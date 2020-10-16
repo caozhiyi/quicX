@@ -2,8 +2,8 @@
 
 namespace quicx {
 
-static const uint32_t __timer_accuracy = 1;  // 1 millisecond
-static const uint32_t __timer_capacity = 50; // 1 millisecond
+static const TIMER_CAPACITY __timer_accuracy = TC_1MS;  // 1 millisecond
+static const TIMER_CAPACITY __timer_capacity = TC_50MS; // 1 millisecond
 
 Timer1ms::Timer1ms() {
     _timer_wheel.resize(__timer_capacity);
@@ -24,10 +24,10 @@ bool Timer1ms::AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool always) 
     }
 
     if (always) {
-        ptr->Set1MsAlways();
+        ptr->SetAlways(__timer_accuracy);
     }
 
-    ptr->Set1MsIndex(time);
+    ptr->SetIndex(time);
     _timer_wheel[time].insert(t);
     return _bitmap.Insert(time);
 }
@@ -38,7 +38,7 @@ bool Timer1ms::RmTimer(std::weak_ptr<TimerSolt> t) {
         return false;
     }
 
-    auto index = ptr->Get1MsIndex();
+    auto index = ptr->GetIndex(__timer_capacity);
     _timer_wheel[index].erase(t);
     return _bitmap.Remove(index);
 }
@@ -65,15 +65,24 @@ void Timer1ms::TimerRun(uint32_t time) {
             if (ptr) {
                 ptr->OnTimer();
             }
-            if (!ptr->Is1MsAlways()) {
+            if (!ptr->IsAlways(__timer_capacity)) {
                 iter = bucket.erase(iter);
-                _bitmap.Remove(ptr->Get1MsIndex());
+                _bitmap.Remove(ptr->GetIndex(__timer_accuracy));
 
             } else {
                 ++iter;
             }
         }
     }
+}
+
+void Timer1ms::AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index) {
+    auto ptr = t.lock();
+    if (!ptr) {
+        return;
+    }
+    _timer_wheel[index].insert(t);
+    _bitmap.Insert(index);
 }
 
 }

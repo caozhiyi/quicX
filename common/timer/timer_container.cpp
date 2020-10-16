@@ -3,7 +3,7 @@
 
 namespace quicx {
 
-TimerContainer::TimerContainer(std::shared_ptr<Timer> t, uint32_t accuracy, uint32_t capacity) :
+TimerContainer::TimerContainer(std::shared_ptr<Timer> t, TIMER_CAPACITY accuracy, TIMER_CAPACITY capacity) :
     _sub_timer(t),
     _accuracy(accuracy),
     _capacity(capacity) {
@@ -28,16 +28,13 @@ bool TimerContainer::AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool al
     }
 
     if (always) {
-        ptr->Set50MsAlways();
+        ptr->SetAlways(_capacity);
     }
 
-    uint32_t index_1ms = time % _accuracy;
-    uint32_t index_50ms = time / _accuracy;
-    ptr->Set1MsIndex(index_1ms);
-    ptr->Set50MsIndex(index_50ms);
+    uint32_t index = ptr->SetIndex(time);
 
     _timer_wheel[time].insert(t);
-    return _bitmap.Insert(index_50ms);
+    return _bitmap.Insert(index);
 }
 
 bool TimerContainer::RmTimer(std::weak_ptr<TimerSolt> t) {
@@ -46,7 +43,7 @@ bool TimerContainer::RmTimer(std::weak_ptr<TimerSolt> t) {
         return false;
     }
 
-    auto index_50ms = ptr->Get1MsIndex();
+    auto index_50ms = ptr->GetIndex(_capacity);
     _timer_wheel[index_50ms].erase(t);
     return _bitmap.Remove(index_50ms) && _sub_timer->RmTimer(t);
 }
@@ -71,11 +68,11 @@ void TimerContainer::TimerRun(uint32_t time) {
         for (auto iter = bucket.begin(); iter != bucket.end();) {
             auto ptr = (iter)->lock();
             if (ptr) {
-                _sub_timer->AddTimer(*iter, ptr->Get1MsIndex(), false);
+                _sub_timer->AddTimer(*iter, ptr->GetIndex(_accuracy));
             }
-            if (!ptr->Is50MsAlways()) {
+            if (!ptr->IsAlways(_capacity)) {
                 iter = bucket.erase(iter);
-                _bitmap.Remove(ptr->Get1MsIndex());
+                _bitmap.Remove(ptr->GetIndex(_capacity));
 
             } else {
                 ++iter;
@@ -83,6 +80,16 @@ void TimerContainer::TimerRun(uint32_t time) {
         }
     }
     _sub_timer->TimerRun(time % _accuracy);
+}
+
+
+void TimerContainer::AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index) {
+    auto ptr = t.lock();
+    if (!ptr) {
+        return;
+    }
+    _timer_wheel[index].insert(t);
+    _bitmap.Insert(index);
 }
 
 }

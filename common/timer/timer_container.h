@@ -1,13 +1,13 @@
-#ifndef COMMON_TIMER_50MS
-#define COMMON_TIMER_50MS
+#ifndef COMMON_TIMER_TIMER_CONTAINER
+#define COMMON_TIMER_TIMER_CONTAINER
 
 #include "timer_1ms.h"
 
 namespace quicx {
 
-class TimerContainer {
+class TimerContainer : public Timer {
 public:
-    TimerContainer(std::shared_ptr<Timer> t, uint32_t accuracy, uint32_t capacity);
+    TimerContainer(std::shared_ptr<Timer> t, TIMER_CAPACITY accuracy, TIMER_CAPACITY capacity);
     ~TimerContainer();
 
     bool AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool always = false);
@@ -19,6 +19,8 @@ public:
     int32_t MinTime();
 
     void TimerRun(uint32_t step);
+
+    void AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index);
     
 private:
     std::vector<std::set<std::weak_ptr<TimerSolt>>> _timer_wheel;
@@ -26,8 +28,8 @@ private:
     uint32_t _cur_index;
     Bitmap _bitmap;
 
-    uint32_t _accuracy;
-    uint32_t _capacity;
+    TIMER_CAPACITY _accuracy;
+    TIMER_CAPACITY _capacity;
 };
 
 }

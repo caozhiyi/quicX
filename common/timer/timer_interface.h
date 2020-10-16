@@ -1,19 +1,27 @@
-#ifndef COMMON_TIMER_INTERFACE
-#define COMMON_TIMER_INTERFACE
+#ifndef COMMON_TIMER_TIMER_INTERFACE
+#define COMMON_TIMER_TIMER_INTERFACE
 
 #include <memory>
 #include "timer_interface.h"
 
 namespace quicx {
 
-enum TimeDefine {
+enum TIMEDEFINE {
     MILLISECOND = 1,
     SECOND      = 1000,
     MINUTE      = 60 * 1000,
 };
 
-enum TimerCode {
+enum TIMER_CODE {
     NO_TIMER = -1 // don't have timer
+};
+
+enum TIMER_CAPACITY {
+    TC_1MS   = 1 * MILLISECOND,
+    TC_50MS  = 50 * MILLISECOND,
+    TC_1SEC  = 1 * SECOND,
+    TC_1MIN  = 1 * MINUTE,
+    TC_1HOUR = 60 * MINUTE
 };
 
 class Timer {
@@ -29,7 +37,9 @@ public:
     // < 0 : has no timer
     virtual int32_t MinTime() = 0;
 
-    virtual void TimerRun(uint32_t step) = 0;
+    virtual void TimerRun(uint32_t time) = 0;
+
+    virtual void AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index) = 0;
 };
 
 }

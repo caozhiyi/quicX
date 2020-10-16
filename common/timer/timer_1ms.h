@@ -1,5 +1,5 @@
-#ifndef COMMON_TIMER_1MS
-#define COMMON_TIMER_1MS
+#ifndef COMMON_TIMER_TIMER_1MS
+#define COMMON_TIMER_TIMER_1MS
 
 #include <set>
 #include <vector>
@@ -13,7 +13,7 @@ namespace quicx {
 // accuracy is 1 millisecond
 // capacity is 50
 // maximum time 50 millisecond
-class Timer1ms {
+class Timer1ms : public Timer {
 public:
     Timer1ms();
     ~Timer1ms();
@@ -27,6 +27,8 @@ public:
     int32_t MinTime();
 
     void TimerRun(uint32_t time);
+
+    void AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index);
     
 private:
     std::vector<std::set<std::weak_ptr<TimerSolt>>> _timer_wheel;
