@@ -1,6 +1,8 @@
 #include <cmath>
 #include "bitmap.h"
-    
+
+namespace quicx {
+
 static const uint32_t __step_size = 64;
 static const uint32_t __max_size = __step_size * 5;
 
@@ -70,4 +72,6 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
         }
     }
     return -1;
+}
+
 }

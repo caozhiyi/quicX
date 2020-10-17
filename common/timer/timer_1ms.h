@@ -1,7 +1,7 @@
 #ifndef COMMON_TIMER_TIMER_1MS
 #define COMMON_TIMER_TIMER_1MS
 
-#include <set>
+#include <list>
 #include <vector>
 
 #include "util/bitmap.h"
@@ -31,7 +31,7 @@ public:
     void AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index);
     
 private:
-    std::vector<std::set<std::weak_ptr<TimerSolt>>> _timer_wheel;
+    std::vector<std::list<std::weak_ptr<TimerSolt>>> _timer_wheel;
     uint32_t _cur_index;
     Bitmap _bitmap;
 };

@@ -10,11 +10,11 @@ namespace quicx {
 // timer task
 class TimerSolt {
 public:
-    enum ALWAYS_FLAG {
-        AF_1MS  = 1 << 7,
-        AF_50MS = 1 << 15,
-        AF_SEC  = 1 << 23,
-        AF_MIN  = 1 << 31,
+
+    enum TIMER_SOLT_FLAG {
+        TSF_INDEX_MASK = 11 << 6,
+        TSF_ALWAYS     = 1 << 7,
+        TSF_REMOVED    = 1 << 6,
     };
 
     TimerSolt();
@@ -31,11 +31,15 @@ public:
 
     void Clear() { _index._index = 0; }
 
-private:
-    void SetIndex(uint32_t pos, uint8_t index, ALWAYS_FLAG af);
+    void SetTimer();
+    void RmTimer();
+    bool IsInTimer();
 
 private:
-    static std::unordered_map<TIMER_CAPACITY, std::pair<ALWAYS_FLAG, uint8_t>> _index_map;
+    void SetIndex(uint32_t pos, uint8_t index);
+
+private:
+    static std::unordered_map<TIMER_CAPACITY, uint8_t> _index_map;
     struct {
         union {
             uint8_t _index[4];

@@ -23,7 +23,7 @@ public:
     void AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index);
     
 private:
-    std::vector<std::set<std::weak_ptr<TimerSolt>>> _timer_wheel;
+    std::vector<std::list<std::weak_ptr<TimerSolt>>> _timer_wheel;
     std::shared_ptr<Timer> _sub_timer;
     uint32_t _cur_index;
     Bitmap _bitmap;

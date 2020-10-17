@@ -24,6 +24,7 @@ enum TIMER_CAPACITY {
     TC_1HOUR = 60 * MINUTE
 };
 
+class TimerSolt;
 class Timer {
 public:
     Timer() {}
