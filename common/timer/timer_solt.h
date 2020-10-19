@@ -39,7 +39,7 @@ private:
     void SetIndex(uint32_t pos, uint8_t index);
 
 private:
-    static std::unordered_map<TIMER_CAPACITY, uint8_t> _index_map;
+    static std::unordered_map<uint32_t, uint8_t> _index_map;
     struct {
         union {
             uint8_t _index[4];

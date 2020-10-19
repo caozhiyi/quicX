@@ -2,7 +2,6 @@
 #define COMMON_TIMER_TIMER_INTERFACE
 
 #include <memory>
-#include "timer_interface.h"
 
 namespace quicx {
 

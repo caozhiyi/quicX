@@ -27,6 +27,10 @@ bool TimerContainer::AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool al
         return false;
     }
 
+    if (ptr->IsInTimer()) {
+        return true;
+    }
+
     if (always) {
         ptr->SetAlways(_capacity);
     }

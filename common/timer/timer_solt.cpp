@@ -2,7 +2,7 @@
 
 namespace quicx {
 
-std::unordered_map<TIMER_CAPACITY, uint8_t> TimerSolt::_index_map;
+std::unordered_map<uint32_t, uint8_t> TimerSolt::_index_map;
 
 TimerSolt::TimerSolt() {  
     _index._index = 0;

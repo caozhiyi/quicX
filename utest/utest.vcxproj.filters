@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="test.cpp" />
+    <ClCompile Include="common\util\bitmap_test.cpp">
+      <Filter>common\util</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="common">
+      <UniqueIdentifier>{ba731ea2-85a5-44a1-b515-59ef48dcefe0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common\util">
+      <UniqueIdentifier>{910aadfe-cc9b-4e65-9616-22c3484b9474}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

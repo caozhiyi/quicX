@@ -3,7 +3,7 @@
 namespace quicx {
 
 static const TIMER_CAPACITY __timer_accuracy = TC_1MS;  // 1 millisecond
-static const TIMER_CAPACITY __timer_capacity = TC_50MS; // 1 millisecond
+static const TIMER_CAPACITY __timer_capacity = TC_50MS; // 50 millisecond
 
 Timer1ms::Timer1ms() {
     _timer_wheel.resize(__timer_capacity);
@@ -23,11 +23,17 @@ bool Timer1ms::AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool always) 
         return false;
     }
 
+    if (ptr->IsInTimer()) {
+        return true;
+    }
+
     if (always) {
         ptr->SetAlways(__timer_accuracy);
     }
 
     ptr->SetIndex(time);
+    ptr->SetTimer();
+    
     _timer_wheel[time].push_back(t);
     return _bitmap.Insert(time);
 }

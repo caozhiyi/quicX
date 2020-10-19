@@ -1,0 +1,51 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="common">
+      <UniqueIdentifier>{b6498d9c-31d3-4e9e-a0d9-77d0a4ff5430}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common\timer">
+      <UniqueIdentifier>{501735db-2fe8-4dd2-81d5-6d7ff1c7cb1e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common\util">
+      <UniqueIdentifier>{ece281a5-2a75-437d-9c31-b584a2c419d3}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="common\timer\timer_1ms.cpp">
+      <Filter>common\timer</Filter>
+    </ClCompile>
+    <ClCompile Include="common\util\bitmap.cpp">
+      <Filter>common\util</Filter>
+    </ClCompile>
+    <ClCompile Include="common\timer\timer_container.cpp">
+      <Filter>common\timer</Filter>
+    </ClCompile>
+    <ClCompile Include="common\timer\timer.cpp">
+      <Filter>common\timer</Filter>
+    </ClCompile>
+    <ClCompile Include="common\timer\timer_solt.cpp">
+      <Filter>common\timer</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="common\timer\timer_1ms.h">
+      <Filter>common\timer</Filter>
+    </ClInclude>
+    <ClInclude Include="common\timer\timer_interface.h">
+      <Filter>common\timer</Filter>
+    </ClInclude>
+    <ClInclude Include="common\timer\timer_solt.h">
+      <Filter>common\timer</Filter>
+    </ClInclude>
+    <ClInclude Include="common\util\bitmap.h">
+      <Filter>common\util</Filter>
+    </ClInclude>
+    <ClInclude Include="common\timer\timer_container.h">
+      <Filter>common\timer</Filter>
+    </ClInclude>
+    <ClInclude Include="common\timer\timer.h">
+      <Filter>common\timer</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
