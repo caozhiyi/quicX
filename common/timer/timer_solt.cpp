@@ -18,74 +18,94 @@ TimerSolt::~TimerSolt() {
 
 uint8_t TimerSolt::GetIndex(TIMER_CAPACITY tc) {
     auto index = _index_map[tc];
-    return _index._info._index[index] &= ~TSF_INDEX_MASK;
+    return _index._index_arr[index] & ~TSF_INDEX_MASK;
 }
 
-uint8_t TimerSolt::SetIndex(uint32_t time) {
-    if (time > TC_1HOUR) {
+uint8_t TimerSolt::SetIndex(uint32_t index) {
+    if (index > TC_1HOUR) {
         return 0;
     }
+
     uint8_t ret = 0;
-    if (time > TC_1MIN) {
-        uint8_t index = time / TC_1MIN;
-        time = time % TC_1MIN;
-        SetIndex(3, index);
-        ret = index;
+    if (index > TC_1MIN) {
+        uint8_t sub_index = index / TC_1MIN;
+        index = index % TC_1MIN;
+        SetIndex(3, sub_index);
+        ret = sub_index;
     } 
     
-    if (time > TC_1SEC) {
-        uint8_t index = time / TC_1SEC;
-        time = time % TC_1SEC;
-        SetIndex(2, index);
-        ret = index;
+    if (index > TC_1SEC) {
+        uint8_t sub_index = index / TC_1SEC;
+        index = index % TC_1SEC;
+        SetIndex(2, sub_index);
+        if (ret == 0) {
+            ret = sub_index;
+        }
     }
 
-    if (time > TC_50MS) {
-        uint8_t index = time / TC_50MS;
-        time = time % TC_50MS;
-        SetIndex(1, index);
-        ret = index;
+    if (index > TC_50MS) {
+        uint8_t sub_index = index / TC_50MS;
+        index = index % TC_50MS;
+        SetIndex(1, sub_index);
+        if (ret == 0) {
+            ret = sub_index;
+        }
     }
     
-    if (time > 0) {
-        uint8_t index = time;
-        SetIndex(0, index);
-        ret = index;
+    if (index >= 0) {
+        uint8_t sub_index = index;
+        SetIndex(0, sub_index);
+        if (ret == 0) {
+            ret = sub_index;
+        }
     }
     return ret;
 }
 
 void TimerSolt::SetAlways(TIMER_CAPACITY tc) {
     auto index = _index_map[tc];
-    _index._info._index[index] |= TSF_ALWAYS;
+    _index._index_arr[index] |= TSF_ALWAYS;
 }
 
 void TimerSolt::CancelAlways(TIMER_CAPACITY tc) {
     auto index = _index_map[tc];
-    _index._info._index[index] &= ~TSF_ALWAYS;
+    _index._index_arr[index] &= ~TSF_ALWAYS;
 }
 
 bool TimerSolt::IsAlways(TIMER_CAPACITY tc) {
     auto index = _index_map[tc];
-    return _index._info._index[index] & TSF_ALWAYS;
+    return _index._index_arr[index] & TSF_ALWAYS;
+}
+
+void TimerSolt::Clear() {
+    _interval = 0; 
+    _index._index = 0; 
 }
 
 void TimerSolt::SetIndex(uint32_t pos, uint8_t index) {
     // clear current index
-    _index._info._index[pos] &= TSF_INDEX_MASK;
-    _index._info._index[pos] |= index; 
+    _index._index_arr[pos] &= TSF_INDEX_MASK;
+    _index._index_arr[pos] |= index; 
 }
 
 void TimerSolt::SetTimer() {
-    _index._info._index[3] |= TSF_REMOVED;
+    _index._index_arr[3] |= TSF_INTIMER;
 }
 
 void TimerSolt::RmTimer() {
-    _index._info._index[3] &= ~TSF_REMOVED;
+    Clear();
 }
 
 bool TimerSolt::IsInTimer() {
-    return _index._info._index[3] & TSF_REMOVED;
+    return _index._index_arr[3] & TSF_INTIMER;
+}
+
+uint32_t TimerSolt::GetInterval() {
+    return _interval;
+}
+
+void TimerSolt::SetInterval(uint32_t time) {
+    _interval = time;
 }
 
 }

@@ -5,9 +5,13 @@ namespace quicx {
 
 TimerContainer::TimerContainer(std::shared_ptr<Timer> t, TIMER_CAPACITY accuracy, TIMER_CAPACITY capacity) :
     _sub_timer(t),
+    _cur_index(0),
     _accuracy(accuracy),
     _capacity(capacity) {
     assert(t);
+    auto size = capacity/accuracy;
+    _timer_wheel.resize(size);
+    _bitmap.Init(size);
 }
 TimerContainer::~TimerContainer() {
 
@@ -35,10 +39,14 @@ bool TimerContainer::AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool al
         ptr->SetAlways(_capacity);
     }
 
-    ptr->SetTimer();
+    time += _cur_index * _accuracy;
+    if (time > _capacity) {
+        time /= _capacity;
+    }
     uint32_t index = ptr->SetIndex(time);
+    ptr->SetTimer();
 
-    _timer_wheel[time].push_back(t);
+    _timer_wheel[index].push_back(t);
     return _bitmap.Insert(index);
 }
 
@@ -59,7 +67,7 @@ int32_t TimerContainer::MinTime() {
         return NO_TIMER;
     }
 
-    return next_setp * _accuracy + _sub_timer->MinTime();
+    return (next_setp - _cur_index) * _accuracy + _sub_timer->MinTime();
 }
 
 void TimerContainer::TimerRun(uint32_t time) {
@@ -73,14 +81,17 @@ void TimerContainer::TimerRun(uint32_t time) {
         for (auto iter = bucket.begin(); iter != bucket.end();) {
             auto ptr = (iter)->lock();
             if (ptr && ptr->IsInTimer()) {
-                _sub_timer->AddTimer(*iter, ptr->GetIndex(_accuracy));
+                _sub_timer->AddTimerByIndex(*iter, ptr->GetIndex(_accuracy));
             }
+            // remove from current bucket
+            iter = bucket.erase(iter);
+            _bitmap.Remove(ptr->GetIndex(_capacity));
             if (!ptr->IsAlways(_capacity) || !ptr->IsInTimer()) {
-                iter = bucket.erase(iter);
-                _bitmap.Remove(ptr->GetIndex(_capacity));
+               continue;
 
             } else {
-                ++iter;
+                // add to timer again
+                AddTimer(ptr, ptr->GetInterval(), true);
             }
         }
     }
@@ -88,7 +99,7 @@ void TimerContainer::TimerRun(uint32_t time) {
 }
 
 
-void TimerContainer::AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index) {
+void TimerContainer::AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index) {
     auto ptr = t.lock();
     if (!ptr) {
         return;

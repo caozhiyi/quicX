@@ -19,8 +19,8 @@ public:
     int32_t MinTime();
 
     void TimerRun(uint32_t step);
-
-    void AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index);
+    
+    void AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index);
     
 private:
     std::vector<std::list<std::weak_ptr<TimerSolt>>> _timer_wheel;

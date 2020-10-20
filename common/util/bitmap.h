@@ -2,6 +2,7 @@
 #define COMMON_UTIL_BITMAP
 
 #include <vector>
+#include <cstdint>
 
 namespace quicx {
 

@@ -2,6 +2,7 @@
 #define COMMON_TIMER_TIMER_INTERFACE
 
 #include <memory>
+#include <cstdint>
 
 namespace quicx {
 
@@ -39,7 +40,7 @@ public:
 
     virtual void TimerRun(uint32_t time) = 0;
 
-    virtual void AddTimer(std::weak_ptr<TimerSolt> t, uint8_t index) = 0;
+    virtual void AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index) = 0;
 };
 
 }

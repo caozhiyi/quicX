@@ -5,3 +5,4 @@ third
 x64
 .vscode
 gtest
+*.o

@@ -5,6 +5,12 @@
     <ClCompile Include="common\util\bitmap_test.cpp">
       <Filter>common\util</Filter>
     </ClCompile>
+    <ClCompile Include="common\timer\timer_1ms_test.cpp">
+      <Filter>common\timer</Filter>
+    </ClCompile>
+    <ClCompile Include="common\timer\timer_solt_test.cpp">
+      <Filter>common\timer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="common">
@@ -13,5 +19,13 @@
     <Filter Include="common\util">
       <UniqueIdentifier>{910aadfe-cc9b-4e65-9616-22c3484b9474}</UniqueIdentifier>
     </Filter>
+    <Filter Include="common\timer">
+      <UniqueIdentifier>{d34ba54f-a350-4b9f-8a32-3d1ebdf4166a}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="common\timer\common.h">
+      <Filter>common\timer</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

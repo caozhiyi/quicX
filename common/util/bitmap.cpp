@@ -63,6 +63,10 @@ bool Bitmap::Remove(uint32_t index) {
 }
 
 int32_t Bitmap::GetMinAfter(uint32_t index) {
+    // get next bit.
+    if (index != 0) {
+        index++;
+    }
     if (index > _bitmap.size() * __step_size) {
         return -1;
     }
