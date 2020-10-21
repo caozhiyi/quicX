@@ -30,6 +30,11 @@ TEST(timer1ms_utest, rmtimer) {
     auto solt4 = std::make_shared<TimerSoltIns>();
     auto timer = quicx::MakeTimer50Ms();
 
+    EXPECT_TRUE(timer->AddTimer(solt1, 10 * quicx::MILLISECOND, true));
+    EXPECT_TRUE(timer->AddTimer(solt2, 30 * quicx::MILLISECOND));
+    EXPECT_TRUE(timer->AddTimer(solt3, 40 * quicx::MILLISECOND));
+    EXPECT_FALSE(timer->AddTimer(solt4, 50 * quicx::MILLISECOND));
+    
     EXPECT_TRUE(timer->RmTimer(solt1));
     EXPECT_TRUE(timer->RmTimer(solt2));
     EXPECT_TRUE(timer->RmTimer(solt3));

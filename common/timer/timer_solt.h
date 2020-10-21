@@ -24,6 +24,7 @@ public:
 
     uint8_t GetIndex(TIMER_CAPACITY tc);
     uint8_t SetIndex(uint32_t index);
+    void SetIndex(uint8_t index, TIMER_CAPACITY tc);
 
     void SetAlways(TIMER_CAPACITY tc);
     void CancelAlways(TIMER_CAPACITY tc);

@@ -32,12 +32,13 @@ bool Timer1ms::AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool always) 
         ptr->SetAlways(__timer_accuracy);
     }
 
+    ptr->SetInterval(time);
+
     time += _cur_index;
     if (time > __timer_capacity) {
-        time /= __timer_capacity;
+        time %= __timer_capacity;
     }
     
-    ptr->SetInterval(time);
     ptr->SetIndex(time);
     ptr->SetTimer();
     
@@ -52,7 +53,14 @@ bool Timer1ms::RmTimer(std::weak_ptr<TimerSolt> t) {
     }
 
     auto index = ptr->GetIndex(__timer_accuracy);
-    return _bitmap.Remove(index);
+    bool ret = _bitmap.Remove(index);
+
+    ptr->RmTimer();
+    return ret;
+}
+
+int32_t Timer1ms::CurrentTimer() {
+    return _cur_index;
 }
 
 int32_t Timer1ms::MinTime() {
@@ -73,10 +81,14 @@ int32_t Timer1ms::MinTime() {
     return NO_TIMER;
 }
 
-void Timer1ms::TimerRun(uint32_t time) {
+uint32_t Timer1ms::TimerRun(uint32_t time) {
+    time = time % __timer_capacity;
     _cur_index += time;
+
+    uint32_t ret = 0;
     if (_cur_index >= __timer_capacity) {
         _cur_index %= __timer_capacity;
+        ret++;
     }
 
     auto& bucket = _timer_wheel[_cur_index];
@@ -91,6 +103,7 @@ void Timer1ms::TimerRun(uint32_t time) {
             _bitmap.Remove(ptr->GetIndex(__timer_accuracy));
 
             if (!ptr->IsAlways(__timer_accuracy) || !ptr->IsInTimer()) {
+                ptr->RmTimer();
                 continue;
 
             } else {
@@ -103,6 +116,7 @@ void Timer1ms::TimerRun(uint32_t time) {
             }
         }
     }
+    return ret;
 }
 
 void Timer1ms::AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index) {
@@ -111,7 +125,7 @@ void Timer1ms::AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index) {
         return;
     }
 
-    ptr->SetIndex(index);
+    ptr->SetIndex(index, TC_1MS);
     _timer_wheel[index].push_back(t);
     _bitmap.Insert(index);
 }

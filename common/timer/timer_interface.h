@@ -38,7 +38,10 @@ public:
     // < 0 : has no timer
     virtual int32_t MinTime() = 0;
 
-    virtual void TimerRun(uint32_t time) = 0;
+    // get current run time
+    virtual int32_t CurrentTimer() = 0;
+
+    virtual uint32_t TimerRun(uint32_t time) = 0;
 
     virtual void AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index) = 0;
 };

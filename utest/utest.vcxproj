@@ -153,6 +153,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="common\timer\timer_1ms_test.cpp" />
+    <ClCompile Include="common\timer\timer_container_test.cpp" />
     <ClCompile Include="common\timer\timer_solt_test.cpp" />
     <ClCompile Include="common\util\bitmap_test.cpp" />
     <ClCompile Include="test.cpp" />

@@ -18,9 +18,14 @@ public:
     // < 0 : has no timer
     int32_t MinTime();
 
-    void TimerRun(uint32_t step);
+    int32_t CurrentTimer();
+
+    uint32_t TimerRun(uint32_t step);
     
     void AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index);
+    
+private:
+    int32_t LocalMinTime();
     
 private:
     std::vector<std::list<std::weak_ptr<TimerSolt>>> _timer_wheel;
@@ -30,6 +35,7 @@ private:
 
     TIMER_CAPACITY _accuracy;
     TIMER_CAPACITY _capacity;
+    uint32_t _max_size;
 };
 
 }

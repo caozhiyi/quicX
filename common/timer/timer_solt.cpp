@@ -27,14 +27,14 @@ uint8_t TimerSolt::SetIndex(uint32_t index) {
     }
 
     uint8_t ret = 0;
-    if (index > TC_1MIN) {
+    if (index >= TC_1MIN) {
         uint8_t sub_index = index / TC_1MIN;
         index = index % TC_1MIN;
         SetIndex(3, sub_index);
         ret = sub_index;
     } 
     
-    if (index > TC_1SEC) {
+    if (index >= TC_1SEC) {
         uint8_t sub_index = index / TC_1SEC;
         index = index % TC_1SEC;
         SetIndex(2, sub_index);
@@ -43,7 +43,7 @@ uint8_t TimerSolt::SetIndex(uint32_t index) {
         }
     }
 
-    if (index > TC_50MS) {
+    if (index >= TC_50MS) {
         uint8_t sub_index = index / TC_50MS;
         index = index % TC_50MS;
         SetIndex(1, sub_index);
@@ -52,7 +52,7 @@ uint8_t TimerSolt::SetIndex(uint32_t index) {
         }
     }
     
-    if (index >= 0) {
+    if (index > 0) {
         uint8_t sub_index = index;
         SetIndex(0, sub_index);
         if (ret == 0) {
@@ -60,6 +60,24 @@ uint8_t TimerSolt::SetIndex(uint32_t index) {
         }
     }
     return ret;
+}
+
+void TimerSolt::SetIndex(uint8_t index, TIMER_CAPACITY tc) {
+    switch (tc)
+    {
+    case TC_1MS:
+        SetIndex(0, index);
+        break;
+    case TC_50MS:
+        SetIndex(1, index);
+        break;
+    case TC_1SEC:
+        SetIndex(2, index);
+        break;
+    case TC_1MIN:
+        SetIndex(3, index);
+        break;
+    }
 }
 
 void TimerSolt::SetAlways(TIMER_CAPACITY tc) {

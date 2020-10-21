@@ -26,7 +26,10 @@ public:
     // < 0 : has no timer
     int32_t MinTime();
 
-    void TimerRun(uint32_t time);
+    int32_t CurrentTimer();
+
+    // return carry
+    uint32_t TimerRun(uint32_t time);
 
     void AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index);
     

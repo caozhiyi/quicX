@@ -11,6 +11,9 @@
     <ClCompile Include="common\timer\timer_solt_test.cpp">
       <Filter>common\timer</Filter>
     </ClCompile>
+    <ClCompile Include="common\timer\timer_container_test.cpp">
+      <Filter>common\timer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="common">
