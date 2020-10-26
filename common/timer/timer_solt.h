@@ -7,7 +7,9 @@
 
 namespace quicx {
 
-// timer task
+// Inherit this class to add to timer.
+// don't call any function in this class, 
+// they internal used by timer.
 class TimerSolt {
 public:
 

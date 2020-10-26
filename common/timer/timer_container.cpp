@@ -33,24 +33,27 @@ bool TimerContainer::AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool al
         return false;
     }
 
+    // only can set once
     if (ptr->IsInTimer()) {
         return true;
     }
+    ptr->SetTimer();
 
+    // set always flag
     if (always) {
         ptr->SetAlways(_accuracy);
     }
 
     ptr->SetInterval(time);
 
+    // relative to current time
     time += _cur_index * _accuracy;
     if (time > _capacity) {
         time %= _capacity;
     }
 
+    // insert into timer
     uint32_t index = ptr->SetIndex(time);
-    ptr->SetTimer();
-
     _timer_wheel[index].push_back(t);
     return _bitmap.Insert(index);
 }
@@ -61,17 +64,17 @@ bool TimerContainer::RmTimer(std::weak_ptr<TimerSolt> t) {
         return false;
     }
 
-    auto index_50ms = ptr->GetIndex(_accuracy);
-    bool ret = _bitmap.Remove(index_50ms) && _sub_timer->RmTimer(t);
-
+    bool ret = _bitmap.Remove(ptr->GetIndex(_accuracy)) && _sub_timer->RmTimer(t);
+    // clear timer solt flag
     ptr->RmTimer();
-
     return ret;
 }
 
 int32_t TimerContainer::MinTime() {
     int32_t sub_time = _sub_timer->MinTime();
     int32_t local_time = LocalMinTime();
+
+    // return less time
     if (sub_time > 0 && local_time > 0) {
         return std::min(sub_time, local_time);
 

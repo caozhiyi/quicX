@@ -10,9 +10,9 @@
 
 namespace quicx {
 
-// accuracy is 1 millisecond
-// capacity is 50
-// maximum time 50 millisecond
+// the base timer wheel, 
+// time unit is millisecond, 
+// and max support 50 milliseconds.
 class Timer1ms : public Timer {
 public:
     Timer1ms();
@@ -21,16 +21,19 @@ public:
     bool AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool always = false);
     bool RmTimer(std::weak_ptr<TimerSolt> t);
 
-    // get min next timer out time
-    // return >= 0 : the next time
-    // < 0 : has no timer
+    // get min next time out time
+    // return: 
+    // >= 0  : the next time
+    //  < 0  : has no timer
     int32_t MinTime();
 
+    // return the timer wheel current time
     int32_t CurrentTimer();
 
+    // timer wheel run time 
     // return carry
     uint32_t TimerRun(uint32_t time);
-
+    // add timer by index. only set current time wheel
     void AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index);
     
 private:

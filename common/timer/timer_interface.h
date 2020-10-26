@@ -6,7 +6,8 @@
 
 namespace quicx {
 
-enum TIMEDEFINE {
+// time unit
+enum TIME_UNIT {
     MILLISECOND = 1,
     SECOND      = 1000,
     MINUTE      = 60 * 1000,
@@ -25,6 +26,8 @@ enum TIMER_CAPACITY {
 };
 
 class TimerSolt;
+
+// timer interface, timer inherits from this.
 class Timer {
 public:
     Timer() {}
@@ -33,16 +36,21 @@ public:
     virtual bool AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool always = false) = 0;
     virtual bool RmTimer(std::weak_ptr<TimerSolt> t) = 0;
 
-    // get min next timer out time
-    // return >= 0 : the next time
-    // < 0 : has no timer
+    // get min next time out time
+    // return: 
+    // >= 0  : the next time
+    //  < 0  : has no timer
     virtual int32_t MinTime() = 0;
 
-    // get current run time
+    // return the timer wheel current time
     virtual int32_t CurrentTimer() = 0;
 
+    // timer wheel run time 
+    // return carry
     virtual uint32_t TimerRun(uint32_t time) = 0;
 
+    // only internal used by timer
+    // add timer by index. only set current time wheel
     virtual void AddTimerByIndex(std::weak_ptr<TimerSolt> t, uint8_t index) = 0;
 };
 
