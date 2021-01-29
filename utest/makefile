@@ -9,7 +9,7 @@ INCLUDES = -I../              \
            -I../third/gtest   \
 
 #debug
-CCFLAGS = -lpthread -fPIC -m64 -g -std=c++11 -lstdc++ -pipe 
+CCFLAGS = -fPIC -m64 -g -std=c++11 -lstdc++ -pipe 
 
 GTESTLIB = ../third/lib/libgtest.a
 BIN = quicx-utest
