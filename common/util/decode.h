@@ -54,7 +54,7 @@ char* EncodeFixed(char* dst, T value) {
     }
 
     uint32_t bit_limit = sizeof(T) * sizeof(void*);
-    for (size_t shift = 0, size_t index = 0; shift <= bit_limit; shift+=8, index++) {
+    for (size_t shift = 0, index = 0; shift <= bit_limit; shift+=8, index++) {
         buffer[index] = static_cast<uint8_t>(value >> shift);
     }
     return dst + sizeof(T);
@@ -72,10 +72,10 @@ char* DecodeFixed(char* start, char* end, T& value) {
     }
 
     uint32_t bit_limit = sizeof(T) * sizeof(void*);
-    for (size_t shift = 0, size_t index = 0; shift <= bit_limit; shift+=8, index++) {
-        buffer[index] |= (static_cast<uint32_t>(buffer[0]) << shift);
+    for (size_t shift = 0, index = 0; shift <= bit_limit; shift+=8, index++) {
+        value |= (static_cast<T>(buffer[index]) << shift);
     }
-    return dst + sizeof(T);
+    return start + sizeof(T);
 }
 
 }

@@ -1,4 +1,9 @@
-SRCS = $(wildcard ../common/timer/*.cpp ../common/util/*.cpp ./common/timer/*.cpp ./common/util/*.cpp ./*.cpp)
+SRCS = $(wildcard ../common/timer/*.cpp   \
+                  ../common/util/*.cpp    \
+				  ./common/timer/*.cpp    \
+				  ./common/util/*.cpp     \
+				  ./common/*.cpp          \
+				  ./*.cpp)
 
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
 
