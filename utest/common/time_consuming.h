@@ -2,16 +2,18 @@
 #define UTEST_COMMON_UTIL_OS_INFO
 
 #include <chrono>
+#include <string>
 
 namespace quicx {
 
 class TimeConsuming {
 public:
-    TimeConsuming();
+    TimeConsuming(std::string name);
     ~TimeConsuming();
 
 private:
-    time_t _clock;
+    std::string _name;
+    std::chrono::system_clock::time_point _start_time;
 };
 
 }

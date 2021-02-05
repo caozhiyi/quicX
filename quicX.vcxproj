@@ -149,19 +149,29 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="common\lock\spin_lock.cpp" />
+    <ClCompile Include="common\queue\queue_thread_local.cpp" />
     <ClCompile Include="common\timer\timer.cpp" />
     <ClCompile Include="common\timer\timer_1ms.cpp" />
     <ClCompile Include="common\timer\timer_container.cpp" />
     <ClCompile Include="common\timer\timer_solt.cpp" />
     <ClCompile Include="common\util\bitmap.cpp" />
+    <ClCompile Include="common\util\decode.cpp" />
+    <ClCompile Include="common\util\os_info.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="common\lock\spin_lock.h" />
+    <ClInclude Include="common\queue\queue_interface.h" />
+    <ClInclude Include="common\queue\queue_solt.h" />
+    <ClInclude Include="common\queue\queue_thread_local.h" />
     <ClInclude Include="common\timer\timer.h" />
     <ClInclude Include="common\timer\timer_1ms.h" />
     <ClInclude Include="common\timer\timer_container.h" />
     <ClInclude Include="common\timer\timer_interface.h" />
     <ClInclude Include="common\timer\timer_solt.h" />
     <ClInclude Include="common\util\bitmap.h" />
+    <ClInclude Include="common\util\decode.h" />
+    <ClInclude Include="common\util\os_info.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -152,14 +152,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="common\lock\spin_lock_test.cpp" />
     <ClCompile Include="common\timer\timer_1ms_test.cpp" />
     <ClCompile Include="common\timer\timer_container_test.cpp" />
     <ClCompile Include="common\timer\timer_solt_test.cpp" />
+    <ClCompile Include="common\time_consuming.cpp" />
     <ClCompile Include="common\util\bitmap_test.cpp" />
+    <ClCompile Include="common\util\decode_test.cpp" />
+    <ClCompile Include="common\util\os_info_test.cpp" />
     <ClCompile Include="test.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="common\queue\common.h" />
     <ClInclude Include="common\timer\common.h" />
+    <ClInclude Include="common\time_consuming.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

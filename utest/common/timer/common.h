@@ -1,5 +1,5 @@
-#ifndef UTEST_COMMON_TIMER_TIMER_SOLT
-#define UTEST_COMMON_TIMER_TIMER_SOLT
+#ifndef UTEST_COMMON_TIMER_COMMON
+#define UTEST_COMMON_TIMER_COMMON
 
 #include "common/timer/timer_solt.h"
 

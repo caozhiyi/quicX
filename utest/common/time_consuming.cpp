@@ -3,13 +3,15 @@
 
 namespace quicx {
 
-TimeConsuming::TimeConsuming() {
-    _clock = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+TimeConsuming::TimeConsuming(std::string name) : _name(name),
+    _start_time(std::chrono::system_clock::now()) {
 }
 
 TimeConsuming::~TimeConsuming() {
-    time_t consuming = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::from_time_t(_clock)).time_since_epoch().count();
-    std::cout << consuming << " ms" << std::endl;
+    std::chrono::milliseconds time_span = std::chrono::duration_cast<std::chrono::milliseconds>  \
+        (std::chrono::system_clock::now() - _start_time);
+
+    std::cout << _name << " used " << time_span.count() << " ms." << std::endl;
 }
 
 }

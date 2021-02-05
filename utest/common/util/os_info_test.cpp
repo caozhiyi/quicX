@@ -4,7 +4,7 @@
 #include "common/util/os_info.h"
 
 TEST(os_info_utest, IsBigEndian_time) {
-    quicx::TimeConsuming tc;
+    quicx::TimeConsuming tc("IsBigEndian_time");
     for (int i = 0; i < 1000000; i++) {
         quicx::IsBigEndian();
     }

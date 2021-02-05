@@ -77,6 +77,9 @@ void TimerSolt::SetIndex(uint8_t index, TIMER_CAPACITY tc) {
     case TC_1MIN:
         SetIndex(3, index);
         break;
+    default:
+        // shouldn't here
+        break;
     }
 }
 

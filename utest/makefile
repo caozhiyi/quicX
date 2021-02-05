@@ -1,6 +1,9 @@
 SRCS = $(wildcard ../common/timer/*.cpp   \
                   ../common/util/*.cpp    \
+				  ../common/queue/*.cpp   \
+				  ../common/lock/*.cpp    \
 				  ./common/timer/*.cpp    \
+				  ./common/lock/*.cpp     \
 				  ./common/util/*.cpp     \
 				  ./common/*.cpp          \
 				  ./*.cpp)
