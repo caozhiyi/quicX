@@ -4,7 +4,7 @@
 #include "../time_consuming.h"
 #include "common/lock/spin_lock.h"
 
-TEST(spin_lock_utest, spin_lock_1) {
+/*TEST(spin_lock_utest, spin_lock_1) {
     int flag = 0;
     quicx::SpinLock lock;
     std::thread th1([&lock, &flag](){
@@ -100,3 +100,4 @@ TEST(spin_lock_utest, spin_lock_3) {
         th2.join();
     }
 }
+*/

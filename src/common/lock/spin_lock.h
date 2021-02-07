@@ -1,5 +1,5 @@
-#ifndef COMMON_SPIN_LOCK
-#define COMMON_SPIN_LOCK
+#ifndef COMMON_LOCK_SPIN_LOCK
+#define COMMON_LOCK_SPIN_LOCK
 
 #include <atomic>
 #include <mutex>
