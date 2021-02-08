@@ -6,10 +6,10 @@
 
 namespace quicx {
 
-class StreamsBlockedFrame : public Frame {
+class NewConnectionIDFrame : public Frame {
 public:
-    StreamsBlockedFrame() : Frame(FT_STREAMS_BLOCKED) {}
-    ~StreamsBlockedFrame() {}
+    NewConnectionIDFrame() : Frame(FT_NEW_CONNECTION_ID) {}
+    ~NewConnectionIDFrame() {}
 
 private:
     uint64_t _sequence_number;  // the connection ID by the sender.
