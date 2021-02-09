@@ -1,4 +1,4 @@
-#include <malloc.h>
+#include <cstdlib>
 #include "pool_block.h"
 
 namespace quicx {

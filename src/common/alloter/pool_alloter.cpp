@@ -1,5 +1,5 @@
 #include <cstring>
-#include <malloc.h>
+#include <cstdlib>
 #include "pool_alloter.h"
 
 namespace quicx {

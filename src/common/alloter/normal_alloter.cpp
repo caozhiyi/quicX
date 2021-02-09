@@ -1,5 +1,5 @@
 #include <cstring>        //for memset
-#include <malloc.h>
+#include <cstdlib>
 #include "normal_alloter.h"
 
 namespace quicx {
