@@ -5,15 +5,17 @@
 #include "address.h"
 #include "util/os_return.h"
 
-
 namespace quicx {
 
-SysCallIntResult Bind(int64_t sockfd, const Address& addr);
+SysCallInt64Result UdpSocket();
 
-SysCallIntResult SetSockopt(int64_t sockfd, in level, int optname, const void* optval,
-                              socklen_t optlen) override;
-SysCallIntResult GetSockopt(int64_t sockfd, int level, int optname, void* optval,
-                              socklen_t* optlen) override;
+SysCallInt32Result Close(int64_t sockfd);
+
+SysCallInt32Result Bind(int64_t sockfd, Address& addr);
+
+SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_t flag, Address& addr);
+
+SysCallInt32Result RecvFrom(int64_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr);
 
 }
 

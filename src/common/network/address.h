@@ -34,9 +34,6 @@ protected:
     uint16_t _port;
 };
 
-std::ostream& operator<< (std::ostream &out, const Address &addr);
-bool operator==(const Address &addr1, const Address &addr2);
-
 }
 
 #endif

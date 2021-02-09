@@ -9,7 +9,8 @@ struct SysCallResult {
   int32_t errno_;
 };
 
-using SysCallIntResult = SysCallResult<int>;
+using SysCallInt32Result = SysCallResult<int32_t>;
+using SysCallInt64Result = SysCallResult<int64_t>;
 
 }
 
