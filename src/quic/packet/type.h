@@ -10,6 +10,13 @@ enum PacketType {
     PT_RETRY     = 0x03,
 };
 
+enum PacketHeaderType {
+    PHT_LONG    = 0x01,
+    PHT_SHORT   = 0x00,
+};
+
+static const unsigned int __fix_header_btye = 0x04;
+
 }
 
 #endif

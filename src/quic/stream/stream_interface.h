@@ -1,8 +1,9 @@
-#ifndef QUIC_STREAM_TYPE
-#define QUIC_STREAM_TYPE
+#ifndef QUIC_STREAM_INTERFACE
+#define QUIC_STREAM_INTERFACE
 
 #include <string>
 #include <cstdint>
+#include "type.h"
 
 namespace qucix {
 
@@ -20,6 +21,10 @@ public:
     void Reset();
 
     void SetReadCallBack();
+private:
+    StreamType _stream_type;
+    uint64_t _data_offset;
+    uint64_t _peer_data_limit;
 };
 
 }
