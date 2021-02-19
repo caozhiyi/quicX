@@ -1,5 +1,5 @@
-#ifndef COMMON_POOL_ALLOTER
-#define COMMON_POOL_ALLOTER
+#ifndef COMMON_ALLOTER_POOL_ALLOTER
+#define COMMON_ALLOTER_POOL_ALLOTER
 
 #include <vector>
 #include <cstdint>

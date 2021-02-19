@@ -2,6 +2,7 @@ SRCS = $(wildcard ../src/common/timer/*.cpp   \
                   ../src/common/util/*.cpp    \
 				  ../src/common/queue/*.cpp   \
 				  ../src/common/lock/*.cpp    \
+				  ../src/common/buffer/*.cpp  \
 				  ../src/common/alloter/*.cpp \
 				  ../src/common/network/*.cpp \
 				  ../src/common/network/linux/*.cpp \

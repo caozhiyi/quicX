@@ -1,5 +1,5 @@
-#ifndef COMMON_ALLOTER_INTERFACE
-#define COMMON_ALLOTER_INTERFACE
+#ifndef COMMON_ALLOTER_ALLOTER_INTERFACE
+#define COMMON_ALLOTER_ALLOTER_INTERFACE
 
 #include <memory>
 #include <cstdint>
@@ -33,12 +33,18 @@ public:
     //for object. invocation of constructors and destructors
     template<typename T, typename... Args >
     T* PoolNew(Args&&... args);
+    template<typename T, typename... Args >
+    std::shared_ptr<T> PoolNewSharePtr(Args&&... args);
+
     template<typename T>
     void PoolDelete(T* &c);
-    
+
     //for continuous memory
     template<typename T>
     T* PoolMalloc(uint32_t size);
+    template<typename T>
+    std::shared_ptr<T> PoolMallocSharePtr(uint32_t size);
+
     template<typename T>
     void PoolFree(T* &m, uint32_t len);
 
@@ -58,20 +64,33 @@ T* AlloterWrap::PoolNew(Args&&... args) {
     T* res = new(data) T(std::forward<Args>(args)...);
     return res;
 }
-    
+
+template<typename T, typename... Args >
+std::shared_ptr<T> AlloterWrap::PoolNewSharePtr(Args&&... args) {
+    T* ret = PoolNew<T>(std::forward<Args>(args)...);
+    return std::shared_ptr<T>(ret, [this](T* &c) { PoolDelete(c); });
+}
+
 template<typename T>
 void AlloterWrap::PoolDelete(T* &c) {
     if (!c) {
         return;
     }
     
-    uint32_t sz = sizeof(T);
-    _alloter->Free(c, sz);
+    uint32_t len = sizeof(T);
+    void* data = (void*)c;
+    _alloter->Free(data, len);   
 }
     
 template<typename T>
 T* AlloterWrap::PoolMalloc(uint32_t sz) {  
     return (T*)_alloter->MallocAlign(sz);
+}
+
+template<typename T>
+std::shared_ptr<T> AlloterWrap::PoolMallocSharePtr(uint32_t size) {
+    T* ret = PoolMalloc<T>(size);
+    return std::shared_ptr<T>(ret, [this](T* &c) { PoolFree(c); });
 }
     
 template<typename T>
@@ -79,7 +98,8 @@ void AlloterWrap::PoolFree(T* &m, uint32_t len) {
     if (!m) {
         return;
     }
-    _alloter->Free(m, len);   
+    void* data = (void*)m;
+    _alloter->Free(data, len);   
 }
 
 }

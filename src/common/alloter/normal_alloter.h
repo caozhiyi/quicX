@@ -1,5 +1,5 @@
-#ifndef COMMON_NORMAL_ALLOTER
-#define COMMON_NORMAL_ALLOTER
+#ifndef COMMON_ALLOTER_NORMAL_ALLOTER
+#define COMMON_ALLOTER_NORMAL_ALLOTER
 
 #include "alloter_interface.h"
 

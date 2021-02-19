@@ -1,3 +1,4 @@
+#ifdef __linux__
 #include <unistd.h>       // for close
 #include <ifaddrs.h>
 #include <sys/uio.h>
@@ -96,3 +97,4 @@ SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 }
 
 }
+#endif

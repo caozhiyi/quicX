@@ -1,5 +1,5 @@
-#ifndef COMMON_POOL_BLOCK
-#define COMMON_POOL_BLOCK
+#ifndef COMMON_ALLOTER_POOL_BLOCK
+#define COMMON_ALLOTER_POOL_BLOCK
 
 #include <vector>
 #include <cstdint>
@@ -13,7 +13,7 @@ public:
     // everytime add nodes num
     BlockMemoryPool(uint32_t large_sz, uint32_t add_num);
     ~BlockMemoryPool();
-        
+
     // for bulk memory. 
     // return one bulk memory node
     void* PoolLargeMalloc();
