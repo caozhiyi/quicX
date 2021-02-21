@@ -60,6 +60,7 @@ uint32_t BufferQueue::Read(char* res, uint32_t len) {
         _buffer_count--;
     }
     _buffer_read = temp;
+    return read_len;
 }
 
 uint32_t BufferQueue::Write(const char* str, uint32_t len) {
@@ -128,6 +129,7 @@ uint32_t BufferQueue::Clear(uint32_t len) {
         _buffer_count--;
     }
     _buffer_read = temp;
+    return cur_len;
 }
 
 uint32_t BufferQueue::MoveWritePt(uint32_t len) {

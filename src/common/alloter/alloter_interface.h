@@ -76,10 +76,13 @@ void AlloterWrap::PoolDelete(T* &c) {
     if (!c) {
         return;
     }
-    
+
+    c->~T();
+
     uint32_t len = sizeof(T);
     void* data = (void*)c;
-    _alloter->Free(data, len);   
+    _alloter->Free(data, len);
+    c = nullptr;
 }
     
 template<typename T>
@@ -90,7 +93,7 @@ T* AlloterWrap::PoolMalloc(uint32_t sz) {
 template<typename T>
 std::shared_ptr<T> AlloterWrap::PoolMallocSharePtr(uint32_t size) {
     T* ret = PoolMalloc<T>(size);
-    return std::shared_ptr<T>(ret, [this](T* &c) { PoolFree(c); });
+    return std::shared_ptr<T>(ret, [this, size](T* &c) { PoolFree(c, size); });
 }
     
 template<typename T>
@@ -99,7 +102,8 @@ void AlloterWrap::PoolFree(T* &m, uint32_t len) {
         return;
     }
     void* data = (void*)m;
-    _alloter->Free(data, len);   
+    _alloter->Free(data, len);
+    m = nullptr;
 }
 
 }

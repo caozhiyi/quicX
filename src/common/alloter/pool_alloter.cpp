@@ -5,8 +5,9 @@
 namespace quicx {
 
 
-PoolAlloter::PoolAlloter(uint32_t large_sz, uint32_t add_num) : _pool_start(nullptr),
-                                                                _pool_end(nullptr) {
+PoolAlloter::PoolAlloter() : 
+    _pool_start(nullptr),
+    _pool_end(nullptr) {
     _free_list.resize(__default_number_of_free_lists);
     memset(&(*_free_list.begin()), 0, sizeof(void*) * __default_number_of_free_lists);
 }
@@ -52,7 +53,7 @@ void* PoolAlloter::MallocZero(uint32_t size) {
     return ret;
 }
 
-void PoolAlloter::Free(char* &data, uint32_t len) {
+void PoolAlloter::Free(void* &data, uint32_t len) {
     if (!data) {
         return;
     }

@@ -13,14 +13,14 @@ static const uint32_t __default_number_add_nodes = 20;
 
 class PoolAlloter : public Alloter {
 public:
-    PoolAlloter(uint32_t large_sz, uint32_t add_num);
+    PoolAlloter();
     ~PoolAlloter();
 
     void* Malloc(uint32_t size);
     void* MallocAlign(uint32_t size);
     void* MallocZero(uint32_t size);
 
-    void Free(char* &data, uint32_t len);
+    void Free(void* &data, uint32_t len);
 private:
     uint32_t FreeListIndex(uint32_t size, uint32_t align = __align) {
         return (size + align - 1) / align - 1;
