@@ -11,7 +11,7 @@ enum PacketType {
 };
 
 enum PacketHeaderType {
-    PHT_LONG    = 0x01,
+    PHT_LONG    = 0x00,
     PHT_SHORT   = 0x00,
 };
 
