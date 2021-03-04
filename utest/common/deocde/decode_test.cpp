@@ -14,7 +14,7 @@ TEST(decode_utest, EncodeVarint64_1) {
 }
 
 TEST(decode_utest, EncodeVarint64_2) {
-    uint64_t value = 1 << 14;
+    uint64_t value = 1 << 13;
     char buf[5];
     char* ptr1 = quicx::EncodeVarint(buf, value);
     EXPECT_EQ(ptr1 - buf, 2);
@@ -26,7 +26,7 @@ TEST(decode_utest, EncodeVarint64_2) {
 }
 
 TEST(decode_utest, EncodeVarint64_3) {
-    uint64_t value = 1 << 30;
+    uint64_t value = 1 << 29;
     char buf[5];
     char* ptr1 = quicx::EncodeVarint(buf, value);
     EXPECT_EQ(ptr1 - buf, 4);
@@ -38,8 +38,8 @@ TEST(decode_utest, EncodeVarint64_3) {
 }
 
 TEST(decode_utest, EncodeVarint64_4) {
-    uint64_t value = 1 << 60;
-    char buf[5];
+    uint64_t value = (uint64_t)1 << 60;
+    char buf[10];
     char* ptr1 = quicx::EncodeVarint(buf, value);
     EXPECT_EQ(ptr1 - buf, 8);
 
