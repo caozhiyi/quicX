@@ -66,4 +66,8 @@ void BlockMemoryPool::Expansion(uint32_t num) {
     }
 }
 
+std::shared_ptr<BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num) {
+    return std::make_shared<BlockMemoryPool>(large_sz, add_num);
+}
+
 }

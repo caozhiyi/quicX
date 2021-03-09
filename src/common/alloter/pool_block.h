@@ -34,6 +34,8 @@ private:
     std::vector<void*>        _free_mem_vec;           //free bulk memory list
 };
 
+std::shared_ptr<BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num);
+
 }
 
 #endif

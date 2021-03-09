@@ -39,5 +39,8 @@ void NormalAlloter::Free(void* &data, uint32_t len) {
     data = nullptr;
 }
 
+std::shared_ptr<NormalAlloter> MakeNormalAlloterPtr() {
+    return std::make_shared<NormalAlloter>();
+}
 
 }

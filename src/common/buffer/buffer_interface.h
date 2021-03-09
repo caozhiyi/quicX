@@ -17,7 +17,7 @@ public:
 
     virtual uint32_t Read(char* res, uint32_t len) = 0;
     virtual uint32_t Write(const char* str, uint32_t len) = 0;
-        
+
     // clear all if len = 0
     // or modify read point
     virtual uint32_t Clear(uint32_t len = 0) = 0;

@@ -1,7 +1,7 @@
 #ifndef COMMON_BUFFER_BUFFER_QUEUE
 #define COMMON_BUFFER_BUFFER_QUEUE
 
-#include <list>
+#include <vector>
 #include <memory>
 #include "buffer_interface.h"
 #include "network/io_handle.h"

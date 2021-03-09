@@ -17,6 +17,8 @@ public:
     void Free(void* &data, uint32_t len);
 };
 
+std::shared_ptr<NormalAlloter> MakeNormalAlloterPtr();
+
 }
 
 #endif 

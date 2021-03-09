@@ -41,6 +41,8 @@ private:
     std::vector<char*>    _malloc_vec;
 };
 
+std::shared_ptr<Alloter> MakePoolAlloterPtr();
+
 }
 
 #endif 
