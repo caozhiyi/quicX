@@ -216,3 +216,15 @@ TEST(normal_decode_utest, EncodeFixed_9) {
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
+
+TEST(normal_decode_utest, EncodeFixed_10) {
+    uint16_t value = 0x04;
+    char buf[3];
+    char* ptr = quicx::EncodeFixed<uint16_t>(buf, value);
+    EXPECT_EQ(ptr - buf, sizeof(uint16_t));
+
+    uint16_t value2 = 0;
+    char* ret = quicx::DecodeFixed<uint16_t>(buf, buf+3, value2);
+    EXPECT_EQ(ret, ptr);
+    EXPECT_EQ(value, value2);
+}
