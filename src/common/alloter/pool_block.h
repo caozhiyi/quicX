@@ -2,6 +2,7 @@
 #define COMMON_ALLOTER_POOL_BLOCK
 
 #include <vector>
+#include <memory>
 #include <cstdint>
 
 namespace quicx {
