@@ -22,8 +22,9 @@ enum FrameType {
     FT_NEW_CONNECTION_ID     = 0x18,
     FT_RETIRE_CONNECTION_ID  = 0x19,
     FT_PATH_CHALLENGE        = 0x1a,
-    FT_PATH_RESPONSE         = 0x1c,
-    FT_CONNECTION_CLOSE      = 0x1d,
+    FT_PATH_RESPONSE         = 0x1b,
+    FT_CONNECTION_CLOSE      = 0x1c,
+    FT_CONNECTION_CLOSE_APP  = 0x1d,
     FT_HANDSHAKE_DONE        = 0x1e,
 };
 

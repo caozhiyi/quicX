@@ -7,6 +7,7 @@ namespace quicx {
 
 BufferQueue::BufferQueue(std::shared_ptr<BlockMemoryPool>& block_pool, 
     std::shared_ptr<AlloterWrap>& alloter): 
+    _buffer_count(0),
     _buffer_read(nullptr),
     _buffer_write(nullptr),
     _buffer_end(nullptr),
@@ -27,7 +28,7 @@ uint32_t BufferQueue::ReadNotClear(char* res, uint32_t len) {
     std::shared_ptr<BufferBlock> temp = _buffer_read;
     uint32_t read_len = 0;
     while (temp && read_len < len) {
-        read_len += temp->ReadNotClear(res, len - read_len);
+        read_len += temp->ReadNotClear(res + read_len, len - read_len);
         if (temp == _buffer_write) {
             break;
         }
@@ -44,7 +45,7 @@ uint32_t BufferQueue::Read(char* res, uint32_t len) {
     std::shared_ptr<BufferBlock> temp = _buffer_read;
     uint32_t read_len = 0;
     while (temp) {
-        read_len += temp->Read(res, len - read_len);
+        read_len += temp->Read(res + read_len, len - read_len);
         if (read_len >= len) {
             break;
         }
@@ -109,7 +110,6 @@ uint32_t BufferQueue::Clear(uint32_t len) {
     }
     
     std::shared_ptr<BufferBlock> temp = _buffer_read;
-    std::shared_ptr<BufferBlock> del_temp;
     uint32_t cur_len = 0;
     while (temp) {
         cur_len += temp->Clear(len - cur_len);
@@ -124,7 +124,6 @@ uint32_t BufferQueue::Clear(uint32_t len) {
                 _Reset();
             }
         }
-        del_temp = temp;
         temp = temp->GetNext();
         _buffer_count--;
     }

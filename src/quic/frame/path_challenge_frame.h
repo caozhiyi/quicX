@@ -5,13 +5,27 @@
 
 namespace quicx {
 
-class PathChallengeFrame : public Frame {
+static const uint16_t __path_data_length = 8;
+
+class RangeRandom;
+class PathResponseFrame;
+class PathChallengeFrame: public Frame {
 public:
-    PathChallengeFrame() : Frame(FT_PATH_CHALLENGE) {}
-    ~PathChallengeFrame() {}
+    PathChallengeFrame();
+    ~PathChallengeFrame();
+
+    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
+    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
+    uint32_t EncodeSize();
+
+    bool CompareData(std::shared_ptr<PathResponseFrame> response);
+
+    void MakeData();
+    char* GetData() { return _data; }
 
 private:
-    char* _data;  // 8-byte field contains arbitrary data.
+    char _data[__path_data_length];  // 8-byte field contains arbitrary data.
+    static std::shared_ptr<RangeRandom> _random;
 };
 
 }

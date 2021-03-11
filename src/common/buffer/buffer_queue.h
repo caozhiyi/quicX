@@ -24,7 +24,7 @@ public:
 
     uint32_t Read(char* res, uint32_t len);
     uint32_t Write(const char* str, uint32_t len);
-        
+
     // clear all if len
     // or modify read point
     uint32_t Clear(uint32_t len);
@@ -72,6 +72,7 @@ private:
     std::shared_ptr<BlockMemoryPool> _block_alloter;
     std::shared_ptr<AlloterWrap> _alloter;
 };
+
 }
 
 #endif

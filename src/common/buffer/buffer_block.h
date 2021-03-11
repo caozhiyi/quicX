@@ -7,7 +7,7 @@
 namespace quicx {
 
 class BlockMemoryPool;
-class BufferBlock : public Buffer {
+class BufferBlock: public Buffer {
 public:
     BufferBlock(std::shared_ptr<BlockMemoryPool>& alloter);
     ~BufferBlock();
@@ -60,7 +60,7 @@ public:
 private:
     //find str in fix length buffer. return the first pos if find otherwise return nullptr
     const char* _FindStrInMem(const char* buffer, const char* ch, uint32_t buffer_len, uint32_t ch_len) const;
-    uint32_t _Read(char* res, uint32_t len, bool clear);
+    uint32_t _Read(char* res, uint32_t len, bool move_pt);
     uint32_t _Write(const char* str, uint32_t len, bool write);
 
 private:

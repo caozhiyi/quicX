@@ -1,6 +1,8 @@
 #ifndef COMMON_UTIL_OS_RETURN
 #define COMMON_UTIL_OS_RETURN
 
+#include <cstdint>
+
 namespace quicx {
 
 template <typename T>

@@ -1,17 +1,24 @@
 #ifndef QUIC_FRAME_PATH_RESPONSE_FRAME
 #define QUIC_FRAME_PATH_RESPONSE_FRAME
 
-#include "frame_interface.h"
+#include "path_challenge_frame.h"
 
 namespace quicx {
 
 class PathResponseFrame : public Frame {
 public:
-    PathResponseFrame() : Frame(FT_PATH_RESPONSE) {}
-    ~PathResponseFrame() {}
+    PathResponseFrame();
+    ~PathResponseFrame();
+
+    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
+    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
+    uint32_t EncodeSize();
+
+    void SetData(char* data);
+    char* GetData() { return _data; }
 
 private:
-    char* _data;  // 8-byte field contains arbitrary data.
+    char _data[__path_data_length];  // 8-byte field contains arbitrary data.
 };
 
 }
