@@ -37,7 +37,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotClear(data, size);
+    buffer->ReadNotMovePt(data, size);
     uint64_t reason_length = 0;
 
     char* pos = nullptr;
@@ -50,7 +50,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     pos = DecodeVirint(pos, data + size, _frame_type);
     pos = DecodeVirint(pos, data + size, reason_length);
     
-    buffer->Clear(pos - data);
+    buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
 
     data = alloter->PoolMalloc<char>(reason_length);

@@ -13,17 +13,18 @@ public:
 
     // read to res buf but don't chenge the read point
     // return read size
-    virtual uint32_t ReadNotClear(char* res, uint32_t len) = 0;
+    virtual uint32_t ReadNotMovePt(char* res, uint32_t len) = 0;
 
     virtual uint32_t Read(char* res, uint32_t len) = 0;
-    virtual uint32_t Write(const char* str, uint32_t len) = 0;
-
-    // clear all if len = 0
-    // or modify read point
-    virtual uint32_t Clear(uint32_t len = 0) = 0;
+    virtual uint32_t Write(const char* data, uint32_t len) = 0;
     
+    // clear all data
+    virtual void Clear() = 0;
+
+    // move read point
+    virtual int32_t MoveReadPt(int32_t len) = 0;
     // move write point
-    virtual uint32_t MoveWritePt(uint32_t len) = 0;
+    virtual int32_t MoveWritePt(int32_t len) = 0;
 
     // do not read when buffer less than len. 
     // return len when read otherwise return 0

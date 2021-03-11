@@ -32,7 +32,7 @@ bool RetireConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
-    uint32_t len = buffer->ReadNotClear(data, size);
+    uint32_t len = buffer->ReadNotMovePt(data, size);
     
     char* pos = nullptr;
     if (with_type) {
@@ -42,7 +42,7 @@ bool RetireConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared
     }
     pos = DecodeVirint(pos, data + size, _sequence_number);
 
-    buffer->Clear(pos - data);
+    buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
     return true;
 }

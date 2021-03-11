@@ -36,7 +36,7 @@ bool PathChallengeFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
-    uint32_t len = buffer->ReadNotClear(data, size);
+    uint32_t len = buffer->ReadNotMovePt(data, size);
     
     char* pos = nullptr;
     if (with_type) {
@@ -48,7 +48,7 @@ bool PathChallengeFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<
     memcpy(_data, pos, __path_data_length);
     pos += __path_data_length;
 
-    buffer->Clear(pos - data);
+    buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
     return true;
 }

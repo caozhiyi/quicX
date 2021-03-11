@@ -41,7 +41,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotClear(data, size);
+    buffer->ReadNotMovePt(data, size);
 
     // encode normal members and number of connection id
     uint8_t connection_id_num = 0;
@@ -55,7 +55,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     pos = DecodeVirint(pos, data + size, _retire_prior_to);
     pos = DecodeFixed<uint8_t>(pos, data + size, connection_id_num);
 
-    buffer->Clear(pos - data);
+    buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
 
     // encode connection ids
@@ -63,14 +63,14 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     data = alloter->PoolMalloc<char>(size);
 
     _connection_id.resize(connection_id_num);
-    buffer->ReadNotClear(data, size);
+    buffer->ReadNotMovePt(data, size);
     pos = data;
 
     for (size_t i = 0; i < connection_id_num; i++) {
         pos = DecodeVirint(pos, data + size, _connection_id[i]);
     }
     
-    buffer->Clear(pos - data);
+    buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
     
 

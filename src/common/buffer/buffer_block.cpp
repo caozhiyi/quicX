@@ -22,7 +22,7 @@ BufferBlock::~BufferBlock() {
     }
 }
 
-uint32_t BufferBlock::ReadNotClear(char* res, uint32_t len) {
+uint32_t BufferBlock::ReadNotMovePt(char* res, uint32_t len) {
     return _Read(res, len, false);
 }
 
@@ -33,67 +33,213 @@ uint32_t BufferBlock::Read(char* res, uint32_t len) {
     return _Read(res, len, true);
 }
 
-uint32_t BufferBlock::Write(const char* str, uint32_t len) {
-    if (str == nullptr) {
+uint32_t BufferBlock::Write(const char* data, uint32_t len) {
+    if (data == nullptr) {
         return 0;
     }
-    return _Write(str, len, true);
+    return _Write(data, len);
 }
-        
-uint32_t BufferBlock::Clear(uint32_t len) {
-    if (len == 0) {
-        _write = _read = _buffer_start;
-        _can_read = false;
-        return 0;
-    }
 
+void BufferBlock::Clear() {
+    _write = _read = _buffer_start;
+    _can_read = false;
+}
+
+int32_t BufferBlock::MoveReadPt(int32_t len) {
     if (!_buffer_start) {
         return 0;
     }
 
-    if (_read < _write) {
-        size_t size = _write - _read;
-        // res can load all
-        if (size <= len) {
-            _write = _read = _buffer_start;
-            _can_read = false;
-            return (int)size;
+    if (len > 0) {
+        /*s-----------r-----w-------------e*/
+        if (_read < _write) {
+            size_t size = _write - _read;
+            // res can load all
+            if (size <= len) {
+                _read = _write;
+                _can_read = false;
+                return (int32_t)size;
 
-        // only read len
+            // only read len
+            } else {
+                _read += len;
+                return len;
+            }
+
+        /*s-----------w-----r-------------e*/
+        /*s-----------wr------------------e*/
         } else {
-            _read += len;
-            return len;
+            if(!_can_read && _read == _write) {
+                return 0;
+            }
+            size_t size_start = _write - _buffer_start;
+            size_t size_end = _buffer_end - _read;
+            size_t size =  size_start + size_end;
+            // res can load all
+            if (size <= len) {
+                _read = _write;
+                _can_read = false;
+                return (int32_t)size;
+
+            // only read len
+            } else {
+                if (len <= size_end) {
+                    _read += len;
+                    return len;
+
+                } else {
+                    size_t left = len - size_end;
+                    _read = _buffer_start + left;
+                    return len;
+                }
+            }
         }
 
     } else {
-        if(!_can_read && _read == _write) {
-            return 0;
-        }
-        size_t size_start = _write - _buffer_start;
-        size_t size_end = _buffer_end - _read;
-        size_t size =  size_start + size_end;
-        // res can load all
-        if (size <= len) {
-            _read = _write = _buffer_start;
-            _can_read = false;
-            return (int)size;
+        len = -len;
+        /*s-----------w-----r-------------e*/
+        if (_write < _read) {
+            size_t size = _read - _write;
+            // reread all buffer
+            if (size <= len) {
+                _read = _write;
+                _can_read = true;
+                return (int32_t)size;
 
-        } else {
-            if (len <= size_end) {
-                _read += len;
-                return len;
-
+            // only reread part of buffer
             } else {
-                size_t left = len - size_end;
-                _read = _buffer_start + left;
+                _read -= len;
                 return len;
+            }
+        
+        /*s-----------r-----w-------------e*/
+        /*s-----------rw------------------e*/
+        } else {
+            if(_can_read && _read == _write) {
+                return 0;
+            }
+            size_t size_start = _read - _buffer_start;
+            size_t size_end = _buffer_end - _write;
+            size_t size =  size_start + size_end;
+            // reread all buffer
+            if (size <= len) {
+                _read = _write;
+                _can_read = true;
+                return (int32_t)size;
+
+            // only reread part of buffer
+            } else {
+                if (len <= size_start) {
+                    _read -= len;
+                    return len;
+
+                } else {
+                    size_t left = len - size_start;
+                    _read = _buffer_end - left;
+                    return len;
+                }
             }
         }
     }
 }
 
-uint32_t BufferBlock::MoveWritePt(uint32_t len) {
-    return _Write(nullptr, len, false);
+int32_t BufferBlock::MoveWritePt(int32_t len) {
+    if (!_buffer_start) {
+        return 0;
+    }
+
+    if (len > 0) {
+        /*s-----------w-----r-------------e*/
+        if (_write < _read) {
+            size_t size = _read - _write;
+            // all buffer will be used
+            if (size <= len) {
+                _write = _read;
+                _can_read = true;
+                return (int32_t)size;
+
+            // part of buffer will be used
+            } else {
+                _write += len;
+                return len;
+            }
+
+        /*s-----------r-----w-------------e*/
+        /*s-----------rw------------------e*/
+        } else {
+            if(_can_read && _read == _write) {
+                return 0;
+            }
+            size_t size_start = _read - _buffer_start;
+            size_t size_end = _buffer_end - _write;
+            size_t size =  size_start + size_end;
+
+            // all buffer will be used
+            if (size <= len) {
+                _write = _read;
+                _can_read = true;
+                return (int32_t)size;
+
+            // part of buffer will be used
+            } else {
+                if (len <= size_end) {
+                    _write += len;
+                    return len;
+
+                } else {
+                    size_t left = len - size_end;
+                    _write = _buffer_start + left;
+                    return len;
+                }
+            }
+        }
+
+    } else {
+        len = -len;
+        /*s-----------r-----w-------------e*/
+        if (_read < _write) {
+            size_t size = _write - _read;
+            // rewrite all buffer
+            if (size <= len) {
+                _write = _read;
+                _can_read = false;
+                return (int32_t)size;
+
+            // only rewrite part of buffer
+            } else {
+                _write -= len;
+                return len;
+            }
+        
+        /*s-----------w-----r-------------e*/
+        /*s-----------wr------------------e*/
+        } else {
+            if(!_can_read && _read == _write) {
+                return 0;
+            }
+            size_t size_start = _write - _buffer_start;
+            size_t size_end = _buffer_end - _read;
+            size_t size =  size_start + size_end;
+            // rewrite all buffer
+            if (size <= len) {
+                _write = _read;
+                _can_read = false;
+                return (int32_t)size;
+
+            // only rewrite part of buffer
+            } else {
+                if (len <= size_start) {
+                    _write -= len;
+                    return len;
+
+                } else {
+                    size_t left = len - size_start;
+                    _write = _buffer_end - left;
+                    return len;
+                }
+            }
+        }
+    }
 }
 
 uint32_t BufferBlock::ReadUntil(char* res, uint32_t len) {
@@ -276,6 +422,7 @@ uint32_t BufferBlock::_Read(char* res, uint32_t len, bool move_pt) {
     if (!_buffer_start) {
         return 0;
     }
+
     /*s-----------r-----w-------------e*/
     if (_read < _write) {
         size_t size = _write - _read;
@@ -283,8 +430,7 @@ uint32_t BufferBlock::_Read(char* res, uint32_t len, bool move_pt) {
         if (size <= len) {
             memcpy(res, _read, size);
             if(move_pt) {
-                // reset point
-                _write = _read = _buffer_start;
+                _read = _write;
                 _can_read = false;
             }
             return (uint32_t)size;
@@ -313,7 +459,7 @@ uint32_t BufferBlock::_Read(char* res, uint32_t len, bool move_pt) {
             memcpy(res + size_end, _buffer_start, size_start);
             if(move_pt) {
                 // reset point
-                _read = _write = _buffer_start;
+                _read = _write;
                 _can_read = false;
             }
             return (uint32_t)size;
@@ -327,7 +473,7 @@ uint32_t BufferBlock::_Read(char* res, uint32_t len, bool move_pt) {
                 return len;
 
             } else {
-                size_t left = len - (size_end);
+                size_t left = len - size_end;
                 memcpy(res, _read, size_end);
                 memcpy(res + size_end, _buffer_start, left);
                 if(move_pt) {
@@ -339,106 +485,71 @@ uint32_t BufferBlock::_Read(char* res, uint32_t len, bool move_pt) {
     }
 }
     
-uint32_t BufferBlock::_Write(const char* str, uint32_t len, bool write) {
+uint32_t BufferBlock::_Write(const char* data, uint32_t len) {
     if (!_buffer_start) {
         return 0;
     }
-    /*s-----------r-----w-------------e*/
-    /*sr----------------w-------------e*/
-    if (_read < _write) {
-        // w-e can save all data
-        if (_write + len <= _buffer_end) {
-            if (write) {
-                memcpy(_write, str, len);
-            }
-            _write += len;
-            return len;
-        
-        } else {
-            size_t size_end = _buffer_end - _write;
-            size_t left = len - size_end;
-            if (write) {
-                memcpy(_write, str, size_end);
-            }
-            _write += size_end;
 
-            /*s-----------r-----w-------------e*/
-            size_t can_save = _read - _buffer_start;
-            // s-r can sava all data
-            if (_buffer_start + left <= _read) {
-                if (write) {
-                    memcpy(_buffer_start, str + size_end, left);
-                }
-                _write = _buffer_start + left;
-                if (_write == _read) {
-                    _can_read = true;
-                }
-                return len;
-
-            // s-r can sava a part of data
-            } else {
-                if (can_save > 0) {
-                    if (write) {
-                        memcpy(_buffer_start, str + size_end, can_save);
-                    }
-                    _write = _read;
-                    _can_read = true;
-                }
-                
-                return  (uint32_t)(can_save + size_end);
-            }
-        }
+    if(!_can_read && _read == _write) {
+        _write = _read = _buffer_start;
+    }
     
     /*s-----------w-----r-------------e*/
-    } else if (_read > _write) {
+    if (_write < _read) {
         size_t size = _read - _write;
-        // w-r can save all data
+        // can save all data
         if (len <= size) {
-            if (write) {
-                memcpy(_write, str, len);
-            }
+            memcpy(_write, data, len);
             _write += len;
             if (_write == _read) {
                 _can_read = true;
             }
             return len;
 
-        // w-r can save a part of data
+        // can save a part of data
         } else {
-            if (write) {
-                memcpy(_write, str, size);
-            }
+            memcpy(_write, data, size);
             _write += size;
             _can_read = true;
 
             return (uint32_t)size;
         }
     
-    /*s-----------wr-------------------e*/
+    /*s-----------r-----w-------------e*/
+    /*s-----------rw------------------e*/
     } else {
-        // there is no free memory
-        if (_can_read) {
+        if(_can_read && _read == _write) {
             return 0;
+        }
 
+        size_t size_start = _read - _buffer_start;
+        size_t size_end = _buffer_end - _write;
+        size_t size =  size_start + size_end;
+
+        // all buffer will be used
+        if (size <= len) {
+
+            memcpy(_write, data, size_end);
+            memcpy(_buffer_start, data + size_end, size_start);
+
+            _write = _read;
+            _can_read = true;
+            return (int32_t)size;
+
+        // part of buffer will be used
         } else {
-            // reset
-            _read = _write = _buffer_start;
-            size_t size = _total_size;
-            // s-e can save a part of data
-            if (size <= len) {
-                if (write) {
-                    memcpy(_write, str, size);
-                }
-                _write += size;
-                _can_read = true;
-                return size;
-
-            // s-e can save all data
-            } else {
-                if (write) {
-                    memcpy(_write, str, len);
-                }
+            if (len <= size_end) {
+                memcpy(_write, data, len);
                 _write += len;
+                return len;
+
+            } else {
+                size_t left = len - size_end;
+
+                memcpy(_write, data, size_end);
+                memcpy(_buffer_start, data + size_end, left);
+               
+                _write = _buffer_start + left;
                 return len;
             }
         }

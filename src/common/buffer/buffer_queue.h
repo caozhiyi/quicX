@@ -20,17 +20,18 @@ public:
 
     // read to res buf but don't chenge the read point
     // return read size
-    uint32_t ReadNotClear(char* res, uint32_t len);
+    uint32_t ReadNotMovePt(char* res, uint32_t len);
 
     uint32_t Read(char* res, uint32_t len);
-    uint32_t Write(const char* str, uint32_t len);
-
-    // clear all if len
-    // or modify read point
-    uint32_t Clear(uint32_t len);
+    uint32_t Write(const char* data, uint32_t len);
     
+    // clear all data
+    void Clear();
+
+    // move read point
+    int32_t MoveReadPt(int32_t len);
     // move write point
-    uint32_t MoveWritePt(uint32_t len);
+    int32_t MoveWritePt(int32_t len);
 
     // do not read when buffer less than len. 
     // return len when read otherwise return 0

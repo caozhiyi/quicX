@@ -36,7 +36,7 @@ bool MaxStreamDataFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
-    uint32_t len = buffer->ReadNotClear(data, size);
+    uint32_t len = buffer->ReadNotMovePt(data, size);
     
     char* pos = nullptr;
     if (with_type) {
@@ -48,7 +48,7 @@ bool MaxStreamDataFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<
     pos = DecodeVirint(pos, data + size, _stream_id);
     pos = DecodeVirint(pos, data + size, _maximum_data);
 
-    buffer->Clear(pos - data);
+    buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
     return true;
 }

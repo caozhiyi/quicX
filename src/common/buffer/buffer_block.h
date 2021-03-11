@@ -14,17 +14,18 @@ public:
 
     // read to res buf but don't chenge the read point
     // return read size
-    uint32_t ReadNotClear(char* res, uint32_t len);
+    uint32_t ReadNotMovePt(char* res, uint32_t len);
 
     uint32_t Read(char* res, uint32_t len);
-    uint32_t Write(const char* str, uint32_t len);
-        
-    // clear all if len
-    // or modify read point
-    uint32_t Clear(uint32_t len);
+    uint32_t Write(const char* data, uint32_t len);
     
+    // clear all data
+    void Clear();
+
+    // move read point
+    int32_t MoveReadPt(int32_t len);
     // move write point
-    uint32_t MoveWritePt(uint32_t len);
+    int32_t MoveWritePt(int32_t len);
 
     // do not read when buffer less than len. 
     // return len when read otherwise return 0
@@ -61,7 +62,7 @@ private:
     //find str in fix length buffer. return the first pos if find otherwise return nullptr
     const char* _FindStrInMem(const char* buffer, const char* ch, uint32_t buffer_len, uint32_t ch_len) const;
     uint32_t _Read(char* res, uint32_t len, bool move_pt);
-    uint32_t _Write(const char* str, uint32_t len, bool write);
+    uint32_t _Write(const char* data, uint32_t len);
 
 private:
     uint32_t _total_size;       //total buffer size

@@ -20,7 +20,7 @@ BufferQueue::~BufferQueue() {
 
 }
 
-uint32_t BufferQueue::ReadNotClear(char* res, uint32_t len) {
+uint32_t BufferQueue::ReadNotMovePt(char* res, uint32_t len) {
     if (!_buffer_read) {
         return 0;
     }
@@ -28,7 +28,7 @@ uint32_t BufferQueue::ReadNotClear(char* res, uint32_t len) {
     std::shared_ptr<BufferBlock> temp = _buffer_read;
     uint32_t read_len = 0;
     while (temp && read_len < len) {
-        read_len += temp->ReadNotClear(res + read_len, len - read_len);
+        read_len += temp->ReadNotMovePt(res + read_len, len - read_len);
         if (temp == _buffer_write) {
             break;
         }
@@ -95,24 +95,17 @@ uint32_t BufferQueue::Write(const char* str, uint32_t len) {
     _buffer_write = temp;
     return write_len;
 }
-        
-uint32_t BufferQueue::Clear(uint32_t len) {
-    if (len == 0) {
-        std::shared_ptr<BufferBlock> temp = _buffer_read;
-        std::shared_ptr<BufferBlock> cur;
-        while (temp) {
-            cur = temp;
-            temp = temp->GetNext();
-            _buffer_count--;
-        }
-        _Reset();
-        return 0;
-    }
-    
+
+
+void BufferQueue::Clear() {
+    _Reset();
+}
+
+int32_t BufferQueue::MoveReadPt(int32_t len) {
     std::shared_ptr<BufferBlock> temp = _buffer_read;
     uint32_t cur_len = 0;
     while (temp) {
-        cur_len += temp->Clear(len - cur_len);
+        cur_len += temp->MoveReadPt(len - cur_len);
         if (cur_len >= len) {
             break;
         }
@@ -131,7 +124,7 @@ uint32_t BufferQueue::Clear(uint32_t len) {
     return cur_len;
 }
 
-uint32_t BufferQueue::MoveWritePt(uint32_t len) {
+int32_t BufferQueue::MoveWritePt(int32_t len) {
     std::shared_ptr<BufferBlock> temp = _buffer_write;
     uint32_t cur_len = 0;
     while (temp) {
