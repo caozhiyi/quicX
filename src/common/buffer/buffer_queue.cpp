@@ -40,13 +40,16 @@ uint32_t BufferQueue::ReadNotMovePt(char* res, uint32_t len) {
 uint32_t BufferQueue::Read(std::shared_ptr<Buffer> buffer, uint32_t len) {
     if (len == 0) {
         len = GetCanReadLength();
-    }
+    } 
     if (len == 0) {
         return 0;
     }
 
     std::shared_ptr<BufferQueue> buffer_queue = std::dynamic_pointer_cast<BufferQueue>(buffer);
-
+    if (!buffer_queue->_buffer_write) {
+        buffer_queue->Append();
+        buffer_queue->_buffer_write = buffer_queue->_buffer_end;
+    }
     uint32_t can_write_size = buffer_queue->_buffer_write->GetCanWriteLength();
     uint32_t total_read_len = 0;
     uint32_t cur_read_len = 0;
@@ -97,7 +100,6 @@ uint32_t BufferQueue::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
     }
 
     std::shared_ptr<BufferQueue> buffer_queue = std::dynamic_pointer_cast<BufferQueue>(buffer);
-    std::shared_ptr<BufferBlock> prv_temp;
 
     uint32_t should_write_size = buffer_queue->_buffer_read->GetCanReadLength();
     uint32_t total_write_len = 0;
@@ -107,16 +109,6 @@ uint32_t BufferQueue::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
         if (!_buffer_write) {
             Append();
             _buffer_write = _buffer_end;
-
-            if (prv_temp) {
-                prv_temp->SetNext(_buffer_write);
-            }
-            prv_temp = _buffer_write;
-        }
-
-        // set buffer read to first
-        if (!_buffer_read) {
-            _buffer_read = _buffer_write;
         }
 
         cur_write_len = _buffer_write->Write(buffer_queue->_buffer_read, should_write_size);
@@ -129,7 +121,7 @@ uint32_t BufferQueue::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
                     buffer_queue->_buffer_write = buffer_queue->_buffer_write->GetNext();
 
                 } else {
-                    Reset();
+                    buffer_queue->Reset();
                     break;
                 }
             }
@@ -181,7 +173,6 @@ uint32_t BufferQueue::Read(char* res, uint32_t len) {
 }
 
 uint32_t BufferQueue::Write(const char* str, uint32_t len) {
-    std::shared_ptr<BufferBlock> prv_temp;
     uint32_t write_len = 0;
 
     while (1) {
@@ -189,18 +180,9 @@ uint32_t BufferQueue::Write(const char* str, uint32_t len) {
             Append();
             _buffer_write = _buffer_end;
         }
-        if (prv_temp) {
-            prv_temp->SetNext(_buffer_write);
-        }
 
         write_len += _buffer_write->Write(str + write_len, len - write_len);
 
-        // set buffer read to first
-        if (!_buffer_read) {
-            _buffer_read = _buffer_write;
-        }
-
-        prv_temp = _buffer_write;
         if (write_len >= len) {
             break;
         }
@@ -314,16 +296,12 @@ uint32_t BufferQueue::GetFreeMemoryBlock(std::vector<Iovec>& block_vec, uint32_t
     uint32_t mem_len_2 = 0;
 
     std::shared_ptr<BufferBlock> temp = _buffer_write;
-    std::shared_ptr<BufferBlock> prv_temp;
     uint32_t cur_len = 0;
     if (size > 0) {
         while (cur_len < size) {
             if (temp == nullptr) {
                 Append();
                 temp = _buffer_end;
-            }
-            if (prv_temp != nullptr) {
-                prv_temp->SetNext(temp);
             }
         
             temp->GetFreeMemoryBlock(mem_1, mem_len_1, mem_2, mem_len_2);
@@ -335,15 +313,6 @@ uint32_t BufferQueue::GetFreeMemoryBlock(std::vector<Iovec>& block_vec, uint32_t
                 block_vec.push_back(Iovec(mem_2, mem_len_2));
                 cur_len += mem_len_2;
             }
-            // set buffer read to first
-            if (_buffer_read == nullptr) {
-                _buffer_read = temp;
-            }
-            // set buffer write to first
-            if (_buffer_write == nullptr) {
-                _buffer_write = temp;
-            }
-            prv_temp = temp;
             temp = temp->GetNext();
         }
 
@@ -435,6 +404,15 @@ void BufferQueue::Append() {
     if (_buffer_end) {
          _buffer_end->SetNext(temp);
     }
+    
+    // first add block node
+    if (!_buffer_read){
+        _buffer_read = temp;
+    }
+    if (!_buffer_read) {
+        _buffer_write = temp;
+    }
+    
     _buffer_end = temp;
 }
 
