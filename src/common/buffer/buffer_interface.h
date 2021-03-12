@@ -2,10 +2,10 @@
 #define COMMON_BUFFER_BUFFER_INTERFACE
 
 #include <memory>
-#include "alloter/alloter_interface.h"
 
 namespace quicx {
 
+class BlockMemoryPool;
 class Buffer {
 public:
     Buffer() {}
@@ -14,6 +14,9 @@ public:
     // read to res buf but don't chenge the read point
     // return read size
     virtual uint32_t ReadNotMovePt(char* res, uint32_t len) = 0;
+
+    virtual uint32_t Read(std::shared_ptr<Buffer> buffer, uint32_t len = 0) = 0;
+    virtual uint32_t Write(std::shared_ptr<Buffer> buffer, uint32_t len = 0) = 0;
 
     virtual uint32_t Read(char* res, uint32_t len) = 0;
     virtual uint32_t Write(const char* data, uint32_t len) = 0;
@@ -36,11 +39,14 @@ public:
     // return 0 and the last param return need length
     virtual uint32_t ReadUntil(char* res, uint32_t len, const char* find, uint32_t find_len, uint32_t& need_len) = 0;
     
-    virtual uint32_t GetFreeLength() = 0;
+    virtual uint32_t GetCanWriteLength() = 0;
     virtual uint32_t GetCanReadLength() = 0;
 
     // return can read bytes
     virtual uint32_t FindStr(const char* s, uint32_t s_len) = 0;
+
+    // return block memory pool
+    virtual std::shared_ptr<BlockMemoryPool> GetBlockMemoryPool() = 0;
 };
 }
 

@@ -26,6 +26,85 @@ uint32_t BufferBlock::ReadNotMovePt(char* res, uint32_t len) {
     return _Read(res, len, false);
 }
 
+uint32_t BufferBlock::Read(std::shared_ptr<Buffer> buffer, uint32_t len) {
+    if (!_buffer_start) {
+        return 0;
+    }
+
+    if(!_can_read && _read == _write) {
+        return 0;
+    }
+
+    if (len == 0) {
+        len = GetCanReadLength();
+    }
+
+    void* data1 = nullptr, *data2 = nullptr;
+    uint32_t len1 = 0, len2 = 0;
+
+    GetUseMemoryBlock(data1, len1, data2, len2);
+    uint32_t total_size = len1 + len2;
+    uint32_t read_done_size = 0;
+    
+    // read all data
+    if (len >= total_size) {
+        read_done_size += buffer->Write((char*)data1, len1);
+        read_done_size += buffer->Write((char*)data2, len2);
+
+    // write part of data
+    } else if (len < total_size && len >= len1) {
+        read_done_size += buffer->Write((char*)data1, len1);
+        read_done_size += buffer->Write((char*)data2, len - len1);
+
+    // write part of data
+    } else {
+        read_done_size += buffer->Write((char*)data1, len);
+    }
+
+    MoveReadPt(read_done_size);
+    return read_done_size;
+}
+
+uint32_t BufferBlock::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
+    if (len == 0) {
+        len = buffer->GetCanReadLength();
+    }
+
+    if (!_buffer_start) {
+        return 0;
+    }
+
+    if(!_can_read && _read == _write) {
+        _write = _read = _buffer_start;
+    }
+
+    void* data1 = nullptr, *data2 = nullptr;
+    uint32_t len1 = 0, len2 = 0;
+
+    std::shared_ptr<BufferBlock> block_buffer = std::dynamic_pointer_cast<BufferBlock>(buffer);
+    block_buffer->GetUseMemoryBlock(data1, len1, data2, len2);
+    uint32_t total_size = len1 + len2;
+    uint32_t write_done_size = 0;
+    
+    // write all data
+    if (len >= total_size) {
+        write_done_size += Write((char*)data1, len1);
+        write_done_size += Write((char*)data2, len2);
+
+    // write part of data
+    } else if (len < total_size && len >= len1) {
+        write_done_size += Write((char*)data1, len1);
+        write_done_size += Write((char*)data2, len - len1);
+
+    // write part of data
+    } else {
+        write_done_size += Write((char*)data1, len);
+    }
+
+    buffer->MoveReadPt(write_done_size);
+    return write_done_size;
+}
+
 uint32_t BufferBlock::Read(char* res, uint32_t len) {
     if (res == nullptr) {
         return 0;
@@ -266,7 +345,7 @@ uint32_t BufferBlock::ReadUntil(char* res, uint32_t len, const char* find, uint3
     return 0;
 }
     
-uint32_t BufferBlock::GetFreeLength() {
+uint32_t BufferBlock::GetCanWriteLength() {
     if (_write > _read) {
         return (uint32_t)((_buffer_end - _write) + (_read - _buffer_start));
     
@@ -383,6 +462,10 @@ uint32_t BufferBlock::FindStr(const char* s, uint32_t s_len) {
             return 0;
         }
     }
+}
+
+std::shared_ptr<BlockMemoryPool> BufferBlock::GetBlockMemoryPool() {
+    return _alloter;
 }
 
 std::shared_ptr<BufferBlock> BufferBlock::GetNext() {

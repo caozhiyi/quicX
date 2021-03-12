@@ -40,9 +40,7 @@ bool ResetStreamFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
     
     char* pos = nullptr;
     if (with_type) {
-        uint16_t type = 0;
-        pos = DecodeFixed<uint16_t>(data, data + size, type);
-        _frame_type = (FrameType)type;
+        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
     }
     pos = DecodeVirint(pos, data + size, _stream_id);
     pos = DecodeVirint(pos, data + size, _app_error_code);

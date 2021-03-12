@@ -47,9 +47,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     uint8_t connection_id_num = 0;
     char* pos = data;
     if (with_type) {
-        uint16_t type = 0;
-        pos = DecodeFixed<uint16_t>(data, data + size, type);
-        _frame_type = (FrameType)type;
+        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
     }
     pos = DecodeVirint(pos, data + size, _sequence_number);
     pos = DecodeVirint(pos, data + size, _retire_prior_to);

@@ -37,9 +37,7 @@ bool MaxStreamsFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<All
     
     char* pos = nullptr;
     if (with_type) {
-        uint16_t type = 0;
-        pos = DecodeFixed<uint16_t>(data, data + size, type);
-        _frame_type = (FrameType)type;
+        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
     }
     pos = DecodeVirint(pos, data + size, _maximum_streams);
 

@@ -19,15 +19,15 @@ public:
     void SetErrorCode(uint32_t error_code) { _error_code = error_code; }
     uint32_t GetErrorCode() { return _error_code; }
 
-    void SetFrameType(uint32_t frame_type) { _frame_type = frame_type; }
-    uint32_t GetFrameType() { return _frame_type; }
+    void SetErrFrameType(uint32_t frame_type) { _err_frame_type = frame_type; }
+    uint32_t GetErrFrameType() { return _err_frame_type; }
 
     void SetReason(const std::string& reason) { _reason = reason; }
     const std::string& GetReason() { return _reason; }
 
 private:
-    uint32_t _error_code;    // indicates the reason for closing this connection.
-    uint32_t _frame_type;    // the type of frame that triggered the error.
+    uint32_t _error_code;        // indicates the reason for closing this connection.
+    uint32_t _err_frame_type;    // the type of frame that triggered the error.
     std::string _reason;
     /*
     uint32_t _reason_length; // the length of the reason phrase in bytes.

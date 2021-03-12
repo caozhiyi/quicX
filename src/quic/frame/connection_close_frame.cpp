@@ -8,7 +8,7 @@ namespace quicx {
 ConnectionCloseFrame::ConnectionCloseFrame():
     Frame(FT_CONNECTION_CLOSE),
     _error_code(0),
-    _frame_type(0) {
+    _err_frame_type(0) {
 
 };
 
@@ -23,7 +23,7 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_pt
 
     char* pos = EncodeFixed<uint16_t>(data, _frame_type);
     pos = EncodeVarint(pos, _error_code);
-    pos = EncodeVarint(pos, _frame_type);
+    pos = EncodeVarint(pos, _err_frame_type);
     pos = EncodeVarint(pos, _reason.length());
 
     buffer->Write(data, pos - data);
@@ -42,12 +42,10 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
 
     char* pos = nullptr;
     if (with_type) {
-        uint16_t type = 0;
-        pos = DecodeFixed<uint16_t>(data, data + size, type);
-        _frame_type = (FrameType)type;
+        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
     }
     pos = DecodeVirint(pos, data + size, _error_code);
-    pos = DecodeVirint(pos, data + size, _frame_type);
+    pos = DecodeVirint(pos, data + size, _err_frame_type);
     pos = DecodeVirint(pos, data + size, reason_length);
     
     buffer->MoveReadPt(pos - data);

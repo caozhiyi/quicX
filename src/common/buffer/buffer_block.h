@@ -16,6 +16,9 @@ public:
     // return read size
     uint32_t ReadNotMovePt(char* res, uint32_t len);
 
+    uint32_t Read(std::shared_ptr<Buffer> buffer, uint32_t len = 0);
+    uint32_t Write(std::shared_ptr<Buffer> buffer, uint32_t len = 0);
+
     uint32_t Read(char* res, uint32_t len);
     uint32_t Write(const char* data, uint32_t len);
     
@@ -37,7 +40,7 @@ public:
     // return 0 and the last param return need length
     uint32_t ReadUntil(char* res, uint32_t len, const char* find, uint32_t find_len, uint32_t& need_len);
     
-    uint32_t GetFreeLength();
+    uint32_t GetCanWriteLength();
     uint32_t GetCanReadLength();
 
     // get free memory block, 
@@ -54,6 +57,9 @@ public:
 
     // return can read bytes
     uint32_t FindStr(const char* s, uint32_t s_len);
+
+    // return block memory pool
+    std::shared_ptr<BlockMemoryPool> GetBlockMemoryPool();
 
     // list point
     std::shared_ptr<BufferBlock> GetNext();

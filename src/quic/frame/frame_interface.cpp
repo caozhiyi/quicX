@@ -12,7 +12,7 @@ Frame::~Frame() {
 
 }
 
-FrameType Frame::GetType() { 
+uint16_t Frame::GetType() { 
     return _frame_type; 
 }
 
@@ -37,9 +37,7 @@ bool Frame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> 
             return false;
         }
 
-        uint16_t type = 0;
-        DecodeFixed<uint16_t>(data, data + size, type);
-        _frame_type = (FrameType)type;
+        DecodeFixed<uint16_t>(data, data + size, _frame_type);
 
         alloter->PoolFree(data, size);
     

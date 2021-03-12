@@ -13,13 +13,13 @@ public:
     Frame(FrameType ft);
     ~Frame();
 
-    FrameType GetType();
+    uint16_t GetType();
 
     virtual bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
     virtual bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
     virtual uint32_t EncodeSize();
 protected:
-    FrameType _frame_type;
+    uint16_t _frame_type;
 };
 
 }
