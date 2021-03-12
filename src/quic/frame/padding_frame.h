@@ -5,9 +5,9 @@
 
 namespace quicx {
 
-class PaddingFrame : public Frame {
+class PaddingFrame: public Frame {
 public:
-    PaddingFrame() : Frame(FT_PADDING) {}
+    PaddingFrame(): Frame(FT_PADDING) {}
     ~PaddingFrame() {}
 };
 

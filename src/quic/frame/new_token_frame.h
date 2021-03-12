@@ -6,9 +6,9 @@
 
 namespace quicx {
 
-class NewTokenFrame : public Frame {
+class NewTokenFrame: public Frame {
 public:
-    NewTokenFrame() : Frame(FT_NEW_TOKEN) {}
+    NewTokenFrame(): Frame(FT_NEW_TOKEN) {}
     ~NewTokenFrame() {}
 
 private:

@@ -40,7 +40,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     buffer->ReadNotMovePt(data, size);
     uint64_t reason_length = 0;
 
-    char* pos = nullptr;
+    char* pos = data;
     if (with_type) {
         pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
     }

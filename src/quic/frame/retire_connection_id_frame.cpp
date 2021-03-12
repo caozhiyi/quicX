@@ -32,9 +32,9 @@ bool RetireConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
-    uint32_t len = buffer->ReadNotMovePt(data, size);
+    buffer->ReadNotMovePt(data, size);
     
-    char* pos = nullptr;
+    char* pos = data;
     if (with_type) {
         pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
     }

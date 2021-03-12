@@ -39,7 +39,7 @@ bool StreamFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Alloter
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
-    uint32_t len = buffer->ReadNotMovePt(data, size);
+    buffer->ReadNotMovePt(data, size);
     
     char* pos = data;
     if (with_type) {

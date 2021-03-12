@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-class MaxStreamsFrame : public Frame {
+class MaxStreamsFrame: public Frame {
 public:
     MaxStreamsFrame();
     ~MaxStreamsFrame();

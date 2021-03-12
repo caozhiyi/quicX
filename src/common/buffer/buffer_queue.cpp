@@ -21,7 +21,7 @@ BufferQueue::~BufferQueue() {
 }
 
 uint32_t BufferQueue::ReadNotMovePt(char* res, uint32_t len) {
-    if (!_buffer_read) {
+    if (!_buffer_read || !res) {
         return 0;
     }
 
@@ -38,6 +38,10 @@ uint32_t BufferQueue::ReadNotMovePt(char* res, uint32_t len) {
 }
 
 uint32_t BufferQueue::Read(std::shared_ptr<Buffer> buffer, uint32_t len) {
+    if (!buffer) {
+        return 0;
+    }
+    
     if (len == 0) {
         len = GetCanReadLength();
     } 
@@ -50,6 +54,7 @@ uint32_t BufferQueue::Read(std::shared_ptr<Buffer> buffer, uint32_t len) {
         buffer_queue->Append();
         buffer_queue->_buffer_write = buffer_queue->_buffer_end;
     }
+
     uint32_t can_write_size = buffer_queue->_buffer_write->GetCanWriteLength();
     uint32_t total_read_len = 0;
     uint32_t cur_read_len = 0;
@@ -92,6 +97,10 @@ uint32_t BufferQueue::Read(std::shared_ptr<Buffer> buffer, uint32_t len) {
 }
 
 uint32_t BufferQueue::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
+    if (!buffer) {
+        return 0;
+    }
+    
     if (len == 0) {
         len = buffer->GetCanReadLength();
     }
@@ -147,7 +156,7 @@ uint32_t BufferQueue::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
 }
 
 uint32_t BufferQueue::Read(char* res, uint32_t len) {
-    if (!_buffer_read) {
+    if (!_buffer_read || !res || len == 0) {
         return 0;
     }
 
@@ -173,6 +182,10 @@ uint32_t BufferQueue::Read(char* res, uint32_t len) {
 }
 
 uint32_t BufferQueue::Write(const char* str, uint32_t len) {
+    if (!str || len == 0) {
+        return 0;
+    }
+    
     uint32_t write_len = 0;
 
     while (1) {

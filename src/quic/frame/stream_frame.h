@@ -20,7 +20,7 @@ public:
     ~StreamFrame();
 
     bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type);
+    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
     uint32_t EncodeSize();
 
     void SetStreamID(uint64_t stream_id) { _stream_id = stream_id; }
