@@ -1,4 +1,5 @@
 #include <cstring>
+
 #include "new_connection_id_frame.h"
 #include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
@@ -70,7 +71,6 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
-    
 
     buffer->Read(_stateless_reset_token, __stateless_reset_token_length);
 

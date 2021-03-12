@@ -1,8 +1,8 @@
 #include "stop_sending_frame.h"
 #include "common/decode/decode.h"
-#include "common/buffer/buffer_queue.h"
 #include "common/decode/normal_decode.h"
-
+#include "common/buffer/buffer_interface.h"
+#include "common/alloter/alloter_interface.h"
 
 namespace quicx {
 

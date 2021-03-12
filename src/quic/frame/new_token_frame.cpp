@@ -1,36 +1,34 @@
-#include "crypto_frame.h"
+#include "new_token_frame.h"
 #include "common/buffer/buffer_queue.h"
 #include "common/decode/normal_decode.h"
 
 namespace quicx {
 
-CryptoFrame::CryptoFrame():
-    Frame(FT_CRYPTO),
-    _offset(0) {
+NewTokenFrame::NewTokenFrame():
+    Frame(FT_NEW_TOKEN) {
 
 }
 
-CryptoFrame::~CryptoFrame() {
+NewTokenFrame::~NewTokenFrame() {
 
 }
 
-bool CryptoFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool NewTokenFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
 
     char* pos = EncodeFixed<uint16_t>(data, _frame_type);
-    pos = EncodeVarint(pos, _offset);
-    pos = EncodeVarint(pos, _data->GetCanReadLength());
+    pos = EncodeVarint(pos, _token->GetCanReadLength());
 
     buffer->Write(data, pos - data);
     alloter->PoolFree(data, size);
 
-    buffer->Write(_data);
+    buffer->Write(_token);
     return true;
 }
 
-bool CryptoFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
+bool NewTokenFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
     uint16_t size = EncodeSize();
 
     char* data = alloter->PoolMalloc<char>(size);
@@ -40,20 +38,19 @@ bool CryptoFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Alloter
     if (with_type) {
         pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
     }
-    pos = DecodeVirint(pos, data + size, _offset);
     uint32_t length = 0;
     pos = DecodeVirint(pos, data + size, length);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
 
-    _data = std::make_shared<BufferQueue>(buffer->GetBlockMemoryPool(), alloter);
-    buffer->Read(_data, length);
+    _token = std::make_shared<BufferQueue>(buffer->GetBlockMemoryPool(), alloter);
+    buffer->Read(_token, length);
     return true;
 }
 
-uint32_t CryptoFrame::EncodeSize() {
-    return sizeof(CryptoFrame);
+uint32_t NewTokenFrame::EncodeSize() {
+    return sizeof(NewTokenFrame);
 }
 
 }
