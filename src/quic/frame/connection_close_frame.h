@@ -10,6 +10,7 @@ namespace quicx {
 class ConnectionCloseFrame: public Frame {
 public:
     ConnectionCloseFrame();
+     ConnectionCloseFrame(uint16_t frame_type);
     ~ConnectionCloseFrame();
 
     bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);

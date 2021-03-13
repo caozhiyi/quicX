@@ -5,7 +5,7 @@
 
 namespace quicx {
 
-Frame::Frame(FrameType ft): 
+Frame::Frame(uint16_t ft): 
     _frame_type(ft) {
     
 }

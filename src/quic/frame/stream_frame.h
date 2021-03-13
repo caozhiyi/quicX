@@ -17,6 +17,7 @@ public:
     };
 
     StreamFrame();
+    StreamFrame(uint16_t frame_type);
     ~StreamFrame();
 
     bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);

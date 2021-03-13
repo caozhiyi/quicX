@@ -10,6 +10,12 @@ StreamFrame::StreamFrame():
 
 }
 
+StreamFrame::StreamFrame(uint16_t frame_type):
+    Frame(frame_type),
+    _offset(0) {
+
+}
+
 StreamFrame::~StreamFrame() {
 
 }

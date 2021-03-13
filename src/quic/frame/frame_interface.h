@@ -10,7 +10,7 @@ class Buffer;
 class AlloterWrap;
 class Frame {
 public:
-    Frame(FrameType ft);
+    Frame(uint16_t ft);
     ~Frame();
 
     uint16_t GetType();

@@ -10,7 +10,14 @@ ConnectionCloseFrame::ConnectionCloseFrame():
     _error_code(0),
     _err_frame_type(0) {
 
-};
+}
+
+ConnectionCloseFrame::ConnectionCloseFrame(uint16_t frame_type):
+    Frame(frame_type),
+    _error_code(0),
+    _err_frame_type(0) {
+
+}
 
 ConnectionCloseFrame::~ConnectionCloseFrame() {
 
