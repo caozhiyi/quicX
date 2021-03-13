@@ -14,7 +14,7 @@ public:
     void* MallocAlign(uint32_t size);
     void* MallocZero(uint32_t size);
 
-    void Free(void* &data, uint32_t len);
+    void Free(void* &data, uint32_t len = 0);
 };
 
 std::shared_ptr<NormalAlloter> MakeNormalAlloterPtr();

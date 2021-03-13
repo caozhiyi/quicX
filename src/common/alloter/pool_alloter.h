@@ -39,6 +39,7 @@ private:
     char*  _pool_end;
     std::vector<MemNode*> _free_list;  
     std::vector<char*>    _malloc_vec;
+    std::shared_ptr<Alloter> _alloter;
 };
 
 std::shared_ptr<Alloter> MakePoolAlloterPtr();

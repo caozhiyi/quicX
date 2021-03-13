@@ -17,7 +17,7 @@ public:
     virtual void* MallocAlign(uint32_t size) = 0;
     virtual void* MallocZero(uint32_t size) = 0;
 
-    virtual void Free(void* &data, uint32_t len) = 0;
+    virtual void Free(void* &data, uint32_t len = 0) = 0;
 
 protected:
     uint32_t Align(uint32_t size) {

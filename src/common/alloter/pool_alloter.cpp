@@ -1,6 +1,8 @@
 #include <cstring>
 #include <cstdlib>
+
 #include "pool_alloter.h"
+#include "normal_alloter.h"
 
 namespace quicx {
 
@@ -10,23 +12,21 @@ PoolAlloter::PoolAlloter() :
     _pool_end(nullptr) {
     _free_list.resize(__default_number_of_free_lists);
     memset(&(*_free_list.begin()), 0, sizeof(void*) * __default_number_of_free_lists);
+    _alloter = MakeNormalAlloterPtr();
 }
 
 PoolAlloter::~PoolAlloter() {
     for (auto iter = _malloc_vec.begin(); iter != _malloc_vec.end(); ++iter) {
         if (*iter) {
-            free(*iter);
+            void* data = (void*)*iter;
+            _alloter->Free(data);
         }
     }
 }
 
 void* PoolAlloter::Malloc(uint32_t size) {
     if (size > __default_max_bytes) {
-        void* ret = malloc(size);
-        if (!ret) {
-            throw "not enough memory";
-            return nullptr;
-        }
+        void* ret = _alloter->Malloc(size);
         return ret;
     }
     
@@ -59,7 +59,7 @@ void PoolAlloter::Free(void* &data, uint32_t len) {
     }
     
     if (len > __default_max_bytes) {
-        free(data);
+        _alloter->Free(data);
         data = nullptr;
         return;
     }
@@ -129,12 +129,7 @@ void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
         _free_list[FreeListIndex(size)] = (MemNode*)_pool_start;
     }
 
-    _pool_start = (char*)malloc(bytes_to_get);
-    //malloc failed
-    if (0 == _pool_start) {
-        throw "not enough memory";
-        return nullptr;
-    }
+    _pool_start = (char*)_alloter->Malloc(bytes_to_get);
 
     _malloc_vec.push_back(_pool_start);
     _pool_end = _pool_start + bytes_to_get;
