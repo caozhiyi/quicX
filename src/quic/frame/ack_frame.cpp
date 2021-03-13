@@ -103,7 +103,9 @@ AckEcnFrame::~AckEcnFrame() {
 }
 
 bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    AckFrame::Encode(buffer, alloter);
+    if (!AckFrame::Encode(buffer, alloter)) {
+        return false;
+    }
 
     uint16_t size = EncodeSize() - sizeof(AckFrame);
     char* data = alloter->PoolMalloc<char>(size);
@@ -120,7 +122,9 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<Buffer> buffer, std::share
 }
 
 bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
-    AckFrame::Decode(buffer, alloter, with_type);
+    if (!AckFrame::Decode(buffer, alloter, with_type)) {
+        return false;
+    } 
 
     uint16_t size = EncodeSize();
     char* data = alloter->PoolMalloc<char>(size);
