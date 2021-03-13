@@ -13,6 +13,7 @@ enum FrameType {
     FT_CRYPTO                = 0x06,
     FT_NEW_TOKEN             = 0x07,
     FT_STREAM                = 0x08,
+    FT_STREAM_MAX            = 0x0f,
     FT_MAX_DATA              = 0x10,
     FT_MAX_STREAM_DATA       = 0x11,
     FT_MAX_STREAMS           = 0x12,

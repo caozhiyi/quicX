@@ -5,7 +5,7 @@
 
 namespace quicx {
 
-class PathResponseFrame : public Frame {
+class PathResponseFrame: public Frame {
 public:
     PathResponseFrame();
     ~PathResponseFrame();

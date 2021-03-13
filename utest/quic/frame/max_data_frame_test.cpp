@@ -14,8 +14,9 @@ TEST(max_data_frame_utest, decode1) {
     auto buffer = std::make_shared<quicx::BufferQueue>(block, alloter);
 
     frame1.SetMaximumData(23624236235626);
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetMaximumData(), frame2.GetMaximumData());

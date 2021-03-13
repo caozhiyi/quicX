@@ -16,8 +16,9 @@ TEST(stream_data_blocked_frame_utest, decode1) {
 
     frame1.SetStreamID(121616546);
     frame1.SetDataLimit(23624236235626);
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetStreamID(), frame2.GetStreamID());

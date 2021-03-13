@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-class DataBlockedFrame : public Frame {
+class DataBlockedFrame: public Frame {
 public:
     DataBlockedFrame();
     ~DataBlockedFrame();

@@ -16,10 +16,10 @@ CryptoFrame::~CryptoFrame() {
 
 bool CryptoFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
+    char* pos = data;
 
-    char* pos = EncodeFixed<uint16_t>(data, _frame_type);
+    pos = EncodeFixed<uint16_t>(data, _frame_type);
     pos = EncodeVarint(pos, _offset);
     pos = EncodeVarint(pos, _data->GetCanReadLength());
 
@@ -32,13 +32,16 @@ bool CryptoFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Alloter
 
 bool CryptoFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
     buffer->ReadNotMovePt(data, size);
-    
     char* pos = data;
+    
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        pos = DecodeFixed<uint16_t>(pos, data + size, _frame_type);
+        if (_frame_type != FT_CRYPTO){
+            return false;
+        }
+        
     }
     pos = DecodeVirint(pos, data + size, _offset);
     uint32_t length = 0;
@@ -48,7 +51,9 @@ bool CryptoFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Alloter
     alloter->PoolFree(data, size);
 
     _data = std::make_shared<BufferQueue>(buffer->GetBlockMemoryPool(), alloter);
-    buffer->Read(_data, length);
+    if (buffer->Read(_data, length) != length) {
+        return false;
+    }
     return true;
 }
 

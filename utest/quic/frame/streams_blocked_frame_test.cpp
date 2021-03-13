@@ -15,8 +15,9 @@ TEST(streams_blocked_frame_utest, decode1) {
     auto buffer = std::make_shared<quicx::BufferQueue>(block, alloter);
 
     frame1.SetStreamLimit(2362423);
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetStreamLimit(), frame2.GetStreamLimit());

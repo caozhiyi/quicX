@@ -16,8 +16,9 @@ TEST(max_stream_data_frame_utest, decode1) {
 
     frame1.SetStreamID(1235125324234);
     frame1.SetMaximumData(23624236235626);
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetStreamID(), frame2.GetStreamID());

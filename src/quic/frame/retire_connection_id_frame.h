@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-class RetireConnectionIDFrame : public Frame {
+class RetireConnectionIDFrame: public Frame {
 public:
     RetireConnectionIDFrame();
     ~RetireConnectionIDFrame();

@@ -8,7 +8,7 @@ namespace quicx {
 
 PathResponseFrame::PathResponseFrame(): 
     Frame(FT_PATH_RESPONSE) {
-
+    memset(_data, 0, __path_data_length);
 }
 
 PathResponseFrame::~PathResponseFrame() {
@@ -17,10 +17,10 @@ PathResponseFrame::~PathResponseFrame() {
 
 bool PathResponseFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
+    char* pos = data;
 
-    char* pos = EncodeFixed<uint16_t>(data, _frame_type);
+    pos = EncodeFixed<uint16_t>(pos, _frame_type);
     buffer->Write(data, pos - data);
     buffer->Write(_data, __path_data_length);
 
@@ -30,13 +30,15 @@ bool PathResponseFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<A
 
 bool PathResponseFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
     buffer->ReadNotMovePt(data, size);
-    
     char* pos = data;
+
     if (with_type) {
         pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        if (_frame_type != FT_PATH_RESPONSE) {
+            return false;
+        } 
     }
 
     memcpy(_data, pos, __path_data_length);

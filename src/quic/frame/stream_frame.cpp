@@ -16,10 +16,10 @@ StreamFrame::~StreamFrame() {
 
 bool StreamFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
+    char* pos = data;
 
-    char* pos = EncodeFixed<uint16_t>(data, _frame_type);
+    pos = EncodeFixed<uint16_t>(pos, _frame_type);
     pos = EncodeVarint(pos, _stream_id);
     if (HasOffset()) {
         pos = EncodeVarint(pos, _offset);
@@ -36,13 +36,15 @@ bool StreamFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Alloter
 
 bool StreamFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
     buffer->ReadNotMovePt(data, size);
-    
     char* pos = data;
+
     if (with_type) {
         pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        if (_frame_type < FT_STREAM || _frame_type > FT_STREAM_MAX) {
+            return false;
+        }
     }
     pos = DecodeVirint(pos, data + size, _stream_id);
     if (HasOffset()) {
@@ -56,7 +58,9 @@ bool StreamFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Alloter
     alloter->PoolFree(data, size);
 
     _data = std::make_shared<BufferQueue>(buffer->GetBlockMemoryPool(), alloter);
-    buffer->Read(_data, length);
+    if (buffer->Read(_data, length) != length) {
+        return false;
+    }
     return true;
 }
 

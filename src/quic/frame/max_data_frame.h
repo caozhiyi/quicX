@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-class MaxDataFrame : public Frame {
+class MaxDataFrame: public Frame {
 public:
     MaxDataFrame();
     ~MaxDataFrame();

@@ -13,7 +13,7 @@ std::shared_ptr<RangeRandom> PathChallengeFrame::_random = std::make_shared<Rang
 
 PathChallengeFrame::PathChallengeFrame():
     Frame(FT_PATH_CHALLENGE) {
-
+    memset(_data, 0, __path_data_length);
 }
 
 PathChallengeFrame::~PathChallengeFrame() {
@@ -22,10 +22,10 @@ PathChallengeFrame::~PathChallengeFrame() {
 
 bool PathChallengeFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
+    char* pos = data;
 
-    char* pos = EncodeFixed<uint16_t>(data, _frame_type);
+    pos = EncodeFixed<uint16_t>(pos, _frame_type);
     buffer->Write(data, pos - data);
     buffer->Write(_data, __path_data_length);
 
@@ -35,13 +35,15 @@ bool PathChallengeFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<
 
 bool PathChallengeFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
     buffer->ReadNotMovePt(data, size);
-    
     char* pos = data;
+
     if (with_type) {
         pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        if (_frame_type != FT_PATH_CHALLENGE) {
+            return false;
+        }
     }
 
     memcpy(_data, pos, __path_data_length);

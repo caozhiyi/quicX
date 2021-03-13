@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-class StreamsBlockedFrame : public Frame {
+class StreamsBlockedFrame: public Frame {
 public:
     StreamsBlockedFrame();
     ~StreamsBlockedFrame();

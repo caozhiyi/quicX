@@ -17,8 +17,9 @@ TEST(reset_frame_utest, decode1) {
     frame1.SetStreamID(1010101);
     frame1.SetAppErrorCode(404);
     frame1.SetFinalSize(100245123);
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetStreamID(), frame2.GetStreamID());

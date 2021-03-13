@@ -18,8 +18,8 @@ TEST(new_token_frame_utest, decode1) {
     data->Write(frame_data, sizeof(frame_data));
     frame1.SetToken(data);
 
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
 

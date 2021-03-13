@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-class ResetStreamFrame : public Frame {
+class ResetStreamFrame: public Frame {
 public:
     ResetStreamFrame();
     ~ResetStreamFrame();

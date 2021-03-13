@@ -20,8 +20,8 @@ TEST(ack_frame_utest, decode1) {
     frame1.AddAckRange(4, 6);
     frame1.AddAckRange(2, 3);
 
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetAckDelay(), frame2.GetAckDelay());
@@ -56,8 +56,8 @@ TEST(ack_ecn_frame_utest, decod1) {
     frame1.SetEct1(2003);
     frame1.SetEcnCe(203);
 
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetAckDelay(), frame2.GetAckDelay());

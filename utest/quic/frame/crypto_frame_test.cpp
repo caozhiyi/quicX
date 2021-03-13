@@ -19,8 +19,8 @@ TEST(crypto_frame_utest, decode1) {
     frame1.SetOffset(1042451);
     frame1.SetData(data);
 
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetOffset(), frame2.GetOffset());

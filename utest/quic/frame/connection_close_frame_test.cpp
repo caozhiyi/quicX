@@ -16,8 +16,9 @@ TEST(connection_close_frame_utest, decode1) {
     frame1.SetErrorCode(10086);
     frame1.SetErrFrameType(0x05);
     frame1.SetReason("it is a test.");
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetErrorCode(), frame2.GetErrorCode());

@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-class StopSendingFrame : public Frame {
+class StopSendingFrame: public Frame {
 public:
     StopSendingFrame();
     ~StopSendingFrame();

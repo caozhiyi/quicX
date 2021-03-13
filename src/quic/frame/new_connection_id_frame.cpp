@@ -20,38 +20,37 @@ NewConnectionIDFrame::~NewConnectionIDFrame() {
 
 bool NewConnectionIDFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
+    char* pos = data;
 
-    char* pos = EncodeFixed<uint16_t>(data, _frame_type);
+    pos = EncodeFixed<uint16_t>(pos, _frame_type);
     pos = EncodeVarint(pos, _sequence_number);
     pos = EncodeVarint(pos, _retire_prior_to);
     pos = EncodeFixed<uint8_t>(pos, (uint8_t)_connection_id.size());
     for (size_t i = 0; i < _connection_id.size(); i++) {
         pos = EncodeVarint(pos, _connection_id[i]);
     }
+
     buffer->Write(data, pos - data);
     alloter->PoolFree(data, size);
 
     buffer->Write(_stateless_reset_token, __stateless_reset_token_length);
-    
     return true;
 }
 
 bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
     buffer->ReadNotMovePt(data, size);
-
-    // encode normal members and number of connection id
-    uint8_t connection_id_num = 0;
     char* pos = data;
+
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        pos = DecodeFixed<uint16_t>(pos, data + size, _frame_type);
     }
     pos = DecodeVirint(pos, data + size, _sequence_number);
     pos = DecodeVirint(pos, data + size, _retire_prior_to);
+    // encode normal members and number of connection id
+    uint8_t connection_id_num = 0;
     pos = DecodeFixed<uint8_t>(pos, data + size, connection_id_num);
 
     buffer->MoveReadPt(pos - data);
@@ -60,7 +59,6 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     // encode connection ids
     size = connection_id_num * sizeof(uint64_t);
     data = alloter->PoolMalloc<char>(size);
-
     _connection_id.resize(connection_id_num);
     buffer->ReadNotMovePt(data, size);
     pos = data;
@@ -72,8 +70,9 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
 
-    buffer->Read(_stateless_reset_token, __stateless_reset_token_length);
-
+    if (buffer->Read(_stateless_reset_token, __stateless_reset_token_length) != __stateless_reset_token_length) {
+        return false;
+    }
     return true;
 }
 

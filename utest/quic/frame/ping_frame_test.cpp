@@ -14,8 +14,8 @@ TEST(ping_frame_utest, decode1) {
     auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);
     auto buffer = std::make_shared<quicx::BufferQueue>(block, alloter);
 
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
 }

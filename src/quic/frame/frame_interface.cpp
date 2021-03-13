@@ -32,17 +32,11 @@ bool Frame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> 
 bool Frame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
     if (with_type) {
         uint16_t size = EncodeSize();
-
         char* data = alloter->PoolMalloc<char>(size);
         uint32_t len = buffer->Read(data, size);
-        if (len != size) {
-            return false;
-        }
 
         DecodeFixed<uint16_t>(data, data + size, _frame_type);
-
         alloter->PoolFree(data, size);
-    
     }
     return true;
 }

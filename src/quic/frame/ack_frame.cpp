@@ -19,10 +19,10 @@ AckFrame::~AckFrame() {
 
 bool AckFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
+    char* pos = data;
 
-    char* pos = EncodeFixed<uint16_t>(data, _frame_type);
+    pos = EncodeFixed<uint16_t>(pos, _frame_type);
     pos = EncodeVarint(pos, _largest_ack);
     pos = EncodeVarint(pos, _ack_delay);
     pos = EncodeVarint(pos, _ack_ranges.size());
@@ -40,17 +40,19 @@ bool AckFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWra
 
 bool AckFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
     buffer->ReadNotMovePt(data, size);
-    uint32_t ack_range_count = 0;
-
+    
     char* pos = data;
     if (with_type) {
         pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        if (_frame_type != FT_ACK && _frame_type != FT_ACK_ECN) {
+            return false;
+        }
     }
     pos = DecodeVirint(pos, data + size, _largest_ack);
     pos = DecodeVirint(pos, data + size, _ack_delay);
+    uint32_t ack_range_count = 0;
     pos = DecodeVirint(pos, data + size, ack_range_count);
     pos = DecodeVirint(pos, data + size, _first_ack_range);
 
@@ -104,7 +106,6 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<Buffer> buffer, std::share
     AckFrame::Encode(buffer, alloter);
 
     uint16_t size = EncodeSize() - sizeof(AckFrame);
-
     char* data = alloter->PoolMalloc<char>(size);
     char* pos = data;
     
@@ -122,7 +123,6 @@ bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<Buffer> buffer, std::share
     AckFrame::Decode(buffer, alloter, with_type);
 
     uint16_t size = EncodeSize();
-
     char* data = alloter->PoolMalloc<char>(size);
     buffer->ReadNotMovePt(data, size);
     char* pos = data;

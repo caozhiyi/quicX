@@ -25,8 +25,8 @@ TEST(new_connection_id_frame_utest, decode1) {
     frame1.AddConnectionID(1212124);
     frame1.AddConnectionID(1212125);
 
-    frame1.Encode(buffer, alloter);
-    frame2.Decode(buffer, alloter, true);
+    EXPECT_TRUE(frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetRetirePriorTo(), frame2.GetRetirePriorTo());
