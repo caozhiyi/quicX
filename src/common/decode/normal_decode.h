@@ -62,6 +62,7 @@ char* EncodeFixed(char* dst, T value) {
 
 template<typename T>
 char* DecodeFixed(char* start, char* end, T& value) {
+    value = 0;
     const uint8_t* const buffer = reinterpret_cast<const uint8_t*>(start);
 
     if (!IsBigEndian()) {

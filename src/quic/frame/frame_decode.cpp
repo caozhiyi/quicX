@@ -17,6 +17,7 @@
 #include "handshake_done_frame.h"
 #include "path_challenge_frame.h"
 #include "streams_blocked_frame.h"
+#include "common/util/singleton.h"
 #include "max_stream_data_frame.h"
 #include "connection_close_frame.h"
 #include "new_connection_id_frame.h"
@@ -26,6 +27,18 @@
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
+
+class FrameDecode: public Singleton<FrameDecode> {
+public:
+    FrameDecode();
+    ~FrameDecode();
+
+    bool DecodeFrame(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, std::vector<std::shared_ptr<Frame>>& frames);
+private:
+    typedef std::function<std::shared_ptr<Frame>(uint16_t)> FrameCreater;
+    // frame type to craeter function map
+    static std::unordered_map<uint16_t, FrameCreater> __frame_creater_map;
+};
 
 std::unordered_map<uint16_t, FrameDecode::FrameCreater> FrameDecode::__frame_creater_map;
 
@@ -95,6 +108,7 @@ bool FrameDecode::DecodeFrame(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
 
         // decode frame
         frame->Decode(buffer, alloter);
+        frames.push_back(frame);
     }
     return true;
 }
