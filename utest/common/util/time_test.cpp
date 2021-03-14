@@ -8,7 +8,7 @@ TEST(time_utest, get_time1) {
     std::cout << quicx::UTCTimeMsec() << std::endl;
     std::cout << quicx::GetFormatTime() << std::endl;
 
-    char buf[16] = {0};
-    quicx::GetFormatTime(buf, 16);
+    char buf[32] = {0};
+    quicx::GetFormatTime(buf, 32);
     std::cout << buf << std::endl;
 }

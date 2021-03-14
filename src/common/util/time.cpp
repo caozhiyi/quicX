@@ -1,9 +1,6 @@
 #include <chrono>
-#include <iomanip>
-#include <sstream>
-#include <cstring>
 #include "time.h"
-#include <time.h>
+#include "common/os/convert.h"
 
 namespace quicx {
 
@@ -16,8 +13,10 @@ uint64_t UTCTimeMsec() {
 }
 
 std::string GetFormatTime() {
-    char buf[16] = {0};
-    GetFormatTime(buf, 16);
+    static const uint8_t __buf_size = sizeof("xxxx-xx-xx xx:xx:xx:xxx");
+
+    char buf[__buf_size] = {0};
+    GetFormatTime(buf, __buf_size);
     return std::move(std::string(buf));
 }
 
@@ -28,8 +27,8 @@ void GetFormatTime(char* buf, int len) {
     auto sec = std::chrono::duration_cast<std::chrono::seconds>(now_time.time_since_epoch()).count();
 
     tm time;
-    ::localtime_r(&now_time_t, &time);
-    sprintf(buf, "%d-%d-%d %d:%d:%d:%d", 1900 + time.tm_year,  time.tm_mon,  time.tm_mday,  time.tm_hour, time.tm_min, time.tm_sec, (int)(msec - (sec * 1000)));
+    Localtime((uint64_t*)&now_time_t, (void*)&time);
+    snprintf(buf, len, "%04d-%02d-%02d %02d:%02d:%02d:%03d", 1900 + time.tm_year,  1 + time.tm_mon,  time.tm_mday,  time.tm_hour, time.tm_min, time.tm_sec, (int)(msec - (sec * 1000)));
 }
 
 }
