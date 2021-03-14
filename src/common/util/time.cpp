@@ -13,14 +13,12 @@ uint64_t UTCTimeMsec() {
 }
 
 std::string GetFormatTime() {
-    static const uint8_t __buf_size = sizeof("xxxx-xx-xx xx:xx:xx:xxx");
-
-    char buf[__buf_size] = {0};
-    GetFormatTime(buf, __buf_size);
+    char buf[__format_time_buf_size] = {0};
+    GetFormatTime(buf, __format_time_buf_size);
     return std::move(std::string(buf));
 }
 
-void GetFormatTime(char* buf, int len) {
+void GetFormatTime(char* buf, uint32_t len) {
     auto now_time = std::chrono::system_clock::now();
     auto now_time_t = std::chrono::system_clock::to_time_t(now_time);
     auto msec = std::chrono::duration_cast<std::chrono::milliseconds>(now_time.time_since_epoch()).count();

@@ -15,7 +15,7 @@ struct AckRange {
 class AckFrame: public Frame {
 public:
     AckFrame();
-    ~AckFrame();
+    virtual ~AckFrame();
 
     bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
     bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);

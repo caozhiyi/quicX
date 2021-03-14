@@ -11,7 +11,7 @@ class AlloterWrap;
 class Frame {
 public:
     Frame(uint16_t ft);
-    ~Frame();
+    virtual ~Frame();
 
     uint16_t GetType();
 
