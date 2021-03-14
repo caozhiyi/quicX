@@ -21,6 +21,7 @@
 #include "max_stream_data_frame.h"
 #include "connection_close_frame.h"
 #include "new_connection_id_frame.h"
+#include "common/log/log_interface.h"
 #include "stream_data_blocked_frame.h"
 #include "retire_connection_id_frame.h"
 #include "common/decode/normal_decode.h"
@@ -92,6 +93,7 @@ bool FrameDecode::DecodeFrame(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
     while (buffer->GetCanReadLength() > 0) {
         // decode type
         if (buffer->Read(type_buf, __type_buf_length) != __type_buf_length) {
+            LOG_ERROR("wrong buffer size while read frame type. size:%d", buffer->GetCanReadLength());
             return false;
         }
         DecodeFixed<uint16_t>(type_buf, type_buf + __type_buf_length, frame_type);
@@ -102,12 +104,15 @@ bool FrameDecode::DecodeFrame(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
             frame = creater->second(frame_type);
 
         } else {
-            // TODO print err log
+            LOG_ERROR("invalid frame type. type:%d", frame_type);
             return false;
         }
 
         // decode frame
-        frame->Decode(buffer, alloter);
+        if (!frame->Decode(buffer, alloter)) {
+            LOG_ERROR("decode frame failed. frame type:%d", frame_type);
+            return false;
+        }
         frames.push_back(frame);
     }
     return true;
