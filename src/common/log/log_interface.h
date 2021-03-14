@@ -5,7 +5,7 @@
 #include <cstdint>
 
 #include "common/util/singleton.h"
-#include "common/queue/thread_safe_queue.h"
+#include "common/structure/thread_safe_queue.h"
 
 namespace quicx {
 

@@ -14,8 +14,9 @@
 
 namespace quicx {
 
-SendStreamStateMachine::SendStreamStateMachine() {
-    _status = SS_READY;
+SendStreamStateMachine::SendStreamStateMachine(StreamStatus s):
+    StreamStateMachine(s) {
+
 }
 
 SendStreamStateMachine::~SendStreamStateMachine() {

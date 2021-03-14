@@ -8,7 +8,7 @@ namespace quicx {
 
 class StreamStateMachine {
 public:
-    StreamStateMachine() {}
+    StreamStateMachine(StreamStatus s): _status(s) {}
     virtual ~StreamStateMachine() {}
 
     virtual bool OnFrame(uint16_t frame_type) = 0;

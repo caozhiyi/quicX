@@ -9,7 +9,7 @@ namespace quicx {
 
 class SendStreamStateMachine: public StreamStateMachine {
 public:
-    SendStreamStateMachine();
+    SendStreamStateMachine(StreamStatus s = SS_READY);
     ~SendStreamStateMachine();
 
     bool OnFrame(uint16_t frame_type);

@@ -6,8 +6,7 @@ namespace quicx {
 
 BufferBlock::BufferBlock(std::shared_ptr<BlockMemoryPool>& alloter) : 
     _alloter(alloter), 
-    _can_read(false),
-    _next(nullptr) {
+    _can_read(false) {
 
     _buffer_start = (char*)_alloter->PoolLargeMalloc();
     _total_size = _alloter->GetBlockLength();
@@ -466,14 +465,6 @@ uint32_t BufferBlock::FindStr(const char* s, uint32_t s_len) {
 
 std::shared_ptr<BlockMemoryPool> BufferBlock::GetBlockMemoryPool() {
     return _alloter;
-}
-
-std::shared_ptr<BufferBlock> BufferBlock::GetNext() {
-    return _next;
-}
-
-void BufferBlock::SetNext(std::shared_ptr<BufferBlock> next) {
-    _next = next;
 }
 
 const char* BufferBlock::_FindStrInMem(const char* buffer, const char* ch, uint32_t buffer_len, uint32_t ch_len) const {

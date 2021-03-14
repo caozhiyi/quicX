@@ -3,11 +3,12 @@
 
 #include <memory>
 #include "buffer_interface.h"
+#include "common/structure/list_solt.h"
 
 namespace quicx {
 
 class BlockMemoryPool;
-class BufferBlock: public Buffer {
+class BufferBlock: public Buffer, public ListSolt<BufferBlock> {
 public:
     BufferBlock(std::shared_ptr<BlockMemoryPool>& alloter);
     ~BufferBlock();
@@ -61,9 +62,6 @@ public:
     // return block memory pool
     std::shared_ptr<BlockMemoryPool> GetBlockMemoryPool();
 
-    // list point
-    std::shared_ptr<BufferBlock> GetNext();
-    void SetNext(std::shared_ptr<BufferBlock> next);
 private:
     //find str in fix length buffer. return the first pos if find otherwise return nullptr
     const char* _FindStrInMem(const char* buffer, const char* ch, uint32_t buffer_len, uint32_t ch_len) const;
@@ -77,7 +75,6 @@ private:
     char*    _buffer_start;
     char*    _buffer_end;
     bool     _can_read;         //when _read == _write? Is there any data can be read.
-    std::shared_ptr<BufferBlock>     _next;         //point to next node
     std::shared_ptr<BlockMemoryPool> _alloter;
 };
 }

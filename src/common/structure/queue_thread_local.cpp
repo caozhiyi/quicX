@@ -6,7 +6,7 @@ thread_local std::shared_ptr<QueueThreadLocal::thread_queue>   \
     QueueThreadLocal::_queue_ptr(new QueueThreadLocal::thread_queue);
 
 QueueThreadLocal::QueueThreadLocal() {
-    
+
 }
 
 QueueThreadLocal::~QueueThreadLocal() {
