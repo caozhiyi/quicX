@@ -210,25 +210,32 @@ void BufferQueue::Clear() {
 int32_t BufferQueue::MoveReadPt(int32_t len) {
     uint32_t total_read_len = 0;
     auto buffer_read = _buffer_list.GetHead();
-    while (buffer_read) {
-        total_read_len += buffer_read->MoveReadPt(len - total_read_len);
 
-        if (total_read_len >= len) {
-            break;
-        }
+    if (len >= 0) {
+        while (buffer_read) {
+            total_read_len += buffer_read->MoveReadPt(len - total_read_len);
 
-        if (buffer_read == _buffer_write) {
-            if (_buffer_write->GetNext()) {
-                _buffer_write = _buffer_write->GetNext();
-
-            } else {
-                Reset();
+            if (total_read_len >= len) {
                 break;
             }
+
+            if (buffer_read == _buffer_write) {
+                if (_buffer_write->GetNext()) {
+                    _buffer_write = _buffer_write->GetNext();
+
+                } else {
+                    Reset();
+                    break;
+                }
+            }
+            _buffer_list.PopFront();
+            buffer_read = _buffer_list.GetHead();
         }
-        _buffer_list.PopFront();
-        buffer_read = _buffer_list.GetHead();
+
+    } else {
+        total_read_len += buffer_read->MoveReadPt(len);
     }
+
     return total_read_len;
 }
 
