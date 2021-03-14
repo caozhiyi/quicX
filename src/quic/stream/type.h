@@ -1,16 +1,16 @@
 #ifndef QUIC_STREAM_TYPE
 #define QUIC_STREAM_TYPE
 
-namespace qucix {
+namespace quicx {
 
 enum StreamType {
     ST_CLIENT_BIDIRECTIONAL = 0x00,
     ST_SERVER_BIDIRECTIONAL = 0x01,
-    ST_CLIENT_BIDIRECTIONAL = 0x02,
+    ST_CLIENT_UNIDIRCTIONAL = 0x02,
     ST_SERVER_UNIDIRCTIONAL = 0x03
 };
 
-enum StreamStates {
+enum StreamStatus {
     // sending stream states
     SS_READY       = 0x0001,
     SS_SEND        = 0x0002,

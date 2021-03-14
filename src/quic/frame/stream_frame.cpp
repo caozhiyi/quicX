@@ -36,7 +36,7 @@ bool StreamFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Alloter
     buffer->Write(data, pos - data);
     alloter->PoolFree(data, size);
 
-    buffer->Write(_data);
+    buffer->Write(_data, _send_length);
     return true;
 }
 
@@ -79,11 +79,14 @@ void StreamFrame::SetOffset(uint64_t offset) {
     _frame_type |= SFF_OFF;
 }
 
-void StreamFrame::SetData(std::shared_ptr<Buffer> data) {
-    uint32_t len = data->GetCanReadLength();
-    if (len > 0) {
+void StreamFrame::SetData(std::shared_ptr<Buffer> data, uint32_t send_len) {
+    if (send_len == 0) {
+        send_len = data->GetCanReadLength();
+    }
+    if (send_len > 0) {
         _frame_type |= SFF_LEN;
         _data = data;
+        _send_length = send_len;
     }
 }
 

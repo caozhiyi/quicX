@@ -1,30 +1,42 @@
-#ifndef QUIC_STREAM_INTERFACE
-#define QUIC_STREAM_INTERFACE
+#ifndef QUIC_STREAM_STREAM_INTERFACE
+#define QUIC_STREAM_STREAM_INTERFACE
 
-#include <string>
+#include <memory>
 #include <cstdint>
+#include <functional>
+
 #include "type.h"
 
-namespace qucix {
+namespace quicx {
+
+class Frame;
+class Buffer;
+class Connection;
+class StreamStateMachine;
+
+typedef std::function<void(std::shared_ptr<Buffer>, int32_t/*errno*/)> StreamReadBack;
+typedef std::function<void(uint32_t, int32_t/*errno*/)> StreamWriteBack;
 
 class Stream {
 public:
-    Stream();
-    ~Stream();
+    Stream() {}
+    virtual ~Stream() {}
 
-    int32_t Write(const std::string &data);
-    int32_t Write(std::string &data);
-    int32_t Write(char* data, uint32_t len);
+    virtual void Close() = 0;
 
-    void Close();
+    virtual void HandleFrame(std::shared_ptr<Frame> frame) = 0;
 
-    void Reset();
+protected:
+    void SetStreamID(uint64_t id) { _stream_id = id; }
+    uint64_t GetStreamID() { return _stream_id; }
 
-    void SetReadCallBack();
-private:
-    StreamType _stream_type;
-    uint64_t _data_offset;
-    uint64_t _peer_data_limit;
+    void SetConnection(std::shared_ptr<Connection> connection) { _connection = connection; }
+    std::shared_ptr<Connection> GetConnection() { return _connection; }
+
+protected:
+    uint64_t _stream_id;
+    std::shared_ptr<Connection> _connection;
+    std::shared_ptr<StreamStateMachine> _state_machine;
 };
 
 }
