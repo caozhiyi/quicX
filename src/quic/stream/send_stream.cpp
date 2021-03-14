@@ -189,8 +189,11 @@ void SendStream::HandleFrame(std::shared_ptr<Frame> frame) {
     if (frame_type == FT_MAX_STREAM_DATA) {
         HandleMaxStreamDataFrame(frame);
 
-    } else {
+    } else if (frame_type == FT_STOP_SENDING) {
         HandleStopSendingFrame(frame);
+
+    } else {
+        LOG_ERROR("unexcept frame on send stream. frame type:%d", frame_type);
     }
 }
 

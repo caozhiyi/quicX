@@ -47,6 +47,8 @@ public:
     // don't call this function
     uint32_t GetUseMemoryBlock(std::vector<Iovec>& block_vec, uint32_t max_size = 4096) { return 0; }
 
+    uint64_t GetDataOffset() { return _data_offset; }
+
 private:
     uint64_t _data_offset;
     uint64_t _sort_offset;
