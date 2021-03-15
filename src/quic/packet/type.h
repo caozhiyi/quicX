@@ -1,6 +1,8 @@
 #ifndef QUIC_PACKET_TYPE
 #define QUIC_PACKET_TYPE
 
+#include <cstdint>
+
 namespace qucix {
 
 enum PacketType {
@@ -15,7 +17,7 @@ enum PacketHeaderType {
     PHT_SHORT   = 0x00,
 };
 
-static const unsigned int __fix_header_btye = 0x04;
+static const unsigned int16_t __fix_header_btye = 0x04;
 
 }
 

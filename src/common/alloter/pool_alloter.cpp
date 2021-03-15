@@ -88,7 +88,7 @@ void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
     my_free = &(_free_list[FreeListIndex(size)]);
 
     *my_free = next = (MemNode*)(chunk + size);
-    for (int i = 1;; i++) {
+    for (uint32_t i = 1;; i++) {
         current = next;
         next = (MemNode*)((char*)next + size);
         if (nums - 1 == i) {
@@ -104,8 +104,8 @@ void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
 
 void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
     char* res;
-    int need_bytes = size * nums;
-    int left_bytes = _pool_end - _pool_start;
+    uint32_t need_bytes = size * nums;
+    uint32_t left_bytes = _pool_end - _pool_start;
 
     //pool is enough
     if (left_bytes >= need_bytes) {
@@ -121,7 +121,7 @@ void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
         return res;
 
     } 
-    int bytes_to_get = size * nums;
+    uint32_t bytes_to_get = size * nums;
 
     if (left_bytes > 0) {
         MemNode* my_free = _free_list[FreeListIndex(left_bytes)];

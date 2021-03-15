@@ -11,7 +11,7 @@ namespace quicx {
 // get length of encode result by: return - first param
 template<typename T>
 char* EncodeVarint(char* dst, T value) {
-    static const int B = 128;
+    static const uint16_t B = 128;
     uint8_t* ptr = reinterpret_cast<uint8_t*>(dst);
     while (value >= B) {
         *(ptr++) = value | B;

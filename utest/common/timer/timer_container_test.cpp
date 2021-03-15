@@ -86,7 +86,7 @@ TEST(timercontainer_utest, timerrun1) {
     timer->TimerRun(2370000);
     EXPECT_EQ(2400000, timer->MinTime());
 
-    for (int i = 0; i < 20; i++) {
+    for (uint32_t i = 0; i < 20; i++) {
         timer->TimerRun(2400000);
         EXPECT_EQ(2400000, timer->MinTime());
     }
@@ -120,7 +120,7 @@ TEST(timercontainer_utest, timerrun2) {
     timer->TimerRun(2000);
     EXPECT_EQ(31000, timer->MinTime());
 
-    for (int i = 0; i < 20; i++) {
+    for (uint32_t i = 0; i < 20; i++) {
         timer->TimerRun(31000);
         EXPECT_EQ(31000, timer->MinTime());
     }

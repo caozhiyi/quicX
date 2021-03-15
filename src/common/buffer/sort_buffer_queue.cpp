@@ -1,6 +1,7 @@
 #include "buffer_block.h"
 #include "sort_buffer_queue.h"
-#include "common/log/log_interface.h"
+
+#include "common/log/log.h"
 
 namespace quicx {
 

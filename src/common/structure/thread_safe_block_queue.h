@@ -1,30 +1,32 @@
-#ifndef COMMON_STRUCTURE_THREAD_SAFE_QUEUE
-#define COMMON_STRUCTURE_THREAD_SAFE_QUEUE
+#ifndef COMMON_STRUCTURE_THREAD_SAFE_BLOCK_QUEUE
+#define COMMON_STRUCTURE_THREAD_SAFE_BLOCK_QUEUE
 
-#include <mutex>
 #include <queue>
+#include <mutex>
+#include <condition_variable>
 
 namespace quicx {
 
 template<typename T>
-class ThreadSafeQueue {
+class ThreadSafeBlockQueue {
 public:
-    ThreadSafeQueue() {}
-    ~ThreadSafeQueue() {}
+    ThreadSafeBlockQueue() {}
+    ~ThreadSafeBlockQueue() {}
 
     void Push(const T& element) {
         std::unique_lock<std::mutex> lock(_mutex);
         _queue.push(element);
+        _empty_notify.notify_all();
     }
 
-    bool Pop(T& value) {
+    T Pop() {
         std::unique_lock<std::mutex> lock(_mutex);
-        if (_queue.empty()) {
-            return false;
-        }
-        value = std::move(_queue.front());
+        _empty_notify.wait(_mutex, [this]() {return !this->_queue.empty(); });
+
+        auto ret = std::move(_queue.front());
         _queue.pop();
-        return true;
+ 
+        return std::move(ret);
     }
 
     void Clear() {
@@ -34,7 +36,7 @@ public:
         }
     }
 
-    size_t Size() {
+    uint32_t Size() {
         std::unique_lock<std::mutex> lock(_mutex);
         return _queue.size();
     }
@@ -45,10 +47,10 @@ public:
     }
 
 private:
-    std::queue<T>        _queue;
-    std::mutex           _mutex;
+    std::mutex    _mutex;
+    std::queue<T> _queue;
+    std::condition_variable_any _empty_notify;
 };
 
 }
-
 #endif

@@ -16,7 +16,7 @@ SysCallInt64Result UdpSocket() {
 }
 
 SysCallInt32Result Close(int64_t sockfd) {
-    const int rc = close(sockfd);
+    const int32_t rc = close(sockfd);
     return {rc, rc != -1 ? 0 : errno};
 }
 
@@ -26,7 +26,7 @@ SysCallInt32Result Bind(int64_t sockfd, Address& addr) {
     addr_in.sin_port = htons(addr.GetPort());
     addr_in.sin_addr.s_addr = inet_addr(addr.GetIp().c_str());
 
-    const int rc = bind(sockfd, (sockaddr*)&addr_in, sizeof(addr_in));
+    const int32_t rc = bind(sockfd, (sockaddr*)&addr_in, sizeof(addr_in));
     return {rc, rc != -1 ? 0 : errno};
 }
 
@@ -45,7 +45,7 @@ SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_
     addr_cli.sin_port = htons(addr.GetPort());
     addr_cli.sin_addr.s_addr = inet_addr(addr.GetIp().c_str());
 
-    const int rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_cli, sizeof(addr_cli));
+    const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_cli, sizeof(addr_cli));
     return {rc, rc != -1 ? 0 : errno};
 }
 

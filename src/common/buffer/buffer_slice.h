@@ -3,7 +3,7 @@
 
 namespace quicx {
 
-class Buffer {
+class BufferSlice {
 public:
 
 };

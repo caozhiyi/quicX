@@ -59,7 +59,7 @@ void BlockMemoryPool::Expansion(uint32_t num) {
         num = _number_large_add_nodes;
     }
 
-    for (int i = 0; i < num; ++i) {
+    for (uint32_t i = 0; i < num; ++i) {
         void* mem = malloc(_large_size);
         // not memset!
         _free_mem_vec.push_back(mem);

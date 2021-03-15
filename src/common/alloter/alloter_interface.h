@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-static const int __align = sizeof(unsigned long);
+static const uint16_t __align = sizeof(unsigned long);
 
 class Alloter {
 public:

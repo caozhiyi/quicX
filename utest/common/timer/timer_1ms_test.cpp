@@ -87,7 +87,7 @@ TEST(timer1ms_utest, timerrun) {
     timer->TimerRun(4);
     EXPECT_EQ(20, timer->MinTime());
 
-    for (int i = 0; i < 20; i++) {
+    for (uint32_t i = 0; i < 20; i++) {
         timer->TimerRun(20);
         EXPECT_EQ(20, timer->MinTime());
     }

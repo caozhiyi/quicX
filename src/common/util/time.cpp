@@ -26,7 +26,7 @@ void GetFormatTime(char* buf, uint32_t len) {
 
     tm time;
     Localtime((uint64_t*)&now_time_t, (void*)&time);
-    snprintf(buf, len, "%04d-%02d-%02d %02d:%02d:%02d:%03d", 1900 + time.tm_year,  1 + time.tm_mon,  time.tm_mday,  time.tm_hour, time.tm_min, time.tm_sec, (int)(msec - (sec * 1000)));
+    snprintf(buf, len, "%04d-%02d-%02d %02d:%02d:%02d:%03d", 1900 + time.tm_year,  1 + time.tm_mon,  time.tm_mday,  time.tm_hour, time.tm_min, time.tm_sec, (int32_t)(msec - (sec * 1000)));
 }
 
 }

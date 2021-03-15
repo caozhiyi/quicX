@@ -430,7 +430,7 @@ uint32_t BufferBlock::FindStr(const char* s, uint32_t s_len) {
     if (_write > _read) {
         const char* find = _FindStrInMem(_read, s, _write - _read, s_len);
         if (find) {
-            return (int)(find - _read + s_len);
+            return (uint32_t)(find - _read + s_len);
         }
         return 0;
         

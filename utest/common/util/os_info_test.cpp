@@ -5,7 +5,7 @@
 
 TEST(os_info_utest, IsBigEndian_time) {
     quicx::TimeConsuming tc("IsBigEndian_time");
-    for (int i = 0; i < 1000000; i++) {
+    for (uint32_t i = 0; i < 1000000; i++) {
         quicx::IsBigEndian();
     }
 }

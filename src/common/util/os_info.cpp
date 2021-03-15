@@ -5,7 +5,7 @@ namespace quicx {
 
 bool IsBigEndian() {
     union temp_endian {
-        int i;
+        int32_t i;
         char c;
     } temp;
     temp.i = 1;

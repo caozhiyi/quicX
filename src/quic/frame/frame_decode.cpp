@@ -17,13 +17,14 @@
 #include "handshake_done_frame.h"
 #include "path_challenge_frame.h"
 #include "streams_blocked_frame.h"
-#include "common/util/singleton.h"
 #include "max_stream_data_frame.h"
 #include "connection_close_frame.h"
 #include "new_connection_id_frame.h"
-#include "common/log/log_interface.h"
 #include "stream_data_blocked_frame.h"
 #include "retire_connection_id_frame.h"
+
+#include "common/log/log.h"
+#include "common/util/singleton.h"
 #include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 
