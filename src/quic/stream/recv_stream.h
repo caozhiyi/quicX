@@ -28,7 +28,7 @@ class BlockMemoryPool;
 class SortBufferQueue;
 class RecvStream: public Stream {
 public:
-    RecvStream();
+    RecvStream(StreamType type);
     ~RecvStream();
 
     void Close();

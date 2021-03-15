@@ -19,7 +19,7 @@ typedef std::function<void(uint32_t, int32_t/*errno*/)> StreamWriteBack;
 
 class Stream {
 public:
-    Stream() {}
+    Stream(StreamType type): _stream_type(type), _stream_id(0) {}
     virtual ~Stream() {}
 
     virtual void Close() = 0;
@@ -34,6 +34,7 @@ protected:
     std::shared_ptr<Connection> GetConnection() { return _connection; }
 
 protected:
+    StreamType _stream_type;
     uint64_t _stream_id;
     std::shared_ptr<Connection> _connection;
     std::shared_ptr<StreamStateMachine> _state_machine;

@@ -21,7 +21,7 @@ class AlloterWrap;
 class BlockMemoryPool;
 class SendStream: public Stream {
 public:
-    SendStream();
+    SendStream(StreamType type);
     virtual ~SendStream();
 
     int32_t Write(std::shared_ptr<Buffer> buffer, uint32_t len = 0);

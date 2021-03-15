@@ -1,6 +1,6 @@
 #include "send_stream.h"
 
-#include "common/log/log_interface.h"
+#include "common/log/log.h"
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_queue.h"
 #include "common/alloter/alloter_interface.h"
@@ -9,7 +9,7 @@
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/frame/max_stream_data_frame.h"
-#include "quic/transport/connection_interface.h"
+#include "quic/connection/connection_interface.h"
 #include "quic/frame/stream_data_blocked_frame.h"
 
 namespace quicx {
@@ -86,10 +86,11 @@ bool SendStreamStateMachine::RecvAllAck() {
     return false;
 }
 
-SendStream::SendStream():
+SendStream::SendStream(StreamType type):
+    Stream(type),
     _data_offset(0),
     _peer_data_limit(0) {
-
+    _state_machine = std::shared_ptr<SendStreamStateMachine>();
 }
 
 SendStream::~SendStream() {
