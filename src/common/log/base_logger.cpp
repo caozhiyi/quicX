@@ -14,12 +14,18 @@ enum LogLevelMask {
 };
 
 static void FormatLog(const char* file, uint32_t line, const char* level, const char* content, va_list list, char* buf, uint32_t& len) {
-    // get time
-    char time_buf[__format_time_buf_size] = {0};
-    GetFormatTime(time_buf, __format_time_buf_size);
+    // format level
+    uint32_t curlen = snprintf(buf, len, "[%s|", level);
 
-    uint32_t curlen = snprintf(buf, len, "[%s|%s|%s:%d] ", level, time_buf, file, line);
+    // format time
+    uint32_t size = __format_time_buf_size;
+    GetFormatTime(buf + curlen, size);
+    curlen += size;
+
+    // format other info
+    curlen += snprintf(buf + curlen, len, "|%s:%d] ", file, line);
     curlen += vsnprintf(buf + curlen, len - curlen, content, list);
+
     len = curlen;
 }
 
@@ -52,7 +58,7 @@ void BaseLogger::Debug(const char* file, uint32_t line, const char* content, va_
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "DEBUG", content, list, log->_log, log->_len);
+    FormatLog(file, line, "DEB", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Debug(log);
@@ -65,7 +71,7 @@ void BaseLogger::Info(const char* file, uint32_t line, const char* content, va_l
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "INFO", content, list, log->_log, log->_len);
+    FormatLog(file, line, "INF", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Info(log);
@@ -78,7 +84,7 @@ void BaseLogger::Warn(const char* file, uint32_t line, const char* content, va_l
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "WARN", content, list, log->_log, log->_len);
+    FormatLog(file, line, "WAR", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Warn(log);
@@ -91,7 +97,7 @@ void BaseLogger::Error(const char* file, uint32_t line, const char* content, va_
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "ERROR", content, list, log->_log, log->_len);
+    FormatLog(file, line, "ERR", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Error(log);
@@ -104,7 +110,7 @@ void BaseLogger::Fatal(const char* file, uint32_t line, const char* content, va_
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "FATAL", content, list, log->_log, log->_len);
+    FormatLog(file, line, "FAT", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Fatal(log);

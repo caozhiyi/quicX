@@ -47,7 +47,7 @@ $(BIN):$(OBJS)
 	$(CC) -c $< -o $@ $(CCFLAGS) $(INCLUDES) 
 
 clean:
-	rm -rf $(BIN) $(OBJS)
+	rm -rf $(BIN) $(OBJS) *.log
 
 test:
 	./$(BIN)

@@ -37,10 +37,6 @@ public:
         return _stop;
     }
 
-    static void Sleep(uint32_t interval) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(interval));
-    }
-
 protected:
     Thread(const Thread&) = delete;
     Thread& operator=(const Thread&) = delete;

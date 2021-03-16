@@ -7,10 +7,10 @@
 
 namespace quicx {
 
-class VersionConsultPacket: public Packet {
+class VersionNegotiationPacket: public Packet {
 public:
-    VersionConsultPacket();
-    virtual ~VersionConsultPacket();
+    VersionNegotiationPacket();
+    virtual ~VersionNegotiationPacket();
 
 private:
     union HeaderFormat {
