@@ -2,39 +2,16 @@
 #ifndef QUIC_PACKET_RTT_0_PACKET
 #define QUIC_PACKET_RTT_0_PACKET
 
-#include "packet_interface.h"
+#include "long_header_packet.h"
 
 namespace quicx {
 
-class Rtt0Packet: public Packet {
+class Rtt0Packet: public LongHeaderPacket {
 public:
     Rtt0Packet();
     virtual ~Rtt0Packet();
 
 private:
-    union HeaderFormat {
-        struct {
-            uint8_t _header_from:1;
-            uint8_t _fix_bit:1;
-            uint8_t _packet_type:2;
-            uint8_t _reserved_bits:2;
-            uint8_t _packet_number_length:2;
-        } _header_info;
-        uint8_t _header;
-    };
-
-    HeaderFormat _header_format;
-    uint32_t _version;
-
-    uint8_t _dc_length;
-    char* _dest_connection_id;
-
-    uint8_t _sc_length;
-    char* _src_connection_id;
-
-    uint32_t _toekn_length;
-    char* _token;
-
     uint32_t _payload_length;
     uint32_t _packet_number;
     char* _payload;

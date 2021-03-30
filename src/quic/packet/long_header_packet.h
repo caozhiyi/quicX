@@ -6,11 +6,14 @@
 
 namespace quicx {
 
+static const uint8_t __connection_length_limit = 20;
+
 class LongHeaderPacket: public Packet {
 public:
     LongHeaderPacket();
     virtual ~LongHeaderPacket();
-private:
+
+protected:
     union HeaderFormat {
         struct {
             uint8_t _header_form:1;
@@ -25,10 +28,10 @@ private:
     uint32_t _version;
 
     uint8_t _dc_length;
-    char* _dest_connection_id;
+    char _dest_connection_id[__connection_length_limit];
 
     uint8_t _sc_length;
-    char* _src_connection_id;
+    char _src_connection_id[__connection_length_limit];
 };
 
 }
