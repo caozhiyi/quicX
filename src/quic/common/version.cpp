@@ -31,6 +31,8 @@ std::string ParseVersion(char* packet) {
   } else {
         throw("Packet without version");
   }
+
+  return version;
 }
 
 }
