@@ -19,7 +19,7 @@ public:
 
     virtual void Close() = 0;
 private:
-    uint64_t _connection_id;
+    uint64_t _connection_id; 
 };
 
 }
