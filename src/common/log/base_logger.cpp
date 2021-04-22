@@ -5,13 +5,20 @@
 
 namespace quicx {
 
-enum LogLevelMask {
-    LLM_FATAL        = 0x01,
-    LLM_ERROR        = 0x02,
-    LLM_WARN         = 0x04,
-    LLM_INFO         = 0x08,
-    LLM_DEBUG        = 0x10,
-};
+static void FormatLog(const char* file, uint32_t line, const char* level, char* buf, uint32_t& len) {
+    // format level
+    uint32_t curlen = snprintf(buf, len, "[%s|", level);
+
+    // format time
+    uint32_t size = __format_time_buf_size;
+    GetFormatTime(buf + curlen, size);
+    curlen += size;
+
+    // format other info
+    curlen += snprintf(buf + curlen, len, "|%s:%d] ", file, line);
+
+    len = curlen;
+}
 
 static void FormatLog(const char* file, uint32_t line, const char* level, const char* content, va_list list, char* buf, uint32_t& len) {
     // format level
@@ -112,6 +119,91 @@ void BaseLogger::Fatal(const char* file, uint32_t line, const char* content, va_
     std::shared_ptr<Log> log = GetLog();
     FormatLog(file, line, "FAT", content, list, log->_log, log->_len);
 
+    if (_logger) {
+        _logger->Fatal(log);
+    }
+}
+
+LogStream BaseLogger::DebugStream(const char* file, uint32_t line) {
+    if (!(_level & LLM_DEBUG)) {
+        return std::move(LogStream());
+    }
+
+    std::shared_ptr<Log> log = GetLog();
+    FormatLog(file, line, "DEB", log->_log, log->_len);
+
+    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Debug(l); }));
+}
+
+LogStream BaseLogger::InfoStream(const char* file, uint32_t line) {
+    if (!(_level & LLM_INFO)) {
+        return std::move(LogStream());
+    }
+
+    std::shared_ptr<Log> log = GetLog();
+    FormatLog(file, line, "INF", log->_log, log->_len);
+
+    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Info(l); }));
+}
+
+LogStream BaseLogger::WarnStream(const char* file, uint32_t line) {
+    if (!(_level & LLM_WARN)) {
+        return std::move(LogStream());
+    }
+
+    std::shared_ptr<Log> log = GetLog();
+    FormatLog(file, line, "WAR", log->_log, log->_len);
+
+    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Warn(l); }));
+}
+
+LogStream BaseLogger::ErrorStream(const char* file, uint32_t line) {
+    if (!(_level & LLM_ERROR)) {
+        return std::move(LogStream());
+    }
+
+    std::shared_ptr<Log> log = GetLog();
+    FormatLog(file, line, "ERR", log->_log, log->_len);
+
+    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Error(l); }));
+}
+
+LogStream BaseLogger::FatalStream(const char* file, uint32_t line) {
+    if (!(_level & LLM_FATAL)) {
+        return std::move(LogStream());
+    }
+
+    std::shared_ptr<Log> log = GetLog();
+    FormatLog(file, line, "FAT", log->_log, log->_len);
+
+    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Fatal(l); }));
+}
+
+void BaseLogger::Debug(std::shared_ptr<Log> log) {
+    if (_logger) {
+        _logger->Debug(log);
+    }
+}
+
+void BaseLogger::Info(std::shared_ptr<Log> log) {
+    if (_logger) {
+        _logger->Info(log);
+    }
+}
+
+void BaseLogger::Warn(std::shared_ptr<Log> log) {
+    if (_logger) {
+        _logger->Warn(log);
+    }
+}
+
+void BaseLogger::Error(std::shared_ptr<Log> log) {
+    if (_logger) {
+        _logger->Error(log);
+    }
+}
+
+void BaseLogger::Fatal(std::shared_ptr<Log> log) {
     if (_logger) {
         _logger->Fatal(log);
     }

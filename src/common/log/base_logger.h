@@ -6,9 +6,18 @@
 #include <stdarg.h>
 
 #include "log.h"
+#include "log_stream.h"
 #include "common/structure/thread_safe_queue.h"
 
 namespace quicx {
+
+enum LogLevelMask {
+    LLM_FATAL        = 0x01,
+    LLM_ERROR        = 0x02,
+    LLM_WARN         = 0x04,
+    LLM_INFO         = 0x08,
+    LLM_DEBUG        = 0x10,
+};
 
 // basic management class of log printing
 struct Log;
@@ -29,7 +38,21 @@ public:
     void Error(const char* file, uint32_t line, const char* content, va_list list);
     void Fatal(const char* file, uint32_t line, const char* content, va_list list);
 
+    LogStream DebugStream(const char* file, uint32_t line);
+    LogStream InfoStream(const char* file, uint32_t line);
+    LogStream WarnStream(const char* file, uint32_t line);
+    LogStream ErrorStream(const char* file, uint32_t line);
+    LogStream FatalStream(const char* file, uint32_t line);
+
 private:
+    void Debug(std::shared_ptr<Log> log);
+    void Info(std::shared_ptr<Log> log);
+    void Warn(std::shared_ptr<Log> log);
+    void Error(std::shared_ptr<Log> log);
+    void Fatal(std::shared_ptr<Log> log);
+
+private:
+    friend class LogStream;
     std::shared_ptr<Log> GetLog();
     void FreeLog(Log* log);
     Log* NewLog();
