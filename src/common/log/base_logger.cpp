@@ -5,7 +5,7 @@
 
 namespace quicx {
 
-static void FormatLog(const char* file, uint32_t line, const char* level, char* buf, uint32_t& len) {
+static uint32_t FormatLog(const char* file, uint32_t line, const char* level, char* buf, uint32_t len) {
     // format level
     uint32_t curlen = snprintf(buf, len, "[%s|", level);
 
@@ -15,25 +15,20 @@ static void FormatLog(const char* file, uint32_t line, const char* level, char* 
     curlen += size;
 
     // format other info
-    curlen += snprintf(buf + curlen, len, "|%s:%d] ", file, line);
+    curlen += snprintf(buf + curlen, len - curlen, "|%s:%d] ", file, line);
 
-    len = curlen;
+    return curlen;
 }
 
-static void FormatLog(const char* file, uint32_t line, const char* level, const char* content, va_list list, char* buf, uint32_t& len) {
-    // format level
-    uint32_t curlen = snprintf(buf, len, "[%s|", level);
+static uint32_t FormatLog(const char* file, uint32_t line, const char* level, const char* content, va_list list, char* buf, uint32_t len) {
+    uint32_t curlen = 0;
 
-    // format time
-    uint32_t size = __format_time_buf_size;
-    GetFormatTime(buf + curlen, size);
-    curlen += size;
+    // format level time and file name
+    curlen += FormatLog(file, line, level, buf, len);
 
-    // format other info
-    curlen += snprintf(buf + curlen, len, "|%s:%d] ", file, line);
     curlen += vsnprintf(buf + curlen, len - curlen, content, list);
 
-    len = curlen;
+    return curlen;
 }
 
 BaseLogger::BaseLogger(uint16_t cache_size, uint16_t block_size):
@@ -65,7 +60,7 @@ void BaseLogger::Debug(const char* file, uint32_t line, const char* content, va_
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "DEB", content, list, log->_log, log->_len);
+    log->_len = FormatLog(file, line, "DEB", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Debug(log);
@@ -78,7 +73,7 @@ void BaseLogger::Info(const char* file, uint32_t line, const char* content, va_l
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "INF", content, list, log->_log, log->_len);
+    log->_len = FormatLog(file, line, "INF", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Info(log);
@@ -91,7 +86,7 @@ void BaseLogger::Warn(const char* file, uint32_t line, const char* content, va_l
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "WAR", content, list, log->_log, log->_len);
+    log->_len = FormatLog(file, line, "WAR", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Warn(log);
@@ -104,7 +99,7 @@ void BaseLogger::Error(const char* file, uint32_t line, const char* content, va_
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "ERR", content, list, log->_log, log->_len);
+    log->_len = FormatLog(file, line, "ERR", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Error(log);
@@ -117,96 +112,50 @@ void BaseLogger::Fatal(const char* file, uint32_t line, const char* content, va_
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "FAT", content, list, log->_log, log->_len);
+    log->_len = FormatLog(file, line, "FAT", content, list, log->_log, log->_len);
 
     if (_logger) {
         _logger->Fatal(log);
     }
 }
 
-LogStream BaseLogger::DebugStream(const char* file, uint32_t line) {
-    if (!(_level & LLM_DEBUG)) {
-        return std::move(LogStream());
+LogStreamParam BaseLogger::GetStreamParam(LogLevel level, const char* file, uint32_t line) {
+    // check log level can print
+    if (level > _level) {
+        return std::make_pair(nullptr, nullptr);
     }
 
     std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "DEB", log->_log, log->_len);
-
-    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Debug(l); }));
-}
-
-LogStream BaseLogger::InfoStream(const char* file, uint32_t line) {
-    if (!(_level & LLM_INFO)) {
-        return std::move(LogStream());
+    std::function<void(std::shared_ptr<Log>)> cb;
+    switch (level)
+    {
+    case LL_NULL:
+        break;
+    case LL_FATAL:
+        cb = [this](std::shared_ptr<Log> l) { _logger->Fatal(l); };
+        log->_len = FormatLog(file, line, "FAT", log->_log, log->_len);
+        break;
+    case LL_ERROR:
+        cb = [this](std::shared_ptr<Log> l) { _logger->Error(l); };
+        log->_len = FormatLog(file, line, "ERR", log->_log, log->_len);
+        break;
+    case LL_WARN:
+        cb = [this](std::shared_ptr<Log> l) { _logger->Warn(l); };
+        log->_len = FormatLog(file, line, "WAR", log->_log, log->_len);
+        break;
+    case LL_INFO:
+        cb = [this](std::shared_ptr<Log> l) { _logger->Info(l); };
+        log->_len = FormatLog(file, line, "INF", log->_log, log->_len);
+        break;
+    case LL_DEBUG:
+        cb = [this](std::shared_ptr<Log> l) { _logger->Debug(l); };
+        log->_len = FormatLog(file, line, "DEB", log->_log, log->_len);
+        break;
+    default:
+        return std::make_pair(nullptr, nullptr);
     }
 
-    std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "INF", log->_log, log->_len);
-
-    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Info(l); }));
-}
-
-LogStream BaseLogger::WarnStream(const char* file, uint32_t line) {
-    if (!(_level & LLM_WARN)) {
-        return std::move(LogStream());
-    }
-
-    std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "WAR", log->_log, log->_len);
-
-    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Warn(l); }));
-}
-
-LogStream BaseLogger::ErrorStream(const char* file, uint32_t line) {
-    if (!(_level & LLM_ERROR)) {
-        return std::move(LogStream());
-    }
-
-    std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "ERR", log->_log, log->_len);
-
-    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Error(l); }));
-}
-
-LogStream BaseLogger::FatalStream(const char* file, uint32_t line) {
-    if (!(_level & LLM_FATAL)) {
-        return std::move(LogStream());
-    }
-
-    std::shared_ptr<Log> log = GetLog();
-    FormatLog(file, line, "FAT", log->_log, log->_len);
-
-    return std::move(LogStream(log, [this](std::shared_ptr<Log> l) { Fatal(l); }));
-}
-
-void BaseLogger::Debug(std::shared_ptr<Log> log) {
-    if (_logger) {
-        _logger->Debug(log);
-    }
-}
-
-void BaseLogger::Info(std::shared_ptr<Log> log) {
-    if (_logger) {
-        _logger->Info(log);
-    }
-}
-
-void BaseLogger::Warn(std::shared_ptr<Log> log) {
-    if (_logger) {
-        _logger->Warn(log);
-    }
-}
-
-void BaseLogger::Error(std::shared_ptr<Log> log) {
-    if (_logger) {
-        _logger->Error(log);
-    }
-}
-
-void BaseLogger::Fatal(std::shared_ptr<Log> log) {
-    if (_logger) {
-        _logger->Fatal(log);
-    }
+    return std::make_pair(log, cb);
 }
 
 std::shared_ptr<Log> BaseLogger::GetLog() {

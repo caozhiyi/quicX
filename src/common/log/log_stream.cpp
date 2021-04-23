@@ -4,16 +4,11 @@
 
 namespace quicx {
 
-#define CHECK_CONTINUE() while(0) {                 \
-    if (_log && _log->_len >= __log_block_size) {   \
-        return *this;                               \
-    }                                               \
-}
+#define CHECK_CONTINUE()  do{ if (!_log || _log->_len >= __log_block_size) { return *this; }  } while(0);
 
-LogStream::LogStream(std::shared_ptr<Log> log,
-    std::function<void(std::shared_ptr<Log>)> call_back):
-    _log(log),
-    _call_back(call_back) {
+LogStream::LogStream(const LogStreamParam& param):
+    _log(param.first),
+    _call_back(param.second) {
 
 }
 
@@ -97,14 +92,14 @@ LogStream& LogStream::operator<<(long long v) {
 LogStream& LogStream::operator<<(float v) {
     CHECK_CONTINUE()
 
-    _log->_len += snprintf(_log->_log + _log->_len, __log_block_size - _log->_len, "%f", v);
+    _log->_len += snprintf(_log->_log + _log->_len, __log_block_size - _log->_len, "%.10lf", v);
     return *this;
 }
 
 LogStream& LogStream::operator<<(double v) {
     CHECK_CONTINUE()
 
-    _log->_len += snprintf(_log->_log + _log->_len, __log_block_size - _log->_len, "%f", v);
+    _log->_len += snprintf(_log->_log + _log->_len, __log_block_size - _log->_len, "%.20lf", v);
     return *this;
 }
 

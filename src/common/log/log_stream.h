@@ -6,12 +6,12 @@
 #include <functional>
 
 namespace quicx {
-
 class Log;
+typedef std::pair<std::shared_ptr<Log>, std::function<void(std::shared_ptr<Log>)>> LogStreamParam;
+
 class LogStream {
 public:
-    LogStream(std::shared_ptr<Log> log = nullptr, 
-        std::function<void(std::shared_ptr<Log>)> call_back = nullptr);
+    LogStream(const LogStreamParam& param);
     ~LogStream();
 
     LogStream& Stream() { return *this; }
@@ -31,6 +31,10 @@ public:
     LogStream& operator<<(const std::string& v);
     LogStream& operator<<(const char* v);
     LogStream& operator<<(char v);
+
+private:
+    LogStream(const LogStream&) = delete;
+    LogStream& operator=(const LogStream&) = delete;
 
 private:
     std::shared_ptr<Log> _log;

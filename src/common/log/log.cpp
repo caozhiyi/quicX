@@ -56,24 +56,8 @@ void SingletonLogger::Fatal(const char* file, uint32_t line, const char* log...)
     va_end(list);
 }
 
-LogStream SingletonLogger::DebugStream(const char* file, uint32_t line) {
-    return _logger->DebugStream(file, line);
-}
-
-LogStream SingletonLogger::InfoStream(const char* file, uint32_t line) {
-    return _logger->InfoStream(file, line);
-}
-
-LogStream SingletonLogger::WarnStream(const char* file, uint32_t line) {
-    return _logger->WarnStream(file, line);
-}
-
-LogStream SingletonLogger::ErrorStream(const char* file, uint32_t line) {
-    return _logger->ErrorStream(file, line);
-}
-
-LogStream SingletonLogger::FatalStream(const char* file, uint32_t line) {
-    return _logger->FatalStream(file, line);
+LogStreamParam SingletonLogger::GetStreamParam(LogLevel level, const char* file, uint32_t line) {
+    return _logger->GetStreamParam(level, file, line);
 }
 
 }

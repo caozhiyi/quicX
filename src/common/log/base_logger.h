@@ -38,21 +38,9 @@ public:
     void Error(const char* file, uint32_t line, const char* content, va_list list);
     void Fatal(const char* file, uint32_t line, const char* content, va_list list);
 
-    LogStream DebugStream(const char* file, uint32_t line);
-    LogStream InfoStream(const char* file, uint32_t line);
-    LogStream WarnStream(const char* file, uint32_t line);
-    LogStream ErrorStream(const char* file, uint32_t line);
-    LogStream FatalStream(const char* file, uint32_t line);
+    LogStreamParam GetStreamParam(LogLevel level, const char* file, uint32_t line);
 
 private:
-    void Debug(std::shared_ptr<Log> log);
-    void Info(std::shared_ptr<Log> log);
-    void Warn(std::shared_ptr<Log> log);
-    void Error(std::shared_ptr<Log> log);
-    void Fatal(std::shared_ptr<Log> log);
-
-private:
-    friend class LogStream;
     std::shared_ptr<Log> GetLog();
     void FreeLog(Log* log);
     Log* NewLog();
