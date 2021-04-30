@@ -1,3 +1,8 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #include <cstring>
 #include <cstdlib>
 
@@ -105,7 +110,7 @@ void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
 void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
     char* res;
     uint32_t need_bytes = size * nums;
-    uint32_t left_bytes = _pool_end - _pool_start;
+    uint32_t left_bytes = uint32_t(_pool_end - _pool_start);
 
     //pool is enough
     if (left_bytes >= need_bytes) {
