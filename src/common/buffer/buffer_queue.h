@@ -1,12 +1,18 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #ifndef COMMON_BUFFER_BUFFER_QUEUE
 #define COMMON_BUFFER_BUFFER_QUEUE
 
 #include <vector>
 #include <memory>
+
 #include "buffer_interface.h"
-#include "network/io_handle.h"
 #include "common/structure/list.h"
-#include "alloter/alloter_interface.h"
+#include "common/network/io_handle.h"
+#include "common/alloter/alloter_interface.h"
 
 namespace quicx {
 
@@ -60,7 +66,8 @@ public:
     // get use memory block, 
     // block_vec: memory block vector.
     // return size of use memory. 
-    virtual uint32_t GetUseMemoryBlock(std::vector<Iovec>& block_vec, uint32_t max_size = 4096);
+    // if size = 0, return all used memory block. 
+    virtual uint32_t GetUseMemoryBlock(std::vector<Iovec>& block_vec, uint32_t max_size = 0);
 
     // return can read bytes
     virtual uint32_t FindStr(const char* s, uint32_t s_len);
@@ -73,6 +80,8 @@ protected:
     virtual void Append();
 
 protected:
+    uint32_t _can_read_length;
+
     List<BufferBlock> _buffer_list;
     std::shared_ptr<BufferBlock> _buffer_write;
     

@@ -1,6 +1,11 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #include <cstring>
 #include "buffer_block.h"
-#include "alloter/pool_block.h"
+#include "common/alloter/pool_block.h"
 
 namespace quicx {
 
@@ -8,16 +13,19 @@ BufferBlock::BufferBlock(std::shared_ptr<BlockMemoryPool>& alloter) :
     _alloter(alloter), 
     _can_read(false) {
 
-    _buffer_start = (char*)_alloter->PoolLargeMalloc();
-    _total_size = _alloter->GetBlockLength();
+    _buffer_start = (char*)alloter->PoolLargeMalloc();
+    _total_size = alloter->GetBlockLength();
     _buffer_end = _buffer_start + _total_size;
     _read = _write = _buffer_start;
 }
 
 BufferBlock::~BufferBlock() {
     if (_buffer_start) {
-        void* m = (void*)_buffer_start;
-        _alloter->PoolLargeFree(m);
+        auto alloter = _alloter.lock();
+        if (alloter) {
+			void* m = (void*)_buffer_start;
+            alloter->PoolLargeFree(m);
+        }
     }
 }
 
@@ -428,32 +436,32 @@ bool BufferBlock::GetUseMemoryBlock(void*& res1, uint32_t& len1, void*& res2, ui
 
 uint32_t BufferBlock::FindStr(const char* s, uint32_t s_len) {
     if (_write > _read) {
-        const char* find = _FindStrInMem(_read, s, _write - _read, s_len);
+        const char* find = _FindStrInMem(_read, s, uint32_t(_write - _read), s_len);
         if (find) {
             return (uint32_t)(find - _read + s_len);
         }
         return 0;
         
     } else if (_write < _read) {
-        const char* find = _FindStrInMem(_read, s, _buffer_end - _read, s_len);
+        const char* find = _FindStrInMem(_read, s, uint32_t(_buffer_end - _read), s_len);
         if (find) {
-            return find - _read + s_len;
+            return uint32_t(find - _read + s_len);
         }
-        find = _FindStrInMem(_buffer_start, s, _write - _buffer_start, s_len);
+        find = _FindStrInMem(_buffer_start, s, uint32_t(_write - _buffer_start), s_len);
         if (find) {
-            return find - _buffer_start + s_len + _buffer_end - _read;
+            return uint32_t(find - _buffer_start + s_len + _buffer_end - _read);
         }
         return 0;
 
     } else {
         if (_can_read) {
-            const char* find = _FindStrInMem(_read, s, _buffer_end - _read, s_len);
+            const char* find = _FindStrInMem(_read, s, uint32_t(_buffer_end - _read), s_len);
             if (find) {
-                return find - _read + s_len;
+                return uint32_t(find - _read + s_len);
             }
-            find = _FindStrInMem(_buffer_start, s, _write - _buffer_start, s_len);
+            find = _FindStrInMem(_buffer_start, s, uint32_t(_write - _buffer_start), s_len);
             if (find) {
-                return find - _buffer_start + s_len + _buffer_end - _read;
+                return uint32_t(find - _buffer_start + s_len + _buffer_end - _read);
             }
             return 0;
 
@@ -464,7 +472,7 @@ uint32_t BufferBlock::FindStr(const char* s, uint32_t s_len) {
 }
 
 std::shared_ptr<BlockMemoryPool> BufferBlock::GetBlockMemoryPool() {
-    return _alloter;
+    return _alloter.lock();
 }
 
 const char* BufferBlock::_FindStrInMem(const char* buffer, const char* ch, uint32_t buffer_len, uint32_t ch_len) const {

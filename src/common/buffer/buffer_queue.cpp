@@ -1,19 +1,27 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #include "buffer_queue.h"
 #include "buffer_block.h"
-#include "alloter/pool_block.h"
-#include "alloter/alloter_interface.h"
+#include "common/alloter/pool_block.h"
+#include "common/alloter/alloter_interface.h"
 
 namespace quicx {
 
+static const uint8_t __block_vec_default_size = 8;
+
 BufferQueue::BufferQueue(const std::shared_ptr<BlockMemoryPool>& block_pool, 
     const std::shared_ptr<AlloterWrap>& alloter):
+    _can_read_length(0),
     _block_alloter(block_pool),
     _alloter(alloter) {
 
 }
 
 BufferQueue::~BufferQueue() {
-
+    _buffer_list.Clear();
 }
 
 uint32_t BufferQueue::ReadNotMovePt(char* res, uint32_t len) {
@@ -90,6 +98,8 @@ uint32_t BufferQueue::Read(std::shared_ptr<Buffer> buffer, uint32_t len) {
             break;
         }
     }
+    _can_read_length -= total_read_len;
+    buffer_queue->_can_read_length += total_read_len;
     return total_read_len;
 }
 
@@ -150,6 +160,8 @@ uint32_t BufferQueue::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
             break;
         }
     }
+    _can_read_length += total_write_len;
+    buffer_queue->_can_read_length -= total_write_len;
     return total_write_len;
 }
 
@@ -176,7 +188,11 @@ uint32_t BufferQueue::Read(char* res, uint32_t len) {
         }
         _buffer_list.PopFront();
         buffer_read = _buffer_list.GetHead();
+		if (buffer_read->GetCanReadLength() == 0) {
+            break;
+		}
     }
+    _can_read_length -= total_read_len;
     return total_read_len;
 }
 
@@ -200,15 +216,17 @@ uint32_t BufferQueue::Write(const char* str, uint32_t len) {
         }
         _buffer_write = _buffer_write->GetNext();
     }
+    _can_read_length += write_len;
     return write_len;
 }
 
 void BufferQueue::Clear() {
+    _can_read_length = 0;
     Reset();
 }
 
 int32_t BufferQueue::MoveReadPt(int32_t len) {
-    uint32_t total_read_len = 0;
+    int32_t total_read_len = 0;
     auto buffer_read = _buffer_list.GetHead();
 
     if (len >= 0) {
@@ -236,11 +254,12 @@ int32_t BufferQueue::MoveReadPt(int32_t len) {
         total_read_len += buffer_read->MoveReadPt(len);
     }
 
+    _can_read_length -= total_read_len;
     return total_read_len;
 }
 
 int32_t BufferQueue::MoveWritePt(int32_t len) {
-    uint32_t total_write_len = 0;
+    int32_t total_write_len = 0;
     if (len >= 0) {
         while (_buffer_write) {
             total_write_len += _buffer_write->MoveWritePt(len - total_write_len);
@@ -259,7 +278,7 @@ int32_t BufferQueue::MoveWritePt(int32_t len) {
             _buffer_write = _buffer_write->GetPrev();
         }
     }
-
+    _can_read_length += total_write_len;
     return total_write_len;
 }
 
@@ -304,20 +323,7 @@ uint32_t BufferQueue::GetCanWriteLength() {
 }
     
 uint32_t BufferQueue::GetCanReadLength() {
-    if (_buffer_list.Size() == 0) {
-        return 0;
-    }
-
-    std::shared_ptr<BufferBlock> temp = _buffer_list.GetHead();
-    uint32_t total_len = 0;
-    while (temp) {
-        total_len += temp->GetCanReadLength();
-        if (temp == _buffer_write) {
-            break;
-        }
-        temp = temp->GetNext();
-    }
-    return total_len;
+    return _can_read_length;
 }
 
 uint32_t BufferQueue::GetFreeMemoryBlock(std::vector<Iovec>& block_vec, uint32_t size) {
@@ -326,6 +332,7 @@ uint32_t BufferQueue::GetFreeMemoryBlock(std::vector<Iovec>& block_vec, uint32_t
     uint32_t mem_len_1 = 0;
     uint32_t mem_len_2 = 0;
 
+    block_vec.reserve(__block_vec_default_size);
     std::shared_ptr<BufferBlock> temp = _buffer_write;
     uint32_t cur_len = 0;
     if (size > 0) {
@@ -337,25 +344,31 @@ uint32_t BufferQueue::GetFreeMemoryBlock(std::vector<Iovec>& block_vec, uint32_t
         
             temp->GetFreeMemoryBlock(mem_1, mem_len_1, mem_2, mem_len_2);
             if (mem_len_1 > 0) {
-                block_vec.push_back(Iovec(mem_1, mem_len_1));
+                block_vec.emplace_back(Iovec(mem_1, mem_len_1));
                 cur_len += mem_len_1;
             }
             if (mem_len_2 > 0) {
-                block_vec.push_back(Iovec(mem_2, mem_len_2));
+                block_vec.emplace_back(Iovec(mem_2, mem_len_2));
                 cur_len += mem_len_2;
             }
             temp = temp->GetNext();
         }
 
     } else {
+        // add one block
+        if (!temp) {
+            Append();
+            temp = _buffer_list.GetTail();
+        }
+        
         while (temp) {
             temp->GetFreeMemoryBlock(mem_1, mem_len_1, mem_2, mem_len_2);
             if (mem_len_1 > 0) {
-                block_vec.push_back(Iovec(mem_1, mem_len_1));
+                block_vec.emplace_back(Iovec(mem_1, mem_len_1));
                 cur_len += mem_len_1;
             }
             if (mem_len_2 > 0) {
-                block_vec.push_back(Iovec(mem_2, mem_len_2));
+                block_vec.emplace_back(Iovec(mem_2, mem_len_2));
                 cur_len += mem_len_2;
             }
             if (temp == _buffer_list.GetTail()) {
@@ -373,22 +386,23 @@ uint32_t BufferQueue::GetUseMemoryBlock(std::vector<Iovec>& block_vec, uint32_t 
     uint32_t mem_len_1 = 0;
     uint32_t mem_len_2 = 0;
 
+    block_vec.reserve(__block_vec_default_size);
     std::shared_ptr<BufferBlock> temp = _buffer_list.GetHead();
     uint32_t cur_len = 0;
     while (temp) {
         temp->GetUseMemoryBlock(mem_1, mem_len_1, mem_2, mem_len_2);
         if (mem_len_1 > 0) {
-            block_vec.push_back(Iovec(mem_1, mem_len_1));
+            block_vec.emplace_back(Iovec(mem_1, mem_len_1));
             cur_len += mem_len_1;
         }
         if (mem_len_2 > 0) {
-            block_vec.push_back(Iovec(mem_2, mem_len_2));
+            block_vec.emplace_back(Iovec(mem_2, mem_len_2));
             cur_len += mem_len_2;
         }
         if (temp == _buffer_write) {
             break;
         }
-        if (cur_len >= max_size) {
+        if (max_size > 0 && cur_len >= max_size) {
             break;
         }
         temp = temp->GetNext();

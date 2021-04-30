@@ -1,3 +1,8 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #ifndef COMMON_BUFFER_BUFFER_BLOCK
 #define COMMON_BUFFER_BUFFER_BLOCK
 
@@ -75,7 +80,7 @@ private:
     char*    _buffer_start;
     char*    _buffer_end;
     bool     _can_read;         //when _read == _write? Is there any data can be read.
-    std::shared_ptr<BlockMemoryPool> _alloter;
+    std::weak_ptr<BlockMemoryPool> _alloter;
 };
 }
 
