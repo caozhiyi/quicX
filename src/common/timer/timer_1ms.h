@@ -1,12 +1,17 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #ifndef COMMON_TIMER_TIMER_1MS
 #define COMMON_TIMER_TIMER_1MS
 
 #include <list>
 #include <vector>
 
-#include "util/bitmap.h"
 #include "timer_solt.h"
 #include "timer_interface.h"
+#include "common/util/bitmap.h"
 
 namespace quicx {
 
