@@ -48,6 +48,12 @@ public:
 
         auto ret = _tail;
         _tail = _tail->GetPrev();
+        if (!_tail) {
+            _head.reset();
+
+        } else {
+            _tail->SetNext(nullptr);
+        }
         _size--;
 
         return ret;
@@ -77,6 +83,10 @@ public:
 
         auto ret = _head;
         _head = _head->GetNext();
+        if (!_head) {
+            _tail.reset();
+        }
+        
         _size--;
 
         return ret;
