@@ -18,7 +18,7 @@ public:
     bool version_flag;
 
     // ********google quic********
-}
+};
 
 }
 
