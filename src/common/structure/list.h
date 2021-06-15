@@ -1,3 +1,8 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #ifndef COMMON_STRUCTURE_LIST
 #define COMMON_STRUCTURE_LIST
 
@@ -20,6 +25,7 @@ public:
 
     void Clear() {
         _size = 0;
+
         _head.reset();
         _tail.reset();
     }

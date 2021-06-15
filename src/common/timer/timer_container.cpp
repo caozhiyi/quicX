@@ -76,6 +76,10 @@ bool TimerContainer::RmTimer(std::weak_ptr<TimerSolt> t) {
 }
 
 int32_t TimerContainer::MinTime() {
+    if (_bitmap.Empty()) {
+        return NO_TIMER;
+    }
+
     int32_t sub_time = _sub_timer->MinTime();
     int32_t local_time = LocalMinTime();
 

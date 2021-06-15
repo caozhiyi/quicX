@@ -1,3 +1,8 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #ifndef COMMON_UTIL_BITMAP
 #define COMMON_UTIL_BITMAP
 
@@ -26,6 +31,9 @@ public:
     // get min index after input param
     // if return -1, means the bitmap has no value
     int32_t GetMinAfter(uint32_t index = 0);
+
+    // bitmap is empty
+    bool Empty();
 
 private:
     std::vector<int64_t> _bitmap;

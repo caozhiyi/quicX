@@ -18,7 +18,9 @@ namespace quicx {
 // the base timer wheel, 
 // time unit is millisecond, 
 // and max support 50 milliseconds.
-class Timer1ms : public Timer {
+class Timer1ms: 
+    public Timer {
+
 public:
     Timer1ms();
     ~Timer1ms();

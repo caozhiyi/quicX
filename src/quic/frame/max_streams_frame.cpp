@@ -8,7 +8,7 @@ namespace quicx {
 
 
 MaxStreamsFrame::MaxStreamsFrame(): 
-    Frame(FT_MAX_STREAMS),
+    Frame(FT_MAX_STREAMS_BIDIRECTIONAL),
     _maximum_streams(0) {
 
 }

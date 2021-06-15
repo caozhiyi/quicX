@@ -11,7 +11,6 @@
 
 namespace quicx {
 
-
 PoolAlloter::PoolAlloter() : 
     _pool_start(nullptr),
     _pool_end(nullptr) {
@@ -34,7 +33,7 @@ void* PoolAlloter::Malloc(uint32_t size) {
         void* ret = _alloter->Malloc(size);
         return ret;
     }
-    
+
     MemNode** my_free = &(_free_list[FreeListIndex(size)]);
     MemNode* result = *my_free;
     if (result == nullptr) {
@@ -68,7 +67,7 @@ void PoolAlloter::Free(void* &data, uint32_t len) {
         data = nullptr;
         return;
     }
-    
+
     MemNode* node = (MemNode*)data;
     MemNode** my_free = &(_free_list[FreeListIndex(len)]);
     

@@ -1,3 +1,8 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #ifndef QUIC_COMMON_LOG_BASE_LOGGER
 #define QUIC_COMMON_LOG_BASE_LOGGER
 
@@ -11,14 +16,6 @@
 
 namespace quicx {
 
-enum LogLevelMask {
-    LLM_FATAL        = 0x01,
-    LLM_ERROR        = 0x02,
-    LLM_WARN         = 0x04,
-    LLM_INFO         = 0x08,
-    LLM_DEBUG        = 0x10,
-};
-
 // basic management class of log printing
 struct Log;
 class Logger;
@@ -30,7 +27,7 @@ public:
 
     void SetLogger(std::shared_ptr<Logger> log) { _logger = log; }
 
-    void SetLevel(LogLevel level) { _level = level; }
+    void SetLevel(LogLevel level);
 
     void Debug(const char* file, uint32_t line, const char* content, va_list list);
     void Info(const char* file, uint32_t line, const char* content, va_list list);

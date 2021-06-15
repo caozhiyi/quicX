@@ -1,7 +1,10 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #include <cmath>
 #include "bitmap.h"
-
-#include <iostream>
 
 namespace quicx {
 
@@ -27,6 +30,10 @@ bool Bitmap::Init(uint32_t size) {
         vec_size++;
     }
     _bitmap.resize(vec_size);
+    for (std::size_t i = 0; i < _bitmap.size(); i++) {
+        _bitmap[i] = 0;
+    }
+    
     return true;
 }
 
@@ -36,7 +43,7 @@ bool Bitmap::Insert(uint32_t index) {
     }
 
     uint32_t step = index;
-    for (size_t i = 0; i < _bitmap.size(); i++) {
+    for (std::size_t i = 0; i < _bitmap.size(); i++) {
         if (index < (i + 1) * __step_size) {
             _bitmap[i] = _bitmap[i] | (__bit_base << step);
             return true;
@@ -52,7 +59,7 @@ bool Bitmap::Remove(uint32_t index) {
     }
 
     uint32_t step = index;
-    for (size_t i = 0; i < _bitmap.size(); i++) {
+    for (std::size_t i = 0; i < _bitmap.size(); i++) {
         if (index < (i + 1) * __step_size) {
             _bitmap[i] = _bitmap[i] & (~(__bit_base << step));
             return true;
@@ -71,8 +78,8 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
         return -1;
     }
 
-    int32_t ret = 0;
-    for (size_t i = 0; i < _bitmap.size(); i++) {
+    uint32_t ret = 0;
+    for (std::size_t i = 0; i < _bitmap.size(); i++) {
         if (index > (i + 1) * __step_size) {
             ret += __step_size;
 
@@ -91,7 +98,7 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
                     continue;
                 }
                 ret += cur_step;
-                ret += std::log2f(cur_bitmap & (-cur_bitmap));
+                ret += (uint32_t)std::log2f(float(cur_bitmap & (-cur_bitmap)));
                 return ret;
 
             } else {
@@ -100,13 +107,22 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
                     ret += __step_size;
                     continue;
                 }
-                ret += std::log2f(cur_bitmap & (-cur_bitmap));
+                ret += (uint32_t)std::log2f(float(cur_bitmap & (-cur_bitmap)));
                 return ret;
             }
            
         }
     }
     return -1;
+}
+
+bool Bitmap::Empty() {
+    for (std::size_t i = 0; i < _bitmap.size(); i++) {
+        if (_bitmap[i] != 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }

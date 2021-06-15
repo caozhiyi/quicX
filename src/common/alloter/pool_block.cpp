@@ -9,18 +9,20 @@
 
 namespace quicx {
 
+static const uint16_t __max_block_num = 20;
 
 BlockMemoryPool::BlockMemoryPool(uint32_t large_sz, uint32_t add_num) :
-                                  _number_large_add_nodes(add_num),
-                                  _large_size(large_sz){
+    _number_large_add_nodes(add_num),
+    _large_size(large_sz) {
 
 }
 
 BlockMemoryPool::~BlockMemoryPool() {
     // free all memory
-    for (auto iter = _all_mem_vec.begin(); iter != _all_mem_vec.end(); ++iter) {
+    for (auto iter = _free_mem_vec.begin(); iter != _free_mem_vec.end(); ++iter) {
         free(*iter);
     }
+    _free_mem_vec.clear();
 }
 
 void* BlockMemoryPool::PoolLargeMalloc() {
@@ -35,6 +37,10 @@ void* BlockMemoryPool::PoolLargeMalloc() {
 
 void BlockMemoryPool::PoolLargeFree(void* &m) {
     _free_mem_vec.push_back(m);
+    if (_free_mem_vec.size() > __max_block_num) {
+        // release some block.
+        ReleaseHalf();
+    }
 }
 
 uint32_t BlockMemoryPool::GetSize() {
@@ -51,10 +57,6 @@ void BlockMemoryPool::ReleaseHalf() {
     for (auto iter = _free_mem_vec.begin(); iter != _free_mem_vec.end();) {
         void* mem = *iter;
 
-        auto all_iter = std::find(_all_mem_vec.begin(), _all_mem_vec.end(), mem);
-        if (all_iter != _all_mem_vec.end()) {
-            _all_mem_vec.erase(all_iter);
-        }
         iter = _free_mem_vec.erase(iter);
         free(mem);
         
@@ -74,7 +76,6 @@ void BlockMemoryPool::Expansion(uint32_t num) {
         void* mem = malloc(_large_size);
         // not memset!
         _free_mem_vec.push_back(mem);
-        _all_mem_vec.push_back(mem);
     }
 }
 

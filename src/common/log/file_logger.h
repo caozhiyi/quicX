@@ -1,3 +1,8 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #ifndef QUIC_COMMON_LOG_FILE_LOGGER
 #define QUIC_COMMON_LOG_FILE_LOGGER
 
@@ -6,7 +11,7 @@
 #include <fstream>
 
 #include "logger_interface.h"
-#include "thread/thread_with_queue.h"
+#include "common/thread/thread_with_queue.h"
 
 namespace quicx {
 
@@ -17,9 +22,12 @@ enum FileLoggerSpiltUnit {
     FLSU_HOUR = 2,
 };
 
-class FileLogger: public Logger, public ThreadWithQueue<std::shared_ptr<Log>> {
+class FileLogger: 
+    public Logger, 
+    public ThreadWithQueue<std::shared_ptr<Log>> {
+
 public:
-    FileLogger(const std::string& file = "quicx", 
+    FileLogger(const std::string& file, 
         FileLoggerSpiltUnit unit = FLSU_DAY, 
         uint16_t max_store_days = 3,
         uint16_t time_offset = 5);

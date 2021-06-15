@@ -1,9 +1,22 @@
+// Use of this source code is governed by a BSD 3-Clause License
+// that can be found in the LICENSE file.
+
+// Author: caozhiyi (caozhiyi5@gmail.com)
+
 #include "base_logger.h"
 #include "logger_interface.h"
 #include "common/util/time.h"
 #include "common/alloter/normal_alloter.h"
 
 namespace quicx {
+
+enum LogLevelMask {
+    LLM_FATAL        = 0x01,
+    LLM_ERROR        = 0x02,
+    LLM_WARN         = 0x04,
+    LLM_INFO         = 0x08,
+    LLM_DEBUG        = 0x10,
+};
 
 static uint32_t FormatLog(const char* file, uint32_t line, const char* level, char* buf, uint32_t len) {
     // format level
@@ -37,19 +50,28 @@ BaseLogger::BaseLogger(uint16_t cache_size, uint16_t block_size):
     _block_size(block_size) {
 
     _allocter = MakeNormalAlloterPtr();
-    for (uint16_t i = 0; i < _cache_size; i++) {
-        _cache_queue.Push(NewLog());
-    }
 }
 
 BaseLogger::~BaseLogger() {
-    size_t size = _cache_queue.Size();
-    Log* log = nullptr;
-    void* del = nullptr;
-    for (size_t i = 0; i < size; i++) {
-        if(_cache_queue.Pop(log)) {
-            del = (void*)log;
-            _allocter->Free(del);
+    SetLevel(LL_NULL);
+}
+
+void BaseLogger::SetLevel(LogLevel level) { 
+    _level = level; 
+    if (_level > LL_NULL && _cache_queue.Empty()) {
+        for (uint16_t i = 0; i < _cache_size; i++) {
+            _cache_queue.Push(NewLog());
+        }
+
+    } else if (_level == LL_NULL) {
+        size_t size = _cache_queue.Size();
+        Log* log = nullptr;
+        void* del = nullptr;
+        for (size_t i = 0; i < size; i++) {
+            if (_cache_queue.Pop(log)) {
+                del = (void*)log;
+                _allocter->Free(del);
+            }
         }
     }
 }

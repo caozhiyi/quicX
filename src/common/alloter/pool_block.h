@@ -12,33 +12,32 @@
 
 namespace quicx {
 
-// all memory must return memory pool before destory.
+// all memory must return memory pool before destroy.
 class BlockMemoryPool {
 public:
     // bulk memory size. 
-    // everytime add nodes num
+    // every time add nodes num
     BlockMemoryPool(uint32_t large_sz, uint32_t add_num);
-    ~BlockMemoryPool();
+    virtual ~BlockMemoryPool();
 
     // for bulk memory. 
     // return one bulk memory node
-    void* PoolLargeMalloc();
-    void PoolLargeFree(void* &m);
+    virtual void* PoolLargeMalloc();
+    virtual void PoolLargeFree(void* &m);
 
     // return bulk memory list size
-    uint32_t GetSize();
+    virtual uint32_t GetSize();
     // return length of bulk memory
-    uint32_t GetBlockLength();
+    virtual uint32_t GetBlockLength();
 
     // release half memory
-    void ReleaseHalf();
-    void Expansion(uint32_t num = 0);
+    virtual void ReleaseHalf();
+    virtual void Expansion(uint32_t num = 0);
 
 private:
     uint32_t                  _number_large_add_nodes; //every time add nodes num
     uint32_t                  _large_size;             //bulk memory size
     std::vector<void*>        _free_mem_vec;           //free bulk memory list
-    std::vector<void*>        _all_mem_vec;
 };
 
 std::shared_ptr<BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num);
