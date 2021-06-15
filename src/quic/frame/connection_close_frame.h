@@ -27,6 +27,7 @@ public:
     const std::string& GetReason() { return _reason; }
 
 private:
+    bool _is_application_error;
     uint32_t _error_code;        // indicates the reason for closing this connection.
     uint32_t _err_frame_type;    // the type of frame that triggered the error.
     std::string _reason;

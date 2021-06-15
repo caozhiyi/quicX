@@ -19,7 +19,8 @@ public:
     uint64_t GetMaximumStreams() { return _maximum_streams; }
 
 private:
-   uint64_t _maximum_streams;  // A count of the cumulative number of streams of the corresponding type that can be opened over the lifetime of the connection.
+    uint8_t _stream_type;
+    uint64_t _maximum_streams;  // A count of the cumulative number of streams of the corresponding type that can be opened over the lifetime of the connection.
 };
 
 }

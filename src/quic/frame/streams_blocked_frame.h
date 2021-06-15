@@ -19,7 +19,8 @@ public:
     uint64_t GetStreamLimit() { return _stream_limit; }
 
 private:
-   uint32_t _stream_limit;  // the stream limit at the time the frame was sent.
+    uint8_t _stream_type;
+    uint32_t _stream_limit;  // the stream limit at the time the frame was sent.
 };
 
 }

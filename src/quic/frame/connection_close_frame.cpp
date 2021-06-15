@@ -7,6 +7,7 @@ namespace quicx {
 
 ConnectionCloseFrame::ConnectionCloseFrame():
     Frame(FT_CONNECTION_CLOSE),
+    _is_application_error(false),
     _error_code(0),
     _err_frame_type(0) {
 
@@ -14,6 +15,7 @@ ConnectionCloseFrame::ConnectionCloseFrame():
 
 ConnectionCloseFrame::ConnectionCloseFrame(uint16_t frame_type):
     Frame(frame_type),
+     _is_application_error(false),
     _error_code(0),
     _err_frame_type(0) {
 

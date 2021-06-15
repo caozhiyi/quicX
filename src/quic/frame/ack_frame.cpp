@@ -7,9 +7,7 @@ namespace quicx {
 
 AckFrame::AckFrame():
     Frame(FT_ACK),
-    _largest_ack(0),
-    _ack_delay(0),
-    _first_ack_range(0) {
+    _ack_delay(0) {
 
 }
 
@@ -23,14 +21,12 @@ bool AckFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWra
     char* pos = data;
 
     pos = EncodeFixed<uint16_t>(pos, _frame_type);
-    pos = EncodeVarint(pos, _largest_ack);
     pos = EncodeVarint(pos, _ack_delay);
     pos = EncodeVarint(pos, _ack_ranges.size());
-    pos = EncodeVarint(pos, _first_ack_range);
 
     for (size_t i = 0; i < _ack_ranges.size(); i++) {
-        pos = EncodeVarint(pos, _ack_ranges[i]._gap);
-        pos = EncodeVarint(pos, _ack_ranges[i]._ack_range);
+        pos = EncodeVarint(pos, _ack_ranges[i].GetSmallest());
+        pos = EncodeVarint(pos, _ack_ranges[i].GetLargest());
     }
     
     buffer->Write(data, pos - data);
@@ -50,11 +46,9 @@ bool AckFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWra
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _largest_ack);
     pos = DecodeVirint(pos, data + size, _ack_delay);
     uint32_t ack_range_count = 0;
     pos = DecodeVirint(pos, data + size, ack_range_count);
-    pos = DecodeVirint(pos, data + size, _first_ack_range);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
@@ -64,12 +58,12 @@ bool AckFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWra
     buffer->ReadNotMovePt(data, size);
     pos = data;
 
-    uint32_t gap;
-    uint32_t range;
+    uint64_t smallest;
+    uint64_t largest;
     for (uint32_t i = 0; i < ack_range_count; i++) {
-        pos = DecodeVirint(pos, data + size, gap);
-        pos = DecodeVirint(pos, data + size, range);
-        _ack_ranges.emplace_back(AckRange{gap, range});
+        pos = DecodeVirint(pos, data + size, smallest);
+        pos = DecodeVirint(pos, data + size, largest);
+        _ack_ranges.emplace_back(AckRange(smallest, largest));
     }
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
@@ -83,9 +77,7 @@ uint32_t AckFrame::EncodeSize() {
 
 AckFrame::AckFrame(FrameType ft):
     Frame(ft),
-    _largest_ack(0),
-    _ack_delay(0),
-    _first_ack_range(0) {
+    _ack_delay(0) {
 
 }
 
