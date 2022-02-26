@@ -3,23 +3,19 @@
 namespace quicx {
 
 AckRange::AckRange():
-    _smallest(0),
-    _largest(0) {
+    _gap(0),
+    _ack_range_length(0) {
 
 }
 
-AckRange::AckRange(uint64_t smallest, uint64_t largest):
-    _smallest(smallest),
-    _largest(largest) {
+AckRange::AckRange(uint64_t gap, uint64_t range):
+    _gap(gap),
+    _ack_range_length(range) {
 
 }
 
 AckRange::~AckRange() {
 
-}
-
-uint16_t AckRange::Length() {
-    return _largest - _smallest + 1;
 }
 
 }

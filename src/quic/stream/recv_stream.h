@@ -31,6 +31,7 @@ public:
     RecvStream(StreamType type);
     ~RecvStream();
 
+    // abort reading
     void Close();
 
     void HandleFrame(std::shared_ptr<Frame> frame);

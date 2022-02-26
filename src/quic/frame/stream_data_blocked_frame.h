@@ -18,12 +18,12 @@ public:
     void SetStreamID(uint64_t id) { _stream_id = id; }
     uint64_t GetStreamID() { return _stream_id; }
 
-    void SetDataLimit(uint64_t limit) { _data_limit = limit; }
-    uint64_t GetDataLimit() { return _data_limit; }
+    void SetMaximumData(uint64_t max) { _maximum_data = max; }
+    uint64_t GetMaximumData() { return _maximum_data; }
 
 private:
-   uint64_t _stream_id;   // the stream which is flow control blocked.
-   uint64_t _data_limit;  // the connection-level limit at which blocking occurred.
+   uint64_t _stream_id;     // the stream which is flow control blocked.
+   uint64_t _maximum_data;  // the connection-level limit at which blocking occurred.
 };
 
 }

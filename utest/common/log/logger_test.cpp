@@ -17,7 +17,7 @@ TEST(stdlogger_utest, print1) {
 
 
 TEST(filelogger_utest, debug) {
-    std::shared_ptr<quicx::Logger> file_log = std::make_shared<quicx::FileLogger>();
+    std::shared_ptr<quicx::Logger> file_log = std::make_shared<quicx::FileLogger>("test.log");
     std::shared_ptr<quicx::Logger> std_log = std::make_shared<quicx::StdoutLogger>();
     file_log->SetLogger(std_log);
     quicx::LOG_SET(file_log);

@@ -7,8 +7,8 @@
 
 
 TEST(max_streams_frame_utest, decode1) {
-    quicx::MaxStreamsFrame frame1;
-    quicx::MaxStreamsFrame frame2;
+    quicx::MaxStreamsFrame frame1(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
+    quicx::MaxStreamsFrame frame2(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
 
     auto alloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
     auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);

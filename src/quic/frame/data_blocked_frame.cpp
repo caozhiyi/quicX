@@ -8,7 +8,7 @@ namespace quicx {
 
 DataBlockedFrame::DataBlockedFrame():
     Frame(FT_DATA_BLOCKED),
-    _data_limit(0) {
+    _maximum_data(0) {
 
 }
 
@@ -23,7 +23,7 @@ bool DataBlockedFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
     char* pos = data;
 
     pos = EncodeFixed<uint16_t>(data, _frame_type);
-    pos = EncodeVarint(pos, _data_limit);
+    pos = EncodeVarint(pos, _maximum_data);
 
     buffer->Write(data, pos - data);
     alloter->PoolFree(data, size);
@@ -43,7 +43,7 @@ bool DataBlockedFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _data_limit);
+    pos = DecodeVirint(pos, data + size, _maximum_data);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

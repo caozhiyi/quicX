@@ -9,7 +9,7 @@ namespace quicx {
 StreamDataBlockedFrame::StreamDataBlockedFrame():
     Frame(FT_STREAM_DATA_BLOCKED),
     _stream_id(0),
-    _data_limit(0) {
+    _maximum_data(0) {
 
 }
 
@@ -24,7 +24,7 @@ bool StreamDataBlockedFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_
 
     pos = EncodeFixed<uint16_t>(pos, _frame_type);
     pos = EncodeVarint(pos, _stream_id);
-    pos = EncodeVarint(pos, _data_limit);
+    pos = EncodeVarint(pos, _maximum_data);
 
     buffer->Write(data, pos - data);
     alloter->PoolFree(data, size);
@@ -44,7 +44,7 @@ bool StreamDataBlockedFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_
         }
     }
     pos = DecodeVirint(pos, data + size, _stream_id);
-    pos = DecodeVirint(pos, data + size, _data_limit);
+    pos = DecodeVirint(pos, data + size, _maximum_data);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

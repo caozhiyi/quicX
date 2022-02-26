@@ -24,14 +24,17 @@ public:
     SendStream(StreamType type);
     virtual ~SendStream();
 
+    // write data to stream
     int32_t Write(std::shared_ptr<Buffer> buffer, uint32_t len = 0);
     int32_t Write(const std::string &data);
     int32_t Write(char* data, uint32_t len);
-
+ 
+    // end the stream
     void Close();
 
     void HandleFrame(std::shared_ptr<Frame> frame);
 
+    // reset the stream
     void Reset(uint64_t err);
 
     void SetWriteCallBack(StreamWriteBack wb) { _write_back = wb; }

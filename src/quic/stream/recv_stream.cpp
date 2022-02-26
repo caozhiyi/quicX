@@ -142,7 +142,7 @@ void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<Frame> frame) {
     }
 
     auto block_frame = std::dynamic_pointer_cast<StreamDataBlockedFrame>(frame);
-    LOG_WARN("peer send block. offset:%d", block_frame->GetDataLimit());
+    LOG_WARN("peer send block. offset:%d", block_frame->GetMaximumData());
 
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(_stream_id);

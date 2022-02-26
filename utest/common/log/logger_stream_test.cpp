@@ -16,7 +16,7 @@ TEST(stdlogger_stream_utest, print1) {
 }
 
 TEST(filelogger_stream_utest, debug) {
-    std::shared_ptr<quicx::Logger> file_log = std::make_shared<quicx::FileLogger>();
+    std::shared_ptr<quicx::Logger> file_log = std::make_shared<quicx::FileLogger>("test.log");
     std::shared_ptr<quicx::Logger> std_log = std::make_shared<quicx::StdoutLogger>();
     file_log->SetLogger(std_log);
     quicx::LOG_SET(file_log);
@@ -30,7 +30,7 @@ TEST(filelogger_stream_utest, debug) {
 }
 
 TEST(filelogger_stream_utest, value) {
-    std::shared_ptr<quicx::Logger> file_log = std::make_shared<quicx::FileLogger>();
+    std::shared_ptr<quicx::Logger> file_log = std::make_shared<quicx::FileLogger>("test.log");
     std::shared_ptr<quicx::Logger> std_log = std::make_shared<quicx::StdoutLogger>();
     file_log->SetLogger(std_log);
     quicx::LOG_SET(file_log);
@@ -45,7 +45,6 @@ TEST(filelogger_stream_utest, value) {
     quicx::LOG_FATAL_S <<  "uint32 value:" << uint32_t(-1);
     quicx::LOG_FATAL_S <<  "int64 value:" << int64_t(-515811548);
     quicx::LOG_FATAL_S <<  "uint64 value:" << uint64_t(-1);
-    quicx::LOG_FATAL_S <<  "long long value:" << (long long)(54561648451166);
     quicx::LOG_FATAL_S <<  "float value:" << float(1.1111111111111);
     quicx::LOG_FATAL_S <<  "double value:" << double(1.45516167894165);;
     quicx::LOG_FATAL_S <<  "string value:" << std::string("it is a test log");

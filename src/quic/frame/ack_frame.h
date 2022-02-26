@@ -29,11 +29,10 @@ protected:
     AckFrame(FrameType ft);
 
 private:
-    uint32_t _ack_delay;       // the time delta in microseconds between when this ACK was sent and when the largest acknowledged packet.
-    /*
-    uint32_t _ack_range_count; // the number of Gap and ACK Range fields in the frame.
-    AckRange *_ack_ranges      // ranges of packets which are alternately not acknowledged (Gap) and acknowledged (ACK Range).
-    */
+    uint64_t _largest_acknowledged; // A variable-length integer representing the largest packet number the peer is acknowledging.
+    uint32_t _ack_delay;            // the time delta in microseconds between when this ACK was sent and when the largest acknowledged packet.
+    uint64_t _first_ack_range;      // A variable-length integer indicating the number of contiguous packets preceding the Largest Acknowledged that are being acknowledged
+    // uint64_t _ack_range;         // A variable-length integer specifying the number of ACK Range fields in the frame.
     std::vector<AckRange> _ack_ranges;                 
 };
 

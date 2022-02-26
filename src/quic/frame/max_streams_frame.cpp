@@ -7,8 +7,8 @@
 namespace quicx {
 
 
-MaxStreamsFrame::MaxStreamsFrame(): 
-    Frame(FT_MAX_STREAMS_BIDIRECTIONAL),
+MaxStreamsFrame::MaxStreamsFrame(uint16_t frame_type): 
+    Frame(frame_type),
     _maximum_streams(0) {
 
 }
@@ -38,7 +38,7 @@ bool MaxStreamsFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<All
 
     if (with_type) {
         pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
-        if (_frame_type != FT_MAX_STREAMS) {
+        if (_frame_type != FT_MAX_STREAMS_BIDIRECTIONAL && _frame_type != FT_MAX_STREAMS_UNIDIRECTIONAL) {
             return false;
         }
     }

@@ -149,7 +149,7 @@ int32_t SendStream::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
         }
         auto frame = std::make_shared<StreamDataBlockedFrame>();
         frame->SetStreamID(_stream_id);
-        frame->SetDataLimit(_peer_data_limit);
+        frame->SetMaximumData(_peer_data_limit);
 
         _connection->Send(frame);
     }

@@ -8,7 +8,7 @@ namespace quicx {
 
 class MaxStreamsFrame: public Frame {
 public:
-    MaxStreamsFrame();
+    MaxStreamsFrame(uint16_t frame_type);
     ~MaxStreamsFrame();
 
     bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
