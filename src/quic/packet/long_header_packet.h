@@ -27,8 +27,6 @@ public:
     virtual bool AddFrame(std::shared_ptr<Frame> frame) = 0;
 
 protected:
-    int _type;
-
     union HeaderUnion {
         struct {
             uint8_t _header_form:1;

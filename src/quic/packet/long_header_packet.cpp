@@ -8,8 +8,13 @@
 
 namespace quicx {
 
-LongHeaderPacket::LongHeaderPacket() {
-    
+LongHeaderPacket::LongHeaderPacket():
+    _version(0),
+    _destination_connection_id_length(0),
+    _source_connection_id_length(0) {
+    _header_format._header = 0;
+    memset(_destination_connection_id, 0, __connection_length_max);
+    memset(_source_connection_id, 0, __connection_length_max);
 }
 
 LongHeaderPacket::~LongHeaderPacket() {
