@@ -52,13 +52,13 @@ bool StreamFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Alloter
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _stream_id);
+    pos = DecodeVarint(pos, data + size, _stream_id);
     if (HasOffset()) {
-        pos = DecodeVirint(pos, data + size, _offset);
+        pos = DecodeVarint(pos, data + size, _offset);
     }
     uint32_t length = 0;
     if (HasLength()) {
-        pos = DecodeVirint(pos, data + size, length);
+        pos = DecodeVarint(pos, data + size, length);
     }
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

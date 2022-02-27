@@ -45,9 +45,9 @@ bool ResetStreamFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _stream_id);
-    pos = DecodeVirint(pos, data + size, _app_error_code);
-    pos = DecodeVirint(pos, data + size, _final_size);
+    pos = DecodeVarint(pos, data + size, _stream_id);
+    pos = DecodeVarint(pos, data + size, _app_error_code);
+    pos = DecodeVarint(pos, data + size, _final_size);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

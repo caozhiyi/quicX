@@ -55,9 +55,9 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _error_code);
-    pos = DecodeVirint(pos, data + size, _err_frame_type);
-    pos = DecodeVirint(pos, data + size, reason_length);
+    pos = DecodeVarint(pos, data + size, _error_code);
+    pos = DecodeVarint(pos, data + size, _err_frame_type);
+    pos = DecodeVarint(pos, data + size, reason_length);
     
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

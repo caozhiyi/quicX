@@ -47,8 +47,8 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     if (with_type) {
         pos = DecodeFixed<uint16_t>(pos, data + size, _frame_type);
     }
-    pos = DecodeVirint(pos, data + size, _sequence_number);
-    pos = DecodeVirint(pos, data + size, _retire_prior_to);
+    pos = DecodeVarint(pos, data + size, _sequence_number);
+    pos = DecodeVarint(pos, data + size, _retire_prior_to);
     // encode normal members and number of connection id
     uint8_t connection_id_num = 0;
     pos = DecodeFixed<uint8_t>(pos, data + size, connection_id_num);
@@ -64,7 +64,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_pt
     pos = data;
 
     for (size_t i = 0; i < connection_id_num; i++) {
-        pos = DecodeVirint(pos, data + size, _connection_id[i]);
+        pos = DecodeVarint(pos, data + size, _connection_id[i]);
     }
     
     buffer->MoveReadPt(pos - data);

@@ -24,7 +24,7 @@ char* EncodeVarint(char* dst, T value) {
 // return the char offset pos
 // get length of decode result by: return - first param
 template<typename T>
-char* DecodeVirint(char* start, char* end, T& value) {
+char* DecodeVarint(char* start, char* end, T& value) {
     T result = 0;
     uint32_t bit_limit = (sizeof(T)-1) * sizeof(void*);
     for (uint32_t shift = 0; shift <= bit_limit && start < end; shift += 7) {

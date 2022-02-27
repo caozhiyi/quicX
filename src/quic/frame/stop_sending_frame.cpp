@@ -44,8 +44,8 @@ bool StopSendingFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
         }
     }
 
-    pos = DecodeVirint(pos, data + size, _stream_id);
-    pos = DecodeVirint(pos, data + size, _app_error_code);
+    pos = DecodeVarint(pos, data + size, _stream_id);
+    pos = DecodeVarint(pos, data + size, _app_error_code);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

@@ -8,7 +8,7 @@ TEST(normal_decode_utest, EncodeVarint32_1) {
     EXPECT_EQ(ptr - buf, 1);
 
     uint32_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint32_t>(buf, buf+5, value2);
+    char* ret = quicx::DecodeVarint<uint32_t>(buf, buf+5, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -20,7 +20,7 @@ TEST(normal_decode_utest, EncodeVarint32_2) {
     EXPECT_EQ(ptr - buf, 2);
 
     uint32_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint32_t>(buf, buf+5, value2);
+    char* ret = quicx::DecodeVarint<uint32_t>(buf, buf+5, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -32,7 +32,7 @@ TEST(normal_decode_utest, EncodeVarint32_3) {
     EXPECT_EQ(ptr - buf, 3);
 
     uint32_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint32_t>(buf, buf+5, value2);
+    char* ret = quicx::DecodeVarint<uint32_t>(buf, buf+5, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -44,7 +44,7 @@ TEST(normal_decode_utest, EncodeVarint32_4) {
     EXPECT_EQ(ptr - buf, 4);
 
     uint32_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint32_t>(buf, buf+5, value2);
+    char* ret = quicx::DecodeVarint<uint32_t>(buf, buf+5, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -56,7 +56,7 @@ TEST(normal_decode_utest, EncodeVarint64_5) {
     EXPECT_EQ(ptr - buf, 5);
 
     uint64_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint64_t>(buf, buf+9, value2);
+    char* ret = quicx::DecodeVarint<uint64_t>(buf, buf+9, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -68,7 +68,7 @@ TEST(normal_decode_utest, EncodeVarint64_6) {
     EXPECT_EQ(ptr - buf, 6);
 
     uint64_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint64_t>(buf, buf+9, value2);
+    char* ret = quicx::DecodeVarint<uint64_t>(buf, buf+9, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -80,7 +80,7 @@ TEST(normal_decode_utest, EncodeVarint64_7) {
     EXPECT_EQ(ptr - buf, 7);
 
     uint64_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint64_t>(buf, buf+9, value2);
+    char* ret = quicx::DecodeVarint<uint64_t>(buf, buf+9, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -92,7 +92,7 @@ TEST(normal_decode_utest, EncodeVarint64_8) {
     EXPECT_EQ(ptr - buf, 8);
 
     uint64_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint64_t>(buf, buf+9, value2);
+    char* ret = quicx::DecodeVarint<uint64_t>(buf, buf+9, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -104,7 +104,7 @@ TEST(normal_decode_utest, EncodeVarint8_9) {
     EXPECT_EQ(ptr - buf, 1);
 
     uint8_t value2 = 0;
-    char* ret = quicx::DecodeVirint<uint8_t>(buf, buf+3, value2);
+    char* ret = quicx::DecodeVarint<uint8_t>(buf, buf+3, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }

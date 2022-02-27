@@ -12,6 +12,12 @@ public:
     VersionNegotiationPacket();
     virtual ~VersionNegotiationPacket();
 
+    virtual bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
+    virtual bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
+    virtual uint32_t EncodeSize();
+
+    virtual bool AddFrame(std::shared_ptr<Frame> frame) = 0;
+
 private:
     std::vector<uint32_t> _support_version;
 };

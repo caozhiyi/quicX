@@ -12,7 +12,7 @@ char* EncodeVarint(char* dst, uint64_t value);
 
 // return the char offset pos
 // get length of decode result by: return - first param
-char* DecodeVirint(char* start, char* end, uint64_t& value);
+char* DecodeVarint(char* start, char* end, uint64_t& value);
 
 }
 

@@ -36,9 +36,9 @@ bool AckFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWra
 }
 
 bool AckFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
-    uint16_t size = EncodeSize();
+    uint32_t size = EncodeSize();
     char* data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotMovePt(data, size);
+    size = buffer->ReadNotMovePt(data, size);
     
     char* pos = data;
     if (with_type) {
@@ -47,10 +47,10 @@ bool AckFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWra
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _ack_delay);
-    pos = DecodeVirint(pos, data + size, _first_ack_range);
+    pos = DecodeVarint(pos, data + size, _ack_delay);
+    pos = DecodeVarint(pos, data + size, _first_ack_range);
     uint32_t ack_range_count = 0;
-    pos = DecodeVirint(pos, data + size, ack_range_count);
+    pos = DecodeVarint(pos, data + size, ack_range_count);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
@@ -63,8 +63,8 @@ bool AckFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWra
     uint64_t gap;
     uint64_t range;
     for (uint32_t i = 0; i < ack_range_count; i++) {
-        pos = DecodeVirint(pos, data + size, gap);
-        pos = DecodeVirint(pos, data + size, range);
+        pos = DecodeVarint(pos, data + size, gap);
+        pos = DecodeVarint(pos, data + size, range);
         _ack_ranges.emplace_back(AckRange(gap, range));
     }
     buffer->MoveReadPt(pos - data);
@@ -125,9 +125,9 @@ bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<Buffer> buffer, std::share
     buffer->ReadNotMovePt(data, size);
     char* pos = data;
 
-    pos = DecodeVirint(pos, data + size, _ect_0);
-    pos = DecodeVirint(pos, data + size, _ect_1);
-    pos = DecodeVirint(pos, data + size, _ecn_ce);
+    pos = DecodeVarint(pos, data + size, _ect_0);
+    pos = DecodeVarint(pos, data + size, _ect_1);
+    pos = DecodeVarint(pos, data + size, _ecn_ce);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

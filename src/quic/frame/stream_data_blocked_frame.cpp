@@ -43,8 +43,8 @@ bool StreamDataBlockedFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _stream_id);
-    pos = DecodeVirint(pos, data + size, _maximum_data);
+    pos = DecodeVarint(pos, data + size, _stream_id);
+    pos = DecodeVarint(pos, data + size, _maximum_data);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

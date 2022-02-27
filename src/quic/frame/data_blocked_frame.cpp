@@ -43,7 +43,7 @@ bool DataBlockedFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _maximum_data);
+    pos = DecodeVarint(pos, data + size, _maximum_data);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

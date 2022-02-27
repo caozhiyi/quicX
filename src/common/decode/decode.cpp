@@ -99,7 +99,7 @@ char* EncodeVarint(char* dst, uint64_t value) {
     return reinterpret_cast<char*>(ptr);
 }
 
-char* DecodeVirint(char* start, char* end, uint64_t& value) {
+char* DecodeVarint(char* start, char* end, uint64_t& value) {
     const static uint8_t first_move = 6;
     const static uint8_t after_move = 8;
 

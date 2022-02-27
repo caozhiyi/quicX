@@ -41,7 +41,7 @@ bool RetireConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared
             return false;
         }
     }
-    pos = DecodeVirint(pos, data + size, _sequence_number);
+    pos = DecodeVarint(pos, data + size, _sequence_number);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);

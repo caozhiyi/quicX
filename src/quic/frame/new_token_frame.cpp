@@ -41,7 +41,7 @@ bool NewTokenFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Allot
         }
     }
     uint32_t length = 0;
-    pos = DecodeVirint(pos, data + size, length);
+    pos = DecodeVarint(pos, data + size, length);
 
     buffer->MoveReadPt(pos - data);
     alloter->PoolFree(data, size);
