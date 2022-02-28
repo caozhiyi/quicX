@@ -31,7 +31,7 @@ bool VersionNegotiationPacket::Decode(std::shared_ptr<Buffer> buffer, std::share
     if (size % sizeof(uint32_t) > 0) {
         // error size of version negotiation packet.
         // TODO send error info.
-        return;
+        return false;
     }
 
     uint32_t version_list_size = size / sizeof(uint32_t);

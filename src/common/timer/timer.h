@@ -11,8 +11,6 @@
 
 namespace quicx {
 
-std::shared_ptr<Timer> MakeTimer50Ms();
-
 std::shared_ptr<Timer> MakeTimer1Sec();
 
 std::shared_ptr<Timer> MakeTimer1Min();

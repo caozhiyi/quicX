@@ -3,7 +3,7 @@
 #define QUIC_PACKET_VERSION_CONSULT_PACKET
 
 #include <vector>
-#include "long_header_packet.h"
+#include "long_header.h"
 
 namespace quicx {
 
