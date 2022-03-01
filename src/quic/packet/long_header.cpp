@@ -8,7 +8,7 @@
 
 namespace quicx {
 
-LongHeaderPacket::LongHeaderPacket():
+LongHeader::LongHeader():
     _version(0),
     _destination_connection_id_length(0),
     _source_connection_id_length(0) {
@@ -17,11 +17,11 @@ LongHeaderPacket::LongHeaderPacket():
     memset(_source_connection_id, 0, __connection_length_max);
 }
 
-LongHeaderPacket::~LongHeaderPacket() {
+LongHeader::~LongHeader() {
 
 }
 
-bool LongHeaderPacket::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool LongHeader::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     int size = EncodeSize();
     char* data = alloter->PoolMalloc<char>(size);
     char* pos = data;
@@ -43,7 +43,7 @@ bool LongHeaderPacket::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
     return true;
 }
 
-bool LongHeaderPacket::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool LongHeader::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
     uint16_t size = EncodeSize();
     char* data = alloter->PoolMalloc<char>(size);
     size = buffer->ReadNotMovePt(data, size);
@@ -67,8 +67,8 @@ bool LongHeaderPacket::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<Al
     return true;
 }
 
-uint32_t LongHeaderPacket::EncodeSize() {
-    return sizeof(LongHeaderPacket);
+uint32_t LongHeader::EncodeSize() {
+    return sizeof(LongHeader);
 }
 
 }

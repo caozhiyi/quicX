@@ -15,10 +15,10 @@ class AlloterWrap;
 
 static const uint8_t __connection_length_max = 20;
 
-class LongHeaderPacket: public Packet {
+class LongHeader: public Packet {
 public:
-    LongHeaderPacket();
-    virtual ~LongHeaderPacket();
+    LongHeader();
+    virtual ~LongHeader();
 
     virtual bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
     virtual bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);

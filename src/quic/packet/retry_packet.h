@@ -2,11 +2,11 @@
 #ifndef QUIC_PACKET_RETRY_PACKET
 #define QUIC_PACKET_RETRY_PACKET
 
-#include "long_header_packet.h"
+#include "long_header.h"
 
 namespace quicx {
 
-class RetryPacket: public LongHeaderPacket {
+class RetryPacket: public LongHeader {
 public:
     RetryPacket();
     virtual ~RetryPacket();

@@ -2,11 +2,11 @@
 #ifndef QUIC_PACKET_RTT_0_PACKET
 #define QUIC_PACKET_RTT_0_PACKET
 
-#include "long_header_packet.h"
+#include "long_header.h"
 
 namespace quicx {
 
-class Rtt0Packet: public LongHeaderPacket {
+class Rtt0Packet: public LongHeader {
 public:
     Rtt0Packet();
     virtual ~Rtt0Packet();

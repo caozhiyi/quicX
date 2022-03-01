@@ -2,11 +2,11 @@
 #ifndef QUIC_PACKET_INIT_PACKET
 #define QUIC_PACKET_INIT_PACKET
 
-#include "long_header_packet.h"
+#include "long_header.h"
 
 namespace quicx {
 
-class InitPacket: public LongHeaderPacket {
+class InitPacket: public LongHeader {
 public:
     InitPacket();
     virtual ~InitPacket();

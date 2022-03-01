@@ -1,13 +1,13 @@
 
-#ifndef QUIC_PACKET_VERSION_CONSULT_PACKET
-#define QUIC_PACKET_VERSION_CONSULT_PACKET
+#ifndef QUIC_PACKET_VERSION_NEGOTIATION_PACKET
+#define QUIC_PACKET_VERSION_NEGOTIATION_PACKET
 
 #include <vector>
 #include "long_header.h"
 
 namespace quicx {
 
-class VersionNegotiationPacket: public LongHeaderPacket {
+class VersionNegotiationPacket: public LongHeader {
 public:
     VersionNegotiationPacket();
     virtual ~VersionNegotiationPacket();

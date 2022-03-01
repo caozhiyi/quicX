@@ -17,7 +17,7 @@ VersionNegotiationPacket::~VersionNegotiationPacket() {
 
 
 bool VersionNegotiationPacket::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    LongHeaderPacket::Encode(buffer, alloter);
+    LongHeader::Encode(buffer, alloter);
 
     if (_support_version.size() > 0) {
         buffer->Write((char*)&(*_support_version.begin()), _support_version.size() * sizeof(uint32_t));
@@ -26,7 +26,7 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<Buffer> buffer, std::share
 }
 
 bool VersionNegotiationPacket::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    LongHeaderPacket::Decode(buffer, alloter);
+    LongHeader::Decode(buffer, alloter);
     uint32_t size = buffer->GetCanReadLength();
     if (size % sizeof(uint32_t) > 0) {
         // error size of version negotiation packet.
