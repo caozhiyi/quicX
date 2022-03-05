@@ -1,18 +1,16 @@
 
-#ifndef QUIC_PACKET_LONG_PACKET
-#define QUIC_PACKET_LONG_PACKET
+#ifndef QUIC_PACKET_SHORT_PACKET
+#define QUIC_PACKET_SHORT_PACKET
 
 #include <memory>
 #include "quic/packet/packet_interface.h"
 
 namespace quicx {
 
-static const uint8_t __connection_length_max = 20;
-
-class LongHeader: public Packet {
+class ShortHeader: public Packet {
 public:
-    LongHeader();
-    virtual ~LongHeader();
+    ShortHeader();
+    virtual ~ShortHeader();
 
     virtual bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
     virtual bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
@@ -23,20 +21,18 @@ protected:
         struct {
             uint8_t _header_form:1;
             uint8_t _fix_bit:1;
-            uint8_t _packet_type:2;
-            uint8_t _special_type:4;
+            uint8_t _spin_bit:1;
+            uint8_t _reserved_bits:2;
+            uint8_t _key_phase:1;
+            uint8_t _packet_number_length:2;
         } _header_info;
         uint8_t _header;
     };
 
     HeaderUnion _header_format;
-    uint32_t _version;
-
-    uint8_t _destination_connection_id_length;
-    char _destination_connection_id[__connection_length_max];
-
-    uint8_t _source_connection_id_length;
-    char _source_connection_id[__connection_length_max];
+    uint64_t _destination_connection_id;
+    uint64_t _packet_number;
+    char* _packet_payload;
 };
 
 }

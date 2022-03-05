@@ -1,9 +1,7 @@
 #ifndef QUIC_PACKET_TYPE
 #define QUIC_PACKET_TYPE
 
-#include <cstdint>
-
-namespace qucix {
+namespace quicx {
 
 enum PacketType {
     PT_INITIAL   = 0x00,

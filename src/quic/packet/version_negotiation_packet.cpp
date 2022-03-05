@@ -1,7 +1,7 @@
-#include "version_negotiation_packet.h"
 #include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
+#include "quic/packet/version_negotiation_packet.h"
 
 namespace quicx {
 
