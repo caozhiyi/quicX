@@ -30,7 +30,7 @@ void RecvStream::Close() {
     stop_frame->SetStreamID(_stream_id);
     stop_frame->SetAppErrorCode(0); // TODO
 
-    _connection->Send(stop_frame);
+    //_connection->Send(stop_frame);
 }
 
 void RecvStream::HandleFrame(std::shared_ptr<Frame> frame) {
@@ -56,7 +56,7 @@ void RecvStream::SetDataLimit(uint32_t limit) {
     max_frame->SetStreamID(_stream_id);
     max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
 
-    _connection->Send(max_frame);
+    //_connection->Send(max_frame);
 }
 
 void RecvStream::HandleStreamFrame(std::shared_ptr<Frame> frame) {
@@ -77,7 +77,7 @@ void RecvStream::HandleStreamFrame(std::shared_ptr<Frame> frame) {
         max_frame->SetStreamID(_stream_id);
         max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
 
-        _connection->Send(max_frame);
+        //_connection->Send(max_frame);
     }
 }
 
@@ -93,7 +93,7 @@ void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<Frame> frame) {
     max_frame->SetStreamID(_stream_id);
     max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
 
-    _connection->Send(max_frame);
+    //_connection->Send(max_frame);
 }
 
 void RecvStream::HandleResetStreamFrame(std::shared_ptr<Frame> frame) {

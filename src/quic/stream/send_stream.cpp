@@ -64,7 +64,7 @@ int32_t SendStream::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
         frame->SetOffset(_data_offset);
         frame->SetData(buffer, len);
 
-        _connection->Send(frame);
+        //_connection->Send(frame);
 
     } else {
         send_block = true;
@@ -80,7 +80,7 @@ int32_t SendStream::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
         frame->SetStreamID(_stream_id);
         frame->SetMaximumData(_peer_data_limit);
 
-        _connection->Send(frame);
+        //_connection->Send(frame);
     }
     return len;
 }
@@ -111,7 +111,7 @@ void SendStream::Close() {
     frame->SetStreamID(_stream_id);
     frame->SetOffset(_data_offset);
 
-    _connection->Send(frame);
+    //_connection->Send(frame);
 }
 
 void SendStream::HandleFrame(std::shared_ptr<Frame> frame) {
@@ -138,7 +138,7 @@ void SendStream::Reset(uint64_t err) {
     frame->SetFinalSize(_data_offset);
     frame->SetAppErrorCode(err);
 
-    _connection->Send(frame);
+    //_connection->Send(frame);
 }
 
 void SendStream::HandleMaxStreamDataFrame(std::shared_ptr<Frame> frame) {

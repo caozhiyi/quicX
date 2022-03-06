@@ -1,22 +1,20 @@
 #ifndef QUIC_CONNECTION_CONNECTION_INTERFACE
 #define QUIC_CONNECTION_CONNECTION_INTERFACE
 
-#include <memory>
 #include <cstdint>
 
 namespace quicx {
 
-class Frame;
-class Address;
 class Connection {
 public:
     Connection() {}
     virtual ~Connection() {}
-
-    virtual bool Open(Address& addr, uint32_t strean_limit) = 0;
-
-    virtual void Send(std::shared_ptr<Frame> frame) = 0;
-
+    // TODO 
+    // 1. 为流配置允许的最小初始数量
+    // 2. 设置流级别及连接级别的流量限制, 限制接收缓存的的大小
+    // 3. 识别握手成功或进行中
+    // 4. 保持连接不被关闭, 发送PING等帧
+    // 5. 立即关闭连接
     virtual void Close() = 0;
 private:
     uint64_t _connection_id; 
