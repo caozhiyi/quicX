@@ -2,26 +2,9 @@
 #define QUIC_STREAM_RECV_STREAM
 
 #include <string>
-#include "stream_interface.h"
-#include "stream_state_machine_interface.h"
+#include "quic/stream/stream_interface.h"
 
 namespace quicx {
-
-enum RecvStreamEvent {
-    RSE_RECV_ALL_DATA = 0x01,
-    RSE_READ_ALL_DATA = 0x02,
-    RSE_READ_RST      = 0x03,
-};
-
-class RecvStreamStateMachine: public StreamStateMachine {
-public:
-    RecvStreamStateMachine(StreamStatus s = SS_RECV);
-    ~RecvStreamStateMachine();
-
-    bool OnFrame(uint16_t frame_type);
-
-    bool OnEvent(RecvStreamEvent event);
-};
 
 class AlloterWrap;
 class BlockMemoryPool;

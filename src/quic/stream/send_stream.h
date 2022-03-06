@@ -2,20 +2,9 @@
 #define QUIC_STREAM_SEND_STREAM
 
 #include <string>
-#include "stream_interface.h"
-#include "stream_state_machine_interface.h"
+#include "quic/stream/stream_interface.h"
 
 namespace quicx {
-
-class SendStreamStateMachine: public StreamStateMachine {
-public:
-    SendStreamStateMachine(StreamStatus s = SS_READY);
-    ~SendStreamStateMachine();
-
-    bool OnFrame(uint16_t frame_type);
-
-    bool RecvAllAck();
-};
 
 class AlloterWrap;
 class BlockMemoryPool;

@@ -1,8 +1,8 @@
-#ifndef QUIC_STREAM_STREAM_STATE_MACHINE_INTERFACE
-#define QUIC_STREAM_STREAM_STATE_MACHINE_INTERFACE
+#ifndef QUIC_STREAM_STATE_MACHINE_INTERFACE
+#define QUIC_STREAM_STATE_MACHINE_INTERFACE
 
 #include <cstdint>
-#include "type.h"
+#include "quic/stream/type.h"
 
 namespace quicx {
 

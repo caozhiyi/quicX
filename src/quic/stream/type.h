@@ -28,6 +28,9 @@ enum StreamStatus {
     SS_RESET_RECVD = 0x0200,
 };
 
+}
+
+#endif
 /* * * * * * * * * * * * * * * * * * * * * 
 
 sending stream states
@@ -99,7 +102,3 @@ receiving stream states
 +-------+                   +-------+
 
 * * * * * * * * * * * * * * * * * * * * */
-
-}
-
-#endif
