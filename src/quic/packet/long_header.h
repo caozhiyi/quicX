@@ -3,11 +3,10 @@
 #define QUIC_PACKET_LONG_PACKET
 
 #include <memory>
+#include "quic/common/constants.h"
 #include "quic/packet/packet_interface.h"
 
 namespace quicx {
-
-static const uint8_t __connection_length_max = 20;
 
 class LongHeader: public Packet {
 public:
@@ -33,10 +32,10 @@ protected:
     uint32_t _version;
 
     uint8_t _destination_connection_id_length;
-    char _destination_connection_id[__connection_length_max];
+    char _destination_connection_id[__max_connection_length];
 
     uint8_t _source_connection_id_length;
-    char _source_connection_id[__connection_length_max];
+    char _source_connection_id[__max_connection_length];
 };
 
 }
