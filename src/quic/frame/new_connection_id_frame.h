@@ -9,14 +9,14 @@ namespace quicx {
 
 static const uint16_t __stateless_reset_token_length = 128;
 
-class NewConnectionIDFrame: public Frame {
+class NewConnectionIDFrame: public IFrame {
 public:
     NewConnectionIDFrame();
     ~NewConnectionIDFrame();
 
-    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
-    uint32_t EncodeSize();
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
 
     void SetSequenceNumber(uint64_t sequence_number) { _sequence_number = sequence_number; }
     uint64_t GetSequenceNumber() { return _sequence_number; }

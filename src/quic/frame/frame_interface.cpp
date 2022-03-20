@@ -1,48 +1,52 @@
-#include "frame_interface.h"
+#include "common/log/log.h"
+#include "quic/frame/frame_interface.h"
 #include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
 
 namespace quicx {
 
-Frame::Frame(uint16_t ft): 
+IFrame::IFrame(uint16_t ft): 
     _frame_type(ft) {
     
 }
 
-Frame::~Frame() {
+IFrame::~IFrame() {
 
 }
 
-uint16_t Frame::GetType() { 
+uint16_t IFrame::GetType() { 
     return _frame_type; 
 }
 
-bool Frame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    uint16_t size = EncodeSize();
+bool IFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    uint16_t need_size = EncodeSize();
+    
+    auto pos_pair = buffer->GetWritePair();
+    auto remain_size = pos_pair.second - pos_pair.first;
 
-    char* data = alloter->PoolMalloc<char>(size);
-    char* pos = EncodeFixed<uint16_t>(data, _frame_type);
+    if (need_size > remain_size) {
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        return false;
+    }
+    
+    char* pos = EncodeFixed<uint16_t>(pos_pair.first, _frame_type);
+    buffer->MoveWritePt(uint32_t(pos - pos_pair.first));
 
-    buffer->Write(data, pos - data);
-    alloter->PoolFree(data, size);
     return true;
 }
 
-bool Frame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
+bool IFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     if (with_type) {
-        uint16_t size = EncodeSize();
-        char* data = alloter->PoolMalloc<char>(size);
-        uint32_t len = buffer->Read(data, size);
-
-        DecodeFixed<uint16_t>(data, data + size, _frame_type);
-        alloter->PoolFree(data, size);
+        auto pos_pair = buffer->GetReadPair();
+        char* pos = DecodeFixed<uint16_t>(pos_pair.first, pos_pair.second, _frame_type);
+        buffer->MoveReadPt(uint32_t(pos - pos_pair.first));
     }
     return true;
 }
 
-uint32_t Frame::EncodeSize() {
-    return sizeof(Frame);
+uint32_t IFrame::EncodeSize() {
+    return sizeof(uint16_t);
 }
 
 }

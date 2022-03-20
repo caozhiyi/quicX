@@ -1,14 +1,14 @@
 #include <cstring>
-
-#include "new_connection_id_frame.h"
+#include "common/log/log.h"
 #include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
+#include "quic/frame/new_connection_id_frame.h"
 
 namespace quicx {
 
 NewConnectionIDFrame::NewConnectionIDFrame():
-    Frame(FT_NEW_CONNECTION_ID),
+    IFrame(FT_NEW_CONNECTION_ID),
     _sequence_number(0),
     _retire_prior_to(0) {
     memset(_stateless_reset_token, 0, __stateless_reset_token_length);
@@ -18,11 +18,16 @@ NewConnectionIDFrame::~NewConnectionIDFrame() {
 
 }
 
-bool NewConnectionIDFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    char* pos = data;
+bool NewConnectionIDFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    uint16_t need_size = EncodeSize();
+    auto pos_pair = buffer->GetWritePair();
+    auto remain_size = pos_pair.second - pos_pair.first;
+    if (need_size > remain_size) {
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        return false;
+    }
 
+    char* pos = pos_pair.first;
     pos = EncodeFixed<uint16_t>(pos, _frame_type);
     pos = EncodeVarint(pos, _sequence_number);
     pos = EncodeVarint(pos, _retire_prior_to);
@@ -31,45 +36,31 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_pt
         pos = EncodeVarint(pos, _connection_id[i]);
     }
 
-    buffer->Write(data, pos - data);
-    alloter->PoolFree(data, size);
+    buffer->MoveWritePt(pos - pos_pair.first);
 
     buffer->Write(_stateless_reset_token, __stateless_reset_token_length);
     return true;
 }
 
-bool NewConnectionIDFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotMovePt(data, size);
-    char* pos = data;
+bool NewConnectionIDFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+    auto pos_pair = buffer->GetReadPair();
+    char* pos = pos_pair.first;
 
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(pos, data + size, _frame_type);
+        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
     }
-    pos = DecodeVarint(pos, data + size, _sequence_number);
-    pos = DecodeVarint(pos, data + size, _retire_prior_to);
+    pos = DecodeVarint(pos, pos_pair.second, _sequence_number);
+    pos = DecodeVarint(pos, pos_pair.second, _retire_prior_to);
     // encode normal members and number of connection id
     uint8_t connection_id_num = 0;
-    pos = DecodeFixed<uint8_t>(pos, data + size, connection_id_num);
+    pos = DecodeFixed<uint8_t>(pos, pos_pair.second, connection_id_num);
 
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
-
-    // encode connection ids
-    size = connection_id_num * sizeof(uint64_t);
-    data = alloter->PoolMalloc<char>(size);
     _connection_id.resize(connection_id_num);
-    buffer->ReadNotMovePt(data, size);
-    pos = data;
-
     for (size_t i = 0; i < connection_id_num; i++) {
-        pos = DecodeVarint(pos, data + size, _connection_id[i]);
+        pos = DecodeVarint(pos, pos_pair.second, _connection_id[i]);
     }
     
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
-
+    buffer->MoveReadPt(pos - pos_pair.first);
     if (buffer->Read(_stateless_reset_token, __stateless_reset_token_length) != __stateless_reset_token_length) {
         return false;
     }

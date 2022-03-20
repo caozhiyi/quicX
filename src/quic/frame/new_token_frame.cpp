@@ -1,11 +1,12 @@
-#include "new_token_frame.h"
-#include "common/buffer/buffer_queue.h"
+#include "common/log/log.h"
+#include "quic/frame/new_token_frame.h"
 #include "common/decode/normal_decode.h"
+
 
 namespace quicx {
 
 NewTokenFrame::NewTokenFrame():
-    Frame(FT_NEW_TOKEN) {
+    IFrame(FT_NEW_TOKEN) {
 
 }
 
@@ -13,43 +14,44 @@ NewTokenFrame::~NewTokenFrame() {
 
 }
 
-bool NewTokenFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    char* pos = data;
+bool NewTokenFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    uint16_t need_size = EncodeSize();
+    auto pos_pair = buffer->GetWritePair();
+    auto remain_size = pos_pair.second - pos_pair.first;
+    if (need_size > remain_size) {
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        return false;
+    }
 
+    char* pos = pos_pair.first;
     pos = EncodeFixed<uint16_t>(pos, _frame_type);
-    pos = EncodeVarint(pos, _token->GetCanReadLength());
+    pos = EncodeVarint(pos, _token_length);
 
-    buffer->Write(data, pos - data);
-    alloter->PoolFree(data, size);
-
-    buffer->Write(_token);
+    buffer->MoveWritePt(pos - pos_pair.first);
+    buffer->Write(_token, _token_length);
     return true;
 }
 
-bool NewTokenFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotMovePt(data, size);
-    char* pos = data;
+bool NewTokenFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+    auto pos_pair = buffer->GetReadPair();
+    char* pos = pos_pair.first;
 
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
         if (_frame_type != FT_NEW_TOKEN) {
             return false;
         }
     }
-    uint32_t length = 0;
-    pos = DecodeVarint(pos, data + size, length);
+    pos = DecodeVarint(pos, pos_pair.second, _token_length);
 
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
-
-    _token = std::make_shared<BufferQueue>(buffer->GetBlockMemoryPool(), alloter);
-    if (buffer->Read(_token, length) != length) {
+    buffer->MoveWritePt(pos - pos_pair.first);
+    if (_token_length > buffer->GetCanReadLength()) {
+        LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetCanReadLength(), _token_length);
         return false;
     }
+    
+    _token = pos;
+    buffer->MoveWritePt(_token_length);
     return true;
 }
 

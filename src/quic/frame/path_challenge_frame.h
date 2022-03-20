@@ -9,14 +9,14 @@ static const uint16_t __path_data_length = 8;
 
 class RangeRandom;
 class PathResponseFrame;
-class PathChallengeFrame: public Frame {
+class PathChallengeFrame: public IFrame {
 public:
     PathChallengeFrame();
     ~PathChallengeFrame();
 
-    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
-    uint32_t EncodeSize();
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
 
     bool CompareData(std::shared_ptr<PathResponseFrame> response);
 

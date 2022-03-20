@@ -6,10 +6,9 @@
 
 namespace quicx {
 
-class Frame;
-class Buffer;
-class AlloterWrap;
-bool DecodeFrame(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, std::vector<std::shared_ptr<Frame>>& frames);
+class IFrame;
+class IBufferReadOnly;
+bool DecodeFrame(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 
 }
 

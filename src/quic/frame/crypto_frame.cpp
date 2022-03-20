@@ -1,11 +1,11 @@
-#include "crypto_frame.h"
-#include "common/buffer/buffer_queue.h"
+#include "common/log/log.h"
+#include "quic/frame/crypto_frame.h"
 #include "common/decode/normal_decode.h"
 
 namespace quicx {
 
 CryptoFrame::CryptoFrame():
-    Frame(FT_CRYPTO),
+    IFrame(FT_CRYPTO),
     _offset(0) {
 
 }
@@ -14,51 +14,52 @@ CryptoFrame::~CryptoFrame() {
 
 }
 
-bool CryptoFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    char* pos = data;
+bool CryptoFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    uint16_t need_size = EncodeSize();
+    auto pos_pair = buffer->GetWritePair();
+    auto remain_size = pos_pair.second - pos_pair.first;
+    if (need_size > remain_size) {
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        return false;
+    }
 
-    pos = EncodeFixed<uint16_t>(data, _frame_type);
+    char* pos = pos_pair.first;
+    pos = EncodeFixed<uint16_t>(pos, _frame_type);
     pos = EncodeVarint(pos, _offset);
-    pos = EncodeVarint(pos, _data->GetCanReadLength());
+    pos = EncodeVarint(pos, _length);
 
-    buffer->Write(data, pos - data);
-    alloter->PoolFree(data, size);
+    buffer->MoveWritePt(pos - pos_pair.first);
 
-    buffer->Write(_data);
+    buffer->Write(_data, _length);
     return true;
 }
 
-bool CryptoFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotMovePt(data, size);
-    char* pos = data;
+bool CryptoFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false) {
+    auto pos_pair = buffer->GetReadPair();
+    char* pos = pos_pair.first;
     
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(pos, data + size, _frame_type);
+        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
         if (_frame_type != FT_CRYPTO){
             return false;
         }
         
     }
-    pos = DecodeVarint(pos, data + size, _offset);
-    uint32_t length = 0;
-    pos = DecodeVarint(pos, data + size, length);
-
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
-
-    _data = std::make_shared<BufferQueue>(buffer->GetBlockMemoryPool(), alloter);
-    if (buffer->Read(_data, length) != length) {
+    pos = DecodeVarint(pos, pos_pair.second, _offset);
+    pos = DecodeVarint(pos, pos_pair.second, _length);
+    buffer->MoveReadPt(pos - pos_pair.first);
+    if (_length > buffer->GetCanReadLength()) {
+        LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetCanReadLength(), _length);
         return false;
     }
+    
+    _data = pos;
+    buffer->MoveReadPt(_length);
     return true;
 }
 
 uint32_t CryptoFrame::EncodeSize() {
-    return sizeof(CryptoFrame);
+    return sizeof(CryptoFrame) + _length;
 }
 
 }

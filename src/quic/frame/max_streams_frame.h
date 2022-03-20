@@ -6,14 +6,14 @@
 
 namespace quicx {
 
-class MaxStreamsFrame: public Frame {
+class MaxStreamsFrame: public IFrame {
 public:
     MaxStreamsFrame(uint16_t frame_type);
     ~MaxStreamsFrame();
 
-    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
-    uint32_t EncodeSize();
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
 
     void SetMaximumStreams(uint64_t maximum) { _maximum_streams = maximum; }
     uint64_t GetMaximumStreams() { return _maximum_streams; }

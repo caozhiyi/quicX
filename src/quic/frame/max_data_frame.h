@@ -6,14 +6,14 @@
 
 namespace quicx {
 
-class MaxDataFrame: public Frame {
+class MaxDataFrame: public IFrame {
 public:
     MaxDataFrame();
     ~MaxDataFrame();
 
-    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
-    uint32_t EncodeSize();
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
 
     void SetMaximumData(uint64_t maximum) { _maximum_data = maximum; }
     uint64_t GetMaximumData() { return _maximum_data; }

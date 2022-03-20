@@ -14,15 +14,15 @@ enum StreamFrameFlag {
 };
 
 class Buffer;
-class StreamFrame: public Frame {
+class StreamFrame: public IFrame {
 public:
     StreamFrame();
     StreamFrame(uint16_t frame_type);
     ~StreamFrame();
 
-    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
-    uint32_t EncodeSize();
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
 
     void SetStreamID(uint64_t stream_id) { _stream_id = stream_id; }
     uint64_t GetStreamID() { return _stream_id; }
@@ -35,19 +35,18 @@ public:
     bool IsFin() { return _frame_type & SFF_FIN; }
 
     bool HasLength() { return _frame_type & SFF_LEN; }
-    void SetData(std::shared_ptr<Buffer> data, uint32_t send_len = 0);
-    std::shared_ptr<Buffer> GetData() { return _data; }
+    void SetData(char* data, uint32_t send_len = 0);
+    char* GetData() { return _data; }
 
 private:
     uint64_t _stream_id;  // indicating the stream ID of the stream.
     uint64_t _offset;     // the byte offset in the stream for the data in this STREAM frame.
 
     uint32_t _send_length;   // only send this length of data from _data
-    std::shared_ptr<Buffer> _data;
-    /*
-    uint32_t _lentgh;     // the length of the Stream Data field in this STREAM frame.
+    //std::shared_ptr<Buffer> _data;
+    
+    uint32_t _length;     // the length of the Stream Data field in this STREAM frame.
     char* _data;          // the bytes from the designated stream to be delivered.
-    */
 };
 
 }

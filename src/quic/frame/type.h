@@ -29,6 +29,8 @@ enum FrameType: uint32_t {
     FT_CONNECTION_CLOSE           = 0x1c,
     FT_CONNECTION_CLOSE_APP       = 0x1d,
     FT_HANDSHAKE_DONE             = 0x1e,
+
+    FT_UNKNOW                     = 0xff,
 };
 
 }

@@ -5,9 +5,9 @@
 
 namespace quicx {
 
-class HandshakeDoneFrame: public Frame {
+class HandshakeDoneFrame: public IFrame {
 public:
-    HandshakeDoneFrame(): Frame(FT_HANDSHAKE_DONE) {}
+    HandshakeDoneFrame(): IFrame(FT_HANDSHAKE_DONE) {}
     ~HandshakeDoneFrame() {}
 };
 

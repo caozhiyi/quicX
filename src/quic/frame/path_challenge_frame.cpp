@@ -1,10 +1,10 @@
 #include <cstring>
-
+#include "common/log/log.h"
 #include "common/util/random.h"
-#include "path_response_frame.h"
-#include "path_challenge_frame.h"
 #include "common/decode/normal_decode.h"
+#include "quic/frame/path_response_frame.h"
 #include "common/buffer/buffer_interface.h"
+#include "quic/frame/path_challenge_frame.h"
 #include "common/alloter/alloter_interface.h"
 
 namespace quicx {
@@ -12,7 +12,7 @@ namespace quicx {
 std::shared_ptr<RangeRandom> PathChallengeFrame::_random = std::make_shared<RangeRandom>(0, 62);
 
 PathChallengeFrame::PathChallengeFrame():
-    Frame(FT_PATH_CHALLENGE) {
+    IFrame(FT_PATH_CHALLENGE) {
     memset(_data, 0, __path_data_length);
 }
 
@@ -20,27 +20,29 @@ PathChallengeFrame::~PathChallengeFrame() {
 
 }
 
-bool PathChallengeFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    char* pos = data;
+bool PathChallengeFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    uint16_t need_size = EncodeSize();
+    auto pos_pair = buffer->GetWritePair();
+    auto remain_size = pos_pair.second - pos_pair.first;
+    if (need_size > remain_size) {
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        return false;
+    }
 
+    char* pos = pos_pair.first;
     pos = EncodeFixed<uint16_t>(pos, _frame_type);
-    buffer->Write(data, pos - data);
-    buffer->Write(_data, __path_data_length);
+    buffer->MoveWritePt(pos - pos_pair.first);
 
-    alloter->PoolFree(data, size);
+    buffer->Write(_data, __path_data_length);
     return true;
 }
 
-bool PathChallengeFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotMovePt(data, size);
-    char* pos = data;
+bool PathChallengeFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+    auto pos_pair = buffer->GetReadPair();
+    char* pos = pos_pair.first;
 
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
         if (_frame_type != FT_PATH_CHALLENGE) {
             return false;
         }
@@ -49,8 +51,7 @@ bool PathChallengeFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<
     memcpy(_data, pos, __path_data_length);
     pos += __path_data_length;
 
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
+    buffer->MoveReadPt(pos - pos_pair.first);
     return true;
 }
 

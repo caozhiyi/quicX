@@ -7,15 +7,15 @@
 
 namespace quicx {
 
-class ConnectionCloseFrame: public Frame {
+class ConnectionCloseFrame: public IFrame {
 public:
     ConnectionCloseFrame();
     ConnectionCloseFrame(uint16_t frame_type);
     ~ConnectionCloseFrame();
 
-    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
-    uint32_t EncodeSize();
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
 
     void SetErrorCode(uint32_t error_code) { _error_code = error_code; }
     uint32_t GetErrorCode() { return _error_code; }

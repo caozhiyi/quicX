@@ -1,4 +1,5 @@
-#include "ack_frame.h"
+#include "common/log/log.h"
+#include "quic/frame/ack_frame.h"
 #include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
@@ -6,7 +7,7 @@
 namespace quicx {
 
 AckFrame::AckFrame():
-    Frame(FT_ACK),
+    IFrame(FT_ACK),
     _ack_delay(0) {
 
 }
@@ -15,11 +16,17 @@ AckFrame::~AckFrame() {
 
 }
 
-bool AckFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    char* pos = data;
-
+bool AckFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    uint16_t need_size = EncodeSize();
+    
+    auto pos_pair = buffer->GetWritePair();
+    auto remain_size = pos_pair.second - pos_pair.first;
+    if (need_size > remain_size) {
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        return false;
+    }
+    
+    char* pos = pos_pair.first;
     pos = EncodeFixed<uint16_t>(pos, _frame_type);
     pos = EncodeVarint(pos, _ack_delay);
     pos = EncodeVarint(pos, _first_ack_range);
@@ -30,46 +37,33 @@ bool AckFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWra
         pos = EncodeVarint(pos, _ack_ranges[i].GetAckRangeLength());
     }
     
-    buffer->Write(data, pos - data);
-    alloter->PoolFree(data, size);
+    buffer->MoveWritePt(pos - pos_pair.first);
     return true;
 }
 
-bool AckFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
-    uint32_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    size = buffer->ReadNotMovePt(data, size);
+bool AckFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+    auto pos_pair = buffer->GetReadPair();
     
-    char* pos = data;
+    char* pos = pos_pair.first;
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(data, data + size, _frame_type);
+        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
         if (_frame_type != FT_ACK && _frame_type != FT_ACK_ECN) {
             return false;
         }
     }
-    pos = DecodeVarint(pos, data + size, _ack_delay);
-    pos = DecodeVarint(pos, data + size, _first_ack_range);
+    pos = DecodeVarint(pos, pos_pair.second, _ack_delay);
+    pos = DecodeVarint(pos, pos_pair.second, _first_ack_range);
     uint32_t ack_range_count = 0;
-    pos = DecodeVarint(pos, data + size, ack_range_count);
-
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
-
-    size = ack_range_count * sizeof(AckRange);
-    data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotMovePt(data, size);
-    pos = data;
+    pos = DecodeVarint(pos, pos_pair.second, ack_range_count);
 
     uint64_t gap;
     uint64_t range;
     for (uint32_t i = 0; i < ack_range_count; i++) {
-        pos = DecodeVarint(pos, data + size, gap);
-        pos = DecodeVarint(pos, data + size, range);
+        pos = DecodeVarint(pos, pos_pair.second, gap);
+        pos = DecodeVarint(pos, pos_pair.second, range);
         _ack_ranges.emplace_back(AckRange(gap, range));
     }
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
-    
+    buffer->MoveReadPt(pos - pos_pair.first);
     return true;
 }
 
@@ -78,7 +72,7 @@ uint32_t AckFrame::EncodeSize() {
 }
 
 AckFrame::AckFrame(FrameType ft):
-    Frame(ft),
+    IFrame(ft),
     _ack_delay(0) {
 
 }
@@ -96,47 +90,49 @@ AckEcnFrame::~AckEcnFrame() {
 
 }
 
-bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    if (!AckFrame::Encode(buffer, alloter)) {
+bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<BufferWriteOnly> buffer) {
+    if (!AckFrame::Encode(buffer)) {
         return false;
     }
 
-    uint16_t size = EncodeSize() - sizeof(AckFrame);
-    char* data = alloter->PoolMalloc<char>(size);
-    char* pos = data;
+    uint16_t need_size = EncodeSize();
     
+    auto pos_pair = buffer->GetWritePair();
+    auto remain_size = pos_pair.second - pos_pair.first;
+    if (need_size > remain_size) {
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        return false;
+    }
+    
+    char* pos = pos_pair.first;
     pos = EncodeVarint(pos, _ect_0);
     pos = EncodeVarint(pos, _ect_1);
     pos = EncodeVarint(pos, _ecn_ce);
 
-    buffer->Write(data, pos - data);
-    alloter->PoolFree(data, size);
+    buffer->MoveWritePt(pos - pos_pair.first);
 
     return true;
 }
 
-bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type) {
-    if (!AckFrame::Decode(buffer, alloter, with_type)) {
+bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<BufferReadOnly> buffer, bool with_type) {
+    if (!AckFrame::Decode(buffer, with_type)) {
         return false;
     } 
 
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    buffer->ReadNotMovePt(data, size);
-    char* pos = data;
+    auto pos_pair = buffer->GetReadPair();
 
-    pos = DecodeVarint(pos, data + size, _ect_0);
-    pos = DecodeVarint(pos, data + size, _ect_1);
-    pos = DecodeVarint(pos, data + size, _ecn_ce);
+    char* pos = pos_pair.first;
+    pos = DecodeVarint(pos, pos_pair.second, _ect_0);
+    pos = DecodeVarint(pos, pos_pair.second, _ect_1);
+    pos = DecodeVarint(pos, pos_pair.second, _ecn_ce);
 
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
+    buffer->MoveReadPt(pos - pos_pair.first);
 
     return true;
 }
 
 uint32_t AckEcnFrame::AckEcnFrame::EncodeSize() {
-    return sizeof(AckEcnFrame) - sizeof(AckFrame) + AckFrame::EncodeSize();
+    return sizeof(uint64_t) * 3;
 }
 
 }

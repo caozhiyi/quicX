@@ -4,20 +4,20 @@
 #include <vector>
 #include <cstdint>
 
-#include "ack_range.h"
-#include "frame_interface.h"
+#include "quic/frame/ack_range.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
 class AckFrame: 
-    public Frame {
+    public IFrame {
 public:
     AckFrame();
     virtual ~AckFrame();
 
-    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
-    uint32_t EncodeSize();
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
 
     void SetAckDelay(uint32_t delay) { _ack_delay = delay; }
     uint32_t GetAckDelay() { return _ack_delay; }
@@ -36,15 +36,14 @@ private:
     std::vector<AckRange> _ack_ranges;                 
 };
 
-
 class AckEcnFrame: public AckFrame {
 public:
     AckEcnFrame();
     ~AckEcnFrame();
 
-    bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter, bool with_type = false);
-    uint32_t EncodeSize();
+    virtual bool Encode(std::shared_ptr<BufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<BufferReadOnly> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
 
     void SetEct0(uint64_t ect0) { _ect_0 = ect0; }
     uint64_t GetEct0() { return _ect_0; }

@@ -5,9 +5,9 @@
 
 namespace quicx {
 
-class PingFrame: public Frame {
+class PingFrame: public IFrame {
 public:
-    PingFrame(): Frame(FT_PING) {}
+    PingFrame(): IFrame(FT_PING) {}
     ~PingFrame() {}
 };
 
