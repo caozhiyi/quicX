@@ -34,7 +34,7 @@ bool CryptoFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool CryptoFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false) {
+bool CryptoFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
     char* pos = pos_pair.first;
     

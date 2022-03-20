@@ -41,8 +41,8 @@ public:
     AckEcnFrame();
     ~AckEcnFrame();
 
-    virtual bool Encode(std::shared_ptr<BufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<BufferReadOnly> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetEct0(uint64_t ect0) { _ect_0 = ect0; }

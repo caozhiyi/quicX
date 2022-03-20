@@ -19,7 +19,10 @@ public:
     void SetOffset(uint64_t offset) { _offset = offset; }
     uint64_t GetOffset() { return _offset; }
 
-    void SetData(char* data) { _data = data; }
+    void SetData(char* data, uint32_t length) { 
+        _data = data;
+        _length = length;
+    }
     char* GetData() { return _data; }
 
 private:

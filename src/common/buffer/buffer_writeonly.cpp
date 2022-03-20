@@ -10,21 +10,21 @@
 
 namespace quicx {
 
-BufferWriteOnly::BufferWriteOnly(std::shared_ptr<BlockMemoryPool>& IAlloter):
-    _alloter(IAlloter) {
+BufferWriteOnly::BufferWriteOnly(std::shared_ptr<BlockMemoryPool>& alloter):
+    _alloter(alloter) {
 
-    _buffer_start = (char*)IAlloter->PoolLargeMalloc();
-    _buffer_end = _buffer_start + IAlloter->GetBlockLength();
+    _buffer_start = (char*)alloter->PoolLargeMalloc();
+    _buffer_end = _buffer_start + alloter->GetBlockLength();
     _write = _buffer_start;
 
 }
 
 BufferWriteOnly::~BufferWriteOnly() {
      if (_buffer_start) {
-        auto IAlloter = _alloter.lock();
-        if (IAlloter) {
+        auto alloter = _alloter.lock();
+        if (alloter) {
             void* m = (void*)_buffer_start;
-            IAlloter->PoolLargeFree(m);
+            alloter->PoolLargeFree(m);
         }
     }
 }

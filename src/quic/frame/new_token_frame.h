@@ -17,7 +17,10 @@ public:
     virtual uint32_t EncodeSize();
 
 
-    void SetToken(char* token) { _token = token; }
+    void SetToken(char* token, uint32_t token_length) { 
+        _token = token;
+        _token_length = token_length;
+    }
     char* GetToken() { return _token; }
 
 private:

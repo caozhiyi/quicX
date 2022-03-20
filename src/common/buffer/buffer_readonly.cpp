@@ -10,22 +10,21 @@
 
 namespace quicx {
 
-BufferReadOnly::BufferReadOnly(std::shared_ptr<BlockMemoryPool>& IAlloter):
+BufferReadOnly::BufferReadOnly(std::shared_ptr<BlockMemoryPool>& alloter):
     _init(false),
-    _alloter(IAlloter) {
+    _alloter(alloter) {
 
-    _buffer_start = (char*)IAlloter->PoolLargeMalloc();
-    _total_size = IAlloter->GetBlockLength();
-    _buffer_end = _buffer_start + _total_size;
+    _buffer_start = (char*)alloter->PoolLargeMalloc();
+    _buffer_end = _buffer_start + alloter->GetBlockLength();
     _read = _buffer_start;
 }
 
 BufferReadOnly::~BufferReadOnly() {
     if (_buffer_start) {
-        auto IAlloter = _alloter.lock();
-        if (IAlloter) {
+        auto alloter = _alloter.lock();
+        if (alloter) {
             void* m = (void*)_buffer_start;
-            IAlloter->PoolLargeFree(m);
+            alloter->PoolLargeFree(m);
         }
     }
 }
@@ -66,7 +65,7 @@ uint32_t BufferReadOnly::Read(char* res, uint32_t len) {
 uint32_t BufferReadOnly::GetCanReadLength() {
     /*s-----------r-------------------e*/
     if (_read <= _buffer_end) {
-        return uint32_t(_write - _read);
+        return uint32_t(_buffer_end - _read);
 
     } else {
         // shouldn't be here
@@ -87,7 +86,7 @@ uint32_t BufferReadOnly::MoveWritePt(uint32_t len) {
     }
     _init = true;
 
-    uint32_t remain_size = uint32_t(_buffer_end - _buffer_start)
+    uint32_t remain_size = uint32_t(_buffer_end - _buffer_start);
     if (len < remain_size) {
         _buffer_end = _buffer_start + len;
         return len;
@@ -102,8 +101,8 @@ std::pair<char*, char*> BufferReadOnly::GetWritePair() {
 
 uint32_t BufferReadOnly::_Read(char* res, uint32_t len, bool move_pt) {
     /*s-----------r-----w-------------e*/
-    if (_read <= _write) {
-        size_t size = _write - _read;
+    if (_read <= _buffer_end) {
+        size_t size = _buffer_end - _read;
         // res can load all
         if (size <= len) {
             memcpy(res, _read, size);

@@ -67,7 +67,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool 
     
     buffer->MoveReadPt(pos - pos_pair.first);
 
-    auto pos_pair = buffer->GetReadPair();
+    pos_pair = buffer->GetReadPair();
     auto remain_size = pos_pair.second - pos_pair.first;
     if (reason_length > remain_size) {
         return false;

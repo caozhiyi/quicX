@@ -35,7 +35,7 @@ public:
     bool IsFin() { return _frame_type & SFF_FIN; }
 
     bool HasLength() { return _frame_type & SFF_LEN; }
-    void SetData(char* data, uint32_t send_len = 0);
+    void SetData(char* data, uint32_t send_len);
     char* GetData() { return _data; }
 
 private:

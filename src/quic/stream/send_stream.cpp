@@ -2,7 +2,6 @@
 
 #include "common/log/log.h"
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_queue.h"
 #include "common/alloter/alloter_interface.h"
 
 #include "quic/frame/stream_frame.h"
@@ -27,7 +26,7 @@ SendStream::~SendStream() {
 }
 
 int32_t SendStream::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
-    if (_peer_data_limit == 0) {
+    /*if (_peer_data_limit == 0) {
         LOG_WARN("peer remote hasn't set data limit");
         return 0;
     }
@@ -83,20 +82,28 @@ int32_t SendStream::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
         //_connection->Send(frame);
     }
     return len;
+    */
+   return 0;
 }
 
 int32_t SendStream::Write(const std::string &data) {
+    /*
     auto buffer = std::make_shared<BufferQueue>(_block_pool, _alloter);
-    buffer->Write(data.c_str(), data.length());
+    //buffer->Write(data.c_str(), data.length());
 
     return Write(buffer);
+    */
+   return 0;
 }
 
 int32_t SendStream::Write(char* data, uint32_t len) {
+    /*
     auto buffer = std::make_shared<BufferQueue>(_block_pool, _alloter);
     buffer->Write(data, len);
 
     return Write(buffer);
+    */
+   return 0;
 }
 
 void SendStream::Close() {

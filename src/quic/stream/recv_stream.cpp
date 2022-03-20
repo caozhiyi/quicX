@@ -1,5 +1,4 @@
 #include "common/log/log.h"
-#include "common/buffer/sort_buffer_queue.h"
 
 #include "quic/stream/recv_stream.h"
 #include "quic/frame/stream_frame.h"
@@ -17,7 +16,7 @@ RecvStream::RecvStream(StreamType type):
     _data_limit(0),
     _to_data_max(0),
     _final_offset(0) {
-    _buffer = std::make_shared<SortBufferQueue>(_block_pool, _alloter);
+    //_buffer = std::make_shared<SortBufferQueue>(_block_pool, _alloter);
     _state_machine = std::shared_ptr<RecvStreamStateMachine>();
 }
 
@@ -54,7 +53,7 @@ void RecvStream::SetDataLimit(uint32_t limit) {
 
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(_stream_id);
-    max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
+    //max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
 
     //_connection->Send(max_frame);
 }
@@ -64,6 +63,7 @@ void RecvStream::HandleStreamFrame(std::shared_ptr<IFrame> frame) {
         return;
     }
 
+    /*
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
     _buffer->Write(stream_frame->GetData(), stream_frame->GetOffset());
 
@@ -79,13 +79,14 @@ void RecvStream::HandleStreamFrame(std::shared_ptr<IFrame> frame) {
 
         //_connection->Send(max_frame);
     }
+    */
 }
 
 void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     if(!_state_machine->OnFrame(frame->GetType())) {
         return;
     }
-
+    /*
     auto block_frame = std::dynamic_pointer_cast<StreamDataBlockedFrame>(frame);
     LOG_WARN("peer send block. offset:%d", block_frame->GetMaximumData());
 
@@ -94,12 +95,14 @@ void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
 
     //_connection->Send(max_frame);
+    */
 }
 
 void RecvStream::HandleResetStreamFrame(std::shared_ptr<IFrame> frame) {
     if(!_state_machine->OnFrame(frame->GetType())) {
         return;
     }
+    /*
     auto reset_frame = std::dynamic_pointer_cast<ResetStreamFrame>(frame);
     uint64_t fin_offset = reset_frame->GetFinalSize();
 
@@ -111,6 +114,7 @@ void RecvStream::HandleResetStreamFrame(std::shared_ptr<IFrame> frame) {
     _final_offset = fin_offset;
 
     _read_back(_buffer, reset_frame->GetAppErrorCode());
+    */
 }
 
 }

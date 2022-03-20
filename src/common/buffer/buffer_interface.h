@@ -17,14 +17,14 @@ public:
     virtual ~IBufferReadOnly() {}
     // read to res buf but don't change the read point
     // return the length of the data actually read
-    virtual uint32_t ReadNotMovePt(char* res, uint32_t len);
+    virtual uint32_t ReadNotMovePt(char* res, uint32_t len) = 0;
     // move read point
     // return the length of the data actually move
-    virtual uint32_t MoveReadPt(uint32_t len);
+    virtual uint32_t MoveReadPt(uint32_t len) = 0;
     // return the length of the data actually read
-    virtual uint32_t Read(char* res, uint32_t len);
+    virtual uint32_t Read(char* res, uint32_t len) = 0;
     // return remaining length of readable data
-    virtual uint32_t GetCanReadLength();
+    virtual uint32_t GetCanReadLength() = 0;
     // return the start and end positions of readable data
     virtual std::pair<char*, char*> GetReadPair() = 0;
 

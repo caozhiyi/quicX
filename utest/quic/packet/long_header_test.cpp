@@ -4,8 +4,6 @@
 #include "quic/frame/frame_interface.h"
 
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_queue.h"
-#include "common/alloter/pool_alloter.h"
 
 class TestLongHeader: public quicx::LongHeader {
 public:
@@ -30,12 +28,18 @@ TEST(long_header_utest, encode) {
     TestLongHeader long_header1 = TestLongHeader();
     TestLongHeader long_header2 = TestLongHeader();
 
-    auto IAlloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
-    auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);
-    auto buffer = std::make_shared<quicx::BufferQueue>(block, IAlloter);
+    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
+    std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
 
-    EXPECT_TRUE(long_header1.Encode(buffer, IAlloter));
-    EXPECT_TRUE(long_header2.Decode(buffer, IAlloter));
+
+    EXPECT_TRUE(long_header1.Encode(write_buffer));
+
+    auto data_piar = write_buffer->GetAllData();
+    auto pos_piar = read_buffer->GetReadPair();
+    memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
+    read_buffer->MoveWritePt(data_piar.second - data_piar.first);
+    EXPECT_TRUE(long_header2.Decode(read_buffer, true));
 
     // TODO check result
 }

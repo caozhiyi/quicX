@@ -17,7 +17,7 @@ class BufferReadOnly:
     public IBufferReadOnly {
 
 public:
-    BufferReadOnly(std::shared_ptr<BlockMemoryPool>& IAlloter);
+    BufferReadOnly(std::shared_ptr<BlockMemoryPool>& alloter);
     ~BufferReadOnly();
 
     // read to res buf but don't change the read point

@@ -90,7 +90,7 @@ AckEcnFrame::~AckEcnFrame() {
 
 }
 
-bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<BufferWriteOnly> buffer) {
+bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     if (!AckFrame::Encode(buffer)) {
         return false;
     }
@@ -114,7 +114,7 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<BufferWriteOnly> buffer) {
     return true;
 }
 
-bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<BufferReadOnly> buffer, bool with_type) {
+bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     if (!AckFrame::Decode(buffer, with_type)) {
         return false;
     } 

@@ -17,7 +17,7 @@ class BufferWriteOnly:
     public IBufferWriteOnly {
 
 public:
-    BufferWriteOnly(std::shared_ptr<BlockMemoryPool>& IAlloter);
+    BufferWriteOnly(std::shared_ptr<BlockMemoryPool>& alloter);
     ~BufferWriteOnly();
     // return the length of the actual write
     virtual uint32_t Write(const char* data, uint32_t len);

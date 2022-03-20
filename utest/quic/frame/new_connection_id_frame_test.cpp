@@ -1,17 +1,15 @@
 #include <gtest/gtest.h>
 
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_queue.h"
-#include "common/alloter/pool_alloter.h"
 #include "quic/frame/new_connection_id_frame.h"
 
 TEST(new_connection_id_frame_utest, decode1) {
     quicx::NewConnectionIDFrame frame1;
     quicx::NewConnectionIDFrame frame2;
 
-    auto IAlloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
-    auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);
-    auto buffer = std::make_shared<quicx::BufferQueue>(block, IAlloter);
+    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
+    std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
 
     frame1.SetRetirePriorTo(10086);
     frame1.SetSequenceNumber(2352632);
@@ -25,8 +23,13 @@ TEST(new_connection_id_frame_utest, decode1) {
     frame1.AddConnectionID(1212124);
     frame1.AddConnectionID(1212125);
 
-    EXPECT_TRUE(frame1.Encode(buffer, IAlloter));
-    EXPECT_TRUE(frame2.Decode(buffer, IAlloter, true));
+    EXPECT_TRUE(frame1.Encode(write_buffer));
+
+    auto data_piar = write_buffer->GetAllData();
+    auto pos_piar = read_buffer->GetReadPair();
+    memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
+    read_buffer->MoveWritePt(data_piar.second - data_piar.first);
+    EXPECT_TRUE(frame2.Decode(read_buffer, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetRetirePriorTo(), frame2.GetRetirePriorTo());
