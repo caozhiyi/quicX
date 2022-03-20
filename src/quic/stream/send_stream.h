@@ -21,7 +21,7 @@ public:
     // end the stream
     void Close();
 
-    void HandleFrame(std::shared_ptr<Frame> frame);
+    void HandleFrame(std::shared_ptr<IFrame> frame);
 
     // reset the stream
     void Reset(uint64_t err);
@@ -29,8 +29,8 @@ public:
     void SetWriteCallBack(StreamWriteBack wb) { _write_back = wb; }
 
 private:
-    void HandleMaxStreamDataFrame(std::shared_ptr<Frame> frame);
-    void HandleStopSendingFrame(std::shared_ptr<Frame> frame);
+    void HandleMaxStreamDataFrame(std::shared_ptr<IFrame> frame);
+    void HandleStopSendingFrame(std::shared_ptr<IFrame> frame);
 
 private:
     uint64_t _data_offset;

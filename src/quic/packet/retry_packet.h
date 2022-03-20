@@ -11,11 +11,11 @@ public:
     RetryPacket();
     virtual ~RetryPacket();
 
-    virtual bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    virtual bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    virtual bool AddFrame(std::shared_ptr<Frame> frame);
+    virtual bool AddFrame(std::shared_ptr<IFrame> frame);
 
 private:
     char* _retry_token;

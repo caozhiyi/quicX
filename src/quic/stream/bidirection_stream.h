@@ -28,7 +28,7 @@ public:
     void SetToDataMax(uint32_t to_data_max);
     uint32_t GetToDataMax();
 
-    void HandleFrame(std::shared_ptr<Frame> frame);
+    void HandleFrame(std::shared_ptr<IFrame> frame);
 
 protected:
     std::shared_ptr<RecvStream> _recv_stream;

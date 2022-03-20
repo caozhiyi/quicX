@@ -10,7 +10,7 @@
 
 namespace quicx {
 
-class NormalAlloter : public Alloter {
+class NormalAlloter : public IAlloter {
 public:
     NormalAlloter();
     ~NormalAlloter();

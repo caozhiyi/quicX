@@ -16,7 +16,8 @@ static const uint32_t __default_max_bytes = 256;
 static const uint32_t __default_number_of_free_lists = __default_max_bytes / __align;
 static const uint32_t __default_number_add_nodes = 20;
 
-class PoolAlloter : public Alloter {
+class PoolAlloter:
+    public IAlloter {
 public:
     PoolAlloter();
     ~PoolAlloter();
@@ -42,12 +43,12 @@ private:
     
     char*  _pool_start;         
     char*  _pool_end;
-    std::vector<MemNode*> _free_list;  
-    std::vector<char*>    _malloc_vec;
-    std::shared_ptr<Alloter> _alloter;
+    std::vector<MemNode*>     _free_list;  
+    std::vector<char*>        _malloc_vec;
+    std::shared_ptr<IAlloter> _alloter;
 };
 
-std::shared_ptr<Alloter> MakePoolAlloterPtr();
+std::shared_ptr<IAlloter> MakePoolAlloterPtr();
 
 }
 

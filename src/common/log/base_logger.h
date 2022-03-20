@@ -19,7 +19,7 @@ namespace quicx {
 // basic management class of log printing
 struct Log;
 class Logger;
-class Alloter;
+class IAlloter;
 class BaseLogger {
 public:
     BaseLogger(uint16_t cache_size, uint16_t block_size);
@@ -47,7 +47,7 @@ protected:
     uint16_t _cache_size;
     uint16_t _block_size;
 
-    std::shared_ptr<Alloter> _allocter;
+    std::shared_ptr<IAlloter> _allocter;
     ThreadSafeQueue<Log*>    _cache_queue;
     std::shared_ptr<Logger>  _logger;
 };

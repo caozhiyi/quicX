@@ -10,15 +10,15 @@ TEST(stream_data_blocked_frame_utest, decode1) {
     quicx::StreamDataBlockedFrame frame1;
     quicx::StreamDataBlockedFrame frame2;
 
-    auto alloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
+    auto IAlloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
     auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);
-    auto buffer = std::make_shared<quicx::BufferQueue>(block, alloter);
+    auto buffer = std::make_shared<quicx::BufferQueue>(block, IAlloter);
 
     frame1.SetStreamID(121616546);
     frame1.SetMaximumData(23624236235626);
 
-    EXPECT_TRUE(frame1.Encode(buffer, alloter));
-    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
+    EXPECT_TRUE(frame1.Encode(buffer, IAlloter));
+    EXPECT_TRUE(frame2.Decode(buffer, IAlloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetStreamID(), frame2.GetStreamID());

@@ -1,6 +1,8 @@
 
 #include <memory>
 
+#include "common/log/log.h"
+#include "quic/common/constants.h"
 #include "quic/packet/long_header.h"
 #include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
@@ -13,56 +15,56 @@ LongHeader::LongHeader():
     _destination_connection_id_length(0),
     _source_connection_id_length(0) {
     _header_format._header = 0;
-    memset(_destination_connection_id, 0, __connection_length_max);
-    memset(_source_connection_id, 0, __connection_length_max);
+    memset(_destination_connection_id, 0, __max_connection_length);
+    memset(_source_connection_id, 0, __max_connection_length);
 }
 
 LongHeader::~LongHeader() {
 
 }
 
-bool LongHeader::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    int size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    char* pos = data;
-
+bool LongHeader::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    uint16_t need_size = EncodeSize();
+    
+    auto pos_pair = buffer->GetWritePair();
+    auto remain_size = pos_pair.second - pos_pair.first;
+    if (need_size > remain_size) {
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        return false;
+    }
+    
+    char* pos = pos_pair.first;
     pos = EncodeFixed<uint8_t>(pos, _header_format._header);
-    pos = EncodeVarint(pos, _version);
-   
+    pos = EncodeFixed<uint32_t>(pos, _version);
     pos = EncodeFixed<uint8_t>(pos, _destination_connection_id_length);
-    buffer->Write(data, pos - data);
+
+    buffer->MoveWritePt(pos - pos_pair.first);
     buffer->Write(_destination_connection_id, _destination_connection_id_length);
+    pos += _destination_connection_id_length;
 
-    pos = data;
     pos = EncodeFixed<uint8_t>(pos, _source_connection_id_length);
-    buffer->Write(data, pos - data);
+    buffer->MoveWritePt(pos - pos_pair.first);
+
     buffer->Write(_source_connection_id, _source_connection_id_length);
-
-    alloter->PoolFree(data, size);
-
     return true;
 }
 
-bool LongHeader::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    uint16_t size = EncodeSize();
-    char* data = alloter->PoolMalloc<char>(size);
-    size = buffer->ReadNotMovePt(data, size);
-    char* pos = data;
-    char* end = data + size;
+bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+    auto pos_pair = buffer->GetReadPair();
+    char* pos = pos_pair.first;
 
-    pos = DecodeFixed<uint8_t>(pos, end, _header_format._header);
-    pos = DecodeVarint(pos, end, _version);
+    pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _header_format._header);
+    pos = DecodeVarint(pos, pos_pair.second, _version);
    
-    pos = DecodeFixed<uint8_t>(pos, end, _destination_connection_id_length);
+    pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _destination_connection_id_length);
     memcpy(&_destination_connection_id, pos, _destination_connection_id_length);
     pos += _destination_connection_id_length;
 
-    pos = DecodeFixed<uint8_t>(pos, end, _source_connection_id_length);
+    pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _source_connection_id_length);
     memcpy(&_source_connection_id, pos, _source_connection_id_length);
     pos += _source_connection_id_length;
  
-    buffer->MoveReadPt(pos - data);
-    alloter->PoolFree(data, size);
+    buffer->MoveReadPt(pos - pos_pair.first);
 
     return true;
 }

@@ -7,7 +7,7 @@
 
 namespace quicx {
 
-class Frame;
+class IFrame;
 class Address;
 class ClientConnection: public Connection {
 public:

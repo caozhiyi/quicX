@@ -12,9 +12,9 @@
 #include "quic/frame/retire_connection_id_frame.h"
 
 TEST(frame_decode_utest, decode1) {
-    auto alloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
+    auto IAlloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
     auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);
-    auto buffer = std::make_shared<quicx::BufferQueue>(block, alloter);
+    auto buffer = std::make_shared<quicx::BufferQueue>(block, IAlloter);
 
     quicx::AckFrame ack_frame1;
     std::shared_ptr<quicx::AckFrame> ack_frame2;
@@ -41,22 +41,22 @@ TEST(frame_decode_utest, decode1) {
     ack_frame1.AddAckRange(3, 5);
     ack_frame1.AddAckRange(4, 6);
     ack_frame1.AddAckRange(2, 3);
-    EXPECT_TRUE(ack_frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(ack_frame1.Encode(buffer, IAlloter));
 
     // stop sending frame
     stop_frame1.SetStreamID(1010101);
     stop_frame1.SetAppErrorCode(404);
-    EXPECT_TRUE(stop_frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(stop_frame1.Encode(buffer, IAlloter));
 
     // stream frame
-    auto data = std::make_shared<quicx::BufferQueue>(block, alloter);
+    auto data = std::make_shared<quicx::BufferQueue>(block, IAlloter);
     char frame_data[64] = "1234567890123456789012345678901234567890";
     data->Write(frame_data, sizeof(frame_data));
     stream_frame1.SetFin();
     stream_frame1.SetOffset(1042451);
     stream_frame1.SetStreamID(20010);
     stream_frame1.SetData(data);
-    EXPECT_TRUE(stream_frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(stream_frame1.Encode(buffer, IAlloter));
 
     // new connection id frame
     new_frame1.SetRetirePriorTo(10086);
@@ -68,21 +68,21 @@ TEST(frame_decode_utest, decode1) {
     new_frame1.AddConnectionID(1212123);
     new_frame1.AddConnectionID(1212124);
     new_frame1.AddConnectionID(1212125);
-    EXPECT_TRUE(new_frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(new_frame1.Encode(buffer, IAlloter));
 
     // retire connection id frame
     retire_frame1.SetSequenceNumber(23624236235626);
-    EXPECT_TRUE(retire_frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(retire_frame1.Encode(buffer, IAlloter));
 
     // connection close frame
     close_frame1.SetErrorCode(10086);
     close_frame1.SetErrFrameType(0x05);
     close_frame1.SetReason("it is a test.");
-    EXPECT_TRUE(close_frame1.Encode(buffer, alloter));
+    EXPECT_TRUE(close_frame1.Encode(buffer, IAlloter));
 
     // decode frames
-    std::vector<std::shared_ptr<quicx::Frame>> frames;
-    EXPECT_TRUE(quicx::DecodeFrame(buffer, alloter, frames));
+    std::vector<std::shared_ptr<quicx::IFrame>> frames;
+    EXPECT_TRUE(quicx::DecodeFrame(buffer, IAlloter, frames));
     EXPECT_EQ(frames.size(), 6);
 
     // check decode result

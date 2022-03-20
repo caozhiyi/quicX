@@ -14,11 +14,11 @@ HandShakePacket::~HandShakePacket() {
 
 }
 
-bool HandShakePacket::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool HandShakePacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool HandShakePacket::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool HandShakePacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     return true;
 }
 
@@ -26,7 +26,7 @@ uint32_t HandShakePacket::EncodeSize() {
     return 0;
 }
 
-bool HandShakePacket::AddFrame(std::shared_ptr<Frame> frame) {
+bool HandShakePacket::AddFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 

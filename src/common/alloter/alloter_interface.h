@@ -13,10 +13,10 @@ namespace quicx {
 
 static const uint16_t __align = sizeof(unsigned long);
 
-class Alloter {
+class IAlloter {
 public:
-    Alloter() {}
-    virtual ~Alloter() {}
+    IAlloter() {}
+    virtual ~IAlloter() {}
 
     virtual void* Malloc(uint32_t size) = 0;
     virtual void* MallocAlign(uint32_t size) = 0;
@@ -32,7 +32,7 @@ protected:
 
 class AlloterWrap {
 public:
-    AlloterWrap(std::shared_ptr<Alloter> a) : _alloter(a) {}
+    AlloterWrap(std::shared_ptr<IAlloter> a) : _alloter(a) {}
     ~AlloterWrap() {}
 
     //for object. invocation of constructors and destructors
@@ -54,7 +54,7 @@ public:
     void PoolFree(T* &m, uint32_t len);
 
 private:
-    std::shared_ptr<Alloter> _alloter;
+    std::shared_ptr<IAlloter> _alloter;
 };
 
 template<typename T, typename... Args>

@@ -17,7 +17,7 @@ public:
     // abort reading
     void Close();
 
-    void HandleFrame(std::shared_ptr<Frame> frame);
+    void HandleFrame(std::shared_ptr<IFrame> frame);
 
     void SetReadCallBack(StreamReadBack rb) { _read_back = rb; }
 
@@ -28,9 +28,9 @@ public:
     uint32_t GetToDataMax() { return _to_data_max; }
 
 private:
-    void HandleStreamFrame(std::shared_ptr<Frame> frame);
-    void HandleStreamDataBlockFrame(std::shared_ptr<Frame> frame);
-    void HandleResetStreamFrame(std::shared_ptr<Frame> frame);
+    void HandleStreamFrame(std::shared_ptr<IFrame> frame);
+    void HandleStreamDataBlockFrame(std::shared_ptr<IFrame> frame);
+    void HandleResetStreamFrame(std::shared_ptr<IFrame> frame);
 
 private:
     uint32_t _data_limit;  // peer send data limit

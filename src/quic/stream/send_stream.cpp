@@ -114,7 +114,7 @@ void SendStream::Close() {
     //_connection->Send(frame);
 }
 
-void SendStream::HandleFrame(std::shared_ptr<Frame> frame) {
+void SendStream::HandleFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     if (frame_type == FT_MAX_STREAM_DATA) {
         HandleMaxStreamDataFrame(frame);
@@ -141,7 +141,7 @@ void SendStream::Reset(uint64_t err) {
     //_connection->Send(frame);
 }
 
-void SendStream::HandleMaxStreamDataFrame(std::shared_ptr<Frame> frame) {
+void SendStream::HandleMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     auto max_data_frame = std::dynamic_pointer_cast<MaxStreamDataFrame>(frame);
     uint64_t new_limit = max_data_frame->GetMaximumData();
 
@@ -156,7 +156,7 @@ void SendStream::HandleMaxStreamDataFrame(std::shared_ptr<Frame> frame) {
     _write_back(can_write_size, 0);
 }
 
-void SendStream::HandleStopSendingFrame(std::shared_ptr<Frame> frame) {
+void SendStream::HandleStopSendingFrame(std::shared_ptr<IFrame> frame) {
     auto stop_frame = std::dynamic_pointer_cast<StopSendingFrame>(frame);
     uint32_t err = stop_frame->GetAppErrorCode();
 

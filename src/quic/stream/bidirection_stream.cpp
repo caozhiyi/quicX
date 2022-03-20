@@ -62,7 +62,7 @@ uint32_t BidirectionStream::GetToDataMax() {
     return _recv_stream->GetToDataMax();
 }
 
-void BidirectionStream::HandleFrame(std::shared_ptr<Frame> frame) {
+void BidirectionStream::HandleFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     if (frame_type == FT_STREAM ||
         frame_type == FT_STREAM_DATA_BLOCKED ||

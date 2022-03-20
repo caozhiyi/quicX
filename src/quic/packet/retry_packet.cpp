@@ -14,11 +14,11 @@ RetryPacket::~RetryPacket() {
 
 }
 
-bool RetryPacket::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool RetryPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool RetryPacket::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool RetryPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     return true;
 }
 
@@ -26,7 +26,7 @@ uint32_t RetryPacket::EncodeSize() {
     return 0;
 }
 
-bool RetryPacket::AddFrame(std::shared_ptr<Frame> frame) {
+bool RetryPacket::AddFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 

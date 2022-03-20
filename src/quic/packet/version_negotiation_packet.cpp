@@ -16,8 +16,8 @@ VersionNegotiationPacket::~VersionNegotiationPacket() {
 }
 
 
-bool VersionNegotiationPacket::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    LongHeader::Encode(buffer, alloter);
+bool VersionNegotiationPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    LongHeader::Encode(buffer);
 
     if (_support_version.size() > 0) {
         buffer->Write((char*)&(*_support_version.begin()), _support_version.size() * sizeof(uint32_t));
@@ -25,8 +25,8 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<Buffer> buffer, std::share
     return true;
 }
 
-bool VersionNegotiationPacket::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
-    LongHeader::Decode(buffer, alloter);
+bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+    LongHeader::Decode(buffer);
     uint32_t size = buffer->GetCanReadLength();
     if (size % sizeof(uint32_t) > 0) {
         // error size of version negotiation packet.
@@ -36,13 +36,8 @@ bool VersionNegotiationPacket::Decode(std::shared_ptr<Buffer> buffer, std::share
 
     uint32_t version_list_size = size / sizeof(uint32_t);
     _support_version.resize(version_list_size);
-    
-    char* data = alloter->PoolMalloc<char>(size);
-    buffer->Read(data, size);
 
-    memcpy((char*)&(*_support_version.begin()), data, size);
-    alloter->PoolFree(data, size);
-
+    buffer->Read((char*)&(*_support_version.begin()), size);
     return true;
 }
 
@@ -50,7 +45,7 @@ uint32_t VersionNegotiationPacket::EncodeSize() {
     return sizeof(VersionNegotiationPacket) + _support_version.size() * sizeof(uint32_t);
 }
 
-bool VersionNegotiationPacket::AddFrame(std::shared_ptr<Frame> frame) {
+bool VersionNegotiationPacket::AddFrame(std::shared_ptr<IFrame> frame) {
     // do nothing
     return true;
 }

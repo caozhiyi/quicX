@@ -13,11 +13,11 @@ InitPacket::~InitPacket() {
 
 }
 
-bool InitPacket::Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool InitPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool InitPacket::Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter) {
+bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     return true;
 }
 
@@ -25,7 +25,7 @@ uint32_t InitPacket::EncodeSize() {
     return 0;
 }
 
-bool InitPacket::AddFrame(std::shared_ptr<Frame> frame) {
+bool InitPacket::AddFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 

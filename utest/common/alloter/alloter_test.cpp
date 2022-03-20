@@ -17,34 +17,34 @@ public:
 };
 
 TEST(alloter_utest, warp1) {
-    quicx::AlloterWrap alloter(std::shared_ptr<quicx::Alloter>(new quicx::PoolAlloter()));
-    AlloterTestClass* at = alloter.PoolNew<AlloterTestClass>(100);
+    quicx::AlloterWrap IAlloter(std::shared_ptr<quicx::IAlloter>(new quicx::PoolAlloter()));
+    AlloterTestClass* at = IAlloter.PoolNew<AlloterTestClass>(100);
     ASSERT_EQ(100, at->_data);
-    alloter.PoolDelete<AlloterTestClass>(at);
+    IAlloter.PoolDelete<AlloterTestClass>(at);
     ASSERT_EQ(0, __alloter_test_value);
 }
 
 
 TEST(alloter_utest, warp2) {
-    quicx::AlloterWrap alloter(std::shared_ptr<quicx::Alloter>(new quicx::PoolAlloter()));
+    quicx::AlloterWrap IAlloter(std::shared_ptr<quicx::IAlloter>(new quicx::PoolAlloter()));
     {
-        auto at = alloter.PoolNewSharePtr<AlloterTestClass>(100);
+        auto at = IAlloter.PoolNewSharePtr<AlloterTestClass>(100);
         ASSERT_EQ(100, at->_data);
     }
     ASSERT_EQ(0, __alloter_test_value);
 }
 
 TEST(alloter_utest, warp3) {
-    quicx::AlloterWrap alloter(std::shared_ptr<quicx::Alloter>(new quicx::PoolAlloter()));
-    auto data = alloter.PoolMalloc<char>(100);
-    alloter.PoolFree<char>(data, 100);
+    quicx::AlloterWrap IAlloter(std::shared_ptr<quicx::IAlloter>(new quicx::PoolAlloter()));
+    auto data = IAlloter.PoolMalloc<char>(100);
+    IAlloter.PoolFree<char>(data, 100);
     ASSERT_EQ(nullptr, data);
 }
 
 
 TEST(alloter_utest, warp4) {
-    quicx::AlloterWrap alloter(std::shared_ptr<quicx::Alloter>(new quicx::PoolAlloter()));
+    quicx::AlloterWrap IAlloter(std::shared_ptr<quicx::IAlloter>(new quicx::PoolAlloter()));
     {
-        auto data = alloter.PoolMallocSharePtr<char>(100);
+        auto data = IAlloter.PoolMallocSharePtr<char>(100);
     }
 }

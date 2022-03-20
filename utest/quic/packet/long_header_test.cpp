@@ -23,19 +23,19 @@ public:
     }
     ~TestLongHeader() {}
 
-    virtual bool AddFrame(std::shared_ptr<quicx::Frame> frame) { return true; }
+    virtual bool AddFrame(std::shared_ptr<quicx::IFrame> frame) { return true; }
 };
 
 TEST(long_header_utest, encode) {
     TestLongHeader long_header1 = TestLongHeader();
     TestLongHeader long_header2 = TestLongHeader();
 
-    auto alloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
+    auto IAlloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
     auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);
-    auto buffer = std::make_shared<quicx::BufferQueue>(block, alloter);
+    auto buffer = std::make_shared<quicx::BufferQueue>(block, IAlloter);
 
-    EXPECT_TRUE(long_header1.Encode(buffer, alloter));
-    EXPECT_TRUE(long_header2.Decode(buffer, alloter));
+    EXPECT_TRUE(long_header1.Encode(buffer, IAlloter));
+    EXPECT_TRUE(long_header2.Decode(buffer, IAlloter));
 
     // TODO check result
 }

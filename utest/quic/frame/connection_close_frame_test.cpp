@@ -9,16 +9,16 @@ TEST(connection_close_frame_utest, decode1) {
     quicx::ConnectionCloseFrame frame1;
     quicx::ConnectionCloseFrame frame2;
 
-    auto alloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
+    auto IAlloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
     auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);
-    auto buffer = std::make_shared<quicx::BufferQueue>(block, alloter);
+    auto buffer = std::make_shared<quicx::BufferQueue>(block, IAlloter);
 
     frame1.SetErrorCode(10086);
     frame1.SetErrFrameType(0x05);
     frame1.SetReason("it is a test.");
 
-    EXPECT_TRUE(frame1.Encode(buffer, alloter));
-    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
+    EXPECT_TRUE(frame1.Encode(buffer, IAlloter));
+    EXPECT_TRUE(frame2.Decode(buffer, IAlloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetErrorCode(), frame2.GetErrorCode());

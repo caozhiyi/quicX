@@ -140,7 +140,7 @@ void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
     return ChunkAlloc(size, nums);
 }
 
-std::shared_ptr<Alloter> MakePoolAlloterPtr() {
+std::shared_ptr<IAlloter> MakePoolAlloterPtr() {
     return std::make_shared<quicx::PoolAlloter>();
 }
 

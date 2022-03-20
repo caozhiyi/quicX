@@ -10,14 +10,14 @@ TEST(max_streams_frame_utest, decode1) {
     quicx::MaxStreamsFrame frame1(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
     quicx::MaxStreamsFrame frame2(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
 
-    auto alloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
+    auto IAlloter = std::make_shared<quicx::AlloterWrap>(quicx::MakePoolAlloterPtr());
     auto block = quicx::MakeBlockMemoryPoolPtr(32, 2);
-    auto buffer = std::make_shared<quicx::BufferQueue>(block, alloter);
+    auto buffer = std::make_shared<quicx::BufferQueue>(block, IAlloter);
 
     frame1.SetMaximumStreams(23624236235626);
 
-    EXPECT_TRUE(frame1.Encode(buffer, alloter));
-    EXPECT_TRUE(frame2.Decode(buffer, alloter, true));
+    EXPECT_TRUE(frame1.Encode(buffer, IAlloter));
+    EXPECT_TRUE(frame2.Decode(buffer, IAlloter, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetMaximumStreams(), frame2.GetMaximumStreams());

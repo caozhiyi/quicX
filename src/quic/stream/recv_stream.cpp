@@ -33,7 +33,7 @@ void RecvStream::Close() {
     //_connection->Send(stop_frame);
 }
 
-void RecvStream::HandleFrame(std::shared_ptr<Frame> frame) {
+void RecvStream::HandleFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     if (frame_type == FT_STREAM) {
         HandleStreamFrame(frame);
@@ -59,7 +59,7 @@ void RecvStream::SetDataLimit(uint32_t limit) {
     //_connection->Send(max_frame);
 }
 
-void RecvStream::HandleStreamFrame(std::shared_ptr<Frame> frame) {
+void RecvStream::HandleStreamFrame(std::shared_ptr<IFrame> frame) {
     if(!_state_machine->OnFrame(frame->GetType())) {
         return;
     }
@@ -81,7 +81,7 @@ void RecvStream::HandleStreamFrame(std::shared_ptr<Frame> frame) {
     }
 }
 
-void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<Frame> frame) {
+void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     if(!_state_machine->OnFrame(frame->GetType())) {
         return;
     }
@@ -96,7 +96,7 @@ void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<Frame> frame) {
     //_connection->Send(max_frame);
 }
 
-void RecvStream::HandleResetStreamFrame(std::shared_ptr<Frame> frame) {
+void RecvStream::HandleResetStreamFrame(std::shared_ptr<IFrame> frame) {
     if(!_state_machine->OnFrame(frame->GetType())) {
         return;
     }

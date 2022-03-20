@@ -9,7 +9,7 @@
 
 namespace quicx {
 
-class Frame;
+class IFrame;
 class Buffer;
 class Connection;
 class StreamStateMachine;
@@ -24,7 +24,7 @@ public:
 
     virtual void Close() = 0;
 
-    virtual void HandleFrame(std::shared_ptr<Frame> frame) = 0;
+    virtual void HandleFrame(std::shared_ptr<IFrame> frame) = 0;
 
 protected:
     void SetStreamID(uint64_t id) { _stream_id = id; }

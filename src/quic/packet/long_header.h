@@ -8,13 +8,14 @@
 
 namespace quicx {
 
-class LongHeader: public Packet {
+class LongHeader:
+    public Packet {
 public:
     LongHeader();
     virtual ~LongHeader();
 
-    virtual bool Encode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
-    virtual bool Decode(std::shared_ptr<Buffer> buffer, std::shared_ptr<AlloterWrap> alloter);
+    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
 protected:
