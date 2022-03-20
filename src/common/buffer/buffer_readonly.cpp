@@ -11,12 +11,23 @@
 namespace quicx {
 
 BufferReadOnly::BufferReadOnly(std::shared_ptr<BlockMemoryPool>& IAlloter):
-    BufferWriter(IAlloter) {
+    _init(false),
+    _alloter(IAlloter) {
 
+    _buffer_start = (char*)IAlloter->PoolLargeMalloc();
+    _total_size = IAlloter->GetBlockLength();
+    _buffer_end = _buffer_start + _total_size;
+    _read = _buffer_start;
 }
 
 BufferReadOnly::~BufferReadOnly() {
-
+    if (_buffer_start) {
+        auto IAlloter = _alloter.lock();
+        if (IAlloter) {
+            void* m = (void*)_buffer_start;
+            IAlloter->PoolLargeFree(m);
+        }
+    }
 }
 
 uint32_t BufferReadOnly::ReadNotMovePt(char* res, uint32_t len) {
@@ -24,9 +35,9 @@ uint32_t BufferReadOnly::ReadNotMovePt(char* res, uint32_t len) {
 }
 
 uint32_t BufferReadOnly::MoveReadPt(uint32_t len) {
-    /*s-----------r-----w-------------e*/
-    if (_read <= _write) {
-        size_t size = _write - _read;
+    /*s-----------r-------------------e*/
+    if (_read <= _buffer_end) {
+        size_t size = _buffer_end - _read;
         // res can load all
         if (size <= len) {
             _read += size;
@@ -53,8 +64,8 @@ uint32_t BufferReadOnly::Read(char* res, uint32_t len) {
 }
 
 uint32_t BufferReadOnly::GetCanReadLength() {
-    /*s-----------r-----w-------------e*/
-    if (_read <= _write) {
+    /*s-----------r-------------------e*/
+    if (_read <= _buffer_end) {
         return uint32_t(_write - _read);
 
     } else {
@@ -62,6 +73,31 @@ uint32_t BufferReadOnly::GetCanReadLength() {
         abort();
         return 0;
     }
+}
+
+std::pair<char*, char*> BufferReadOnly::GetReadPair() {
+    return std::make_pair(_read, _buffer_end);
+}
+
+uint32_t BufferReadOnly::MoveWritePt(uint32_t len) {
+    if (_init) {
+        // shouldn't be here
+        abort();
+        return 0;
+    }
+    _init = true;
+
+    uint32_t remain_size = uint32_t(_buffer_end - _buffer_start)
+    if (len < remain_size) {
+        _buffer_end = _buffer_start + len;
+        return len;
+    }
+
+    return remain_size;
+}
+
+std::pair<char*, char*> BufferReadOnly::GetWritePair() {
+    return std::make_pair(_buffer_start, _buffer_end);
 }
 
 uint32_t BufferReadOnly::_Read(char* res, uint32_t len, bool move_pt) {
