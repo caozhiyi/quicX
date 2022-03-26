@@ -39,8 +39,8 @@ bool StreamFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     if (HasLength()) {
         pos = EncodeVarint(pos, _length);
     }
-    buffer->MoveWritePt(pos - pos_pair.second);
-    buffer->Write(_data, _send_length);
+    buffer->MoveWritePt(pos - pos_pair.first);
+    buffer->Write(_data, _length);
     return true;
 }
 
@@ -86,7 +86,7 @@ void StreamFrame::SetData(char* data, uint32_t send_len) {
     if (send_len > 0) {
         _frame_type |= SFF_LEN;
         _data = data;
-        _send_length = send_len;
+        _length = send_len;
     }
 }
 

@@ -44,14 +44,14 @@ bool NewTokenFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_ty
     }
     pos = DecodeVarint(pos, pos_pair.second, _token_length);
 
-    buffer->MoveWritePt(pos - pos_pair.first);
+    buffer->MoveReadPt(pos - pos_pair.first);
     if (_token_length > buffer->GetCanReadLength()) {
         LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetCanReadLength(), _token_length);
         return false;
     }
     
     _token = pos;
-    buffer->MoveWritePt(_token_length);
+    buffer->MoveReadPt(_token_length);
     return true;
 }
 

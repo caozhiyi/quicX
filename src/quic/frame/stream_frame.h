@@ -37,14 +37,12 @@ public:
     bool HasLength() { return _frame_type & SFF_LEN; }
     void SetData(char* data, uint32_t send_len);
     char* GetData() { return _data; }
+    uint32_t GetLength() { return _length; }
 
 private:
     uint64_t _stream_id;  // indicating the stream ID of the stream.
     uint64_t _offset;     // the byte offset in the stream for the data in this STREAM frame.
 
-    uint32_t _send_length;   // only send this length of data from _data
-    //std::shared_ptr<Buffer> _data;
-    
     uint32_t _length;     // the length of the Stream Data field in this STREAM frame.
     char* _data;          // the bytes from the designated stream to be delivered.
 };

@@ -11,7 +11,7 @@
 #include "quic/frame/retire_connection_id_frame.h"
 
 TEST(frame_decode_utest, decode1) {
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
+    auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
     std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
     std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
 
@@ -121,8 +121,7 @@ TEST(frame_decode_utest, decode1) {
     EXPECT_EQ(stream_frame1.GetStreamID(), stream_frame2->GetStreamID());
     EXPECT_EQ(stream_frame1.GetOffset(), stream_frame2->GetOffset());
     auto data2 = stream_frame2->GetData();
-    char frame_data2[64] = {0};
-    EXPECT_EQ(std::string(frame_data), std::string(data2));
+    EXPECT_EQ(std::string(frame_data), std::string(data2, stream_frame2->GetLength()));
 
     // check new connection id frame
     EXPECT_EQ(new_frame1.GetType(), new_frame2->GetType());

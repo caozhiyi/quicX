@@ -7,7 +7,7 @@ TEST(new_connection_id_frame_utest, decode1) {
     quicx::NewConnectionIDFrame frame1;
     quicx::NewConnectionIDFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
+    auto alloter = quicx::MakeBlockMemoryPoolPtr(256, 2);
     std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
     std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
 
