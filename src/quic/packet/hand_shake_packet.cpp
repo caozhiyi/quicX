@@ -5,9 +5,12 @@
 namespace quicx {
 
 HandShakePacket::HandShakePacket() {
-    _header_format._header_info._header_form = 1;
-    _header_format._header_info._fix_bit = 1;
-    _header_format._header_info._packet_type = PT_HANDSHAKE;
+
+}
+
+HandShakePacket::HandShakePacket(std::shared_ptr<IHeader> header):
+    IPacket(header) {
+
 }
 
 HandShakePacket::~HandShakePacket() {

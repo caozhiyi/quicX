@@ -36,7 +36,7 @@ public:
     FrameDecode();
     ~FrameDecode();
 
-    bool DecodeFrame(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
+    bool DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 private:
     typedef std::function<std::shared_ptr<IFrame>(uint16_t)> FrameCreater;
     // frame type to craeter function map
@@ -83,7 +83,7 @@ FrameDecode::~FrameDecode() {
 
 }
 
-bool FrameDecode::DecodeFrame(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     if(!buffer) {
         return false;
     }
@@ -122,8 +122,8 @@ bool FrameDecode::DecodeFrame(std::shared_ptr<IBufferReadOnly> buffer, std::vect
     return true;
 }
 
-bool DecodeFrame(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
-    return FrameDecode::Instance().DecodeFrame(buffer, frames);
+bool DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+    return FrameDecode::Instance().DecodeFrames(buffer, frames);
 }
 
 }

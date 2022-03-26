@@ -8,7 +8,7 @@ namespace quicx {
 
 class IFrame;
 class IBufferReadOnly;
-bool DecodeFrame(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
+bool DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 
 }
 

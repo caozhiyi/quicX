@@ -5,6 +5,7 @@
 
 #include "common/alloter/pool_block.h"
 
+/*
 class TestLongHeader: public quicx::LongHeader {
 public:
     TestLongHeader() {
@@ -43,3 +44,4 @@ TEST(long_header_utest, encode) {
 
     // TODO check result
 }
+*/

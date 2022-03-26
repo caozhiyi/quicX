@@ -19,7 +19,7 @@ std::string ParseVersion(char* packet) {
 
     } else if (first_byte_bit5 && !first_byte_bit2) {
         if (!first_byte_bit8) {
-            throw ("Packet without version");
+            throw ("IPacket without version");
         }
     if (first_byte_bit5) {
         version = std::string(&packet[9], 4);
@@ -29,7 +29,7 @@ std::string ParseVersion(char* packet) {
     }
 
   } else {
-        throw("Packet without version");
+        throw("IPacket without version");
   }
 
   return version;

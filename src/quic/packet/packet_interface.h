@@ -7,19 +7,20 @@
 namespace quicx {
 
 class IFrame;
-class Buffer;
-class AlloterWrap;
+class IHeader;
 
-class Packet {
+class IPacket {
 public:
-    Packet() {}
-    virtual ~Packet() {}
+    IPacket() {}
+    IPacket(std::shared_ptr<IHeader> header): _header(header) {}
+    virtual ~IPacket() {}
 
     virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer) = 0;
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false) = 0;
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeSize() = 0;
 
-    virtual bool AddFrame(std::shared_ptr<IFrame> frame) = 0;
+protected:
+    std::shared_ptr<IHeader> _header;
 };
 
 }

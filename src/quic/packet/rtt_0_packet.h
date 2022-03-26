@@ -2,13 +2,17 @@
 #ifndef QUIC_PACKET_RTT_0_PACKET
 #define QUIC_PACKET_RTT_0_PACKET
 
-#include "quic/packet/long_header.h"
+#include <memory>
+#include "quic/packet/packet_interface.h"
+#include "quic/packet/header_interface.h"
 
 namespace quicx {
 
-class Rtt0Packet: public LongHeader {
+class Rtt0Packet:
+    public IPacket {
 public:
     Rtt0Packet();
+    Rtt0Packet(std::shared_ptr<IHeader> header);
     virtual ~Rtt0Packet();
 
     virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);

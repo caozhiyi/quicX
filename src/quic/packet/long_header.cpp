@@ -14,7 +14,15 @@ LongHeader::LongHeader():
     _version(0),
     _destination_connection_id_length(0),
     _source_connection_id_length(0) {
-    _header_format._header = 0;
+    memset(_destination_connection_id, 0, __max_connection_length);
+    memset(_source_connection_id, 0, __max_connection_length);
+}
+
+LongHeader::LongHeader(HeaderFlag flag):
+    IHeader(flag),
+    _version(0),
+    _destination_connection_id_length(0),
+    _source_connection_id_length(0) {
     memset(_destination_connection_id, 0, __max_connection_length);
     memset(_source_connection_id, 0, __max_connection_length);
 }
@@ -24,6 +32,10 @@ LongHeader::~LongHeader() {
 }
 
 bool LongHeader::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+    if (!_flag.Encode(buffer)) {
+        return false;
+    }
+
     uint16_t need_size = EncodeSize();
     
     auto pos_pair = buffer->GetWritePair();
@@ -34,7 +46,6 @@ bool LongHeader::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     }
     
     char* pos = pos_pair.first;
-    pos = EncodeFixed<uint8_t>(pos, _header_format._header);
     pos = EncodeFixed<uint32_t>(pos, _version);
     pos = EncodeFixed<uint8_t>(pos, _destination_connection_id_length);
 
@@ -49,13 +60,17 @@ bool LongHeader::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag) {
+    if (with_flag) {
+        if (_flag.Decode(buffer)) {
+            return false;
+        }
+    }
+    
     auto pos_pair = buffer->GetReadPair();
     char* pos = pos_pair.first;
 
-    pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _header_format._header);
     pos = DecodeVarint(pos, pos_pair.second, _version);
-   
     pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _destination_connection_id_length);
     memcpy(&_destination_connection_id, pos, _destination_connection_id_length);
     pos += _destination_connection_id_length;
@@ -71,6 +86,13 @@ bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type)
 
 uint32_t LongHeader::EncodeSize() {
     return sizeof(LongHeader);
+}
+
+PacketType LongHeader::GetPacketType() const {
+    if (_version == 0) {
+        return PT_NEGOTIATION;
+    }
+    return PacketType(_flag.GetLongHeaderFlag()._packet_type);
 }
 
 }

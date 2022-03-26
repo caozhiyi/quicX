@@ -4,9 +4,12 @@
 namespace quicx {
 
 InitPacket::InitPacket() {
-    _header_format._header_info._header_form = 1;
-    _header_format._header_info._fix_bit = 1;
-    _header_format._header_info._packet_type = PT_INITIAL;
+
+}
+
+InitPacket::InitPacket(std::shared_ptr<IHeader> header):
+    IPacket(header) {
+
 }
 
 InitPacket::~InitPacket() {

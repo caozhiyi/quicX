@@ -5,8 +5,12 @@
 namespace quicx {
 
 Rtt1Packet::Rtt1Packet() {
-    _header_format._header_info._header_form = 0;
-    _header_format._header_info._fix_bit = 1;
+
+}
+
+Rtt1Packet::Rtt1Packet(std::shared_ptr<IHeader> header):
+    IPacket(header) {
+
 }
 
 Rtt1Packet::~Rtt1Packet() {

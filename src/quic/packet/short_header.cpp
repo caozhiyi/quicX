@@ -3,9 +3,13 @@
 
 namespace quicx {
 
-ShortHeader::ShortHeader():
-    _packet_number(0) {
-    _header_format._header = 0;
+ShortHeader::ShortHeader() {
+
+}
+
+ShortHeader::ShortHeader(HeaderFlag flag):
+    IHeader(flag) {
+
 }
 
 ShortHeader::~ShortHeader() {

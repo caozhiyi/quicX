@@ -84,7 +84,7 @@ TEST(frame_decode_utest, decode1) {
 
     // decode frames
     std::vector<std::shared_ptr<quicx::IFrame>> frames;
-    EXPECT_TRUE(quicx::DecodeFrame(read_buffer, frames));
+    EXPECT_TRUE(quicx::DecodeFrames(read_buffer, frames));
     EXPECT_EQ(frames.size(), 6);
 
     // check decode result

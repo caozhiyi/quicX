@@ -2,13 +2,17 @@
 #ifndef QUIC_PACKET_RETRY_PACKET
 #define QUIC_PACKET_RETRY_PACKET
 
-#include "quic/packet/long_header.h"
+#include <memory>
+#include "quic/packet/packet_interface.h"
+#include "quic/packet/header_interface.h"
 
 namespace quicx {
 
-class RetryPacket: public LongHeader {
+class RetryPacket:
+    public IPacket {
 public:
     RetryPacket();
+    RetryPacket(std::shared_ptr<IHeader> header);
     virtual ~RetryPacket();
 
     virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);

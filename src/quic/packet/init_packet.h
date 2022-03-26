@@ -3,13 +3,16 @@
 #define QUIC_PACKET_INIT_PACKET
 
 #include <memory>
-#include "quic/packet/long_header.h"
+#include "quic/packet/packet_interface.h"
+#include "quic/packet/header_interface.h"
 
 namespace quicx {
 
-class InitPacket: public LongHeader {
+class InitPacket:
+    public IPacket {
 public:
     InitPacket();
+    InitPacket(std::shared_ptr<IHeader> header);
     virtual ~InitPacket();
 
     virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
