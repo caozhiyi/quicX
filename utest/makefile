@@ -13,6 +13,7 @@ SRCS = $(wildcard ../src/common/timer/*.cpp   \
 				  ../src/quic/frame/*.cpp     \
 				  ../src/quic/stream/*.cpp    \
 				  ../src/quic/packet/*.cpp    \
+				  ../src/quic/crypto/*.cpp    \
 				  ./common/alloter/*.cpp  \
 				  ./common/timer/*.cpp    \
 				  ./common/lock/*.cpp     \
@@ -39,12 +40,14 @@ INCLUDES = -I../              \
 CCFLAGS = -fPIC -m64 -g -std=c++11 -lstdc++ -pipe  -lpthread
 
 GTESTLIB = ../third/lib/libgtest.a
+SSLLIB = ../third/lib/libcrypto.a
+CRYPTOLIB = ../third/lib/libssl.a
 BIN = quicx-utest
 
 all:$(BIN)
 
 $(BIN):$(OBJS)
-	$(CC) $(OBJS) -o $(BIN) $(CCFLAGS) $(INCLUDES) $(GTESTLIB)
+	$(CC) $(OBJS) -o $(BIN) $(CCFLAGS) $(INCLUDES) $(GTESTLIB) ${SSLLIB} ${CRYPTOLIB}
 
 %.o : %.cpp
 	$(CC) -c $< -o $@ $(CCFLAGS) $(INCLUDES) 
