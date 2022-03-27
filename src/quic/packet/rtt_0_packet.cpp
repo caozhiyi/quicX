@@ -20,7 +20,7 @@ bool Rtt0Packet::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool Rtt0Packet::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool Rtt0Packet::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
     return true;
 }
 

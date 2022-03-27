@@ -20,7 +20,7 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
     return true;
 }
 

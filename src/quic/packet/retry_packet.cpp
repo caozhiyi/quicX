@@ -21,7 +21,7 @@ bool RetryPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool RetryPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool RetryPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
     return true;
 }
 

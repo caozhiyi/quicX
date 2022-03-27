@@ -16,7 +16,7 @@ public:
     virtual ~Rtt0Packet();
 
     virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header = false);
     virtual uint32_t EncodeSize();
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);

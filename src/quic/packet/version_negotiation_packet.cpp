@@ -20,7 +20,7 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) 
     return true;
 }
 
-bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
 
     return true;
 }
