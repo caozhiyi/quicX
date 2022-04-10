@@ -24,6 +24,7 @@ SRCS = $(wildcard ../src/common/timer/*.cpp   \
 				  ./common/structure/*.cpp\
 				  ./quic/frame/*.cpp      \
 				  ./quic/packet/*.cpp     \
+				  ./quic/crypto/*.cpp     \
 				  ./common/*.cpp          \
 				  ./*.cpp)
 
@@ -40,8 +41,9 @@ INCLUDES = -I../              \
 CCFLAGS = -fPIC -m64 -g -std=c++11 -lstdc++ -pipe  -lpthread
 
 GTESTLIB = ../third/lib/libgtest.a
-SSLLIB = ../third/lib/libcrypto.a
-CRYPTOLIB = ../third/lib/libssl.a
+CRYPTOLIB = ../third/lib/libcrypto.a
+SSLLIB = ../third/lib/libssl.a
+
 BIN = quicx-utest
 
 all:$(BIN)
