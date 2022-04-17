@@ -1,6 +1,7 @@
 #ifndef QUIC_CRYPTO_SSL_CTX
 #define QUIC_CRYPTO_SSL_CTX
 
+#include <string>
 #include <cstdint>
 #include "openssl/ssl.h"
 #include "common/util/singleton.h"
@@ -20,6 +21,8 @@ public:
     bool SetCertificateAndKey(const std::string& cert_path, const std::string& key_path, const std::string& key_pwd);
     // get ssl ctx
     SSL_CTX* GetSSLCtx() { return _ssl_ctx; }
+    // get connection index
+    int32_t GetSslConnectionIndex() { return _ssl_connection_index; }
 
 private:
     X509* LoadCertificate(const std::string& cert_path);
