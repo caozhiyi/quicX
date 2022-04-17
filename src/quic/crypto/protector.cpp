@@ -4,8 +4,10 @@
 #include "openssl/sha.h"
 #include "openssl/ssl.h"
 #include "openssl/hkdf.h"
+#include "openssl/digest.h"
 
 #include "common/log/log.h"
+#include "quic/crypto/type.h"
 #include "quic/crypto/protector.h"
 
 namespace quicx {
@@ -22,6 +24,12 @@ bool Protector::MakeInitSecret(char* sercet, uint16_t length) {
     static const char* salt = "\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb\x7f\x0a";
     SecretPair& secret_pair = _secrets[ssl_encryption_initial];
 
+    /*
+     * RFC 9001, section 5.  Packet Protection
+     *
+     * Initial packets use AEAD_AES_128_GCM.  The hash function
+     * for HKDF when deriving initial secrets and keys is SHA-256.
+     */
     auto digest = EVP_sha256();
     size_t is_len = SHA256_DIGEST_LENGTH;
     uint8_t is[SHA256_DIGEST_LENGTH];
@@ -35,7 +43,7 @@ bool Protector::MakeInitSecret(char* sercet, uint16_t length) {
     struct {
         std::string  label;
         std::string* source_secret; 
-        uint8_t      target_secret_len;
+        uint32_t     target_secret_len;
         std::string* target_secret;
 
     } keys_list[] = {
@@ -61,10 +69,45 @@ bool Protector::MakeInitSecret(char* sercet, uint16_t length) {
 }
 
 bool Protector::MakeEncryptionSecret(bool is_write, ssl_encryption_level_t level, const SSL_CIPHER *cipher, const uint8_t *secret, size_t secret_len) {
-    Secret& secret = is_write ? _secrets[level]._server_secret : _secrets[level]._client_secret;
+    Secret& secret_info = is_write ? _secrets[level]._server_secret : _secrets[level]._client_secret;
     _cipher = SSL_CIPHER_get_protocol_id(cipher);
 
-    // todo
+    uint32_t key_len = 0;
+    const EVP_MD *digest = GetCiphers(_cipher, level, key_len);
+    if (!digest) {
+        LOG_ERROR("get ciphers failed.");
+        return false;
+    }
+
+    secret_info._secret = std::string((char*)secret, secret_len);
+    struct {
+        std::string  label;
+        std::string* source_secret; 
+        uint32_t     target_secret_len;
+        std::string* target_secret;
+
+    } keys_list[] = {
+        {"tls13 quic key", &secret_info._secret, key_len,     &secret_info._key},
+        {"tls13 quic iv",  &secret_info._secret, QUIC_IV_LEN, &secret_info._iv},
+        {"tls13 quic hp",  &secret_info._secret, key_len,     &secret_info._hp},
+    };
+    for (uint32_t i = 0; i < (sizeof(keys_list) / sizeof(keys_list[0])); i++) {
+        *keys_list[i].target_secret = HkdfExpand(digest, keys_list[i].label.c_str(), keys_list[i].label.length(), keys_list[i].source_secret, keys_list[i].target_secret_len);
+        if (keys_list[i].target_secret->length() == 0) {
+            LOG_ERROR("hkdf expand secret failed. index:%d", i);
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+void Protector::DiscardKey(ssl_encryption_level_t level) {
+    _secrets[level]._client_secret._key.clear();
+}
+
+bool Protector::IsAvailableKey(ssl_encryption_level_t level) {
+    return !_secrets[level]._client_secret._key.empty();
 }
 
 std::string Protector::HkdfExpand(const EVP_MD* digest, const char* label, uint8_t label_len, const std::string* secret, uint8_t out_len) {
@@ -82,6 +125,32 @@ std::string Protector::HkdfExpand(const EVP_MD* digest, const char* label, uint8
     }
 
     return std::string((char*)ret, out_len);
+}
+
+const EVP_MD* Protector::GetCiphers(uint32_t id, enum ssl_encryption_level_t level, uint32_t& out_len) {
+    uint32_t len = 0;
+      
+    if (level == ssl_encryption_initial) {
+        id = TLS_AES_128_GCM_SHA256;
+    }
+
+    switch (id) {
+        case TLS_AES_128_GCM_SHA256:
+        out_len = 16;
+        return EVP_sha256();
+
+    case TLS_AES_256_GCM_SHA384:
+        out_len = 32;
+        return EVP_sha384();
+
+    case TLS_CHACHA20_POLY1305_SHA256:
+        out_len = 32;
+        return EVP_sha256();
+
+    default:
+        LOG_ERROR("unknow ciphers id:%d", id);
+        return nullptr;
+    }
 }
 
 }
