@@ -73,7 +73,7 @@ SysCallInt32Result RecvFrom(int64_t sockfd, char *buf, uint32_t len, uint16_t fl
     struct sockaddr_in addr_cli;
     socklen_t fromlen = sizeof(sockaddr);
 
-    const int32_t rc = recvfrom(sockfd, buf, len, 0, (sockaddr*)&addr_cli, &fromlen);
+    const int32_t rc = recvfrom(sockfd, buf, len, flag, (sockaddr*)&addr_cli, &fromlen);
     if (rc == -1) {
         return {rc, errno};
     }

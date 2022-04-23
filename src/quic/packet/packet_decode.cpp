@@ -42,7 +42,7 @@ bool DecodePackets(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::sha
         }
             
         std::shared_ptr<LongHeader> header = std::make_shared<LongHeader>(flag);
-        if (header->Decode(buffer)) {
+        if (!header->Decode(buffer)) {
             LOG_ERROR("decode long header failed.");
             return false;
         }
