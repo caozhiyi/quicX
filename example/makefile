@@ -16,18 +16,6 @@ SRCS = $(wildcard ../src/common/timer/*.cpp         \
 				  ../src/quic/crypto/*.cpp          \
 				  ../src/quic/udp/*.cpp             \
 				  ../src/quic/controller/*.cpp      \
-				  ./common/alloter/*.cpp            \
-				  ./common/timer/*.cpp              \
-				  ./common/lock/*.cpp               \
-				  ./common/log/*.cpp                \
-				  ./common/util/*.cpp               \
-				  ./common/network/*.cpp            \
-				  ./common/deocde/*.cpp             \
-				  ./common/structure/*.cpp          \
-				  ./quic/frame/*.cpp                \
-				  ./quic/packet/*.cpp               \
-				  ./quic/crypto/*.cpp               \
-				  ./common/*.cpp                    \
 				  ./*.cpp)
 
 OBJS = $(patsubst %.cpp, %.o, $(SRCS))
@@ -46,7 +34,7 @@ GTESTLIB = ../third/lib/libgtest.a
 CRYPTOLIB = ../third/lib/libcrypto.a
 SSLLIB = ../third/lib/libssl.a
 
-BIN = quicx-utest
+BIN = quicx-test
 
 all:$(BIN)
 
