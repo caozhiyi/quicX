@@ -8,6 +8,8 @@
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
 
+#include <arpa/inet.h>
+
 namespace quicx {
 
 LongHeader::LongHeader():
@@ -69,8 +71,9 @@ bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag)
     
     auto pos_pair = buffer->GetReadPair();
     char* pos = pos_pair.first;
-
     pos = DecodeFixed<uint32_t>(pos, pos_pair.second, _version);
+    _version = ntohl(_version);
+
     pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _destination_connection_id_length);
     memcpy(&_destination_connection_id, pos, _destination_connection_id_length);
     pos += _destination_connection_id_length;

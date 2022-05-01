@@ -42,7 +42,7 @@ enum LogLevel {
 
 // log cache config
 static const uint16_t __log_cache_size = 20;
-static const uint16_t __log_block_size = 1024; 
+static const uint16_t __log_block_size = 2048;
 
 
 class Logger;

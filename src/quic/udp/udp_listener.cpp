@@ -50,7 +50,8 @@ bool UdpListener::Listen(const std::string& ip, uint16_t port) {
             LOG_ERROR("recv from failed. err:%d", recv_ret.errno_);
             continue;
         }
-        
+        LOG_DEBUG("recv udp msg. msg:%s", buffer_pair.first);
+        LOG_DEBUG("recv udp msg. size:%d", recv_ret._return_value);
         recv_buffer->MoveWritePt(recv_ret._return_value);
         _recv_callback(recv_buffer);
     }

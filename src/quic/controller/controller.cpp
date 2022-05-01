@@ -1,4 +1,8 @@
 #include <functional>
+
+#include "common/log/log.h"
+#include "common/log/file_logger.h"
+#include "common/log/stdout_logger.h"
 #include "quic/udp/udp_listener.h"
 #include "quic/udp/udp_packet_in.h"
 #include "quic/controller/controller.h"
@@ -9,7 +13,9 @@ namespace quicx {
 
 Controller::Controller():
     _listener(nullptr) {
-
+    std::shared_ptr<Logger> std_log = std::make_shared<StdoutLogger>();
+    LOG_SET(std_log);
+    LOG_SET_LEVEL(LL_DEBUG);
 }
 
 Controller::~Controller() {

@@ -16,6 +16,8 @@ enum PacketType {
 const uint8_t __max_connection_length = 20;
 const uint8_t __min_connection_length = 8;
 
+const char* PacketTypeToString(PacketType type);
+
 }
 
 #endif

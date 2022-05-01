@@ -4,13 +4,13 @@
 namespace quicx {
 
 bool IsBigEndian() {
-    union temp_endian {
+    static union temp_endian {
         int32_t i;
         char c;
     } temp;
     temp.i = 1;
 
-    return temp.c == 1;
+    return temp.c != 1;
 }
 
 }

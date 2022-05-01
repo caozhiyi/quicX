@@ -3,7 +3,8 @@
 
 namespace quicx {
 
-InitPacket::InitPacket() {
+InitPacket::InitPacket():
+    IPacket() {
 
 }
 

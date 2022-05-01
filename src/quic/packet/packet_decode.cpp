@@ -47,6 +47,7 @@ bool DecodePackets(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::sha
             return false;
         }
 
+        LOG_DEBUG("get packet type:%s", PacketTypeToString(header->GetPacketType()));
         switch (header->GetPacketType())
         {
         case PT_INITIAL:
@@ -66,6 +67,7 @@ bool DecodePackets(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::sha
             break;
         default:
             LOG_ERROR("unknow packet type. type:%d", header->GetPacketType());
+            return false;
         }
         
         if (packet->Decode(buffer)) {

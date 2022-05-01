@@ -77,7 +77,7 @@ SysCallInt32Result RecvFrom(int64_t sockfd, char *buf, uint32_t len, uint16_t fl
     if (rc == -1) {
         return {rc, errno};
     }
-    
+
     addr.SetIp(inet_ntoa(addr_cli.sin_addr));
     addr.SetPort(ntohs(addr_cli.sin_port));
     return {rc, 0};

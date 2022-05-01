@@ -36,12 +36,7 @@ uint32_t HeaderFlag::EncodeSize() {
 }
 
 bool HeaderFlag::IsShortHeaderFlag() const {
-    if (_flag._long_header_flag._header_form != 1) {
-        return true;
-    
-    } else {
-        return false;
-    }
+    return _flag._long_header_flag._header_form != 1;
 }
 
 }
