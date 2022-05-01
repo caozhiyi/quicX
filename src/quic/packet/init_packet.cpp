@@ -1,6 +1,7 @@
 #include "common/log/log.h"
 #include "quic/packet/type.h"
 #include "quic/common/version.h"
+#include "common/decode/decode.h"
 #include "quic/common/constants.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/long_header.h"
@@ -35,14 +36,23 @@ bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
     auto pos_pair = buffer->GetReadPair();
 
     // check buffer length
-    if (pos_pair.second - pos_pair.second <= __min_initial_size) {
+    if (pos_pair.second - pos_pair.first <= __min_initial_size) {
         LOG_ERROR("buffer is too small for initial packet");
         return false;
     }
     
-
     char* pos = pos_pair.first;
+    pos = DecodeVarint(pos, pos_pair.second, _token_length);
+    _token = pos;
+    pos += _token_length;
+    LOG_DEBUG("get initial token:%s", std::string(_token, _token_length));
 
+    pos = DecodeVarint(pos, pos_pair.second, _payload_length);
+    _payload = pos;
+    pos += _payload_length;
+
+    _buffer = buffer;
+    buffer->MoveReadPt(pos - pos_pair.first);
     return true;
 }
 

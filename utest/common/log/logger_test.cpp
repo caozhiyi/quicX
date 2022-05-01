@@ -23,11 +23,9 @@ TEST(filelogger_utest, debug) {
     quicx::LOG_SET(file_log);
     quicx::LOG_SET_LEVEL(quicx::LL_DEBUG);
     
-    for (size_t i = 0; i < 100; i++) {
-        quicx::LOG_DEBUG("it is a debug test log.");
-        quicx::LOG_INFO("%s %d", "it is a info test num", 100191);
-        quicx::LOG_WARN("%s %d", "it is a warn test num", 100191);
-        quicx::LOG_ERROR("%s %d", "it is a error test num", 100191);
-        quicx::LOG_FATAL("%s %d", "it is a fatal test num", 100191);
-    }
+    quicx::LOG_DEBUG("it is a debug test log.");
+    quicx::LOG_INFO("%s %d", "it is a info test num", 100191);
+    quicx::LOG_WARN("%s %d", "it is a warn test num", 100191);
+    quicx::LOG_ERROR("%s %d", "it is a error test num", 100191);
+    quicx::LOG_FATAL("%s %d", "it is a fatal test num", 100191);
 }

@@ -24,8 +24,8 @@
 #include "retire_connection_id_frame.h"
 
 #include "common/log/log.h"
+#include "common/decode/decode.h"
 #include "common/util/singleton.h"
-#include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
@@ -100,7 +100,7 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vec
             LOG_ERROR("wrong buffer size while read frame type. size:%d", buffer->GetCanReadLength());
             return false;
         }
-        DecodeFixed<uint16_t>(type_buf, type_buf + __type_buf_length, frame_type);
+        FixedDecodeUint16(type_buf, type_buf + __type_buf_length, frame_type);
 
         auto creater = __frame_creater_map.find(frame_type);
         if (creater != __frame_creater_map.end()) {

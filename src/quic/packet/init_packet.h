@@ -27,6 +27,8 @@ private:
     uint32_t _payload_length;
     uint32_t _packet_number;
     char* _payload;
+
+    std::shared_ptr<IBufferReadOnly> _buffer;
 };
 
 }

@@ -1,7 +1,7 @@
 #include <cstring>
 #include "common/log/log.h"
 #include "common/util/random.h"
-#include "common/decode/normal_decode.h"
+#include "common/decode/decode.h"
 #include "quic/frame/path_response_frame.h"
 #include "common/buffer/buffer_interface.h"
 #include "quic/frame/path_challenge_frame.h"
@@ -30,7 +30,7 @@ bool PathChallengeFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     }
 
     char* pos = pos_pair.first;
-    pos = EncodeFixed<uint16_t>(pos, _frame_type);
+    pos = FixedEncodeUint16(pos, _frame_type);
     buffer->MoveWritePt(pos - pos_pair.first);
 
     buffer->Write(_data, __path_data_length);
@@ -42,7 +42,7 @@ bool PathChallengeFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool wi
     char* pos = pos_pair.first;
 
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
+        pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
         if (_frame_type != FT_PATH_CHALLENGE) {
             return false;
         }

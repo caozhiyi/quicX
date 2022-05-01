@@ -70,7 +70,7 @@ bool DecodePackets(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::sha
             return false;
         }
         
-        if (packet->Decode(buffer)) {
+        if (!packet->Decode(buffer)) {
             LOG_ERROR("decode long header packet failed.");
             return false;
         }

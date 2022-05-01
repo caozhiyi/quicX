@@ -1,7 +1,6 @@
 #include "common/log/log.h"
 #include "common/decode/decode.h"
 #include "quic/frame/stream_frame.h"
-#include "common/decode/normal_decode.h"
 
 namespace quicx {
 
@@ -32,7 +31,7 @@ bool StreamFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     }
 
     char* pos = pos_pair.first;
-    pos = EncodeFixed<uint16_t>(pos, _frame_type);
+    pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _stream_id);
     if (HasOffset()) {
         pos = EncodeVarint(pos, _offset);
@@ -50,7 +49,7 @@ bool StreamFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type
     char* pos = pos_pair.first;
 
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
+        pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
         if (_frame_type < FT_STREAM || _frame_type > FT_STREAM_MAX) {
             return false;
         }

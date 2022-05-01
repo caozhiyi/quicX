@@ -1,6 +1,6 @@
 #include "common/log/log.h"
+#include "common/decode/decode.h"
 #include "quic/frame/frame_interface.h"
-#include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
 
@@ -30,7 +30,7 @@ bool IFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
     
-    char* pos = EncodeFixed<uint16_t>(pos_pair.first, _frame_type);
+    char* pos = FixedEncodeUint16(pos_pair.first, _frame_type);
     buffer->MoveWritePt(uint32_t(pos - pos_pair.first));
 
     return true;
@@ -39,7 +39,7 @@ bool IFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
 bool IFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     if (with_type) {
         auto pos_pair = buffer->GetReadPair();
-        char* pos = DecodeFixed<uint16_t>(pos_pair.first, pos_pair.second, _frame_type);
+        char* pos = FixedDecodeUint16(pos_pair.first, pos_pair.second, _frame_type);
         buffer->MoveReadPt(uint32_t(pos - pos_pair.first));
     }
     return true;

@@ -1,125 +1,66 @@
 #include "decode.h"
+#include <arpa/inet.h>
 
 namespace quicx {
 
 const static uint64_t __max_decode = ((uint64_t)-1) >> 2;
 
-enum EncodeLength {
-    EL_1 = 0x00,
-    EL_2 = 0x01,
-    EL_4 = 0x02,
-    EL_8 = 0x03,
-    EL_MASK = ~(0x03 << 6),
-};
-
-// encode state machine
-class EncodeState {
-public:
-    EncodeState() : _encode_length(EL_1), _loop_times(0) {}
-    ~EncodeState() {}
-
-    // return loop times
-    uint32_t NextLoop() {
-        uint32_t ret = 0;
-        _loop_times++;
-        switch (_encode_length)
-        {
-        case EL_1:
-            _encode_length = EL_2;
-        
-        case EL_2:
-            ret = 2 - _loop_times;
-            if (_loop_times >= 2) {
-                _encode_length = EL_4;
-            } else {
-                break;
-            }
-
-        case EL_4:
-            ret = 4 - _loop_times;
-            if (_loop_times >= 4) {
-                _encode_length = EL_8;
-            } else {
-                break;
-            }
-        
-        case EL_8:
-            ret = 8 - _loop_times;
-            break;
-        }
-        return ret;
-    }
-
-    uint8_t GetLength() {
-        return (uint8_t)_encode_length;
-    }
-
-private:
-    EncodeLength _encode_length;
-    uint32_t _loop_times;
-};
+#define IntSet(p, value, len, bits)          \
+    (*(p)++ = ((value >> ((len) * 8)) & 0xff) | ((bits) << 6))
 
 char* EncodeVarint(char* dst, uint64_t value) {
     if (value > __max_decode) {
         throw "too large decode number";
     }
 
-    uint8_t* ptr = reinterpret_cast<uint8_t*>(dst);
-    uint8_t* start = ptr;
-    EncodeState es;
-    uint32_t loop_times = 0;
+    char* p = dst;
+    if (value < (1 << 6)) {
+        IntSet(p, value, 0, 0);
 
-    bool first_byte = true;
-    do
-    {
-        if (first_byte) {
-            first_byte = false;
-             // set first byte
-            *(ptr++) = value & EL_MASK;
-            uint32_t test = *(ptr - 1);
+    } else if (value < (1 << 14)) {
+        IntSet(p, value, 1, 1);
+        IntSet(p, value, 0, 0);
 
-            value = value >> 6;
-            if (value > 0) {
-                loop_times = es.NextLoop();
-            }
+    } else if (value < (1 << 30)) {
+        IntSet(p, value, 3, 2);
+        IntSet(p, value, 2, 0);
+        IntSet(p, value, 1, 0);
+        IntSet(p, value, 0, 0);
 
-        } else {
-            *(ptr++) = value;
-            uint32_t test = *(ptr - 1);
-            value >>= 8;
-            if (value > 0) {
-                loop_times = es.NextLoop();
-            } else {
-                loop_times--;
-            }
-        }
-    } while (loop_times > 0);
-    
-    *(start) |= es.GetLength() << 6;
-    return reinterpret_cast<char*>(ptr);
+    } else {
+        IntSet(p, value, 7, 3);
+        IntSet(p, value, 6, 0);
+        IntSet(p, value, 5, 0);
+        IntSet(p, value, 4, 0);
+        IntSet(p, value, 3, 0);
+        IntSet(p, value, 2, 0);
+        IntSet(p, value, 1, 0);
+        IntSet(p, value, 0, 0);
+    }
+
+    return p;
 }
 
 char* DecodeVarint(char* start, char* end, uint64_t& value) {
-    const static uint8_t first_move = 6;
-    const static uint8_t after_move = 8;
-
-    value = 0;
-    uint8_t prefix = *(reinterpret_cast<const uint8_t*>(start++));
-    int32_t length = prefix >> 6;
-    uint32_t loop_times = 1 << length;
-    
-    value = prefix & EL_MASK;
-    loop_times--;
-
-    uint8_t move = first_move;
-    while (loop_times > 0) {
-        uint64_t byte = *(reinterpret_cast<const uint8_t*>(start++));
-        value |= byte << move;
-        loop_times--;
-        move += after_move;
-   
+    if (start >= end) {
+        return NULL;
     }
-    return start;
+
+    uint8_t* uend = (uint8_t*)start;
+    uint8_t* p = (uint8_t*)start;
+    uint8_t len = 1 << (*p >> 6);
+
+    value = *p++ & 0x3f;
+
+    if ((size_t)(uend - p) < (len - 1)) {
+        return NULL;
+    }
+
+    while (--len) {
+        value = (value << 8) + *p++;
+    }
+
+    return (char*)p;
 }
 
 char* DecodeVarint(char* start, char* end, uint32_t& value) {
@@ -127,6 +68,46 @@ char* DecodeVarint(char* start, char* end, uint32_t& value) {
     char* ret_pos = DecodeVarint(start, end, ret);
     value = uint32_t(ret);
     return ret_pos;
+}
+
+char* FixedEncodeUint8(char *pos, uint8_t value) {
+    *pos++ = *(char*)&value;
+    return pos;
+}
+
+char* FixedDecodeUint8(char *pos, char *end, uint8_t& out) {
+    out = *(uint8_t*)pos++;
+    return pos;
+}
+
+char* FixedEncodeUint16(char *pos, uint16_t value) {
+    *(uint16_t*)pos = htons(value);
+    return pos + sizeof(uint16_t);
+}
+
+char* FixedDecodeUint16(char *pos, char *end, uint16_t& out) {
+    out = ntohs(*(uint16_t*)pos);
+    return pos + sizeof(uint16_t);
+}
+
+char* FixedEncodeUint32(char *pos, uint32_t value) {
+    *(uint32_t*)pos = htonl(value);
+    return pos + sizeof(uint32_t);
+}
+
+char* FixedDecodeUint32(char *pos, char *end, uint32_t& out) {
+    out = ntohl(*(uint32_t*)pos);
+    return pos + sizeof(uint32_t);
+}
+
+char* FixedEncodeUint64(char *pos, uint64_t value) {
+    *(uint64_t*)pos = htonl(value);
+    return pos + sizeof(uint64_t);
+}
+
+char* FixedDecodeUint64(char *pos, char *end, uint64_t& out) {
+    out = ntohl(*(uint64_t*)pos);
+    return pos + sizeof(uint64_t);
 }
 
 }

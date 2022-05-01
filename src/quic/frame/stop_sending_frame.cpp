@@ -1,6 +1,5 @@
 #include "common/log/log.h"
 #include "common/decode/decode.h"
-#include "common/decode/normal_decode.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
@@ -28,7 +27,7 @@ bool StopSendingFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     }
 
     char* pos = pos_pair.first;
-    pos = EncodeFixed<uint16_t>(pos, _frame_type);
+    pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _stream_id);
     pos = EncodeVarint(pos, _app_error_code);
 
@@ -41,7 +40,7 @@ bool StopSendingFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with
     char* pos = pos_pair.first;
 
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
+        pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
         if (_frame_type != FT_STOP_SENDING) {
             return false;
         }

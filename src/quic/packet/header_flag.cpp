@@ -1,6 +1,6 @@
 #include "common/log/log.h"
+#include "common/decode/decode.h"
 #include "quic/packet/header_flag.h"
-#include "common/decode/normal_decode.h"
 
 namespace quicx {
 
@@ -14,7 +14,7 @@ bool HeaderFlag::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     }
 
     char* pos = pos_pair.first;
-    pos = EncodeFixed<uint8_t>(pos, _flag._header_flag);
+    pos = FixedEncodeUint8(pos, _flag._header_flag);
     buffer->MoveWritePt(pos - pos_pair.first);
     return true;
 }
@@ -26,7 +26,7 @@ bool HeaderFlag::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
     }
 
     char* pos = pos_pair.first;
-    pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _flag._header_flag);
+    pos = FixedDecodeUint8(pos, pos_pair.second, _flag._header_flag);
     buffer->MoveReadPt(pos - pos_pair.first);
     return true;
 }

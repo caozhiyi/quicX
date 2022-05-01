@@ -1,7 +1,6 @@
 #include <cstring>
 #include "common/log/log.h"
 #include "common/decode/decode.h"
-#include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
 #include "quic/frame/new_connection_id_frame.h"
@@ -29,10 +28,10 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     }
 
     char* pos = pos_pair.first;
-    pos = EncodeFixed<uint16_t>(pos, _frame_type);
+    pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _sequence_number);
     pos = EncodeVarint(pos, _retire_prior_to);
-    pos = EncodeFixed<uint8_t>(pos, (uint8_t)_connection_id.size());
+    pos = FixedEncodeUint8(pos, (uint8_t)_connection_id.size());
     for (size_t i = 0; i < _connection_id.size(); i++) {
         pos = EncodeVarint(pos, _connection_id[i]);
     }
@@ -48,13 +47,13 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool 
     char* pos = pos_pair.first;
 
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
+        pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
     }
     pos = DecodeVarint(pos, pos_pair.second, _sequence_number);
     pos = DecodeVarint(pos, pos_pair.second, _retire_prior_to);
     // encode normal members and number of connection id
     uint8_t connection_id_num = 0;
-    pos = DecodeFixed<uint8_t>(pos, pos_pair.second, connection_id_num);
+    pos = FixedDecodeUint8(pos, pos_pair.second, connection_id_num);
 
     _connection_id.resize(connection_id_num);
     for (size_t i = 0; i < connection_id_num; i++) {

@@ -1,7 +1,6 @@
 #include "common/log/log.h"
 #include "common/decode/decode.h"
 #include "quic/frame/max_data_frame.h"
-#include "common/decode/normal_decode.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
 
@@ -27,7 +26,7 @@ bool MaxDataFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     }
 
     char* pos = pos_pair.first;
-    pos = EncodeFixed<uint16_t>(pos, _frame_type);
+    pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _maximum_data);
 
     buffer->MoveWritePt(pos - pos_pair.first);
@@ -39,7 +38,7 @@ bool MaxDataFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_typ
     char* pos = pos_pair.first;
 
     if (with_type) {
-        pos = DecodeFixed<uint16_t>(pos, pos_pair.second, _frame_type);
+        pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
         if (_frame_type != FT_MAX_DATA) {
             return false;
         }
