@@ -1,38 +1,16 @@
-#include "version.h"
+#include "quic/common/version.h"
 
 namespace quicx {
 
-std::string ParseVersion(char* packet) {
-    std::string version;
-
-    uint8_t first_byte = packet[0];
-    uint8_t first_byte_bit1 = ((first_byte & 0x80) != 0);
-    uint8_t first_byte_bit2 = ((first_byte & 0x40) != 0);
-    uint8_t first_byte_bit3 = ((first_byte & 0x20) != 0);
-    uint8_t first_byte_bit4 = ((first_byte & 0x10) != 0);
-    uint8_t first_byte_bit5 = ((first_byte & 0x08) != 0);
-    uint8_t first_byte_bit6 = ((first_byte & 0x04) != 0);
-    uint8_t first_byte_bit7 = ((first_byte & 0x02) != 0);
-    uint8_t first_byte_bit8 = ((first_byte & 0x01) != 0);
-    if (first_byte_bit1) {
-        version = std::string(&packet[1], 4);
-
-    } else if (first_byte_bit5 && !first_byte_bit2) {
-        if (!first_byte_bit8) {
-            throw ("IPacket without version");
+bool CheckVersion(uint32_t version) {
+    static uint16_t versions_size = (sizeof(__quic_versions) / sizeof(__quic_versions[0]));
+    for (uint16_t i = 0; i < versions_size; i++) {
+        if (__quic_versions[i] == version) {
+            return true;
         }
-    if (first_byte_bit5) {
-        version = std::string(&packet[9], 4);
-
-    } else {
-        version = std::string(&packet[5], 4);
     }
 
-  } else {
-        throw("IPacket without version");
-  }
-
-  return version;
+    return false;
 }
 
 }

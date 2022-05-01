@@ -2,10 +2,6 @@
 
 namespace quicx {
 
-VersionNegotiationPacket::VersionNegotiationPacket() {
-
-}
-
 VersionNegotiationPacket::VersionNegotiationPacket(std::shared_ptr<IHeader> header):
     IPacket(header) {
 
@@ -20,7 +16,7 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) 
     return true;
 }
 
-bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
+bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
 
     return true;
 }

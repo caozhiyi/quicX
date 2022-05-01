@@ -1,12 +1,11 @@
+#include "common/log/log.h"
 #include "quic/packet/type.h"
+#include "quic/common/version.h"
+#include "quic/common/constants.h"
 #include "quic/packet/init_packet.h"
+#include "quic/packet/long_header.h"
 
 namespace quicx {
-
-InitPacket::InitPacket():
-    IPacket() {
-
-}
 
 InitPacket::InitPacket(std::shared_ptr<IHeader> header):
     IPacket(header) {
@@ -21,7 +20,29 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
+bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
+    if (!_header) {
+        LOG_ERROR("empty header.");
+        return false;
+    }
+
+    // check version
+    std::shared_ptr<LongHeader> header = std::dynamic_pointer_cast<LongHeader>(_header);
+    if (!CheckVersion(header->GetVersion())) {
+        return false;
+    }
+    
+    auto pos_pair = buffer->GetReadPair();
+
+    // check buffer length
+    if (pos_pair.second - pos_pair.second <= __min_initial_size) {
+        LOG_ERROR("buffer is too small for initial packet");
+        return false;
+    }
+    
+
+    char* pos = pos_pair.first;
+
     return true;
 }
 

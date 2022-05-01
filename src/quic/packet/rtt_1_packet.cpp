@@ -4,10 +4,6 @@
 
 namespace quicx {
 
-Rtt1Packet::Rtt1Packet() {
-
-}
-
 Rtt1Packet::Rtt1Packet(std::shared_ptr<IHeader> header):
     IPacket(header) {
 
@@ -21,7 +17,7 @@ bool Rtt1Packet::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool Rtt1Packet::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
+bool Rtt1Packet::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
     return true;
 }
 

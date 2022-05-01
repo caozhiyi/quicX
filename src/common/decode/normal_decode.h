@@ -7,41 +7,6 @@
 
 namespace quicx {
 
-// return the char offset pos
-// get length of encode result by: return - first param
-template<typename T>
-char* EncodeVarint(char* dst, T value) {
-    static const uint32_t B = 128;
-    uint8_t* ptr = reinterpret_cast<uint8_t*>(dst);
-    while (value >= B) {
-        *(ptr++) = value | B;
-        value >>= 7;
-    }
-    *(ptr++) = static_cast<uint8_t>(value);
-    return reinterpret_cast<char*>(ptr);
-}
-
-// return the char offset pos
-// get length of decode result by: return - first param
-template<typename T>
-char* DecodeVarint(char* start, char* end, T& value) {
-    T result = 0;
-    uint32_t bit_limit = (sizeof(T)-1) * sizeof(void*);
-    for (uint32_t shift = 0; shift <= bit_limit && start < end; shift += 7) {
-        T byte = *(reinterpret_cast<const uint8_t*>(start));
-        start++;
-        if (byte & 128) {
-            // More bytes are present
-            result |= ((byte & 127) << shift);
-        } else {
-            result |= (byte << shift);
-            value = result;
-            return start;
-        }
-    }
-    return nullptr;
-}
-
 template<typename T>
 char* EncodeFixed(char* dst, T value) {
     uint8_t* const buffer = reinterpret_cast<uint8_t*>(dst);

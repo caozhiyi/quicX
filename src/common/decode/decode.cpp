@@ -122,4 +122,11 @@ char* DecodeVarint(char* start, char* end, uint64_t& value) {
     return start;
 }
 
+char* DecodeVarint(char* start, char* end, uint32_t& value) {
+    uint64_t ret = 0;
+    char* ret_pos = DecodeVarint(start, end, ret);
+    value = uint32_t(ret);
+    return ret_pos;
+}
+
 }

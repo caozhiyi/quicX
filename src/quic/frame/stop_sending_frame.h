@@ -23,7 +23,7 @@ public:
 
 private:
     uint64_t _stream_id;      // the Stream ID of the stream being ignored.
-    uint32_t _app_error_code; // the application protocol error code.
+    uint64_t _app_error_code; // the application protocol error code.
 };
 
 }

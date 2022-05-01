@@ -12,12 +12,11 @@ namespace quicx {
 class VersionNegotiationPacket:
     public IPacket {
 public:
-    VersionNegotiationPacket();
     VersionNegotiationPacket(std::shared_ptr<IHeader> header);
     virtual ~VersionNegotiationPacket();
 
     virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header = false);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer);
     virtual uint32_t EncodeSize();
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);

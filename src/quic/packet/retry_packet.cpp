@@ -4,10 +4,6 @@
 
 namespace quicx {
 
-RetryPacket::RetryPacket() {
-
-}
-
 RetryPacket::RetryPacket(std::shared_ptr<IHeader> header):
     IPacket(header) {
 
@@ -21,7 +17,7 @@ bool RetryPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool RetryPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
+bool RetryPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
     return true;
 }
 

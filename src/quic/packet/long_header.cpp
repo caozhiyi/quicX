@@ -68,6 +68,12 @@ bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag)
             return false;
         }
     }
+
+    // check flag fixed bit
+    if (!_flag.GetLongHeaderFlag()._fix_bit) {
+        LOG_ERROR("quic fixed bit is not set");
+        return false;
+    }
     
     auto pos_pair = buffer->GetReadPair();
     char* pos = pos_pair.first;
@@ -75,10 +81,12 @@ bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag)
     _version = ntohl(_version);
 
     pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _destination_connection_id_length);
+    // todo not copy
     memcpy(&_destination_connection_id, pos, _destination_connection_id_length);
     pos += _destination_connection_id_length;
 
     pos = DecodeFixed<uint8_t>(pos, pos_pair.second, _source_connection_id_length);
+    // todo not copy
     memcpy(&_source_connection_id, pos, _source_connection_id_length);
     pos += _source_connection_id_length;
  
@@ -96,6 +104,10 @@ PacketType LongHeader::GetPacketType() const {
         return PT_NEGOTIATION;
     }
     return PacketType(_flag.GetLongHeaderFlag()._packet_type);
+}
+
+uint32_t LongHeader::GetVersion() const {
+    return _version;
 }
 
 }

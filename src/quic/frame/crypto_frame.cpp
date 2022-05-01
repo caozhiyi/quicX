@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "common/decode/decode.h"
 #include "quic/frame/crypto_frame.h"
 #include "common/decode/normal_decode.h"
 

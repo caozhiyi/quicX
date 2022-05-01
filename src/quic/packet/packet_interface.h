@@ -16,7 +16,7 @@ public:
     virtual ~IPacket() {}
 
     virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer) = 0;
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header = false) = 0;
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer) = 0;
     virtual uint32_t EncodeSize() = 0;
 
 protected:

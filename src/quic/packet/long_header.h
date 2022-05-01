@@ -20,9 +20,10 @@ public:
     virtual uint32_t EncodeSize();
 
     PacketType GetPacketType() const;
+    uint32_t GetVersion() const;
 
 protected:
-    uint32_t   _version;
+    uint32_t _version;
 
     uint8_t _destination_connection_id_length;
     char _destination_connection_id[__max_connection_length];

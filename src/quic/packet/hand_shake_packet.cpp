@@ -4,10 +4,6 @@
 
 namespace quicx {
 
-HandShakePacket::HandShakePacket() {
-
-}
-
 HandShakePacket::HandShakePacket(std::shared_ptr<IHeader> header):
     IPacket(header) {
 
@@ -21,7 +17,7 @@ bool HandShakePacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool HandShakePacket::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header) {
+bool HandShakePacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
     return true;
 }
 

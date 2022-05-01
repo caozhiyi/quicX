@@ -12,6 +12,9 @@ const uint16_t __max_v6_packet_size = 1452;
 // The maximum packet size of any QUIC packet over IPv4.
 // 1500(Ethernet) - 20(IPv4 header) - 8(UDP header) = 1472.
 const uint16_t __max_v4_packet_size = 1472; 
+
+const uint16_t __min_initial_size = 1200;
+
 }
 
 #endif

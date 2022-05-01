@@ -11,12 +11,11 @@ namespace quicx {
 class Rtt0Packet:
     public IPacket {
 public:
-    Rtt0Packet();
     Rtt0Packet(std::shared_ptr<IHeader> header);
     virtual ~Rtt0Packet();
 
     virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_header = false);
+    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer);
     virtual uint32_t EncodeSize();
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
