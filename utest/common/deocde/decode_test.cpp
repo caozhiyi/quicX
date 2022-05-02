@@ -48,3 +48,26 @@ TEST(decode_utest, EncodeVarint64_4) {
     EXPECT_EQ(ptr1, ptr2);
     EXPECT_EQ(value, value2);
 }
+
+TEST(decode_utest, decode_bytes_copy) {
+    const char* str = "12345678910";
+    char buf[20] = {};
+    char* ptr1 = quicx::EncodeBytes(buf, buf + 20, str, strlen(str));
+    EXPECT_EQ(ptr1 - buf, strlen(str));
+
+    char buf2[20] = {};
+    char* bufptr = buf2;
+    char* ptr2 = quicx::DecodeBytesCopy(buf, buf + 20, bufptr, strlen(str));
+    EXPECT_EQ(strcmp(str, bufptr), 0);
+}
+
+TEST(decode_utest, decode_bytes_not_copy) {
+    const char* str = "12345678910";
+    char buf[20] = {};
+    char* ptr1 = quicx::EncodeBytes(buf, buf + 20, str, strlen(str));
+    EXPECT_EQ(ptr1 - buf, strlen(str));
+
+    char* bufptr;
+    char* ptr2 = quicx::DecodeBytesNoCopy(buf, buf + 20, bufptr, strlen(str));
+    EXPECT_EQ(strcmp(str, bufptr), 0);
+}

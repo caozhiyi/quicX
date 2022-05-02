@@ -21,6 +21,8 @@ public:
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
 
+    virtual PacketType GetPacketType() { return PT_NEGOTIATION; }
+
 private:
     std::vector<uint32_t> _support_version;
 };

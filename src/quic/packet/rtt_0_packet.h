@@ -20,6 +20,8 @@ public:
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
 
+    virtual PacketType GetPacketType() { return PT_0RTT; }
+
 private:
     uint32_t _payload_length;
     uint32_t _packet_number;

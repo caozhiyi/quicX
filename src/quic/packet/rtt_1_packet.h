@@ -3,6 +3,7 @@
 #define QUIC_PACKET_RTT_1_PACKET
 
 #include <memory>
+#include "quic/common/constants.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/packet/header_interface.h"
 
@@ -19,6 +20,8 @@ public:
     virtual uint32_t EncodeSize();
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
+
+    virtual PacketType GetPacketType() { return PT_0RTT; }
 
 protected:
     char _destination_connection_id[__max_connection_length];

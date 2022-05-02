@@ -15,6 +15,8 @@ const char* PacketTypeToString(PacketType type) {
         return "retry";
     case PT_NEGOTIATION:
         return "negotiation";
+    case PT_1RTT:
+        return "1rtt";
     default:
         return "unkonw";
     }

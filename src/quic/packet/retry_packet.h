@@ -20,6 +20,8 @@ public:
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
 
+    virtual PacketType GetPacketType() { return PT_RETRY; }
+
 private:
     char* _retry_token;
     char _retry_integrity_tag[128];

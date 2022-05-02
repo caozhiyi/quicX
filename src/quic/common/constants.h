@@ -15,6 +15,9 @@ const uint16_t __max_v4_packet_size = 1472;
 
 const uint16_t __min_initial_size = 1200;
 
+const uint8_t __max_connection_length = 20;
+const uint8_t __min_connection_length = 8;
+
 }
 
 #endif
