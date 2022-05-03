@@ -5,14 +5,20 @@
 #include "openssl/ssl.h"
 #include "openssl/hkdf.h"
 #include "openssl/digest.h"
+#include "openssl/chacha.h"
 
 #include "common/log/log.h"
 #include "quic/crypto/type.h"
+#include "quic/common/constants.h"
 #include "quic/crypto/protector.h"
+#include "quic/packet/header_flag.h"
+#include "quic/packet/header_interface.h"
+#include "quic/packet/packet_interface.h"
 
 namespace quicx {
 
-Protector::Protector(): _cipher(0) {
+Protector::Protector():
+    _cipher(0) {
 
 }
 
@@ -72,9 +78,9 @@ bool Protector::MakeEncryptionSecret(bool is_write, ssl_encryption_level_t level
     Secret& secret_info = is_write ? _secrets[level]._server_secret : _secrets[level]._client_secret;
     _cipher = SSL_CIPHER_get_protocol_id(cipher);
 
-    uint32_t key_len = 0;
-    const EVP_MD *digest = GetCiphers(_cipher, level, key_len);
-    if (!digest) {
+    Ciphers ciphers;
+    uint32_t key_len = GetCiphers(_cipher, level, ciphers);
+    if (key_len == 0) {
         LOG_ERROR("get ciphers failed.");
         return false;
     }
@@ -92,7 +98,7 @@ bool Protector::MakeEncryptionSecret(bool is_write, ssl_encryption_level_t level
         {"tls13 quic hp",  &secret_info._secret, key_len,     &secret_info._hp},
     };
     for (uint32_t i = 0; i < (sizeof(keys_list) / sizeof(keys_list[0])); i++) {
-        *keys_list[i].target_secret = HkdfExpand(digest, keys_list[i].label.c_str(), keys_list[i].label.length(), keys_list[i].source_secret, keys_list[i].target_secret_len);
+        *keys_list[i].target_secret = HkdfExpand(ciphers._evp_md, keys_list[i].label.c_str(), keys_list[i].label.length(), keys_list[i].source_secret, keys_list[i].target_secret_len);
         if (keys_list[i].target_secret->length() == 0) {
             LOG_ERROR("hkdf expand secret failed. index:%d", i);
             return false;
@@ -108,6 +114,48 @@ void Protector::DiscardKey(ssl_encryption_level_t level) {
 
 bool Protector::IsAvailableKey(ssl_encryption_level_t level) {
     return !_secrets[level]._client_secret._key.empty();
+}
+
+bool Protector::Decrypt(std::shared_ptr<IPacket> packet, ssl_encryption_level_t level) {
+    BufferView payload = packet->GetPayload();
+    if (payload.IsEmpty()) {
+        LOG_ERROR("empty payload to decrypt");
+        return false;
+    }
+    
+    char* data = payload.GetData();
+    uint32_t data_len = payload.GetLength();
+    if (data_len < __initial_tls_tag_len + 4) {
+        return false;
+    }
+
+    // get ciphers
+    Ciphers ciphers;
+    uint32_t key_len = 0;
+    key_len = GetCiphers(_cipher, level, ciphers);
+    if (key_len == 0) {
+        LOG_ERROR("get cipher failed. level:%d, cipher id:%d", level, _cipher);
+        return false;
+    }
+
+    // get secrets
+    const Secret& secret = _secrets[level]._client_secret;
+
+    // header protection
+    u_char* sample_pos = (u_char*)data + 4;
+    u_char mask[__header_protect_lenght] = {0};
+    std::shared_ptr<IHeader> header = packet->GetHeader();
+    HeaderFlag& header_flag = header->GetHeaderFlag();
+
+    if (!GetHeaderProtectMask(ciphers._header_protect_evp_cipher, secret, sample_pos, mask)) {
+        LOG_ERROR("get header protect mask failed.");
+        return false;
+    }
+
+    uint8_t flag = header_flag.GetFlagUint();
+    flag ^= mask[0] & (header_flag.IsShortHeaderFlag() ? 0x1F : 0x0F);
+
+    return true;
 }
 
 std::string Protector::HkdfExpand(const EVP_MD* digest, const char* label, uint8_t label_len, const std::string* secret, uint8_t out_len) {
@@ -127,7 +175,45 @@ std::string Protector::HkdfExpand(const EVP_MD* digest, const char* label, uint8
     return std::string((char*)ret, out_len);
 }
 
-const EVP_MD* Protector::GetCiphers(uint32_t id, enum ssl_encryption_level_t level, uint32_t& out_len) {
+bool Protector::GetHeaderProtectMask(const EVP_CIPHER *cipher, const Secret& secret, u_char *sample,  u_char *out_mask) {
+    uint32_t cnt = 0;
+    u_char zero[__header_protect_lenght] = {0};
+    memcpy(&cnt, sample, sizeof(uint32_t));
+
+    if (cipher == (const EVP_CIPHER *) EVP_aead_chacha20_poly1305()) {
+        CRYPTO_chacha_20(out_mask, zero, __header_protect_lenght, (const uint8_t*)secret._hp.c_str(), &sample[4], cnt);
+        return true;
+    }
+
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (ctx == NULL) {
+        return false;
+    }
+
+    if (EVP_EncryptInit_ex(ctx, cipher, NULL, (const u_char*)secret._hp.c_str(), sample) != 1) {
+        LOG_ERROR("EVP_EncryptInit_ex() failed");
+        EVP_CIPHER_CTX_free(ctx);
+        return false;
+    }
+
+    int32_t outlen = 0;
+    if (!EVP_EncryptUpdate(ctx, out_mask, &outlen, zero, __header_protect_lenght)) {
+        LOG_ERROR("EVP_EncryptUpdate() failed");
+        EVP_CIPHER_CTX_free(ctx);
+        return false;
+    }
+
+    if (!EVP_EncryptFinal_ex(ctx, out_mask + __header_protect_lenght, &outlen)) {
+        LOG_ERROR("EVP_EncryptFinal_Ex() failed");
+        EVP_CIPHER_CTX_free(ctx);
+        return false;
+    }
+
+    EVP_CIPHER_CTX_free(ctx);
+    return true;
+}
+
+uint32_t Protector::GetCiphers(uint32_t id, enum ssl_encryption_level_t level, Ciphers& ciphers) {
     uint32_t len = 0;
       
     if (level == ssl_encryption_initial) {
@@ -135,22 +221,32 @@ const EVP_MD* Protector::GetCiphers(uint32_t id, enum ssl_encryption_level_t lev
     }
 
     switch (id) {
-        case TLS_AES_128_GCM_SHA256:
-        out_len = 16;
-        return EVP_sha256();
+    case TLS_AES_128_GCM_SHA256:
+        ciphers._content_protect_evp_cipher = EVP_aead_aes_128_gcm();
+        ciphers._header_protect_evp_cipher = EVP_aes_128_ctr();
+        ciphers._evp_md = EVP_sha256();
+        len = 16;
+        break;
 
     case TLS_AES_256_GCM_SHA384:
-        out_len = 32;
-        return EVP_sha384();
+        ciphers._content_protect_evp_cipher = EVP_aead_aes_256_gcm();
+        ciphers._header_protect_evp_cipher = EVP_aes_256_ctr();
+        ciphers._evp_md = EVP_sha384();
+        len = 32;
+        break;
 
     case TLS_CHACHA20_POLY1305_SHA256:
-        out_len = 32;
-        return EVP_sha256();
+        ciphers._content_protect_evp_cipher = EVP_aead_chacha20_poly1305();
+        ciphers._header_protect_evp_cipher = (const EVP_CIPHER *) EVP_aead_chacha20_poly1305();
+        ciphers._evp_md = EVP_sha256();
+        len = 32;
+        break;
 
     default:
         LOG_ERROR("unknow ciphers id:%d", id);
-        return nullptr;
+        return 0;
     }
+    return len;
 }
 
 }

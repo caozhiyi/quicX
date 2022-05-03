@@ -15,6 +15,16 @@ public:
     Controller();
     ~Controller();
 
+    /*
+     * initialize encryption library.
+     * ciphers: cipher suite
+     * prefer_server_ciphers: preferred server encryption suite
+     * cert_path: certificate path
+     * key_path: key file address
+     * key_pwd: key file password
+     */
+    bool SetCrypto(const std::string& ciphers, bool prefer_server_ciphers, const std::string& cert_path, const std::string& key_path, const std::string& key_pwd);
+
     bool Listen(const std::string& ip, uint16_t port);
 
     bool Stop();

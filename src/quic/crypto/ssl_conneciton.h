@@ -9,7 +9,8 @@
 
 namespace quicx {
 
-class SSLConnection {
+class SSLConnection:
+    public Protector {
 public:
     SSLConnection();
     ~SSLConnection();
@@ -17,8 +18,6 @@ public:
     bool Init(uint64_t sock, bool is_server = true);
     // add crypto data
     bool PutHandshakeData(char* data, uint32_t len);
-    // encrypt
-    // bool Encrypt();
 
 public:
     static int32_t SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
@@ -31,7 +30,6 @@ public:
     static int32_t SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t alert);
 private:
     SSL *_ssl;
-    Protector _protector;
 };
 
 }

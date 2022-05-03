@@ -48,7 +48,7 @@ bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
     LOG_DEBUG("get initial token:%s", std::string(_token, _token_length));
 
     pos = DecodeVarint(pos, pos_pair.second, _payload_length);
-    _payload = pos;
+    _payload.SetData(pos, _payload_length);
     pos += _payload_length;
 
     _buffer = buffer;
@@ -62,6 +62,10 @@ uint32_t InitPacket::EncodeSize() {
 
 bool InitPacket::AddFrame(std::shared_ptr<IFrame> frame) {
     return true;
+}
+
+BufferView& InitPacket::GetPayload() {
+    return _payload;
 }
 
 }

@@ -19,6 +19,8 @@ public:
     virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeSize() = 0;
 
+    virtual HeaderFlag& GetHeaderFlag() { return _flag; }
+
 protected:
     HeaderFlag _flag;
 };

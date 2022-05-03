@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include "quic/packet/type.h"
+#include "common/buffer/buffer_view.h"
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
@@ -21,11 +22,13 @@ public:
     virtual uint32_t EncodeSize() = 0;
 
     virtual PacketType GetPacketType() = 0;
+    virtual BufferView& GetPayload() { return _view; }
 
     std::shared_ptr<IHeader> GetHeader() { return _header; }
 
 protected:
     std::shared_ptr<IHeader> _header;
+    static BufferView _view;
 };
 
 }

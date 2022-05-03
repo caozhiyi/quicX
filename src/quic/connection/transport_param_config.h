@@ -3,10 +3,20 @@
 
 #include <string>
 #include <cstdint>
+#include "common/util/singleton.h"
 
 namespace quicx {
 
-struct TransportParamConfig {
+/*
+ * transmission parameters local configuration parameters
+ */
+class TransportParamConfig:
+    public Singleton<TransportParamConfig> {
+public:
+    TransportParamConfig();
+    ~TransportParamConfig();
+
+public:
     std::string _original_destination_connection_id;
     uint32_t    _max_idle_timeout;
     std::string _stateless_reset_token;

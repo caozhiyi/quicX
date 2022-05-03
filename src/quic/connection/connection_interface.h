@@ -2,6 +2,8 @@
 #define QUIC_CONNECTION_CONNECTION_INTERFACE
 
 #include <cstdint>
+#include "quic/crypto/ssl_conneciton.h"
+#include "quic/connection/transport_param.h"
 
 namespace quicx {
 
@@ -16,8 +18,9 @@ public:
     // 4. 保持连接不被关闭, 发送PING等帧
     // 5. 立即关闭连接
     virtual void Close() = 0;
-private:
-    uint64_t _connection_id; 
+protected:
+    SSLConnection  _ssl_connection;
+    TransportParam _transport_param;
 };
 
 }

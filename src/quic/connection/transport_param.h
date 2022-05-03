@@ -15,13 +15,22 @@ public:
     TransportParam();
     ~TransportParam();
 
+    // init transport param with local config
     void Init(TransportParamConfig& conf);
 
+    // merge client and server transport param
+    bool Merge(const TransportParam& tp);
+
+    /*
+     * serialization and deserialization operations
+     */
     bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
     bool Decode(std::shared_ptr<IBufferReadOnly> buffer);
     uint32_t EncodeSize();
 
-
+    /**
+     * get transmission parameter interface cluster
+     */
     const std::string& GetOriginalDestinationConnectionId() { return _original_destination_connection_id; }
     uint32_t GetMaxIdleTimeout() { return _max_idle_timeout; }
     const std::string& GetStatelessResetToken() { return _stateless_reset_token; }
@@ -41,10 +50,12 @@ public:
     const std::string& GetRetrySourceConnectionId() { return _retry_source_connection_id; }
 
 private:
+    /*
+     * internal serialization and deserialization operations
+     */
     char* EncodeUint(char* start, char* end, uint32_t value, uint32_t type);
     char* EncodeString(char* start, char* end, const std::string& value, uint32_t type);
     char* EncodeBool(char* start, char* end, bool value, uint32_t type);
-
     char* DecodeUint(char* start, char* end, uint32_t& value);
     char* DecodeString(char* start, char* end, std::string& value);
     char* DecodeBool(char* start, char* end, bool& value);

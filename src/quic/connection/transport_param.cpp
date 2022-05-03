@@ -47,6 +47,15 @@ void TransportParam::Init(TransportParamConfig& conf) {
     _retry_source_connection_id = conf._retry_source_connection_id;
 }
 
+ bool TransportParam::Merge(const TransportParam& tp) {
+     // the max idle time takes the minimum value
+     if (tp._max_idle_timeout < _max_idle_timeout) {
+         _max_idle_timeout = tp._max_idle_timeout;
+     }
+     
+     return true;
+ }
+
 bool TransportParam::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     if (buffer->GetCanWriteLength() < EncodeSize()) {
         return false;

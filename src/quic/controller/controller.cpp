@@ -5,6 +5,7 @@
 #include "common/log/stdout_logger.h"
 #include "common/buffer/buffer_interface.h"
 
+#include "quic/crypto/ssl_ctx.h"
 #include "quic/common/constants.h"
 #include "quic/udp/udp_listener.h"
 #include "quic/udp/udp_packet_in.h"
@@ -24,6 +25,22 @@ Controller::Controller():
 
 Controller::~Controller() {
 
+}
+
+bool Controller::SetCrypto(const std::string& ciphers, bool prefer_server_ciphers, const std::string& cert_path, const std::string& key_path, const std::string& key_pwd) {
+    if (!SSLCtx::Instance().Init()) {
+        LOG_ERROR("init ssl ctx failed.");
+        return false;
+    }
+    if (!SSLCtx::Instance().SetCiphers(ciphers, prefer_server_ciphers)) {
+        LOG_ERROR("ssl ctx set ciphers failed.");
+        return false;
+    }
+    if (!SSLCtx::Instance().SetCertificateAndKey(cert_path, key_path, key_pwd)) {
+        LOG_ERROR("ssl ctx set certificate and key failed.");
+        return false;
+    }
+    return true;
 }
 
 bool Controller::Listen(const std::string& ip, uint16_t port) {
@@ -82,43 +99,31 @@ bool Controller::HandleInitial(std::shared_ptr<IPacket> packet) {
         LOG_ERROR("dynamic init packet failed.");
         return false;
     }
-
-    std::shared_ptr<LongHeader> header = std::dynamic_pointer_cast<LongHeader>(packet->GetHeader());
-    if (!header) {
-        LOG_ERROR("dynamic long header failed.");
-        return false;
-    }
-    
-    // check destination connection id length
-    if (header->GetDestinationConnectionIdLength() < __min_connection_length) {
-        LOG_ERROR("quic too short dcid in initial. len:%d", header->GetDestinationConnectionIdLength());
-        return false;
-    }
     
     // todo token process
 
     // create new connection 
-    
+    return true;
 }
 
 bool Controller::Handle0rtt(std::shared_ptr<IPacket> packet) {
-
+    return true;
 }
 
 bool Controller::HandleHandshake(std::shared_ptr<IPacket> packet) {
-
+    return true;
 }
 
 bool Controller::HandleRetry(std::shared_ptr<IPacket> packet) {
-
+    return true;
 }
 
 bool Controller::HandleNegotiation(std::shared_ptr<IPacket> packet) {
-
+    return true;
 }
 
 bool Controller::Handle1rtt(std::shared_ptr<IPacket> packet) {
-
+    return true;
 }
 
 }

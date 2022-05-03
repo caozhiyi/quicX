@@ -90,7 +90,7 @@ int32_t SSLConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, con
     const uint8_t *secret, size_t secret_len) {
     SSLConnection* conn = (SSLConnection*)SSL_get_ex_data(ssl, Singleton<SSLCtx>::Instance().GetSslConnectionIndex());
     
-    if (!conn->_protector.MakeEncryptionSecret(false, level, cipher, secret, secret_len)) {
+    if (!conn->MakeEncryptionSecret(false, level, cipher, secret, secret_len)) {
         LOG_ERROR("make encryption secret failed.");
         return 0;
     }
@@ -103,7 +103,7 @@ int32_t SSLConnection::SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, co
         const uint8_t *secret, size_t secret_len) {
     SSLConnection* conn = (SSLConnection*)SSL_get_ex_data(ssl, Singleton<SSLCtx>::Instance().GetSslConnectionIndex());
     
-    if (!conn->_protector.MakeEncryptionSecret(true, level, cipher, secret, secret_len)) {
+    if (!conn->MakeEncryptionSecret(true, level, cipher, secret, secret_len)) {
         LOG_ERROR("make encryption secret failed.");
         return 0;
     }

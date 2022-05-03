@@ -20,10 +20,11 @@ struct SecretPair {
 
 const static uint16_t __secret_num = (ssl_encryption_application) + 1;
 
+class IPacket;
 class Protector {
 public:
     Protector();
-    ~Protector();
+    virtual ~Protector();
 
     // make initial secret
     bool MakeInitSecret(char* sercet, uint16_t length);
@@ -37,9 +38,17 @@ public:
     // is key available?
     bool IsAvailableKey(ssl_encryption_level_t level);
 
+    bool Decrypt(std::shared_ptr<IPacket> packet, ssl_encryption_level_t level);
+
 private:
     static std::string HkdfExpand(const EVP_MD* digest, const char* label, uint8_t label_len, const std::string* secret, uint8_t out_len);
-    static const EVP_MD* GetCiphers(uint32_t id, enum ssl_encryption_level_t level, uint32_t& out_len);
+    static bool GetHeaderProtectMask(const EVP_CIPHER *cipher, const Secret& secret, u_char *sample,  u_char *out_mask);
+    struct Ciphers {
+        const EVP_AEAD*   _content_protect_evp_cipher;
+        const EVP_CIPHER* _header_protect_evp_cipher;
+        const EVP_MD*     _evp_md;
+    };
+    static uint32_t GetCiphers(uint32_t id, enum ssl_encryption_level_t level, Ciphers& ciphers);
 
 private:
     uint32_t   _cipher;

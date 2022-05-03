@@ -9,7 +9,8 @@ namespace quicx {
 
 class IFrame;
 class Address;
-class ClientConnection: public Connection {
+class ClientConnection:
+    public Connection {
 public:
     ClientConnection() {}
     virtual ~ClientConnection() {}

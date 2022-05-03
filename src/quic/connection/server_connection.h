@@ -7,13 +7,18 @@
 
 namespace quicx {
 
+class InitPacket;
 class IFrame;
 class Address;
-class ServerConnection: public Connection {
+class ServerConnection:
+    public Connection {
 public:
     ServerConnection() {}
     virtual ~ServerConnection() {}
 
+    bool Init(char* init_kay, uint16_t init_len);
+
+    bool HandleInitPacket(std::shared_ptr<InitPacket> packet);
     // TODO
     // 1. 监听传入的连接
     // 2. 如果支持早期数据，在发送给客户端的TLS恢复ticket中嵌入应用层控制数据
