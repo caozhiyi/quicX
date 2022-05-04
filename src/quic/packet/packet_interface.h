@@ -23,11 +23,15 @@ public:
 
     virtual PacketType GetPacketType() = 0;
     virtual BufferView& GetPayload() { return _view; }
+    virtual uint64_t GetPacketNumber() { return _packet_number; }
+    virtual void SetPacketNumber(uint64_t num) { _packet_number = num; }
 
     std::shared_ptr<IHeader> GetHeader() { return _header; }
 
 protected:
     std::shared_ptr<IHeader> _header;
+    uint64_t _packet_number; /*encryption protection*/
+    
     static BufferView _view;
 };
 

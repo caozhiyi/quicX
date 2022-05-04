@@ -7,7 +7,8 @@
 namespace quicx {
 
 struct LongHeaderFlag {
-    uint8_t _special_type:4; /*encryption protection*/
+    uint8_t _packet_number_length:2; /*encryption protection*/
+    uint8_t _reserved_bits:2;        /*encryption protection*/
     uint8_t _packet_type:2;
     uint8_t _fix_bit:1;
     uint8_t _header_form:1;

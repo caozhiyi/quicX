@@ -29,7 +29,6 @@ private:
     char* _token;
 
     uint32_t _payload_length;
-    uint32_t _packet_number; /*encryption protection*/
     BufferView _payload;     /*encryption protection*/
 
     std::shared_ptr<IBufferReadOnly> _buffer;

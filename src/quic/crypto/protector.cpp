@@ -18,7 +18,8 @@
 namespace quicx {
 
 Protector::Protector():
-    _cipher(0) {
+    _cipher(0),
+    _largest_packet_number(0) {
 
 }
 
@@ -152,8 +153,21 @@ bool Protector::Decrypt(std::shared_ptr<IPacket> packet, ssl_encryption_level_t 
         return false;
     }
 
+    // head label de confusion
     uint8_t flag = header_flag.GetFlagUint();
     flag ^= mask[0] & (header_flag.IsShortHeaderFlag() ? 0x1F : 0x0F);
+    header_flag.SetFlagUint(flag);
+
+    // get packet number length
+    uint32_t packet_number_length = 0;
+    if (header_flag.IsShortHeaderFlag()) {
+        packet_number_length = header_flag.GetShortHeaderFlag()._packet_number_length;
+    } else {
+        packet_number_length = header_flag.GetLongHeaderFlag()._packet_number_length;
+    }
+    
+    // packet number protection
+
 
     return true;
 }
