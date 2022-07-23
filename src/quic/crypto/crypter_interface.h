@@ -3,8 +3,11 @@
 
 #include <string>
 
+namespace quicx {
+
 class CrypterIntreface {
 public:
+    CrypterIntreface() {}
     virtual ~CrypterIntreface() {}
 
     virtual void SetSecret(const std::string& serret) = 0;
@@ -13,5 +16,7 @@ public:
 
     virtual void SetHeaderSecret(const std::string& secret) = 0;
 };
+
+}
 
 #endif
