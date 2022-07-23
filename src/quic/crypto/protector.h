@@ -43,7 +43,7 @@ public:
 private:
     static std::string HkdfExpand(const EVP_MD* digest, const char* label, uint8_t label_len, const std::string* secret, uint8_t out_len);
     static bool GetHeaderProtectMask(const EVP_CIPHER *cipher, const Secret& secret, u_char *sample,  u_char *out_mask);
-    static bool ParsePacketNumber(u_char*& pos, uint32_t length, u_char* mask, )
+    static uint64_t ParsePacketNumber(u_char*& data, uint32_t length, u_char* mask, uint64_t larget_packet_number);
     struct Ciphers {
         const EVP_AEAD*   _content_protect_evp_cipher;
         const EVP_CIPHER* _header_protect_evp_cipher;

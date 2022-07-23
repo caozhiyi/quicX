@@ -167,7 +167,12 @@ bool Protector::Decrypt(std::shared_ptr<IPacket> packet, ssl_encryption_level_t 
     }
     
     // packet number protection
+    u_char* pos = (u_char*)data;
+    uint64_t packet_number = ParsePacketNumber(pos, packet_number_length, &mask[1], _largest_packet_number);
+    packet->SetPacketNumber(packet_number);
 
+    // packet protection 
+        
 
     return true;
 }
@@ -225,6 +230,36 @@ bool Protector::GetHeaderProtectMask(const EVP_CIPHER *cipher, const Secret& sec
 
     EVP_CIPHER_CTX_free(ctx);
     return true;
+}
+
+uint64_t Protector::ParsePacketNumber(u_char*& data, uint32_t length, u_char* mask, uint64_t larget_packet_number) {
+    uint64_t pn_nbits = std::min<uint64_t>(length * 8, 62);
+
+    u_char* pos = data;
+    uint64_t truncated_pn = *pos++ ^ *mask++;
+    while (--length) {
+        truncated_pn = (truncated_pn << 8) + (*pos++ ^ *mask++);
+    }
+    data = pos;
+
+    uint64_t expected_pn = larget_packet_number + 1;
+    uint64_t pn_win = 1ULL << pn_nbits;
+    uint64_t pn_hwin = pn_win / 2;
+    uint64_t pn_mask = pn_win - 1;
+
+    uint64_t candidate_pn = (expected_pn & ~pn_mask) | truncated_pn;
+
+    if ((int64_t) candidate_pn <= (int64_t) (expected_pn - pn_hwin)
+        && candidate_pn < (1ULL << 62) - pn_win) {
+        candidate_pn += pn_win;
+
+    } else if (candidate_pn > expected_pn + pn_hwin
+               && candidate_pn >= pn_win) {
+        candidate_pn -= pn_win;
+    }
+
+    larget_packet_number = std::max<uint64_t>(larget_packet_number, candidate_pn);
+    return candidate_pn;
 }
 
 uint32_t Protector::GetCiphers(uint32_t id, enum ssl_encryption_level_t level, Ciphers& ciphers) {
