@@ -39,7 +39,6 @@ CC = g++
 
 INCLUDES = -I../              \
 		   -I../src/          \
-		   -I../src/common/   \
            -I../third/        \
 
 #debug

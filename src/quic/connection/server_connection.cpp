@@ -43,7 +43,7 @@ bool ServerConnection::HandleInitPacket(std::shared_ptr<InitPacket> packet) {
         return false;
     }
 
-    
+    return true;
 }   
 
 }

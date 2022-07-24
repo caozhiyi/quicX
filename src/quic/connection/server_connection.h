@@ -13,8 +13,8 @@ class Address;
 class ServerConnection:
     public Connection {
 public:
-    ServerConnection() {}
-    virtual ~ServerConnection() {}
+    ServerConnection();
+    virtual ~ServerConnection();
 
     bool Init(char* init_kay, uint16_t init_len);
 
