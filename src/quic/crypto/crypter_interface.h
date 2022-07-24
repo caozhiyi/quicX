@@ -10,11 +10,11 @@ public:
     CrypterIntreface() {}
     virtual ~CrypterIntreface() {}
 
-    virtual void SetSecret(const std::string& serret) = 0;
+    virtual bool SetSecret(const std::string& serret) = 0;
 
-    virtual void SetIV(const std::string& iv) = 0;
+    virtual bool SetIV(const std::string& iv) = 0;
 
-    virtual void SetHeaderSecret(const std::string& secret) = 0;
+    virtual bool SetHeaderSecret(const std::string& secret) = 0;
 };
 
 }
