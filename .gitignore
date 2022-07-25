@@ -1,8 +1,6 @@
 .vs
 Debug
 __MACOSX
-third
 x64
 .vscode
-gtest
 *.o
