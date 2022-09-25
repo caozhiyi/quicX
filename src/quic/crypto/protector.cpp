@@ -124,7 +124,7 @@ bool Protector::Decrypt(std::shared_ptr<IPacket> packet, ssl_encryption_level_t 
         return false;
     }
     
-    char* data = payload.GetData();
+    uint8_t* data = payload.GetData();
     uint32_t data_len = payload.GetLength();
     if (data_len < __initial_tls_tag_len + 4) {
         return false;

@@ -29,7 +29,7 @@ bool PathChallengeFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint16(pos, _frame_type);
     buffer->MoveWritePt(pos - pos_pair.first);
 
@@ -39,7 +39,7 @@ bool PathChallengeFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
 
 bool PathChallengeFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
 
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
@@ -60,7 +60,7 @@ uint32_t PathChallengeFrame::EncodeSize() {
 }
 
 bool PathChallengeFrame::CompareData(std::shared_ptr<PathResponseFrame> response) {
-    return strncmp(_data, response->GetData(), __path_data_length) == 0;
+    return strncmp((const char*)_data, (const char*)response->GetData(), __path_data_length) == 0;
 }
 
 void PathChallengeFrame::MakeData() {

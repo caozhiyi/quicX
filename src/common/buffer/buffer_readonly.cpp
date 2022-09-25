@@ -14,7 +14,7 @@ BufferReadOnly::BufferReadOnly(std::shared_ptr<BlockMemoryPool>& alloter):
     _init(false),
     _alloter(alloter) {
 
-    _buffer_start = (char*)alloter->PoolLargeMalloc();
+    _buffer_start = (uint8_t*)alloter->PoolLargeMalloc();
     _buffer_end = _buffer_start + alloter->GetBlockLength();
     _read = _buffer_start;
 }
@@ -29,7 +29,7 @@ BufferReadOnly::~BufferReadOnly() {
     }
 }
 
-uint32_t BufferReadOnly::ReadNotMovePt(char* res, uint32_t len) {
+uint32_t BufferReadOnly::ReadNotMovePt(uint8_t* res, uint32_t len) {
     return _Read(res, len, false);
 }
 
@@ -55,7 +55,7 @@ uint32_t BufferReadOnly::MoveReadPt(uint32_t len) {
     }
 }
 
-uint32_t BufferReadOnly::Read(char* res, uint32_t len) {
+uint32_t BufferReadOnly::Read(uint8_t* res, uint32_t len) {
     if (res == nullptr) {
         return 0;
     }
@@ -74,7 +74,7 @@ uint32_t BufferReadOnly::GetCanReadLength() {
     }
 }
 
-std::pair<char*, char*> BufferReadOnly::GetReadPair() {
+std::pair<uint8_t*, uint8_t*> BufferReadOnly::GetReadPair() {
     return std::make_pair(_read, _buffer_end);
 }
 
@@ -95,11 +95,11 @@ uint32_t BufferReadOnly::MoveWritePt(uint32_t len) {
     return remain_size;
 }
 
-std::pair<char*, char*> BufferReadOnly::GetWritePair() {
+std::pair<uint8_t*, uint8_t*> BufferReadOnly::GetWritePair() {
     return std::make_pair(_buffer_start, _buffer_end);
 }
 
-uint32_t BufferReadOnly::_Read(char* res, uint32_t len, bool move_pt) {
+uint32_t BufferReadOnly::_Read(uint8_t* res, uint32_t len, bool move_pt) {
     /*s-----------r-----w-------------e*/
     if (_read <= _buffer_end) {
         size_t size = _buffer_end - _read;

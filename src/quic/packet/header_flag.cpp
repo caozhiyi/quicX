@@ -13,7 +13,7 @@ bool HeaderFlag::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint8(pos, _flag._header_flag);
     buffer->MoveWritePt(pos - pos_pair.first);
     return true;
@@ -25,7 +25,7 @@ bool HeaderFlag::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
         return false;
     }
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedDecodeUint8(pos, pos_pair.second, _flag._header_flag);
     buffer->MoveReadPt(pos - pos_pair.first);
     return true;

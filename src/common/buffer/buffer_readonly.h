@@ -22,16 +22,16 @@ public:
 
     // read to res buf but don't change the read point
     // return the length of the data actually read
-    virtual uint32_t ReadNotMovePt(char* res, uint32_t len);
+    virtual uint32_t ReadNotMovePt(uint8_t* res, uint32_t len);
     // move read point
     // return the length of the data actually move
     virtual uint32_t MoveReadPt(uint32_t len);
     // return the length of the data actually read
-    virtual uint32_t Read(char* res, uint32_t len);
+    virtual uint32_t Read(uint8_t* res, uint32_t len);
     // return remaining length of readable data
     virtual uint32_t GetCanReadLength();
     // return the start and end positions of readable data
-    virtual std::pair<char*, char*> GetReadPair();
+    virtual std::pair<uint8_t*, uint8_t*> GetReadPair();
 
     // initialization interfaces, which can only be called once
     // move write point
@@ -39,16 +39,16 @@ public:
     virtual uint32_t MoveWritePt(uint32_t len);
     // initialization interfaces, which can only be called once
     // return buffer write and end pos
-    virtual std::pair<char*, char*> GetWritePair();
+    virtual std::pair<uint8_t*, uint8_t*> GetWritePair();
 
 protected:
-    uint32_t _Read(char* res, uint32_t len, bool move_pt);
+    uint32_t _Read(uint8_t* res, uint32_t len, bool move_pt);
 
 private:
-    char* _read; // read position
-    char* _buffer_start;
-    char* _buffer_end;
     bool  _init;
+    uint8_t* _read; // read position
+    uint8_t* _buffer_start;
+    uint8_t* _buffer_end;
     std::weak_ptr<BlockMemoryPool> _alloter;
 };
 

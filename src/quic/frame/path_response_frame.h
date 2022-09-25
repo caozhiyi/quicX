@@ -14,11 +14,11 @@ public:
     virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetData(char* data);
-    char* GetData() { return _data; }
+    void SetData(uint8_t* data);
+    uint8_t* GetData() { return _data; }
 
 private:
-    char _data[__path_data_length];  // 8-byte field contains arbitrary data.
+    uint8_t _data[__path_data_length];  // 8-byte field contains arbitrary data.
 };
 
 }

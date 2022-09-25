@@ -36,14 +36,14 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _error_code);
     pos = EncodeVarint(pos, _err_frame_type);
     pos = EncodeVarint(pos, _reason.length());
 
     buffer->MoveWritePt(pos - pos_pair.first);
-    buffer->Write(_reason.c_str(), _reason.length());
+    buffer->Write((const uint8_t*)_reason.c_str(), _reason.length());
     return true;
 }
 
@@ -51,7 +51,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool 
     uint16_t size = EncodeSize();
 
     auto pos_pair = buffer->GetReadPair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
 
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
@@ -74,7 +74,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool 
     }
     
     _reason.clear();
-    _reason.append(pos_pair.first, reason_length);
+    _reason.append((const char*)pos_pair.first, reason_length);
     buffer->MoveReadPt(reason_length);
     return true;
 }

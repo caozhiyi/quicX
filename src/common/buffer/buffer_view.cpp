@@ -32,11 +32,11 @@ bool BufferView::IsEmpty() {
     return _view_data == nullptr;
 }
 
-void BufferView::SetData(char* data, uint32_t len) {
+void BufferView::SetData(uint8_t* data, uint32_t len) {
 
 }
 
-char* BufferView::GetData() {
+uint8_t* BufferView::GetData() {
     return _view_data;
 }
 

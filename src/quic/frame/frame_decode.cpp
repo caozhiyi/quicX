@@ -92,7 +92,7 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vec
 
     std::shared_ptr<IFrame> frame;
     uint16_t frame_type = 0;
-    char type_buf[__type_buf_length] = {0};
+    uint8_t type_buf[__type_buf_length] = {0};
 
     while (buffer->GetCanReadLength() > 0) {
         // decode type

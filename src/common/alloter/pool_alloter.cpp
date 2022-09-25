@@ -79,7 +79,7 @@ void PoolAlloter::Free(void* &data, uint32_t len) {
 void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
     uint32_t nums = num;
 
-    char* chunk = (char*)ChunkAlloc(size, nums);
+    uint8_t* chunk = (uint8_t*)ChunkAlloc(size, nums);
 
     MemNode* volatile* my_free;
     MemNode* res, *current, *next;
@@ -94,7 +94,7 @@ void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
     *my_free = next = (MemNode*)(chunk + size);
     for (uint32_t i = 1;; i++) {
         current = next;
-        next = (MemNode*)((char*)next + size);
+        next = (MemNode*)((uint8_t*)next + size);
         if (nums - 1 == i) {
             current->_next = nullptr;
             break;
@@ -107,7 +107,7 @@ void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
 }
 
 void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
-    char* res;
+    uint8_t* res;
     uint32_t need_bytes = size * nums;
     uint32_t left_bytes = uint32_t(_pool_end - _pool_start);
 
@@ -133,7 +133,7 @@ void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
         _free_list[FreeListIndex(size)] = (MemNode*)_pool_start;
     }
 
-    _pool_start = (char*)_alloter->Malloc(bytes_to_get);
+    _pool_start = (uint8_t*)_alloter->Malloc(bytes_to_get);
 
     _malloc_vec.push_back(_pool_start);
     _pool_end = _pool_start + bytes_to_get;

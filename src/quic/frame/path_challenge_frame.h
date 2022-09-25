@@ -21,10 +21,10 @@ public:
     bool CompareData(std::shared_ptr<PathResponseFrame> response);
 
     void MakeData();
-    char* GetData() { return _data; }
+    uint8_t* GetData() { return _data; }
 
 private:
-    char _data[__path_data_length];  // 8-byte field contains arbitrary data.
+    uint8_t _data[__path_data_length];  // 8-byte field contains arbitrary data.
     static std::shared_ptr<RangeRandom> _random;
 };
 
