@@ -9,15 +9,37 @@
 
 namespace quicx {
 
+class TlsHandlerInterface {
+public:
+    TlsHandlerInterface() {}
+    virtual ~TlsHandlerInterface() {}
+
+    virtual void SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+        const uint8_t *secret, size_t secret_len) = 0;
+
+    virtual void SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+        const uint8_t *secret, size_t secret_len) = 0;
+
+    virtual void WriteMessage(ssl_encryption_level_t level, const uint8_t *data,
+        size_t len) = 0;
+
+    virtual void FlushFlight() = 0;
+    virtual void SendAlert(ssl_encryption_level_t level, uint8_t alert) = 0;   
+};
+
 class SSLConnection:
     public Protector {
 public:
-    SSLConnection();
+    SSLConnection(std::shared_ptr<TlsHandlerInterface> handler);
     ~SSLConnection();
     // init ssl connection
-    bool Init(uint64_t sock, bool is_server = true);
+    bool Init(bool is_server = true);
+
+    // do handshake
+    bool DoHandleShake();
+
     // add crypto data
-    bool PutHandshakeData(char* data, uint32_t len);
+    bool ProcessCryptoData(char* data, uint32_t len);
 
 public:
     static int32_t SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
@@ -30,6 +52,7 @@ public:
     static int32_t SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t alert);
 private:
     SSL *_ssl;
+    std::shared_ptr<TlsHandlerInterface> _handler;
 };
 
 }
