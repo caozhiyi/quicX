@@ -19,17 +19,16 @@ public:
     void Clear();
     bool IsEmpty();
 
-    void SetData(char* data, uint32_t len);
+    void SetData(uint8_t* data, uint32_t len);
 
-    char* GetData();
+    uint8_t* GetData();
     uint32_t GetLength();
 
     BufferView& operator=(const BufferView& view);
 
 private:
-    char* _view_data;
+    uint8_t* _view_data;
     uint32_t _view_length;
-
 };
 
 }

@@ -32,14 +32,14 @@ bool Controller::SetCrypto(const std::string& ciphers, bool prefer_server_cipher
         LOG_ERROR("init ssl ctx failed.");
         return false;
     }
-    if (!SSLCtx::Instance().SetCiphers(ciphers, prefer_server_ciphers)) {
+    /*if (!SSLCtx::Instance().SetCiphers(ciphers, prefer_server_ciphers)) {
         LOG_ERROR("ssl ctx set ciphers failed.");
         return false;
     }
     if (!SSLCtx::Instance().SetCertificateAndKey(cert_path, key_path, key_pwd)) {
         LOG_ERROR("ssl ctx set certificate and key failed.");
         return false;
-    }
+    }*/
     return true;
 }
 

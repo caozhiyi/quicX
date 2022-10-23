@@ -53,12 +53,12 @@ private:
     /*
      * internal serialization and deserialization operations
      */
-    char* EncodeUint(char* start, char* end, uint32_t value, uint32_t type);
-    char* EncodeString(char* start, char* end, const std::string& value, uint32_t type);
-    char* EncodeBool(char* start, char* end, bool value, uint32_t type);
-    char* DecodeUint(char* start, char* end, uint32_t& value);
-    char* DecodeString(char* start, char* end, std::string& value);
-    char* DecodeBool(char* start, char* end, bool& value);
+    uint8_t* EncodeUint(uint8_t* start, uint8_t* end, uint32_t value, uint32_t type);
+    uint8_t* EncodeString(uint8_t* start, uint8_t* end, const std::string& value, uint32_t type);
+    uint8_t* EncodeBool(uint8_t* start, uint8_t* end, bool value, uint32_t type);
+    uint8_t* DecodeUint(uint8_t* start, uint8_t* end, uint32_t& value);
+    uint8_t* DecodeString(uint8_t* start, uint8_t* end, std::string& value);
+    uint8_t* DecodeBool(uint8_t* start, uint8_t* end, bool& value);
 
 private:
     std::string _original_destination_connection_id;

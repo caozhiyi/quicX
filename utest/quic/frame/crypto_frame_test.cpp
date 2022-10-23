@@ -13,7 +13,7 @@ TEST(crypto_frame_utest, decode1) {
 
     char frame_data[64] = "1234567890123456789012345678901234567890";
     frame1.SetOffset(1042451);
-    frame1.SetData(frame_data, strlen(frame_data));
+    frame1.SetData((uint8_t*)frame_data, strlen(frame_data));
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
@@ -27,7 +27,7 @@ TEST(crypto_frame_utest, decode1) {
     EXPECT_EQ(frame1.GetOffset(), frame2.GetOffset());
 
     auto data2 = frame2.GetData();
-    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string(data2, strlen(frame_data)));
+    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2, strlen(frame_data)));
 }
 
 
@@ -41,7 +41,7 @@ TEST(crypto_frame_utest, decod2) {
 
     char frame_data[64] = "";
     frame1.SetOffset(1042451);
-    frame1.SetData(frame_data, strlen(frame_data));
+    frame1.SetData((uint8_t*)frame_data, strlen(frame_data));
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
@@ -55,5 +55,5 @@ TEST(crypto_frame_utest, decod2) {
     EXPECT_EQ(frame1.GetOffset(), frame2.GetOffset());
 
     auto data2 = frame2.GetData();
-    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string(data2, strlen(frame_data)));
+    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2, strlen(frame_data)));
 }

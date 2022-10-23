@@ -26,7 +26,7 @@ bool AckFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
     
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _ack_delay);
     pos = EncodeVarint(pos, _first_ack_range);
@@ -44,7 +44,7 @@ bool AckFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
 bool AckFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
     
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
         if (_frame_type != FT_ACK && _frame_type != FT_ACK_ECN) {
@@ -104,7 +104,7 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) 
         return false;
     }
     
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = EncodeVarint(pos, _ect_0);
     pos = EncodeVarint(pos, _ect_1);
     pos = EncodeVarint(pos, _ecn_ce);
@@ -121,7 +121,7 @@ bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, b
 
     auto pos_pair = buffer->GetReadPair();
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = DecodeVarint(pos, pos_pair.second, _ect_0);
     pos = DecodeVarint(pos, pos_pair.second, _ect_1);
     pos = DecodeVarint(pos, pos_pair.second, _ecn_ce);

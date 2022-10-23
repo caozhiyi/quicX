@@ -27,7 +27,7 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _sequence_number);
     pos = EncodeVarint(pos, _retire_prior_to);
@@ -44,7 +44,7 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
 
 bool NewConnectionIDFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
 
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
@@ -71,7 +71,7 @@ uint32_t NewConnectionIDFrame::EncodeSize() {
     return sizeof(NewConnectionIDFrame) - __stateless_reset_token_length + _connection_id.size() * sizeof(uint64_t);
 }
 
-void NewConnectionIDFrame::SetStatelessResetToken(char* token) {
+void NewConnectionIDFrame::SetStatelessResetToken(uint8_t* token) {
     memcpy(_stateless_reset_token, token, __stateless_reset_token_length);
 }
 

@@ -12,7 +12,7 @@ TEST(new_token_frame_utest, decode1) {
     std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
 
     char frame_data[64] = "1234567890123456789012345678901234567890";
-    frame1.SetToken(frame_data, strlen(frame_data));
+    frame1.SetToken((uint8_t*)frame_data, strlen(frame_data));
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
@@ -25,5 +25,5 @@ TEST(new_token_frame_utest, decode1) {
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
 
     auto data2 = frame2.GetToken();
-    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string(data2, strlen(frame_data)));
+    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2, strlen(frame_data)));
 }

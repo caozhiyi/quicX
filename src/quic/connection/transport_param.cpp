@@ -62,7 +62,7 @@ bool TransportParam::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     }
     
     auto pos_pair = buffer->GetWritePair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     if (!_original_destination_connection_id.empty()) {
         pos = EncodeString(pos, pos_pair.second, _original_destination_connection_id, TP_ORIGINAL_DESTINATION_CONNECTION_ID);
     }
@@ -138,7 +138,7 @@ bool TransportParam::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
 bool TransportParam::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
     uint64_t type = 0;
     auto pos_pair = buffer->GetReadPair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     while (pos < pos_pair.second) {
         pos = DecodeVarint(pos, pos_pair.second, type);
         switch(type) {
@@ -206,28 +206,28 @@ uint32_t TransportParam::EncodeSize() {
     return sizeof(TransportParam);
 }
 
-char* TransportParam::EncodeUint(char* start, char* end, uint32_t value, uint32_t type) {
+uint8_t* TransportParam::EncodeUint(uint8_t* start, uint8_t* end, uint32_t value, uint32_t type) {
     start = EncodeVarint(start, type);
     start = EncodeVarint(start, GetEncodeVarintLength(value));
     start = EncodeVarint(start, value);
     return start;
 }
 
-char* TransportParam::EncodeString(char* start, char* end, const std::string& value, uint32_t type) {
+uint8_t* TransportParam::EncodeString(uint8_t* start, uint8_t* end, const std::string& value, uint32_t type) {
     start = EncodeVarint(start, type);
     start = EncodeVarint(start, value.length());
-    start = EncodeBytes(start, end, value.c_str(), value.length());
+    start = EncodeBytes(start, end, (const uint8_t*)value.c_str(), value.length());
     return start;
 }
 
-char* TransportParam::EncodeBool(char* start, char* end, bool value, uint32_t type) {
+uint8_t* TransportParam::EncodeBool(uint8_t* start, uint8_t* end, bool value, uint32_t type) {
     start = EncodeVarint(start, type);
     start = EncodeVarint(start, 1);
     start = EncodeVarint(start, value ? 1 : 0);
     return start;
 }
 
-char* TransportParam::DecodeUint(char* start, char* end, uint32_t& value) {
+uint8_t* TransportParam::DecodeUint(uint8_t* start, uint8_t* end, uint32_t& value) {
     uint64_t varint = 0;
     // read length
     start = DecodeVarint(start, end, varint);
@@ -237,18 +237,18 @@ char* TransportParam::DecodeUint(char* start, char* end, uint32_t& value) {
     return start;
 }
 
-char* TransportParam::DecodeString(char* start, char* end, std::string& value) {
+uint8_t* TransportParam::DecodeString(uint8_t* start, uint8_t* end, std::string& value) {
     uint64_t length = 0;
     // read length
     start = DecodeVarint(start, end, length);
     // read value
-    char* ptr;
+    uint8_t* ptr;
     start = DecodeBytesNoCopy(start, end, ptr, length);
-    value = std::move(std::string(ptr, length));
+    value = std::move(std::string((const char*)ptr, length));
     return start;
 }
 
-char* TransportParam::DecodeBool(char* start, char* end, bool& value) {
+uint8_t* TransportParam::DecodeBool(uint8_t* start, uint8_t* end, bool& value) {
     uint64_t varint = 0;
     // read length
     start = DecodeVarint(start, end, varint);

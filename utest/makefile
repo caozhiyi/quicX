@@ -40,13 +40,14 @@ CC = g++
 INCLUDES = -I../              \
 		   -I../src/          \
            -I../third/        \
+		   -I../third/boringssl/include  \
 
 #debug
-CCFLAGS = -fPIC -m64 -g -std=c++11 -lstdc++ -pipe  -lpthread
+CCFLAGS = -fPIC -m64 -g -std=c++14 -lstdc++ -pipe  -lpthread
 
 GTESTLIB = ../third/lib/libgtest.a
-CRYPTOLIB = ../third/lib/libcrypto.a
-SSLLIB = ../third/lib/libssl.a
+CRYPTOLIB = ../third/boringssl/build/crypto/libcrypto.a
+SSLLIB = ../third/boringssl/build/ssl/libssl.a
 
 BIN = quicx-utest
 

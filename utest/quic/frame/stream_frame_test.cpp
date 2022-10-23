@@ -15,7 +15,7 @@ TEST(stream_frame_utest, decode1) {
     frame1.SetFin();
     frame1.SetOffset(1042451);
     frame1.SetStreamID(20010);
-    frame1.SetData(frame_data, strlen(frame_data));
+    frame1.SetData((uint8_t*)frame_data, strlen(frame_data));
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
@@ -32,5 +32,5 @@ TEST(stream_frame_utest, decode1) {
     EXPECT_EQ(frame1.GetOffset(), frame2.GetOffset());
 
     auto data2 = frame2.GetData();
-    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string(data2, strlen(frame_data)));
+    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((const char*)data2, strlen(frame_data)));
 }

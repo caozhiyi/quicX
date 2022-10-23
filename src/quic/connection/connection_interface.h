@@ -19,7 +19,7 @@ public:
     // 5. 立即关闭连接
     virtual void Close() = 0;
 protected:
-    SSLConnection  _ssl_connection;
+    //SSLConnection  _ssl_connection;
     TransportParam _transport_param;
 };
 

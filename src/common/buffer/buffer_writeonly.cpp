@@ -13,7 +13,7 @@ namespace quicx {
 BufferWriteOnly::BufferWriteOnly(std::shared_ptr<BlockMemoryPool>& alloter):
     _alloter(alloter) {
 
-    _buffer_start = (char*)alloter->PoolLargeMalloc();
+    _buffer_start = (uint8_t*)alloter->PoolLargeMalloc();
     _buffer_end = _buffer_start + alloter->GetBlockLength();
     _write = _buffer_start;
 
@@ -29,7 +29,7 @@ BufferWriteOnly::~BufferWriteOnly() {
     }
 }
 
-uint32_t BufferWriteOnly::Write(const char* data, uint32_t len) {
+uint32_t BufferWriteOnly::Write(const uint8_t* data, uint32_t len) {
     /*s-----------w-------------------e*/
     if (_write < _buffer_end) {
         size_t size = _buffer_end - _write;
@@ -58,7 +58,7 @@ uint32_t BufferWriteOnly::Write(const char* data, uint32_t len) {
     }
 }
 
-std::pair<char*, char*> BufferWriteOnly::GetAllData() {
+std::pair<uint8_t*, uint8_t*> BufferWriteOnly::GetAllData() {
     return std::make_pair(_buffer_start, _write);
 }
 
@@ -90,7 +90,7 @@ uint32_t BufferWriteOnly::MoveWritePt(uint32_t len) {
     return (uint32_t)(_buffer_end - _write);
 }
 
-std::pair<char*, char*> BufferWriteOnly::GetWritePair() {
+std::pair<uint8_t*, uint8_t*> BufferWriteOnly::GetWritePair() {
     return std::make_pair(_write, _buffer_end);
 }
 

@@ -22,18 +22,18 @@ public:
     PacketType GetPacketType() const;
     uint32_t GetVersion() const;
     uint8_t GetDestinationConnectionIdLength() { return _destination_connection_id_length; }
-    char* GetDestinationConnectionId()  { return _destination_connection_id; }
+    const uint8_t* GetDestinationConnectionId()  { return _destination_connection_id; }
     uint8_t GetSourceConnectionIdLength() { return _source_connection_id_length; }
-    char* GetSourceConnectionId()  { return _source_connection_id; }
+    const uint8_t* GetSourceConnectionId()  { return _source_connection_id; }
 
 protected:
     uint32_t _version;
 
     uint8_t _destination_connection_id_length;
-    char _destination_connection_id[__max_connection_length];
+    uint8_t _destination_connection_id[__max_connection_length];
 
     uint8_t _source_connection_id_length;
-    char _source_connection_id[__max_connection_length];
+    uint8_t _source_connection_id[__max_connection_length];
 };
 
 }

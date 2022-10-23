@@ -41,11 +41,11 @@ bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
         return false;
     }
     
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = DecodeVarint(pos, pos_pair.second, _token_length);
     _token = pos;
     pos += _token_length;
-    LOG_DEBUG("get initial token:%s", std::string(_token, _token_length));
+    LOG_DEBUG("get initial token:%s", _token);
 
     pos = DecodeVarint(pos, pos_pair.second, _payload_length);
     _payload.SetData(pos, _payload_length);

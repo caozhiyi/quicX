@@ -52,14 +52,14 @@ TEST(frame_decode_utest, decode1) {
     stream_frame1.SetFin();
     stream_frame1.SetOffset(1042451);
     stream_frame1.SetStreamID(20010);
-    stream_frame1.SetData(frame_data, strlen(frame_data));
+    stream_frame1.SetData((uint8_t*)frame_data, strlen(frame_data));
     EXPECT_TRUE(stream_frame1.Encode(write_buffer));
 
     // new connection id frame
     new_frame1.SetRetirePriorTo(10086);
     new_frame1.SetSequenceNumber(2352632);
     char toekn[128] = "123456789012345678901234567890123456789801234567890";
-    new_frame1.SetStatelessResetToken(toekn);
+    new_frame1.SetStatelessResetToken((uint8_t*)toekn);
     new_frame1.AddConnectionID(1212121);
     new_frame1.AddConnectionID(1212122);
     new_frame1.AddConnectionID(1212123);
@@ -121,15 +121,15 @@ TEST(frame_decode_utest, decode1) {
     EXPECT_EQ(stream_frame1.GetStreamID(), stream_frame2->GetStreamID());
     EXPECT_EQ(stream_frame1.GetOffset(), stream_frame2->GetOffset());
     auto data2 = stream_frame2->GetData();
-    EXPECT_EQ(std::string(frame_data), std::string(data2, stream_frame2->GetLength()));
+    EXPECT_EQ(std::string(frame_data), std::string((char*)data2, stream_frame2->GetLength()));
 
     // check new connection id frame
     EXPECT_EQ(new_frame1.GetType(), new_frame2->GetType());
     EXPECT_EQ(new_frame1.GetRetirePriorTo(), new_frame2->GetRetirePriorTo());
     EXPECT_EQ(new_frame1.GetSequenceNumber(), new_frame2->GetSequenceNumber());
     EXPECT_EQ(new_frame1.GetConnectionID().size(), new_frame2->GetConnectionID().size());
-    EXPECT_EQ(std::string(new_frame1.GetStatelessResetToken(), quicx::__stateless_reset_token_length), 
-        std::string(new_frame2->GetStatelessResetToken(), quicx::__stateless_reset_token_length));
+    EXPECT_EQ(std::string((char*)new_frame1.GetStatelessResetToken(), quicx::__stateless_reset_token_length), 
+        std::string((char*)new_frame2->GetStatelessResetToken(), quicx::__stateless_reset_token_length));
 
     // check retire connection id frame
     EXPECT_EQ(retire_frame1.GetType(), retire_frame2->GetType());

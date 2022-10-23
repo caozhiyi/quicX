@@ -19,16 +19,16 @@ public:
     void SetOffset(uint64_t offset) { _offset = offset; }
     uint64_t GetOffset() { return _offset; }
 
-    void SetData(char* data, uint32_t length) { 
+    void SetData(uint8_t* data, uint32_t length) { 
         _data = data;
         _length = length;
     }
-    char* GetData() { return _data; }
+    uint8_t* GetData() { return _data; }
 
 private:
     uint64_t _offset;  // the byte offset in the stream for the data in this CRYPTO frame.
     uint32_t _length;  // the length of the Crypto Data field in this CRYPTO frame.
-    char* _data;       // the cryptographic message data.
+    uint8_t* _data;    // the cryptographic message data.
 };
 
 }

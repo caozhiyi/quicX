@@ -25,7 +25,7 @@ bool MaxStreamsFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _maximum_streams);
 
@@ -35,7 +35,7 @@ bool MaxStreamsFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
 
 bool MaxStreamsFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
 
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);

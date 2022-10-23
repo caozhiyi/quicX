@@ -45,7 +45,7 @@ bool LongHeader::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
     
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint32(pos, _version);
     pos = FixedEncodeUint8(pos, _destination_connection_id_length);
 
@@ -74,21 +74,22 @@ bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag)
     }
     
     auto pos_pair = buffer->GetReadPair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedDecodeUint32(pos, pos_pair.second, _version);
     pos = FixedDecodeUint8(pos, pos_pair.second, _destination_connection_id_length);
     // todo not copy
     memcpy(&_destination_connection_id, pos, _destination_connection_id_length);
-    LOG_DEBUG("get destination connect id:%s", std::string(_destination_connection_id, _destination_connection_id_length).c_str());
     pos += _destination_connection_id_length;
 
     pos = FixedDecodeUint8(pos, pos_pair.second, _source_connection_id_length);
     // todo not copy
     memcpy(&_source_connection_id, pos, _source_connection_id_length);
-    LOG_DEBUG("get source connect id:%s", std::string(_source_connection_id, _source_connection_id_length).c_str());
     pos += _source_connection_id_length;
  
     buffer->MoveReadPt(pos - pos_pair.first);
+
+    LOG_DEBUG("get destination connect id:%s", _destination_connection_id);
+    LOG_DEBUG("get source connect id:%s", _source_connection_id);
 
     return true;
 }

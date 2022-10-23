@@ -6,3 +6,5 @@ x64
 .vscode
 gtest
 *.o
+*.log
+quicx-utest

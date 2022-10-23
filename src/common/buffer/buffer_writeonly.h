@@ -20,21 +20,21 @@ public:
     BufferWriteOnly(std::shared_ptr<BlockMemoryPool>& alloter);
     ~BufferWriteOnly();
     // return the length of the actual write
-    virtual uint32_t Write(const char* data, uint32_t len);
+    virtual uint32_t Write(const uint8_t* data, uint32_t len);
     // return the remaining length that can be written
     virtual uint32_t GetCanWriteLength();
     // return start and end positions of all written data
-    virtual std::pair<char*, char*> GetAllData();
+    virtual std::pair<uint8_t*, uint8_t*> GetAllData();
     // move write point
     // return the length of the data actually move
     virtual uint32_t MoveWritePt(uint32_t len);
     // return buffer write and end pos
-    virtual std::pair<char*, char*> GetWritePair();
+    virtual std::pair<uint8_t*, uint8_t*> GetWritePair();
 
 private:
-    char*    _write; // write position
-    char*    _buffer_start;
-    char*    _buffer_end;
+    uint8_t*    _write; // write position
+    uint8_t*    _buffer_start;
+    uint8_t*    _buffer_end;
     std::weak_ptr<BlockMemoryPool> _alloter;
 };
 

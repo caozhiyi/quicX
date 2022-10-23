@@ -23,7 +23,7 @@ bool CryptoFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _offset);
     pos = EncodeVarint(pos, _length);
@@ -36,7 +36,7 @@ bool CryptoFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
 
 bool CryptoFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);

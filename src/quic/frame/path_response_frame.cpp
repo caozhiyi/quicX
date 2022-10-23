@@ -25,7 +25,7 @@ bool PathResponseFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
         return false;
     }
 
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
     pos = FixedEncodeUint16(pos, _frame_type);
     buffer->MoveWritePt(pos - pos_pair.first);
 
@@ -35,7 +35,7 @@ bool PathResponseFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
 
 bool PathResponseFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
-    char* pos = pos_pair.first;
+    uint8_t* pos = pos_pair.first;
 
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
@@ -55,7 +55,7 @@ uint32_t PathResponseFrame::EncodeSize() {
     return sizeof(PathResponseFrame);
 }
 
-void PathResponseFrame::SetData(char* data) {
+void PathResponseFrame::SetData(uint8_t* data) {
     memcpy(_data, data, __path_data_length);
 }
 

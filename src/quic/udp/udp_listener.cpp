@@ -45,7 +45,7 @@ bool UdpListener::Listen(const std::string& ip, uint16_t port) {
         auto recv_buffer = std::make_shared<BufferReadOnly>(alloter);
         auto buffer_pair = recv_buffer->GetWritePair();
 
-        auto recv_ret = RecvFrom(sock, buffer_pair.first, __max_v4_packet_size, 0, peer_addr);
+        auto recv_ret = RecvFrom(sock, (char*)buffer_pair.first, __max_v4_packet_size, 0, peer_addr);
         if (recv_ret.errno_ != 0) {
             LOG_ERROR("recv from failed. err:%d", recv_ret.errno_);
             continue;
