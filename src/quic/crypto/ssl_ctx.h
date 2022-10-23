@@ -8,18 +8,17 @@
 
 namespace quicx {
 
-class SSLCtx:
-    public Singleton<SSLCtx> {
+class SSLCtx {
 public:
     SSLCtx();
-    ~SSLCtx();
+    virtual ~SSLCtx();
     // init ssl library and create global ssl ctx
-    bool Init();
-    void Destory();
+    virtual bool Init();
+    virtual void Destory();
     // get ssl ctx
-    SSL_CTX* GetSSLCtx() { return _ssl_ctx; }
+    virtual SSL_CTX* GetSSLCtx() { return _ssl_ctx; }
 
-private:
+protected:
     SSL_CTX *_ssl_ctx;
 };
 

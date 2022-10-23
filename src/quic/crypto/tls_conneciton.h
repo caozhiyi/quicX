@@ -1,5 +1,5 @@
-#ifndef QUIC_CRYPTO_SSL_CONNECTION
-#define QUIC_CRYPTO_SSL_CONNECTION
+#ifndef QUIC_CRYPTO_TLS_CONNECTION
+#define QUIC_CRYPTO_TLS_CONNECTION
 
 #include <string>
 #include <cstdint>
@@ -27,19 +27,18 @@ public:
     virtual void SendAlert(ssl_encryption_level_t level, uint8_t alert) = 0;   
 };
 
-class SSLConnection:
-    public Protector {
+class TLSConnection {
 public:
-    SSLConnection(std::shared_ptr<TlsHandlerInterface> handler);
-    ~SSLConnection();
+    TLSConnection(SSL_CTX *ctx, std::shared_ptr<TlsHandlerInterface> handler);
+    ~TLSConnection();
     // init ssl connection
-    bool Init(bool is_server = true);
+    virtual bool Init();
 
     // do handshake
-    bool DoHandleShake();
+    virtual bool DoHandleShake();
 
     // add crypto data
-    bool ProcessCryptoData(char* data, uint32_t len);
+    virtual bool ProcessCryptoData(char* data, uint32_t len);
 
 public:
     static int32_t SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
@@ -50,8 +49,10 @@ public:
         size_t len);
     static int32_t FlushFlight(SSL* ssl);
     static int32_t SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t alert);
-private:
+
+protected:
     SSL *_ssl;
+    SSL_CTX *_ctx;
     std::shared_ptr<TlsHandlerInterface> _handler;
 };
 
