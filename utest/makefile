@@ -46,8 +46,8 @@ INCLUDES = -I../              \
 CCFLAGS = -fPIC -m64 -g -std=c++14 -lstdc++ -pipe  -lpthread
 
 GTESTLIB = ../third/lib/libgtest.a
-CRYPTOLIB = ../third/boringssl/build/crypto/libcrypto.a
-SSLLIB = ../third/boringssl/build/ssl/libssl.a
+CRYPTOLIB = ../third/lib/libcrypto.a
+SSLLIB = ../third/lib/libssl.a
 
 BIN = quicx-utest
 

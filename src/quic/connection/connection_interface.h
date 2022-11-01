@@ -2,7 +2,7 @@
 #define QUIC_CONNECTION_CONNECTION_INTERFACE
 
 #include <cstdint>
-#include "quic/crypto/ssl_conneciton.h"
+#include "quic/crypto/tls_conneciton.h"
 #include "quic/connection/transport_param.h"
 
 namespace quicx {

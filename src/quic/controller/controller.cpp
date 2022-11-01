@@ -28,7 +28,7 @@ Controller::~Controller() {
 }
 
 bool Controller::SetCrypto(const std::string& ciphers, bool prefer_server_ciphers, const std::string& cert_path, const std::string& key_path, const std::string& key_pwd) {
-    if (!SSLCtx::Instance().Init()) {
+    /*if (!SSLCtx::Instance().Init()) {
         LOG_ERROR("init ssl ctx failed.");
         return false;
     }
