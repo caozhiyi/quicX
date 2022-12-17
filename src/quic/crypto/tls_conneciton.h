@@ -1,6 +1,7 @@
 #ifndef QUIC_CRYPTO_TLS_CONNECTION
 #define QUIC_CRYPTO_TLS_CONNECTION
 
+#include <memory>
 #include <string>
 #include <cstdint>
 #include "openssl/ssl.h"
