@@ -16,9 +16,6 @@ public:
     // do handshake
     virtual bool DoHandleShake();
 
-    // add transport param
-    virtual bool AddTransportParam(uint8_t* tp, uint32_t len);
-
     // add alpn
     virtual bool AddAlpn(uint8_t* alpn, uint32_t len); 
 };

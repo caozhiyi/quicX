@@ -41,6 +41,11 @@ public:
     // add crypto data
     virtual bool ProcessCryptoData(char* data, uint32_t len);
 
+    // add transport param
+    virtual bool AddTransportParam(uint8_t* tp, uint32_t len);
+
+    ssl_encryption_level_t GetLevel();
+
 public:
     static int32_t SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len);

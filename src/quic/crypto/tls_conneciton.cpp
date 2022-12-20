@@ -43,6 +43,10 @@ bool TLSConnection::Init() {
         LOG_ERROR("SSL_set_quic_method failed.");
         return false;
     }
+    
+    /* set tls version */
+    SSL_CTX_set_min_proto_version(_ctx, TLS1_3_VERSION);
+    SSL_CTX_set_max_proto_version(_ctx, TLS1_3_VERSION);
 
     return true;
 }
@@ -55,8 +59,8 @@ bool TLSConnection::DoHandleShake() {
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err = SSL_error_description(ssl_err);
             LOG_ERROR("SSL_do_handshake failed. err:%s", err);
-            return false;
         }
+        return false;
     }
 
     return true;    
@@ -70,6 +74,19 @@ bool TLSConnection::ProcessCryptoData(char* data, uint32_t len) {
 
     // todo handshake done, send handle done frame
     return true;
+}
+
+bool TLSConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
+    if (SSL_set_quic_transport_params(_ssl, tp, len) == 0) {
+        LOG_ERROR("SSL_set_quic_transport_params failed.");
+        return false;
+    }
+    
+    return true;
+}
+
+ssl_encryption_level_t TLSConnection::GetLevel() {
+    return SSL_quic_read_level(_ssl);
 }
 
 int32_t TLSConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
