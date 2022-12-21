@@ -1,11 +1,10 @@
-#ifndef QUIC_CRYPTO_TLS_CONNECTION
-#define QUIC_CRYPTO_TLS_CONNECTION
+#ifndef QUIC_CRYPTO_TLS_TLS_CONNECTION
+#define QUIC_CRYPTO_TLS_TLS_CONNECTION
 
 #include <memory>
 #include <string>
 #include <cstdint>
 #include "openssl/ssl.h"
-#include "quic/crypto/protector.h"
 #include "common/util/singleton.h"
 
 namespace quicx {

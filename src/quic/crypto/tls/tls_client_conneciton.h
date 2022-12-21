@@ -1,7 +1,7 @@
-#ifndef QUIC_CRYPTO_TLS_CLIENT_CONNECTION
-#define QUIC_CRYPTO_TLS_CLIENT_CONNECTION
+#ifndef QUIC_CRYPTO_TLS_TLS_CLIENT_CONNECTION
+#define QUIC_CRYPTO_TLS_TLS_CLIENT_CONNECTION
 
-#include "quic/crypto/tls_conneciton.h"
+#include "quic/crypto/tls/tls_conneciton.h"
 
 namespace quicx {
 

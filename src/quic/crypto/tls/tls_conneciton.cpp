@@ -1,8 +1,8 @@
 #include <cstring>
 #include "openssl/base.h"
 #include "common/log/log.h"
-#include "quic/crypto/ssl_ctx.h"
-#include "quic/crypto/tls_conneciton.h"
+#include "quic/crypto/tls/tls_ctx.h"
+#include "quic/crypto/tls/tls_conneciton.h"
 
 namespace quicx {
 

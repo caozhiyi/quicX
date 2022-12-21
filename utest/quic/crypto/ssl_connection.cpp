@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
-#include "quic/crypto/ssl_client_ctx.h"
-#include "quic/crypto/ssl_server_ctx.h"
-#include "quic/crypto/tls_client_conneciton.h"
-#include "quic/crypto/tls_server_conneciton.h"
+#include "quic/crypto/tls/tls_client_ctx.h"
+#include "quic/crypto/tls/tls_server_ctx.h"
+#include "quic/crypto/tls/tls_client_conneciton.h"
+#include "quic/crypto/tls/tls_server_conneciton.h"
 
 constexpr size_t kNumQUICLevels = 4;
 static uint8_t kALPNProtos[] = {0x03, 'f', 'o', 'o'};
@@ -229,10 +229,10 @@ static bool ProvideHandshakeData(std::shared_ptr<MockTransport> mt, quicx::TLSCo
 }
 
 TEST(crypto_ssl_connection_utest, test1) {
-    quicx::SSLClientCtx client_ctx;
+    quicx::TLSClientCtx client_ctx;
     client_ctx.Init();
 
-    quicx::SSLServerCtx server_ctx;
+    quicx::TLSServerCtx server_ctx;
     server_ctx.Init("server.crt", "server.key");
 
     std::shared_ptr<MockTransport> cli_handler = std::make_shared<MockTransport>(MockTransport::Role::R_CLITNE);

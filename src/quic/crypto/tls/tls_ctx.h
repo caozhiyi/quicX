@@ -1,5 +1,5 @@
-#ifndef QUIC_CRYPTO_SSL_CTX
-#define QUIC_CRYPTO_SSL_CTX
+#ifndef QUIC_CRYPTO_TLS_TLS_CTX
+#define QUIC_CRYPTO_TLS_TLS_CTX
 
 #include <string>
 #include <cstdint>
@@ -8,10 +8,10 @@
 
 namespace quicx {
 
-class SSLCtx {
+class TLSCtx {
 public:
-    SSLCtx();
-    virtual ~SSLCtx();
+    TLSCtx();
+    virtual ~TLSCtx();
     // init ssl library and create global ssl ctx
     virtual bool Init();
     virtual void Destory();

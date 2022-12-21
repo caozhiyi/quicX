@@ -5,7 +5,6 @@
 #include "common/log/stdout_logger.h"
 #include "common/buffer/buffer_interface.h"
 
-#include "quic/crypto/ssl_ctx.h"
 #include "quic/common/constants.h"
 #include "quic/udp/udp_listener.h"
 #include "quic/udp/udp_packet_in.h"

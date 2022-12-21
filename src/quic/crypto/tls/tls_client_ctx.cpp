@@ -1,18 +1,18 @@
 #include "common/log/log.h"
-#include "quic/crypto/ssl_client_ctx.h"
+#include "quic/crypto/tls/tls_client_ctx.h"
 
 namespace quicx {
 
-SSLClientCtx::SSLClientCtx() {
+TLSClientCtx::TLSClientCtx() {
 
 }
 
-SSLClientCtx::~SSLClientCtx() {
+TLSClientCtx::~TLSClientCtx() {
     
 }
 
-bool SSLClientCtx::Init() {
-    if (!SSLCtx::Init()) {
+bool TLSClientCtx::Init() {
+    if (!TLSCtx::Init()) {
         return false;
     }
 
