@@ -3,6 +3,14 @@
 
 namespace quicx {
 
+SSLClientCtx::SSLClientCtx() {
+
+}
+
+SSLClientCtx::~SSLClientCtx() {
+    
+}
+
 bool SSLClientCtx::Init() {
     if (!SSLCtx::Init()) {
         return false;

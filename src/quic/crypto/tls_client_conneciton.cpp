@@ -20,8 +20,9 @@ bool TLSClientConnection::Init() {
     
     SSL_set_connect_state(_ssl);
 
-    SSL_CTX_set_session_cache_mode(_ctx, 
-        SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
+    SSL_CTX_set_session_cache_mode(_ctx, SSL_SESS_CACHE_BOTH);
+    // SSL_CTX_set_session_cache_mode(_ctx, 
+    //     SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
 
     
     return true;

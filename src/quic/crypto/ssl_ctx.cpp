@@ -24,8 +24,8 @@ bool SSLCtx::Init() {
     SSL_CTX_set_min_proto_version(_ssl_ctx, TLS1_3_VERSION);
     SSL_CTX_set_max_proto_version(_ssl_ctx, TLS1_3_VERSION);
 
-    SSL_CTX_set_session_cache_mode(_ssl_ctx, 
-        SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
+    // SSL_CTX_set_session_cache_mode(_ssl_ctx, 
+    //     SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
 
     return true;
 }

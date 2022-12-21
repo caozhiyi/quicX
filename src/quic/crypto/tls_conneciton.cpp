@@ -44,10 +44,6 @@ bool TLSConnection::Init() {
         return false;
     }
     
-    /* set tls version */
-    SSL_CTX_set_min_proto_version(_ctx, TLS1_3_VERSION);
-    SSL_CTX_set_max_proto_version(_ctx, TLS1_3_VERSION);
-
     return true;
 }
 
