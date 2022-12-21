@@ -3,7 +3,15 @@
 
 namespace quicx {
 
-bool SSLServerCtx::Init() {
+SSLServerCtx::SSLServerCtx() {
+
+}
+
+SSLServerCtx::~SSLServerCtx() {
+    
+}
+
+bool SSLServerCtx::Init(const std::string& cert_file, const std::string& key_file) {
     if (!SSLCtx::Init()) {
         return false;
     }
@@ -16,7 +24,7 @@ bool SSLServerCtx::Init() {
     /* Save RAM by releasing read and write buffers when they're empty */
     SSL_CTX_set_mode(_ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
 
-    return true;
+    return SetCertificateAndKey(cert_file, key_file);
 }
 
 bool SSLServerCtx::SetCertificateAndKey(const std::string& cert_file, const std::string& key_file) {

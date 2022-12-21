@@ -21,7 +21,7 @@ public:
     TLSServerConnection(SSL_CTX *ctx, std::shared_ptr<TlsHandlerInterface> handler, std::shared_ptr<TlsServerHandlerInterface> ser_handler);
     ~TLSServerConnection();
     // init ssl connection
-    virtual bool Init(const std::string& key_file, const std::string& cert_file);
+    virtual bool Init();
 
 private:
     static int SSLAlpnSelect(SSL* ssl, const unsigned char **out, unsigned char *outlen,

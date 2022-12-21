@@ -1,6 +1,6 @@
-#include <iostream>
 #include <gtest/gtest.h>
-#include "quic/crypto/ssl_ctx.h"
+#include "quic/crypto/ssl_client_ctx.h"
+#include "quic/crypto/ssl_server_ctx.h"
 #include "quic/crypto/tls_client_conneciton.h"
 #include "quic/crypto/tls_server_conneciton.h"
 
@@ -229,11 +229,11 @@ static bool ProvideHandshakeData(std::shared_ptr<MockTransport> mt, quicx::TLSCo
 }
 
 TEST(crypto_ssl_connection_utest, test1) {
-    quicx::SSLCtx client_ctx;
+    quicx::SSLClientCtx client_ctx;
     client_ctx.Init();
 
-    quicx::SSLCtx server_ctx;
-    server_ctx.Init();
+    quicx::SSLServerCtx server_ctx;
+    server_ctx.Init("server.crt", "server.key");
 
     std::shared_ptr<MockTransport> cli_handler = std::make_shared<MockTransport>(MockTransport::Role::R_CLITNE);
     std::shared_ptr<MockTransport> ser_handler = std::make_shared<MockTransport>(MockTransport::Role::R_SERVER);
@@ -246,7 +246,7 @@ TEST(crypto_ssl_connection_utest, test1) {
     cli_conn.Init();
 
     quicx::TLSServerConnection ser_conn = quicx::TLSServerConnection(server_ctx.GetSSLCtx(), ser_handler, ser_alpn_handler);
-    ser_conn.Init("server.key", "server.crt");
+    ser_conn.Init();
 
     static uint8_t client_transport_params[] = {0};
     cli_conn.AddTransportParam(client_transport_params, sizeof(client_transport_params));
@@ -275,7 +275,7 @@ TEST(crypto_ssl_connection_utest, test1) {
                 return;
             }
             if (ser_conn.DoHandleShake()) {
-                client_done = true;
+                server_done = true;
             }
         }
     }
