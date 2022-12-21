@@ -1,24 +1,25 @@
 #include "common/log/log.h"
-#include "quic/crypto/ssl_server_ctx.h"
+#include "quic/crypto/tls/tls_server_ctx.h"
 
 namespace quicx {
 
-SSLServerCtx::SSLServerCtx() {
+TLSServerCtx::TLSServerCtx() {
 
 }
 
-SSLServerCtx::~SSLServerCtx() {
+TLSServerCtx::~TLSServerCtx() {
     
 }
 
-bool SSLServerCtx::Init(const std::string& cert_file, const std::string& key_file) {
-    if (!SSLCtx::Init()) {
+bool TLSServerCtx::Init(const std::string& cert_file, const std::string& key_file) {
+    if (!TLSCtx::Init()) {
         return false;
     }
 
     // set server config 
     long ssl_opts = (SSL_OP_ALL & ~SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS)
         | SSL_OP_SINGLE_ECDH_USE;
+        
     SSL_CTX_set_options(_ssl_ctx, ssl_opts);
 
     /* Save RAM by releasing read and write buffers when they're empty */
@@ -27,7 +28,7 @@ bool SSLServerCtx::Init(const std::string& cert_file, const std::string& key_fil
     return SetCertificateAndKey(cert_file, key_file);
 }
 
-bool SSLServerCtx::SetCertificateAndKey(const std::string& cert_file, const std::string& key_file) {
+bool TLSServerCtx::SetCertificateAndKey(const std::string& cert_file, const std::string& key_file) {
     /* set private key file */
     if (SSL_CTX_use_PrivateKey_file(_ssl_ctx, key_file.c_str(), SSL_FILETYPE_PEM) != 1) {
         LOG_ERROR("SSL_CTX_use_PrivateKey_file failed.");

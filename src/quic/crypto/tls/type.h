@@ -1,5 +1,5 @@
-#ifndef QUIC_CRYPTO_TYPE
-#define QUIC_CRYPTO_TYPE
+#ifndef QUIC_CRYPTO_TLS_TYPE
+#define QUIC_CRYPTO_TLS_TYPE
 
 #include <cstdint>
 #include "openssl/ssl.h"

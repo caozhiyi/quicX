@@ -1,20 +1,20 @@
 #include "openssl/conf.h"
 
 #include "common/log/log.h"
-#include "quic/crypto/ssl_ctx.h"
+#include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
 
-SSLCtx::SSLCtx():
+TLSCtx::TLSCtx():
     _ssl_ctx(nullptr) {
 
 }
 
-SSLCtx::~SSLCtx() {
+TLSCtx::~TLSCtx() {
 
 }
 
-bool SSLCtx::Init() {
+bool TLSCtx::Init() {
     _ssl_ctx = SSL_CTX_new(TLS_method());
     if (_ssl_ctx == nullptr) {
         LOG_ERROR("create ssl ctx failed");
@@ -30,7 +30,7 @@ bool SSLCtx::Init() {
     return true;
 }
 
-void SSLCtx::Destory() {
+void TLSCtx::Destory() {
     if (_ssl_ctx != nullptr) {
         SSL_CTX_free(_ssl_ctx);
     }

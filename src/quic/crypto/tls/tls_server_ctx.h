@@ -1,15 +1,15 @@
-#ifndef QUIC_CRYPTO_SSL_SERVER_CTX
-#define QUIC_CRYPTO_SSL_SERVER_CTX
+#ifndef QUIC_CRYPTO_TLS_TLS_SERVER_CTX
+#define QUIC_CRYPTO_TLS_TLS_SERVER_CTX
 
-#include "quic/crypto/ssl_ctx.h"
+#include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
 
-class SSLServerCtx:
-    public SSLCtx {
+class TLSServerCtx:
+    public TLSCtx {
 public:
-    SSLServerCtx();
-    ~SSLServerCtx();
+    TLSServerCtx();
+    ~TLSServerCtx();
     // init ssl library and create global ssl ctx
     virtual bool Init(const std::string& cert_file, const std::string& key_file);
 
