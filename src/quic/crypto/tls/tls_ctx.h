@@ -3,8 +3,8 @@
 
 #include <string>
 #include <cstdint>
-#include "openssl/ssl.h"
-#include "common/util/singleton.h"
+#include <openssl/ssl.h>
+#include "quic/crypto/tls/type.h"
 
 namespace quicx {
 
@@ -14,12 +14,11 @@ public:
     virtual ~TLSCtx();
     // init ssl library and create global ssl ctx
     virtual bool Init();
-    virtual void Destory();
     // get ssl ctx
-    virtual SSL_CTX* GetSSLCtx() { return _ssl_ctx; }
+    virtual SSL_CTX* GetSSLCtx() { return _ssl_ctx.get(); }
 
 protected:
-    SSL_CTX *_ssl_ctx;
+    SSLCtxPtr _ssl_ctx;
 };
 
 

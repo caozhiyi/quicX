@@ -4,8 +4,8 @@
 #include <memory>
 #include <string>
 #include <cstdint>
-#include "openssl/ssl.h"
-#include "common/util/singleton.h"
+#include <openssl/ssl.h>
+#include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
 
@@ -29,7 +29,7 @@ public:
 
 class TLSConnection {
 public:
-    TLSConnection(SSL_CTX *ctx, std::shared_ptr<TlsHandlerInterface> handler);
+    TLSConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler);
     ~TLSConnection();
     // init ssl connection
     virtual bool Init();
@@ -38,7 +38,7 @@ public:
     virtual bool DoHandleShake();
 
     // add crypto data
-    virtual bool ProcessCryptoData(char* data, uint32_t len);
+    virtual bool ProcessCryptoData(uint8_t* data, uint32_t len);
 
     // add transport param
     virtual bool AddTransportParam(uint8_t* tp, uint32_t len);
@@ -56,8 +56,8 @@ public:
     static int32_t SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t alert);
 
 protected:
-    SSL *_ssl;
-    SSL_CTX *_ctx;
+    SSLPtr _ssl;
+    std::shared_ptr<TLSCtx> _ctx;
     std::shared_ptr<TlsHandlerInterface> _handler;
 };
 

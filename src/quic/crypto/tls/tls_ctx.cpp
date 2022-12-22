@@ -15,25 +15,16 @@ TLSCtx::~TLSCtx() {
 }
 
 bool TLSCtx::Init() {
-    _ssl_ctx = SSL_CTX_new(TLS_method());
-    if (_ssl_ctx == nullptr) {
+    _ssl_ctx = SSLCtxPtr(SSL_CTX_new(TLS_method()));
+    if (!_ssl_ctx) {
         LOG_ERROR("create ssl ctx failed");
         return false;
     }
 
-    SSL_CTX_set_min_proto_version(_ssl_ctx, TLS1_3_VERSION);
-    SSL_CTX_set_max_proto_version(_ssl_ctx, TLS1_3_VERSION);
-
-    // SSL_CTX_set_session_cache_mode(_ssl_ctx, 
-    //     SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
+    SSL_CTX_set_min_proto_version(_ssl_ctx.get(), TLS1_3_VERSION);
+    SSL_CTX_set_max_proto_version(_ssl_ctx.get(), TLS1_3_VERSION);
 
     return true;
-}
-
-void TLSCtx::Destory() {
-    if (_ssl_ctx != nullptr) {
-        SSL_CTX_free(_ssl_ctx);
-    }
 }
 
 }
