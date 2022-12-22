@@ -5,7 +5,7 @@
 
 namespace quicx {
 
-TLSServerConnection::TLSServerConnection(SSL_CTX *ctx, std::shared_ptr<TlsHandlerInterface> handler, std::shared_ptr<TlsServerHandlerInterface> ser_handle):
+TLSServerConnection::TLSServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler, std::shared_ptr<TlsServerHandlerInterface> ser_handle):
     TLSConnection(ctx, handler),
     _ser_handler(ser_handle) {
 }
@@ -15,16 +15,16 @@ TLSServerConnection::~TLSServerConnection() {
 }
 
 bool TLSServerConnection::Init() {
-    SSL_CTX_set_alpn_select_cb(_ctx, TLSServerConnection::SSLAlpnSelect, nullptr);
+    SSL_CTX_set_alpn_select_cb(_ctx->GetSSLCtx(), TLSServerConnection::SSLAlpnSelect, nullptr);
 
     if (!TLSConnection::Init()) {
         return false;
     }
     
-    SSL_set_accept_state(_ssl);
+    SSL_set_accept_state(_ssl.get());
 
     static std::vector<uint8_t> server_quic_early_data_context_ = {2};
-    SSL_set_quic_early_data_context(_ssl, server_quic_early_data_context_.data(), server_quic_early_data_context_.size());
+    SSL_set_quic_early_data_context(_ssl.get(), server_quic_early_data_context_.data(), server_quic_early_data_context_.size());
 
     return true;
 }

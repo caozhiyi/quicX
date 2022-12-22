@@ -18,7 +18,7 @@ public:
 class TLSServerConnection:
     public TLSConnection {
 public:
-    TLSServerConnection(SSL_CTX *ctx, std::shared_ptr<TlsHandlerInterface> handler, std::shared_ptr<TlsServerHandlerInterface> ser_handler);
+    TLSServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler, std::shared_ptr<TlsServerHandlerInterface> ser_handler);
     ~TLSServerConnection();
     // init ssl connection
     virtual bool Init();

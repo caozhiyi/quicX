@@ -222,18 +222,18 @@ public:
     }
 };
 
-static bool ProvideHandshakeData(std::shared_ptr<MockTransport> mt, quicx::TLSConnection& conn,  size_t num = std::numeric_limits<size_t>::max()) {
-    ssl_encryption_level_t level = conn.GetLevel();
+static bool ProvideHandshakeData(std::shared_ptr<MockTransport> mt, std::shared_ptr<quicx::TLSConnection> conn,  size_t num = std::numeric_limits<size_t>::max()) {
+    ssl_encryption_level_t level = conn->GetLevel();
     std::vector<uint8_t> data;
-    return mt->ReadHandshakeData(&data, level, num) && conn.ProcessCryptoData((char*)data.data(), data.size());
+    return mt->ReadHandshakeData(&data, level, num) && conn->ProcessCryptoData(data.data(), data.size());
 }
 
 TEST(crypto_ssl_connection_utest, test1) {
-    quicx::TLSClientCtx client_ctx;
-    client_ctx.Init();
+    std::shared_ptr<quicx::TLSCtx> client_ctx = std::make_shared<quicx::TLSClientCtx>();
+    client_ctx->Init();
 
-    quicx::TLSServerCtx server_ctx;
-    server_ctx.Init("server.crt", "server.key");
+    std::shared_ptr<quicx::TLSServerCtx> server_ctx = std::make_shared<quicx::TLSServerCtx>();
+    server_ctx->Init("server.crt", "server.key");
 
     std::shared_ptr<MockTransport> cli_handler = std::make_shared<MockTransport>(MockTransport::Role::R_CLITNE);
     std::shared_ptr<MockTransport> ser_handler = std::make_shared<MockTransport>(MockTransport::Role::R_SERVER);
@@ -242,20 +242,20 @@ TEST(crypto_ssl_connection_utest, test1) {
     ser_handler->SetPeer(cli_handler.get());
     cli_handler->SetPeer(ser_handler.get());
 
-    quicx::TLSClientConnection cli_conn = quicx::TLSClientConnection(client_ctx.GetSSLCtx(), cli_handler);
-    cli_conn.Init();
+    std::shared_ptr<quicx::TLSClientConnection> cli_conn = std::make_shared<quicx::TLSClientConnection>(client_ctx, cli_handler);
+    cli_conn->Init();
 
-    quicx::TLSServerConnection ser_conn = quicx::TLSServerConnection(server_ctx.GetSSLCtx(), ser_handler, ser_alpn_handler);
-    ser_conn.Init();
+    std::shared_ptr<quicx::TLSServerConnection> ser_conn = std::make_shared<quicx::TLSServerConnection>(server_ctx, ser_handler, ser_alpn_handler);
+    ser_conn->Init();
 
     static uint8_t client_transport_params[] = {0};
-    cli_conn.AddTransportParam(client_transport_params, sizeof(client_transport_params));
+    cli_conn->AddTransportParam(client_transport_params, sizeof(client_transport_params));
 
     static uint8_t kALPNProtos[] = {'f', 'o', 'o'};
-    cli_conn.AddAlpn(kALPNProtos, sizeof(kALPNProtos));
+    cli_conn->AddAlpn(kALPNProtos, sizeof(kALPNProtos));
 
     static std::vector<uint8_t> server_transport_params = {1};
-    ser_conn.AddTransportParam(server_transport_params.data(), server_transport_params.size());
+    ser_conn->AddTransportParam(server_transport_params.data(), server_transport_params.size());
 
     bool client_done = false, server_done = false;
     while (!client_done || !server_done) {
@@ -264,7 +264,7 @@ TEST(crypto_ssl_connection_utest, test1) {
                 ADD_FAILURE() << "ProvideHandshakeData client failed";
                 return;
             }
-            if (cli_conn.DoHandleShake()) {
+            if (cli_conn->DoHandleShake()) {
                 client_done = true;
             }
         }
@@ -274,7 +274,7 @@ TEST(crypto_ssl_connection_utest, test1) {
                 ADD_FAILURE() << "ProvideHandshakeData server failed";
                 return;
             }
-            if (ser_conn.DoHandleShake()) {
+            if (ser_conn->DoHandleShake()) {
                 server_done = true;
             }
         }

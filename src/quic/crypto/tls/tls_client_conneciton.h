@@ -8,7 +8,7 @@ namespace quicx {
 class TLSClientConnection:
     public TLSConnection {
 public:
-    TLSClientConnection(SSL_CTX *ctx, std::shared_ptr<TlsHandlerInterface> handler);
+    TLSClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler);
     ~TLSClientConnection();
     // init ssl connection
     virtual bool Init();
