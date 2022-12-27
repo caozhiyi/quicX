@@ -13,10 +13,6 @@ public:
     AeadBaseCryptographer();
     virtual ~AeadBaseCryptographer();
 
-    virtual const char* GetName() = 0;
-
-    virtual uint32_t GetCipherId() = 0;
-
     virtual bool InstallSecret(uint8_t* secret, uint32_t secret_len, bool is_write);
 
     virtual bool InstallInitSecret(uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server);
