@@ -11,6 +11,7 @@ Aes128GcmCryptographer::Aes128GcmCryptographer() {
 
     _aead_key_length = EVP_AEAD_key_length(_aead);
     _aead_iv_length = EVP_AEAD_nonce_length(_aead);
+    _aead_tag_length = EVP_AEAD_max_tag_len(_aead);
 
     _cipher_key_length = EVP_CIPHER_key_length(_cipher); 
     _cipher_iv_length = EVP_CIPHER_iv_length(_cipher);

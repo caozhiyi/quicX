@@ -4,6 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include "quic/crypto/type.h"
+#include "common/buffer/buffer_view.h"
 
 namespace quicx {
 
@@ -21,11 +22,15 @@ public:
 
     virtual bool InstallInitSecret(uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server) = 0;
 
-    virtual bool DecryptPacket(std::shared_ptr<IBufferReadOnly> ciphertext,
+    virtual bool DecryptPacket(uint64_t pn, BufferView associated_data, std::shared_ptr<IBufferReadOnly> ciphertext,
                              std::shared_ptr<IBufferReadOnly> out_plaintext) = 0;
 
-    virtual bool EncryptPacket(std::shared_ptr<IBufferReadOnly> plaintext,
+    virtual bool EncryptPacket(uint64_t pn, BufferView associated_data, std::shared_ptr<IBufferReadOnly> plaintext,
                              std::shared_ptr<IBufferReadOnly> out_ciphertext) = 0;
+
+    virtual bool DecryptHeader(std::shared_ptr<IBufferReadOnly> ciphertext, uint8_t pn_offset, bool is_short) = 0;
+
+    virtual bool EncryptHeader(std::shared_ptr<IBufferReadOnly> plaintext, uint8_t pn_offset, bool is_short) = 0;
 };
 
 }
