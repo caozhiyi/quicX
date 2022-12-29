@@ -14,6 +14,7 @@ class BufferView {
 public:
     BufferView();
     BufferView(const BufferView& view);
+    BufferView(uint8_t* data, uint32_t length);
     ~BufferView();
 
     void Clear();

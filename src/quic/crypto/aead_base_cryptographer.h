@@ -17,18 +17,21 @@ public:
 
     virtual bool InstallInitSecret(uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server);
 
-    virtual bool DecryptPacket(uint64_t pn, BufferView associated_data, std::shared_ptr<IBufferReadOnly> ciphertext,
+    virtual bool DecryptPacket(uint64_t pkt_number, BufferView associated_data, std::shared_ptr<IBufferReadOnly> ciphertext,
                              std::shared_ptr<IBufferReadOnly> out_plaintext);
 
-    virtual bool EncryptPacket(uint64_t pn, BufferView associated_data, std::shared_ptr<IBufferReadOnly> plaintext,
+    virtual bool EncryptPacket(uint64_t pkt_number, BufferView associated_data, std::shared_ptr<IBufferReadOnly> plaintext,
                              std::shared_ptr<IBufferReadOnly> out_ciphertext);
 
     virtual bool DecryptHeader(std::shared_ptr<IBufferReadOnly> ciphertext, uint8_t pn_offset, bool is_short);
 
-    virtual bool EncryptHeader(std::shared_ptr<IBufferReadOnly> plaintext, uint8_t pn_offset, bool is_short);
+    virtual bool EncryptHeader(std::shared_ptr<IBufferReadOnly> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short);
+    
 private:
-    bool InitKey(bool is_write);
-
+    bool MakeHeaderProtectMask(std::shared_ptr<IBufferReadOnly> ciphertext, BufferView sample, std::vector<uint8_t>& key,
+                            uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length);
+    void MakePacketNonce(uint8_t* nonce, std::vector<uint8_t>& iv, uint64_t pkt_number);
+    uint64_t PktNumberN2L(uint64_t pkt_number);
 protected:
     struct Secret {
         std::vector<uint8_t> _key;
@@ -49,9 +52,6 @@ protected:
     const EVP_MD *_digest;
     const EVP_AEAD *_aead;
     const EVP_CIPHER *_cipher;
-
-    EVP_AEAD_CTX *_write_aead_ctx;
-    EVP_AEAD_CTX *_read_aead_ctx;
 };
 
 }
