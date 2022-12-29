@@ -19,6 +19,10 @@ BufferView::BufferView(const BufferView& view):
 
 }
 
+BufferView::BufferView(uint8_t* data, uint32_t length) {
+    SetData(data, length);
+}
+
 BufferView::~BufferView() {
 
 }
