@@ -1,4 +1,8 @@
 #include <gtest/gtest.h>
+#include <openssl/bio.h>
+#include <openssl/mem.h>
+#include <openssl/pem.h>
+#include "common/util/c_smart_ptr.h"
 #include "quic/crypto/tls/tls_client_ctx.h"
 #include "quic/crypto/tls/tls_server_ctx.h"
 #include "quic/crypto/tls/tls_client_conneciton.h"
@@ -228,12 +232,58 @@ static bool ProvideHandshakeData(std::shared_ptr<MockTransport> mt, std::shared_
     return mt->ReadHandshakeData(&data, level, num) && conn->ProcessCryptoData(data.data(), data.size());
 }
 
+static const char __cert_pem[] =
+      "-----BEGIN CERTIFICATE-----\n"
+      "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
+      "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
+      "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
+      "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
+      "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
+      "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
+      "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
+      "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
+      "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
+      "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
+      "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
+      "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
+      "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
+      "-----END CERTIFICATE-----\n";
+
+static const char __key_pem[] =
+      "-----BEGIN RSA PRIVATE KEY-----\n"
+      "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
+      "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
+      "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
+      "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
+      "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
+      "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
+      "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
+      "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
+      "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
+      "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
+      "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
+      "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
+      "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
+      "-----END RSA PRIVATE KEY-----\n"; 
+
 TEST(crypto_ssl_connection_utest, test1) {
     std::shared_ptr<quicx::TLSCtx> client_ctx = std::make_shared<quicx::TLSClientCtx>();
     client_ctx->Init();
 
+    BIO* cert_bio = BIO_new_mem_buf(__cert_pem, strlen(__cert_pem));
+    EXPECT_TRUE(cert_bio != nullptr);
+    quicx::CSmartPtr<X509, X509_free> cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
+    EXPECT_TRUE(cert != nullptr);
+    BIO_free(cert_bio);
+
+    BIO* key_bio = BIO_new_mem_buf(__key_pem, strlen(__key_pem));
+    EXPECT_TRUE(key_bio != nullptr);
+    quicx::CSmartPtr<EVP_PKEY, EVP_PKEY_free> key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
+    EXPECT_TRUE(key != nullptr);
+    BIO_free(key_bio);
+
     std::shared_ptr<quicx::TLSServerCtx> server_ctx = std::make_shared<quicx::TLSServerCtx>();
-    server_ctx->Init("server.crt", "server.key");
+    server_ctx->Init(cert.get(), key.get());
 
     std::shared_ptr<MockTransport> cli_handler = std::make_shared<MockTransport>(MockTransport::Role::R_CLITNE);
     std::shared_ptr<MockTransport> ser_handler = std::make_shared<MockTransport>(MockTransport::Role::R_SERVER);
