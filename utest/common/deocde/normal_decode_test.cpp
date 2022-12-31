@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include "common/decode/decode.h"
+namespace quicx {
+namespace {
 
 TEST(normal_decode_utest, EncodeFixed_1) {
     uint32_t value = 1 << 5;
@@ -71,4 +73,7 @@ TEST(normal_decode_utest, EncodeFixed_10) {
     uint8_t* ret = quicx::FixedDecodeUint16(buf, buf+3, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
+}
+
+}
 }

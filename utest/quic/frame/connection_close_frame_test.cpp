@@ -3,6 +3,9 @@
 #include "common/alloter/pool_block.h"
 #include "quic/frame/connection_close_frame.h"
 
+namespace quicx {
+namespace {
+
 TEST(connection_close_frame_utest, decode1) {
     quicx::ConnectionCloseFrame frame1;
     quicx::ConnectionCloseFrame frame2;
@@ -27,4 +30,7 @@ TEST(connection_close_frame_utest, decode1) {
     EXPECT_EQ(frame1.GetErrorCode(), frame2.GetErrorCode());
     EXPECT_EQ(frame1.GetErrFrameType(), frame2.GetErrFrameType());
     EXPECT_EQ(frame1.GetReason(), frame2.GetReason());
+}
+
+}
 }

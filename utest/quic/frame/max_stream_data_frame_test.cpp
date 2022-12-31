@@ -4,6 +4,8 @@
 #include "common/alloter/pool_alloter.h"
 #include "quic/frame/max_stream_data_frame.h"
 
+namespace quicx {
+namespace {
 
 TEST(max_stream_data_frame_utest, decode1) {
     quicx::MaxStreamDataFrame frame1;
@@ -27,4 +29,7 @@ TEST(max_stream_data_frame_utest, decode1) {
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetStreamID(), frame2.GetStreamID());
     EXPECT_EQ(frame1.GetMaximumData(), frame2.GetMaximumData());
+}
+
+}
 }

@@ -3,6 +3,9 @@
 #include "common.h"
 #include "common/timer/timer.h"
 
+namespace quicx {
+namespace {
+
 TEST(combin_timercontainer_utest, addtimer1) {
     auto solt = std::make_shared<TimerSoltIns>();
     auto timer = quicx::MakeTimer1Hour();
@@ -175,4 +178,7 @@ TEST(combin_timercontainer_utest, timerrun4) {
     EXPECT_EQ(1000, timer->MinTime());
 
     timer->TimerRun(2500);
+}
+
+}
 }

@@ -3,6 +3,9 @@
 #include "quic/frame/stream_frame.h"
 #include "common/alloter/pool_block.h"
 
+namespace quicx {
+namespace {
+
 TEST(stream_frame_utest, decode1) {
     quicx::StreamFrame frame1;
     quicx::StreamFrame frame2;
@@ -33,4 +36,7 @@ TEST(stream_frame_utest, decode1) {
 
     auto data2 = frame2.GetData();
     EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((const char*)data2, strlen(frame_data)));
+}
+
+}
 }

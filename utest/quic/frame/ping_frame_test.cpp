@@ -4,6 +4,8 @@
 #include "common/alloter/pool_block.h"
 #include "common/alloter/pool_alloter.h"
 
+namespace quicx {
+namespace {
 
 TEST(ping_frame_utest, decode1) {
     quicx::PingFrame frame1;
@@ -22,4 +24,7 @@ TEST(ping_frame_utest, decode1) {
     EXPECT_TRUE(frame2.Decode(read_buffer, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
+}
+
+}
 }

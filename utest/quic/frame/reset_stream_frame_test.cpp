@@ -3,6 +3,8 @@
 #include "common/alloter/pool_block.h"
 #include "quic/frame/reset_stream_frame.h"
 
+namespace quicx {
+namespace {
 
 TEST(reset_frame_utest, decode1) {
     quicx::ResetStreamFrame frame1;
@@ -28,4 +30,7 @@ TEST(reset_frame_utest, decode1) {
     EXPECT_EQ(frame1.GetStreamID(), frame2.GetStreamID());
     EXPECT_EQ(frame1.GetAppErrorCode(), frame2.GetAppErrorCode());
     EXPECT_EQ(frame1.GetFinalSize(), frame2.GetFinalSize());
+}
+
+}
 }

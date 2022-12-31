@@ -3,9 +3,12 @@
 
 #include "common/timer/timer_solt.h"
 
+namespace quicx {
 class TimerSoltIns: public quicx::TimerSolt {
 public:
     void OnTimer() {}
 };
+
+}
 
 #endif

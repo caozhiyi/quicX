@@ -3,6 +3,9 @@
 #include "quic/frame/crypto_frame.h"
 #include "common/alloter/pool_block.h"
 
+namespace quicx {
+namespace {
+
 TEST(crypto_frame_utest, decode1) {
     quicx::CryptoFrame frame1;
     quicx::CryptoFrame frame2;
@@ -56,4 +59,7 @@ TEST(crypto_frame_utest, decod2) {
 
     auto data2 = frame2.GetData();
     EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2, strlen(frame_data)));
+}
+
+}
 }

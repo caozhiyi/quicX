@@ -7,6 +7,9 @@
 #include "common/buffer/buffer_writeonly.h"
 #include "common/buffer/buffer_interface.h"
 
+namespace quicx {
+namespace {
+
 TEST(transport_param_utest, test1) {
     quicx::TransportParamConfig config;
     config._original_destination_connection_id = "11231";
@@ -98,4 +101,7 @@ TEST(transport_param_utest, test2) {
     EXPECT_EQ(tp1.GetActiveConnectionIdLimit(),tp2.GetActiveConnectionIdLimit());
     EXPECT_EQ(tp1.GetInitialSourceConnectionId(),tp2.GetInitialSourceConnectionId());
     EXPECT_EQ(tp1.GetRetrySourceConnectionId(),tp2.GetRetrySourceConnectionId());
+}
+
+}
 }

@@ -3,6 +3,8 @@
 #include "common/alloter/pool_block.h"
 #include "quic/frame/max_streams_frame.h"
 
+namespace quicx {
+namespace {
 
 TEST(max_streams_frame_utest, decode1) {
     quicx::MaxStreamsFrame frame1(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
@@ -24,4 +26,7 @@ TEST(max_streams_frame_utest, decode1) {
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetMaximumStreams(), frame2.GetMaximumStreams());
+}
+
+}
 }

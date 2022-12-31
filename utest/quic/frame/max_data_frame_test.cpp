@@ -2,6 +2,8 @@
 #include "quic/frame/max_data_frame.h"
 #include "common/alloter/pool_block.h"
 
+namespace quicx {
+namespace {
 
 TEST(max_data_frame_utest, decode1) {
     quicx::MaxDataFrame frame1;
@@ -23,4 +25,7 @@ TEST(max_data_frame_utest, decode1) {
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetMaximumData(), frame2.GetMaximumData());
+}
+
+}
 }
