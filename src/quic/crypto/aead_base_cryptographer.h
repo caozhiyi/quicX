@@ -13,9 +13,9 @@ public:
     AeadBaseCryptographer();
     virtual ~AeadBaseCryptographer();
 
-    virtual bool InstallSecret(uint8_t* secret, uint32_t secret_len, bool is_write);
+    virtual bool InstallSecret(const uint8_t* secret, uint32_t secret_len, bool is_write);
 
-    virtual bool InstallInitSecret(uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server);
+    virtual bool InstallInitSecret(const uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server);
 
     virtual bool DecryptPacket(uint64_t pkt_number, BufferView associated_data, std::shared_ptr<IBufferReadOnly> ciphertext,
                              std::shared_ptr<IBufferReadOnly> out_plaintext);
@@ -27,8 +27,8 @@ public:
 
     virtual bool EncryptHeader(std::shared_ptr<IBufferReadOnly> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short);
     
-private:
-    bool MakeHeaderProtectMask(std::shared_ptr<IBufferReadOnly> ciphertext, BufferView sample, std::vector<uint8_t>& key,
+protected:
+    virtual bool MakeHeaderProtectMask(std::shared_ptr<IBufferReadOnly> ciphertext, BufferView sample, std::vector<uint8_t>& key,
                             uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length);
     void MakePacketNonce(uint8_t* nonce, std::vector<uint8_t>& iv, uint64_t pkt_number);
     uint64_t PktNumberN2L(uint64_t pkt_number);

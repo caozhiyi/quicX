@@ -4,9 +4,9 @@
 #include <openssl/evp.h>
 
 #include "common/log/log.h"
-#include "common/buffer/buffer_interface.h"
 #include "quic/crypto/type.h"
 #include "quic/crypto/hkdf.h"
+#include "common/buffer/buffer_interface.h"
 #include "quic/crypto/aead_base_cryptographer.h"
 
 namespace quicx {
@@ -19,9 +19,10 @@ AeadBaseCryptographer::AeadBaseCryptographer():
 }
 
 AeadBaseCryptographer::~AeadBaseCryptographer() {
+
 }
 
-bool AeadBaseCryptographer::InstallSecret(uint8_t* secret, uint32_t secret_len, bool is_write) {
+bool AeadBaseCryptographer::InstallSecret(const uint8_t* secret, uint32_t secret_len, bool is_write) {
     Secret& dest_secret = is_write ? _write_secret : _read_secret;
     
     // make packet protect key
@@ -45,7 +46,7 @@ bool AeadBaseCryptographer::InstallSecret(uint8_t* secret, uint32_t secret_len, 
     return true;
 }
 
-bool AeadBaseCryptographer::InstallInitSecret(uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server) {
+bool AeadBaseCryptographer::InstallInitSecret(const uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server) {
     const EVP_MD *digest = EVP_sha256();
 
     // make init secret
@@ -82,7 +83,33 @@ bool AeadBaseCryptographer::InstallInitSecret(uint8_t* secret, uint32_t secret_l
 
 bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferView associated_data, std::shared_ptr<IBufferReadOnly> ciphertext,
     std::shared_ptr<IBufferReadOnly> out_plaintext) {
+    if (_read_secret._key.empty() || _read_secret._iv.empty()) {
+        LOG_ERROR("decrypt packet but not install secret");
+        return false;
+    }
+
+    // get nonce
+    uint8_t nonce[__packet_nonce_length] = {0};
+    MakePacketNonce(nonce, _read_secret._iv, pkt_number);
+
+    // encrypt
+    EVPAEADCTXPtr ctx = EVP_AEAD_CTX_new(_aead, _read_secret._key.data(), _read_secret._key.size(), _aead_tag_length);
+    if (!ctx) {
+        LOG_ERROR("EVP_AEAD_CTX_new failed");
+        return false;
+    }
+
+    size_t out_length = 0;
+    auto out_pair = out_plaintext->GetWritePair();
+    auto in_pair = ciphertext->GetWritePair();
+    if (EVP_AEAD_CTX_open(ctx.get(), out_pair.first, &out_length, out_pair.second - out_pair.first, nonce, _read_secret._iv.size(),
+        in_pair.first, ciphertext->GetCanReadLength(), associated_data.GetData(), associated_data.GetLength()) != 1) {
+        LOG_ERROR("EVP_AEAD_CTX_open failed");
+        return false;
+    }
+    out_plaintext->MoveWritePt(out_length);
     return true;
+
 }
 
 bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferView associated_data, std::shared_ptr<IBufferReadOnly> plaintext,
@@ -106,11 +133,12 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferView associ
     size_t out_length = 0;
     auto out_pair = out_ciphertext->GetWritePair();
     auto in_pair = plaintext->GetWritePair();
-    if (EVP_AEAD_CTX_open(ctx.get(), out_pair.first, &out_length, out_pair.second - out_pair.first, nonce, 
-        __packet_nonce_length, in_pair.first, plaintext->GetCanReadLength(), associated_data.GetData(), associated_data.GetLength()) != 1) {
-        LOG_ERROR("EVP_AEAD_CTX_open failed");
+    if (EVP_AEAD_CTX_seal(ctx.get(), out_pair.first, &out_length, out_pair.second - out_pair.first, nonce, _write_secret._iv.size(),
+        in_pair.first, plaintext->GetCanReadLength(), associated_data.GetData(), associated_data.GetLength()) != 1) {
+        LOG_ERROR("EVP_AEAD_CTX_seal failed");
         return false;
     }
+    out_ciphertext->MoveWritePt(out_length);
     return true;
 }
 
@@ -231,13 +259,11 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(std::shared_ptr<IBufferReadOnl
 }
 
 void AeadBaseCryptographer::MakePacketNonce(uint8_t* nonce, std::vector<uint8_t>& iv, uint64_t pkt_number) {
-    size_t i;
-
     memcpy(nonce, iv.data(), iv.size());
     pkt_number = PktNumberN2L(pkt_number);
 
     // nonce is formed by combining the packet protection IV with the packet number
-    for (i = 0; i < 8; ++i) {
+    for (size_t i = 0; i < 8; ++i) {
         nonce[iv.size() - 8 + i] ^= ((uint8_t *)&pkt_number)[i];
     }
 }
