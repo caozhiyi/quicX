@@ -1,7 +1,10 @@
 #include <string>
 #include <gtest/gtest.h>
 #include "common/util/time.h"
-#include "../time_consuming.h"
+#include "utest/common/time_consuming.h"
+
+namespace quicx {
+namespace {
 
 TEST(time_utest, get_time1) {
     std::cout << quicx::UTCTimeSec() << std::endl;
@@ -36,4 +39,7 @@ TEST(time_utest, get_time2) {
 
     std::string millisecond = quicx::GetFormatTime(quicx::FTU_MILLISECOND);
     EXPECT_EQ(millisecond.length(), sizeof("xxxx-xx-xx xx:xx:xx:xxx") - 1);
+}
+
+}
 }

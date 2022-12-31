@@ -4,6 +4,8 @@
 #include "common/alloter/pool_alloter.h"
 #include "quic/frame/path_response_frame.h"
 
+namespace quicx {
+namespace {
 
 TEST(path_response_frame_utest, decode1) {
     quicx::PathResponseFrame frame1;
@@ -22,4 +24,7 @@ TEST(path_response_frame_utest, decode1) {
     EXPECT_TRUE(frame2.Decode(read_buffer, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
+}
+
+}
 }

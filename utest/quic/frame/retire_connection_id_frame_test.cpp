@@ -3,6 +3,8 @@
 #include "common/alloter/pool_block.h"
 #include "quic/frame/retire_connection_id_frame.h"
 
+namespace quicx {
+namespace {
 
 TEST(retire_connection_id_frame_utest, decode1) {
     quicx::RetireConnectionIDFrame frame1;
@@ -24,4 +26,7 @@ TEST(retire_connection_id_frame_utest, decode1) {
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetSequenceNumber(), frame2.GetSequenceNumber());
+}
+
+}
 }

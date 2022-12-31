@@ -3,6 +3,9 @@
 #include "common/alloter/pool_block.h"
 #include "quic/frame/new_token_frame.h"
 
+namespace quicx {
+namespace {
+
 TEST(new_token_frame_utest, decode1) {
     quicx::NewTokenFrame frame1;
     quicx::NewTokenFrame frame2;
@@ -26,4 +29,7 @@ TEST(new_token_frame_utest, decode1) {
 
     auto data2 = frame2.GetToken();
     EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2, strlen(frame_data)));
+}
+
+}
 }

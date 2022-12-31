@@ -3,6 +3,9 @@
 #include "common/structure/list.h"
 #include "common/structure/list_solt.h"
 
+namespace quicx {
+namespace {
+
 static uint32_t __test_shared_count = 0;
 
 class TestListItem:
@@ -76,4 +79,7 @@ TEST(list_utest, add3) {
 
     list.PopBack();
     EXPECT_EQ(__test_shared_count, 0);
+}
+
+}
 }

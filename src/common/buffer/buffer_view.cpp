@@ -19,7 +19,7 @@ BufferView::BufferView(const BufferView& view):
 
 }
 
-BufferView::BufferView(uint8_t* data, uint32_t length) {
+BufferView::BufferView(const uint8_t* data, uint32_t length) {
     SetData(data, length);
 }
 
@@ -36,11 +36,13 @@ bool BufferView::IsEmpty() {
     return _view_data == nullptr;
 }
 
-void BufferView::SetData(uint8_t* data, uint32_t len) {
+void BufferView::SetData(const uint8_t* data, uint32_t len) {
+    _view_data = data;
+    _view_length = len;
 
 }
 
-uint8_t* BufferView::GetData() {
+const uint8_t* BufferView::GetData() {
     return _view_data;
 }
 

@@ -5,6 +5,9 @@
 #include "quic/frame/path_response_frame.h"
 #include "quic/frame/path_challenge_frame.h"
 
+namespace quicx {
+namespace {
+
 TEST(path_challenge_frame_utest, decode1) {
     quicx::PathChallengeFrame frame1;
     quicx::PathChallengeFrame frame2;
@@ -28,4 +31,7 @@ TEST(path_challenge_frame_utest, decode1) {
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_TRUE(frame2.CompareData(frame3));
+}
+
+}
 }

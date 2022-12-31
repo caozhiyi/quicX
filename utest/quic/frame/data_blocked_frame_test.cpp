@@ -3,6 +3,8 @@
 #include "common/alloter/pool_block.h"
 #include "quic/frame/data_blocked_frame.h"
 
+namespace quicx {
+namespace {
 
 TEST(data_blocked_frame_utest, decode1) {
     quicx::DataBlockedFrame frame1;
@@ -24,4 +26,7 @@ TEST(data_blocked_frame_utest, decode1) {
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetMaximumData(), frame2.GetMaximumData());
+}
+
+}
 }

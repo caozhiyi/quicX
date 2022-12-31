@@ -14,22 +14,22 @@ class BufferView {
 public:
     BufferView();
     BufferView(const BufferView& view);
-    BufferView(uint8_t* data, uint32_t length);
+    BufferView(const uint8_t* data, uint32_t length);
     ~BufferView();
 
     void Clear();
     bool IsEmpty();
 
-    void SetData(uint8_t* data, uint32_t len);
+    void SetData(const uint8_t* data, uint32_t len);
 
-    uint8_t* GetData();
+    const uint8_t* GetData();
     uint32_t GetLength();
 
     BufferView& operator=(const BufferView& view);
 
 private:
-    uint8_t* _view_data;
-    uint32_t _view_length;
+    const uint8_t* _view_data;
+    uint32_t       _view_length;
 };
 
 }

@@ -14,6 +14,10 @@ public:
     virtual const char* GetName();
 
     virtual uint32_t GetCipherId();
+
+protected:
+    virtual bool MakeHeaderProtectMask(std::shared_ptr<IBufferReadOnly> ciphertext, BufferView sample, std::vector<uint8_t>& key,
+                            uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length);
 };
 
 }

@@ -10,6 +10,9 @@
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
 
+namespace quicx {
+namespace {
+
 TEST(frame_decode_utest, decode1) {
     auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
     std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
@@ -140,4 +143,7 @@ TEST(frame_decode_utest, decode1) {
     EXPECT_EQ(close_frame1.GetErrorCode(), close_frame2->GetErrorCode());
     EXPECT_EQ(close_frame1.GetErrFrameType(), close_frame2->GetErrFrameType());
     EXPECT_EQ(close_frame1.GetReason(), close_frame2->GetReason());
+}
+
+}
 }

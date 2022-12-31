@@ -1,7 +1,7 @@
 #ifndef QUIC_CRYPTO_HKDF
 #define QUIC_CRYPTO_HKDF
 
-#include <stddef.h>
+#include <cstdint>
 #include <openssl/ossl_typ.h>
 
 namespace quicx {

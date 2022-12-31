@@ -3,6 +3,9 @@
 #include "common/log/file_logger.h"
 #include "common/log/stdout_logger.h"
 
+namespace quicx {
+namespace {
+
 TEST(stdlogger_stream_utest, print1) {
     std::shared_ptr<quicx::Logger> log = std::make_shared<quicx::StdoutLogger>();
     quicx::LOG_SET(log);
@@ -50,4 +53,7 @@ TEST(filelogger_stream_utest, value) {
     quicx::LOG_FATAL_S <<  "string value:" << std::string("it is a test log");
     quicx::LOG_FATAL_S <<  "const char* value:" << "it is a test log";
     quicx::LOG_FATAL_S <<  "char value:" << 'N';
+}
+
+}
 }

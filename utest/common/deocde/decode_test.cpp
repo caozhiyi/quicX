@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 #include "common/decode/decode.h"
 
+namespace quicx {
+namespace {
+
 TEST(decode_utest, EncodeVarint64_1) {
     uint64_t value = 1 << 5;
     uint8_t buf[5];
@@ -71,3 +74,6 @@ TEST(decode_utest, EncodeVarint64_4) {
 //     uint8_t* ptr2 = quicx::DecodeBytesNoCopy(buf, buf + 20, bufptr, strlen((const char*)str));
 //     EXPECT_EQ(strcmp((const char*)str, (const char*)bufptr), 0);
 // }
+
+}
+}

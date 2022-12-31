@@ -2,6 +2,9 @@
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_readonly.h"
 
+namespace quicx {
+namespace {
+    
 TEST(buffer_readonly_utest, buffer_readonly) {
     auto block = quicx::MakeBlockMemoryPoolPtr(63, 2);
     std::shared_ptr<quicx::BufferReadOnly> buffer = std::make_shared<quicx::BufferReadOnly>(block);
@@ -13,4 +16,7 @@ TEST(buffer_readonly_utest, buffer_readonly) {
 
     char ret_str[20] = {0};
     auto ret_size = buffer->Read(ret_str, 20);
+}
+
+}
 }

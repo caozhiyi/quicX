@@ -3,6 +3,9 @@
 #include "quic/frame/ack_frame.h"
 #include "common/alloter/pool_block.h"
 
+namespace quicx {
+namespace {
+
 TEST(ack_frame_utest, decode1) {
     quicx::AckFrame frame1;
     quicx::AckFrame frame2;
@@ -82,4 +85,7 @@ TEST(ack_ecn_frame_utest, decod1) {
     EXPECT_EQ(frame1.GetEct0(), frame2.GetEct0());
     EXPECT_EQ(frame1.GetEct1(), frame2.GetEct1());
     EXPECT_EQ(frame1.GetEcnCe(), frame2.GetEcnCe());
+}
+
+}
 }

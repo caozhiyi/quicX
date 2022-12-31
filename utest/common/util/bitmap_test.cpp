@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 #include "common/util/bitmap.h"
 
+namespace quicx {
+namespace {
+
 TEST(bitmap_utest, init) {
     quicx::Bitmap bm;
     EXPECT_TRUE(bm.Init(64));
@@ -42,4 +45,7 @@ TEST(bitmap_utest, minafter) {
     EXPECT_TRUE(bm.Remove(20));
     EXPECT_EQ(40, bm.GetMinAfter(8));
     EXPECT_EQ(80, bm.GetMinAfter(61));
+}
+
+}
 }

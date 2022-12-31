@@ -3,6 +3,9 @@
 #include <gtest/gtest.h>
 #include "common/alloter/pool_alloter.h"
 
+namespace quicx {
+namespace {
+
 uint32_t __alloter_test_value = 0;
 class AlloterTestClass {
 public:
@@ -47,4 +50,7 @@ TEST(alloter_utest, warp4) {
     {
         auto data = IAlloter.PoolMallocSharePtr<char>(100);
     }
+}
+
+}
 }

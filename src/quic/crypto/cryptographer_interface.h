@@ -18,9 +18,9 @@ public:
 
     virtual uint32_t GetCipherId() = 0;
 
-    virtual bool InstallSecret(uint8_t* secret, uint32_t secret_len, bool is_write) = 0;
+    virtual bool InstallSecret(const uint8_t* secret, uint32_t secret_len, bool is_write) = 0;
 
-    virtual bool InstallInitSecret(uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server) = 0;
+    virtual bool InstallInitSecret(const uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server) = 0;
 
     virtual bool DecryptPacket(uint64_t pn, BufferView associated_data, std::shared_ptr<IBufferReadOnly> ciphertext,
                              std::shared_ptr<IBufferReadOnly> out_plaintext) = 0;
@@ -30,7 +30,7 @@ public:
 
     virtual bool DecryptHeader(std::shared_ptr<IBufferReadOnly> ciphertext, uint8_t pn_offset, bool is_short) = 0;
 
-    virtual bool EncryptHeader(std::shared_ptr<IBufferReadOnly> plaintext, uint8_t pn_offset, bool is_short) = 0;
+    virtual bool EncryptHeader(std::shared_ptr<IBufferReadOnly> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) = 0;
 };
 
 }

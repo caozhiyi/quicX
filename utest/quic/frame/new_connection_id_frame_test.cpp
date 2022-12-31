@@ -3,6 +3,9 @@
 #include "common/alloter/pool_block.h"
 #include "quic/frame/new_connection_id_frame.h"
 
+namespace quicx {
+namespace {
+
 TEST(new_connection_id_frame_utest, decode1) {
     quicx::NewConnectionIDFrame frame1;
     quicx::NewConnectionIDFrame frame2;
@@ -37,4 +40,7 @@ TEST(new_connection_id_frame_utest, decode1) {
     EXPECT_EQ(frame1.GetConnectionID().size(), frame2.GetConnectionID().size());
     EXPECT_EQ(std::string((char*)frame1.GetStatelessResetToken(), quicx::__stateless_reset_token_length), 
         std::string((char*)frame2.GetStatelessResetToken(), quicx::__stateless_reset_token_length));
+}
+
+}
 }

@@ -3,6 +3,9 @@
 #include "common/log/file_logger.h"
 #include "common/log/stdout_logger.h"
 
+namespace quicx {
+namespace {
+
 TEST(stdlogger_utest, print1) {
     std::shared_ptr<quicx::Logger> log = std::make_shared<quicx::StdoutLogger>();
     quicx::LOG_SET(log);
@@ -28,4 +31,7 @@ TEST(filelogger_utest, debug) {
     quicx::LOG_WARN("%s %d", "it is a warn test num", 100191);
     quicx::LOG_ERROR("%s %d", "it is a error test num", 100191);
     quicx::LOG_FATAL("%s %d", "it is a fatal test num", 100191);
+}
+
+}
 }
