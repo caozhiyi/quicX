@@ -12,13 +12,13 @@
 
 namespace quicx {
 
-bool DecodePackets(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IPacket>>& packets) {
+bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IPacket>>& packets) {
     if(!buffer) {
         return false;
     }
 
     HeaderFlag flag;
-    while (buffer->GetCanReadLength() > 0) {
+    while (buffer->GetDataLength() > 0) {
         if (!flag.Decode(buffer)) {
             LOG_ERROR("decode header flag failed.");
             return false;

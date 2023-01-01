@@ -14,7 +14,7 @@ NewTokenFrame::~NewTokenFrame() {
 
 }
 
-bool NewTokenFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool NewTokenFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     auto pos_pair = buffer->GetWritePair();
     auto remain_size = pos_pair.second - pos_pair.first;
@@ -32,7 +32,7 @@ bool NewTokenFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool NewTokenFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool NewTokenFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
     uint8_t* pos = pos_pair.first;
 
@@ -45,8 +45,8 @@ bool NewTokenFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_ty
     pos = DecodeVarint(pos, pos_pair.second, _token_length);
 
     buffer->MoveReadPt(pos - pos_pair.first);
-    if (_token_length > buffer->GetCanReadLength()) {
-        LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetCanReadLength(), _token_length);
+    if (_token_length > buffer->GetDataLength()) {
+        LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), _token_length);
         return false;
     }
     

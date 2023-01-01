@@ -8,6 +8,6 @@ static const uint8_t __salt[] = "\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe
 static const uint8_t __secret[] = "cf063a34d4a9a76c2c86787d3f96db71";
 static const uint8_t __associated_data[] = "cf063a34d4a9a76c2c86787d3f96db71cf063a34d4a9a76c2c86787d3f96db71cf063a34d4a9a76c2c86787d3f96db71cf063a34d4a9a76c2c86787d3f96db71";
 
-bool DecryptPacketTest(std::shared_ptr<CryptographerIntreface> encrypter, std::shared_ptr<CryptographerIntreface> decrypter);
-bool DecryptHeaderTest(std::shared_ptr<CryptographerIntreface> encrypter, std::shared_ptr<CryptographerIntreface> decrypter);
+bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_ptr<ICryptographer> decrypter);
+bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_ptr<ICryptographer> decrypter);
 }

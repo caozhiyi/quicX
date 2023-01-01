@@ -6,6 +6,7 @@
 #include "common/alloter/pool_block.h"
 #include "common/alloter/pool_alloter.h"
 #include "quic/frame/stop_sending_frame.h"
+#include "common/buffer/buffer_read_write.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
@@ -15,8 +16,8 @@ namespace {
 
 TEST(frame_decode_utest, decode1) {
     auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
-    std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
+    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
 
     quicx::AckFrame ack_frame1;
     std::shared_ptr<quicx::AckFrame> ack_frame2;
@@ -80,7 +81,7 @@ TEST(frame_decode_utest, decode1) {
     close_frame1.SetReason("it is a test.");
     EXPECT_TRUE(close_frame1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetAllData();
+    auto data_piar = write_buffer->GetReadPair();
     auto pos_piar = read_buffer->GetReadPair();
     memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
     read_buffer->MoveWritePt(data_piar.second - data_piar.first);

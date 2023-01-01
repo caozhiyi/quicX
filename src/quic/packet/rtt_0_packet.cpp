@@ -12,11 +12,11 @@ Rtt0Packet::~Rtt0Packet() {
 
 }
 
-bool Rtt0Packet::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool Rtt0Packet::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool Rtt0Packet::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
+bool Rtt0Packet::Decode(std::shared_ptr<IBufferRead> buffer) {
     return true;
 }
 

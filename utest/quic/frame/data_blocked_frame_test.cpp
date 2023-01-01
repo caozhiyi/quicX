@@ -2,6 +2,7 @@
 
 #include "common/alloter/pool_block.h"
 #include "quic/frame/data_blocked_frame.h"
+#include "common/buffer/buffer_read_write.h"
 
 namespace quicx {
 namespace {
@@ -11,14 +12,14 @@ TEST(data_blocked_frame_utest, decode1) {
     quicx::DataBlockedFrame frame2;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
-    std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
+    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
 
     frame1.SetMaximumData(23624236235626);
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetAllData();
+    auto data_piar = write_buffer->GetReadPair();
     auto pos_piar = read_buffer->GetReadPair();
     memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
     read_buffer->MoveWritePt(data_piar.second - data_piar.first);

@@ -14,7 +14,7 @@ CryptoFrame::~CryptoFrame() {
 
 }
 
-bool CryptoFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool CryptoFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     auto pos_pair = buffer->GetWritePair();
     auto remain_size = pos_pair.second - pos_pair.first;
@@ -34,7 +34,7 @@ bool CryptoFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool CryptoFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool CryptoFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
     uint8_t* pos = pos_pair.first;
     
@@ -48,8 +48,8 @@ bool CryptoFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type
     pos = DecodeVarint(pos, pos_pair.second, _offset);
     pos = DecodeVarint(pos, pos_pair.second, _length);
     buffer->MoveReadPt(pos - pos_pair.first);
-    if (_length > buffer->GetCanReadLength()) {
-        LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetCanReadLength(), _length);
+    if (_length > buffer->GetDataLength()) {
+        LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), _length);
         return false;
     }
     

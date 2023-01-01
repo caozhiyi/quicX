@@ -14,8 +14,8 @@ public:
     PathChallengeFrame();
     ~PathChallengeFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     bool CompareData(std::shared_ptr<PathResponseFrame> response);

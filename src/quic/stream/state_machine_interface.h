@@ -6,17 +6,17 @@
 
 namespace quicx {
 
-class StreamStateMachine {
+class IStreamStateMachine {
 public:
-    StreamStateMachine(StreamStatus s): _status(s) {}
-    virtual ~StreamStateMachine() {}
+    IStreamStateMachine(StreamState s = SS_UNKNOW): _state(s) {}
+    virtual ~IStreamStateMachine() {}
 
     virtual bool OnFrame(uint16_t frame_type) = 0;
 
-    StreamStatus GetStatus() { return _status; }
+    StreamState GetStatus() { return _state; }
 
 protected:
-    StreamStatus _status;
+    StreamState _state;
 };
 
 }

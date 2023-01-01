@@ -10,8 +10,8 @@
 
 namespace quicx {
 
-SendStreamStateMachine::SendStreamStateMachine(StreamStatus s):
-    StreamStateMachine(s) {
+SendStreamStateMachine::SendStreamStateMachine(StreamState s):
+    IStreamStateMachine(s) {
 
 }
 
@@ -21,40 +21,37 @@ SendStreamStateMachine::~SendStreamStateMachine() {
 
 bool SendStreamStateMachine::OnFrame(uint16_t frame_type) {
     if (frame_type >= FT_STREAM && frame_type <= FT_STREAM_MAX) {
-        // check status change 
-        if (_status == SS_READY) {
-            _status = SS_SEND;
+        if (_state == SS_READY) {
+            _state = SS_SEND;
             if (frame_type & SFF_FIN) {
-                _status = SS_DATA_SENT;
+                _state = SS_DATA_SENT;
             }
             return true;
         }
         if (frame_type & SFF_FIN) {
-            if (_status == SS_SEND) {
-                _status = SS_DATA_SENT;
+            if (_state == SS_SEND) {
+                _state = SS_DATA_SENT;
                 return true;
             }
         }
 
-        // check status
-        if (_status == SS_READY || _status == SS_SEND) {
+        if (_state == SS_READY || _state == SS_SEND) {
             return true;
         }
 
     } else if (frame_type == FT_STREAM_DATA_BLOCKED) {
-        if (_status == SS_READY) {
-            _status = SS_SEND;
+        if (_state == SS_READY) {
+            _state = SS_SEND;
             return true;
         }
 
-        // check status
-        if (_status == SS_READY || _status == SS_SEND) {
+        if (_state == SS_READY || _state == SS_SEND) {
             return true;
         }
 
     }  else if (frame_type == FT_RESET_STREAM) {
-        if (_status == SS_READY || _status == SS_SEND || _status == SS_DATA_SENT) {
-            _status = SS_RESET_SENT;
+        if (_state == SS_READY || _state == SS_SEND || _state == SS_DATA_SENT) {
+            _state = SS_RESET_SENT;
             return true;
         }
 
@@ -63,22 +60,22 @@ bool SendStreamStateMachine::OnFrame(uint16_t frame_type) {
         return false;
     }
 
-    LOG_ERROR("current status not allow send this frame. status:%d, frame type:%d", _status, frame_type);
+    LOG_ERROR("current status not allow send this frame. status:%d, frame type:%d", _state, frame_type);
     return false;
 }
 
 bool SendStreamStateMachine::RecvAllAck() {
-    if (_status == SS_DATA_SENT) {
-        _status = SS_DATA_RECVD;
+    if (_state == SS_DATA_SENT) {
+        _state = SS_DATA_RECVD;
         return true;
     }
 
-    if (_status == SS_RESET_SENT) {
-        _status = SS_RESET_RECVD;
+    if (_state == SS_RESET_SENT) {
+        _state = SS_RESET_RECVD;
         return true;
     }
 
-    LOG_ERROR("current status not allow recv this ack. status:%d", _status);
+    LOG_ERROR("current status not allow recv this ack. status:%d", _state);
     return false;
 }
 

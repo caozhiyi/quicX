@@ -4,7 +4,7 @@
 
 namespace quicx {
 
-bool HeaderFlag::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool HeaderFlag::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     auto pos_pair = buffer->GetWritePair();
     auto remain_size = pos_pair.second - pos_pair.first;
@@ -19,9 +19,9 @@ bool HeaderFlag::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool HeaderFlag::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
+bool HeaderFlag::Decode(std::shared_ptr<IBufferRead> buffer) {
     auto pos_pair = buffer->GetReadPair();
-    if (buffer->GetCanReadLength() < EncodeSize()) {
+    if (buffer->GetDataLength() < EncodeSize()) {
         return false;
     }
 

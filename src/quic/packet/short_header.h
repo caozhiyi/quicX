@@ -15,8 +15,8 @@ public:
     ShortHeader(HeaderFlag flag);
     virtual ~ShortHeader();
 
-    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag = false);
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag = false);
     virtual uint32_t EncodeSize();
 };
 

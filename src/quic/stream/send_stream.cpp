@@ -14,95 +14,19 @@
 
 namespace quicx {
 
-SendStream::SendStream(StreamType type):
-    Stream(type),
+SendStream::SendStream(uint64_t id):
+    ISendStream(id),
     _data_offset(0),
     _peer_data_limit(0) {
-    _state_machine = std::shared_ptr<SendStreamStateMachine>();
+    _send_machine = std::shared_ptr<SendStreamStateMachine>();
 }
 
 SendStream::~SendStream() {
 
 }
 
-int32_t SendStream::Write(std::shared_ptr<Buffer> buffer, uint32_t len) {
-    /*if (_peer_data_limit == 0) {
-        LOG_WARN("peer remote hasn't set data limit");
-        return 0;
-    }
-
-    if (len == 0) {
-        len = buffer->GetCanReadLength();
-    }
-
-    if (len == 0) {
-        LOG_WARN("send buffer is empty");
-        return 0;
-    }
-    
-    bool send_block = false;
-    // send stream frame
-    if (_data_offset < _peer_data_limit) {
-        uint64_t limit_send = _peer_data_limit - _data_offset;
-        if (limit_send < len) {
-            len = limit_send;
-
-        } else {
-            send_block = true;
-        }
-
-        // check status
-        if(!_state_machine->OnFrame(FT_STREAM)) {
-            return 0;
-        }
-
-        _data_offset += len;
-
-        auto frame = std::make_shared<StreamFrame>();
-        frame->SetStreamID(_stream_id);
-        frame->SetOffset(_data_offset);
-        frame->SetData(buffer, len);
-
-        //_connection->Send(frame);
-
-    } else {
-        send_block = true;
-    }
-    
-    // send stream data block frame
-    if (send_block) {
-        // check status
-        if(!_state_machine->OnFrame(FT_STREAM_DATA_BLOCKED)) {
-            return 0;
-        }
-        auto frame = std::make_shared<StreamDataBlockedFrame>();
-        frame->SetStreamID(_stream_id);
-        frame->SetMaximumData(_peer_data_limit);
-
-        //_connection->Send(frame);
-    }
-    return len;
-    */
-   return 0;
-}
-
-int32_t SendStream::Write(const std::string &data) {
-    /*
-    auto buffer = std::make_shared<BufferQueue>(_block_pool, _alloter);
-    //buffer->Write(data.c_str(), data.length());
-
-    return Write(buffer);
-    */
-   return 0;
-}
-
-int32_t SendStream::Write(char* data, uint32_t len) {
-    /*
-    auto buffer = std::make_shared<BufferQueue>(_block_pool, _alloter);
-    buffer->Write(data, len);
-
-    return Write(buffer);
-    */
+int32_t SendStream::Send(uint8_t* data, uint32_t len) {
+   
    return 0;
 }
 
@@ -111,7 +35,7 @@ void SendStream::Close() {
     frame->SetFin();
 
     // check status
-    if(!_state_machine->OnFrame(frame->GetType())) {
+    if(!_send_machine->OnFrame(frame->GetType())) {
         return;
     }
 
@@ -136,7 +60,7 @@ void SendStream::HandleFrame(std::shared_ptr<IFrame> frame) {
 
 void SendStream::Reset(uint64_t err) {
     // check status
-    if(!_state_machine->OnFrame(FT_RESET_STREAM)) {
+    if(!_send_machine->OnFrame(FT_RESET_STREAM)) {
         return;
     }
 
@@ -160,7 +84,7 @@ void SendStream::HandleMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     uint32_t can_write_size = new_limit - _peer_data_limit;
     _peer_data_limit = new_limit;
 
-    _write_back(can_write_size, 0);
+    //_write_back(can_write_size, 0);
 }
 
 void SendStream::HandleStopSendingFrame(std::shared_ptr<IFrame> frame) {
@@ -169,7 +93,7 @@ void SendStream::HandleStopSendingFrame(std::shared_ptr<IFrame> frame) {
 
     Reset(0);
 
-    _write_back(0, err);
+    //_write_back(0, err);
 }
 
 }

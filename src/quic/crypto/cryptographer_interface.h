@@ -4,15 +4,14 @@
 #include <memory>
 #include <cstdint>
 #include "quic/crypto/type.h"
-#include "common/buffer/buffer_view.h"
+#include "common/buffer/buffer_interface.h"
 
 namespace quicx {
 
-class IBufferReadOnly;
-class CryptographerIntreface {
+class ICryptographer {
 public:
-    CryptographerIntreface();
-    virtual ~CryptographerIntreface();
+    ICryptographer();
+    virtual ~ICryptographer();
 
     virtual const char* GetName() = 0;
 
@@ -22,15 +21,15 @@ public:
 
     virtual bool InstallInitSecret(const uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server) = 0;
 
-    virtual bool DecryptPacket(uint64_t pn, BufferView associated_data, std::shared_ptr<IBufferReadOnly> ciphertext,
-                             std::shared_ptr<IBufferReadOnly> out_plaintext) = 0;
+    virtual bool DecryptPacket(uint64_t pn, BufferReadView associated_data, std::shared_ptr<IBufferRead> ciphertext,
+                             std::shared_ptr<IBufferWrite> out_plaintext) = 0;
 
-    virtual bool EncryptPacket(uint64_t pn, BufferView associated_data, std::shared_ptr<IBufferReadOnly> plaintext,
-                             std::shared_ptr<IBufferReadOnly> out_ciphertext) = 0;
+    virtual bool EncryptPacket(uint64_t pn, BufferReadView associated_data, std::shared_ptr<IBufferRead> plaintext,
+                             std::shared_ptr<IBufferWrite> out_ciphertext) = 0;
 
-    virtual bool DecryptHeader(std::shared_ptr<IBufferReadOnly> ciphertext, uint8_t pn_offset, bool is_short) = 0;
+    virtual bool DecryptHeader(std::shared_ptr<IBufferRead> ciphertext, uint8_t pn_offset, bool is_short) = 0;
 
-    virtual bool EncryptHeader(std::shared_ptr<IBufferReadOnly> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) = 0;
+    virtual bool EncryptHeader(std::shared_ptr<IBufferRead> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) = 0;
 };
 
 }

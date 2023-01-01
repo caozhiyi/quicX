@@ -12,9 +12,9 @@ enum RecvStreamEvent {
     RSE_READ_RST      = 0x03,
 };
 
-class RecvStreamStateMachine: public StreamStateMachine {
+class RecvStreamStateMachine: public IStreamStateMachine {
 public:
-    RecvStreamStateMachine(StreamStatus s = SS_RECV);
+    RecvStreamStateMachine(StreamState s = SS_RECV);
     ~RecvStreamStateMachine();
 
     bool OnFrame(uint16_t frame_type);

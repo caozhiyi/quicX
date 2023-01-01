@@ -30,8 +30,8 @@ public:
     HeaderFlag(const HeaderFlag& flag) { _flag._header_flag = flag._flag._header_flag; }
     ~HeaderFlag() {}
 
-    bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    bool Decode(std::shared_ptr<IBufferReadOnly> buffer);
+    bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    bool Decode(std::shared_ptr<IBufferRead> buffer);
     uint32_t EncodeSize();
 
     bool IsShortHeaderFlag() const;

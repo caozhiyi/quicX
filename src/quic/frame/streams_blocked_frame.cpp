@@ -17,7 +17,7 @@ StreamsBlockedFrame::~StreamsBlockedFrame() {
 
 }
 
-bool StreamsBlockedFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool StreamsBlockedFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     auto pos_pair = buffer->GetWritePair();
     auto remain_size = pos_pair.second - pos_pair.first;
@@ -34,7 +34,7 @@ bool StreamsBlockedFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool StreamsBlockedFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool StreamsBlockedFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
     uint8_t* pos = pos_pair.first;
 

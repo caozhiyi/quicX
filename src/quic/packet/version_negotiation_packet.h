@@ -15,8 +15,8 @@ public:
     VersionNegotiationPacket(std::shared_ptr<IHeader> header);
     virtual ~VersionNegotiationPacket();
 
-    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer);
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
     virtual uint32_t EncodeSize();
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);

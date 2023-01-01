@@ -11,13 +11,12 @@
 
 namespace quicx {
 
-RecvStream::RecvStream(StreamType type):
-    Stream(type),
+RecvStream::RecvStream(uint64_t id):
+    IRecvStream(id),
     _data_limit(0),
     _to_data_max(0),
     _final_offset(0) {
-    //_buffer = std::make_shared<SortBufferQueue>(_block_pool, _alloter);
-    _state_machine = std::shared_ptr<RecvStreamStateMachine>();
+    _recv_machine = std::shared_ptr<RecvStreamStateMachine>();
 }
 
 RecvStream::~RecvStream() {
@@ -48,18 +47,8 @@ void RecvStream::HandleFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
-void RecvStream::SetDataLimit(uint32_t limit) {
-    _data_limit = limit;
-
-    auto max_frame = std::make_shared<MaxStreamDataFrame>();
-    max_frame->SetStreamID(_stream_id);
-    //max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
-
-    //_connection->Send(max_frame);
-}
-
 void RecvStream::HandleStreamFrame(std::shared_ptr<IFrame> frame) {
-    if(!_state_machine->OnFrame(frame->GetType())) {
+    if(!_recv_machine->OnFrame(frame->GetType())) {
         return;
     }
 
@@ -67,7 +56,7 @@ void RecvStream::HandleStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
     _buffer->Write(stream_frame->GetData(), stream_frame->GetOffset());
 
-    if (_buffer->GetCanReadLength() > 0) {
+    if (_buffer->GetDataLength() > 0) {
         _read_back(_buffer, 0);
     }
 
@@ -83,7 +72,7 @@ void RecvStream::HandleStreamFrame(std::shared_ptr<IFrame> frame) {
 }
 
 void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
-    if(!_state_machine->OnFrame(frame->GetType())) {
+    if(!_recv_machine->OnFrame(frame->GetType())) {
         return;
     }
     /*
@@ -99,7 +88,7 @@ void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
 }
 
 void RecvStream::HandleResetStreamFrame(std::shared_ptr<IFrame> frame) {
-    if(!_state_machine->OnFrame(frame->GetType())) {
+    if(!_recv_machine->OnFrame(frame->GetType())) {
         return;
     }
     /*

@@ -8,10 +8,10 @@
 
 namespace quicx {
 
-class IBufferReadOnly;
+class IBufferRead;
 class UdpListener {
 public:
-    UdpListener(std::function<void(std::shared_ptr<IBufferReadOnly>)> cb);
+    UdpListener(std::function<void(std::shared_ptr<IBufferRead>)> cb);
     ~UdpListener();
 
     bool Listen(const std::string& ip, uint16_t port);
@@ -21,7 +21,7 @@ public:
 private:
     bool _stop;
     uint64_t _listen_sock;
-    std::function<void(std::shared_ptr<IBufferReadOnly>)> _recv_callback;
+    std::function<void(std::shared_ptr<IBufferRead>)> _recv_callback;
 };
 
 }

@@ -54,7 +54,7 @@ bool Controller::Stop() {
     return true;
 }
 
-void Controller::Dispatcher(std::shared_ptr<IBufferReadOnly> recv_data) {
+void Controller::Dispatcher(std::shared_ptr<IBufferRead> recv_data) {
     auto udp_packet = std::make_shared<UdpPacketIn>(recv_data);
 
     std::vector<std::shared_ptr<IPacket>> packets;

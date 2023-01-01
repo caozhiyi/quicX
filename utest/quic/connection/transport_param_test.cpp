@@ -3,9 +3,7 @@
 #include "quic/connection/transport_param_config.h"
 
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_readonly.h"
-#include "common/buffer/buffer_writeonly.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/buffer_read_write.h"
 
 namespace quicx {
 namespace {
@@ -34,12 +32,12 @@ TEST(transport_param_utest, test1) {
     tp1.Init(config);
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
-    std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
+    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetAllData();
+    auto data_piar = write_buffer->GetReadPair();
     auto pos_piar = read_buffer->GetReadPair();
     memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
     read_buffer->MoveWritePt(data_piar.second - data_piar.first);
@@ -71,12 +69,12 @@ TEST(transport_param_utest, test2) {
     quicx::TransportParam tp1;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
-    std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
+    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetAllData();
+    auto data_piar = write_buffer->GetReadPair();
     auto pos_piar = read_buffer->GetReadPair();
     memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
     read_buffer->MoveWritePt(data_piar.second - data_piar.first);

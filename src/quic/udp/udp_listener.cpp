@@ -3,7 +3,7 @@
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_readonly.h"
+#include "common/buffer/buffer_read.h"
 
 #include "quic/udp/udp_listener.h"
 #include "quic/common/constants.h"
@@ -11,7 +11,7 @@
 
 namespace quicx {
 
-UdpListener::UdpListener(std::function<void(std::shared_ptr<IBufferReadOnly>)> cb):
+UdpListener::UdpListener(std::function<void(std::shared_ptr<IBufferRead>)> cb):
     _listen_sock(0),
     _stop(false),
     _recv_callback(cb) {
@@ -42,17 +42,16 @@ bool UdpListener::Listen(const std::string& ip, uint16_t port) {
     Address peer_addr(AT_IPV4);
 
     while (!_stop) {
-        auto recv_buffer = std::make_shared<BufferReadOnly>(alloter);
-        auto buffer_pair = recv_buffer->GetWritePair();
-
-        auto recv_ret = RecvFrom(sock, (char*)buffer_pair.first, __max_v4_packet_size, 0, peer_addr);
+        uint8_t* data = (uint8_t*)alloter->PoolLargeMalloc();
+        
+        auto recv_ret = RecvFrom(sock, (char*)data, __max_v4_packet_size, 0, peer_addr);
         if (recv_ret.errno_ != 0) {
             LOG_ERROR("recv from failed. err:%d", recv_ret.errno_);
             continue;
         }
-        LOG_DEBUG("recv udp msg. msg:%s", buffer_pair.first);
+        LOG_DEBUG("recv udp msg. msg:%s", data);
         LOG_DEBUG("recv udp msg. size:%d", recv_ret._return_value);
-        recv_buffer->MoveWritePt(recv_ret._return_value);
+        auto recv_buffer = std::make_shared<BufferRead>(data, data + recv_ret._return_value, alloter);
         _recv_callback(recv_buffer);
     }
     return true;
