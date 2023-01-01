@@ -11,12 +11,12 @@ VersionNegotiationPacket::~VersionNegotiationPacket() {
     
 }
 
-bool VersionNegotiationPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool VersionNegotiationPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     
     return true;
 }
 
-bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
+bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
 
     return true;
 }

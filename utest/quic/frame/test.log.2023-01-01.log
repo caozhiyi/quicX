@@ -1,0 +1,66 @@
+[DEB|2023-01-01:23:43:40:896|common/log/logger_stream_test.cpp:28] it is a debug test log.
+[INF|2023-01-01:23:43:40:897|common/log/logger_stream_test.cpp:29] it is a info test num
+[WAR|2023-01-01:23:43:40:897|common/log/logger_stream_test.cpp:30] it is a warn test num
+[ERR|2023-01-01:23:43:40:897|common/log/logger_stream_test.cpp:31] it is a error test num
+[FAT|2023-01-01:23:43:40:897|common/log/logger_stream_test.cpp:32] it is a fatal test num
+[FAT|2023-01-01:23:43:40:897|common/log/logger_stream_test.cpp:42] bool value:1
+[FAT|2023-01-01:23:43:40:897|common/log/logger_stream_test.cpp:43] int8 value:32
+[FAT|2023-01-01:23:43:40:897|common/log/logger_stream_test.cpp:44] uint8 value:255
+[DEB|2023-01-01:23:43:40:899|common/log/logger_test.cpp:29] it is a debug test log.
+[INF|2023-01-01:23:43:40:899|common/log/logger_test.cpp:30] it is a info test num 100191
+[WAR|2023-01-01:23:43:40:899|common/log/logger_test.cpp:31] it is a warn test num 100191
+[ERR|2023-01-01:23:43:40:899|common/log/logger_test.cpp:32] it is a error test num 100191
+[FAT|2023-01-01:23:43:40:899|common/log/logger_test.cpp:33] it is a fatal test num 100191
+[DEB|2023-01-01:23:43:52:100|common/log/logger_stream_test.cpp:28] it is a debug test log.
+[INF|2023-01-01:23:43:52:100|common/log/logger_stream_test.cpp:29] it is a info test num
+[WAR|2023-01-01:23:43:52:100|common/log/logger_stream_test.cpp:30] it is a warn test num
+[ERR|2023-01-01:23:43:52:100|common/log/logger_stream_test.cpp:31] it is a error test num
+[FAT|2023-01-01:23:43:52:100|common/log/logger_stream_test.cpp:32] it is a fatal test num
+[FAT|2023-01-01:23:43:52:101|common/log/logger_stream_test.cpp:42] bool value:1
+[FAT|2023-01-01:23:43:52:101|common/log/logger_stream_test.cpp:43] int8 value:32
+[FAT|2023-01-01:23:43:52:101|common/log/logger_stream_test.cpp:44] uint8 value:255
+[FAT|2023-01-01:23:43:52:101|common/log/logger_stream_test.cpp:45] int16 value:128
+[FAT|2023-01-01:23:43:52:101|common/log/logger_stream_test.cpp:46] uint16 value:65535
+[DEB|2023-01-01:23:43:52:102|common/log/logger_test.cpp:29] it is a debug test log.
+[INF|2023-01-01:23:43:52:102|common/log/logger_test.cpp:30] it is a info test num 100191
+[WAR|2023-01-01:23:43:52:102|common/log/logger_test.cpp:31] it is a warn test num 100191
+[ERR|2023-01-01:23:43:52:102|common/log/logger_test.cpp:32] it is a error test num 100191
+[FAT|2023-01-01:23:43:52:102|common/log/logger_test.cpp:33] it is a fatal test num 100191
+[DEB|2023-01-01:23:44:01:173|common/log/logger_stream_test.cpp:28] it is a debug test log.
+[INF|2023-01-01:23:44:01:173|common/log/logger_stream_test.cpp:29] it is a info test num
+[WAR|2023-01-01:23:44:01:173|common/log/logger_stream_test.cpp:30] it is a warn test num
+[ERR|2023-01-01:23:44:01:173|common/log/logger_stream_test.cpp:31] it is a error test num
+[FAT|2023-01-01:23:44:01:173|common/log/logger_stream_test.cpp:32] it is a fatal test num
+[FAT|2023-01-01:23:44:01:174|common/log/logger_stream_test.cpp:42] bool value:1
+[FAT|2023-01-01:23:44:01:174|common/log/logger_stream_test.cpp:43] int8 value:32
+[FAT|2023-01-01:23:44:01:174|common/log/logger_stream_test.cpp:44] uint8 value:255
+[FAT|2023-01-01:23:44:01:174|common/log/logger_stream_test.cpp:45] int16 value:128
+[FAT|2023-01-01:23:44:01:174|common/log/logger_stream_test.cpp:46] uint16 value:65535
+[FAT|2023-01-01:23:44:01:174|common/log/logger_stream_test.cpp:47] int32 value:6451
+[FAT|2023-01-01:23:44:01:174|common/log/logger_stream_test.cpp:48] uint32 value:4294967295
+[FAT|2023-01-01:23:44:01:174|common/log/logger_stream_test.cpp:49] int64 value:-515811548
+[DEB|2023-01-01:23:44:01:175|common/log/logger_test.cpp:29] it is a debug test log.
+[INF|2023-01-01:23:44:01:175|common/log/logger_test.cpp:30] it is a info test num 100191
+[WAR|2023-01-01:23:44:01:175|common/log/logger_test.cpp:31] it is a warn test num 100191
+[ERR|2023-01-01:23:44:01:175|common/log/logger_test.cpp:32] it is a error test num 100191
+[FAT|2023-01-01:23:44:01:175|common/log/logger_test.cpp:33] it is a fatal test num 100191
+[DEB|2023-01-01:23:44:44:252|common/log/logger_stream_test.cpp:28] it is a debug test log.
+[INF|2023-01-01:23:44:44:252|common/log/logger_stream_test.cpp:29] it is a info test num
+[WAR|2023-01-01:23:44:44:252|common/log/logger_stream_test.cpp:30] it is a warn test num
+[ERR|2023-01-01:23:44:44:252|common/log/logger_stream_test.cpp:31] it is a error test num
+[FAT|2023-01-01:23:44:44:252|common/log/logger_stream_test.cpp:32] it is a fatal test num
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:42] bool value:1
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:43] int8 value:32
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:44] uint8 value:255
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:45] int16 value:128
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:46] uint16 value:65535
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:47] int32 value:6451
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:48] uint32 value:4294967295
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:49] int64 value:-515811548
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:50] uint64 value:18446744073709551615
+[FAT|2023-01-01:23:44:44:253|common/log/logger_stream_test.cpp:51] float value:1.1111111641
+[DEB|2023-01-01:23:44:44:254|common/log/logger_test.cpp:29] it is a debug test log.
+[INF|2023-01-01:23:44:44:254|common/log/logger_test.cpp:30] it is a info test num 100191
+[WAR|2023-01-01:23:44:44:254|common/log/logger_test.cpp:31] it is a warn test num 100191
+[ERR|2023-01-01:23:44:44:254|common/log/logger_test.cpp:32] it is a error test num 100191
+[FAT|2023-01-01:23:44:44:254|common/log/logger_test.cpp:33] it is a fatal test num 100191

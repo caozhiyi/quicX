@@ -13,11 +13,11 @@ RetryPacket::~RetryPacket() {
 
 }
 
-bool RetryPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool RetryPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool RetryPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
+bool RetryPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     return true;
 }
 

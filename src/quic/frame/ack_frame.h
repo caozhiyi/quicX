@@ -15,8 +15,8 @@ public:
     AckFrame();
     virtual ~AckFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetAckDelay(uint32_t delay) { _ack_delay = delay; }
@@ -41,8 +41,8 @@ public:
     AckEcnFrame();
     ~AckEcnFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetEct0(uint64_t ect0) { _ect_0 = ect0; }

@@ -12,11 +12,11 @@
 
 namespace quicx {
 
-class IBufferReadOnly;
+class IBufferRead;
 class UdpPacketIn:
     public IUdpPacket  {
 public:
-    UdpPacketIn(std::shared_ptr<IBufferReadOnly> buffer);
+    UdpPacketIn(std::shared_ptr<IBufferRead> buffer);
     ~UdpPacketIn();
 
     // set recv data from peer
@@ -25,7 +25,7 @@ public:
     bool Decode(std::vector<std::shared_ptr<IPacket>>& out_packets);
 
 private:
-    std::shared_ptr<IBufferReadOnly> _recv_buffer;
+    std::shared_ptr<IBufferRead> _recv_buffer;
 };
 
 }

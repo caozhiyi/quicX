@@ -17,11 +17,11 @@ InitPacket::~InitPacket() {
 
 }
 
-bool InitPacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
+bool InitPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     if (!_header) {
         LOG_ERROR("empty header.");
         return false;
@@ -48,7 +48,7 @@ bool InitPacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
     LOG_DEBUG("get initial token:%s", _token);
 
     pos = DecodeVarint(pos, pos_pair.second, _payload_length);
-    _payload.SetData(pos, _payload_length);
+    //_payload.SetData(pos, _payload_length);
     pos += _payload_length;
 
     _buffer = buffer;
@@ -64,8 +64,8 @@ bool InitPacket::AddFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 
-BufferView& InitPacket::GetPayload() {
-    return _payload;
-}
+//BufferReadView& InitPacket::GetPayload() {
+    //return _payload;
+//}
 
 }

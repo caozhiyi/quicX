@@ -4,12 +4,10 @@
 #include <memory>
 #include "type.h"
 
-#include "common/buffer/buffer_readonly.h"
-#include "common/buffer/buffer_writeonly.h"
+#include "common/buffer/buffer_interface.h"
 
 namespace quicx {
 
-class AlloterWrap;
 class IFrame {
 public:
     IFrame(uint16_t ft = FT_UNKNOW);
@@ -17,8 +15,8 @@ public:
 
     uint16_t GetType();
 
-    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 protected:
     uint16_t _frame_type;

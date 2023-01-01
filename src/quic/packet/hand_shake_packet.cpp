@@ -13,11 +13,11 @@ HandShakePacket::~HandShakePacket() {
 
 }
 
-bool HandShakePacket::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool HandShakePacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool HandShakePacket::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
+bool HandShakePacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     return true;
 }
 

@@ -2,11 +2,11 @@
 
 namespace quicx {
 
-CryptographerIntreface::CryptographerIntreface() {
+ICryptographer::ICryptographer() {
 
 }
 
-CryptographerIntreface::~CryptographerIntreface() {
+ICryptographer::~ICryptographer() {
     
 }
 

@@ -36,7 +36,7 @@ public:
     FrameDecode();
     ~FrameDecode();
 
-    bool DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
+    bool DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 private:
     typedef std::function<std::shared_ptr<IFrame>(uint16_t)> FrameCreater;
     // frame type to craeter function map
@@ -83,7 +83,7 @@ FrameDecode::~FrameDecode() {
 
 }
 
-bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     if(!buffer) {
         return false;
     }
@@ -94,10 +94,10 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vec
     uint16_t frame_type = 0;
     uint8_t type_buf[__type_buf_length] = {0};
 
-    while (buffer->GetCanReadLength() > 0) {
+    while (buffer->GetDataLength() > 0) {
         // decode type
         if (buffer->Read(type_buf, __type_buf_length) != __type_buf_length) {
-            LOG_ERROR("wrong buffer size while read frame type. size:%d", buffer->GetCanReadLength());
+            LOG_ERROR("wrong buffer size while read frame type. size:%d", buffer->GetDataLength());
             return false;
         }
         FixedDecodeUint16(type_buf, type_buf + __type_buf_length, frame_type);
@@ -122,7 +122,7 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vec
     return true;
 }
 
-bool DecodeFrames(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     return FrameDecode::Instance().DecodeFrames(buffer, frames);
 }
 

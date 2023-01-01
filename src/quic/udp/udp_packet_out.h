@@ -9,14 +9,13 @@
 #include "common/network/address.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/udp/udp_packet_interface.h"
-#include "common/buffer/buffer_writeonly.h"
 
 namespace quicx {
 
 class UdpPacketOut:
     public IUdpPacket {
 public:
-    UdpPacketOut(std::shared_ptr<BufferWriteOnly> buffer);
+    UdpPacketOut(std::shared_ptr<IBufferWrite> buffer);
     ~UdpPacketOut();
 
     // set recv data from peer
@@ -25,7 +24,7 @@ public:
     bool Eecode(char*& out_data, uint32_t& out_len);
 
 private:
-    std::shared_ptr<BufferWriteOnly> _send_buffer;
+    std::shared_ptr<IBufferWrite> _send_buffer;
     std::vector<std::shared_ptr<IPacket>> _packets;
 };
 

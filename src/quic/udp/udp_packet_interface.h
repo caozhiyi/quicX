@@ -8,7 +8,6 @@
 
 #include "common/network/address.h"
 #include "quic/packet/packet_interface.h"
-#include "common/buffer/buffer_writeonly.h"
 
 namespace quicx {
 

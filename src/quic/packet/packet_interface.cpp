@@ -2,6 +2,4 @@
 
 namespace quicx {
 
-BufferView IPacket::_view;
-
 }

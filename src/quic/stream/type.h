@@ -10,7 +10,8 @@ enum StreamType {
     ST_SERVER_UNIDIRCTIONAL = 0x03
 };
 
-enum StreamStatus {
+enum StreamState {
+    SS_UNKNOW      = 0,
     // sending stream states
     SS_READY       = 0x0001,
     SS_SEND        = 0x0002,

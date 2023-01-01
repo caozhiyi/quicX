@@ -26,7 +26,7 @@ ConnectionCloseFrame::~ConnectionCloseFrame() {
 
 }
 
-bool ConnectionCloseFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool ConnectionCloseFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
 
     auto pos_pair = buffer->GetWritePair();
@@ -47,7 +47,7 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool ConnectionCloseFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool ConnectionCloseFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     uint16_t size = EncodeSize();
 
     auto pos_pair = buffer->GetReadPair();

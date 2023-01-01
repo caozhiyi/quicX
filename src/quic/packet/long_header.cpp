@@ -31,7 +31,7 @@ LongHeader::~LongHeader() {
 
 }
 
-bool LongHeader::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool LongHeader::Encode(std::shared_ptr<IBufferWrite> buffer) {
     if (!_flag.Encode(buffer)) {
         return false;
     }
@@ -60,7 +60,7 @@ bool LongHeader::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool LongHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag) {
+bool LongHeader::Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
     if (with_flag) {
         if (_flag.Decode(buffer)) {
             return false;

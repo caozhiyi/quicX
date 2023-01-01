@@ -13,8 +13,8 @@ public:
     ConnectionCloseFrame(uint16_t frame_type);
     ~ConnectionCloseFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetErrorCode(uint32_t error_code) { _error_code = error_code; }

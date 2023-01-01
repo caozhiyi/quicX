@@ -7,8 +7,8 @@
 
 namespace quicx {
 
-class IBufferReadOnly;
-class IBufferWriteOnly;
+class IBufferRead;
+class IBufferWrite;
 class TransportParamConfig;
 class TransportParam {
 public:
@@ -24,8 +24,8 @@ public:
     /*
      * serialization and deserialization operations
      */
-    bool Encode(std::shared_ptr<IBufferWriteOnly> buffer);
-    bool Decode(std::shared_ptr<IBufferReadOnly> buffer);
+    bool Encode(std::shared_ptr<IBufferWrite> buffer);
+    bool Decode(std::shared_ptr<IBufferRead> buffer);
     uint32_t EncodeSize();
 
     /**

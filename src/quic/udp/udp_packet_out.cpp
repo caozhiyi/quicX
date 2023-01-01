@@ -2,7 +2,7 @@
 
 namespace quicx {
 
-UdpPacketOut::UdpPacketOut(std::shared_ptr<BufferWriteOnly> buffer):
+UdpPacketOut::UdpPacketOut(std::shared_ptr<IBufferWrite> buffer):
     _send_buffer(buffer) {
 
 }

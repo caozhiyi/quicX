@@ -56,8 +56,8 @@ void TransportParam::Init(TransportParamConfig& conf) {
      return true;
  }
 
-bool TransportParam::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
-    if (buffer->GetCanWriteLength() < EncodeSize()) {
+bool TransportParam::Encode(std::shared_ptr<IBufferWrite> buffer) {
+    if (buffer->GetFreeLength() < EncodeSize()) {
         return false;
     }
     
@@ -135,7 +135,7 @@ bool TransportParam::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool TransportParam::Decode(std::shared_ptr<IBufferReadOnly> buffer) {
+bool TransportParam::Decode(std::shared_ptr<IBufferRead> buffer) {
     uint64_t type = 0;
     auto pos_pair = buffer->GetReadPair();
     uint8_t* pos = pos_pair.first;

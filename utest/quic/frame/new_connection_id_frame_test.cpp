@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "common/alloter/pool_block.h"
+#include "common/buffer/buffer_read_write.h"
 #include "quic/frame/new_connection_id_frame.h"
 
 namespace quicx {
@@ -11,8 +12,8 @@ TEST(new_connection_id_frame_utest, decode1) {
     quicx::NewConnectionIDFrame frame2;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(256, 2);
-    std::shared_ptr<quicx::IBufferReadOnly> read_buffer = std::make_shared<quicx::BufferReadOnly>(alloter);
-    std::shared_ptr<quicx::IBufferWriteOnly> write_buffer = std::make_shared<quicx::BufferWriteOnly>(alloter);
+    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
 
     frame1.SetRetirePriorTo(10086);
     frame1.SetSequenceNumber(2352632);
@@ -28,7 +29,7 @@ TEST(new_connection_id_frame_utest, decode1) {
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetAllData();
+    auto data_piar = write_buffer->GetReadPair();
     auto pos_piar = read_buffer->GetReadPair();
     memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
     read_buffer->MoveWritePt(data_piar.second - data_piar.first);

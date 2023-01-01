@@ -16,7 +16,7 @@ AckFrame::~AckFrame() {
 
 }
 
-bool AckFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool AckFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     
     auto pos_pair = buffer->GetWritePair();
@@ -41,7 +41,7 @@ bool AckFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
     return true;
 }
 
-bool AckFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool AckFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
     
     uint8_t* pos = pos_pair.first;
@@ -90,7 +90,7 @@ AckEcnFrame::~AckEcnFrame() {
 
 }
 
-bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     if (!AckFrame::Encode(buffer)) {
         return false;
     }
@@ -114,7 +114,7 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<IBufferWriteOnly> buffer) 
     return true;
 }
 
-bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     if (!AckFrame::Decode(buffer, with_type)) {
         return false;
     } 

@@ -8,7 +8,7 @@
 namespace quicx {
 
 class AeadBaseCryptographer:
-    public CryptographerIntreface {
+    public ICryptographer {
 public:
     AeadBaseCryptographer();
     virtual ~AeadBaseCryptographer();
@@ -17,18 +17,18 @@ public:
 
     virtual bool InstallInitSecret(const uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server);
 
-    virtual bool DecryptPacket(uint64_t pkt_number, BufferView associated_data, std::shared_ptr<IBufferReadOnly> ciphertext,
-                             std::shared_ptr<IBufferReadOnly> out_plaintext);
+    virtual bool DecryptPacket(uint64_t pkt_number, BufferReadView associated_data, std::shared_ptr<IBufferRead> ciphertext,
+                             std::shared_ptr<IBufferWrite> out_plaintext);
 
-    virtual bool EncryptPacket(uint64_t pkt_number, BufferView associated_data, std::shared_ptr<IBufferReadOnly> plaintext,
-                             std::shared_ptr<IBufferReadOnly> out_ciphertext);
+    virtual bool EncryptPacket(uint64_t pkt_number, BufferReadView associated_data, std::shared_ptr<IBufferRead> plaintext,
+                             std::shared_ptr<IBufferWrite> out_ciphertext);
 
-    virtual bool DecryptHeader(std::shared_ptr<IBufferReadOnly> ciphertext, uint8_t pn_offset, bool is_short);
+    virtual bool DecryptHeader(std::shared_ptr<IBufferRead> ciphertext, uint8_t pn_offset, bool is_short);
 
-    virtual bool EncryptHeader(std::shared_ptr<IBufferReadOnly> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short);
+    virtual bool EncryptHeader(std::shared_ptr<IBufferRead> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short);
     
 protected:
-    virtual bool MakeHeaderProtectMask(std::shared_ptr<IBufferReadOnly> ciphertext, BufferView sample, std::vector<uint8_t>& key,
+    virtual bool MakeHeaderProtectMask(std::shared_ptr<IBufferRead> ciphertext, BufferReadView sample, std::vector<uint8_t>& key,
                             uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length);
     void MakePacketNonce(uint8_t* nonce, std::vector<uint8_t>& iv, uint64_t pkt_number);
     uint64_t PktNumberN2L(uint64_t pkt_number);

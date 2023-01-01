@@ -7,16 +7,16 @@
 
 namespace quicx {
 
-class IBufferReadOnly;
-class IBufferWriteOnly;
+class IBufferRead;
+class IBufferWrite;
 class IHeader {
 public:
     IHeader() {}
     IHeader(HeaderFlag flag): _flag(flag) {}
     virtual ~IHeader() {}
 
-    virtual bool Encode(std::shared_ptr<IBufferWriteOnly> buffer) = 0;
-    virtual bool Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_flag = false) = 0;
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer) = 0;
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeSize() = 0;
 
     virtual HeaderFlag& GetHeaderFlag() { return _flag; }

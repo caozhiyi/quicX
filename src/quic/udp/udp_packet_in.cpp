@@ -4,7 +4,7 @@
 
 namespace quicx {
 
-UdpPacketIn::UdpPacketIn(std::shared_ptr<IBufferReadOnly> buffer):
+UdpPacketIn::UdpPacketIn(std::shared_ptr<IBufferRead> buffer):
     _recv_buffer(buffer) {
 
 }
@@ -14,13 +14,14 @@ UdpPacketIn::~UdpPacketIn() {
 }
 
 bool UdpPacketIn::SetData(char* data, uint32_t size) {
-    auto write_pair = _recv_buffer->GetWritePair();
+    /*auto write_pair = _recv_buffer->GetWritePair();
     if (write_pair.second - write_pair.first < size) {
         return false;
     }
     
     memcpy(write_pair.first, data, size);
     _recv_buffer->MoveWritePt(size);
+    */
     return true;
 }
 

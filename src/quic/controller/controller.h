@@ -8,7 +8,7 @@
 namespace quicx {
 
 class IPacket;
-class IBufferReadOnly;
+class IBufferRead;
 class UdpListener;
 class Controller {
 public:
@@ -30,7 +30,7 @@ public:
     bool Stop();
 
 private:
-    void Dispatcher(std::shared_ptr<IBufferReadOnly> recv_data);
+    void Dispatcher(std::shared_ptr<IBufferRead> recv_data);
     bool HandleInitial(std::shared_ptr<IPacket> packet);
     bool Handle0rtt(std::shared_ptr<IPacket> packet);
     bool HandleHandshake(std::shared_ptr<IPacket> packet);

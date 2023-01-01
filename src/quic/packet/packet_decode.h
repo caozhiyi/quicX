@@ -7,8 +7,8 @@
 namespace quicx {
 
 class IPacket;
-class IBufferReadOnly;
-bool DecodePackets(std::shared_ptr<IBufferReadOnly> buffer, std::vector<std::shared_ptr<IPacket>>& packets);
+class IBufferRead;
+bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IPacket>>& packets);
 
 }
 

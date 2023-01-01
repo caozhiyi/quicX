@@ -16,11 +16,11 @@ ShortHeader::~ShortHeader() {
 
 }
 
-bool ShortHeader::Encode(std::shared_ptr<IBufferWriteOnly> buffer) {
+bool ShortHeader::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool ShortHeader::Decode(std::shared_ptr<IBufferReadOnly> buffer, bool with_type) {
+bool ShortHeader::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     return true;
 }
 
