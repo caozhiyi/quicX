@@ -28,7 +28,7 @@ public:
     virtual bool EncryptHeader(std::shared_ptr<IBufferRead> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short);
     
 protected:
-    virtual bool MakeHeaderProtectMask(std::shared_ptr<IBufferRead> ciphertext, BufferReadView sample, std::vector<uint8_t>& key,
+    virtual bool MakeHeaderProtectMask(BufferReadView sample, std::vector<uint8_t>& key,
                             uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length);
     void MakePacketNonce(uint8_t* nonce, std::vector<uint8_t>& iv, uint64_t pkt_number);
     uint64_t PktNumberN2L(uint64_t pkt_number);
