@@ -157,7 +157,7 @@ bool AeadBaseCryptographer::DecryptHeader(std::shared_ptr<IBufferRead> ciphertex
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
     size_t mask_length = 0;
-    if (!MakeHeaderProtectMask(ciphertext, sample, _read_secret._hp, mask, __header_protect_mask_length, mask_length)) {
+    if (!MakeHeaderProtectMask(sample, _read_secret._hp, mask, __header_protect_mask_length, mask_length)) {
         LOG_ERROR("make header protect mask failed");
         return false;
     }
@@ -195,11 +195,10 @@ bool AeadBaseCryptographer::EncryptHeader(std::shared_ptr<IBufferRead> plaintext
     auto data_pair = plaintext->GetReadPair();
     uint8_t* pkt_number_pos = data_pair.first + pn_offset;
     BufferReadView sample = BufferReadView(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
-
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
     size_t mask_length = 0;
-    if (!MakeHeaderProtectMask(plaintext, sample, _write_secret._hp, mask, __header_protect_mask_length, mask_length)) {
+    if (!MakeHeaderProtectMask(sample, _write_secret._hp, mask, __header_protect_mask_length, mask_length)) {
         LOG_ERROR("make header protect mask failed");
         return false;
     }
@@ -223,7 +222,7 @@ bool AeadBaseCryptographer::EncryptHeader(std::shared_ptr<IBufferRead> plaintext
     return true;
 }
 
-bool AeadBaseCryptographer::MakeHeaderProtectMask(std::shared_ptr<IBufferRead> ciphertext, BufferReadView sample, std::vector<uint8_t>& key,
+bool AeadBaseCryptographer::MakeHeaderProtectMask(BufferReadView sample, std::vector<uint8_t>& key,
     uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length) {
     out_mask_length = 0;
     
@@ -239,8 +238,7 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(std::shared_ptr<IBufferRead> c
     }
 
     int len = 0;
-    auto read_pair = ciphertext->GetReadPair();
-    if (EVP_EncryptUpdate(ctx.get(), out_mask, &len, read_pair.first, ciphertext->GetDataLength()) != 1) {
+    if (EVP_EncryptUpdate(ctx.get(), out_mask, &len, __header_mask, sizeof(__header_mask) - 1) != 1) {
         LOG_ERROR("EVP_EncryptUpdate failed");
         return false;
     }

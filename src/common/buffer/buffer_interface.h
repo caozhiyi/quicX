@@ -10,49 +10,6 @@
 
 namespace quicx {
 
-// // read only buffer interface
-// class IBufferRead {
-// public:
-//     IBufferRead() {}
-//     virtual ~IBufferRead() {}
-//     // read to data buf but don't change the read point
-//     // return the length of the data actually read
-//     virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len) = 0;
-//     // move read point
-//     // return the length of the data actually move
-//     virtual uint32_t MoveReadPt(uint32_t len) = 0;
-//     // return the length of the data actually read
-//     virtual uint32_t Read(uint8_t* data, uint32_t len) = 0;
-//     // return remaining length of readable data
-//     virtual uint32_t GetDataLength() = 0;
-//     // return the start and end positions of readable data
-//     virtual std::pair<uint8_t*, uint8_t*> GetReadPair() = 0;
-
-//     // move write point
-//     // return the length of the data actually move
-//     virtual uint32_t MoveWritePt(uint32_t len) = 0;
-//     // return buffer write and end pos
-//     virtual std::pair<uint8_t*, uint8_t*> GetWritePair() = 0;
-// };
-
-// // write only buffer interface
-// class IBufferWrite {
-// public:
-//     IBufferWrite() {}
-//     virtual ~IBufferWrite() {}
-//     // return the length of the actual write
-//     virtual uint32_t Write(const uint8_t* data, uint32_t len) = 0;
-//     // return the remaining length that can be written
-//     virtual uint32_t GetFreeLength() = 0;
-//     // return start and end positions of all written data
-//     virtual std::pair<uint8_t*, uint8_t*> GetReadPair() = 0;
-//     // move write point
-//     // return the length of the data actually move
-//     virtual uint32_t MoveWritePt(uint32_t len) = 0;
-//     // return buffer write and end pos
-//     virtual std::pair<uint8_t*, uint8_t*> GetWritePair() = 0;
-// };
-
 // read only buffer interface
 class BufferReadView;
 class IBufferRead {

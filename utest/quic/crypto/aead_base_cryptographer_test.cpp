@@ -64,19 +64,19 @@ bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     plaintext->MoveWritePt(__plaintext_length);
 
     std::shared_ptr<BufferReadWrite> src_ciphertext = std::make_shared<BufferReadWrite>(pool);
-    auto src_write_pair = plaintext->GetWritePair();
+    auto src_write_pair = src_ciphertext->GetWritePair();
     memcpy(src_write_pair.first, plaintext_pair.first, __plaintext_length);
     src_ciphertext->MoveWritePt(__plaintext_length);
 
     uint64_t pkt_num = 102154;
     uint64_t pn_offset = 2;
-    uint64_t pkt_length = 3;
+    uint64_t pkt_length = 1;
     if (!encrypter->EncryptHeader(plaintext, pn_offset, pkt_length, true)) {
         ADD_FAILURE() << encrypter->GetName() << " EncryptHeader failed";
         return false;
     }
 
-    if (!encrypter->DecryptHeader(plaintext, pn_offset, true)) {
+    if (!decrypter->DecryptHeader(plaintext, pn_offset, true)) {
         ADD_FAILURE() << encrypter->GetName() << " DecryptHeader failed";
         return false;
     }
