@@ -3,21 +3,23 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef COMMON_BUFFER_BUFFER_READ_WRITE
-#define COMMON_BUFFER_BUFFER_READ_WRITE
+#ifndef COMMON_BUFFER_BUFFER_CHAINS_READ_WRITE
+#define COMMON_BUFFER_BUFFER_CHAINS_READ_WRITE
 
+#include <list>
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
 
+class BufferReadWrite;
 class BlockMemoryPool;
-// read write buffer
-class BufferReadWrite:
+// read only buffer
+class BufferChainsReadWrite:
     public IBufferRead,
     public IBufferWrite {
 public:
-    BufferReadWrite(std::shared_ptr<BlockMemoryPool>& alloter);
-    virtual ~BufferReadWrite();
+    BufferChainsReadWrite(std::shared_ptr<BlockMemoryPool>& alloter);
+    virtual ~BufferChainsReadWrite();
 
     // read to data buf but don't change the read point
     // return the length of the data actually read
@@ -57,12 +59,11 @@ private:
     void Clear();
 
 private:
-    uint8_t* _read_pos;             //read position
-    uint8_t* _write_pos;            //write position
-    bool     _can_read;             //when _read == _write? Is there any data can be read.
-    uint8_t* _buffer_start;
-    uint8_t* _buffer_end;
+    std::list<std::shared_ptr<BufferReadWrite>>::iterator _read_pos;
+    std::list<std::shared_ptr<BufferReadWrite>>::iterator _write_pos;
+    
     std::weak_ptr<BlockMemoryPool> _alloter;
+    std::list<std::shared_ptr<BufferReadWrite>> _buffer_list;
 };
 
 }
