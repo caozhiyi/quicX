@@ -6,10 +6,10 @@
 
 namespace quicx {
 
-class Connection {
+class IConnection {
 public:
-    Connection() {}
-    virtual ~Connection() {}
+    IConnection() {}
+    virtual ~IConnection() {}
     // TODO 
     // 1. 为流配置允许的最小初始数量
     // 2. 设置流级别及连接级别的流量限制, 限制接收缓存的的大小
