@@ -10,7 +10,7 @@ namespace quicx {
 class IFrame;
 class Address;
 class ClientConnection:
-    public Connection {
+    public IConnection {
 public:
     ClientConnection() {}
     virtual ~ClientConnection() {}
