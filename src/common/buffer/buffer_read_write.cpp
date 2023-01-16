@@ -91,7 +91,7 @@ uint32_t BufferReadWrite::GetDataLength() {
     return uint32_t(_write_pos - _read_pos); 
 }
 
-std::pair<uint8_t*, uint8_t*> BufferReadWrite::GetReadPair() {
+std::pair<const uint8_t*, const uint8_t*> BufferReadWrite::GetReadPair() {
     return std::make_pair(_read_pos, _write_pos);
 }
 
@@ -103,7 +103,7 @@ std::shared_ptr<IBufferRead> BufferReadWrite::GetReadViewPtr(uint32_t offset) {
     return std::make_shared<BufferReadView>(_read_pos, _write_pos);
 }
 
-uint8_t* BufferReadWrite::GetData() {
+const uint8_t* BufferReadWrite::GetData() {
     return _read_pos;
 }
 

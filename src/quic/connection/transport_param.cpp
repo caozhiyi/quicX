@@ -138,7 +138,7 @@ bool TransportParam::Encode(std::shared_ptr<IBufferWrite> buffer) {
 bool TransportParam::Decode(std::shared_ptr<IBufferRead> buffer) {
     uint64_t type = 0;
     auto pos_pair = buffer->GetReadPair();
-    uint8_t* pos = pos_pair.first;
+    const uint8_t* pos = pos_pair.first;
     while (pos < pos_pair.second) {
         pos = DecodeVarint(pos, pos_pair.second, type);
         switch(type) {
@@ -227,7 +227,7 @@ uint8_t* TransportParam::EncodeBool(uint8_t* start, uint8_t* end, bool value, ui
     return start;
 }
 
-uint8_t* TransportParam::DecodeUint(uint8_t* start, uint8_t* end, uint32_t& value) {
+const uint8_t* TransportParam::DecodeUint(const uint8_t* start, const uint8_t* end, uint32_t& value) {
     uint64_t varint = 0;
     // read length
     start = DecodeVarint(start, end, varint);
@@ -237,18 +237,18 @@ uint8_t* TransportParam::DecodeUint(uint8_t* start, uint8_t* end, uint32_t& valu
     return start;
 }
 
-uint8_t* TransportParam::DecodeString(uint8_t* start, uint8_t* end, std::string& value) {
+const uint8_t* TransportParam::DecodeString(const uint8_t* start, const uint8_t* end, std::string& value) {
     uint64_t length = 0;
     // read length
     start = DecodeVarint(start, end, length);
     // read value
-    uint8_t* ptr;
+    const uint8_t* ptr;
     start = DecodeBytesNoCopy(start, end, ptr, length);
     value = std::move(std::string((const char*)ptr, length));
     return start;
 }
 
-uint8_t* TransportParam::DecodeBool(uint8_t* start, uint8_t* end, bool& value) {
+const uint8_t* TransportParam::DecodeBool(const uint8_t* start, const uint8_t* end, bool& value) {
     uint64_t varint = 0;
     // read length
     start = DecodeVarint(start, end, varint);

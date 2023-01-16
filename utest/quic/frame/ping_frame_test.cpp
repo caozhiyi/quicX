@@ -19,7 +19,7 @@ TEST(ping_frame_utest, decode1) {
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
     auto data_piar = write_buffer->GetReadPair();
-    auto pos_piar = read_buffer->GetReadPair();
+    auto pos_piar = read_buffer->GetWritePair();
     memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
     read_buffer->MoveWritePt(data_piar.second - data_piar.first);
     EXPECT_TRUE(frame2.Decode(read_buffer, true));

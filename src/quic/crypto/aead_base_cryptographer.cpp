@@ -151,7 +151,8 @@ bool AeadBaseCryptographer::DecryptHeader(std::shared_ptr<IBufferRead> ciphertex
 
     // get sample 
     auto data_pair = ciphertext->GetReadPair();
-    uint8_t* pkt_number_pos = data_pair.first + pn_offset;
+    auto write_pair = std::make_pair((uint8_t*)data_pair.first, (uint8_t*)data_pair.second);
+    uint8_t* pkt_number_pos = write_pair.first + pn_offset;
     BufferReadView sample = BufferReadView(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
 
     // get mask 
@@ -168,14 +169,14 @@ bool AeadBaseCryptographer::DecryptHeader(std::shared_ptr<IBufferRead> ciphertex
 
     // remove protection for first byte
     if (is_short) {
-        *data_pair.first = *data_pair.first ^ (mask[0] & 0x1f);
+        *write_pair.first = *write_pair.first ^ (mask[0] & 0x1f);
 
     } else {
-        *data_pair.first = *data_pair.first ^ (mask[0] & 0x0f);
+        *write_pair.first = *write_pair.first ^ (mask[0] & 0x0f);
     }
 
     // get length of packet number
-    size_t pkt_number_len = (*data_pair.first & 0x03) + 1;
+    size_t pkt_number_len = (*write_pair.first & 0x03) + 1;
     
     // remove protection for packet number
     for (size_t i = 0; i < pkt_number_len; i++) {
@@ -193,7 +194,8 @@ bool AeadBaseCryptographer::EncryptHeader(std::shared_ptr<IBufferRead> plaintext
 
     // get sample 
     auto data_pair = plaintext->GetReadPair();
-    uint8_t* pkt_number_pos = data_pair.first + pn_offset;
+    auto write_pair = std::make_pair((uint8_t*)data_pair.first, (uint8_t*)data_pair.second);
+    uint8_t* pkt_number_pos = write_pair.first + pn_offset;
     BufferReadView sample = BufferReadView(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
@@ -209,10 +211,10 @@ bool AeadBaseCryptographer::EncryptHeader(std::shared_ptr<IBufferRead> plaintext
 
     // protect the first byte of header 
     if (is_short) {
-        *data_pair.first = *data_pair.first ^ (mask[0] & 0x1f);
+        *write_pair.first = *write_pair.first ^ (mask[0] & 0x1f);
 
     } else {
-        *data_pair.first = *data_pair.first ^ (mask[0] & 0x0f);
+        *write_pair.first = *write_pair.first ^ (mask[0] & 0x0f);
     }
 
     // protect packet number

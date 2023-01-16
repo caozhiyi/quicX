@@ -43,7 +43,7 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     pos = EncodeVarint(pos, _reason.length());
 
     buffer->MoveWritePt(pos - pos_pair.first);
-    buffer->Write((const uint8_t*)_reason.c_str(), _reason.length());
+    buffer->Write((const uint8_t*)_reason.data(), _reason.length());
     return true;
 }
 
@@ -51,7 +51,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with
     uint16_t size = EncodeSize();
 
     auto pos_pair = buffer->GetReadPair();
-    uint8_t* pos = pos_pair.first;
+    const uint8_t* pos = pos_pair.first;
 
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);

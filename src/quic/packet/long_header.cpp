@@ -74,7 +74,7 @@ bool LongHeader::Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
     }
     
     auto pos_pair = buffer->GetReadPair();
-    uint8_t* pos = pos_pair.first;
+    const uint8_t* pos = pos_pair.first;
     pos = FixedDecodeUint32(pos, pos_pair.second, _version);
     pos = FixedDecodeUint8(pos, pos_pair.second, _destination_connection_id_length);
     // todo not copy

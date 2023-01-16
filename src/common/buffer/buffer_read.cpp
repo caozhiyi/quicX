@@ -3,7 +3,7 @@
 
 namespace quicx {
 
-BufferRead::BufferRead(uint8_t* data, uint8_t* end, std::shared_ptr<BlockMemoryPool>& alloter):
+BufferRead::BufferRead(const uint8_t* data, const uint8_t* end, std::shared_ptr<BlockMemoryPool>& alloter):
     BufferReadView(data, end),
     _alloter(alloter) {
 

@@ -10,7 +10,7 @@ TEST(normal_decode_utest, EncodeFixed_1) {
     EXPECT_EQ(ptr - buf, sizeof(uint32_t));
 
     uint32_t value2 = 0;
-    uint8_t* ret = quicx::FixedDecodeUint32(buf, buf+5, value2);
+    const uint8_t* ret = quicx::FixedDecodeUint32(buf, buf+5, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -22,7 +22,7 @@ TEST(normal_decode_utest, EncodeFixed_2) {
     EXPECT_EQ(ptr - buf, sizeof(uint32_t));
 
     uint32_t value2 = 0;
-    uint8_t* ret = quicx::FixedDecodeUint32(buf, buf+5, value2);
+    const uint8_t* ret = quicx::FixedDecodeUint32(buf, buf+5, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -34,7 +34,7 @@ TEST(normal_decode_utest, EncodeFixed_3) {
     EXPECT_EQ(ptr - buf, sizeof(uint32_t));
 
     uint32_t value2 = 0;
-    uint8_t* ret = quicx::FixedDecodeUint32(buf, buf+5, value2);
+    const uint8_t* ret = quicx::FixedDecodeUint32(buf, buf+5, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -46,7 +46,7 @@ TEST(normal_decode_utest, EncodeFixed_4) {
     EXPECT_EQ(ptr - buf, sizeof(uint32_t));
 
     uint32_t value2 = 0;
-    uint8_t* ret = quicx::FixedDecodeUint32(buf, buf+5, value2);
+    const uint8_t* ret = quicx::FixedDecodeUint32(buf, buf+5, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -58,7 +58,7 @@ TEST(normal_decode_utest, EncodeFixed_9) {
     EXPECT_EQ(ptr - buf, sizeof(uint8_t));
 
     uint8_t value2 = 0;
-    uint8_t* ret = quicx::FixedDecodeUint8(buf, buf+3, value2);
+    const uint8_t* ret = quicx::FixedDecodeUint8(buf, buf+3, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }
@@ -70,7 +70,7 @@ TEST(normal_decode_utest, EncodeFixed_10) {
     EXPECT_EQ(ptr - buf, sizeof(uint16_t));
 
     uint16_t value2 = 0;
-    uint8_t* ret = quicx::FixedDecodeUint16(buf, buf+3, value2);
+    const uint8_t* ret = quicx::FixedDecodeUint16(buf, buf+3, value2);
     EXPECT_EQ(ret, ptr);
     EXPECT_EQ(value, value2);
 }

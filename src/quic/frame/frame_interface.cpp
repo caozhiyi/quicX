@@ -39,7 +39,7 @@ bool IFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
 bool IFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     if (with_type) {
         auto pos_pair = buffer->GetReadPair();
-        uint8_t* pos = FixedDecodeUint16(pos_pair.first, pos_pair.second, _frame_type);
+        const uint8_t* pos = FixedDecodeUint16(pos_pair.first, pos_pair.second, _frame_type);
         buffer->MoveReadPt(uint32_t(pos - pos_pair.first));
     }
     return true;
