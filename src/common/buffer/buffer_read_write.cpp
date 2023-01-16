@@ -25,7 +25,7 @@ BufferReadWrite::~BufferReadWrite() {
     }
 }
 
-uint32_t BufferReadWrite::ReadNotMovePt(uint8_t* data, uint32_t len) {
+uint32_t BufferReadWrite::ReadNotMovePt(const uint8_t* data, uint32_t len) {
     if (data == nullptr) {
         return 0;
     }

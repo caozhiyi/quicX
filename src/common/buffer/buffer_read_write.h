@@ -21,7 +21,7 @@ public:
 
     // read to data buf but don't change the read point
     // return the length of the data actually read
-    virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len);
+    virtual uint32_t ReadNotMovePt(const uint8_t* data, uint32_t len);
     // move read point
     // return the length of the data actually move
     virtual uint32_t MoveReadPt(int32_t len);

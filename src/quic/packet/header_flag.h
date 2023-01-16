@@ -44,7 +44,7 @@ public:
     }
 
     uint8_t GetFlagUint() { return _flag._header_flag; }
-    void SetFlagUint(uint flag) { _flag._header_flag = flag; }
+    void SetFlagUint(uint8_t flag) { _flag._header_flag = flag; }
 
 protected:
     union HeaderFlagUnion {

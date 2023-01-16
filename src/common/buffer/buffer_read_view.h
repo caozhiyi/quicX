@@ -19,12 +19,12 @@ public:
     virtual ~BufferReadView();
     // read to data buf but don't change the read point
     // return the length of the data actually read
-    virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len);
+    virtual uint32_t ReadNotMovePt(const uint8_t* data, uint32_t len);
     // move read point
     // return the length of the data actually move
     virtual uint32_t MoveReadPt(int32_t len);
     // return the length of the data actually read
-    virtual uint32_t Read(uint8_t* data, uint32_t len);
+    virtual uint32_t Read(const uint8_t* data, uint32_t len);
     // return remaining length of readable data
     virtual uint32_t GetDataLength();
     // return the start and end positions of readable data
