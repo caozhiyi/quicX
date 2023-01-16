@@ -11,7 +11,7 @@ TEST(decode_utest, EncodeVarint64_1) {
     EXPECT_EQ(ptr1 - buf, 1);
 
     uint64_t value2 = 0;
-    uint8_t* ptr2 = quicx::DecodeVarint(buf, buf+5, value2);
+    const uint8_t* ptr2 = quicx::DecodeVarint(buf, buf+5, value2);
     EXPECT_EQ(ptr1, ptr2);
     EXPECT_EQ(value, value2);
 }
@@ -23,7 +23,7 @@ TEST(decode_utest, EncodeVarint64_2) {
     EXPECT_EQ(ptr1 - buf, 2);
 
     uint64_t value2 = 0;
-    uint8_t* ptr2 = quicx::DecodeVarint(buf, buf+5, value2);
+    const uint8_t* ptr2 = quicx::DecodeVarint(buf, buf+5, value2);
     EXPECT_EQ(ptr1, ptr2);
     EXPECT_EQ(value, value2);
 }
@@ -35,7 +35,7 @@ TEST(decode_utest, EncodeVarint64_3) {
     EXPECT_EQ(ptr1 - buf, 4);
 
     uint64_t value2 = 0;
-    uint8_t* ptr2 = quicx::DecodeVarint(buf, buf+5, value2);
+    const uint8_t* ptr2 = quicx::DecodeVarint(buf, buf+5, value2);
     EXPECT_EQ(ptr1, ptr2);
     EXPECT_EQ(value, value2);
 }
@@ -47,7 +47,7 @@ TEST(decode_utest, EncodeVarint64_4) {
     EXPECT_EQ(ptr1 - buf, 8);
 
     uint64_t value2 = 0;
-    uint8_t* ptr2 = quicx::DecodeVarint(buf, buf+5, value2);
+    const uint8_t* ptr2 = quicx::DecodeVarint(buf, buf+5, value2);
     EXPECT_EQ(ptr1, ptr2);
     EXPECT_EQ(value, value2);
 }

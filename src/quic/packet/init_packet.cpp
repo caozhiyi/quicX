@@ -41,7 +41,7 @@ bool InitPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
         return false;
     }
     
-    uint8_t* pos = pos_pair.first;
+    const uint8_t* pos = pos_pair.first;
     pos = DecodeVarint(pos, pos_pair.second, _token_length);
     _token = pos;
     pos += _token_length;

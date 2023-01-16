@@ -11,9 +11,13 @@ TEST(connnection_id_generator_utest, generator) {
     ConnectionIDGenerator::Instance().Generator(cid1, 8);
     ConnectionIDGenerator::Instance().Generator(cid2, 8);
 
+    bool eq = true;
     for (size_t i = 0; i < 8; i++) {
-        EXPECT_FALSE(cid1[i] == cid2[i]);
+        if (cid1[i] != cid2[i]) {
+            eq = false;
+        }
     }
+    EXPECT_FALSE(eq);
 }
 
 TEST(connnection_id_generator_utest, hash) {

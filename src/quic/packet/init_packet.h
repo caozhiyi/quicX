@@ -26,7 +26,7 @@ public:
 
 private:
     uint32_t _token_length;
-    uint8_t* _token;
+    const uint8_t* _token;
 
     uint32_t _payload_length;
     //BufferReadView _payload;     /*encryption protection*/

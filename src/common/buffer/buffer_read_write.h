@@ -21,7 +21,7 @@ public:
 
     // read to data buf but don't change the read point
     // return the length of the data actually read
-    virtual uint32_t ReadNotMovePt(const uint8_t* data, uint32_t len);
+    virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len);
     // move read point
     // return the length of the data actually move
     virtual uint32_t MoveReadPt(int32_t len);
@@ -30,13 +30,13 @@ public:
     // return remaining length of readable data
     virtual uint32_t GetDataLength();
     // return the start and end positions of readable data
-    virtual std::pair<uint8_t*, uint8_t*> GetReadPair();
+    virtual std::pair<const uint8_t*, const uint8_t*> GetReadPair();
     // get a write buffer view
     virtual BufferReadView GetReadView(uint32_t offset = 0);
     // get a write buffer view shared ptr
     virtual std::shared_ptr<IBufferRead> GetReadViewPtr(uint32_t offset = 0);
     // get src data pos
-    virtual uint8_t* GetData();
+    virtual const uint8_t* GetData();
 
     // return the length of the actual write
     virtual uint32_t Write(const uint8_t* data, uint32_t len);

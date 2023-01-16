@@ -17,15 +17,15 @@ public:
     virtual uint32_t EncodeSize();
 
 
-    void SetToken(uint8_t* token, uint32_t token_length) { 
+    void SetToken(const uint8_t* token, uint32_t token_length) { 
         _token = token;
         _token_length = token_length;
     }
-    uint8_t* GetToken() { return _token; }
+    const uint8_t* GetToken() { return _token; }
 
 private:
     uint32_t _token_length;  // the length of the token in bytes.
-    uint8_t* _token;            // An opaque blob that the client may use with a future Initial packet.
+    const uint8_t* _token;   // An opaque blob that the client may use with a future Initial packet.
 };
 
 }

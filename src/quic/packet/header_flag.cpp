@@ -25,7 +25,7 @@ bool HeaderFlag::Decode(std::shared_ptr<IBufferRead> buffer) {
         return false;
     }
 
-    uint8_t* pos = pos_pair.first;
+    const uint8_t* pos = pos_pair.first;
     pos = FixedDecodeUint8(pos, pos_pair.second, _flag._header_flag);
     buffer->MoveReadPt(pos - pos_pair.first);
     return true;

@@ -21,12 +21,12 @@ public:
 
     // read to data buf but don't change the read point
     // return the length of the data actually read
-    virtual uint32_t ReadNotMovePt(const uint8_t* data, uint32_t len);
+    virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len);
     // move read point
     // return the length of the data actually move
     virtual uint32_t MoveReadPt(int32_t len);
     // return the length of the data actually read
-    virtual uint32_t Read(const uint8_t* data, uint32_t len);
+    virtual uint32_t Read(uint8_t* data, uint32_t len);
     // return remaining length of readable data
     virtual uint32_t GetDataLength();
     // return readable buffer list
@@ -42,9 +42,7 @@ public:
     virtual std::vector<std::shared_ptr<IBufferWrite>> GetWriteBuffers(uint32_t len = 0);
 
 private:
-    typedef std::function<uint32_t(std::shared_ptr<BufferReadWrite>)> BufferOperation;
-    uint32_t InnerRead(BufferOperation op);
-    uint32_t InnerWrite(BufferOperation op);
+    std::list<std::shared_ptr<BufferReadWrite>>::iterator GetReadEndPos();
     void Clear();
 
 private:

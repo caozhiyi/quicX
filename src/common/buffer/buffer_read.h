@@ -15,7 +15,7 @@ class BlockMemoryPool;
 class BufferRead:
     public BufferReadView {
 public:
-    BufferRead(uint8_t* data, uint8_t* end, std::shared_ptr<BlockMemoryPool>& alloter);
+    BufferRead(const uint8_t* data, const uint8_t* end, std::shared_ptr<BlockMemoryPool>& alloter);
     virtual ~BufferRead();
 
 private:

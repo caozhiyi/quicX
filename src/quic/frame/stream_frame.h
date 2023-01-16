@@ -35,8 +35,8 @@ public:
     bool IsFin() { return _frame_type & SFF_FIN; }
 
     bool HasLength() { return _frame_type & SFF_LEN; }
-    void SetData(uint8_t* data, uint32_t send_len);
-    uint8_t* GetData() { return _data; }
+    void SetData(const uint8_t* data, uint32_t send_len);
+    const uint8_t* GetData() { return _data; }
     uint32_t GetLength() { return _length; }
 
 private:
@@ -44,7 +44,7 @@ private:
     uint64_t _offset;     // the byte offset in the stream for the data in this STREAM frame.
 
     uint32_t _length;     // the length of the Stream Data field in this STREAM frame.
-    uint8_t* _data;          // the bytes from the designated stream to be delivered.
+    const uint8_t* _data;          // the bytes from the designated stream to be delivered.
 };
 
 }

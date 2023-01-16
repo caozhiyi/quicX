@@ -34,7 +34,7 @@ bool NewTokenFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
 
 bool NewTokenFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     auto pos_pair = buffer->GetReadPair();
-    uint8_t* pos = pos_pair.first;
+    const uint8_t* pos = pos_pair.first;
 
     if (with_type) {
         pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
