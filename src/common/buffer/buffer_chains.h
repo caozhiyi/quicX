@@ -6,13 +6,11 @@
 #ifndef COMMON_BUFFER_BUFFER_CHAINS
 #define COMMON_BUFFER_BUFFER_CHAINS
 
-#include <list>
-#include <functional>
+#include "common/buffer/buffer_block.h"
 #include "common/buffer/buffer_chains_interface.h"
 
 namespace quicx {
 
-class BufferReadWrite;
 class BufferChains:
     public IBufferChains {
 public:
@@ -30,7 +28,7 @@ public:
     // return remaining length of readable data
     virtual uint32_t GetDataLength();
     // return readable buffer list
-    virtual std::vector<std::shared_ptr<IBufferRead>> GetReadBuffers();
+    virtual std::shared_ptr<BufferBlock> GetReadBuffers();
 
     // return the length of the actual write
     virtual uint32_t Write(const uint8_t* data, uint32_t len);
@@ -39,18 +37,14 @@ public:
     // return the length of the data actually move
     virtual uint32_t MoveWritePt(int32_t len);
     // return buffer write list
-    virtual std::vector<std::shared_ptr<IBufferWrite>> GetWriteBuffers(uint32_t len = 0);
+    virtual std::shared_ptr<BufferBlock> GetWriteBuffers(uint32_t len);
 
 private:
-    std::list<std::shared_ptr<BufferReadWrite>>::iterator GetReadEndPos();
-    void Clear();
-
-private:
-    std::list<std::shared_ptr<BufferReadWrite>>::iterator _read_pos;
-    std::list<std::shared_ptr<BufferReadWrite>>::iterator _write_pos;
+    std::shared_ptr<BufferBlock> _read_pos;
+    std::shared_ptr<BufferBlock> _write_pos;
     
-    std::weak_ptr<BlockMemoryPool> _alloter;
-    std::list<std::shared_ptr<BufferReadWrite>> _buffer_list;
+    LinkedList<BufferBlock> _buffer_list;
+    std::shared_ptr<BlockMemoryPool> _alloter;
 };
 
 }

@@ -4,9 +4,10 @@
 namespace quicx {
 
 BufferChains::BufferChains(std::shared_ptr<BlockMemoryPool>& alloter):
+    _read_pos(nullptr),
+    _write_pos(nullptr),
     _alloter(alloter) {
-    _read_pos = _buffer_list.end();
-    _write_pos = _buffer_list.end();
+
 }
 
 BufferChains::~BufferChains() {
@@ -18,10 +19,9 @@ uint32_t BufferChains::ReadNotMovePt(uint8_t* data, uint32_t len) {
         return 0;
     }
     
-    auto end_pos = GetReadEndPos();
     uint32_t size = 0;
-    for (auto iter = _read_pos; iter != end_pos; iter++) {
-        size += (*iter)->ReadNotMovePt(data, len - size);
+    for (auto iter = _read_pos; iter && iter->GetDataLength() > 0; iter = iter->GetNext()) {
+        size += iter->ReadNotMovePt(data + size, len - size);
         if (size >= len) {
             break;
         }
@@ -30,14 +30,15 @@ uint32_t BufferChains::ReadNotMovePt(uint8_t* data, uint32_t len) {
 }
 
 uint32_t BufferChains::MoveReadPt(int32_t len) {
-    auto end_pos = GetReadEndPos();
     uint32_t size = 0;
-    for (auto iter = _read_pos; iter != end_pos; iter++) {
-        size += (*iter)->MoveReadPt(len - size);
+    for (; _read_pos && _read_pos->GetDataLength() > 0; _read_pos = _read_pos->GetNext()) {
+        size += _read_pos->MoveReadPt(len - size);
         if (size >= len) {
             break;
         }
+        _buffer_list.PopFront();
     }
+
     return size;
 }
 
@@ -45,11 +46,57 @@ uint32_t BufferChains::Read(uint8_t* data, uint32_t len) {
     if (data == nullptr) {
         return 0;
     }
-    
-    auto end_pos = GetReadEndPos();
+
     uint32_t size = 0;
-    for (auto iter = _read_pos; iter != end_pos; iter++) {
-        size += (*iter)->Read(data, len - size);
+    for (; _read_pos && _read_pos->GetDataLength() > 0; _read_pos = _read_pos->GetNext()) {
+        size += _read_pos->Read(data + size, len - size);
+        if (size >= len) {
+            break;
+        }
+        _buffer_list.PopFront();
+    }
+    return size;
+}
+
+uint32_t BufferChains::GetDataLength() {
+    uint32_t size = 0;
+    for (auto iter = _read_pos; iter && iter->GetDataLength() > 0; iter = iter->GetNext()) {
+        size += iter->GetDataLength();
+    }
+    return size;
+}
+
+std::shared_ptr<BufferBlock> BufferChains::GetReadBuffers() {
+    return _read_pos;
+}
+
+uint32_t BufferChains::Write(const uint8_t* data, uint32_t len) {
+    uint32_t offset = 0;
+    while (offset < len) {
+        if (!_write_pos || _write_pos->GetFreeLength() == 0) {
+            _write_pos = std::make_shared<BufferBlock>(_alloter);
+            _buffer_list.PushBack(_write_pos);
+            if (!_read_pos) {
+                _read_pos = _write_pos;
+            }
+        }
+        offset += _write_pos->Write(data + offset, len - offset);
+    }
+    return offset;
+}
+
+uint32_t BufferChains::GetFreeLength() {
+    uint32_t size = 0;
+    for (auto iter = _write_pos; iter; iter = iter->GetNext()) {
+        size += iter->GetFreeLength();
+    }
+    return size;
+}
+
+uint32_t BufferChains::MoveWritePt(int32_t len) {
+    uint32_t size = 0;
+    for (; _write_pos && _write_pos->GetFreeLength() > 0; _write_pos = _write_pos->GetNext()) {
+        size += _write_pos->MoveWritePt(len - size);
         if (size >= len) {
             break;
         }
@@ -57,60 +104,21 @@ uint32_t BufferChains::Read(uint8_t* data, uint32_t len) {
     return size;
 }
 
-uint32_t BufferChains::GetDataLength() {
-    auto end_pos = GetReadEndPos();
-    uint32_t size = 0;
-    for (auto iter = _read_pos; iter != end_pos; iter++) {
-        size += (*iter)->GetDataLength();
-    }
-    return size;
-}
-
-std::vector<std::shared_ptr<IBufferRead>> BufferChains::GetReadBuffers() {
-    std::vector<std::shared_ptr<IBufferRead>> ret;
-    auto end_pos = GetReadEndPos();
-    for (auto iter = _read_pos; iter != end_pos; iter++) {
-        ret.push_back(*iter);
-    }
-    return ret;
-}
-
-
-uint32_t BufferChains::Write(const uint8_t* data, uint32_t len) {
-
-}
-
-uint32_t BufferChains::GetFreeLength() {
-
-}
-
-uint32_t BufferChains::MoveWritePt(int32_t len) {
-
-}
-
-std::vector<std::shared_ptr<IBufferWrite>> BufferChains::GetWriteBuffers(uint32_t len) {
-
-}
-
-std::list<std::shared_ptr<BufferReadWrite>>::iterator BufferChains::GetReadEndPos() {
-    std::list<std::shared_ptr<BufferReadWrite>>::iterator end_pos;
-    if (_write_pos != _buffer_list.end()) {
-        if ((*_write_pos)->GetDataLength() > 0) {
-            end_pos = _write_pos;
-            end_pos++;
-
-        } else {
-            end_pos = _write_pos;
+std::shared_ptr<BufferBlock> BufferChains::GetWriteBuffers(uint32_t len) {
+    uint32_t offset = 0;
+    std::shared_ptr<BufferBlock> cur_write = _write_pos;
+    while (offset < len) {
+        if (!cur_write || cur_write->GetFreeLength() == 0) {
+            cur_write = std::make_shared<BufferBlock>(_alloter);
+            _buffer_list.PushBack(cur_write);
+            if (!_write_pos) {
+                _write_pos = cur_write;
+            }
         }
-        
-    } else {
-        end_pos = _buffer_list.end();
+        offset += cur_write->GetFreeLength();
+        cur_write = cur_write->GetNext();
     }
-    return end_pos;
-}
-
-void BufferChains::Clear() {
-
+    return _write_pos;
 }
 
 }

@@ -3,20 +3,20 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef COMMON_STRUCTURE_LIST
-#define COMMON_STRUCTURE_LIST
+#ifndef COMMON_STRUCTURE_LINKED_LIST
+#define COMMON_STRUCTURE_LINKED_LIST
 
 #include <memory>
 #include <cstdint>
-#include "list_solt.h"
+#include "common/structure/linked_list_solt.h"
 
 namespace quicx {
 
 template<typename T>
-class List {
+class LinkedList {
 public:
-    List(): _size(0) {}
-    ~List() {}
+    LinkedList(): _size(0), _head(nullptr), _tail(nullptr) {}
+    ~LinkedList() {}
 
     uint32_t Size() { return _size; }
 
@@ -41,43 +41,7 @@ public:
 
         } else {
             _tail->SetNext(v);
-            v->SetPrev(_tail);
             _tail = v;
-        }
-        _size++;
-    }
-
-    std::shared_ptr<T> PopBack() {
-        if (!_tail) {
-            return nullptr;
-        }
-
-        auto ret = _tail;
-        _tail = _tail->GetPrev();
-        if (!_tail) {
-            _head.reset();
-
-        } else {
-            _tail->SetNext(nullptr);
-        }
-        _size--;
-
-        return ret;
-    }
-
-    void PushFront(std::shared_ptr<T> v) {
-        if (!v) {
-            return;
-        }
-    
-        if (!_head) {
-            _tail = v;
-            _head = v;
-
-        } else {
-            _head->SetPrev(v);
-            v->SetNext(_head);
-            _head = v;
         }
         _size++;
     }
@@ -94,7 +58,6 @@ public:
         }
         
         _size--;
-
         return ret;
     }
 
