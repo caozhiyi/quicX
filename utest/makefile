@@ -27,6 +27,7 @@ SRCS = $(wildcard ../src/common/timer/*.cpp         \
 				  ./common/network/*.cpp            \
 				  ./common/deocde/*.cpp             \
 				  ./common/structure/*.cpp          \
+				  ./common/buffer/*.cpp             \
 				  ./quic/frame/*.cpp                \
 				  ./quic/packet/*.cpp               \
 				  ./quic/crypto/*.cpp               \

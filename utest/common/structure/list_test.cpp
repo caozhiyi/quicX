@@ -1,7 +1,7 @@
 #include <iostream>
 #include <gtest/gtest.h>
-#include "common/structure/list.h"
-#include "common/structure/list_solt.h"
+#include "common/structure/linked_list.h"
+#include "common/structure/linked_list_solt.h"
 
 namespace quicx {
 namespace {
@@ -9,7 +9,7 @@ namespace {
 static uint32_t __test_shared_count = 0;
 
 class TestListItem:
-    public quicx::ListSolt<TestListItem> {
+    public quicx::LinkedListSolt<TestListItem> {
 public:
     TestListItem(){
         __test_shared_count++;
@@ -20,15 +20,15 @@ public:
 
 };
 
-TEST(list_utest, add1) {
-    quicx::List<TestListItem> list;
+TEST(linked_list_utest, add1) {
+    quicx::LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
-        list.PushFront(item1);
+        list.PushBack(item1);
         EXPECT_EQ(__test_shared_count, 1);
 
         auto item2 = std::make_shared<TestListItem>();
-        list.PushFront(item2);
+        list.PushBack(item2);
         EXPECT_EQ(__test_shared_count, 2);
     }
 
@@ -39,15 +39,15 @@ TEST(list_utest, add1) {
     EXPECT_EQ(__test_shared_count, 0);
 }
 
-TEST(list_utest, add2) {
-    quicx::List<TestListItem> list;
+TEST(linked_list_utest, add2) {
+    quicx::LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
-        list.PushFront(item1);
+        list.PushBack(item1);
         EXPECT_EQ(__test_shared_count, 1);
 
         auto item2 = std::make_shared<TestListItem>();
-        list.PushFront(item2);
+        list.PushBack(item2);
         EXPECT_EQ(__test_shared_count, 2);
     }
 
@@ -55,15 +55,15 @@ TEST(list_utest, add2) {
     EXPECT_EQ(__test_shared_count, 0);
 }
 
-TEST(list_utest, add3) {
-    quicx::List<TestListItem> list;
+TEST(linked_list_utest, add3) {
+    quicx::LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
-        list.PushFront(item1);
+        list.PushBack(item1);
         EXPECT_EQ(__test_shared_count, 1);
 
         auto item2 = std::make_shared<TestListItem>();
-        list.PushFront(item2);
+        list.PushBack(item2);
         EXPECT_EQ(__test_shared_count, 2);
 
         auto item3 = std::make_shared<TestListItem>();
@@ -74,10 +74,10 @@ TEST(list_utest, add3) {
     list.PopFront();
     EXPECT_EQ(__test_shared_count, 2);
 
-    list.PopBack();
+    list.PopFront();
     EXPECT_EQ(__test_shared_count, 1);
 
-    list.PopBack();
+    list.PopFront();
     EXPECT_EQ(__test_shared_count, 0);
 }
 

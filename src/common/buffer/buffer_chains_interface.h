@@ -7,13 +7,9 @@
 #define COMMON_BUFFER_BUFFER_CHAINS_INTERFACE
 
 #include <memory>
-#include <vector>
 
 namespace quicx {
 
-class IBufferRead;
-class IBufferWrite;
-class BlockMemoryPool;
 // buffer chains interface
 class IBufferChains {
 public:
@@ -31,7 +27,7 @@ public:
     // return remaining length of readable data
     virtual uint32_t GetDataLength() = 0;
     // return readable buffer list
-    virtual std::vector<std::shared_ptr<IBufferRead>> GetReadBuffers() = 0;
+    virtual std::shared_ptr<BufferBlock> GetReadBuffers() = 0;
 
     // return the length of the actual write
     virtual uint32_t Write(const uint8_t* data, uint32_t len) = 0;
@@ -40,7 +36,7 @@ public:
     // return the length of the data actually move
     virtual uint32_t MoveWritePt(int32_t len) = 0;
     // return buffer write list
-    virtual std::vector<std::shared_ptr<IBufferWrite>> GetWriteBuffers(uint32_t len = 0) = 0;
+    virtual std::shared_ptr<BufferBlock> GetWriteBuffers(uint32_t len) = 0;
 };
 
 }
