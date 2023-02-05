@@ -1,5 +1,5 @@
-#ifndef QUIC_CONNECTION_CLIENT_CONNECTION
-#define QUIC_CONNECTION_CLIENT_CONNECTION
+#ifndef QUIC_CONNECTION_CONNECTION_ID_GENERATOR
+#define QUIC_CONNECTION_CONNECTION_ID_GENERATOR
 
 #include <cstdint>
 #include "common/util/singleton.h"
@@ -11,7 +11,7 @@ class ConnectionIDGenerator:
 public:
     ConnectionIDGenerator();
     ~ConnectionIDGenerator();
-    
+
     void Generator(void* cid, uint32_t len);
     uint64_t Hash(uint8_t* cid, uint16_t len);
 

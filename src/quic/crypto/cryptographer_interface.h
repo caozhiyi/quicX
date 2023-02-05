@@ -32,6 +32,8 @@ public:
     virtual bool EncryptHeader(std::shared_ptr<IBufferRead> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) = 0;
 };
 
+std::shared_ptr<ICryptographer> MakeCryptographer(const SSL_CIPHER *cipher);
+
 }
 
 #endif
