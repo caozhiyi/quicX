@@ -1,49 +1,49 @@
-// #include "openssl/ssl.h"
+#include "openssl/ssl.h"
 
-// #include "common/log/log.h"
-// #include "quic/packet/long_header.h"
-// #include "quic/packet/init_packet.h"
-// #include "quic/connection/server_connection.h"
-// #include "quic/connection/transport_param_config.h"
+#include "common/log/log.h"
+#include "quic/packet/long_header.h"
+#include "quic/packet/init_packet.h"
+#include "quic/connection/server_connection.h"
+#include "quic/connection/transport_param_config.h"
 
-// namespace quicx {
+namespace quicx {
 
-// ServerConnection::ServerConnection() {
+ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx):
+    _tls_connection(ctx, shared_from_this(), shared_from_this()) {
 
-// }
+}
 
-// ServerConnection::~ServerConnection() {
+ServerConnection::~ServerConnection() {
 
-// }
+}
 
-// bool ServerConnection::Init(char* init_kay, uint16_t init_len) {
-//     // init transport param
-//     _transport_param.Init(TransportParamConfig::Instance());
+void ServerConnection::Close() {
 
-//     // create crypto init secret
-//     return _ssl_connection.MakeInitSecret(init_kay, init_len);
-// }
+}
 
-// bool ServerConnection::HandleInitPacket(std::shared_ptr<InitPacket> packet) {
-//     std::shared_ptr<LongHeader> header = std::dynamic_pointer_cast<LongHeader>(packet->GetHeader());
-//     if (!header) {
-//         LOG_ERROR("dynamic long header failed.");
-//         return false;
-//     }
-    
-//     // check destination connection id length
-//     if (header->GetDestinationConnectionIdLength() < __min_connection_length) {
-//         LOG_ERROR("quic too short dcid in initial. len:%d", header->GetDestinationConnectionIdLength());
-//         return false;
-//     }
+void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
+    const unsigned char *in, unsigned int inlen, void *arg) {
 
-//     // check secret valid
-//     if(!_ssl_connection.IsAvailableKey(ssl_encryption_initial)) {
-//         LOG_ERROR("encryption initial secret is invalid.");
-//         return false;
-//     }
+}
 
-//     return true;
-// }   
+bool ServerConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {
+    return true;
+}
 
-// }
+bool ServerConnection::Handle0rtt(std::shared_ptr<Rtt0Packet> packet) {
+    return true;
+}
+
+bool ServerConnection::HandleHandshake(std::shared_ptr<HandShakePacket> packet) {
+    return true;
+}
+
+bool ServerConnection::HandleRetry(std::shared_ptr<RetryPacket> packet) {
+    return true;
+}
+
+bool ServerConnection::Handle1rtt(std::shared_ptr<Rtt1Packet> packet) {
+    return true;
+}
+
+}

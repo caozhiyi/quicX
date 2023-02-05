@@ -18,6 +18,8 @@ static const uint16_t __max_init_secret_length       = 32;
 static const uint16_t __header_protect_sample_length = 16;
 static const uint16_t __header_protect_mask_length   = 5;
 static const uint16_t __packet_nonce_length          = 16;
+static const uint16_t __crypto_level_count           = 4;
+
 
 using EVPCIPHERCTXPtr = CSmartPtr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free>;
 using EVPAEADCTXPtr = CSmartPtr<EVP_AEAD_CTX, EVP_AEAD_CTX_free>;
