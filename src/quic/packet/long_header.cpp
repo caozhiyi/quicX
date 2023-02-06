@@ -86,6 +86,7 @@ bool LongHeader::Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
     memcpy(&_source_connection_id, pos, _source_connection_id_length);
     pos += _source_connection_id_length;
  
+    _src_data = std::make_pair(pos_pair.first, pos);
     buffer->MoveReadPt(pos - pos_pair.first);
 
     LOG_DEBUG("get destination connect id:%s", _destination_connection_id);
