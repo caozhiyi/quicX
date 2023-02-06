@@ -3,7 +3,7 @@
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read.h"
+#include "common/buffer/buffer_read_write.h"
 
 #include "quic/udp/udp_listener.h"
 #include "quic/common/constants.h"
@@ -42,16 +42,16 @@ bool UdpListener::Listen(const std::string& ip, uint16_t port) {
     Address peer_addr(AT_IPV4);
 
     while (!_stop) {
-        uint8_t* data = (uint8_t*)alloter->PoolLargeMalloc();
+        auto recv_buffer = std::make_shared<BufferReadWrite>(alloter);
+        auto read_pair = recv_buffer->GetReadPair();
         
-        auto recv_ret = RecvFrom(sock, (char*)data, __max_v4_packet_size, 0, peer_addr);
+        auto recv_ret = RecvFrom(sock, (char*)read_pair.first, __max_v4_packet_size, 0, peer_addr);
         if (recv_ret.errno_ != 0) {
             LOG_ERROR("recv from failed. err:%d", recv_ret.errno_);
             continue;
         }
-        LOG_DEBUG("recv udp msg. msg:%s", data);
+        recv_buffer->MoveReadPt(recv_ret._return_value);
         LOG_DEBUG("recv udp msg. size:%d", recv_ret._return_value);
-        auto recv_buffer = std::make_shared<BufferRead>(data, data + recv_ret._return_value, alloter);
         _recv_callback(recv_buffer);
     }
     return true;

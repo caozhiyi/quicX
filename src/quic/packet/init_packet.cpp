@@ -51,7 +51,7 @@ bool InitPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     //_payload.SetData(pos, _payload_length);
     pos += _payload_length;
 
-    _buffer = buffer;
+    _src_data = std::make_pair(pos_pair.first, pos);
     buffer->MoveReadPt(pos - pos_pair.first);
     return true;
 }

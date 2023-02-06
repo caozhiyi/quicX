@@ -29,6 +29,7 @@ public:
 protected:
     std::shared_ptr<IHeader> _header;
     uint64_t _packet_number; /*encryption protection*/
+    std::pair<const uint8_t*, const uint8_t*> _src_data;
 };
 
 }

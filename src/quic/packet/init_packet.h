@@ -30,8 +30,6 @@ private:
 
     uint32_t _payload_length;
     //BufferReadView _payload;     /*encryption protection*/
-
-    std::shared_ptr<IBufferRead> _buffer;
 };
 
 }
