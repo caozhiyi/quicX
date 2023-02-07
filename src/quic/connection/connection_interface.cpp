@@ -50,7 +50,7 @@ void IConnection::SendAlert(ssl_encryption_level_t level, uint8_t alert) {
 
 void IConnection::HandlePacket(std::vector<std::shared_ptr<IPacket>>& packets) {
     for (size_t i = 0; i < packets.size(); i++) {
-        switch (packets[i]->GetPacketType())
+        /*switch (packets[i]->GetPacketType())
         {
         case PT_INITIAL:
             if (!HandleInitial(std::dynamic_pointer_cast<InitPacket>(packets[i]))) {
@@ -80,7 +80,7 @@ void IConnection::HandlePacket(std::vector<std::shared_ptr<IPacket>>& packets) {
         default:
             LOG_ERROR("unknow packet type. type:%d", packets[i]->GetPacketType());
             break;
-        }
+        }*/
     }
 }
 

@@ -4,8 +4,7 @@
 
 namespace quicx {
 
-RetryPacket::RetryPacket(std::shared_ptr<IHeader> header):
-    IPacket(header) {
+RetryPacket::RetryPacket() {
 
 }
 

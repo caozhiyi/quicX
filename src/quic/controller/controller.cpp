@@ -8,10 +8,11 @@
 #include "quic/common/constants.h"
 #include "quic/udp/udp_listener.h"
 #include "quic/udp/udp_packet_in.h"
-#include "quic/packet/long_header.h"
 #include "quic/packet/init_packet.h"
 #include "quic/controller/controller.h"
 #include "quic/packet/packet_interface.h"
+#include "quic/connection/server_connection.h"
+#include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
 
@@ -63,65 +64,40 @@ void Controller::Dispatcher(std::shared_ptr<IBufferRead> recv_data) {
         return;
     }
 
-    // dispatch packet
-    for (auto iter = packets.begin(); iter != packets.end(); iter++) {
-        switch((*iter)->GetPacketType()) {
-        case PT_INITIAL:
-            HandleInitial(*iter);
-            break;
-        case PT_0RTT:
-            Handle0rtt(*iter);
-            break;
-        case PT_HANDSHAKE:
-            HandleHandshake(*iter);
-            break;
-        case PT_RETRY:
-            HandleRetry(*iter);
-            break;
-        case PT_NEGOTIATION:
-            HandleNegotiation(*iter);
-            break;
-        case PT_1RTT:
-            Handle1rtt(*iter);
-            break;
-        default:
-            LOG_ERROR("unknow packet type:%d", (*iter)->GetPacketType());
-            // todo send version negotiate packet
-        }
+    uint8_t* cid = nullptr;
+    uint16_t len = 0;
+    if (!GetDestConnectionId(packets, cid, len)) {
+        LOG_ERROR("get dest connection id failed.");
+        return;
     }
+    
+    // dispatch packet
+    long cid_code = ConnectionIDGenerator::Instance().Hash(cid, len);
+    auto conn = _conn_map.find(cid_code);
+    if (conn != _conn_map.end()) {
+        conn->second->HandlePacket(packets);
+        return;
+    }
+
+    auto new_conn = std::make_shared<ServerConnection>(nullptr);
+    _conn_map[cid_code] = new_conn;
+    new_conn->HandlePacket(packets);    
 }
 
-
-bool Controller::HandleInitial(std::shared_ptr<IPacket> packet) {
-    std::shared_ptr<InitPacket> init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
-    if (!init_packet) {
-        LOG_ERROR("dynamic init packet failed.");
+bool Controller::GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
+    if (packets.empty()) {
+        LOG_ERROR("parse packet list is empty.");
         return false;
     }
     
-    // todo token process
-
-    // create new connection 
-    return true;
-}
-
-bool Controller::Handle0rtt(std::shared_ptr<IPacket> packet) {
-    return true;
-}
-
-bool Controller::HandleHandshake(std::shared_ptr<IPacket> packet) {
-    return true;
-}
-
-bool Controller::HandleRetry(std::shared_ptr<IPacket> packet) {
-    return true;
-}
-
-bool Controller::HandleNegotiation(std::shared_ptr<IPacket> packet) {
-    return true;
-}
-
-bool Controller::Handle1rtt(std::shared_ptr<IPacket> packet) {
+    auto first_packet_header = packets[0]->GetHeader();
+    if (first_packet_header->GetHeaderType() == PHT_SHORT_HEADER) {
+        // todo get short header dcid
+    } else {
+        auto long_header = dynamic_cast<LongHeader*>(first_packet_header);
+        len = long_header->GetDestinationConnectionIdLength();
+        cid = (uint8_t*)long_header->GetDestinationConnectionId();
+    }
     return true;
 }
 

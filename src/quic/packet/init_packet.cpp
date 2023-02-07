@@ -4,12 +4,15 @@
 #include "common/decode/decode.h"
 #include "quic/common/constants.h"
 #include "quic/packet/init_packet.h"
-#include "quic/packet/long_header.h"
 
 namespace quicx {
 
-InitPacket::InitPacket(std::shared_ptr<IHeader> header):
-    IPacket(header) {
+InitPacket::InitPacket() {
+
+}
+
+InitPacket::InitPacket(uint8_t flag):
+    _header(flag) {
 
 }
 
@@ -22,14 +25,13 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
 }
 
 bool InitPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
-    if (!_header) {
-        LOG_ERROR("empty header.");
+    if (!_header.DecodeHeader(buffer)) {
+        LOG_ERROR("decode header failed");
         return false;
     }
 
     // check version
-    std::shared_ptr<LongHeader> header = std::dynamic_pointer_cast<LongHeader>(_header);
-    if (!CheckVersion(header->GetVersion())) {
+    if (!CheckVersion(_header.GetVersion())) {
         return false;
     }
     
@@ -51,7 +53,7 @@ bool InitPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     //_payload.SetData(pos, _payload_length);
     pos += _payload_length;
 
-    _src_data = std::make_pair(pos_pair.first, pos);
+    _packet_src_data = std::make_pair(pos_pair.first, pos);
     buffer->MoveReadPt(pos - pos_pair.first);
     return true;
 }

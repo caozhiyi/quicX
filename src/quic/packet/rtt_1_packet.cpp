@@ -4,8 +4,7 @@
 
 namespace quicx {
 
-Rtt1Packet::Rtt1Packet(std::shared_ptr<IHeader> header):
-    IPacket(header) {
+Rtt1Packet::Rtt1Packet() {
 
 }
 
