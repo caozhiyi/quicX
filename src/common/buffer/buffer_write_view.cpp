@@ -1,4 +1,5 @@
 #include <cstring>
+#include <cstdlib> // for abort
 #include "common/buffer/buffer_read_view.h"
 #include "common/buffer/buffer_write_view.h"
 
