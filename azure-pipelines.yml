@@ -11,5 +11,5 @@ pool:
 
 steps:
 - script: |
-    make
+    cd utest & make
   displayName: 'make'
