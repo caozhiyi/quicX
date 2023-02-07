@@ -3,8 +3,7 @@
 
 namespace quicx {
 
-Rtt0Packet::Rtt0Packet(std::shared_ptr<IHeader> header):
-    IPacket(header) {
+Rtt0Packet::Rtt0Packet() {
 
 }
 

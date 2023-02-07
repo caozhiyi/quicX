@@ -1,10 +1,10 @@
-#ifndef QUIC_PACKET_LONG_PACKET
-#define QUIC_PACKET_LONG_PACKET
+#ifndef QUIC_PACKET_HEADER_LONG_PACKET
+#define QUIC_PACKET_HEADER_LONG_PACKET
 
 #include <memory>
 #include "quic/packet/type.h"
 #include "quic/common/constants.h"
-#include "quic/packet/header_interface.h"
+#include "quic/packet/header/header_interface.h"
 
 namespace quicx {
 
@@ -12,14 +12,13 @@ class LongHeader:
     public IHeader {
 public:
     LongHeader();
-    LongHeader(HeaderFlag flag);
+    LongHeader(uint8_t flag);
     virtual ~LongHeader();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag = false);
-    virtual uint32_t EncodeSize();
+    virtual bool EncodeHeader(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag = false);
+    virtual uint32_t EncodeHeaderSize();
 
-    PacketType GetPacketType() const;
     uint32_t GetVersion() const;
     uint8_t GetDestinationConnectionIdLength() { return _destination_connection_id_length; }
     const uint8_t* GetDestinationConnectionId()  { return _destination_connection_id; }

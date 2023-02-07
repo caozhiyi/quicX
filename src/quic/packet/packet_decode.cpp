@@ -1,13 +1,11 @@
 #include "common/log/log.h"
-#include "quic/packet/header_flag.h"
-#include "quic/packet/long_header.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/retry_packet.h"
-#include "quic/packet/short_header.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/packet/hand_shake_packet.h"
+#include "quic/packet/header/header_flag.h"
 #include "quic/packet/version_negotiation_packet.h"
 
 namespace quicx {
@@ -19,20 +17,14 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
 
     HeaderFlag flag;
     while (buffer->GetDataLength() > 0) {
-        if (!flag.Decode(buffer)) {
+        if (!flag.DecodeFlag(buffer)) {
             LOG_ERROR("decode header flag failed.");
             return false;
         }
 
         std::shared_ptr<IPacket> packet;
-        if (flag.IsShortHeaderFlag()) {
-            std::shared_ptr<ShortHeader> header = std::make_shared<ShortHeader>(flag);
-            if (header->Decode(buffer)) {
-                LOG_ERROR("decode short header failed.");
-                return false;
-            }
-            
-            packet = std::make_shared<Rtt1Packet>(header);
+        if (flag.GetHeaderType() == PHT_SHORT_HEADER) {
+            packet = std::make_shared<Rtt1Packet>();
             if (packet->Decode(buffer)) {
                 LOG_ERROR("decode 1 rtt packet failed.");
                 return false;
@@ -41,32 +33,26 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
             continue;
         }
             
-        std::shared_ptr<LongHeader> header = std::make_shared<LongHeader>(flag);
-        if (!header->Decode(buffer)) {
-            LOG_ERROR("decode long header failed.");
-            return false;
-        }
-
-        LOG_DEBUG("get packet type:%s", PacketTypeToString(header->GetPacketType()));
-        switch (header->GetPacketType())
+        LOG_DEBUG("get packet type:%s", PacketTypeToString(flag.GetPacketType()));
+        switch (flag.GetPacketType())
         {
         case PT_INITIAL:
-            packet = std::make_shared<InitPacket>(header);
+            packet = std::make_shared<InitPacket>(flag.GetFlag());
             break;
         case PT_0RTT:
-            packet = std::make_shared<Rtt0Packet>(header);
+            packet = std::make_shared<Rtt0Packet>();
             break;
         case PT_HANDSHAKE:
-            packet = std::make_shared<HandShakePacket>(header);
+            packet = std::make_shared<HandShakePacket>();
             break;
         case PT_RETRY:
-            packet = std::make_shared<RetryPacket>(header);
+            packet = std::make_shared<RetryPacket>();
             break;
         case PT_NEGOTIATION:
-            packet = std::make_shared<VersionNegotiationPacket>(header);
+            packet = std::make_shared<VersionNegotiationPacket>();
             break;
         default:
-            LOG_ERROR("unknow packet type. type:%d", header->GetPacketType());
+            LOG_ERROR("unknow packet type. type:%d", flag.GetPacketType());
             return false;
         }
         

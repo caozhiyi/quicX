@@ -1,7 +1,9 @@
-#ifndef QUIC_PACKET_HEADER_FLAG
-#define QUIC_PACKET_HEADER_FLAG
+#ifndef QUIC_PACKET_HEADER_HEADER_FLAG
+#define QUIC_PACKET_HEADER_HEADER_FLAG
 
 #include <memory>
+#include "quic/packet/type.h"
+#include "quic/packet/header/type.h"
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
@@ -25,26 +27,19 @@ struct ShortHeaderFlag {
 
 class HeaderFlag {
 public:
-    HeaderFlag(uint8_t flag) { _flag._header_flag = flag; }
     HeaderFlag() { _flag._header_flag = 0; }
-    HeaderFlag(const HeaderFlag& flag) { _flag._header_flag = flag._flag._header_flag; }
-    ~HeaderFlag() {}
+    HeaderFlag(uint8_t flag) { _flag._header_flag = flag; }
+    virtual ~HeaderFlag() {}
 
-    bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    bool Decode(std::shared_ptr<IBufferRead> buffer);
-    uint32_t EncodeSize();
+    virtual bool EncodeFlag(std::shared_ptr<IBufferWrite> buffer);
+    virtual bool DecodeFlag(std::shared_ptr<IBufferRead> buffer);
+    virtual uint32_t EncodeFlagSize();
 
-    bool IsShortHeaderFlag() const;
+    uint8_t GetFlag() { return _flag._header_flag; }
+    PacketHeaderType GetHeaderType() const;
+    PacketType GetPacketType() const;
     LongHeaderFlag GetLongHeaderFlag() const { return _flag._long_header_flag; }
     ShortHeaderFlag GetShortHeaderFlag() const { return _flag._short_header_flag; }
-
-    HeaderFlag& operator=(HeaderFlag& flag) {
-        _flag._header_flag = flag._flag._header_flag;
-        return *this;
-    }
-
-    uint8_t GetFlagUint() { return _flag._header_flag; }
-    void SetFlagUint(uint8_t flag) { _flag._header_flag = flag; }
 
 protected:
     union HeaderFlagUnion {

@@ -1,15 +1,18 @@
 #ifndef QUIC_CONTROLLER_CONTROLLER
 #define QUIC_CONTROLLER_CONTROLLER
 
+#include <vector>
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <unordered_map>
 
 namespace quicx {
 
 class IPacket;
 class IBufferRead;
 class UdpListener;
+class IConnection;
 class Controller {
 public:
     Controller();
@@ -31,15 +34,11 @@ public:
 
 private:
     void Dispatcher(std::shared_ptr<IBufferRead> recv_data);
-    bool HandleInitial(std::shared_ptr<IPacket> packet);
-    bool Handle0rtt(std::shared_ptr<IPacket> packet);
-    bool HandleHandshake(std::shared_ptr<IPacket> packet);
-    bool HandleRetry(std::shared_ptr<IPacket> packet);
-    bool HandleNegotiation(std::shared_ptr<IPacket> packet);
-    bool Handle1rtt(std::shared_ptr<IPacket> packet);
+    bool GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len);
 
 private:
     std::shared_ptr<UdpListener> _listener;
+    std::unordered_map<uint64_t, std::shared_ptr<IConnection>> _conn_map;
 };
 
 }

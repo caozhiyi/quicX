@@ -2,8 +2,7 @@
 
 namespace quicx {
 
-VersionNegotiationPacket::VersionNegotiationPacket(std::shared_ptr<IHeader> header):
-    IPacket(header) {
+VersionNegotiationPacket::VersionNegotiationPacket() {
 
 }
 

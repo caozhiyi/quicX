@@ -12,6 +12,8 @@ enum PacketType {
     PT_RETRY       = 0x03,
     PT_NEGOTIATION = 0x04,
     PT_1RTT        = 0x05,
+
+    PT_UNKNOW      = 0xFF,
 };
 
 const char* PacketTypeToString(PacketType type);

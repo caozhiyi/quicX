@@ -4,7 +4,7 @@
 #include "common/log/log.h"
 #include "common/decode/decode.h"
 #include "quic/common/constants.h"
-#include "quic/packet/long_header.h"
+#include "quic/packet/header/long_header.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
 
@@ -18,7 +18,7 @@ LongHeader::LongHeader():
     memset(_source_connection_id, 0, __max_connection_length);
 }
 
-LongHeader::LongHeader(HeaderFlag flag):
+LongHeader::LongHeader(uint8_t flag):
     IHeader(flag),
     _version(0),
     _destination_connection_id_length(0),
@@ -31,12 +31,12 @@ LongHeader::~LongHeader() {
 
 }
 
-bool LongHeader::Encode(std::shared_ptr<IBufferWrite> buffer) {
-    if (!_flag.Encode(buffer)) {
+bool LongHeader::EncodeHeader(std::shared_ptr<IBufferWrite> buffer) {
+    if (!HeaderFlag::EncodeFlag(buffer)) {
         return false;
     }
 
-    uint16_t need_size = EncodeSize();
+    uint16_t need_size = EncodeHeaderSize();
     
     auto pos_pair = buffer->GetWritePair();
     auto remain_size = pos_pair.second - pos_pair.first;
@@ -60,15 +60,15 @@ bool LongHeader::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool LongHeader::Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
+bool LongHeader::DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
     if (with_flag) {
-        if (_flag.Decode(buffer)) {
+        if (HeaderFlag::DecodeFlag(buffer)) {
             return false;
         }
     }
 
     // check flag fixed bit
-    if (!_flag.GetLongHeaderFlag()._fix_bit) {
+    if (!HeaderFlag::GetLongHeaderFlag()._fix_bit) {
         LOG_ERROR("quic fixed bit is not set");
         return false;
     }
@@ -86,7 +86,7 @@ bool LongHeader::Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
     memcpy(&_source_connection_id, pos, _source_connection_id_length);
     pos += _source_connection_id_length;
  
-    _src_data = std::make_pair(pos_pair.first, pos);
+    _header_src_data = std::make_pair(pos_pair.first, pos);
     buffer->MoveReadPt(pos - pos_pair.first);
 
     LOG_DEBUG("get destination connect id:%s", _destination_connection_id);
@@ -95,15 +95,8 @@ bool LongHeader::Decode(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
     return true;
 }
 
-uint32_t LongHeader::EncodeSize() {
+uint32_t LongHeader::EncodeHeaderSize() {
     return sizeof(LongHeader);
-}
-
-PacketType LongHeader::GetPacketType() const {
-    if (_version == 0) {
-        return PT_NEGOTIATION;
-    }
-    return PacketType(_flag.GetLongHeaderFlag()._packet_type);
 }
 
 uint32_t LongHeader::GetVersion() const {

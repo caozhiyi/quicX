@@ -1,7 +1,6 @@
 #include "openssl/ssl.h"
 
 #include "common/log/log.h"
-#include "quic/packet/long_header.h"
 #include "quic/packet/init_packet.h"
 #include "quic/connection/server_connection.h"
 #include "quic/connection/transport_param_config.h"
@@ -27,6 +26,7 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
 }
 
 bool ServerConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {
+
     return true;
 }
 

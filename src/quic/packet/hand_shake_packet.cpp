@@ -4,8 +4,7 @@
 
 namespace quicx {
 
-HandShakePacket::HandShakePacket(std::shared_ptr<IHeader> header):
-    IPacket(header) {
+HandShakePacket::HandShakePacket() {
 
 }
 
