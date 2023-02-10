@@ -50,7 +50,7 @@ void IConnection::SendAlert(ssl_encryption_level_t level, uint8_t alert) {
 
 void IConnection::HandlePacket(std::vector<std::shared_ptr<IPacket>>& packets) {
     for (size_t i = 0; i < packets.size(); i++) {
-        /*switch (packets[i]->GetPacketType())
+        switch (packets[i]->GetHeader()->GetPacketType())
         {
         case PT_INITIAL:
             if (!HandleInitial(std::dynamic_pointer_cast<InitPacket>(packets[i]))) {
@@ -74,13 +74,13 @@ void IConnection::HandlePacket(std::vector<std::shared_ptr<IPacket>>& packets) {
             break;
         case PT_1RTT:
             if (!Handle1rtt(std::dynamic_pointer_cast<Rtt1Packet>(packets[i]))) {
-                LOG_ERROR("init packet handle failed.");
+                LOG_ERROR("1 rtt packet handle failed.");
             }
             break;
         default:
-            LOG_ERROR("unknow packet type. type:%d", packets[i]->GetPacketType());
+            LOG_ERROR("unknow packet type. type:%d", packets[i]->GetHeader()->GetPacketType());
             break;
-        }*/
+        }
     }
 }
 
