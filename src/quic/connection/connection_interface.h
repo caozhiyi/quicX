@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <cstdint>
+#include <unordered_set>
 #include <openssl/ssl.h>
 #include "quic/packet/init_packet.h"
 #include "quic/packet/retry_packet.h"
