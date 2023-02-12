@@ -18,27 +18,28 @@ PathResponseFrame::~PathResponseFrame() {
 
 bool PathResponseFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
-    auto pos_pair = buffer->GetWritePair();
-    auto remain_size = pos_pair.second - pos_pair.first;
+    auto span = buffer->GetWriteSpan();
+    auto remain_size = span.GetLength();
     if (need_size > remain_size) {
         LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
 
-    uint8_t* pos = pos_pair.first;
+    uint8_t* pos = span.GetStart();
     pos = FixedEncodeUint16(pos, _frame_type);
-    buffer->MoveWritePt(pos - pos_pair.first);
+    buffer->MoveWritePt(pos - span.GetStart());
 
     buffer->Write(_data, __path_data_length);
     return true;
 }
 
 bool PathResponseFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
-    auto pos_pair = buffer->GetReadPair();
-    const uint8_t* pos = pos_pair.first;
+    auto span = buffer->GetReadSpan();
+    uint8_t* pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
+        pos = FixedDecodeUint16(pos, end, _frame_type);
         if (_frame_type != FT_PATH_RESPONSE) {
             return false;
         } 
@@ -47,7 +48,7 @@ bool PathResponseFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_ty
     memcpy(_data, pos, __path_data_length);
     pos += __path_data_length;
 
-    buffer->MoveReadPt(pos - pos_pair.first);
+    buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
 

@@ -22,25 +22,25 @@ uint16_t IFrame::GetType() {
 bool IFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     
-    auto pos_pair = buffer->GetWritePair();
-    auto remain_size = pos_pair.second - pos_pair.first;
+    auto span = buffer->GetWriteSpan();
+    auto remain_size = span.GetLength();
 
     if (need_size > remain_size) {
         LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
     
-    uint8_t* pos = FixedEncodeUint16(pos_pair.first, _frame_type);
-    buffer->MoveWritePt(uint32_t(pos - pos_pair.first));
+    uint8_t* pos = FixedEncodeUint16(span.GetStart(), _frame_type);
+    buffer->MoveWritePt(uint32_t(pos - span.GetStart()));
 
     return true;
 }
 
 bool IFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     if (with_type) {
-        auto pos_pair = buffer->GetReadPair();
-        const uint8_t* pos = FixedDecodeUint16(pos_pair.first, pos_pair.second, _frame_type);
-        buffer->MoveReadPt(uint32_t(pos - pos_pair.first));
+        auto span = buffer->GetReadSpan();
+        const uint8_t* pos = FixedDecodeUint16(span.GetStart(), span.GetEnd(), _frame_type);
+        buffer->MoveReadPt(uint32_t(pos - span.GetStart()));
     }
     return true;
 }

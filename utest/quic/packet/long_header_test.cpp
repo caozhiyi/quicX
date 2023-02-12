@@ -36,10 +36,10 @@ TEST(long_header_utest, encode) {
 
     EXPECT_TRUE(long_header1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetReadPair();
-    auto pos_piar = read_buffer->GetReadPair();
-    memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
-    read_buffer->MoveWritePt(data_piar.second - data_piar.first);
+    auto data_span = write_buffer->GetReadSpan();
+    auto pos_span = read_buffer->GetReadSpan();
+    memcpy(pos_span.first, data_span.first, data_span.second - data_span.first);
+    read_buffer->MoveWritePt(data_span.second - data_span.first);
     EXPECT_TRUE(long_header2.Decode(read_buffer, true));
 
     // TODO check result

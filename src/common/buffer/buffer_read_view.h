@@ -15,7 +15,7 @@ class BlockMemoryPool;
 class BufferReadView:
     public IBufferRead {
 public:
-    BufferReadView(const uint8_t* start, const uint8_t* end);
+    BufferReadView(uint8_t* start, uint8_t* end);
     virtual ~BufferReadView();
     // read to data buf but don't change the read point
     // return the length of the data actually read
@@ -28,20 +28,20 @@ public:
     // return remaining length of readable data
     virtual uint32_t GetDataLength();
     // return the start and end positions of readable data
-    virtual std::pair<const uint8_t*, const uint8_t*> GetReadPair();
+    virtual BufferSpan GetReadSpan();
     // get a write buffer view
     virtual BufferReadView GetReadView(uint32_t offset = 0);
     // get a write buffer view shared ptr
     virtual std::shared_ptr<IBufferRead> GetReadViewPtr(uint32_t offset = 0);
     // get src data pos
-    virtual const uint8_t* GetData();
+    virtual uint8_t* GetData();
 protected:
     uint32_t Read(uint8_t* data, uint32_t len, bool move_pt);
 
 protected:
-    const uint8_t* _read_pos;
-    const uint8_t* _buffer_start;
-    const uint8_t* _buffer_end;
+    uint8_t* _read_pos;
+    uint8_t* _buffer_start;
+    uint8_t* _buffer_end;
 };
 
 }

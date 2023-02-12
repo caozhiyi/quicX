@@ -23,6 +23,9 @@ class IConnection:
 public:
     IConnection();
     virtual ~IConnection();
+
+    void AddConnectionId(uint8_t* id, uint16_t len);
+    void RetireConnectionId(uint8_t* id, uint16_t len);
     // TODO 
     // 1. 为流配置允许的最小初始数量
     // 2. 设置流级别及连接级别的流量限制, 限制接收缓存的的大小
@@ -32,7 +35,6 @@ public:
     virtual void Close() = 0;
 
     // Encryption correlation function
-
     virtual void SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len);
 
@@ -56,6 +58,7 @@ protected:
 
 protected:
     TransportParam _transport_param;
+    std::unordered_set<std::string> _conn_id_set;
     std::shared_ptr<ICryptographer> _cryptographers[__crypto_level_count]; 
 };
 

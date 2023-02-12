@@ -3,6 +3,7 @@
 #define QUIC_PACKET_RTT_1_PACKET
 
 #include <memory>
+#include "quic/packet/type.h"
 #include "quic/common/constants.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/packet/header/short_header.h"
@@ -15,6 +16,7 @@ public:
     Rtt1Packet();
     virtual ~Rtt1Packet();
 
+    virtual uint16_t GetCryptoLevel() const { return PCL_APPLICATION; }
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
     virtual uint32_t EncodeSize();

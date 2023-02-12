@@ -10,8 +10,8 @@ TEST(buffer_readonly_utest, buffer) {
     auto block = quicx::MakeBlockMemoryPoolPtr(63, 2);
     std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(block);
     const char* str = "it is a test str";
-    auto pos_pair = buffer->GetWritePair();
-    memcpy(pos_pair.first, str, sizeof(str));
+    auto span = buffer->GetWriteSpan();
+    memcpy(span.GetStart(), str, sizeof(str));
 
     buffer->MoveWritePt(strlen(str));
 

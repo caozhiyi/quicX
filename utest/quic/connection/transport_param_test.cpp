@@ -37,10 +37,10 @@ TEST(transport_param_utest, test1) {
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetReadPair();
-    auto pos_piar = read_buffer->GetWritePair();
-    memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
-    read_buffer->MoveWritePt(data_piar.second - data_piar.first);
+    auto data_span = write_buffer->GetReadSpan();
+    auto pos_span = read_buffer->GetWriteSpan();
+    memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
+    read_buffer->MoveWritePt(data_span.GetLength());
 
     quicx::TransportParam tp2;
     EXPECT_TRUE(tp2.Decode(read_buffer));
@@ -74,10 +74,10 @@ TEST(transport_param_utest, test2) {
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetReadPair();
-    auto pos_piar = read_buffer->GetWritePair();
-    memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
-    read_buffer->MoveWritePt(data_piar.second - data_piar.first);
+    auto data_span = write_buffer->GetReadSpan();
+    auto pos_span = read_buffer->GetWriteSpan();
+    memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
+    read_buffer->MoveWritePt(data_span.GetLength());
 
     quicx::TransportParam tp2;
     EXPECT_TRUE(tp2.Decode(read_buffer));

@@ -16,6 +16,15 @@ enum PacketType {
     PT_UNKNOW      = 0xFF,
 };
 
+enum PakcetCryptoLevel: uint16_t {
+    PCL_INITIAL     = 0,
+    PCL_ELAY_DATA   = 1,
+    PCL_HANDSHAKE   = 2,
+    PCL_APPLICATION = 3,
+
+    PCL_UNCRYPTO    = 4,
+};
+
 const char* PacketTypeToString(PacketType type);
 
 }

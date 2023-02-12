@@ -5,10 +5,10 @@
 
 namespace quicx {
 
-BufferReadView::BufferReadView(const uint8_t* start, const uint8_t* end):
-    _read_pos((uint8_t*)start),
-    _buffer_start((uint8_t*)start),
-    _buffer_end((uint8_t*)end) {
+BufferReadView::BufferReadView(uint8_t* start, uint8_t* end):
+    _read_pos(start),
+    _buffer_start(start),
+    _buffer_end(end) {
 
 }
 
@@ -59,8 +59,8 @@ uint32_t BufferReadView::GetDataLength() {
     }
 }
 
-std::pair<const uint8_t*, const uint8_t*> BufferReadView::GetReadPair() {
-    return std::make_pair(_read_pos, _buffer_end);
+BufferSpan BufferReadView::GetReadSpan() {
+    return std::move(BufferSpan(_read_pos, _buffer_end));
 }
 
 BufferReadView BufferReadView::GetReadView(uint32_t offset) {
@@ -71,7 +71,7 @@ std::shared_ptr<IBufferRead> BufferReadView::GetReadViewPtr(uint32_t offset) {
     return std::make_shared<BufferReadView>(_buffer_start + offset, _buffer_end);
 }
 
-const uint8_t* BufferReadView::GetData() {
+uint8_t* BufferReadView::GetData() {
     return _read_pos;
 }
 

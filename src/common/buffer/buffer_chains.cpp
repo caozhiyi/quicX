@@ -70,7 +70,7 @@ std::shared_ptr<BufferBlock> BufferChains::GetReadBuffers() {
     return _read_pos;
 }
 
-uint32_t BufferChains::Write(const uint8_t* data, uint32_t len) {
+uint32_t BufferChains::Write(uint8_t* data, uint32_t len) {
     uint32_t offset = 0;
     while (offset < len) {
         if (!_write_pos || _write_pos->GetFreeLength() == 0) {

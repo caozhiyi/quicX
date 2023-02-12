@@ -81,10 +81,10 @@ TEST(frame_decode_utest, decode1) {
     close_frame1.SetReason("it is a test.");
     EXPECT_TRUE(close_frame1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetReadPair();
-    auto pos_piar = read_buffer->GetWritePair();
-    memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
-    read_buffer->MoveWritePt(data_piar.second - data_piar.first);
+    auto data_span = write_buffer->GetReadSpan();
+    auto pos_span = read_buffer->GetWriteSpan();
+    memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
+    read_buffer->MoveWritePt(data_span.GetLength());
 
     // decode frames
     std::vector<std::shared_ptr<quicx::IFrame>> frames;

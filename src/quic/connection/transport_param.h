@@ -56,9 +56,9 @@ private:
     uint8_t* EncodeUint(uint8_t* start, uint8_t* end, uint32_t value, uint32_t type);
     uint8_t* EncodeString(uint8_t* start, uint8_t* end, const std::string& value, uint32_t type);
     uint8_t* EncodeBool(uint8_t* start, uint8_t* end, bool value, uint32_t type);
-    const uint8_t* DecodeUint(const uint8_t* start, const uint8_t* end, uint32_t& value);
-    const uint8_t* DecodeString(const uint8_t* start, const uint8_t* end, std::string& value);
-    const uint8_t* DecodeBool(const uint8_t* start, const uint8_t* end, bool& value);
+    uint8_t* DecodeUint(uint8_t* start, uint8_t* end, uint32_t& value);
+    uint8_t* DecodeString(uint8_t* start, uint8_t* end, std::string& value);
+    uint8_t* DecodeBool(uint8_t* start, uint8_t* end, bool& value);
 
 private:
     std::string _original_destination_connection_id;

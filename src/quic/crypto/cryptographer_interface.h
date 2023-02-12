@@ -27,12 +27,13 @@ public:
     virtual bool EncryptPacket(uint64_t pn, BufferReadView associated_data, std::shared_ptr<IBufferRead> plaintext,
                              std::shared_ptr<IBufferWrite> out_ciphertext) = 0;
 
-    virtual bool DecryptHeader(std::shared_ptr<IBufferRead> ciphertext, uint8_t pn_offset, bool is_short) = 0;
+    virtual bool DecryptHeader(BufferSpan ciphertext, uint8_t pn_offset, bool is_short) = 0;
 
-    virtual bool EncryptHeader(std::shared_ptr<IBufferRead> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) = 0;
+    virtual bool EncryptHeader(BufferSpan plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) = 0;
 };
 
 std::shared_ptr<ICryptographer> MakeCryptographer(const SSL_CIPHER *cipher);
+std::shared_ptr<ICryptographer> MakeCryptographer(uint32_t cipher_id);
 
 }
 

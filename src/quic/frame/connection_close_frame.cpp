@@ -29,52 +29,53 @@ ConnectionCloseFrame::~ConnectionCloseFrame() {
 bool ConnectionCloseFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
 
-    auto pos_pair = buffer->GetWritePair();
-    auto remain_size = pos_pair.second - pos_pair.first;
+    auto span = buffer->GetWriteSpan();
+    auto remain_size = span.GetLength();
     if (need_size > remain_size) {
         LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
 
-    uint8_t* pos = pos_pair.first;
+    uint8_t* pos = span.GetStart();
     pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _error_code);
     pos = EncodeVarint(pos, _err_frame_type);
     pos = EncodeVarint(pos, _reason.length());
 
-    buffer->MoveWritePt(pos - pos_pair.first);
-    buffer->Write((const uint8_t*)_reason.data(), _reason.length());
+    buffer->MoveWritePt(pos - span.GetStart());
+    buffer->Write((uint8_t*)_reason.data(), _reason.length());
     return true;
 }
 
 bool ConnectionCloseFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
     uint16_t size = EncodeSize();
 
-    auto pos_pair = buffer->GetReadPair();
-    const uint8_t* pos = pos_pair.first;
+    auto span = buffer->GetReadSpan();
+    uint8_t* pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
+        pos = FixedDecodeUint16(pos, end, _frame_type);
         if (_frame_type != FT_CONNECTION_CLOSE) {
             return false;
         }
     }
 
     uint32_t reason_length = 0;
-    pos = DecodeVarint(pos, pos_pair.second, _error_code);
-    pos = DecodeVarint(pos, pos_pair.second, _err_frame_type);
-    pos = DecodeVarint(pos, pos_pair.second, reason_length);
+    pos = DecodeVarint(pos, end, _error_code);
+    pos = DecodeVarint(pos, end, _err_frame_type);
+    pos = DecodeVarint(pos, end, reason_length);
     
-    buffer->MoveReadPt(pos - pos_pair.first);
+    buffer->MoveReadPt(pos - span.GetStart());
 
-    pos_pair = buffer->GetReadPair();
-    auto remain_size = pos_pair.second - pos_pair.first;
+    span = buffer->GetReadSpan();
+    auto remain_size = span.GetLength();
     if (reason_length > remain_size) {
         return false;
     }
     
     _reason.clear();
-    _reason.append((const char*)pos_pair.first, reason_length);
+    _reason.append((const char*)span.GetStart(), reason_length);
     buffer->MoveReadPt(reason_length);
     return true;
 }

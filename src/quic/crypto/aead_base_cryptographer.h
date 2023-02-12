@@ -23,9 +23,9 @@ public:
     virtual bool EncryptPacket(uint64_t pkt_number, BufferReadView associated_data, std::shared_ptr<IBufferRead> plaintext,
                              std::shared_ptr<IBufferWrite> out_ciphertext);
 
-    virtual bool DecryptHeader(std::shared_ptr<IBufferRead> ciphertext, uint8_t pn_offset, bool is_short);
+    virtual bool DecryptHeader(BufferSpan ciphertext, uint8_t pn_offset, bool is_short);
 
-    virtual bool EncryptHeader(std::shared_ptr<IBufferRead> plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short);
+    virtual bool EncryptHeader(BufferSpan plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short);
     
 protected:
     virtual bool MakeHeaderProtectMask(BufferReadView sample, std::vector<uint8_t>& key,

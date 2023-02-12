@@ -92,8 +92,8 @@ uint32_t Buffer::GetDataLength() {
     return uint32_t(_write_pos - _read_pos); 
 }
 
-std::pair<const uint8_t*, const uint8_t*> Buffer::GetReadPair() {
-    return std::make_pair(_read_pos, _write_pos);
+BufferSpan Buffer::GetReadSpan() {
+    return std::move(BufferSpan(_read_pos, _write_pos));
 }
 
 BufferReadView Buffer::GetReadView(uint32_t offset) {
@@ -104,11 +104,11 @@ std::shared_ptr<IBufferRead> Buffer::GetReadViewPtr(uint32_t offset) {
     return std::make_shared<BufferReadView>(_read_pos, _write_pos);
 }
 
-const uint8_t* Buffer::GetData() {
+uint8_t* Buffer::GetData() {
     return _read_pos;
 }
 
-uint32_t Buffer::Write(const uint8_t* data, uint32_t len) {
+uint32_t Buffer::Write(uint8_t* data, uint32_t len) {
     if (data == nullptr) {
         return 0;
     }
@@ -168,8 +168,8 @@ uint32_t Buffer::MoveWritePt(int32_t len) {
     }
 }
 
-std::pair<uint8_t*, uint8_t*> Buffer::GetWritePair() {
-    return std::make_pair(_write_pos, _buffer_end);
+BufferSpan Buffer::GetWriteSpan() {
+    return std::move(BufferSpan(_write_pos, _buffer_end));
 }
 
 BufferWriteView Buffer::GetWriteView(uint32_t offset) {

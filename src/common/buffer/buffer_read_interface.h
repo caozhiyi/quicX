@@ -7,6 +7,7 @@
 #define COMMON_BUFFER_BUFFER_READ_INTERFACE
 
 #include <memory>
+#include "common/buffer/buffer_span.h"
 
 namespace quicx {
 
@@ -27,13 +28,13 @@ public:
     // return remaining length of readable data
     virtual uint32_t GetDataLength() = 0;
     // return the start and end positions of readable data
-    virtual std::pair<const uint8_t*, const uint8_t*> GetReadPair() = 0;
+    virtual BufferSpan GetReadSpan() = 0;
     // get a write buffer view
     virtual BufferReadView GetReadView(uint32_t offset = 0) = 0;
     // get a write buffer view shared ptr
     virtual std::shared_ptr<IBufferRead> GetReadViewPtr(uint32_t offset = 0) = 0;
     // get src data pos
-    virtual const uint8_t* GetData() = 0;
+    virtual uint8_t* GetData() = 0;
 };
 
 }
