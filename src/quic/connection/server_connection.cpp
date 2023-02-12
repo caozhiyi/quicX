@@ -29,20 +29,16 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
 
 bool ServerConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {
     std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
-    if (cryptographer != nullptr) {
-        LOG_ERROR("aleady recv initial packet.");
-        return false;
-    }
-
     // get header
     auto header = dynamic_cast<LongHeader*>(packet->GetHeader());
+    if (cryptographer == nullptr) {
+        // make initial cryptographer
+        cryptographer = MakeCryptographer(TLS1_CK_AES_128_GCM_SHA256);
+        cryptographer->InstallInitSecret(header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(),
+            __initial_slat, sizeof(__initial_slat), true);
+    }
 
-    // make initial cryptographer
-    cryptographer = MakeCryptographer(TLS1_CK_AES_128_GCM_SHA256);
-    cryptographer->InstallInitSecret(header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(),
-        __initial_slat, sizeof(__initial_slat), true);
-
-    //cryptographer->DecryptHeader();    
+    cryptographer->DecryptHeader(header->GetHeaderSrcData(), packet->get);    
     return true;
 }
 

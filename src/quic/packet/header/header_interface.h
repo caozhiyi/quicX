@@ -21,6 +21,7 @@ public:
     virtual bool DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeHeaderSize() = 0;
     
+    virtual BufferSpan& GetHeaderSrcData() { return _header_src_data; }
 protected:
     BufferSpan _header_src_data;
 };

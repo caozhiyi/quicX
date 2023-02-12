@@ -143,7 +143,7 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferReadView as
     return true;
 }
 
-bool AeadBaseCryptographer::DecryptHeader(BufferSpan ciphertext, uint8_t pn_offset, bool is_short) {
+bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, uint8_t pn_offset, bool is_short) {
     if (_read_secret._hp.empty()) {
         LOG_ERROR("decrypt header but not install hp secret");
         return false;
@@ -152,7 +152,7 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan ciphertext, uint8_t pn_offs
     // get sample
     uint8_t* pos = ciphertext.GetStart();
     uint8_t* pkt_number_pos = pos + pn_offset;
-    BufferReadView sample = BufferReadView(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
+    BufferSpan sample = BufferSpan(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
 
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
@@ -185,7 +185,7 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan ciphertext, uint8_t pn_offs
     return true;
 }
 
-bool AeadBaseCryptographer::EncryptHeader(BufferSpan plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) {
+bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) {
     if (_write_secret._hp.empty()) {
         LOG_ERROR("encrypt header but not install hp secret");
         return false;
@@ -194,7 +194,7 @@ bool AeadBaseCryptographer::EncryptHeader(BufferSpan plaintext, uint8_t pn_offse
     // get sample 
     uint8_t* pos = plaintext.GetStart();
     uint8_t* pkt_number_pos = pos + pn_offset;
-    BufferReadView sample = BufferReadView(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
+    BufferSpan sample = BufferSpan(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
     size_t mask_length = 0;
@@ -222,7 +222,7 @@ bool AeadBaseCryptographer::EncryptHeader(BufferSpan plaintext, uint8_t pn_offse
     return true;
 }
 
-bool AeadBaseCryptographer::MakeHeaderProtectMask(BufferReadView sample, std::vector<uint8_t>& key,
+bool AeadBaseCryptographer::MakeHeaderProtectMask(BufferSpan& sample, std::vector<uint8_t>& key,
     uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length) {
     out_mask_length = 0;
     
@@ -232,7 +232,7 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(BufferReadView sample, std::ve
         return false;
     }
 
-    if (EVP_EncryptInit_ex(ctx.get(), _cipher, NULL, key.data(), sample.GetData()) != 1) {
+    if (EVP_EncryptInit_ex(ctx.get(), _cipher, NULL, key.data(), sample.GetStart()) != 1) {
         LOG_ERROR("EVP_EncryptInit_ex failed");
         return false;
     }

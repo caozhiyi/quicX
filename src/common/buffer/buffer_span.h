@@ -12,8 +12,9 @@ namespace quicx {
 
 class BufferSpan {
 public:
-    BufferSpan(): _start(nullptr), _end(nullptr) { }
-    BufferSpan(uint8_t* start, uint8_t* end): _start(start), _end(end) { }
+    BufferSpan(): _start(nullptr), _end(nullptr) {}
+    BufferSpan(uint8_t* start, uint32_t len): _start(start), _end(start + len) {}
+    BufferSpan(uint8_t* start, uint8_t* end): _start(start), _end(end) {}
     virtual ~BufferSpan() {}
 
     uint8_t* GetStart() { return _start; }
