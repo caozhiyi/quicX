@@ -1,22 +1,22 @@
 #include <cstring>
 #include <cstdlib> // for abort
+#include "common/buffer/buffer.h"
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_read_view.h"
 #include "common/buffer/buffer_write_view.h"
-#include "common/buffer/buffer_read_write.h"
 
 namespace quicx {
 
-BufferReadWrite::BufferReadWrite(std::shared_ptr<BlockMemoryPool>& alloter):
+Buffer::Buffer(std::shared_ptr<BlockMemoryPool>& alloter):
     _can_read(false),
-    _alloter(alloter) {
+    IBuffer(alloter) {
 
     _buffer_start = (uint8_t*)alloter->PoolLargeMalloc();
     _buffer_end = _buffer_start + alloter->GetBlockLength();
     _read_pos = _write_pos = _buffer_start;
 }
 
-BufferReadWrite::~BufferReadWrite() {
+Buffer::~Buffer() {
     if (_buffer_start) {
         auto alloter = _alloter.lock();
         if (alloter) {
@@ -26,14 +26,14 @@ BufferReadWrite::~BufferReadWrite() {
     }
 }
 
-uint32_t BufferReadWrite::ReadNotMovePt(uint8_t* data, uint32_t len) {
+uint32_t Buffer::ReadNotMovePt(uint8_t* data, uint32_t len) {
     if (data == nullptr) {
         return 0;
     }
     return InnerRead(data, len, false);
 }
 
-uint32_t BufferReadWrite::MoveReadPt(int32_t len) {
+uint32_t Buffer::MoveReadPt(int32_t len) {
     if (!_buffer_start) {
         return 0;
     }
@@ -81,45 +81,45 @@ uint32_t BufferReadWrite::MoveReadPt(int32_t len) {
     }
 }
 
-uint32_t BufferReadWrite::Read(uint8_t* data, uint32_t len) {
+uint32_t Buffer::Read(uint8_t* data, uint32_t len) {
     if (data == nullptr) {
         return 0;
     }
     return InnerRead(data, len, true);
 }
 
-uint32_t BufferReadWrite::GetDataLength() {
+uint32_t Buffer::GetDataLength() {
     return uint32_t(_write_pos - _read_pos); 
 }
 
-std::pair<const uint8_t*, const uint8_t*> BufferReadWrite::GetReadPair() {
-    return std::make_pair(_read_pos, _write_pos);
+BufferSpan Buffer::GetReadSpan() {
+    return std::move(BufferSpan(_read_pos, _write_pos));
 }
 
-BufferReadView BufferReadWrite::GetReadView(uint32_t offset) {
+BufferReadView Buffer::GetReadView(uint32_t offset) {
     return std::move(BufferReadView(_read_pos, _write_pos));
 }
 
-std::shared_ptr<IBufferRead> BufferReadWrite::GetReadViewPtr(uint32_t offset) {
+std::shared_ptr<IBufferRead> Buffer::GetReadViewPtr(uint32_t offset) {
     return std::make_shared<BufferReadView>(_read_pos, _write_pos);
 }
 
-const uint8_t* BufferReadWrite::GetData() {
+uint8_t* Buffer::GetData() {
     return _read_pos;
 }
 
-uint32_t BufferReadWrite::Write(const uint8_t* data, uint32_t len) {
+uint32_t Buffer::Write(uint8_t* data, uint32_t len) {
     if (data == nullptr) {
         return 0;
     }
     return InnerWrite((uint8_t*)data, len);
 }
 
-uint32_t BufferReadWrite::GetFreeLength() {
+uint32_t Buffer::GetFreeLength() {
     return uint32_t(_buffer_end - _write_pos);
 }
 
-uint32_t BufferReadWrite::MoveWritePt(int32_t len) {
+uint32_t Buffer::MoveWritePt(int32_t len) {
     if (!_buffer_start) {
         return 0;
     }
@@ -168,19 +168,19 @@ uint32_t BufferReadWrite::MoveWritePt(int32_t len) {
     }
 }
 
-std::pair<uint8_t*, uint8_t*> BufferReadWrite::GetWritePair() {
-    return std::make_pair(_write_pos, _buffer_end);
+BufferSpan Buffer::GetWriteSpan() {
+    return std::move(BufferSpan(_write_pos, _buffer_end));
 }
 
-BufferWriteView BufferReadWrite::GetWriteView(uint32_t offset) {
+BufferWriteView Buffer::GetWriteView(uint32_t offset) {
     return std::move(BufferWriteView(_write_pos, _buffer_end));
 }
 
-std::shared_ptr<IBufferWrite> BufferReadWrite::GetWriteViewPtr(uint32_t offset) {
+std::shared_ptr<IBufferWrite> Buffer::GetWriteViewPtr(uint32_t offset) {
     return std::make_shared<BufferWriteView>(_write_pos, _buffer_end);
 }
 
-uint32_t BufferReadWrite::InnerRead(uint8_t* data, uint32_t len, bool move_pt) {
+uint32_t Buffer::InnerRead(uint8_t* data, uint32_t len, bool move_pt) {
     /*s-----------r-----w-------------e*/
     if (_read_pos <= _write_pos) {
         size_t size = _write_pos - _read_pos;
@@ -208,7 +208,7 @@ uint32_t BufferReadWrite::InnerRead(uint8_t* data, uint32_t len, bool move_pt) {
     }
 }
 
-uint32_t BufferReadWrite::InnerWrite(uint8_t* data, uint32_t len) {
+uint32_t Buffer::InnerWrite(uint8_t* data, uint32_t len) {
     if (_write_pos <= _buffer_end) {
         size_t size = _buffer_end - _write_pos;
         // all buffer will be used
@@ -232,7 +232,7 @@ uint32_t BufferReadWrite::InnerWrite(uint8_t* data, uint32_t len) {
     }
 }
 
-void BufferReadWrite::Clear() {
+void Buffer::Clear() {
     _write_pos = _read_pos = _buffer_start;
     _can_read = false;
 }

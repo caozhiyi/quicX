@@ -59,11 +59,11 @@ public:
     void SetLevel(LogLevel level);
 
     // for log print as printf
-    void Debug(const char* file, uint32_t line, const char* log...);
-    void Info(const char* file, uint32_t line, const char* log...);
-    void Warn(const char* file, uint32_t line, const char* log...);
-    void Error(const char* file, uint32_t line, const char* log...);
-    void Fatal(const char* file, uint32_t line, const char* log...);
+    void Debug(const char* file, uint32_t line, const char* log...) const;
+    void Info(const char* file, uint32_t line, const char* log...) const;
+    void Warn(const char* file, uint32_t line, const char* log...) const;
+    void Error(const char* file, uint32_t line, const char* log...) const;
+    void Fatal(const char* file, uint32_t line, const char* log...) const;
 
     // for log stream
     LogStreamParam GetStreamParam(LogLevel level, const char* file, uint32_t line);

@@ -1,8 +1,10 @@
-#include "openssl/ssl.h"
-
+#include <openssl/tls1.h>
 #include "common/log/log.h"
+#include "quic/crypto/type.h"
 #include "quic/packet/init_packet.h"
+#include "quic/packet/header/long_header.h"
 #include "quic/connection/server_connection.h"
+#include "quic/crypto/cryptographer_interface.h"
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {
@@ -26,7 +28,17 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
 }
 
 bool ServerConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    // get header
+    auto header = dynamic_cast<LongHeader*>(packet->GetHeader());
+    if (cryptographer == nullptr) {
+        // make initial cryptographer
+        cryptographer = MakeCryptographer(TLS1_CK_AES_128_GCM_SHA256);
+        cryptographer->InstallInitSecret(header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(),
+            __initial_slat, sizeof(__initial_slat), true);
+    }
 
+    cryptographer->DecryptHeader(header->GetHeaderSrcData(), packet->get);    
     return true;
 }
 

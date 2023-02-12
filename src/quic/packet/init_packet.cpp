@@ -1,5 +1,4 @@
 #include "common/log/log.h"
-#include "quic/packet/type.h"
 #include "quic/common/version.h"
 #include "common/decode/decode.h"
 #include "quic/common/constants.h"
@@ -34,27 +33,28 @@ bool InitPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     if (!CheckVersion(_header.GetVersion())) {
         return false;
     }
-    
-    auto pos_pair = buffer->GetReadPair();
+
+    auto span = buffer->GetReadSpan();
 
     // check buffer length
-    if (pos_pair.second - pos_pair.first <= __min_initial_size) {
+    if (span.GetLength() <= __min_initial_size) {
         LOG_ERROR("buffer is too small for initial packet");
         return false;
     }
     
-    const uint8_t* pos = pos_pair.first;
-    pos = DecodeVarint(pos, pos_pair.second, _token_length);
+    uint8_t* pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
+    pos = DecodeVarint(pos, end, _token_length);
     _token = pos;
     pos += _token_length;
     LOG_DEBUG("get initial token:%s", _token);
 
-    pos = DecodeVarint(pos, pos_pair.second, _payload_length);
+    pos = DecodeVarint(pos, end, _payload_length);
     //_payload.SetData(pos, _payload_length);
     pos += _payload_length;
 
-    _packet_src_data = std::make_pair(pos_pair.first, pos);
-    buffer->MoveReadPt(pos - pos_pair.first);
+    _packet_src_data = std::move(BufferSpan(span.GetStart(), pos));
+    buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
 

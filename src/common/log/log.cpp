@@ -26,35 +26,35 @@ void SingletonLogger::SetLevel(LogLevel level){
     _logger->SetLevel(level);
 }
 
-void SingletonLogger::Debug(const char* file, uint32_t line, const char* log...){
+void SingletonLogger::Debug(const char* file, uint32_t line, const char* log...) const {
     va_list list;
     va_start(list, log);
     _logger->Debug(file, line, log, list);
     va_end(list);
 }
 
-void SingletonLogger::Info(const char* file, uint32_t line, const char* log...){
+void SingletonLogger::Info(const char* file, uint32_t line, const char* log...) const {
     va_list list;
     va_start(list, log);
     _logger->Info(file, line, log, list);
     va_end(list);
 }
 
-void SingletonLogger::Warn(const char* file, uint32_t line, const char* log...){
+void SingletonLogger::Warn(const char* file, uint32_t line, const char* log...) const {
     va_list list;
     va_start(list, log);
     _logger->Warn(file, line, log, list);
     va_end(list);
 }
 
-void SingletonLogger::Error(const char* file, uint32_t line, const char* log...){
+void SingletonLogger::Error(const char* file, uint32_t line, const char* log...) const {
     va_list list;
     va_start(list, log);
     _logger->Error(file, line, log, list);
     va_end(list);
 }
 
-void SingletonLogger::Fatal(const char* file, uint32_t line, const char* log...){
+void SingletonLogger::Fatal(const char* file, uint32_t line, const char* log...) const {
     va_list list;
     va_start(list, log);
     _logger->Fatal(file, line, log, list);

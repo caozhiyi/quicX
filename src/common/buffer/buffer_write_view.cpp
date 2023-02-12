@@ -5,10 +5,10 @@
 
 namespace quicx {
 
-BufferWriteView::BufferWriteView(const uint8_t* start, const uint8_t* end):
-    _write_pos((uint8_t*)start),
-    _buffer_start((uint8_t*)start),
-    _buffer_end((uint8_t*)end) {
+BufferWriteView::BufferWriteView(uint8_t* start, uint8_t* end):
+    _write_pos(start),
+    _buffer_start(start),
+    _buffer_end(end) {
 
 }
 
@@ -16,7 +16,7 @@ BufferWriteView::~BufferWriteView() {
     // view do nothing
 }
 
-uint32_t BufferWriteView::Write(const uint8_t* data, uint32_t len) {
+uint32_t BufferWriteView::Write(uint8_t* data, uint32_t len) {
     /*s-----------w-------------------e*/
     if (_write_pos < _buffer_end) {
         size_t size = _buffer_end - _write_pos;
@@ -72,8 +72,8 @@ uint32_t BufferWriteView::MoveWritePt(int32_t len) {
     return (uint32_t)(_buffer_end - _write_pos);
 }
 
-std::pair<uint8_t*, uint8_t*> BufferWriteView::GetWritePair() {
-    return std::make_pair(_write_pos, _buffer_end);
+BufferSpan BufferWriteView::GetWriteSpan() {
+    return std::move(BufferSpan(_write_pos, _buffer_end));
 }
 
 BufferWriteView BufferWriteView::GetWriteView(uint32_t offset) {

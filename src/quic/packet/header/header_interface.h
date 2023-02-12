@@ -3,12 +3,13 @@
 
 
 #include <cstdint>
+#include "common/buffer/buffer_span.h"
 #include "quic/packet/header/header_flag.h"
+#include "common/buffer/buffer_read_interface.h"
+#include "common/buffer/buffer_write_interface.h"
 
 namespace quicx {
 
-class IBufferRead;
-class IBufferWrite;
 class IHeader:
     public HeaderFlag {
 public:
@@ -20,8 +21,9 @@ public:
     virtual bool DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeHeaderSize() = 0;
     
+    virtual BufferSpan& GetHeaderSrcData() { return _header_src_data; }
 protected:
-    std::pair<const uint8_t*, const uint8_t*> _header_src_data;
+    BufferSpan _header_src_data;
 };
 
 }

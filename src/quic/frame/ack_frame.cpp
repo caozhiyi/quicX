@@ -19,14 +19,14 @@ AckFrame::~AckFrame() {
 bool AckFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     
-    auto pos_pair = buffer->GetWritePair();
-    auto remain_size = pos_pair.second - pos_pair.first;
+    auto span = buffer->GetWriteSpan();
+    auto remain_size = span.GetLength();
     if (need_size > remain_size) {
         LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
     
-    uint8_t* pos = pos_pair.first;
+    uint8_t* pos = span.GetStart();
     pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _ack_delay);
     pos = EncodeVarint(pos, _first_ack_range);
@@ -37,33 +37,34 @@ bool AckFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
         pos = EncodeVarint(pos, _ack_ranges[i].GetAckRangeLength());
     }
     
-    buffer->MoveWritePt(pos - pos_pair.first);
+    buffer->MoveWritePt(pos - span.GetStart());
     return true;
 }
 
 bool AckFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
-    auto pos_pair = buffer->GetReadPair();
+    auto span = buffer->GetReadSpan();
     
-    const uint8_t* pos = pos_pair.first;
+    uint8_t* pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
     if (with_type) {
-        pos = FixedDecodeUint16(pos, pos_pair.second, _frame_type);
+        pos = FixedDecodeUint16(pos, end, _frame_type);
         if (_frame_type != FT_ACK && _frame_type != FT_ACK_ECN) {
             return false;
         }
     }
-    pos = DecodeVarint(pos, pos_pair.second, _ack_delay);
-    pos = DecodeVarint(pos, pos_pair.second, _first_ack_range);
+    pos = DecodeVarint(pos, end, _ack_delay);
+    pos = DecodeVarint(pos, end, _first_ack_range);
     uint32_t ack_range_count = 0;
-    pos = DecodeVarint(pos, pos_pair.second, ack_range_count);
+    pos = DecodeVarint(pos, end, ack_range_count);
 
     uint64_t gap;
     uint64_t range;
     for (uint32_t i = 0; i < ack_range_count; i++) {
-        pos = DecodeVarint(pos, pos_pair.second, gap);
-        pos = DecodeVarint(pos, pos_pair.second, range);
+        pos = DecodeVarint(pos, end, gap);
+        pos = DecodeVarint(pos, end, range);
         _ack_ranges.emplace_back(AckRange(gap, range));
     }
-    buffer->MoveReadPt(pos - pos_pair.first);
+    buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
 
@@ -97,19 +98,19 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
 
     uint16_t need_size = EncodeSize();
     
-    auto pos_pair = buffer->GetWritePair();
-    auto remain_size = pos_pair.second - pos_pair.first;
+    auto span = buffer->GetWriteSpan();
+    auto remain_size = span.GetLength();
     if (need_size > remain_size) {
         LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
     
-    uint8_t* pos = pos_pair.first;
+    uint8_t* pos = span.GetStart();
     pos = EncodeVarint(pos, _ect_0);
     pos = EncodeVarint(pos, _ect_1);
     pos = EncodeVarint(pos, _ecn_ce);
 
-    buffer->MoveWritePt(pos - pos_pair.first);
+    buffer->MoveWritePt(pos - span.GetStart());
 
     return true;
 }
@@ -119,14 +120,15 @@ bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool 
         return false;
     } 
 
-    auto pos_pair = buffer->GetReadPair();
+    auto span = buffer->GetReadSpan();
 
-    const uint8_t* pos = pos_pair.first;
-    pos = DecodeVarint(pos, pos_pair.second, _ect_0);
-    pos = DecodeVarint(pos, pos_pair.second, _ect_1);
-    pos = DecodeVarint(pos, pos_pair.second, _ecn_ce);
+    uint8_t* pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
+    pos = DecodeVarint(pos, end, _ect_0);
+    pos = DecodeVarint(pos, end, _ect_1);
+    pos = DecodeVarint(pos, end, _ecn_ce);
 
-    buffer->MoveReadPt(pos - pos_pair.first);
+    buffer->MoveReadPt(pos - span.GetStart());
 
     return true;
 }

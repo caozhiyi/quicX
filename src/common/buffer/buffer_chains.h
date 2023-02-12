@@ -31,7 +31,7 @@ public:
     virtual std::shared_ptr<BufferBlock> GetReadBuffers();
 
     // return the length of the actual write
-    virtual uint32_t Write(const uint8_t* data, uint32_t len);
+    virtual uint32_t Write(uint8_t* data, uint32_t len);
     // return the remaining length that can be written
     virtual uint32_t GetFreeLength();
     // return the length of the data actually move

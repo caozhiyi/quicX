@@ -7,28 +7,29 @@ namespace quicx {
 
 bool HeaderFlag::EncodeFlag(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeFlagSize();
-    auto pos_pair = buffer->GetWritePair();
-    auto remain_size = pos_pair.second - pos_pair.first;
+    auto span = buffer->GetWriteSpan();
+    auto remain_size = span.GetLength();
     if (need_size > remain_size) {
         LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
 
-    uint8_t* pos = pos_pair.first;
+    uint8_t* pos = span.GetStart();
     pos = FixedEncodeUint8(pos, _flag._header_flag);
-    buffer->MoveWritePt(pos - pos_pair.first);
+    buffer->MoveWritePt(pos - span.GetStart());
     return true;
 }
 
 bool HeaderFlag::DecodeFlag(std::shared_ptr<IBufferRead> buffer) {
-    auto pos_pair = buffer->GetReadPair();
+    auto span = buffer->GetReadSpan();
     if (buffer->GetDataLength() < EncodeFlagSize()) {
         return false;
     }
 
-    const uint8_t* pos = pos_pair.first;
-    pos = FixedDecodeUint8(pos, pos_pair.second, _flag._header_flag);
-    buffer->MoveReadPt(pos - pos_pair.first);
+    uint8_t* pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
+    pos = FixedDecodeUint8(pos, end, _flag._header_flag);
+    buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
 

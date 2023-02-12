@@ -18,7 +18,10 @@ ICryptographer::~ICryptographer() {
 
 std::shared_ptr<ICryptographer> MakeCryptographer(const SSL_CIPHER *cipher) {
     uint32_t cipher_id = SSL_CIPHER_get_id(cipher);
+    return MakeCryptographer(cipher_id);
+}
 
+std::shared_ptr<ICryptographer> MakeCryptographer(uint32_t cipher_id) {
     switch (cipher_id)
     {
     case TLS1_CK_AES_128_GCM_SHA256:

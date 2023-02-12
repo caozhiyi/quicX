@@ -13,17 +13,18 @@ enum AddressType {
 
 class Address {
 public:
+    Address();
     Address(AddressType at);
     Address(AddressType at, const std::string& ip, uint16_t port);
     ~Address();
 
     virtual void SetIp(const std::string& ip);
-    virtual std::string GetIp();
+    virtual const std::string& GetIp() const;
 
     virtual void SetPort(uint16_t port);
     virtual uint16_t GetPort();
 
-    virtual const std::string AsString();
+    virtual const std::string AsString() const;
 
     friend std::ostream& operator<< (std::ostream &out, Address &addr);
     friend bool operator==(const Address &addr1, const Address &addr2);

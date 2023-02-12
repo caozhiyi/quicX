@@ -7,6 +7,8 @@
 #define COMMON_BUFFER_BUFFER_CHAINS_INTERFACE
 
 #include <memory>
+#include "common/buffer/buffer_block.h"
+#include "common/buffer/buffer_interface.h"
 
 namespace quicx {
 
@@ -30,7 +32,7 @@ public:
     virtual std::shared_ptr<BufferBlock> GetReadBuffers() = 0;
 
     // return the length of the actual write
-    virtual uint32_t Write(const uint8_t* data, uint32_t len) = 0;
+    virtual uint32_t Write(uint8_t* data, uint32_t len) = 0;
     // return the remaining length that can be written
     virtual uint32_t GetFreeLength() = 0;
     // return the length of the data actually move

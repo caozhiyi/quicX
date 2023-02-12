@@ -15,6 +15,14 @@ IConnection::~IConnection() {
 
 }
 
+void IConnection::AddConnectionId(uint8_t* id, uint16_t len) {
+    _conn_id_set.insert(std::string((char*)id, len));
+}
+
+void IConnection::RetireConnectionId(uint8_t* id, uint16_t len) {
+    _conn_id_set.erase(std::string((char*)id, len));
+}
+
 void IConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
     const uint8_t *secret, size_t secret_len) {
     std::shared_ptr<ICryptographer> cryptographer = _cryptographers[level];

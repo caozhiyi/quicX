@@ -14,16 +14,16 @@ namespace quicx {
 class BufferWriteView:
     public IBufferWrite {
 public:
-    BufferWriteView(const uint8_t* start, const uint8_t* end);
+    BufferWriteView(uint8_t* start, uint8_t* end);
     virtual ~BufferWriteView();
     // return the length of the actual write
-    virtual uint32_t Write(const uint8_t* data, uint32_t len);
+    virtual uint32_t Write(uint8_t* data, uint32_t len);
     // return the remaining length that can be written
     virtual uint32_t GetFreeLength();
     // return the length of the data actually move
     virtual uint32_t MoveWritePt(int32_t len);
     // return buffer write and end pos
-    virtual std::pair<uint8_t*, uint8_t*> GetWritePair();
+     virtual BufferSpan GetWriteSpan();
     // get a read buffer view
     virtual BufferWriteView GetWriteView(uint32_t offset = 0);
     // get a read buffer view shared ptr

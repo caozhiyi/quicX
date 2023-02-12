@@ -61,144 +61,146 @@ bool TransportParam::Encode(std::shared_ptr<IBufferWrite> buffer) {
         return false;
     }
     
-    auto pos_pair = buffer->GetWritePair();
-    uint8_t* pos = pos_pair.first;
+    auto span = buffer->GetWriteSpan();
+    uint8_t* pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
     if (!_original_destination_connection_id.empty()) {
-        pos = EncodeString(pos, pos_pair.second, _original_destination_connection_id, TP_ORIGINAL_DESTINATION_CONNECTION_ID);
+        pos = EncodeString(pos, end, _original_destination_connection_id, TP_ORIGINAL_DESTINATION_CONNECTION_ID);
     }
     
     if (_max_idle_timeout) {
-        pos = EncodeUint(pos, pos_pair.second, _max_idle_timeout, TP_MAX_IDLE_TIMEOUT);
+        pos = EncodeUint(pos, end, _max_idle_timeout, TP_MAX_IDLE_TIMEOUT);
     }
     
     if (!_stateless_reset_token.empty()) {
-        pos = EncodeString(pos, pos_pair.second, _stateless_reset_token, TP_STATELESS_RESET_TOKEN);
+        pos = EncodeString(pos, end, _stateless_reset_token, TP_STATELESS_RESET_TOKEN);
     }
     
     if (_max_udp_payload_size) {
-        pos = EncodeUint(pos, pos_pair.second, _max_udp_payload_size, TP_MAX_UDP_PAYLOAD_SIZE);
+        pos = EncodeUint(pos, end, _max_udp_payload_size, TP_MAX_UDP_PAYLOAD_SIZE);
     }
     
     if (_initial_max_data) {
-        pos = EncodeUint(pos, pos_pair.second, _initial_max_data, TP_INITIAL_MAX_DATA);
+        pos = EncodeUint(pos, end, _initial_max_data, TP_INITIAL_MAX_DATA);
     }
 
     if (_initial_max_stream_data_bidi_local) {
-        pos = EncodeUint(pos, pos_pair.second, _initial_max_stream_data_bidi_local, TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL);
+        pos = EncodeUint(pos, end, _initial_max_stream_data_bidi_local, TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL);
     }
     
     if (_initial_max_stream_data_bidi_remote) {
-        pos = EncodeUint(pos, pos_pair.second, _initial_max_stream_data_bidi_remote, TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE);
+        pos = EncodeUint(pos, end, _initial_max_stream_data_bidi_remote, TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE);
     }
 
     if (_initial_max_stream_data_uni) {
-        pos = EncodeUint(pos, pos_pair.second, _initial_max_stream_data_uni, TP_INITIAL_MAX_STREAM_DATA_UNI);
+        pos = EncodeUint(pos, end, _initial_max_stream_data_uni, TP_INITIAL_MAX_STREAM_DATA_UNI);
     }
 
     if (_initial_max_streams_bidi) {
-        pos = EncodeUint(pos, pos_pair.second, _initial_max_streams_bidi, TP_INITIAL_MAX_STREAMS_BIDI);
+        pos = EncodeUint(pos, end, _initial_max_streams_bidi, TP_INITIAL_MAX_STREAMS_BIDI);
     }
 
     if (_initial_max_streams_uni) {
-        pos = EncodeUint(pos, pos_pair.second, _initial_max_streams_uni, TP_INITIAL_MAX_STREAMS_UNI);
+        pos = EncodeUint(pos, end, _initial_max_streams_uni, TP_INITIAL_MAX_STREAMS_UNI);
     }
     
     if (_ack_delay_exponent) {
-        pos = EncodeUint(pos, pos_pair.second, _ack_delay_exponent, TP_ACK_DELAY_EXPONENT);
+        pos = EncodeUint(pos, end, _ack_delay_exponent, TP_ACK_DELAY_EXPONENT);
     }
 
     if (_max_ack_delay) {
-        pos = EncodeUint(pos, pos_pair.second, _max_ack_delay, TP_MAX_ACK_DELAY);
+        pos = EncodeUint(pos, end, _max_ack_delay, TP_MAX_ACK_DELAY);
     }
 
     if (_disable_active_migration) {
-        pos = EncodeBool(pos, pos_pair.second, _disable_active_migration, TP_DISABLE_ACTIVE_MIGRATION);
+        pos = EncodeBool(pos, end, _disable_active_migration, TP_DISABLE_ACTIVE_MIGRATION);
     }
 
     if (!_preferred_address.empty()) {
-        pos = EncodeString(pos, pos_pair.second, _preferred_address, TP_PREFERRED_ADDRESS);
+        pos = EncodeString(pos, end, _preferred_address, TP_PREFERRED_ADDRESS);
     }
 
     if (_active_connection_id_limit) {
-        pos = EncodeUint(pos, pos_pair.second, _active_connection_id_limit, TP_ACTIVE_CONNECTION_ID_LIMIT);
+        pos = EncodeUint(pos, end, _active_connection_id_limit, TP_ACTIVE_CONNECTION_ID_LIMIT);
     }
 
     if (!_initial_source_connection_id.empty()) {
-        pos = EncodeString(pos, pos_pair.second, _initial_source_connection_id, TP_INITIAL_SOURCE_CONNECTION_ID);
+        pos = EncodeString(pos, end, _initial_source_connection_id, TP_INITIAL_SOURCE_CONNECTION_ID);
     }
 
     if (!_retry_source_connection_id.empty()) {
-        pos = EncodeString(pos, pos_pair.second, _retry_source_connection_id, TP_RETRY_SOURCE_CONNECTION_ID);
+        pos = EncodeString(pos, end, _retry_source_connection_id, TP_RETRY_SOURCE_CONNECTION_ID);
     }
 
-    buffer->MoveWritePt(pos - pos_pair.first);
+    buffer->MoveWritePt(pos - span.GetStart());
     return true;
 }
 
 bool TransportParam::Decode(std::shared_ptr<IBufferRead> buffer) {
     uint64_t type = 0;
-    auto pos_pair = buffer->GetReadPair();
-    const uint8_t* pos = pos_pair.first;
-    while (pos < pos_pair.second) {
-        pos = DecodeVarint(pos, pos_pair.second, type);
+    auto span = buffer->GetReadSpan();
+    uint8_t* pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
+    while (pos < end) {
+        pos = DecodeVarint(pos, end, type);
         switch(type) {
         case TP_ORIGINAL_DESTINATION_CONNECTION_ID:
-            pos = DecodeString(pos, pos_pair.second, _original_destination_connection_id);
+            pos = DecodeString(pos, end, _original_destination_connection_id);
             break;
         case TP_MAX_IDLE_TIMEOUT:
-            pos = DecodeUint(pos, pos_pair.second, _max_idle_timeout);
+            pos = DecodeUint(pos, end, _max_idle_timeout);
             break;
         case TP_STATELESS_RESET_TOKEN:
-            pos = DecodeString(pos, pos_pair.second, _stateless_reset_token);
+            pos = DecodeString(pos, end, _stateless_reset_token);
             break;
         case TP_MAX_UDP_PAYLOAD_SIZE:
-            pos = DecodeUint(pos, pos_pair.second, _max_udp_payload_size);
+            pos = DecodeUint(pos, end, _max_udp_payload_size);
             break;
         case TP_INITIAL_MAX_DATA:
-            pos = DecodeUint(pos, pos_pair.second, _initial_max_data);
+            pos = DecodeUint(pos, end, _initial_max_data);
             break;
         case TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL:
-            pos = DecodeUint(pos, pos_pair.second, _initial_max_stream_data_bidi_local);
+            pos = DecodeUint(pos, end, _initial_max_stream_data_bidi_local);
             break;
         case TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE:
-            pos = DecodeUint(pos, pos_pair.second, _initial_max_stream_data_bidi_remote);
+            pos = DecodeUint(pos, end, _initial_max_stream_data_bidi_remote);
             break;
         case TP_INITIAL_MAX_STREAM_DATA_UNI:
-            pos = DecodeUint(pos, pos_pair.second, _initial_max_stream_data_uni);
+            pos = DecodeUint(pos, end, _initial_max_stream_data_uni);
             break;
         case TP_INITIAL_MAX_STREAMS_BIDI:
-            pos = DecodeUint(pos, pos_pair.second, _initial_max_streams_bidi);
+            pos = DecodeUint(pos, end, _initial_max_streams_bidi);
             break;
         case TP_INITIAL_MAX_STREAMS_UNI:
-            pos = DecodeUint(pos, pos_pair.second, _initial_max_streams_uni);
+            pos = DecodeUint(pos, end, _initial_max_streams_uni);
             break;
         case TP_ACK_DELAY_EXPONENT:
-            pos = DecodeUint(pos, pos_pair.second, _ack_delay_exponent);
+            pos = DecodeUint(pos, end, _ack_delay_exponent);
             break;
         case TP_MAX_ACK_DELAY:
-            pos = DecodeUint(pos, pos_pair.second, _max_ack_delay);
+            pos = DecodeUint(pos, end, _max_ack_delay);
             break;
         case TP_DISABLE_ACTIVE_MIGRATION:
-            pos = DecodeBool(pos, pos_pair.second, _disable_active_migration);
+            pos = DecodeBool(pos, end, _disable_active_migration);
             break;
         case TP_PREFERRED_ADDRESS:
-            pos = DecodeString(pos, pos_pair.second, _preferred_address);
+            pos = DecodeString(pos, end, _preferred_address);
             break;
         case TP_ACTIVE_CONNECTION_ID_LIMIT:
-            pos = DecodeUint(pos, pos_pair.second, _active_connection_id_limit);
+            pos = DecodeUint(pos, end, _active_connection_id_limit);
             break;
         case TP_INITIAL_SOURCE_CONNECTION_ID:
-            pos = DecodeString(pos, pos_pair.second, _initial_source_connection_id);
+            pos = DecodeString(pos, end, _initial_source_connection_id);
             break;
         case TP_RETRY_SOURCE_CONNECTION_ID:
-            pos = DecodeString(pos, pos_pair.second, _retry_source_connection_id);
+            pos = DecodeString(pos, end, _retry_source_connection_id);
             break;
         default:
             LOG_ERROR("unsupport stransport param. type:%d", type);
             return false;
         }
     }
-    buffer->MoveReadPt(pos - pos_pair.second);
+    buffer->MoveReadPt(pos - end);
     return true;
 }
 
@@ -216,7 +218,7 @@ uint8_t* TransportParam::EncodeUint(uint8_t* start, uint8_t* end, uint32_t value
 uint8_t* TransportParam::EncodeString(uint8_t* start, uint8_t* end, const std::string& value, uint32_t type) {
     start = EncodeVarint(start, type);
     start = EncodeVarint(start, value.length());
-    start = EncodeBytes(start, end, (const uint8_t*)value.c_str(), value.length());
+    start = EncodeBytes(start, end, (uint8_t*)value.c_str(), value.length());
     return start;
 }
 
@@ -227,7 +229,7 @@ uint8_t* TransportParam::EncodeBool(uint8_t* start, uint8_t* end, bool value, ui
     return start;
 }
 
-const uint8_t* TransportParam::DecodeUint(const uint8_t* start, const uint8_t* end, uint32_t& value) {
+uint8_t* TransportParam::DecodeUint(uint8_t* start, uint8_t* end, uint32_t& value) {
     uint64_t varint = 0;
     // read length
     start = DecodeVarint(start, end, varint);
@@ -237,18 +239,18 @@ const uint8_t* TransportParam::DecodeUint(const uint8_t* start, const uint8_t* e
     return start;
 }
 
-const uint8_t* TransportParam::DecodeString(const uint8_t* start, const uint8_t* end, std::string& value) {
+uint8_t* TransportParam::DecodeString(uint8_t* start, uint8_t* end, std::string& value) {
     uint64_t length = 0;
     // read length
     start = DecodeVarint(start, end, length);
     // read value
-    const uint8_t* ptr;
+    uint8_t* ptr;
     start = DecodeBytesNoCopy(start, end, ptr, length);
     value = std::move(std::string((const char*)ptr, length));
     return start;
 }
 
-const uint8_t* TransportParam::DecodeBool(const uint8_t* start, const uint8_t* end, bool& value) {
+uint8_t* TransportParam::DecodeBool(uint8_t* start, uint8_t* end, bool& value) {
     uint64_t varint = 0;
     // read length
     start = DecodeVarint(start, end, varint);

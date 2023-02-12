@@ -14,7 +14,7 @@ UdpPacketIn::~UdpPacketIn() {
 }
 
 bool UdpPacketIn::SetData(char* data, uint32_t size) {
-    /*auto write_pair = _recv_buffer->GetWritePair();
+    /*auto write_pair = _recv_buffer->GetWriteSpan();
     if (write_pair.second - write_pair.first < size) {
         return false;
     }

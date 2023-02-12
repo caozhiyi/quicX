@@ -3,6 +3,7 @@
 #define QUIC_PACKET_HAND_SHAKE_PACKET
 
 #include <memory>
+#include "quic/packet/type.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/packet/header/long_header.h"
 
@@ -14,6 +15,7 @@ public:
     HandShakePacket();
     virtual ~HandShakePacket();
 
+    virtual uint16_t GetCryptoLevel() const { return PCL_HANDSHAKE; }
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
     virtual uint32_t EncodeSize();

@@ -2,7 +2,7 @@
 
 #include "quic/frame/crypto_frame.h"
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 
 namespace quicx {
 namespace {
@@ -12,8 +12,8 @@ TEST(crypto_frame_utest, decode1) {
     quicx::CryptoFrame frame2;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     char frame_data[64] = "1234567890123456789012345678901234567890";
     frame1.SetOffset(1042451);
@@ -21,10 +21,10 @@ TEST(crypto_frame_utest, decode1) {
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetReadPair();
-    auto pos_piar = read_buffer->GetWritePair();
-    memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
-    read_buffer->MoveWritePt(data_piar.second - data_piar.first);
+    auto data_span = write_buffer->GetReadSpan();
+    auto pos_span = read_buffer->GetWriteSpan();
+    memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
+    read_buffer->MoveWritePt(data_span.GetLength());
     EXPECT_TRUE(frame2.Decode(read_buffer, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
@@ -40,8 +40,8 @@ TEST(crypto_frame_utest, decod2) {
     quicx::CryptoFrame frame2;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     char frame_data[64] = "";
     frame1.SetOffset(1042451);
@@ -49,10 +49,10 @@ TEST(crypto_frame_utest, decod2) {
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
-    auto data_piar = write_buffer->GetReadPair();
-    auto pos_piar = read_buffer->GetWritePair();
-    memcpy(pos_piar.first, data_piar.first, data_piar.second - data_piar.first);
-    read_buffer->MoveWritePt(data_piar.second - data_piar.first);
+    auto data_span = write_buffer->GetReadSpan();
+    auto pos_span = read_buffer->GetWriteSpan();
+    memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
+    read_buffer->MoveWritePt(data_span.GetLength());
     EXPECT_TRUE(frame2.Decode(read_buffer, true));
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
