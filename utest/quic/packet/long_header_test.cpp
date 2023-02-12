@@ -30,8 +30,8 @@ TEST(long_header_utest, encode) {
     TestLongHeader long_header2 = TestLongHeader();
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
 
     EXPECT_TRUE(long_header1.Encode(write_buffer));

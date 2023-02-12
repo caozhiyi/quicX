@@ -12,12 +12,11 @@ namespace quicx {
 
 class BlockMemoryPool;
 // read write buffer
-class BufferReadWrite:
-    public IBufferRead,
-    public IBufferWrite {
+class Buffer:
+    public IBuffer {
 public:
-    BufferReadWrite(std::shared_ptr<BlockMemoryPool>& alloter);
-    virtual ~BufferReadWrite();
+    Buffer(std::shared_ptr<BlockMemoryPool>& alloter);
+    virtual ~Buffer();
 
     // read to data buf but don't change the read point
     // return the length of the data actually read
@@ -62,7 +61,6 @@ private:
     bool     _can_read;             //when _read == _write? Is there any data can be read.
     uint8_t* _buffer_start;
     uint8_t* _buffer_end;
-    std::weak_ptr<BlockMemoryPool> _alloter;
 };
 
 }

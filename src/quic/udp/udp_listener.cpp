@@ -1,9 +1,9 @@
 #include <memory>
 
 #include "common/log/log.h"
+#include "common/buffer/buffer.h"
 #include "common/network/io_handle.h"
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_write.h"
 
 #include "quic/udp/udp_listener.h"
 #include "quic/common/constants.h"
@@ -42,7 +42,7 @@ bool UdpListener::Listen(const std::string& ip, uint16_t port) {
     Address peer_addr(AT_IPV4);
 
     while (!_stop) {
-        auto recv_buffer = std::make_shared<BufferReadWrite>(alloter);
+        auto recv_buffer = std::make_shared<Buffer>(alloter);
         auto read_pair = recv_buffer->GetReadPair();
         
         auto recv_ret = RecvFrom(sock, (char*)read_pair.first, __max_v4_packet_size, 0, peer_addr);

@@ -2,7 +2,7 @@
 
 #include "common/alloter/pool_block.h"
 #include "quic/frame/reset_stream_frame.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 
 namespace quicx {
 namespace {
@@ -12,8 +12,8 @@ TEST(reset_frame_utest, decode1) {
     quicx::ResetStreamFrame frame2;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<quicx::BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<quicx::BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<quicx::Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<quicx::Buffer>(alloter);
 
     frame1.SetStreamID(1010101);
     frame1.SetAppErrorCode(404);

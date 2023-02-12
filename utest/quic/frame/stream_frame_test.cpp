@@ -2,7 +2,7 @@
 
 #include "quic/frame/stream_frame.h"
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 
 namespace quicx {
 namespace {
@@ -12,8 +12,8 @@ TEST(stream_frame_utest, decode1) {
     quicx::StreamFrame frame2;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     char frame_data[64] = "1234567890123456789012345678901234567890";
     frame1.SetFin();

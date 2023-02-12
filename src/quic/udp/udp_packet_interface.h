@@ -8,20 +8,24 @@
 
 #include "common/network/address.h"
 #include "quic/packet/packet_interface.h"
+#include "common/buffer/buffer_interface.h"
 
 namespace quicx {
 
 class IUdpPacket {
 public:
     IUdpPacket();
-    ~IUdpPacket();
+    virtual ~IUdpPacket();
 
-    // peer address
-    void SetPeerAddress(std::shared_ptr<Address> peer_addr);
-    std::shared_ptr<Address> GetPeerAddress();
+    void SetPeerAddress(const Address&& addr); 
+    const Address& GetPeerAddress() const;
+
+    void SetData(const std::shared_ptr<IBuffer>&& buffer);
+    std::shared_ptr<IBuffer> GetBuffer() const;
 
 private:
-    std::shared_ptr<Address> _peer_addr;
+    Address _peer_addr;
+    std::shared_ptr<IBuffer> _buffer;
 };
 
 }

@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_read_view.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 #include "common/buffer/buffer_write_view.h"
 #include "utest/quic/crypto/aead_base_cryptographer_test.h"
 
@@ -14,7 +14,7 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     static const uint32_t __plaintext_length = 1024;
     
     // make test plaintext
-    std::shared_ptr<BufferReadWrite> plaintext = std::make_shared<BufferReadWrite>(pool);
+    std::shared_ptr<Buffer> plaintext = std::make_shared<Buffer>(pool);
     auto plaintext_pair = plaintext->GetWritePair();
     for (uint16_t i = 0; i < __plaintext_length; i++) {
         *(plaintext_pair.first + i) = i;
@@ -22,14 +22,14 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     plaintext->MoveWritePt(__plaintext_length);
 
     uint64_t pkt_num = 102154;
-    std::shared_ptr<BufferReadWrite> out_ciphertext = std::make_shared<BufferReadWrite>(pool);
+    std::shared_ptr<Buffer> out_ciphertext = std::make_shared<Buffer>(pool);
     if (!encrypter->EncryptPacket(pkt_num, BufferReadView(__associated_data, __associated_data + sizeof(__associated_data)),
         plaintext, out_ciphertext)) {
         ADD_FAILURE() << encrypter->GetName() << " EncryptPacket failed";
         return false;
     }
     
-    std::shared_ptr<BufferReadWrite> out_plaintext = std::make_shared<BufferReadWrite>(pool);
+    std::shared_ptr<Buffer> out_plaintext = std::make_shared<Buffer>(pool);
     if (!decrypter->DecryptPacket(pkt_num, BufferReadView(__associated_data,  __associated_data + sizeof(__associated_data)),
         out_ciphertext->GetReadViewPtr(), out_plaintext)) {
         ADD_FAILURE() << decrypter->GetName() << " DecryptPacket failed";
@@ -56,14 +56,14 @@ bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
 
     static const uint32_t __plaintext_length = 5;
     // make test plaintext
-    std::shared_ptr<BufferReadWrite> plaintext = std::make_shared<BufferReadWrite>(pool);
+    std::shared_ptr<Buffer> plaintext = std::make_shared<Buffer>(pool);
     auto plaintext_pair = plaintext->GetWritePair();
     for (uint16_t i = 0; i < __plaintext_length; i++) {
         *(plaintext_pair.first + i) = i;
     }
     plaintext->MoveWritePt(__plaintext_length);
 
-    std::shared_ptr<BufferReadWrite> src_ciphertext = std::make_shared<BufferReadWrite>(pool);
+    std::shared_ptr<Buffer> src_ciphertext = std::make_shared<Buffer>(pool);
     auto src_write_pair = src_ciphertext->GetWritePair();
     memcpy(src_write_pair.first, plaintext_pair.first, __plaintext_length);
     src_ciphertext->MoveWritePt(__plaintext_length);

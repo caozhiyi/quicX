@@ -6,7 +6,7 @@
 #ifndef COMMON_BUFFER_BUFFER_READ_VIEW
 #define COMMON_BUFFER_BUFFER_READ_VIEW
 
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/buffer_read_interface.h"
 
 namespace quicx {
 

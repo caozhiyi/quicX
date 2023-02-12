@@ -3,8 +3,11 @@
 
 namespace quicx {
 
+Address::Address() {
+
+}
+
 Address::Address(AddressType at): _address_type(at),
-                                _ip(""),
                                 _port(0) {
     
 }
@@ -24,7 +27,7 @@ void Address::SetIp(const std::string& ip) {
     _ip = ip;
 }
 
-std::string Address::GetIp() {
+const std::string& Address::GetIp() const {
     return _ip;
 }
 
@@ -36,7 +39,7 @@ uint16_t Address::GetPort() {
     return _port;
 }
 
-const std::string Address::AsString() {
+const std::string Address::AsString() const {
     return std::move(_ip + ":" + std::to_string(_port));
 }
 

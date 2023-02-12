@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 #include "quic/frame/streams_blocked_frame.h"
 
 namespace quicx {
@@ -12,8 +12,8 @@ TEST(streams_blocked_frame_utest, decode1) {
     quicx::StreamsBlockedFrame frame2(quicx::FT_STREAMS_BLOCKED_BIDIRECTIONAL);
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     frame1.SetMaximumStreams(2362423);
 

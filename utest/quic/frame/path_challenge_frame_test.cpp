@@ -3,7 +3,7 @@
 #include "common/alloter/pool_block.h"
 #include "common/alloter/pool_alloter.h"
 #include "quic/frame/path_response_frame.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 #include "quic/frame/path_challenge_frame.h"
 
 namespace quicx {
@@ -15,8 +15,8 @@ TEST(path_challenge_frame_utest, decode1) {
     std::shared_ptr<quicx::PathResponseFrame> frame3 = std::make_shared<quicx::PathResponseFrame>();
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     frame1.MakeData();
 

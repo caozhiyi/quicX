@@ -10,12 +10,20 @@ IUdpPacket::~IUdpPacket() {
 
 }
 
-void IUdpPacket::SetPeerAddress(std::shared_ptr<Address> peer_addr) {
-    _peer_addr = peer_addr;
+void IUdpPacket::SetPeerAddress(const Address&& addr) {
+    _peer_addr = std::move(addr);
 }
 
-std::shared_ptr<Address> IUdpPacket::GetPeerAddress() {
+const Address& IUdpPacket::GetPeerAddress() const {
     return _peer_addr;
+}
+
+void IUdpPacket::SetData(const std::shared_ptr<IBuffer>&& buffer) {
+    _buffer = std::move(buffer);
+}
+
+std::shared_ptr<IBuffer> IUdpPacket::GetBuffer() const {
+    return _buffer;
 }
 
 }

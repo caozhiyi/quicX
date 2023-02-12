@@ -7,6 +7,8 @@
 #define COMMON_BUFFER_BUFFER_CHAINS_INTERFACE
 
 #include <memory>
+#include "common/buffer/buffer_block.h"
+#include "common/buffer/buffer_interface.h"
 
 namespace quicx {
 

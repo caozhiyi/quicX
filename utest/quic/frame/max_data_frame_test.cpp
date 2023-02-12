@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "quic/frame/max_data_frame.h"
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 
 namespace quicx {
 namespace {
@@ -11,8 +11,8 @@ TEST(max_data_frame_utest, decode1) {
     quicx::MaxDataFrame frame2;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     frame1.SetMaximumData(23624236235626);
 

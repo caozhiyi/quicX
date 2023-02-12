@@ -3,7 +3,7 @@
 #include "quic/connection/transport_param_config.h"
 
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 
 namespace quicx {
 namespace {
@@ -32,8 +32,8 @@ TEST(transport_param_utest, test1) {
     tp1.Init(config);
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 
@@ -69,8 +69,8 @@ TEST(transport_param_utest, test2) {
     quicx::TransportParam tp1;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 

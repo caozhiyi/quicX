@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_write.h"
+#include "common/buffer/buffer.h"
 #include "quic/frame/connection_close_frame.h"
 
 namespace quicx {
@@ -12,8 +12,8 @@ TEST(connection_close_frame_utest, decode1) {
     quicx::ConnectionCloseFrame frame2;
 
     auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<BufferReadWrite> read_buffer = std::make_shared<BufferReadWrite>(alloter);
-    std::shared_ptr<BufferReadWrite> write_buffer = std::make_shared<BufferReadWrite>(alloter);
+    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
+    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
 
     frame1.SetErrorCode(10086);
     frame1.SetErrFrameType(0x05);

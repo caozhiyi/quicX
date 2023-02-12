@@ -7,17 +7,17 @@
 #define COMMON_BUFFER_BUFFER_BLOCK
 
 #include <memory>
+#include "common/buffer/buffer.h"
 #include "common/structure/linked_list.h"
-#include "common/buffer/buffer_read_write.h"
 
 namespace quicx {
 
 class BlockMemoryPool;
 class BufferBlock:
-    public BufferReadWrite,
+    public Buffer,
     public LinkedListSolt<BufferBlock> {
 public:
-    BufferBlock(std::shared_ptr<BlockMemoryPool>& alloter): BufferReadWrite(alloter) {}
+    BufferBlock(std::shared_ptr<BlockMemoryPool>& alloter): Buffer(alloter) {}
     ~BufferBlock() {}
 };
 
