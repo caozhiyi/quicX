@@ -8,7 +8,7 @@
 namespace quicx {
 
 IConnection::IConnection() {
-    memset(_cryptographers, 0, sizeof(std::shared_ptr<ICryptographer>) * __crypto_level_count);
+    memset(_cryptographers, 0, sizeof(std::shared_ptr<ICryptographer>) * NUM_ENCRYPTION_LEVELS);
 }
 
 IConnection::~IConnection() {
@@ -23,7 +23,7 @@ void IConnection::RetireConnectionId(uint8_t* id, uint16_t len) {
     _conn_id_set.erase(std::string((char*)id, len));
 }
 
-void IConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+void IConnection::SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
     const uint8_t *secret, size_t secret_len) {
     std::shared_ptr<ICryptographer> cryptographer = _cryptographers[level];
     if (cryptographer == nullptr) {
@@ -33,7 +33,7 @@ void IConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SS
     cryptographer->InstallSecret(secret, (uint32_t)secret_len, false);
 }
 
-void IConnection::SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+void IConnection::SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
     const uint8_t *secret, size_t secret_len) {
     std::shared_ptr<ICryptographer> cryptographer = _cryptographers[level];
     if (cryptographer == nullptr) {
@@ -43,7 +43,7 @@ void IConnection::SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, const S
     cryptographer->InstallSecret(secret, (uint32_t)secret_len, true);
 }
 
-void IConnection::WriteMessage(ssl_encryption_level_t level, const uint8_t *data,
+void IConnection::WriteMessage(EncryptionLevel level, const uint8_t *data,
     size_t len) {
     
 }
@@ -52,7 +52,7 @@ void IConnection::FlushFlight() {
 
 }
 
-void IConnection::SendAlert(ssl_encryption_level_t level, uint8_t alert) {
+void IConnection::SendAlert(EncryptionLevel level, uint8_t alert) {
 
 }
 

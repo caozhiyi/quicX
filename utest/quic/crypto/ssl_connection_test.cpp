@@ -2,14 +2,17 @@
 #include <openssl/bio.h>
 #include <openssl/mem.h>
 #include <openssl/pem.h>
+#include "quic/crypto/type.h"
+#include "quic/crypto/tls/type.h"
 #include "common/util/c_smart_ptr.h"
 #include "quic/crypto/tls/tls_client_ctx.h"
 #include "quic/crypto/tls/tls_server_ctx.h"
 #include "quic/crypto/tls/tls_client_conneciton.h"
 #include "quic/crypto/tls/tls_server_conneciton.h"
 
-constexpr size_t kNumQUICLevels = 4;
 static uint8_t kALPNProtos[] = {0x03, 'f', 'o', 'o'};
+namespace quicx {
+namespace {
 
 class MockTransport:
     public quicx::TlsHandlerInterface {
@@ -21,44 +24,44 @@ public:
 
     MockTransport(Role role): _role(role) {
         // The caller is expected to configure initial secrets.
-        _levels[ssl_encryption_initial].write_secret = {1};
-        _levels[ssl_encryption_initial].read_secret = {1};
+        _levels[EL_INITIAL].write_secret = {1};
+        _levels[EL_INITIAL].read_secret = {1};
     }
 
     void SetPeer(MockTransport *peer) { _peer = peer; }
 
     bool HasAlert() const { return _has_alert; }
-    ssl_encryption_level_t AlertLevel() const { return _alert_level; }
+    EncryptionLevel AlertLevel() const { return _alert_level; }
     uint8_t Alert() const { return _alert; }
 
-    bool PeerSecretsMatch(ssl_encryption_level_t level) const {
+    bool PeerSecretsMatch(EncryptionLevel level) const {
         return _levels[level].write_secret == _peer->_levels[level].read_secret &&
             _levels[level].read_secret == _peer->_levels[level].write_secret &&
             _levels[level].cipher == _peer->_levels[level].cipher;
     }
 
-    bool HasReadSecret(ssl_encryption_level_t level) const {
+    bool HasReadSecret(EncryptionLevel level) const {
         return !_levels[level].read_secret.empty();
     }
 
-    bool HasWriteSecret(ssl_encryption_level_t level) const {
+    bool HasWriteSecret(EncryptionLevel level) const {
         return !_levels[level].write_secret.empty();
     }
 
-    void SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+    void SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len) {
         if (HasReadSecret(level)) {
             ADD_FAILURE() << LevelToString(level) << " read secret configured twice";
             return;
         }
 
-        if (_role == Role::R_CLITNE && level == ssl_encryption_early_data) {
+        if (_role == Role::R_CLITNE && level == EL_EARLY_DATA) {
             ADD_FAILURE() << "Unexpected early data read secret";
             return;
         }
 
-        ssl_encryption_level_t ack_level =
-        level == ssl_encryption_early_data ? ssl_encryption_application : level;
+        EncryptionLevel ack_level =
+        level == EL_EARLY_DATA ? EL_APPLICATION : level;
         if (!HasWriteSecret(ack_level)) {
             ADD_FAILURE() << LevelToString(level) << " read secret configured before ACK write secret";
             return;
@@ -69,7 +72,7 @@ public:
             return;
         }
 
-        if (level != ssl_encryption_early_data && SSL_CIPHER_get_id(cipher) != _levels[level].cipher) {
+        if (level != EL_EARLY_DATA && SSL_CIPHER_get_id(cipher) != _levels[level].cipher) {
             ADD_FAILURE() << "Cipher suite inconsistent";
             return;
         }
@@ -79,14 +82,14 @@ public:
         _levels[level].cipher = SSL_CIPHER_get_id(cipher);
     }
 
-    void SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+    void SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len) {
         if (HasWriteSecret(level)) {
             ADD_FAILURE() << LevelToString(level) << " write secret configured twice";
             return;
         }
 
-        if (_role == Role::R_SERVER && level == ssl_encryption_early_data) {
+        if (_role == Role::R_SERVER && level == EL_EARLY_DATA) {
             ADD_FAILURE() << "Unexpected early data write secret";
             return;
         }
@@ -102,7 +105,7 @@ public:
         return;
     }
 
-    void WriteMessage(ssl_encryption_level_t level, const uint8_t *data,
+    void WriteMessage(EncryptionLevel level, const uint8_t *data,
         size_t len) {
         if (_levels[level].write_secret.empty()) {
             ADD_FAILURE() << LevelToString(level)
@@ -111,20 +114,20 @@ public:
         }
 
         switch (level) {
-            case ssl_encryption_early_data:
+            case EL_EARLY_DATA:
                 ADD_FAILURE() << "unexpected handshake data at early data level";
                 return;
-            case ssl_encryption_initial:
-                if (!_levels[ssl_encryption_handshake].write_secret.empty()) {
+            case EL_INITIAL:
+                if (!_levels[EL_HANDSHAKE].write_secret.empty()) {
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after handshake keys installed";
                     return;
                 }
-          case ssl_encryption_handshake:
-                if (!_levels[ssl_encryption_application].write_secret.empty()) {
+          case EL_HANDSHAKE:
+                if (!_levels[EL_APPLICATION].write_secret.empty()) {
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after application keys installed";
                     return;
                 }
-          case ssl_encryption_application:
+          case EL_APPLICATION:
             break;
         }
     
@@ -137,7 +140,7 @@ public:
         // do nothing
     }
 
-    void SendAlert(ssl_encryption_level_t level, uint8_t alert) {
+    void SendAlert(EncryptionLevel level, uint8_t alert) {
         if (_has_alert) {
             ADD_FAILURE() << "duplicate alert sent";
             return;
@@ -154,7 +157,7 @@ public:
     }
 
     
-    bool ReadHandshakeData(std::vector<uint8_t> *out, ssl_encryption_level_t level, size_t num = std::numeric_limits<size_t>::max()) {
+    bool ReadHandshakeData(std::vector<uint8_t> *out, EncryptionLevel level, size_t num = std::numeric_limits<size_t>::max()) {
         if (_levels[level].read_secret.empty()) {
             ADD_FAILURE() << "data read before keys configured in level " << level;
             return false;
@@ -185,15 +188,15 @@ public:
     }
 
 private:
-    const char* LevelToString(ssl_encryption_level_t level) {
+    const char* LevelToString(EncryptionLevel level) {
         switch (level) {
-        case ssl_encryption_initial:
+        case EL_INITIAL:
             return "initial";
-        case ssl_encryption_early_data:
+        case EL_EARLY_DATA:
             return "early data";
-        case ssl_encryption_handshake:
+        case EL_HANDSHAKE:
             return "handshake";
-        case ssl_encryption_application:
+        case EL_APPLICATION:
             return "application";
         }
         return "<unknown>";
@@ -204,7 +207,7 @@ private:
     MockTransport *_peer = nullptr;
 
     bool _has_alert = false;
-    ssl_encryption_level_t _alert_level = ssl_encryption_initial;
+    EncryptionLevel _alert_level = EL_INITIAL;
     uint8_t _alert = 0;
 
     struct Level {
@@ -213,7 +216,7 @@ private:
         std::vector<uint8_t> read_secret;
         uint32_t cipher = 0;
     };
-    Level _levels[kNumQUICLevels];
+    Level _levels[NUM_ENCRYPTION_LEVELS];
 };
 
 class TestServerHandler:
@@ -227,7 +230,7 @@ public:
 };
 
 static bool ProvideHandshakeData(std::shared_ptr<MockTransport> mt, std::shared_ptr<quicx::TLSConnection> conn,  size_t num = std::numeric_limits<size_t>::max()) {
-    ssl_encryption_level_t level = conn->GetLevel();
+    EncryptionLevel level = conn->GetLevel();
     std::vector<uint8_t> data;
     return mt->ReadHandshakeData(&data, level, num) && conn->ProcessCryptoData(data.data(), data.size());
 }
@@ -330,7 +333,10 @@ TEST(crypto_ssl_connection_utest, test1) {
         }
     }
 
-    EXPECT_TRUE(ser_handler->PeerSecretsMatch(ssl_encryption_application));
+    EXPECT_TRUE(ser_handler->PeerSecretsMatch(EL_APPLICATION));
     EXPECT_FALSE(ser_handler->HasAlert());
     EXPECT_FALSE(cli_handler->HasAlert());
+}
+
+}    
 }

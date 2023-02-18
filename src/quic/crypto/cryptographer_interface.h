@@ -30,10 +30,12 @@ public:
     virtual bool DecryptHeader(BufferSpan& ciphertext, uint8_t pn_offset, bool is_short) = 0;
 
     virtual bool EncryptHeader(BufferSpan& plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) = 0;
+
+    static CryptographerType AdapterCryptographerType(uint32_t cipher_id);
 };
 
 std::shared_ptr<ICryptographer> MakeCryptographer(const SSL_CIPHER *cipher);
-std::shared_ptr<ICryptographer> MakeCryptographer(uint32_t cipher_id);
+std::shared_ptr<ICryptographer> MakeCryptographer(CryptographerType cipher);
 
 }
 

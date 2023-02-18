@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 #include <cstdint>
-#include <openssl/ssl.h>
+#include "quic/crypto/tls/type.h"
 #include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
@@ -14,17 +14,17 @@ public:
     TlsHandlerInterface() {}
     virtual ~TlsHandlerInterface() {}
 
-    virtual void SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+    virtual void SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len) = 0;
 
-    virtual void SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+    virtual void SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len) = 0;
 
-    virtual void WriteMessage(ssl_encryption_level_t level, const uint8_t *data,
+    virtual void WriteMessage(EncryptionLevel level, const uint8_t *data,
         size_t len) = 0;
 
     virtual void FlushFlight() = 0;
-    virtual void SendAlert(ssl_encryption_level_t level, uint8_t alert) = 0;   
+    virtual void SendAlert(EncryptionLevel level, uint8_t alert) = 0;   
 };
 
 class TLSConnection {
@@ -43,7 +43,7 @@ public:
     // add transport param
     virtual bool AddTransportParam(uint8_t* tp, uint32_t len);
 
-    ssl_encryption_level_t GetLevel();
+    EncryptionLevel GetLevel();
 
 public:
     static int32_t SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
@@ -55,6 +55,7 @@ public:
     static int32_t FlushFlight(SSL* ssl);
     static int32_t SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t alert);
 
+    static EncryptionLevel AdapterEncryptionLevel(ssl_encryption_level_t level);
 protected:
     SSLPtr _ssl;
     std::shared_ptr<TLSCtx> _ctx;

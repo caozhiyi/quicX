@@ -5,7 +5,7 @@
 #include <vector>
 #include <cstdint>
 #include <unordered_set>
-#include <openssl/ssl.h>
+#include "quic/crypto/tls/type.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
@@ -35,17 +35,17 @@ public:
     virtual void Close() = 0;
 
     // Encryption correlation function
-    virtual void SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+    virtual void SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len);
 
-    virtual void SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
+    virtual void SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len);
 
-    virtual void WriteMessage(ssl_encryption_level_t level, const uint8_t *data,
+    virtual void WriteMessage(EncryptionLevel level, const uint8_t *data,
         size_t len);
 
     virtual void FlushFlight();
-    virtual void SendAlert(ssl_encryption_level_t level, uint8_t alert);
+    virtual void SendAlert(EncryptionLevel level, uint8_t alert);
 
     virtual void HandlePacket(std::vector<std::shared_ptr<IPacket>>& packets);
 
@@ -59,7 +59,7 @@ protected:
 protected:
     TransportParam _transport_param;
     std::unordered_set<std::string> _conn_id_set;
-    std::shared_ptr<ICryptographer> _cryptographers[__crypto_level_count]; 
+    std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS]; 
 };
 
 }
