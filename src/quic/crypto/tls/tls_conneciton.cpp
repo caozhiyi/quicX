@@ -79,15 +79,15 @@ bool TLSConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
     return true;
 }
 
-ssl_encryption_level_t TLSConnection::GetLevel() {
-    return SSL_quic_read_level(_ssl.get());
+EncryptionLevel TLSConnection::GetLevel() {
+    return AdapterEncryptionLevel(SSL_quic_read_level(_ssl.get()));
 }
 
 int32_t TLSConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
     const uint8_t *secret, size_t secret_len) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
     
-    conn->_handler->SetReadSecret(ssl, level, cipher, secret, secret_len);
+    conn->_handler->SetReadSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
     return 1;
 }
 
@@ -95,7 +95,7 @@ int32_t TLSConnection::SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, co
         const uint8_t *secret, size_t secret_len) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
     
-    conn->_handler->SetWriteSecret(ssl, level, cipher, secret, secret_len);
+    conn->_handler->SetWriteSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
     return 1;
 }
 
@@ -103,7 +103,7 @@ int32_t TLSConnection::AddHandshakeData(SSL* ssl, ssl_encryption_level_t level, 
     size_t len) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
 
-    conn->_handler->WriteMessage(level, data, len);
+    conn->_handler->WriteMessage(AdapterEncryptionLevel(level), data, len);
     return 1;
 }
 
@@ -117,8 +117,21 @@ int32_t TLSConnection::FlushFlight(SSL* ssl) {
 int32_t TLSConnection::SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t alert) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
 
-    conn->_handler->SendAlert(level, alert);
+    conn->_handler->SendAlert(AdapterEncryptionLevel(level), alert);
     return 1;
+}
+
+EncryptionLevel TLSConnection::AdapterEncryptionLevel(ssl_encryption_level_t level) {
+    switch (level)
+    {
+    case ssl_encryption_initial: return EL_INITIAL;
+    case ssl_encryption_early_data: return EL_EARLY_DATA;
+    case ssl_encryption_handshake: return EL_HANDSHAKE;
+    case ssl_encryption_application: return EL_APPLICATION;
+    default:
+        LOG_ERROR("unknow encryption level. level:%d", level);
+        abort();
+    }
 }
 
 }

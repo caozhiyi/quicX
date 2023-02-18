@@ -6,12 +6,14 @@
 
 namespace quicx {
 
-InitPacket::InitPacket() {
+InitPacket::InitPacket():
+    _packet_num_offset(0) {
 
 }
 
 InitPacket::InitPacket(uint8_t flag):
-    _header(flag) {
+    _header(flag),
+    _packet_num_offset(0) {
 
 }
 
@@ -49,9 +51,11 @@ bool InitPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     pos += _token_length;
     LOG_DEBUG("get initial token:%s", _token);
 
+    _packet_num_offset = pos - span.GetStart();
     pos = DecodeVarint(pos, end, _payload_length);
     //_payload.SetData(pos, _payload_length);
     pos += _payload_length;
+    
 
     _packet_src_data = std::move(BufferSpan(span.GetStart(), pos));
     buffer->MoveReadPt(pos - span.GetStart());
@@ -64,6 +68,10 @@ uint32_t InitPacket::EncodeSize() {
 
 bool InitPacket::AddFrame(std::shared_ptr<IFrame> frame) {
     return true;
+}
+
+uint32_t InitPacket::GetPacketNumOffset() {
+    return _packet_num_offset;
 }
 
 //BufferReadView& InitPacket::GetPayload() {

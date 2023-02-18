@@ -28,9 +28,9 @@ const uint16_t iv_length = 12;
 // understand.
 enum EncryptionLevel: int8_t {
     EL_INITIAL           = 0,
-    EL_HANDSHAKE         = 1,
-    EL_ZERO_RTT          = 2,
-    EL_FORWARD_SECURE    = 3,
+    EL_EARLY_DATA        = 1,
+    EL_HANDSHAKE         = 2,
+    EL_APPLICATION       = 3,
 
     NUM_ENCRYPTION_LEVELS,
 };

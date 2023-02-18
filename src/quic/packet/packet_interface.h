@@ -23,6 +23,7 @@ public:
     virtual uint32_t EncodeSize() = 0;
 
     virtual IHeader* GetHeader() = 0;
+    virtual uint32_t GetPacketNumOffset() { return 0; };
     virtual uint64_t GetPacketNumber() { return _packet_number; }
     virtual void SetPacketNumber(uint64_t num) { _packet_number = num; }
 protected:

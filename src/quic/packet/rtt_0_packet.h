@@ -21,6 +21,7 @@ public:
     virtual uint32_t EncodeSize();
 
     virtual IHeader* GetHeader() { return &_header; }
+    virtual uint32_t GetPacketNumOffset() { return 0; }
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
 
     virtual PacketType GetPacketType() { return PT_0RTT; }

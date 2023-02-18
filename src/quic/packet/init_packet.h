@@ -22,6 +22,7 @@ public:
     virtual uint32_t EncodeSize();
 
     virtual IHeader* GetHeader() { return &_header; }
+    virtual uint32_t GetPacketNumOffset() { return _packet_num_offset; }
 
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
 
@@ -32,6 +33,8 @@ private:
 
     uint32_t _payload_length;
     uint8_t* _payload;     /*encryption protection*/
+
+    uint32_t _packet_num_offset;
 };
 
 }
