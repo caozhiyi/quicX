@@ -7,6 +7,14 @@
 
 namespace quicx {
 
+Buffer::Buffer(uint8_t* start, uint8_t* end):
+    _can_read(false),
+    IBuffer(nullptr) {
+    _buffer_start = start;
+    _buffer_end = end;
+    _read_pos = _write_pos = _buffer_start;
+}
+
 Buffer::Buffer(std::shared_ptr<BlockMemoryPool>& alloter):
     _can_read(false),
     IBuffer(alloter) {

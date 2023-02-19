@@ -21,8 +21,6 @@ public:
 
     // set recv data from peer
     bool SetData(char* data, uint32_t size);
-    // decode data to quic packet
-    bool Decode(std::vector<std::shared_ptr<IPacket>>& out_packets);
 
 private:
     std::shared_ptr<IBufferRead> _recv_buffer;

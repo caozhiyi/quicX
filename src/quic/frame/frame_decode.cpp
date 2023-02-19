@@ -84,7 +84,7 @@ FrameDecode::~FrameDecode() {
 }
 
 bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
-    if(!buffer) {
+    if(buffer->GetDataLength() == 0) {
         return false;
     }
 

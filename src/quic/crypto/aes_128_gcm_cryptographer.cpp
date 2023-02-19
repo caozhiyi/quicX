@@ -25,8 +25,8 @@ const char* Aes128GcmCryptographer::GetName() {
     return "aes_128_gcm_cryptographer";
 }
 
-uint32_t Aes128GcmCryptographer::GetCipherId() {
-    return TLS1_CK_AES_128_GCM_SHA256;
+CryptographerId Aes128GcmCryptographer::GetCipherId() {
+    return CI_TLS1_CK_AES_128_GCM_SHA256;
 }
 
 }

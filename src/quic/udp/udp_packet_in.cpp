@@ -25,8 +25,4 @@ bool UdpPacketIn::SetData(char* data, uint32_t size) {
     return true;
 }
 
-bool UdpPacketIn::Decode(std::vector<std::shared_ptr<IPacket>>& out_packets) {
-    return DecodePackets(_recv_buffer, out_packets);
-}
-
 }

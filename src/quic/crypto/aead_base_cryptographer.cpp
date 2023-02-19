@@ -6,6 +6,7 @@
 #include "common/log/log.h"
 #include "quic/crypto/type.h"
 #include "quic/crypto/hkdf.h"
+#include "common/decode/decode.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/buffer/buffer_read_view.h"
 #include "quic/crypto/aead_base_cryptographer.h"
@@ -82,7 +83,7 @@ bool AeadBaseCryptographer::InstallInitSecret(const uint8_t* secret, uint32_t se
     return true;
 }
 
-bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferReadView associated_data, std::shared_ptr<IBufferRead> ciphertext,
+bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferSpan& associated_data, BufferSpan& ciphertext,
     std::shared_ptr<IBufferWrite> out_plaintext) {
     if (_read_secret._key.empty() || _read_secret._iv.empty()) {
         LOG_ERROR("decrypt packet but not install secret");
@@ -102,9 +103,8 @@ bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferReadView as
 
     size_t out_length = 0;
     auto out_span = out_plaintext->GetWriteSpan();
-    auto in_span = ciphertext->GetReadSpan();
     if (EVP_AEAD_CTX_open(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _read_secret._iv.size(),
-        in_span.GetStart(), in_span.GetLength(), associated_data.GetData(), associated_data.GetDataLength()) != 1) {
+        ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
         LOG_ERROR("EVP_AEAD_CTX_open failed");
         return false;
     }
@@ -113,7 +113,7 @@ bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferReadView as
 
 }
 
-bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferReadView associated_data, std::shared_ptr<IBufferRead> plaintext,
+bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferSpan& associated_data, BufferSpan& plaintext,
     std::shared_ptr<IBufferWrite> out_ciphertext) {
     if (_write_secret._key.empty() || _write_secret._iv.empty()) {
         LOG_ERROR("encrypt packet but not install secret");
@@ -133,9 +133,8 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferReadView as
 
     size_t out_length = 0;
     auto out_span = out_ciphertext->GetWriteSpan();
-    auto in_span = plaintext->GetReadSpan();
     if (EVP_AEAD_CTX_seal(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _write_secret._iv.size(),
-        in_span.GetStart(), in_span.GetLength(), associated_data.GetData(), associated_data.GetDataLength()) != 1) {
+        plaintext.GetStart(), plaintext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
         LOG_ERROR("EVP_AEAD_CTX_seal failed");
         return false;
     }
@@ -143,16 +142,12 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferReadView as
     return true;
 }
 
-bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, uint8_t pn_offset, bool is_short) {
+bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sample, uint8_t pn_offset, bool is_short,
+    uint64_t& out_packet_num, uint32_t& out_packet_num_len) {
     if (_read_secret._hp.empty()) {
         LOG_ERROR("decrypt header but not install hp secret");
         return false;
     }
-
-    // get sample
-    uint8_t* pos = ciphertext.GetStart();
-    uint8_t* pkt_number_pos = pos + pn_offset;
-    BufferSpan sample = BufferSpan(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
 
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
@@ -167,6 +162,7 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, uint8_t pn_off
     }
 
     // remove protection for first byte
+    uint8_t* pos = ciphertext.GetStart();
     if (is_short) {
         *pos = *pos ^ (mask[0] & 0x1f);
 
@@ -175,26 +171,25 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, uint8_t pn_off
     }
 
     // get length of packet number
-    size_t pkt_number_len = (*pos & 0x03) + 1;
+    out_packet_num_len = (*pos & 0x03) + 1;
     
     // remove protection for packet number
-    for (size_t i = 0; i < pkt_number_len; i++) {
+    uint8_t* pkt_number_pos = pos + pn_offset;
+    for (size_t i = 0; i < out_packet_num_len; i++) {
         *(pkt_number_pos + i) = pkt_number_pos[i] ^ mask[i + 1];
     }
+    DecodeVarint(pkt_number_pos, pkt_number_pos + out_packet_num_len, out_packet_num);
 
     return true;
 }
 
-bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short) {
+bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, BufferSpan& sample,
+    uint8_t pn_offset, size_t pkt_number_len, bool is_short) {
     if (_write_secret._hp.empty()) {
         LOG_ERROR("encrypt header but not install hp secret");
         return false;
     }
-
-    // get sample 
-    uint8_t* pos = plaintext.GetStart();
-    uint8_t* pkt_number_pos = pos + pn_offset;
-    BufferSpan sample = BufferSpan(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
+    
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
     size_t mask_length = 0;
@@ -208,6 +203,7 @@ bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, uint8_t pn_offs
     }
 
     // protect the first byte of header 
+    uint8_t* pos = plaintext.GetStart();
     if (is_short) {
         *pos = *pos ^ (mask[0] & 0x1f);
 
@@ -216,6 +212,7 @@ bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, uint8_t pn_offs
     }
 
     // protect packet number
+    uint8_t* pkt_number_pos = pos + pn_offset;
     for (size_t i = 0; i < pkt_number_len; i++) {
         *(pkt_number_pos + i) ^= mask[i + 1];
     }

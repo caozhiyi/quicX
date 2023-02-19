@@ -27,8 +27,8 @@ const char* ChaCha20Poly1305Cryptographer::GetName() {
     return "chacha20_poly1305_cryptographer";
 }
 
-uint32_t ChaCha20Poly1305Cryptographer::GetCipherId() {
-    return TLS1_CK_CHACHA20_POLY1305_SHA256;
+CryptographerId ChaCha20Poly1305Cryptographer::GetCipherId() {
+    return CI_TLS1_CK_CHACHA20_POLY1305_SHA256;
 }
 
 bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(BufferReadView sample, std::vector<uint8_t>& key,

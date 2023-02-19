@@ -13,7 +13,7 @@ public:
 
     virtual const char* GetName();
 
-    virtual uint32_t GetCipherId();
+    virtual CryptographerId GetCipherId();
 
 protected:
     virtual bool MakeHeaderProtectMask(BufferReadView sample, std::vector<uint8_t>& key,
