@@ -3,11 +3,11 @@
 
 #include <memory>
 #include <vector>
+#include "quic/frame/frame_interface.h"
+#include "common/buffer/buffer_read_interface.h"
 
 namespace quicx {
 
-class IFrame;
-class IBufferRead;
 bool DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 
 }

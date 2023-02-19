@@ -16,7 +16,7 @@ class IBuffer:
     public IBufferRead,
     public IBufferWrite {
 public:
-    IBuffer(std::shared_ptr<BlockMemoryPool>& alloter): _alloter(alloter) {}
+    IBuffer(const std::shared_ptr<BlockMemoryPool>& alloter): _alloter(alloter) {}
     virtual ~IBuffer() {}
 
 protected:

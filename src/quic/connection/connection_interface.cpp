@@ -1,5 +1,6 @@
 #include <cstring>
 #include "common/log/log.h"
+#include "common/buffer/buffer.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/crypto/aes_128_gcm_cryptographer.h"
 #include "quic/crypto/aes_256_gcm_cryptographer.h"
@@ -90,6 +91,42 @@ void IConnection::HandlePacket(std::vector<std::shared_ptr<IPacket>>& packets) {
             break;
         }
     }
+}
+
+bool IConnection::Decrypto(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet) {
+    auto header = dynamic_cast<LongHeader*>(packet->GetHeader());
+    // get sample
+    BufferSpan head_span = header->GetHeaderSrcData();
+    uint32_t packet_offset = packet->GetPacketNumOffset();
+    uint8_t* pkt_number_pos = head_span.GetStart() + packet_offset;
+    BufferSpan sample = BufferSpan(pkt_number_pos + 4, pkt_number_pos + 4 + __header_protect_sample_length);
+
+    // decrypto header
+    uint64_t packet_num = 0;
+    uint32_t packet_num_len = 0;
+    if(!cryptographer->DecryptHeader(head_span, sample, packet_offset, false, packet_num, packet_num_len)) {
+        LOG_ERROR("decrypt header failed.");
+        return false;
+    }
+
+    // decrypto packet
+    auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
+    BufferSpan payload = BufferSpan(pkt_number_pos + packet_num_len, pkt_number_pos + init_packet->GetPayloadLength());
+
+    uint8_t plaintext_buffer[1550];
+    auto plaintext = std::make_shared<Buffer>(plaintext_buffer, plaintext_buffer + 1550);
+    if(!cryptographer->DecryptPacket(packet_num, header->GetHeaderSrcData(), payload, plaintext)) {
+        LOG_ERROR("decrypt packet failed.");
+        return false;
+    }
+
+    // decode payload
+    if(!init_packet->DecodeAfterDecrypt(plaintext)) {
+        LOG_ERROR("decode packet failed.");
+        return false;
+    }
+
+    return true;
 }
 
 }

@@ -32,6 +32,7 @@ protected:
 
 private:
     TLSServerConnection _tls_connection;
+    std::shared_ptr<BlockMemoryPool> _alloter;
 };
 
 }

@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "quic/crypto/type.h"
+#include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/header/long_header.h"
 #include "quic/connection/server_connection.h"
@@ -32,13 +33,17 @@ bool ServerConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {
     auto header = dynamic_cast<LongHeader*>(packet->GetHeader());
     if (cryptographer == nullptr) {
         // make initial cryptographer
-        cryptographer = MakeCryptographer(CT_TLS1_CK_AES_128_GCM_SHA256);
+        cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
         cryptographer->InstallInitSecret(header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(),
             __initial_slat, sizeof(__initial_slat), true);
+        _cryptographers[packet->GetCryptoLevel()] = cryptographer;
     }
 
-    cryptographer->DecryptHeader(header->GetHeaderSrcData(), packet->GetPacketNumOffset(), false);
-    header->GetLongHeaderFlag()._packet_number_length;
+    if(Decrypto(cryptographer, packet)) {
+        return false;
+    }
+    // dispatcher frames
+    auto frames = packet->GetFrames();
     return true;
 }
 

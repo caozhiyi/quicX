@@ -17,15 +17,17 @@ public:
 
     virtual bool InstallInitSecret(const uint8_t* secret, uint32_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server);
 
-    virtual bool DecryptPacket(uint64_t pkt_number, BufferReadView associated_data, std::shared_ptr<IBufferRead> ciphertext,
+    virtual bool DecryptPacket(uint64_t pkt_number, BufferSpan& associated_data, BufferSpan& ciphertext,
                              std::shared_ptr<IBufferWrite> out_plaintext);
 
-    virtual bool EncryptPacket(uint64_t pkt_number, BufferReadView associated_data, std::shared_ptr<IBufferRead> plaintext,
+    virtual bool EncryptPacket(uint64_t pkt_number, BufferSpan& associated_data, BufferSpan& plaintext,
                              std::shared_ptr<IBufferWrite> out_ciphertext);
 
-    virtual bool DecryptHeader(BufferSpan& ciphertext, uint8_t pn_offset, bool is_short);
+    virtual bool DecryptHeader(BufferSpan& ciphertext, BufferSpan& sample, uint8_t pn_offset, bool is_short,
+                             uint64_t& out_packet_num, uint32_t& out_packet_num_len);
 
-    virtual bool EncryptHeader(BufferSpan& plaintext, uint8_t pn_offset, size_t pkt_number_len, bool is_short);
+    virtual bool EncryptHeader(BufferSpan& plaintext, BufferSpan& sample,
+                             uint8_t pn_offset, size_t pkt_number_len, bool is_short);
     
 protected:
     virtual bool MakeHeaderProtectMask(BufferSpan& sample, std::vector<uint8_t>& key,
