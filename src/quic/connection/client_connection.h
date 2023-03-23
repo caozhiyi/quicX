@@ -12,11 +12,12 @@ class Address;
 class ClientConnection:
     public IConnection {
 public:
-    ClientConnection() {}
-    virtual ~ClientConnection() {}
+    ClientConnection();
+    virtual ~ClientConnection();
 
-    virtual bool Open(Address& addr, uint32_t strean_limit) = 0;
+    virtual bool Open(Address& addr, uint32_t strean_limit);
 
+    virtual void Close();
     // TODO
     // 1. 创建一个连接
     // 2. 如果支持, 启用早期数据
