@@ -2,23 +2,24 @@
 
 #include "common/log/log.h"
 #include "common/alloter/pool_block.h"
+#include "common/buffer/buffer_chains.h"
 #include "common/alloter/alloter_interface.h"
 
 #include "quic/frame/stream_frame.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
-#include "quic/stream/send_state_machine.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/frame/stream_data_blocked_frame.h"
 
 namespace quicx {
 
-SendStream::SendStream(uint64_t id):
+SendStream::SendStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id):
     ISendStream(id),
     _data_offset(0),
     _peer_data_limit(0) {
-    _send_machine = std::shared_ptr<SendStreamStateMachine>();
+    _send_buffer = std::make_shared<BufferChains>(alloter);  
+
 }
 
 SendStream::~SendStream() {
@@ -26,8 +27,7 @@ SendStream::~SendStream() {
 }
 
 int32_t SendStream::Send(uint8_t* data, uint32_t len) {
-   
-   return 0;
+   return _send_buffer->Write(data, len);
 }
 
 void SendStream::Close() {
@@ -42,19 +42,45 @@ void SendStream::Close() {
     frame->SetStreamID(_stream_id);
     frame->SetOffset(_data_offset);
 
-    //_connection->Send(frame);
+    _frame_list.emplace_back(frame);
 }
 
-void SendStream::HandleFrame(std::shared_ptr<IFrame> frame) {
+void SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     if (frame_type == FT_MAX_STREAM_DATA) {
-        HandleMaxStreamDataFrame(frame);
+        OnMaxStreamDataFrame(frame);
 
     } else if (frame_type == FT_STOP_SENDING) {
-        HandleStopSendingFrame(frame);
+        OnStopSendingFrame(frame);
 
     } else {
         LOG_ERROR("unexcept frame on send stream. frame type:%d", frame_type);
+    }
+}
+
+void SendStream::HandleFrame(SendStreamVisitor& visitior) {
+    // TODO check stream state
+    
+    // make stream frame
+    auto frame = std::make_shared<StreamFrame>();
+    frame->SetStreamID(_stream_id);
+
+    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
+        if (visitior.HandleFrame(*iter)) {
+            iter = _frame_list.erase(iter);
+
+        } else {
+            return;
+        }
+    }
+
+     // TODO not copy buffer
+    uint8_t buf[1000] = {0};
+    uint32_t size = _send_buffer->ReadNotMovePt(buf, 1000);
+    frame->SetData(buf, size);
+
+    if (visitior.HandleFrame(frame)) {
+        _send_buffer->MoveReadPt(size);
     }
 }
 
@@ -69,10 +95,10 @@ void SendStream::Reset(uint64_t err) {
     frame->SetFinalSize(_data_offset);
     frame->SetAppErrorCode(err);
 
-    //_connection->Send(frame);
+    _frame_list.emplace_back(frame);
 }
 
-void SendStream::HandleMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
+void SendStream::OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     auto max_data_frame = std::dynamic_pointer_cast<MaxStreamDataFrame>(frame);
     uint64_t new_limit = max_data_frame->GetMaximumData();
 
@@ -87,7 +113,7 @@ void SendStream::HandleMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     //_write_back(can_write_size, 0);
 }
 
-void SendStream::HandleStopSendingFrame(std::shared_ptr<IFrame> frame) {
+void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
     auto stop_frame = std::dynamic_pointer_cast<StopSendingFrame>(frame);
     uint32_t err = stop_frame->GetAppErrorCode();
 
