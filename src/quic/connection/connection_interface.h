@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_CONNECTION_INTERFACE
 #define QUIC_CONNECTION_CONNECTION_INTERFACE
 
+#include <list>
 #include <memory>
 #include <vector>
 #include <cstdint>
@@ -61,6 +62,7 @@ protected:
 protected:
     TransportParam _transport_param;
     std::unordered_set<std::string> _conn_id_set;
+    std::list<std::shared_ptr<IFrame>> _frame_list;
     std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS]; 
 };
 

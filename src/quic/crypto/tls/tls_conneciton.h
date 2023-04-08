@@ -29,7 +29,7 @@ public:
 
 class TLSConnection {
 public:
-    TLSConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler);
+    TLSConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler);
     ~TLSConnection();
     // init ssl connection
     virtual bool Init();
@@ -59,7 +59,7 @@ public:
 protected:
     SSLPtr _ssl;
     std::shared_ptr<TLSCtx> _ctx;
-    std::shared_ptr<TlsHandlerInterface> _handler;
+    TlsHandlerInterface* _handler;
 };
 
 }

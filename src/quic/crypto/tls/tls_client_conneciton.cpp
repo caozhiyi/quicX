@@ -4,7 +4,7 @@
 
 namespace quicx {
 
-TLSClientConnection::TLSClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler):
+TLSClientConnection::TLSClientConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler):
     TLSConnection(ctx, handler) {
 
 }

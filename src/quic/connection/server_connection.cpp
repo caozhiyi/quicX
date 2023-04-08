@@ -9,9 +9,8 @@
 
 namespace quicx {
 
-ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx):
-    _tls_connection(ctx, shared_from_this(), shared_from_this()) {
-
+ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx) {
+    _tls_connection = std::make_shared<TLSServerConnection>(ctx, this, this);
 }
 
 ServerConnection::~ServerConnection() {

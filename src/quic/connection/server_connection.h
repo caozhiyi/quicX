@@ -10,8 +10,7 @@ namespace quicx {
 
 class ServerConnection:
     public IConnection,
-    public TlsServerHandlerInterface,
-    public std::enable_shared_from_this<ServerConnection> {
+    public TlsServerHandlerInterface {
 public:
     ServerConnection(std::shared_ptr<TLSCtx> ctx);
     virtual ~ServerConnection();
@@ -31,8 +30,8 @@ protected:
     virtual bool Handle1rtt(std::shared_ptr<Rtt1Packet> packet);
 
 private:
-    TLSServerConnection _tls_connection;
     std::shared_ptr<BlockMemoryPool> _alloter;
+    std::shared_ptr<TLSServerConnection> _tls_connection;
 };
 
 }

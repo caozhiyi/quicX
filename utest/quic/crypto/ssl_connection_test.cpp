@@ -295,10 +295,10 @@ TEST(crypto_ssl_connection_utest, test1) {
     ser_handler->SetPeer(cli_handler.get());
     cli_handler->SetPeer(ser_handler.get());
 
-    std::shared_ptr<quicx::TLSClientConnection> cli_conn = std::make_shared<quicx::TLSClientConnection>(client_ctx, cli_handler);
+    std::shared_ptr<quicx::TLSClientConnection> cli_conn = std::make_shared<quicx::TLSClientConnection>(client_ctx, cli_handler.get());
     cli_conn->Init();
 
-    std::shared_ptr<quicx::TLSServerConnection> ser_conn = std::make_shared<quicx::TLSServerConnection>(server_ctx, ser_handler, ser_alpn_handler);
+    std::shared_ptr<quicx::TLSServerConnection> ser_conn = std::make_shared<quicx::TLSServerConnection>(server_ctx, ser_handler.get(), ser_alpn_handler.get());
     ser_conn->Init();
 
     static uint8_t client_transport_params[] = {0};

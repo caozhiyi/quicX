@@ -2,19 +2,12 @@
 #define QUIC_STREAM_SEND_STREAM_INTERFACE
 
 #include "quic/stream/stream_interface.h"
+#include "quic/common/send_data_visitor.h"
 #include "quic/stream/state_machine_interface.h"
 
 namespace quicx {
 
 typedef std::function<void(uint32_t size, int32_t err)> StreamSendCB;
-
-class SendStreamVisitor {
-public:
-    SendStreamVisitor() {}
-    virtual ~SendStreamVisitor() {}
-
-    virtual bool HandleFrame(std::shared_ptr<IFrame> frame) = 0;
-};
 
 class ISendStream:
     public virtual IStream {
@@ -27,7 +20,7 @@ public:
     // reset the stream
     virtual void Reset(uint64_t err) = 0;
 
-    virtual void HandleFrame(SendStreamVisitor& visitior) = 0;
+    virtual void TrySendData(SendDataVisitor& visitior) = 0;
 
     void SetWriteCallBack(StreamSendCB cb) { _write_cb = cb; }
 

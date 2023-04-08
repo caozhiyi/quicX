@@ -58,7 +58,7 @@ void SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
-void SendStream::HandleFrame(SendStreamVisitor& visitior) {
+void SendStream::TrySendData(SendDataVisitor& visitior) {
     // TODO check stream state
     
     // make stream frame
