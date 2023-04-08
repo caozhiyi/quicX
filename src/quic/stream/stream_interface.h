@@ -17,7 +17,7 @@ public:
 
     virtual void Close() = 0;
 
-    virtual void HandleFrame(std::shared_ptr<IFrame> frame) = 0;
+    virtual void OnFrame(std::shared_ptr<IFrame> frame) = 0;
 
     void SetStreamID(uint64_t id) { _stream_id = id; }
     uint64_t GetStreamID() { return _stream_id; }
