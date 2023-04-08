@@ -14,7 +14,7 @@ static const SSL_QUIC_METHOD __quic_method = {
     TLSConnection::SendAlert,
 };
 
-TLSConnection::TLSConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler):
+TLSConnection::TLSConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler):
     _ssl(nullptr),
     _ctx(ctx),
     _handler(handler) {
@@ -53,8 +53,8 @@ bool TLSConnection::DoHandleShake() {
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err = SSL_error_description(ssl_err);
             LOG_ERROR("SSL_do_handshake failed. err:%s", err);
+            return false;
         }
-        return false;
     }
 
     return true;    

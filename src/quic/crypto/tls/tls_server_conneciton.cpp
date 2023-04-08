@@ -5,7 +5,7 @@
 
 namespace quicx {
 
-TLSServerConnection::TLSServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler, std::shared_ptr<TlsServerHandlerInterface> ser_handle):
+TLSServerConnection::TLSServerConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler, TlsServerHandlerInterface* ser_handle):
     TLSConnection(ctx, handler),
     _ser_handler(ser_handle) {
 }

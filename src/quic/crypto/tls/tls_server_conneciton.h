@@ -18,7 +18,7 @@ public:
 class TLSServerConnection:
     public TLSConnection {
 public:
-    TLSServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<TlsHandlerInterface> handler, std::shared_ptr<TlsServerHandlerInterface> ser_handler);
+    TLSServerConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler, TlsServerHandlerInterface* ser_handler);
     ~TLSServerConnection();
     // init ssl connection
     virtual bool Init();
@@ -28,7 +28,7 @@ private:
     const unsigned char *in, unsigned int inlen, void *arg);
 
 private:
-    std::shared_ptr<TlsServerHandlerInterface> _ser_handler;
+    TlsServerHandlerInterface* _ser_handler;
 };
 
 }

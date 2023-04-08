@@ -1,6 +1,7 @@
 #include <cstring>
 #include "common/log/log.h"
 #include "common/buffer/buffer.h"
+#include "quic/frame/crypto_frame.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/crypto/aes_128_gcm_cryptographer.h"
 #include "quic/crypto/aes_256_gcm_cryptographer.h"
@@ -46,7 +47,10 @@ void IConnection::SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPH
 
 void IConnection::WriteMessage(EncryptionLevel level, const uint8_t *data,
     size_t len) {
-    
+    // make crypto frame
+    std::shared_ptr<CryptoFrame> frame = std::shared_ptr<CryptoFrame>();
+    frame->SetData((uint8_t*)data, len); // TODO parameter optimization
+    _frame_list.emplace_back(frame);
 }
 
 void IConnection::FlushFlight() {

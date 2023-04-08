@@ -25,7 +25,7 @@ public:
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame);
 
-    virtual void HandleFrame(SendStreamVisitor& visitior);
+    virtual void TrySendData(SendDataVisitor& visitior);
 
 private:
     void OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame);
