@@ -2,13 +2,15 @@
 #include "common/buffer/buffer.h"
 #include "quic/connection/type.h"
 #include "common/network/io_handle.h"
+#include "quic/stream/bidirection_stream.h"
 #include "quic/connection/client_connection.h"
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
 
 
-ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx) {
+ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx):
+    _id_generator(StreamIDGenerator::SS_CLIENT) {
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
     _tls_connection = std::make_shared<TLSClientConnection>(ctx, this);
 }
@@ -66,11 +68,33 @@ bool ClientConnection::Dial(const Address& addr) {
         _cryptographers[PCL_INITIAL] = cryptographer;
     }
 
+    // create crypto stream
+    _crypto_stream = std::make_shared<BidirectionStream>(_id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
     return _tls_connection->DoHandleShake();
 }
 
 void ClientConnection::Close() {
 
+}
+
+bool ClientConnection::TrySendData(SendDataVisitor& visitior) {
+    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
+        if (visitior.HandleFrame(*iter)) {
+            iter = _frame_list.erase(iter);
+
+        } else {
+            return false;
+        }
+    }
+
+    for (auto iter = _hope_send_stream_list.begin(); iter != _hope_send_stream_list.end();) {
+        if((*iter)->TrySendData(visitior)) {
+            iter = _hope_send_stream_list.erase(iter);
+        } else {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool ClientConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {

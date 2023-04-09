@@ -3,7 +3,9 @@
 
 namespace quicx {
 
-ISendStream::ISendStream(uint64_t id): IStream(id) {
+ISendStream::ISendStream(uint64_t id, bool is_crypto_stream):
+    IStream(id),
+    _is_crypto_stream(is_crypto_stream) {
     _send_machine = std::shared_ptr<SendStreamStateMachine>();
 }
 

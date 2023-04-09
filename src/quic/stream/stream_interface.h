@@ -5,7 +5,8 @@
 #include <cstdint>
 #include <functional>
 
-#include "type.h"
+#include "quic/stream/type.h"
+#include "quic/common/send_data_visitor.h"
 
 namespace quicx {
 
@@ -16,6 +17,8 @@ public:
     virtual ~IStream() {}
 
     virtual void Close() = 0;
+
+    virtual bool TrySendData(SendDataVisitor& visitior) = 0;
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame) = 0;
 

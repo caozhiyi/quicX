@@ -53,8 +53,8 @@ bool TLSConnection::DoHandleShake() {
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err = SSL_error_description(ssl_err);
             LOG_ERROR("SSL_do_handshake failed. err:%s", err);
-            return false;
         }
+        return false;
     }
 
     return true;    

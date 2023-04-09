@@ -33,6 +33,7 @@ SRCS = $(wildcard ../src/common/timer/*.cpp         \
 				  ./quic/packet/*.cpp               \
 				  ./quic/crypto/*.cpp               \
 				  ./quic/connection/*.cpp           \
+				  ./quic/stream/*.cpp               \
 				  ./common/*.cpp                    \
 				  ./*.cpp)
 

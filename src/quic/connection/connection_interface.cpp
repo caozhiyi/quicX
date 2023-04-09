@@ -47,10 +47,11 @@ void IConnection::SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPH
 
 void IConnection::WriteMessage(EncryptionLevel level, const uint8_t *data,
     size_t len) {
-    // make crypto frame
-    std::shared_ptr<CryptoFrame> frame = std::shared_ptr<CryptoFrame>();
-    frame->SetData((uint8_t*)data, len); // TODO parameter optimization
-    _frame_list.emplace_back(frame);
+    // // make crypto frame
+    // std::shared_ptr<CryptoFrame> frame = std::shared_ptr<CryptoFrame>();
+    // frame->SetData((uint8_t*)data, len); // TODO parameter optimization
+    // frame->SetOffset(_crypto_offset);
+    // _frame_list.emplace_back(frame);
 }
 
 void IConnection::FlushFlight() {
@@ -131,6 +132,10 @@ bool IConnection::Decrypto(std::shared_ptr<ICryptographer>& cryptographer, std::
     }
 
     return true;
+}
+
+void IConnection::ActiveSendStream(ISendStream* stream) {
+    _hope_send_stream_list.emplace_back(stream);
 }
 
 }

@@ -5,15 +5,18 @@
 #include <memory>
 #include <vector>
 #include <cstdint>
+#include <unordered_map>
 #include <unordered_set>
 #include "quic/crypto/tls/type.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
-#include "quic/packet/hand_shake_packet.h"
+#include "quic/stream/stream_interface.h"
 #include "quic/packet/packet_interface.h"
+#include "quic/packet/hand_shake_packet.h"
 #include "quic/connection/transport_param.h"
+#include "quic/stream/send_stream_interface.h"
 #include "quic/crypto/cryptographer_interface.h"
 #include "quic/crypto/tls/tls_server_conneciton.h"
 
@@ -59,10 +62,16 @@ protected:
 
     static bool Decrypto(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet);
 
+    virtual void ActiveSendStream(ISendStream* stream);
+
 protected:
     TransportParam _transport_param;
     std::unordered_set<std::string> _conn_id_set;
     std::list<std::shared_ptr<IFrame>> _frame_list;
+
+    std::list<ISendStream*> _hope_send_stream_list;
+    std::unordered_map<uint64_t, std::shared_ptr<IStream>> _stream_map;
+
     std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS]; 
 };
 

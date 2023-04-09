@@ -1,7 +1,7 @@
 #include "common/log/log.h"
-
 #include "quic/stream/recv_stream.h"
 #include "quic/frame/stream_frame.h"
+#include "common/buffer/buffer_chains.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/stream/recv_state_machine.h"
@@ -11,12 +11,13 @@
 
 namespace quicx {
 
-RecvStream::RecvStream(uint64_t id):
+RecvStream::RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id):
     IRecvStream(id),
-    _data_limit(0),
-    _to_data_max(0),
+    _local_data_limit(0),
     _final_offset(0) {
     _recv_machine = std::shared_ptr<RecvStreamStateMachine>();
+    _recv_buffer = std::make_shared<BufferChains>(alloter);
+
 }
 
 RecvStream::~RecvStream() {
@@ -26,40 +27,60 @@ RecvStream::~RecvStream() {
 void RecvStream::Close() {
     auto stop_frame = std::make_shared<StopSendingFrame>();
     stop_frame->SetStreamID(_stream_id);
-    stop_frame->SetAppErrorCode(0); // TODO
+    stop_frame->SetAppErrorCode(0); // TODO. add some error code
 
-    //_connection->Send(stop_frame);
+    _frame_list.emplace_back(stop_frame);
 }
 
-void RecvStream::HandleFrame(std::shared_ptr<IFrame> frame) {
+bool RecvStream::TrySendData(SendDataVisitor& visitior) {
+    // TODO check stream state
+    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
+        if (visitior.HandleFrame(*iter)) {
+            iter = _frame_list.erase(iter);
+
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+void RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
-    if (frame_type == FT_STREAM) {
-        HandleStreamFrame(frame);
-
-    } else if (frame_type == FT_STREAM_DATA_BLOCKED) {
-        HandleStreamDataBlockFrame(frame);
-
-    } else if (frame_type == FT_RESET_STREAM) {
-        HandleResetStreamFrame(frame);
-
-    } else {
-        LOG_ERROR("unexcept frame on send stream. frame type:%d", frame_type);
+    switch (frame_type)
+    {
+    case FT_STREAM_DATA_BLOCKED:
+        OnStreamDataBlockFrame(frame);
+        break;
+    case FT_RESET_STREAM:
+        OnResetStreamFrame(frame);
+        break;
+    case FT_CRYPTO:
+        OnCryptoFrame(frame);
+    default:
+        if (frame_type >= FT_STREAM && frame_type <= FT_STREAM_MAX) {
+            OnStreamFrame(frame);
+            break;
+        } else {
+            LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
+        }
     }
 }
 
-void RecvStream::HandleStreamFrame(std::shared_ptr<IFrame> frame) {
+void RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if(!_recv_machine->OnFrame(frame->GetType())) {
         return;
     }
 
-    /*
+    
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
-    _buffer->Write(stream_frame->GetData(), stream_frame->GetOffset());
+    _recv_buffer->Write(stream_frame->GetData(), stream_frame->GetLength());
 
-    if (_buffer->GetDataLength() > 0) {
-        _read_back(_buffer, 0);
+    if (_recv_cb) {
+        _recv_cb(_recv_buffer, 0);
     }
 
+    /*
     // send max stream data
     if (stream_frame->GetOffset() - _buffer->GetDataOffset() >= _to_data_max) {
         auto max_frame = std::make_shared<MaxStreamDataFrame>();
@@ -71,27 +92,26 @@ void RecvStream::HandleStreamFrame(std::shared_ptr<IFrame> frame) {
     */
 }
 
-void RecvStream::HandleStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
+void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     if(!_recv_machine->OnFrame(frame->GetType())) {
         return;
     }
-    /*
+    
     auto block_frame = std::dynamic_pointer_cast<StreamDataBlockedFrame>(frame);
     LOG_WARN("peer send block. offset:%d", block_frame->GetMaximumData());
 
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(_stream_id);
-    max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
+    max_frame->SetMaximumData(_local_data_limit + 4096); // TODO. define increase steps
 
-    //_connection->Send(max_frame);
-    */
+    _frame_list.emplace_back(max_frame);
 }
 
-void RecvStream::HandleResetStreamFrame(std::shared_ptr<IFrame> frame) {
+void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     if(!_recv_machine->OnFrame(frame->GetType())) {
         return;
     }
-    /*
+    
     auto reset_frame = std::dynamic_pointer_cast<ResetStreamFrame>(frame);
     uint64_t fin_offset = reset_frame->GetFinalSize();
 
@@ -102,8 +122,22 @@ void RecvStream::HandleResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     _final_offset = fin_offset;
 
-    _read_back(_buffer, reset_frame->GetAppErrorCode());
-    */
+    if (_recv_cb) {
+        _recv_cb(_recv_buffer, reset_frame->GetAppErrorCode());
+    }
+}
+
+void RecvStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
+    if(!_recv_machine->OnFrame(frame->GetType())) {
+        return;
+    }
+
+    auto crypto_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
+    _recv_buffer->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+
+    if (_recv_cb) {
+        _recv_cb(_recv_buffer, 0);
+    }
 }
 
 }
