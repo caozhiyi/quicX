@@ -6,6 +6,7 @@
 #include "common/network/address.h"
 #include "common/alloter/pool_block.h"
 #include "quic/common/send_data_visitor.h"
+#include "quic/stream/stream_id_generator.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/crypto/tls/tls_client_conneciton.h"
 
@@ -32,7 +33,7 @@ public:
 
     void Close();
 
-    void TrySendData(SendDataVisitor& visitior);
+    bool TrySendData(SendDataVisitor& visitior);
 protected:
     virtual bool HandleInitial(std::shared_ptr<InitPacket> packet);
     virtual bool Handle0rtt(std::shared_ptr<Rtt0Packet> packet);
@@ -42,10 +43,11 @@ protected:
 
 private:
     AlpnType _alpn_type; // application protocol
-    TransportParam _transport_param;
     uint64_t _sock;
     Address _local_addr;
     Address _peer_addr;
+    StreamIDGenerator _id_generator;
+    std::shared_ptr<IStream> _crypto_stream;
     std::shared_ptr<BlockMemoryPool> _alloter;
     std::shared_ptr<TLSClientConnection> _tls_connection;
 };
