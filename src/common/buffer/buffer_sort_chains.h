@@ -3,23 +3,21 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef COMMON_BUFFER_BUFFER_CHAINS
-#define COMMON_BUFFER_BUFFER_CHAINS
+#ifndef COMMON_BUFFER_BUFFER_SORT_CHAINS
+#define COMMON_BUFFER_BUFFER_SORT_CHAINS
 
+#include <map>
 #include "common/buffer/buffer_block.h"
-#include "common/buffer/buffer_chains_interface.h"
+#include "common/buffer/buffer_chains.h"
 
 namespace quicx {
 
-class BufferChains:
-    public IBufferChains {
+class BufferSortChains:
+    public BufferChains {
 public:
-    BufferChains(std::shared_ptr<BlockMemoryPool>& alloter);
-    virtual ~BufferChains();
+    BufferSortChains(std::shared_ptr<BlockMemoryPool>& alloter);
+    virtual ~BufferSortChains();
 
-    // read to data buf but don't change the read point
-    // return the length of the data actually read
-    virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len);
     // move read point
     // return the length of the data actually move
     virtual uint32_t MoveReadPt(int32_t len);
@@ -40,11 +38,11 @@ public:
     virtual std::shared_ptr<BufferBlock> GetWriteBuffers(uint32_t len);
 
 protected:
-    std::shared_ptr<BufferBlock> _read_pos;
-    std::shared_ptr<BufferBlock> _write_pos;
-    
-    LinkedList<BufferBlock> _buffer_list;
-    std::shared_ptr<BlockMemoryPool> _alloter;
+    enum SegmentType {
+        ST_END = 0,
+        ST_START = 1,
+    };
+    std::map<uint64_t, SegmentType> _segment_map;
 };
 
 }
