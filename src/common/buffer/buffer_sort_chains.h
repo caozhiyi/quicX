@@ -12,6 +12,23 @@
 
 namespace quicx {
 
+class SortSegment {
+public:
+    SortSegment() {}
+    ~SortSegment() {}
+
+    bool Insert(uint64_t index, uint32_t len);
+    bool Remove(uint32_t len);
+    uint64_t MaxSortLength();
+
+protected:
+    enum SegmentType {
+        ST_END = 0,
+        ST_START = 1,
+    };
+    std::map<uint64_t, SegmentType> _segment_map;
+};
+
 class BufferSortChains:
     public BufferChains {
 public:
@@ -37,12 +54,8 @@ public:
     // return buffer write list
     virtual std::shared_ptr<BufferBlock> GetWriteBuffers(uint32_t len);
 
-protected:
-    enum SegmentType {
-        ST_END = 0,
-        ST_START = 1,
-    };
-    std::map<uint64_t, SegmentType> _segment_map;
+private:
+    SortSegment _sort_segment;
 };
 
 }
