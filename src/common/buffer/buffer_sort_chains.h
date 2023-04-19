@@ -8,7 +8,7 @@
 
 #include <map>
 #include "common/buffer/buffer_block.h"
-#include "common/buffer/buffer_chains.h"
+#include "common/buffer/buffer_interface.h"
 
 namespace quicx {
 
@@ -17,7 +17,7 @@ public:
     SortSegment() {}
     ~SortSegment() {}
 
-    bool Insert(uint64_t index, uint32_t len);
+    bool Insert(uint64_t offset, uint32_t len);
     bool Remove(uint32_t len);
     uint64_t MaxSortLength();
 
@@ -29,10 +29,9 @@ protected:
     std::map<uint64_t, SegmentType> _segment_map;
 };
 
-class BufferSortChains:
-    public BufferChains {
+class BufferSortChains {
 public:
-    BufferSortChains(std::shared_ptr<BlockMemoryPool>& alloter);
+    BufferSortChains(std::shared_ptr<BlockMemoryPool>& alloter, uint32_t max_size);
     virtual ~BufferSortChains();
 
     // move read point
@@ -46,6 +45,9 @@ public:
     virtual std::shared_ptr<BufferBlock> GetReadBuffers();
 
     // return the length of the actual write
+    virtual uint32_t Write(uint64_t offset, uint8_t* data, uint32_t len);
+private:
+    // return the length of the actual write
     virtual uint32_t Write(uint8_t* data, uint32_t len);
     // return the remaining length that can be written
     virtual uint32_t GetFreeLength();
@@ -56,6 +58,7 @@ public:
 
 private:
     SortSegment _sort_segment;
+    std::shared_ptr<IBuffer> _buffers_cycle_list;
 };
 
 }
