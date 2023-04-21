@@ -70,7 +70,10 @@ BufferSortChains::BufferSortChains(std::shared_ptr<BlockMemoryPool>& alloter, ui
     _write_index(0),
     _alloter(alloter) {
     uint32_t block_size = alloter->GetBlockLength();
-    uint32_t list_size = max_size / block_size + 1;
+    uint32_t list_size = max_size / block_size;
+    if (max_size % block_size > 0) {
+        list_size++;
+    }
     _buffers_cycle_list.reserve(list_size);
 }
 
@@ -78,10 +81,15 @@ BufferSortChains::~BufferSortChains() {
 
 }
 
-uint32_t BufferSortChains::MoveReadPt(int32_t len) {
+uint32_t BufferSortChains::MoveReadPt(uint32_t len) {
+    if (len == 0) {
+        return 0;
+    }
+    
     uint32_t size = _sort_segment.MaxSortLength();
     size = size > len ? len : size;
     _sort_segment.Remove(size);
+    
     return size;
 }
 
