@@ -8,6 +8,9 @@ namespace {
 TEST(sort_segment_utest, buffer) {
     SortSegment segment;
     
+    EXPECT_TRUE(segment.UpdateMaxOffset(200));
+    EXPECT_TRUE(segment.UpdateMaxOffset(100));
+
     EXPECT_FALSE(segment.Remove(20));
     EXPECT_EQ(segment.MaxSortLength(), 0);
 

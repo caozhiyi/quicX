@@ -3,7 +3,11 @@
 namespace quicx {
 
 bool SortSegment::Insert(uint64_t offset, uint32_t len) {
-    if (offset <= _cur_offset && _cur_offset != 0) {
+    if (offset <= _start_offset && _start_offset != 0) {
+        return false;
+    }
+
+    if (offset >= _max_offset) {
         return false;
     }
     
@@ -37,7 +41,7 @@ uint32_t SortSegment::Remove(uint32_t len) {
     uint32_t remove_size = 0;
     while (iter != _segment_map.end()) {
         if (iter->first <= start_offset) {
-            remove_size = iter->first - _cur_offset;
+            remove_size = iter->first - _start_offset;
             iter = _segment_map.erase(iter);
         
         } else {
@@ -45,7 +49,7 @@ uint32_t SortSegment::Remove(uint32_t len) {
         }
     }
 
-    _cur_offset = start_offset;
+    _start_offset = start_offset;
     if (iter != _segment_map.end()) {
         _segment_map[start_offset] = ST_START;
     }
@@ -62,40 +66,87 @@ uint64_t SortSegment::MaxSortLength() {
     if (iter == _segment_map.end()) {
         return 0;
     }
-    return iter->first - _cur_offset;
+    return iter->first - _start_offset;
 }
 
-BufferSortChains::BufferSortChains(std::shared_ptr<BlockMemoryPool>& alloter, uint32_t max_size):
-    _read_index(0),
-    _write_index(0),
-    _alloter(alloter) {
-    uint32_t block_size = alloter->GetBlockLength();
-    uint32_t list_size = max_size / block_size;
-    if (max_size % block_size > 0) {
-        list_size++;
+bool SortSegment::UpdateMaxOffset(uint64_t offset) {
+    if (_max_offset < offset) {
+        _max_offset = offset;
+        return true;
     }
-    _buffers_cycle_list.reserve(list_size);
+    return false;
+}
+
+BufferSortChains::BufferSortChains(std::shared_ptr<BlockMemoryPool>& alloter):
+    _read_pos(nullptr),
+    _write_pos(nullptr),
+    _alloter(alloter) {
+
 }
 
 BufferSortChains::~BufferSortChains() {
 
 }
 
-uint32_t BufferSortChains::MoveReadPt(uint32_t len) {
+bool BufferSortChains::UpdateOffset(uint64_t offset) {
+    return _sort_segment.UpdateMaxOffset(offset);
+}
+
+uint32_t BufferSortChains::ReadNotMovePt(uint8_t* data, uint32_t len) {
+    if (len == 0 || data == nullptr) {
+        return 0;
+    }
+    
+    uint32_t read_len = _sort_segment.MaxSortLength();
+    read_len = read_len > len ? len : read_len;
+
+    uint32_t size = 0;
+    for (auto iter = _read_pos; iter && iter->GetDataLength() > 0; iter = iter->GetNext()) {
+        size += iter->ReadNotMovePt(data + size, len - size);
+        if (size >= read_len) {
+            break;
+        }
+    }
+    return size;
+}
+
+uint32_t BufferSortChains::MoveReadPt(int32_t len) {
     if (len == 0) {
         return 0;
     }
     
-    uint32_t size = _sort_segment.MaxSortLength();
-    size = size > len ? len : size;
+    uint32_t read_len = _sort_segment.MaxSortLength();
+    read_len = read_len > len ? len : read_len;
+
+    uint32_t size = 0;
+    for (; _read_pos && _read_pos->GetDataLength() > 0; _read_pos = _read_pos->GetNext()) {
+        size += _read_pos->MoveReadPt(len - size);
+        if (size >= read_len) {
+            break;
+        }
+        _buffer_list.PopFront();
+    }
     _sort_segment.Remove(size);
-    
+
     return size;
 }
 
 uint32_t BufferSortChains::Read(uint8_t* data, uint32_t len) {
-    uint32_t size = _sort_segment.MaxSortLength();
-    size = size > len ? len : size;
+    if (len == 0 || data == nullptr) {
+        return 0;
+    }
+
+    uint32_t read_len = _sort_segment.MaxSortLength();
+    read_len = read_len > len ? len : read_len;
+
+    uint32_t size = 0;
+    for (; _read_pos && _read_pos->GetDataLength() > 0; _read_pos = _read_pos->GetNext()) {
+        size += _read_pos->Read(data + size, len - size);
+        if (size >= read_len) {
+            break;
+        }
+        _buffer_list.PopFront();
+    }
     _sort_segment.Remove(size);
     return size;
 }
@@ -103,45 +154,17 @@ uint32_t BufferSortChains::Read(uint8_t* data, uint32_t len) {
 uint32_t BufferSortChains::GetDataLength() {
     return _sort_segment.MaxSortLength();
 }
-
+    
 std::shared_ptr<BufferBlock> BufferSortChains::GetReadBuffers() {
-    return nullptr;
+    return _read_pos;
 }
 
 uint32_t BufferSortChains::Write(uint64_t offset, uint8_t* data, uint32_t len) {
-
-}
-
-uint32_t BufferSortChains::Write(uint8_t* data, uint32_t len) {
-    return 0;
-}
-
-uint32_t BufferSortChains::GetFreeLength() {
-    return 0;
+    
 }
 
 uint32_t BufferSortChains::MoveWritePt(int32_t len) {
-    return 0;
-}
-
-std::shared_ptr<BufferBlock> BufferSortChains::GetWriteBuffers(uint32_t len) {
-    return nullptr;
-}
-
-int16_t BufferSortChains::Next(int16_t index) {
-    index++;
-    if (index >= _buffers_cycle_list.size()) {
-        index = 0;
-    }
-    return index;
-}
-
-int16_t BufferSortChains::Prev(int16_t index) {
-    index--;
-    if (index < 0) {
-        index = _buffers_cycle_list.size() - 1;
-    }
-    return index;
+    
 }
 
 }
