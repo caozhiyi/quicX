@@ -13,15 +13,21 @@ namespace quicx {
 
 class SortSegment {
 public:
-    SortSegment(): _start_offset(0), _max_offset(0) {}
+    SortSegment(): _start_offset(0), _limit_offset(0) {}
     ~SortSegment() {}
 
+    // insert a part of segment from offset
     bool Insert(uint64_t offset, uint32_t len);
+    // remove a part of segment from start
     uint32_t Remove(uint32_t len);
-    uint64_t MaxSortLength();
+    // get continuous segment length from start
+    uint64_t ContinuousLength();
+    // get current start offset on stream 
     uint64_t GetStartOffset() { return _start_offset; }
-    uint64_t GetMaxOffset() { return _max_offset; }
-    bool UpdateMaxOffset(uint64_t offset);
+    // get current limit offset of stream
+    uint64_t GetLimitOffset() { return _limit_offset; }
+    // update current limit offset of stream, only increase
+    bool UpdateLimitOffset(uint64_t offset);
 
 protected:
     enum SegmentType {
@@ -29,7 +35,7 @@ protected:
         ST_START = 1,
     };
     uint64_t _start_offset;
-    uint64_t _max_offset;
+    uint64_t _limit_offset;
     std::map<uint64_t, SegmentType> _segment_map;
 };
 
@@ -49,16 +55,16 @@ public:
     uint32_t Read(uint8_t* data, uint32_t len);
     // return remaining length of readable data
     uint32_t GetDataLength();
-    // return readable buffer list
-    std::shared_ptr<BufferBlock> GetReadBuffers();
 
     // return the length of the actual write
     uint32_t Write(uint64_t offset, uint8_t* data, uint32_t len);
 private:
+    // move 
     // return the length of the data actually move
-    uint32_t MoveWritePt(int32_t len);
+    uint32_t MoveWritePt(uint64_t offset);
 
 protected:
+    uint64_t _cur_write_offset;
     SortSegment _sort_segment;
     std::shared_ptr<BufferBlock> _read_pos;
     std::shared_ptr<BufferBlock> _write_pos;

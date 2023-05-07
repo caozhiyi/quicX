@@ -7,7 +7,7 @@ bool SortSegment::Insert(uint64_t offset, uint32_t len) {
         return false;
     }
 
-    if (offset >= _max_offset) {
+    if (offset >= _limit_offset) {
         return false;
     }
     
@@ -27,7 +27,7 @@ bool SortSegment::Insert(uint64_t offset, uint32_t len) {
 }
 
 uint32_t SortSegment::Remove(uint32_t len) {
-    uint64_t max_len = MaxSortLength();
+    uint64_t max_len = ContinuousLength();
     if (max_len == 0) {
         return 0;
     }
@@ -56,7 +56,7 @@ uint32_t SortSegment::Remove(uint32_t len) {
     return max_len;
 }
 
-uint64_t SortSegment::MaxSortLength() {
+uint64_t SortSegment::ContinuousLength() {
     auto iter = _segment_map.begin();
     for (;iter != _segment_map.end(); iter++) {
         if (iter->second == ST_END) {
@@ -69,15 +69,16 @@ uint64_t SortSegment::MaxSortLength() {
     return iter->first - _start_offset;
 }
 
-bool SortSegment::UpdateMaxOffset(uint64_t offset) {
-    if (_max_offset < offset) {
-        _max_offset = offset;
+bool SortSegment::UpdateLimitOffset(uint64_t offset) {
+    if (_limit_offset < offset) {
+        _limit_offset = offset;
         return true;
     }
     return false;
 }
 
 BufferSortChains::BufferSortChains(std::shared_ptr<BlockMemoryPool>& alloter):
+    _cur_write_offset(0),
     _read_pos(nullptr),
     _write_pos(nullptr),
     _alloter(alloter) {
@@ -89,7 +90,7 @@ BufferSortChains::~BufferSortChains() {
 }
 
 bool BufferSortChains::UpdateOffset(uint64_t offset) {
-    return _sort_segment.UpdateMaxOffset(offset);
+    return _sort_segment.UpdateLimitOffset(offset);
 }
 
 uint32_t BufferSortChains::ReadNotMovePt(uint8_t* data, uint32_t len) {
@@ -97,7 +98,7 @@ uint32_t BufferSortChains::ReadNotMovePt(uint8_t* data, uint32_t len) {
         return 0;
     }
     
-    uint32_t read_len = _sort_segment.MaxSortLength();
+    uint32_t read_len = _sort_segment.ContinuousLength();
     read_len = read_len > len ? len : read_len;
 
     uint32_t size = 0;
@@ -115,7 +116,7 @@ uint32_t BufferSortChains::MoveReadPt(int32_t len) {
         return 0;
     }
     
-    uint32_t read_len = _sort_segment.MaxSortLength();
+    uint32_t read_len = _sort_segment.ContinuousLength();
     read_len = read_len > len ? len : read_len;
 
     uint32_t size = 0;
@@ -136,7 +137,7 @@ uint32_t BufferSortChains::Read(uint8_t* data, uint32_t len) {
         return 0;
     }
 
-    uint32_t read_len = _sort_segment.MaxSortLength();
+    uint32_t read_len = _sort_segment.ContinuousLength();
     read_len = read_len > len ? len : read_len;
 
     uint32_t size = 0;
@@ -152,19 +153,29 @@ uint32_t BufferSortChains::Read(uint8_t* data, uint32_t len) {
 }
 
 uint32_t BufferSortChains::GetDataLength() {
-    return _sort_segment.MaxSortLength();
-}
-    
-std::shared_ptr<BufferBlock> BufferSortChains::GetReadBuffers() {
-    return _read_pos;
+    return _sort_segment.ContinuousLength();
 }
 
 uint32_t BufferSortChains::Write(uint64_t offset, uint8_t* data, uint32_t len) {
-    
+    if(!_sort_segment.Insert(offset, len)) {
+        return 0;
+    }
 }
 
-uint32_t BufferSortChains::MoveWritePt(int32_t len) {
-    
+uint32_t BufferSortChains::MoveWritePt(uint64_t offset) {
+    int32_t move_len = 0;
+    bool move_next;
+    if (offset > _cur_write_offset) {
+        move_next = true;
+        move_len = offset - _cur_write_offset;
+    } else {
+        move_next = false;
+        move_len = _cur_write_offset - offset;
+    }
+
+    if (move_len == 0) {
+        return move_len;
+    }
 }
 
 }
