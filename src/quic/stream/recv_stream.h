@@ -27,6 +27,7 @@ private:
     void OnResetStreamFrame(std::shared_ptr<IFrame> frame);
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
+    void OnRecvData(uint8_t* data, uint32_t len, uint64_t offset);
 private:
     uint64_t _final_offset;
     uint32_t _local_data_limit;  // peer send data limit

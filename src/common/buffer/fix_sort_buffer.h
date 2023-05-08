@@ -22,17 +22,16 @@ public:
     virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len);
     // move read point
     // return the length of the data actually move
-    virtual uint32_t MoveReadPt(int32_t len);
+    virtual uint32_t MoveReadPt(uint32_t len);
+    // return the length of the data actually move
+    virtual uint32_t MoveWritePt(int32_t len);
     // return the length of the data actually read
     virtual uint32_t Read(uint8_t* data, uint32_t len);
-    // return remaining length of readable data
-    virtual uint32_t GetDataLength();
     // return the length of the actual write
-    virtual uint32_t Write(uint64_t offset, uint8_t* data, uint32_t len);
+    virtual uint32_t Write(uint8_t* data, uint32_t len);
 
 protected:
     uint32_t Read(uint8_t* data, uint32_t len, bool move_pt);
-    uint32_t Write(const char* data, uint32_t len);
     // clear all data
     void Clear();
 private:
