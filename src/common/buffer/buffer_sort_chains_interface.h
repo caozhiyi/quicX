@@ -20,13 +20,14 @@ public:
     virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len) = 0;
     // move read point
     // return the length of the data actually move
-    virtual uint32_t MoveReadPt(int32_t len) = 0;
+    virtual uint32_t MoveReadPt(uint32_t len) = 0;
+    // move write point
+    // return the length of the data actually move
+    virtual uint32_t MoveWritePt(int32_t len) = 0;
     // return the length of the data actually read
     virtual uint32_t Read(uint8_t* data, uint32_t len) = 0;
-    // return remaining length of readable data
-    virtual uint32_t GetDataLength() = 0;
     // return the length of the actual write
-    virtual uint32_t Write(uint64_t offset, uint8_t* data, uint32_t len) = 0;
+    virtual uint32_t Write(uint8_t* data, uint32_t len) = 0;
 };
 
 }

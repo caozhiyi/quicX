@@ -1,15 +1,15 @@
 #include <gtest/gtest.h>
-#include "common/buffer/buffer_sort_chains.h"
+#include "quic/stream/buffer_segment.h"
 
 
 namespace quicx {
 namespace {
     
-TEST(sort_segment_utest, buffer) {
-    SortSegment segment;
+TEST(buffer_segment_utest, buffer) {
+    BufferSegment segment;
     
     EXPECT_TRUE(segment.UpdateLimitOffset(200));
-    EXPECT_TRUE(segment.UpdateLimitOffset(100));
+    EXPECT_FALSE(segment.UpdateLimitOffset(100));
 
     EXPECT_FALSE(segment.Remove(20));
     EXPECT_EQ(segment.ContinuousLength(), 0);

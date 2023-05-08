@@ -140,4 +140,8 @@ void RecvStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
+void RecvStream::OnRecvData(uint8_t* data, uint32_t len, uint64_t offset) {
+    
+}
+
 }
