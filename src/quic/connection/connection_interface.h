@@ -15,6 +15,7 @@
 #include "quic/stream/stream_interface.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/packet/hand_shake_packet.h"
+#include "quic/stream/stream_id_generator.h"
 #include "quic/connection/transport_param.h"
 #include "quic/stream/send_stream_interface.h"
 #include "quic/crypto/cryptographer_interface.h"

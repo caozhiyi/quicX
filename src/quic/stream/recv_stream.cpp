@@ -14,7 +14,8 @@ namespace quicx {
 RecvStream::RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id):
     IRecvStream(id),
     _local_data_limit(0),
-    _final_offset(0) {
+    _final_offset(0),
+    _except_offset(0) {
     _recv_machine = std::shared_ptr<RecvStreamStateMachine>();
     _recv_buffer = std::make_shared<BufferChains>(alloter);
 
@@ -71,13 +72,29 @@ void RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if(!_recv_machine->OnFrame(frame->GetType())) {
         return;
     }
-
     
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
-    _recv_buffer->Write(stream_frame->GetData(), stream_frame->GetLength());
+    if (stream_frame->GetOffset() == _except_offset) {
+        _recv_buffer->Write(stream_frame->GetData(), stream_frame->GetLength());
+        _except_offset += stream_frame->GetLength();
 
-    if (_recv_cb) {
-        _recv_cb(_recv_buffer, 0);
+        while (true) {
+            auto iter = _out_order_frame.find(_except_offset);
+            if (iter == _out_order_frame.end()) {
+                break;
+            }
+
+            stream_frame = std::dynamic_pointer_cast<StreamFrame>(iter->second);
+            _recv_buffer->Write(stream_frame->GetData(), stream_frame->GetLength());
+            _except_offset += stream_frame->GetLength();
+            _out_order_frame.erase(iter);
+        }
+        
+         if (_recv_cb) {
+            _recv_cb(_recv_buffer, 0);
+        }
+    } else {
+        _out_order_frame[stream_frame->GetOffset()] = stream_frame;
     }
 
     /*
@@ -138,10 +155,6 @@ void RecvStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     if (_recv_cb) {
         _recv_cb(_recv_buffer, 0);
     }
-}
-
-void RecvStream::OnRecvData(uint8_t* data, uint32_t len, uint64_t offset) {
-    
 }
 
 }

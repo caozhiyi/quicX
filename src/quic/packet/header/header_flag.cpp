@@ -54,8 +54,6 @@ PacketType HeaderFlag::GetPacketType() const {
         return PT_HANDSHAKE;
     case 0x03:
         return PT_RETRY;
-    case 0x04:
-        return PT_NEGOTIATION;
     default:
         LOG_ERROR("unknow packet type. type:%d", GetLongHeaderFlag()._packet_type);
         break;

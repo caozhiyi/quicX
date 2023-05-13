@@ -21,8 +21,8 @@ public:
     // reset the stream
     virtual void Reset(uint64_t err) = 0;
 
-    void SetSendCB(StreamSendCB cb) { _send_cb = cb; }
-    void SetHopeSendCB(StreamHopeSendCB cb) { _hope_send_cb = cb; }
+    virtual void SetSendCB(StreamSendCB cb) { _send_cb = cb; }
+    virtual void SetHopeSendCB(StreamHopeSendCB cb) { _hope_send_cb = cb; }
 
 protected:
     bool _is_crypto_stream;
