@@ -4,9 +4,9 @@
 #include <memory>
 #include <cstdint>
 #include "common/network/address.h"
+#include "quic/stream/crypto_stream.h"
 #include "common/alloter/pool_block.h"
 #include "quic/common/send_data_visitor.h"
-#include "quic/stream/stream_id_generator.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/crypto/tls/tls_client_conneciton.h"
 
@@ -41,13 +41,16 @@ protected:
     virtual bool HandleRetry(std::shared_ptr<RetryPacket> packet);
     virtual bool Handle1rtt(std::shared_ptr<Rtt1Packet> packet);
 
+    virtual void WriteMessage(EncryptionLevel level, const uint8_t *data, size_t len);
+
 private:
     AlpnType _alpn_type; // application protocol
     uint64_t _sock;
     Address _local_addr;
     Address _peer_addr;
     StreamIDGenerator _id_generator;
-    std::shared_ptr<IStream> _crypto_stream;
+    std::shared_ptr<CryptoStream> _crypto_stream;
+
     std::shared_ptr<BlockMemoryPool> _alloter;
     std::shared_ptr<TLSClientConnection> _tls_connection;
 };

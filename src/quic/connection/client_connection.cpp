@@ -2,7 +2,7 @@
 #include "common/buffer/buffer.h"
 #include "quic/connection/type.h"
 #include "common/network/io_handle.h"
-#include "quic/stream/bidirection_stream.h"
+#include "quic/stream/crypto_stream.h"
 #include "quic/connection/client_connection.h"
 #include "quic/connection/connection_id_generator.h"
 
@@ -69,7 +69,8 @@ bool ClientConnection::Dial(const Address& addr) {
     }
 
     // create crypto stream
-    _crypto_stream = std::make_shared<BidirectionStream>(_id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+    _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+    _crypto_stream->SetHopeSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
     return _tls_connection->DoHandleShake();
 }
 
@@ -115,6 +116,14 @@ bool ClientConnection::HandleRetry(std::shared_ptr<RetryPacket> packet) {
 
 bool ClientConnection::Handle1rtt(std::shared_ptr<Rtt1Packet> packet) {
     return true;
+}
+
+void ClientConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, size_t len) {
+    if (!_crypto_stream) {
+        _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+    }
+    
+    _crypto_stream->Send((uint8_t*)data, len);
 }
 
 }
