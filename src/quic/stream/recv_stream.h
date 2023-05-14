@@ -6,6 +6,7 @@
 #include <functional>
 #include <unordered_map>
 #include "quic/stream/recv_stream_interface.h"
+#include "quic/process/data_visitor_interface.h"
 
 namespace quicx {
 
@@ -18,7 +19,7 @@ public:
     // abort reading
     void Close();
 
-    bool TrySendData(SendDataVisitor& visitior);
+    bool TrySendData(IDataVisitor* visitior);
 
     void OnFrame(std::shared_ptr<IFrame> frame);
 

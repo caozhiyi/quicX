@@ -1,10 +1,9 @@
-#include "send_stream.h"
-
 #include "common/log/log.h"
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_chains.h"
 #include "common/alloter/alloter_interface.h"
 
+#include "quic/stream/send_stream.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
@@ -69,10 +68,10 @@ void SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
-bool SendStream::TrySendData(SendDataVisitor& visitior) {
+bool SendStream::TrySendData(IDataVisitor* visitior) {
     // TODO check stream state
     for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
-        if (visitior.HandleFrame(*iter)) {
+        if (visitior->HandleFrame(*iter)) {
             iter = _frame_list.erase(iter);
 
         } else {
@@ -89,7 +88,7 @@ bool SendStream::TrySendData(SendDataVisitor& visitior) {
     uint32_t size = _send_buffer->ReadNotMovePt(buf, 1000);
     frame->SetData(buf, size);
 
-    if (!visitior.HandleFrame(frame)) {
+    if (!visitior->HandleFrame(frame)) {
         return false;
     }
     _send_buffer->MoveReadPt(size);

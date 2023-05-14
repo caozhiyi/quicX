@@ -38,6 +38,7 @@ public:
     uint8_t GetFlag() { return _flag._header_flag; }
     PacketHeaderType GetHeaderType() const;
     PacketType GetPacketType() const;
+    uint8_t GetPacketNumberLength() const { return _flag._long_header_flag._packet_number_length; }
     LongHeaderFlag GetLongHeaderFlag() const { return _flag._long_header_flag; }
     ShortHeaderFlag GetShortHeaderFlag() const { return _flag._short_header_flag; }
 

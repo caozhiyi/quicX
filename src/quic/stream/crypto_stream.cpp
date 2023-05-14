@@ -12,10 +12,10 @@ CryptoStream::~CryptoStream() {
 
 }
     
-bool CryptoStream::TrySendData(SendDataVisitor& visitior) {
+bool CryptoStream::TrySendData(IDataVisitor* visitior) {
     // TODO check stream state
     for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
-        if (visitior.HandleFrame(*iter)) {
+        if (visitior->HandleFrame(*iter)) {
             iter = _frame_list.erase(iter);
 
         } else {
@@ -31,7 +31,7 @@ bool CryptoStream::TrySendData(SendDataVisitor& visitior) {
     uint32_t size = _send_buffer->ReadNotMovePt(buf, 1000);
     frame->SetData(buf, size);
 
-    if (!visitior.HandleFrame(frame)) {
+    if (!visitior->HandleFrame(frame)) {
         return false;
     }
     _send_buffer->MoveReadPt(size);

@@ -6,11 +6,11 @@
 #include <functional>
 
 #include "quic/stream/type.h"
-#include "quic/common/send_data_visitor.h"
+#include "quic/frame/frame_interface.h"
+#include "quic/process/data_visitor_interface.h"
 
 namespace quicx {
 
-class IFrame;
 class IStream {
 public:
     IStream(uint64_t id = 0): _stream_id(id) {}
@@ -18,7 +18,7 @@ public:
 
     virtual void Close() = 0;
 
-    virtual bool TrySendData(SendDataVisitor& visitior) = 0;
+    virtual bool TrySendData(IDataVisitor* visitior) = 0;
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame) = 0;
 

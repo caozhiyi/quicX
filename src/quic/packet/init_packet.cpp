@@ -24,6 +24,33 @@ InitPacket::~InitPacket() {
 }
 
 bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
+    if (!_header.EncodeHeader(buffer)) {
+        LOG_ERROR("encode header failed");
+        return false;
+    }
+
+    auto span = buffer->GetWriteSpan();
+    uint8_t* start_pos = span.GetStart();
+    uint8_t* cur_pos = start_pos;
+    uint8_t* end = span.GetEnd();
+
+    cur_pos = EncodeVarint(cur_pos, _token_length);
+    if (_token_length > 0) {
+        memcpy(cur_pos, _token, _token_length);
+        cur_pos += _token_length;
+    }
+    
+    cur_pos = EncodeVarint(cur_pos, _payload_length);
+    _packet_num_offset = cur_pos - start_pos;
+
+    cur_pos += _header.GetPacketNumberLength();
+    _payload_offset = cur_pos - start_pos;
+
+    cur_pos += _payload_length;
+    _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
+
+    buffer->MoveWritePt(cur_pos - span.GetStart());
+    buffer->Write(_palyload.GetStart(), _palyload.GetLength());
     return true;
 }
 
@@ -46,24 +73,33 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
         return false;
     }
     
-    uint8_t* pos = span.GetStart();
+    uint8_t* start_pos = span.GetStart();
+    uint8_t* cur_pos = start_pos;
     uint8_t* end = span.GetEnd();
-    pos = DecodeVarint(pos, end, _token_length);
-    _token = pos;
-    pos += _token_length;
+    cur_pos = DecodeVarint(cur_pos, end, _token_length);
+    _token = cur_pos;
+    cur_pos += _token_length;
     LOG_DEBUG("get initial token:%s", _token);
 
-    pos = DecodeVarint(pos, end, _payload_length);
-    _packet_num_offset = pos - span.GetStart();
+    cur_pos = DecodeVarint(cur_pos, end, _payload_length);
+    _packet_num_offset = cur_pos - start_pos;
 
-    pos += _payload_length;
-    buffer->MoveReadPt(pos - span.GetStart());
+    cur_pos += _header.GetPacketNumberLength();
+    _payload_offset = cur_pos - start_pos;
+
+    cur_pos += _payload_length;
+    _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
+
+    buffer->MoveReadPt(cur_pos - span.GetStart());
     return true;
 }
 
 bool InitPacket::DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer) {
+    buffer->MoveReadPt(_payload_offset);
+    _palyload =  std::move(BufferSpan(buffer->GetData(), _payload_length));
     // decode payload frames
-    if(!DecodeFrames(buffer, _frame_list)) {
+    std::shared_ptr<BufferReadView> view = std::make_shared<BufferReadView>(_palyload.GetStart(), _palyload.GetEnd());
+    if(!DecodeFrames(view, _frame_list)) {
         LOG_ERROR("decode frame failed.");
         return false;
     }

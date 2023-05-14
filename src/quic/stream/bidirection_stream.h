@@ -17,7 +17,7 @@ public:
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame);
 
-    virtual bool TrySendData(SendDataVisitor& visitior);
+    virtual bool TrySendData(IDataVisitor* visitior);
 
     virtual int32_t Send(uint8_t* data, uint32_t len);
 

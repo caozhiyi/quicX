@@ -29,9 +29,12 @@ public:
     virtual uint32_t GetPacketNumOffset() { return 0; };
     virtual uint64_t GetPacketNumber() { return _packet_number; }
     virtual void SetPacketNumber(uint64_t num) { _packet_number = num; }
+
+    virtual BufferSpan& GetSrcBuffer() { return _packet_src_data; }
+
 protected:
     uint64_t _packet_number; /*encryption protection*/
-
+    BufferSpan _packet_src_data;
     std::vector<std::shared_ptr<IFrame>> _no_use;
 };
 
