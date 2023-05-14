@@ -61,7 +61,10 @@ protected:
     virtual bool HandleRetry(std::shared_ptr<RetryPacket> packet) = 0;
     virtual bool Handle1rtt(std::shared_ptr<Rtt1Packet> packet) = 0;
 
-    static bool Decrypto(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet);
+    static bool Decrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet, 
+        std::shared_ptr<IBufferWrite> out_plaintext);
+    static bool Encrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet, 
+        std::shared_ptr<IBuffer> out_ciphertext);
 
     virtual void ActiveSendStream(ISendStream* stream);
 

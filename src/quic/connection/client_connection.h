@@ -3,16 +3,21 @@
 
 #include <memory>
 #include <cstdint>
+#include <functional>
+#include "quic/connection/type.h"
 #include "common/network/address.h"
 #include "quic/stream/crypto_stream.h"
 #include "common/alloter/pool_block.h"
-#include "quic/common/send_data_visitor.h"
+#include "quic/frame/frame_interface.h"
+#include "quic/process/data_visitor_interface.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/crypto/tls/tls_client_conneciton.h"
 
 namespace quicx {
 
-class IFrame;
+class ClientConnection;
+typedef std::function<void(ClientConnection&)> HandshakeDoneCB;
+
 // TODO
 // 1. 创建一个连接
 // 2. 如果支持, 启用早期数据
@@ -33,7 +38,9 @@ public:
 
     void Close();
 
-    bool TrySendData(SendDataVisitor& visitior);
+    bool TrySendData(IDataVisitor* visitior);
+
+    void SetHandshakeDoneCB(HandshakeDoneCB& cb);
 protected:
     virtual bool HandleInitial(std::shared_ptr<InitPacket> packet);
     virtual bool Handle0rtt(std::shared_ptr<Rtt0Packet> packet);
@@ -51,6 +58,7 @@ private:
     StreamIDGenerator _id_generator;
     std::shared_ptr<CryptoStream> _crypto_stream;
 
+    HandshakeDoneCB _handshake_done_cb;
     std::shared_ptr<BlockMemoryPool> _alloter;
     std::shared_ptr<TLSClientConnection> _tls_connection;
 };

@@ -29,6 +29,7 @@ public:
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frame_list; }
 
+    void SetPayload(BufferSpan payload) { _palyload = payload; }
     uint32_t GetPayloadLength() { return _payload_length; }
 
 private:
@@ -36,6 +37,8 @@ private:
     uint32_t _token_length;
     const uint8_t* _token;
 
+    BufferSpan _palyload;
+    uint32_t _payload_offset;
     uint32_t _payload_length;
 
     uint32_t _packet_num_offset;

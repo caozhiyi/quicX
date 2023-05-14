@@ -33,10 +33,10 @@ void RecvStream::Close() {
     _frame_list.emplace_back(stop_frame);
 }
 
-bool RecvStream::TrySendData(SendDataVisitor& visitior) {
+bool RecvStream::TrySendData(IDataVisitor* visitior) {
     // TODO check stream state
     for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
-        if (visitior.HandleFrame(*iter)) {
+        if (visitior->HandleFrame(*iter)) {
             iter = _frame_list.erase(iter);
 
         } else {

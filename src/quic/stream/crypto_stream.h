@@ -11,7 +11,7 @@ public:
     CryptoStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t id = 0);
     virtual ~CryptoStream();
 
-    virtual bool TrySendData(SendDataVisitor& visitior);
+    virtual bool TrySendData(IDataVisitor* visitior);
 };
 
 }

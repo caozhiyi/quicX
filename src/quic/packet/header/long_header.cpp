@@ -45,18 +45,21 @@ bool LongHeader::EncodeHeader(std::shared_ptr<IBufferWrite> buffer) {
         return false;
     }
     
-    uint8_t* pos = span.GetStart();
-    pos = FixedEncodeUint32(pos, _version);
-    pos = FixedEncodeUint8(pos, _destination_connection_id_length);
 
-    buffer->MoveWritePt(pos - span.GetStart());
+    uint8_t* start_pos = span.GetStart();
+    uint8_t* cur_pos = start_pos;
+    cur_pos = FixedEncodeUint32(cur_pos, _version);
+    cur_pos = FixedEncodeUint8(cur_pos, _destination_connection_id_length);
+
+    buffer->MoveWritePt(cur_pos - span.GetStart());
     buffer->Write(_destination_connection_id, _destination_connection_id_length);
-    pos += _destination_connection_id_length;
+    cur_pos += _destination_connection_id_length;
 
-    pos = FixedEncodeUint8(pos, _source_connection_id_length);
-    buffer->MoveWritePt(pos - span.GetStart());
+    cur_pos = FixedEncodeUint8(cur_pos, _source_connection_id_length);
+    buffer->MoveWritePt(cur_pos - span.GetStart());
 
-    buffer->Write(_source_connection_id, _source_connection_id_length);
+    cur_pos += buffer->Write(_source_connection_id, _source_connection_id_length);
+    _header_src_data = std::move(BufferSpan(start_pos - 1, cur_pos));
     return true;
 }
 
@@ -88,7 +91,7 @@ bool LongHeader::DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_fla
     memcpy(&_source_connection_id, pos, _source_connection_id_length);
     pos += _source_connection_id_length;
  
-    _header_src_data = std::move(BufferSpan(span.GetStart(), pos));
+    _header_src_data = std::move(BufferSpan(span.GetStart() - (with_flag ? 1 : 0), pos));
     buffer->MoveReadPt(pos - span.GetStart());
 
     LOG_DEBUG("get destination connect id:%s", _destination_connection_id);

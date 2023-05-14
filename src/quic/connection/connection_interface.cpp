@@ -95,8 +95,9 @@ void IConnection::HandlePacket(std::vector<std::shared_ptr<IPacket>>& packets) {
     }
 }
 
-bool IConnection::Decrypto(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet) {
-    auto header = dynamic_cast<LongHeader*>(packet->GetHeader());
+bool IConnection::Decrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet,
+    std::shared_ptr<IBufferWrite> out_plaintext) {
+    auto header = packet->GetHeader();
     // get sample
     BufferSpan head_span = header->GetHeaderSrcData();
     uint32_t packet_offset = packet->GetPacketNumOffset();
@@ -106,25 +107,44 @@ bool IConnection::Decrypto(std::shared_ptr<ICryptographer>& cryptographer, std::
     // decrypto header
     uint64_t packet_num = 0;
     uint32_t packet_num_len = 0;
-    if(!cryptographer->DecryptHeader(head_span, sample, packet_offset, false, packet_num, packet_num_len)) {
+    if(!cryptographer->DecryptHeader(head_span, sample, packet_offset, header->GetHeaderType() == PHT_SHORT_HEADER,
+        packet_num, packet_num_len)) {
+
         LOG_ERROR("decrypt header failed.");
         return false;
     }
 
     // decrypto packet
-    auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
-    BufferSpan payload = BufferSpan(pkt_number_pos + packet_num_len, pkt_number_pos + init_packet->GetPayloadLength());
-
-    uint8_t plaintext_buffer[1550];
-    auto plaintext = std::make_shared<Buffer>(plaintext_buffer, plaintext_buffer + 1550);
-    if(!cryptographer->DecryptPacket(packet_num, header->GetHeaderSrcData(), payload, plaintext)) {
+    if(!cryptographer->DecryptPacket(packet_num, header->GetHeaderSrcData(), packet->GetSrcBuffer(), out_plaintext)) {
         LOG_ERROR("decrypt packet failed.");
         return false;
     }
 
-    // decode payload
-    if(!init_packet->DecodeAfterDecrypt(plaintext)) {
-        LOG_ERROR("decode packet failed.");
+    return true;
+}
+
+bool IConnection::Encrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet, 
+    std::shared_ptr<IBuffer> out_ciphertext) {
+    auto header = packet->GetHeader();
+
+    out_ciphertext->Write(header->GetHeaderSrcData().GetStart(), header->GetHeaderSrcData().GetLength());
+    auto header_span = out_ciphertext->GetReadSpan();
+
+    // packet protection
+    if(!cryptographer->EncryptPacket(packet->GetPacketNumber(), header->GetHeaderSrcData(), packet->GetSrcBuffer(), out_ciphertext)) {
+        LOG_ERROR("encrypt packet failed.");
+        return false;
+    }
+
+    // header protection
+    uint32_t packet_offset = packet->GetPacketNumOffset();
+    BufferSpan sample = BufferSpan(header_span.GetEnd() + 4,  header_span.GetEnd() + 4 + __header_protect_sample_length);
+    //BufferSpan& plaintext, BufferSpan& sample,
+    //uint8_t pn_offset, size_t pkt_number_len, bool is_short
+    if(!cryptographer->EncryptHeader(header_span, sample, packet->GetPacketNumOffset(), header->GetPacketNumberLength(),
+        header->GetHeaderType() == PHT_SHORT_HEADER)) {
+ 
+        LOG_ERROR("decrypt header failed.");
         return false;
     }
 

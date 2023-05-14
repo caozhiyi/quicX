@@ -38,7 +38,12 @@ bool ServerConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {
         _cryptographers[packet->GetCryptoLevel()] = cryptographer;
     }
 
-    if(Decrypto(cryptographer, packet)) {
+    auto buffer = std::make_shared<Buffer>(_alloter);
+    if(Decrypt(cryptographer, packet, buffer)) {
+        return false;
+    }
+    
+    if (!packet->DecodeAfterDecrypt(buffer)) {
         return false;
     }
     // dispatcher frames

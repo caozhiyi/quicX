@@ -78,9 +78,9 @@ void ClientConnection::Close() {
 
 }
 
-bool ClientConnection::TrySendData(SendDataVisitor& visitior) {
+bool ClientConnection::TrySendData(IDataVisitor* visitior) {
     for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
-        if (visitior.HandleFrame(*iter)) {
+        if (visitior->HandleFrame(*iter)) {
             iter = _frame_list.erase(iter);
 
         } else {
@@ -96,6 +96,10 @@ bool ClientConnection::TrySendData(SendDataVisitor& visitior) {
         }
     }
     return true;
+}
+
+void ClientConnection::SetHandshakeDoneCB(HandshakeDoneCB& cb) {
+    _handshake_done_cb = cb;
 }
 
 bool ClientConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {
