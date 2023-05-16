@@ -9,7 +9,6 @@
 #include "quic/stream/crypto_stream.h"
 #include "common/alloter/pool_block.h"
 #include "quic/frame/frame_interface.h"
-#include "quic/process/data_visitor_interface.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/crypto/tls/tls_client_conneciton.h"
 
@@ -38,7 +37,7 @@ public:
 
     void Close();
 
-    bool TrySendData(IDataVisitor* visitior);
+    virtual bool TrySendData(IPacketVisitor* pkt_visitor);
 
     void SetHandshakeDoneCB(HandshakeDoneCB& cb);
 protected:

@@ -20,6 +20,7 @@
 #include "quic/stream/send_stream_interface.h"
 #include "quic/crypto/cryptographer_interface.h"
 #include "quic/crypto/tls/tls_server_conneciton.h"
+#include "quic/connection/packet_visitor_interface.h"
 
 namespace quicx {
 
@@ -39,6 +40,9 @@ public:
     // 5. 立即关闭连接
     virtual void Close() = 0;
 
+    // try to build a quic message
+    virtual bool TrySendData(IPacketVisitor* pkt_visitor) = 0;
+
     // Encryption correlation function
     virtual void SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
         const uint8_t *secret, size_t secret_len);
@@ -53,6 +57,8 @@ public:
     virtual void SendAlert(EncryptionLevel level, uint8_t alert);
 
     virtual void HandlePacket(std::vector<std::shared_ptr<IPacket>>& packets);
+
+    virtual EncryptionLevel GetCurEncryptionLevel() { return _cur_encryption_level; }
 
 protected:
     virtual bool HandleInitial(std::shared_ptr<InitPacket> packet) = 0;
@@ -76,6 +82,7 @@ protected:
     std::list<ISendStream*> _hope_send_stream_list;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> _stream_map;
 
+    EncryptionLevel _cur_encryption_level;
     std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS]; 
 };
 

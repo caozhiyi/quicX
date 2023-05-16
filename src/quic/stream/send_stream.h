@@ -5,6 +5,7 @@
 #include <string>
 #include "common/alloter/pool_alloter.h"
 #include "quic/stream/send_stream_interface.h"
+#include "quic/stream/frame_visitor_interface.h"
 #include "common/buffer/buffer_chains_interface.h"
 
 namespace quicx {
@@ -25,7 +26,7 @@ public:
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame);
 
-    virtual bool TrySendData(IDataVisitor* visitior);
+    virtual bool TrySendData(IFrameVisitor* visitor);
 
 private:
     void OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame);
