@@ -7,7 +7,7 @@
 
 #include "quic/stream/type.h"
 #include "quic/frame/frame_interface.h"
-#include "quic/process/data_visitor_interface.h"
+#include "quic/stream/frame_visitor_interface.h"
 
 namespace quicx {
 
@@ -18,7 +18,7 @@ public:
 
     virtual void Close() = 0;
 
-    virtual bool TrySendData(IDataVisitor* visitior) = 0;
+    virtual bool TrySendData(IFrameVisitor* visitor) = 0;
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame) = 0;
 

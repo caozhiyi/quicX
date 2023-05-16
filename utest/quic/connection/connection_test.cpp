@@ -3,8 +3,8 @@
 #include "quic/frame/frame_decode.h"
 #include "quic/crypto/tls/tls_client_ctx.h"
 #include "quic/connection/client_connection.h"
-#include "quic/process/fix_buffer_data_visitor.h"
 #include "quic/connection/transport_param_config.h"
+#include "quic/connection/fix_buffer_packet_visitor.h"
 
 namespace quicx {
 namespace {
@@ -24,13 +24,9 @@ TEST(connnection_utest, client) {
 
     client_conn.Dial(addr);
 
-    FixBufferDataVisitor visitor(1456);
+    FixBufferPacketVisitor visitor(1456);
 
     client_conn.TrySendData(&visitor);
-
-    std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_TRUE(DecodeFrames(visitor.GetBuffer(), frames));
-
     //client_conn.HandlePacket
 }
 

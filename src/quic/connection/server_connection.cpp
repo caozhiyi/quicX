@@ -21,6 +21,10 @@ void ServerConnection::Close() {
 
 }
 
+bool ServerConnection::TrySendData(IPacketVisitor* pkt_visitor) {
+    return true;
+}
+
 void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
     const unsigned char *in, unsigned int inlen, void *arg) {
 
