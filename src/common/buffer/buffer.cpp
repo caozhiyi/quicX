@@ -25,7 +25,7 @@ Buffer::Buffer(std::shared_ptr<BlockMemoryPool>& alloter):
 }
 
 Buffer::~Buffer() {
-    if (_buffer_start) {
+    if (_buffer_start != nullptr) {
         auto alloter = _alloter.lock();
         if (alloter) {
             void* m = (void*)_buffer_start;
