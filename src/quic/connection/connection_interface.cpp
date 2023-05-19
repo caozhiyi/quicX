@@ -139,8 +139,6 @@ bool IConnection::Encrypt(std::shared_ptr<ICryptographer>& cryptographer, std::s
     // header protection
     uint32_t packet_offset = packet->GetPacketNumOffset();
     BufferSpan sample = BufferSpan(header_span.GetEnd() + 4,  header_span.GetEnd() + 4 + __header_protect_sample_length);
-    //BufferSpan& plaintext, BufferSpan& sample,
-    //uint8_t pn_offset, size_t pkt_number_len, bool is_short
     if(!cryptographer->EncryptHeader(header_span, sample, packet->GetPacketNumOffset(), header->GetPacketNumberLength(),
         header->GetHeaderType() == PHT_SHORT_HEADER)) {
  

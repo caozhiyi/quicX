@@ -5,7 +5,7 @@
 namespace quicx {
 
 FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t size) {
-    uint8_t* _buffer_start = new uint8_t[size];
+    _buffer_start = new uint8_t[size];
     _buffer = std::make_shared<Buffer>(_buffer_start, _buffer_start + size);
 }
 
