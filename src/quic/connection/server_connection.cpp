@@ -21,7 +21,7 @@ void ServerConnection::Close() {
 
 }
 
-bool ServerConnection::TrySendData(IPacketVisitor* pkt_visitor) {
+bool ServerConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
     return true;
 }
 

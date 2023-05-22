@@ -4,7 +4,6 @@
 #include "quic/crypto/tls/tls_client_ctx.h"
 #include "quic/connection/client_connection.h"
 #include "quic/connection/transport_param_config.h"
-#include "quic/connection/fix_buffer_packet_visitor.h"
 
 namespace quicx {
 namespace {
@@ -24,10 +23,10 @@ TEST(connnection_utest, client) {
 
     client_conn.Dial(addr);
 
-    FixBufferPacketVisitor visitor(1456);
+    uint8_t buf[1500] = {0};
+    std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(buf, buf + 1500);
 
-    client_conn.TrySendData(&visitor);
-    //client_conn.HandlePacket
+    client_conn.GenerateSendData(buffer);
 }
 
 }

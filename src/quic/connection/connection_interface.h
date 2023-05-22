@@ -41,7 +41,7 @@ public:
     virtual void Close() = 0;
 
     // try to build a quic message
-    virtual bool TrySendData(IPacketVisitor* pkt_visitor) = 0;
+    virtual bool GenerateSendData(std::shared_ptr<IBuffer> buffer) = 0;
 
     // Encryption correlation function
     virtual void SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
