@@ -37,7 +37,7 @@ public:
 
     void Close();
 
-    virtual bool TrySendData(IPacketVisitor* pkt_visitor);
+    bool GenerateSendData(std::shared_ptr<IBuffer> buffer);
 
     void SetHandshakeDoneCB(HandshakeDoneCB& cb);
 protected:

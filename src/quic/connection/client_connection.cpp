@@ -83,7 +83,7 @@ void ClientConnection::Close() {
 
 }
 
-bool ClientConnection::TrySendData(IPacketVisitor* pkt_visitor) {
+bool ClientConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
     FixBufferFrameVisitor frame_visitor(1450);
     // priority sending frames of connection
     for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
@@ -127,7 +127,11 @@ bool ClientConnection::TrySendData(IPacketVisitor* pkt_visitor) {
     }
     }
 
-    pkt_visitor->HandlePacket(packet);
+    std::shared_ptr<ICryptographer> crypto_grapher = _cryptographers[GetCurEncryptionLevel()];
+    if (!Encrypt(crypto_grapher, packet, buffer)) {
+        return false;
+    }
+
     return true;
 }
 
@@ -159,7 +163,7 @@ void ClientConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, 
     if (!_crypto_stream) {
         _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
     }
-    
+    _cur_encryption_level = level;
     _crypto_stream->Send((uint8_t*)data, len);
 }
 

@@ -20,7 +20,7 @@ public:
     // 3. 如果支持早期数据，从接收自客户端的恢复ticket中恢复应用层控制数据，并根据该信息接受或拒绝早期数据。
     virtual void Close();
 
-    virtual bool TrySendData(IPacketVisitor* pkt_visitor);
+    bool GenerateSendData(std::shared_ptr<IBuffer> buffer);
     void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg);
 protected:
