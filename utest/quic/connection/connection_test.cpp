@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "quic/connection/type.h"
+#include "quic/udp/udp_packet_in.h"
 #include "quic/frame/frame_decode.h"
+#include "quic/process/server_processor.h"
 #include "quic/crypto/tls/tls_client_ctx.h"
 #include "quic/connection/client_connection.h"
 #include "quic/connection/transport_param_config.h"
@@ -27,6 +29,12 @@ TEST(connnection_utest, client) {
     std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(buf, buf + 1500);
 
     client_conn.GenerateSendData(buffer);
+
+    std::shared_ptr<IUdpPacket> udp_packet = std::make_shared<UdpPacketIn>();
+    udp_packet->SetData(buffer);
+
+    std::shared_ptr<IProcessor> processor = std::make_shared<ServerProcessor>();
+    processor->HandlePacket(udp_packet);
 }
 
 }

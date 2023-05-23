@@ -13,7 +13,7 @@ public:
     IProcessor() {}
     virtual ~IProcessor() {}
 
-    virtual bool HandlePacket(std::shared_ptr<IUdpPacket>& udp_packet) = 0;
+    virtual bool HandlePacket(std::shared_ptr<IUdpPacket> udp_packet) = 0;
     virtual bool HandlePackets(const std::vector<std::shared_ptr<IUdpPacket>>& udp_packets) = 0;
 
 protected:
