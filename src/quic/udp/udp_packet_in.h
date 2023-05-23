@@ -16,14 +16,11 @@ class IBufferRead;
 class UdpPacketIn:
     public IUdpPacket  {
 public:
-    UdpPacketIn(std::shared_ptr<IBufferRead> buffer);
+    UdpPacketIn();
     ~UdpPacketIn();
 
     // set recv data from peer
     bool SetData(char* data, uint32_t size);
-
-private:
-    std::shared_ptr<IBufferRead> _recv_buffer;
 };
 
 }

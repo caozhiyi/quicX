@@ -4,8 +4,7 @@
 
 namespace quicx {
 
-UdpPacketIn::UdpPacketIn(std::shared_ptr<IBufferRead> buffer):
-    _recv_buffer(buffer) {
+UdpPacketIn::UdpPacketIn() {
 
 }
 
