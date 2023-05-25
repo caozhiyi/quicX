@@ -14,6 +14,15 @@ struct LongHeaderFlag {
     uint8_t _packet_type:2;
     uint8_t _fix_bit:1;
     uint8_t _header_form:1;
+
+    uint8_t getPacketNumberLength() { return _packet_number_length; }
+    void setPacketNumberLength(uint8_t len) { return _packet_number_length = len; }
+
+    uint8_t getReservedBits() { return _reserved_bits; }
+    void setReservedBits(uint8_t bits) { return _reserved_bits = bits; }
+
+    uint8_t getPacketType() { return _packet_type; }
+    void setPacketType(uint8_t type) { return _packet_type = type; }
 };
 
 struct ShortHeaderFlag {
@@ -23,6 +32,18 @@ struct ShortHeaderFlag {
     uint8_t _spin_bit:1;
     uint8_t _fix_bit:1;
     uint8_t _header_form:1;
+
+    uint8_t getPacketNumberLength() { return _packet_number_length; }
+    void setPacketNumberLength(uint8_t len) { return _packet_number_length = len; }
+
+    uint8_t getKeyPhase() { return _key_phase; }
+    void setKeyPhase(uint8_t phase) { return _key_phase = phase; }
+
+    uint8_t getReservedBits() { return _reserved_bits; }
+    void setReservedBits(uint8_t bits) { return _reserved_bits = bits; }
+
+    uint8_t getSpinBit() { return _spin_bit; }
+    void setSpinBit(uint8_t bit) { return _spin_bit = bit; }
 };
 
 class HeaderFlag {
@@ -36,11 +57,8 @@ public:
     virtual uint32_t EncodeFlagSize();
 
     uint8_t GetFlag() { return _flag._header_flag; }
-    PacketHeaderType GetHeaderType() const;
-    PacketType GetPacketType() const;
-    uint8_t GetPacketNumberLength() const { return _flag._long_header_flag._packet_number_length; }
-    LongHeaderFlag GetLongHeaderFlag() const { return _flag._long_header_flag; }
-    ShortHeaderFlag GetShortHeaderFlag() const { return _flag._short_header_flag; }
+    LongHeaderFlag& GetLongHeaderFlag() const { return _flag._long_header_flag; }
+    ShortHeaderFlag& GetShortHeaderFlag() const { return _flag._short_header_flag; }
 
 protected:
     union HeaderFlagUnion {
