@@ -15,14 +15,11 @@ struct LongHeaderFlag {
     uint8_t _fix_bit:1;
     uint8_t _header_form:1;
 
-    uint8_t getPacketNumberLength() { return _packet_number_length; }
-    void setPacketNumberLength(uint8_t len) { return _packet_number_length = len; }
+    uint8_t GetReservedBits() { return _reserved_bits; }
+    void SetReservedBits(uint8_t bits) { _reserved_bits = bits; }
 
-    uint8_t getReservedBits() { return _reserved_bits; }
-    void setReservedBits(uint8_t bits) { return _reserved_bits = bits; }
-
-    uint8_t getPacketType() { return _packet_type; }
-    void setPacketType(uint8_t type) { return _packet_type = type; }
+    uint8_t GetPacketType() { return _packet_type; }
+    void SetPacketType(uint8_t type) { _packet_type = type; }
 };
 
 struct ShortHeaderFlag {
@@ -33,22 +30,20 @@ struct ShortHeaderFlag {
     uint8_t _fix_bit:1;
     uint8_t _header_form:1;
 
-    uint8_t getPacketNumberLength() { return _packet_number_length; }
-    void setPacketNumberLength(uint8_t len) { return _packet_number_length = len; }
+    uint8_t GetKeyPhase() { return _key_phase; }
+    void SetKeyPhase(uint8_t phase) { _key_phase = phase; }
 
-    uint8_t getKeyPhase() { return _key_phase; }
-    void setKeyPhase(uint8_t phase) { return _key_phase = phase; }
+    uint8_t GetReservedBits() { return _reserved_bits; }
+    void SetReservedBits(uint8_t bits) { _reserved_bits = bits; }
 
-    uint8_t getReservedBits() { return _reserved_bits; }
-    void setReservedBits(uint8_t bits) { return _reserved_bits = bits; }
-
-    uint8_t getSpinBit() { return _spin_bit; }
-    void setSpinBit(uint8_t bit) { return _spin_bit = bit; }
+    uint8_t GetSpinBit() { return _spin_bit; }
+    void SetSpinBit(uint8_t bit) { _spin_bit = bit; }
 };
 
 class HeaderFlag {
 public:
     HeaderFlag() { _flag._header_flag = 0; }
+    HeaderFlag(PacketHeaderType type) { _flag._header_flag = 0; _flag._long_header_flag.SetPacketType(type); }
     HeaderFlag(uint8_t flag) { _flag._header_flag = flag; }
     virtual ~HeaderFlag() {}
 
@@ -56,9 +51,15 @@ public:
     virtual bool DecodeFlag(std::shared_ptr<IBufferRead> buffer);
     virtual uint32_t EncodeFlagSize();
 
+    virtual PacketHeaderType GetHeaderType() const;
+    virtual PacketType GetPacketType();
+
     uint8_t GetFlag() { return _flag._header_flag; }
-    LongHeaderFlag& GetLongHeaderFlag() const { return _flag._long_header_flag; }
-    ShortHeaderFlag& GetShortHeaderFlag() const { return _flag._short_header_flag; }
+    
+    uint8_t GetPacketNumberLength() { return _flag._long_header_flag._packet_number_length; }
+    void SetPacketNumberLength(uint8_t len) { _flag._long_header_flag._packet_number_length = len; }
+    LongHeaderFlag& GetLongHeaderFlag() { return _flag._long_header_flag; }
+    ShortHeaderFlag& GetShortHeaderFlag() { return _flag._short_header_flag; }
 
 protected:
     union HeaderFlagUnion {

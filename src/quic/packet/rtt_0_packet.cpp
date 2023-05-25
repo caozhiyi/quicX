@@ -4,7 +4,7 @@
 namespace quicx {
 
 Rtt0Packet::Rtt0Packet() {
-
+    _header.GetLongHeaderFlag().SetPacketType(PT_0RTT);
 }
 
 Rtt0Packet::~Rtt0Packet() {

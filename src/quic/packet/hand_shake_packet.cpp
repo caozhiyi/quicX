@@ -5,7 +5,7 @@
 namespace quicx {
 
 HandShakePacket::HandShakePacket() {
-
+    _header.GetLongHeaderFlag().SetPacketType(PT_HANDSHAKE);
 }
 
 HandShakePacket::~HandShakePacket() {
