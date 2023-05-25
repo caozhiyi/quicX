@@ -11,11 +11,13 @@
 namespace quicx {
 
 LongHeader::LongHeader():
+    IHeader(PHT_LONG_HEADER),
     _version(0),
     _destination_connection_id_length(0),
     _source_connection_id_length(0) {
     memset(_destination_connection_id, 0, __max_connection_length);
     memset(_source_connection_id, 0, __max_connection_length);
+
 }
 
 LongHeader::LongHeader(uint8_t flag):

@@ -38,14 +38,14 @@ uint32_t HeaderFlag::EncodeFlagSize() {
 }
 
 PacketHeaderType HeaderFlag::GetHeaderType() const {
-    return _flag._long_header_flag._header_form != 1 ? PHT_LONG_HEADER : PHT_SHORT_HEADER;
+    return _flag._long_header_flag._header_form == 1 ? PHT_LONG_HEADER : PHT_SHORT_HEADER;
 }
 
-PacketType HeaderFlag::GetPacketType() const {
+PacketType HeaderFlag::GetPacketType() {
     if (GetHeaderType() == PHT_SHORT_HEADER) {
         return PT_1RTT;
     }
-    switch (GetLongHeaderFlag()._packet_type) {
+    switch (GetLongHeaderFlag().GetPacketType()) {
     case 0x00:
         return PT_INITIAL;
     case 0x01:

@@ -4,8 +4,8 @@
 namespace quicx {
 
 enum PacketHeaderType {
-    PHT_SHORT_HEADER = 0x00,
-    PHT_LONG_HEADER  = 0x01,
+    PHT_SHORT_HEADER = 0x0,
+    PHT_LONG_HEADER  = 0x1,
 };
 
 }

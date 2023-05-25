@@ -10,7 +10,7 @@ namespace quicx {
 
 InitPacket::InitPacket():
     _packet_num_offset(0) {
-
+    _header.GetLongHeaderFlag().SetPacketType(PT_INITIAL);
 }
 
 InitPacket::InitPacket(uint8_t flag):

@@ -3,7 +3,7 @@
 namespace quicx {
 
 VersionNegotiationPacket::VersionNegotiationPacket() {
-
+    _header.GetLongHeaderFlag().SetPacketType(PT_NEGOTIATION);
 }
 
 VersionNegotiationPacket::~VersionNegotiationPacket() {

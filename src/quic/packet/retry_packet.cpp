@@ -5,7 +5,7 @@
 namespace quicx {
 
 RetryPacket::RetryPacket() {
-
+    _header.GetLongHeaderFlag().SetPacketType(PT_RETRY);
 }
 
 RetryPacket::~RetryPacket() {

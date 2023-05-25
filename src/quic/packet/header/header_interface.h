@@ -14,6 +14,7 @@ class IHeader:
     public HeaderFlag {
 public:
     IHeader() {}
+    IHeader(PacketHeaderType type): HeaderFlag(type) {}
     IHeader(uint8_t flag): HeaderFlag(flag) {}
     virtual ~IHeader() {}
 

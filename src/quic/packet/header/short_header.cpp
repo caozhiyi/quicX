@@ -3,7 +3,8 @@
 
 namespace quicx {
 
-ShortHeader::ShortHeader() {
+ShortHeader::ShortHeader():
+    IHeader(PHT_SHORT_HEADER) {
 
 }
 
