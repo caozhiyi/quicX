@@ -5,6 +5,19 @@
 
 namespace quicx {
 
+HeaderFlag::HeaderFlag() { 
+    _flag._header_flag = 0;
+}
+
+HeaderFlag::HeaderFlag(PacketHeaderType type) {
+    _flag._header_flag = 0;
+    _flag._long_header_flag._header_form = type;
+}
+
+HeaderFlag::HeaderFlag(uint8_t flag) {
+    _flag._header_flag = flag;
+}
+
 bool HeaderFlag::EncodeFlag(std::shared_ptr<IBufferWrite> buffer) {
     uint16_t need_size = EncodeFlagSize();
     auto span = buffer->GetWriteSpan();
