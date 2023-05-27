@@ -42,9 +42,9 @@ struct ShortHeaderFlag {
 
 class HeaderFlag {
 public:
-    HeaderFlag() { _flag._header_flag = 0; }
-    HeaderFlag(PacketHeaderType type) { _flag._header_flag = 0; _flag._long_header_flag.SetPacketType(type); }
-    HeaderFlag(uint8_t flag) { _flag._header_flag = flag; }
+    HeaderFlag();
+    HeaderFlag(PacketHeaderType type);
+    HeaderFlag(uint8_t flag);
     virtual ~HeaderFlag() {}
 
     virtual bool EncodeFlag(std::shared_ptr<IBufferWrite> buffer);
@@ -52,10 +52,12 @@ public:
     virtual uint32_t EncodeFlagSize();
 
     virtual PacketHeaderType GetHeaderType() const;
+    uint8_t GetFixBit() const { return _flag._long_header_flag._fix_bit; } 
+
     virtual PacketType GetPacketType();
 
     uint8_t GetFlag() { return _flag._header_flag; }
-    
+
     uint8_t GetPacketNumberLength() { return _flag._long_header_flag._packet_number_length; }
     void SetPacketNumberLength(uint8_t len) { _flag._long_header_flag._packet_number_length = len; }
     LongHeaderFlag& GetLongHeaderFlag() { return _flag._long_header_flag; }
