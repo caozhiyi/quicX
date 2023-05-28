@@ -20,7 +20,7 @@ TEST(header_flag_utest, rtt1_create) {
     EXPECT_EQ(flag.GetPacketNumberLength(), 2);
     EXPECT_EQ(flag.GetHeaderType(), PHT_SHORT_HEADER);
     EXPECT_EQ(flag.GetPacketType(), PT_1RTT);
-    EXPECT_EQ(flag.GetFixBit(), 0);
+    EXPECT_EQ(flag.GetFixBit(), 1);
 }
 
 TEST(header_flag_utest, init_create) {
@@ -33,7 +33,7 @@ TEST(header_flag_utest, init_create) {
     EXPECT_EQ(flag.GetPacketNumberLength(), 2);
     EXPECT_EQ(flag.GetHeaderType(), PHT_LONG_HEADER);
     EXPECT_EQ(flag.GetPacketType(), PT_INITIAL);
-    EXPECT_EQ(flag.GetFixBit(), 0);
+    EXPECT_EQ(flag.GetFixBit(), 1);
 }
 
 TEST(header_flag_utest, rtt1_encode) {
@@ -50,16 +50,16 @@ TEST(header_flag_utest, rtt1_encode) {
     EXPECT_TRUE(flag.EncodeFlag(buffer));
     EXPECT_EQ(buffer->GetDataLength(), 1);
 
-    HeaderFlag newFlag;
-    EXPECT_TRUE(newFlag.DecodeFlag(buffer));
+    HeaderFlag new_flag;
+    EXPECT_TRUE(new_flag.DecodeFlag(buffer));
 
-    EXPECT_EQ(newFlag.GetShortHeaderFlag().GetSpinBit(), 1);
-    EXPECT_EQ(newFlag.GetShortHeaderFlag().GetReservedBits(), 1);
-    EXPECT_EQ(newFlag.GetShortHeaderFlag().GetKeyPhase(), 1);
-    EXPECT_EQ(newFlag.GetPacketNumberLength(), 2);
-    EXPECT_EQ(newFlag.GetHeaderType(), PHT_SHORT_HEADER);
-    EXPECT_EQ(newFlag.GetPacketType(), PT_1RTT);
-    EXPECT_EQ(newFlag.GetFixBit(), 0);
+    EXPECT_EQ(new_flag.GetShortHeaderFlag().GetSpinBit(), 1);
+    EXPECT_EQ(new_flag.GetShortHeaderFlag().GetReservedBits(), 1);
+    EXPECT_EQ(new_flag.GetShortHeaderFlag().GetKeyPhase(), 1);
+    EXPECT_EQ(new_flag.GetPacketNumberLength(), 2);
+    EXPECT_EQ(new_flag.GetHeaderType(), PHT_SHORT_HEADER);
+    EXPECT_EQ(new_flag.GetPacketType(), PT_1RTT);
+    EXPECT_EQ(new_flag.GetFixBit(), 1);
 }
 
 TEST(header_flag_utest, init_encode) {
@@ -75,14 +75,14 @@ TEST(header_flag_utest, init_encode) {
     EXPECT_TRUE(flag.EncodeFlag(buffer));
     EXPECT_EQ(buffer->GetDataLength(), 1);
 
-    HeaderFlag newFlag;
-    EXPECT_TRUE(newFlag.DecodeFlag(buffer));
+    HeaderFlag new_flag;
+    EXPECT_TRUE(new_flag.DecodeFlag(buffer));
 
-    EXPECT_EQ(newFlag.GetLongHeaderFlag().GetReservedBits(), 1);
-    EXPECT_EQ(newFlag.GetPacketNumberLength(), 2);
-    EXPECT_EQ(newFlag.GetHeaderType(), PHT_LONG_HEADER);
-    EXPECT_EQ(newFlag.GetPacketType(), PT_INITIAL);
-    EXPECT_EQ(newFlag.GetFixBit(), 0);
+    EXPECT_EQ(new_flag.GetLongHeaderFlag().GetReservedBits(), 1);
+    EXPECT_EQ(new_flag.GetPacketNumberLength(), 2);
+    EXPECT_EQ(new_flag.GetHeaderType(), PHT_LONG_HEADER);
+    EXPECT_EQ(new_flag.GetPacketType(), PT_INITIAL);
+    EXPECT_EQ(new_flag.GetFixBit(), 1);
 }
 
 }

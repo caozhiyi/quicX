@@ -43,14 +43,15 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     cur_pos = EncodeVarint(cur_pos, _payload_length);
     _packet_num_offset = cur_pos - start_pos;
 
-    cur_pos += _header.GetPacketNumberLength();
+    // todo process packet number
+    //cur_pos += _header.GetPacketNumberLength();
     _payload_offset = cur_pos - start_pos;
 
+    memcpy(cur_pos, _palyload.GetStart(), _palyload.GetLength());
     cur_pos += _payload_length;
-    _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
 
+    _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
     buffer->MoveWritePt(cur_pos - span.GetStart());
-    buffer->Write(_palyload.GetStart(), _palyload.GetLength());
     return true;
 }
 
@@ -61,17 +62,17 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
     }
 
     // check version
-    if (!CheckVersion(_header.GetVersion())) {
+    /*if (!CheckVersion(_header.GetVersion())) {
         return false;
-    }
+    }*/
 
     auto span = buffer->GetReadSpan();
 
     // check buffer length
-    if (span.GetLength() <= __min_initial_size) {
+    /*if (span.GetLength() <= __min_initial_size) {
         LOG_ERROR("buffer is too small for initial packet");
         return false;
-    }
+    }*/
     
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
@@ -84,10 +85,11 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
     cur_pos = DecodeVarint(cur_pos, end, _payload_length);
     _packet_num_offset = cur_pos - start_pos;
 
-    cur_pos += _header.GetPacketNumberLength();
+    // todo process packet number
+    //cur_pos += _header.GetPacketNumberLength();
     _payload_offset = cur_pos - start_pos;
-
     cur_pos += _payload_length;
+    
     _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
 
     buffer->MoveReadPt(cur_pos - span.GetStart());
@@ -113,6 +115,16 @@ uint32_t InitPacket::EncodeSize() {
 
 bool InitPacket::AddFrame(std::shared_ptr<IFrame> frame) {
     return true;
+}
+
+void InitPacket::SetToken(uint8_t* token, uint32_t len) {
+    _token = token;
+    _token_length = len;
+}
+
+void InitPacket::SetPayload(BufferSpan payload) {
+    _payload_length = payload.GetLength();
+    _palyload = payload;
 }
 
 }

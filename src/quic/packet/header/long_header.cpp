@@ -15,8 +15,6 @@ LongHeader::LongHeader():
     _version(0),
     _destination_connection_id_length(0),
     _source_connection_id_length(0) {
-    memset(_destination_connection_id, 0, __max_connection_length);
-    memset(_source_connection_id, 0, __max_connection_length);
 
 }
 
@@ -25,8 +23,7 @@ LongHeader::LongHeader(uint8_t flag):
     _version(0),
     _destination_connection_id_length(0),
     _source_connection_id_length(0) {
-    memset(_destination_connection_id, 0, __max_connection_length);
-    memset(_source_connection_id, 0, __max_connection_length);
+
 }
 
 LongHeader::~LongHeader() {
@@ -47,27 +44,27 @@ bool LongHeader::EncodeHeader(std::shared_ptr<IBufferWrite> buffer) {
         return false;
     }
     
-
-    uint8_t* start_pos = span.GetStart();
-    uint8_t* cur_pos = start_pos;
+    uint8_t* cur_pos = span.GetStart();
     cur_pos = FixedEncodeUint32(cur_pos, _version);
     cur_pos = FixedEncodeUint8(cur_pos, _destination_connection_id_length);
-
-    buffer->MoveWritePt(cur_pos - span.GetStart());
-    buffer->Write(_destination_connection_id, _destination_connection_id_length);
-    cur_pos += _destination_connection_id_length;
+    if (_destination_connection_id > 0) {
+        memcpy(cur_pos, _destination_connection_id, _destination_connection_id_length);
+        cur_pos += _destination_connection_id_length;
+    }
 
     cur_pos = FixedEncodeUint8(cur_pos, _source_connection_id_length);
+    if (_source_connection_id_length > 0) {
+        memcpy(cur_pos, _source_connection_id, _source_connection_id_length);
+        cur_pos += _source_connection_id_length;
+    }
     buffer->MoveWritePt(cur_pos - span.GetStart());
-
-    cur_pos += buffer->Write(_source_connection_id, _source_connection_id_length);
-    _header_src_data = std::move(BufferSpan(start_pos - 1, cur_pos));
+    _header_src_data = std::move(BufferSpan(span.GetStart() - 1, cur_pos));
     return true;
 }
 
 bool LongHeader::DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
     if (with_flag) {
-        if (HeaderFlag::DecodeFlag(buffer)) {
+        if (!HeaderFlag::DecodeFlag(buffer)) {
             return false;
         }
     }
@@ -95,10 +92,6 @@ bool LongHeader::DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_fla
  
     _header_src_data = std::move(BufferSpan(span.GetStart() - (with_flag ? 1 : 0), pos));
     buffer->MoveReadPt(pos - span.GetStart());
-
-    LOG_DEBUG("get destination connect id:%s", _destination_connection_id);
-    LOG_DEBUG("get source connect id:%s", _source_connection_id);
-
     return true;
 }
 
@@ -106,8 +99,14 @@ uint32_t LongHeader::EncodeHeaderSize() {
     return sizeof(LongHeader);
 }
 
-uint32_t LongHeader::GetVersion() const {
-    return _version;
+void LongHeader::SetDestinationConnectionId(uint8_t* id, uint8_t len) {
+    _destination_connection_id_length = len;
+    memcpy(_destination_connection_id, id, len);
+}
+
+void LongHeader::SetSourceConnectionId(uint8_t* id, uint8_t len) {
+    _source_connection_id_length = len;
+    memcpy(_source_connection_id, id, len);
 }
 
 }

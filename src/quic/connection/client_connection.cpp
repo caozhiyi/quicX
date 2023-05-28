@@ -127,13 +127,14 @@ bool ClientConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
     }
     }
 
-    packet->Encode(frame_visitor.GetBuffer());
-    /*std::shared_ptr<ICryptographer> crypto_grapher = _cryptographers[GetCurEncryptionLevel()];
+    uint8_t plaintext_buf[1450] = {0};
+    std::shared_ptr<IBuffer> plaintext_buffer = std::make_shared<Buffer>(plaintext_buf, plaintext_buf + 1450);
+    packet->Encode(plaintext_buffer);
+    
+    std::shared_ptr<ICryptographer> crypto_grapher = _cryptographers[GetCurEncryptionLevel()];
     if (!Encrypt(crypto_grapher, packet, buffer)) {
         return false;
-    }*/
-    buffer->Write(frame_visitor.GetBuffer()->GetData(), frame_visitor.GetBuffer()->GetDataLength());
-
+    }
     return true;
 }
 
