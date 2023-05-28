@@ -19,9 +19,14 @@ public:
     virtual bool DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag = false);
     virtual uint32_t EncodeHeaderSize();
 
-    uint32_t GetVersion() const;
+    void SetVersion(uint32_t version) { _version = version; } 
+    uint32_t GetVersion() const {  return _version; }
+
+    void SetDestinationConnectionId(uint8_t* id, uint8_t len);
     uint8_t GetDestinationConnectionIdLength() { return _destination_connection_id_length; }
     const uint8_t* GetDestinationConnectionId()  { return _destination_connection_id; }
+
+    void SetSourceConnectionId(uint8_t* id, uint8_t len);
     uint8_t GetSourceConnectionIdLength() { return _source_connection_id_length; }
     const uint8_t* GetSourceConnectionId()  { return _source_connection_id; }
 

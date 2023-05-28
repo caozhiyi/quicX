@@ -10,6 +10,25 @@
 
 namespace quicx {
 
+/*
+Initial Packet {
+    Header Form (1) = 1,
+    Fixed Bit (1) = 1,
+    Long Packet Type (2) = 0,
+    Reserved Bits (2),
+    Packet Number Length (2),
+    Version (32),
+    Destination Connection ID Length (8),
+    Destination Connection ID (0..160),
+    Source Connection ID Length (8),
+    Source Connection ID (0..160),
+    Token Length (i),
+    Token (..),
+    Length (i),
+    Packet Number (8..32),
+    Packet Payload (8..),
+}
+*/
 class InitPacket:
     public IPacket {
 public:
@@ -29,20 +48,25 @@ public:
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frame_list; }
 
-    void SetPayload(BufferSpan payload) { _palyload = payload; }
+    void SetToken(uint8_t* token, uint32_t len);
+    uint32_t GetTokenLength() { return _token_length; }
+    uint8_t* GetToken() { return _token; }
+
+    void SetPayload(BufferSpan payload);
+    BufferSpan GetPayload() { return _palyload; }
     uint32_t GetPayloadLength() { return _payload_length; }
 
 private:
     LongHeader _header;
     uint32_t _token_length;
-    const uint8_t* _token;
+    uint8_t* _token;
 
-    BufferSpan _palyload;
-    uint32_t _payload_offset;
     uint32_t _payload_length;
+    uint64_t _packet_num;
+    BufferSpan _palyload;
 
+    uint32_t _payload_offset;
     uint32_t _packet_num_offset;
-
     std::vector<std::shared_ptr<IFrame>> _frame_list;
 };
 

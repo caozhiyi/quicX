@@ -7,11 +7,13 @@ namespace quicx {
 
 HeaderFlag::HeaderFlag() { 
     _flag._header_flag = 0;
+    _flag._long_header_flag._fix_bit = 1;
 }
 
 HeaderFlag::HeaderFlag(PacketHeaderType type) {
     _flag._header_flag = 0;
     _flag._long_header_flag._header_form = type;
+    _flag._long_header_flag._fix_bit = 1;
 }
 
 HeaderFlag::HeaderFlag(uint8_t flag) {
