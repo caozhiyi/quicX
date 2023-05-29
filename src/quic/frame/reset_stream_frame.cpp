@@ -7,8 +7,7 @@
 namespace quicx {
 
 ResetStreamFrame::ResetStreamFrame(): 
-    IFrame(FT_RESET_STREAM),
-    _stream_id(0),
+    IStreamFrame(FT_RESET_STREAM),
     _app_error_code(0), 
     _final_size(0) {
 

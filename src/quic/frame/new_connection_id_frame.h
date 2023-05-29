@@ -3,13 +3,14 @@
 
 #include <vector>
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
 static const uint16_t __stateless_reset_token_length = 128;
 
-class NewConnectionIDFrame: public IFrame {
+class NewConnectionIDFrame:
+    public IFrame {
 public:
     NewConnectionIDFrame();
     ~NewConnectionIDFrame();

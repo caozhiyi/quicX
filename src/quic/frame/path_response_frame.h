@@ -1,11 +1,12 @@
 #ifndef QUIC_FRAME_PATH_RESPONSE_FRAME
 #define QUIC_FRAME_PATH_RESPONSE_FRAME
 
-#include "path_challenge_frame.h"
+#include "quic/frame/path_challenge_frame.h"
 
 namespace quicx {
 
-class PathResponseFrame: public IFrame {
+class PathResponseFrame:
+    public IFrame {
 public:
     PathResponseFrame();
     ~PathResponseFrame();

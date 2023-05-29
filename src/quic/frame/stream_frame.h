@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/stream_frame_interface.h"
 
 namespace quicx {
 
@@ -14,7 +14,8 @@ enum StreamFrameFlag {
 };
 
 class Buffer;
-class StreamFrame: public IFrame {
+class StreamFrame:
+    public IStreamFrame {
 public:
     StreamFrame();
     StreamFrame(uint16_t frame_type);
@@ -23,9 +24,6 @@ public:
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
-
-    void SetStreamID(uint64_t stream_id) { _stream_id = stream_id; }
-    uint64_t GetStreamID() { return _stream_id; }
 
     bool HasOffset() { return _frame_type & SFF_OFF; }
     void SetOffset(uint64_t offset);
@@ -40,7 +38,6 @@ public:
     uint32_t GetLength() { return _length; }
 
 private:
-    uint64_t _stream_id;  // indicating the stream ID of the stream.
     uint64_t _offset;     // the byte offset in the stream for the data in this STREAM frame.
 
     uint32_t _length;     // the length of the Stream Data field in this STREAM frame.

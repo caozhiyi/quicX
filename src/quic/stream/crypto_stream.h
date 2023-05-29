@@ -12,6 +12,11 @@ public:
     virtual ~CryptoStream();
 
     virtual bool TrySendData(IFrameVisitor* visitor);
+
+    void OnFrame(std::shared_ptr<IFrame> frame);
+
+protected:
+    void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 };
 
 }

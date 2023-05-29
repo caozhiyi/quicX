@@ -2,11 +2,12 @@
 #define QUIC_FRAME_MAX_STREAMS_FRAME
 
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
-class MaxStreamsFrame: public IFrame {
+class MaxStreamsFrame:
+    public IFrame {
 public:
     MaxStreamsFrame(uint16_t frame_type);
     ~MaxStreamsFrame();

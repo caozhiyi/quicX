@@ -17,7 +17,7 @@ TEST(stream_id_generator_utest, client) {
 
     // 1100
     stream_id = generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL);
-    EXPECT_EQ(stream_id, 12); 
+    EXPECT_EQ(stream_id, 12);
 
     // 10000
     stream_id = generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL);

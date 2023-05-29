@@ -7,8 +7,7 @@
 namespace quicx {
 
 StopSendingFrame::StopSendingFrame(): 
-    IFrame(FT_STOP_SENDING),
-    _stream_id(0),
+    IStreamFrame(FT_STOP_SENDING),
     _app_error_code(0) {
 
 }

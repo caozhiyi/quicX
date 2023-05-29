@@ -11,7 +11,7 @@
 namespace quicx {
 
 class SendStream:
-    public ISendStream {
+    public virtual ISendStream {
 public:
     SendStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id = 0);
     virtual ~SendStream();
@@ -28,15 +28,14 @@ public:
 
     virtual bool TrySendData(IFrameVisitor* visitor);
 
-private:
+protected:
     void OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame);
     void OnStopSendingFrame(std::shared_ptr<IFrame> frame);
 
-private:
+protected:
     uint64_t _data_offset;
     uint64_t _peer_data_limit;
     std::shared_ptr<IBufferChains> _send_buffer;
-    std::list<std::shared_ptr<IFrame>> _frame_list;
 };
 
 }

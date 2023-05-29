@@ -2,11 +2,12 @@
 #define QUIC_FRAME_RESET_STREAM_FRAME
 
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/stream_frame_interface.h"
 
 namespace quicx {
 
-class ResetStreamFrame: public IFrame {
+class ResetStreamFrame:
+    public IStreamFrame {
 public:
     ResetStreamFrame();
     ~ResetStreamFrame();
@@ -15,9 +16,6 @@ public:
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetStreamID(uint64_t id) { _stream_id = id; }
-    uint64_t GetStreamID() { return _stream_id; }
-
     void SetAppErrorCode(uint64_t err_code) { _app_error_code = err_code; }
     uint64_t GetAppErrorCode() { return _app_error_code; }
 
@@ -25,7 +23,6 @@ public:
     uint64_t GetFinalSize() { return _final_size; }
 
 private:
-   uint64_t _stream_id;      // the Stream ID of the stream being terminated.
    uint64_t _app_error_code; // the application protocol error code.
    uint64_t _final_size;     // the final size of the stream by the RESET_STREAM sender.
 }; 

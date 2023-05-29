@@ -1,11 +1,12 @@
 #ifndef QUIC_FRAME_PING_FRAME
 #define QUIC_FRAME_PING_FRAME
 
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
-class PingFrame: public IFrame {
+class PingFrame:
+    public IFrame {
 public:
     PingFrame(): IFrame(FT_PING) {}
     ~PingFrame() {}

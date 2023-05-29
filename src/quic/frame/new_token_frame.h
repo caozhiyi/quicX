@@ -2,12 +2,13 @@
 #define QUIC_FRAME_NEW_TOKEN_FRAME
 
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
 class Buffer;
-class NewTokenFrame: public IFrame {
+class NewTokenFrame:
+    public IFrame {
 public:
     NewTokenFrame();
     ~NewTokenFrame();

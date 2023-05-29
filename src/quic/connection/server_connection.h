@@ -3,13 +3,13 @@
 
 #include <memory>
 #include <cstdint>
-#include "quic/connection/connection_interface.h"
+#include "quic/connection/base_connection.h"
 #include "quic/crypto/tls/tls_server_conneciton.h"
 
 namespace quicx {
 
 class ServerConnection:
-    public IConnection,
+    public BaseConnection,
     public TlsServerHandlerInterface {
 public:
     ServerConnection(std::shared_ptr<TLSCtx> ctx);
@@ -23,15 +23,15 @@ public:
     bool GenerateSendData(std::shared_ptr<IBuffer> buffer);
     void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg);
+
 protected:
-    virtual bool HandleInitial(std::shared_ptr<InitPacket> packet);
-    virtual bool Handle0rtt(std::shared_ptr<Rtt0Packet> packet);
-    virtual bool HandleHandshake(std::shared_ptr<HandShakePacket> packet);
-    virtual bool HandleRetry(std::shared_ptr<RetryPacket> packet);
-    virtual bool Handle1rtt(std::shared_ptr<Rtt1Packet> packet);
+    virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet);
+    virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
+    virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);
+    virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
+    virtual bool On1rttPacket(std::shared_ptr<IPacket> packet);
 
 private:
-    std::shared_ptr<BlockMemoryPool> _alloter;
     std::shared_ptr<TLSServerConnection> _tls_connection;
 };
 

@@ -80,7 +80,9 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
     cur_pos = DecodeVarint(cur_pos, end, _token_length);
     _token = cur_pos;
     cur_pos += _token_length;
-    LOG_DEBUG("get initial token:%s", _token);
+    if (_token_length > 0) {
+        LOG_DEBUG("get initial token:%s", _token);
+    }
 
     cur_pos = DecodeVarint(cur_pos, end, _payload_length);
     _packet_num_offset = cur_pos - start_pos;

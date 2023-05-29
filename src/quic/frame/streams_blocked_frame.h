@@ -2,11 +2,12 @@
 #define QUIC_FRAME_STREAMS_BLOCKED_FRAME
 
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/stream_frame_interface.h"
 
 namespace quicx {
 
-class StreamsBlockedFrame: public IFrame {
+class StreamsBlockedFrame:
+    public IFrame {
 public:
     StreamsBlockedFrame(uint16_t frame_type);
     ~StreamsBlockedFrame();
