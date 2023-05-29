@@ -36,7 +36,8 @@ private:
     std::vector<AckRange> _ack_ranges;                 
 };
 
-class AckEcnFrame: public AckFrame {
+class AckEcnFrame:
+    public AckFrame {
 public:
     AckEcnFrame();
     ~AckEcnFrame();

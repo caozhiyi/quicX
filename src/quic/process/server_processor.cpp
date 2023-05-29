@@ -34,14 +34,14 @@ bool ServerProcessor::HandlePacket(std::shared_ptr<IUdpPacket> udp_packet) {
     long cid_code = ConnectionIDGenerator::Instance().Hash(cid, len);
     auto conn = _conn_map.find(cid_code);
     if (conn != _conn_map.end()) {
-        conn->second->HandlePacket(packets);
+        conn->second->OnPackets(packets);
         return false;
     }
 
     auto new_conn = std::make_shared<ServerConnection>(nullptr);
     new_conn->AddConnectionId(cid, len);
     _conn_map[cid_code] = new_conn;
-    new_conn->HandlePacket(packets);    
+    new_conn->OnPackets(packets);    
 
     return true;
 }

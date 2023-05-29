@@ -1,7 +1,7 @@
 #ifndef QUIC_FRAME_PATH_CHALLENGE_FRAME
 #define QUIC_FRAME_PATH_CHALLENGE_FRAME
 
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
@@ -9,7 +9,8 @@ static const uint16_t __path_data_length = 8;
 
 class RangeRandom;
 class PathResponseFrame;
-class PathChallengeFrame: public IFrame {
+class PathChallengeFrame:
+    public IFrame {
 public:
     PathChallengeFrame();
     ~PathChallengeFrame();

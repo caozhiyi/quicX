@@ -47,7 +47,7 @@ bool LongHeader::EncodeHeader(std::shared_ptr<IBufferWrite> buffer) {
     uint8_t* cur_pos = span.GetStart();
     cur_pos = FixedEncodeUint32(cur_pos, _version);
     cur_pos = FixedEncodeUint8(cur_pos, _destination_connection_id_length);
-    if (_destination_connection_id > 0) {
+    if (_destination_connection_id_length > 0) {
         memcpy(cur_pos, _destination_connection_id, _destination_connection_id_length);
         cur_pos += _destination_connection_id_length;
     }

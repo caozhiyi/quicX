@@ -3,11 +3,12 @@
 
 #include <string>
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
-class ConnectionCloseFrame: public IFrame {
+class ConnectionCloseFrame:
+    public IFrame {
 public:
     ConnectionCloseFrame();
     ConnectionCloseFrame(uint16_t frame_type);

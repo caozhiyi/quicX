@@ -2,11 +2,12 @@
 #define QUIC_FRAME_MAX_DATA_FRAME
 
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
-class MaxDataFrame: public IFrame {
+class MaxDataFrame:
+    public IFrame {
 public:
     MaxDataFrame();
     ~MaxDataFrame();

@@ -38,4 +38,26 @@ bool CryptoStream::TrySendData(IFrameVisitor* visitor) {
     return true;
 }
 
+void CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
+    uint16_t frame_type = frame->GetType();
+    if (frame_type == FT_CRYPTO) {
+        OnCryptoFrame(frame);
+        return;
+    }
+    BidirectionStream::OnFrame(frame);
+}
+
+void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
+    if(!_recv_machine->OnFrame(frame->GetType())) {
+        return;
+    }
+
+    auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frame);
+    _recv_buffer->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+
+    if (_recv_cb) {
+        _recv_cb(_recv_buffer, 0);
+    }
+}
+
 }

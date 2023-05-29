@@ -2,11 +2,12 @@
 #define QUIC_FRAME_RETIRE_CONNECTION_ID_FRAME
 
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
-class RetireConnectionIDFrame: public IFrame {
+class RetireConnectionIDFrame:
+    public IFrame {
 public:
     RetireConnectionIDFrame();
     ~RetireConnectionIDFrame();

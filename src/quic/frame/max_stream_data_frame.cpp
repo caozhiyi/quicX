@@ -8,8 +8,7 @@ namespace quicx {
 
 
 MaxStreamDataFrame::MaxStreamDataFrame():
-    IFrame(FT_MAX_STREAM_DATA),
-    _stream_id(0),
+    IStreamFrame(FT_MAX_STREAM_DATA),
     _maximum_data(0) {
 
 }

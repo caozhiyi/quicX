@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "quic/packet/header/long_header.h"
 #include "quic/process/processor_interface.h"
 
 namespace quicx {

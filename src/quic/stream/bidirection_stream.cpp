@@ -12,10 +12,9 @@
 namespace quicx {
 
 BidirectionStream::BidirectionStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t id):
-    ISendStream(id), 
-    _alloter(alloter) {
-    _recv_machine = std::make_shared<RecvStreamStateMachine>();
-    _send_machine = std::make_shared<SendStreamStateMachine>();
+    SendStream(alloter, id),
+    RecvStream(alloter, id) {
+
 }
 
 BidirectionStream::~BidirectionStream() {
@@ -35,7 +34,29 @@ void BidirectionStream::Close() {
 }
 
 void BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
-
+    uint16_t frame_type = frame->GetType();
+    switch (frame_type)
+    {
+    case FT_STREAM_DATA_BLOCKED:
+        OnStreamDataBlockFrame(frame);
+        break;
+    case FT_RESET_STREAM:
+        OnResetStreamFrame(frame);
+        break;
+    case FT_MAX_STREAM_DATA:
+        OnMaxStreamDataFrame(frame);
+        break;
+    case FT_STOP_SENDING:
+        OnStopSendingFrame(frame);
+        break;
+    default:
+        if (frame_type >= FT_STREAM && frame_type <= FT_STREAM_MAX) {
+            OnStreamFrame(frame);
+            break;
+        } else {
+            LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
+        }
+    }
 }
 
 bool BidirectionStream::TrySendData(IFrameVisitor* visitor) {
@@ -66,14 +87,7 @@ bool BidirectionStream::TrySendData(IFrameVisitor* visitor) {
 }
 
 int32_t BidirectionStream::Send(uint8_t* data, uint32_t len) {
-    if (!_send_buffer) {
-        _send_buffer = std::make_shared<BufferChains>(_alloter);
-    }
-    int32_t ret = _send_buffer->Write(data, len);
-    if (_hope_send_cb) {
-        _hope_send_cb(this);
-    }
-    return ret;
+    return SendStream::Send(data, len);
 }
 
 void BidirectionStream::Reset(uint64_t err) {

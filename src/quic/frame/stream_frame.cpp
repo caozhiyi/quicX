@@ -5,14 +5,14 @@
 namespace quicx {
 
 StreamFrame::StreamFrame():
-    IFrame(FT_STREAM),
+    IStreamFrame(FT_STREAM),
     _offset(0),
     _length(0) {
 
 }
 
 StreamFrame::StreamFrame(uint16_t frame_type):
-    IFrame(frame_type),
+    IStreamFrame(frame_type),
     _offset(0) {
 
 }

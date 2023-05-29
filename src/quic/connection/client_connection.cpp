@@ -15,7 +15,7 @@ namespace quicx {
 
 
 ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx):
-    _id_generator(StreamIDGenerator::SS_CLIENT) {
+    BaseConnection(StreamIDGenerator::SS_CLIENT) {
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
     _tls_connection = std::make_shared<TLSClientConnection>(ctx, this);
 }
@@ -83,82 +83,26 @@ void ClientConnection::Close() {
 
 }
 
-bool ClientConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
-    FixBufferFrameVisitor frame_visitor(1450);
-    // priority sending frames of connection
-    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
-        if (frame_visitor.HandleFrame(*iter)) {
-            iter = _frame_list.erase(iter);
-
-        } else {
-            return false;
-        }
-    }
-
-    // then sending frames of stream
-    for (auto iter = _hope_send_stream_list.begin(); iter != _hope_send_stream_list.end();) {
-        if((*iter)->TrySendData(&frame_visitor)) {
-            iter = _hope_send_stream_list.erase(iter);
-        } else {
-            return false;
-        }
-    }
-
-    // make quic packet
-    std::shared_ptr<IPacket> packet;
-    switch (GetCurEncryptionLevel()) {
-    case EL_INITIAL: {
-        auto init_packet = std::make_shared<InitPacket>();
-        init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-        packet = init_packet;
-        break;
-    }
-    case EL_EARLY_DATA: {
-        packet = std::make_shared<Rtt0Packet>();
-        break;
-    }
-    case EL_HANDSHAKE: {
-        packet = std::make_shared<HandShakePacket>();
-        break;
-    }
-    case EL_APPLICATION: {
-        packet = std::make_shared<Rtt1Packet>();
-        break;
-    }
-    }
-
-    uint8_t plaintext_buf[1450] = {0};
-    std::shared_ptr<IBuffer> plaintext_buffer = std::make_shared<Buffer>(plaintext_buf, plaintext_buf + 1450);
-    packet->Encode(plaintext_buffer);
-    
-    std::shared_ptr<ICryptographer> crypto_grapher = _cryptographers[GetCurEncryptionLevel()];
-    if (!Encrypt(crypto_grapher, packet, buffer)) {
-        return false;
-    }
-    return true;
-}
-
 void ClientConnection::SetHandshakeDoneCB(HandshakeDoneCB& cb) {
     _handshake_done_cb = cb;
 }
-
-bool ClientConnection::HandleInitial(std::shared_ptr<InitPacket> packet) {
+bool ClientConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-bool ClientConnection::Handle0rtt(std::shared_ptr<Rtt0Packet> packet) {
+bool ClientConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-bool ClientConnection::HandleHandshake(std::shared_ptr<HandShakePacket> packet) {
+bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-bool ClientConnection::HandleRetry(std::shared_ptr<RetryPacket> packet) {
+bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-bool ClientConnection::Handle1rtt(std::shared_ptr<Rtt1Packet> packet) {
+bool ClientConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 

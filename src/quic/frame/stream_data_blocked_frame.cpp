@@ -7,8 +7,7 @@
 namespace quicx {
 
 StreamDataBlockedFrame::StreamDataBlockedFrame():
-    IFrame(FT_STREAM_DATA_BLOCKED),
-    _stream_id(0),
+    IStreamFrame(FT_STREAM_DATA_BLOCKED),
     _maximum_data(0) {
 
 }

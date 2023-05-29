@@ -56,8 +56,6 @@ void RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
     case FT_RESET_STREAM:
         OnResetStreamFrame(frame);
         break;
-    case FT_CRYPTO:
-        OnCryptoFrame(frame);
     default:
         if (frame_type >= FT_STREAM && frame_type <= FT_STREAM_MAX) {
             OnStreamFrame(frame);
@@ -141,19 +139,6 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     if (_recv_cb) {
         _recv_cb(_recv_buffer, reset_frame->GetAppErrorCode());
-    }
-}
-
-void RecvStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
-    if(!_recv_machine->OnFrame(frame->GetType())) {
-        return;
-    }
-
-    auto crypto_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
-    _recv_buffer->Write(crypto_frame->GetData(), crypto_frame->GetLength());
-
-    if (_recv_cb) {
-        _recv_cb(_recv_buffer, 0);
     }
 }
 

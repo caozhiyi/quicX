@@ -1,6 +1,7 @@
 #ifndef QUIC_STREAM_STREAM_INTERFACE
 #define QUIC_STREAM_STREAM_INTERFACE
 
+#include <list>
 #include <memory>
 #include <cstdint>
 #include <functional>
@@ -27,6 +28,9 @@ public:
 
 protected:
     uint64_t _stream_id;
+    // frames that wait for sending
+    std::list<std::shared_ptr<IFrame>> _frame_list;
+
 };
 
 }

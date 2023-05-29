@@ -2,12 +2,13 @@
 #define QUIC_FRAME_CRYPTO_FRAME
 
 #include <cstdint>
-#include "frame_interface.h"
+#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 
 class Buffer;
-class CryptoFrame: public IFrame {
+class CryptoFrame:
+    public IFrame {
 public:
     CryptoFrame();
     ~CryptoFrame();
@@ -24,6 +25,7 @@ public:
         _length = length;
     }
     uint8_t* GetData() { return _data; }
+    uint32_t GetLength() { return _length; }
 
 private:
     uint64_t _offset;  // the byte offset in the stream for the data in this CRYPTO frame.
