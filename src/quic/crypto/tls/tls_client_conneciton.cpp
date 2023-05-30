@@ -14,12 +14,12 @@ TLSClientConnection::~TLSClientConnection() {
 }
 
 bool TLSClientConnection::Init() {
-    SSL_CTX_set_session_cache_mode(_ctx->GetSSLCtx(), SSL_SESS_CACHE_BOTH);
-
     if (!TLSConnection::Init()) {
         return false;
     }
-    
+
+    SSL_CTX_set_session_cache_mode(_ctx->GetSSLCtx(), SSL_SESS_CACHE_BOTH);
+
     SSL_set_connect_state(_ssl.get());
     return true;
 }

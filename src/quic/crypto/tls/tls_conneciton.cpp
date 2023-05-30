@@ -18,7 +18,7 @@ TLSConnection::TLSConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* h
     _ssl(nullptr),
     _ctx(ctx),
     _handler(handler) {
-
+    
 }
 
 TLSConnection::~TLSConnection() {
