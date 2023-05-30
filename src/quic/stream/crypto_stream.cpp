@@ -48,9 +48,9 @@ void CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
 }
 
 void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
-    if(!_recv_machine->OnFrame(frame->GetType())) {
+    /*if(!_recv_machine->OnFrame(frame->GetType())) {
         return;
-    }
+    }*/
 
     auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frame);
     _recv_buffer->Write(crypto_frame->GetData(), crypto_frame->GetLength());

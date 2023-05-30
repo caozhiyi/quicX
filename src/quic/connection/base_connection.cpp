@@ -218,7 +218,9 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
         case FT_ACK_ECN: break;
         case FT_RESET_STREAM: break;
         case FT_STOP_SENDING: break;
-        case FT_CRYPTO: break;
+        case FT_CRYPTO: 
+            OnCryptoFrame(frames[i]);
+            break;
         case FT_NEW_TOKEN: break;
         case FT_MAX_DATA: break;
         case FT_MAX_STREAM_DATA: break;
@@ -250,9 +252,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IStreamFrame> frame) {
 
 bool BaseConnection::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     if (!_crypto_stream) {
-        _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
-        // todo
-        //_crypto_stream->SetRecvCallBack();
+        MakeCryptoStream();
     }
 
     _crypto_stream->OnFrame(frame);

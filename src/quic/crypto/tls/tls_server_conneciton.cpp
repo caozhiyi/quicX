@@ -8,6 +8,7 @@ namespace quicx {
 TLSServerConnection::TLSServerConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler, TlsServerHandlerInterface* ser_handle):
     TLSConnection(ctx, handler),
     _ser_handler(ser_handle) {
+
 }
 
 TLSServerConnection::~TLSServerConnection() {
@@ -15,6 +16,10 @@ TLSServerConnection::~TLSServerConnection() {
 }
 
 bool TLSServerConnection::Init() {
+    if (!TLSConnection::Init()) {
+        return false;
+    }
+    
     SSL_CTX_set_alpn_select_cb(_ctx->GetSSLCtx(), TLSServerConnection::SSLAlpnSelect, nullptr);
 
     if (!TLSConnection::Init()) {

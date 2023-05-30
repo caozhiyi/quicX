@@ -42,6 +42,9 @@ protected:
 
     virtual void WriteMessage(EncryptionLevel level, const uint8_t *data, size_t len);
 
+    virtual void MakeCryptoStream();
+    virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err);
+
 private:
     AlpnType _alpn_type; // application protocol
     uint64_t _sock;

@@ -4,6 +4,13 @@
 
 namespace quicx {
 
+IProcessor::IProcessor() {
+    _ctx = std::make_shared<TLSCtx>();
+    if (!_ctx->Init()) {
+        LOG_ERROR("tls ctx init faliled.");
+    }
+}
+
 bool IProcessor::GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
     if (packets.empty()) {
         LOG_ERROR("parse packet list is empty.");

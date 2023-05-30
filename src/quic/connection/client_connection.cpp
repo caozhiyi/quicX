@@ -18,6 +18,9 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx):
     BaseConnection(StreamIDGenerator::SS_CLIENT) {
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
     _tls_connection = std::make_shared<TLSClientConnection>(ctx, this);
+    if (!_tls_connection->Init()) {
+        LOG_ERROR("tls connection init failed.");
+    }
 }
 
 ClientConnection::~ClientConnection() {
@@ -33,8 +36,6 @@ void ClientConnection::AddTransportParam(TransportParamConfig& tp_config) {
 }
 
 bool ClientConnection::Dial(const Address& addr) {
-    _tls_connection->Init();
-
     // set application protocol
     if (_alpn_type == AT_HTTP3) {
         if(!_tls_connection->AddAlpn(__alpn_h3, 2)) {
@@ -108,10 +109,31 @@ bool ClientConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
 
 void ClientConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, size_t len) {
     if (!_crypto_stream) {
-        _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+        MakeCryptoStream();
     }
     _cur_encryption_level = level;
     _crypto_stream->Send((uint8_t*)data, len);
+}
+
+void ClientConnection::MakeCryptoStream() {
+    _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+    _crypto_stream->SetRecvCallBack(std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
+}
+
+void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err) {
+    if (err != 0) {
+        LOG_ERROR("get crypto data failed. err:%s", err);
+        return;
+    }
+    
+    uint8_t data[1450] = {0};
+    uint32_t len = buffer->Read(data, 1450);
+    if (!_tls_connection->ProcessCryptoData(data, len)) {
+        LOG_ERROR("process crypto data failed. err:%s", err);
+        return;
+    }
+    
+    _tls_connection->DoHandleShake();
 }
 
 }

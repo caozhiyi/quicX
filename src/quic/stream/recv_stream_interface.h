@@ -7,7 +7,7 @@
 
 namespace quicx {
 
-typedef std::function<void(std::shared_ptr<IBufferChains>& buffer, int32_t err)> StreamRecvCB;
+typedef std::function<void(std::shared_ptr<IBufferChains> buffer, int32_t err)> StreamRecvCB;
 
 class IRecvStream:
     public virtual IStream {
