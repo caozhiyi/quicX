@@ -41,7 +41,7 @@ bool ServerProcessor::HandlePacket(std::shared_ptr<IUdpPacket> udp_packet) {
     auto new_conn = std::make_shared<ServerConnection>(_ctx);
     new_conn->AddConnectionId(cid, len);
     _conn_map[cid_code] = new_conn;
-    new_conn->OnPackets(packets);    
+    new_conn->OnPackets(packets);
 
     return true;
 }

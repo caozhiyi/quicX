@@ -35,6 +35,8 @@ public:
     virtual std::shared_ptr<IBufferRead> GetReadViewPtr(uint32_t offset = 0) = 0;
     // get src data pos
     virtual uint8_t* GetData() = 0;
+    // clear all data
+    virtual void Clear() = 0;
 };
 
 }
