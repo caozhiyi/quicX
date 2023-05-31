@@ -37,24 +37,25 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
 }
 
 bool ServerConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
+    auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
     std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
     // get header
-    auto header = dynamic_cast<LongHeader*>(packet->GetHeader());
+    auto header = dynamic_cast<LongHeader*>(init_packet->GetHeader());
     if (cryptographer == nullptr) {
         // make initial cryptographer
         cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
         cryptographer->InstallInitSecret(header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(),
             __initial_slat, sizeof(__initial_slat), true);
-        _cryptographers[packet->GetCryptoLevel()] = cryptographer;
+        _cryptographers[init_packet->GetCryptoLevel()] = cryptographer;
     }
 
     auto buffer = std::make_shared<Buffer>(_alloter);
-    buffer->Write(packet->GetSrcBuffer().GetStart(), packet->GetSrcBuffer().GetLength());
+    buffer->Write(init_packet->GetSrcBuffer().GetStart(), init_packet->GetSrcBuffer().GetLength());
     //if(Decrypt(cryptographer, packet, buffer)) {
     //    return false;
     //}
     
-    if (!packet->DecodeAfterDecrypt(buffer)) {
+    if (!init_packet->DecodeAfterDecrypt(buffer)) {
         return false;
     }
     // dispatcher frames

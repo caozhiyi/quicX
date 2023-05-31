@@ -116,6 +116,12 @@ uint8_t* Buffer::GetData() {
     return _read_pos;
 }
 
+// clear all data
+void Buffer::Clear() {
+    _write_pos = _read_pos = _buffer_start;
+    _can_read = false;
+}
+
 uint32_t Buffer::Write(uint8_t* data, uint32_t len) {
     if (data == nullptr) {
         return 0;
@@ -238,11 +244,6 @@ uint32_t Buffer::InnerWrite(uint8_t* data, uint32_t len) {
         abort();
         return 0;
     }
-}
-
-void Buffer::Clear() {
-    _write_pos = _read_pos = _buffer_start;
-    _can_read = false;
 }
 
 }

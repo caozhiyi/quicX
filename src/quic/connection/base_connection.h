@@ -48,7 +48,7 @@ public:
     virtual EncryptionLevel GetCurEncryptionLevel() { return _cur_encryption_level; }
 
 protected:
-    virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet);
+    virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet) = 0;
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
     virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);

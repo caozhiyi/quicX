@@ -88,7 +88,8 @@ void ClientConnection::SetHandshakeDoneCB(HandshakeDoneCB& cb) {
     _handshake_done_cb = cb;
 }
 bool ClientConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
-    return true;
+    // todo client connection should't get initial packet
+    return false;
 }
 
 bool ClientConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {

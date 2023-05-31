@@ -38,6 +38,8 @@ public:
     virtual std::shared_ptr<IBufferRead> GetReadViewPtr(uint32_t offset = 0);
     // get src data pos
     virtual uint8_t* GetData();
+    // clear all data
+    virtual void Clear();
 
     // return the length of the actual write
     virtual uint32_t Write(uint8_t* data, uint32_t len);
@@ -55,7 +57,6 @@ public:
 private:
     uint32_t InnerRead(uint8_t* data, uint32_t len, bool move_pt);
     uint32_t InnerWrite(uint8_t* data, uint32_t len);
-    void Clear();
 
 private:
     uint8_t* _read_pos;             //read position
