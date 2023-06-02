@@ -113,7 +113,7 @@ void BaseConnection::SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_C
 
 void BaseConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, size_t len) {
     if (!_crypto_stream) {
-        _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+        MakeCryptoStream();
     }
     _cur_encryption_level = level;
     _crypto_stream->Send((uint8_t*)data, len);

@@ -75,8 +75,7 @@ bool ClientConnection::Dial(const Address& addr) {
     }
 
     // create crypto stream
-    _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
-    _crypto_stream->SetHopeSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
+ 
     return _tls_connection->DoHandleShake();
 }
 
@@ -118,6 +117,7 @@ void ClientConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, 
 
 void ClientConnection::MakeCryptoStream() {
     _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+    _crypto_stream->SetHopeSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
     _crypto_stream->SetRecvCallBack(std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 }
 
