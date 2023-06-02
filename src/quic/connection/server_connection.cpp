@@ -27,8 +27,13 @@ void ServerConnection::Close() {
 
 }
 
-bool ServerConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
-    return true;
+void ServerConnection::AddTransportParam(TransportParamConfig& tp_config) {
+    _transport_param.Init(tp_config);
+
+    // set transport param. TODO define tp length
+    std::shared_ptr<Buffer> buf = std::make_shared<Buffer>(_alloter);
+    _transport_param.Encode(buf);
+    _tls_connection->AddTransportParam(buf->GetData(), buf->GetDataLength());
 }
 
 void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
@@ -81,6 +86,7 @@ bool ServerConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
 
 void ServerConnection::MakeCryptoStream() {
     _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+    _crypto_stream->SetHopeSendCB(std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1));
     _crypto_stream->SetRecvCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 }
 
