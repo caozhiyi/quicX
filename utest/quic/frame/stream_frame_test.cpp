@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(stream_frame_utest, decode1) {
+TEST(stream_frame_utest, codec) {
     quicx::StreamFrame frame1;
     quicx::StreamFrame frame2;
 

@@ -35,46 +35,61 @@ void BaseConnection::Close() {
 
 bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
     FixBufferFrameVisitor frame_visitor(1450);
-    // priority sending frames of connection
-    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
-        if (frame_visitor.HandleFrame(*iter)) {
-            iter = _frame_list.erase(iter);
+    while (true) {
+        if (_frame_list.empty() && _hope_send_stream_list.empty()) {
+            break;
+        }
+        
+        // priority sending frames of connection
+        for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
+            if (frame_visitor.HandleFrame(*iter)) {
+                iter = _frame_list.erase(iter);
 
-        } else {
+            } else {
+                return false;
+            }
+        }
+
+        // then sending frames of stream
+        for (auto iter = _hope_send_stream_list.begin(); iter != _hope_send_stream_list.end();) {
+            auto ret = (*iter)->TrySendData(&frame_visitor);
+            if (ret == TSR_SUCCESS) {
+                iter = _hope_send_stream_list.erase(iter);
+    
+            } else if (ret == TSR_FAILED) {
+                return false;
+    
+            } else if (ret == TSR_BREAK) {
+                break;
+            }
+        }
+
+        // make quic packet
+        std::shared_ptr<IPacket> packet;
+        switch (GetCurEncryptionLevel()) {
+            case EL_INITIAL: {
+                auto init_packet = std::make_shared<InitPacket>();
+                init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
+                packet = init_packet;
+                break;
+            }
+            case EL_EARLY_DATA: {
+                packet = std::make_shared<Rtt0Packet>();
+                break;
+            }
+            case EL_HANDSHAKE: {
+                packet = std::make_shared<HandShakePacket>();
+                break;
+            }
+            case EL_APPLICATION: {
+                packet = std::make_shared<Rtt1Packet>();
+                break;
+            }
+        }
+
+        if (!packet->Encode(buffer)) {
             return false;
         }
-    }
-
-    // then sending frames of stream
-    for (auto iter = _hope_send_stream_list.begin(); iter != _hope_send_stream_list.end();) {
-        if((*iter)->TrySendData(&frame_visitor)) {
-            iter = _hope_send_stream_list.erase(iter);
-        } else {
-            return false;
-        }
-    }
-
-    // make quic packet
-    std::shared_ptr<IPacket> packet;
-    switch (GetCurEncryptionLevel()) {
-    case EL_INITIAL: {
-        auto init_packet = std::make_shared<InitPacket>();
-        init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-        packet = init_packet;
-        break;
-    }
-    case EL_EARLY_DATA: {
-        packet = std::make_shared<Rtt0Packet>();
-        break;
-    }
-    case EL_HANDSHAKE: {
-        packet = std::make_shared<HandShakePacket>();
-        break;
-    }
-    case EL_APPLICATION: {
-        packet = std::make_shared<Rtt1Packet>();
-        break;
-    }
     }
 
     //uint8_t plaintext_buf[1450] = {0};
@@ -85,9 +100,6 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
     //if (!Encrypt(crypto_grapher, packet, buffer)) {
     //    return false;
     //}
-    if (!packet->Encode(buffer)) {
-        return false;
-    }
     return true;
 }
 
@@ -116,7 +128,7 @@ void BaseConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, si
         MakeCryptoStream();
     }
     _cur_encryption_level = level;
-    _crypto_stream->Send((uint8_t*)data, len);
+    _crypto_stream->Send((uint8_t*)data, len, level);
 }
 
 void BaseConnection::FlushFlight() {

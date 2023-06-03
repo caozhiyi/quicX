@@ -6,7 +6,7 @@
 namespace quicx {
 namespace {
 
-TEST(max_data_frame_utest, decode1) {
+TEST(max_data_frame_utest, codec) {
     quicx::MaxDataFrame frame1;
     quicx::MaxDataFrame frame2;
 

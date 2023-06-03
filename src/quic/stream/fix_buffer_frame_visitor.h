@@ -1,7 +1,6 @@
 #ifndef QUIC_STREAM_FIX_BUFFER_FRAME_VISITOR
 #define QUIC_STREAM_FIX_BUFFER_FRAME_VISITOR
 
-#include "quic/stream/type.h"
 #include "quic/stream/frame_visitor_interface.h"
 
 namespace quicx {
@@ -20,8 +19,11 @@ public:
 
     virtual std::vector<FrameType>& GetFramesType();
 
+    virtual uint8_t GetEncryptionLevel();
+
 private:
     uint8_t* _buffer_start;
+    uint8_t _encryption_level;
     std::shared_ptr<IBuffer> _buffer;
     std::vector<FrameType> _types;
 };

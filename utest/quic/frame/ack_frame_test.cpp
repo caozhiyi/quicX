@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(ack_frame_utest, decode1) {
+TEST(ack_frame_utest, codec) {
     quicx::AckFrame frame1;
     quicx::AckFrame frame2;
 

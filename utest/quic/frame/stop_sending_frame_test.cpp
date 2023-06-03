@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(stop_sending_frame_utest, decode1) {
+TEST(stop_sending_frame_utest, codec) {
     quicx::StopSendingFrame frame1;
     quicx::StopSendingFrame frame2;
 

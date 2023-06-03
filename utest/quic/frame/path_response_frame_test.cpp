@@ -8,7 +8,7 @@
 namespace quicx {
 namespace {
 
-TEST(path_response_frame_utest, decode1) {
+TEST(path_response_frame_utest, codec) {
     quicx::PathResponseFrame frame1;
     quicx::PathResponseFrame frame2;
 

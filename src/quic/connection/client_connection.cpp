@@ -107,16 +107,8 @@ bool ClientConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-void ClientConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, size_t len) {
-    if (!_crypto_stream) {
-        MakeCryptoStream();
-    }
-    _cur_encryption_level = level;
-    _crypto_stream->Send((uint8_t*)data, len);
-}
-
 void ClientConnection::MakeCryptoStream() {
-    _crypto_stream = std::make_shared<CryptoStream>(_alloter, _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL));
+    _crypto_stream = std::make_shared<CryptoStream>(_alloter);
     _crypto_stream->SetHopeSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
     _crypto_stream->SetRecvCallBack(std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 }

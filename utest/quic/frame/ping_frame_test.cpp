@@ -8,7 +8,7 @@
 namespace quicx {
 namespace {
 
-TEST(ping_frame_utest, decode1) {
+TEST(ping_frame_utest, codec) {
     quicx::PingFrame frame1;
     quicx::PingFrame frame2;
 

@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(max_streams_frame_utest, decode1) {
+TEST(max_streams_frame_utest, codec) {
     quicx::MaxStreamsFrame frame1(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
     quicx::MaxStreamsFrame frame2(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
 
