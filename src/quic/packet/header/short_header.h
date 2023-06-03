@@ -18,6 +18,13 @@ public:
     virtual bool EncodeHeader(std::shared_ptr<IBufferWrite> buffer);
     virtual bool DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag = false);
     virtual uint32_t EncodeHeaderSize();
+
+    void SetDestinationConnectionId(uint8_t* id, uint8_t len);
+    uint8_t GetDestinationConnectionIdLength() { return _destination_connection_id_length; }
+    const uint8_t* GetDestinationConnectionId()  { return _destination_connection_id; }
+protected:
+    uint32_t _destination_connection_id_length;
+    uint8_t _destination_connection_id[__max_connection_length];
 };
 
 }

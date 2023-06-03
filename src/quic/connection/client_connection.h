@@ -36,9 +36,7 @@ public:
 protected:
     virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
-    virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
-    virtual bool On1rttPacket(std::shared_ptr<IPacket> packet);
 
     virtual void MakeCryptoStream();
     virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err);

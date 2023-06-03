@@ -74,9 +74,8 @@ bool ClientConnection::Dial(const Address& addr) {
         _cryptographers[PCL_INITIAL] = cryptographer;
     }
 
-    // create crypto stream
- 
-    return _tls_connection->DoHandleShake();
+    _tls_connection->DoHandleShake();
+    return true;
 }
 
 void ClientConnection::Close() {
@@ -86,6 +85,7 @@ void ClientConnection::Close() {
 void ClientConnection::SetHandshakeDoneCB(HandshakeDoneCB& cb) {
     _handshake_done_cb = cb;
 }
+
 bool ClientConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
     std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
@@ -109,30 +109,7 @@ bool ClientConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
-    auto handshake_packet = std::dynamic_pointer_cast<HandShakePacket>(packet);
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
-    // get header
-    auto header = dynamic_cast<LongHeader*>(handshake_packet->GetHeader());
-    auto buffer = std::make_shared<Buffer>(_alloter);
-    buffer->Write(handshake_packet->GetSrcBuffer().GetStart(), handshake_packet->GetSrcBuffer().GetLength());
-    //if(Decrypt(cryptographer, packet, buffer)) {
-    //    return false;
-    //}
-    
-    if (!handshake_packet->DecodeAfterDecrypt(buffer)) {
-        return false;
-    }
-    // dispatcher frames
-    OnFrames(packet->GetFrames());
-    return true;
-}
-
 bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
-    return true;
-}
-
-bool ClientConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
@@ -155,7 +132,9 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, in
         return;
     }
     
-    _tls_connection->DoHandleShake();
+    if (_tls_connection->DoHandleShake()) {
+        LOG_DEBUG("handshake done.");
+    }
 }
 
 }

@@ -36,7 +36,7 @@ TEST(header_flag_utest, init_create) {
     EXPECT_EQ(flag.GetFixBit(), 1);
 }
 
-TEST(header_flag_utest, rtt1_encode) {
+TEST(header_flag_utest, rtt1_codec) {
     HeaderFlag flag(PHT_SHORT_HEADER);
     flag.SetPacketNumberLength(2);
     flag.GetShortHeaderFlag().SetKeyPhase(1);
@@ -62,7 +62,7 @@ TEST(header_flag_utest, rtt1_encode) {
     EXPECT_EQ(new_flag.GetFixBit(), 1);
 }
 
-TEST(header_flag_utest, init_encode) {
+TEST(header_flag_utest, init_codec) {
     HeaderFlag flag(PHT_LONG_HEADER);
     flag.SetPacketNumberLength(2);
     flag.GetLongHeaderFlag().SetPacketType(PT_INITIAL);
