@@ -95,30 +95,7 @@ bool ServerConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-bool ServerConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
-    auto handshake_packet = std::dynamic_pointer_cast<HandShakePacket>(packet);
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
-    // get header
-    auto header = dynamic_cast<LongHeader*>(handshake_packet->GetHeader());
-    auto buffer = std::make_shared<Buffer>(_alloter);
-    buffer->Write(handshake_packet->GetSrcBuffer().GetStart(), handshake_packet->GetSrcBuffer().GetLength());
-    //if(Decrypt(cryptographer, packet, buffer)) {
-    //    return false;
-    //}
-    
-    if (!handshake_packet->DecodeAfterDecrypt(buffer)) {
-        return false;
-    }
-    // dispatcher frames
-    OnFrames(packet->GetFrames());
-    return true;
-}
-
 bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
-    return true;
-}
-
-bool ServerConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
@@ -141,7 +118,9 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, in
         return;
     }
     
-    _tls_connection->DoHandleShake();
+    if (_tls_connection->DoHandleShake()) {
+        LOG_DEBUG("handshake done.");
+    }
 }
 
 }

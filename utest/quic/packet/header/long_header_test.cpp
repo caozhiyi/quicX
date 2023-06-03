@@ -6,7 +6,7 @@
 namespace quicx {
 namespace {
 
-TEST(long_header_utest, encode) {
+TEST(long_header_utest, codec) {
     LongHeader header;
     header.SetVersion(1);
     uint8_t dest_id[4] = {1,2,3,4};
@@ -32,7 +32,7 @@ TEST(long_header_utest, encode) {
 
     EXPECT_EQ(new_header.GetDestinationConnectionIdLength(), header.GetDestinationConnectionIdLength());
     const uint8_t* new_dest_id = new_header.GetDestinationConnectionId();
-    for (size_t i = 0; i < sizeof(src_id); i++) {
+    for (size_t i = 0; i < sizeof(dest_id); i++) {
         EXPECT_EQ(*(new_dest_id + i), dest_id[i]);
     }
 }

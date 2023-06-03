@@ -18,21 +18,26 @@ public:
 
     virtual uint16_t GetCryptoLevel() const { return PCL_APPLICATION; }
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
+    virtual bool DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer);
+    virtual bool DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer);
     virtual uint32_t EncodeSize();
 
     virtual IHeader* GetHeader() { return &_header; }
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
+    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frame_list; }
 
-    virtual PacketType GetPacketType() { return PT_0RTT; }
+    void SetPayload(BufferSpan payload);
+    BufferSpan GetPayload() { return _palyload; }
+    uint32_t GetPayloadLength() { return _palyload.GetEnd() - _palyload.GetStart(); }
 
 protected:
     ShortHeader _header;
-    char _destination_connection_id[__max_connection_length];
+    uint64_t _packet_num;
+    BufferSpan _palyload;
 
-    uint32_t _packet_number_length;
-    char* _packet_number;
-    char* _payload;
+    uint32_t _payload_offset;
+    uint32_t _packet_num_offset;
+    std::vector<std::shared_ptr<IFrame>> _frame_list;
 };
 
 }

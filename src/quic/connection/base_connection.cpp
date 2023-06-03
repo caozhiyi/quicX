@@ -91,7 +91,9 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
                 break;
             }
             case EL_APPLICATION: {
-                packet = std::make_shared<Rtt1Packet>();
+                auto rtt1_packet = std::make_shared<Rtt1Packet>();
+                rtt1_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
+                packet = rtt1_packet;
                 break;
             }
         }
@@ -190,6 +192,21 @@ bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
+    auto handshake_packet = std::dynamic_pointer_cast<HandShakePacket>(packet);
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    // get header
+    auto header = dynamic_cast<LongHeader*>(handshake_packet->GetHeader());
+    auto buffer = std::make_shared<Buffer>(_alloter);
+    buffer->Write(handshake_packet->GetSrcBuffer().GetStart(), handshake_packet->GetSrcBuffer().GetLength());
+    //if(Decrypt(cryptographer, packet, buffer)) {
+    //    return false;
+    //}
+    
+    if (!handshake_packet->DecodeAfterDecrypt(buffer)) {
+        return false;
+    }
+    // dispatcher frames
+    OnFrames(packet->GetFrames());
     return true;
 }
 
@@ -198,6 +215,21 @@ bool BaseConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
+    auto rtt1_packet = std::dynamic_pointer_cast<Rtt1Packet>(packet);
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    // get header
+    auto header = dynamic_cast<LongHeader*>(rtt1_packet->GetHeader());
+    auto buffer = std::make_shared<Buffer>(_alloter);
+    buffer->Write(rtt1_packet->GetSrcBuffer().GetStart(), rtt1_packet->GetSrcBuffer().GetLength());
+    //if(Decrypt(cryptographer, packet, buffer)) {
+    //    return false;
+    //}
+    
+    if (!rtt1_packet->DecodeAfterDecrypt(buffer)) {
+        return false;
+    }
+    // dispatcher frames
+    OnFrames(rtt1_packet->GetFrames());
     return true;
 }
 
