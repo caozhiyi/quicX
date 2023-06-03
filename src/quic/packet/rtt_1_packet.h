@@ -32,7 +32,6 @@ protected:
 
     uint32_t _packet_number_length;
     char* _packet_number;
-
     char* _payload;
 };
 

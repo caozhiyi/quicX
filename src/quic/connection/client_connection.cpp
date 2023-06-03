@@ -87,8 +87,22 @@ void ClientConnection::SetHandshakeDoneCB(HandshakeDoneCB& cb) {
     _handshake_done_cb = cb;
 }
 bool ClientConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
-    // todo client connection should't get initial packet
-    return false;
+    auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    // get header
+    auto header = dynamic_cast<LongHeader*>(init_packet->GetHeader());
+    auto buffer = std::make_shared<Buffer>(_alloter);
+    buffer->Write(init_packet->GetSrcBuffer().GetStart(), init_packet->GetSrcBuffer().GetLength());
+    //if(Decrypt(cryptographer, packet, buffer)) {
+    //    return false;
+    //}
+    
+    if (!init_packet->DecodeAfterDecrypt(buffer)) {
+        return false;
+    }
+    // dispatcher frames
+    OnFrames(packet->GetFrames());
+    return true;
 }
 
 bool ClientConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
@@ -96,6 +110,21 @@ bool ClientConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
+    auto handshake_packet = std::dynamic_pointer_cast<HandShakePacket>(packet);
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    // get header
+    auto header = dynamic_cast<LongHeader*>(handshake_packet->GetHeader());
+    auto buffer = std::make_shared<Buffer>(_alloter);
+    buffer->Write(handshake_packet->GetSrcBuffer().GetStart(), handshake_packet->GetSrcBuffer().GetLength());
+    //if(Decrypt(cryptographer, packet, buffer)) {
+    //    return false;
+    //}
+    
+    if (!handshake_packet->DecodeAfterDecrypt(buffer)) {
+        return false;
+    }
+    // dispatcher frames
+    OnFrames(packet->GetFrames());
     return true;
 }
 

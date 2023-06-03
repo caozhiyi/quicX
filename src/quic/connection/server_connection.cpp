@@ -1,8 +1,10 @@
 #include "common/log/log.h"
 #include "quic/crypto/type.h"
+#include "quic/connection/type.h"
 #include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
 #include "quic/frame/frame_interface.h"
+#include "quic/packet/hand_shake_packet.h"
 #include "quic/packet/header/long_header.h"
 #include "quic/connection/server_connection.h"
 #include "quic/crypto/cryptographer_interface.h"
@@ -38,7 +40,28 @@ void ServerConnection::AddTransportParam(TransportParamConfig& tp_config) {
 
 void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
     const unsigned char *in, unsigned int inlen, void *arg) {
-
+    
+    // parse client alpn list
+    std::vector<std::string> client_protos;
+    for (unsigned int i = 0; i < inlen; i++) {
+        int len = in[i];
+        client_protos.push_back(std::string((const char*)&in[i+1], len));
+        i += len;
+    }
+    
+    // TODO server support alpn list
+    static std::vector<std::string> server_protos = {"h3", "transport"};
+    
+    // find a alpn
+    for (auto const& client_proto : client_protos) {
+        for (auto const& server_proto : server_protos) {
+            if (client_proto == server_proto) {
+                *out = (unsigned char*)server_proto.c_str();
+                *outlen = server_proto.length();
+                return;
+            }
+        }
+    }
 }
 
 bool ServerConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
@@ -73,6 +96,21 @@ bool ServerConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool ServerConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
+    auto handshake_packet = std::dynamic_pointer_cast<HandShakePacket>(packet);
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    // get header
+    auto header = dynamic_cast<LongHeader*>(handshake_packet->GetHeader());
+    auto buffer = std::make_shared<Buffer>(_alloter);
+    buffer->Write(handshake_packet->GetSrcBuffer().GetStart(), handshake_packet->GetSrcBuffer().GetLength());
+    //if(Decrypt(cryptographer, packet, buffer)) {
+    //    return false;
+    //}
+    
+    if (!handshake_packet->DecodeAfterDecrypt(buffer)) {
+        return false;
+    }
+    // dispatcher frames
+    OnFrames(packet->GetFrames());
     return true;
 }
 
