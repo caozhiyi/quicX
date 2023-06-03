@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(streams_blocked_frame_utest, decode1) {
+TEST(streams_blocked_frame_utest, codec) {
     quicx::StreamsBlockedFrame frame1(quicx::FT_STREAMS_BLOCKED_BIDIRECTIONAL);
     quicx::StreamsBlockedFrame frame2(quicx::FT_STREAMS_BLOCKED_BIDIRECTIONAL);
 

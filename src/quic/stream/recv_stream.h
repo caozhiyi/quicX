@@ -19,7 +19,7 @@ public:
     // abort reading
     void Close();
 
-    bool TrySendData(IFrameVisitor* visitor);
+    TrySendResult TrySendData(IFrameVisitor* visitor);
 
     void OnFrame(std::shared_ptr<IFrame> frame);
 

@@ -2,6 +2,7 @@
 #define QUIC_STREAM_FRAME_VISITOR_INTERFACE
 
 #include <vector>
+#include "quic/crypto/tls/type.h"
 #include "quic/frame/frame_interface.h"
 #include "common/buffer/buffer_interface.h"
 
@@ -19,6 +20,8 @@ public:
     virtual std::shared_ptr<IBuffer> GetBuffer() = 0;
 
     virtual std::vector<FrameType>& GetFramesType() = 0;
+
+    virtual uint8_t GetEncryptionLevel() = 0;
 };
 
 

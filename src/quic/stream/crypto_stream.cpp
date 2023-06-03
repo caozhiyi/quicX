@@ -1,41 +1,83 @@
+#include "common/log/log.h"
 #include "quic/frame/crypto_frame.h"
 #include "quic/stream/crypto_stream.h"
+#include "common/buffer/buffer_chains.h"
 
 namespace quicx {
 
-CryptoStream::CryptoStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t id):
-    BidirectionStream(alloter, id) {
+CryptoStream::CryptoStream(std::shared_ptr<BlockMemoryPool> alloter):
+    _alloter(alloter),
+    _except_offset(0),
+    _send_offset(0) {
 
 }
 
 CryptoStream::~CryptoStream() {
 
 }
-    
-bool CryptoStream::TrySendData(IFrameVisitor* visitor) {
-    // TODO check stream state
-    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
-        if (visitor->HandleFrame(*iter)) {
-            iter = _frame_list.erase(iter);
+
+TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
+    // TODO not copy buffer
+    TrySendResult ret = TSR_SUCCESS;
+    std::shared_ptr<IBufferChains> buffer;
+    uint8_t level;
+    if (_send_buffers[EL_INITIAL] && _send_buffers[EL_INITIAL]->GetDataLength() > 0) {
+        buffer = _send_buffers[EL_INITIAL];
+        level = EL_INITIAL;
+    }
+
+    if (_send_buffers[EL_HANDSHAKE] && _send_buffers[EL_HANDSHAKE]->GetDataLength() > 0) {
+        if (!buffer) {
+            buffer = _send_buffers[EL_HANDSHAKE];
+            level = EL_HANDSHAKE;
+            _send_buffers[EL_INITIAL] = nullptr;
 
         } else {
-            return false;
+            ret = TSR_BREAK;
         }
     }
 
-    // make stream frame
+    if (_send_buffers[EL_APPLICATION] && _send_buffers[EL_APPLICATION]->GetDataLength() > 0) {
+        if (!buffer) {
+            buffer = _send_buffers[EL_APPLICATION];
+            level = EL_APPLICATION;
+            _send_buffers[EL_HANDSHAKE] = nullptr;
+
+        } else {
+            ret = TSR_BREAK;
+        }
+    }
+    
+    if (!buffer) {
+        return ret;
+    }
+    
+
+    // make crypto frame
     auto frame = std::make_shared<CryptoFrame>();
+    frame->SetOffset(_send_offset);
 
     // TODO not copy buffer
     uint8_t buf[1000] = {0};
-    uint32_t size = _send_buffer->ReadNotMovePt(buf, 1000);
+    uint32_t size = buffer->ReadNotMovePt(buf, 1000);
     frame->SetData(buf, size);
 
     if (!visitor->HandleFrame(frame)) {
-        return false;
+        ret = TSR_FAILED;
+        return ret;
     }
-    _send_buffer->MoveReadPt(size);
-    return true;
+
+    buffer->MoveReadPt(size);
+    _send_offset += size;
+    return ret;
+}
+
+void CryptoStream::Reset(uint64_t err) {
+    // do nothing
+}
+
+void CryptoStream::Close() {
+    // do nothing
 }
 
 void CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
@@ -44,19 +86,55 @@ void CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
         OnCryptoFrame(frame);
         return;
     }
-    BidirectionStream::OnFrame(frame);
+    // shouldn't be here
+    LOG_ERROR("crypto stream recv error frame. type:%d", frame_type);
+}
+
+int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level) {
+    std::shared_ptr<IBufferChains> buffer = _send_buffers[encryption_level];
+    if (!buffer) {
+        buffer = std::make_shared<BufferChains>(_alloter);
+        _send_buffers[encryption_level] = buffer;
+    }
+    int32_t size = buffer->Write(data, len);
+
+    if (_hope_send_cb) {
+        _hope_send_cb(this);
+    }
+    return size;
+}
+
+int32_t CryptoStream::Send(uint8_t* data, uint32_t len) {
+    return 0;
 }
 
 void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
-    /*if(!_recv_machine->OnFrame(frame->GetType())) {
-        return;
-    }*/
-
+    if (!_recv_buffer) {
+        _recv_buffer = std::make_shared<BufferChains>(_alloter);
+    }
+    
     auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frame);
-    _recv_buffer->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+    if (crypto_frame->GetOffset() == _except_offset) {
+        _recv_buffer->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+        _except_offset += crypto_frame->GetLength();
 
-    if (_recv_cb) {
-        _recv_cb(_recv_buffer, 0);
+        while (true) {
+            auto iter = _out_order_frame.find(_except_offset);
+            if (iter == _out_order_frame.end()) {
+                break;
+            }
+
+            crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(iter->second);
+            _recv_buffer->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+            _except_offset += crypto_frame->GetLength();
+            _out_order_frame.erase(iter);
+        }
+        
+         if (_recv_cb) {
+            _recv_cb(_recv_buffer, 0);
+        }
+    } else {
+        _out_order_frame[crypto_frame->GetOffset()] = crypto_frame;
     }
 }
 

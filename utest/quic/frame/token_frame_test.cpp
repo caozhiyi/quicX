@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(new_token_frame_utest, decode1) {
+TEST(new_token_frame_utest, codec) {
     quicx::NewTokenFrame frame1;
     quicx::NewTokenFrame frame2;
 

@@ -14,7 +14,7 @@
 namespace quicx {
 namespace {
 
-TEST(frame_decode_utest, decode1) {
+TEST(frame_decode_utest, codec) {
     auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
     std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
     std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);

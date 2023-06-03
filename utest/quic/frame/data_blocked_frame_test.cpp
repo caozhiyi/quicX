@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(data_blocked_frame_utest, decode1) {
+TEST(data_blocked_frame_utest, codec) {
     quicx::DataBlockedFrame frame1;
     quicx::DataBlockedFrame frame2;
 

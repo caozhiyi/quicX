@@ -68,14 +68,14 @@ void SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
-bool SendStream::TrySendData(IFrameVisitor* visitor) {
+TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     // TODO check stream state
     for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
         if (visitor->HandleFrame(*iter)) {
             iter = _frame_list.erase(iter);
 
         } else {
-            return false;
+            return TSR_FAILED;
         }
     }
 
@@ -89,10 +89,10 @@ bool SendStream::TrySendData(IFrameVisitor* visitor) {
     frame->SetData(buf, size);
 
     if (!visitor->HandleFrame(frame)) {
-        return false;
+        return TSR_FAILED;
     }
     _send_buffer->MoveReadPt(size);
-    return true;
+    return TSR_SUCCESS;
 }
 
 void SendStream::Reset(uint64_t err) {

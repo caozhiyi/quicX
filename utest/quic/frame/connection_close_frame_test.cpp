@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(connection_close_frame_utest, decode1) {
+TEST(connection_close_frame_utest, codec) {
     quicx::ConnectionCloseFrame frame1;
     quicx::ConnectionCloseFrame frame2;
 

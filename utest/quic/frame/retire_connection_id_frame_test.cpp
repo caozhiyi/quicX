@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(retire_connection_id_frame_utest, decode1) {
+TEST(retire_connection_id_frame_utest, codec) {
     quicx::RetireConnectionIDFrame frame1;
     quicx::RetireConnectionIDFrame frame2;
 

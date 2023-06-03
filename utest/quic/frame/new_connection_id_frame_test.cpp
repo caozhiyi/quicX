@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(new_connection_id_frame_utest, decode1) {
+TEST(new_connection_id_frame_utest, codec) {
     quicx::NewConnectionIDFrame frame1;
     quicx::NewConnectionIDFrame frame2;
 

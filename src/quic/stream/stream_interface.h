@@ -12,6 +12,12 @@
 
 namespace quicx {
 
+enum TrySendResult {
+    TSR_SUCCESS = 0,
+    TSR_FAILED  = 1,
+    TSR_BREAK   = 2
+};
+
 class IStream {
 public:
     IStream(uint64_t id = 0): _stream_id(id) {}
@@ -19,7 +25,7 @@ public:
 
     virtual void Close() = 0;
 
-    virtual bool TrySendData(IFrameVisitor* visitor) = 0;
+    virtual TrySendResult TrySendData(IFrameVisitor* visitor) = 0;
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame) = 0;
 

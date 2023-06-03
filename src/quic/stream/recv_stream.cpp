@@ -33,17 +33,17 @@ void RecvStream::Close() {
     _frame_list.emplace_back(stop_frame);
 }
 
-bool RecvStream::TrySendData(IFrameVisitor* visitor) {
+TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
     // TODO check stream state
     for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
         if (visitor->HandleFrame(*iter)) {
             iter = _frame_list.erase(iter);
 
         } else {
-            return false;
+            return TSR_FAILED;
         }
     }
-    return true;
+    return TSR_SUCCESS;
 }
 
 void RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {

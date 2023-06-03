@@ -7,7 +7,7 @@
 namespace quicx {
 namespace {
 
-TEST(reset_frame_utest, decode1) {
+TEST(reset_frame_utest, codec) {
     quicx::ResetStreamFrame frame1;
     quicx::ResetStreamFrame frame2;
 

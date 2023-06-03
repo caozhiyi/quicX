@@ -26,7 +26,7 @@ public:
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame);
 
-    virtual bool TrySendData(IFrameVisitor* visitor);
+    virtual TrySendResult TrySendData(IFrameVisitor* visitor);
 
 protected:
     void OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame);

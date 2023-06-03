@@ -27,10 +27,15 @@ public:
     uint8_t* GetData() { return _data; }
     uint32_t GetLength() { return _length; }
 
+    void SetEncryptionLevel(uint8_t level) { _encryption_level = level; }
+    uint8_t GetEncryptionLevel() { return _encryption_level; }
+
 private:
     uint64_t _offset;  // the byte offset in the stream for the data in this CRYPTO frame.
     uint32_t _length;  // the length of the Crypto Data field in this CRYPTO frame.
     uint8_t* _data;    // the cryptographic message data.
+
+    uint8_t _encryption_level;
 };
 
 }

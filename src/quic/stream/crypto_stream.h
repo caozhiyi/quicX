@@ -1,22 +1,44 @@
 #ifndef QUIC_STREAM_CRYPTO_STREAM
 #define QUIC_STREAM_CRYPTO_STREAM
 
-#include "quic/stream/bidirection_stream.h"
+#include <unordered_map>
+#include "quic/crypto/tls/type.h"
+#include "common/buffer/buffer_chains.h"
+#include "quic/stream/send_stream_interface.h"
+#include "quic/stream/recv_stream_interface.h"
 
 namespace quicx {
 
 class CryptoStream:
-    public BidirectionStream {
+    public virtual ISendStream,
+    public virtual IRecvStream {
 public:
-    CryptoStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t id = 0);
+    CryptoStream(std::shared_ptr<BlockMemoryPool> alloter);
     virtual ~CryptoStream();
 
-    virtual bool TrySendData(IFrameVisitor* visitor);
+    virtual TrySendResult TrySendData(IFrameVisitor* visitor);
 
-    void OnFrame(std::shared_ptr<IFrame> frame);
+    virtual void Reset(uint64_t err);
+
+    virtual void Close();
+
+    virtual void OnFrame(std::shared_ptr<IFrame> frame);
+
+    virtual int32_t Send(uint8_t* data, uint32_t len, uint8_t encryption_level);
+    virtual int32_t Send(uint8_t* data, uint32_t len);
 
 protected:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
+
+private:
+    std::shared_ptr<BlockMemoryPool> _alloter;
+
+    uint64_t _except_offset;
+    std::shared_ptr<IBufferChains> _recv_buffer;
+    std::unordered_map<uint64_t, std::shared_ptr<IFrame>> _out_order_frame;
+
+    uint64_t _send_offset;
+    std::shared_ptr<IBufferChains> _send_buffers[NUM_ENCRYPTION_LEVELS];
 };
 
 }

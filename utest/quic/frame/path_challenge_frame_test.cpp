@@ -9,7 +9,7 @@
 namespace quicx {
 namespace {
 
-TEST(path_challenge_frame_utest, decode1) {
+TEST(path_challenge_frame_utest, codec) {
     quicx::PathChallengeFrame frame1;
     quicx::PathChallengeFrame frame2;
     std::shared_ptr<quicx::PathResponseFrame> frame3 = std::make_shared<quicx::PathResponseFrame>();
