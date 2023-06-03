@@ -34,12 +34,12 @@ void BaseConnection::Close() {
 }
 
 bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
-    FixBufferFrameVisitor frame_visitor(1450);
     while (true) {
         if (_frame_list.empty() && _hope_send_stream_list.empty()) {
             break;
         }
         
+        FixBufferFrameVisitor frame_visitor(1450);
         // priority sending frames of connection
         for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
             if (frame_visitor.HandleFrame(*iter)) {
@@ -60,13 +60,20 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
                 return false;
     
             } else if (ret == TSR_BREAK) {
+                iter = _hope_send_stream_list.erase(iter);
                 break;
             }
         }
 
         // make quic packet
         std::shared_ptr<IPacket> packet;
-        switch (GetCurEncryptionLevel()) {
+        uint8_t encrypto_level = GetCurEncryptionLevel();
+        uint8_t packet_encrypto_level = frame_visitor.GetEncryptionLevel();
+        if (packet_encrypto_level < encrypto_level) {
+            encrypto_level = packet_encrypto_level;
+        }
+        
+        switch (encrypto_level) {
             case EL_INITIAL: {
                 auto init_packet = std::make_shared<InitPacket>();
                 init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
@@ -78,7 +85,9 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
                 break;
             }
             case EL_HANDSHAKE: {
-                packet = std::make_shared<HandShakePacket>();
+                auto handshake_packet = std::make_shared<HandShakePacket>();
+                handshake_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
+                packet = handshake_packet;
                 break;
             }
             case EL_APPLICATION: {
@@ -110,6 +119,7 @@ void BaseConnection::SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CI
         cryptographer = MakeCryptographer(cipher);
         _cryptographers[level] = cryptographer;
     }
+    _cur_encryption_level = level;
     cryptographer->InstallSecret(secret, (uint32_t)secret_len, false);
 }
 
@@ -120,6 +130,7 @@ void BaseConnection::SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_C
         cryptographer = MakeCryptographer(cipher);
         _cryptographers[level] = cryptographer;
     }
+    _cur_encryption_level = level;
     cryptographer->InstallSecret(secret, (uint32_t)secret_len, true);
 }
 
@@ -127,7 +138,6 @@ void BaseConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, si
     if (!_crypto_stream) {
         MakeCryptoStream();
     }
-    _cur_encryption_level = level;
     _crypto_stream->Send((uint8_t*)data, len, level);
 }
 

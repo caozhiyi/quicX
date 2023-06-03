@@ -38,6 +38,9 @@ uint32_t BufferChains::MoveReadPt(int32_t len) {
         }
         _buffer_list.PopFront();
     }
+    if (_buffer_list.Size() == 0) {
+        Clear();
+    }
 
     return size;
 }
@@ -54,6 +57,9 @@ uint32_t BufferChains::Read(uint8_t* data, uint32_t len) {
             break;
         }
         _buffer_list.PopFront();
+    }
+    if (_buffer_list.Size() == 0) {
+        Clear();
     }
     return size;
 }
@@ -119,6 +125,11 @@ std::shared_ptr<BufferBlock> BufferChains::GetWriteBuffers(uint32_t len) {
         cur_write = cur_write->GetNext();
     }
     return _write_pos;
+}
+
+void BufferChains::Clear() {
+    _read_pos = nullptr;
+    _write_pos = nullptr;
 }
 
 }

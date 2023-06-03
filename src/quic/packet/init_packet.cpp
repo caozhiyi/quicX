@@ -9,12 +9,14 @@
 namespace quicx {
 
 InitPacket::InitPacket():
+    _payload_offset(0),
     _packet_num_offset(0) {
     _header.GetLongHeaderFlag().SetPacketType(PT_INITIAL);
 }
 
 InitPacket::InitPacket(uint8_t flag):
     _header(flag),
+    _payload_offset(0),
     _packet_num_offset(0) {
 
 }

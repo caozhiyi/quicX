@@ -40,6 +40,9 @@ public:
     virtual std::shared_ptr<BufferBlock> GetWriteBuffers(uint32_t len);
 
 protected:
+    void Clear();
+
+protected:
     std::shared_ptr<BufferBlock> _read_pos;
     std::shared_ptr<BufferBlock> _write_pos;
     

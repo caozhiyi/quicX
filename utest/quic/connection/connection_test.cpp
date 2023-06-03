@@ -97,12 +97,14 @@ TEST(connnection_utest, client) {
     auto server_conn = std::make_shared<ServerConnection>(server_ctx);
     server_conn->AddTransportParam(TransportParamConfig::Instance());
 
-    int times = 5;
+    int times = 2;
     while (times--) {
         ConnectionProcess(server_conn, buffer);
         ConnectionProcess(client_conn, buffer);
     }
 
+    EXPECT_EQ(server_conn->GetCurEncryptionLevel(), EL_APPLICATION);
+    EXPECT_EQ(client_conn->GetCurEncryptionLevel(), EL_APPLICATION);
 }
 
 }

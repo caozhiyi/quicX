@@ -56,10 +56,11 @@ TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
     // make crypto frame
     auto frame = std::make_shared<CryptoFrame>();
     frame->SetOffset(_send_offset);
+    frame->SetEncryptionLevel(level);
 
     // TODO not copy buffer
-    uint8_t buf[1000] = {0};
-    uint32_t size = buffer->ReadNotMovePt(buf, 1000);
+    uint8_t buf[1450] = {0};
+    uint32_t size = buffer->ReadNotMovePt(buf, 1450);
     frame->SetData(buf, size);
 
     if (!visitor->HandleFrame(frame)) {
