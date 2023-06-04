@@ -65,15 +65,6 @@ bool VersionNegotiationPacket::DecodeAfterDecrypt(std::shared_ptr<IBufferRead> b
     return true; // do nothing
 }
 
-uint32_t VersionNegotiationPacket::EncodeSize() {
-    return 0;
-}
-
-bool VersionNegotiationPacket::AddFrame(std::shared_ptr<IFrame> frame) {
-    // do nothing
-    return true;
-}
-
 void VersionNegotiationPacket::SetSupportVersion(std::vector<uint32_t> versions) {
     _support_version.insert(_support_version.end(), versions.begin(), versions.end());
 }

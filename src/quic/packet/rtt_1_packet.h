@@ -21,10 +21,8 @@ public:
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
     virtual bool DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer);
     virtual bool DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer);
-    virtual uint32_t EncodeSize();
 
     virtual IHeader* GetHeader() { return &_header; }
-    virtual bool AddFrame(std::shared_ptr<IFrame> frame);
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frame_list; }
 
     void SetPayload(BufferSpan payload);
@@ -33,11 +31,11 @@ public:
 
 protected:
     ShortHeader _header;
-    uint64_t _packet_num;
     BufferSpan _palyload;
 
     uint32_t _payload_offset;
     uint32_t _packet_num_offset;
+    uint64_t _largest_pn;
     std::vector<std::shared_ptr<IFrame>> _frame_list;
 };
 

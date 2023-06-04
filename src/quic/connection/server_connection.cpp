@@ -66,9 +66,10 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
 
 bool ServerConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
     // get header
     auto header = dynamic_cast<LongHeader*>(init_packet->GetHeader());
+
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
     if (cryptographer == nullptr) {
         // make initial cryptographer
         cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
@@ -78,16 +79,21 @@ bool ServerConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     }
 
     auto buffer = std::make_shared<Buffer>(_alloter);
-    buffer->Write(init_packet->GetSrcBuffer().GetStart(), init_packet->GetSrcBuffer().GetLength());
-    //if(Decrypt(cryptographer, packet, buffer)) {
-    //    return false;
-    //}
     
-    if (!init_packet->DecodeAfterDecrypt(buffer)) {
+    if(Decrypt(cryptographer, packet, buffer)) {
+        LOG_ERROR("decrypt packet failed.");
         return false;
     }
-    // dispatcher frames
-    OnFrames(packet->GetFrames());
+    
+    if (!packet->DecodeAfterDecrypt(buffer)) {
+        LOG_ERROR("decode packet after decrypt failed.");
+        return false;
+    }
+
+    if (!OnFrames(packet->GetFrames())) {
+        LOG_ERROR("process frames failed.");
+        return false;
+    }
     return true;
 }
 

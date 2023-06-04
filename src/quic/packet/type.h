@@ -31,6 +31,8 @@ enum PacketNumberSpace: uint8_t {
     PNS_APPLICATION = 3,
 };
 
+static const uint8_t __packent_number_length = 4;
+
 const char* PacketTypeToString(PacketType type);
 
 }

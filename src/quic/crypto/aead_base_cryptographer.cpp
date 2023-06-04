@@ -171,7 +171,7 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sa
     }
 
     // get length of packet number
-    out_packet_num_len = (*pos & 0x03) + 1;
+    out_packet_num_len = (*pos & 0x03);
     
     // remove protection for packet number
     uint8_t* pkt_number_pos = pos + pn_offset;

@@ -21,10 +21,9 @@ public:
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
     virtual bool DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer);
     virtual bool DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer);
-    virtual uint32_t EncodeSize();
 
     virtual IHeader* GetHeader() { return &_header; }
-    virtual bool AddFrame(std::shared_ptr<IFrame> frame);
+    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { }
 
     void SetSupportVersion(std::vector<uint32_t> versions);
     void AddSupportVersion(uint32_t version);

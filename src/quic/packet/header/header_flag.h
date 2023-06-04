@@ -59,7 +59,9 @@ public:
     uint8_t GetFlag() { return _flag._header_flag; }
 
     uint8_t GetPacketNumberLength() { return _flag._long_header_flag._packet_number_length; }
-    void SetPacketNumberLength(uint8_t len) { _flag._long_header_flag._packet_number_length = len; }
+    void SetPacketNumberLength(uint8_t len) { 
+        _flag._long_header_flag._packet_number_length = len;
+    }
     LongHeaderFlag& GetLongHeaderFlag() { return _flag._long_header_flag; }
     ShortHeaderFlag& GetShortHeaderFlag() { return _flag._short_header_flag; }
 
