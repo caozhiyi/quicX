@@ -12,6 +12,11 @@ HandShakePacket::HandShakePacket() {
     _header.GetLongHeaderFlag().SetPacketType(PT_HANDSHAKE);
 }
 
+HandShakePacket::HandShakePacket(uint8_t flag):
+    _header(flag) {
+
+}
+
 HandShakePacket::~HandShakePacket() {
 
 }

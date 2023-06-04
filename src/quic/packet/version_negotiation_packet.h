@@ -14,17 +14,21 @@ class VersionNegotiationPacket:
     public IPacket {
 public:
     VersionNegotiationPacket();
+    VersionNegotiationPacket(uint8_t flag);
     virtual ~VersionNegotiationPacket();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_UNCRYPTO; }
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
+    virtual bool DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer);
+    virtual bool DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer);
     virtual uint32_t EncodeSize();
 
     virtual IHeader* GetHeader() { return &_header; }
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
 
-    virtual PacketType GetPacketType() { return PT_NEGOTIATION; }
+    void SetSupportVersion(std::vector<uint32_t> versions);
+    void AddSupportVersion(uint32_t version);
+    const std::vector<uint32_t>& GetSupportVersion() { return _support_version; }
 
 private:
     LongHeader _header;

@@ -13,6 +13,7 @@ class Rtt0Packet:
     public IPacket {
 public:
     Rtt0Packet();
+    Rtt0Packet(uint8_t flag);
     virtual ~Rtt0Packet();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_ELAY_DATA; }

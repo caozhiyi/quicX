@@ -25,6 +25,12 @@ enum PakcetCryptoLevel: uint16_t {
     PCL_UNCRYPTO    = 4,
 };
 
+enum PacketNumberSpace: uint8_t {
+    PNS_INITIAL     = 1,
+    PNS_HANDSHAKE   = 2,
+    PNS_APPLICATION = 3,
+};
+
 const char* PacketTypeToString(PacketType type);
 
 }

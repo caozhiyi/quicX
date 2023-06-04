@@ -11,6 +11,11 @@ Rtt1Packet::Rtt1Packet() {
 
 }
 
+Rtt1Packet::Rtt1Packet(uint8_t flag):
+    _header(flag) {
+
+}
+
 Rtt1Packet::~Rtt1Packet() {
 
 }

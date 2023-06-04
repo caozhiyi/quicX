@@ -8,6 +8,11 @@ RetryPacket::RetryPacket() {
     _header.GetLongHeaderFlag().SetPacketType(PT_RETRY);
 }
 
+RetryPacket::RetryPacket(uint8_t flag):
+    _header(flag) {
+
+}
+
 RetryPacket::~RetryPacket() {
 
 }

@@ -13,6 +13,7 @@ class HandShakePacket:
     public IPacket {
 public:
     HandShakePacket();
+    HandShakePacket(uint8_t flag);
     virtual ~HandShakePacket();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_HANDSHAKE; }
