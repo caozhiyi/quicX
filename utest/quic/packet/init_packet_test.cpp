@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 
 #include "common/buffer/buffer.h"
-#include "quic/packet/rtt_1_packet.h"
+#include "quic/packet/init_packet.h"
 
 namespace quicx {
 namespace {
 
-TEST(rtt_1_packet_utest, codec) {
-    Rtt1Packet packet;
+TEST(init_packet_utest, codec) {
+    InitPacket packet;
     uint8_t data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30};
     BufferSpan payload(data, sizeof(data));
     packet.SetPayload(payload);
@@ -23,13 +23,16 @@ TEST(rtt_1_packet_utest, codec) {
     HeaderFlag flag;
     EXPECT_TRUE(flag.DecodeFlag(buffer));
 
-    Rtt1Packet new_packet(flag.GetFlag());
+    InitPacket new_packet(flag.GetFlag());
     EXPECT_TRUE(new_packet.DecodeBeforeDecrypt(buffer));
 
     auto alloter = MakeBlockMemoryPoolPtr(1024, 4);
     auto payload_buffer = std::make_shared<Buffer>(alloter);
     payload_buffer->Write(new_packet.GetSrcBuffer().GetStart(), new_packet.GetSrcBuffer().GetLength());
     EXPECT_FALSE(new_packet.DecodeAfterDecrypt(payload_buffer));
+
+    EXPECT_EQ(new_packet.GetPacketNumber(), 10);
+    EXPECT_EQ(new_packet.GetHeader()->GetPacketNumberLength(), 2);
 
     auto new_payload = new_packet.GetPayload();
     EXPECT_EQ(new_payload.GetLength(), sizeof(data));

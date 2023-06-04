@@ -4,20 +4,23 @@
 #include "quic/common/constants.h"
 #include "quic/packet/init_packet.h"
 #include "quic/frame/frame_decode.h"
+#include "quic/packet/packet_number.h"
 #include "common/buffer/buffer_read_view.h"
 
 namespace quicx {
 
 InitPacket::InitPacket():
     _payload_offset(0),
-    _packet_num_offset(0) {
+    _packet_num_offset(0),
+    _token_length(0) {
     _header.GetLongHeaderFlag().SetPacketType(PT_INITIAL);
 }
 
 InitPacket::InitPacket(uint8_t flag):
     _header(flag),
     _payload_offset(0),
-    _packet_num_offset(0) {
+    _packet_num_offset(0),
+    _token_length(0) {
 
 }
 
@@ -36,23 +39,28 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     uint8_t* cur_pos = start_pos;
     uint8_t* end = span.GetEnd();
 
+    // encode token
     cur_pos = EncodeVarint(cur_pos, _token_length);
     if (_token_length > 0) {
         memcpy(cur_pos, _token, _token_length);
         cur_pos += _token_length;
     }
     
-    cur_pos = EncodeVarint(cur_pos, _payload_length);
+    // encode length
+    _length = 46 + _header.GetPacketNumberLength();
+    cur_pos = EncodeVarint(cur_pos, _length);
+
+    // encode packet number
     _packet_num_offset = cur_pos - start_pos;
+    cur_pos = PacketNumber::Encode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
 
-    // todo process packet number
-    //cur_pos += _header.GetPacketNumberLength();
+    // encode payload
     _payload_offset = cur_pos - start_pos;
-
     memcpy(cur_pos, _palyload.GetStart(), _palyload.GetLength());
-    cur_pos += _payload_length;
+    cur_pos += _palyload.GetLength();
 
     _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
+
     buffer->MoveWritePt(cur_pos - span.GetStart());
     return true;
 }
@@ -79,6 +87,8 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
     uint8_t* end = span.GetEnd();
+
+    // decode token
     cur_pos = DecodeVarint(cur_pos, end, _token_length);
     _token = cur_pos;
     cur_pos += _token_length;
@@ -86,14 +96,12 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
         LOG_DEBUG("get initial token:%s", _token);
     }
 
-    cur_pos = DecodeVarint(cur_pos, end, _payload_length);
+    // decode length
+    cur_pos = DecodeVarint(cur_pos, end, _length);
     _packet_num_offset = cur_pos - start_pos;
 
-    // todo process packet number
-    //cur_pos += _header.GetPacketNumberLength();
-    _payload_offset = cur_pos - start_pos;
-    cur_pos += _payload_length;
-    
+    // decode payload
+    cur_pos += _length;
     _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
 
     buffer->MoveReadPt(cur_pos - span.GetStart());
@@ -101,8 +109,14 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
 }
 
 bool InitPacket::DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer) {
-    buffer->MoveReadPt(_payload_offset);
-    _palyload =  std::move(BufferSpan(buffer->GetData(), _payload_length));
+    buffer->MoveReadPt(_packet_num_offset);
+    auto span = buffer->GetReadSpan();
+    uint8_t* cur_pos = span.GetStart();
+    // decode packet number
+    cur_pos = PacketNumber::Decode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
+
+    // decode payload
+    _palyload =  std::move(BufferSpan(cur_pos, span.GetEnd()));
     // decode payload frames
     std::shared_ptr<BufferReadView> view = std::make_shared<BufferReadView>(_palyload.GetStart(), _palyload.GetEnd());
     if(!DecodeFrames(view, _frame_list)) {
@@ -113,21 +127,12 @@ bool InitPacket::DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer) {
     return true;
 }
 
-uint32_t InitPacket::EncodeSize() {
-    return 0;
-}
-
-bool InitPacket::AddFrame(std::shared_ptr<IFrame> frame) {
-    return true;
-}
-
 void InitPacket::SetToken(uint8_t* token, uint32_t len) {
     _token = token;
     _token_length = len;
 }
 
 void InitPacket::SetPayload(BufferSpan payload) {
-    _payload_length = payload.GetLength();
     _palyload = payload;
 }
 

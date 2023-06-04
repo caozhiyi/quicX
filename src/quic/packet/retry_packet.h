@@ -24,6 +24,7 @@ public:
     virtual IHeader* GetHeader() { return &_header; }
     virtual uint32_t GetPacketNumOffset() { return 0; }
     virtual bool AddFrame(std::shared_ptr<IFrame> frame);
+    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { }
 
     virtual PacketType GetPacketType() { return PT_RETRY; }
 
