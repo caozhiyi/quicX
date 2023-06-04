@@ -7,6 +7,11 @@ Rtt0Packet::Rtt0Packet() {
     _header.GetLongHeaderFlag().SetPacketType(PT_0RTT);
 }
 
+Rtt0Packet::Rtt0Packet(uint8_t flag):
+    _header(flag) {
+
+}
+
 Rtt0Packet::~Rtt0Packet() {
 
 }

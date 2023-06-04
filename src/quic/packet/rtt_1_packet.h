@@ -14,6 +14,7 @@ class Rtt1Packet:
     public IPacket {
 public:
     Rtt1Packet();
+    Rtt1Packet(uint8_t flag);
     virtual ~Rtt1Packet();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_APPLICATION; }
