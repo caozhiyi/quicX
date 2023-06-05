@@ -47,7 +47,7 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     }
     
     // encode length
-    _length = 46 + _header.GetPacketNumberLength();
+    _length = _palyload.GetLength() + _header.GetPacketNumberLength();
     cur_pos = EncodeVarint(cur_pos, _length);
 
     // encode packet number
@@ -101,7 +101,8 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
     _packet_num_offset = cur_pos - start_pos;
 
     // decode payload
-    cur_pos += _length;
+    //cur_pos += _length;
+    cur_pos += span.GetEnd() - cur_pos;
     _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
 
     buffer->MoveReadPt(cur_pos - span.GetStart());
@@ -109,11 +110,11 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
 }
 
 bool InitPacket::DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer) {
-    buffer->MoveReadPt(_packet_num_offset);
+    //buffer->MoveReadPt(_packet_num_offset);
     auto span = buffer->GetReadSpan();
     uint8_t* cur_pos = span.GetStart();
     // decode packet number
-    cur_pos = PacketNumber::Decode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
+    //cur_pos = PacketNumber::Decode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
 
     // decode payload
     _palyload =  std::move(BufferSpan(cur_pos, span.GetEnd()));

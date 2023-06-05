@@ -10,6 +10,7 @@
 #include "common/buffer/buffer_interface.h"
 #include "common/buffer/buffer_read_view.h"
 #include "quic/crypto/aead_base_cryptographer.h"
+#include "quic/packet/packet_number.h"
 
 namespace quicx {
 
@@ -110,7 +111,6 @@ bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferSpan& assoc
     }
     out_plaintext->MoveWritePt(out_length);
     return true;
-
 }
 
 bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferSpan& associated_data, BufferSpan& plaintext,
@@ -178,7 +178,7 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sa
     for (size_t i = 0; i < out_packet_num_len; i++) {
         *(pkt_number_pos + i) = pkt_number_pos[i] ^ mask[i + 1];
     }
-    DecodeVarint(pkt_number_pos, pkt_number_pos + out_packet_num_len, out_packet_num);
+    PacketNumber::Decode(pkt_number_pos, out_packet_num_len, out_packet_num);
 
     return true;
 }

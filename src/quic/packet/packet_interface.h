@@ -6,6 +6,7 @@
 #include "common/buffer/buffer_span.h"
 #include "quic/frame/frame_interface.h"
 #include "quic/packet/header/header_interface.h"
+#include "quic/crypto/cryptographer_interface.h"
 #include "common/buffer/buffer_read_interface.h"
 #include "common/buffer/buffer_write_interface.h"
 
@@ -24,15 +25,19 @@ public:
     virtual IHeader* GetHeader() = 0;
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() = 0;
 
-    virtual uint32_t GetPacketNumOffset() { return 0; };
-    virtual uint64_t GetPacketNumber() { return _packet_number; }
-    virtual void SetPacketNumber(uint64_t num) { _packet_number = num; }
+    uint32_t GetPacketNumOffset() { return 0; };
+    uint64_t GetPacketNumber() { return _packet_number; }
+    void SetPacketNumber(uint64_t num) { _packet_number = num; }
 
-    virtual BufferSpan& GetSrcBuffer() { return _packet_src_data; }
+    BufferSpan& GetSrcBuffer() { return _packet_src_data; }
 
+    virtual void SetCryptographer(std::shared_ptr<ICryptographer> grapher) { _crypto_grapher = grapher; }
+    virtual std::shared_ptr<ICryptographer> GetCryptographer() { return _crypto_grapher; }
+    
 protected:
     uint64_t _packet_number; /*encryption protection*/
     BufferSpan _packet_src_data;
+    std::shared_ptr<ICryptographer> _crypto_grapher;
 };
 
 }
