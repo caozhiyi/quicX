@@ -33,6 +33,8 @@ public:
     virtual bool EncryptHeader(BufferSpan& plaintext, BufferSpan& sample,
                              uint8_t pn_offset, size_t pkt_number_len, bool is_short) = 0;
 
+    virtual uint32_t GetTagLength() = 0;
+    
     static CryptographerId AdapterCryptographerType(uint32_t cipher_id);
 };
 
