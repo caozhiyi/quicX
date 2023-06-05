@@ -28,6 +28,8 @@ public:
 
     virtual bool EncryptHeader(BufferSpan& plaintext, BufferSpan& sample,
                              uint8_t pn_offset, size_t pkt_number_len, bool is_short);
+
+    virtual uint32_t GetTagLength() { return _aead_tag_length; }
     
 protected:
     virtual bool MakeHeaderProtectMask(BufferSpan& sample, std::vector<uint8_t>& key,

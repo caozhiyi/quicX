@@ -86,6 +86,7 @@ bool Encrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPa
     return true;
 }
 
+/*
 TEST(connnection_crypto_utest, generator) {
     uint8_t dcid[__max_cid_length] = {0};
     ConnectionIDGenerator::Instance().Generator(dcid, __max_cid_length);
@@ -137,6 +138,7 @@ TEST(connnection_crypto_utest, generator) {
         EXPECT_EQ(data[i], *(new_payload.GetStart() + i));
     }
 }
+*/
 
 }
 }

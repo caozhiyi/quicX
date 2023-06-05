@@ -103,6 +103,7 @@ bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferSpan& assoc
     }
 
     size_t out_length = 0;
+    auto tag_length = _aead_tag_length;
     auto out_span = out_plaintext->GetWriteSpan();
     if (EVP_AEAD_CTX_open(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _read_secret._iv.size(),
         ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
@@ -133,6 +134,7 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferSpan& assoc
 
     size_t out_length = 0;
     auto out_span = out_ciphertext->GetWriteSpan();
+    auto len = plaintext.GetLength();
     if (EVP_AEAD_CTX_seal(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _write_secret._iv.size(),
         plaintext.GetStart(), plaintext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
         LOG_ERROR("EVP_AEAD_CTX_seal failed");
@@ -178,7 +180,6 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sa
     for (size_t i = 0; i < out_packet_num_len; i++) {
         *(pkt_number_pos + i) = pkt_number_pos[i] ^ mask[i + 1];
     }
-    PacketNumber::Decode(pkt_number_pos, out_packet_num_len, out_packet_num);
 
     return true;
 }
