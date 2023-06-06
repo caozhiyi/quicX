@@ -4,7 +4,7 @@
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/packet_decode.h"
-#include "quic/packet/hand_shake_packet.h"
+#include "quic/packet/handshake_packet.h"
 #include "quic/packet/header/header_flag.h"
 #include "quic/packet/version_negotiation_packet.h"
 
@@ -43,7 +43,7 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
             packet = std::make_shared<Rtt0Packet>(flag.GetFlag());
             break;
         case PT_HANDSHAKE:
-            packet = std::make_shared<HandShakePacket>(flag.GetFlag());
+            packet = std::make_shared<HandshakePacket>(flag.GetFlag());
             break;
         case PT_RETRY:
             packet = std::make_shared<RetryPacket>(flag.GetFlag());

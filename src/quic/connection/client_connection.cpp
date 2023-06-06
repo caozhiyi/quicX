@@ -6,7 +6,7 @@
 #include "quic/packet/rtt_0_packet.h"
 #include "common/network/io_handle.h"
 #include "quic/stream/crypto_stream.h"
-#include "quic/packet/hand_shake_packet.h"
+#include "quic/packet/handshake_packet.h"
 #include "quic/connection/client_connection.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 #include "quic/connection/connection_id_generator.h"
@@ -59,9 +59,9 @@ bool ClientConnection::Dial(const Address& addr) {
 
     // generate connection id
     uint8_t scid[__max_cid_length] = {0};
-    uint8_t dcid[__max_cid_length] = {0};
+    uint8_t dcid[10] = {0,1,2,3,4,5,6,7,8,9};
     ConnectionIDGenerator::Instance().Generator(scid, __max_cid_length);
-    ConnectionIDGenerator::Instance().Generator(dcid, __max_cid_length);
+    //ConnectionIDGenerator::Instance().Generator(dcid, __max_cid_length);
 
     // install initial secret
     std::shared_ptr<ICryptographer> cryptographer = _cryptographers[PCL_INITIAL];
@@ -69,7 +69,7 @@ bool ClientConnection::Dial(const Address& addr) {
     if (cryptographer == nullptr) {
         // make initial cryptographer
         cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-        cryptographer->InstallInitSecret(dcid, __max_cid_length,
+        cryptographer->InstallInitSecret(dcid, sizeof(dcid),
             __initial_slat, sizeof(__initial_slat), false);
         _cryptographers[PCL_INITIAL] = cryptographer;
     }
@@ -99,6 +99,7 @@ bool ClientConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     
+    cryptographer = nullptr;
     if (!packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
