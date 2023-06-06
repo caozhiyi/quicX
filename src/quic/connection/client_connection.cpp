@@ -99,12 +99,7 @@ bool ClientConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     
-    if(Decrypt(cryptographer, packet, buffer)) {
-        LOG_ERROR("decrypt packet failed.");
-        return false;
-    }
-    
-    if (!packet->DecodeAfterDecrypt(buffer)) {
+    if (!packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
     }

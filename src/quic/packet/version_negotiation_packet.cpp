@@ -20,7 +20,7 @@ VersionNegotiationPacket::~VersionNegotiationPacket() {
     
 }
 
-bool VersionNegotiationPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
+bool VersionNegotiationPacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
     if (!_header.EncodeHeader(buffer)) {
         LOG_ERROR("encode header failed");
         return false;
@@ -39,7 +39,7 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool VersionNegotiationPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
+bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     if (!_header.DecodeHeader(buffer)) {
         LOG_ERROR("decode header failed");
         return false;
@@ -59,10 +59,6 @@ bool VersionNegotiationPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> 
     _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
     buffer->MoveReadPt(cur_pos - span.GetStart());
     return true;
-}
-
-bool VersionNegotiationPacket::DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer) {
-    return true; // do nothing
 }
 
 void VersionNegotiationPacket::SetSupportVersion(std::vector<uint32_t> versions) {

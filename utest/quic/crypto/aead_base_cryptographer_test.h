@@ -1,3 +1,6 @@
+#ifndef UTEST_QUIC_CRYPTO_AEAD_BASE_CRYPTOGRAPHER_TEST
+#define UTEST_QUIC_CRYPTO_AEAD_BASE_CRYPTOGRAPHER_TEST
+
 #include <cstdint>
 #include "quic/crypto/cryptographer_interface.h"
 
@@ -10,4 +13,7 @@ static const uint8_t __associated_data[] = "cf063a34d4a9a76c2c86787d3f96db71cf06
 
 bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_ptr<ICryptographer> decrypter);
 bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_ptr<ICryptographer> decrypter);
+
 }
+
+#endif

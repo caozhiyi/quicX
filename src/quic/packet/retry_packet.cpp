@@ -17,7 +17,7 @@ RetryPacket::~RetryPacket() {
 
 }
 
-bool RetryPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
+bool RetryPacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
     return true;
 }
 
@@ -25,8 +25,8 @@ bool RetryPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     return true;
 }
 
-uint32_t RetryPacket::EncodeSize() {
-    return 0;
+bool RetryPacket::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
+    return true;
 }
 
 bool RetryPacket::AddFrame(std::shared_ptr<IFrame> frame) {
