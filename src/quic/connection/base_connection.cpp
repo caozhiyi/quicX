@@ -100,21 +100,16 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             }
         }
 
-        uint8_t plaintext_buf[1450] = {0};
-        std::shared_ptr<IBuffer> plaintext_buffer = std::make_shared<Buffer>(plaintext_buf, plaintext_buf + 1450);
-        if (!packet->Encode(plaintext_buffer)) {
-            LOG_ERROR("packet encode failed.");
-            return false;
-        }
-        
         std::shared_ptr<ICryptographer> crypto_grapher = _cryptographers[encrypto_level];
         if (!crypto_grapher) {
             LOG_ERROR("encrypt grapher is not ready.");
             return false;
         }
 
-        if (!Encrypt(crypto_grapher, packet, buffer)) {
-            LOG_ERROR("encrypt packet failed.");
+        uint8_t plaintext_buf[1450] = {0};
+        std::shared_ptr<IBuffer> plaintext_buffer = std::make_shared<Buffer>(plaintext_buf, plaintext_buf + 1450);
+        if (!packet->Encode(plaintext_buffer, crypto_grapher)) {
+            LOG_ERROR("packet encode failed.");
             return false;
         }
     }
@@ -212,12 +207,7 @@ bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     
-    if(Decrypt(cryptographer, packet, buffer)) {
-        LOG_ERROR("decrypt packet failed.");
-        return false;
-    }
-    
-    if (!handshake_packet->DecodeAfterDecrypt(buffer)) {
+    if (!handshake_packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
     }
@@ -246,12 +236,7 @@ bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     
-    if(Decrypt(cryptographer, packet, buffer)) {
-        LOG_ERROR("decrypt packet failed.");
-        return false;
-    }
-    
-    if (!packet->DecodeAfterDecrypt(buffer)) {
+    if (!packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
     }
@@ -317,72 +302,6 @@ bool BaseConnection::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 
 void BaseConnection::ActiveSendStream(ISendStream* stream) {
     _hope_send_stream_list.emplace_back(stream);
-}
-
-bool BaseConnection::Decrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet,
-    std::shared_ptr<IBufferWrite> out_plaintext) {
-    auto header = packet->GetHeader();
-    // get sample
-    BufferSpan header_span = header->GetHeaderSrcData();
-    uint32_t packet_offset = packet->GetPacketNumOffset();
-    BufferSpan sample = BufferSpan(header_span.GetEnd() + packet->GetPacketNumOffset() + 4,
-        header_span.GetEnd() + packet->GetPacketNumOffset() + 4 + __header_protect_sample_length);
-    // decrypto header
-    uint64_t packet_num = 0;
-    uint32_t packet_num_len = 0;
-    if(!cryptographer->DecryptHeader(header_span, sample, header_span.GetLength() + packet_offset, header->GetHeaderType() == PHT_SHORT_HEADER,
-        packet_num, packet_num_len)) {
-
-        LOG_ERROR("decrypt header failed.");
-        return false;
-    }
-
-    // decrypto packet
-    auto payload = BufferSpan(packet->GetSrcBuffer().GetStart() + packet->GetPacketNumOffset() + header->GetPacketNumberLength(), packet->GetSrcBuffer().GetEnd()); 
-    if(!cryptographer->DecryptPacket(packet_num, header->GetHeaderSrcData(), payload, out_plaintext)) {
-        LOG_ERROR("decrypt packet failed.");
-        return false;
-    }
-
-    return true;
-}
-
-bool BaseConnection::Encrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet, 
-    std::shared_ptr<IBuffer> out_ciphertext) {
-    auto header = packet->GetHeader();
-
-    out_ciphertext->Write(header->GetHeaderSrcData().GetStart(), header->GetHeaderSrcData().GetLength());
-    auto header_span = out_ciphertext->GetReadSpan();
-
-    out_ciphertext->Write(packet->GetSrcBuffer().GetStart(), packet->GetPacketNumOffset() + header->GetPacketNumberLength());
-
-    auto payload = BufferSpan(packet->GetSrcBuffer().GetStart() + packet->GetPacketNumOffset() + header->GetPacketNumberLength(), packet->GetSrcBuffer().GetEnd()); 
-    // packet protection
-    if(!cryptographer->EncryptPacket(packet->GetPacketNumber(), header->GetHeaderSrcData(), payload, out_ciphertext)) {
-        LOG_ERROR("encrypt packet failed.");
-        return false;
-    }
-
-
-    LOG_DEBUG("encrypt header start:%p", header_span.GetStart());
-    LOG_DEBUG("encrypt header end:%p", header_span.GetEnd());
-
-    // header protection
-    uint32_t packet_offset = packet->GetPacketNumOffset();
-    BufferSpan sample = BufferSpan(header_span.GetEnd() + packet->GetPacketNumOffset() + 4,
-        header_span.GetEnd() + packet->GetPacketNumOffset() + 4 + __header_protect_sample_length);
-
-    LOG_DEBUG("encrypt sample start:%p", sample.GetStart());
-    LOG_DEBUG("encrypt sample end:%p", sample.GetEnd());
-
-    LOG_DEBUG("encrypt packet number start:%p", header_span.GetEnd() + packet->GetPacketNumOffset());
-    if(!cryptographer->EncryptHeader(header_span, sample, header_span.GetLength() + packet->GetPacketNumOffset() , header->GetPacketNumberLength(),
-        header->GetHeaderType() == PHT_SHORT_HEADER)) {
-        LOG_ERROR("decrypt header failed.");
-        return false;
-    }
-
-    return true;
 }
 
 }

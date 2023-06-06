@@ -23,11 +23,11 @@ public:
     virtual bool EncryptPacket(uint64_t pkt_number, BufferSpan& associated_data, BufferSpan& plaintext,
                              std::shared_ptr<IBufferWrite> out_ciphertext);
 
-    virtual bool DecryptHeader(BufferSpan& ciphertext, BufferSpan& sample, uint8_t pn_offset, bool is_short,
-                             uint64_t& out_packet_num, uint32_t& out_packet_num_len);
+    virtual bool DecryptHeader(BufferSpan& ciphertext, BufferSpan& sample, uint8_t pn_offset,
+                             uint8_t& out_packet_num_len, bool is_short);
 
-    virtual bool EncryptHeader(BufferSpan& plaintext, BufferSpan& sample,
-                             uint8_t pn_offset, size_t pkt_number_len, bool is_short);
+    virtual bool EncryptHeader(BufferSpan& plaintext, BufferSpan& sample, uint8_t pn_offset,
+                             size_t pkt_number_len, bool is_short);
 
     virtual uint32_t GetTagLength() { return _aead_tag_length; }
     

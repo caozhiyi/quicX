@@ -144,8 +144,8 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferSpan& assoc
     return true;
 }
 
-bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sample, uint8_t pn_offset, bool is_short,
-    uint64_t& out_packet_num, uint32_t& out_packet_num_len) {
+bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sample, uint8_t pn_offset,
+    uint8_t& out_packet_num_len, bool is_short) {
     if (_read_secret._hp.empty()) {
         LOG_ERROR("decrypt header but not install hp secret");
         return false;
@@ -184,8 +184,8 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sa
     return true;
 }
 
-bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, BufferSpan& sample,
-    uint8_t pn_offset, size_t pkt_number_len, bool is_short) {
+bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, BufferSpan& sample, uint8_t pn_offset,
+    size_t pkt_number_len, bool is_short) {
     if (_write_secret._hp.empty()) {
         LOG_ERROR("encrypt header but not install hp secret");
         return false;

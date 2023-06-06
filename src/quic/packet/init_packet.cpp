@@ -29,7 +29,7 @@ InitPacket::~InitPacket() {
 
 }
 
-bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
+bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
     if (!_header.EncodeHeader(buffer)) {
         LOG_ERROR("encode header failed");
         return false;
@@ -48,7 +48,7 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     }
 
     // encode length
-    _length = _palyload.GetLength() + _header.GetPacketNumberLength() + (_crypto_grapher ? _crypto_grapher->GetTagLength() : 0);
+    _length = _payload.GetLength() + _header.GetPacketNumberLength() + (crypto_grapher ? crypto_grapher->GetTagLength() : 0);
     cur_pos = EncodeVarint(cur_pos, _length);
 
     // encode packet number
@@ -56,10 +56,10 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     cur_pos = PacketNumber::Encode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
 
     // encode payload 
-    if (!_crypto_grapher) {
+    if (!crypto_grapher) {
         _payload_offset = cur_pos - start_pos;
-        memcpy(cur_pos, _palyload.GetStart(), _palyload.GetLength());
-        cur_pos += _palyload.GetLength();
+        memcpy(cur_pos, _payload.GetStart(), _payload.GetLength());
+        cur_pos += _payload.GetLength();
         buffer->MoveWritePt(cur_pos - span.GetStart());
         return true;
     }
@@ -67,14 +67,14 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
      // encode payload whit encrypt
     buffer->MoveWritePt(cur_pos - start_pos);
     auto header_span = _header.GetHeaderSrcData();
-    if(!_crypto_grapher->EncryptPacket(_packet_number, header_span, _palyload, buffer)) {
+    if(!crypto_grapher->EncryptPacket(_packet_number, header_span, _payload, buffer)) {
         LOG_ERROR("encrypt payload failed.");
         return false;
     }
 
     BufferSpan sample = BufferSpan(start_pos + _packet_num_offset + 4,
     start_pos + _packet_num_offset + 4 + __header_protect_sample_length);
-    if(!_crypto_grapher->EncryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, _header.GetPacketNumberLength(),
+    if(!crypto_grapher->EncryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, _header.GetPacketNumberLength(),
         _header.GetHeaderType() == PHT_SHORT_HEADER)) {
         LOG_ERROR("encrypt header failed.");
         return false;
@@ -83,15 +83,14 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
+bool InitPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     if (!_header.DecodeHeader(buffer)) {
         LOG_ERROR("decode header failed");
         return false;
     }
 
     auto span = buffer->GetReadSpan();
-    uint8_t* start_pos = span.GetStart();
-    uint8_t* cur_pos = start_pos;
+    uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();
 
     // decode token
@@ -104,15 +103,32 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
     
     // decode length
     cur_pos = DecodeVarint(cur_pos, end, _length);
-    _packet_num_offset = cur_pos - start_pos;
+
+    // decode cipher data
+    _packet_num_offset = cur_pos - span.GetStart();
+    cur_pos += _length;
+
+    // set src data
+    _packet_src_data = std::move(BufferSpan(span.GetStart(), cur_pos));
+
+    // move buffer read point
+    buffer->MoveReadPt(cur_pos - span.GetStart());
+    return true;
+}
+
+bool InitPacket::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
+    auto span = _packet_src_data;
+    uint8_t* cur_pos = span.GetStart();
+    uint8_t* end = span.GetEnd();
     
-    if (!_crypto_grapher) {
+    if (!crypto_grapher) {
         // decrypt packet number
+        cur_pos += _packet_num_offset;
         cur_pos = PacketNumber::Decode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
 
         // decode payload frames
-        _palyload =  std::move(BufferSpan(cur_pos, _length - _header.GetPacketNumberLength()));
-        std::shared_ptr<BufferReadView> view = std::make_shared<BufferReadView>(_palyload.GetStart(), _palyload.GetEnd());
+        _payload = BufferSpan(cur_pos, cur_pos + _length - _header.GetPacketNumberLength());
+        std::shared_ptr<BufferReadView> view = std::make_shared<BufferReadView>(_payload.GetStart(), _payload.GetEnd());
         if(!DecodeFrames(view, _frame_list)) {
             LOG_ERROR("decode frame failed.");
             return false;
@@ -121,30 +137,27 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
     }
     
     // decrypt header
-    uint64_t packet_num = 0;
-    uint32_t packet_num_len = 0;
+    uint8_t packet_num_len = 0;
     BufferSpan header_span = _header.GetHeaderSrcData();
-    BufferSpan sample = BufferSpan(start_pos + _packet_num_offset + 4,
-        start_pos + _packet_num_offset + 4 + __header_protect_sample_length);
-    if(!_crypto_grapher->DecryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, _header.GetHeaderType() == PHT_SHORT_HEADER,
-        packet_num, packet_num_len)) {
+    BufferSpan sample = BufferSpan(span.GetStart() + _packet_num_offset + 4,
+        span.GetStart() + _packet_num_offset + 4 + __header_protect_sample_length);
+    if(!crypto_grapher->DecryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, packet_num_len, 
+        _header.GetHeaderType() == PHT_SHORT_HEADER)) {
         LOG_ERROR("decrypt header failed.");
         return false;
     }
     _header.SetPacketNumberLength(packet_num_len);
+    cur_pos += _packet_num_offset;
     cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, _packet_number);
 
     // decrypt packet
-    static const uint32_t __buf_len = 1450;
-    uint8_t *buf = new uint8_t[__buf_len];
-    std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, buf + __buf_len);
+    uint8_t buf[1450] = {0};
     auto payload = BufferSpan(cur_pos, cur_pos + _length - packet_num_len);
-    if(!_crypto_grapher->DecryptPacket(_packet_number, header_span, payload, out_plaintext)) {
+    std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, buf + 1450);
+    if(!crypto_grapher->DecryptPacket(_packet_number, header_span, payload, out_plaintext)) {
         LOG_ERROR("decrypt packet failed.");
         return false;
     }
-    buffer->MoveReadPt(_length - packet_num_len);
-    _palyload = out_plaintext->GetReadSpan();
 
     if(!DecodeFrames(out_plaintext, _frame_list)) {
         LOG_ERROR("decode frame failed.");
@@ -154,17 +167,13 @@ bool InitPacket::DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) {
     return true;
 }
 
-bool InitPacket::DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer) {
-    return true;
-}
-
 void InitPacket::SetToken(uint8_t* token, uint32_t len) {
     _token = token;
     _token_length = len;
 }
 
 void InitPacket::SetPayload(BufferSpan payload) {
-    _palyload = payload;
+    _payload = payload;
 }
 
 }

@@ -60,11 +60,6 @@ protected:
 
     virtual void ActiveSendStream(ISendStream* stream);
 
-    static bool Decrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet, 
-        std::shared_ptr<IBufferWrite> out_plaintext);
-    static bool Encrypt(std::shared_ptr<ICryptographer>& cryptographer, std::shared_ptr<IPacket> packet, 
-        std::shared_ptr<IBuffer> out_ciphertext);
-
 protected:
     std::shared_ptr<BlockMemoryPool> _alloter;
 

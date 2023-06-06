@@ -1,4 +1,3 @@
-
 #ifndef QUIC_PACKET_VERSION_NEGOTIATION_PACKET
 #define QUIC_PACKET_VERSION_NEGOTIATION_PACKET
 
@@ -18,9 +17,8 @@ public:
     virtual ~VersionNegotiationPacket();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_UNCRYPTO; }
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer);
-    virtual bool DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer);
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher = nullptr);
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
 
     virtual IHeader* GetHeader() { return &_header; }
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { }

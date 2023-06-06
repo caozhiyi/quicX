@@ -18,9 +18,9 @@ public:
     virtual ~IPacket() {}
 
     virtual uint16_t GetCryptoLevel() const = 0;
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer) = 0;
-    virtual bool DecodeBeforeDecrypt(std::shared_ptr<IBufferRead> buffer) { return true; };
-    virtual bool DecodeAfterDecrypt(std::shared_ptr<IBufferRead> buffer) { return true; };
+    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher = nullptr) = 0;
+    virtual bool Decode(std::shared_ptr<IBufferRead> buffer) = 0;
+    virtual bool Decode(std::shared_ptr<ICryptographer> crypto_grapher) { return true; };
 
     virtual IHeader* GetHeader() = 0;
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() = 0;
@@ -30,14 +30,10 @@ public:
     void SetPacketNumber(uint64_t num) { _packet_number = num; }
 
     BufferSpan& GetSrcBuffer() { return _packet_src_data; }
-
-    virtual void SetCryptographer(std::shared_ptr<ICryptographer> grapher) { _crypto_grapher = grapher; }
-    virtual std::shared_ptr<ICryptographer> GetCryptographer() { return _crypto_grapher; }
     
 protected:
     uint64_t _packet_number; /*encryption protection*/
     BufferSpan _packet_src_data;
-    std::shared_ptr<ICryptographer> _crypto_grapher;
 };
 
 }

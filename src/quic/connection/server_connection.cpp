@@ -78,14 +78,7 @@ bool ServerConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
         _cryptographers[init_packet->GetCryptoLevel()] = cryptographer;
     }
 
-    auto buffer = std::make_shared<Buffer>(_alloter);
-    
-    if(Decrypt(cryptographer, packet, buffer)) {
-        LOG_ERROR("decrypt packet failed.");
-        return false;
-    }
-    
-    if (!packet->DecodeAfterDecrypt(buffer)) {
+    if (!packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
     }
