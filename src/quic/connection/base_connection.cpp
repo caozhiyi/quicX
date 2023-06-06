@@ -5,7 +5,7 @@
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
-#include "quic/packet/hand_shake_packet.h"
+#include "quic/packet/handshake_packet.h"
 #include "quic/connection/base_connection.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 
@@ -79,6 +79,8 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
                 init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
                 init_packet->SetPacketNumber(100);
                 init_packet->GetHeader()->SetPacketNumberLength(3);
+                uint8_t dcid[10] = {0,1,2,3,4,5,6,7,8,9};
+                ((LongHeader*)init_packet->GetHeader())->SetDestinationConnectionId(dcid, sizeof(dcid));
                 packet = init_packet;
                 break;
             }
@@ -87,7 +89,7 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
                 break;
             }
             case EL_HANDSHAKE: {
-                auto handshake_packet = std::make_shared<HandShakePacket>();
+                auto handshake_packet = std::make_shared<HandshakePacket>();
                 handshake_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
                 packet = handshake_packet;
                 break;
@@ -106,9 +108,8 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             return false;
         }
 
-        uint8_t plaintext_buf[1450] = {0};
-        std::shared_ptr<IBuffer> plaintext_buffer = std::make_shared<Buffer>(plaintext_buf, plaintext_buf + 1450);
-        if (!packet->Encode(plaintext_buffer, crypto_grapher)) {
+        crypto_grapher = nullptr;
+        if (!packet->Encode(buffer, crypto_grapher)) {
             LOG_ERROR("packet encode failed.");
             return false;
         }
@@ -169,7 +170,7 @@ void BaseConnection::OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) {
             }
             break;
         case PT_HANDSHAKE:
-            if (!OnHandshakePacket(std::dynamic_pointer_cast<HandShakePacket>(packets[i]))) {
+            if (!OnHandshakePacket(std::dynamic_pointer_cast<HandshakePacket>(packets[i]))) {
                 LOG_ERROR("handshakee packet handle failed.");
             }
             break;
@@ -195,7 +196,7 @@ bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
-    auto handshake_packet = std::dynamic_pointer_cast<HandShakePacket>(packet);
+    auto handshake_packet = std::dynamic_pointer_cast<HandshakePacket>(packet);
     // get header
     auto header = dynamic_cast<LongHeader*>(handshake_packet->GetHeader());
     auto buffer = std::make_shared<Buffer>(_alloter);
@@ -207,6 +208,7 @@ bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     
+    cryptographer = nullptr;
     if (!handshake_packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
@@ -236,6 +238,7 @@ bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     
+    cryptographer = nullptr;
     if (!packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;

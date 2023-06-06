@@ -31,7 +31,6 @@ bool Rtt1Packet::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<IC
     auto span = buffer->GetWriteSpan();
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
-    uint8_t* end = span.GetEnd();
 
     // encode packet number
     cur_pos = PacketNumber::Encode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
@@ -45,7 +44,7 @@ bool Rtt1Packet::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<IC
         return true;
     }
 
-     // encode payload whit encrypt
+    // encode payload whit encrypt
     buffer->MoveWritePt(cur_pos - start_pos);
     auto header_span = _header.GetHeaderSrcData();
     if(!crypto_grapher->EncryptPacket(_packet_number, header_span, _payload, buffer)) {

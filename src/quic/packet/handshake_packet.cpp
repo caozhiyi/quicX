@@ -5,25 +5,25 @@
 #include "common/buffer/buffer.h"
 #include "quic/frame/frame_decode.h"
 #include "quic/packet/packet_number.h"
-#include "quic/packet/hand_shake_packet.h"
+#include "quic/packet/handshake_packet.h"
 #include "common/buffer/buffer_read_view.h"
 
 namespace quicx {
 
-HandShakePacket::HandShakePacket() {
+HandshakePacket::HandshakePacket() {
     _header.GetLongHeaderFlag().SetPacketType(PT_HANDSHAKE);
 }
 
-HandShakePacket::HandShakePacket(uint8_t flag):
+HandshakePacket::HandshakePacket(uint8_t flag):
     _header(flag) {
 
 }
 
-HandShakePacket::~HandShakePacket() {
+HandshakePacket::~HandshakePacket() {
 
 }
 
-bool HandShakePacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
+bool HandshakePacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
     if (!_header.EncodeHeader(buffer)) {
         LOG_ERROR("encode header failed");
         return false;
@@ -70,7 +70,7 @@ bool HandShakePacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_p
     return true;
 }
 
-bool HandShakePacket::Decode(std::shared_ptr<IBufferRead> buffer) {
+bool HandshakePacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     if (!_header.DecodeHeader(buffer)) {
         LOG_ERROR("decode header failed");
         return false;
@@ -96,7 +96,7 @@ bool HandShakePacket::Decode(std::shared_ptr<IBufferRead> buffer) {
 }
 
 
-bool HandShakePacket::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
+bool HandshakePacket::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
     auto span = _packet_src_data;
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();
@@ -147,7 +147,7 @@ bool HandShakePacket::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
     return true;
 }
 
-void HandShakePacket::SetPayload(BufferSpan payload) {
+void HandshakePacket::SetPayload(BufferSpan payload) {
     _payload = payload;
 }
 

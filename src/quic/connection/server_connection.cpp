@@ -4,7 +4,7 @@
 #include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
 #include "quic/frame/frame_interface.h"
-#include "quic/packet/hand_shake_packet.h"
+#include "quic/packet/handshake_packet.h"
 #include "quic/packet/header/long_header.h"
 #include "quic/connection/server_connection.h"
 #include "quic/crypto/cryptographer_interface.h"
@@ -78,6 +78,7 @@ bool ServerConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
         _cryptographers[init_packet->GetCryptoLevel()] = cryptographer;
     }
 
+    cryptographer = nullptr;
     if (!packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;

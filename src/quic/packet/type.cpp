@@ -10,7 +10,7 @@ const char* PacketTypeToString(PacketType type) {
     case PT_0RTT:
         return "0rtt";
     case PT_HANDSHAKE:
-        return "handshacke";
+        return "handshake";
     case PT_RETRY:
         return "retry";
     case PT_NEGOTIATION:

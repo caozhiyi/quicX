@@ -64,7 +64,7 @@ bool ShortHeader::DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_fl
     memcpy(&_destination_connection_id, pos, _destination_connection_id_length);
     pos += _destination_connection_id_length;
  
-    _header_src_data = std::move(BufferSpan(span.GetStart() - (with_flag ? 1 : 0), pos));
+    _header_src_data = std::move(BufferSpan((span.GetStart() - 1), pos));
     buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }

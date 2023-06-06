@@ -1,6 +1,6 @@
 
-#ifndef QUIC_PACKET_HAND_SHAKE_PACKET
-#define QUIC_PACKET_HAND_SHAKE_PACKET
+#ifndef QUIC_PACKET_HANDSHAKE_PACKET
+#define QUIC_PACKET_HANDSHAKE_PACKET
 
 #include <memory>
 #include "quic/packet/type.h"
@@ -9,12 +9,12 @@
 
 namespace quicx {
 
-class HandShakePacket:
+class HandshakePacket:
     public IPacket {
 public:
-    HandShakePacket();
-    HandShakePacket(uint8_t flag);
-    virtual ~HandShakePacket();
+    HandshakePacket();
+    HandshakePacket(uint8_t flag);
+    virtual ~HandshakePacket();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_HANDSHAKE; }
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher = nullptr);
