@@ -20,7 +20,7 @@ public:
     virtual uint16_t GetCryptoLevel() const = 0;
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher = nullptr) = 0;
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer) = 0;
-    virtual bool Decode(std::shared_ptr<ICryptographer> crypto_grapher) { return true; };
+    virtual bool Decode(std::shared_ptr<ICryptographer> crypto_grapher, std::shared_ptr<IBuffer> buffer) { return true; };
 
     virtual IHeader* GetHeader() = 0;
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() = 0;

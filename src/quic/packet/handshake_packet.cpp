@@ -96,7 +96,7 @@ bool HandshakePacket::Decode(std::shared_ptr<IBufferRead> buffer) {
 }
 
 
-bool HandshakePacket::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
+bool HandshakePacket::Decode(std::shared_ptr<ICryptographer> crypto_grapher, std::shared_ptr<IBuffer> buffer) {
     auto span = _packet_src_data;
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();
@@ -131,15 +131,13 @@ bool HandshakePacket::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
     cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, _packet_number);
 
     // decrypt packet
-    uint8_t *buf = new uint8_t[1450];
     auto payload = BufferSpan(cur_pos, cur_pos + _length - packet_num_len);
-    std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, buf + 1450);
-    if(!crypto_grapher->DecryptPacket(_packet_number, header_span, payload, out_plaintext)) {
+    if(!crypto_grapher->DecryptPacket(_packet_number, header_span, payload, buffer)) {
         LOG_ERROR("decrypt packet failed.");
         return false;
     }
 
-    if(!DecodeFrames(out_plaintext, _frame_list)) {
+    if(!DecodeFrames(buffer, _frame_list)) {
         LOG_ERROR("decode frame failed.");
         return false;
     }

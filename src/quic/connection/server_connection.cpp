@@ -64,32 +64,6 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
     }
 }
 
-bool ServerConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
-    auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
-    // get header
-    auto header = dynamic_cast<LongHeader*>(init_packet->GetHeader());
-
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
-    if (cryptographer == nullptr) {
-        // make initial cryptographer
-        cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-        cryptographer->InstallInitSecret(header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(),
-            __initial_slat, sizeof(__initial_slat), true);
-        _cryptographers[init_packet->GetCryptoLevel()] = cryptographer;
-    }
-
-    if (!packet->Decode(cryptographer)) {
-        LOG_ERROR("decode packet after decrypt failed.");
-        return false;
-    }
-
-    if (!OnFrames(packet->GetFrames())) {
-        LOG_ERROR("process frames failed.");
-        return false;
-    }
-    return true;
-}
-
 bool ServerConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }

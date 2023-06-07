@@ -35,7 +35,6 @@ public:
 
     void SetHandshakeDoneCB(HandshakeDoneCB& cb);
 protected:
-    virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
 

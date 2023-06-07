@@ -7,6 +7,22 @@
 
 namespace quicx {
 
+Buffer::Buffer(BufferSpan& span):
+    _can_read(false),
+    IBuffer(nullptr) {
+    _buffer_start = span.GetStart();
+    _buffer_end = span.GetEnd();
+    _read_pos = _write_pos = _buffer_start;
+}
+
+Buffer::Buffer(uint8_t* start, uint32_t len):
+    _can_read(false),
+    IBuffer(nullptr) {
+    _buffer_start = start;
+    _buffer_end = start + len;
+    _read_pos = _write_pos = _buffer_start;
+}
+
 Buffer::Buffer(uint8_t* start, uint8_t* end):
     _can_read(false),
     IBuffer(nullptr) {

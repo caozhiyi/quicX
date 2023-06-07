@@ -24,7 +24,7 @@ bool Rtt0Packet::Decode(std::shared_ptr<IBufferRead> buffer) {
     return true;
 }
 
-bool Rtt0Packet::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
+bool Rtt0Packet::Decode(std::shared_ptr<ICryptographer> crypto_grapher, std::shared_ptr<IBuffer> buffer) {
     return true;
 }
 

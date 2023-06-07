@@ -86,31 +86,6 @@ void ClientConnection::SetHandshakeDoneCB(HandshakeDoneCB& cb) {
     _handshake_done_cb = cb;
 }
 
-bool ClientConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
-    auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
-    // get header
-    auto header = dynamic_cast<LongHeader*>(init_packet->GetHeader());
-    auto buffer = std::make_shared<Buffer>(_alloter);
-    buffer->Write(init_packet->GetSrcBuffer().GetStart(), init_packet->GetSrcBuffer().GetLength());
-    
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
-    if (!cryptographer) {
-        LOG_ERROR("decrypt grapher is not ready.");
-        return false;
-    }
-    
-    if (!packet->Decode(cryptographer)) {
-        LOG_ERROR("decode packet after decrypt failed.");
-        return false;
-    }
-
-    if (!OnFrames(packet->GetFrames())) {
-        LOG_ERROR("process frames failed.");
-        return false;
-    }
-    return true;
-}
-
 bool ClientConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }

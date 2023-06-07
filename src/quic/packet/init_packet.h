@@ -39,7 +39,7 @@ public:
     virtual uint16_t GetCryptoLevel() const { return PCL_INITIAL; }
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher = nullptr);
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
-    virtual bool Decode(std::shared_ptr<ICryptographer> crypto_grapher);
+    virtual bool Decode(std::shared_ptr<ICryptographer> crypto_grapher, std::shared_ptr<IBuffer> buffer);
 
     virtual IHeader* GetHeader() { return &_header; }
     virtual uint32_t GetPacketNumOffset() { return _packet_num_offset; }

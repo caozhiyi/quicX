@@ -27,7 +27,6 @@ public:
         const unsigned char *in, unsigned int inlen, void *arg);
 
 protected:
-    virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
 
