@@ -90,12 +90,16 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             }
             case EL_HANDSHAKE: {
                 auto handshake_packet = std::make_shared<HandshakePacket>();
+                handshake_packet->SetPacketNumber(10);
+                handshake_packet->GetHeader()->SetPacketNumberLength(2);
                 handshake_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
                 packet = handshake_packet;
                 break;
             }
             case EL_APPLICATION: {
                 auto rtt1_packet = std::make_shared<Rtt1Packet>();
+                rtt1_packet->SetPacketNumber(10);
+                rtt1_packet->GetHeader()->SetPacketNumberLength(2);
                 rtt1_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
                 packet = rtt1_packet;
                 break;
@@ -108,7 +112,6 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             return false;
         }
 
-        crypto_grapher = nullptr;
         if (!packet->Encode(buffer, crypto_grapher)) {
             LOG_ERROR("packet encode failed.");
             return false;
@@ -208,7 +211,6 @@ bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     
-    cryptographer = nullptr;
     if (!handshake_packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
@@ -238,7 +240,6 @@ bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     
-    cryptographer = nullptr;
     if (!packet->Decode(cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;

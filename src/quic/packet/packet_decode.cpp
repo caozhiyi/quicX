@@ -24,7 +24,7 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
 
         std::shared_ptr<IPacket> packet;
         if (flag.GetHeaderType() == PHT_SHORT_HEADER) {
-            packet = std::make_shared<Rtt1Packet>();
+            packet = std::make_shared<Rtt1Packet>(flag.GetFlag());
             if (!packet->Decode(buffer)) {
                 LOG_ERROR("decode 1 rtt packet failed.");
                 return false;
