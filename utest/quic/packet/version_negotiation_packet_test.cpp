@@ -14,7 +14,7 @@ TEST(version_negotiation_packet_utest, codec) {
 
     static const uint8_t __buf_len = 128;
     uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> buffer = std::make_shared<Buffer>(buf, buf + __buf_len);
+    std::shared_ptr<IBuffer> buffer = std::make_shared<Buffer>(buf, __buf_len);
 
     EXPECT_TRUE(packet.Encode(buffer));
 

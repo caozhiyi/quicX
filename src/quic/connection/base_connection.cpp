@@ -194,33 +194,28 @@ void BaseConnection::OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) {
     }
 }
 
+
+bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    if (cryptographer == nullptr) {
+        // get header
+        auto header = dynamic_cast<LongHeader*>(packet->GetHeader());
+        // make initial cryptographer
+        cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
+        cryptographer->InstallInitSecret(header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(),
+            __initial_slat, sizeof(__initial_slat), true);
+        _cryptographers[packet->GetCryptoLevel()] = cryptographer;
+    }
+    return OnNormalPacket(packet);
+}
+
+
 bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
 bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
-    auto handshake_packet = std::dynamic_pointer_cast<HandshakePacket>(packet);
-    // get header
-    auto header = dynamic_cast<LongHeader*>(handshake_packet->GetHeader());
-    auto buffer = std::make_shared<Buffer>(_alloter);
-    buffer->Write(handshake_packet->GetSrcBuffer().GetStart(), handshake_packet->GetSrcBuffer().GetLength());
-
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
-    if (!cryptographer) {
-        LOG_ERROR("decrypt grapher is not ready.");
-        return false;
-    }
-    
-    if (!handshake_packet->Decode(cryptographer)) {
-        LOG_ERROR("decode packet after decrypt failed.");
-        return false;
-    }
-
-    if (!OnFrames(packet->GetFrames())) {
-        LOG_ERROR("process frames failed.");
-        return false;
-    }
-    return true;
+    return OnNormalPacket(packet);
 }
 
 bool BaseConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
@@ -228,28 +223,7 @@ bool BaseConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
-    auto rtt1_packet = std::dynamic_pointer_cast<Rtt1Packet>(packet);
-    // get header
-    auto header = dynamic_cast<LongHeader*>(rtt1_packet->GetHeader());
-    auto buffer = std::make_shared<Buffer>(_alloter);
-    buffer->Write(rtt1_packet->GetSrcBuffer().GetStart(), rtt1_packet->GetSrcBuffer().GetLength());
-
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
-    if (!cryptographer) {
-        LOG_ERROR("decrypt grapher is not ready.");
-        return false;
-    }
-    
-    if (!packet->Decode(cryptographer)) {
-        LOG_ERROR("decode packet after decrypt failed.");
-        return false;
-    }
-
-    if (!OnFrames(packet->GetFrames())) {
-        LOG_ERROR("process frames failed.");
-        return false;
-    }
-    return true;
+    return OnNormalPacket(packet);
 }
 
 bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
@@ -306,6 +280,27 @@ bool BaseConnection::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 
 void BaseConnection::ActiveSendStream(ISendStream* stream) {
     _hope_send_stream_list.emplace_back(stream);
+}
+
+bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
+    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    if (!cryptographer) {
+        LOG_ERROR("decrypt grapher is not ready.");
+        return false;
+    }
+    
+    uint8_t buf[1450];
+    std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, 1450);
+    if (!packet->Decode(cryptographer, out_plaintext)) {
+        LOG_ERROR("decode packet after decrypt failed.");
+        return false;
+    }
+
+    if (!OnFrames(packet->GetFrames())) {
+        LOG_ERROR("process frames failed.");
+        return false;
+    }
+    return true;
 }
 
 }

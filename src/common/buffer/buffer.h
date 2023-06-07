@@ -16,6 +16,8 @@ class BlockMemoryPool;
 class Buffer:
     public IBuffer {
 public:
+    Buffer(BufferSpan& span);
+    Buffer(uint8_t* start, uint32_t len);
     Buffer(uint8_t* start, uint8_t* end);
     Buffer(std::shared_ptr<BlockMemoryPool>& alloter);
     virtual ~Buffer();
