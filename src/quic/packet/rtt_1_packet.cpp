@@ -110,7 +110,7 @@ bool Rtt1Packet::Decode(std::shared_ptr<ICryptographer> crypto_grapher) {
     cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, _packet_number);
 
     // decrypt packet
-    uint8_t buf[1450] = {0};
+    uint8_t *buf = new uint8_t[1450];
     auto payload = BufferSpan(cur_pos, span.GetEnd());
     std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, buf + 1450);
     if(!crypto_grapher->DecryptPacket(_packet_number, header_span, payload, out_plaintext)) {
