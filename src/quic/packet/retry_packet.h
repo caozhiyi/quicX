@@ -4,10 +4,27 @@
 
 #include <memory>
 #include "quic/packet/type.h"
+#include "common/buffer/buffer_span.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/packet/header/long_header.h"
 
 namespace quicx {
+
+/*
+Retry Packet {
+    Header Form (1) = 1,
+    Fixed Bit (1) = 1,
+    Long Packet Type (2) = 3,
+    Unused (4),
+    Version (32),
+    Destination Connection ID Length (8),
+    Destination Connection ID (0..160),
+    Source Connection ID Length (8),
+    Source Connection ID (0..160),
+    Retry Token (..),
+    Retry Integrity Tag (128),
+}
+*/
 
 class RetryPacket:
     public IPacket {
@@ -19,19 +36,19 @@ public:
     virtual uint16_t GetCryptoLevel() const { return PCL_UNCRYPTO; }
     virtual bool Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher = nullptr);
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
-    virtual bool Decode(std::shared_ptr<ICryptographer> crypto_grapher, std::shared_ptr<IBuffer> buffer);
 
     virtual IHeader* GetHeader() { return &_header; }
-    virtual uint32_t GetPacketNumOffset() { return 0; }
-    virtual bool AddFrame(std::shared_ptr<IFrame> frame);
-    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { }
 
-    virtual PacketType GetPacketType() { return PT_RETRY; }
+    void SetRetryToken(BufferSpan toekn) { _retry_token = toekn; }
+    BufferSpan& GetRetryToken() { return _retry_token; }
+
+    void SetRetryIntegrityTag(uint8_t* tag);
+    uint8_t* GetRetryIntegrityTag();
 
 private:
     LongHeader _header;
-    char* _retry_token;
-    char _retry_integrity_tag[128];
+    BufferSpan _retry_token;
+    uint8_t _retry_integrity_tag[__retry_integrity_tag_length];
 };
 
 }

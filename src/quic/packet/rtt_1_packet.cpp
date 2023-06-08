@@ -77,7 +77,7 @@ bool Rtt1Packet::Decode(std::shared_ptr<IBufferRead> buffer) {
     return true;
 }
 
-bool Rtt1Packet::Decode(std::shared_ptr<ICryptographer> crypto_grapher, std::shared_ptr<IBuffer> buffer) {
+bool Rtt1Packet::Decode(std::shared_ptr<IBuffer> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
     auto span = _packet_src_data;
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();

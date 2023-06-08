@@ -21,7 +21,6 @@ public:
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer);
 
     virtual IHeader* GetHeader() { return &_header; }
-    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { }
 
     void SetSupportVersion(std::vector<uint32_t> versions);
     void AddSupportVersion(uint32_t version);

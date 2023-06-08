@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_BASE_CONNECTION
 #define QUIC_CONNECTION_BASE_CONNECTION
 
+#include <set>
 #include <list>
 #include <memory>
 #include <vector>
@@ -56,6 +57,7 @@ protected:
 
     virtual bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames);
     virtual bool OnStreamFrame(std::shared_ptr<IStreamFrame> frame);
+
     virtual bool OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
     virtual void ActiveSendStream(ISendStream* stream);
@@ -76,7 +78,7 @@ protected:
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> _stream_map;
 
     EncryptionLevel _cur_encryption_level;
-    std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS];  
+    std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS];
 };
 
 }
