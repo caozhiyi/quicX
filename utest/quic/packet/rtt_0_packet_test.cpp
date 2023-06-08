@@ -2,21 +2,21 @@
 
 #include "common/buffer/buffer.h"
 #include "quic/connection/type.h"
-#include "quic/packet/init_packet.h"
+#include "quic/packet/rtt_0_packet.h"
 #include "utest/quic/packet/common_test_frame.h"
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
 namespace {
 
-TEST(init_packet_utest, codec) {
+TEST(rtt_0_packet_utest, codec) {
     auto frame = PacketTest::GetTestFrame();
 
     uint8_t frame_buf[__buf_len] = {0};
     std::shared_ptr<IBuffer> frame_buffer = std::make_shared<Buffer>(frame_buf, __buf_len);
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
-    InitPacket packet;
+    Rtt0Packet packet;
     BufferSpan payload(frame_buffer->GetReadSpan());
     packet.SetPayload(payload);
     packet.SetPacketNumber(10);
@@ -31,7 +31,7 @@ TEST(init_packet_utest, codec) {
     HeaderFlag flag;
     EXPECT_TRUE(flag.DecodeFlag(packet_buffer));
 
-    InitPacket new_packet(flag.GetFlag());
+    Rtt0Packet new_packet(flag.GetFlag());
     EXPECT_TRUE(new_packet.Decode(packet_buffer));
     EXPECT_TRUE(new_packet.Decode(nullptr, nullptr));
 
@@ -44,14 +44,14 @@ TEST(init_packet_utest, codec) {
     EXPECT_TRUE(PacketTest::CheckTestFrame(frames[0]));
 }
 
-TEST(init_packet_utest, crypto_codec) {
+TEST(rtt_0_packet_utest, crypto_codec) {
     auto frame = PacketTest::GetTestFrame();
 
     uint8_t frame_buf[__buf_len] = {0};
     std::shared_ptr<IBuffer> frame_buffer = std::make_shared<Buffer>(frame_buf, __buf_len);
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
-    InitPacket packet;
+    Rtt0Packet packet;
     BufferSpan payload(frame_buffer->GetReadSpan());
     packet.SetPayload(payload);
     packet.SetPacketNumber(10);
@@ -66,7 +66,7 @@ TEST(init_packet_utest, crypto_codec) {
     HeaderFlag flag;
     EXPECT_TRUE(flag.DecodeFlag(packet_buffer));
 
-    InitPacket new_packet(flag.GetFlag());
+    Rtt0Packet new_packet(flag.GetFlag());
     EXPECT_TRUE(new_packet.Decode(packet_buffer));
     std::shared_ptr<ICryptographer> crypto_grapher;
 

@@ -291,7 +291,7 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
     
     uint8_t buf[1450];
     std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, 1450);
-    if (!packet->Decode(cryptographer, out_plaintext)) {
+    if (!packet->Decode(out_plaintext, cryptographer)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
     }

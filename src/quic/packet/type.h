@@ -32,6 +32,7 @@ enum PacketNumberSpace: uint8_t {
 };
 
 static const uint8_t __packent_number_length = 4;
+static const uint32_t __retry_integrity_tag_length = 128;
 
 const char* PacketTypeToString(PacketType type);
 

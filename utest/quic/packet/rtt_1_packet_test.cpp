@@ -64,7 +64,7 @@ TEST(rtt_1_packet_utest, crypto_codec) {
 
     uint8_t plaintext_buf[__buf_len] = {0};
     std::shared_ptr<IBuffer> plaintext_buffer = std::make_shared<Buffer>(plaintext_buf, __buf_len);
-    EXPECT_TRUE(new_packet.Decode(PacketTest::Instance().GetTestServerCryptographer(), plaintext_buffer));
+    EXPECT_TRUE(new_packet.Decode(plaintext_buffer, PacketTest::Instance().GetTestServerCryptographer()));
 
     auto frames = new_packet.GetFrames();
     EXPECT_EQ(frames.size(), 1);

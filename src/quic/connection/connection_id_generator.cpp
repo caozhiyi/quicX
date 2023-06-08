@@ -13,11 +13,11 @@ ConnectionIDGenerator::~ConnectionIDGenerator() {
 
 }
 
-void ConnectionIDGenerator::Generator(void* cid, uint32_t len) {
-    RAND_bytes(reinterpret_cast<uint8_t*>(cid), len);
+void ConnectionIDGenerator::Generator(uint8_t* cid, uint32_t len) {
+    RAND_bytes(cid, len);
 }
 
-uint64_t ConnectionIDGenerator::Hash(uint8_t* cid, uint16_t len) {
+uint64_t ConnectionIDGenerator::Hash(uint8_t* cid, uint32_t len) {
     return SIPHASH_24(_sip_hash_key, cid, len);
 }
 

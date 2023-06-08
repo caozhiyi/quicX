@@ -46,17 +46,15 @@ bool VersionNegotiationPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
     }
 
     auto span = buffer->GetReadSpan();
-    uint8_t* start_pos = span.GetStart();
-    uint8_t* cur_pos = start_pos;
-    uint8_t* end = span.GetEnd();
+    uint8_t* cur_pos = span.GetStart();
 
-    uint32_t version_count = (span.GetEnd() - start_pos) / sizeof(uint32_t);
+    uint32_t version_count = (span.GetEnd() - span.GetStart()) / sizeof(uint32_t);
     _support_version.resize(version_count);
     for (size_t i = 0; i < version_count; i++) {
-        cur_pos = FixedDecodeUint32(cur_pos, end, _support_version[i]);
+        cur_pos = FixedDecodeUint32(cur_pos, span.GetEnd(), _support_version[i]);
     }
 
-    _packet_src_data = std::move(BufferSpan(start_pos, cur_pos));
+    _packet_src_data = std::move(BufferSpan(span.GetStart(), cur_pos));
     buffer->MoveReadPt(cur_pos - span.GetStart());
     return true;
 }
