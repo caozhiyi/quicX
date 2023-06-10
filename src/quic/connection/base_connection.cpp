@@ -12,7 +12,8 @@
 namespace quicx {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start):
-    _id_generator(start) {
+    _id_generator(start),
+    _transport_param_done(false) {
     memset(_cryptographers, 0, sizeof(std::shared_ptr<ICryptographer>) * NUM_ENCRYPTION_LEVELS);
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
 }

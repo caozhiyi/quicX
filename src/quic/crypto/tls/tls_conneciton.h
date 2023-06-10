@@ -24,7 +24,8 @@ public:
         size_t len) = 0;
 
     virtual void FlushFlight() = 0;
-    virtual void SendAlert(EncryptionLevel level, uint8_t alert) = 0;   
+    virtual void SendAlert(EncryptionLevel level, uint8_t alert) = 0;
+    virtual void OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) = 0;
 };
 
 class TLSConnection {
@@ -54,6 +55,7 @@ public:
         size_t len);
     static int32_t FlushFlight(SSL* ssl);
     static int32_t SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t alert);
+    static void TryGetTransportParam(SSL* ssl, ssl_encryption_level_t level);
 
     static EncryptionLevel AdapterEncryptionLevel(ssl_encryption_level_t level);
 protected:

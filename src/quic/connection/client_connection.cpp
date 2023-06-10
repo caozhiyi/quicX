@@ -7,6 +7,7 @@
 #include "common/network/io_handle.h"
 #include "quic/stream/crypto_stream.h"
 #include "quic/packet/handshake_packet.h"
+#include "common/buffer/buffer_read_view.h"
 #include "quic/connection/client_connection.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 #include "quic/connection/connection_id_generator.h"
@@ -115,6 +116,19 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, in
     
     if (_tls_connection->DoHandleShake()) {
         LOG_DEBUG("handshake done.");
+    }
+}
+
+void ClientConnection::OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
+    if (_transport_param_done) {
+        return;
+    }
+    _transport_param_done = true;
+    TransportParam peer_tp;
+    std::shared_ptr<IBufferRead> buffer = std::make_shared<BufferReadView>((uint8_t*)tp, tp_len);
+    if (!peer_tp.Decode(buffer)) {
+        LOG_ERROR("decode peer transport failed.");
+        return;
     }
 }
 

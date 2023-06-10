@@ -156,6 +156,12 @@ public:
         _alert = alert;
     }
 
+    void OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
+        if (_transport_param_done) {
+            return;
+        }
+        _transport_param_done = true;
+    }
     
     bool ReadHandshakeData(std::vector<uint8_t> *out, EncryptionLevel level, size_t num = std::numeric_limits<size_t>::max()) {
         if (_levels[level].read_secret.empty()) {
@@ -204,6 +210,7 @@ private:
 
 private:
     Role _role;
+    bool _transport_param_done = false;
     MockTransport *_peer = nullptr;
 
     bool _has_alert = false;

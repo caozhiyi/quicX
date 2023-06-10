@@ -5,6 +5,19 @@
 
 namespace quicx {
 
+BufferReadView::BufferReadView(BufferSpan span):
+    _read_pos(span.GetStart()),
+    _buffer_start(span.GetStart()),
+    _buffer_end(span.GetEnd()) {
+
+}
+
+BufferReadView::BufferReadView(uint8_t* start, uint32_t len):
+    _read_pos(start),
+    _buffer_start(start),
+    _buffer_end(start + len) {
+}
+
 BufferReadView::BufferReadView(uint8_t* start, uint8_t* end):
     _read_pos(start),
     _buffer_start(start),

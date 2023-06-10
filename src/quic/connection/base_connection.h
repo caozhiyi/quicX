@@ -65,6 +65,7 @@ protected:
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
 
 protected:
+    bool _transport_param_done;
     std::shared_ptr<BlockMemoryPool> _alloter;
 
     StreamIDGenerator _id_generator;
