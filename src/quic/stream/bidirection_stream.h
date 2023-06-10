@@ -7,8 +7,8 @@
 namespace quicx {
 
 class BidirectionStream:
-    public SendStream,
-    public RecvStream {
+    public virtual SendStream,
+    public virtual RecvStream {
 public:
     BidirectionStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t id = 0);
     virtual ~BidirectionStream();
@@ -18,11 +18,6 @@ public:
     virtual void OnFrame(std::shared_ptr<IFrame> frame);
 
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
-
-    virtual int32_t Send(uint8_t* data, uint32_t len);
-
-    // reset the stream
-    virtual void Reset(uint64_t err);
 };
 
 }

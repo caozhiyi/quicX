@@ -56,15 +56,18 @@ protected:
     virtual bool On1rttPacket(std::shared_ptr<IPacket> packet);
 
     virtual bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames);
-    virtual bool OnStreamFrame(std::shared_ptr<IStreamFrame> frame);
+    virtual bool OnStreamFrame(std::shared_ptr<IFrame> frame);
 
     virtual bool OnCryptoFrame(std::shared_ptr<IFrame> frame);
+    virtual bool OnNewToken(std::shared_ptr<IFrame> frame) {}
 
     virtual void ActiveSendStream(IStream* stream);
 
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
 
 protected:
+    uint64_t _last_communicate_time;   
+
     bool _transport_param_done;
     std::shared_ptr<BlockMemoryPool> _alloter;
 

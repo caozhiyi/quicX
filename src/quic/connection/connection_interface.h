@@ -48,7 +48,7 @@ protected:
     virtual bool On1rttPacket(std::shared_ptr<IPacket> packet) = 0;
 
     virtual bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) = 0;
-    virtual bool OnStreamFrame(std::shared_ptr<IStreamFrame> frame) = 0;
+    virtual bool OnStreamFrame(std::shared_ptr<IFrame> frame) = 0;
 
     virtual void ActiveSendStream(IStream* stream) = 0;
     virtual void MakeCryptoStream() = 0;

@@ -47,6 +47,7 @@ bool RecvStreamStateMachine::OnFrame(uint16_t frame_type) {
         if (StreamFrame::IsStreamFrame(frame_type)) {
             return true;
         }
+        break;
     }
 
     LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", _state, frame_type);
@@ -56,13 +57,26 @@ bool RecvStreamStateMachine::OnFrame(uint16_t frame_type) {
 bool RecvStreamStateMachine::RecvAllData() {
     switch (_state) {
     case SS_SIZE_KNOWN:
+        _state = SS_DATA_RECVD;
+        return true;
+    case SS_RESET_RECVD:
+        _state = SS_RESET_RECVD;
+        return true;
+    }
+    LOG_ERROR("current status not allow recv all data. status:%d", _state);
+    return false;
+}
+
+bool RecvStreamStateMachine::AppReadAllData() {
+    switch (_state) {
+    case SS_DATA_RECVD:
         _state = SS_DATA_READ;
         return true;
     case SS_RESET_RECVD:
         _state = SS_RESET_READ;
         return true;
     }
-    LOG_ERROR("current status not allow recv all data. status:%d", _state);
+    LOG_ERROR("current status not allow read all data. status:%d", _state);
     return false;
 }
 
