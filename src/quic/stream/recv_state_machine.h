@@ -41,12 +41,6 @@ receiving stream states
 +-------+                   +-------+
 */
 
-enum RecvStreamEvent {
-    RSE_RECV_ALL_DATA = 0x01,
-    RSE_READ_ALL_DATA = 0x02,
-    RSE_READ_RST      = 0x03,
-};
-
 class RecvStreamStateMachine: public IStreamStateMachine {
 public:
     RecvStreamStateMachine(StreamState s = SS_RECV);
@@ -55,7 +49,11 @@ public:
     // current recv frame type
     bool OnFrame(uint16_t frame_type);
 
+    // recv all data from peer
     bool RecvAllData();
+
+    // application read all data
+    bool AppReadAllData();
 };
 
 }

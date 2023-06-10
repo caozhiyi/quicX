@@ -1,5 +1,6 @@
 #include <cstring>
 #include "common/log/log.h"
+#include "common/util/time.h"
 #include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/retry_packet.h"
@@ -12,6 +13,7 @@
 namespace quicx {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start):
+    _last_communicate_time(0),
     _id_generator(start),
     _transport_param_done(false) {
     memset(_cryptographers, 0, sizeof(std::shared_ptr<ICryptographer>) * NUM_ENCRYPTION_LEVELS);
@@ -197,6 +199,10 @@ void BaseConnection::OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) {
 
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
+    // check version
+
+    // check init packet size
+
     std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
     if (cryptographer == nullptr) {
         // get header
@@ -232,16 +238,22 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
         uint16_t type = frames[i]->GetType();
         switch (type)
         {
-        case FT_PADDING: break;
-        case FT_PING: break;
+        case FT_PADDING:
+            // do nothing
+            break;
+        case FT_PING: 
+            _last_communicate_time = UTCTimeMsec();
+            break;
         case FT_ACK: break;
         case FT_ACK_ECN: break;
-        case FT_RESET_STREAM: break;
-        case FT_STOP_SENDING: break;
-        case FT_CRYPTO: 
-            OnCryptoFrame(frames[i]);
-            break;
-        case FT_NEW_TOKEN: break;
+        case FT_RESET_STREAM:
+        case FT_STOP_SENDING:
+        case FT_STREAM_DATA_BLOCKED:
+            return OnStreamFrame(frames[i]);
+        case FT_CRYPTO:
+            return OnCryptoFrame(frames[i]);
+        case FT_NEW_TOKEN:
+            return OnNewToken(frames[i]);
         case FT_MAX_DATA: break;
         case FT_MAX_STREAM_DATA: break;
         case FT_MAX_STREAMS_BIDIRECTIONAL: break;
@@ -258,7 +270,7 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
         case FT_HANDSHAKE_DONE: break;
         default:
             if (!OnStreamFrame(std::dynamic_pointer_cast<IStreamFrame>(frames[i]))) {
-                return false;
+                return OnStreamFrame(frames[i]);
             }
             break;
         }
@@ -266,7 +278,7 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
     return true;
 }
 
-bool BaseConnection::OnStreamFrame(std::shared_ptr<IStreamFrame> frame) {
+bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 
