@@ -6,14 +6,57 @@
 
 namespace quicx {
 
-class SendStreamStateMachine: public IStreamStateMachine {
+/*
+sending stream states
+    o    
+    | Create Stream (Sending)    
+    | Peer Creates Bidirectional Stream    
+    v    
++-------+    
+| Ready | Send RESET_STREAM    
+|       |-----------------------.    
++-------+                       |    
+    |                           |       
+    | Send STREAM /             |    
+    | STREAM_DATA_BLOCKED       |    
+    |                           |    
+    | Peer Creates              |    
+    | Bidirectional Stream      |    
+    v                           |    
++-------+                       |    
+| Send  | Send RESET_STREAM     |    
+|       |---------------------->|    
++-------+                       |    
+    |                           |    
+    | Send STREAM + FIN         |    
+    v                           v    
++-------+                   +-------+
+| Data  | Send RESET_STREAM | Reset |
+| Sent  |------------------>| Sent  |
++-------+                   +-------+
+    |                           |
+    | Recv All ACKs             | Recv ACK
+    v                           v
++-------+                   +-------+
+| Data  |                   | Reset |
+| Recvd |                   | Recvd |
++-------+                   +-------+
+*/
+
+class SendStreamStateMachine:
+    public IStreamStateMachine {
 public:
     SendStreamStateMachine(StreamState s = SS_READY);
     ~SendStreamStateMachine();
 
+    // current send frame type
     bool OnFrame(uint16_t frame_type);
 
-    bool RecvAllAck();
+    // recv all acks?
+    bool AllAckDone();
+
+    // check can send?
+    bool CanSendData();
 };
 
 }

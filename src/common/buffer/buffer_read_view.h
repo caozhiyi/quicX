@@ -15,6 +15,8 @@ class BlockMemoryPool;
 class BufferReadView:
     public IBufferRead {
 public:
+    BufferReadView(BufferSpan span);
+    BufferReadView(uint8_t* start, uint32_t len);
     BufferReadView(uint8_t* start, uint8_t* end);
     virtual ~BufferReadView();
     // read to data buf but don't change the read point
@@ -37,6 +39,7 @@ public:
     virtual uint8_t* GetData();
     // clear all data
     virtual void Clear() {}
+
 protected:
     uint32_t Read(uint8_t* data, uint32_t len, bool move_pt);
 

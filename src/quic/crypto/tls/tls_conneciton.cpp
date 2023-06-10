@@ -87,6 +87,7 @@ int32_t TLSConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, con
     const uint8_t *secret, size_t secret_len) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
     
+    TryGetTransportParam(ssl, level);
     conn->_handler->SetReadSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
     return 1;
 }
@@ -95,6 +96,7 @@ int32_t TLSConnection::SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, co
         const uint8_t *secret, size_t secret_len) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
     
+    TryGetTransportParam(ssl, level);
     conn->_handler->SetWriteSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
     return 1;
 }
@@ -119,6 +121,18 @@ int32_t TLSConnection::SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t
 
     conn->_handler->SendAlert(AdapterEncryptionLevel(level), alert);
     return 1;
+}
+
+void TLSConnection::TryGetTransportParam(SSL* ssl, ssl_encryption_level_t level) {
+    const uint8_t *peer_tp;
+    size_t tp_len = 0;
+    SSL_get_peer_quic_transport_params(ssl, &peer_tp, &tp_len);
+    if (tp_len == 0) {
+        return;
+    }
+
+    TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
+    conn->_handler->OnTransportParams(AdapterEncryptionLevel(level), peer_tp, tp_len);
 }
 
 EncryptionLevel TLSConnection::AdapterEncryptionLevel(ssl_encryption_level_t level) {

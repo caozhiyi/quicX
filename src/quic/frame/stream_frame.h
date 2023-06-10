@@ -8,9 +8,10 @@
 namespace quicx {
 
 enum StreamFrameFlag {
-    SFF_OFF = 0x04,
-    SFF_LEN = 0x02,
-    SFF_FIN = 0x01
+    SFF_FIN  = 0x01,
+    SFF_LEN  = 0x02,
+    SFF_OFF  = 0x04,
+    SFF_MASK = 0x07,
 };
 
 class Buffer;
@@ -36,6 +37,8 @@ public:
     void SetData(uint8_t* data, uint32_t send_len);
     uint8_t* GetData() { return _data; }
     uint32_t GetLength() { return _length; }
+
+    static bool IsStreamFrame(uint16_t frame_type);
 
 private:
     uint64_t _offset;     // the byte offset in the stream for the data in this STREAM frame.

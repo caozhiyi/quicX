@@ -12,7 +12,8 @@
 namespace quicx {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start):
-    _id_generator(start) {
+    _id_generator(start),
+    _transport_param_done(false) {
     memset(_cryptographers, 0, sizeof(std::shared_ptr<ICryptographer>) * NUM_ENCRYPTION_LEVELS);
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
 }
@@ -53,13 +54,13 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
         // then sending frames of stream
         for (auto iter = _hope_send_stream_list.begin(); iter != _hope_send_stream_list.end();) {
             auto ret = (*iter)->TrySendData(&frame_visitor);
-            if (ret == TSR_SUCCESS) {
+            if (ret == IStream::TSR_SUCCESS) {
                 iter = _hope_send_stream_list.erase(iter);
     
-            } else if (ret == TSR_FAILED) {
+            } else if (ret == IStream::TSR_FAILED) {
                 return false;
     
-            } else if (ret == TSR_BREAK) {
+            } else if (ret == IStream::TSR_BREAK) {
                 iter = _hope_send_stream_list.erase(iter);
                 break;
             }
@@ -278,7 +279,7 @@ bool BaseConnection::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 
-void BaseConnection::ActiveSendStream(ISendStream* stream) {
+void BaseConnection::ActiveSendStream(IStream* stream) {
     _hope_send_stream_list.emplace_back(stream);
 }
 

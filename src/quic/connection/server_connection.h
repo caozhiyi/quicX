@@ -32,6 +32,7 @@ protected:
 
     virtual void MakeCryptoStream();
     virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err);
+    virtual void OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len);
 private:
     std::shared_ptr<TLSServerConnection> _tls_connection;
 };

@@ -25,25 +25,12 @@ RecvStream::~RecvStream() {
 
 }
 
-void RecvStream::Close() {
+void RecvStream::Close(uint64_t error) {
     auto stop_frame = std::make_shared<StopSendingFrame>();
     stop_frame->SetStreamID(_stream_id);
-    stop_frame->SetAppErrorCode(0); // TODO. add some error code
+    stop_frame->SetAppErrorCode(error);
 
     _frame_list.emplace_back(stop_frame);
-}
-
-TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
-    // TODO check stream state
-    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
-        if (visitor->HandleFrame(*iter)) {
-            iter = _frame_list.erase(iter);
-
-        } else {
-            return TSR_FAILED;
-        }
-    }
-    return TSR_SUCCESS;
 }
 
 void RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
@@ -57,13 +44,27 @@ void RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
         OnResetStreamFrame(frame);
         break;
     default:
-        if (frame_type >= FT_STREAM && frame_type <= FT_STREAM_MAX) {
+        if (StreamFrame::IsStreamFrame(frame_type)) {
             OnStreamFrame(frame);
             break;
         } else {
             LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
         }
     }
+}
+
+IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
+    IStream::TrySendData(nullptr);
+
+    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
+        if (visitor->HandleFrame(*iter)) {
+            iter = _frame_list.erase(iter);
+
+        } else {
+            return TSR_FAILED;
+        }
+    }
+    return TSR_SUCCESS;
 }
 
 void RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
@@ -95,16 +96,15 @@ void RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         _out_order_frame[stream_frame->GetOffset()] = stream_frame;
     }
 
-    /*
-    // send max stream data
-    if (stream_frame->GetOffset() - _buffer->GetDataOffset() >= _to_data_max) {
+    // TODO put number to config
+    if (_local_data_limit - _except_offset < 3096) {
+        _local_data_limit += 3096;
         auto max_frame = std::make_shared<MaxStreamDataFrame>();
         max_frame->SetStreamID(_stream_id);
-        max_frame->SetMaximumData(_buffer->GetDataOffset() + _data_limit);
+        max_frame->SetMaximumData(_local_data_limit);
 
-        //_connection->Send(max_frame);
+        ActiveToSend();
     }
-    */
 }
 
 void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
@@ -117,9 +117,10 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
 
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(_stream_id);
-    max_frame->SetMaximumData(_local_data_limit + 4096); // TODO. define increase steps
-
+    max_frame->SetMaximumData(_local_data_limit + 3096); // TODO. define increase steps
     _frame_list.emplace_back(max_frame);
+
+    ActiveToSend();
 }
 
 void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
@@ -137,6 +138,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     _final_offset = fin_offset;
 
+    // TODO delay call it
     if (_recv_cb) {
         _recv_cb(_recv_buffer, reset_frame->GetAppErrorCode());
     }

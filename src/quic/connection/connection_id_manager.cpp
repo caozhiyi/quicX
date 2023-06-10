@@ -9,15 +9,19 @@ ConnectionID ConnectionIDManager::Generator() {
 
 bool ConnectionIDManager::RetireID(ConnectionID& id) {
     uint64_t id_hash = ConnectionIDGenerator::Instance().Hash(id._id, id._len);
-    auto iter = _ids.find(id_hash);
-    if (iter == _ids.end()) {
+    auto iter = _ids_map.find(id_hash);
+    if (iter == _ids_map.end()) {
         return false;
     }
-    _ids.erase(iter);
+    _ids_map.erase(iter);
+    return true;
 }
 
 bool ConnectionIDManager::AddID(ConnectionID& id) {
-    _ids.insert(ConnectionIDGenerator::Instance().Hash(id._id, id._len), std::move(std::string(id._id, id._len)));
+    // auto key = ConnectionIDGenerator::Instance().Hash(id._id, id._len);
+    // auto value = std::string((char*)id._id, id._len);
+    // _ids_map.insert(key, value);
+    return true;
 }
 
 }

@@ -6,7 +6,7 @@ namespace quicx {
 
 ConnectionIDGenerator::ConnectionIDGenerator() {
     // make key
-    Generator(_sip_hash_key, sizeof(_sip_hash_key));
+    RAND_bytes((unsigned char*)_sip_hash_key, sizeof(_sip_hash_key));
 }
 
 ConnectionIDGenerator::~ConnectionIDGenerator() {

@@ -11,8 +11,11 @@ public:
     IStreamStateMachine(StreamState s = SS_UNKNOW): _state(s) {}
     virtual ~IStreamStateMachine() {}
 
+    // current recv frame type
+    // return false if the state machine refuse frame type  
     virtual bool OnFrame(uint16_t frame_type) = 0;
 
+    // get current state machine state
     StreamState GetStatus() { return _state; }
 
 protected:

@@ -16,7 +16,7 @@ CryptoStream::~CryptoStream() {
 
 }
 
-TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
+IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
     // TODO not copy buffer
     TrySendResult ret = TSR_SUCCESS;
     std::shared_ptr<IBufferChains> buffer;
@@ -77,7 +77,7 @@ void CryptoStream::Reset(uint64_t err) {
     // do nothing
 }
 
-void CryptoStream::Close() {
+void CryptoStream::Close(uint64_t err) {
     // do nothing
 }
 
@@ -99,9 +99,7 @@ int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level
     }
     int32_t size = buffer->Write(data, len);
 
-    if (_hope_send_cb) {
-        _hope_send_cb(this);
-    }
+    ActiveToSend();
     return size;
 }
 

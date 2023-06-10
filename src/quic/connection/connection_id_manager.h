@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_CONNECTION_ID_MANAGER
 #define QUIC_CONNECTION_CONNECTION_ID_MANAGER
 
+#include <string>
 #include <cstdint>
 #include <unordered_map>
 #include "common/util/singleton.h"
@@ -22,7 +23,7 @@ public:
     bool AddID(ConnectionID& id);
 
 private: 
-    std::unordered_map<uint64_t, std::string> _ids;
+    std::unordered_map<uint64_t, std::string> _ids_map;
 };
 
 }

@@ -60,11 +60,12 @@ protected:
 
     virtual bool OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
-    virtual void ActiveSendStream(ISendStream* stream);
+    virtual void ActiveSendStream(IStream* stream);
 
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
 
 protected:
+    bool _transport_param_done;
     std::shared_ptr<BlockMemoryPool> _alloter;
 
     StreamIDGenerator _id_generator;
@@ -74,7 +75,7 @@ protected:
     std::unordered_set<std::string> _conn_id_set;
     std::list<std::shared_ptr<IFrame>> _frame_list;
 
-    std::list<ISendStream*> _hope_send_stream_list;
+    std::list<IStream*> _hope_send_stream_list;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> _stream_map;
 
     EncryptionLevel _cur_encryption_level;

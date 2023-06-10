@@ -51,9 +51,6 @@ bool StreamFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
 
     if (with_type) {
         pos = FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type < FT_STREAM || _frame_type > FT_STREAM_MAX) {
-            return false;
-        }
     }
     pos = DecodeVarint(pos, end, _stream_id);
     if (HasOffset()) {
@@ -89,6 +86,10 @@ void StreamFrame::SetData(uint8_t* data, uint32_t send_len) {
         _data = data;
         _length = send_len;
     }
+}
+
+bool StreamFrame::IsStreamFrame(uint16_t frame_type) {
+    return (frame_type & ~SFF_MASK) == FT_STREAM;
 }
 
 }

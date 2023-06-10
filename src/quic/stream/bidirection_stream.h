@@ -13,11 +13,11 @@ public:
     BidirectionStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t id = 0);
     virtual ~BidirectionStream();
 
-    virtual void Close();
+    virtual void Close(uint64_t error = 0);
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame);
 
-    virtual TrySendResult TrySendData(IFrameVisitor* visitor);
+    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
 
     virtual int32_t Send(uint8_t* data, uint32_t len);
 
