@@ -16,12 +16,14 @@ public:
     RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id = 0);
     ~RecvStream();
 
-    // abort reading
-    void Close();
+    // close the stream
+    virtual void Close(uint64_t error = 0);
 
-    TrySendResult TrySendData(IFrameVisitor* visitor);
+    // process recv frames
+    virtual void OnFrame(std::shared_ptr<IFrame> frame);
 
-    void OnFrame(std::shared_ptr<IFrame> frame);
+    // try generate data to send
+    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
 
 protected:
     void OnStreamFrame(std::shared_ptr<IFrame> frame);

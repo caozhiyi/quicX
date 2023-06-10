@@ -7,16 +7,13 @@
 
 namespace quicx {
 
-typedef std::function<void(std::shared_ptr<IBufferChains> buffer, int32_t err)> StreamRecvCB;
-
 class IRecvStream:
     public virtual IStream {
 public:
     IRecvStream(uint64_t id = 0): IStream(id), _recv_cb(nullptr) {}
     virtual ~IRecvStream() {}
 
-    virtual void OnFrame(std::shared_ptr<IFrame> frame) = 0;
-
+    typedef std::function<void(std::shared_ptr<IBufferChains>/*recv buffer*/, int32_t /*error no*/)> StreamRecvCB;
     void SetRecvCallBack(StreamRecvCB rb) { _recv_cb = rb; }
 
 protected:

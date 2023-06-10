@@ -50,7 +50,7 @@ protected:
     virtual bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) = 0;
     virtual bool OnStreamFrame(std::shared_ptr<IStreamFrame> frame) = 0;
 
-    virtual void ActiveSendStream(ISendStream* stream) = 0;
+    virtual void ActiveSendStream(IStream* stream) = 0;
     virtual void MakeCryptoStream() = 0;
     virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err) = 0;
 };

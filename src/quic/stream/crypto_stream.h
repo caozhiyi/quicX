@@ -16,11 +16,11 @@ public:
     CryptoStream(std::shared_ptr<BlockMemoryPool> alloter);
     virtual ~CryptoStream();
 
-    virtual TrySendResult TrySendData(IFrameVisitor* visitor);
+    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
 
     virtual void Reset(uint64_t err);
 
-    virtual void Close();
+    virtual void Close(uint64_t err = 0);
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame);
 

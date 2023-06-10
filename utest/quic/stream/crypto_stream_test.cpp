@@ -83,9 +83,9 @@ TEST(crypto_stream_utest, send) {
     stream->Send(data + 15, 15, EL_APPLICATION);
 
     FixBufferFrameVisitor frame_visitor(1450);
-    EXPECT_EQ(stream->TrySendData(&frame_visitor), TSR_BREAK);
-    EXPECT_EQ(stream->TrySendData(&frame_visitor), TSR_BREAK);
-    EXPECT_EQ(stream->TrySendData(&frame_visitor), TSR_SUCCESS);
+    EXPECT_EQ(stream->TrySendData(&frame_visitor), IStream::TSR_BREAK);
+    EXPECT_EQ(stream->TrySendData(&frame_visitor), IStream::TSR_BREAK);
+    EXPECT_EQ(stream->TrySendData(&frame_visitor), IStream::TSR_SUCCESS);
 
     std::vector<std::shared_ptr<IFrame>> frames;
     EXPECT_TRUE(DecodeFrames(frame_visitor.GetBuffer(), frames));

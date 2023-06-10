@@ -1,11 +1,7 @@
 #include "common/log/log.h"
+#include "quic/frame/type.h"
 #include "quic/frame/stream_frame.h"
-#include "quic/frame/stop_sending_frame.h"
-#include "quic/frame/reset_stream_frame.h"
 #include "quic/stream/recv_state_machine.h"
-#include "quic/frame/max_stream_data_frame.h"
-#include "quic/connection/connection_interface.h"
-#include "quic/frame/stream_data_blocked_frame.h"
 
 namespace quicx {
 
@@ -19,51 +15,55 @@ RecvStreamStateMachine::~RecvStreamStateMachine() {
 }
 
 bool RecvStreamStateMachine::OnFrame(uint16_t frame_type) {
-    if (frame_type >= FT_STREAM && frame_type <= FT_STREAM_MAX) {
-        if (frame_type & SFF_FIN) {
-            if (_state == SS_RECV) {
+    switch (_state) {
+    case SS_RECV:
+        if (StreamFrame::IsStreamFrame(frame_type)) {
+            if (frame_type & SFF_FIN) {
                 _state = SS_SIZE_KNOWN;
-                return true;
             }
-        }
-
-        if (_state == SS_RECV || _state == SS_SIZE_KNOWN) {
             return true;
         }
-        
-
-    } else if (frame_type == FT_RESET_STREAM) {
-        if (_state == SS_RECV || _state == SS_SIZE_KNOWN || _state == SS_DATA_RECVD) {
+        if (frame_type == FT_STREAM_DATA_BLOCKED) {
+            return true;
+        }
+        if (frame_type == FT_RESET_STREAM) {
             _state = SS_RESET_RECVD;
             return true;
         }
-
-    } else {
-        LOG_ERROR("invalid frame type on recv stream. type:%d", frame_type);
-        return false;
+        break;
+    case SS_SIZE_KNOWN:
+        if (StreamFrame::IsStreamFrame(frame_type)) {
+            return true;
+        }
+        if (frame_type == FT_STREAM_DATA_BLOCKED) {
+            return true;
+        }
+        if (frame_type == FT_RESET_STREAM) {
+            _state = SS_RESET_RECVD;
+            return true;
+        }
+        break;
+    case SS_RESET_RECVD:
+        if (StreamFrame::IsStreamFrame(frame_type)) {
+            return true;
+        }
     }
-    
+
     LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", _state, frame_type);
     return false;
 }
 
-bool RecvStreamStateMachine::OnEvent(RecvStreamEvent event) {
-    if (event == RSE_RECV_ALL_DATA) {
-        if (_state == SS_SIZE_KNOWN) {
-            _state = SS_DATA_RECVD;
-        }
-        
-    } else if (event == RSE_READ_ALL_DATA) {
-        if (_state == SS_DATA_RECVD) {
-            _state = SS_DATA_READ;
-        }
-
-    } else {
-        if (_state == SS_RESET_RECVD) {
-            _state = SS_RESET_READ;
-        }
+bool RecvStreamStateMachine::RecvAllData() {
+    switch (_state) {
+    case SS_SIZE_KNOWN:
+        _state = SS_DATA_READ;
+        return true;
+    case SS_RESET_RECVD:
+        _state = SS_RESET_READ;
+        return true;
     }
-    return true;
+    LOG_ERROR("current status not allow recv all data. status:%d", _state);
+    return false;
 }
 
 }

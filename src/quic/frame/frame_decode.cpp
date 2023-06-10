@@ -61,7 +61,7 @@ FrameDecode::FrameDecode() {
     __frame_creater_map[FT_STREAM + 4]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
     __frame_creater_map[FT_STREAM + 5]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
     __frame_creater_map[FT_STREAM + 6]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_STREAM_MAX]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
+    __frame_creater_map[FT_STREAM + 7]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
     __frame_creater_map[FT_MAX_DATA]                        = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxDataFrame>(); };
     __frame_creater_map[FT_MAX_STREAM_DATA]                 = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamDataFrame>(); };
     __frame_creater_map[FT_MAX_STREAMS_BIDIRECTIONAL]       = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamsFrame>(type); };

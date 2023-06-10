@@ -21,16 +21,14 @@ BidirectionStream::~BidirectionStream() {
 
 }
 
-void BidirectionStream::Close() {
+void BidirectionStream::Close(uint64_t error) {
     auto stop_frame = std::make_shared<StopSendingFrame>();
     stop_frame->SetStreamID(_stream_id);
-    stop_frame->SetAppErrorCode(0); // TODO. add some error code
+    stop_frame->SetAppErrorCode(error);
 
     _frame_list.emplace_back(stop_frame);
 
-    if (_hope_send_cb) {
-        _hope_send_cb(this);
-    }
+    ActiveStreamSendCB();
 }
 
 void BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
@@ -50,7 +48,7 @@ void BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
         OnStopSendingFrame(frame);
         break;
     default:
-        if (frame_type >= FT_STREAM && frame_type <= FT_STREAM_MAX) {
+        if (StreamFrame::IsStreamFrame(frame_type)) {
             OnStreamFrame(frame);
             break;
         } else {
@@ -59,7 +57,9 @@ void BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
-TrySendResult BidirectionStream::TrySendData(IFrameVisitor* visitor) {
+IStream::TrySendResult BidirectionStream::TrySendData(IFrameVisitor* visitor) {
+    IStream::TrySendData(nullptr);
+
     // TODO check stream state
     for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
         if (visitor->HandleFrame(*iter)) {
@@ -103,9 +103,7 @@ void BidirectionStream::Reset(uint64_t err) {
 
     _frame_list.emplace_back(frame);
 
-    if (_hope_send_cb) {
-        _hope_send_cb(this);
-    }
+    ActiveStreamSendCB();
 }
 
 }
