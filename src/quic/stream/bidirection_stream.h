@@ -13,6 +13,9 @@ public:
     BidirectionStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t id = 0);
     virtual ~BidirectionStream();
 
+    // reset the stream
+    virtual void Reset(uint64_t error);
+
     virtual void Close(uint64_t error = 0);
 
     virtual void OnFrame(std::shared_ptr<IFrame> frame);

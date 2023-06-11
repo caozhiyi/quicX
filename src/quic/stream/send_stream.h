@@ -19,7 +19,7 @@ public:
     virtual int32_t Send(uint8_t* data, uint32_t len);
 
     // reset the stream
-    virtual void Reset(uint64_t err);
+    virtual void Reset(uint64_t error);
  
     // close the stream
     virtual void Close(uint64_t error = 0);

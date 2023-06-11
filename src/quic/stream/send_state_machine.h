@@ -55,8 +55,17 @@ public:
     // recv all acks?
     bool AllAckDone();
 
-    // check can send?
-    bool CanSendData();
+    // can send stream frame?
+    bool CanSendStrameFrame();
+
+    // can send app data?
+    bool CanSendAppData();
+
+    // can send data block frame?
+    bool CanSendDataBlockFrame();
+
+    // can send reset stream frame?
+    bool CanSendResetStreamFrame();
 };
 
 }

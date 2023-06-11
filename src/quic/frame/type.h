@@ -1,6 +1,8 @@
 #ifndef QUIC_FRAME_TYPE
 #define QUIC_FRAME_TYPE
 
+#include <cstdint>
+
 namespace quicx {
 
 enum FrameType: uint32_t {

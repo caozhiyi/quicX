@@ -2,7 +2,7 @@
 #define QUIC_STREAM_RECV_STREAM_INTERFACE
 
 #include "quic/stream/stream_interface.h"
-#include "quic/stream/state_machine_interface.h"
+#include "quic/stream/recv_state_machine.h"
 #include "common/buffer/buffer_chains_interface.h"
 
 namespace quicx {
@@ -18,7 +18,7 @@ public:
 
 protected:
     StreamRecvCB _recv_cb;
-    std::shared_ptr<IStreamStateMachine> _recv_machine;
+    std::shared_ptr<RecvStreamStateMachine> _recv_machine;
 };
 
 }

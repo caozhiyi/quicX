@@ -49,6 +49,15 @@ public:
     // current recv frame type
     bool OnFrame(uint16_t frame_type);
 
+    // can send max stream data frame?
+    bool CanSendMaxStrameDataFrame();
+
+    // can send stop sending frame?
+    bool CanSendStopSendingFrame();
+
+    // can application read all data?
+    bool CanAppReadAllData();
+
     // recv all data from peer
     bool RecvAllData();
 
