@@ -21,7 +21,8 @@ public:
     virtual void Close(uint64_t error = 0) = 0;
 
     // process recv frames
-    virtual void OnFrame(std::shared_ptr<IFrame> frame) = 0;
+    // return stream data size
+    virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) = 0;
 
     void SetStreamID(uint64_t id) { _stream_id = id; }
     uint64_t GetStreamID() { return _stream_id; }
@@ -36,18 +37,29 @@ public:
 
     typedef std::function<void(IStream* /*stream*/)> ActiveStreamSendCB;
     void SetHopeSendCB(ActiveStreamSendCB cb) { _active_send_cb = cb; }
+
+    typedef std::function<void(uint64_t/*errro*/, uint16_t/*tigger frame*/, const std::string&/*resion*/)> ConnectionCloseCB;
+    void SetConnectionCloseCB(ConnectionCloseCB cb) { _connection_close_cb = cb; }
+
+    typedef std::function<void(uint64_t/*stream id*/)> StreamCloseCB;
+    void SetStreamCloseCB(StreamCloseCB cb) { _stream_close_cb = cb; }
     
-protected:
+
+    void NoticeToClose();
     void ActiveToSend();
+    
 
 protected:
     uint64_t _stream_id;
     bool _is_active_send;
     // put stream to active send list callback
     ActiveStreamSendCB _active_send_cb;
+    // inner connection close callback
+    ConnectionCloseCB _connection_close_cb;
+    // stream close call back
+    StreamCloseCB _stream_close_cb;
     // frames that wait for sending
-    std::list<std::shared_ptr<IFrame>> _frame_list;
-
+    std::list<std::shared_ptr<IFrame>> _frames_list;
 };
 
 }

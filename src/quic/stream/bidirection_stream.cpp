@@ -11,9 +11,11 @@
 
 namespace quicx {
 
-BidirectionStream::BidirectionStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t id):
-    SendStream(alloter, id),
-    RecvStream(alloter, id) {
+BidirectionStream::BidirectionStream(std::shared_ptr<BlockMemoryPool> alloter, 
+    uint64_t init_data_limit,
+    uint64_t id):
+    SendStream(alloter, init_data_limit, id),
+    RecvStream(alloter, init_data_limit, id) {
 
 }
 
@@ -31,7 +33,7 @@ void BidirectionStream::Close(uint64_t error) {
     SendStream::Close(error);
 }
 
-void BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
+uint32_t BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     switch (frame_type)
     {
@@ -49,12 +51,12 @@ void BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
         break;
     default:
         if (StreamFrame::IsStreamFrame(frame_type)) {
-            OnStreamFrame(frame);
-            break;
+            return OnStreamFrame(frame);
         } else {
             LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
         }
     }
+    return 0;
 }
 
 IStream::TrySendResult BidirectionStream::TrySendData(IFrameVisitor* visitor) {

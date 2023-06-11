@@ -20,7 +20,6 @@ public:
     uint64_t GetMaximumStreams() { return _maximum_streams; }
 
 private:
-    uint8_t _stream_type;
     uint32_t _maximum_streams;  // the stream limit at the time the frame was sent.
 };
 

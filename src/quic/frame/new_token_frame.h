@@ -23,6 +23,7 @@ public:
         _token_length = token_length;
     }
     uint8_t* GetToken() { return _token; }
+    uint32_t GetTokenLength() { return _token_length; }
 
 private:
     uint32_t _token_length;  // the length of the token in bytes.

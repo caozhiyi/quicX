@@ -22,7 +22,7 @@ public:
 
     virtual void Close(uint64_t err = 0);
 
-    virtual void OnFrame(std::shared_ptr<IFrame> frame);
+    virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
 
     virtual int32_t Send(uint8_t* data, uint32_t len, uint8_t encryption_level);
     virtual int32_t Send(uint8_t* data, uint32_t len);

@@ -43,7 +43,7 @@ public:
 
     virtual IHeader* GetHeader() { return &_header; }
     virtual uint32_t GetPacketNumOffset() { return _packet_num_offset; }
-    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frame_list; }
+    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frames_list; }
 
     void SetToken(uint8_t* token, uint32_t len);
     uint32_t GetTokenLength() { return _token_length; }
@@ -63,7 +63,7 @@ private:
 
     uint32_t _payload_offset;
     uint32_t _packet_num_offset;
-    std::vector<std::shared_ptr<IFrame>> _frame_list;
+    std::vector<std::shared_ptr<IFrame>> _frames_list;
 };
 
 }

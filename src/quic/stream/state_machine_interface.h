@@ -18,8 +18,12 @@ public:
     // get current state machine state
     StreamState GetStatus() { return _state; }
 
+    typedef std::function<void()> StreamCloseCB;
+    void SetStreamCloseCB(StreamCloseCB cb) { _stream_close_cb = cb; }
+
 protected:
     StreamState _state;
+    StreamCloseCB _stream_close_cb;
 };
 
 }

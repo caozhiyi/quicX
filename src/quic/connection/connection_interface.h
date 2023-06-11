@@ -5,6 +5,7 @@
 #include "quic/stream/send_stream.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/crypto/tls/tls_conneciton.h"
+#include "quic/stream/bidirection_stream.h"
 #include "quic/frame/stream_frame_interface.h"
 
 namespace quicx {
@@ -15,10 +16,13 @@ public:
     IConnection() {}
     virtual ~IConnection() {}
 
+    virtual std::shared_ptr<ISendStream> MakeSendStream() = 0;
+    virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream() = 0;
+
     virtual void AddConnectionId(uint8_t* id, uint16_t len) = 0;
     virtual void RetireConnectionId(uint8_t* id, uint16_t len) = 0;
 
-    virtual void Close() = 0;
+    virtual void Close(uint64_t error) = 0;
 
     // try to build a quic message
     virtual bool GenerateSendData(std::shared_ptr<IBuffer> buffer) = 0;

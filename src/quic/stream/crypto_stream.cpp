@@ -81,14 +81,15 @@ void CryptoStream::Close(uint64_t err) {
     // do nothing
 }
 
-void CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
+uint32_t CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     if (frame_type == FT_CRYPTO) {
         OnCryptoFrame(frame);
-        return;
+        return 0;
     }
     // shouldn't be here
     LOG_ERROR("crypto stream recv error frame. type:%d", frame_type);
+    return 0;
 }
 
 int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level) {

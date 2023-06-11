@@ -13,19 +13,25 @@ public:
 
     virtual bool HandleFrame(std::shared_ptr<IFrame> frame);
 
-    virtual uint32_t GetLeftSize();
+    virtual std::shared_ptr<IBuffer> GetBuffer() { return _buffer; }
 
-    virtual std::shared_ptr<IBuffer> GetBuffer();
+    virtual uint8_t GetEncryptionLevel() { return _encryption_level; }
 
-    virtual std::vector<FrameType>& GetFramesType();
+    virtual void SetStreamDataSizeLimit(uint32_t size) { _left_stream_data_size = size; }
 
-    virtual uint8_t GetEncryptionLevel();
+    virtual uint32_t GetLeftStreamDataSize() { return _left_stream_data_size - _cur_stream_data_size; }
+
+    virtual void AddStreamDataSize(uint32_t size) { _cur_stream_data_size += size; }
+
+    virtual uint64_t GetStreamDataSize() { return _cur_stream_data_size; }
 
 private:
     uint8_t* _buffer_start;
     uint8_t _encryption_level;
+
+    uint32_t _cur_stream_data_size;
+    uint32_t _left_stream_data_size;
     std::shared_ptr<IBuffer> _buffer;
-    std::vector<FrameType> _types;
 };
 
 

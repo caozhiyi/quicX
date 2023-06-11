@@ -24,7 +24,7 @@ public:
     virtual IHeader* GetHeader() { return &_header; }
     virtual uint32_t GetPacketNumOffset() { return _packet_num_offset; }
 
-    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frame_list; }
+    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frames_list; }
 
     void SetPayload(BufferSpan payload);
     BufferSpan GetPayload() { return _payload; }
@@ -37,7 +37,7 @@ private:
 
     uint32_t _payload_offset;
     uint32_t _packet_num_offset;
-    std::vector<std::shared_ptr<IFrame>> _frame_list;
+    std::vector<std::shared_ptr<IFrame>> _frames_list;
 };
 
 }

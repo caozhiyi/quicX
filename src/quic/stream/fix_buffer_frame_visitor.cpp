@@ -6,7 +6,9 @@
 namespace quicx {
 
 FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t size):
-    _encryption_level(EL_APPLICATION) {
+    _encryption_level(EL_APPLICATION),
+    _cur_stream_data_size(0),
+    _left_stream_data_size(0) {
     _buffer_start = new uint8_t[size];
     _buffer = std::make_shared<Buffer>(_buffer_start, _buffer_start + size);
 }
@@ -21,24 +23,7 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
         _encryption_level = crypto_frame->GetEncryptionLevel();
     }
 
-    //_types.push_back(FrameType(frame->GetType()));
     return frame->Encode(_buffer);
-}
-
-uint32_t FixBufferFrameVisitor::GetLeftSize() {
-    return _buffer->GetFreeLength();
-}
-
-std::shared_ptr<IBuffer> FixBufferFrameVisitor::GetBuffer() {
-    return _buffer;
-}
-
-std::vector<FrameType>& FixBufferFrameVisitor::GetFramesType() {
-    return _types;
-}
-
-uint8_t FixBufferFrameVisitor::GetEncryptionLevel() {
-    return _encryption_level;
 }
 
 }
