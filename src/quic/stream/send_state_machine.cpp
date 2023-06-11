@@ -69,7 +69,23 @@ bool SendStreamStateMachine::AllAckDone() {
     return false;
 }
 
-bool SendStreamStateMachine::CanSendData() {
+bool SendStreamStateMachine::CanSendStrameFrame() {
+    return _state == SS_READY ||
+           _state == SS_SEND  ||
+           _state == SS_DATA_SENT;
+}
+
+bool SendStreamStateMachine::CanSendAppData() {
+    return _state == SS_READY ||
+           _state == SS_SEND;
+}
+
+bool SendStreamStateMachine::CanSendDataBlockFrame() {
+    return _state == SS_READY ||
+           _state == SS_SEND;
+}
+
+bool SendStreamStateMachine::CanSendResetStreamFrame() {
     return _state == SS_READY ||
            _state == SS_SEND  ||
            _state == SS_DATA_SENT;

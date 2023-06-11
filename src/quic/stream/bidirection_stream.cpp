@@ -21,6 +21,11 @@ BidirectionStream::~BidirectionStream() {
 
 }
 
+void BidirectionStream::Reset(uint64_t error) {
+    SendStream::Reset(error);
+    RecvStream::Close(error);
+}
+
 void BidirectionStream::Close(uint64_t error) {
     RecvStream::Close(error);
     SendStream::Close(error);

@@ -54,6 +54,19 @@ bool RecvStreamStateMachine::OnFrame(uint16_t frame_type) {
     return false;
 }
 
+bool RecvStreamStateMachine::CanSendMaxStrameDataFrame() {
+    return _state == SS_RECV;
+}
+
+bool RecvStreamStateMachine::CanSendStopSendingFrame() {
+    return _state != SS_RESET_READ &&
+           _state != SS_RESET_RECVD;
+}
+
+bool RecvStreamStateMachine::CanAppReadAllData() {
+    return _state == SS_DATA_RECVD;
+}
+
 bool RecvStreamStateMachine::RecvAllData() {
     switch (_state) {
     case SS_SIZE_KNOWN:
