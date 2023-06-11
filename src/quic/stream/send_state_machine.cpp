@@ -60,13 +60,20 @@ bool SendStreamStateMachine::AllAckDone() {
     switch (_state) {
     case SS_DATA_SENT:
         _state = SS_DATA_RECVD;
-        return true;
+        break;
     case SS_RESET_SENT:
         _state = SS_RESET_RECVD;
-        return true;
+        break;
+    default:
+        LOG_ERROR("current status not allow ack done. status:%d", _state);
+        return false;
     }
-    LOG_ERROR("current status not allow ack done. status:%d", _state);
-    return false;
+    if (_state == SS_DATA_RECVD || _state == SS_RESET_RECVD) {
+        if (_stream_close_cb) {
+            _stream_close_cb();
+        }
+    }
+    return true;
 }
 
 bool SendStreamStateMachine::CanSendStrameFrame() {

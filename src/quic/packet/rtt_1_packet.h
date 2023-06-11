@@ -23,7 +23,7 @@ public:
     virtual bool Decode(std::shared_ptr<IBuffer> buffer, std::shared_ptr<ICryptographer> crypto_grapher);
 
     virtual IHeader* GetHeader() { return &_header; }
-    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frame_list; }
+    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frames_list; }
 
     void SetPayload(BufferSpan payload);
     BufferSpan GetPayload() { return _payload; }
@@ -35,7 +35,7 @@ protected:
 
     uint32_t _payload_offset;
     uint64_t _largest_pn;
-    std::vector<std::shared_ptr<IFrame>> _frame_list;
+    std::vector<std::shared_ptr<IFrame>> _frames_list;
 };
 
 }

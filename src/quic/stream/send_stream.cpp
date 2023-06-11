@@ -3,6 +3,7 @@
 #include "common/buffer/buffer_chains.h"
 #include "common/alloter/alloter_interface.h"
 
+#include "quic/connection/error.h"
 #include "quic/stream/send_stream.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/frame/stop_sending_frame.h"
@@ -14,11 +15,11 @@
 
 namespace quicx {
 
-SendStream::SendStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id):
+SendStream::SendStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
     ISendStream(id),
     _to_fin(false),
     _data_offset(0),
-    _peer_data_limit(0) {
+    _peer_data_limit(init_data_limit) {
     _send_buffer = std::make_shared<BufferChains>(alloter);
 }
 
@@ -49,7 +50,7 @@ void SendStream::Reset(uint64_t error) {
     frame->SetFinalSize(_data_offset);
     frame->SetAppErrorCode(error);
 
-    _frame_list.emplace_back(frame);
+    _frames_list.emplace_back(frame);
 }
 
 void SendStream::Close(uint64_t) {
@@ -59,7 +60,7 @@ void SendStream::Close(uint64_t) {
     }
 }
 
-void SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
+uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     switch (frame_type)
     {
@@ -72,6 +73,7 @@ void SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
     default:
         LOG_ERROR("unexcept frame on send stream. frame type:%d", frame_type);
     }
+    return 0;
 }
 
 IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
@@ -96,9 +98,9 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
         return TSR_FAILED;
     }
     
-    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
+    for (auto iter = _frames_list.begin(); iter != _frames_list.end();) {
         if (visitor->HandleFrame(*iter)) {
-            iter = _frame_list.erase(iter);
+            iter = _frames_list.erase(iter);
 
         } else {
             return TSR_FAILED;
@@ -117,7 +119,9 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
         frame->SetFin();
     }
     
-    uint32_t send_size = _peer_data_limit - _data_offset;
+    uint32_t stream_send_size = _peer_data_limit - _data_offset;
+    uint32_t conn_send_size = visitor->GetLeftStreamDataSize();
+    uint32_t send_size = stream_send_size > conn_send_size ? conn_send_size : stream_send_size;
     send_size = send_size > 1000 ? 1000 : send_size;
 
     // TODO not copy buffer
@@ -128,6 +132,8 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     if (!visitor->HandleFrame(frame)) {
         return TSR_FAILED;
     }
+    visitor->AddStreamDataSize(send_size);
+
     _send_buffer->MoveReadPt(size);
     _data_offset += size;
 

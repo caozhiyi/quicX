@@ -9,19 +9,21 @@ namespace quicx {
 class StreamIDGenerator {
 public:
     enum StreamStarter {
-        SS_CLIENT = 1,
-        SS_SERVER = 2,
+        SS_CLIENT = 0x0,
+        SS_SERVER = 0x1,
     };
 
     enum StreamDirection {
-        SD_BIDIRECTIONAL   = 1,
-        SD_UNIIDIRECTIONAL = 2,
+        SD_BIDIRECTIONAL   = 0x0,
+        SD_UNIIDIRECTIONAL = 0x2,
     };
 
     StreamIDGenerator(StreamStarter starter);
     ~StreamIDGenerator();
 
     uint64_t NextStreamID(StreamDirection direction);
+
+    static StreamDirection GetStreamDirection(uint64_t id);
 
 private:
     StreamStarter _starter;

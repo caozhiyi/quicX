@@ -84,13 +84,20 @@ bool RecvStreamStateMachine::AppReadAllData() {
     switch (_state) {
     case SS_DATA_RECVD:
         _state = SS_DATA_READ;
-        return true;
+        break;
     case SS_RESET_RECVD:
         _state = SS_RESET_READ;
-        return true;
+        break;
+    default:
+        LOG_ERROR("current status not allow read all data. status:%d", _state);
+        return false;
     }
-    LOG_ERROR("current status not allow read all data. status:%d", _state);
-    return false;
+    if (_state == SS_DATA_READ || _state == SS_RESET_READ) {
+        if (_stream_close_cb) {
+            _stream_close_cb();
+        }
+    }
+    return true;
 }
 
 }

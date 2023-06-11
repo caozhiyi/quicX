@@ -12,7 +12,7 @@ namespace quicx {
 class SendStream:
     public virtual ISendStream {
 public:
-    SendStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id = 0);
+    SendStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id = 0);
     virtual ~SendStream();
 
     // send data to peer
@@ -25,7 +25,7 @@ public:
     virtual void Close(uint64_t error = 0);
 
     // process recv frames
-    virtual void OnFrame(std::shared_ptr<IFrame> frame);
+    virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
 
     // try generate data to send
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);

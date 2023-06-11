@@ -5,7 +5,7 @@
 
 namespace quicx {
 
-enum FrameType: uint32_t {
+enum FrameType: uint16_t {
     FT_PADDING                         = 0x00,
     FT_PING                            = 0x01,
     FT_ACK                             = 0x02,

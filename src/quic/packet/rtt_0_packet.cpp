@@ -115,7 +115,7 @@ bool Rtt0Packet::Decode(std::shared_ptr<IBuffer> buffer, std::shared_ptr<ICrypto
         // decode payload frames
         _payload = BufferSpan(cur_pos, cur_pos + _length - _header.GetPacketNumberLength());
         std::shared_ptr<BufferReadView> view = std::make_shared<BufferReadView>(_payload.GetStart(), _payload.GetEnd());
-        if(!DecodeFrames(view, _frame_list)) {
+        if(!DecodeFrames(view, _frames_list)) {
             LOG_ERROR("decode frame failed.");
             return false;
         }
@@ -143,7 +143,7 @@ bool Rtt0Packet::Decode(std::shared_ptr<IBuffer> buffer, std::shared_ptr<ICrypto
         return false;
     }
 
-    if(!DecodeFrames(buffer, _frame_list)) {
+    if(!DecodeFrames(buffer, _frames_list)) {
         LOG_ERROR("decode frame failed.");
         return false;
     }

@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "quic/connection/error.h"
 #include "quic/stream/recv_stream.h"
 #include "quic/frame/stream_frame.h"
 #include "common/buffer/buffer_chains.h"
@@ -11,12 +12,13 @@
 
 namespace quicx {
 
-RecvStream::RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id):
+RecvStream::RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
     IRecvStream(id),
-    _local_data_limit(0),
+    _local_data_limit(init_data_limit),
     _final_offset(0),
     _except_offset(0) {
     _recv_machine = std::shared_ptr<RecvStreamStateMachine>();
+    _recv_machine->SetStreamCloseCB(std::bind(&IStream::NoticeToClose, this));
     _recv_buffer = std::make_shared<BufferChains>(alloter);
 
 }
@@ -31,12 +33,12 @@ void RecvStream::Close(uint64_t error) {
         stop_frame->SetStreamID(_stream_id);
         stop_frame->SetAppErrorCode(error);
 
-        _frame_list.emplace_back(stop_frame);
+        _frames_list.emplace_back(stop_frame);
         ActiveToSend();
     }
 }
 
-void RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
+uint32_t RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     switch (frame_type)
     {
@@ -48,20 +50,20 @@ void RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
         break;
     default:
         if (StreamFrame::IsStreamFrame(frame_type)) {
-            OnStreamFrame(frame);
-            break;
+            return OnStreamFrame(frame);
         } else {
             LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
         }
     }
+    return 0;
 }
 
 IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
     IStream::TrySendData(nullptr);
 
-    for (auto iter = _frame_list.begin(); iter != _frame_list.end();) {
+    for (auto iter = _frames_list.begin(); iter != _frames_list.end();) {
         if (visitor->HandleFrame(*iter)) {
-            iter = _frame_list.erase(iter);
+            iter = _frames_list.erase(iter);
 
         } else {
             return TSR_FAILED;
@@ -70,21 +72,34 @@ IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
     return TSR_SUCCESS;
 }
 
-void RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
+uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if(!_recv_machine->OnFrame(frame->GetType())) {
-        return;
+        return 0;
+    }
+
+    // check flow control
+    auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
+    if (stream_frame->GetOffset() + stream_frame->GetLength() > _local_data_limit) {
+        if (_connection_close_cb) {
+            _connection_close_cb(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "stream recv data exceeding flow control limits.");
+        }
+        return 0;
     }
     
-    auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
+    // check stream frame whit fin
     if (stream_frame->IsFin()) {
         uint64_t fin_offset = stream_frame->GetOffset() + stream_frame->GetLength();
         if (_final_offset != 0 && fin_offset != _final_offset) {
             LOG_ERROR("invalid final size. size:%d", fin_offset);
-            return;
+            if (_connection_close_cb) {
+                _connection_close_cb(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
+            }
+            return 0;
         }
         _final_offset = fin_offset;
     }
     
+
     if (stream_frame->GetOffset() == _except_offset) {
         _recv_buffer->Write(stream_frame->GetData(), stream_frame->GetLength());
         _except_offset += stream_frame->GetLength();
@@ -117,7 +132,7 @@ void RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // recv a repeat packet
         if (_out_order_frame.find(stream_frame->GetOffset()) != _out_order_frame.end() ||
             stream_frame->GetOffset() < _except_offset) {
-            return;
+            return 0;
         }
         
         _out_order_frame[stream_frame->GetOffset()] = stream_frame;
@@ -134,6 +149,7 @@ void RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             ActiveToSend();
         }
     }
+    return stream_frame->GetLength();
 }
 
 void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
@@ -147,7 +163,7 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(_stream_id);
     max_frame->SetMaximumData(_local_data_limit + 3096); // TODO. define increase steps
-    _frame_list.emplace_back(max_frame);
+    _frames_list.emplace_back(max_frame);
 
     ActiveToSend();
 }
@@ -162,6 +178,9 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     if (_final_offset != 0 && fin_offset != _final_offset) {
         LOG_ERROR("invalid final size. size:%d", fin_offset);
+        if (_connection_close_cb) {
+            _connection_close_cb(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
+        }
         return;
     }
 

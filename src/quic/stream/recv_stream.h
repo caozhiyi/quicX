@@ -13,27 +13,28 @@ namespace quicx {
 class RecvStream:
     public virtual IRecvStream {
 public:
-    RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t id = 0);
+    RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id = 0);
     ~RecvStream();
 
     // close the stream
     virtual void Close(uint64_t error = 0);
 
     // process recv frames
-    virtual void OnFrame(std::shared_ptr<IFrame> frame);
+    virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
 
     // try generate data to send
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
 
 protected:
-    void OnStreamFrame(std::shared_ptr<IFrame> frame);
+    uint32_t OnStreamFrame(std::shared_ptr<IFrame> frame);
     void OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame);
     void OnResetStreamFrame(std::shared_ptr<IFrame> frame);
 
 protected:
     uint64_t _final_offset;
-    uint32_t _local_data_limit;  // peer send data limit
-
+    // peer send data limit
+    uint32_t _local_data_limit;
+    // next except data offset
     uint64_t _except_offset;
     std::shared_ptr<IBufferChains> _recv_buffer;
     std::unordered_map<uint64_t, std::shared_ptr<IFrame>> _out_order_frame;

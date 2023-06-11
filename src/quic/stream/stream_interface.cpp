@@ -17,4 +17,10 @@ void IStream::ActiveToSend() {
     }
 }
 
+void IStream::NoticeToClose() {
+    if (_stream_close_cb) {
+        _stream_close_cb(_stream_id);
+    }
+}
+
 }
