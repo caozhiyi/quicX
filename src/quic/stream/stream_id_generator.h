@@ -14,8 +14,8 @@ public:
     };
 
     enum StreamDirection {
-        SD_BIDIRECTIONAL   = 0x0,
-        SD_UNIIDIRECTIONAL = 0x2,
+        SD_BIDIRECTIONAL  = 0x0,
+        SD_UNIDIRECTIONAL = 0x2,
     };
 
     StreamIDGenerator(StreamStarter starter);

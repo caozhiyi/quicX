@@ -76,6 +76,9 @@ protected:
 
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
 
+private:
+    std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id);
+
 protected:
     // connection will to close
     bool _to_close;

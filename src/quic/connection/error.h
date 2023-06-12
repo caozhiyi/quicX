@@ -1,5 +1,5 @@
-#ifndef QUIC_TRANSPORT_ERROR
-#define QUIC_TRANSPORT_ERROR
+#ifndef QUIC_CONNECTION_ERROR
+#define QUIC_CONNECTION_ERROR
 
 namespace quicx {
 

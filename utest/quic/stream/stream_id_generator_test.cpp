@@ -24,19 +24,19 @@ TEST(stream_id_generator_utest, client) {
     EXPECT_EQ(stream_id, 16);
 
     // 110
-    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     EXPECT_EQ(stream_id, 6);
 
     // 1010
-    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     EXPECT_EQ(stream_id, 10);
 
     // 1110
-    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     EXPECT_EQ(stream_id, 14); 
 
     // 10010
-    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     EXPECT_EQ(stream_id, 18);
 }
 
@@ -60,19 +60,19 @@ TEST(stream_id_generator_utest, server) {
     EXPECT_EQ(stream_id, 17);
 
     // 111
-    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     EXPECT_EQ(stream_id, 7);
 
     // 1011
-    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     EXPECT_EQ(stream_id, 11);
 
     // 1111
-    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     EXPECT_EQ(stream_id, 15);
 
     // 10011
-    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     EXPECT_EQ(stream_id, 19); 
 }
 
