@@ -57,13 +57,11 @@ std::shared_ptr<ISendStream> BaseConnection::MakeSendStream() {
         frame->SetMaximumStreams(_local_unidirectional_stream_limit);
         _frames_list.push_back(frame);
     }
-    
-    _local_cur_max_stream_id = _id_generator.NextStreamID(StreamIDGenerator::SD_UNIIDIRECTIONAL);
-    auto stream = std::make_shared<SendStream>(_alloter, _transport_param.GetInitialMaxStreamDataUni(), _local_cur_max_stream_id);
-    stream->SetStreamCloseCB(std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1));
-    stream->SetConnectionCloseCB(std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    stream->SetHopeSendCB(std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1));
-    return stream;
+
+    _local_cur_max_stream_id = _id_generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
+    //auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), _local_cur_max_stream_id);
+    //return stream;
+    return nullptr;
 }
 
 std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
@@ -83,11 +81,9 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
     }
     
     _local_cur_max_stream_id = _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL);
-    auto stream = std::make_shared<BidirectionStream>(_alloter, _transport_param.GetInitialMaxStreamDataBidiLocal(), _local_cur_max_stream_id);
-    stream->SetStreamCloseCB(std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1));
-    stream->SetConnectionCloseCB(std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    stream->SetHopeSendCB(std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1));
-    return stream;
+    //auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiLocal(), _local_cur_max_stream_id);
+    //return stream;
+    return nullptr;
 }
 
 void BaseConnection::AddConnectionId(uint8_t* id, uint16_t len) {
@@ -378,7 +374,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IStream> new_stream;
     std::shared_ptr<MaxStreamsFrame> max_stream_frame;
     if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::SD_BIDIRECTIONAL) {
-        new_stream = std::make_shared<BidirectionStream>(_alloter, _transport_param.GetInitialMaxStreamDataBidiRemote(), stream_id);
+        new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiRemote(), stream_id);
         if (_peer_bidirectional_stream_limit > _peer_cur_max_stream_id >> 2 &&
             _peer_bidirectional_stream_limit - _peer_cur_max_stream_id >> 2 < 4) {
             _peer_bidirectional_stream_limit += 8;
@@ -386,7 +382,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             max_stream_frame->SetMaximumStreams(_peer_bidirectional_stream_limit);
         }
     } else {
-        new_stream = std::make_shared<RecvStream>(_alloter, _transport_param.GetInitialMaxStreamDataUni(), stream_id);
+        new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id);
         if (_peer_unidirectional_stream_limit > _peer_cur_max_stream_id >> 2 &&
             _peer_unidirectional_stream_limit - _peer_cur_max_stream_id >> 2 < 4) {
             _peer_unidirectional_stream_limit += 8;
@@ -394,10 +390,6 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             max_stream_frame->SetMaximumStreams(_peer_unidirectional_stream_limit);
         }
     }
-    new_stream->SetStreamCloseCB(std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1));
-    new_stream->SetConnectionCloseCB(std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    new_stream->SetHopeSendCB(std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1));
-
     _streams_map[stream_id] = new_stream;
     _peer_send_data_size += new_stream->OnFrame(frame);
 
@@ -545,6 +537,19 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     return true;
+}
+
+std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id) {
+    std::shared_ptr<IStream> new_stream;
+    if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::SD_BIDIRECTIONAL) {
+        new_stream = std::make_shared<BidirectionStream>(_alloter, init_size, stream_id);
+    } else {
+        new_stream = std::make_shared<RecvStream>(_alloter, init_size, stream_id);
+    }
+    new_stream->SetStreamCloseCB(std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1));
+    new_stream->SetConnectionCloseCB(std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    new_stream->SetHopeSendCB(std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1));
+    return new_stream;
 }
 
 }
