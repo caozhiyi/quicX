@@ -3,6 +3,7 @@
 #include "quic/frame/type.h"
 #include "common/util/time.h"
 #include "common/buffer/buffer.h"
+#include "quic/connection/error.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/packet/init_packet.h"
 #include "quic/stream/recv_stream.h"
@@ -27,13 +28,8 @@ namespace quicx {
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start):
     _to_close(false),
     _last_communicate_time(0),
-    _id_generator(start),
-    _transport_param_done(false),
-    _local_send_max_data_limit(0),
-    _local_send_data_size(0),
-    _local_cur_max_stream_id(0),
-    _peer_cur_max_stream_id(0) {
-
+    _flow_control(start),
+    _transport_param_done(false) {
     memset(_cryptographers, 0, sizeof(std::shared_ptr<ICryptographer>) * NUM_ENCRYPTION_LEVELS);
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
 }
@@ -44,44 +40,32 @@ BaseConnection::~BaseConnection() {
 
 std::shared_ptr<ISendStream> BaseConnection::MakeSendStream() {
     // check streams limit
-    if (_local_cur_max_stream_id >> 2 > _local_unidirectional_stream_limit) {
-        auto frame = std::make_shared<StreamsBlockedFrame>(FT_STREAMS_BLOCKED_UNIDIRECTIONAL);
-        frame->SetMaximumStreams(_local_unidirectional_stream_limit);
-        _frames_list.push_back(frame);
-
+    uint64_t stream_id;
+    std::shared_ptr<IFrame> frame;
+    if(!_flow_control.CheckLocalUnidirectionStreamLimit(stream_id, frame)) {
         return nullptr;
     }
-    // TODO put 4 to config
-    if (_local_unidirectional_stream_limit - (_local_cur_max_stream_id >> 2) < 4) {
-        auto frame = std::make_shared<StreamsBlockedFrame>(FT_STREAMS_BLOCKED_UNIDIRECTIONAL);
-        frame->SetMaximumStreams(_local_unidirectional_stream_limit);
+    if (frame) {
         _frames_list.push_back(frame);
     }
-
-    _local_cur_max_stream_id = _id_generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
-    //auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), _local_cur_max_stream_id);
+    
+    //auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id);
     //return stream;
     return nullptr;
 }
 
 std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
     // check streams limit
-    if (_local_cur_max_stream_id >> 2 > _local_bidirectional_stream_limit) {
-        auto frame = std::make_shared<StreamsBlockedFrame>(FT_STREAMS_BLOCKED_BIDIRECTIONAL);
-        frame->SetMaximumStreams(_local_bidirectional_stream_limit);
-        _frames_list.push_back(frame);
-
+    uint64_t stream_id;
+    std::shared_ptr<IFrame> frame;
+    if(!_flow_control.CheckLocalBidirectionStreamLimit(stream_id, frame)) {
         return nullptr;
     }
-    // TODO put 4 to config
-    if (_local_bidirectional_stream_limit - (_local_cur_max_stream_id >> 2) < 4) {
-        auto frame = std::make_shared<StreamsBlockedFrame>(FT_STREAMS_BLOCKED_BIDIRECTIONAL);
-        frame->SetMaximumStreams(_local_bidirectional_stream_limit);
+    if (frame) {
         _frames_list.push_back(frame);
     }
     
-    _local_cur_max_stream_id = _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL);
-    //auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiLocal(), _local_cur_max_stream_id);
+    //auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiLocal(), stream_id);
     //return stream;
     return nullptr;
 }
@@ -102,10 +86,13 @@ void BaseConnection::Close(uint64_t error) {
 }
 
 bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
-    // TODO put 8912 to config
-    if (_local_send_max_data_limit - _local_send_data_size < 8912) {
-        auto frame = std::make_shared<DataBlockedFrame>();
-        frame->SetMaximumData(_local_send_max_data_limit);
+    // check flow control
+    uint32_t can_send_size;
+    std::shared_ptr<IFrame> frame;
+    if (!_flow_control.CheckLocalSendDataLimit(can_send_size, frame)) {
+        return false;
+    }
+    if (frame) {
         _frames_list.push_back(frame);
     }
     
@@ -116,7 +103,7 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
         
         // TODO put 1450 to config
         FixBufferFrameVisitor frame_visitor(1450);
-        frame_visitor.SetStreamDataSizeLimit(_local_send_max_data_limit - _local_send_data_size);
+        frame_visitor.SetStreamDataSizeLimit(can_send_size);
         // priority sending frames of connection
         for (auto iter = _frames_list.begin(); iter != _frames_list.end();) {
             if (frame_visitor.HandleFrame(*iter)) {
@@ -194,7 +181,8 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             return false;
         }
 
-        _local_send_data_size += frame_visitor.GetStreamDataSize();
+        _flow_control.AddLocalSendData(frame_visitor.GetStreamDataSize());
+        can_send_size -= frame_visitor.GetStreamDataSize();
     }
 
     return true;
@@ -365,45 +353,39 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     uint64_t stream_id = stream_frame->GetStreamID();
     auto stream = _streams_map.find(stream_id);
     if (stream != _streams_map.end()) {
-        _peer_send_data_size += stream->second->OnFrame(frame);
+        _flow_control.AddRemoteSendData(stream->second->OnFrame(frame));
         return true;
     }
 
+    // check streams limit    
+    std::shared_ptr<IFrame> send_frame;
+    if (!_flow_control.CheckRemoteStreamLimit(stream_id, send_frame)) {
+        return false;
+    }
+    if (send_frame) {
+        _frames_list.push_back(send_frame);
+    }
+    
     // create new stream
-    _peer_cur_max_stream_id = stream_id;
     std::shared_ptr<IStream> new_stream;
-    std::shared_ptr<MaxStreamsFrame> max_stream_frame;
     if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::SD_BIDIRECTIONAL) {
         new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiRemote(), stream_id);
-        if (_peer_bidirectional_stream_limit > _peer_cur_max_stream_id >> 2 &&
-            _peer_bidirectional_stream_limit - _peer_cur_max_stream_id >> 2 < 4) {
-            _peer_bidirectional_stream_limit += 8;
-            max_stream_frame = std::make_shared<MaxStreamsFrame>(FT_MAX_STREAMS_BIDIRECTIONAL);
-            max_stream_frame->SetMaximumStreams(_peer_bidirectional_stream_limit);
-        }
+        
     } else {
         new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id);
-        if (_peer_unidirectional_stream_limit > _peer_cur_max_stream_id >> 2 &&
-            _peer_unidirectional_stream_limit - _peer_cur_max_stream_id >> 2 < 4) {
-            _peer_unidirectional_stream_limit += 8;
-            max_stream_frame = std::make_shared<MaxStreamsFrame>(FT_MAX_STREAMS_UNIDIRECTIONAL);
-            max_stream_frame->SetMaximumStreams(_peer_unidirectional_stream_limit);
-        }
     }
     _streams_map[stream_id] = new_stream;
-    _peer_send_data_size += new_stream->OnFrame(frame);
+    _flow_control.AddRemoteSendData(new_stream->OnFrame(frame));
 
     // check peer data limit
-    if (_peer_send_max_data_limit - _peer_send_data_size > 8912) {
-        _peer_send_max_data_limit += 8912;
-        auto frame = std::make_shared<MaxDataFrame>();
-        frame->SetMaximumData(_peer_send_max_data_limit);
-        _frames_list.push_back(frame);
+    if (!_flow_control.CheckRemoteSendDataLimit(send_frame)) {
+        InnerConnectionClose(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "flow control stream data limit.");
+        return false;
+    }
+    if (send_frame) {
+        _frames_list.push_back(send_frame);
     }
 
-    if (max_stream_frame) {
-        _frames_list.push_back(max_stream_frame);
-    }
     return true;
 }
 
@@ -425,43 +407,24 @@ bool BaseConnection::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
     auto max_data_frame = std::dynamic_pointer_cast<MaxDataFrame>(frame);
     uint64_t max_data_size = max_data_frame->GetMaximumData();
-    if (max_data_size > _local_send_max_data_limit) {
-        _local_send_max_data_limit = max_data_size;
-    }
+    _flow_control.UpdateLocalSendDataLimit(max_data_size);
     return true;
 }
 
 bool BaseConnection::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
-    if (_peer_send_max_data_limit - _peer_send_data_size < 8912) {
-        _peer_send_max_data_limit += 8912;
-        auto frame = std::make_shared<MaxDataFrame>();
-        frame->SetMaximumData(_peer_send_max_data_limit);
-        _frames_list.push_back(frame);
+    std::shared_ptr<IFrame> send_frame;
+    _flow_control.CheckRemoteSendDataLimit(send_frame);
+    if (send_frame) {
+        _frames_list.push_back(send_frame);
     }
     return true;
 }
 
 bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
-    auto stream_block_frame = std::dynamic_pointer_cast<StreamsBlockedFrame>(frame);
-    std::shared_ptr<MaxStreamsFrame> max_stream_frame;
-    if (stream_block_frame->GetType() == FT_STREAMS_BLOCKED_BIDIRECTIONAL) {
-        if (_peer_bidirectional_stream_limit > _peer_cur_max_stream_id >> 2 &&
-            _peer_bidirectional_stream_limit - _peer_cur_max_stream_id >> 2 < 4) {
-            _peer_bidirectional_stream_limit += 8;
-            max_stream_frame = std::make_shared<MaxStreamsFrame>(FT_MAX_STREAMS_BIDIRECTIONAL);
-            max_stream_frame->SetMaximumStreams(_peer_bidirectional_stream_limit);
-        }
-
-    } else {
-        if (_peer_unidirectional_stream_limit > _peer_cur_max_stream_id >> 2 &&
-            _peer_unidirectional_stream_limit - _peer_cur_max_stream_id >> 2 < 4) {
-            _peer_unidirectional_stream_limit += 8;
-            max_stream_frame = std::make_shared<MaxStreamsFrame>(FT_MAX_STREAMS_UNIDIRECTIONAL);
-            max_stream_frame->SetMaximumStreams(_peer_unidirectional_stream_limit);
-        }
-    }
-    if (max_stream_frame) {
-        _frames_list.push_back(max_stream_frame);
+    std::shared_ptr<IFrame> send_frame;
+    _flow_control.CheckRemoteStreamLimit(0, send_frame);
+    if (send_frame) {
+        _frames_list.push_back(send_frame);
     }
     return true;
 }
@@ -469,14 +432,10 @@ bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_block_frame = std::dynamic_pointer_cast<MaxStreamsFrame>(frame);
     if (stream_block_frame->GetType() == FT_MAX_STREAMS_BIDIRECTIONAL) {
-        if (_local_bidirectional_stream_limit < stream_block_frame->GetMaximumStreams()) {
-            _local_bidirectional_stream_limit = stream_block_frame->GetMaximumStreams();
-        }
+        _flow_control.UpdateLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
 
     } else {
-        if (_peer_unidirectional_stream_limit < stream_block_frame->GetMaximumStreams()) {
-            _peer_unidirectional_stream_limit = stream_block_frame->GetMaximumStreams();
-        }
+        _flow_control.UpdateLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
     }
     return true;
 }
@@ -515,7 +474,7 @@ void BaseConnection::OnTransportParams(EncryptionLevel level, const uint8_t* tp,
     }
     _transport_param.Merge(peer_tp);
 
-    _local_send_max_data_limit = _transport_param.GetInitialMaxData();
+    _flow_control.InitConfig(_transport_param);
 }
 
 bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {

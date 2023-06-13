@@ -129,10 +129,14 @@ bool ConnectionFlowControl::CheckLocalUnidirectionStreamLimit(uint64_t& stream_i
 
 bool ConnectionFlowControl::CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& send_frame) {
     if (StreamIDGenerator::GetStreamDirection(id) == StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL)  {
-        _remote_max_unidirectional_stream_id = id;
+        if (id > 0) {
+            _remote_max_unidirectional_stream_id = id;
+        }
         return CheckRemoteUnidirectionStreamLimit(send_frame);
     } else {
-        _remote_max_bidirectional_stream_id = id;
+        if (id > 0) {
+            _remote_max_bidirectional_stream_id = id;
+        }
         return CheckRemoteBidirectionStreamLimit(send_frame);
     }
 }
