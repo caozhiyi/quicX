@@ -9,11 +9,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "quic/stream/crypto_stream.h"
-#include "quic/stream/stream_id_generator.h"
 #include "quic/connection/transport_param.h"
 #include "quic/stream/send_stream_interface.h"
 #include "quic/crypto/cryptographer_interface.h"
 #include "quic/connection/connection_interface.h"
+#include "quic/connection/connection_flow_control.h"
 
 namespace quicx {
 
@@ -89,7 +89,6 @@ protected:
     bool _transport_param_done;
     TransportParam _transport_param;
 
-    StreamIDGenerator _id_generator;
     std::shared_ptr<CryptoStream> _crypto_stream;
     std::list<IStream*> _active_send_stream_list;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> _streams_map;
@@ -101,19 +100,9 @@ protected:
     std::unordered_set<std::string> _conn_id_set;
     std::list<std::shared_ptr<IFrame>> _frames_list;
 
-    // data flow control
-    uint64_t _local_send_max_data_limit;
-    uint64_t _local_send_data_size;
-    uint64_t _peer_send_max_data_limit;
-    uint64_t _peer_send_data_size;
-    // streams flow control
-    uint64_t _local_cur_max_stream_id;
-    uint64_t _local_bidirectional_stream_limit;
-    uint64_t _local_unidirectional_stream_limit;
-    uint64_t _peer_cur_max_stream_id;
-    uint64_t _peer_bidirectional_stream_limit;
-    uint64_t _peer_unidirectional_stream_limit;
-
+    // flow control
+    ConnectionFlowControl _flow_control;
+   
     // token
     std::string _token;
 

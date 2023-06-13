@@ -131,14 +131,6 @@ void ClientConnection::OnTransportParams(EncryptionLevel level, const uint8_t* t
         return;
     }
     _transport_param.Merge(peer_tp);
-
-    _local_send_max_data_limit = _transport_param.GetInitialMaxData();
-    _peer_send_max_data_limit = _transport_param.GetInitialMaxData();
-    _local_bidirectional_stream_limit = _transport_param.GetInitialMaxStreamsBidi();
-    _local_unidirectional_stream_limit = _transport_param.GetInitialMaxStreamsUni();
-    _peer_bidirectional_stream_limit = _transport_param.GetInitialMaxStreamsBidi();
-    _peer_unidirectional_stream_limit = _transport_param.GetInitialMaxStreamsUni();
-
 }
 
 }
