@@ -47,6 +47,7 @@ private:
     uint64_t _local_bidirectional_stream_limit;
     uint64_t _local_max_unidirectional_stream_id;
     uint64_t _local_unidirectional_stream_limit;
+    
     uint64_t _remote_max_bidirectional_stream_id;
     uint64_t _remote_bidirectional_stream_limit;
     uint64_t _remote_max_unidirectional_stream_id;

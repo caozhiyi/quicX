@@ -9,7 +9,7 @@ TransportParamConfig::TransportParamConfig():
     _original_destination_connection_id(),
     _max_idle_timeout(5 * TU_MILLISECOND),
     _max_udp_payload_size(__max_v4_packet_size),
-    _initial_max_data(__max_v4_packet_size),
+    _initial_max_data(__max_v4_packet_size*10),
     _initial_max_stream_data_bidi_local(__max_v4_packet_size*10),
     _initial_max_stream_data_bidi_remote(__max_v4_packet_size*10),
     _initial_max_stream_data_uni(__max_v4_packet_size*10),

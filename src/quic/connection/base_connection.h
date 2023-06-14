@@ -8,10 +8,9 @@
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
-#include "quic/stream/crypto_stream.h"
 #include "quic/connection/transport_param.h"
 #include "quic/stream/send_stream_interface.h"
-#include "quic/crypto/cryptographer_interface.h"
+#include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/connection/connection_flow_control.h"
 
@@ -34,22 +33,9 @@ public:
     // try to build a quic message
     virtual bool GenerateSendData(std::shared_ptr<IBuffer> buffer);
 
-    // Encryption correlation function
-    virtual void SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
-        const uint8_t *secret, size_t secret_len);
-
-    virtual void SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
-        const uint8_t *secret, size_t secret_len);
-
-    virtual void WriteMessage(EncryptionLevel level, const uint8_t *data,
-        size_t len);
-
-    virtual void FlushFlight();
-    virtual void SendAlert(EncryptionLevel level, uint8_t alert);
-
     virtual void OnPackets(std::vector<std::shared_ptr<IPacket>>& packets);
 
-    virtual EncryptionLevel GetCurEncryptionLevel() { return _cur_encryption_level; }
+    virtual EncryptionLevel GetCurEncryptionLevel() { return _connection_crypto.GetCurEncryptionLevel(); }
 
 protected:
     virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet);
@@ -72,7 +58,7 @@ protected:
 
     virtual void InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string resion);
     virtual void InnerStreamClose(uint64_t stream_id);
-    virtual void OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len);
+    virtual void OnTransportParams(TransportParam& remote_tp);
 
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
 
@@ -86,10 +72,9 @@ protected:
     uint64_t _last_communicate_time; 
 
     // transport param verify done
-    bool _transport_param_done;
     TransportParam _transport_param;
 
-    std::shared_ptr<CryptoStream> _crypto_stream;
+    // streams
     std::list<IStream*> _active_send_stream_list;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> _streams_map;
 
@@ -102,13 +87,12 @@ protected:
 
     // flow control
     ConnectionFlowControl _flow_control;
+
+    // crypto
+    ConnectionCrypto _connection_crypto;
    
     // token
     std::string _token;
-
-    // about crypto
-    EncryptionLevel _cur_encryption_level;
-    std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS];
 };
 
 }

@@ -15,11 +15,15 @@ namespace quicx {
 
 ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx):
     BaseConnection(StreamIDGenerator::SS_SERVER) {
-    _tls_connection = std::make_shared<TLSServerConnection>(ctx, this, this);
+    _tls_connection = std::make_shared<TLSServerConnection>(ctx, &_connection_crypto, this);
     if (!_tls_connection->Init()) {
         LOG_ERROR("tls connection init failed.");
     }
-    _alloter = MakeBlockMemoryPoolPtr(1024, 4);
+    auto crypto_stream = std::make_shared<CryptoStream>(_alloter);
+    crypto_stream->SetHopeSendCB(std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1));
+    crypto_stream->SetRecvCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
+
+    _connection_crypto.SetCryptoStream(crypto_stream);
 }
 
 ServerConnection::~ServerConnection() {
@@ -73,12 +77,6 @@ bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-void ServerConnection::MakeCryptoStream() {
-    _crypto_stream = std::make_shared<CryptoStream>(_alloter);
-    _crypto_stream->SetHopeSendCB(std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1));
-    _crypto_stream->SetRecvCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
-}
-
 void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err) {
     if (err != 0) {
         LOG_ERROR("get crypto data failed. err:%s", err);
@@ -94,19 +92,6 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, in
     
     if (_tls_connection->DoHandleShake()) {
         LOG_DEBUG("handshake done.");
-    }
-}
-
-void ServerConnection::OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
-    if (_transport_param_done) {
-        return;
-    }
-    _transport_param_done = true;
-    TransportParam peer_tp;
-    std::shared_ptr<IBufferRead> buffer = std::make_shared<BufferReadView>((uint8_t*)tp, tp_len);
-    if (!peer_tp.Decode(buffer)) {
-        LOG_ERROR("decode peer transport failed.");
-        return;
     }
 }
 
