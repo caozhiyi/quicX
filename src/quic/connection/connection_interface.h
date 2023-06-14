@@ -10,8 +10,7 @@
 
 namespace quicx {
 
-class IConnection:
-    public TlsHandlerInterface {
+class IConnection {
 public:
     IConnection() {}
     virtual ~IConnection() {}
@@ -27,22 +26,7 @@ public:
     // try to build a quic message
     virtual bool GenerateSendData(std::shared_ptr<IBuffer> buffer) = 0;
 
-    // Encryption correlation function
-    virtual void SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
-        const uint8_t *secret, size_t secret_len) = 0;
-
-    virtual void SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
-        const uint8_t *secret, size_t secret_len) = 0;
-
-    virtual void WriteMessage(EncryptionLevel level, const uint8_t *data,
-        size_t len) = 0;
-
-    virtual void FlushFlight() = 0;
-    virtual void SendAlert(EncryptionLevel level, uint8_t alert) = 0;
-
     virtual void OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) = 0;
-
-    virtual EncryptionLevel GetCurEncryptionLevel()  = 0;
 
 protected:
     virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet) = 0;
@@ -55,7 +39,6 @@ protected:
     virtual bool OnStreamFrame(std::shared_ptr<IFrame> frame) = 0;
 
     virtual void ActiveSendStream(IStream* stream) = 0;
-    virtual void MakeCryptoStream() = 0;
     virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err) = 0;
 };
 

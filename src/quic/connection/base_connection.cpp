@@ -11,12 +11,12 @@
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
+#include "quic/stream/crypto_stream.h"
 #include "quic/frame/max_data_frame.h"
 #include "quic/frame/new_token_frame.h"
 #include "quic/frame/max_streams_frame.h"
 #include "quic/packet/handshake_packet.h"
 #include "quic/frame/data_blocked_frame.h"
-#include "common/buffer/buffer_read_view.h"
 #include "quic/stream/bidirection_stream.h"
 #include "quic/connection/base_connection.h"
 #include "quic/frame/streams_blocked_frame.h"
@@ -28,10 +28,9 @@ namespace quicx {
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start):
     _to_close(false),
     _last_communicate_time(0),
-    _flow_control(start),
-    _transport_param_done(false) {
-    memset(_cryptographers, 0, sizeof(std::shared_ptr<ICryptographer>) * NUM_ENCRYPTION_LEVELS);
+    _flow_control(start) {
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
+    _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 }
 
 BaseConnection::~BaseConnection() {
@@ -170,7 +169,7 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             }
         }
 
-        std::shared_ptr<ICryptographer> crypto_grapher = _cryptographers[encrypto_level];
+        auto crypto_grapher = _connection_crypto.GetCryptographer(encrypto_level);
         if (!crypto_grapher) {
             LOG_ERROR("encrypt grapher is not ready.");
             return false;
@@ -186,43 +185,6 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
     }
 
     return true;
-}
-
-void BaseConnection::SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
-    const uint8_t *secret, size_t secret_len) {
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[level];
-    if (cryptographer == nullptr) {
-        cryptographer = MakeCryptographer(cipher);
-        _cryptographers[level] = cryptographer;
-    }
-    _cur_encryption_level = level;
-    cryptographer->InstallSecret(secret, (uint32_t)secret_len, false);
-}
-
-void BaseConnection::SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
-    const uint8_t *secret, size_t secret_len) {
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[level];
-    if (cryptographer == nullptr) {
-        cryptographer = MakeCryptographer(cipher);
-        _cryptographers[level] = cryptographer;
-    }
-    _cur_encryption_level = level;
-    cryptographer->InstallSecret(secret, (uint32_t)secret_len, true);
-}
-
-void BaseConnection::WriteMessage(EncryptionLevel level, const uint8_t *data, size_t len) {
-    if (!_crypto_stream) {
-        MakeCryptoStream();
-    }
-    _crypto_stream->Send((uint8_t*)data, len, level);
-}
-
-void BaseConnection::FlushFlight() {
-
-}
-
-void BaseConnection::SendAlert(EncryptionLevel level, uint8_t alert) {
-
 }
 
 void BaseConnection::OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) {
@@ -267,15 +229,9 @@ bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
 
     // check init packet size
 
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
-    if (cryptographer == nullptr) {
-        // get header
-        auto header = dynamic_cast<LongHeader*>(packet->GetHeader());
-        // make initial cryptographer
-        cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-        cryptographer->InstallInitSecret(header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(),
-            __initial_slat, sizeof(__initial_slat), true);
-        _cryptographers[packet->GetCryptoLevel()] = cryptographer;
+    if (!_connection_crypto.InitIsReady()) {
+        LongHeader* header = (LongHeader*)packet->GetHeader();
+        _connection_crypto.InstallInitSecret((uint8_t*)header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(), true);
     }
     return OnNormalPacket(packet);
 }
@@ -390,10 +346,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
 }
 
 bool BaseConnection::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
-    if (!_crypto_stream) {
-        MakeCryptoStream();
-    }
-    _crypto_stream->OnFrame(frame);
+    _connection_crypto.OnCryptoFrame(frame);
     return true;
 }
 
@@ -461,24 +414,13 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
     }
 }
 
-void BaseConnection::OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
-    if (_transport_param_done) {
-        return;
-    }
-    _transport_param_done = true;
-    TransportParam peer_tp;
-    std::shared_ptr<IBufferRead> buffer = std::make_shared<BufferReadView>((uint8_t*)tp, tp_len);
-    if (!peer_tp.Decode(buffer)) {
-        LOG_ERROR("decode peer transport failed.");
-        return;
-    }
-    _transport_param.Merge(peer_tp);
-
+void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
+    _transport_param.Merge(remote_tp);
     _flow_control.InitConfig(_transport_param);
 }
 
 bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[packet->GetCryptoLevel()];
+    std::shared_ptr<ICryptographer> cryptographer = _connection_crypto.GetCryptographer(packet->GetCryptoLevel());
     if (!cryptographer) {
         LOG_ERROR("decrypt grapher is not ready.");
         return false;

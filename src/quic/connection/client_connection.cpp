@@ -17,11 +17,16 @@ namespace quicx {
 
 ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx):
     BaseConnection(StreamIDGenerator::SS_CLIENT) {
-    _alloter = MakeBlockMemoryPoolPtr(1024, 4);
-    _tls_connection = std::make_shared<TLSClientConnection>(ctx, this);
+    _tls_connection = std::make_shared<TLSClientConnection>(ctx, &_connection_crypto);
     if (!_tls_connection->Init()) {
         LOG_ERROR("tls connection init failed.");
     }
+
+    auto crypto_stream = std::make_shared<CryptoStream>(_alloter);
+    crypto_stream->SetHopeSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
+    crypto_stream->SetRecvCallBack(std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
+
+    _connection_crypto.SetCryptoStream(crypto_stream);
 }
 
 ClientConnection::~ClientConnection() {
@@ -64,17 +69,10 @@ bool ClientConnection::Dial(const Address& addr) {
     ConnectionIDGenerator::Instance().Generator(scid, __max_cid_length);
     //ConnectionIDGenerator::Instance().Generator(dcid, __max_cid_length);
 
+    _flow_control.InitConfig(_transport_param);
     // install initial secret
-    std::shared_ptr<ICryptographer> cryptographer = _cryptographers[PCL_INITIAL];
-    // get header
-    if (cryptographer == nullptr) {
-        // make initial cryptographer
-        cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-        cryptographer->InstallInitSecret(dcid, sizeof(dcid),
-            __initial_slat, sizeof(__initial_slat), false);
-        _cryptographers[PCL_INITIAL] = cryptographer;
-    }
-
+    _connection_crypto.InstallInitSecret(dcid, sizeof(dcid), false);
+    
     _tls_connection->DoHandleShake();
     return true;
 }
@@ -95,12 +93,6 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-void ClientConnection::MakeCryptoStream() {
-    _crypto_stream = std::make_shared<CryptoStream>(_alloter);
-    _crypto_stream->SetHopeSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
-    _crypto_stream->SetRecvCallBack(std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
-}
-
 void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err) {
     if (err != 0) {
         LOG_ERROR("get crypto data failed. err:%s", err);
@@ -117,20 +109,6 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, in
     if (_tls_connection->DoHandleShake()) {
         LOG_DEBUG("handshake done.");
     }
-}
-
-void ClientConnection::OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
-    if (_transport_param_done) {
-        return;
-    }
-    _transport_param_done = true;
-    TransportParam peer_tp;
-    std::shared_ptr<IBufferRead> buffer = std::make_shared<BufferReadView>((uint8_t*)tp, tp_len);
-    if (!peer_tp.Decode(buffer)) {
-        LOG_ERROR("decode peer transport failed.");
-        return;
-    }
-    _transport_param.Merge(peer_tp);
 }
 
 }
