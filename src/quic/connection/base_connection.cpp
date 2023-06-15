@@ -293,13 +293,12 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
         case FT_MAX_STREAM_DATA:
             return OnStreamFrame(frames[i]);
         default:
-            if (!OnStreamFrame(std::dynamic_pointer_cast<IStreamFrame>(frames[i]))) {
+            if (StreamFrame::IsStreamFrame(type)) {
                 return OnStreamFrame(frames[i]);
             }
-            break;
         }
     }
-    return true;
+    return false;
 }
 
 bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
