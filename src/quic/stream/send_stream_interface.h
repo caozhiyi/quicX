@@ -5,7 +5,6 @@
 #include "quic/stream/send_state_machine.h"
 
 namespace quicx {
-class ISendStream;
 
 class ISendStream:
     public virtual IStream {
