@@ -64,7 +64,7 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
         _frames_list.push_back(frame);
     }
     
-    //auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiLocal(), stream_id);
+    auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiLocal(), stream_id, BaseConnection::StreamType::ST_BIDIRECTIONAL);
     //return stream;
     return nullptr;
 }
@@ -225,8 +225,6 @@ void BaseConnection::OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) {
 
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
-    // check version
-
     // check init packet size
 
     if (!_connection_crypto.InitIsReady()) {
@@ -324,10 +322,10 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // create new stream
     std::shared_ptr<IStream> new_stream;
     if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::SD_BIDIRECTIONAL) {
-        new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiRemote(), stream_id);
+        new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiRemote(), stream_id, BaseConnection::StreamType::ST_BIDIRECTIONAL);
         
     } else {
-        new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id);
+        new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id, BaseConnection::StreamType::ST_RECV);
     }
     _streams_map[stream_id] = new_stream;
     _flow_control.AddRemoteSendData(new_stream->OnFrame(frame));
@@ -439,10 +437,14 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id) {
+std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id, StreamType st) {
     std::shared_ptr<IStream> new_stream;
-    if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::SD_BIDIRECTIONAL) {
+    if (st == BaseConnection::ST_BIDIRECTIONAL) {
         new_stream = std::make_shared<BidirectionStream>(_alloter, init_size, stream_id);
+
+    } else if (st == BaseConnection::ST_SEND) {
+        new_stream = std::make_shared<SendStream>(_alloter, init_size, stream_id);
+
     } else {
         new_stream = std::make_shared<RecvStream>(_alloter, init_size, stream_id);
     }

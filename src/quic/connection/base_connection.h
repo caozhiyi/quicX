@@ -63,7 +63,12 @@ protected:
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
 
 private:
-    std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id);
+    enum StreamType {
+        ST_BIDIRECTIONAL = 1,
+        ST_RECV,
+        ST_SEND,
+    };
+    std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamType st);
 
 protected:
     // connection will to close

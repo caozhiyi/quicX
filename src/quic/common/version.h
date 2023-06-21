@@ -9,7 +9,7 @@ static const uint32_t __quic_versions[] = {
     0x00000001, // QUICv1
 };
 
-bool CheckVersion(uint32_t version);
+bool VersionCheck(uint32_t version);
 
 }
 
