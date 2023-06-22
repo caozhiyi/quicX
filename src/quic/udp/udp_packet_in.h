@@ -1,26 +1,33 @@
 #ifndef QUIC_UDP_PACKET_IN
 #define QUIC_UDP_PACKET_IN
 
-#include <string>
-#include <memory>
 #include <vector>
-#include <cstdint>
-
-#include "common/network/address.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/udp/udp_packet_interface.h"
 
 namespace quicx {
 
-class IBufferRead;
 class UdpPacketIn:
     public IUdpPacket  {
 public:
     UdpPacketIn();
     ~UdpPacketIn();
 
-    // set recv data from peer
-    bool SetData(char* data, uint32_t size);
+    bool DecodePacket();
+
+    void GetConnection(uint8_t* id, uint16_t& len);
+
+    void SetPeerAddress(const Address&& addr) { _peer_addr = std::move(addr); }
+    const Address& GetPeerAddress() const { return _peer_addr; }
+
+    uint64_t GetConnectionHashCode() { return _connection_hash_code; }
+    std::vector<std::shared_ptr<IPacket>>& GetPackets() { return _packets; }
+private:
+    Address _peer_addr;
+    uint8_t* _connection_id;
+    uint16_t _connection_id_len;
+    uint64_t _connection_hash_code;
+    std::vector<std::shared_ptr<IPacket>> _packets;
 };
 
 }

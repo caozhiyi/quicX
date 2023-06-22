@@ -42,7 +42,6 @@ protected:
 
 private:
     AlpnType _alpn_type; // application protocol
-    uint64_t _sock;
     Address _local_addr;
     Address _peer_addr;
 

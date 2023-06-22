@@ -11,15 +11,15 @@
 
 namespace quicx {
 
-UdpListener::UdpListener(std::function<void(std::shared_ptr<IBufferRead>)> cb):
-    _listen_sock(0),
-    _stop(false),
-    _recv_callback(cb) {
+UdpListener::UdpListener():
+    _listen_sock(0) {
 
 }
 
 UdpListener::~UdpListener() {
-
+    if (_listen_sock > 0) {
+        Close(_listen_sock);
+    }
 }
 
 bool UdpListener::Listen(const std::string& ip, uint16_t port) {
@@ -29,43 +29,33 @@ bool UdpListener::Listen(const std::string& ip, uint16_t port) {
         return false;
     }
     
-    uint64_t sock = ret._return_value;
+    uint64_t _listen_sock = ret._return_value;
 
-    Address addr(AT_IPV4, ip, port);
-    auto bind_ret = Bind(sock, addr);
+    _listen_address.SetIp(ip);
+    _listen_address.SetPort(port);
+
+    auto bind_ret = Bind(_listen_sock, _listen_address);
     if (bind_ret.errno_ != 0) {
         LOG_ERROR("bind address failed. err:%d", ret.errno_);
         return false;
     }
     
-    auto alloter = MakeBlockMemoryPoolPtr(__max_v4_packet_size, 10);
-    Address peer_addr(AT_IPV4);
-
-    while (!_stop) {
-        auto recv_buffer = std::make_shared<Buffer>(alloter);
-        auto span = recv_buffer->GetWriteSpan();
-        
-        auto recv_ret = RecvFrom(sock, (char*)span.GetStart(), __max_v4_packet_size, 0, peer_addr);
-        if (recv_ret.errno_ != 0) {
-            LOG_ERROR("recv from failed. err:%d", recv_ret.errno_);
-            continue;
-        }
-        recv_buffer->MoveReadPt(recv_ret._return_value);
-        LOG_DEBUG("recv udp msg. size:%d", recv_ret._return_value);
-        _recv_callback(recv_buffer);
-    }
     return true;
 }
 
-bool UdpListener::Stop() {
-    if (_listen_sock > 0) {
-        auto ret = Close(_listen_sock);
-        if (ret.errno_ != 0) {
-            LOG_ERROR("clost udp socket failed. err:%d", ret.errno_);
-            return false;
-        }
+bool UdpListener::DoRecv(std::shared_ptr<UdpPacketIn> udp_packet) {
+    auto buffer = udp_packet->GetData();
+    auto span = buffer->GetWriteSpan();
+    Address peer_addr(AT_IPV4);
+        
+    auto recv_ret = RecvFrom(_listen_sock, (char*)span.GetStart(), __max_v4_packet_size, 0, peer_addr);
+    if (recv_ret.errno_ != 0) {
+        LOG_ERROR("recv from failed. err:%d", recv_ret.errno_);
+        return false;
     }
-    _stop = true;
+    buffer->MoveReadPt(recv_ret._return_value);
+    udp_packet->SetPeerAddress(std::move(peer_addr));
+
     return true;
 }
 

@@ -14,17 +14,13 @@ namespace quicx {
 
 class IUdpPacket {
 public:
-    IUdpPacket();
-    virtual ~IUdpPacket();
+    IUdpPacket() {}
+    virtual ~IUdpPacket() {}
 
-    void SetPeerAddress(const Address&& addr); 
-    const Address& GetPeerAddress() const;
+    void SetData(std::shared_ptr<IBuffer> buffer) { _buffer = buffer; }
+    std::shared_ptr<IBuffer> GetData() const { return _buffer; }
 
-    void SetData(const std::shared_ptr<IBuffer>&& buffer);
-    std::shared_ptr<IBuffer> GetBuffer() const;
-
-private:
-    Address _peer_addr;
+protected:
     std::shared_ptr<IBuffer> _buffer;
 };
 

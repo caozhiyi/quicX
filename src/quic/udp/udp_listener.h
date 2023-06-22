@@ -1,27 +1,24 @@
 #ifndef QUIC_UDP_LISTENER
 #define QUIC_UDP_LISTENER
 
-#include <memory>
 #include <string>
 #include <cstdint>
-#include <functional>
+#include "quic/udp/udp_packet_in.h"
 
 namespace quicx {
 
-class IBufferRead;
 class UdpListener {
 public:
-    UdpListener(std::function<void(std::shared_ptr<IBufferRead>)> cb);
+    UdpListener();
     ~UdpListener();
 
     bool Listen(const std::string& ip, uint16_t port);
 
-    bool Stop();
+    bool DoRecv(std::shared_ptr<UdpPacketIn> udp_packet);
 
 private:
-    bool _stop;
     uint64_t _listen_sock;
-    std::function<void(std::shared_ptr<IBufferRead>)> _recv_callback;
+    Address _listen_address;
 };
 
 }

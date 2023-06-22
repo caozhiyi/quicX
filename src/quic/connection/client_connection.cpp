@@ -63,6 +63,8 @@ bool ClientConnection::Dial(const Address& addr) {
         return false;
     }
 
+    _send_sock = ret._return_value;
+
     // generate connection id
     uint8_t scid[__max_cid_length] = {0};
     uint8_t dcid[10] = {0,1,2,3,4,5,6,7,8,9};

@@ -31,6 +31,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start):
     _flow_control(start) {
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
     _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
+
 }
 
 BaseConnection::~BaseConnection() {
