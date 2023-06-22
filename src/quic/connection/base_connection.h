@@ -37,6 +37,11 @@ public:
 
     virtual EncryptionLevel GetCurEncryptionLevel() { return _connection_crypto.GetCurEncryptionLevel(); }
 
+    virtual uint64_t GetSock() { return _send_sock; }
+    
+    virtual void SetPeerAddress(const Address&& addr) { _peer_addr = std::move(addr); }
+    virtual Address* GetPeerAddress() { return &_peer_addr; }
+
 protected:
     virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
@@ -71,6 +76,9 @@ private:
     std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamType st);
 
 protected:
+    uint64_t _send_sock;
+    Address _peer_addr;
+
     // connection will to close
     bool _to_close;
     // last time communicate, use to idle shutdown

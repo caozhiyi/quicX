@@ -15,17 +15,17 @@ namespace quicx {
 class UdpPacketOut:
     public IUdpPacket {
 public:
-    UdpPacketOut(std::shared_ptr<IBufferWrite> buffer);
-    ~UdpPacketOut();
+    UdpPacketOut() {}
+    ~UdpPacketOut() {}
 
-    // set recv data from peer
-    bool AddQuicPacket(std::shared_ptr<IPacket> packet);
-    // decode data to quic packet
-    bool Eecode(char*& out_data, uint32_t& out_len);
+    void SetOutsocket(uint64_t sock) { _out_socket = sock; }
+    uint64_t GetOutSocket() { return _out_socket; }
 
+    void SetPeerAddress(Address* addr) { _address = addr; }
+    Address* GetPeerAddress() { return _address; }
 private:
-    std::shared_ptr<IBufferWrite> _send_buffer;
-    std::vector<std::shared_ptr<IPacket>> _packets;
+    uint64_t _out_socket;
+    Address* _address;
 };
 
 }

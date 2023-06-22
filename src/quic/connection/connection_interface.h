@@ -2,6 +2,7 @@
 #define QUIC_CONNECTION_CONNECTION_INTERFACE
 
 #include "quic/crypto/tls/type.h"
+#include "common/network/address.h"
 #include "quic/stream/send_stream.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/crypto/tls/tls_conneciton.h"
@@ -28,6 +29,9 @@ public:
 
     virtual void OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) = 0;
 
+    virtual uint64_t GetSock() = 0;
+    virtual void SetPeerAddress(const Address&& addr) = 0;
+    virtual Address* GetPeerAddress() = 0;
 protected:
     virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet) = 0;
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet) = 0;

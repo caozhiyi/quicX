@@ -3,6 +3,7 @@
 #include "quic/connection/type.h"
 #include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
+#include "common/network/io_handle.h"
 #include "quic/frame/frame_interface.h"
 #include "quic/packet/handshake_packet.h"
 #include "common/buffer/buffer_read_view.h"
@@ -24,6 +25,13 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx):
     crypto_stream->SetRecvCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     _connection_crypto.SetCryptoStream(crypto_stream);
+
+    auto ret = UdpSocket();
+    if (ret._return_value < 0) {
+        LOG_ERROR("make send socket failed. err:%d", ret.errno_);
+        return;
+    }
+    _send_sock = ret._return_value;
 }
 
 ServerConnection::~ServerConnection() {
