@@ -7,7 +7,8 @@
 namespace quicx {
     
 template<typename T>
-class ThreadWithQueue: public Thread {
+class ThreadWithQueue:
+    public Thread {
 public:
     ThreadWithQueue() {}
     virtual ~ThreadWithQueue() {}
@@ -31,7 +32,7 @@ protected:
     ThreadWithQueue(const ThreadWithQueue&) = delete;
     ThreadWithQueue& operator=(const ThreadWithQueue&) = delete;
 
-private:
+protected:
     ThreadSafeBlockQueue<T> _queue;
 };
 

@@ -1,21 +1,19 @@
-#ifndef QUIC_PROCESS_SERVER_PROCESSOR
-#define QUIC_PROCESS_SERVER_PROCESSOR
+#ifndef QUIC_PROCESS_CLIENT_PROCESSOR
+#define QUIC_PROCESS_CLIENT_PROCESSOR
 
 #include "quic/udp/udp_packet_in.h"
 #include "quic/process/processor_interface.h"
 
 namespace quicx {
 
-class ServerProcessor:
+class ClientProcessor:
     public IProcessor {
 public:
-    ServerProcessor();
-    virtual ~ServerProcessor();
+    ClientProcessor();
+    virtual ~ClientProcessor();
 
     virtual bool HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet);
     virtual bool HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& udp_packets);
-
-    bool InitPacketCheck(std::shared_ptr<IPacket> packet);
 };
 
 }
