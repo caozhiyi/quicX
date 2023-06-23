@@ -21,6 +21,7 @@ SRCS = $(wildcard ../src/common/timer/*.cpp         \
 				  ../src/quic/controller/*.cpp      \
 				  ../src/quic/connection/*.cpp      \
 				  ../src/quic/process/*.cpp         \
+				  ../src/quic/app/*.cpp             \
 				  ./common/alloter/*.cpp            \
 				  ./common/timer/*.cpp              \
 				  ./common/lock/*.cpp               \
@@ -36,6 +37,7 @@ SRCS = $(wildcard ../src/common/timer/*.cpp         \
 				  ./quic/crypto/*.cpp               \
 				  ./quic/connection/*.cpp           \
 				  ./quic/stream/*.cpp               \
+				  ./quic/include/*.cpp              \
 				  ./common/*.cpp                    \
 				  ./*.cpp)
 

@@ -42,6 +42,8 @@ public:
     virtual void SetPeerAddress(const Address&& addr) { _peer_addr = std::move(addr); }
     virtual Address* GetPeerAddress() { return &_peer_addr; }
 
+    virtual uint64_t GetConnectionHashCode() { return 0; }
+
 protected:
     virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);

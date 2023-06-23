@@ -33,4 +33,12 @@ bool ClientProcessor::HandlePackets(const std::vector<std::shared_ptr<UdpPacketI
     return true;
 }
 
+ void ClientProcessor::AddConnection(std::shared_ptr<ClientConnection> conn) {
+    _conn_map[conn->GetConnectionHashCode()] = conn; 
+ }
+
+ void ClientProcessor::RemoveConnection(std::shared_ptr<ClientConnection> conn) {
+    _conn_map.erase(conn->GetConnectionHashCode());
+ }
+
 }

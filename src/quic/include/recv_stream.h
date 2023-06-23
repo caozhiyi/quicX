@@ -6,8 +6,7 @@
 
 namespace quicx {
 
-template <typename T = int>
-class RecvStream<T> {
+class RecvStream {
 public:
     RecvStream() {}
     virtual ~RecvStream() {}
@@ -16,10 +15,10 @@ public:
 
     virtual uint64_t GetStreamID() = 0;
 
-    void SetUserData(T user_data) { _user_data = user_data; }
-    T GetUserData() { return _user_data; }
+    void SetUserData(void* user_data) { _user_data = user_data; }
+    void* GetUserData() { return _user_data; }
 private:
-    T _user_data;
+    void* _user_data;
 };
 
 }
