@@ -5,8 +5,9 @@
 
 namespace quicx {
 
-template <typename T = int>
-class Connection<T> {
+class ISendStream;
+class BidirectionStream;
+class Connection {
 public:
     Connection() {}
     virtual ~Connection() {}
@@ -16,13 +17,13 @@ public:
 
     virtual void Close(uint64_t error = 0) = 0;
 
-    virtual void GetLocalAddr(std::string& addr, uint32_t& port);
-    virtual void GetRemoteAddr(std::string& addr, uint32_t& port);
+    virtual void GetLocalAddr(std::string& addr, uint32_t& port) = 0;
+    virtual void GetRemoteAddr(std::string& addr, uint32_t& port) = 0;
 
-    void SetUserData(T user_data) { _user_data = user_data; }
-    T GetUserData() { return _user_data; }
+    void SetUserData(void* user_data) { _user_data = user_data; }
+    void* GetUserData() { return _user_data; }
 private:
-    T _user_data;
+    void* _user_data;
 };
 
 }
