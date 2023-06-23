@@ -4,6 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include <functional>
+#include "quic/connection/type.h"
 #include "common/network/address.h"
 #include "quic/connection/base_connection.h"
 #include "quic/crypto/tls/tls_client_conneciton.h"
