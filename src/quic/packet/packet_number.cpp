@@ -1,9 +1,14 @@
+#include <cstring>
 #include "quic/packet/packet_number.h"
 
 namespace quicx {
 
-uint64_t PacketNumber::NextPakcetNumber() {
-    return _cur_packet_number++;
+PacketNumber::PacketNumber() {
+    memset(_cur_packet_number, 0, sizeof(_cur_packet_number));
+}
+
+uint64_t PacketNumber::NextPakcetNumber(PacketNumberSpace space) {
+    return _cur_packet_number[space]++;
 }
 
 uint8_t* PacketNumber::Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t packet_number) {

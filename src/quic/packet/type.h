@@ -26,9 +26,11 @@ enum PakcetCryptoLevel: uint16_t {
 };
 
 enum PacketNumberSpace: uint8_t {
-    PNS_INITIAL     = 1,
-    PNS_HANDSHAKE   = 2,
-    PNS_APPLICATION = 3,
+    PNS_INITIAL     = 0,
+    PNS_HANDSHAKE   = 1,
+    PNS_APPLICATION = 2,
+
+    PNS_NUMBER      = 3,
 };
 
 static const uint8_t __packent_number_length = 4;

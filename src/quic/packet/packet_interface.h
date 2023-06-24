@@ -2,6 +2,7 @@
 #define QUIC_PACKET_PACKET_INTERFACE
 
 #include <cstdint>
+#include "quic/frame/type.h"
 #include "quic/packet/type.h"
 #include "common/buffer/buffer_span.h"
 #include "quic/frame/frame_interface.h"
@@ -14,7 +15,7 @@ namespace quicx {
 
 class IPacket {
 public:
-    IPacket(): _packet_number(0) {}
+    IPacket(): _frame_type_bit(0), _packet_number(0) {}
     virtual ~IPacket() {}
 
     virtual uint16_t GetCryptoLevel() const = 0;
@@ -30,8 +31,12 @@ public:
     void SetPacketNumber(uint64_t num) { _packet_number = num; }
 
     BufferSpan& GetSrcBuffer() { return _packet_src_data; }
+
+    void AddFrameTypeBit(FrameTypeBit bit) { _frame_type_bit |= bit; }
+    uint32_t GetFrameTypeBit() { return _frame_type_bit; }
     
 protected:
+    uint32_t _frame_type_bit;
     uint64_t _packet_number; /*encryption protection*/
     BufferSpan _packet_src_data;
 };

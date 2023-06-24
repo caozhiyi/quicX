@@ -8,10 +8,10 @@ namespace quicx {
 
 class PacketNumber {
 public:
-    PacketNumber(PacketNumberSpace space): _space(space), _cur_packet_number(0) {}
+    PacketNumber();
     ~PacketNumber() {};
 
-    uint64_t NextPakcetNumber();
+    uint64_t NextPakcetNumber(PacketNumberSpace space);
     
     // encode packet number to buffer
     static uint8_t* Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t packet_number);
@@ -22,7 +22,7 @@ public:
 
 private:
     PacketNumberSpace _space;
-    uint64_t _cur_packet_number;
+    uint64_t _cur_packet_number[PNS_NUMBER];
 };
 
 }
