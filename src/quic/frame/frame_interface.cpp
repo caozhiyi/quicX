@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "common/decode/decode.h"
+#include "quic/frame/stream_frame.h"
 #include "quic/frame/frame_interface.h"
 #include "common/buffer/buffer_interface.h"
 #include "common/alloter/alloter_interface.h"
@@ -47,6 +48,14 @@ bool IFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
 
 uint32_t IFrame::EncodeSize() {
     return sizeof(uint16_t);
+}
+
+uint32_t IFrame::GetFrameTypeBit() {
+    if (StreamFrame::IsStreamFrame(_frame_type)) {
+        return FTB_STREAM;
+    }
+    
+    return (uint32_t)1 << _frame_type;
 }
 
 }

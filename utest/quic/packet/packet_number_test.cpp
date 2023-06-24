@@ -6,13 +6,13 @@ namespace quicx {
 namespace {
 
 TEST(packet_number_utest, codec) {
-    PacketNumber packet_number(PNS_APPLICATION);
+    PacketNumber packet_number;
 
     for (size_t i = 0; i < 1000; i++) {
-        packet_number.NextPakcetNumber();
+        packet_number.NextPakcetNumber(PNS_APPLICATION);
     }
 
-    uint64_t pn = packet_number.NextPakcetNumber();
+    uint64_t pn = packet_number.NextPakcetNumber(PNS_APPLICATION);
     EXPECT_EQ(pn, 1000);
 
     uint8_t buf[4] = {0};

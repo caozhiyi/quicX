@@ -34,6 +34,34 @@ enum FrameType: uint16_t {
     FT_UNKNOW                          = 0xff,
 };
 
+enum FrameTypeBit: uint32_t {
+    FTB_PADDING                         = 1 << FT_PADDING,
+    FTB_PING                            = 1 << FT_PING,
+    FTB_ACK                             = 1 << FT_ACK,
+    FTB_ACK_ECN                         = 1 << FT_ACK_ECN,
+    FTB_RESET_STREAM                    = 1 << FT_RESET_STREAM,
+    FTB_STOP_SENDING                    = 1 << FT_STOP_SENDING,
+    FTB_CRYPTO                          = 1 << FT_CRYPTO,
+    FTB_NEW_TOKEN                       = 1 << FT_NEW_TOKEN,
+    FTB_STREAM                          = 1 << FT_STREAM,
+    FTB_MAX_DATA                        = 1 << FT_MAX_DATA,
+    FTB_MAX_STREAM_DATA                 = 1 << FT_MAX_STREAM_DATA,
+    FTB_MAX_STREAMS_BIDIRECTIONAL       = 1 << FT_MAX_STREAMS_BIDIRECTIONAL,
+    FTB_MAX_STREAMS_UNIDIRECTIONAL      = 1 << FT_MAX_STREAMS_UNIDIRECTIONAL,
+    FTB_DATA_BLOCKED                    = 1 << FT_DATA_BLOCKED,
+    FTB_STREAM_DATA_BLOCKED             = 1 << FT_STREAM_DATA_BLOCKED,
+    FTB_STREAMS_BLOCKED_BIDIRECTIONAL   = 1 << FT_STREAMS_BLOCKED_BIDIRECTIONAL,
+    FTB_STREAMS_BLOCKED_UNIDIRECTIONAL  = 1 << FT_STREAMS_BLOCKED_UNIDIRECTIONAL,
+    FTB_NEW_CONNECTION_ID               = 1 << FT_NEW_CONNECTION_ID,
+    FTB_RETIRE_CONNECTION_ID            = 1 << FT_RETIRE_CONNECTION_ID,
+    FTB_PATH_CHALLENGE                  = 1 << FT_PATH_CHALLENGE,
+    FTB_PATH_RESPONSE                   = 1 << FT_PATH_RESPONSE,
+    FTB_CONNECTION_CLOSE                = 1 << FT_CONNECTION_CLOSE,
+    FTB_CONNECTION_CLOSE_APP            = 1 << FT_CONNECTION_CLOSE_APP,
+    FTB_HANDSHAKE_DONE                  = 1 << FT_HANDSHAKE_DONE,
+};
+
+
 }
 
 #endif

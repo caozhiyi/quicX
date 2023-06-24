@@ -45,6 +45,8 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
         _rtt_var = _rtt_var - _rtt_var >> 2 + rttvar_sample >> 2;
     }
     _last_update_time = now;
+
+    return true;
 }
 
 void RttCalculator::Reset() {
