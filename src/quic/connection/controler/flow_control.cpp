@@ -2,11 +2,11 @@
 #include "quic/frame/max_streams_frame.h"
 #include "quic/frame/data_blocked_frame.h"
 #include "quic/frame/streams_blocked_frame.h"
-#include "quic/connection/connection_flow_control.h"
+#include "quic/connection/controler/flow_control.h"
 
 namespace quicx {
 
-ConnectionFlowControl::ConnectionFlowControl(StreamIDGenerator::StreamStarter starter):
+FlowControl::FlowControl(StreamIDGenerator::StreamStarter starter):
     _local_send_data_size(0),
     _remote_send_data_size(0),
     _local_max_bidirectional_stream_id(0),
@@ -17,7 +17,7 @@ ConnectionFlowControl::ConnectionFlowControl(StreamIDGenerator::StreamStarter st
 
 }
 
-void ConnectionFlowControl::InitConfig(TransportParam& tp) {
+void FlowControl::InitConfig(TransportParam& tp) {
     _local_send_max_data_limit = tp.GetInitialMaxData();
     _remote_send_max_data_limit = tp.GetInitialMaxData();
     _local_bidirectional_stream_limit = tp.GetInitialMaxStreamsBidi();
@@ -26,17 +26,17 @@ void ConnectionFlowControl::InitConfig(TransportParam& tp) {
     _remote_unidirectional_stream_limit = tp.GetInitialMaxStreamsUni();
 }
 
-void ConnectionFlowControl::AddLocalSendData(uint32_t size) {
+void FlowControl::AddLocalSendData(uint32_t size) {
     _local_send_data_size += size;
 }
 
-void ConnectionFlowControl::UpdateLocalSendDataLimit(uint64_t limit) {
+void FlowControl::UpdateLocalSendDataLimit(uint64_t limit) {
     if (_local_send_max_data_limit < limit) {
         _local_send_max_data_limit = limit;
     }
 }
 
-bool ConnectionFlowControl::CheckLocalSendDataLimit(uint32_t& can_send_size, std::shared_ptr<IFrame>& send_frame) {
+bool FlowControl::CheckLocalSendDataLimit(uint32_t& can_send_size, std::shared_ptr<IFrame>& send_frame) {
     // reaching the upper limit of flow control
     if (_local_send_data_size >= _local_send_max_data_limit) {
         auto frame = std::make_shared<DataBlockedFrame>();
@@ -55,11 +55,11 @@ bool ConnectionFlowControl::CheckLocalSendDataLimit(uint32_t& can_send_size, std
     return true;
 }
 
-void ConnectionFlowControl::AddRemoteSendData(uint32_t size) {
+void FlowControl::AddRemoteSendData(uint32_t size) {
     _remote_send_data_size += size;
 }
 
-bool ConnectionFlowControl::CheckRemoteSendDataLimit(std::shared_ptr<IFrame>& send_frame) {
+bool FlowControl::CheckRemoteSendDataLimit(std::shared_ptr<IFrame>& send_frame) {
     // reaching the upper limit of flow control
     if (_remote_send_data_size >= _remote_send_max_data_limit) {
         return false;
@@ -75,13 +75,13 @@ bool ConnectionFlowControl::CheckRemoteSendDataLimit(std::shared_ptr<IFrame>& se
     return true;
 }
 
-void ConnectionFlowControl::UpdateLocalBidirectionStreamLimit(uint64_t limit) {
+void FlowControl::UpdateLocalBidirectionStreamLimit(uint64_t limit) {
     if (_local_bidirectional_stream_limit < limit) {
         _local_bidirectional_stream_limit = limit;
     }
 }
 
-bool ConnectionFlowControl::CheckLocalBidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame) {
+bool FlowControl::CheckLocalBidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame) {
     stream_id = _id_generator.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL);
     // reaching the upper limit of flow control
     if (stream_id >> 2 > _local_bidirectional_stream_limit) {
@@ -101,13 +101,13 @@ bool ConnectionFlowControl::CheckLocalBidirectionStreamLimit(uint64_t& stream_id
     return true;
 }
 
-void ConnectionFlowControl::UpdateLocalUnidirectionStreamLimit(uint64_t limit) {
+void FlowControl::UpdateLocalUnidirectionStreamLimit(uint64_t limit) {
     if (_local_unidirectional_stream_limit < limit) {
         _local_unidirectional_stream_limit = limit;
     }
 }
 
-bool ConnectionFlowControl::CheckLocalUnidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame) {
+bool FlowControl::CheckLocalUnidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame) {
     stream_id = _id_generator.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
     // reaching the upper limit of flow control
     if (stream_id >> 2 > _local_unidirectional_stream_limit) {
@@ -127,7 +127,7 @@ bool ConnectionFlowControl::CheckLocalUnidirectionStreamLimit(uint64_t& stream_i
     return true;
 }
 
-bool ConnectionFlowControl::CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& send_frame) {
+bool FlowControl::CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& send_frame) {
     if (StreamIDGenerator::GetStreamDirection(id) == StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL)  {
         if (id > 0) {
             _remote_max_unidirectional_stream_id = id;
@@ -141,7 +141,7 @@ bool ConnectionFlowControl::CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<
     }
 }
 
-bool ConnectionFlowControl::CheckRemoteBidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame) {
+bool FlowControl::CheckRemoteBidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame) {
     if (_remote_bidirectional_stream_limit < _remote_max_bidirectional_stream_id >> 2) {
         return false;
     }
@@ -155,7 +155,7 @@ bool ConnectionFlowControl::CheckRemoteBidirectionStreamLimit(std::shared_ptr<IF
     return true;
 }
 
-bool ConnectionFlowControl::CheckRemoteUnidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame) {
+bool FlowControl::CheckRemoteUnidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame) {
     if (_remote_unidirectional_stream_limit < _remote_max_unidirectional_stream_id >> 2) {
         return false;
     }
