@@ -1,5 +1,5 @@
-#ifndef QUIC_CONNECTION_CONNECTION_FLOW_CONTROL
-#define QUIC_CONNECTION_CONNECTION_FLOW_CONTROL
+#ifndef QUIC_CONNECTION_CONTROLER_FLOW_CONTROL
+#define QUIC_CONNECTION_CONTROLER_FLOW_CONTROL
 
 #include "quic/frame/frame_interface.h"
 #include "quic/stream/stream_id_generator.h"
@@ -7,10 +7,10 @@
 
 namespace quicx {
 
-class ConnectionFlowControl {
+class FlowControl {
 public:
-    ConnectionFlowControl(StreamIDGenerator::StreamStarter starter);
-    ~ConnectionFlowControl() {}
+    FlowControl(StreamIDGenerator::StreamStarter starter);
+    ~FlowControl() {}
 
     // set init flow control from transport param
     void InitConfig(TransportParam& tp);

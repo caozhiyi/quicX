@@ -12,7 +12,7 @@
 #include "quic/stream/send_stream_interface.h"
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_interface.h"
-#include "quic/connection/connection_flow_control.h"
+#include "quic/connection/controler/flow_control.h"
 
 namespace quicx {
 
@@ -101,7 +101,7 @@ protected:
     std::list<std::shared_ptr<IFrame>> _frames_list;
 
     // flow control
-    ConnectionFlowControl _flow_control;
+    FlowControl _flow_control;
 
     // crypto
     ConnectionCrypto _connection_crypto;

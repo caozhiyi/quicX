@@ -35,6 +35,7 @@ void Client::MainLoop(uint16_t thread_num) {
         thread_num = 10;
     }
 
+    _processors.resize(thread_num);
     for (size_t i = 0; i < thread_num; i++) {
         auto processor = std::make_shared<ClientProcessor>();
         processor->SetRecvFunction([this] { return _receiver->DoRecv(); });

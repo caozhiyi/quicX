@@ -2,7 +2,7 @@
 #include "common/util/singleton.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/transport_param_config.h"
-#include "quic/connection/connection_flow_control.h"
+#include "quic/connection/controler/flow_control.h"
 
 namespace quicx {
 namespace {
@@ -29,7 +29,7 @@ private:
 };
 
 TEST(connection_control_flow, local_send_data) {
-    ConnectionFlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
     flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint32_t can_send_size = 0;
@@ -61,7 +61,7 @@ TEST(connection_control_flow, local_send_data) {
 }
 
 TEST(connection_control_flow, remote_send_data) {
-    ConnectionFlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
     flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
 
     std::shared_ptr<IFrame> frame;
@@ -83,7 +83,7 @@ TEST(connection_control_flow, remote_send_data) {
 
 
 TEST(connection_control_flow, local_bidirection_streams) {
-    ConnectionFlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
     flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint64_t stream_id = 0;
@@ -107,7 +107,7 @@ TEST(connection_control_flow, local_bidirection_streams) {
 }
 
 TEST(connection_control_flow, local_unidirection_streams) {
-    ConnectionFlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
     flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint64_t stream_id = 0;
@@ -131,7 +131,7 @@ TEST(connection_control_flow, local_unidirection_streams) {
 }
 
 TEST(connection_control_flow, remote_bidirection_streams) {
-    ConnectionFlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
     flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
 
     StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::SS_SERVER);
@@ -155,7 +155,7 @@ TEST(connection_control_flow, remote_bidirection_streams) {
 
 
 TEST(connection_control_flow, remote_unidirection_streams) {
-    ConnectionFlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
     flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
 
     StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::SS_SERVER);
