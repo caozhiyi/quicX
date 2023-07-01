@@ -12,7 +12,9 @@ public:
     ~PacketNumber() {};
 
     uint64_t NextPakcetNumber(PacketNumberSpace space);
-    
+
+    // encode packet number to buffer
+    static uint32_t GetPacketNumberLength(uint64_t packet_number);
     // encode packet number to buffer
     static uint8_t* Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t packet_number);
     // decode packet number from buffer

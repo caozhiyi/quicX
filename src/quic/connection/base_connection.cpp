@@ -3,6 +3,7 @@
 #include "quic/frame/type.h"
 #include "common/util/time.h"
 #include "common/buffer/buffer.h"
+#include "quic/connection/util.h"
 #include "quic/connection/error.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/packet/init_packet.h"
@@ -49,9 +50,8 @@ std::shared_ptr<ISendStream> BaseConnection::MakeSendStream() {
         _frames_list.push_back(frame);
     }
     
-    //auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id);
-    //return stream;
-    return nullptr;
+    auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id, BaseConnection::StreamType::ST_SEND);
+    return std::dynamic_pointer_cast<ISendStream>(stream);
 }
 
 std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
@@ -66,8 +66,7 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
     }
     
     auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiLocal(), stream_id, BaseConnection::StreamType::ST_BIDIRECTIONAL);
-    //return stream;
-    return nullptr;
+    return std::dynamic_pointer_cast<BidirectionStream>(stream);
 }
 
 void BaseConnection::AddConnectionId(uint8_t* id, uint16_t len) {
@@ -136,13 +135,11 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
         if (packet_encrypto_level < encrypto_level) {
             encrypto_level = packet_encrypto_level;
         }
-        
+
         switch (encrypto_level) {
             case EL_INITIAL: {
                 auto init_packet = std::make_shared<InitPacket>();
                 init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-                init_packet->SetPacketNumber(100);
-                init_packet->GetHeader()->SetPacketNumberLength(3);
                 uint8_t dcid[10] = {0,1,2,3,4,5,6,7,8,9};
                 ((LongHeader*)init_packet->GetHeader())->SetDestinationConnectionId(dcid, sizeof(dcid));
                 packet = init_packet;
@@ -154,21 +151,22 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             }
             case EL_HANDSHAKE: {
                 auto handshake_packet = std::make_shared<HandshakePacket>();
-                handshake_packet->SetPacketNumber(10);
-                handshake_packet->GetHeader()->SetPacketNumberLength(2);
                 handshake_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
                 packet = handshake_packet;
                 break;
             }
             case EL_APPLICATION: {
                 auto rtt1_packet = std::make_shared<Rtt1Packet>();
-                rtt1_packet->SetPacketNumber(10);
-                rtt1_packet->GetHeader()->SetPacketNumberLength(2);
                 rtt1_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
                 packet = rtt1_packet;
                 break;
             }
         }
+
+        // make packet numer
+        uint64_t pkt_number = _pakcet_number.NextPakcetNumber(CryptoLevel2PacketNumberSpace(encrypto_level));
+        packet->SetPacketNumber(pkt_number);
+        packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
 
         auto crypto_grapher = _connection_crypto.GetCryptographer(encrypto_level);
         if (!crypto_grapher) {
