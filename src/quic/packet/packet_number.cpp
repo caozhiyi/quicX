@@ -11,6 +11,15 @@ uint64_t PacketNumber::NextPakcetNumber(PacketNumberSpace space) {
     return _cur_packet_number[space]++;
 }
 
+uint32_t PacketNumber::GetPacketNumberLength(uint64_t packet_number) {
+    uint32_t len = 0;
+    while (packet_number > 0) {
+        len++;
+        packet_number = packet_number >> 8;
+    }
+    return len;
+}
+
 uint8_t* PacketNumber::Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t packet_number) {
     if (packet_number_len == 4) {
         *pos++ = packet_number >> 24;

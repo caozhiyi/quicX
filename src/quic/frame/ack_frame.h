@@ -19,10 +19,16 @@ public:
     virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
+    void SetLargestAck(uint64_t ack) { _largest_acknowledged = ack; }
+    uint64_t GetLargestAck() { return _largest_acknowledged; }
+
     void SetAckDelay(uint32_t delay) { _ack_delay = delay; }
     uint32_t GetAckDelay() { return _ack_delay; }
 
-    void AddAckRange(uint64_t smallest, uint64_t largest) { _ack_ranges.emplace_back(AckRange(smallest, largest)); }
+    void SetFirstAckRange(uint32_t range) { _first_ack_range = range; }
+    uint32_t GetFirstAckRange() { return _first_ack_range; }
+
+    void AddAckRange(uint64_t gap, uint64_t range) { _ack_ranges.emplace_back(AckRange(gap, range)); }
     const std::vector<AckRange>& GetAckRange() { return _ack_ranges; }
 
 protected:

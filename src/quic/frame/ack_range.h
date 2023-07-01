@@ -8,7 +8,7 @@ namespace quicx {
 class AckRange {
 public:
     AckRange();
-    AckRange(uint64_t smallest, uint64_t largest);
+    AckRange(uint64_t gap, uint64_t range);
     ~AckRange();
 
     void SetAckRangeLength(uint64_t v) { _ack_range_length = v; }

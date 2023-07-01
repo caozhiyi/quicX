@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
+#include "quic/packet/packet_number.h"
 #include "quic/connection/transport_param.h"
 #include "quic/stream/send_stream_interface.h"
 #include "quic/connection/connection_crypto.h"
@@ -108,6 +109,9 @@ protected:
    
     // token
     std::string _token;
+
+    // packet number
+    PacketNumber _pakcet_number;
 };
 
 }
