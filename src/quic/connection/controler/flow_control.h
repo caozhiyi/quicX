@@ -7,6 +7,8 @@
 
 namespace quicx {
 
+// flow control.
+// include limit number of stream and max offset of connection.
 class FlowControl {
 public:
     FlowControl(StreamIDGenerator::StreamStarter starter);
