@@ -8,6 +8,7 @@
 
 namespace quicx {
 
+// controller of sender. 
 class SendControl {
 public:
     SendControl();

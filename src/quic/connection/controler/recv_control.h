@@ -7,6 +7,7 @@
 
 namespace quicx {
 
+// controller of receiver. 
 class RecvControl {
 public:
     RecvControl();

@@ -317,6 +317,9 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if (send_frame) {
         _frames_list.push_back(send_frame);
     }
+
+    // frame 的序列化函数
+    
     
     // create new stream
     std::shared_ptr<IStream> new_stream;
