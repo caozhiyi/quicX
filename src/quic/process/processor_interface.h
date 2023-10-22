@@ -35,8 +35,8 @@ public:
 
 protected:
     virtual void ProcessRecv();
-    virtual void ProcessTimer();
     virtual void ProcessSend();
+    virtual void ProcessTimer();
 
     static bool GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len);
 protected:

@@ -46,6 +46,7 @@ void IProcessor::MainLoop() {
 
 void IProcessor::Quit() {
     _run = false;
+    WeakUp();
 }
 
 void IProcessor::ActiveSendConnection(IConnection* conn) {
@@ -69,14 +70,6 @@ void IProcessor::ProcessRecv() {
     }
 }
 
-void IProcessor::ProcessTimer() {
-    uint64_t now = UTCTimeMsec();
-    uint32_t run_time = now - _cur_time;
-    _cur_time = now;
-
-    _timer->TimerRun(run_time);
-}
-
 void IProcessor::ProcessSend() {
     static thread_local uint8_t buf[1500] = {0};
     std::shared_ptr<IBuffer> buffer = std::make_shared<Buffer>(buf, sizeof(buf));
@@ -97,6 +90,14 @@ void IProcessor::ProcessSend() {
         }
     }
     _active_send_connection_list.clear();
+}
+
+void IProcessor::ProcessTimer() {
+    uint64_t now = UTCTimeMsec();
+    uint32_t run_time = now - _cur_time;
+    _cur_time = now;
+
+    _timer->TimerRun(run_time);
 }
 
 bool IProcessor::GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
