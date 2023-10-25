@@ -33,10 +33,13 @@ public:
 
     std::shared_ptr<TLSCtx> GetCtx() { return _ctx; }
 
+    void SetAddConnectionIDCB(ConnectionIDCB cb) { _add_connection_id_cb = cb; }
+    void SetRetireConnectionIDCB(ConnectionIDCB cb)  { _retire_connection_id_cb = cb; }
+
 protected:
     virtual void ProcessRecv();
-    virtual void ProcessSend();
     virtual void ProcessTimer();
+    virtual void ProcessSend();
 
     static bool GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len);
 protected:
@@ -55,6 +58,9 @@ protected:
 
     std::mutex _notify_mutex;
     std::condition_variable _notify;
+
+    ConnectionIDCB _add_connection_id_cb;
+    ConnectionIDCB _retire_connection_id_cb;
 
     uint32_t _max_recv_times;
     RecvFunction _recv_function;

@@ -14,6 +14,7 @@ bool ThreadReceiver::Listen(const std::string& ip, uint16_t port) {
         return false;   
     }
     Start();
+    return true;
 }
 
 std::shared_ptr<UdpPacketIn> ThreadReceiver::DoRecv() {
@@ -33,7 +34,9 @@ std::shared_ptr<UdpPacketIn> ThreadReceiver::DoRecv() {
 }
 
 void ThreadReceiver::Run() {
+    // only recv thead
     while (!_stop) {
+        // todo block io to recv
         auto packet = Receiver::DoRecv();
         if (packet != nullptr) {
             DispatcherPacket(packet);
@@ -66,7 +69,7 @@ void ThreadReceiver::DispatcherPacket(std::shared_ptr<UdpPacketIn> packet) {
     }
     
     // a new connection
-    static uint32_t index = 0;
+    static uint32_t index = 0; // TODO random
     index = index >= _thread_vec.size() ? index - _thread_vec.size() : index;
     auto id = _thread_vec[index];
     _thread_map[hash_code] = id;
@@ -82,7 +85,7 @@ void ThreadReceiver::RegisteThread(std::thread::id& id, ThreadSafeBlockQueue<std
     _processer_map[id] = queue;
 }
 
-void ThreadReceiver::RegisteConnection(std::thread::id& id, uint64_t cid_code) {
+void ThreadReceiver::RegisteConnection(std::thread::id id, uint64_t cid_code) {
     auto local_id = std::this_thread::get_id();
     if (local_id == id) {
         _thread_map[cid_code] = id;
@@ -92,7 +95,7 @@ void ThreadReceiver::RegisteConnection(std::thread::id& id, uint64_t cid_code) {
     }
 }
 
-void ThreadReceiver::CancelConnection(std::thread::id& id, uint64_t cid_code) {
+void ThreadReceiver::CancelConnection(std::thread::id id, uint64_t cid_code) {
     auto local_id = std::this_thread::get_id();
     if (local_id == id) {
         _thread_map.erase(cid_code);

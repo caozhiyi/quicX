@@ -4,3 +4,4 @@ __MACOSX
 x64
 .vscode
 *.o
+.VSCodeCounter

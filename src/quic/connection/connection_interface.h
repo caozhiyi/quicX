@@ -11,6 +11,7 @@
 
 namespace quicx {
 
+typedef std::function<void(uint64_t id_hash)> ConnectionIDCB;
 class IConnection {
 public:
     IConnection() {}
@@ -19,6 +20,8 @@ public:
     virtual std::shared_ptr<ISendStream> MakeSendStream() = 0;
     virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream() = 0;
 
+    virtual void SetAddConnectionIDCB(ConnectionIDCB cb) = 0;
+    virtual void SetRetireConnectionIDCB(ConnectionIDCB cb) = 0;
     virtual void AddConnectionId(uint8_t* id, uint16_t len) = 0;
     virtual void RetireConnectionId(uint8_t* id, uint16_t len) = 0;
 

@@ -21,12 +21,12 @@ public:
 
     virtual std::shared_ptr<UdpPacketIn> DoRecv();
 
-protected:
+//protected:
     virtual void Run();
     void DispatcherPacket(std::shared_ptr<UdpPacketIn> packet);
     void RegisteThread(std::thread::id& id, ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>* queue);
-    void RegisteConnection(std::thread::id& id, uint64_t cid_code);
-    void CancelConnection(std::thread::id& id, uint64_t cid_code);
+    void RegisteConnection(std::thread::id id, uint64_t cid_code);
+    void CancelConnection(std::thread::id id, uint64_t cid_code);
 
 private:
     static thread_local std::vector<std::thread::id> _thread_vec;

@@ -1,6 +1,7 @@
 #ifndef QUIC_PROCESS_RECEIVER
 #define QUIC_PROCESS_RECEIVER
 
+#include <thread>
 #include "quic/udp/udp_receiver.h"
 #include "quic/udp/udp_packet_in.h"
 #include "common/alloter/pool_block.h"
@@ -16,6 +17,9 @@ public:
     virtual void SetRecvSocket(uint64_t sock);
 
     virtual std::shared_ptr<UdpPacketIn> DoRecv();
+
+    void RegisteConnection(std::thread::id id, uint64_t cid_code) {}
+    void CancelConnection(std::thread::id id, uint64_t cid_code) {}
 
 protected:
     UdpReceiver _receiver;
