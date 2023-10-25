@@ -13,6 +13,7 @@
 #include "quic/stream/send_stream_interface.h"
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_interface.h"
+#include "quic/connection/connection_id_manager.h"
 #include "quic/connection/controler/flow_control.h"
 
 namespace quicx {
@@ -26,6 +27,8 @@ public:
     virtual std::shared_ptr<ISendStream> MakeSendStream();
     virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream();
 
+    virtual void SetAddConnectionIDCB(ConnectionIDCB cb);
+    virtual void SetRetireConnectionIDCB(ConnectionIDCB cb);
     virtual void AddConnectionId(uint8_t* id, uint16_t len);
     virtual void RetireConnectionId(uint8_t* id, uint16_t len);
 
@@ -98,7 +101,11 @@ protected:
     std::shared_ptr<BlockMemoryPool> _alloter;
     
     // connection id
-    std::unordered_set<std::string> _conn_id_set;
+    ConnectionIDManager _conn_id_manager;
+    ConnectionIDCB _add_connection_id_cb;
+    ConnectionIDCB _retire_connection_id_cb;
+
+    // wait send frames
     std::list<std::shared_ptr<IFrame>> _frames_list;
 
     // flow control

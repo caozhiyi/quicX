@@ -3,13 +3,19 @@
 
 namespace quicx {
 
-ConnectionID ConnectionIDManager::Generator() {
+uint64_t ConnectionID::Hash() {
+    if (_hash == 0) {
+        _hash = ConnectionIDGenerator::Instance().Hash(_id, _len);
+    }
+    return _hash;
+}
 
+ConnectionID ConnectionIDManager::Generator() {
+    // TODO
 }
 
 bool ConnectionIDManager::RetireID(ConnectionID& id) {
-    uint64_t id_hash = ConnectionIDGenerator::Instance().Hash(id._id, id._len);
-    auto iter = _ids_map.find(id_hash);
+    auto iter = _ids_map.find(id.Hash());
     if (iter == _ids_map.end()) {
         return false;
     }
@@ -18,9 +24,7 @@ bool ConnectionIDManager::RetireID(ConnectionID& id) {
 }
 
 bool ConnectionIDManager::AddID(ConnectionID& id) {
-    // auto key = ConnectionIDGenerator::Instance().Hash(id._id, id._len);
-    // auto value = std::string((char*)id._id, id._len);
-    // _ids_map.insert(key, value);
+    _ids_map[id.Hash()] = std::string((char*)id._id, id._len);
     return true;
 }
 

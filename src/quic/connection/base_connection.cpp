@@ -69,12 +69,28 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
     return std::dynamic_pointer_cast<BidirectionStream>(stream);
 }
 
+void BaseConnection::SetAddConnectionIDCB(ConnectionIDCB cb) {
+    _add_connection_id_cb = cb;
+}
+
+void BaseConnection::SetRetireConnectionIDCB(ConnectionIDCB cb) {
+    _retire_connection_id_cb = cb;
+}
+
 void BaseConnection::AddConnectionId(uint8_t* id, uint16_t len) {
-    _conn_id_set.insert(std::string((char*)id, len));
+    ConnectionID cid(id, len);
+    _conn_id_manager.AddID(cid);
+    if (_add_connection_id_cb) {
+        _add_connection_id_cb(cid.Hash());
+    }
 }
 
 void BaseConnection::RetireConnectionId(uint8_t* id, uint16_t len) {
-    _conn_id_set.erase(std::string((char*)id, len));
+    ConnectionID cid(id, len);
+    _conn_id_manager.RetireID(cid);
+    if (_retire_connection_id_cb) {
+        _retire_connection_id_cb(cid.Hash());
+    }
 }
 
 void BaseConnection::Close(uint64_t error) {

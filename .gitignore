@@ -3,8 +3,9 @@ Debug
 __MACOSX
 x64
 .vscode
-gtest
 *.o
+.VSCodeCounter
+gtest
 *.log
 quicx-utest
 third

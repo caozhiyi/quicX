@@ -30,6 +30,8 @@ void Server::MainLoop(uint16_t thread_num) {
     for (size_t i = 0; i < thread_num; i++) {
         auto processor = std::make_shared<ServerProcessor>();
         processor->SetRecvFunction([this] { return _receiver->DoRecv(); });
+        processor->SetAddConnectionIDCB([this] (uint64_t id) { _receiver->RegisteConnection(std::this_thread::get_id(), id);});
+        processor->SetRetireConnectionIDCB([this] (uint64_t id) { _receiver->CancelConnection(std::this_thread::get_id(), id);});
         _processors.emplace_back(processor);
     }
     IApplication::MainLoop(thread_num);
