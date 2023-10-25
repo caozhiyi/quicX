@@ -5,3 +5,7 @@ x64
 .vscode
 *.o
 .VSCodeCounter
+gtest
+*.log
+quicx-utest
+third
