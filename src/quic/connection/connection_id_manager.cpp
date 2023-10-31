@@ -11,20 +11,37 @@ uint64_t ConnectionID::Hash() {
 }
 
 ConnectionID ConnectionIDManager::Generator() {
-    // TODO
+    ConnectionID id;
+    ConnectionIDGenerator::Instance().Generator(id._id, id._len);
+    id._index = _cur_index++;
+    AddID(id);
+    return id;
 }
 
-bool ConnectionIDManager::RetireID(ConnectionID& id) {
-    auto iter = _ids_map.find(id.Hash());
-    if (iter == _ids_map.end()) {
+bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
+    bool cur_retire = false;
+    for (auto iter = _ids_map.begin(); iter != _ids_map.end();) {
+        if (iter->second.Hash() == _cur_id.Hash()) {
+            cur_retire = true;
+        }
+        if (iter->second._index <= sequence) {
+            iter = _ids_map.erase(iter);
+        }
+    }
+    
+    if (cur_retire && !_ids_map.empty()){
+        _cur_id = _ids_map.begin()->second;
+    } else {
         return false;
     }
-    _ids_map.erase(iter);
     return true;
 }
 
 bool ConnectionIDManager::AddID(ConnectionID& id) {
-    _ids_map[id.Hash()] = std::string((char*)id._id, id._len);
+    _ids_map[id._index] = id;
+    if (_ids_map.size() == 1) { 
+        _cur_id = id;
+    }
     return true;
 }
 

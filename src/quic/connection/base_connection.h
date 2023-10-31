@@ -64,6 +64,8 @@ protected:
     virtual bool OnDataBlockFrame(std::shared_ptr<IFrame> frame);
     virtual bool OnStreamBlockFrame(std::shared_ptr<IFrame> frame);
     virtual bool OnMaxStreamFrame(std::shared_ptr<IFrame> frame);
+    virtual bool OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame);
+    virtual bool OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame);
 
     virtual void ActiveSendStream(IStream* stream);
 
@@ -101,7 +103,8 @@ protected:
     std::shared_ptr<BlockMemoryPool> _alloter;
     
     // connection id
-    ConnectionIDManager _conn_id_manager;
+    ConnectionIDManager _local_conn_id_manager;
+    ConnectionIDManager _remote_conn_id_manager;
     ConnectionIDCB _add_connection_id_cb;
     ConnectionIDCB _retire_connection_id_cb;
 

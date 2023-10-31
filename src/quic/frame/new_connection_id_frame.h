@@ -25,8 +25,8 @@ public:
     void SetRetirePriorTo(uint64_t retire_prior_to) { _retire_prior_to = retire_prior_to; }
     uint64_t GetRetirePriorTo() { return _retire_prior_to; }
 
-    void AddConnectionID(uint64_t id) { _connection_id.push_back(id); }
-    const std::vector<uint64_t>& GetConnectionID() { return _connection_id; }
+    void AddConnectionID(uint8_t* id, uint8_t len) { _connection_id = id; _length = len; }
+    void GetConnectionID(uint8_t* id, uint8_t& len) { id = _connection_id; len = _length; }
 
     void SetStatelessResetToken(uint8_t* token);
     const uint8_t* GetStatelessResetToken() { return _stateless_reset_token; }
@@ -34,13 +34,10 @@ public:
 private:
     uint64_t _sequence_number;  // the connection ID by the sender.
     uint64_t _retire_prior_to;  // which connection IDs should be retired.
-
-    std::vector<uint64_t> _connection_id; // a connection ID of the specified length.
+    uint8_t  _length;           // the length of the connection ID.
+    uint8_t* _connection_id;    // a connection ID of the specified length.
 
     uint8_t _stateless_reset_token[__stateless_reset_token_length];  // a 128-bit value that will be used for a stateless reset when the associated connection ID is used.
-    /*
-    uint8_t  _length;           // the length of the connection ID.
-    */
 };
 
 }

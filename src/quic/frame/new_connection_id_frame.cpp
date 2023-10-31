@@ -31,13 +31,9 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     pos = FixedEncodeUint16(pos, _frame_type);
     pos = EncodeVarint(pos, _sequence_number);
     pos = EncodeVarint(pos, _retire_prior_to);
-    pos = FixedEncodeUint8(pos, (uint8_t)_connection_id.size());
-    for (size_t i = 0; i < _connection_id.size(); i++) {
-        pos = EncodeVarint(pos, _connection_id[i]);
-    }
-
+    pos = FixedEncodeUint8(pos, _length);
     buffer->MoveWritePt(pos - span.GetStart());
-
+    buffer->Write(_connection_id, _length);
     buffer->Write(_stateless_reset_token, __stateless_reset_token_length);
     return true;
 }
@@ -52,16 +48,11 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with
     }
     pos = DecodeVarint(pos, end, _sequence_number);
     pos = DecodeVarint(pos, end, _retire_prior_to);
-    // encode normal members and number of connection id
-    uint8_t connection_id_num = 0;
-    pos = FixedDecodeUint8(pos, end, connection_id_num);
-
-    _connection_id.resize(connection_id_num);
-    for (size_t i = 0; i < connection_id_num; i++) {
-        pos = DecodeVarint(pos, end, _connection_id[i]);
-    }
-    
+    pos = FixedDecodeUint8(pos, end, _length);
     buffer->MoveReadPt(pos - span.GetStart());
+    if (buffer->Read(_connection_id, _length) != _length) {
+        return false;
+    }
     if (buffer->Read(_stateless_reset_token, __stateless_reset_token_length) != __stateless_reset_token_length) {
         return false;
     }
@@ -69,7 +60,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with
 }
 
 uint32_t NewConnectionIDFrame::EncodeSize() {
-    return sizeof(NewConnectionIDFrame) - __stateless_reset_token_length + _connection_id.size() * sizeof(uint64_t);
+    return sizeof(NewConnectionIDFrame) - __stateless_reset_token_length + _length;
 }
 
 void NewConnectionIDFrame::SetStatelessResetToken(uint8_t* token) {

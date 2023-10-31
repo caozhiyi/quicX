@@ -22,7 +22,9 @@
 #include "quic/connection/base_connection.h"
 #include "quic/frame/streams_blocked_frame.h"
 #include "quic/frame/connection_close_frame.h"
+#include "quic/frame/new_connection_id_frame.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
+#include "quic/frame/retire_connection_id_frame.h"
 
 namespace quicx {
 
@@ -79,7 +81,7 @@ void BaseConnection::SetRetireConnectionIDCB(ConnectionIDCB cb) {
 
 void BaseConnection::AddConnectionId(uint8_t* id, uint16_t len) {
     ConnectionID cid(id, len);
-    _conn_id_manager.AddID(cid);
+    _remote_conn_id_manager.AddID(cid);
     if (_add_connection_id_cb) {
         _add_connection_id_cb(cid.Hash());
     }
@@ -87,7 +89,7 @@ void BaseConnection::AddConnectionId(uint8_t* id, uint16_t len) {
 
 void BaseConnection::RetireConnectionId(uint8_t* id, uint16_t len) {
     ConnectionID cid(id, len);
-    _conn_id_manager.RetireID(cid);
+    _remote_conn_id_manager.RetireID(cid);
     if (_retire_connection_id_cb) {
         _retire_connection_id_cb(cid.Hash());
     }
@@ -156,8 +158,8 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             case EL_INITIAL: {
                 auto init_packet = std::make_shared<InitPacket>();
                 init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-                uint8_t dcid[10] = {0,1,2,3,4,5,6,7,8,9};
-                ((LongHeader*)init_packet->GetHeader())->SetDestinationConnectionId(dcid, sizeof(dcid));
+                auto cid = _remote_conn_id_manager.GetCurrentID();
+                ((LongHeader*)init_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
                 packet = init_packet;
                 break;
             }
@@ -167,12 +169,16 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             }
             case EL_HANDSHAKE: {
                 auto handshake_packet = std::make_shared<HandshakePacket>();
+                auto cid = _remote_conn_id_manager.GetCurrentID();
+                ((LongHeader*)handshake_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
                 handshake_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
                 packet = handshake_packet;
                 break;
             }
             case EL_APPLICATION: {
                 auto rtt1_packet = std::make_shared<Rtt1Packet>();
+                auto cid = _remote_conn_id_manager.GetCurrentID();
+                ((ShortHeader*)rtt1_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
                 rtt1_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
                 packet = rtt1_packet;
                 break;
@@ -406,6 +412,15 @@ bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
         _flow_control.UpdateLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
     }
     return true;
+}
+
+bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
+    auto new_cid_frame = std::dynamic_pointer_cast<NewConnectionIDFrame>(frame);
+    
+}
+
+bool BaseConnection::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
+
 }
 
 void BaseConnection::ActiveSendStream(IStream* stream) {
