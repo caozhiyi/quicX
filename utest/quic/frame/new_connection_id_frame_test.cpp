@@ -21,11 +21,9 @@ TEST(new_connection_id_frame_utest, codec) {
     char toekn[128] = "123456789012345678901234567890123456789801234567890";
     frame1.SetStatelessResetToken((uint8_t*)toekn);
 
-    frame1.AddConnectionID(1212121);
-    frame1.AddConnectionID(1212122);
-    frame1.AddConnectionID(1212123);
-    frame1.AddConnectionID(1212124);
-    frame1.AddConnectionID(1212125);
+    uint8_t cid[] = {1,2,3,4,5,6,7,8};
+    uint8_t len = sizeof(cid);
+    frame1.SetConnectionID(cid, len);
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
@@ -38,7 +36,10 @@ TEST(new_connection_id_frame_utest, codec) {
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetRetirePriorTo(), frame2.GetRetirePriorTo());
     EXPECT_EQ(frame1.GetSequenceNumber(), frame2.GetSequenceNumber());
-    EXPECT_EQ(frame1.GetConnectionID().size(), frame2.GetConnectionID().size());
+
+    uint8_t* cid_ptr = frame2.GetConnectionID();
+    uint8_t cid_len = frame2.GetConnectionIDLength();
+    EXPECT_EQ(std::string(cid_ptr, cid_len), std::string(cid, len));
     EXPECT_EQ(std::string((char*)frame1.GetStatelessResetToken(), quicx::__stateless_reset_token_length), 
         std::string((char*)frame2.GetStatelessResetToken(), quicx::__stateless_reset_token_length));
 }
