@@ -6,7 +6,7 @@
 
 namespace quicx {
 
-SendControl::SendControl() {
+SendControl::SendControl(std::shared_ptr<ITimer> timer): _timer(timer) {
     memset(_pkt_num_largest_sent, 0, sizeof(_pkt_num_largest_sent));
     memset(_pkt_num_largest_acked, 0, sizeof(_pkt_num_largest_acked));
     memset(_largest_sent_time, 0, sizeof(_largest_sent_time));
@@ -20,6 +20,7 @@ void SendControl::OnPacketSend(uint64_t time, std::shared_ptr<IPacket> packet) {
         return;
     }
     _unacked_packets[ns][packet->GetPacketNumber()] = packet;
+    //_timer->AddTimer
 }
 
 void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {

@@ -15,13 +15,16 @@
 #include "quic/connection/connection_interface.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/controler/flow_control.h"
+#include "quic/connection/controler/send_control.h"
+#include "quic/connection/controler/recv_control.h"
+
 
 namespace quicx {
 
 class BaseConnection:
     public IConnection {
 public:
-    BaseConnection(StreamIDGenerator::StreamStarter start);
+    BaseConnection(StreamIDGenerator::StreamStarter start, std::shared_ptr<ITimer> timer);
     virtual ~BaseConnection();
 
     virtual std::shared_ptr<ISendStream> MakeSendStream();
@@ -105,14 +108,14 @@ protected:
     // connection id
     ConnectionIDManager _local_conn_id_manager;
     ConnectionIDManager _remote_conn_id_manager;
-    ConnectionIDCB _add_connection_id_cb;
-    ConnectionIDCB _retire_connection_id_cb;
 
     // wait send frames
     std::list<std::shared_ptr<IFrame>> _frames_list;
 
     // flow control
     FlowControl _flow_control;
+    SendControl _send_control;
+    RecvControl _recv_control;
 
     // crypto
     ConnectionCrypto _connection_crypto;

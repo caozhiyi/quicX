@@ -7,15 +7,11 @@
 #define COMMON_TIMER_TIMER
 
 #include <memory>
-#include "timer_interface.h"
+#include "common/timer/timer_interface.h"
 
 namespace quicx {
 
-std::shared_ptr<Timer> MakeTimer1Sec();
-
-std::shared_ptr<Timer> MakeTimer1Min();
-
-std::shared_ptr<Timer> MakeTimer1Hour();
+std::shared_ptr<ITimer> MakeTimer();
 
 }
 

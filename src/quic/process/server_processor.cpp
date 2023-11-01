@@ -15,7 +15,7 @@ ServerProcessor::~ServerProcessor() {
 
 }
 
-bool ServerProcessor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) {
+bool ServerProcessor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet, std::shared_ptr<ITimer> timer) {
     LOG_INFO("get packet from %s", udp_packet->GetPeerAddress().AsString().c_str());
 
     // dispatch packet
@@ -46,9 +46,9 @@ bool ServerProcessor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) {
     return true;
 }
 
-bool ServerProcessor::HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& udp_packets) {
+bool ServerProcessor::HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& udp_packets, std::shared_ptr<ITimer> timer) {
     for (size_t i = 0; i < udp_packets.size(); i++) {
-        HandlePacket(udp_packets[i]);
+        HandlePacket(udp_packets[i], timer);
     }
     return true;
 }

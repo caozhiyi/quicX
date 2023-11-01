@@ -63,6 +63,16 @@ uint32_t NewConnectionIDFrame::EncodeSize() {
     return sizeof(NewConnectionIDFrame) - __stateless_reset_token_length + _length;
 }
 
+void NewConnectionIDFrame::GetConnectionID(uint8_t* id, uint8_t& len) { 
+    if (len < _length) {
+        LOG_ERROR("insufficient remaining id space. remain_size:%d, need_size:%d", len, _length);
+        return;
+    }
+    
+    memcpy(id, _connection_id, _length); 
+    len = _length;
+}
+
 void NewConnectionIDFrame::SetStatelessResetToken(uint8_t* token) {
     memcpy(_stateless_reset_token, token, __stateless_reset_token_length);
 }

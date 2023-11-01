@@ -3,6 +3,7 @@
 
 #include <set>
 #include "quic/packet/type.h"
+#include "common/timer/timer_interface.h"
 #include "quic/packet/packet_interface.h"
 
 namespace quicx {
@@ -21,7 +22,7 @@ namespace quicx {
 */
 class RecvControl {
 public:
-    RecvControl();
+    RecvControl(std::shared_ptr<ITimer> timer);
     ~RecvControl() {}
 
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
@@ -32,7 +33,7 @@ private:
     uint64_t _largest_recv_time[PNS_NUMBER];
 
     std::set<uint64_t> _wait_ack_packet_numbers[PNS_NUMBER];
-    
+    std::shared_ptr<ITimer> _timer;
 };
 
 }

@@ -28,10 +28,12 @@
 
 namespace quicx {
 
-BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start):
+BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, std::shared_ptr<ITimer> timer):
     _to_close(false),
     _last_communicate_time(0),
-    _flow_control(start) {
+    _flow_control(start),
+    _send_control(timer),
+    _recv_control(timer) {
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
     _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
@@ -72,27 +74,24 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
 }
 
 void BaseConnection::SetAddConnectionIDCB(ConnectionIDCB cb) {
-    _add_connection_id_cb = cb;
+    _local_conn_id_manager.SetAddConnectionIDCB(cb);
 }
 
 void BaseConnection::SetRetireConnectionIDCB(ConnectionIDCB cb) {
-    _retire_connection_id_cb = cb;
+    _local_conn_id_manager.SetRetireConnectionIDCB(cb);
 }
 
 void BaseConnection::AddConnectionId(uint8_t* id, uint16_t len) {
     ConnectionID cid(id, len);
     _remote_conn_id_manager.AddID(cid);
-    if (_add_connection_id_cb) {
-        _add_connection_id_cb(cid.Hash());
-    }
 }
 
 void BaseConnection::RetireConnectionId(uint8_t* id, uint16_t len) {
-    ConnectionID cid(id, len);
-    _remote_conn_id_manager.RetireID(cid);
-    if (_retire_connection_id_cb) {
-        _retire_connection_id_cb(cid.Hash());
-    }
+    // ConnectionID cid(id, len);
+    // _remote_conn_id_manager.RetireID(cid);
+    // if (_retire_connection_id_cb) {
+    //     _retire_connection_id_cb(cid.Hash());
+    // }
 }
 
 void BaseConnection::Close(uint64_t error) {
@@ -299,8 +298,10 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
         case FT_STREAMS_BLOCKED_BIDIRECTIONAL:
         case FT_STREAMS_BLOCKED_UNIDIRECTIONAL:
             return OnStreamBlockFrame(frames[i]);
-        case FT_NEW_CONNECTION_ID: break;
-        case FT_RETIRE_CONNECTION_ID: break;
+        case FT_NEW_CONNECTION_ID: 
+            return OnNewConnectionIDFrame(frames[i]);
+        case FT_RETIRE_CONNECTION_ID:
+            return OnRetireConnectionIDFrame(frames[i]);
         case FT_PATH_CHALLENGE: break;
         case FT_PATH_RESPONSE: break;
         case FT_CONNECTION_CLOSE: break;
@@ -416,11 +417,18 @@ bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
 
 bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     auto new_cid_frame = std::dynamic_pointer_cast<NewConnectionIDFrame>(frame);
-    
+    _remote_conn_id_manager.RetireIDBySequence(new_cid_frame->GetRetirePriorTo());
+    ConnectionID id;
+    new_cid_frame->GetConnectionID(id._id, id._len);
+    id._index = new_cid_frame->GetSequenceNumber();
+    _remote_conn_id_manager.AddID(id);
+    return true;
 }
 
 bool BaseConnection::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
-
+    auto retire_cid_frame = std::dynamic_pointer_cast<RetireConnectionIDFrame>(frame);
+    _remote_conn_id_manager.RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
+    return true;
 }
 
 void BaseConnection::ActiveSendStream(IStream* stream) {

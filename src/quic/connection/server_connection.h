@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <cstdint>
+#include "common/timer/timer_interface.h"
 #include "quic/connection/base_connection.h"
 #include "quic/crypto/tls/tls_server_conneciton.h"
 
@@ -12,7 +13,7 @@ class ServerConnection:
     public BaseConnection,
     public TlsServerHandlerInterface {
 public:
-    ServerConnection(std::shared_ptr<TLSCtx> ctx);
+    ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ITimer> timer);
     virtual ~ServerConnection();
     // TODO
     // 1. 监听传入的连接
