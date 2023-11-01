@@ -5,7 +5,7 @@
 
 namespace quicx {
 
-RecvControl::RecvControl() {
+RecvControl::RecvControl(std::shared_ptr<ITimer> timer): _timer(timer) {
     memset(_pkt_num_largest_recvd, 0, sizeof(_pkt_num_largest_recvd));
     memset(_largest_recv_time, 0, sizeof(_largest_recv_time));
 }

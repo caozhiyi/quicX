@@ -6,33 +6,18 @@
 #ifndef COMMON_TIMER_TIMER_INTERFACE
 #define COMMON_TIMER_TIMER_INTERFACE
 
-#include <memory>
-#include <cstdint>
+#include "common/timer/timer_task.h"
 
 namespace quicx {
 
-// time unit
-enum TIME_UNIT: uint32_t {
-    TU_MILLISECOND = 1,
-    TU_SECOND      = TU_MILLISECOND * 1000,
-    TU_MINUTE      = TU_SECOND * 60,
-    TU_HOUR        = TU_MINUTE * 60,
-};
-
-enum TIMER_CODE {
-    NO_TIMER = -1 // don't have timer
-};
-
-class TimerSolt;
-
 // timer interface, timer inherits from this.
-class Timer {
+class ITimer {
 public:
-    Timer() {}
-    ~Timer() {}
+    ITimer() {}
+    ~ITimer() {}
 
-    virtual bool AddTimer(std::weak_ptr<TimerSolt> t, uint32_t time, bool always = false) = 0;
-    virtual bool RmTimer(std::weak_ptr<TimerSolt> t) = 0;
+    virtual uint64_t AddTimer(TimerTask& task, uint32_t time) = 0;
+    virtual void RmTimer(TimerTask& task) = 0;
 
     // get min next time out time
     // return: 
@@ -40,12 +25,8 @@ public:
     //  < 0  : has no timer
     virtual int32_t MinTime() = 0;
 
-    // return the timer wheel current time
-    virtual int32_t CurrentTimer() = 0;
-
     // timer wheel run time 
-    // return carry
-    virtual uint32_t TimerRun(uint32_t time) = 0;
+    virtual void TimerRun() = 0;
 
     virtual bool Empty() = 0;
 };

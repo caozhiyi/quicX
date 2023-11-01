@@ -25,8 +25,8 @@ public:
     void SetRetirePriorTo(uint64_t retire_prior_to) { _retire_prior_to = retire_prior_to; }
     uint64_t GetRetirePriorTo() { return _retire_prior_to; }
 
-    void AddConnectionID(uint8_t* id, uint8_t len) { _connection_id = id; _length = len; }
-    void GetConnectionID(uint8_t* id, uint8_t& len) { id = _connection_id; len = _length; }
+    void SetConnectionID(uint8_t* id, uint8_t len) { _connection_id = id; _length = len; }
+    void GetConnectionID(uint8_t* id, uint8_t& len);
 
     void SetStatelessResetToken(uint8_t* token);
     const uint8_t* GetStatelessResetToken() { return _stateless_reset_token; }

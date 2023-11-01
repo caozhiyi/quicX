@@ -14,8 +14,8 @@
 
 namespace quicx {
 
-ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx):
-    BaseConnection(StreamIDGenerator::SS_SERVER) {
+ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ITimer> timer):
+    BaseConnection(StreamIDGenerator::SS_SERVER, timer) {
     _tls_connection = std::make_shared<TLSServerConnection>(ctx, &_connection_crypto, this);
     if (!_tls_connection->Init()) {
         LOG_ERROR("tls connection init failed.");

@@ -8,13 +8,14 @@
 
 namespace quicx {
 
+thread_local std::shared_ptr<ITimer> IProcessor::_timer = MakeTimer();
+
 IProcessor::IProcessor():
     _run(false) {
     _ctx = std::make_shared<TLSCtx>();
     if (!_ctx->Init()) {
         LOG_ERROR("tls ctx init faliled.");
     }
-    _timer = MakeTimer1Min();
 }
 
 void IProcessor::MainLoop() {
@@ -23,7 +24,6 @@ void IProcessor::MainLoop() {
         return;
     }
 
-    _cur_time = UTCTimeMsec();
     while (_run) {
         if (_process_type & IProcessor::PT_RECV) {
             ProcessRecv();
@@ -93,11 +93,7 @@ void IProcessor::ProcessSend() {
 }
 
 void IProcessor::ProcessTimer() {
-    uint64_t now = UTCTimeMsec();
-    uint32_t run_time = now - _cur_time;
-    _cur_time = now;
-
-    _timer->TimerRun(run_time);
+    _timer->TimerRun();
 }
 
 bool IProcessor::GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {

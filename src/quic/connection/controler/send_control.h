@@ -4,14 +4,16 @@
 #include <list>
 #include <unordered_map>
 #include "quic/packet/type.h"
+#include "common/timer/timer_interface.h"
 #include "quic/packet/packet_interface.h"
+#include "quic/connection/controler/rtt_calculator.h"
 
 namespace quicx {
 
 // controller of sender. 
 class SendControl {
 public:
-    SendControl();
+    SendControl(std::shared_ptr<ITimer> timer);
     ~SendControl() {}
 
     void OnPacketSend(uint64_t time, std::shared_ptr<IPacket> packet);
@@ -26,6 +28,9 @@ private:
     uint64_t _pkt_num_largest_sent[PNS_NUMBER];
     uint64_t _pkt_num_largest_acked[PNS_NUMBER];
     uint64_t _largest_sent_time[PNS_NUMBER];
+
+    RttCalculator _rtt_calculator;
+    std::shared_ptr<ITimer> _timer;
 };
 
 }

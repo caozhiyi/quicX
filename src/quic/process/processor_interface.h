@@ -53,8 +53,7 @@ protected:
 
     std::shared_ptr<TLSCtx> _ctx;
 
-    uint64_t _cur_time;
-    std::shared_ptr<Timer> _timer;
+    thread_local static std::shared_ptr<ITimer> _timer;
 
     std::mutex _notify_mutex;
     std::condition_variable _notify;
