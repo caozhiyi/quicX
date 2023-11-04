@@ -1,21 +1,13 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
 #include "common/buffer/buffer.h"
-#include "quic/process/thread_receiver.h"
+#include "quic/quicx/thread_receiver.h"
 
 namespace quicx {
 
 thread_local std::vector<std::thread::id> ThreadReceiver::_thread_vec;
 thread_local std::unordered_map<uint64_t, std::thread::id> ThreadReceiver::_thread_map;
 thread_local std::unordered_map<std::thread::id, ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>*> ThreadReceiver::_processer_map;
-
-bool ThreadReceiver::Listen(const std::string& ip, uint16_t port) {
-    if (!Receiver::Listen(ip, port)) {
-        return false;   
-    }
-    Start();
-    return true;
-}
 
 std::shared_ptr<UdpPacketIn> ThreadReceiver::DoRecv() {
     auto id = std::this_thread::get_id();
@@ -33,6 +25,38 @@ std::shared_ptr<UdpPacketIn> ThreadReceiver::DoRecv() {
     return nullptr;
 }
 
+bool ThreadReceiver::Listen(const std::string& ip, uint16_t port) {
+    if (!Receiver::Listen(ip, port)) {
+        return false;   
+    }
+    Start();
+    return true;
+}
+
+void ThreadReceiver::RegisteConnection(std::thread::id id, uint64_t cid_code) {
+    auto local_id = std::this_thread::get_id();
+    if (local_id == id) {
+        _thread_map[cid_code] = id;
+
+    } else {
+        Push([&id, &cid_code, this] { RegisteConnection(id, cid_code); });
+    }
+}
+
+void ThreadReceiver::CancelConnection(std::thread::id id, uint64_t cid_code) {
+    auto local_id = std::this_thread::get_id();
+    if (local_id == id) {
+        _thread_map.erase(cid_code);
+
+    } else {
+        Push([&id, &cid_code, this] { CancelConnection(id, cid_code); });
+    }
+}
+
+void ThreadReceiver::WeakUp() {
+    Push(nullptr);
+}
+
 void ThreadReceiver::Run() {
     // only recv thead
     while (!_stop) {
@@ -44,7 +68,9 @@ void ThreadReceiver::Run() {
         
         while (!_queue.Empty()) {
             auto task = Pop();
-            task();
+            if (task) {
+                task();
+            }
         }
 
         Sleep(100);
@@ -83,26 +109,6 @@ void ThreadReceiver::DispatcherPacket(std::shared_ptr<UdpPacketIn> packet) {
 void ThreadReceiver::RegisteThread(std::thread::id& id, ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>* queue) {
     _thread_vec.push_back(id);
     _processer_map[id] = queue;
-}
-
-void ThreadReceiver::RegisteConnection(std::thread::id id, uint64_t cid_code) {
-    auto local_id = std::this_thread::get_id();
-    if (local_id == id) {
-        _thread_map[cid_code] = id;
-
-    } else {
-        Push([&id, &cid_code, this] { RegisteConnection(id, cid_code); });
-    }
-}
-
-void ThreadReceiver::CancelConnection(std::thread::id id, uint64_t cid_code) {
-    auto local_id = std::this_thread::get_id();
-    if (local_id == id) {
-        _thread_map.erase(cid_code);
-
-    } else {
-        Push([&id, &cid_code, this] { CancelConnection(id, cid_code); });
-    }
 }
 
 }

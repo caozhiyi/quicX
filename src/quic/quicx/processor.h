@@ -1,5 +1,5 @@
-#ifndef QUIC_PROCESS_PROCESSOR_INTERFACE
-#define QUIC_PROCESS_PROCESSOR_INTERFACE
+#ifndef QUIC_QUICX_SERVER_PROCESSOR
+#define QUIC_QUICX_SERVER_PROCESSOR
 
 #include <memory>
 #include <functional>
@@ -8,52 +8,45 @@
 #include "common/timer/timer.h"
 #include "quic/udp/udp_packet_in.h"
 #include "quic/crypto/tls/tls_ctx.h"
+#include "quic/quicx/processor_interface.h"
 #include "quic/connection/connection_interface.h"
 
 namespace quicx {
 
-class IProcessor {
+class Processor:
+    public IProcessor {
 public:
-    IProcessor();
-    virtual ~IProcessor() {}
+    Processor();
+    virtual ~Processor();
 
-    virtual bool HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) = 0;
-    virtual bool HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& udp_packets) = 0;
+    void Run();
 
-    virtual void MainLoop();
-
-    virtual void Quit();
+    virtual bool HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet);
+    virtual bool HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& udp_packets);
 
     virtual void ActiveSendConnection(IConnection* conn);
 
     virtual void WeakUp();
-
-    typedef std::function<std::shared_ptr<UdpPacketIn>/*recv packet*/()> RecvFunction;
-    void SetRecvFunction(RecvFunction rf) { _recv_function = rf; }
-
-    std::shared_ptr<TLSCtx> GetCtx() { return _ctx; }
-
-    void SetAddConnectionIDCB(ConnectionIDCB cb) { _add_connection_id_cb = cb; }
-    void SetRetireConnectionIDCB(ConnectionIDCB cb)  { _retire_connection_id_cb = cb; }
 
 protected:
     virtual void ProcessRecv();
     virtual void ProcessTimer();
     virtual void ProcessSend();
 
+    bool InitPacketCheck(std::shared_ptr<IPacket> packet);
+
     static bool GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len);
+
 protected:
     enum ProcessType {
         PT_RECV = 0x01,
         PT_SEND = 0x02,
     };
-
-    bool _run;
     uint32_t _process_type;
 
     std::shared_ptr<TLSCtx> _ctx;
 
-    thread_local static std::shared_ptr<ITimer> _timer;
+    thread_local static std::shared_ptr<ITimer> __timer;
 
     std::mutex _notify_mutex;
     std::condition_variable _notify;

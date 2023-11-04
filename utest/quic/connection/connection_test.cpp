@@ -80,7 +80,7 @@ TEST(connnection_utest, client) {
     std::shared_ptr<quicx::TLSCtx> client_ctx = std::make_shared<quicx::TLSClientCtx>();
     client_ctx->Init();
 
-    std::shared_ptr<ClientConnection> client_conn = std::make_shared<ClientConnection>(client_ctx);
+    std::shared_ptr<ClientConnection> client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr);
     client_conn->AddAlpn(AT_HTTP3);
     client_conn->AddTransportParam(TransportParamConfig::Instance());
 
@@ -94,7 +94,7 @@ TEST(connnection_utest, client) {
     std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(buf, buf + 1500);
     client_conn->GenerateSendData(buffer);
 
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, nullptr);
     server_conn->AddTransportParam(TransportParamConfig::Instance());
 
     int times = 2;

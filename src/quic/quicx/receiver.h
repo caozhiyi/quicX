@@ -1,14 +1,16 @@
-#ifndef QUIC_PROCESS_RECEIVER
-#define QUIC_PROCESS_RECEIVER
+#ifndef QUIC_QUICX_RECEIVER
+#define QUIC_QUICX_RECEIVER
 
 #include <thread>
 #include "quic/udp/udp_receiver.h"
 #include "quic/udp/udp_packet_in.h"
 #include "common/alloter/pool_block.h"
+#include "quic/quicx/receiver_interface.h"
 
 namespace quicx {
 
-class Receiver {
+class Receiver:
+    public IReceiver {
 public:
     Receiver();
     virtual ~Receiver() {}

@@ -17,6 +17,7 @@ typedef std::function<void()> TimerCallback;
 class TimerTask {
 public:
     TimerCallback _tcb;
+    TimerTask() {}
     TimerTask(TimerCallback tcb): _tcb(tcb) {}
 private:
     uint64_t _time;

@@ -21,7 +21,7 @@ typedef std::function<void(ClientConnection&)> HandshakeDoneCB;
 class ClientConnection:
     public BaseConnection {
 public:
-    ClientConnection(std::shared_ptr<TLSCtx> ctx);
+    ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ITimer> timer);
     ~ClientConnection();
 
     // set application protocol

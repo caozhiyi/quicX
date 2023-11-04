@@ -1,0 +1,30 @@
+#ifndef QUIC_QUICX_QUICX_IMPL
+#define QUIC_QUICX_QUICX_IMPL
+
+#include <memory>
+#include "include/quicx.h"
+#include "common/thread/thread.h"
+#include "quic/crypto/tls/tls_ctx.h"
+#include "quic/quicx/receiver_interface.h"
+#include "quic/quicx/processor_interface.h"
+
+namespace quicx {
+
+class QuicxImpl:
+    public Quicx {
+public:
+    QuicxImpl();
+    virtual ~QuicxImpl();
+
+    virtual bool Init(uint16_t thread_num);
+    virtual void Join();
+    virtual void Destroy();
+private:
+    std::shared_ptr<TLSCtx> _ctx;
+    std::shared_ptr<IReceiver> _receiver;
+    std::vector<std::shared_ptr<IProcessor>> _processors;
+};
+
+}
+
+#endif

@@ -1,9 +1,9 @@
-#ifndef QUIC_PROCESS_THREAD_RECEIVER
-#define QUIC_PROCESS_THREAD_RECEIVER
+#ifndef QUIC_QUICX_THREAD_RECEIVER
+#define QUIC_QUICX_THREAD_RECEIVER
 
 #include <thread>
 #include <unordered_map>
-#include "quic/process/receiver.h"
+#include "quic/quicx/receiver.h"
 #include "common/thread/thread_with_queue.h"
 
 namespace quicx {
@@ -17,16 +17,18 @@ public:
     ThreadReceiver() {}
     virtual ~ThreadReceiver() {}
 
-    virtual bool Listen(const std::string& ip, uint16_t port);
-
     virtual std::shared_ptr<UdpPacketIn> DoRecv();
 
-//protected:
+    virtual bool Listen(const std::string& ip, uint16_t port);
+
+    virtual void RegisteConnection(std::thread::id id, uint64_t cid_code);
+    virtual void CancelConnection(std::thread::id id, uint64_t cid_code);
+
+    void WeakUp();
+protected:
     virtual void Run();
     void DispatcherPacket(std::shared_ptr<UdpPacketIn> packet);
     void RegisteThread(std::thread::id& id, ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>* queue);
-    void RegisteConnection(std::thread::id id, uint64_t cid_code);
-    void CancelConnection(std::thread::id id, uint64_t cid_code);
 
 private:
     static thread_local std::vector<std::thread::id> _thread_vec;
