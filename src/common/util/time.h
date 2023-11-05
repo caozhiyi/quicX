@@ -17,6 +17,14 @@ enum FormatTimeUnit {
     FTU_MILLISECOND = 7, // 2021-03-16:10:03:33:258
 };
 
+enum TimeUnit {
+    TU_MILLISECOND = 1,
+    TU_SECOND      = TU_MILLISECOND * 1000,
+    TU_MINUTE      = TU_SECOND * 60,
+    TU_HOUR        = TU_MINUTE * 60,
+    TU_DAY         = TU_HOUR * 24,
+};
+
 // get format time string [xxxx-xx-xx xx:xx:xx]
 std::string GetFormatTime(FormatTimeUnit unit = FTU_MILLISECOND);
 // get format time string as [xxxx-xx-xx xx:xx:xx]

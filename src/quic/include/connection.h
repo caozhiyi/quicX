@@ -1,6 +1,7 @@
 #ifndef QUIC_INCLUDE_CONNECTION
 #define QUIC_INCLUDE_CONNECTION
 
+#include <memory>
 #include <string>
 
 namespace quicx {

@@ -10,7 +10,7 @@
 namespace quicx {
 
 
-TreeMapTimer::TreeMapTimer(): _random(0, (int32_t)std::numeric_limits<int32_t>::max) {
+TreeMapTimer::TreeMapTimer(): _random(0, (int32_t)std::numeric_limits<int32_t>::max()) {
     
 }
 

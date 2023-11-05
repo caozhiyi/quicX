@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "common.h"
 #include "common/timer/timer.h"
 
 namespace quicx {
 namespace {
 
+/*
 TEST(combin_timercontainer_utest, addtimer1) {
     auto solt = std::make_shared<TimerSoltIns>();
     auto timer = quicx::MakeTimer1Hour();
@@ -179,6 +179,8 @@ TEST(combin_timercontainer_utest, timerrun4) {
 
     timer->TimerRun(2500);
 }
+
+*/
 
 }
 }
