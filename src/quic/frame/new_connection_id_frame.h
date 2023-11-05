@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cstdint>
+#include "quic/connection/type.h"
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
@@ -25,7 +26,7 @@ public:
     void SetRetirePriorTo(uint64_t retire_prior_to) { _retire_prior_to = retire_prior_to; }
     uint64_t GetRetirePriorTo() { return _retire_prior_to; }
 
-    void SetConnectionID(uint8_t* id, uint8_t len) { _connection_id = id; _length = len; }
+    void SetConnectionID(uint8_t* id, uint8_t len);
     void GetConnectionID(uint8_t* id, uint8_t& len);
 
     void SetStatelessResetToken(uint8_t* token);
@@ -35,7 +36,7 @@ private:
     uint64_t _sequence_number;  // the connection ID by the sender.
     uint64_t _retire_prior_to;  // which connection IDs should be retired.
     uint8_t  _length;           // the length of the connection ID.
-    uint8_t* _connection_id;    // a connection ID of the specified length.
+    uint8_t  _connection_id[__max_cid_length];    // a connection ID of the specified length.
 
     uint8_t _stateless_reset_token[__stateless_reset_token_length];  // a 128-bit value that will be used for a stateless reset when the associated connection ID is used.
 };

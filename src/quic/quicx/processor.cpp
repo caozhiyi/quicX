@@ -5,9 +5,12 @@
 #include "quic/packet/init_packet.h"
 #include "quic/udp/udp_packet_out.h"
 #include "quic/packet/packet_decode.h"
+#include "quic/connection/client_connection.h"
 #include "quic/connection/server_connection.h"
 
 namespace quicx {
+
+thread_local std::shared_ptr<ITimer> Processor::__timer = MakeTimer();
 
 Processor::Processor() {
 
@@ -88,6 +91,16 @@ void Processor::ActiveSendConnection(IConnection* conn) {
 
 void Processor::WeakUp() {
      _notify.notify_one();
+}
+
+std::shared_ptr<IConnection> Processor::MakeClientConnection() {
+    auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer);
+    
+    //new_conn->AddConnectionId(cid, len);
+    new_conn->SetAddConnectionIDCB(_add_connection_id_cb);
+    new_conn->SetRetireConnectionIDCB(_retire_connection_id_cb);
+    //_conn_map[cid_code] = new_conn;
+    return new_conn;
 }
 
 void Processor::ProcessRecv() {

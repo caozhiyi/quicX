@@ -28,6 +28,8 @@ public:
 
     virtual void WeakUp();
 
+    virtual std::shared_ptr<IConnection> MakeClientConnection();
+
 protected:
     virtual void ProcessRecv();
     virtual void ProcessTimer();

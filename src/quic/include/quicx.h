@@ -2,6 +2,7 @@
 #define QUIC_INCLUDE_QUICX
 
 #include <stdint.h>
+#include <string>
 
 namespace quicx {
 
@@ -15,6 +16,7 @@ public:
     virtual void Join();
     virtual void Destroy();
 
+    virtual bool Connection(const std::string& ip, uint16_t port);
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
 private:
     QuicxImpl* _impl;

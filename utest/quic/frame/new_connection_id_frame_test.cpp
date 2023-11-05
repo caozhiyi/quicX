@@ -18,7 +18,11 @@ TEST(new_connection_id_frame_utest, codec) {
     frame1.SetRetirePriorTo(10086);
     frame1.SetSequenceNumber(2352632);
 
-    char toekn[128] = "123456789012345678901234567890123456789801234567890";
+    uint8_t toekn[128] = {0};
+    for (size_t i = 0; i < 128; i++) {
+        toekn[i] = i;
+    }
+    
     frame1.SetStatelessResetToken((uint8_t*)toekn);
 
     uint8_t cid[] = {1,2,3,4,5,6,7,8};
@@ -38,7 +42,7 @@ TEST(new_connection_id_frame_utest, codec) {
     EXPECT_EQ(frame1.GetSequenceNumber(), frame2.GetSequenceNumber());
 
     uint8_t cid_ptr[20] = {};
-    uint8_t cid_len = 0;
+    uint8_t cid_len = 20;
     frame2.GetConnectionID(cid_ptr, cid_len);
     EXPECT_EQ(std::string((char*)cid_ptr, cid_len), std::string((char*)cid, len));
     EXPECT_EQ(std::string((char*)frame1.GetStatelessResetToken(), quicx::__stateless_reset_token_length), 
