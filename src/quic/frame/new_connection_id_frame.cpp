@@ -63,6 +63,15 @@ uint32_t NewConnectionIDFrame::EncodeSize() {
     return sizeof(NewConnectionIDFrame) - __stateless_reset_token_length + _length;
 }
 
+void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {
+    if (len > __max_cid_length) {
+        LOG_ERROR("too max connecion id length. len:%d, max:%d", len, __max_cid_length);
+        return;
+    }
+    memcpy(_connection_id, id, len);
+    _length = len;
+}
+
 void NewConnectionIDFrame::GetConnectionID(uint8_t* id, uint8_t& len) { 
     if (len < _length) {
         LOG_ERROR("insufficient remaining id space. remain_size:%d, need_size:%d", len, _length);
