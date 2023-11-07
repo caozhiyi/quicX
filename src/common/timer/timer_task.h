@@ -19,6 +19,7 @@ public:
     TimerCallback _tcb;
     TimerTask() {}
     TimerTask(TimerCallback tcb): _tcb(tcb) {}
+    TimerTask(const TimerTask& t): _tcb(t._tcb), _time(t._time), _id(t._id) {}
 private:
     uint64_t _time;
     uint64_t _id;

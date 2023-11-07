@@ -5,7 +5,6 @@
 namespace quicx {
 namespace {
 
-/*
 TEST(combin_timercontainer_utest, addtimer1) {
     auto solt = std::make_shared<TimerSoltIns>();
     auto timer = quicx::MakeTimer1Hour();
@@ -18,7 +17,7 @@ TEST(combin_timercontainer_utest, addtimer2) {
     auto solt2 = std::make_shared<TimerSoltIns>();
     auto solt3 = std::make_shared<TimerSoltIns>();
     auto solt4 = std::make_shared<TimerSoltIns>();
-    auto timer = quicx::MakeTimer1Hour();
+    auto timer = quicx::MakeTimer();
 
     EXPECT_TRUE(timer->AddTimer(solt1, 10 * quicx::TU_MILLISECOND, true));
     EXPECT_TRUE(timer->AddTimer(solt2, 30 * quicx::TU_SECOND));
@@ -179,8 +178,6 @@ TEST(combin_timercontainer_utest, timerrun4) {
 
     timer->TimerRun(2500);
 }
-
-*/
 
 }
 }
