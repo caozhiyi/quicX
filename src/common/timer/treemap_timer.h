@@ -20,18 +20,18 @@ public:
     TreeMapTimer();
     ~TreeMapTimer();
 
-    virtual uint64_t AddTimer(TimerTask& task, uint32_t time);
+    virtual uint64_t AddTimer(TimerTask& task, uint32_t time, uint64_t now = 0);
     virtual void RmTimer(TimerTask& task);
 
     // get min next time out time
     // return: 
     // >= 0  : the next time
     //  < 0  : has no timer
-    virtual int32_t MinTime();
+    virtual int32_t MinTime(uint64_t now = 0);
 
     // timer wheel run time 
     // return carry
-    virtual void TimerRun();
+    virtual void TimerRun(uint64_t now = 0);
 
     virtual bool Empty();
 private:

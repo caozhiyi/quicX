@@ -4,6 +4,7 @@
 #include <list>
 #include <unordered_map>
 #include "quic/packet/type.h"
+#include "common/timer/timer_task.h"
 #include "common/timer/timer_interface.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/connection/controler/rtt_calculator.h"
@@ -23,7 +24,13 @@ public:
 
 private:
     std::list<std::shared_ptr<IPacket>> _lost_packets;
-    std::unordered_map<uint64_t, std::shared_ptr<IPacket>> _unacked_packets[PNS_NUMBER];
+    struct PacketTimerInfo {
+        uint64_t _send_time;
+        TimerTask _timer_task;
+        PacketTimerInfo() {}
+        PacketTimerInfo(uint64_t t, const TimerTask& task): _send_time(t), _timer_task(task) {}
+    };
+    std::unordered_map<uint64_t, PacketTimerInfo> _unacked_packets[PNS_NUMBER];
 
     uint64_t _pkt_num_largest_sent[PNS_NUMBER];
     uint64_t _pkt_num_largest_acked[PNS_NUMBER];
