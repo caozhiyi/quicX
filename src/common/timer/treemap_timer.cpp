@@ -23,23 +23,29 @@ uint64_t TreeMapTimer::AddTimer(TimerTask& task, uint32_t time, uint64_t now) {
         now = UTCTimeMsec();
     }
 
-    task._time = UTCTimeMsec() + time;
+    task._time = now + time;
     task._id = _random.Random();
     _timer_map[task._time][task._id] = task;
     return task._id;
 }
 
-void TreeMapTimer::RmTimer(TimerTask& task) {
+bool TreeMapTimer::RmTimer(TimerTask& task) {
     auto iter = _timer_map.find(task._time);
     if (iter != _timer_map.end()) {
         iter->second.erase(task._id);
         if (iter->second.empty()) {
             _timer_map.erase(iter);
         }
+        return true;
     }
+    return false;
 }
 
 int32_t TreeMapTimer::MinTime(uint64_t now) {
+    if (_timer_map.empty()) {
+        return -1;
+    }
+    
     if (now == 0) {
         now = UTCTimeMsec();
     }
@@ -53,9 +59,13 @@ void TreeMapTimer::TimerRun(uint64_t now) {
     for (auto iter = _timer_map.begin(); iter != _timer_map.end();) {
         if (iter->first <= now) {
             for (auto task = iter->second.begin(); task != iter->second.end(); task++) {
-                task->second._tcb();
+                if (task->second._tcb) {
+                    task->second._tcb();
+                }
             }
             iter = _timer_map.erase(iter);
+        } else {
+            break;
         }
     }
 }

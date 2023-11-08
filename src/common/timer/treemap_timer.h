@@ -21,7 +21,7 @@ public:
     ~TreeMapTimer();
 
     virtual uint64_t AddTimer(TimerTask& task, uint32_t time, uint64_t now = 0);
-    virtual void RmTimer(TimerTask& task);
+    virtual bool RmTimer(TimerTask& task);
 
     // get min next time out time
     // return: 
