@@ -17,7 +17,7 @@ public:
     ~ITimer() {}
 
     virtual uint64_t AddTimer(TimerTask& task, uint32_t time, uint64_t now = 0) = 0;
-    virtual void RmTimer(TimerTask& task) = 0;
+    virtual bool RmTimer(TimerTask& task) = 0;
 
     // get min next time out time
     // return: 
