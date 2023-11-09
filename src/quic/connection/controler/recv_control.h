@@ -2,6 +2,7 @@
 #define QUIC_CONNECTION_CONTROLER_RECV_CONTROL
 
 #include <set>
+#include <functional>
 #include "quic/packet/type.h"
 #include "common/timer/timer_interface.h"
 #include "quic/packet/packet_interface.h"
@@ -20,6 +21,9 @@ namespace quicx {
 5. 接收方应该（SHOULD）在收到至少两个ACK触发包后才发送一个ACK帧
 6. 接收方在每个ACK帧中都应该（SHOULD）包含一个ACK Range，该Range包含最大接收包号
 */
+
+typedef std::function<void()> ActiveSendCB;
+
 class RecvControl {
 public:
     RecvControl(std::shared_ptr<ITimer> timer);
@@ -28,12 +32,18 @@ public:
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
     std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns);
 
+    void SetActiveSendCB(ActiveSendCB cb) { _active_send_cb = cb; }
+
 private:
     uint64_t _pkt_num_largest_recvd[PNS_NUMBER];
     uint64_t _largest_recv_time[PNS_NUMBER];
-
     std::set<uint64_t> _wait_ack_packet_numbers[PNS_NUMBER];
+    
+    bool _set_timer;
     std::shared_ptr<ITimer> _timer;
+
+    TimerTask _timer_task;
+    ActiveSendCB _active_send_cb;
 };
 
 }

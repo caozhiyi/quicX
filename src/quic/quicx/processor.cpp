@@ -84,7 +84,7 @@ bool Processor::HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& u
     return true;
 }
 
-void Processor::ActiveSendConnection(IConnection* conn) {
+void Processor::ActiveSendConnection(std::shared_ptr<IConnection> conn) {
     _active_send_connection_list.push_back(conn);
     _process_type |= Processor::PT_SEND;
 }

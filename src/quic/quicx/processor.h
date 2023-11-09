@@ -24,7 +24,7 @@ public:
     virtual bool HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet);
     virtual bool HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& udp_packets);
 
-    virtual void ActiveSendConnection(IConnection* conn);
+    virtual void ActiveSendConnection(std::shared_ptr<IConnection> conn);
 
     virtual void WeakUp();
 
@@ -58,7 +58,7 @@ protected:
 
     uint32_t _max_recv_times;
     RecvFunction _recv_function;
-    std::list<IConnection*> _active_send_connection_list;
+    std::list<std::shared_ptr<IConnection>> _active_send_connection_list;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> _conn_map;
 };
 

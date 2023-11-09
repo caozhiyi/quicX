@@ -35,10 +35,6 @@ std::shared_ptr<IFrame> PacketTest::GetTestFrame() {
 
 bool PacketTest::CheckTestFrame(std::shared_ptr<IFrame> f) {
     std::shared_ptr<CryptoFrame> frame = std::dynamic_pointer_cast<CryptoFrame>(f);
-    // if (frame->GetEncryptionLevel() != __level) {
-    //     return false;
-    // }
-    
     if (frame->GetOffset() != __offset) {
         return false;
     }
