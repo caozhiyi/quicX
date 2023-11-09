@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_CONNECTION_INTERFACE
 #define QUIC_CONNECTION_CONNECTION_INTERFACE
 
+#include <memory>
 #include "quic/crypto/tls/type.h"
 #include "common/network/address.h"
 #include "quic/stream/send_stream.h"
@@ -11,6 +12,8 @@
 
 namespace quicx {
 
+class IConnection;
+typedef std::function<void(std::shared_ptr<IConnection>)> ActiveConnectionCB;
 typedef std::function<void(uint64_t id_hash)> ConnectionIDCB;
 class IConnection {
 public:
@@ -35,6 +38,8 @@ public:
     virtual uint64_t GetSock() = 0;
     virtual void SetPeerAddress(const Address&& addr) = 0;
     virtual Address* GetPeerAddress() = 0;
+
+    virtual void SetActiveConnectionCB(ActiveConnectionCB cb) = 0;
 protected:
     virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet) = 0;
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet) = 0;

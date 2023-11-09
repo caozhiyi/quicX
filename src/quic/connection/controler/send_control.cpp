@@ -4,6 +4,7 @@
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/connection/controler/send_control.h"
+#include "quic/connection/transport_param_config.h"
 
 namespace quicx {
 
@@ -28,7 +29,7 @@ void SendControl::OnPacketSend(uint64_t time, std::shared_ptr<IPacket> packet) {
     auto timer_task = TimerTask([this, packet]{
         _lost_packets.push_back(packet);
     });
-    _timer->AddTimer(timer_task, _rtt_calculator.GetPT0Interval(200)); // TODO get max ack delay from config
+    _timer->AddTimer(timer_task, _rtt_calculator.GetPT0Interval(TransportParamConfig::Instance()._max_ack_delay));
     _unacked_packets[ns][packet->GetPacketNumber()] = PacketTimerInfo(_largest_sent_time[ns], timer_task);
 }
 

@@ -7,7 +7,6 @@
 #include <vector>
 #include <cstdint>
 #include <unordered_map>
-#include <unordered_set>
 #include "quic/packet/packet_number.h"
 #include "quic/connection/transport_param.h"
 #include "quic/stream/send_stream_interface.h"
@@ -22,7 +21,8 @@
 namespace quicx {
 
 class BaseConnection:
-    public IConnection {
+    public IConnection,
+    public std::enable_shared_from_this<BaseConnection> {
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start, std::shared_ptr<ITimer> timer);
     virtual ~BaseConnection();
@@ -48,6 +48,8 @@ public:
     
     virtual void SetPeerAddress(const Address&& addr) { _peer_addr = std::move(addr); }
     virtual Address* GetPeerAddress() { return &_peer_addr; }
+
+    virtual void SetActiveConnectionCB(ActiveConnectionCB cb);
 
     virtual uint64_t GetConnectionHashCode() { return 0; }
 
@@ -77,6 +79,7 @@ protected:
     virtual void OnTransportParams(TransportParam& remote_tp);
 
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
+    void ActiveSend();
 
 private:
     enum StreamType {
@@ -125,6 +128,9 @@ protected:
 
     // packet number
     PacketNumber _pakcet_number;
+
+    bool _is_active_send;
+    ActiveConnectionCB _active_connection_cb;
 };
 
 }

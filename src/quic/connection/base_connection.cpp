@@ -33,7 +33,8 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, std::shar
     _last_communicate_time(0),
     _flow_control(start),
     _send_control(timer),
-    _recv_control(timer) {
+    _recv_control(timer),
+    _is_active_send(false) {
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
     _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
@@ -243,6 +244,11 @@ void BaseConnection::OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) {
     }
 }
 
+void BaseConnection::SetActiveConnectionCB(ActiveConnectionCB cb) {
+    _active_connection_cb = cb;
+    _recv_control.SetActiveSendCB(std::bind(&BaseConnection::ActiveSend, this));
+}
+
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     // check init packet size
@@ -433,6 +439,7 @@ bool BaseConnection::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
 
 void BaseConnection::ActiveSendStream(IStream* stream) {
     _active_send_stream_list.emplace_back(stream);
+    ActiveSend();
 }
 
 void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string resion) {
@@ -476,6 +483,15 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
     return true;
+}
+
+void BaseConnection::ActiveSend() {
+    if (!_is_active_send) {
+        _is_active_send = true;
+    }
+    if (_active_connection_cb) {
+        _active_connection_cb(shared_from_this());
+    }
 }
 
 std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id, StreamType st) {

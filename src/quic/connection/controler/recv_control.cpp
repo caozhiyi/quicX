@@ -2,12 +2,20 @@
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/connection/controler/recv_control.h"
+#include "quic/connection/transport_param_config.h"
 
 namespace quicx {
 
-RecvControl::RecvControl(std::shared_ptr<ITimer> timer): _timer(timer) {
+RecvControl::RecvControl(std::shared_ptr<ITimer> timer): _set_timer(false), _timer(timer) {
     memset(_pkt_num_largest_recvd, 0, sizeof(_pkt_num_largest_recvd));
     memset(_largest_recv_time, 0, sizeof(_largest_recv_time));
+
+    _timer_task = TimerTask([this] {
+            _set_timer = false;
+            if (_active_send_cb) {
+                _active_send_cb();
+            }
+        });
 }
 
 void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
@@ -22,13 +30,22 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     }
 
     _wait_ack_packet_numbers[ns].insert(packet->GetPacketNumber());
+    if (!_set_timer) {
+        _set_timer = true;
+        _timer->AddTimer(_timer_task, TransportParamConfig::Instance()._max_ack_delay);
+    }
 }
 
 std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns) {
+    if (_set_timer) {
+        _timer->RmTimer(_timer_task);
+        _set_timer = false;
+    }
+    
     if (_wait_ack_packet_numbers[ns].empty()) {
         return nullptr;
     }
-    
+
     std::shared_ptr<AckFrame> frame = std::make_shared<AckFrame>();
     frame->SetLargestAck(_pkt_num_largest_recvd[ns]);
     frame->SetAckDelay(now - _largest_recv_time[ns]);
