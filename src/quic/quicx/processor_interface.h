@@ -19,7 +19,7 @@ public:
     virtual bool HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) = 0;
     virtual bool HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& udp_packets) = 0;
 
-    virtual void ActiveSendConnection(IConnection* conn) = 0;
+    virtual void ActiveSendConnection(std::shared_ptr<IConnection> conn) = 0;
 
     virtual void WeakUp() = 0;
 

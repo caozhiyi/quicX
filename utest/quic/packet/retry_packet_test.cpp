@@ -26,7 +26,7 @@ TEST(retry_packet_utest, codec) {
     EXPECT_TRUE(flag.DecodeFlag(buffer));
 
     RetryPacket new_packet(flag.GetFlag());
-    EXPECT_TRUE(new_packet.Decode(buffer));
+    EXPECT_TRUE(new_packet.DecodeWithoutCrypto(buffer));
 
     auto new_tag = new_packet.GetRetryIntegrityTag();
     for (uint32_t i = 0; i < __retry_integrity_tag_length; i++) {

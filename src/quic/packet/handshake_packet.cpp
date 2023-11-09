@@ -23,7 +23,7 @@ HandshakePacket::~HandshakePacket() {
 
 }
 
-bool HandshakePacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
+bool HandshakePacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     if (!_header.EncodeHeader(buffer)) {
         LOG_ERROR("encode header failed");
         return false;
@@ -35,7 +35,7 @@ bool HandshakePacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_p
     uint8_t* end = span.GetEnd();
 
     // encode length
-    _length = _payload.GetLength() + _header.GetPacketNumberLength() + (crypto_grapher ? crypto_grapher->GetTagLength() : 0);
+    _length = _payload.GetLength() + _header.GetPacketNumberLength() + (_crypto_grapher ? _crypto_grapher->GetTagLength() : 0);
     cur_pos = EncodeVarint(cur_pos, _length);
 
     // encode packet number
@@ -43,7 +43,7 @@ bool HandshakePacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_p
     cur_pos = PacketNumber::Encode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
 
     // encode payload 
-    if (!crypto_grapher) {
+    if (!_crypto_grapher) {
         _payload_offset = cur_pos - start_pos;
         memcpy(cur_pos, _payload.GetStart(), _payload.GetLength());
         cur_pos += _payload.GetLength();
@@ -54,14 +54,14 @@ bool HandshakePacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_p
      // encode payload whit encrypt
     buffer->MoveWritePt(cur_pos - start_pos);
     auto header_span = _header.GetHeaderSrcData();
-    if(!crypto_grapher->EncryptPacket(_packet_number, header_span, _payload, buffer)) {
+    if(!_crypto_grapher->EncryptPacket(_packet_number, header_span, _payload, buffer)) {
         LOG_ERROR("encrypt payload failed.");
         return false;
     }
 
     BufferSpan sample = BufferSpan(start_pos + _packet_num_offset + 4,
     start_pos + _packet_num_offset + 4 + __header_protect_sample_length);
-    if(!crypto_grapher->EncryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, _header.GetPacketNumberLength(),
+    if(!_crypto_grapher->EncryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, _header.GetPacketNumberLength(),
         _header.GetHeaderType() == PHT_SHORT_HEADER)) {
         LOG_ERROR("encrypt header failed.");
         return false;
@@ -70,7 +70,7 @@ bool HandshakePacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_p
     return true;
 }
 
-bool HandshakePacket::Decode(std::shared_ptr<IBufferRead> buffer) {
+bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer) {
     if (!_header.DecodeHeader(buffer)) {
         LOG_ERROR("decode header failed");
         return false;
@@ -96,12 +96,12 @@ bool HandshakePacket::Decode(std::shared_ptr<IBufferRead> buffer) {
 }
 
 
-bool HandshakePacket::Decode(std::shared_ptr<IBuffer> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
+bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<IBuffer> buffer) {
     auto span = _packet_src_data;
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();
     
-    if (!crypto_grapher) {
+    if (!_crypto_grapher) {
         // decrypt packet number
         cur_pos += _packet_num_offset;
         cur_pos = PacketNumber::Decode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
@@ -121,7 +121,7 @@ bool HandshakePacket::Decode(std::shared_ptr<IBuffer> buffer, std::shared_ptr<IC
     BufferSpan header_span = _header.GetHeaderSrcData();
     BufferSpan sample = BufferSpan(span.GetStart() + _packet_num_offset + 4,
         span.GetStart() + _packet_num_offset + 4 + __header_protect_sample_length);
-    if(!crypto_grapher->DecryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, packet_num_len, 
+    if(!_crypto_grapher->DecryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, packet_num_len, 
         _header.GetHeaderType() == PHT_SHORT_HEADER)) {
         LOG_ERROR("decrypt header failed.");
         return false;
@@ -132,7 +132,7 @@ bool HandshakePacket::Decode(std::shared_ptr<IBuffer> buffer, std::shared_ptr<IC
 
     // decrypt packet
     auto payload = BufferSpan(cur_pos, cur_pos + _length - packet_num_len);
-    if(!crypto_grapher->DecryptPacket(_packet_number, header_span, payload, buffer)) {
+    if(!_crypto_grapher->DecryptPacket(_packet_number, header_span, payload, buffer)) {
         LOG_ERROR("decrypt packet failed.");
         return false;
     }

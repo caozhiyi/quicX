@@ -25,39 +25,33 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
         std::shared_ptr<IPacket> packet;
         if (flag.GetHeaderType() == PHT_SHORT_HEADER) {
             packet = std::make_shared<Rtt1Packet>(flag.GetFlag());
-            if (!packet->Decode(buffer)) {
-                LOG_ERROR("decode 1 rtt packet failed.");
+           
+        } else {
+            LOG_DEBUG("get packet type:%s", PacketTypeToString(flag.GetPacketType()));
+            switch (flag.GetPacketType())
+            {
+            case PT_INITIAL:
+                packet = std::make_shared<InitPacket>(flag.GetFlag());
+                break;
+            case PT_0RTT:
+                packet = std::make_shared<Rtt0Packet>(flag.GetFlag());
+                break;
+            case PT_HANDSHAKE:
+                packet = std::make_shared<HandshakePacket>(flag.GetFlag());
+                break;
+            case PT_RETRY:
+                packet = std::make_shared<RetryPacket>(flag.GetFlag());
+                break;
+            case PT_NEGOTIATION:
+                packet = std::make_shared<VersionNegotiationPacket>(flag.GetFlag());
+                break;
+            default:
+                LOG_ERROR("unknow packet type. type:%d", flag.GetPacketType());
                 return false;
             }
-            packets.emplace_back(packet);
-            continue;
         }
-            
-        LOG_DEBUG("get packet type:%s", PacketTypeToString(flag.GetPacketType()));
-        switch (flag.GetPacketType())
-        {
-        case PT_INITIAL:
-            packet = std::make_shared<InitPacket>(flag.GetFlag());
-            break;
-        case PT_0RTT:
-            packet = std::make_shared<Rtt0Packet>(flag.GetFlag());
-            break;
-        case PT_HANDSHAKE:
-            packet = std::make_shared<HandshakePacket>(flag.GetFlag());
-            break;
-        case PT_RETRY:
-            packet = std::make_shared<RetryPacket>(flag.GetFlag());
-            break;
-        case PT_NEGOTIATION:
-            packet = std::make_shared<VersionNegotiationPacket>(flag.GetFlag());
-            break;
-        default:
-            LOG_ERROR("unknow packet type. type:%d", flag.GetPacketType());
-            return false;
-        }
-        
-        if (!packet->Decode(buffer)) {
-            LOG_ERROR("decode long header packet failed.");
+        if (!packet->DecodeWithoutCrypto(buffer)) {
+            LOG_ERROR("decode header packet failed.");
             return false;
         }
         packets.emplace_back(packet);
