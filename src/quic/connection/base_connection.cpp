@@ -195,8 +195,8 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
             LOG_ERROR("encrypt grapher is not ready.");
             return false;
         }
-
-        if (!packet->Encode(buffer, crypto_grapher)) {
+        packet->SetCryptographer(crypto_grapher);
+        if (!packet->Encode(buffer)) {
             LOG_ERROR("packet encode failed.");
             return false;
         }
@@ -470,10 +470,11 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
         LOG_ERROR("decrypt grapher is not ready.");
         return false;
     }
+    packet->SetCryptographer(cryptographer);
     
     uint8_t buf[1450];
     std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, 1450);
-    if (!packet->Decode(out_plaintext, cryptographer)) {
+    if (!packet->DecodeWithCrypto(out_plaintext)) {
         LOG_ERROR("decode packet after decrypt failed.");
         return false;
     }

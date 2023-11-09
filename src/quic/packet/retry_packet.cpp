@@ -18,7 +18,7 @@ RetryPacket::~RetryPacket() {
 
 }
 
-bool RetryPacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<ICryptographer> crypto_grapher) {
+bool RetryPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     if (!_header.EncodeHeader(buffer)) {
         LOG_ERROR("encode header failed");
         return false;
@@ -39,7 +39,7 @@ bool RetryPacket::Encode(std::shared_ptr<IBufferWrite> buffer, std::shared_ptr<I
     return true;
 }
 
-bool RetryPacket::Decode(std::shared_ptr<IBufferRead> buffer) {
+bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer) {
     if (!_header.DecodeHeader(buffer)) {
         LOG_ERROR("decode header failed");
         return false;

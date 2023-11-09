@@ -22,7 +22,7 @@ TEST(version_negotiation_packet_utest, codec) {
     EXPECT_TRUE(flag.DecodeFlag(buffer));
 
     VersionNegotiationPacket new_packet(flag.GetFlag());
-    EXPECT_TRUE(new_packet.Decode(buffer));
+    EXPECT_TRUE(new_packet.DecodeWithoutCrypto(buffer));
 
     auto new_versions = new_packet.GetSupportVersion();
     EXPECT_EQ(new_versions.size(), 5);
