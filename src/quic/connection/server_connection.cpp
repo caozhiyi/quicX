@@ -21,7 +21,7 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
         LOG_ERROR("tls connection init failed.");
     }
     auto crypto_stream = std::make_shared<CryptoStream>(_alloter);
-    crypto_stream->SetHopeSendCB(std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1));
+    crypto_stream->SetActiveStreamSendCB(std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1));
     crypto_stream->SetRecvCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     _connection_crypto.SetCryptoStream(crypto_stream);

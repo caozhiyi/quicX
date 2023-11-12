@@ -12,7 +12,8 @@
 
 namespace quicx {
 
-class IStream {
+class IStream:
+    public std::enable_shared_from_this<IStream> {
 public:
     IStream(uint64_t id = 0): _stream_id(id), _is_active_send(0) {}
     virtual ~IStream() {}
@@ -35,8 +36,8 @@ public:
     };
     virtual TrySendResult TrySendData(IFrameVisitor* visitor);
 
-    typedef std::function<void(IStream* /*stream*/)> ActiveStreamSendCB;
-    void SetHopeSendCB(ActiveStreamSendCB cb) { _active_send_cb = cb; }
+    typedef std::function<void(std::shared_ptr<IStream> /*stream*/)> ActiveStreamSendCB;
+    void SetActiveStreamSendCB(ActiveStreamSendCB cb) { _active_send_cb = cb; }
 
     typedef std::function<void(uint64_t/*errro*/, uint16_t/*tigger frame*/, const std::string&/*resion*/)> ConnectionCloseCB;
     void SetConnectionCloseCB(ConnectionCloseCB cb) { _connection_close_cb = cb; }

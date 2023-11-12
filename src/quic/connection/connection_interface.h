@@ -47,10 +47,9 @@ protected:
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) = 0;
     virtual bool On1rttPacket(std::shared_ptr<IPacket> packet) = 0;
 
-    virtual bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) = 0;
     virtual bool OnStreamFrame(std::shared_ptr<IFrame> frame) = 0;
 
-    virtual void ActiveSendStream(IStream* stream) = 0;
+    virtual void ActiveSendStream(std::shared_ptr<IStream> stream) = 0;
     virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err) = 0;
 };
 

@@ -1,14 +1,13 @@
 #include "common/log/log.h"
-#include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_chains.h"
-#include "common/alloter/alloter_interface.h"
-
 #include "quic/connection/error.h"
 #include "quic/stream/send_stream.h"
 #include "quic/frame/stream_frame.h"
+#include "common/alloter/pool_block.h"
+#include "common/buffer/buffer_chains.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/stream/send_state_machine.h"
+#include "common/alloter/alloter_interface.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/frame/stream_data_blocked_frame.h"
@@ -34,7 +33,7 @@ int32_t SendStream::Send(uint8_t* data, uint32_t len) {
     
     int32_t ret = _send_buffer->Write(data, len);
     if (_active_send_cb) {
-        _active_send_cb(this);
+        _active_send_cb(shared_from_this());
     }
     return ret;
 }
@@ -56,7 +55,7 @@ void SendStream::Reset(uint64_t error) {
 void SendStream::Close(uint64_t) {
     _to_fin = true;
     if (_active_send_cb) {
-        _active_send_cb(this);
+        _active_send_cb(shared_from_this());
     }
 }
 

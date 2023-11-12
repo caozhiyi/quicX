@@ -23,7 +23,6 @@
 #include "quic/frame/streams_blocked_frame.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/new_connection_id_frame.h"
-#include "quic/stream/fix_buffer_frame_visitor.h"
 #include "quic/frame/retire_connection_id_frame.h"
 
 namespace quicx {
@@ -31,13 +30,17 @@ namespace quicx {
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, std::shared_ptr<ITimer> timer):
     _to_close(false),
     _last_communicate_time(0),
-    _flow_control(start),
-    _send_control(timer),
     _recv_control(timer),
+    _send_manager(timer),
     _is_active_send(false) {
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
     _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
-
+    _flow_control = std::make_shared<FlowControl>(start);
+    _local_conn_id_manager = std::make_shared<ConnectionIDManager>();
+    _remote_conn_id_manager = std::make_shared<ConnectionIDManager>();
+    _send_manager.SetFlowControl(_flow_control);
+    _send_manager.SetRemoteConnectionIDManager(_remote_conn_id_manager);
+    _send_manager.SetLocalConnectionIDManager(_local_conn_id_manager);
 }
 
 BaseConnection::~BaseConnection() {
@@ -48,7 +51,7 @@ std::shared_ptr<ISendStream> BaseConnection::MakeSendStream() {
     // check streams limit
     uint64_t stream_id;
     std::shared_ptr<IFrame> frame;
-    if(!_flow_control.CheckLocalUnidirectionStreamLimit(stream_id, frame)) {
+    if(!_flow_control->CheckLocalUnidirectionStreamLimit(stream_id, frame)) {
         return nullptr;
     }
     if (frame) {
@@ -63,7 +66,7 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
     // check streams limit
     uint64_t stream_id;
     std::shared_ptr<IFrame> frame;
-    if(!_flow_control.CheckLocalBidirectionStreamLimit(stream_id, frame)) {
+    if(!_flow_control->CheckLocalBidirectionStreamLimit(stream_id, frame)) {
         return nullptr;
     }
     if (frame) {
@@ -75,16 +78,16 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
 }
 
 void BaseConnection::SetAddConnectionIDCB(ConnectionIDCB cb) {
-    _local_conn_id_manager.SetAddConnectionIDCB(cb);
+    _local_conn_id_manager->SetAddConnectionIDCB(cb);
 }
 
 void BaseConnection::SetRetireConnectionIDCB(ConnectionIDCB cb) {
-    _local_conn_id_manager.SetRetireConnectionIDCB(cb);
+    _local_conn_id_manager->SetRetireConnectionIDCB(cb);
 }
 
 void BaseConnection::AddConnectionId(uint8_t* id, uint16_t len) {
     ConnectionID cid(id, len);
-    _remote_conn_id_manager.AddID(cid);
+    _remote_conn_id_manager->AddID(cid);
 }
 
 void BaseConnection::RetireConnectionId(uint8_t* id, uint16_t len) {
@@ -103,109 +106,15 @@ void BaseConnection::Close(uint64_t error) {
 }
 
 bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
-    // check flow control
-    uint32_t can_send_size;
-    std::shared_ptr<IFrame> frame;
-    if (!_flow_control.CheckLocalSendDataLimit(can_send_size, frame)) {
+    // make quic packet
+    uint8_t encrypto_level = GetCurEncryptionLevel();
+    auto crypto_grapher = _connection_crypto.GetCryptographer(encrypto_level);
+    if (!crypto_grapher) {
+        LOG_ERROR("encrypt grapher is not ready.");
         return false;
     }
-    if (frame) {
-        _frames_list.push_back(frame);
-    }
-    
-    while (true) {
-        if (_frames_list.empty() && _active_send_stream_list.empty()) {
-            break;
-        }
-        
-        // TODO put 1450 to config
-        FixBufferFrameVisitor frame_visitor(1450);
-        frame_visitor.SetStreamDataSizeLimit(can_send_size);
-        // priority sending frames of connection
-        for (auto iter = _frames_list.begin(); iter != _frames_list.end();) {
-            if (frame_visitor.HandleFrame(*iter)) {
-                iter = _frames_list.erase(iter);
 
-            } else {
-                return false;
-            }
-        }
-
-        // then sending frames of stream
-        for (auto iter = _active_send_stream_list.begin(); iter != _active_send_stream_list.end();) {
-            auto ret = (*iter)->TrySendData(&frame_visitor);
-            if (ret == IStream::TSR_SUCCESS) {
-                iter = _active_send_stream_list.erase(iter);
-    
-            } else if (ret == IStream::TSR_FAILED) {
-                return false;
-    
-            } else if (ret == IStream::TSR_BREAK) {
-                iter = _active_send_stream_list.erase(iter);
-                break;
-            }
-        }
-
-        // make quic packet
-        std::shared_ptr<IPacket> packet;
-        uint8_t encrypto_level = GetCurEncryptionLevel();
-        uint8_t packet_encrypto_level = frame_visitor.GetEncryptionLevel();
-        if (packet_encrypto_level < encrypto_level) {
-            encrypto_level = packet_encrypto_level;
-        }
-
-        switch (encrypto_level) {
-            case EL_INITIAL: {
-                auto init_packet = std::make_shared<InitPacket>();
-                init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-                auto cid = _remote_conn_id_manager.GetCurrentID();
-                ((LongHeader*)init_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
-                packet = init_packet;
-                break;
-            }
-            case EL_EARLY_DATA: {
-                packet = std::make_shared<Rtt0Packet>();
-                break;
-            }
-            case EL_HANDSHAKE: {
-                auto handshake_packet = std::make_shared<HandshakePacket>();
-                auto cid = _remote_conn_id_manager.GetCurrentID();
-                ((LongHeader*)handshake_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
-                handshake_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-                packet = handshake_packet;
-                break;
-            }
-            case EL_APPLICATION: {
-                auto rtt1_packet = std::make_shared<Rtt1Packet>();
-                auto cid = _remote_conn_id_manager.GetCurrentID();
-                ((ShortHeader*)rtt1_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
-                rtt1_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-                packet = rtt1_packet;
-                break;
-            }
-        }
-
-        // make packet numer
-        uint64_t pkt_number = _pakcet_number.NextPakcetNumber(CryptoLevel2PacketNumberSpace(encrypto_level));
-        packet->SetPacketNumber(pkt_number);
-        packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
-
-        auto crypto_grapher = _connection_crypto.GetCryptographer(encrypto_level);
-        if (!crypto_grapher) {
-            LOG_ERROR("encrypt grapher is not ready.");
-            return false;
-        }
-        packet->SetCryptographer(crypto_grapher);
-        if (!packet->Encode(buffer)) {
-            LOG_ERROR("packet encode failed.");
-            return false;
-        }
-
-        _flow_control.AddLocalSendData(frame_visitor.GetStreamDataSize());
-        can_send_size -= frame_visitor.GetStreamDataSize();
-    }
-
-    return true;
+    return _send_manager.GetSendData(buffer, encrypto_level, crypto_grapher);
 }
 
 void BaseConnection::OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) {
@@ -277,7 +186,7 @@ bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
     return OnNormalPacket(packet);
 }
 
-bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
+bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level) {
     for (size_t i = 0; i < frames.size(); i++) {
         uint16_t type = frames[i]->GetType();
         switch (type)
@@ -327,6 +236,12 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames) {
     return false;
 }
 
+bool BaseConnection::OnAckFrame(std::shared_ptr<IFrame> frame,  uint16_t crypto_level) {
+    auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
+    _send_manager.OnPacketAck(ns, frame);
+    return true;
+}
+
 bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
     
@@ -334,13 +249,13 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     uint64_t stream_id = stream_frame->GetStreamID();
     auto stream = _streams_map.find(stream_id);
     if (stream != _streams_map.end()) {
-        _flow_control.AddRemoteSendData(stream->second->OnFrame(frame));
+        _flow_control->AddRemoteSendData(stream->second->OnFrame(frame));
         return true;
     }
 
     // check streams limit    
     std::shared_ptr<IFrame> send_frame;
-    if (!_flow_control.CheckRemoteStreamLimit(stream_id, send_frame)) {
+    if (!_flow_control->CheckRemoteStreamLimit(stream_id, send_frame)) {
         return false;
     }
     if (send_frame) {
@@ -359,10 +274,10 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         new_stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id, BaseConnection::StreamType::ST_RECV);
     }
     _streams_map[stream_id] = new_stream;
-    _flow_control.AddRemoteSendData(new_stream->OnFrame(frame));
+    _flow_control->AddRemoteSendData(new_stream->OnFrame(frame));
 
     // check peer data limit
-    if (!_flow_control.CheckRemoteSendDataLimit(send_frame)) {
+    if (!_flow_control->CheckRemoteSendDataLimit(send_frame)) {
         InnerConnectionClose(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "flow control stream data limit.");
         return false;
     }
@@ -388,13 +303,13 @@ bool BaseConnection::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
     auto max_data_frame = std::dynamic_pointer_cast<MaxDataFrame>(frame);
     uint64_t max_data_size = max_data_frame->GetMaximumData();
-    _flow_control.UpdateLocalSendDataLimit(max_data_size);
+    _flow_control->UpdateLocalSendDataLimit(max_data_size);
     return true;
 }
 
 bool BaseConnection::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
-    _flow_control.CheckRemoteSendDataLimit(send_frame);
+    _flow_control->CheckRemoteSendDataLimit(send_frame);
     if (send_frame) {
         _frames_list.push_back(send_frame);
     }
@@ -403,7 +318,7 @@ bool BaseConnection::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
 
 bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
-    _flow_control.CheckRemoteStreamLimit(0, send_frame);
+    _flow_control->CheckRemoteStreamLimit(0, send_frame);
     if (send_frame) {
         _frames_list.push_back(send_frame);
     }
@@ -413,32 +328,32 @@ bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_block_frame = std::dynamic_pointer_cast<MaxStreamsFrame>(frame);
     if (stream_block_frame->GetType() == FT_MAX_STREAMS_BIDIRECTIONAL) {
-        _flow_control.UpdateLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
+        _flow_control->UpdateLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
 
     } else {
-        _flow_control.UpdateLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
+        _flow_control->UpdateLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
     }
     return true;
 }
 
 bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     auto new_cid_frame = std::dynamic_pointer_cast<NewConnectionIDFrame>(frame);
-    _remote_conn_id_manager.RetireIDBySequence(new_cid_frame->GetRetirePriorTo());
+    _remote_conn_id_manager->RetireIDBySequence(new_cid_frame->GetRetirePriorTo());
     ConnectionID id;
     new_cid_frame->GetConnectionID(id._id, id._len);
     id._index = new_cid_frame->GetSequenceNumber();
-    _remote_conn_id_manager.AddID(id);
+    _remote_conn_id_manager->AddID(id);
     return true;
 }
 
 bool BaseConnection::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     auto retire_cid_frame = std::dynamic_pointer_cast<RetireConnectionIDFrame>(frame);
-    _remote_conn_id_manager.RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
+    _remote_conn_id_manager->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
     return true;
 }
 
-void BaseConnection::ActiveSendStream(IStream* stream) {
-    _active_send_stream_list.emplace_back(stream);
+void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
+    _send_manager.AddActiveStream(stream);
     ActiveSend();
 }
 
@@ -461,7 +376,7 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
 
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     _transport_param.Merge(remote_tp);
-    _flow_control.InitConfig(_transport_param);
+    _flow_control->InitConfig(_transport_param);
 }
 
 bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
@@ -479,7 +394,7 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
 
-    if (!OnFrames(packet->GetFrames())) {
+    if (!OnFrames(packet->GetFrames(), packet->GetCryptoLevel())) {
         LOG_ERROR("process frames failed.");
         return false;
     }
@@ -508,7 +423,7 @@ std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t
     }
     new_stream->SetStreamCloseCB(std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1));
     new_stream->SetConnectionCloseCB(std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    new_stream->SetHopeSendCB(std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1));
+    new_stream->SetActiveStreamSendCB(std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1));
     return new_stream;
 }
 

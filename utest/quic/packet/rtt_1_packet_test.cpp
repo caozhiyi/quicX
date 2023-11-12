@@ -61,7 +61,7 @@ TEST(rtt_1_packet_utest, crypto_codec) {
     EXPECT_TRUE(flag.DecodeFlag(packet_buffer));
 
     Rtt1Packet new_packet(flag.GetFlag());
-    new_packet.SetCryptographer(PacketTest::Instance().GetTestClientCryptographer());
+    new_packet.SetCryptographer(PacketTest::Instance().GetTestServerCryptographer());
     EXPECT_TRUE(new_packet.DecodeWithoutCrypto(packet_buffer));
 
     uint8_t plaintext_buf[__buf_len] = {0};
