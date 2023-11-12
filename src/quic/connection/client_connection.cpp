@@ -23,7 +23,7 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
     }
 
     auto crypto_stream = std::make_shared<CryptoStream>(_alloter);
-    crypto_stream->SetHopeSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
+    crypto_stream->SetActiveStreamSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
     crypto_stream->SetRecvCallBack(std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     _connection_crypto.SetCryptoStream(crypto_stream);
@@ -71,7 +71,7 @@ bool ClientConnection::Dial(const Address& addr) {
     ConnectionIDGenerator::Instance().Generator(scid, __max_cid_length);
     //ConnectionIDGenerator::Instance().Generator(dcid, __max_cid_length);
 
-    _flow_control.InitConfig(_transport_param);
+    _flow_control->InitConfig(_transport_param);
     // install initial secret
     _connection_crypto.InstallInitSecret(dcid, sizeof(dcid), false);
     

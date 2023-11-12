@@ -17,6 +17,7 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
 
     HeaderFlag flag;
     while (buffer->GetDataLength() > 0) {
+        auto len = buffer->GetDataLength();
         if (!flag.DecodeFlag(buffer)) {
             LOG_ERROR("decode header flag failed.");
             return false;

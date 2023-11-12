@@ -13,7 +13,7 @@ void IStream::ActiveToSend() {
     _is_active_send = true;
 
     if (_active_send_cb) {
-        _active_send_cb(this);
+        _active_send_cb(shared_from_this());
     }
 }
 

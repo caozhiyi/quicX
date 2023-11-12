@@ -16,7 +16,7 @@ SendControl::SendControl(std::shared_ptr<ITimer> timer): _timer(timer) {
 
 void SendControl::OnPacketSend(uint64_t time, std::shared_ptr<IPacket> packet) {
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
-    if (_pkt_num_largest_sent[ns] >= packet->GetPacketNumber()) {
+    if (_pkt_num_largest_sent[ns] > packet->GetPacketNumber()) {
         LOG_ERROR("invalid packet number. number:%d", packet->GetPacketNumber());
         return;
     }
