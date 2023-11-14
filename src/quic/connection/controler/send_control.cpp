@@ -40,6 +40,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
     }
 
     auto ack_frame = std::dynamic_pointer_cast<AckFrame>(frame);
+    
     uint64_t pkt_num = ack_frame->GetLargestAck();
     if (_pkt_num_largest_acked[ns] < pkt_num) {
         _pkt_num_largest_acked[ns] = pkt_num;
