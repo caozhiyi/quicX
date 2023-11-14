@@ -111,11 +111,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(uint32_t can_send_size, uint8_t
 
     switch (encrypto_level) {
         case EL_INITIAL: {
-            auto init_packet = std::make_shared<InitPacket>();
-            init_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-            auto cid = _remote_conn_id_manager->GetCurrentID();
-            ((LongHeader*)init_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
-            packet = init_packet;
+            packet = std::make_shared<InitPacket>();
             break;
         }
         case EL_EARLY_DATA: {
@@ -123,22 +119,18 @@ std::shared_ptr<IPacket> SendManager::MakePacket(uint32_t can_send_size, uint8_t
             break;
         }
         case EL_HANDSHAKE: {
-            auto handshake_packet = std::make_shared<HandshakePacket>();
-            auto cid = _remote_conn_id_manager->GetCurrentID();
-            ((LongHeader*)handshake_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
-            handshake_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-            packet = handshake_packet;
+            packet = std::make_shared<HandshakePacket>();
             break;
         }
         case EL_APPLICATION: {
-            auto rtt1_packet = std::make_shared<Rtt1Packet>();
-            auto cid = _remote_conn_id_manager->GetCurrentID();
-            ((ShortHeader*)rtt1_packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
-            rtt1_packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
-            packet = rtt1_packet;
+            packet = std::make_shared<Rtt1Packet>();
             break;
         }
     }
+
+    auto cid = _remote_conn_id_manager->GetCurrentID();
+    ((LongHeader*)packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
+    packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
     packet->SetCryptographer(cryptographer);
     return packet;
 }

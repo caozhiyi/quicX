@@ -197,8 +197,9 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
         case FT_PING: 
             _last_communicate_time = UTCTimeMsec();
             break;
-        case FT_ACK: break;
-        case FT_ACK_ECN: break;
+        case FT_ACK:
+        case FT_ACK_ECN:
+            return OnAckFrame(frames[i], crypto_level);
         case FT_CRYPTO:
             return OnCryptoFrame(frames[i]);
         case FT_NEW_TOKEN:
@@ -230,6 +231,8 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
         default:
             if (StreamFrame::IsStreamFrame(type)) {
                 return OnStreamFrame(frames[i]);
+            } else {
+                LOG_ERROR("invalid frame type. type:%s", type);
             }
         }
     }
@@ -295,6 +298,10 @@ bool BaseConnection::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 
 bool BaseConnection::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
     auto token_frame = std::dynamic_pointer_cast<NewTokenFrame>(frame);
+    if (!token_frame) {
+        LOG_ERROR("invalid new token frame.");
+        return false;
+    }
     auto data = token_frame->GetToken();
     _token = std::move(std::string((const char*)data, token_frame->GetTokenLength()));
     return true;
@@ -302,6 +309,10 @@ bool BaseConnection::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
 
 bool BaseConnection::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
     auto max_data_frame = std::dynamic_pointer_cast<MaxDataFrame>(frame);
+    if (!max_data_frame) {
+        LOG_ERROR("invalid max data frame.");
+        return false;
+    }
     uint64_t max_data_size = max_data_frame->GetMaximumData();
     _flow_control->UpdateLocalSendDataLimit(max_data_size);
     return true;
@@ -338,6 +349,11 @@ bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
 
 bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     auto new_cid_frame = std::dynamic_pointer_cast<NewConnectionIDFrame>(frame);
+    if (!new_cid_frame) {
+        LOG_ERROR("invalid new connection id frame.");
+        return false;
+    }
+    
     _remote_conn_id_manager->RetireIDBySequence(new_cid_frame->GetRetirePriorTo());
     ConnectionID id;
     new_cid_frame->GetConnectionID(id._id, id._len);
@@ -359,6 +375,7 @@ void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
 
 void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string resion) {
     _to_close = true;
+    // make connection close frame
     auto frame = std::make_shared<ConnectionCloseFrame>();
     frame->SetErrorCode(error);
     frame->SetErrFrameType(tigger_frame);

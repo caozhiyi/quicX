@@ -35,6 +35,8 @@ public:
     void AddFrameTypeBit(FrameTypeBit bit) { _frame_type_bit |= bit; }
     uint32_t GetFrameTypeBit() { return _frame_type_bit; }
 
+    virtual void SetPayload(BufferSpan payload) {}
+
     void SetCryptographer(std::shared_ptr<ICryptographer> crypto_grapher) { _crypto_grapher = crypto_grapher; }
     
 protected:
