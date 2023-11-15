@@ -22,7 +22,12 @@ public:
 
     uint64_t GetConnectionHashCode() { return _connection_hash_code; }
     std::vector<std::shared_ptr<IPacket>>& GetPackets() { return _packets; }
+
+    void SetRecvTime(uint64_t t) { _recv_time = t; }
+    uint64_t GetRecvTime() { return _recv_time; }
+
 private:
+    uint64_t _recv_time;
     Address _peer_addr;
     uint8_t* _connection_id;
     uint16_t _connection_id_len;
