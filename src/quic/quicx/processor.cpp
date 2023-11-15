@@ -54,7 +54,7 @@ bool Processor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) {
     uint64_t cid_code = udp_packet->GetConnectionHashCode();
     auto conn = _conn_map.find(cid_code);
     if (conn != _conn_map.end()) {
-        conn->second->OnPackets(packets);
+        conn->second->OnPackets(udp_packet->GetRecvTime(), packets);
         return true;
     }
 
@@ -69,10 +69,10 @@ bool Processor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) {
 
     auto new_conn = std::make_shared<ServerConnection>(_ctx, __timer);
     new_conn->AddConnectionId(cid, len);
-    new_conn->SetAddConnectionIDCB(_add_connection_id_cb);
-    new_conn->SetRetireConnectionIDCB(_retire_connection_id_cb);
+    new_conn->AddConnectionIDCB(_add_connection_id_cb);
+    new_conn->RetireConnectionIDCB(_retire_connection_id_cb);
     _conn_map[cid_code] = new_conn;
-    new_conn->OnPackets(packets);
+    new_conn->OnPackets(udp_packet->GetRecvTime(), packets);
 
     return true;
 }
@@ -97,8 +97,8 @@ std::shared_ptr<IConnection> Processor::MakeClientConnection() {
     auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer);
     
     //new_conn->AddConnectionId(cid, len);
-    new_conn->SetAddConnectionIDCB(_add_connection_id_cb);
-    new_conn->SetRetireConnectionIDCB(_retire_connection_id_cb);
+    new_conn->AddConnectionIDCB(_add_connection_id_cb);
+    new_conn->RetireConnectionIDCB(_retire_connection_id_cb);
     //_conn_map[cid_code] = new_conn;
     return new_conn;
 }

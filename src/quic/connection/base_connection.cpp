@@ -51,13 +51,14 @@ std::shared_ptr<ISendStream> BaseConnection::MakeSendStream() {
     // check streams limit
     uint64_t stream_id;
     std::shared_ptr<IFrame> frame;
-    if(!_flow_control->CheckLocalUnidirectionStreamLimit(stream_id, frame)) {
-        return nullptr;
-    }
+    bool can_make_stream = _flow_control->CheckLocalUnidirectionStreamLimit(stream_id, frame);
     if (frame) {
         _frames_list.push_back(frame);
     }
-    
+    if (!can_make_stream) {
+        return nullptr;
+    }
+
     auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataUni(), stream_id, BaseConnection::StreamType::ST_SEND);
     return std::dynamic_pointer_cast<ISendStream>(stream);
 }
@@ -66,22 +67,23 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
     // check streams limit
     uint64_t stream_id;
     std::shared_ptr<IFrame> frame;
-    if(!_flow_control->CheckLocalBidirectionStreamLimit(stream_id, frame)) {
-        return nullptr;
-    }
+    bool can_make_stream = _flow_control->CheckLocalBidirectionStreamLimit(stream_id, frame);
     if (frame) {
         _frames_list.push_back(frame);
+    }
+    if (!can_make_stream) {
+        return nullptr;
     }
     
     auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiLocal(), stream_id, BaseConnection::StreamType::ST_BIDIRECTIONAL);
     return std::dynamic_pointer_cast<BidirectionStream>(stream);
 }
 
-void BaseConnection::SetAddConnectionIDCB(ConnectionIDCB cb) {
+void BaseConnection::AddConnectionIDCB(ConnectionIDCB cb) {
     _local_conn_id_manager->SetAddConnectionIDCB(cb);
 }
 
-void BaseConnection::SetRetireConnectionIDCB(ConnectionIDCB cb) {
+void BaseConnection::RetireConnectionIDCB(ConnectionIDCB cb) {
     _local_conn_id_manager->SetRetireConnectionIDCB(cb);
 }
 
@@ -114,11 +116,18 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
         return false;
     }
 
+    auto ack_frame = _recv_control.MayGenerateAckFrame(UTCTimeMsec(), CryptoLevel2PacketNumberSpace(encrypto_level));
+    if (ack_frame) {
+        _send_manager.AddFrame(ack_frame);
+    }
+    
     return _send_manager.GetSendData(buffer, encrypto_level, crypto_grapher);
 }
 
-void BaseConnection::OnPackets(std::vector<std::shared_ptr<IPacket>>& packets) {
+void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
     for (size_t i = 0; i < packets.size(); i++) {
+        _recv_control.OnPacketRecv(now, packets[i]);
+
         switch (packets[i]->GetHeader()->GetPacketType())
         {
         case PT_INITIAL:
@@ -258,15 +267,13 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
 
     // check streams limit    
     std::shared_ptr<IFrame> send_frame;
-    if (!_flow_control->CheckRemoteStreamLimit(stream_id, send_frame)) {
-        return false;
-    }
+    bool can_make_stream = _flow_control->CheckRemoteStreamLimit(stream_id, send_frame);
     if (send_frame) {
         _frames_list.push_back(send_frame);
     }
-
-    // frame 的序列化函数
-    
+    if (!can_make_stream) {
+        return false;
+    }
     
     // create new stream
     std::shared_ptr<IStream> new_stream;

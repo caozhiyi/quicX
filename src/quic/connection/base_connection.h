@@ -28,8 +28,8 @@ public:
     virtual std::shared_ptr<ISendStream> MakeSendStream();
     virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream();
 
-    virtual void SetAddConnectionIDCB(ConnectionIDCB cb);
-    virtual void SetRetireConnectionIDCB(ConnectionIDCB cb);
+    virtual void AddConnectionIDCB(ConnectionIDCB cb);
+    virtual void RetireConnectionIDCB(ConnectionIDCB cb);
     virtual void AddConnectionId(uint8_t* id, uint16_t len);
     virtual void RetireConnectionId(uint8_t* id, uint16_t len);
 
@@ -38,7 +38,7 @@ public:
     // try to build a quic message
     virtual bool GenerateSendData(std::shared_ptr<IBuffer> buffer);
 
-    virtual void OnPackets(std::vector<std::shared_ptr<IPacket>>& packets);
+    virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
 
     virtual EncryptionLevel GetCurEncryptionLevel() { return _connection_crypto.GetCurEncryptionLevel(); }
 

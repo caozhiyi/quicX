@@ -52,7 +52,7 @@ bool ConnectionProcess(std::shared_ptr<IConnection> conn, std::shared_ptr<IBuffe
         return false;
     }
 
-    conn->OnPackets(packets);
+    conn->OnPackets(0, packets);
 
     buffer->Clear();
     conn->GenerateSendData(buffer);

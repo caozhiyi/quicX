@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_set>
 #include "quic/packet/packet_number.h"
+#include "common/timer/timer_interface.h"
 #include "quic/packet/packet_interface.h"
 #include "common/buffer/buffer_interface.h"
 #include "quic/connection/connection_id_manager.h"
