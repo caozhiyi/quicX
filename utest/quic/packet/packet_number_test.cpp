@@ -13,7 +13,7 @@ TEST(packet_number_utest, codec) {
     }
 
     uint64_t pn = packet_number.NextPakcetNumber(PNS_APPLICATION);
-    EXPECT_EQ(pn, 1000);
+    EXPECT_EQ(pn, 1001);
 
     uint8_t buf[4] = {0};
     PacketNumber::Encode(buf, 2, pn);

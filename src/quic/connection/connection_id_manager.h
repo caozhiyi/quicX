@@ -15,12 +15,12 @@ static const uint8_t __connection_id_len = 16;
 struct ConnectionID {
     uint8_t _id[__connection_id_len];
     uint8_t _len;
-    uint64_t _hash;
     uint64_t _index;
-    ConnectionID(uint64_t index = 0): _len(__connection_id_len), _hash(0), _index(index) {
+    uint64_t _hash;
+    ConnectionID(uint64_t index = 0): _len(__connection_id_len), _index(index), _hash(0) {
         memset(_id, 0, __connection_id_len);
     }
-    ConnectionID(uint8_t* id, uint8_t len, uint64_t index = 0): _len(len), _hash(0), _index(index) {
+    ConnectionID(uint8_t* id, uint8_t len, uint64_t index = 0): _len(len), _index(index), _hash(0) {
         memcpy(_id, id, __connection_id_len);
     }
     ~ConnectionID() {}

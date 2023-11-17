@@ -13,7 +13,7 @@ uint64_t ConnectionID::Hash() {
 ConnectionID ConnectionIDManager::Generator() {
     ConnectionID id;
     ConnectionIDGenerator::Instance().Generator(id._id, id._len);
-    id._index = _cur_index++;
+    id._index = ++_cur_index;
     AddID(id);
     return id;
 }

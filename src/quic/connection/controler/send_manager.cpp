@@ -6,6 +6,7 @@
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/handshake_packet.h"
+#include "quic/packet/header/long_header.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 #include "quic/connection/controler/send_manager.h"
 
@@ -128,8 +129,14 @@ std::shared_ptr<IPacket> SendManager::MakePacket(uint32_t can_send_size, uint8_t
         }
     }
 
+    auto header = packet->GetHeader();
+    if (header->GetHeaderType() == PHT_LONG_HEADER) {
+        auto cid = _local_conn_id_manager->GetCurrentID();
+        ((LongHeader*)packet->GetHeader())->SetSourceConnectionId(cid._id, cid._len);
+    }
+
     auto cid = _remote_conn_id_manager->GetCurrentID();
-    ((LongHeader*)packet->GetHeader())->SetDestinationConnectionId(cid._id, cid._len);
+    packet->GetHeader()->SetDestinationConnectionId(cid._id, cid._len);
     packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
     packet->SetCryptographer(cryptographer);
     return packet;

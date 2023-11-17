@@ -27,7 +27,10 @@
 
 namespace quicx {
 
-BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, std::shared_ptr<ITimer> timer):
+BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
+        std::shared_ptr<ITimer> timer,
+        ConnectionIDCB add_conn_id_cb,
+        ConnectionIDCB retire_conn_id_cb):
     _to_close(false),
     _last_communicate_time(0),
     _recv_control(timer),
@@ -36,11 +39,17 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, std::shar
     _alloter = MakeBlockMemoryPoolPtr(1024, 4);
     _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
     _flow_control = std::make_shared<FlowControl>(start);
-    _local_conn_id_manager = std::make_shared<ConnectionIDManager>();
     _remote_conn_id_manager = std::make_shared<ConnectionIDManager>();
+    _local_conn_id_manager = std::make_shared<ConnectionIDManager>();
+    _local_conn_id_manager->SetAddConnectionIDCB(add_conn_id_cb);
+    _local_conn_id_manager->SetRetireConnectionIDCB(retire_conn_id_cb);
+
     _send_manager.SetFlowControl(_flow_control);
     _send_manager.SetRemoteConnectionIDManager(_remote_conn_id_manager);
     _send_manager.SetLocalConnectionIDManager(_local_conn_id_manager);
+    
+    // generate local id
+    _local_conn_id_manager->Generator();
 }
 
 BaseConnection::~BaseConnection() {
@@ -77,27 +86,6 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
     
     auto stream = MakeStream(_transport_param.GetInitialMaxStreamDataBidiLocal(), stream_id, BaseConnection::StreamType::ST_BIDIRECTIONAL);
     return std::dynamic_pointer_cast<BidirectionStream>(stream);
-}
-
-void BaseConnection::AddConnectionIDCB(ConnectionIDCB cb) {
-    _local_conn_id_manager->SetAddConnectionIDCB(cb);
-}
-
-void BaseConnection::RetireConnectionIDCB(ConnectionIDCB cb) {
-    _local_conn_id_manager->SetRetireConnectionIDCB(cb);
-}
-
-void BaseConnection::AddConnectionId(uint8_t* id, uint16_t len) {
-    ConnectionID cid(id, len);
-    _remote_conn_id_manager->AddID(cid);
-}
-
-void BaseConnection::RetireConnectionId(uint8_t* id, uint16_t len) {
-    // ConnectionID cid(id, len);
-    // _remote_conn_id_manager.RetireID(cid);
-    // if (_retire_connection_id_cb) {
-    //     _retire_connection_id_cb(cid.Hash());
-    // }
 }
 
 void BaseConnection::Close(uint64_t error) {

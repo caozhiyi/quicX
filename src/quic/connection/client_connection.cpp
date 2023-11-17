@@ -15,8 +15,11 @@
 namespace quicx {
 
 
-ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ITimer> timer):
-    BaseConnection(StreamIDGenerator::SS_CLIENT, timer) {
+ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<ITimer> timer,
+        ConnectionIDCB add_conn_id_cb,
+        ConnectionIDCB retire_conn_id_cb):
+    BaseConnection(StreamIDGenerator::SS_CLIENT, timer, add_conn_id_cb, retire_conn_id_cb) {
     _tls_connection = std::make_shared<TLSClientConnection>(ctx, &_connection_crypto);
     if (!_tls_connection->Init()) {
         LOG_ERROR("tls connection init failed.");
@@ -65,15 +68,13 @@ bool ClientConnection::Dial(const Address& addr) {
 
     _send_sock = ret._return_value;
 
-    // generate connection id
-    uint8_t scid[__max_cid_length] = {0};
-    uint8_t dcid[10] = {0,1,2,3,4,5,6,7,8,9};
-    ConnectionIDGenerator::Instance().Generator(scid, __max_cid_length);
-    //ConnectionIDGenerator::Instance().Generator(dcid, __max_cid_length);
-
     _flow_control->InitConfig(_transport_param);
+
+    // generate connection id
+    auto dcid = _remote_conn_id_manager->Generator();
+
     // install initial secret
-    _connection_crypto.InstallInitSecret(dcid, sizeof(dcid), false);
+    _connection_crypto.InstallInitSecret(dcid._id, dcid._len, false);
     
     _tls_connection->DoHandleShake();
     return true;

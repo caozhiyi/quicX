@@ -70,6 +70,7 @@ bool InitPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
      // encode payload whit encrypt
     buffer->MoveWritePt(cur_pos - start_pos);
     auto header_span = _header.GetHeaderSrcData();
+    
     if(!_crypto_grapher->EncryptPacket(_packet_number, header_span, _payload, buffer)) {
         LOG_ERROR("encrypt payload failed.");
         return false;
@@ -159,7 +160,6 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<IBuffer> buffer) {
         LOG_ERROR("decrypt packet failed.");
         return false;
     }
-
     if(!DecodeFrames(buffer, _frames_list)) {
         LOG_ERROR("decode frame failed.");
         return false;
