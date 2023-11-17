@@ -22,16 +22,14 @@ class BaseConnection:
     public IConnection,
     public std::enable_shared_from_this<BaseConnection> {
 public:
-    BaseConnection(StreamIDGenerator::StreamStarter start, std::shared_ptr<ITimer> timer);
+    BaseConnection(StreamIDGenerator::StreamStarter start,
+        std::shared_ptr<ITimer> timer,
+        ConnectionIDCB add_conn_id_cb,
+        ConnectionIDCB retire_conn_id_cb);
     virtual ~BaseConnection();
 
     virtual std::shared_ptr<ISendStream> MakeSendStream();
     virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream();
-
-    virtual void AddConnectionIDCB(ConnectionIDCB cb);
-    virtual void RetireConnectionIDCB(ConnectionIDCB cb);
-    virtual void AddConnectionId(uint8_t* id, uint16_t len);
-    virtual void RetireConnectionId(uint8_t* id, uint16_t len);
 
     virtual void Close(uint64_t error);
 

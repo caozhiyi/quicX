@@ -21,6 +21,9 @@ public:
     virtual bool EncodeHeader(std::shared_ptr<IBufferWrite> buffer) = 0;
     virtual bool DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeHeaderSize() = 0;
+
+    virtual void SetDestinationConnectionId(uint8_t* id, uint8_t len) = 0;
+    virtual uint8_t GetDestinationConnectionIdLength() = 0;
     
     virtual BufferSpan& GetHeaderSrcData() { return _header_src_data; }
 protected:

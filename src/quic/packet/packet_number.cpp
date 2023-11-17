@@ -8,7 +8,7 @@ PacketNumber::PacketNumber() {
 }
 
 uint64_t PacketNumber::NextPakcetNumber(PacketNumberSpace space) {
-    return _cur_packet_number[space]++;
+    return ++_cur_packet_number[space];
 }
 
 uint32_t PacketNumber::GetPacketNumberLength(uint64_t packet_number) {

@@ -13,8 +13,13 @@ class ServerConnection:
     public BaseConnection,
     public TlsServerHandlerInterface {
 public:
-    ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ITimer> timer);
+    ServerConnection(std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<ITimer> timer,
+        ConnectionIDCB add_conn_id_cb,
+        ConnectionIDCB retire_conn_id_cb);
     virtual ~ServerConnection();
+
+    virtual void AddRemoteConnectionId(uint8_t* id, uint16_t len);
     // TODO
     // 1. 监听传入的连接
     // 2. 如果支持早期数据，在发送给客户端的TLS恢复ticket中嵌入应用层控制数据

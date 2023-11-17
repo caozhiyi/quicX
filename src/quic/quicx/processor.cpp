@@ -67,10 +67,8 @@ bool Processor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) {
     uint16_t len = 0;
     udp_packet->GetConnection(cid, len);
 
-    auto new_conn = std::make_shared<ServerConnection>(_ctx, __timer);
-    new_conn->AddConnectionId(cid, len);
-    new_conn->AddConnectionIDCB(_add_connection_id_cb);
-    new_conn->RetireConnectionIDCB(_retire_connection_id_cb);
+    auto new_conn = std::make_shared<ServerConnection>(_ctx, __timer, _add_connection_id_cb, _retire_connection_id_cb);
+    new_conn->AddRemoteConnectionId(cid, len);
     _conn_map[cid_code] = new_conn;
     new_conn->OnPackets(udp_packet->GetRecvTime(), packets);
 
@@ -94,12 +92,7 @@ void Processor::WeakUp() {
 }
 
 std::shared_ptr<IConnection> Processor::MakeClientConnection() {
-    auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer);
-    
-    //new_conn->AddConnectionId(cid, len);
-    new_conn->AddConnectionIDCB(_add_connection_id_cb);
-    new_conn->RetireConnectionIDCB(_retire_connection_id_cb);
-    //_conn_map[cid_code] = new_conn;
+    auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer, _add_connection_id_cb, _retire_connection_id_cb);
     return new_conn;
 }
 

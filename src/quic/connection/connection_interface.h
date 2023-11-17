@@ -23,11 +23,6 @@ public:
     virtual std::shared_ptr<ISendStream> MakeSendStream() = 0;
     virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream() = 0;
 
-    virtual void AddConnectionIDCB(ConnectionIDCB cb) = 0;
-    virtual void RetireConnectionIDCB(ConnectionIDCB cb) = 0;
-    virtual void AddConnectionId(uint8_t* id, uint16_t len) = 0;
-    virtual void RetireConnectionId(uint8_t* id, uint16_t len) = 0;
-
     virtual void Close(uint64_t error) = 0;
 
     // try to build a quic message
