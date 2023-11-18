@@ -11,7 +11,6 @@
 #include "quic/connection/controler/send_manager.h"
 
 namespace quicx {
-
 SendManager::SendManager(std::shared_ptr<ITimer> timer): 
     _send_control(timer) {
     
@@ -30,15 +29,16 @@ void SendManager::AddActiveStream(std::shared_ptr<IStream> stream) {
 }
 
 bool SendManager::GetSendData(std::shared_ptr<IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
-    std::shared_ptr<IPacket> packet;
     // firstly, send resend packet
     if (_send_control.NeedReSend()) {
         auto lost_list = _send_control.GetLostPacket();
-        packet = lost_list.front();
+        auto packet = lost_list.front();
         lost_list.pop_front();
 
-    // secondly, send new packet
+        return PacketInit(packet, buffer);
+
     } else {
+        // secondly, send new packet
         // check flow control
         uint32_t can_send_size;
         std::shared_ptr<IFrame> frame;
@@ -48,39 +48,26 @@ bool SendManager::GetSendData(std::shared_ptr<IBuffer> buffer, uint8_t encrypto_
         if (frame) {
             AddFrame(frame);
         }
-
-        packet = MakePacket(can_send_size, encrypto_level, cryptographer);
+    
+        FixBufferFrameVisitor frame_visitor(1450); // TODO put 1450 to config
+        frame_visitor.SetStreamDataSizeLimit(can_send_size);
+        auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
         if (!packet) {
             return false;
         }
+        return PacketInit(packet, buffer);
     }
-    
-    // make packet numer
-    uint64_t pkt_number = _pakcet_number.NextPakcetNumber(CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel()));
-    packet->SetPacketNumber(pkt_number);
-    packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
-
-    if (!packet->Encode(buffer)) {
-        LOG_ERROR("encode packet error");
-        return false;
-    }
-
-    _send_control.OnPacketSend(UTCTimeMsec(), packet);
-    return true;
 }
 
 void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
     _send_control.OnPacketAck(UTCTimeMsec(), ns, frame);
 }
 
-std::shared_ptr<IPacket> SendManager::MakePacket(uint32_t can_send_size, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
+std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
     std::shared_ptr<IPacket> packet;
-    // TODO put 1450 to config
-    FixBufferFrameVisitor frame_visitor(1450);
-    frame_visitor.SetStreamDataSizeLimit(can_send_size);
     // priority sending frames of connection
     for (auto iter = _wait_frame_list.begin(); iter != _wait_frame_list.end();) {
-        if (frame_visitor.HandleFrame(*iter)) {
+        if (visitor->HandleFrame(*iter)) {
             iter = _wait_frame_list.erase(iter);
 
         } else {
@@ -88,14 +75,15 @@ std::shared_ptr<IPacket> SendManager::MakePacket(uint32_t can_send_size, uint8_t
         }
     }
 
+    bool need_break = false;
     while (true) {
-        if (_active_send_stream_set.empty()) {
+        if (_active_send_stream_set.empty() || need_break) {
             break;
         }
         
         // then sending frames of stream
         for (auto iter = _active_send_stream_set.begin(); iter != _active_send_stream_set.end();) {
-            auto ret = (*iter)->TrySendData(&frame_visitor);
+            auto ret = (*iter)->TrySendData(visitor);
             if (ret == IStream::TSR_SUCCESS) {
                 iter = _active_send_stream_set.erase(iter);
     
@@ -104,10 +92,15 @@ std::shared_ptr<IPacket> SendManager::MakePacket(uint32_t can_send_size, uint8_t
                 return nullptr;
     
             } else if (ret == IStream::TSR_BREAK) {
-                iter = _active_send_stream_set.erase(iter);
+                need_break = true;
                 break;
             }
         }
+    }
+
+    if (visitor->GetBuffer()->GetDataLength() == 0) {
+        LOG_INFO("there is no data to send.");
+        return nullptr;
     }
 
     switch (encrypto_level) {
@@ -137,9 +130,24 @@ std::shared_ptr<IPacket> SendManager::MakePacket(uint32_t can_send_size, uint8_t
 
     auto cid = _remote_conn_id_manager->GetCurrentID();
     packet->GetHeader()->SetDestinationConnectionId(cid._id, cid._len);
-    packet->SetPayload(frame_visitor.GetBuffer()->GetReadSpan());
+    packet->SetPayload(visitor->GetBuffer()->GetReadSpan());
     packet->SetCryptographer(cryptographer);
     return packet;
+}
+
+bool SendManager::PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<IBuffer> buffer) {
+    // make packet numer
+    uint64_t pkt_number = _pakcet_number.NextPakcetNumber(CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel()));
+    packet->SetPacketNumber(pkt_number);
+    packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
+
+    if (!packet->Encode(buffer)) {
+        LOG_ERROR("encode packet error");
+        return false;
+    }
+
+    _send_control.OnPacketSend(UTCTimeMsec(), packet);
+    return true;
 }
 
 }

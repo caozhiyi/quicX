@@ -30,7 +30,7 @@ public:
 
     virtual void OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len);
 
-    EncryptionLevel GetCurEncryptionLevel() { return _cur_encryption_level; }
+    EncryptionLevel GetCurEncryptionLevel();
 
     std::shared_ptr<ICryptographer> GetCryptographer(uint8_t level) { return _cryptographers[level]; }
 

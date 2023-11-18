@@ -5,23 +5,23 @@
 #include <string>
 #include <cstring>
 #include <cstdint>
+#include "quic/connection/type.h"
 #include "common/util/singleton.h"
 #include "quic/connection/connection_interface.h"
 
 namespace quicx {
 
-static const uint8_t __connection_id_len = 16;
 
 struct ConnectionID {
-    uint8_t _id[__connection_id_len];
+    uint8_t _id[__max_cid_length];
     uint8_t _len;
     uint64_t _index;
     uint64_t _hash;
-    ConnectionID(uint64_t index = 0): _len(__connection_id_len), _index(index), _hash(0) {
-        memset(_id, 0, __connection_id_len);
+    ConnectionID(uint64_t index = 0): _len(__max_cid_length), _index(index), _hash(0) {
+        memset(_id, 0, __max_cid_length);
     }
     ConnectionID(uint8_t* id, uint8_t len, uint64_t index = 0): _len(len), _index(index), _hash(0) {
-        memcpy(_id, id, __connection_id_len);
+        memcpy(_id, id, len);
     }
     ~ConnectionID() {}
     uint64_t Hash();

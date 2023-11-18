@@ -67,6 +67,11 @@ void ConnectionCrypto::OnTransportParams(EncryptionLevel level, const uint8_t* t
     }
 }
 
+EncryptionLevel ConnectionCrypto::GetCurEncryptionLevel() {
+    uint8_t level = _crypto_stream->GetWaitSendEncryptionLevel();
+    return (EncryptionLevel)std::min<uint8_t>(level, _cur_encryption_level);
+}
+
 void ConnectionCrypto::SetCryptoStream(std::shared_ptr<CryptoStream> crypto_stream) {
     _crypto_stream = crypto_stream;
 }
