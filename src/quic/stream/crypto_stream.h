@@ -27,6 +27,8 @@ public:
     virtual int32_t Send(uint8_t* data, uint32_t len, uint8_t encryption_level);
     virtual int32_t Send(uint8_t* data, uint32_t len);
 
+    virtual uint8_t GetWaitSendEncryptionLevel();
+
 protected:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 

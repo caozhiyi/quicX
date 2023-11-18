@@ -46,17 +46,17 @@ static const char __key_pem[] =
       "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
       "-----END RSA PRIVATE KEY-----\n"; 
 
-bool ConnectionProcess(std::shared_ptr<IConnection> conn, std::shared_ptr<IBuffer> buffer) {
+bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn) {
+    uint8_t buf[1500] = {0};
+    std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(buf, buf + 1500);
+    send_conn->GenerateSendData(buffer);
+
     std::vector<std::shared_ptr<IPacket>> packets;
     if (!DecodePackets(buffer, packets)) {
         return false;
     }
 
-    conn->OnPackets(0, packets);
-
-    buffer->Clear();
-    conn->GenerateSendData(buffer);
-
+    recv_conn->OnPackets(0, packets);
     return true;
 }
 
@@ -89,20 +89,19 @@ TEST(connnection_utest, handshake) {
 
     client_conn->Dial(addr);
     
-    uint8_t buf[1500] = {0};
-    std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(buf, buf + 1500);
-    client_conn->GenerateSendData(buffer);
-
-    int len = buffer->GetDataLength();
-
     auto server_conn = std::make_shared<ServerConnection>(server_ctx, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(TransportParamConfig::Instance());
 
-    int times = 2;
-    while (times--) {
-        ConnectionProcess(server_conn, buffer);
-        ConnectionProcess(client_conn, buffer);
-    }
+    // client -------init-----> server
+    ConnectionProcess(client_conn, server_conn);
+    // client <------init------ server
+    ConnectionProcess(server_conn, client_conn);
+    // client <---handshake---- server
+    ConnectionProcess(server_conn, client_conn);
+    // client ----handshake---> server
+    ConnectionProcess(client_conn, server_conn);
+    // client <----session----- server
+    ConnectionProcess(server_conn, client_conn);
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), EL_APPLICATION);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), EL_APPLICATION);

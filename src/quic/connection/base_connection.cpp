@@ -397,9 +397,10 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
         LOG_ERROR("decrypt grapher is not ready.");
         return false;
     }
+    
     packet->SetCryptographer(cryptographer);
     
-    uint8_t buf[1450];
+    uint8_t buf[1450] = {0};
     std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, 1450);
     if (!packet->DecodeWithCrypto(out_plaintext)) {
         LOG_ERROR("decode packet after decrypt failed.");

@@ -11,6 +11,7 @@
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/controler/send_control.h"
 #include "quic/connection/controler/flow_control.h"
+#include "quic/connection/packet_visitor_interface.h"
 
 namespace quicx {
 
@@ -30,7 +31,8 @@ public:
     void SetRemoteConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { _remote_conn_id_manager = manager; }
 
 private:
-    std::shared_ptr<IPacket> MakePacket(uint32_t can_send_size, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
+    std::shared_ptr<IPacket> MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
+    bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<IBuffer> buffer);
 
 private:
     SendControl _send_control;

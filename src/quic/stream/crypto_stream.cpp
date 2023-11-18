@@ -108,6 +108,16 @@ int32_t CryptoStream::Send(uint8_t* data, uint32_t len) {
     return 0;
 }
 
+uint8_t CryptoStream::GetWaitSendEncryptionLevel() {
+    uint8_t level = EL_APPLICATION;
+    if (_send_buffers[EL_INITIAL] && _send_buffers[EL_INITIAL]->GetDataLength() > 0) {
+        level = EL_INITIAL;
+    } else if (_send_buffers[EL_HANDSHAKE] && _send_buffers[EL_HANDSHAKE]->GetDataLength() > 0) {
+        level = EL_HANDSHAKE;
+    }
+    return level;
+}
+
 void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     if (!_recv_buffer) {
         _recv_buffer = std::make_shared<BufferChains>(_alloter);

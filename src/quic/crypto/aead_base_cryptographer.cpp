@@ -2,7 +2,6 @@
 #include <netinet/in.h>	
 #include <openssl/aead.h>
 #include <openssl/evp.h>
-
 #include "common/log/log.h"
 #include "quic/crypto/type.h"
 #include "quic/crypto/hkdf.h"
@@ -134,7 +133,6 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferSpan& assoc
 
     size_t out_length = 0;
     auto out_span = out_ciphertext->GetWriteSpan();
-    auto len = plaintext.GetLength();
     if (EVP_AEAD_CTX_seal(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _write_secret._iv.size(),
         plaintext.GetStart(), plaintext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
         LOG_ERROR("EVP_AEAD_CTX_seal failed");
