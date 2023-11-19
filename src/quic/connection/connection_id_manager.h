@@ -17,10 +17,11 @@ struct ConnectionID {
     uint8_t _len;
     uint64_t _index;
     uint64_t _hash;
-    ConnectionID(uint64_t index = 0): _len(__max_cid_length), _index(index), _hash(0) {
+    ConnectionID(uint64_t index = 0): _len(0), _index(index), _hash(0) {
         memset(_id, 0, __max_cid_length);
     }
     ConnectionID(uint8_t* id, uint8_t len, uint64_t index = 0): _len(len), _index(index), _hash(0) {
+        memset(_id, 0, __max_cid_length);
         memcpy(_id, id, len);
     }
     ~ConnectionID() {}
