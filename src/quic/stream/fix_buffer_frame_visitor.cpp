@@ -4,13 +4,14 @@
 
 
 namespace quicx {
+namespace quic {
 
 FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t size):
     _encryption_level(EL_APPLICATION),
     _cur_stream_data_size(0),
     _left_stream_data_size(0) {
     _buffer_start = new uint8_t[size];
-    _buffer = std::make_shared<Buffer>(_buffer_start, _buffer_start + size);
+    _buffer = std::make_shared<common::Buffer>(_buffer_start, _buffer_start + size);
 }
 
 FixBufferFrameVisitor::~FixBufferFrameVisitor() {
@@ -26,4 +27,5 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
     return frame->Encode(_buffer);
 }
 
+}
 }

@@ -5,6 +5,7 @@
 #include "quic/stream/send_state_machine.h"
 
 namespace quicx {
+namespace quic {
 
 class ISendStream:
     public virtual IStream {
@@ -27,6 +28,7 @@ protected:
     std::shared_ptr<SendStreamStateMachine> _send_machine;
 };
 
+}
 }
 
 #endif

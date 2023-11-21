@@ -5,15 +5,16 @@
 #include "common/buffer/buffer.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(max_streams_frame_utest, codec) {
-    quicx::MaxStreamsFrame frame1(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
-    quicx::MaxStreamsFrame frame2(quicx::FT_MAX_STREAMS_BIDIRECTIONAL);
+    MaxStreamsFrame frame1(FT_MAX_STREAMS_BIDIRECTIONAL);
+    MaxStreamsFrame frame2(FT_MAX_STREAMS_BIDIRECTIONAL);
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetMaximumStreams(23624236235626);
 
@@ -29,5 +30,6 @@ TEST(max_streams_frame_utest, codec) {
     EXPECT_EQ(frame1.GetMaximumStreams(), frame2.GetMaximumStreams());
 }
 
+}
 }
 }

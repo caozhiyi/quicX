@@ -5,6 +5,7 @@
 #include <mutex>
 
 namespace quicx {
+namespace common {
 
 // spain lock
 class SpinLock {
@@ -38,6 +39,7 @@ private:
     SpinLock* _lock;
 };
 
+}
 }
 
 #endif

@@ -4,8 +4,9 @@
 #include "common/buffer/buffer_chains.h"
 
 namespace quicx {
+namespace quic {
 
-CryptoStream::CryptoStream(std::shared_ptr<BlockMemoryPool> alloter):
+CryptoStream::CryptoStream(std::shared_ptr<common::BlockMemoryPool> alloter):
     _alloter(alloter),
     _except_offset(0),
     _send_offset(0) {
@@ -19,7 +20,7 @@ CryptoStream::~CryptoStream() {
 IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
     // TODO not copy buffer
     TrySendResult ret = TSR_SUCCESS;
-    std::shared_ptr<IBufferChains> buffer;
+    std::shared_ptr<common::IBufferChains> buffer;
     uint8_t level;
     if (_send_buffers[EL_INITIAL] && _send_buffers[EL_INITIAL]->GetDataLength() > 0) {
         buffer = _send_buffers[EL_INITIAL];
@@ -88,14 +89,14 @@ uint32_t CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
         return 0;
     }
     // shouldn't be here
-    LOG_ERROR("crypto stream recv error frame. type:%d", frame_type);
+    common::LOG_ERROR("crypto stream recv error frame. type:%d", frame_type);
     return 0;
 }
 
 int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level) {
-    std::shared_ptr<IBufferChains> buffer = _send_buffers[encryption_level];
+    std::shared_ptr<common::IBufferChains> buffer = _send_buffers[encryption_level];
     if (!buffer) {
-        buffer = std::make_shared<BufferChains>(_alloter);
+        buffer = std::make_shared<common::BufferChains>(_alloter);
         _send_buffers[encryption_level] = buffer;
     }
     int32_t size = buffer->Write(data, len);
@@ -120,7 +121,7 @@ uint8_t CryptoStream::GetWaitSendEncryptionLevel() {
 
 void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     if (!_recv_buffer) {
-        _recv_buffer = std::make_shared<BufferChains>(_alloter);
+        _recv_buffer = std::make_shared<common::BufferChains>(_alloter);
     }
     
     auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frame);
@@ -148,4 +149,5 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
+}
 }

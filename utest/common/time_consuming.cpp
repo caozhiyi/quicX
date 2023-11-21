@@ -2,6 +2,7 @@
 #include "time_consuming.h"
 
 namespace quicx {
+namespace common {
 
 TimeConsuming::TimeConsuming(std::string name) : _name(name),
     _start_time(std::chrono::system_clock::now()) {
@@ -14,4 +15,5 @@ TimeConsuming::~TimeConsuming() {
     std::cout << _name << " used " << time_span.count() << " ms." << std::endl;
 }
 
+}
 }

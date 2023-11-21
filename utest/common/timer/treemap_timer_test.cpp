@@ -4,6 +4,7 @@
 #include "common/timer/timer.h"
 
 namespace quicx {
+namespace common {
 namespace {
 
 TEST(treemap_timer_utest, addtimer1) {
@@ -143,5 +144,6 @@ TEST(treemap_timer_utest, timerrun3) {
     EXPECT_TRUE(timer->Empty());
 }
 
+}
 }
 }

@@ -9,8 +9,9 @@
 #include "quic/connection/server_connection.h"
 
 namespace quicx {
+namespace quic {
 
-thread_local std::shared_ptr<ITimer> Processor::__timer = MakeTimer();
+thread_local std::shared_ptr<common::ITimer> Processor::__timer = common::MakeTimer();
 
 Processor::Processor() {
 
@@ -22,7 +23,7 @@ Processor::~Processor() {
 
 void Processor::Run() {
     if (!_recv_function) {
-        LOG_ERROR("recv function is not set.");
+        common::LOG_ERROR("recv function is not set.");
         return;
     }
 
@@ -47,7 +48,7 @@ void Processor::Run() {
 }
 
 bool Processor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) {
-    LOG_INFO("get packet from %s", udp_packet->GetPeerAddress().AsString().c_str());
+    common::LOG_INFO("get packet from %s", udp_packet->GetPeerAddress().AsString().c_str());
 
     // dispatch packet
     auto packets = udp_packet->GetPackets();
@@ -114,12 +115,12 @@ void Processor::ProcessTimer() {
 
 void Processor::ProcessSend() {
     static thread_local uint8_t buf[1500] = {0};
-    std::shared_ptr<IBuffer> buffer = std::make_shared<Buffer>(buf, sizeof(buf));
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
 
     std::shared_ptr<UdpPacketOut> packet_out;
     for (auto iter = _active_send_connection_list.begin(); iter != _active_send_connection_list.end(); ++iter) {
         if (!(*iter)->GenerateSendData(buffer)) {
-            LOG_ERROR("generate send data failed.");
+            common::LOG_ERROR("generate send data failed.");
             continue;
         }
 
@@ -128,7 +129,7 @@ void Processor::ProcessSend() {
         packet_out->SetPeerAddress((*iter)->GetPeerAddress());
 
         if (!UdpSender::DoSend(packet_out)) {
-            LOG_ERROR("udp send failed.");
+            common::LOG_ERROR("udp send failed.");
         }
     }
     _active_send_connection_list.clear();
@@ -136,7 +137,7 @@ void Processor::ProcessSend() {
 
 bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
     if (packet->GetHeader()->GetPacketType() != PT_INITIAL) {
-        LOG_ERROR("recv packet whitout connection.");
+        common::LOG_ERROR("recv packet whitout connection.");
         return false;
     }
 
@@ -153,7 +154,7 @@ bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
 
 bool Processor::GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
     if (packets.empty()) {
-        LOG_ERROR("parse packet list is empty.");
+        common::LOG_ERROR("parse packet list is empty.");
         return false;
     }
     
@@ -168,4 +169,5 @@ bool Processor::GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>&
     return true;
 }
 
+}
 }

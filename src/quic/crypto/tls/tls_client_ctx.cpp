@@ -2,6 +2,7 @@
 #include "quic/crypto/tls/tls_client_ctx.h"
 
 namespace quicx {
+namespace quic {
 
 TLSClientCtx::TLSClientCtx() {
 
@@ -23,4 +24,5 @@ bool TLSClientCtx::Init() {
     return true;
 }
 
+}
 }

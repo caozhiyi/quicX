@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 class AckRange {
 public:
@@ -22,6 +23,7 @@ private:
     uint64_t _ack_range_length; // A variable-length integer indicating the number of contiguous acknowledged packets preceding the largest packet number, as determined by the preceding Gap
 };
 
+}
 }
 
 #endif

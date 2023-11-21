@@ -5,15 +5,16 @@
 #include "common/buffer/buffer.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(ack_frame_utest, codec) {
-    quicx::AckFrame frame1;
-    quicx::AckFrame frame2;
+    AckFrame frame1;
+    AckFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetAckDelay(104);
     frame1.AddAckRange(3, 5);
@@ -44,12 +45,12 @@ TEST(ack_frame_utest, codec) {
 }
 
 TEST(ack_ecn_frame_utest, decod1) {
-    quicx::AckEcnFrame frame1;
-    quicx::AckEcnFrame frame2;
+    AckEcnFrame frame1;
+    AckEcnFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetAckDelay(104);
     //frame1.SetFirstAckRange(10012);
@@ -88,5 +89,6 @@ TEST(ack_ecn_frame_utest, decod1) {
     EXPECT_EQ(frame1.GetEcnCe(), frame2.GetEcnCe());
 }
 
+}
 }
 }

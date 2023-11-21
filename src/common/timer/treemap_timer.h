@@ -12,6 +12,7 @@
 #include "common/timer/timer_interface.h"
 
 namespace quicx {
+namespace common {
 
 // timer interface, timer inherits from this.
 class TreeMapTimer:
@@ -40,6 +41,7 @@ private:
     std::map<uint64_t, std::unordered_map<uint64_t, TimerTask>> _timer_map;
 };
 
+}
 }
 
 #endif

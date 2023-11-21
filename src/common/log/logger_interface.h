@@ -10,6 +10,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace common {
 
 struct Log {
     char*    _log;
@@ -36,6 +37,7 @@ protected:
     std::shared_ptr<Logger> _logger;
 };
 
+}
 }
 
 #endif

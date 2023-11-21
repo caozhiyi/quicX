@@ -5,6 +5,7 @@
 #include <string>
 
 namespace quicx {
+namespace common {
 
 class TimeConsuming {
 public:
@@ -16,6 +17,7 @@ private:
     std::chrono::system_clock::time_point _start_time;
 };
 
+}
 }
 
 #endif

@@ -10,6 +10,7 @@
 
 
 namespace quicx {
+namespace quic {
 
 UdpReceiver::UdpReceiver():
     _recv_sock(0) {
@@ -18,14 +19,14 @@ UdpReceiver::UdpReceiver():
 
 UdpReceiver::~UdpReceiver() {
     if (_recv_sock > 0) {
-        Close(_recv_sock);
+        common::Close(_recv_sock);
     }
 }
 
 bool UdpReceiver::Listen(const std::string& ip, uint16_t port) {
-    auto ret = UdpSocket();
+    auto ret = common::UdpSocket();
     if (ret.errno_ != 0) {
-        LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
+        common::LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
         return false;
     }
     
@@ -36,7 +37,7 @@ bool UdpReceiver::Listen(const std::string& ip, uint16_t port) {
 
     auto bind_ret = Bind(_recv_sock, _listen_address);
     if (bind_ret.errno_ != 0) {
-        LOG_ERROR("bind address failed. err:%d", ret.errno_);
+        common::LOG_ERROR("bind address failed. err:%d", ret.errno_);
         return false;
     }
     
@@ -46,15 +47,15 @@ bool UdpReceiver::Listen(const std::string& ip, uint16_t port) {
 UdpReceiver::RecvRet UdpReceiver::DoRecv(std::shared_ptr<UdpPacketIn> udp_packet) {
     auto buffer = udp_packet->GetData();
     auto span = buffer->GetWriteSpan();
-    Address peer_addr(AT_IPV4);
+    common::Address peer_addr(common::AT_IPV4);
         
-    auto recv_ret = RecvFrom(_recv_sock, (char*)span.GetStart(), __max_v4_packet_size, MSG_DONTWAIT, peer_addr);
+    auto recv_ret = common::RecvFrom(_recv_sock, (char*)span.GetStart(), __max_v4_packet_size, MSG_DONTWAIT, peer_addr);
     if (recv_ret.errno_ != 0) {
         if (recv_ret.errno_ == EWOULDBLOCK) {
             return UdpReceiver::RR_WOULDBLOCK;
         }
         
-        LOG_ERROR("recv from failed. err:%d", recv_ret.errno_);
+        common::LOG_ERROR("recv from failed. err:%d", recv_ret.errno_);
         return UdpReceiver::RR_FAILED;
     }
     buffer->MoveReadPt(recv_ret._return_value);
@@ -63,4 +64,5 @@ UdpReceiver::RecvRet UdpReceiver::DoRecv(std::shared_ptr<UdpPacketIn> udp_packet
     return UdpReceiver::RR_SUCCESS;
 }
 
+}
 }

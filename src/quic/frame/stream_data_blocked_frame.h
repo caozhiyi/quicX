@@ -5,6 +5,7 @@
 #include "quic/frame/stream_frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class StreamDataBlockedFrame:
     public IStreamFrame {
@@ -12,8 +13,8 @@ public:
     StreamDataBlockedFrame();
     ~StreamDataBlockedFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetMaximumData(uint64_t max) { _maximum_data = max; }
@@ -23,6 +24,7 @@ private:
    uint64_t _maximum_data;  // the connection-level limit at which blocking occurred.
 };
 
+}
 }
 
 #endif

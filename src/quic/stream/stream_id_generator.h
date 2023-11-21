@@ -5,6 +5,7 @@
 #include "quic/stream/type.h"
 
 namespace quicx {
+namespace quic {
 
 class StreamIDGenerator {
 public:
@@ -31,6 +32,7 @@ private:
     uint64_t _cur_unidirectional_id;
 };
 
+}
 }
 
 #endif

@@ -5,6 +5,7 @@
 #include <openssl/ossl_typ.h>
 
 namespace quicx {
+namespace quic {
 
 class Hkdf {
 public:
@@ -18,6 +19,7 @@ public:
         const uint8_t *info, size_t infolen, const EVP_MD *md);
 };
 
+}
 }
 
 #endif

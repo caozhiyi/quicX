@@ -4,6 +4,7 @@
 #include "quic/crypto/tls/tls_server_conneciton.h"
 
 namespace quicx {
+namespace quic {
 
 TLSServerConnection::TLSServerConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler, TlsServerHandlerInterface* ser_handle):
     TLSConnection(ctx, handler),
@@ -43,4 +44,5 @@ int TLSServerConnection::SSLAlpnSelect(SSL* ssl, const unsigned char **out, unsi
     return 0;
 }
 
+}
 }

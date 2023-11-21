@@ -3,6 +3,7 @@
 #include "quic/stream/send_stream_interface.h"
 
 namespace quicx {
+namespace quic {
 
 ISendStream::ISendStream(uint64_t id, bool is_crypto_stream):
     IStream(id),
@@ -15,5 +16,6 @@ ISendStream::~ISendStream() {
 
 }
 
+}
 }
 

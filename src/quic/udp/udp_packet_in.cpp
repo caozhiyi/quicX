@@ -5,6 +5,7 @@
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
+namespace quic {
 
 UdpPacketIn::UdpPacketIn():
     _connection_hash_code(0) {
@@ -22,7 +23,7 @@ bool UdpPacketIn::DecodePacket() {
     }
 
     if (_packets.empty()) {
-        LOG_ERROR("parse packet list is empty.");
+        common::LOG_ERROR("parse packet list is empty.");
         return false;
     }
     
@@ -46,4 +47,5 @@ void UdpPacketIn::GetConnection(uint8_t* id, uint16_t& len) {
     len = _connection_id_len;
 }
 
+}
 }

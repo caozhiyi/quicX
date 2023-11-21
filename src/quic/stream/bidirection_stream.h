@@ -5,12 +5,13 @@
 #include "quic/stream/send_stream.h"
 
 namespace quicx {
+namespace quic {
 
 class BidirectionStream:
     public virtual SendStream,
     public virtual RecvStream {
 public:
-    BidirectionStream(std::shared_ptr<BlockMemoryPool> alloter, uint64_t init_data_limit, uint64_t id = 0);
+    BidirectionStream(std::shared_ptr<common::BlockMemoryPool> alloter, uint64_t init_data_limit, uint64_t id = 0);
     virtual ~BidirectionStream();
 
     // reset the stream
@@ -23,6 +24,7 @@ public:
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
 };
 
+}
 }
 
 #endif

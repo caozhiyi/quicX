@@ -10,6 +10,7 @@
 #include "logger_interface.h"
 
 namespace quicx {
+namespace common {
 
 class StdoutLogger: 
     public Logger {
@@ -28,6 +29,7 @@ private:
     std::mutex _mutex;
 };
 
+}
 }
 
 #endif

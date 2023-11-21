@@ -5,6 +5,7 @@
 #include "common/structure/thread_safe_block_queue.h"
 
 namespace quicx {
+namespace common {
     
 template<typename T>
 class ThreadWithQueue:
@@ -37,4 +38,6 @@ protected:
 };
 
 }
+}
+
 #endif

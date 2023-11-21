@@ -11,6 +11,7 @@
 #include <functional>
 
 namespace quicx {
+namespace common {
 
 typedef std::function<void()> TimerCallback;
 
@@ -26,6 +27,7 @@ private:
 friend class TreeMapTimer;
 };
 
+}
 }
 
 #endif

@@ -5,6 +5,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class Buffer;
 class CryptoFrame:
@@ -13,8 +14,8 @@ public:
     CryptoFrame();
     ~CryptoFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetOffset(uint64_t offset) { _offset = offset; }
@@ -38,6 +39,7 @@ private:
     uint8_t _encryption_level;
 };
 
+}
 }
 
 #endif

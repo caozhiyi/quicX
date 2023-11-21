@@ -1,6 +1,7 @@
 #include "ack_range.h"
 
 namespace quicx {
+namespace quic {
 
 AckRange::AckRange():
     _gap(0),
@@ -18,4 +19,5 @@ AckRange::~AckRange() {
 
 }
 
+}
 }

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 namespace quicx {
+namespace quic {
 
 enum PacketType {
     PT_INITIAL     = 0x00,
@@ -38,6 +39,7 @@ static const uint32_t __retry_integrity_tag_length = 128;
 
 const char* PacketTypeToString(PacketType type);
 
+}
 }
 
 #endif

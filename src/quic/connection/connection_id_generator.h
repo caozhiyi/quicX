@@ -5,9 +5,10 @@
 #include "common/util/singleton.h"
 
 namespace quicx {
+namespace quic {
 
 class ConnectionIDGenerator:
-    public Singleton<ConnectionIDGenerator> {
+    public common::Singleton<ConnectionIDGenerator> {
 public:
     ConnectionIDGenerator();
     ~ConnectionIDGenerator();
@@ -19,6 +20,7 @@ private:
     uint64_t _sip_hash_key[2];    
 };
 
+}
 }
 
 #endif

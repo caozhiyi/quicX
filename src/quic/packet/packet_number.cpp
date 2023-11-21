@@ -2,6 +2,7 @@
 #include "quic/packet/packet_number.h"
 
 namespace quicx {
+namespace quic {
 
 PacketNumber::PacketNumber() {
     memset(_cur_packet_number, 0, sizeof(_cur_packet_number));
@@ -65,4 +66,5 @@ uint64_t PacketNumber::Decode(uint64_t largest_pn, uint64_t truncated_pn, uint64
     return candidate_pn;
 }
 
+}
 }

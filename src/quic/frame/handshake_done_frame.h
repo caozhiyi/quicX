@@ -4,6 +4,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class HandshakeDoneFrame:
     public IFrame {
@@ -12,6 +13,7 @@ public:
     ~HandshakeDoneFrame() {}
 };
 
+}
 }
 
 #endif

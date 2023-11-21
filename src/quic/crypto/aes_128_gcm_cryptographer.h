@@ -4,6 +4,7 @@
 #include "quic/crypto/aead_base_cryptographer.h"
 
 namespace quicx {
+namespace quic {
 
 class Aes128GcmCryptographer:
     public AeadBaseCryptographer {
@@ -16,6 +17,7 @@ public:
     virtual CryptographerId GetCipherId();
 };
 
+}
 }
 
 #endif

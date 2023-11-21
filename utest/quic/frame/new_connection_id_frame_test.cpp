@@ -5,15 +5,16 @@
 #include "quic/frame/new_connection_id_frame.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(new_connection_id_frame_utest, codec) {
-    quicx::NewConnectionIDFrame frame1;
-    quicx::NewConnectionIDFrame frame2;
+    NewConnectionIDFrame frame1;
+    NewConnectionIDFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(256, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(256, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetRetirePriorTo(10086);
     frame1.SetSequenceNumber(2352632);
@@ -45,9 +46,10 @@ TEST(new_connection_id_frame_utest, codec) {
     uint8_t cid_len = 20;
     frame2.GetConnectionID(cid_ptr, cid_len);
     EXPECT_EQ(std::string((char*)cid_ptr, cid_len), std::string((char*)cid, len));
-    EXPECT_EQ(std::string((char*)frame1.GetStatelessResetToken(), quicx::__stateless_reset_token_length), 
-        std::string((char*)frame2.GetStatelessResetToken(), quicx::__stateless_reset_token_length));
+    EXPECT_EQ(std::string((char*)frame1.GetStatelessResetToken(), __stateless_reset_token_length), 
+        std::string((char*)frame2.GetStatelessResetToken(), __stateless_reset_token_length));
 }
 
+}
 }
 }

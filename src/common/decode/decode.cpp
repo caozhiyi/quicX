@@ -4,6 +4,7 @@
 #include "common/decode/decode.h"
 
 namespace quicx {
+namespace common {
 
 const static uint64_t __max_decode = ((uint64_t)-1) >> 2;
 
@@ -159,5 +160,5 @@ uint8_t* DecodeBytesNoCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t
     return start + out_len;
 }
 
-
+}
 }

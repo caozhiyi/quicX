@@ -5,6 +5,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace common {
 
 class RangeRandom {
 public:
@@ -19,6 +20,7 @@ private:
     std::uniform_int_distribution<int32_t> _uniform;
 };
 
+}
 }
 
 #endif

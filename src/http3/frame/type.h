@@ -3,6 +3,7 @@
 
 #include <cstdint>
 
+namespace quicx {
 namespace http3 {
 
 enum FrameType: uint16_t {
@@ -17,6 +18,7 @@ enum FrameType: uint16_t {
     FT_UNKNOW        = 0xff,
 };
 
+}
 }
 
 #endif

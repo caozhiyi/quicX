@@ -8,6 +8,7 @@
 #include "normal_alloter.h"
 
 namespace quicx {
+namespace common {
 
 NormalAlloter::NormalAlloter() {
 
@@ -48,4 +49,5 @@ std::shared_ptr<NormalAlloter> MakeNormalAlloterPtr() {
     return std::make_shared<NormalAlloter>();
 }
 
+}
 }

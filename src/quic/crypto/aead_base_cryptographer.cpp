@@ -12,6 +12,7 @@
 #include "quic/packet/packet_number.h"
 
 namespace quicx {
+namespace quic {
 
 AeadBaseCryptographer::AeadBaseCryptographer():
     _digest(nullptr),
@@ -83,10 +84,10 @@ bool AeadBaseCryptographer::InstallInitSecret(const uint8_t* secret, uint32_t se
     return true;
 }
 
-bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferSpan& associated_data, BufferSpan& ciphertext,
-    std::shared_ptr<IBufferWrite> out_plaintext) {
+bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data, common::BufferSpan& ciphertext,
+    std::shared_ptr<common::IBufferWrite> out_plaintext) {
     if (_read_secret._key.empty() || _read_secret._iv.empty()) {
-        LOG_ERROR("decrypt packet but not install secret");
+        common::LOG_ERROR("decrypt packet but not install secret");
         return false;
     }
 
@@ -97,7 +98,7 @@ bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferSpan& assoc
     // encrypt
     EVPAEADCTXPtr ctx = EVP_AEAD_CTX_new(_aead, _read_secret._key.data(), _read_secret._key.size(), _aead_tag_length);
     if (!ctx) {
-        LOG_ERROR("EVP_AEAD_CTX_new failed");
+        common::LOG_ERROR("EVP_AEAD_CTX_new failed");
         return false;
     }
 
@@ -106,17 +107,17 @@ bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, BufferSpan& assoc
     auto out_span = out_plaintext->GetWriteSpan();
     if (EVP_AEAD_CTX_open(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _read_secret._iv.size(),
         ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
-        LOG_ERROR("EVP_AEAD_CTX_open failed");
+        common::LOG_ERROR("EVP_AEAD_CTX_open failed");
         return false;
     }
     out_plaintext->MoveWritePt(out_length);
     return true;
 }
 
-bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferSpan& associated_data, BufferSpan& plaintext,
-    std::shared_ptr<IBufferWrite> out_ciphertext) {
+bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data, common::BufferSpan& plaintext,
+    std::shared_ptr<common::IBufferWrite> out_ciphertext) {
     if (_write_secret._key.empty() || _write_secret._iv.empty()) {
-        LOG_ERROR("encrypt packet but not install secret");
+        common::LOG_ERROR("encrypt packet but not install secret");
         return false;
     }
 
@@ -127,7 +128,7 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferSpan& assoc
     // encrypt
     EVPAEADCTXPtr ctx = EVP_AEAD_CTX_new(_aead, _write_secret._key.data(), _write_secret._key.size(), _aead_tag_length);
     if (!ctx) {
-        LOG_ERROR("EVP_AEAD_CTX_new failed");
+        common::LOG_ERROR("EVP_AEAD_CTX_new failed");
         return false;
     }
 
@@ -135,17 +136,17 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, BufferSpan& assoc
     auto out_span = out_ciphertext->GetWriteSpan();
     if (EVP_AEAD_CTX_seal(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _write_secret._iv.size(),
         plaintext.GetStart(), plaintext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
-        LOG_ERROR("EVP_AEAD_CTX_seal failed");
+        common::LOG_ERROR("EVP_AEAD_CTX_seal failed");
         return false;
     }
     out_ciphertext->MoveWritePt(out_length);
     return true;
 }
 
-bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sample, uint8_t pn_offset,
+bool AeadBaseCryptographer::DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
     uint8_t& out_packet_num_len, bool is_short) {
     if (_read_secret._hp.empty()) {
-        LOG_ERROR("decrypt header but not install hp secret");
+        common::LOG_ERROR("decrypt header but not install hp secret");
         return false;
     }
 
@@ -153,11 +154,11 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sa
     uint8_t mask[__header_protect_mask_length] = {0};
     size_t mask_length = 0;
     if (!MakeHeaderProtectMask(sample, _read_secret._hp, mask, __header_protect_mask_length, mask_length)) {
-        LOG_ERROR("make header protect mask failed");
+        common::LOG_ERROR("make header protect mask failed");
         return false;
     }
     if (mask_length < __header_protect_mask_length) {
-        LOG_ERROR("make header protect mask too short");
+        common::LOG_ERROR("make header protect mask too short");
         return false;
     }
 
@@ -182,10 +183,10 @@ bool AeadBaseCryptographer::DecryptHeader(BufferSpan& ciphertext, BufferSpan& sa
     return true;
 }
 
-bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, BufferSpan& sample, uint8_t pn_offset,
+bool AeadBaseCryptographer::EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint8_t pn_offset,
     size_t pkt_number_len, bool is_short) {
     if (_write_secret._hp.empty()) {
-        LOG_ERROR("encrypt header but not install hp secret");
+        common::LOG_ERROR("encrypt header but not install hp secret");
         return false;
     }
     
@@ -193,11 +194,11 @@ bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, BufferSpan& sam
     uint8_t mask[__header_protect_mask_length] = {0};
     size_t mask_length = 0;
     if (!MakeHeaderProtectMask(sample, _write_secret._hp, mask, __header_protect_mask_length, mask_length)) {
-        LOG_ERROR("make header protect mask failed");
+        common::LOG_ERROR("make header protect mask failed");
         return false;
     }
     if (mask_length < __header_protect_mask_length) {
-        LOG_ERROR("make header protect mask too short");
+        common::LOG_ERROR("make header protect mask too short");
         return false;
     }
 
@@ -218,35 +219,35 @@ bool AeadBaseCryptographer::EncryptHeader(BufferSpan& plaintext, BufferSpan& sam
     return true;
 }
 
-bool AeadBaseCryptographer::MakeHeaderProtectMask(BufferSpan& sample, std::vector<uint8_t>& key,
+bool AeadBaseCryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
     uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length) {
     out_mask_length = 0;
     
     EVPCIPHERCTXPtr ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
-        LOG_ERROR("create evp cipher ctx failed");
+        common::LOG_ERROR("create evp cipher ctx failed");
         return false;
     }
 
     if (EVP_EncryptInit_ex(ctx.get(), _cipher, NULL, key.data(), sample.GetStart()) != 1) {
-        LOG_ERROR("EVP_EncryptInit_ex failed");
+        common::LOG_ERROR("EVP_EncryptInit_ex failed");
         return false;
     }
 
     int len = 0;
     if (EVP_EncryptUpdate(ctx.get(), out_mask, &len, __header_mask, sizeof(__header_mask) - 1) != 1) {
-        LOG_ERROR("EVP_EncryptUpdate failed");
+        common::LOG_ERROR("EVP_EncryptUpdate failed");
         return false;
     }
     out_mask_length = len;
 
     if (EVP_EncryptFinal_ex(ctx.get(), out_mask + out_mask_length, &len) != 1) {
-        LOG_ERROR("EVP_EncryptFinal_ex failed");
+        common::LOG_ERROR("EVP_EncryptFinal_ex failed");
         return false;
     }
 
     if (len != 0) {
-        LOG_ERROR("EVP_EncryptFinal_ex out put length is not zero");
+        common::LOG_ERROR("EVP_EncryptFinal_ex out put length is not zero");
         return false;
     }
 
@@ -267,4 +268,5 @@ uint64_t AeadBaseCryptographer::PktNumberN2L(uint64_t pkt_number) {
     return ((uint64_t)(ntohl((uint32_t)(pkt_number))) << 32 | ntohl((uint32_t)((pkt_number) >> 32)));
 }
 
+}
 }

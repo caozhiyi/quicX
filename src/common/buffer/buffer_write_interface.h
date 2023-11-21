@@ -10,6 +10,7 @@
 #include "common/buffer/buffer_span.h"
 
 namespace quicx {
+namespace common {
 
 // write only buffer interface
 class BufferWriteView;
@@ -28,9 +29,10 @@ public:
     // get a read buffer view
     virtual BufferWriteView GetWriteView(uint32_t offset = 0) = 0;
     // get a read buffer view shared ptr
-    virtual std::shared_ptr<IBufferWrite> GetWriteViewPtr(uint32_t offset = 0) = 0;
+    virtual std::shared_ptr<common::IBufferWrite> GetWriteViewPtr(uint32_t offset = 0) = 0;
 };
 
+}
 }
 
 #endif

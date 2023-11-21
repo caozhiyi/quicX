@@ -6,6 +6,7 @@
 #include "quic/crypto/chacha20_poly1305_cryptographer.h"
 
 namespace quicx {
+namespace quic {
 
 ChaCha20Poly1305Cryptographer::ChaCha20Poly1305Cryptographer() {
     _aead = EVP_aead_chacha20_poly1305();
@@ -31,7 +32,7 @@ CryptographerId ChaCha20Poly1305Cryptographer::GetCipherId() {
     return CI_TLS1_CK_CHACHA20_POLY1305_SHA256;
 }
 
-bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(BufferReadView sample, std::vector<uint8_t>& key,
+bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(common::BufferReadView sample, std::vector<uint8_t>& key,
     uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length) {
 
     const uint8_t* sample_pos = sample.GetData();
@@ -44,4 +45,5 @@ bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(BufferReadView sample,
     return true;
 }
 
+}
 }

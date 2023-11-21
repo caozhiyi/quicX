@@ -11,16 +11,18 @@
 #include "common/structure/linked_list.h"
 
 namespace quicx {
+namespace common {
 
 class BlockMemoryPool;
 class BufferBlock:
     public Buffer,
     public LinkedListSolt<BufferBlock> {
 public:
-    BufferBlock(std::shared_ptr<BlockMemoryPool>& alloter): Buffer(alloter) {}
+    BufferBlock(std::shared_ptr<common::BlockMemoryPool>& alloter): Buffer(alloter) {}
     ~BufferBlock() {}
 };
 
+}
 }
 
 #endif

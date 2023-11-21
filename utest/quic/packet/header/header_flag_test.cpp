@@ -4,6 +4,7 @@
 #include "quic/packet/header/header_flag.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 
@@ -45,7 +46,7 @@ TEST(header_flag_utest, rtt1_codec) {
 
     static const uint8_t __buf_len = 2;
     uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> buffer = std::make_shared<Buffer>(buf, buf + __buf_len);
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, buf + __buf_len);
 
     EXPECT_TRUE(flag.EncodeFlag(buffer));
     EXPECT_EQ(buffer->GetDataLength(), 1);
@@ -70,7 +71,7 @@ TEST(header_flag_utest, init_codec) {
 
     static const uint8_t __buf_len = 2;
     uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> buffer = std::make_shared<Buffer>(buf, buf + __buf_len);
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, buf + __buf_len);
 
     EXPECT_TRUE(flag.EncodeFlag(buffer));
     EXPECT_EQ(buffer->GetDataLength(), 1);
@@ -85,5 +86,6 @@ TEST(header_flag_utest, init_codec) {
     EXPECT_EQ(new_flag.GetFixBit(), 1);
 }
 
+}
 }
 }

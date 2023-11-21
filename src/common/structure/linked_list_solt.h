@@ -4,6 +4,7 @@
 #include <memory>
 
 namespace quicx {
+namespace common {
 
 template<typename T>
 class LinkedListSolt {
@@ -18,6 +19,7 @@ protected:
     std::shared_ptr<T> _next;
 };
 
+}
 }
 
 #endif

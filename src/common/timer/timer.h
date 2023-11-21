@@ -10,9 +10,11 @@
 #include "common/timer/timer_interface.h"
 
 namespace quicx {
+namespace common {
 
 std::shared_ptr<ITimer> MakeTimer();
 
+}
 }
 
 #endif

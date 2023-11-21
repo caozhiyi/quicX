@@ -10,6 +10,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace common {
 
 static const uint16_t __align = sizeof(unsigned long);
 
@@ -111,6 +112,7 @@ void AlloterWrap::PoolFree(T* &m, uint32_t len) {
     m = nullptr;
 }
 
+}
 }
 
 #endif 

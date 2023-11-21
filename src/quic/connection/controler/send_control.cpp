@@ -7,8 +7,9 @@
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {
+namespace quic {
 
-SendControl::SendControl(std::shared_ptr<ITimer> timer): _timer(timer) {
+SendControl::SendControl(std::shared_ptr<common::ITimer> timer): _timer(timer) {
     memset(_pkt_num_largest_sent, 0, sizeof(_pkt_num_largest_sent));
     memset(_pkt_num_largest_acked, 0, sizeof(_pkt_num_largest_acked));
     memset(_largest_sent_time, 0, sizeof(_largest_sent_time));
@@ -17,16 +18,16 @@ SendControl::SendControl(std::shared_ptr<ITimer> timer): _timer(timer) {
 void SendControl::OnPacketSend(uint64_t time, std::shared_ptr<IPacket> packet) {
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
     if (_pkt_num_largest_sent[ns] > packet->GetPacketNumber()) {
-        LOG_ERROR("invalid packet number. number:%d", packet->GetPacketNumber());
+        common::LOG_ERROR("invalid packet number. number:%d", packet->GetPacketNumber());
         return;
     }
     _pkt_num_largest_sent[ns] = packet->GetPacketNumber();
-    _largest_sent_time[ns] = UTCTimeMsec();
+    _largest_sent_time[ns] = common::UTCTimeMsec();
 
     if (!IsAckElictingPacket(packet->GetFrameTypeBit())) {
         return;
     }
-    auto timer_task = TimerTask([this, packet]{
+    auto timer_task = common::TimerTask([this, packet]{
         _lost_packets.push_back(packet);
     });
     _timer->AddTimer(timer_task, _rtt_calculator.GetPT0Interval(TransportParamConfig::Instance()._max_ack_delay));
@@ -35,7 +36,7 @@ void SendControl::OnPacketSend(uint64_t time, std::shared_ptr<IPacket> packet) {
 
 void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
     if (frame->GetType() != FT_ACK) {
-        LOG_ERROR("invalid frame on packet ack.");
+        common::LOG_ERROR("invalid frame on packet ack.");
         return;
     }
 
@@ -70,4 +71,5 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
     }
 }
 
+}
 }

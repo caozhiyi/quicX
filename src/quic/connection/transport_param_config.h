@@ -6,12 +6,13 @@
 #include "common/util/singleton.h"
 
 namespace quicx {
+namespace quic {
 
 /*
  * transmission parameters local configuration parameters
  */
 class TransportParamConfig:
-    public Singleton<TransportParamConfig> {
+    public common::Singleton<TransportParamConfig> {
 public:
     TransportParamConfig();
     ~TransportParamConfig();
@@ -36,6 +37,7 @@ public:
     std::string _retry_source_connection_id;
 };
 
+}
 }
 
 #endif

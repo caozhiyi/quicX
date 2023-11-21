@@ -7,6 +7,7 @@
 #include "quic/crypto/tls/type.h"
 
 namespace quicx {
+namespace quic {
 
 class TLSCtx {
 public:
@@ -22,6 +23,7 @@ protected:
 };
 
 
+}
 }
 
 #endif

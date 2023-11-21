@@ -6,6 +6,7 @@
 #include "quic/frame/stream_frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 enum StreamFrameFlag {
     SFF_FIN  = 0x01,
@@ -22,8 +23,8 @@ public:
     StreamFrame(uint16_t frame_type);
     ~StreamFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     bool HasOffset() { return _frame_type & SFF_OFF; }
@@ -47,6 +48,7 @@ private:
     uint8_t* _data;       // the bytes from the designated stream to be delivered.
 };
 
+}
 }
 
 #endif

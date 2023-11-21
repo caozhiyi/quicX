@@ -7,6 +7,7 @@
 #include "stdout_logger.h"
 
 namespace quicx {
+namespace common {
 
 StdoutLogger::StdoutLogger() {
 
@@ -56,4 +57,5 @@ void StdoutLogger::Fatal(std::shared_ptr<Log>& log) {
     Logger::Fatal(log);
 }
 
+}
 }

@@ -9,6 +9,7 @@
 #include "quic/packet/header/long_header.h"
 
 namespace quicx {
+namespace quic {
 
 /*
 Retry Packet {
@@ -34,24 +35,25 @@ public:
     virtual ~RetryPacket();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_UNCRYPTO; }
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer);
-    virtual bool DecodeWithCrypto(std::shared_ptr<IBuffer> buffer) { return true; }
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
+    virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) { return true; }
 
     virtual IHeader* GetHeader() { return &_header; }
 
-    void SetRetryToken(BufferSpan toekn) { _retry_token = toekn; }
-    BufferSpan& GetRetryToken() { return _retry_token; }
+    void SetRetryToken(common::BufferSpan toekn) { _retry_token = toekn; }
+    common::BufferSpan& GetRetryToken() { return _retry_token; }
 
     void SetRetryIntegrityTag(uint8_t* tag);
     uint8_t* GetRetryIntegrityTag();
 
 private:
     LongHeader _header;
-    BufferSpan _retry_token;
+    common::BufferSpan _retry_token;
     uint8_t _retry_integrity_tag[__retry_integrity_tag_length];
 };
 
+}
 }
 
 #endif

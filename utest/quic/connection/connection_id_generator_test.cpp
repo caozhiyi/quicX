@@ -2,6 +2,7 @@
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(connnection_id_generator_utest, generator) {
@@ -33,5 +34,6 @@ TEST(connnection_id_generator_utest, hash) {
     EXPECT_EQ(h1, h2);
 }
 
+}
 }
 }

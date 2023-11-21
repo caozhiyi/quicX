@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 enum AlpnType {
     AT_HTTP3     = 1,
@@ -16,6 +17,7 @@ static uint8_t __alpn_transport[] = {'t', 'r', 'a', 'n', 's', 'p', 'o', 'r', 't'
 
 static const uint16_t __max_cid_length = 20;
 static const uint16_t __min_cid_length = 4;
-}
 
+}
+}
 #endif

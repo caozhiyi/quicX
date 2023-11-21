@@ -6,10 +6,11 @@
 #include "common/buffer/buffer.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(transport_param_utest, test1) {
-    quicx::TransportParamConfig config;
+    TransportParamConfig config;
     config._original_destination_connection_id = "11231";
     config._max_idle_timeout = 100;
     config._stateless_reset_token = "qwe";
@@ -28,12 +29,12 @@ TEST(transport_param_utest, test1) {
     config._initial_source_connection_id = "127.0.0.1";
     config._retry_source_connection_id = "192.168.3.1";
 
-    quicx::TransportParam tp1;
+    TransportParam tp1;
     tp1.Init(config);
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(1024, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 
@@ -42,7 +43,7 @@ TEST(transport_param_utest, test1) {
     memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
     read_buffer->MoveWritePt(data_span.GetLength());
 
-    quicx::TransportParam tp2;
+    TransportParam tp2;
     EXPECT_TRUE(tp2.Decode(read_buffer));
 
     EXPECT_EQ(tp1.GetOriginalDestinationConnectionId(),tp2.GetOriginalDestinationConnectionId());
@@ -66,11 +67,11 @@ TEST(transport_param_utest, test1) {
 
 
 TEST(transport_param_utest, test2) {
-    quicx::TransportParam tp1;
+    TransportParam tp1;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(1024, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 
@@ -79,7 +80,7 @@ TEST(transport_param_utest, test2) {
     memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
     read_buffer->MoveWritePt(data_span.GetLength());
 
-    quicx::TransportParam tp2;
+    TransportParam tp2;
     EXPECT_TRUE(tp2.Decode(read_buffer));
 
     EXPECT_EQ(tp1.GetOriginalDestinationConnectionId(),tp2.GetOriginalDestinationConnectionId());
@@ -101,5 +102,6 @@ TEST(transport_param_utest, test2) {
     EXPECT_EQ(tp1.GetRetrySourceConnectionId(),tp2.GetRetrySourceConnectionId());
 }
 
+}
 }
 }

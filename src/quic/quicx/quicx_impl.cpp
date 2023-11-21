@@ -6,6 +6,7 @@
 #include "quic/connection/client_connection.h"
 
 namespace quicx {
+namespace quic {
 
 QuicxImpl::QuicxImpl() {
 
@@ -18,7 +19,7 @@ QuicxImpl::~QuicxImpl() {
 bool QuicxImpl::Init(uint16_t thread_num) {
     _ctx = std::make_shared<TLSCtx>();
     if (!_ctx->Init()) {
-        LOG_ERROR("tls ctx init faliled.");
+        common::LOG_ERROR("tls ctx init faliled.");
         return false;
     }
 
@@ -70,7 +71,7 @@ bool QuicxImpl::Connection(const std::string& ip, uint16_t port) {
         // 2. client connectin manage
         auto conn = _processors[0]->MakeClientConnection();
         auto cli_conn = std::dynamic_pointer_cast<ClientConnection>(conn);
-        Address addr(AT_IPV4, ip, port);
+        common::Address addr(common::AT_IPV4, ip, port);
         if (cli_conn->Dial(addr)) {
             _receiver->SetRecvSocket(cli_conn->GetSock());
             return true;
@@ -86,4 +87,5 @@ bool QuicxImpl::ListenAndAccept(const std::string& ip, uint16_t port) {
     return false;
 }
 
+}
 }

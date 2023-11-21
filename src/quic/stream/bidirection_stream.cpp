@@ -10,8 +10,9 @@
 #include "quic/stream/bidirection_stream.h"
 
 namespace quicx {
+namespace quic {
 
-BidirectionStream::BidirectionStream(std::shared_ptr<BlockMemoryPool> alloter, 
+BidirectionStream::BidirectionStream(std::shared_ptr<common::BlockMemoryPool> alloter, 
     uint64_t init_data_limit,
     uint64_t id):
     SendStream(alloter, init_data_limit, id),
@@ -53,7 +54,7 @@ uint32_t BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
         if (StreamFrame::IsStreamFrame(frame_type)) {
             return OnStreamFrame(frame);
         } else {
-            LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
+            common::LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
         }
     }
     return 0;
@@ -63,4 +64,5 @@ IStream::TrySendResult BidirectionStream::TrySendData(IFrameVisitor* visitor) {
     return SendStream::TrySendData(visitor);
 }
 
+}
 }

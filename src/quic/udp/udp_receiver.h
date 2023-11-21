@@ -4,8 +4,10 @@
 #include <string>
 #include <cstdint>
 #include "quic/udp/udp_packet_in.h"
+#include "common/network/address.h"
 
 namespace quicx {
+namespace quic {
 
 class UdpReceiver{
 public:
@@ -24,9 +26,10 @@ public:
 
 private:
     uint64_t _recv_sock;
-    Address _listen_address;
+    common::Address _listen_address;
 };
 
+}
 }
 
 #endif

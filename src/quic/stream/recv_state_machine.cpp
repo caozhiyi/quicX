@@ -4,6 +4,7 @@
 #include "quic/stream/recv_state_machine.h"
 
 namespace quicx {
+namespace quic {
 
 RecvStreamStateMachine::RecvStreamStateMachine(StreamState s):
     IStreamStateMachine(s) {
@@ -50,7 +51,7 @@ bool RecvStreamStateMachine::OnFrame(uint16_t frame_type) {
         break;
     }
 
-    LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", _state, frame_type);
+    common::LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", _state, frame_type);
     return false;
 }
 
@@ -76,7 +77,7 @@ bool RecvStreamStateMachine::RecvAllData() {
         _state = SS_RESET_RECVD;
         return true;
     }
-    LOG_ERROR("current status not allow recv all data. status:%d", _state);
+    common::LOG_ERROR("current status not allow recv all data. status:%d", _state);
     return false;
 }
 
@@ -89,7 +90,7 @@ bool RecvStreamStateMachine::AppReadAllData() {
         _state = SS_RESET_READ;
         break;
     default:
-        LOG_ERROR("current status not allow read all data. status:%d", _state);
+        common::LOG_ERROR("current status not allow read all data. status:%d", _state);
         return false;
     }
     if (_state == SS_DATA_READ || _state == SS_RESET_READ) {
@@ -100,4 +101,5 @@ bool RecvStreamStateMachine::AppReadAllData() {
     return true;
 }
 
+}
 }

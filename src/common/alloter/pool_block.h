@@ -11,6 +11,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace common {
 
 // all memory must return memory pool before destroy.
 class BlockMemoryPool {
@@ -40,8 +41,9 @@ private:
     std::vector<void*>        _free_mem_vec;           //free bulk memory list
 };
 
-std::shared_ptr<BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num);
+std::shared_ptr<common::BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num);
 
+}
 }
 
 #endif

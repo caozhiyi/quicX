@@ -8,6 +8,7 @@
 #include "quic/packet/header/long_header.h"
 
 namespace quicx {
+namespace quic {
 
 class VersionNegotiationPacket:
     public IPacket {
@@ -17,9 +18,9 @@ public:
     virtual ~VersionNegotiationPacket();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_UNCRYPTO; }
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer);
-    virtual bool DecodeWithCrypto(std::shared_ptr<IBuffer> buffer) { return true; }
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
+    virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) { return true; }
 
     virtual IHeader* GetHeader() { return &_header; }
 
@@ -32,6 +33,7 @@ private:
     std::vector<uint32_t> _support_version;
 };
 
+}
 }
 
 #endif

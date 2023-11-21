@@ -5,11 +5,13 @@
 #include "quic/packet/type.h"
 
 namespace quicx {
+namespace quic {
 
 bool IsAckElictingPacket(uint32_t frame_type);
 
 PacketNumberSpace CryptoLevel2PacketNumberSpace(uint16_t level);
 
+}
 }
 
 #endif

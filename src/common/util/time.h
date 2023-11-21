@@ -4,6 +4,7 @@
 #include <string>
 
 namespace quicx {
+namespace common {
 
 static const uint8_t __format_time_buf_size = sizeof("xxxx-xx-xx:xx:xx:xx:xxx");
 
@@ -37,6 +38,7 @@ uint64_t UTCTimeMsec();
 // sleep interval milliseconds
 void Sleep(uint32_t interval);
 
+}
 }
 
 #endif

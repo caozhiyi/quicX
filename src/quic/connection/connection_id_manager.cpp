@@ -2,6 +2,7 @@
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
+namespace quic {
 
 uint64_t ConnectionID::Hash() {
     if (_hash == 0) {
@@ -55,4 +56,5 @@ bool ConnectionIDManager::AddID(ConnectionID& id) {
     return true;
 }
 
+}
 }

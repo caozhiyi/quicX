@@ -10,6 +10,7 @@
 #include "common/util/time.h"
 
 namespace quicx {
+namespace common {
 
 FileLogger::FileLogger(const std::string& file, 
     FileLoggerSpiltUnit unit, 
@@ -131,4 +132,5 @@ void FileLogger::CheckExpireFiles() {
     }
 }
 
+}
 }

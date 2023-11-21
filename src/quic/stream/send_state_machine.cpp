@@ -4,6 +4,7 @@
 #include "quic/stream/send_state_machine.h"
 
 namespace quicx {
+namespace quic {
 
 SendStreamStateMachine::SendStreamStateMachine(StreamState s):
     IStreamStateMachine(s) {
@@ -52,7 +53,7 @@ bool SendStreamStateMachine::OnFrame(uint16_t frame_type) {
         }
         break;
     }
-    LOG_ERROR("current status not allow send this frame. status:%d, frame type:%d", _state, frame_type);
+    common::LOG_ERROR("current status not allow send this frame. status:%d, frame type:%d", _state, frame_type);
     return false;
 }
 
@@ -65,7 +66,7 @@ bool SendStreamStateMachine::AllAckDone() {
         _state = SS_RESET_RECVD;
         break;
     default:
-        LOG_ERROR("current status not allow ack done. status:%d", _state);
+        common::LOG_ERROR("current status not allow ack done. status:%d", _state);
         return false;
     }
     if (_state == SS_DATA_RECVD || _state == SS_RESET_RECVD) {
@@ -98,4 +99,5 @@ bool SendStreamStateMachine::CanSendResetStreamFrame() {
            _state == SS_DATA_SENT;
 }
 
+}
 }

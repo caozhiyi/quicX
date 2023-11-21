@@ -9,6 +9,7 @@
 #include "common/buffer/buffer_read_interface.h"
 
 namespace quicx {
+namespace common {
 
 class BlockMemoryPool;
 // read only buffer
@@ -34,7 +35,7 @@ public:
     // get a write buffer view
     virtual BufferReadView GetReadView(uint32_t offset = 0);
     // get a write buffer view shared ptr
-    virtual std::shared_ptr<IBufferRead> GetReadViewPtr(uint32_t offset = 0);
+    virtual std::shared_ptr<common::IBufferRead> GetReadViewPtr(uint32_t offset = 0);
     // get src data pos
     virtual uint8_t* GetData();
     // clear all data
@@ -49,6 +50,7 @@ protected:
     uint8_t* _buffer_end;
 };
 
+}
 }
 
 #endif

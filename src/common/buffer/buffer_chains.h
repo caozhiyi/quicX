@@ -10,11 +10,12 @@
 #include "common/buffer/buffer_chains_interface.h"
 
 namespace quicx {
+namespace common {
 
 class BufferChains:
     public IBufferChains {
 public:
-    BufferChains(std::shared_ptr<BlockMemoryPool>& alloter);
+    BufferChains(std::shared_ptr<common::BlockMemoryPool>& alloter);
     virtual ~BufferChains();
 
     // read to data buf but don't change the read point
@@ -47,9 +48,10 @@ protected:
     std::shared_ptr<BufferBlock> _write_pos;
     
     LinkedList<BufferBlock> _buffer_list;
-    std::shared_ptr<BlockMemoryPool> _alloter;
+    std::shared_ptr<common::BlockMemoryPool> _alloter;
 };
 
+}
 }
 
 #endif

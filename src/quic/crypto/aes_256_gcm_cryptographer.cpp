@@ -3,6 +3,7 @@
 #include "quic/crypto/aes_256_gcm_cryptographer.h"
 
 namespace quicx {
+namespace quic {
 
 Aes256GcmCryptographer::Aes256GcmCryptographer() {
     _aead = EVP_aead_aes_256_gcm();
@@ -29,4 +30,5 @@ CryptographerId Aes256GcmCryptographer::GetCipherId() {
     return CI_TLS1_CK_AES_256_GCM_SHA384;
 }
 
+}
 }

@@ -8,13 +8,14 @@
 #include "quic/crypto/tls/tls_server_conneciton.h"
 
 namespace quicx {
+namespace quic {
 
 class ServerConnection:
     public BaseConnection,
     public TlsServerHandlerInterface {
 public:
     ServerConnection(std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<ITimer> timer,
+        std::shared_ptr<common::ITimer> timer,
         ConnectionIDCB add_conn_id_cb,
         ConnectionIDCB retire_conn_id_cb);
     virtual ~ServerConnection();
@@ -36,11 +37,12 @@ protected:
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
 
-    virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err);
+    virtual void WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err);
 private:
     std::shared_ptr<TLSServerConnection> _tls_connection;
 };
 
+}
 }
 
 #endif

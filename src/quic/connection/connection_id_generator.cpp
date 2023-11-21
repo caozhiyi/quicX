@@ -3,6 +3,7 @@
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
+namespace quic {
 
 ConnectionIDGenerator::ConnectionIDGenerator() {
     // make key
@@ -21,4 +22,5 @@ uint64_t ConnectionIDGenerator::Hash(uint8_t* cid, uint32_t len) {
     return SIPHASH_24(_sip_hash_key, cid, len);
 }
 
+}
 }

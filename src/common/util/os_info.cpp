@@ -2,6 +2,7 @@
 #include <atomic>
 
 namespace quicx {
+namespace common {
 
 bool IsBigEndian() {
     static union temp_endian {
@@ -13,4 +14,5 @@ bool IsBigEndian() {
     return temp.c != 1;
 }
 
+}
 }

@@ -11,6 +11,7 @@
 #include "alloter_interface.h"
 
 namespace quicx {
+namespace common {
 
 static const uint32_t __default_max_bytes = 256;
 static const uint32_t __default_number_of_free_lists = __default_max_bytes / __align;
@@ -50,6 +51,7 @@ private:
 
 std::shared_ptr<IAlloter> MakePoolAlloterPtr();
 
+}
 }
 
 #endif 

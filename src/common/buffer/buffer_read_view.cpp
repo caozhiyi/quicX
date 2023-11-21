@@ -4,6 +4,7 @@
 #include "common/buffer/buffer_write_view.h"
 
 namespace quicx {
+namespace common {
 
 BufferReadView::BufferReadView(BufferSpan span):
     _read_pos(span.GetStart()),
@@ -80,7 +81,7 @@ BufferReadView BufferReadView::GetReadView(uint32_t offset) {
     return std::move(BufferReadView(_buffer_start + offset, _buffer_end));
 }
 
-std::shared_ptr<IBufferRead> BufferReadView::GetReadViewPtr(uint32_t offset) {
+std::shared_ptr<common::IBufferRead> BufferReadView::GetReadViewPtr(uint32_t offset) {
     return std::make_shared<BufferReadView>(_buffer_start + offset, _buffer_end);
 }
 
@@ -116,4 +117,5 @@ uint32_t BufferReadView::Read(uint8_t* data, uint32_t len, bool move_pt) {
     }
 }
 
+}
 }

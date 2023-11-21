@@ -6,15 +6,16 @@
 #include "common/buffer/buffer.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(ping_frame_utest, codec) {
-    quicx::PingFrame frame1;
-    quicx::PingFrame frame2;
+    PingFrame frame1;
+    PingFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
@@ -27,5 +28,6 @@ TEST(ping_frame_utest, codec) {
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
 }
 
+}
 }
 }

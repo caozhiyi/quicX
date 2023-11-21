@@ -2,6 +2,7 @@
 #include "address.h"
 
 namespace quicx {
+namespace common {
 
 Address::Address() {
 
@@ -53,4 +54,5 @@ bool operator==(const Address &addr1, const Address &addr2) {
     return addr1._ip == addr2._ip && addr1._port == addr2._port && addr1._port != 0;
 }
 
+}
 }

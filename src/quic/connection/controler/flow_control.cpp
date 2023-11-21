@@ -5,6 +5,7 @@
 #include "quic/connection/controler/flow_control.h"
 
 namespace quicx {
+namespace quic {
 
 FlowControl::FlowControl(StreamIDGenerator::StreamStarter starter):
     _local_send_data_size(0),
@@ -169,4 +170,5 @@ bool FlowControl::CheckRemoteUnidirectionStreamLimit(std::shared_ptr<IFrame>& se
     return true;
 }
 
+}
 }

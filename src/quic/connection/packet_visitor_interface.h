@@ -5,6 +5,7 @@
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class IPacketVisitor {
 public:
@@ -15,10 +16,10 @@ public:
 
     virtual uint32_t GetLeftSize() = 0;
 
-    virtual std::shared_ptr<IBuffer> GetBuffer() = 0;
+    virtual std::shared_ptr<common::IBuffer> GetBuffer() = 0;
 };
 
-
+}
 }
 
 #endif

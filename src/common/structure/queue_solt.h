@@ -2,6 +2,7 @@
 #define COMMON_STRUCTURE_QUEUE_SOLT
 
 namespace quicx {
+namespace common {
 
 class QueueSolt {
 public:
@@ -9,6 +10,7 @@ public:
     ~QueueSolt(){}
 };
 
+}
 }
 
 #endif

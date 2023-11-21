@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 enum FrameType: uint16_t {
     FT_PADDING                         = 0x00,
@@ -62,6 +63,7 @@ enum FrameTypeBit: uint32_t {
 };
 
 
+}
 }
 
 #endif

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 class ICongestionControl {
 public:
@@ -15,6 +16,7 @@ public:
     virtual void OnPacketSend(uint64_t send_time, uint32_t send_bytes, uint64_t pkt_num) = 0;
 };
 
+}
 }
 
 #endif

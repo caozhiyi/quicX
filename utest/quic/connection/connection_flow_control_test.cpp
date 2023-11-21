@@ -5,10 +5,11 @@
 #include "quic/connection/controler/flow_control.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 class TransportParamTest:
-    public Singleton<TransportParamTest> {
+    public common::Singleton<TransportParamTest> {
 public:
     TransportParamTest() {
         TransportParamConfig config;
@@ -177,5 +178,6 @@ TEST(connection_control_flow, remote_unidirection_streams) {
     EXPECT_TRUE(frame == nullptr);
 }
 
+}
 }
 }

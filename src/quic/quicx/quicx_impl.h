@@ -10,6 +10,7 @@
 #include "quic/quicx/processor_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class QuicxImpl:
     public Quicx {
@@ -28,6 +29,7 @@ private:
     std::vector<std::shared_ptr<IProcessor>> _processors;
 };
 
+}
 }
 
 #endif

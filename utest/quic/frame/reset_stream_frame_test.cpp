@@ -5,15 +5,16 @@
 #include "common/buffer/buffer.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(reset_frame_utest, codec) {
-    quicx::ResetStreamFrame frame1;
-    quicx::ResetStreamFrame frame2;
+    ResetStreamFrame frame1;
+    ResetStreamFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<quicx::Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<quicx::Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetStreamID(1010101);
     frame1.SetAppErrorCode(404);
@@ -33,5 +34,6 @@ TEST(reset_frame_utest, codec) {
     EXPECT_EQ(frame1.GetFinalSize(), frame2.GetFinalSize());
 }
 
+}
 }
 }

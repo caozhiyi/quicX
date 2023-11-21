@@ -2,6 +2,7 @@
 #include "quic/crypto/tls/tls_server_ctx.h"
 
 namespace quicx {
+namespace quic {
 
 TLSServerCtx::TLSServerCtx() {
 
@@ -18,19 +19,19 @@ bool TLSServerCtx::Init(const std::string& cert_file, const std::string& key_fil
 
     // set cert file
     if (SSL_CTX_use_certificate_chain_file(_ssl_ctx.get(), cert_file.c_str()) != 1) {
-        LOG_ERROR("SSL_CTX_use_certificate_chain_file failed.");
+        common::LOG_ERROR("SSL_CTX_use_certificate_chain_file failed.");
         return false;
     }
 
     // set private key file
     if (SSL_CTX_use_PrivateKey_file(_ssl_ctx.get(), key_file.c_str(), SSL_FILETYPE_PEM) != 1) {
-        LOG_ERROR("SSL_CTX_use_PrivateKey_file failed.");
+        common::LOG_ERROR("SSL_CTX_use_PrivateKey_file failed.");
         return false;
     }
 
     // check private key of certificate
     if (SSL_CTX_check_private_key(_ssl_ctx.get()) != 1) {
-        LOG_ERROR("SSL_CTX_check_private_key failed.");
+        common::LOG_ERROR("SSL_CTX_check_private_key failed.");
         return false;
     }
 
@@ -44,19 +45,19 @@ bool TLSServerCtx::Init(X509* cert, EVP_PKEY* key) {
 
     // set cert file
     if (SSL_CTX_use_certificate(_ssl_ctx.get(), cert) != 1) {
-        LOG_ERROR("SSL_CTX_use_certificate failed.");
+        common::LOG_ERROR("SSL_CTX_use_certificate failed.");
         return false;
     }
 
     // set private key file
     if (SSL_CTX_use_PrivateKey(_ssl_ctx.get(), key) != 1) {
-        LOG_ERROR("SSL_CTX_use_PrivateKey failed.");
+        common::LOG_ERROR("SSL_CTX_use_PrivateKey failed.");
         return false;
     }
 
     // check private key of certificate
     if (SSL_CTX_check_private_key(_ssl_ctx.get()) != 1) {
-        LOG_ERROR("SSL_CTX_check_private_key failed.");
+        common::LOG_ERROR("SSL_CTX_check_private_key failed.");
         return false;
     }
 
@@ -80,4 +81,5 @@ bool TLSServerCtx::Init() {
     return true;
 }
 
+}
 }

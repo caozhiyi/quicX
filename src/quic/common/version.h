@@ -4,6 +4,7 @@
 #include <string>
 
 namespace quicx {
+namespace quic {
 
 static const uint32_t __quic_versions[] = {
     0x00000001, // QUICv1
@@ -11,6 +12,7 @@ static const uint32_t __quic_versions[] = {
 
 bool VersionCheck(uint32_t version);
 
+}
 }
 
 #endif

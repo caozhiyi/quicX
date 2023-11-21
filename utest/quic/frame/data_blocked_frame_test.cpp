@@ -5,15 +5,16 @@
 #include "common/buffer/buffer.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(data_blocked_frame_utest, codec) {
-    quicx::DataBlockedFrame frame1;
-    quicx::DataBlockedFrame frame2;
+    DataBlockedFrame frame1;
+    DataBlockedFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetMaximumData(23624236235626);
 
@@ -29,5 +30,6 @@ TEST(data_blocked_frame_utest, codec) {
     EXPECT_EQ(frame1.GetMaximumData(), frame2.GetMaximumData());
 }
 
+}
 }
 }

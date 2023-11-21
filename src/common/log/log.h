@@ -13,6 +13,7 @@
 #include "common/util/singleton.h"
 
 namespace quicx {
+namespace common {
 
 // log level and switch
 enum LogLevel {
@@ -34,11 +35,11 @@ enum LogLevel {
 #define LOG_ERROR(log, ...)  SingletonLogger::Instance().Error(__FILE__, __LINE__, log, ##__VA_ARGS__)
 #define LOG_FATAL(log, ...)  SingletonLogger::Instance().Fatal(__FILE__, __LINE__, log, ##__VA_ARGS__)
 
-#define LOG_DEBUG_S LogStream(quicx::SingletonLogger::Instance().GetStreamParam(quicx::LL_DEBUG, __FILE__, __LINE__))
-#define LOG_INFO_S  LogStream(quicx::SingletonLogger::Instance().GetStreamParam(quicx::LL_INFO, __FILE__, __LINE__))
-#define LOG_WARN_S  LogStream(quicx::SingletonLogger::Instance().GetStreamParam(quicx::LL_WARN, __FILE__, __LINE__))
-#define LOG_ERROR_S LogStream(quicx::SingletonLogger::Instance().GetStreamParam(quicx::LL_ERROR, __FILE__, __LINE__))
-#define LOG_FATAL_S LogStream(quicx::SingletonLogger::Instance().GetStreamParam(quicx::LL_FATAL, __FILE__, __LINE__))
+#define LOG_DEBUG_S LogStream(SingletonLogger::Instance().GetStreamParam(LL_DEBUG, __FILE__, __LINE__))
+#define LOG_INFO_S  LogStream(SingletonLogger::Instance().GetStreamParam(LL_INFO, __FILE__, __LINE__))
+#define LOG_WARN_S  LogStream(SingletonLogger::Instance().GetStreamParam(LL_WARN, __FILE__, __LINE__))
+#define LOG_ERROR_S LogStream(SingletonLogger::Instance().GetStreamParam(LL_ERROR, __FILE__, __LINE__))
+#define LOG_FATAL_S LogStream(SingletonLogger::Instance().GetStreamParam(LL_FATAL, __FILE__, __LINE__))
 
 // log cache config
 static const uint16_t __log_cache_size = 20;
@@ -48,7 +49,7 @@ static const uint16_t __log_block_size = 2048;
 class Logger;
 class BaseLogger;
 class SingletonLogger: 
-    public Singleton<SingletonLogger> {
+    public common::Singleton<SingletonLogger> {
 
 public:
     SingletonLogger();
@@ -72,6 +73,7 @@ private:
     std::shared_ptr<BaseLogger> _logger;
 };
 
+}
 }
 
 #endif

@@ -2,6 +2,7 @@
 #define QUIC_STREAM_TYPE
 
 namespace quicx {
+namespace quic {
 
 enum StreamType {
     ST_CLIENT_BIDIRECTIONAL  = 0x00,
@@ -29,6 +30,7 @@ enum StreamState {
     SS_RESET_RECVD = 0x0200,
 };
 
+}
 }
 
 #endif

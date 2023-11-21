@@ -6,15 +6,16 @@
 #include "quic/frame/max_stream_data_frame.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(max_stream_data_frame_utest, codec) {
-    quicx::MaxStreamDataFrame frame1;
-    quicx::MaxStreamDataFrame frame2;
+    MaxStreamDataFrame frame1;
+    MaxStreamDataFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetStreamID(1235125324234);
     frame1.SetMaximumData(23624236235626);
@@ -32,5 +33,6 @@ TEST(max_stream_data_frame_utest, codec) {
     EXPECT_EQ(frame1.GetMaximumData(), frame2.GetMaximumData());
 }
 
+}
 }
 }

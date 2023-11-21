@@ -8,6 +8,7 @@
 #include "logger_interface.h"
 
 namespace quicx {
+namespace common {
 
 #define CHECK_CONTINUE()  do{ if (!_log || _log->_len >= __log_block_size) { return *this; }  } while(0);
 
@@ -128,4 +129,5 @@ LogStream& LogStream::operator<<(char v) {
     return *this;
 }
 
+}
 }

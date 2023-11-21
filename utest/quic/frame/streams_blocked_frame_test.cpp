@@ -5,15 +5,16 @@
 #include "quic/frame/streams_blocked_frame.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(streams_blocked_frame_utest, codec) {
-    quicx::StreamsBlockedFrame frame1(quicx::FT_STREAMS_BLOCKED_BIDIRECTIONAL);
-    quicx::StreamsBlockedFrame frame2(quicx::FT_STREAMS_BLOCKED_BIDIRECTIONAL);
+    StreamsBlockedFrame frame1(FT_STREAMS_BLOCKED_BIDIRECTIONAL);
+    StreamsBlockedFrame frame2(FT_STREAMS_BLOCKED_BIDIRECTIONAL);
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetMaximumStreams(2362423);
 
@@ -29,5 +30,6 @@ TEST(streams_blocked_frame_utest, codec) {
     EXPECT_EQ(frame1.GetMaximumStreams(), frame2.GetMaximumStreams());
 }
 
+}
 }
 }

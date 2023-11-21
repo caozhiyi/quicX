@@ -12,30 +12,31 @@
 #include "quic/frame/retire_connection_id_frame.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(frame_decode_utest, codec) {
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(1024, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
-    quicx::AckFrame ack_frame1;
-    std::shared_ptr<quicx::AckFrame> ack_frame2;
+    AckFrame ack_frame1;
+    std::shared_ptr<AckFrame> ack_frame2;
 
-    quicx::StopSendingFrame stop_frame1;
-    std::shared_ptr<quicx::StopSendingFrame> stop_frame2;
+    StopSendingFrame stop_frame1;
+    std::shared_ptr<StopSendingFrame> stop_frame2;
 
-    quicx::StreamFrame stream_frame1;
-    std::shared_ptr<quicx::StreamFrame> stream_frame2;
+    StreamFrame stream_frame1;
+    std::shared_ptr<StreamFrame> stream_frame2;
 
-    quicx::NewConnectionIDFrame new_frame1;
-    std::shared_ptr<quicx::NewConnectionIDFrame> new_frame2;
+    NewConnectionIDFrame new_frame1;
+    std::shared_ptr<NewConnectionIDFrame> new_frame2;
 
-    quicx::RetireConnectionIDFrame retire_frame1;
-    std::shared_ptr<quicx::RetireConnectionIDFrame> retire_frame2;
+    RetireConnectionIDFrame retire_frame1;
+    std::shared_ptr<RetireConnectionIDFrame> retire_frame2;
 
-    quicx::ConnectionCloseFrame close_frame1;
-    std::shared_ptr<quicx::ConnectionCloseFrame> close_frame2;
+    ConnectionCloseFrame close_frame1;
+    std::shared_ptr<ConnectionCloseFrame> close_frame2;
 
     // ack frame
     ack_frame1.SetAckDelay(104);
@@ -82,17 +83,17 @@ TEST(frame_decode_utest, codec) {
     read_buffer->MoveWritePt(data_span.GetLength());
 
     // decode frames
-    std::vector<std::shared_ptr<quicx::IFrame>> frames;
-    EXPECT_TRUE(quicx::DecodeFrames(read_buffer, frames));
+    std::vector<std::shared_ptr<IFrame>> frames;
+    EXPECT_TRUE(DecodeFrames(read_buffer, frames));
     EXPECT_EQ(frames.size(), 6);
 
     // check decode result
-    ack_frame2 = std::dynamic_pointer_cast<quicx::AckFrame>(frames[0]);
-    stop_frame2 = std::dynamic_pointer_cast<quicx::StopSendingFrame>(frames[1]);
-    stream_frame2 = std::dynamic_pointer_cast<quicx::StreamFrame>(frames[2]);
-    new_frame2 = std::dynamic_pointer_cast<quicx::NewConnectionIDFrame>(frames[3]);
-    retire_frame2 = std::dynamic_pointer_cast<quicx::RetireConnectionIDFrame>(frames[4]);
-    close_frame2 = std::dynamic_pointer_cast<quicx::ConnectionCloseFrame>(frames[5]);
+    ack_frame2 = std::dynamic_pointer_cast<AckFrame>(frames[0]);
+    stop_frame2 = std::dynamic_pointer_cast<StopSendingFrame>(frames[1]);
+    stream_frame2 = std::dynamic_pointer_cast<StreamFrame>(frames[2]);
+    new_frame2 = std::dynamic_pointer_cast<NewConnectionIDFrame>(frames[3]);
+    retire_frame2 = std::dynamic_pointer_cast<RetireConnectionIDFrame>(frames[4]);
+    close_frame2 = std::dynamic_pointer_cast<ConnectionCloseFrame>(frames[5]);
 
     // check ack frame
     EXPECT_EQ(ack_frame1.GetType(), ack_frame2->GetType());
@@ -126,8 +127,8 @@ TEST(frame_decode_utest, codec) {
     EXPECT_EQ(new_frame1.GetType(), new_frame2->GetType());
     EXPECT_EQ(new_frame1.GetRetirePriorTo(), new_frame2->GetRetirePriorTo());
     EXPECT_EQ(new_frame1.GetSequenceNumber(), new_frame2->GetSequenceNumber());
-    EXPECT_EQ(std::string((char*)new_frame1.GetStatelessResetToken(), quicx::__stateless_reset_token_length), 
-        std::string((char*)new_frame2->GetStatelessResetToken(), quicx::__stateless_reset_token_length));
+    EXPECT_EQ(std::string((char*)new_frame1.GetStatelessResetToken(), __stateless_reset_token_length), 
+        std::string((char*)new_frame2->GetStatelessResetToken(), __stateless_reset_token_length));
 
     // check retire connection id frame
     EXPECT_EQ(retire_frame1.GetType(), retire_frame2->GetType());
@@ -140,5 +141,6 @@ TEST(frame_decode_utest, codec) {
     EXPECT_EQ(close_frame1.GetReason(), close_frame2->GetReason());
 }
 
+}
 }
 }

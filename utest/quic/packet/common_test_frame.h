@@ -6,10 +6,11 @@
 #include "quic/crypto/cryptographer_interface.h"
 
 namespace quicx {
+namespace quic {
 
 static const uint8_t __buf_len = 128;
 class PacketTest:
-    public Singleton<PacketTest> {
+    public common::Singleton<PacketTest> {
 public:
     PacketTest();
     ~PacketTest() {}
@@ -24,6 +25,7 @@ private:
     std::shared_ptr<ICryptographer> _ser_cryptographer;
 };
 
+}
 }
 
 #endif

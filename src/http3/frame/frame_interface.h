@@ -4,6 +4,7 @@
 #include <cstdint>
 #include "http3/frame/type.h"
 
+namespace quicx {
 namespace http3 {
 
 class IFrame {
@@ -18,6 +19,6 @@ protected:
 };
 
 }
-
+}
 
 #endif

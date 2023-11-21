@@ -6,6 +6,7 @@
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {
+namespace quic {
 
 TransportParam::TransportParam():
     _max_idle_timeout(0),
@@ -56,7 +57,7 @@ void TransportParam::Init(TransportParamConfig& conf) {
      return true;
  }
 
-bool TransportParam::Encode(std::shared_ptr<IBufferWrite> buffer) {
+bool TransportParam::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (buffer->GetFreeLength() < EncodeSize()) {
         return false;
     }
@@ -136,13 +137,13 @@ bool TransportParam::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool TransportParam::Decode(std::shared_ptr<IBufferRead> buffer) {
+bool TransportParam::Decode(std::shared_ptr<common::IBufferRead> buffer) {
     uint64_t type = 0;
     auto span = buffer->GetReadSpan();
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
     while (pos < end) {
-        pos = DecodeVarint(pos, end, type);
+        pos = common::DecodeVarint(pos, end, type);
         switch(type) {
         case TP_ORIGINAL_DESTINATION_CONNECTION_ID:
             pos = DecodeString(pos, end, _original_destination_connection_id);
@@ -196,7 +197,7 @@ bool TransportParam::Decode(std::shared_ptr<IBufferRead> buffer) {
             pos = DecodeString(pos, end, _retry_source_connection_id);
             break;
         default:
-            LOG_ERROR("unsupport stransport param. type:%d", type);
+            common::LOG_ERROR("unsupport stransport param. type:%d", type);
             return false;
         }
     }
@@ -209,32 +210,32 @@ uint32_t TransportParam::EncodeSize() {
 }
 
 uint8_t* TransportParam::EncodeUint(uint8_t* start, uint8_t* end, uint32_t value, uint32_t type) {
-    start = EncodeVarint(start, type);
-    start = EncodeVarint(start, GetEncodeVarintLength(value));
-    start = EncodeVarint(start, value);
+    start = common::EncodeVarint(start, type);
+    start = common::EncodeVarint(start, common::GetEncodeVarintLength(value));
+    start = common::EncodeVarint(start, value);
     return start;
 }
 
 uint8_t* TransportParam::EncodeString(uint8_t* start, uint8_t* end, const std::string& value, uint32_t type) {
-    start = EncodeVarint(start, type);
-    start = EncodeVarint(start, value.length());
-    start = EncodeBytes(start, end, (uint8_t*)value.c_str(), value.length());
+    start = common::EncodeVarint(start, type);
+    start = common::EncodeVarint(start, value.length());
+    start = common::EncodeBytes(start, end, (uint8_t*)value.c_str(), value.length());
     return start;
 }
 
 uint8_t* TransportParam::EncodeBool(uint8_t* start, uint8_t* end, bool value, uint32_t type) {
-    start = EncodeVarint(start, type);
-    start = EncodeVarint(start, 1);
-    start = EncodeVarint(start, value ? 1 : 0);
+    start = common::EncodeVarint(start, type);
+    start = common::EncodeVarint(start, 1);
+    start = common::EncodeVarint(start, value ? 1 : 0);
     return start;
 }
 
 uint8_t* TransportParam::DecodeUint(uint8_t* start, uint8_t* end, uint32_t& value) {
     uint64_t varint = 0;
     // read length
-    start = DecodeVarint(start, end, varint);
+    start = common::DecodeVarint(start, end, varint);
     // read value
-    start = DecodeVarint(start, end, varint);
+    start = common::DecodeVarint(start, end, varint);
     value = varint;
     return start;
 }
@@ -242,10 +243,10 @@ uint8_t* TransportParam::DecodeUint(uint8_t* start, uint8_t* end, uint32_t& valu
 uint8_t* TransportParam::DecodeString(uint8_t* start, uint8_t* end, std::string& value) {
     uint64_t length = 0;
     // read length
-    start = DecodeVarint(start, end, length);
+    start = common::DecodeVarint(start, end, length);
     // read value
     uint8_t* ptr;
-    start = DecodeBytesNoCopy(start, end, ptr, length);
+    start = common::DecodeBytesNoCopy(start, end, ptr, length);
     value = std::move(std::string((const char*)ptr, length));
     return start;
 }
@@ -253,11 +254,12 @@ uint8_t* TransportParam::DecodeString(uint8_t* start, uint8_t* end, std::string&
 uint8_t* TransportParam::DecodeBool(uint8_t* start, uint8_t* end, bool& value) {
     uint64_t varint = 0;
     // read length
-    start = DecodeVarint(start, end, varint);
+    start = common::DecodeVarint(start, end, varint);
     // read value
-    start = DecodeVarint(start, end, varint);
+    start = common::DecodeVarint(start, end, varint);
     value = varint > 0;
     return start;
 }
 
+}
 }

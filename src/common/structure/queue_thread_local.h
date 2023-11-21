@@ -2,10 +2,13 @@
 #define COMMON_STRUCTURE_QUEUE_THREAD_LOCAL
 
 #include <queue>
-#include "lock/spin_lock.h"
-#include "queue_interface.h"
+#include "common/lock/spin_lock.h"
+#include "common/structure/queue_interface.h"
 
 namespace quicx {
+namespace quic {
+
+namespace common {
 
 class QueueSolt;
 class QueueThreadLocal: public Queue{
@@ -32,6 +35,6 @@ static thread_local std::shared_ptr<thread_queue> _queue_ptr;
 };
 
 }
-
+}
 
 #endif

@@ -2,8 +2,9 @@
 #include "common/buffer/buffer_chains.h"
 
 namespace quicx {
+namespace common {
 
-BufferChains::BufferChains(std::shared_ptr<BlockMemoryPool>& alloter):
+BufferChains::BufferChains(std::shared_ptr<common::BlockMemoryPool>& alloter):
     _read_pos(nullptr),
     _write_pos(nullptr),
     _alloter(alloter) {
@@ -132,4 +133,5 @@ void BufferChains::Clear() {
     _write_pos = nullptr;
 }
 
+}
 }

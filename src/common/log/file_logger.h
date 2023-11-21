@@ -14,6 +14,7 @@
 #include "common/thread/thread_with_queue.h"
 
 namespace quicx {
+namespace common {
 
 static const uint8_t __file_logger_time_buf_size = sizeof("xxxx-xx-xx:xx");
 
@@ -68,6 +69,7 @@ private:
     std::queue<std::string> _history_file_names;
 };
 
+}
 }
 
 #endif

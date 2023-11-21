@@ -2,6 +2,7 @@
 #include "quic/stream/stream_id_generator.h"
 
 namespace quicx {
+namespace quic {
 
 StreamIDGenerator::StreamIDGenerator(StreamStarter starter):
     _starter(starter),
@@ -41,4 +42,5 @@ StreamIDGenerator::StreamDirection StreamIDGenerator::GetStreamDirection(uint64_
     return SD_BIDIRECTIONAL;
 }
 
+}
 }

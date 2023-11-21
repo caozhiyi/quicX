@@ -6,6 +6,7 @@
 #include "common/util/c_smart_ptr.h"
 
 namespace quicx {
+namespace quic {
 
 // hkdf expand label
 static const uint8_t __tls_label_client[] = "tls13 client in";
@@ -29,8 +30,10 @@ enum CryptographerId: uint16_t {
     CI_TLS1_CK_CHACHA20_POLY1305_SHA256,
 };
 
-using EVPCIPHERCTXPtr = CSmartPtr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free>;
-using EVPAEADCTXPtr = CSmartPtr<EVP_AEAD_CTX, EVP_AEAD_CTX_free>;
+using EVPCIPHERCTXPtr = common::CSmartPtr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free>;
+using EVPAEADCTXPtr = common::CSmartPtr<EVP_AEAD_CTX, EVP_AEAD_CTX_free>;
+
+}
 }
 
 #endif

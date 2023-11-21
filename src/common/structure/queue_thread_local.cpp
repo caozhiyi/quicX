@@ -1,6 +1,7 @@
-#include "queue_thread_local.h"
+#include "common/structure/queue_thread_local.h"
 
 namespace quicx {
+namespace common {
 
 thread_local std::shared_ptr<QueueThreadLocal::thread_queue>   \
     QueueThreadLocal::_queue_ptr(new QueueThreadLocal::thread_queue);
@@ -47,4 +48,5 @@ void QueueThreadLocal::Swap(std::shared_ptr<Queue>& q) {
 
 }
 
+}
 }

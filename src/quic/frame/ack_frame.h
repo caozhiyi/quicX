@@ -8,6 +8,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class AckFrame: 
     public IFrame {
@@ -15,8 +16,8 @@ public:
     AckFrame();
     virtual ~AckFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetLargestAck(uint64_t ack) { _largest_acknowledged = ack; }
@@ -48,8 +49,8 @@ public:
     AckEcnFrame();
     ~AckEcnFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetEct0(uint64_t ect0) { _ect_0 = ect0; }
@@ -67,6 +68,7 @@ private:
     uint64_t _ecn_ce;   // the total number of packets received with the CE codepoint in the packet number space of the ACK frame.
 };
 
+}
 }
 
 #endif

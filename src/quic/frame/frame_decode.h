@@ -7,9 +7,11 @@
 #include "common/buffer/buffer_read_interface.h"
 
 namespace quicx {
+namespace quic {
 
-bool DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
+bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 
+}
 }
 
 #endif

@@ -9,6 +9,7 @@
 #include "alloter_interface.h"
 
 namespace quicx {
+namespace common {
 
 class NormalAlloter : public IAlloter {
 public:
@@ -24,6 +25,7 @@ public:
 
 std::shared_ptr<NormalAlloter> MakeNormalAlloterPtr();
 
+}
 }
 
 #endif 

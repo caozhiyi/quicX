@@ -11,6 +11,7 @@
 #include "quic/frame/stream_frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class IConnection;
 typedef std::function<void(std::shared_ptr<IConnection>)> ActiveConnectionCB;
@@ -26,13 +27,13 @@ public:
     virtual void Close(uint64_t error) = 0;
 
     // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<IBuffer> buffer) = 0;
+    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer) = 0;
 
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
 
     virtual uint64_t GetSock() = 0;
-    virtual void SetPeerAddress(const Address&& addr) = 0;
-    virtual Address* GetPeerAddress() = 0;
+    virtual void SetPeerAddress(const common::Address&& addr) = 0;
+    virtual common::Address* GetPeerAddress() = 0;
 
     virtual void SetActiveConnectionCB(ActiveConnectionCB cb) = 0;
 protected:
@@ -45,9 +46,10 @@ protected:
     virtual bool OnStreamFrame(std::shared_ptr<IFrame> frame) = 0;
 
     virtual void ActiveSendStream(std::shared_ptr<IStream> stream) = 0;
-    virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err) = 0;
+    virtual void WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err) = 0;
 };
 
+}
 }
 
 #endif

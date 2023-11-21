@@ -5,6 +5,7 @@
 #include <queue>
 
 namespace quicx {
+namespace common {
 
 template<typename T>
 class ThreadSafeQueue {
@@ -49,6 +50,7 @@ private:
     std::mutex           _mutex;
 };
 
+}
 }
 
 #endif

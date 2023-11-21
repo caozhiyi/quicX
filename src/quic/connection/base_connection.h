@@ -17,13 +17,14 @@
 
 
 namespace quicx {
+namespace quic {
 
 class BaseConnection:
     public IConnection,
     public std::enable_shared_from_this<BaseConnection> {
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start,
-        std::shared_ptr<ITimer> timer,
+        std::shared_ptr<common::ITimer> timer,
         ConnectionIDCB add_conn_id_cb,
         ConnectionIDCB retire_conn_id_cb);
     virtual ~BaseConnection();
@@ -34,7 +35,7 @@ public:
     virtual void Close(uint64_t error);
 
     // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<IBuffer> buffer);
+    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer);
 
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
 
@@ -42,8 +43,8 @@ public:
 
     virtual uint64_t GetSock() { return _send_sock; }
     
-    virtual void SetPeerAddress(const Address&& addr) { _peer_addr = std::move(addr); }
-    virtual Address* GetPeerAddress() { return &_peer_addr; }
+    virtual void SetPeerAddress(const common::Address&& addr) { _peer_addr = std::move(addr); }
+    virtual common::Address* GetPeerAddress() { return &_peer_addr; }
 
     virtual void SetActiveConnectionCB(ActiveConnectionCB cb);
 
@@ -88,7 +89,7 @@ private:
 
 protected:
     uint64_t _send_sock;
-    Address _peer_addr;
+    common::Address _peer_addr;
 
     // connection will to close
     bool _to_close;
@@ -102,7 +103,7 @@ protected:
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> _streams_map;
 
     // connection memory pool
-    std::shared_ptr<BlockMemoryPool> _alloter;
+    std::shared_ptr<common::BlockMemoryPool> _alloter;
     
     // connection id
     std::shared_ptr<ConnectionIDManager> _local_conn_id_manager;
@@ -126,6 +127,7 @@ protected:
     ActiveConnectionCB _active_connection_cb;
 };
 
+}
 }
 
 #endif

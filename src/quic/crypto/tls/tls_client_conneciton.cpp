@@ -3,6 +3,7 @@
 #include "quic/crypto/tls/tls_client_conneciton.h"
 
 namespace quicx {
+namespace quic {
 
 TLSClientConnection::TLSClientConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler):
     TLSConnection(ctx, handler) {
@@ -35,11 +36,12 @@ bool TLSClientConnection::AddAlpn(uint8_t* alpn, uint32_t len) {
     memcpy(&alpn_buf[1], alpn, protos_len);
     alpn_buf[protos_len] = '\0';
     if (SSL_set_alpn_protos(_ssl.get(), alpn_buf, protos_len) != 0) {
-        LOG_ERROR("SSL_set_alpn_protos failed.");
+        common::LOG_ERROR("SSL_set_alpn_protos failed.");
         return false;
     }
 
     return true;
 }
 
+}
 }

@@ -5,15 +5,16 @@
 #include "quic/frame/connection_close_frame.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(connection_close_frame_utest, codec) {
-    quicx::ConnectionCloseFrame frame1;
-    quicx::ConnectionCloseFrame frame2;
+    ConnectionCloseFrame frame1;
+    ConnectionCloseFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetErrorCode(10086);
     frame1.SetErrFrameType(0x05);
@@ -33,5 +34,6 @@ TEST(connection_close_frame_utest, codec) {
     EXPECT_EQ(frame1.GetReason(), frame2.GetReason());
 }
 
+}
 }
 }

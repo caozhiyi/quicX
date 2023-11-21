@@ -5,6 +5,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 class RecvStream {
 public:
@@ -21,6 +22,7 @@ private:
     void* _user_data;
 };
 
+}
 }
 
 #endif

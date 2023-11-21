@@ -4,6 +4,7 @@
 #include "quic/connection/connection_crypto.h"
 
 namespace quicx {
+namespace quic {
 
 ConnectionCrypto::ConnectionCrypto():
     _cur_encryption_level(EL_INITIAL),
@@ -57,9 +58,9 @@ void ConnectionCrypto::OnTransportParams(EncryptionLevel level, const uint8_t* t
     _transport_param_done = true;
 
     TransportParam remote_tp;
-    std::shared_ptr<IBufferRead> buffer = std::make_shared<BufferReadView>((uint8_t*)tp, tp_len);
+    std::shared_ptr<common::IBufferRead> buffer = std::make_shared<common::BufferReadView>((uint8_t*)tp, tp_len);
     if (!remote_tp.Decode(buffer)) {
-        LOG_ERROR("decode remote transport failed.");
+        common::LOG_ERROR("decode remote transport failed.");
         return;
     }
     if (_transport_param_cb) {
@@ -92,4 +93,5 @@ bool ConnectionCrypto::InstallInitSecret(uint8_t* secret, uint32_t len, bool is_
     return true;
 }
 
+}
 }

@@ -13,13 +13,14 @@
 #include "quic/frame/stream_data_blocked_frame.h"
 
 namespace quicx {
+namespace quic {
 
-SendStream::SendStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
+SendStream::SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
     ISendStream(id),
     _to_fin(false),
     _data_offset(0),
     _peer_data_limit(init_data_limit) {
-    _send_buffer = std::make_shared<BufferChains>(alloter);
+    _send_buffer = std::make_shared<common::BufferChains>(alloter);
 }
 
 SendStream::~SendStream() {
@@ -70,7 +71,7 @@ uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
         OnStopSendingFrame(frame);
         break;
     default:
-        LOG_ERROR("unexcept frame on send stream. frame type:%d", frame_type);
+        common::LOG_ERROR("unexcept frame on send stream. frame type:%d", frame_type);
     }
     return 0;
 }
@@ -147,7 +148,7 @@ void SendStream::OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     uint64_t new_limit = max_data_frame->GetMaximumData();
 
     if (new_limit <= _peer_data_limit) {
-        LOG_WARN("get a invalid max data stream. new limit:%d, current limit:%d", new_limit, _peer_data_limit);
+        common::LOG_WARN("get a invalid max data stream. new limit:%d, current limit:%d", new_limit, _peer_data_limit);
         return;
     }
 
@@ -172,4 +173,5 @@ void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
+}
 }

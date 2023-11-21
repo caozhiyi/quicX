@@ -7,16 +7,17 @@
 #include "quic/frame/path_challenge_frame.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(path_challenge_frame_utest, codec) {
-    quicx::PathChallengeFrame frame1;
-    quicx::PathChallengeFrame frame2;
-    std::shared_ptr<quicx::PathResponseFrame> frame3 = std::make_shared<quicx::PathResponseFrame>();
+    PathChallengeFrame frame1;
+    PathChallengeFrame frame2;
+    std::shared_ptr<PathResponseFrame> frame3 = std::make_shared<PathResponseFrame>();
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.MakeData();
 
@@ -34,5 +35,6 @@ TEST(path_challenge_frame_utest, codec) {
     EXPECT_TRUE(frame2.CompareData(frame3));
 }
 
+}
 }
 }

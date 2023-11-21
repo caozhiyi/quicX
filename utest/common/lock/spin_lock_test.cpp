@@ -6,17 +6,17 @@
 
 /*TEST(spin_lock_utest, spin_lock_1) {
     int flag = 0;
-    quicx::SpinLock lock;
+    SpinLock lock;
     std::thread th1([&lock, &flag](){
             for (size_t i = 0; i < 200000; i++) {
-                quicx::UniqueLock l(lock);
+                UniqueLock l(lock);
                 flag--;
             }
         }
     );
     std::thread th2([&lock, &flag](){
             for (size_t i = 0; i < 200000; i++) {
-                quicx::UniqueLock l(lock);
+                UniqueLock l(lock);
                 flag++;
             }
         }
@@ -30,11 +30,11 @@
 
 TEST(spin_lock_utest, spin_lock_2) {
     int flag = 0;
-    quicx::SpinLock lock;
+    SpinLock lock;
     std::mutex mu;
 
     {
-        quicx::TimeConsuming tc("spin_lock_1");
+        TimeConsuming tc("spin_lock_1");
         for (size_t i = 0; i < 2000000; i++) {
             lock.Lock();
             lock.Unlock();
@@ -42,7 +42,7 @@ TEST(spin_lock_utest, spin_lock_2) {
     }
     
     {
-        quicx::TimeConsuming tc("mutex_lock_1");
+        TimeConsuming tc("mutex_lock_1");
         for (size_t i = 0; i < 2000000; i++) {
             mu.lock();
             mu.unlock();
@@ -53,7 +53,7 @@ TEST(spin_lock_utest, spin_lock_2) {
 
 TEST(spin_lock_utest, spin_lock_3) {
     int flag = 0;
-    quicx::SpinLock lock;
+    SpinLock lock;
     std::mutex mu;
 
     {
@@ -69,7 +69,7 @@ TEST(spin_lock_utest, spin_lock_3) {
                 lock.Unlock();
             }
         });
-        quicx::TimeConsuming tc("spin_lock_2");
+        TimeConsuming tc("spin_lock_2");
         for (size_t i = 0; i < 2000000; i++) {
             lock.Lock();
             lock.Unlock();
@@ -91,7 +91,7 @@ TEST(spin_lock_utest, spin_lock_3) {
                 mu.unlock();
             }
         });
-        quicx::TimeConsuming tc("mutex_lock_2");
+        TimeConsuming tc("mutex_lock_2");
         for (size_t i = 0; i < 2000000; i++) {
             mu.lock();
             mu.unlock();

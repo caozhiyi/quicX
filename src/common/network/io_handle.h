@@ -6,6 +6,7 @@
 #include "common/util/os_return.h"
 
 namespace quicx {
+namespace common {
 
 struct Iovec {
     void      *_iov_base;      // starting address of buffer
@@ -49,6 +50,7 @@ SysCallInt32Result RecvFrom(int64_t sockfd, char *msg, uint32_t len, uint16_t fl
 SysCallInt32Result RecvMsg(int64_t sockfd, Msghdr* msg, int16_t flag);
 SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out);
 
+}
 }
 
 #endif

@@ -6,6 +6,7 @@
 #include <condition_variable>
 
 namespace quicx {
+namespace common {
 
 template<typename T>
 class ThreadSafeBlockQueue {
@@ -53,4 +54,6 @@ private:
 };
 
 }
+}
+
 #endif

@@ -4,6 +4,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class PingFrame:
     public IFrame {
@@ -12,6 +13,7 @@ public:
     ~PingFrame() {}
 };
 
+}
 }
 
 #endif
