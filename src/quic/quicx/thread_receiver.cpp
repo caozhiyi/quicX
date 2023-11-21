@@ -4,16 +4,17 @@
 #include "quic/quicx/thread_receiver.h"
 
 namespace quicx {
+namespace quic {
 
 thread_local std::vector<std::thread::id> ThreadReceiver::_thread_vec;
 thread_local std::unordered_map<uint64_t, std::thread::id> ThreadReceiver::_thread_map;
-thread_local std::unordered_map<std::thread::id, ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>*> ThreadReceiver::_processer_map;
+thread_local std::unordered_map<std::thread::id, common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>*> ThreadReceiver::_processer_map;
 
 std::shared_ptr<UdpPacketIn> ThreadReceiver::DoRecv() {
     auto id = std::this_thread::get_id();
-    static thread_local std::shared_ptr<ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>> __queue;
+    static thread_local std::shared_ptr<common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>> __queue;
     if (!__queue) {
-        __queue = std::make_shared<ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>>();
+        __queue = std::make_shared<common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>>();
         auto queue = __queue.get();
         Push([&id, &queue, this] { RegisteThread(id, queue); });
     }
@@ -73,13 +74,13 @@ void ThreadReceiver::Run() {
             }
         }
 
-        Sleep(100);
+        common::Sleep(100);
     }
 }
 
 void ThreadReceiver::DispatcherPacket(std::shared_ptr<UdpPacketIn> packet) {
     if (!packet->DecodePacket()) {
-        LOG_ERROR("decode packet failed.");
+        common::LOG_ERROR("decode packet failed.");
         return;
     }
     
@@ -106,9 +107,10 @@ void ThreadReceiver::DispatcherPacket(std::shared_ptr<UdpPacketIn> packet) {
     index++;
 }
 
-void ThreadReceiver::RegisteThread(std::thread::id& id, ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>* queue) {
+void ThreadReceiver::RegisteThread(std::thread::id& id, common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>* queue) {
     _thread_vec.push_back(id);
     _processer_map[id] = queue;
 }
 
+}
 }

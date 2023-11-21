@@ -8,6 +8,7 @@
 #include "pool_block.h"
 
 namespace quicx {
+namespace common {
 
 static const uint16_t __max_block_num = 20;
 
@@ -79,8 +80,9 @@ void BlockMemoryPool::Expansion(uint32_t num) {
     }
 }
 
-std::shared_ptr<BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num) {
+std::shared_ptr<common::BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num) {
     return std::make_shared<BlockMemoryPool>(large_sz, add_num);
 }
 
+}
 }

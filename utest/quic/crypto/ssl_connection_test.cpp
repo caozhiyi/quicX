@@ -12,10 +12,11 @@
 
 static uint8_t kALPNProtos[] = {0x03, 'f', 'o', 'o'};
 namespace quicx {
+namespace quic {
 namespace {
 
 class MockTransport:
-    public quicx::TlsHandlerInterface {
+    public TlsHandlerInterface {
 public:
     enum Role {
         R_CLITNE,
@@ -227,7 +228,7 @@ private:
 };
 
 class TestServerHandler:
-    public quicx::TlsServerHandlerInterface {
+    public TlsServerHandlerInterface {
 public:    
     virtual void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg) {
@@ -236,7 +237,7 @@ public:
     }
 };
 
-static bool ProvideHandshakeData(std::shared_ptr<MockTransport> mt, std::shared_ptr<quicx::TLSConnection> conn,  size_t num = std::numeric_limits<size_t>::max()) {
+static bool ProvideHandshakeData(std::shared_ptr<MockTransport> mt, std::shared_ptr<TLSConnection> conn,  size_t num = std::numeric_limits<size_t>::max()) {
     EncryptionLevel level = conn->GetLevel();
     std::vector<uint8_t> data;
     return mt->ReadHandshakeData(&data, level, num) && conn->ProcessCryptoData(data.data(), data.size());
@@ -277,22 +278,22 @@ static const char __key_pem[] =
       "-----END RSA PRIVATE KEY-----\n"; 
 
 TEST(crypto_ssl_connection_utest, test1) {
-    std::shared_ptr<quicx::TLSCtx> client_ctx = std::make_shared<quicx::TLSClientCtx>();
+    std::shared_ptr<TLSCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init();
 
     BIO* cert_bio = BIO_new_mem_buf(__cert_pem, strlen(__cert_pem));
     EXPECT_TRUE(cert_bio != nullptr);
-    quicx::CSmartPtr<X509, X509_free> cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
+    common::CSmartPtr<X509, X509_free> cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
     EXPECT_TRUE(cert != nullptr);
     BIO_free(cert_bio);
 
     BIO* key_bio = BIO_new_mem_buf(__key_pem, strlen(__key_pem));
     EXPECT_TRUE(key_bio != nullptr);
-    quicx::CSmartPtr<EVP_PKEY, EVP_PKEY_free> key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
+    common::CSmartPtr<EVP_PKEY, EVP_PKEY_free> key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
     EXPECT_TRUE(key != nullptr);
     BIO_free(key_bio);
 
-    std::shared_ptr<quicx::TLSServerCtx> server_ctx = std::make_shared<quicx::TLSServerCtx>();
+    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(cert.get(), key.get());
 
     std::shared_ptr<MockTransport> cli_handler = std::make_shared<MockTransport>(MockTransport::Role::R_CLITNE);
@@ -302,10 +303,10 @@ TEST(crypto_ssl_connection_utest, test1) {
     ser_handler->SetPeer(cli_handler.get());
     cli_handler->SetPeer(ser_handler.get());
 
-    std::shared_ptr<quicx::TLSClientConnection> cli_conn = std::make_shared<quicx::TLSClientConnection>(client_ctx, cli_handler.get());
+    std::shared_ptr<TLSClientConnection> cli_conn = std::make_shared<TLSClientConnection>(client_ctx, cli_handler.get());
     cli_conn->Init();
 
-    std::shared_ptr<quicx::TLSServerConnection> ser_conn = std::make_shared<quicx::TLSServerConnection>(server_ctx, ser_handler.get(), ser_alpn_handler.get());
+    std::shared_ptr<TLSServerConnection> ser_conn = std::make_shared<TLSServerConnection>(server_ctx, ser_handler.get(), ser_alpn_handler.get());
     ser_conn->Init();
 
     static uint8_t client_transport_params[] = {0};
@@ -346,4 +347,5 @@ TEST(crypto_ssl_connection_utest, test1) {
 }
 
 }    
+}
 }

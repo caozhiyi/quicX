@@ -6,6 +6,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class ConnectionCloseFrame:
     public IFrame {
@@ -14,8 +15,8 @@ public:
     ConnectionCloseFrame(uint16_t frame_type);
     ~ConnectionCloseFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetErrorCode(uint32_t error_code) { _error_code = error_code; }
@@ -38,6 +39,7 @@ private:
     */
 };
 
+}
 }
 
 #endif

@@ -11,6 +11,7 @@
 #include "common/structure/linked_list_solt.h"
 
 namespace quicx {
+namespace common {
 
 template<typename T>
 class LinkedList {
@@ -67,6 +68,7 @@ private:
     std::shared_ptr<T> _tail;
 };
 
+}
 }
 
 #endif

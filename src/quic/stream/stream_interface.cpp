@@ -1,5 +1,6 @@
 #include "quic/stream/stream_interface.h"
 namespace quicx {
+namespace quic {
 
 IStream::TrySendResult IStream::TrySendData(IFrameVisitor* visitor) {
     _is_active_send = false;
@@ -23,4 +24,5 @@ void IStream::NoticeToClose() {
     }
 }
 
+}
 }

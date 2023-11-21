@@ -5,6 +5,7 @@
 #include "quic/packet/type.h"
 
 namespace quicx {
+namespace quic {
 
 class PacketNumber {
 public:
@@ -27,6 +28,7 @@ private:
     uint64_t _cur_packet_number[PNS_NUMBER];
 };
 
+}
 }
 
 #endif

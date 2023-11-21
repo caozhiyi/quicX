@@ -4,6 +4,7 @@
 #include "quic/packet/retry_packet.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(retry_packet_utest, codec) {
@@ -14,11 +15,11 @@ TEST(retry_packet_utest, codec) {
 
     RetryPacket packet;
     packet.SetRetryIntegrityTag(tag);
-    packet.SetRetryToken(BufferSpan(tag, 64));
+    packet.SetRetryToken(common::BufferSpan(tag, 64));
 
     static const uint32_t __buf_len = 256;
     uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> buffer = std::make_shared<Buffer>(buf, __buf_len);
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, __buf_len);
 
     EXPECT_TRUE(packet.Encode(buffer));
 
@@ -39,5 +40,6 @@ TEST(retry_packet_utest, codec) {
     }
 }
 
+}
 }
 }

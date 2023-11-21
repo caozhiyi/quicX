@@ -9,6 +9,7 @@
 #include "common/buffer/buffer_write_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class IHeader:
     public HeaderFlag {
@@ -18,18 +19,19 @@ public:
     IHeader(uint8_t flag): HeaderFlag(flag) {}
     virtual ~IHeader() {}
 
-    virtual bool EncodeHeader(std::shared_ptr<IBufferWrite> buffer) = 0;
-    virtual bool DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag = false) = 0;
+    virtual bool EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) = 0;
+    virtual bool DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeHeaderSize() = 0;
 
     virtual void SetDestinationConnectionId(uint8_t* id, uint8_t len) = 0;
     virtual uint8_t GetDestinationConnectionIdLength() = 0;
     
-    virtual BufferSpan& GetHeaderSrcData() { return _header_src_data; }
+    virtual common::BufferSpan& GetHeaderSrcData() { return _header_src_data; }
 protected:
-    BufferSpan _header_src_data;
+    common::BufferSpan _header_src_data;
 };
 
+}
 }
 
 #endif

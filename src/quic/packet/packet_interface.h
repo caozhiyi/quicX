@@ -12,6 +12,7 @@
 #include "common/buffer/buffer_write_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class IPacket {
 public:
@@ -19,9 +20,9 @@ public:
     virtual ~IPacket() {}
 
     virtual uint16_t GetCryptoLevel() const = 0;
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer) = 0;
-    virtual bool DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer) = 0;
-    virtual bool DecodeWithCrypto(std::shared_ptr<IBuffer> buffer) = 0;
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer) = 0;
+    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer) = 0;
+    virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) = 0;
 
     virtual IHeader* GetHeader() = 0;
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames();
@@ -30,23 +31,24 @@ public:
     uint64_t GetPacketNumber() { return _packet_number; }
     void SetPacketNumber(uint64_t num) { _packet_number = num; }
 
-    BufferSpan& GetSrcBuffer() { return _packet_src_data; }
+    common::BufferSpan& GetSrcBuffer() { return _packet_src_data; }
 
     void AddFrameTypeBit(FrameTypeBit bit) { _frame_type_bit |= bit; }
     uint32_t GetFrameTypeBit() { return _frame_type_bit; }
 
-    virtual void SetPayload(BufferSpan payload) {}
+    virtual void SetPayload(common::BufferSpan payload) {}
 
     void SetCryptographer(std::shared_ptr<ICryptographer> crypto_grapher) { _crypto_grapher = crypto_grapher; }
     
 protected:
     uint32_t _frame_type_bit;
     uint64_t _packet_number; /*encryption protection*/
-    BufferSpan _packet_src_data;
+    common::BufferSpan _packet_src_data;
 
     std::shared_ptr<ICryptographer> _crypto_grapher;
 };
 
+}
 }
 
 #endif

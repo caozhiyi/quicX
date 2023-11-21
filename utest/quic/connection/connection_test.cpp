@@ -10,6 +10,7 @@
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 static const char __cert_pem[] =
@@ -48,7 +49,7 @@ static const char __key_pem[] =
 
 bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn) {
     uint8_t buf[1500] = {0};
-    std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(buf, buf + 1500);
+    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + 1500);
     send_conn->GenerateSendData(buffer);
 
     std::vector<std::shared_ptr<IPacket>> packets;
@@ -63,27 +64,27 @@ bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<I
 TEST(connnection_utest, handshake) {
     BIO* cert_bio = BIO_new_mem_buf(__cert_pem, strlen(__cert_pem));
     EXPECT_TRUE(cert_bio != nullptr);
-    quicx::CSmartPtr<X509, X509_free> cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
+    common::CSmartPtr<X509, X509_free> cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
     EXPECT_TRUE(cert != nullptr);
     BIO_free(cert_bio);
 
     BIO* key_bio = BIO_new_mem_buf(__key_pem, strlen(__key_pem));
     EXPECT_TRUE(key_bio != nullptr);
-    quicx::CSmartPtr<EVP_PKEY, EVP_PKEY_free> key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
+    common::CSmartPtr<EVP_PKEY, EVP_PKEY_free> key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
     EXPECT_TRUE(key != nullptr);
     BIO_free(key_bio);
 
-    std::shared_ptr<quicx::TLSServerCtx> server_ctx = std::make_shared<quicx::TLSServerCtx>();
+    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(cert.get(), key.get());
 
-    std::shared_ptr<quicx::TLSCtx> client_ctx = std::make_shared<quicx::TLSClientCtx>();
+    std::shared_ptr<TLSCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init();
 
     std::shared_ptr<ClientConnection> client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr);
     client_conn->AddAlpn(AT_HTTP3);
     client_conn->AddTransportParam(TransportParamConfig::Instance());
 
-    Address addr(AT_IPV4);
+    common::Address addr(common::AT_IPV4);
     addr.SetIp("127.0.0.1");
     addr.SetPort(9432);
 
@@ -107,5 +108,6 @@ TEST(connnection_utest, handshake) {
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), EL_APPLICATION);
 }
 
+}
 }
 }

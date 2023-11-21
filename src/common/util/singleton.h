@@ -2,6 +2,7 @@
 #define COMMON_UTIL_SINGLETON
 
 namespace quicx {
+namespace common {
 
 template<typename T>
 class Singleton {
@@ -19,4 +20,6 @@ protected:
 };
 
 }
+}
+
 #endif

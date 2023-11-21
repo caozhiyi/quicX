@@ -5,6 +5,7 @@
 #include "quic/stream/state_machine_interface.h"
 
 namespace quicx {
+namespace quic {
 
 /*
 receiving stream states
@@ -65,6 +66,7 @@ public:
     bool AppReadAllData();
 };
 
+}
 }
 
 #endif

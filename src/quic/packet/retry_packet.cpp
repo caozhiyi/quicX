@@ -4,6 +4,7 @@
 #include "quic/packet/retry_packet.h"
 
 namespace quicx {
+namespace quic {
 
 RetryPacket::RetryPacket() {
     _header.GetLongHeaderFlag().SetPacketType(PT_RETRY);
@@ -18,9 +19,9 @@ RetryPacket::~RetryPacket() {
 
 }
 
-bool RetryPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
+bool RetryPacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (!_header.EncodeHeader(buffer)) {
-        LOG_ERROR("encode header failed");
+        common::LOG_ERROR("encode header failed");
         return false;
     }
 
@@ -39,9 +40,9 @@ bool RetryPacket::Encode(std::shared_ptr<IBufferWrite> buffer) {
     return true;
 }
 
-bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer) {
+bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer) {
     if (!_header.DecodeHeader(buffer)) {
-        LOG_ERROR("decode header failed");
+        common::LOG_ERROR("decode header failed");
         return false;
     }
 
@@ -50,7 +51,7 @@ bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer) {
     uint32_t token_len = span.GetLength() - __retry_integrity_tag_length;
 
     // decode retry token
-    _retry_token = std::move(BufferSpan(span.GetStart(), token_len));
+    _retry_token = std::move(common::BufferSpan(span.GetStart(), token_len));
     cur_pos += token_len;
 
     // decode retry integrity tag 
@@ -68,4 +69,5 @@ uint8_t* RetryPacket::GetRetryIntegrityTag() {
     return _retry_integrity_tag;
 }
 
+}
 }

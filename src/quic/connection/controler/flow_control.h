@@ -6,6 +6,7 @@
 #include "quic/connection/transport_param.h"
 
 namespace quicx {
+namespace quic {
 
 // flow control.
 // include limit number of stream and max offset of connection.
@@ -58,6 +59,7 @@ private:
     StreamIDGenerator _id_generator;
 };
 
+}
 }
 
 #endif

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 // TODO 在ack时检测丢包
 class LossDetection {
@@ -17,6 +18,7 @@ private:
 
 };
 
+}
 }
 
 #endif

@@ -5,6 +5,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class MaxDataFrame:
     public IFrame {
@@ -12,8 +13,8 @@ public:
     MaxDataFrame();
     ~MaxDataFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetMaximumData(uint64_t maximum) { _maximum_data = maximum; }
@@ -23,6 +24,7 @@ private:
     uint64_t _maximum_data;  // the maximum amount of data that can be sent on the entire connection.
 };
 
+}
 }
 
 #endif

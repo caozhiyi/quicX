@@ -4,6 +4,7 @@
 #include "common/buffer/buffer_write_view.h"
 
 namespace quicx {
+namespace common {
 
 BufferWriteView::BufferWriteView(uint8_t* start, uint8_t* end):
     _write_pos(start),
@@ -80,8 +81,9 @@ BufferWriteView BufferWriteView::GetWriteView(uint32_t offset) {
     return std::move(BufferWriteView(_buffer_start + offset, _buffer_end));
 }
 
-std::shared_ptr<IBufferWrite> BufferWriteView::GetWriteViewPtr(uint32_t offset) {
+std::shared_ptr<common::IBufferWrite> BufferWriteView::GetWriteViewPtr(uint32_t offset) {
     return std::make_shared<BufferWriteView>(_buffer_start + offset, _buffer_end);
 }
 
+}
 }

@@ -4,6 +4,7 @@
 #include "quic/connection/util.h"
 
 namespace quicx {
+namespace quic {
 
 bool IsAckElictingPacket(uint32_t frame_type) {
     return ((frame_type) & ~(FTB_ACK | FTB_ACK_ECN | FTB_PADDING | FTB_CONNECTION_CLOSE));
@@ -20,4 +21,5 @@ PacketNumberSpace CryptoLevel2PacketNumberSpace(uint16_t level) {
     }
 }
 
+}
 }

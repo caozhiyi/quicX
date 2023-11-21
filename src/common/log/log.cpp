@@ -9,6 +9,7 @@
 #include "base_logger.h"
 
 namespace quicx {
+namespace common {
 
 SingletonLogger::SingletonLogger() {
     _logger = std::make_shared<BaseLogger>(__log_cache_size, __log_block_size);
@@ -65,4 +66,5 @@ LogStreamParam SingletonLogger::GetStreamParam(LogLevel level, const char* file,
     return _logger->GetStreamParam(level, file, line);
 }
 
+}
 }

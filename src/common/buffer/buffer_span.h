@@ -9,6 +9,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace common {
 
 class BufferSpan {
 public:
@@ -26,6 +27,7 @@ private:
     uint8_t* _end;
 };
 
+}
 }
 
 #endif

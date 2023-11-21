@@ -4,10 +4,11 @@
 #include "common/buffer/buffer_chains.h"
 
 namespace quicx {
+namespace common {
 namespace {
 
 TEST(buffer_chains_utest, read) {
-    auto alloter = MakeBlockMemoryPoolPtr(16, 5);
+    auto alloter = common::MakeBlockMemoryPoolPtr(16, 5);
     std::shared_ptr<BufferChains> buffer_chains = std::make_shared<BufferChains>(alloter);
 
     uint8_t data[] = "123456789";
@@ -37,7 +38,7 @@ TEST(buffer_chains_utest, read) {
 }
 
 TEST(buffer_chains_utest, write) {
-    auto alloter = MakeBlockMemoryPoolPtr(16, 5);
+    auto alloter = common::MakeBlockMemoryPoolPtr(16, 5);
     std::shared_ptr<BufferChains> buffer_chains = std::make_shared<BufferChains>(alloter);
 
     uint8_t data[] = "123456789";
@@ -59,5 +60,6 @@ TEST(buffer_chains_utest, write) {
     EXPECT_EQ(buffer_chains->GetFreeLength(), 2);
 }
 
+}
 }
 }

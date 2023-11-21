@@ -2,6 +2,7 @@
 #include "quic/quicx/quicx_impl.h"
 
 namespace quicx {
+namespace quic {
 
 Quicx::Quicx() {
     _impl = new QuicxImpl();
@@ -31,4 +32,5 @@ bool Quicx::ListenAndAccept(const std::string& ip, uint16_t port) {
     return _impl->ListenAndAccept(ip, port);
 }
 
+}
 }

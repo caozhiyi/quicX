@@ -7,6 +7,7 @@
 #include "quic/crypto/chacha20_poly1305_cryptographer.h"
 
 namespace quicx {
+namespace quic {
 
 ICryptographer::ICryptographer() {
 
@@ -23,7 +24,7 @@ CryptographerId ICryptographer::AdapterCryptographerType(uint32_t cipher_id) {
     case TLS1_CK_AES_256_GCM_SHA384: return CI_TLS1_CK_AES_256_GCM_SHA384;
     case TLS1_CK_CHACHA20_POLY1305_SHA256: return CI_TLS1_CK_CHACHA20_POLY1305_SHA256;
     default:
-        LOG_ERROR("unknow cipher. id:%d", cipher_id);
+        common::LOG_ERROR("unknow cipher. id:%d", cipher_id);
         abort();
     }
 }
@@ -42,10 +43,11 @@ std::shared_ptr<ICryptographer> MakeCryptographer(CryptographerId cipher) {
     case CI_TLS1_CK_CHACHA20_POLY1305_SHA256:
         return std::make_shared<ChaCha20Poly1305Cryptographer>();
     default:
-        LOG_ERROR("unsupport cipher id. id:%d", cipher);
+        common::LOG_ERROR("unsupport cipher id. id:%d", cipher);
         break;
     }
     return nullptr;
 }
 
+}
 }

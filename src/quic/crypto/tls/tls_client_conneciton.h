@@ -4,6 +4,7 @@
 #include "quic/crypto/tls/tls_conneciton.h"
 
 namespace quicx {
+namespace quic {
 
 class TLSClientConnection:
     public TLSConnection {
@@ -20,6 +21,7 @@ public:
     virtual bool AddAlpn(uint8_t* alpn, uint32_t len); 
 };
 
+}
 }
 
 #endif

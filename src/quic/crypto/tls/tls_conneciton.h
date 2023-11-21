@@ -8,6 +8,7 @@
 #include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
+namespace quic {
 
 class TlsHandlerInterface {
 public:
@@ -64,6 +65,7 @@ protected:
     TlsHandlerInterface* _handler;
 };
 
+}
 }
 
 #endif

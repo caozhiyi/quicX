@@ -9,6 +9,7 @@
 #include "quic/packet/header/short_header.h"
 
 namespace quicx {
+namespace quic {
 
 class Rtt1Packet:
     public IPacket {
@@ -18,26 +19,27 @@ public:
     virtual ~Rtt1Packet();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_APPLICATION; }
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer);
-    virtual bool DecodeWithCrypto(std::shared_ptr<IBuffer> buffer);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
+    virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer);
 
     virtual IHeader* GetHeader() { return &_header; }
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frames_list; }
 
-    void SetPayload(BufferSpan payload);
-    BufferSpan GetPayload() { return _payload; }
+    void SetPayload(common::BufferSpan payload);
+    common::BufferSpan GetPayload() { return _payload; }
     uint32_t GetPayloadLength() { return _payload.GetEnd() - _payload.GetStart(); }
 
 protected:
     ShortHeader _header;
-    BufferSpan _payload;
+    common::BufferSpan _payload;
 
     uint32_t _payload_offset;
     uint64_t _largest_pn;
     std::vector<std::shared_ptr<IFrame>> _frames_list;
 };
 
+}
 }
 
 #endif

@@ -3,6 +3,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 // The maximum packet size of any QUIC packet over IPv6, based on ethernet's max
 // size, minus the IP and UDP headers. IPv6 has a 40 byte header, UDP adds an
@@ -22,6 +23,7 @@ const uint8_t __initial_tls_tag_len = 16;
 // RFC 9001, 5.4.1.  Header Protection Application: 5-byte mask
 const uint8_t __header_protect_lenght = 5;
 
+}
 }
 
 #endif

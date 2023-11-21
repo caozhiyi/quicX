@@ -14,16 +14,17 @@
 #include "quic/connection/packet_visitor_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class SendManager {
 public:
-    SendManager(std::shared_ptr<ITimer> timer);
+    SendManager(std::shared_ptr<common::ITimer> timer);
     ~SendManager();
 
     void AddFrame(std::shared_ptr<IFrame> frame);
     void AddActiveStream(std::shared_ptr<IStream> stream);
 
-    bool GetSendData(std::shared_ptr<IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
+    bool GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
     void OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame);
 
     void SetFlowControl(std::shared_ptr<FlowControl> flow_control) { _flow_control = flow_control; }
@@ -32,7 +33,7 @@ public:
 
 private:
     std::shared_ptr<IPacket> MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
-    bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<IBuffer> buffer);
+    bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer);
 
 private:
     SendControl _send_control;
@@ -47,6 +48,7 @@ private:
     std::shared_ptr<ConnectionIDManager> _remote_conn_id_manager;
 };
 
+}
 }
 
 #endif

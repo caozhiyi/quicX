@@ -8,6 +8,7 @@
 #include "common/timer/treemap_timer.h"
 
 namespace quicx {
+namespace common {
 
 
 TreeMapTimer::TreeMapTimer(): _random(0, (int32_t)std::numeric_limits<int32_t>::max()) {
@@ -74,4 +75,5 @@ bool TreeMapTimer::Empty() {
     return _timer_map.empty();
 }
 
+}
 }

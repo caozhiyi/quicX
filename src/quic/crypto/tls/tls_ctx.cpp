@@ -4,6 +4,7 @@
 #include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
+namespace quic {
 
 TLSCtx::TLSCtx():
     _ssl_ctx(nullptr) {
@@ -17,7 +18,7 @@ TLSCtx::~TLSCtx() {
 bool TLSCtx::Init() {
     _ssl_ctx = SSLCtxPtr(SSL_CTX_new(TLS_method()));
     if (!_ssl_ctx) {
-        LOG_ERROR("create ssl ctx failed");
+        common::LOG_ERROR("create ssl ctx failed");
         return false;
     }
 
@@ -27,4 +28,5 @@ bool TLSCtx::Init() {
     return true;
 }
 
+}
 }

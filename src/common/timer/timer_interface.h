@@ -9,6 +9,7 @@
 #include "common/timer/timer_task.h"
 
 namespace quicx {
+namespace common {
 
 // timer interface, timer inherits from this.
 class ITimer {
@@ -31,6 +32,7 @@ public:
     virtual bool Empty() = 0;
 };
 
+}
 }
 
 #endif

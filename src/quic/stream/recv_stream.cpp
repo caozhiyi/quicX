@@ -11,15 +11,16 @@
 #include "quic/frame/stream_data_blocked_frame.h"
 
 namespace quicx {
+namespace quic {
 
-RecvStream::RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
+RecvStream::RecvStream(std::shared_ptr<common::BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
     IRecvStream(id),
     _local_data_limit(init_data_limit),
     _final_offset(0),
     _except_offset(0) {
     _recv_machine = std::shared_ptr<RecvStreamStateMachine>();
     _recv_machine->SetStreamCloseCB(std::bind(&IStream::NoticeToClose, this));
-    _recv_buffer = std::make_shared<BufferChains>(alloter);
+    _recv_buffer = std::make_shared<common::BufferChains>(alloter);
 
 }
 
@@ -52,7 +53,7 @@ uint32_t RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
         if (StreamFrame::IsStreamFrame(frame_type)) {
             return OnStreamFrame(frame);
         } else {
-            LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
+            common::LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
         }
     }
     return 0;
@@ -90,7 +91,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if (stream_frame->IsFin()) {
         uint64_t fin_offset = stream_frame->GetOffset() + stream_frame->GetLength();
         if (_final_offset != 0 && fin_offset != _final_offset) {
-            LOG_ERROR("invalid final size. size:%d", fin_offset);
+            common::LOG_ERROR("invalid final size. size:%d", fin_offset);
             if (_connection_close_cb) {
                 _connection_close_cb(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
             }
@@ -158,7 +159,7 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     }
     
     auto block_frame = std::dynamic_pointer_cast<StreamDataBlockedFrame>(frame);
-    LOG_WARN("peer send block. offset:%d", block_frame->GetMaximumData());
+    common::LOG_WARN("peer send block. offset:%d", block_frame->GetMaximumData());
 
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(_stream_id);
@@ -177,7 +178,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     uint64_t fin_offset = reset_frame->GetFinalSize();
 
     if (_final_offset != 0 && fin_offset != _final_offset) {
-        LOG_ERROR("invalid final size. size:%d", fin_offset);
+        common::LOG_ERROR("invalid final size. size:%d", fin_offset);
         if (_connection_close_cb) {
             _connection_close_cb(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
         }
@@ -192,4 +193,5 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
+}
 }

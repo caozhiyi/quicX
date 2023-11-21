@@ -7,6 +7,7 @@
 #include <functional> // for bind
 
 namespace quicx {
+namespace common {
 
 class Thread {
 public:
@@ -47,4 +48,6 @@ protected:
 };
 
 }
+}
+
 #endif

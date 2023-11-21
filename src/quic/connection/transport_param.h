@@ -4,11 +4,13 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include "common/buffer/buffer_read_interface.h"
+#include "common/buffer/buffer_write_interface.h"
 
 namespace quicx {
+namespace quic {
 
-class IBufferRead;
-class IBufferWrite;
+
 class TransportParamConfig;
 class TransportParam {
 public:
@@ -24,8 +26,8 @@ public:
     /*
      * serialization and deserialization operations
      */
-    bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    bool Decode(std::shared_ptr<IBufferRead> buffer);
+    bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    bool Decode(std::shared_ptr<common::IBufferRead> buffer);
     uint32_t EncodeSize();
 
     /**
@@ -80,6 +82,7 @@ private:
     std::string _retry_source_connection_id;   // no client
 };
 
+}
 }
 
 #endif

@@ -6,6 +6,7 @@
 #include "common/util/c_smart_ptr.h"
 
 namespace quicx {
+namespace quic {
 
 const uint16_t aes_128_key_length = 16;
 
@@ -35,9 +36,10 @@ enum EncryptionLevel: int8_t {
     NUM_ENCRYPTION_LEVELS,
 };
 
-using SSLCtxPtr = CSmartPtr<SSL_CTX, SSL_CTX_free>;
-using SSLPtr = CSmartPtr<SSL, SSL_free>;
+using SSLCtxPtr = common::CSmartPtr<SSL_CTX, SSL_CTX_free>;
+using SSLPtr = common::CSmartPtr<SSL, SSL_free>;
 
+}
 }
 
 #endif

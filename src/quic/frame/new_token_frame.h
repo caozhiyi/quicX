@@ -5,6 +5,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class Buffer;
 class NewTokenFrame:
@@ -13,8 +14,8 @@ public:
     NewTokenFrame();
     ~NewTokenFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
 
@@ -30,6 +31,7 @@ private:
     uint8_t* _token;   // An opaque blob that the client may use with a future Initial packet.
 };
 
+}
 }
 
 #endif

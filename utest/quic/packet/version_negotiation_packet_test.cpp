@@ -4,6 +4,7 @@
 #include "quic/packet/version_negotiation_packet.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(version_negotiation_packet_utest, codec) {
@@ -14,7 +15,7 @@ TEST(version_negotiation_packet_utest, codec) {
 
     static const uint8_t __buf_len = 128;
     uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> buffer = std::make_shared<Buffer>(buf, __buf_len);
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, __buf_len);
 
     EXPECT_TRUE(packet.Encode(buffer));
 
@@ -31,5 +32,6 @@ TEST(version_negotiation_packet_utest, codec) {
     }
 }
 
+}
 }
 }

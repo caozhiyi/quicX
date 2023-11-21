@@ -5,6 +5,7 @@
 #include "common/alloter/alloter_interface.h"
 
 namespace quicx {
+namespace quic {
 
 AckFrame::AckFrame():
     IFrame(FT_ACK),
@@ -16,52 +17,52 @@ AckFrame::~AckFrame() {
 
 }
 
-bool AckFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
+bool AckFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     
     auto span = buffer->GetWriteSpan();
     auto remain_size = span.GetLength();
     if (need_size > remain_size) {
-        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
     
     uint8_t* pos = span.GetStart();
-    pos = FixedEncodeUint16(pos, _frame_type);
-    pos = EncodeVarint(pos, _ack_delay);
-    pos = EncodeVarint(pos, _first_ack_range);
-    pos = EncodeVarint(pos, _ack_ranges.size());
+    pos = common::FixedEncodeUint16(pos, _frame_type);
+    pos = common::EncodeVarint(pos, _ack_delay);
+    pos = common::EncodeVarint(pos, _first_ack_range);
+    pos = common::EncodeVarint(pos, _ack_ranges.size());
 
     for (size_t i = 0; i < _ack_ranges.size(); i++) {
-        pos = EncodeVarint(pos, _ack_ranges[i].GetGap());
-        pos = EncodeVarint(pos, _ack_ranges[i].GetAckRangeLength());
+        pos = common::EncodeVarint(pos, _ack_ranges[i].GetGap());
+        pos = common::EncodeVarint(pos, _ack_ranges[i].GetAckRangeLength());
     }
     
     buffer->MoveWritePt(pos - span.GetStart());
     return true;
 }
 
-bool AckFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
+bool AckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
     auto span = buffer->GetReadSpan();
     
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
     if (with_type) {
-        pos = FixedDecodeUint16(pos, end, _frame_type);
+        pos = common::FixedDecodeUint16(pos, end, _frame_type);
         if (_frame_type != FT_ACK && _frame_type != FT_ACK_ECN) {
             return false;
         }
     }
-    pos = DecodeVarint(pos, end, _ack_delay);
-    pos = DecodeVarint(pos, end, _first_ack_range);
+    pos = common::DecodeVarint(pos, end, _ack_delay);
+    pos = common::DecodeVarint(pos, end, _first_ack_range);
     uint32_t ack_range_count = 0;
-    pos = DecodeVarint(pos, end, ack_range_count);
+    pos = common::DecodeVarint(pos, end, ack_range_count);
 
     uint64_t gap;
     uint64_t range;
     for (uint32_t i = 0; i < ack_range_count; i++) {
-        pos = DecodeVarint(pos, end, gap);
-        pos = DecodeVarint(pos, end, range);
+        pos = common::DecodeVarint(pos, end, gap);
+        pos = common::DecodeVarint(pos, end, range);
         _ack_ranges.emplace_back(AckRange(gap, range));
     }
     buffer->MoveReadPt(pos - span.GetStart());
@@ -91,7 +92,7 @@ AckEcnFrame::~AckEcnFrame() {
 
 }
 
-bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
+bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (!AckFrame::Encode(buffer)) {
         return false;
     }
@@ -101,21 +102,21 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<IBufferWrite> buffer) {
     auto span = buffer->GetWriteSpan();
     auto remain_size = span.GetLength();
     if (need_size > remain_size) {
-        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
     
     uint8_t* pos = span.GetStart();
-    pos = EncodeVarint(pos, _ect_0);
-    pos = EncodeVarint(pos, _ect_1);
-    pos = EncodeVarint(pos, _ecn_ce);
+    pos = common::EncodeVarint(pos, _ect_0);
+    pos = common::EncodeVarint(pos, _ect_1);
+    pos = common::EncodeVarint(pos, _ecn_ce);
 
     buffer->MoveWritePt(pos - span.GetStart());
 
     return true;
 }
 
-bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool with_type) {
+bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
     if (!AckFrame::Decode(buffer, with_type)) {
         return false;
     } 
@@ -124,9 +125,9 @@ bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<IBufferRead> buffer, bool 
 
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
-    pos = DecodeVarint(pos, end, _ect_0);
-    pos = DecodeVarint(pos, end, _ect_1);
-    pos = DecodeVarint(pos, end, _ecn_ce);
+    pos = common::DecodeVarint(pos, end, _ect_0);
+    pos = common::DecodeVarint(pos, end, _ect_1);
+    pos = common::DecodeVarint(pos, end, _ecn_ce);
 
     buffer->MoveReadPt(pos - span.GetStart());
 
@@ -137,4 +138,5 @@ uint32_t AckEcnFrame::AckEcnFrame::EncodeSize() {
     return sizeof(uint64_t) * 3;
 }
 
+}
 }

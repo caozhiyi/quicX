@@ -5,6 +5,7 @@
 #include "quic/connection/controler/rtt_calculator.h"
 
 namespace quicx {
+namespace quic {
 
 RttCalculator::RttCalculator() {
     Reset();
@@ -15,7 +16,7 @@ RttCalculator::~RttCalculator() {
 }
 
 bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_delay) {
-    LOG_DEBUG("update rtt. send time:%lld, now:%lld, ack delay:%d", send_time, now, ack_delay);
+    common::LOG_DEBUG("update rtt. send time:%lld, now:%lld, ack delay:%d", send_time, now, ack_delay);
 
     _latest_rtt = now - send_time;
     // first update rtt
@@ -63,4 +64,5 @@ uint32_t RttCalculator::GetPT0Interval(uint32_t max_ack_delay) {
     return _smoothed_rtt + std::max<uint32_t>(_rtt_var << 2, 1000) + max_ack_delay;
 }
 
+}
 }

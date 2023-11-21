@@ -10,6 +10,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace common {
 
 // bitmap base on array.
 // find next valid bit in O(1) time.
@@ -44,6 +45,7 @@ private:
     std::vector<int64_t> _bitmap;
 };
 
+}
 }
 
 #endif

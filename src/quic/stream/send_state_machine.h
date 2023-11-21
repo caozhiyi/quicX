@@ -5,6 +5,7 @@
 #include "quic/stream/state_machine_interface.h"
 
 namespace quicx {
+namespace quic {
 
 /*
 sending stream states
@@ -68,6 +69,7 @@ public:
     bool CanSendResetStreamFrame();
 };
 
+}
 }
 
 #endif

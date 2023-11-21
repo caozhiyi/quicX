@@ -5,6 +5,7 @@
 #include <string>
 
 namespace quicx {
+namespace quic {
 
 class ISendStream;
 class BidirectionStream;
@@ -27,6 +28,7 @@ private:
     void* _user_data;
 };
 
+}
 }
 
 #endif

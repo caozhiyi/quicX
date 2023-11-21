@@ -11,6 +11,7 @@
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
+namespace common {
 
 // buffer chains interface
 class IBufferChains {
@@ -41,6 +42,7 @@ public:
     virtual std::shared_ptr<BufferBlock> GetWriteBuffers(uint32_t len) = 0;
 };
 
+}
 }
 
 #endif

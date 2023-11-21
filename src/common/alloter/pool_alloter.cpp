@@ -10,6 +10,7 @@
 #include "normal_alloter.h"
 
 namespace quicx {
+namespace common {
 
 PoolAlloter::PoolAlloter() : 
     _pool_start(nullptr),
@@ -141,7 +142,8 @@ void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
 }
 
 std::shared_ptr<IAlloter> MakePoolAlloterPtr() {
-    return std::make_shared<quicx::PoolAlloter>();
+    return std::make_shared<PoolAlloter>();
 }
 
+}
 }

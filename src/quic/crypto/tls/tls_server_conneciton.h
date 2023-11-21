@@ -5,6 +5,7 @@
 #include "quic/crypto/tls/tls_conneciton.h"
 
 namespace quicx {
+namespace quic {
 
 class TlsServerHandlerInterface {
 public:
@@ -31,6 +32,7 @@ private:
     TlsServerHandlerInterface* _ser_handler;
 };
 
+}
 }
 
 #endif

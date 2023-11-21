@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 enum TransportParamType : uint32_t {
     TP_ORIGINAL_DESTINATION_CONNECTION_ID  = 0x00, // This parameter is the value of the Destination Connection ID field from the first Initial packet sent by the client;
@@ -33,6 +34,7 @@ enum TransportParamType : uint32_t {
     TP_RETRY_SOURCE_CONNECTION_ID          = 0x10, // This is the value that the server included in the Source Connection ID field of a Retry packet
 };
 
+}
 }
 
 #endif

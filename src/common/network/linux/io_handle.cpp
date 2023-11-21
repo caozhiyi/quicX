@@ -9,6 +9,7 @@
 #include "common/network/io_handle.h"
 
 namespace quicx {
+namespace common {
 
 SysCallInt64Result UdpSocket() {
     int64_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -97,4 +98,6 @@ SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 }
 
 }
+}
+
 #endif

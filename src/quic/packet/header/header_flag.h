@@ -7,6 +7,7 @@
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
+namespace quic {
 
 struct LongHeaderFlag {
     uint8_t _packet_number_length:2; /*encryption protection*/ // must set when encode and decode
@@ -47,8 +48,8 @@ public:
     HeaderFlag(uint8_t flag);
     virtual ~HeaderFlag() {}
 
-    virtual bool EncodeFlag(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool DecodeFlag(std::shared_ptr<IBufferRead> buffer);
+    virtual bool EncodeFlag(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool DecodeFlag(std::shared_ptr<common::IBufferRead> buffer);
     virtual uint32_t EncodeFlagSize();
 
     virtual PacketHeaderType GetHeaderType() const;
@@ -73,6 +74,7 @@ protected:
     } _flag;
 };
 
+}
 }
 
 #endif

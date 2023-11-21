@@ -11,6 +11,7 @@
 #include "quic/udp/udp_packet_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class UdpPacketOut:
     public IUdpPacket {
@@ -21,13 +22,14 @@ public:
     void SetOutsocket(uint64_t sock) { _out_socket = sock; }
     uint64_t GetOutSocket() { return _out_socket; }
 
-    void SetPeerAddress(Address* addr) { _address = addr; }
-    Address* GetPeerAddress() { return _address; }
+    void SetPeerAddress(common::Address* addr) { _address = addr; }
+    common::Address* GetPeerAddress() { return _address; }
 private:
     uint64_t _out_socket;
-    Address* _address;
+    common::Address* _address;
 };
 
+}
 }
 
 #endif

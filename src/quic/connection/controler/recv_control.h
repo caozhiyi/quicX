@@ -8,6 +8,7 @@
 #include "quic/packet/packet_interface.h"
 
 namespace quicx {
+namespace quic {
 
 // controller of receiver. 
 
@@ -26,7 +27,7 @@ typedef std::function<void()> ActiveSendCB;
 
 class RecvControl {
 public:
-    RecvControl(std::shared_ptr<ITimer> timer);
+    RecvControl(std::shared_ptr<common::ITimer> timer);
     ~RecvControl() {}
 
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
@@ -40,12 +41,13 @@ private:
     std::set<uint64_t> _wait_ack_packet_numbers[PNS_NUMBER];
     
     bool _set_timer;
-    std::shared_ptr<ITimer> _timer;
+    std::shared_ptr<common::ITimer> _timer;
 
-    TimerTask _timer_task;
+    common::TimerTask _timer_task;
     ActiveSendCB _active_send_cb;
 };
 
+}
 }
 
 #endif

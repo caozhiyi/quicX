@@ -2,6 +2,7 @@
 #include "quic/stream/stream_id_generator.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(stream_id_generator_utest, client) {
@@ -76,5 +77,6 @@ TEST(stream_id_generator_utest, server) {
     EXPECT_EQ(stream_id, 19); 
 }
 
+}
 }
 }

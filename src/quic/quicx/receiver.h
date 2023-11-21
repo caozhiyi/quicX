@@ -8,6 +8,7 @@
 #include "quic/quicx/receiver_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class Receiver:
     public IReceiver {
@@ -25,9 +26,10 @@ public:
 
 protected:
     UdpReceiver _udp_receiver;
-    std::shared_ptr<BlockMemoryPool> _alloter;
+    std::shared_ptr<common::BlockMemoryPool> _alloter;
 };
 
+}
 }
 
 #endif

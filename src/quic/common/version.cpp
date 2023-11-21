@@ -1,6 +1,7 @@
 #include "quic/common/version.h"
 
 namespace quicx {
+namespace quic {
 
 bool VersionCheck(uint32_t version) {
     static uint16_t versions_size = (sizeof(__quic_versions) / sizeof(__quic_versions[0]));
@@ -13,4 +14,5 @@ bool VersionCheck(uint32_t version) {
     return false;
 }
 
+}
 }

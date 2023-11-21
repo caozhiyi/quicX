@@ -11,18 +11,20 @@
 #include "common/buffer/buffer_write_interface.h"
 
 namespace quicx {
+namespace common {
 
 class IBuffer:
     public IBufferRead,
     public IBufferWrite {
 public:
-    IBuffer(const std::shared_ptr<BlockMemoryPool>& alloter): _alloter(alloter) {}
+    IBuffer(const std::shared_ptr<common::BlockMemoryPool>& alloter): _alloter(alloter) {}
     virtual ~IBuffer() {}
 
 protected:
     std::weak_ptr<BlockMemoryPool> _alloter;
 };
 
+}
 }
 
 #endif

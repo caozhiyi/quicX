@@ -4,6 +4,7 @@
 #include "quic/frame/path_challenge_frame.h"
 
 namespace quicx {
+namespace quic {
 
 class PathResponseFrame:
     public IFrame {
@@ -11,8 +12,8 @@ public:
     PathResponseFrame();
     ~PathResponseFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetData(uint8_t* data);
@@ -22,6 +23,7 @@ private:
     uint8_t _data[__path_data_length];  // 8-byte field contains arbitrary data.
 };
 
+}
 }
 
 #endif

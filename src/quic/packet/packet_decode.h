@@ -5,11 +5,13 @@
 #include <vector>
 
 namespace quicx {
+namespace quic {
 
 class IPacket;
 class IBufferRead;
-bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IPacket>>& packets);
+bool DecodePackets(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IPacket>>& packets);
 
+}
 }
 
 

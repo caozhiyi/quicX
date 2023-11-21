@@ -9,6 +9,7 @@
 #include "common/alloter/normal_alloter.h"
 
 namespace quicx {
+namespace common {
 
 enum LogLevelMask {
     LLM_FATAL        = 0x01,
@@ -211,4 +212,5 @@ Log* BaseLogger::NewLog() {
     return item;
 }
 
+}
 }

@@ -7,24 +7,25 @@
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(rtt_0_packet_utest, codec) {
     auto frame = PacketTest::GetTestFrame();
 
     uint8_t frame_buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> frame_buffer = std::make_shared<Buffer>(frame_buf, __buf_len);
+    std::shared_ptr<common::IBuffer> frame_buffer = std::make_shared<common::Buffer>(frame_buf, __buf_len);
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
     Rtt0Packet packet;
-    BufferSpan payload(frame_buffer->GetReadSpan());
+    common::BufferSpan payload(frame_buffer->GetReadSpan());
     packet.SetPayload(payload);
     packet.SetPacketNumber(10);
     packet.GetHeader()->SetPacketNumberLength(2);
 
     static const uint8_t __buf_len = 128;
     uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> packet_buffer = std::make_shared<Buffer>(buf, __buf_len);
+    std::shared_ptr<common::IBuffer> packet_buffer = std::make_shared<common::Buffer>(buf, __buf_len);
 
     EXPECT_TRUE(packet.Encode(packet_buffer));
 
@@ -48,11 +49,11 @@ TEST(rtt_0_packet_utest, crypto_codec) {
     auto frame = PacketTest::GetTestFrame();
 
     uint8_t frame_buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> frame_buffer = std::make_shared<Buffer>(frame_buf, __buf_len);
+    std::shared_ptr<common::IBuffer> frame_buffer = std::make_shared<common::Buffer>(frame_buf, __buf_len);
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
     Rtt0Packet packet;
-    BufferSpan payload(frame_buffer->GetReadSpan());
+    common::BufferSpan payload(frame_buffer->GetReadSpan());
     packet.SetPayload(payload);
     packet.SetPacketNumber(10);
     packet.GetHeader()->SetPacketNumberLength(2);
@@ -60,7 +61,7 @@ TEST(rtt_0_packet_utest, crypto_codec) {
 
     static const uint8_t __buf_len = 128;
     uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> packet_buffer = std::make_shared<Buffer>(buf, __buf_len);
+    std::shared_ptr<common::IBuffer> packet_buffer = std::make_shared<common::Buffer>(buf, __buf_len);
 
     EXPECT_TRUE(packet.Encode(packet_buffer));
 
@@ -72,7 +73,7 @@ TEST(rtt_0_packet_utest, crypto_codec) {
     EXPECT_TRUE(new_packet.DecodeWithoutCrypto(packet_buffer));
 
     uint8_t plaintext_buf[__buf_len] = {0};
-    std::shared_ptr<IBuffer> plaintext_buffer = std::make_shared<Buffer>(plaintext_buf, __buf_len);
+    std::shared_ptr<common::IBuffer> plaintext_buffer = std::make_shared<common::Buffer>(plaintext_buf, __buf_len);
     EXPECT_TRUE(new_packet.DecodeWithCrypto(plaintext_buffer));
 
     EXPECT_EQ(new_packet.GetPacketNumber(), 10);
@@ -84,5 +85,6 @@ TEST(rtt_0_packet_utest, crypto_codec) {
     EXPECT_TRUE(PacketTest::CheckTestFrame(frames[0]));
 }
 
+}
 }
 }

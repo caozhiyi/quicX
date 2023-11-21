@@ -6,6 +6,7 @@
 #include "common/buffer/buffer_write_view.h"
 
 namespace quicx {
+namespace common {
 
 Buffer::Buffer(BufferSpan& span):
     _can_read(false),
@@ -31,7 +32,7 @@ Buffer::Buffer(uint8_t* start, uint8_t* end):
     _read_pos = _write_pos = _buffer_start;
 }
 
-Buffer::Buffer(std::shared_ptr<BlockMemoryPool>& alloter):
+Buffer::Buffer(std::shared_ptr<common::BlockMemoryPool>& alloter):
     _can_read(false),
     IBuffer(alloter) {
 
@@ -124,7 +125,7 @@ BufferReadView Buffer::GetReadView(uint32_t offset) {
     return std::move(BufferReadView(_read_pos, _write_pos));
 }
 
-std::shared_ptr<IBufferRead> Buffer::GetReadViewPtr(uint32_t offset) {
+std::shared_ptr<common::IBufferRead> Buffer::GetReadViewPtr(uint32_t offset) {
     return std::make_shared<BufferReadView>(_read_pos, _write_pos);
 }
 
@@ -206,7 +207,7 @@ BufferWriteView Buffer::GetWriteView(uint32_t offset) {
     return std::move(BufferWriteView(_write_pos, _buffer_end));
 }
 
-std::shared_ptr<IBufferWrite> Buffer::GetWriteViewPtr(uint32_t offset) {
+std::shared_ptr<common::IBufferWrite> Buffer::GetWriteViewPtr(uint32_t offset) {
     return std::make_shared<BufferWriteView>(_write_pos, _buffer_end);
 }
 
@@ -262,4 +263,5 @@ uint32_t Buffer::InnerWrite(uint8_t* data, uint32_t len) {
     }
 }
 
+}
 }

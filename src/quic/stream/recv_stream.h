@@ -9,11 +9,12 @@
 #include "quic/stream/frame_visitor_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class RecvStream:
     public virtual IRecvStream {
 public:
-    RecvStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id = 0);
+    RecvStream(std::shared_ptr<common::BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id = 0);
     ~RecvStream();
 
     // close the stream
@@ -36,10 +37,11 @@ protected:
     uint32_t _local_data_limit;
     // next except data offset
     uint64_t _except_offset;
-    std::shared_ptr<IBufferChains> _recv_buffer;
+    std::shared_ptr<common::IBufferChains> _recv_buffer;
     std::unordered_map<uint64_t, std::shared_ptr<IFrame>> _out_order_frame;
 };
 
+}
 }
 
 #endif

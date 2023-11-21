@@ -7,6 +7,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 static const uint16_t __stateless_reset_token_length = 128;
 
@@ -16,8 +17,8 @@ public:
     NewConnectionIDFrame();
     ~NewConnectionIDFrame();
 
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetSequenceNumber(uint64_t sequence_number) { _sequence_number = sequence_number; }
@@ -41,6 +42,7 @@ private:
     uint8_t _stateless_reset_token[__stateless_reset_token_length];  // a 128-bit value that will be used for a stateless reset when the associated connection ID is used.
 };
 
+}
 }
 
 #endif

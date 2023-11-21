@@ -15,6 +15,7 @@
 #include "common/structure/thread_safe_queue.h"
 
 namespace quicx {
+namespace common {
 
 // basic management class of log printing
 struct Log;
@@ -52,6 +53,7 @@ protected:
     std::shared_ptr<Logger>  _logger;
 };
 
+}
 }
 
 #endif

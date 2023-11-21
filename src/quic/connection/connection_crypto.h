@@ -8,6 +8,7 @@
 #include "quic/crypto/cryptographer_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class ConnectionCrypto:
     public TlsHandlerInterface {
@@ -53,6 +54,7 @@ private:
     std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS];
 };
 
+}
 }
 
 #endif

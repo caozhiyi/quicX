@@ -11,6 +11,7 @@
 #include "quic/stream/frame_visitor_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class IStream:
     public std::enable_shared_from_this<IStream> {
@@ -63,6 +64,7 @@ protected:
     std::list<std::shared_ptr<IFrame>> _frames_list;
 };
 
+}
 }
 
 #endif

@@ -9,6 +9,7 @@
 #include "quic/packet/header/long_header.h"
 
 namespace quicx {
+namespace quic {
 
 /*
 Initial Packet {
@@ -37,9 +38,9 @@ public:
     virtual ~InitPacket();
 
     virtual uint16_t GetCryptoLevel() const { return PCL_INITIAL; }
-    virtual bool Encode(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool DecodeWithoutCrypto(std::shared_ptr<IBufferRead> buffer);
-    virtual bool DecodeWithCrypto(std::shared_ptr<IBuffer> buffer);
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
+    virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer);
 
     virtual IHeader* GetHeader() { return &_header; }
     virtual uint32_t GetPacketNumOffset() { return _packet_num_offset; }
@@ -49,8 +50,8 @@ public:
     uint32_t GetTokenLength() { return _token_length; }
     uint8_t* GetToken() { return _token; }
 
-    void SetPayload(BufferSpan payload);
-    BufferSpan GetPayload() { return _payload; }
+    void SetPayload(common::BufferSpan payload);
+    common::BufferSpan GetPayload() { return _payload; }
     uint32_t GetLength() { return _length; }
 
 private:
@@ -59,13 +60,14 @@ private:
     uint8_t* _token;
 
     uint32_t _length;
-    BufferSpan _payload;
+    common::BufferSpan _payload;
 
     uint32_t _payload_offset;
     uint32_t _packet_num_offset;
     std::vector<std::shared_ptr<IFrame>> _frames_list;
 };
 
+}
 }
 
 #endif

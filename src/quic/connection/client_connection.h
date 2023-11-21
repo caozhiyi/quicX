@@ -10,6 +10,7 @@
 #include "quic/crypto/tls/tls_client_conneciton.h"
 
 namespace quicx {
+namespace quic {
 
 class ClientConnection;
 typedef std::function<void(ClientConnection&)> HandshakeDoneCB;
@@ -22,7 +23,7 @@ class ClientConnection:
     public BaseConnection {
 public:
     ClientConnection(std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<ITimer> timer,
+        std::shared_ptr<common::ITimer> timer,
         ConnectionIDCB add_conn_id_cb,
         ConnectionIDCB retire_conn_id_cb);
     ~ClientConnection();
@@ -33,7 +34,7 @@ public:
     // set transport param
     void AddTransportParam(TransportParamConfig& tp_config);
 
-    bool Dial(const Address& addr);
+    bool Dial(const common::Address& addr);
 
     void Close();
 
@@ -42,17 +43,18 @@ protected:
     virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
 
-    virtual void WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err);
+    virtual void WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err);
 
 private:
     AlpnType _alpn_type; // application protocol
-    Address _local_addr;
-    Address _peer_addr;
+    common::Address _local_addr;
+    common::Address _peer_addr;
 
     HandshakeDoneCB _handshake_done_cb;
     std::shared_ptr<TLSClientConnection> _tls_connection;
 };
 
+}
 }
 
 #endif

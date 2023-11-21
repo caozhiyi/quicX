@@ -4,6 +4,7 @@
 #include "utest/quic/crypto/aead_base_cryptographer_test.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(Aes128GcmCryptographerTest, DecryptPacketInit) {
@@ -31,4 +32,5 @@ TEST(Aes128GcmCryptographerTest, DecryptPacket) {
 
 }
 
+}
 }

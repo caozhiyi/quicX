@@ -8,12 +8,13 @@
 #include "quic/stream/recv_stream_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class CryptoStream:
     public virtual ISendStream,
     public virtual IRecvStream {
 public:
-    CryptoStream(std::shared_ptr<BlockMemoryPool> alloter);
+    CryptoStream(std::shared_ptr<common::BlockMemoryPool> alloter);
     virtual ~CryptoStream();
 
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
@@ -33,16 +34,17 @@ protected:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
 private:
-    std::shared_ptr<BlockMemoryPool> _alloter;
+    std::shared_ptr<common::BlockMemoryPool> _alloter;
 
     uint64_t _except_offset;
-    std::shared_ptr<IBufferChains> _recv_buffer;
+    std::shared_ptr<common::IBufferChains> _recv_buffer;
     std::unordered_map<uint64_t, std::shared_ptr<IFrame>> _out_order_frame;
 
     uint64_t _send_offset;
-    std::shared_ptr<IBufferChains> _send_buffers[NUM_ENCRYPTION_LEVELS];
+    std::shared_ptr<common::IBufferChains> _send_buffers[NUM_ENCRYPTION_LEVELS];
 };
 
+}
 }
 
 #endif

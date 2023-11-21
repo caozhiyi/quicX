@@ -1,6 +1,7 @@
 #include "spin_lock.h"
 
 namespace quicx {
+namespace common {
 
 static bool flag = true;
 
@@ -26,4 +27,5 @@ void SpinLock::Unlock() {
     _lock.clear(std::memory_order_release);
 }
 
+}
 }

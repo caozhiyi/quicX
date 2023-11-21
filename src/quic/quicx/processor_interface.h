@@ -9,9 +9,10 @@
 #include "quic/connection/connection_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class IProcessor:
-    public Thread {
+    public common::Thread {
 public:
     IProcessor() {}
     virtual ~IProcessor() {}
@@ -40,6 +41,7 @@ protected:
     RecvFunction _recv_function;
 };
 
+}
 }
 
 #endif

@@ -5,12 +5,13 @@
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {
+namespace quic {
 
-RecvControl::RecvControl(std::shared_ptr<ITimer> timer): _set_timer(false), _timer(timer) {
+RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer): _set_timer(false), _timer(timer) {
     memset(_pkt_num_largest_recvd, 0, sizeof(_pkt_num_largest_recvd));
     memset(_largest_recv_time, 0, sizeof(_largest_recv_time));
 
-    _timer_task = TimerTask([this] {
+    _timer_task = common::TimerTask([this] {
             _set_timer = false;
             if (_active_send_cb) {
                 _active_send_cb();
@@ -83,4 +84,5 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     return frame;
 }
 
+}
 }

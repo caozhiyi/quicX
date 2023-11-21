@@ -7,6 +7,7 @@
 #include "quic/frame/frame_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class IStreamFrame:
     public IFrame {
@@ -21,6 +22,7 @@ protected:
     uint64_t _stream_id;     // indicating the stream ID of the stream.
 };
 
+}
 }
 
 #endif

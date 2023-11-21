@@ -5,6 +5,7 @@
 #include <cstring>
 
 namespace quicx {
+namespace common {
 
 // return the uint8_t offset pos
 // get length of encode result by: return - first param
@@ -36,6 +37,7 @@ uint8_t* EncodeBytes(uint8_t *start, uint8_t *end, uint8_t* in, uint32_t in_len)
 uint8_t* DecodeBytesCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t out_len);
 uint8_t* DecodeBytesNoCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t out_len);
 
+}
 }
 
 #endif

@@ -2,16 +2,17 @@
 #include "common/util/bitmap.h"
 
 namespace quicx {
+namespace common {
 namespace {
 
 TEST(bitmap_utest, init) {
-    quicx::Bitmap bm;
+    Bitmap bm;
     EXPECT_TRUE(bm.Init(64));
     EXPECT_TRUE(bm.Init(100));
 }
 
 TEST(bitmap_utest, insert) {
-    quicx::Bitmap bm;
+    Bitmap bm;
 
     EXPECT_TRUE(bm.Init(100));
 
@@ -20,7 +21,7 @@ TEST(bitmap_utest, insert) {
 }
 
 TEST(bitmap_utest, remove) {
-    quicx::Bitmap bm;
+    Bitmap bm;
 
     EXPECT_TRUE(bm.Init(100));
 
@@ -33,7 +34,7 @@ TEST(bitmap_utest, remove) {
 
 
 TEST(bitmap_utest, minafter) {
-    quicx::Bitmap bm;
+    Bitmap bm;
     EXPECT_TRUE(bm.Init(100));
 
     EXPECT_TRUE(bm.Insert(20));
@@ -47,5 +48,6 @@ TEST(bitmap_utest, minafter) {
     EXPECT_EQ(80, bm.GetMinAfter(61));
 }
 
+}
 }
 }

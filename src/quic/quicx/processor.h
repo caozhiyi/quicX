@@ -12,6 +12,7 @@
 #include "quic/connection/connection_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class Processor:
     public IProcessor {
@@ -48,7 +49,7 @@ protected:
 
     std::shared_ptr<TLSCtx> _ctx;
 
-    thread_local static std::shared_ptr<ITimer> __timer;
+    thread_local static std::shared_ptr<common::ITimer> __timer;
 
     std::mutex _notify_mutex;
     std::condition_variable _notify;
@@ -62,6 +63,7 @@ protected:
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> _conn_map;
 };
 
+}
 }
 
 #endif

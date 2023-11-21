@@ -6,6 +6,7 @@
 #include "quic/udp/udp_packet_out.h"
 
 namespace quicx {
+namespace quic {
 
 class UdpSender {
 public:
@@ -15,6 +16,7 @@ public:
     static bool DoSend(std::shared_ptr<UdpPacketOut> udp_packet);
 };
 
+}
 }
 
 #endif

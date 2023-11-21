@@ -10,11 +10,12 @@
 #include "quic/connection/controler/rtt_calculator.h"
 
 namespace quicx {
+namespace quic {
 
 // controller of sender. 
 class SendControl {
 public:
-    SendControl(std::shared_ptr<ITimer> timer);
+    SendControl(std::shared_ptr<common::ITimer> timer);
     ~SendControl() {}
 
     void OnPacketSend(uint64_t time, std::shared_ptr<IPacket> packet);
@@ -26,9 +27,9 @@ private:
     std::list<std::shared_ptr<IPacket>> _lost_packets;
     struct PacketTimerInfo {
         uint64_t _send_time;
-        TimerTask _timer_task;
+        common::TimerTask _timer_task;
         PacketTimerInfo() {}
-        PacketTimerInfo(uint64_t t, const TimerTask& task): _send_time(t), _timer_task(task) {}
+        PacketTimerInfo(uint64_t t, const common::TimerTask& task): _send_time(t), _timer_task(task) {}
     };
     std::unordered_map<uint64_t, PacketTimerInfo> _unacked_packets[PNS_NUMBER];
 
@@ -37,9 +38,10 @@ private:
     uint64_t _largest_sent_time[PNS_NUMBER];
 
     RttCalculator _rtt_calculator;
-    std::shared_ptr<ITimer> _timer;
+    std::shared_ptr<common::ITimer> _timer;
 };
 
+}
 }
 
 #endif

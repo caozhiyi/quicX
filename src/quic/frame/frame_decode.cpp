@@ -29,14 +29,15 @@
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class FrameDecode:
-    public Singleton<FrameDecode> {
+    public common::Singleton<FrameDecode> {
 public:
     FrameDecode();
     ~FrameDecode();
 
-    bool DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
+    bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 private:
     typedef std::function<std::shared_ptr<IFrame>(uint16_t)> FrameCreater;
     // frame type to craeter function map
@@ -83,7 +84,7 @@ FrameDecode::~FrameDecode() {
 
 }
 
-bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool FrameDecode::DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     if(buffer->GetDataLength() == 0) {
         return false;
     }
@@ -97,10 +98,10 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<
     while (buffer->GetDataLength() > 0) {
         // decode type
         if (buffer->Read(type_buf, __type_buf_length) != __type_buf_length) {
-            LOG_ERROR("wrong buffer size while read frame type. size:%d", buffer->GetDataLength());
+            common::LOG_ERROR("wrong buffer size while read frame type. size:%d", buffer->GetDataLength());
             return false;
         }
-        FixedDecodeUint16(type_buf, type_buf + __type_buf_length, frame_type);
+        common::FixedDecodeUint16(type_buf, type_buf + __type_buf_length, frame_type);
 
         auto creater = __frame_creater_map.find(frame_type);
         if (creater != __frame_creater_map.end()) {
@@ -108,13 +109,13 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<
             frame = creater->second(frame_type);
 
         } else {
-            LOG_ERROR("invalid frame type. type:%d", frame_type);
+            common::LOG_ERROR("invalid frame type. type:%d", frame_type);
             return false;
         }
 
         // decode frame
         if (!frame->Decode(buffer)) {
-            LOG_ERROR("decode frame failed. frame type:%d", frame_type);
+            common::LOG_ERROR("decode frame failed. frame type:%d", frame_type);
             return false;
         }
         frames.push_back(frame);
@@ -122,8 +123,9 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<
     return true;
 }
 
-bool DecodeFrames(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     return FrameDecode::Instance().DecodeFrames(buffer, frames);
 }
 
+}
 }

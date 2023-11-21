@@ -5,15 +5,16 @@
 #include "common/buffer/buffer.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(new_token_frame_utest, codec) {
-    quicx::NewTokenFrame frame1;
-    quicx::NewTokenFrame frame2;
+    NewTokenFrame frame1;
+    NewTokenFrame frame2;
 
-    auto alloter = quicx::MakeBlockMemoryPoolPtr(128, 2);
-    std::shared_ptr<Buffer> read_buffer = std::make_shared<Buffer>(alloter);
-    std::shared_ptr<Buffer> write_buffer = std::make_shared<Buffer>(alloter);
+    auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
+    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
+    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     char frame_data[64] = "1234567890123456789012345678901234567890";
     frame1.SetToken((uint8_t*)frame_data, strlen(frame_data));
@@ -32,5 +33,6 @@ TEST(new_token_frame_utest, codec) {
     EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2, strlen(frame_data)));
 }
 
+}
 }
 }

@@ -4,6 +4,7 @@
 #include "quic/stream/send_state_machine.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(send_state_machine_utest, normal_state_change) {
@@ -38,5 +39,6 @@ TEST(send_state_machine_utest, wrong_state_change) {
     EXPECT_TRUE(state.AllAckDone());
 }
 
+}
 }
 }

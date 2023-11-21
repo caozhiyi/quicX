@@ -4,10 +4,11 @@
 
 
 namespace quicx {
+namespace common {
 namespace {
     
 TEST(buffer_readonly_utest, buffer) {
-    auto block = quicx::MakeBlockMemoryPoolPtr(63, 2);
+    auto block = common::MakeBlockMemoryPoolPtr(63, 2);
     std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(block);
     const char* str = "it is a test str";
     auto span = buffer->GetWriteSpan();
@@ -19,5 +20,6 @@ TEST(buffer_readonly_utest, buffer) {
     auto ret_size = buffer->Read(ret_str, 20);
 }
 
+}
 }
 }

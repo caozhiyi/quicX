@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 const static uint32_t __init_rtt = 250;
 
@@ -33,6 +34,7 @@ private:
 
 };
 
+}
 }
 
 #endif

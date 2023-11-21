@@ -5,6 +5,7 @@
 #include "quic/crypto/tls/tls_conneciton.h"
 
 namespace quicx {
+namespace quic {
 
 static const SSL_QUIC_METHOD __quic_method = {
     TLSConnection::SetReadSecret,
@@ -28,17 +29,17 @@ TLSConnection::~TLSConnection() {
 bool TLSConnection::Init() {
     _ssl = SSL_new(_ctx->GetSSLCtx());
     if (!_ssl) {
-        LOG_ERROR("create ssl failed.");
+        common::LOG_ERROR("create ssl failed.");
         return false;
     }
 
     if (SSL_set_app_data(_ssl.get(), this) == 0) {
-        LOG_ERROR("SSL_set_app_data failed.");
+        common::LOG_ERROR("SSL_set_app_data failed.");
         return false;
     }
 
     if (SSL_set_quic_method(_ssl.get(), &__quic_method) == 0) {
-        LOG_ERROR("SSL_set_quic_method failed.");
+        common::LOG_ERROR("SSL_set_quic_method failed.");
         return false;
     }
     
@@ -52,7 +53,7 @@ bool TLSConnection::DoHandleShake() {
         int32_t ssl_err = SSL_get_error(_ssl.get(), ret);
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err = SSL_error_description(ssl_err);
-            LOG_ERROR("SSL_do_handshake failed. err:%s", err);
+            common::LOG_ERROR("SSL_do_handshake failed. err:%s", err);
         }
         return false;
     }
@@ -62,7 +63,7 @@ bool TLSConnection::DoHandleShake() {
 
 bool TLSConnection::ProcessCryptoData(uint8_t* data, uint32_t len) {
     if (!SSL_provide_quic_data(_ssl.get(), SSL_quic_read_level(_ssl.get()), data, len)) {
-        LOG_ERROR("SSL_provide_quic_data failed.");
+        common::LOG_ERROR("SSL_provide_quic_data failed.");
         return false;
     }
 
@@ -72,7 +73,7 @@ bool TLSConnection::ProcessCryptoData(uint8_t* data, uint32_t len) {
 
 bool TLSConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
     if (SSL_set_quic_transport_params(_ssl.get(), tp, len) == 0) {
-        LOG_ERROR("SSL_set_quic_transport_params failed.");
+        common::LOG_ERROR("SSL_set_quic_transport_params failed.");
         return false;
     }
     
@@ -143,9 +144,10 @@ EncryptionLevel TLSConnection::AdapterEncryptionLevel(ssl_encryption_level_t lev
     case ssl_encryption_handshake: return EL_HANDSHAKE;
     case ssl_encryption_application: return EL_APPLICATION;
     default:
-        LOG_ERROR("unknow encryption level. level:%d", level);
+        common::LOG_ERROR("unknow encryption level. level:%d", level);
         abort();
     }
 }
 
+}
 }

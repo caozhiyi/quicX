@@ -5,6 +5,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace quic {
 
 class SendStream {
 public:
@@ -26,6 +27,7 @@ private:
     void* _user_data;
 };
 
+}
 }
 
 #endif

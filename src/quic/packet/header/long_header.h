@@ -7,6 +7,7 @@
 #include "quic/packet/header/header_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class LongHeader:
     public IHeader {
@@ -15,8 +16,8 @@ public:
     LongHeader(uint8_t flag);
     virtual ~LongHeader();
 
-    virtual bool EncodeHeader(std::shared_ptr<IBufferWrite> buffer);
-    virtual bool DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag = false);
+    virtual bool EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false);
     virtual uint32_t EncodeHeaderSize();
 
     void SetVersion(uint32_t version) { _version = version; } 
@@ -40,6 +41,7 @@ protected:
     uint8_t _source_connection_id[__max_connection_length];
 };
 
+}
 }
 
 #endif

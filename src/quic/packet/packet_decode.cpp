@@ -9,8 +9,9 @@
 #include "quic/packet/version_negotiation_packet.h"
 
 namespace quicx {
+namespace quic {
 
-bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_ptr<IPacket>>& packets) {
+bool DecodePackets(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IPacket>>& packets) {
     if(!buffer) {
         return false;
     }
@@ -19,7 +20,7 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
     while (buffer->GetDataLength() > 0) {
         auto len = buffer->GetDataLength();
         if (!flag.DecodeFlag(buffer)) {
-            LOG_ERROR("decode header flag failed.");
+            common::LOG_ERROR("decode header flag failed.");
             return false;
         }
 
@@ -28,7 +29,7 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
             packet = std::make_shared<Rtt1Packet>(flag.GetFlag());
            
         } else {
-            LOG_DEBUG("get packet type:%s", PacketTypeToString(flag.GetPacketType()));
+            common::LOG_DEBUG("get packet type:%s", PacketTypeToString(flag.GetPacketType()));
             switch (flag.GetPacketType())
             {
             case PT_INITIAL:
@@ -47,12 +48,12 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
                 packet = std::make_shared<VersionNegotiationPacket>(flag.GetFlag());
                 break;
             default:
-                LOG_ERROR("unknow packet type. type:%d", flag.GetPacketType());
+                common::LOG_ERROR("unknow packet type. type:%d", flag.GetPacketType());
                 return false;
             }
         }
         if (!packet->DecodeWithoutCrypto(buffer)) {
-            LOG_ERROR("decode header packet failed.");
+            common::LOG_ERROR("decode header packet failed.");
             return false;
         }
         packets.emplace_back(packet);
@@ -61,5 +62,6 @@ bool DecodePackets(std::shared_ptr<IBufferRead> buffer, std::vector<std::shared_
     return true;
 }
 
+}
 }
 

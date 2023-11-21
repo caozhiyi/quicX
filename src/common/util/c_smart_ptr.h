@@ -4,6 +4,7 @@
 #include <memory>
 
 namespace quicx {
+namespace common {
 
 /**
  * This is a helper that wraps C style API objects that need to be deleted with a smart pointer.
@@ -16,6 +17,7 @@ public:
     CSmartPtr(T* object) : std::unique_ptr<T, void (*)(T*)>(object, deleter) {}
 };
 
+}
 }
 
 #endif

@@ -12,6 +12,7 @@
 #include <functional>
 
 namespace quicx {
+namespace common {
 
 struct Log;
 typedef std::pair<std::shared_ptr<Log>, std::function<void(std::shared_ptr<Log>)>> LogStreamParam;
@@ -47,6 +48,7 @@ private:
     std::function<void(std::shared_ptr<Log>)> _call_back;
 };
 
+}
 }
 
 #endif

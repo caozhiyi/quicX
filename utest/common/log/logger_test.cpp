@@ -4,34 +4,36 @@
 #include "common/log/stdout_logger.h"
 
 namespace quicx {
+namespace common {
 namespace {
 
 TEST(stdlogger_utest, print1) {
-    std::shared_ptr<quicx::Logger> log = std::make_shared<quicx::StdoutLogger>();
-    quicx::LOG_SET(log);
-    quicx::LOG_SET_LEVEL(quicx::LL_ERROR);
+    std::shared_ptr<Logger> log = std::make_shared<StdoutLogger>();
+    LOG_SET(log);
+    LOG_SET_LEVEL(LL_ERROR);
     
-    quicx::LOG_DEBUG("it is a debug test log.");
-    quicx::LOG_INFO("%s %d", "it is a info test num", 100191);
-    quicx::LOG_WARN("%s %d", "it is a warn test num", 100191);
-    quicx::LOG_ERROR("%s %d", "it is a error test num", 100191);
-    quicx::LOG_FATAL("%s %d", "it is a fatal test num", 100191);
+    LOG_DEBUG("it is a debug test log.");
+    LOG_INFO("%s %d", "it is a info test num", 100191);
+    LOG_WARN("%s %d", "it is a warn test num", 100191);
+    LOG_ERROR("%s %d", "it is a error test num", 100191);
+    LOG_FATAL("%s %d", "it is a fatal test num", 100191);
 }
 
 
 TEST(filelogger_utest, debug) {
-    std::shared_ptr<quicx::Logger> file_log = std::make_shared<quicx::FileLogger>("test.log");
-    std::shared_ptr<quicx::Logger> std_log = std::make_shared<quicx::StdoutLogger>();
+    std::shared_ptr<Logger> file_log = std::make_shared<FileLogger>("test.log");
+    std::shared_ptr<Logger> std_log = std::make_shared<StdoutLogger>();
     file_log->SetLogger(std_log);
-    quicx::LOG_SET(file_log);
-    quicx::LOG_SET_LEVEL(quicx::LL_DEBUG);
+    LOG_SET(file_log);
+    LOG_SET_LEVEL(LL_DEBUG);
     
-    quicx::LOG_DEBUG("it is a debug test log.");
-    quicx::LOG_INFO("%s %d", "it is a info test num", 100191);
-    quicx::LOG_WARN("%s %d", "it is a warn test num", 100191);
-    quicx::LOG_ERROR("%s %d", "it is a error test num", 100191);
-    quicx::LOG_FATAL("%s %d", "it is a fatal test num", 100191);
+    LOG_DEBUG("it is a debug test log.");
+    LOG_INFO("%s %d", "it is a info test num", 100191);
+    LOG_WARN("%s %d", "it is a warn test num", 100191);
+    LOG_ERROR("%s %d", "it is a error test num", 100191);
+    LOG_FATAL("%s %d", "it is a fatal test num", 100191);
 }
 
+}
 }
 }

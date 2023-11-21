@@ -4,12 +4,13 @@
 #include "common/structure/linked_list_solt.h"
 
 namespace quicx {
+namespace common {
 namespace {
 
 static uint32_t __test_shared_count = 0;
 
 class TestListItem:
-    public quicx::LinkedListSolt<TestListItem> {
+    public LinkedListSolt<TestListItem> {
 public:
     TestListItem(){
         __test_shared_count++;
@@ -21,7 +22,7 @@ public:
 };
 
 TEST(linked_list_utest, add1) {
-    quicx::LinkedList<TestListItem> list;
+    LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
         list.PushBack(item1);
@@ -40,7 +41,7 @@ TEST(linked_list_utest, add1) {
 }
 
 TEST(linked_list_utest, add2) {
-    quicx::LinkedList<TestListItem> list;
+    LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
         list.PushBack(item1);
@@ -56,7 +57,7 @@ TEST(linked_list_utest, add2) {
 }
 
 TEST(linked_list_utest, add3) {
-    quicx::LinkedList<TestListItem> list;
+    LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
         list.PushBack(item1);
@@ -81,5 +82,6 @@ TEST(linked_list_utest, add3) {
     EXPECT_EQ(__test_shared_count, 0);
 }
 
+}
 }
 }

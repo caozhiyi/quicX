@@ -4,6 +4,7 @@
 #include "common/alloter/pool_alloter.h"
 
 namespace quicx {
+namespace common {
 namespace {
 
 uint32_t __alloter_test_value = 0;
@@ -20,7 +21,7 @@ public:
 };
 
 TEST(alloter_utest, warp1) {
-    quicx::AlloterWrap IAlloter(std::shared_ptr<quicx::IAlloter>(new quicx::PoolAlloter()));
+    AlloterWrap IAlloter(std::shared_ptr<IAlloter>(new PoolAlloter()));
     AlloterTestClass* at = IAlloter.PoolNew<AlloterTestClass>(100);
     ASSERT_EQ(100, at->_data);
     IAlloter.PoolDelete<AlloterTestClass>(at);
@@ -29,7 +30,7 @@ TEST(alloter_utest, warp1) {
 
 
 TEST(alloter_utest, warp2) {
-    quicx::AlloterWrap IAlloter(std::shared_ptr<quicx::IAlloter>(new quicx::PoolAlloter()));
+    AlloterWrap IAlloter(std::shared_ptr<IAlloter>(new PoolAlloter()));
     {
         auto at = IAlloter.PoolNewSharePtr<AlloterTestClass>(100);
         ASSERT_EQ(100, at->_data);
@@ -38,7 +39,7 @@ TEST(alloter_utest, warp2) {
 }
 
 TEST(alloter_utest, warp3) {
-    quicx::AlloterWrap IAlloter(std::shared_ptr<quicx::IAlloter>(new quicx::PoolAlloter()));
+    AlloterWrap IAlloter(std::shared_ptr<IAlloter>(new PoolAlloter()));
     auto data = IAlloter.PoolMalloc<char>(100);
     IAlloter.PoolFree<char>(data, 100);
     ASSERT_EQ(nullptr, data);
@@ -46,11 +47,12 @@ TEST(alloter_utest, warp3) {
 
 
 TEST(alloter_utest, warp4) {
-    quicx::AlloterWrap IAlloter(std::shared_ptr<quicx::IAlloter>(new quicx::PoolAlloter()));
+    AlloterWrap IAlloter(std::shared_ptr<IAlloter>(new PoolAlloter()));
     {
         auto data = IAlloter.PoolMallocSharePtr<char>(100);
     }
 }
 
+}
 }
 }

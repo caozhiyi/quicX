@@ -7,6 +7,7 @@
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class IFrameVisitor {
 public:
@@ -15,7 +16,7 @@ public:
 
     virtual bool HandleFrame(std::shared_ptr<IFrame> frame) = 0;
 
-    virtual std::shared_ptr<IBuffer> GetBuffer() = 0;
+    virtual std::shared_ptr<common::IBuffer> GetBuffer() = 0;
 
     virtual uint8_t GetEncryptionLevel() = 0;
 
@@ -27,6 +28,7 @@ public:
 };
 
 
+}
 }
 
 #endif

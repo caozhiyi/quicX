@@ -3,6 +3,7 @@
 #include "quic/packet/header/short_header.h"
 
 namespace quicx {
+namespace quic {
 
 ShortHeader::ShortHeader():
     _destination_connection_id_length(0),
@@ -19,7 +20,7 @@ ShortHeader::~ShortHeader() {
 
 }
 
-bool ShortHeader::EncodeHeader(std::shared_ptr<IBufferWrite> buffer) {
+bool ShortHeader::EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) {
     if (!HeaderFlag::EncodeFlag(buffer)) {
         return false;
     }
@@ -29,7 +30,7 @@ bool ShortHeader::EncodeHeader(std::shared_ptr<IBufferWrite> buffer) {
     auto span = buffer->GetWriteSpan();
     auto remain_size = span.GetLength();
     if (need_size > remain_size) {
-        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
     
@@ -39,11 +40,11 @@ bool ShortHeader::EncodeHeader(std::shared_ptr<IBufferWrite> buffer) {
         cur_pos += _destination_connection_id_length;
     }
     buffer->MoveWritePt(cur_pos - span.GetStart());
-    _header_src_data = std::move(BufferSpan(span.GetStart() - 1, cur_pos));
+    _header_src_data = std::move(common::BufferSpan(span.GetStart() - 1, cur_pos));
     return true;
 }
 
-bool ShortHeader::DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_flag) {
+bool ShortHeader::DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool with_flag) {
     if (with_flag) {
         if (!HeaderFlag::DecodeFlag(buffer)) {
             return false;
@@ -52,7 +53,7 @@ bool ShortHeader::DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_fl
 
     // check flag fixed bit
     if (!HeaderFlag::GetLongHeaderFlag()._fix_bit) {
-        LOG_ERROR("quic fixed bit is not set");
+        common::LOG_ERROR("quic fixed bit is not set");
         return false;
     }
     
@@ -64,7 +65,7 @@ bool ShortHeader::DecodeHeader(std::shared_ptr<IBufferRead> buffer, bool with_fl
     memcpy(&_destination_connection_id, pos, _destination_connection_id_length);
     pos += _destination_connection_id_length;
  
-    _header_src_data = std::move(BufferSpan((span.GetStart() - 1), pos));
+    _header_src_data = std::move(common::BufferSpan((span.GetStart() - 1), pos));
     buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
@@ -80,4 +81,5 @@ void ShortHeader::SetDestinationConnectionId(uint8_t* id, uint8_t len) {
     }
 }
 
+}
 }

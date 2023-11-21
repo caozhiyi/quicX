@@ -8,11 +8,12 @@
 #include "common/buffer/buffer_chains_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class SendStream:
     public virtual ISendStream {
 public:
-    SendStream(std::shared_ptr<BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id = 0);
+    SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id = 0);
     virtual ~SendStream();
 
     // send data to peer
@@ -38,9 +39,10 @@ protected:
     bool _to_fin;
     uint64_t _data_offset;
     uint64_t _peer_data_limit;
-    std::shared_ptr<IBufferChains> _send_buffer;
+    std::shared_ptr<common::IBufferChains> _send_buffer;
 };
 
+}
 }
 
 #endif

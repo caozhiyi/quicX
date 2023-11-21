@@ -5,6 +5,7 @@
 #include "quic/stream/type.h"
 
 namespace quicx {
+namespace quic {
 
 class IStreamStateMachine {
 public:
@@ -26,6 +27,7 @@ protected:
     StreamCloseCB _stream_close_cb;
 };
 
+}
 }
 
 #endif

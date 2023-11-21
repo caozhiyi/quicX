@@ -4,6 +4,7 @@
 #include <memory>
 
 namespace quicx {
+namespace common {
 
 class QueueSolt;
 
@@ -25,6 +26,7 @@ virtual void Swap(std::shared_ptr<Queue>& q) = 0;
 
 };
 
+}
 }
 
 #endif

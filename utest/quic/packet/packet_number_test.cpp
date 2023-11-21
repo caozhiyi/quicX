@@ -3,6 +3,7 @@
 #include "quic/packet/packet_number.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(packet_number_utest, codec) {
@@ -27,5 +28,6 @@ TEST(packet_number_utest, codec) {
     EXPECT_EQ(except_pn, new_pn);
 }
 
+}
 }
 }

@@ -4,6 +4,7 @@
 #include "quic/stream/frame_visitor_interface.h"
 
 namespace quicx {
+namespace quic {
 
 class FixBufferFrameVisitor:
     public IFrameVisitor {
@@ -13,7 +14,7 @@ public:
 
     virtual bool HandleFrame(std::shared_ptr<IFrame> frame);
 
-    virtual std::shared_ptr<IBuffer> GetBuffer() { return _buffer; }
+    virtual std::shared_ptr<common::IBuffer> GetBuffer() { return _buffer; }
 
     virtual uint8_t GetEncryptionLevel() { return _encryption_level; }
 
@@ -31,10 +32,10 @@ private:
 
     uint32_t _cur_stream_data_size;
     uint32_t _left_stream_data_size;
-    std::shared_ptr<IBuffer> _buffer;
+    std::shared_ptr<common::IBuffer> _buffer;
 };
 
 
 }
-
+}
 #endif

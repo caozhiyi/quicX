@@ -11,7 +11,9 @@
 #include "quic/connection/controler/send_manager.h"
 
 namespace quicx {
-SendManager::SendManager(std::shared_ptr<ITimer> timer): 
+namespace quic {
+
+SendManager::SendManager(std::shared_ptr<common::ITimer> timer): 
     _send_control(timer) {
     
 }
@@ -28,7 +30,7 @@ void SendManager::AddActiveStream(std::shared_ptr<IStream> stream) {
     _active_send_stream_set.insert(stream);
 }
 
-bool SendManager::GetSendData(std::shared_ptr<IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
+bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
     // firstly, send resend packet
     if (_send_control.NeedReSend()) {
         auto lost_list = _send_control.GetLostPacket();
@@ -60,7 +62,7 @@ bool SendManager::GetSendData(std::shared_ptr<IBuffer> buffer, uint8_t encrypto_
 }
 
 void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
-    _send_control.OnPacketAck(UTCTimeMsec(), ns, frame);
+    _send_control.OnPacketAck(common::UTCTimeMsec(), ns, frame);
 }
 
 std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
@@ -88,7 +90,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
                 iter = _active_send_stream_set.erase(iter);
     
             } else if (ret == IStream::TSR_FAILED) {
-                LOG_ERROR("get stream send data failed.");
+                common::LOG_ERROR("get stream send data failed.");
                 return nullptr;
     
             } else if (ret == IStream::TSR_BREAK) {
@@ -99,7 +101,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     }
 
     if (visitor->GetBuffer()->GetDataLength() == 0) {
-        LOG_INFO("there is no data to send.");
+        common::LOG_INFO("there is no data to send.");
         return nullptr;
     }
 
@@ -135,19 +137,20 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     return packet;
 }
 
-bool SendManager::PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<IBuffer> buffer) {
+bool SendManager::PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer) {
     // make packet numer
     uint64_t pkt_number = _pakcet_number.NextPakcetNumber(CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel()));
     packet->SetPacketNumber(pkt_number);
     packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
 
     if (!packet->Encode(buffer)) {
-        LOG_ERROR("encode packet error");
+        common::LOG_ERROR("encode packet error");
         return false;
     }
 
-    _send_control.OnPacketSend(UTCTimeMsec(), packet);
+    _send_control.OnPacketSend(common::UTCTimeMsec(), packet);
     return true;
 }
 
+}
 }

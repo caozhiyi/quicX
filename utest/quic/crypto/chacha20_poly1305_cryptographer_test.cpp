@@ -4,6 +4,7 @@
 #include "utest/quic/crypto/aead_base_cryptographer_test.h"
 
 namespace quicx {
+namespace quic {
 namespace {
 
 TEST(ChaCha20Poly1305CryptographerTest, DecryptPacketInit) {
@@ -31,4 +32,5 @@ TEST(ChaCha20Poly1305CryptographerTest, DecryptPacket) {
 
 }
 
+}
 }

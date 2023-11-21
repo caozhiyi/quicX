@@ -5,6 +5,7 @@
 #include <string>
 
 namespace quicx {
+namespace quic {
 
 class QuicxImpl;
 class Quicx {
@@ -22,6 +23,7 @@ private:
     QuicxImpl* _impl;
 };
 
+}
 }
 
 #endif

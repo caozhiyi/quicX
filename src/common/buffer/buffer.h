@@ -10,6 +10,7 @@
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
+namespace common {
 
 class BlockMemoryPool;
 // read write buffer
@@ -19,7 +20,7 @@ public:
     Buffer(BufferSpan& span);
     Buffer(uint8_t* start, uint32_t len);
     Buffer(uint8_t* start, uint8_t* end);
-    Buffer(std::shared_ptr<BlockMemoryPool>& alloter);
+    Buffer(std::shared_ptr<common::BlockMemoryPool>& alloter);
     virtual ~Buffer();
 
     // read to data buf but don't change the read point
@@ -37,7 +38,7 @@ public:
     // get a write buffer view
     virtual BufferReadView GetReadView(uint32_t offset = 0);
     // get a write buffer view shared ptr
-    virtual std::shared_ptr<IBufferRead> GetReadViewPtr(uint32_t offset = 0);
+    virtual std::shared_ptr<common::IBufferRead> GetReadViewPtr(uint32_t offset = 0);
     // get src data pos
     virtual uint8_t* GetData();
     // clear all data
@@ -54,7 +55,7 @@ public:
     // get a read buffer view
     virtual BufferWriteView GetWriteView(uint32_t offset = 0);
     // get a read buffer view shared ptr
-    virtual std::shared_ptr<IBufferWrite> GetWriteViewPtr(uint32_t offset = 0);
+    virtual std::shared_ptr<common::IBufferWrite> GetWriteViewPtr(uint32_t offset = 0);
 
 private:
     uint32_t InnerRead(uint8_t* data, uint32_t len, bool move_pt);
@@ -68,6 +69,7 @@ private:
     uint8_t* _buffer_end;
 };
 
+}
 }
 
 #endif

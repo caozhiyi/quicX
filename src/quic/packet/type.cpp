@@ -1,6 +1,7 @@
 #include "quic/packet/type.h"
 
 namespace quicx {
+namespace quic {
 
 const char* PacketTypeToString(PacketType type) {
     switch (type)
@@ -22,4 +23,5 @@ const char* PacketTypeToString(PacketType type) {
     }
 }
 
+}
 }

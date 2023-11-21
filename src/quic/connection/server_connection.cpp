@@ -13,15 +13,16 @@
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {
+namespace quic {
 
 ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<ITimer> timer,
+        std::shared_ptr<common::ITimer> timer,
         ConnectionIDCB add_conn_id_cb,
         ConnectionIDCB retire_conn_id_cb):
     BaseConnection(StreamIDGenerator::SS_SERVER, timer, add_conn_id_cb, retire_conn_id_cb) {
     _tls_connection = std::make_shared<TLSServerConnection>(ctx, &_connection_crypto, this);
     if (!_tls_connection->Init()) {
-        LOG_ERROR("tls connection init failed.");
+        common::LOG_ERROR("tls connection init failed.");
     }
     auto crypto_stream = std::make_shared<CryptoStream>(_alloter);
     crypto_stream->SetActiveStreamSendCB(std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1));
@@ -29,9 +30,9 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
 
     _connection_crypto.SetCryptoStream(crypto_stream);
 
-    auto ret = UdpSocket();
+    auto ret = common::UdpSocket();
     if (ret._return_value < 0) {
-        LOG_ERROR("make send socket failed. err:%d", ret.errno_);
+        common::LOG_ERROR("make send socket failed. err:%d", ret.errno_);
         return;
     }
     _send_sock = ret._return_value;
@@ -54,7 +55,7 @@ void ServerConnection::AddTransportParam(TransportParamConfig& tp_config) {
     _transport_param.Init(tp_config);
 
     // set transport param. TODO define tp length
-    std::shared_ptr<Buffer> buf = std::make_shared<Buffer>(_alloter);
+    std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(_alloter);
     _transport_param.Encode(buf);
     _tls_connection->AddTransportParam(buf->GetData(), buf->GetDataLength());
 }
@@ -93,22 +94,23 @@ bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferChains> buffer, int32_t err) {
+void ServerConnection::WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err) {
     if (err != 0) {
-        LOG_ERROR("get crypto data failed. err:%s", err);
+        common::LOG_ERROR("get crypto data failed. err:%s", err);
         return;
     }
     
     uint8_t data[1450] = {0};
     uint32_t len = buffer->Read(data, 1450);
     if (!_tls_connection->ProcessCryptoData(data, len)) {
-        LOG_ERROR("process crypto data failed. err:%s", err);
+        common::LOG_ERROR("process crypto data failed. err:%s", err);
         return;
     }
     
     if (_tls_connection->DoHandleShake()) {
-        LOG_DEBUG("handshake done.");
+        common::LOG_DEBUG("handshake done.");
     }
 }
 
+}
 }

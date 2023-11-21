@@ -5,6 +5,7 @@
 #include <cstdint>
 
 namespace quicx {
+namespace common {
 
 enum AddressType {
     AT_IPV4  = 0x1,
@@ -35,6 +36,7 @@ protected:
     uint16_t _port;
 };
 
+}
 }
 
 #endif

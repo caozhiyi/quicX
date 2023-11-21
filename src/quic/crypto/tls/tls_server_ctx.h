@@ -5,6 +5,7 @@
 #include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
+namespace quic {
 
 class TLSServerCtx:
     public TLSCtx {
@@ -19,6 +20,7 @@ private:
     bool Init();
 };
 
+}
 }
 
 #endif

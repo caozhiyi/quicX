@@ -26,9 +26,10 @@
 #include "quic/frame/retire_connection_id_frame.h"
 
 namespace quicx {
+namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
-        std::shared_ptr<ITimer> timer,
+        std::shared_ptr<common::ITimer> timer,
         ConnectionIDCB add_conn_id_cb,
         ConnectionIDCB retire_conn_id_cb):
     _to_close(false),
@@ -36,7 +37,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     _recv_control(timer),
     _send_manager(timer),
     _is_active_send(false) {
-    _alloter = MakeBlockMemoryPoolPtr(1024, 4);
+    _alloter = common::MakeBlockMemoryPoolPtr(1024, 4);
     _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
     _flow_control = std::make_shared<FlowControl>(start);
     _remote_conn_id_manager = std::make_shared<ConnectionIDManager>();
@@ -95,16 +96,16 @@ void BaseConnection::Close(uint64_t error) {
     _frames_list.push_back(frame);
 }
 
-bool BaseConnection::GenerateSendData(std::shared_ptr<IBuffer> buffer) {
+bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer) {
     // make quic packet
     uint8_t encrypto_level = GetCurEncryptionLevel();
     auto crypto_grapher = _connection_crypto.GetCryptographer(encrypto_level);
     if (!crypto_grapher) {
-        LOG_ERROR("encrypt grapher is not ready.");
+        common::LOG_ERROR("encrypt grapher is not ready.");
         return false;
     }
 
-    auto ack_frame = _recv_control.MayGenerateAckFrame(UTCTimeMsec(), CryptoLevel2PacketNumberSpace(encrypto_level));
+    auto ack_frame = _recv_control.MayGenerateAckFrame(common::UTCTimeMsec(), CryptoLevel2PacketNumberSpace(encrypto_level));
     if (ack_frame) {
         _send_manager.AddFrame(ack_frame);
     }
@@ -120,31 +121,31 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         {
         case PT_INITIAL:
             if (!OnInitialPacket(std::dynamic_pointer_cast<InitPacket>(packets[i]))) {
-                LOG_ERROR("init packet handle failed.");
+                common::LOG_ERROR("init packet handle failed.");
             }
             break;
         case PT_0RTT:
             if (!On0rttPacket(std::dynamic_pointer_cast<Rtt0Packet>(packets[i]))) {
-                LOG_ERROR("0 rtt packet handle failed.");
+                common::LOG_ERROR("0 rtt packet handle failed.");
             }
             break;
         case PT_HANDSHAKE:
             if (!OnHandshakePacket(std::dynamic_pointer_cast<HandshakePacket>(packets[i]))) {
-                LOG_ERROR("handshakee packet handle failed.");
+                common::LOG_ERROR("handshakee packet handle failed.");
             }
             break;
         case PT_RETRY:
             if (!OnRetryPacket(std::dynamic_pointer_cast<RetryPacket>(packets[i]))) {
-                LOG_ERROR("retry packet handle failed.");
+                common::LOG_ERROR("retry packet handle failed.");
             }
             break;
         case PT_1RTT:
             if (!On1rttPacket(std::dynamic_pointer_cast<Rtt1Packet>(packets[i]))) {
-                LOG_ERROR("1 rtt packet handle failed.");
+                common::LOG_ERROR("1 rtt packet handle failed.");
             }
             break;
         default:
-            LOG_ERROR("unknow packet type. type:%d", packets[i]->GetHeader()->GetPacketType());
+            common::LOG_ERROR("unknow packet type. type:%d", packets[i]->GetHeader()->GetPacketType());
             break;
         }
     }
@@ -192,7 +193,7 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
             // do nothing
             break;
         case FT_PING: 
-            _last_communicate_time = UTCTimeMsec();
+            _last_communicate_time = common::UTCTimeMsec();
             break;
         case FT_ACK:
         case FT_ACK_ECN:
@@ -229,7 +230,7 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
             if (StreamFrame::IsStreamFrame(type)) {
                 return OnStreamFrame(frames[i]);
             } else {
-                LOG_ERROR("invalid frame type. type:%s", type);
+                common::LOG_ERROR("invalid frame type. type:%s", type);
             }
         }
     }
@@ -294,7 +295,7 @@ bool BaseConnection::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
     auto token_frame = std::dynamic_pointer_cast<NewTokenFrame>(frame);
     if (!token_frame) {
-        LOG_ERROR("invalid new token frame.");
+        common::LOG_ERROR("invalid new token frame.");
         return false;
     }
     auto data = token_frame->GetToken();
@@ -305,7 +306,7 @@ bool BaseConnection::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
     auto max_data_frame = std::dynamic_pointer_cast<MaxDataFrame>(frame);
     if (!max_data_frame) {
-        LOG_ERROR("invalid max data frame.");
+        common::LOG_ERROR("invalid max data frame.");
         return false;
     }
     uint64_t max_data_size = max_data_frame->GetMaximumData();
@@ -345,7 +346,7 @@ bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     auto new_cid_frame = std::dynamic_pointer_cast<NewConnectionIDFrame>(frame);
     if (!new_cid_frame) {
-        LOG_ERROR("invalid new connection id frame.");
+        common::LOG_ERROR("invalid new connection id frame.");
         return false;
     }
     
@@ -394,21 +395,21 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
 bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
     std::shared_ptr<ICryptographer> cryptographer = _connection_crypto.GetCryptographer(packet->GetCryptoLevel());
     if (!cryptographer) {
-        LOG_ERROR("decrypt grapher is not ready.");
+        common::LOG_ERROR("decrypt grapher is not ready.");
         return false;
     }
     
     packet->SetCryptographer(cryptographer);
     
     uint8_t buf[1450] = {0};
-    std::shared_ptr<IBuffer> out_plaintext = std::make_shared<Buffer>(buf, 1450);
+    std::shared_ptr<common::IBuffer> out_plaintext = std::make_shared<common::Buffer>(buf, 1450);
     if (!packet->DecodeWithCrypto(out_plaintext)) {
-        LOG_ERROR("decode packet after decrypt failed.");
+        common::LOG_ERROR("decode packet after decrypt failed.");
         return false;
     }
 
     if (!OnFrames(packet->GetFrames(), packet->GetCryptoLevel())) {
-        LOG_ERROR("process frames failed.");
+        common::LOG_ERROR("process frames failed.");
         return false;
     }
     return true;
@@ -440,4 +441,5 @@ std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t
     return new_stream;
 }
 
+}
 }

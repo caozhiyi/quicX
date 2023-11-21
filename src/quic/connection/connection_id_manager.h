@@ -10,7 +10,7 @@
 #include "quic/connection/connection_interface.h"
 
 namespace quicx {
-
+namespace quic {
 
 struct ConnectionID {
     uint8_t _id[__max_cid_length];
@@ -50,6 +50,7 @@ private:
     ConnectionIDCB _retire_connection_id_cb;
 };
 
+}
 }
 
 #endif

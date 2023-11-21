@@ -2,6 +2,7 @@
 #define QUIC_CONNECTION_ERROR
 
 namespace quicx {
+namespace quic {
 
 enum QUIC_ERROR_CODE {
     QEC_NO_ERROR                  = 0x00, // an endpoint uses this with CONNECTION_CLOSE to signal that the connection is being closed abruptly in the absence of any error.
@@ -20,6 +21,7 @@ enum QUIC_ERROR_CODE {
     QEC_CRYPTO_ERROR              = 0x10, // cryptographic handshake failed.
 };
 
+}
 }
 
 #endif

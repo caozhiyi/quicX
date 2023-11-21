@@ -4,6 +4,7 @@
 #include "quic/udp/udp_packet_in.h"
 
 namespace quicx {
+namespace quic {
 
 class IReceiver {
 public:
@@ -19,6 +20,7 @@ public:
     virtual void CancelConnection(std::thread::id id, uint64_t cid_code) = 0;
 };
 
+}
 }
 
 #endif
