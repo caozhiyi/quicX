@@ -1,9 +1,9 @@
 #ifndef QUIC_INCLUDE_QUICX
 #define QUIC_INCLUDE_QUICX
 
-#include <stdint.h>
+#include <cstdint>
 #include <string>
-
+#include "quic/include/type.h"
 namespace quicx {
 namespace quic {
 
@@ -19,6 +19,8 @@ public:
 
     virtual bool Connection(const std::string& ip, uint16_t port);
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
+
+    virtual void SetConnectionStateCallBack(connection_state_call_back cb);
 private:
     QuicxImpl* _impl;
 };

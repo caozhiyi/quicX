@@ -3,23 +3,18 @@
 
 #include <string>
 #include <cstdint>
+#include "quic/include/stream.h"
 
 namespace quicx {
 namespace quic {
 
-class RecvStream {
+class QuicxRecvStream: 
+    virtual public QuicxStream {
 public:
-    RecvStream() {}
-    virtual ~RecvStream() {}
+    QuicxRecvStream() {}
+    virtual ~QuicxRecvStream() {}
 
-    virtual void Close() = 0;
-
-    virtual uint64_t GetStreamID() = 0;
-
-    void SetUserData(void* user_data) { _user_data = user_data; }
-    void* GetUserData() { return _user_data; }
-private:
-    void* _user_data;
+    virtual void SetStreamReadCallBack(stream_read_call_back cb) = 0;
 };
 
 }

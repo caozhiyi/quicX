@@ -3,28 +3,20 @@
 
 #include <string>
 #include <cstdint>
+#include "quic/include/stream.h"
 
 namespace quicx {
 namespace quic {
 
-class SendStream {
+class QuicxSendStream: 
+    virtual public QuicxStream {
 public:
-    SendStream() {}
-    virtual ~SendStream() {}
+    QuicxSendStream() {}
+    virtual ~QuicxSendStream() {}
 
-    virtual int32_t Send(const std::string& data);
-    virtual int32_t Send(u_char* data, uint32_t len);
+    virtual int32_t Send(uint8_t* data, uint32_t len);
 
-    virtual void Close() = 0;
-
-    virtual void Reset(uint64_t error = 0) = 0;
-
-    virtual uint64_t GetStreamID() = 0;
-
-    void SetUserData(void* user_data) { _user_data = user_data; }
-    void* GetUserData() { return _user_data; }
-private:
-    void* _user_data;
+    virtual void SetStreamWriteCallBack(stream_write_call_back cb) = 0;
 };
 
 }

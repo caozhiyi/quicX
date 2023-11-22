@@ -1,7 +1,7 @@
 #ifndef QUIC_PACKET_TYPE
 #define QUIC_PACKET_TYPE
 
-#include <stdint.h>
+#include <cstdint>
 
 namespace quicx {
 namespace quic {
