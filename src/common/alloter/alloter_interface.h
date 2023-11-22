@@ -43,7 +43,7 @@ public:
     std::shared_ptr<T> PoolNewSharePtr(Args&&... args);
 
     template<typename T>
-    void PoolDelete(T* &c);
+    void PoolDelete(T* c);
 
     //for continuous memory
     template<typename T>
@@ -52,7 +52,7 @@ public:
     std::shared_ptr<T> PoolMallocSharePtr(uint32_t size);
 
     template<typename T>
-    void PoolFree(T* &m, uint32_t len);
+    void PoolFree(T* m, uint32_t len);
 
 private:
     std::shared_ptr<IAlloter> _alloter;
@@ -78,7 +78,7 @@ std::shared_ptr<T> AlloterWrap::PoolNewSharePtr(Args&&... args) {
 }
 
 template<typename T>
-void AlloterWrap::PoolDelete(T* &c) {
+void AlloterWrap::PoolDelete(T* c) {
     if (!c) {
         return;
     }
@@ -88,7 +88,6 @@ void AlloterWrap::PoolDelete(T* &c) {
     uint32_t len = sizeof(T);
     void* data = (void*)c;
     _alloter->Free(data, len);
-    c = nullptr;
 }
     
 template<typename T>
@@ -103,13 +102,12 @@ std::shared_ptr<T> AlloterWrap::PoolMallocSharePtr(uint32_t size) {
 }
     
 template<typename T>
-void AlloterWrap::PoolFree(T* &m, uint32_t len) {
+void AlloterWrap::PoolFree(T* m, uint32_t len) {
     if (!m) {
         return;
     }
     void* data = (void*)m;
     _alloter->Free(data, len);
-    m = nullptr;
 }
 
 }

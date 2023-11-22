@@ -3,19 +3,20 @@
 
 #include <memory>
 #include <string>
+#include "quic/include/type.h"
+#include "quic/include/stream.h"
 
 namespace quicx {
 namespace quic {
 
-class ISendStream;
-class BidirectionStream;
-class Connection {
+class QuicxConnection {
 public:
-    Connection() {}
-    virtual ~Connection() {}
+    QuicxConnection() {}
+    virtual ~QuicxConnection() {}
 
-    virtual std::shared_ptr<ISendStream> MakeSendStream() = 0;
-    virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream() = 0;
+    virtual std::shared_ptr<QuicxStream> MakeStream(StreamType st) = 0;
+
+    virtual void SetStreamStateCallBack(stream_state_call_back cb) = 0;
 
     virtual void Close(uint64_t error = 0) = 0;
 
