@@ -10,7 +10,7 @@ namespace quic {
 
 class QuicxStream {
 public:
-    QuicxStream(StreamType st): _type(st) {}
+    QuicxStream(QuicStreamType st): _type(st) {}
     virtual ~QuicxStream() {}
 
     virtual void Close() = 0;
@@ -21,7 +21,7 @@ public:
     void* GetUserData() { return _user_data; }
 
 private:
-    StreamType _type;
+    QuicStreamType _type;
     void* _user_data;
 };
 
