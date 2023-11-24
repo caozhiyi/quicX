@@ -12,7 +12,7 @@ namespace quic {
 class QuicxStream;
 class QuicxConnection;
 
-enum StreamType {
+enum QuicStreamType {
     ST_SEND = 0x01, // send stream
     ST_RECV = 0x02, // recv stream
     ST_BIDI = 0x03, // bidirection stream
