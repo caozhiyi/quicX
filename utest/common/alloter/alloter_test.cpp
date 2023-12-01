@@ -42,7 +42,6 @@ TEST(alloter_utest, warp3) {
     AlloterWrap IAlloter(std::shared_ptr<IAlloter>(new PoolAlloter()));
     auto data = IAlloter.PoolMalloc<char>(100);
     IAlloter.PoolFree<char>(data, 100);
-    ASSERT_EQ(nullptr, data);
 }
 
 

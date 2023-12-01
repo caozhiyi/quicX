@@ -20,7 +20,7 @@ public:
     virtual bool Connection(const std::string& ip, uint16_t port);
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
 
-    virtual void SetConnectionStateCallBack(connection_state_call_back cb);
+    virtual void SetConnectionStateCallBack(connection_state_call_back cb) {}
 private:
     QuicxImpl* _impl;
 };
