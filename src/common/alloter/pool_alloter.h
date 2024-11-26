@@ -45,7 +45,7 @@ private:
     uint8_t*  _pool_start;         
     uint8_t*  _pool_end;
     std::vector<MemNode*>     _free_list;  
-    std::vector<uint8_t*>        _malloc_vec;
+    std::vector<uint8_t*>     _malloc_vec;
     std::shared_ptr<IAlloter> _alloter;
 };
 

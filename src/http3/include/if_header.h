@@ -1,5 +1,5 @@
-#ifndef HTTP3_HTTP_HEADER_INTERFACE
-#define HTTP3_HTTP_HEADER_INTERFACE
+#ifndef HTTP3_HTTP_IF_HEADER
+#define HTTP3_HTTP_IF_HEADER
 
 namespace quicx {
 namespace http3 {
