@@ -10,7 +10,6 @@ RouterNodeRoot::RouterNodeRoot():
 bool RouterNodeRoot::Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result) {
     std::string section = PathParse(path, path_offset);
     if (section.empty()) {
-        result.error = RouterErrorCode::REC_INVAILID_PATH;
         return false;
     }
     return RouterNode::Match(path, path_offset, section, result);

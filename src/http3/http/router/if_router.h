@@ -10,7 +10,7 @@ namespace quicx {
 namespace http3 {
 
 struct MatchResult {
-    RouterErrorCode error;                               // error code of router operation 
+    bool is_match;
     http_handler handler;                                // http handler
     std::unordered_map<std::string, std::string> params; // request params
 };
@@ -26,7 +26,6 @@ public:
     // router match
     virtual MatchResult Match(MothedType mothed, const std::string& path) = 0;
 };
-
 
 }
 }

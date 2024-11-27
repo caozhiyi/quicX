@@ -4,7 +4,6 @@
 namespace quicx {
 namespace http3 {
 
-
 bool Router::AddRoute(MothedType mothed, const std::string& path, const http_handler& handler) {
     std::shared_ptr<IRouterNode> cur_node;
     
@@ -28,11 +27,10 @@ MatchResult Router::Match(MothedType mothed, const std::string& path) {
     
     auto iter = router_map_.find(mothed);
     if (iter == router_map_.end()) {
-        result.error = RouterErrorCode::REC_UNFIND;
         return std::move(result);
     }
 
-    iter->second->Match(path, 0, "", result);
+    result.is_match = iter->second->Match(path, 0, "", result);
     return std::move(result);
 }
 

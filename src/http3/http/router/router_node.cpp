@@ -79,7 +79,6 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
             return true;
         }
     } else {
-        result.error == RouterErrorCode::REC_UNFIND;
         result.handler = nullptr;
     }
 
@@ -89,7 +88,6 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
             return true;
 
         } else {
-            result.error == RouterErrorCode::REC_UNFIND;
             result.handler = nullptr;
         }
     }
@@ -100,7 +98,6 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
             return true;
 
         } else {
-            result.error == RouterErrorCode::REC_UNFIND;
             result.handler = nullptr;
         }
     }
