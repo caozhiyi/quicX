@@ -1,10 +1,10 @@
 #include "http3/http/router/router.h"
+#include "http3/http/router/router_node_root.h"
 
 namespace quicx {
 namespace http3 {
 
-
-RouterErrorCode Router::AddRoute(MothedType mothed, const std::string& path, const http_handler& handler) {
+bool Router::AddRoute(MothedType mothed, const std::string& path, const http_handler& handler) {
     std::shared_ptr<IRouterNode> cur_node;
     
     auto iter = router_map_.find(mothed);
@@ -12,21 +12,26 @@ RouterErrorCode Router::AddRoute(MothedType mothed, const std::string& path, con
         cur_node = iter->second;
 
     } else {
-        cur_node = MakeNode(path_offset == path.size() - 1, section);
+        cur_node = std::make_shared<RouterNodeRoot>();
         if (!cur_node) {
-            return RouterErrorCode::REC_INVAILID_PATH;
+            return false;
         }
-        router_map_[section] = cur_node;
+        router_map_[mothed] = cur_node;
     }
-    
-    if (path_offset >= path.size() - 1) {
-        return RouterErrorCode::REC_SUCCESS;
-    }
-    return cur_node->AddRoute(path, path_offset, handler);
+
+    return cur_node->AddRoute(path, 0, handler);
 }
 
 MatchResult Router::Match(MothedType mothed, const std::string& path) {
-    return MatchResult();
+    MatchResult result;
+    
+    auto iter = router_map_.find(mothed);
+    if (iter == router_map_.end()) {
+        return std::move(result);
+    }
+
+    result.is_match = iter->second->Match(path, 0, "", result);
+    return std::move(result);
 }
 
 }

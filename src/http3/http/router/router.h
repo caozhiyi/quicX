@@ -5,6 +5,7 @@
 #include <memory>
 #include <unordered_map>
 #include "http3/http/router/if_router.h"
+#include "http3/http/router/if_router_node.h"
 
 namespace quicx {
 namespace http3 {
@@ -15,7 +16,7 @@ public:
     Router() {}
     virtual ~Router() {}
 
-    virtual RouterErrorCode AddRoute(MothedType mothed, const std::string& path, const http_handler& handler);
+    virtual bool AddRoute(MothedType mothed, const std::string& path, const http_handler& handler);
 
     virtual MatchResult Match(MothedType mothed, const std::string& path);
 

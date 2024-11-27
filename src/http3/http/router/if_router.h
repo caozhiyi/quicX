@@ -9,26 +9,23 @@
 namespace quicx {
 namespace http3 {
 
+struct MatchResult {
+    bool is_match;
+    http_handler handler;                                // http handler
+    std::unordered_map<std::string, std::string> params; // request params
+};
+
 class IRouter {
-
-public:
-    struct MatchResult {
-        RouterErrorCode error;                               // error code of router operation 
-        http_handler handler;                                // http handler
-        std::unordered_map<std::string, std::string> params; // request params
-    }
-
 public:
     IRouter() {}
     virtual ~IRouter() {}
 
     // add route context
-    virtual RouterErrorCode AddRoute(MothedType mothed, const std::string& path, const http_handler& handler) = 0;
+    virtual bool AddRoute(MothedType mothed, const std::string& path, const http_handler& handler) = 0;
 
     // router match
     virtual MatchResult Match(MothedType mothed, const std::string& path) = 0;
 };
-
 
 }
 }
