@@ -8,7 +8,6 @@ enum RouterErrorCode {
     REC_SUCCESS       = 0,
     REC_UNFIND        = 1, // can't find the resource
     REC_INVAILID_PATH = 2, // invalid path
-
 };
 
 }
