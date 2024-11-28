@@ -1,5 +1,5 @@
-#ifndef QUIC_INCLUDE_IF_BUFFER
-#define QUIC_INCLUDE_IF_BUFFER
+#ifndef QUIC_INCLUDE_IF_QUIC_BUFFER
+#define QUIC_INCLUDE_IF_QUIC_BUFFER
 
 #include <cstdint>
 
@@ -9,10 +9,10 @@ namespace quic {
 /*
  buffer interface
 */ 
-class IBuffer {
+class IQuicBuffer {
 public:
-    IBuffer() {}
-    virtual ~IBuffer() {}
+    IQuicBuffer() {}
+    virtual ~IQuicBuffer() {}
 
     // read data from buffer but don't move the read offset
     // return the length of data actually read

@@ -10,15 +10,15 @@ namespace quic {
  stream interface
  indicates a quic stream
 */
-class IStream {
+class IQuicStream {
 public:
-    IStream() {}
-    virtual ~IStream() {}
+    IQuicStream() {}
+    virtual ~IQuicStream() {}
 
     virtual void SetUserData(void* user_data) = 0;
     virtual void* GetUserData() = 0;
 
-    virtual StreamType GetType() = 0;
+    virtual StreamDirection GetDirection() = 0;
     virtual uint64_t GetStreamID() = 0;
 
     // close the stream gracefully, the stream will be closed after all data transported.

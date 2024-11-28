@@ -4,7 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include <functional>
-#include "quic/include/if_buffer.h"
+#include "quic/include/if_quic_buffer.h"
 
 namespace quicx {
 namespace quic {
@@ -15,10 +15,10 @@ class ISendStream;
 class IRecvStream;
 class IBidirectionStream;
 
-enum StreamType {
-    ST_SEND = 0x01, // send stream
-    ST_RECV = 0x02, // recv stream
-    ST_BIDI = 0x03, // bidirection stream
+enum StreamDirection {
+    SD_SEND = 0x01, // send stream
+    SD_RECV = 0x02, // recv stream
+    SD_BIDI = 0x03, // bidirection stream
 };
 
 // connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
@@ -31,7 +31,7 @@ typedef std::function<void(std::shared_ptr<IStream> stream, uint32_t error)> str
 
 // stream read callback, call this callback when stream get data from peer
 // data: data buffer
-typedef std::function<void(std::shared_ptr<IBuffer> data, uint32_t error)> stream_read_callback;
+typedef std::function<void(std::shared_ptr<IQuicBuffer> data, uint32_t error)> stream_read_callback;
 
 // stream write callback, call this callback when stream write data ready to send
 // length: data length

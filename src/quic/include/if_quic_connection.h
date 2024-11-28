@@ -1,5 +1,5 @@
-#ifndef QUIC_INCLUDE_IF_CONNECTION
-#define QUIC_INCLUDE_IF_CONNECTION
+#ifndef QUIC_INCLUDE_IF_QUIC_CONNECTION
+#define QUIC_INCLUDE_IF_QUIC_CONNECTION
 
 #include <string>
 #include "quic/include/type.h"
@@ -10,13 +10,13 @@ namespace quic {
 /*
  indicates a quic connection.
 */
-class IConnection {
+class IQuicConnection {
 public:
-    IConnection() {}
-    virtual ~IConnection() {}
+    IQuicConnection() {}
+    virtual ~IQuicConnection() {}
 
-    void SetUserData(void* user_data) = 0;
-    void* GetUserData() = 0;
+    virtual void SetUserData(void* user_data) = 0;
+    virtual void* GetUserData() = 0;
 
     virtual void GetLocalAddr(std::string& addr, uint32_t& port) = 0;
     virtual void GetRemoteAddr(std::string& addr, uint32_t& port) = 0;
@@ -28,7 +28,7 @@ public:
     virtual void Reset() = 0;
 
     // create a new stream, only supported send stream and bidirection stream.
-    virtual std::shared_ptr<ISendStream> MakeStream(StreamType type) = 0;
+    virtual std::shared_ptr<ISendStream> MakeStream(StreamDirection type) = 0;
 
     // set the callback function to handle the stream state change.
     virtual void SetStreamStateCallBack(stream_state_callback cb) = 0;

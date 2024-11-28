@@ -1,8 +1,8 @@
-#ifndef QUIC_INCLUDE_IF_SEND_STREAM
-#define QUIC_INCLUDE_IF_SEND_STREAM
+#ifndef QUIC_INCLUDE_IF_QUIC_SEND_STREAM
+#define QUIC_INCLUDE_IF_QUIC_SEND_STREAM
 
 #include <string>
-#include "quic/include/if_stream.h"
+#include "quic/include/if_quic_stream.h"
 
 namespace quicx {
 namespace quic {
@@ -11,11 +11,11 @@ namespace quic {
  send stream interface, used to send data to peer.
  who send data create this stream actively, remote peer can't create this stream.
 */
-class ISendStream:
-    public IStream {
+class IQuicSendStream:
+    public IQuicStream {
 public:
-    ISendStream() {}
-    virtual ~ISendStream() {}
+    IQuicSendStream() {}
+    virtual ~IQuicSendStream() {}
 
     // send data to peer, return the number of bytes sended.
     virtual int32_t Send(uint8_t* data, uint32_t len) = 0;

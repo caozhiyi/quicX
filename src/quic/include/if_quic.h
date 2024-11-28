@@ -1,9 +1,9 @@
-#ifndef QUIC_INCLUDE_QUICX
-#define QUIC_INCLUDE_QUICX
+#ifndef QUIC_INCLUDE_QUIC_QUICX
+#define QUIC_INCLUDE_QUIC_QUICX
 
 #include "quic/include/type.h"
-#include "quic/include/if_connection.h"
-#include "quic/include/if_bidirection_stream.h"
+#include "quic/include/if_quic_connection.h"
+#include "quic/include/if_quic_bidirection_stream.h"
 
 namespace quicx {
 namespace quic {
