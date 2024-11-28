@@ -10,7 +10,6 @@ RouterNodeStaticPath::RouterNodeStaticPath(RouterNodeType type, const std::strin
 
 }
 
-
 bool RouterNodeStaticPath::Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result) {
     // check match done
     if (path_offset >= path.length()) {
