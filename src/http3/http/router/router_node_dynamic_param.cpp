@@ -1,4 +1,3 @@
-#include "http3/http/router/type.h"
 #include "http3/http/router/router_node_dynamic_param.h"
 
 namespace quicx {

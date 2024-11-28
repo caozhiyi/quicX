@@ -4,26 +4,38 @@
 #include <memory>
 #include <cstdint>
 #include <functional>
-#include "common/buffer/buffer_chains_interface.h"
+#include "quic/include/if_quic_buffer.h"
 
 namespace quicx {
 namespace quic {
-    
-class QuicxStream;
-class QuicxConnection;
 
-enum QuicStreamType {
-    ST_SEND = 0x01, // send stream
-    ST_RECV = 0x02, // recv stream
-    ST_BIDI = 0x03, // bidirection stream
+class IStream;
+class IConnection;
+class ISendStream;
+class IRecvStream;
+class IBidirectionStream;
+
+enum StreamDirection {
+    SD_SEND = 0x01, // send stream
+    SD_RECV = 0x02, // recv stream
+    SD_BIDI = 0x03, // bidirection stream
 };
 
-typedef std::function<void(std::shared_ptr<QuicxConnection> conn, uint32_t error)> connection_state_call_back;
+// connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
+// conn: connection instance which state changed
+typedef std::function<void(std::shared_ptr<IConnection> conn, uint32_t error)> connection_state_callback;
 
-typedef std::function<void(std::shared_ptr<QuicxStream> conn, uint32_t error)> stream_state_call_back;
-typedef std::function<void(std::shared_ptr<common::IBufferChains> data, uint32_t error)> stream_read_call_back;
-typedef std::function<void(uint32_t length, uint32_t error)> stream_write_call_back;
+// stream state callback, call this callback when stream state changed, like created, closed, etc.
+// stream: stream instance which state changed
+typedef std::function<void(std::shared_ptr<IStream> stream, uint32_t error)> stream_state_callback;
 
+// stream read callback, call this callback when stream get data from peer
+// data: data buffer
+typedef std::function<void(std::shared_ptr<IQuicBuffer> data, uint32_t error)> stream_read_callback;
+
+// stream write callback, call this callback when stream write data ready to send
+// length: data length
+typedef std::function<void(uint32_t length, uint32_t error)> stream_write_callback;
 
 }
 }

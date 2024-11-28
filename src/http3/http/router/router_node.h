@@ -4,7 +4,6 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
-#include "http3/http/router/type.h"
 #include "http3/http/router/util.h"
 #include "http3/http/router/if_router.h"
 #include "http3/http/router/if_router_node.h"
