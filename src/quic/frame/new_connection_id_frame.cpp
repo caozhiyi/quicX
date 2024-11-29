@@ -10,9 +10,9 @@ namespace quic {
 
 NewConnectionIDFrame::NewConnectionIDFrame():
     IFrame(FT_NEW_CONNECTION_ID),
-    _sequence_number(0),
-    _retire_prior_to(0) {
-    memset(_stateless_reset_token, 0, __stateless_reset_token_length);
+    sequence_number_(0),
+    retire_prior_to_(0) {
+    memset(stateless_reset_token_, 0, __stateless_reset_token_length);
 }
 
 NewConnectionIDFrame::~NewConnectionIDFrame() {
@@ -29,13 +29,13 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) 
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _sequence_number);
-    pos = common::EncodeVarint(pos, _retire_prior_to);
-    pos = common::FixedEncodeUint8(pos, _length);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, sequence_number_);
+    pos = common::EncodeVarint(pos, retire_prior_to_);
+    pos = common::FixedEncodeUint8(pos, length_);
     buffer->MoveWritePt(pos - span.GetStart());
-    buffer->Write(_connection_id, _length);
-    buffer->Write(_stateless_reset_token, __stateless_reset_token_length);
+    buffer->Write(connection_id_, length_);
+    buffer->Write(stateless_reset_token_, __stateless_reset_token_length);
     return true;
 }
 
@@ -45,23 +45,23 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, b
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
     }
-    pos = common::DecodeVarint(pos, end, _sequence_number);
-    pos = common::DecodeVarint(pos, end, _retire_prior_to);
-    pos = common::FixedDecodeUint8(pos, end, _length);
+    pos = common::DecodeVarint(pos, end, sequence_number_);
+    pos = common::DecodeVarint(pos, end, retire_prior_to_);
+    pos = common::FixedDecodeUint8(pos, end, length_);
     buffer->MoveReadPt(pos - span.GetStart());
-    if (buffer->Read(_connection_id, _length) != _length) {
+    if (buffer->Read(connection_id_, length_) != length_) {
         return false;
     }
-    if (buffer->Read(_stateless_reset_token, __stateless_reset_token_length) != __stateless_reset_token_length) {
+    if (buffer->Read(stateless_reset_token_, __stateless_reset_token_length) != __stateless_reset_token_length) {
         return false;
     }
     return true;
 }
 
 uint32_t NewConnectionIDFrame::EncodeSize() {
-    return sizeof(NewConnectionIDFrame) - __stateless_reset_token_length + _length;
+    return sizeof(NewConnectionIDFrame) - __stateless_reset_token_length + length_;
 }
 
 void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {
@@ -69,22 +69,22 @@ void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {
         common::LOG_ERROR("too max connecion id length. len:%d, max:%d", len, __max_cid_length);
         return;
     }
-    memcpy(_connection_id, id, len);
-    _length = len;
+    memcpy(connection_id_, id, len);
+    length_ = len;
 }
 
 void NewConnectionIDFrame::GetConnectionID(uint8_t* id, uint8_t& len) { 
-    if (len < _length) {
-        common::LOG_ERROR("insufficient remaining id space. remain_size:%d, need_size:%d", len, _length);
+    if (len < length_) {
+        common::LOG_ERROR("insufficient remaining id space. remain_size:%d, need_size:%d", len, length_);
         return;
     }
     
-    memcpy(id, _connection_id, _length); 
-    len = _length;
+    memcpy(id, connection_id_, length_); 
+    len = length_;
 }
 
 void NewConnectionIDFrame::SetStatelessResetToken(uint8_t* token) {
-    memcpy(_stateless_reset_token, token, __stateless_reset_token_length);
+    memcpy(stateless_reset_token_, token, __stateless_reset_token_length);
 }
 
 }

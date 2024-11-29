@@ -2,7 +2,7 @@
 #define QUIC_FRAME_RESET_STREAM_FRAME
 
 #include <cstdint>
-#include "quic/frame/stream_frame_interface.h"
+#include "quic/frame/if_stream_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -17,15 +17,15 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetAppErrorCode(uint64_t err_code) { _app_error_code = err_code; }
-    uint64_t GetAppErrorCode() { return _app_error_code; }
+    void SetAppErrorCode(uint64_t err_code) { app_error_code_ = err_code; }
+    uint64_t GetAppErrorCode() { return app_error_code_; }
 
-    void SetFinalSize(uint64_t size) { _final_size = size; }
-    uint64_t GetFinalSize() { return _final_size; }
+    void SetFinalSize(uint64_t size) { final_size_ = size; }
+    uint64_t GetFinalSize() { return final_size_; }
 
 private:
-   uint64_t _app_error_code; // the application protocol error code.
-   uint64_t _final_size;     // the final size of the stream by the RESET_STREAM sender.
+   uint64_t app_error_code_; // the application protocol error code.
+   uint64_t final_size_;     // the final size of the stream by the RESET_STREAM sender.
 }; 
 
 

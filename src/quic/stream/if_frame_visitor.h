@@ -3,7 +3,7 @@
 
 #include <vector>
 #include "quic/crypto/tls/type.h"
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {

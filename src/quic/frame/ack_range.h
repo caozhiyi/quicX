@@ -12,15 +12,15 @@ public:
     AckRange(uint64_t gap, uint64_t range);
     ~AckRange();
 
-    void SetAckRangeLength(uint64_t v) { _ack_range_length = v; }
-    uint64_t GetAckRangeLength() { return _ack_range_length; }
+    void SetAckRangeLength(uint64_t v) { ack_range_length_ = v; }
+    uint64_t GetAckRangeLength() { return ack_range_length_; }
 
-    void SetGap(uint64_t v) { _gap = v; }
-    uint64_t GetGap() { return _gap; }
+    void SetGap(uint64_t v) { gap_ = v; }
+    uint64_t GetGap() { return gap_; }
 
 private:
-    uint64_t _gap; // A variable-length integer indicating the number of contiguous unacknowledged packets preceding the packet number one lower than the smallest in the preceding ACK Range
-    uint64_t _ack_range_length; // A variable-length integer indicating the number of contiguous acknowledged packets preceding the largest packet number, as determined by the preceding Gap
+    uint64_t gap_; // A variable-length integer indicating the number of contiguous unacknowledged packets preceding the packet number one lower than the smallest in the preceding ACK Range
+    uint64_t ack_range_length_; // A variable-length integer indicating the number of contiguous acknowledged packets preceding the largest packet number, as determined by the preceding Gap
 };
 
 }

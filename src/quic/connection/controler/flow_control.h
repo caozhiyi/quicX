@@ -1,7 +1,7 @@
 #ifndef QUIC_CONNECTION_CONTROLER_FLOW_CONTROL
 #define QUIC_CONNECTION_CONTROLER_FLOW_CONTROL
 
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 #include "quic/stream/stream_id_generator.h"
 #include "quic/connection/transport_param.h"
 

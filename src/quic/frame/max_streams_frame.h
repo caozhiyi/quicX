@@ -2,7 +2,7 @@
 #define QUIC_FRAME_MAX_STREAMS_FRAME
 
 #include <cstdint>
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -17,12 +17,12 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetMaximumStreams(uint64_t maximum) { _maximum_streams = maximum; }
-    uint64_t GetMaximumStreams() { return _maximum_streams; }
+    void SetMaximumStreams(uint64_t maximum) { maximum_streams_ = maximum; }
+    uint64_t GetMaximumStreams() { return maximum_streams_; }
 
 private:
-    uint8_t _stream_type;
-    uint64_t _maximum_streams;  // A count of the cumulative number of streams of the corresponding type that can be opened over the lifetime of the connection.
+    uint8_t stream_type_;
+    uint64_t maximum_streams_;  // A count of the cumulative number of streams of the corresponding type that can be opened over the lifetime of the connection.
 };
 
 }

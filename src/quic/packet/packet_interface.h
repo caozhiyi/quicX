@@ -5,7 +5,7 @@
 #include "quic/frame/type.h"
 #include "quic/packet/type.h"
 #include "common/buffer/buffer_span.h"
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 #include "quic/packet/header/header_interface.h"
 #include "quic/crypto/cryptographer_interface.h"
 #include "common/buffer/buffer_read_interface.h"

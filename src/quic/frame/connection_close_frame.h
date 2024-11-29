@@ -3,7 +3,7 @@
 
 #include <string>
 #include <cstdint>
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -19,23 +19,23 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetErrorCode(uint32_t error_code) { _error_code = error_code; }
-    uint32_t GetErrorCode() { return _error_code; }
+    void SetErrorCode(uint32_t error_code) { error_code_ = error_code; }
+    uint32_t GetErrorCode() { return error_code_; }
 
-    void SetErrFrameType(uint32_t frame_type) { _err_frame_type = frame_type; }
-    uint32_t GetErrFrameType() { return _err_frame_type; }
+    void SetErrFrameType(uint32_t frame_type) { err_frame_type_ = frame_type; }
+    uint32_t GetErrFrameType() { return err_frame_type_; }
 
-    void SetReason(const std::string& reason) { _reason = reason; }
-    const std::string& GetReason() { return _reason; }
+    void SetReason(const std::string& reason) { reason_ = reason; }
+    const std::string& GetReason() { return reason_; }
 
 private:
-    bool _is_application_error;
-    uint32_t _error_code;        // indicates the reason for closing this connection.
-    uint32_t _err_frame_type;    // the type of frame that triggered the error.
-    std::string _reason;
+    bool is_application_error_;
+    uint32_t error_code_;        // indicates the reason for closing this connection.
+    uint32_t err_frame_type_;    // the type of frame that triggered the error.
+    std::string reason_;
     /*
-    uint32_t _reason_length; // the length of the reason phrase in bytes.
-    char* _reason;           // why the connection was closed.
+    uint32_t reason_length; // the length of the reason phrase in bytes.
+    char* reason_;           // why the connection was closed.
     */
 };
 

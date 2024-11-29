@@ -25,11 +25,11 @@ bool NewTokenFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _token_length);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, token_length_);
 
     buffer->MoveWritePt(pos - span.GetStart());
-    buffer->Write(_token, _token_length);
+    buffer->Write(token_, token_length_);
     return true;
 }
 
@@ -39,21 +39,21 @@ bool NewTokenFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool wit
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_NEW_TOKEN) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_NEW_TOKEN) {
             return false;
         }
     }
-    pos = common::DecodeVarint(pos, end, _token_length);
+    pos = common::DecodeVarint(pos, end, token_length_);
 
     buffer->MoveReadPt(pos - span.GetStart());
-    if (_token_length > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), _token_length);
+    if (token_length_ > buffer->GetDataLength()) {
+        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), token_length_);
         return false;
     }
     
-    _token = pos;
-    buffer->MoveReadPt(_token_length);
+    token_ = pos;
+    buffer->MoveReadPt(token_length_);
     return true;
 }
 

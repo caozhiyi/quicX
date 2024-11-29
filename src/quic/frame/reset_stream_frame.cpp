@@ -9,8 +9,8 @@ namespace quic {
 
 ResetStreamFrame::ResetStreamFrame(): 
     IStreamFrame(FT_RESET_STREAM),
-    _app_error_code(0), 
-    _final_size(0) {
+    app_error_code_(0), 
+    final_size_(0) {
 
 }
 
@@ -28,10 +28,10 @@ bool ResetStreamFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _stream_id);
-    pos = common::EncodeVarint(pos, _app_error_code);
-    pos = common::EncodeVarint(pos, _final_size);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, stream_id_);
+    pos = common::EncodeVarint(pos, app_error_code_);
+    pos = common::EncodeVarint(pos, final_size_);
 
     buffer->MoveWritePt(pos - span.GetStart());
     return true;
@@ -43,14 +43,14 @@ bool ResetStreamFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool 
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_RESET_STREAM) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_RESET_STREAM) {
             return false;
         }
     }
-    pos = common::DecodeVarint(pos, end, _stream_id);
-    pos = common::DecodeVarint(pos, end, _app_error_code);
-    pos = common::DecodeVarint(pos, end, _final_size);
+    pos = common::DecodeVarint(pos, end, stream_id_);
+    pos = common::DecodeVarint(pos, end, app_error_code_);
+    pos = common::DecodeVarint(pos, end, final_size_);
 
     buffer->MoveReadPt(pos - span.GetStart());
     return true;

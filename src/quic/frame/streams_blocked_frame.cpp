@@ -10,7 +10,7 @@ namespace quic {
 
 StreamsBlockedFrame::StreamsBlockedFrame(uint16_t frame_type):
     IFrame(frame_type),
-    _maximum_streams(0) {
+    maximum_streams_(0) {
 
 }
 
@@ -28,8 +28,8 @@ bool StreamsBlockedFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _maximum_streams);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, maximum_streams_);
 
     buffer->MoveWritePt(pos - span.GetStart());
     return true;
@@ -41,12 +41,12 @@ bool StreamsBlockedFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bo
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_STREAMS_BLOCKED_BIDIRECTIONAL && _frame_type != FT_STREAMS_BLOCKED_BIDIRECTIONAL) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_STREAMS_BLOCKED_BIDIRECTIONAL && frame_type_ != FT_STREAMS_BLOCKED_BIDIRECTIONAL) {
             return false;
         }
     }
-    pos = common::DecodeVarint(pos, end, _maximum_streams);
+    pos = common::DecodeVarint(pos, end, maximum_streams_);
 
     buffer->MoveReadPt(pos - span.GetStart());
     return true;

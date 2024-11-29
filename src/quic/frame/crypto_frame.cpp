@@ -7,7 +7,7 @@ namespace quic {
 
 CryptoFrame::CryptoFrame():
     IFrame(FT_CRYPTO),
-    _offset(0) {
+    offset_(0) {
 
 }
 
@@ -25,13 +25,13 @@ bool CryptoFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _offset);
-    pos = common::EncodeVarint(pos, _length);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, offset_);
+    pos = common::EncodeVarint(pos, length_);
 
     buffer->MoveWritePt(pos - span.GetStart());
 
-    buffer->Write(_data, _length);
+    buffer->Write(data_, length_);
     return true;
 }
 
@@ -41,27 +41,27 @@ bool CryptoFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_CRYPTO){
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_CRYPTO){
             return false;
         }
         
     }
-    pos = common::DecodeVarint(pos, end, _offset);
-    pos = common::DecodeVarint(pos, end, _length);
+    pos = common::DecodeVarint(pos, end, offset_);
+    pos = common::DecodeVarint(pos, end, length_);
     buffer->MoveReadPt(pos - span.GetStart());
-    if (_length > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), _length);
+    if (length_ > buffer->GetDataLength()) {
+        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
         return false;
     }
     
-    _data = pos;
-    buffer->MoveReadPt(_length);
+    data_ = pos;
+    buffer->MoveReadPt(length_);
     return true;
 }
 
 uint32_t CryptoFrame::EncodeSize() {
-    return sizeof(CryptoFrame) + _length;
+    return sizeof(CryptoFrame) + length_;
 }
 
 }

@@ -2,7 +2,7 @@
 #define QUIC_FRAME_DATA_BLOCKED_FRAME
 
 #include <cstdint>
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -17,11 +17,11 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetMaximumData(uint64_t max) { _maximum_data = max; }
-    uint64_t GetMaximumData() { return _maximum_data; }
+    void SetMaximumData(uint64_t max) { maximum_data_ = max; }
+    uint64_t GetMaximumData() { return maximum_data_; }
 
 private:
-   uint64_t _maximum_data;  //  the connection-level limit at which blocking occurred.
+   uint64_t maximum_data_;  //  the connection-level limit at which blocking occurred.
 };
 
 }

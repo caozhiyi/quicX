@@ -4,8 +4,8 @@
 #include <vector>
 #include <cstdint>
 
+#include "quic/frame/if_frame.h"
 #include "quic/frame/ack_range.h"
-#include "quic/frame/frame_interface.h"
 
 namespace quicx {
 namespace quic {
@@ -20,27 +20,27 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetLargestAck(uint64_t ack) { _largest_acknowledged = ack; }
-    uint64_t GetLargestAck() { return _largest_acknowledged; }
+    void SetLargestAck(uint64_t ack) { largest_acknowledged_ = ack; }
+    uint64_t GetLargestAck() { return largest_acknowledged_; }
 
-    void SetAckDelay(uint32_t delay) { _ack_delay = delay; }
-    uint32_t GetAckDelay() { return _ack_delay; }
+    void SetAckDelay(uint32_t delay) { ack_delay_ = delay; }
+    uint32_t GetAckDelay() { return ack_delay_; }
 
-    void SetFirstAckRange(uint32_t range) { _first_ack_range = range; }
-    uint32_t GetFirstAckRange() { return _first_ack_range; }
+    void SetFirstAckRange(uint32_t range) { first_ack_range_ = range; }
+    uint32_t GetFirstAckRange() { return first_ack_range_; }
 
-    void AddAckRange(uint64_t gap, uint64_t range) { _ack_ranges.emplace_back(AckRange(gap, range)); }
-    const std::vector<AckRange>& GetAckRange() { return _ack_ranges; }
+    void AddAckRange(uint64_t gap, uint64_t range) { ack_ranges_.emplace_back(AckRange(gap, range)); }
+    const std::vector<AckRange>& GetAckRange() { return ack_ranges_; }
 
 protected:
     AckFrame(FrameType ft);
 
 private:
-    uint64_t _largest_acknowledged; // A variable-length integer representing the largest packet number the peer is acknowledging.
-    uint32_t _ack_delay;            // the time delta in microseconds between when this ACK was sent and when the largest acknowledged packet.
-    uint64_t _first_ack_range;      // A variable-length integer indicating the number of contiguous packets preceding the Largest Acknowledged that are being acknowledged
+    uint64_t largest_acknowledged_; // A variable-length integer representing the largest packet number the peer is acknowledging.
+    uint32_t ack_delay_;            // the time delta in microseconds between when this ACK was sent and when the largest acknowledged packet.
+    uint64_t first_ack_range_;      // A variable-length integer indicating the number of contiguous packets preceding the Largest Acknowledged that are being acknowledged
     // uint64_t _ack_range;         // A variable-length integer specifying the number of ACK Range fields in the frame.
-    std::vector<AckRange> _ack_ranges;                 
+    std::vector<AckRange> ack_ranges_;                 
 };
 
 class AckEcnFrame:
@@ -53,19 +53,19 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetEct0(uint64_t ect0) { _ect_0 = ect0; }
-    uint64_t GetEct0() { return _ect_0; }
+    void SetEct0(uint64_t ect0) { ect_0_ = ect0; }
+    uint64_t GetEct0() { return ect_0_; }
 
-    void SetEct1(uint64_t ect1) { _ect_1 = ect1; }
-    uint64_t GetEct1() { return _ect_1; }
+    void SetEct1(uint64_t ect1) { ect_1_ = ect1; }
+    uint64_t GetEct1() { return ect_1_; }
 
-    void SetEcnCe(uint64_t ce) { _ecn_ce = ce; }
-    uint64_t GetEcnCe() { return _ecn_ce; }
+    void SetEcnCe(uint64_t ce) { ecn_ce_ = ce; }
+    uint64_t GetEcnCe() { return ecn_ce_; }
 
 private:
-    uint64_t _ect_0;    // the total number of packets received with the ECT(0) codepoint in the packet number space of the ACK frame.
-    uint64_t _ect_1;    // the total number of packets received with the ECT(1) codepoint in the packet number space of the ACK frame.
-    uint64_t _ecn_ce;   // the total number of packets received with the CE codepoint in the packet number space of the ACK frame.
+    uint64_t ect_0_;    // the total number of packets received with the ECT(0) codepoint in the packet number space of the ACK frame.
+    uint64_t ect_1_;    // the total number of packets received with the ECT(1) codepoint in the packet number space of the ACK frame.
+    uint64_t ecn_ce_;   // the total number of packets received with the CE codepoint in the packet number space of the ACK frame.
 };
 
 }

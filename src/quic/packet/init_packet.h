@@ -4,7 +4,7 @@
 
 #include <memory>
 #include "quic/packet/type.h"
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 #include "quic/packet/packet_interface.h"
 #include "quic/packet/header/long_header.h"
 

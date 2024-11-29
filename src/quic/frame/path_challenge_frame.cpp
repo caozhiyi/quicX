@@ -10,11 +10,11 @@
 namespace quicx {
 namespace quic {
 
-std::shared_ptr<common::RangeRandom> PathChallengeFrame::_random = std::make_shared<common::RangeRandom>(0, 62);
+std::shared_ptr<common::RangeRandom> PathChallengeFrame::random_ = std::make_shared<common::RangeRandom>(0, 62);
 
 PathChallengeFrame::PathChallengeFrame():
     IFrame(FT_PATH_CHALLENGE) {
-    memset(_data, 0, __path_data_length);
+    memset(data_, 0, __path_data_length);
 }
 
 PathChallengeFrame::~PathChallengeFrame() {
@@ -31,10 +31,10 @@ bool PathChallengeFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
     buffer->MoveWritePt(pos - span.GetStart());
 
-    buffer->Write(_data, __path_data_length);
+    buffer->Write(data_, __path_data_length);
     return true;
 }
 
@@ -44,13 +44,13 @@ bool PathChallengeFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, boo
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_PATH_CHALLENGE) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_PATH_CHALLENGE) {
             return false;
         }
     }
 
-    memcpy(_data, pos, __path_data_length);
+    memcpy(data_, pos, __path_data_length);
     pos += __path_data_length;
 
     buffer->MoveReadPt(pos - span.GetStart());
@@ -62,20 +62,20 @@ uint32_t PathChallengeFrame::EncodeSize() {
 }
 
 bool PathChallengeFrame::CompareData(std::shared_ptr<PathResponseFrame> response) {
-    return strncmp((const char*)_data, (const char*)response->GetData(), __path_data_length) == 0;
+    return strncmp((const char*)data_, (const char*)response->GetData(), __path_data_length) == 0;
 }
 
 void PathChallengeFrame::MakeData() {
     for (uint32_t i = 0; i < __path_data_length; i++) {
-        int32_t randomChar = _random->Random();        
+        int32_t randomChar = random_->Random();        
         if (randomChar < 26) {
-            _data[i] = 'a' + randomChar;
+            data_[i] = 'a' + randomChar;
 
         } else if (randomChar < 52) {
-            _data[i] = 'A' + randomChar - 26;
+            data_[i] = 'A' + randomChar - 26;
 
         } else {
-            _data[i] = '0' + randomChar - 52;
+            data_[i] = '0' + randomChar - 52;
         }
     }
 }

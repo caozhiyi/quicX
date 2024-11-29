@@ -9,7 +9,7 @@ namespace quic {
 
 AckFrame::AckFrame():
     IFrame(FT_ACK),
-    _ack_delay(0) {
+    ack_delay_(0) {
 
 }
 
@@ -28,14 +28,14 @@ bool AckFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
     
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _ack_delay);
-    pos = common::EncodeVarint(pos, _first_ack_range);
-    pos = common::EncodeVarint(pos, _ack_ranges.size());
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, ack_delay_);
+    pos = common::EncodeVarint(pos, first_ack_range_);
+    pos = common::EncodeVarint(pos, ack_ranges_.size());
 
-    for (size_t i = 0; i < _ack_ranges.size(); i++) {
-        pos = common::EncodeVarint(pos, _ack_ranges[i].GetGap());
-        pos = common::EncodeVarint(pos, _ack_ranges[i].GetAckRangeLength());
+    for (size_t i = 0; i < ack_ranges_.size(); i++) {
+        pos = common::EncodeVarint(pos, ack_ranges_[i].GetGap());
+        pos = common::EncodeVarint(pos, ack_ranges_[i].GetAckRangeLength());
     }
     
     buffer->MoveWritePt(pos - span.GetStart());
@@ -48,13 +48,13 @@ bool AckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_typ
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_ACK && _frame_type != FT_ACK_ECN) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_ACK && frame_type_ != FT_ACK_ECN) {
             return false;
         }
     }
-    pos = common::DecodeVarint(pos, end, _ack_delay);
-    pos = common::DecodeVarint(pos, end, _first_ack_range);
+    pos = common::DecodeVarint(pos, end, ack_delay_);
+    pos = common::DecodeVarint(pos, end, first_ack_range_);
     uint32_t ack_range_count = 0;
     pos = common::DecodeVarint(pos, end, ack_range_count);
 
@@ -63,28 +63,28 @@ bool AckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_typ
     for (uint32_t i = 0; i < ack_range_count; i++) {
         pos = common::DecodeVarint(pos, end, gap);
         pos = common::DecodeVarint(pos, end, range);
-        _ack_ranges.emplace_back(AckRange(gap, range));
+        ack_ranges_.emplace_back(AckRange(gap, range));
     }
     buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
 
 uint32_t AckFrame::EncodeSize() {
-    return sizeof(AckFrame) + _ack_ranges.size() * sizeof(AckRange);
+    return sizeof(AckFrame) + ack_ranges_.size() * sizeof(AckRange);
 }
 
 AckFrame::AckFrame(FrameType ft):
     IFrame(ft),
-    _ack_delay(0) {
+    ack_delay_(0) {
 
 }
 
 
 AckEcnFrame::AckEcnFrame():
     AckFrame(FT_ACK_ECN),
-    _ect_0(0),
-    _ect_1(0),
-    _ecn_ce(0) {
+    ect_0_(0),
+    ect_1_(0),
+    ecn_ce_(0) {
 
 }
 
@@ -107,9 +107,9 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buff
     }
     
     uint8_t* pos = span.GetStart();
-    pos = common::EncodeVarint(pos, _ect_0);
-    pos = common::EncodeVarint(pos, _ect_1);
-    pos = common::EncodeVarint(pos, _ecn_ce);
+    pos = common::EncodeVarint(pos, ect_0_);
+    pos = common::EncodeVarint(pos, ect_1_);
+    pos = common::EncodeVarint(pos, ecn_ce_);
 
     buffer->MoveWritePt(pos - span.GetStart());
 
@@ -125,9 +125,9 @@ bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffe
 
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
-    pos = common::DecodeVarint(pos, end, _ect_0);
-    pos = common::DecodeVarint(pos, end, _ect_1);
-    pos = common::DecodeVarint(pos, end, _ecn_ce);
+    pos = common::DecodeVarint(pos, end, ect_0_);
+    pos = common::DecodeVarint(pos, end, ect_1_);
+    pos = common::DecodeVarint(pos, end, ecn_ce_);
 
     buffer->MoveReadPt(pos - span.GetStart());
 

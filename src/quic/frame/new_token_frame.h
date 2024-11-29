@@ -2,7 +2,7 @@
 #define QUIC_FRAME_NEW_TOKEN_FRAME
 
 #include <cstdint>
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -20,15 +20,15 @@ public:
 
 
     void SetToken(uint8_t* token, uint32_t token_length) { 
-        _token = token;
-        _token_length = token_length;
+        token_ = token;
+        token_length_ = token_length;
     }
-    uint8_t* GetToken() { return _token; }
-    uint32_t GetTokenLength() { return _token_length; }
+    uint8_t* GetToken() { return token_; }
+    uint32_t GetTokenLength() { return token_length_; }
 
 private:
-    uint32_t _token_length;  // the length of the token in bytes.
-    uint8_t* _token;   // An opaque blob that the client may use with a future Initial packet.
+    uint32_t token_length_;  // the length of the token in bytes.
+    uint8_t* token_;   // An opaque blob that the client may use with a future Initial packet.
 };
 
 }

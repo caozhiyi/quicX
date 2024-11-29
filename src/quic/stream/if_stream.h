@@ -7,7 +7,7 @@
 #include <functional>
 
 #include "quic/stream/type.h"
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 #include "quic/stream/if_frame_visitor.h"
 
 namespace quicx {

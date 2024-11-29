@@ -8,7 +8,7 @@
 #include "quic/packet/packet_interface.h"
 #include "quic/crypto/tls/tls_conneciton.h"
 #include "quic/stream/bidirection_stream.h"
-#include "quic/frame/stream_frame_interface.h"
+#include "quic/frame/if_stream_frame.h"
 
 namespace quicx {
 namespace quic {

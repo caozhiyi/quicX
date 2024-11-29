@@ -2,7 +2,7 @@
 #define QUIC_FRAME_CRYPTO_FRAME
 
 #include <cstdint>
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -18,25 +18,25 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetOffset(uint64_t offset) { _offset = offset; }
-    uint64_t GetOffset() { return _offset; }
+    void SetOffset(uint64_t offset) { offset_ = offset; }
+    uint64_t GetOffset() { return offset_; }
 
     void SetData(uint8_t* data, uint32_t length) { 
-        _data = data;
-        _length = length;
+        data_ = data;
+        length_ = length;
     }
-    uint8_t* GetData() { return _data; }
-    uint32_t GetLength() { return _length; }
+    uint8_t* GetData() { return data_; }
+    uint32_t GetLength() { return length_; }
 
-    void SetEncryptionLevel(uint8_t level) { _encryption_level = level; }
-    uint8_t GetEncryptionLevel() { return _encryption_level; }
+    void SetEncryptionLevel(uint8_t level) { encryption_level_ = level; }
+    uint8_t GetEncryptionLevel() { return encryption_level_; }
 
 private:
-    uint64_t _offset;  // the byte offset in the stream for the data in this CRYPTO frame.
-    uint32_t _length;  // the length of the Crypto Data field in this CRYPTO frame.
-    uint8_t* _data;    // the cryptographic message data.
+    uint64_t offset_;  // the byte offset in the stream for the data in this CRYPTO frame.
+    uint32_t length_;  // the length of the Crypto Data field in this CRYPTO frame.
+    uint8_t* data_;    // the cryptographic message data.
 
-    uint8_t _encryption_level;
+    uint8_t encryption_level_;
 };
 
 }
