@@ -103,6 +103,7 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<common::IBufferChains> bu
         return;
     }
     
+    // TODO do not copy data
     uint8_t data[1450] = {0};
     uint32_t len = buffer->Read(data, 1450);
     if (!_tls_connection->ProcessCryptoData(data, len)) {

@@ -5,7 +5,7 @@
 #include <functional>
 #include "quic/packet/type.h"
 #include "common/timer/timer_interface.h"
-#include "quic/packet/packet_interface.h"
+#include "quic/packet/if_packet.h"
 
 namespace quicx {
 namespace quic {

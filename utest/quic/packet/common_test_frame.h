@@ -2,7 +2,7 @@
 #define UTEST_QUIC_PACKET_HEADER_COMMON_TEST_FRAME
 
 #include "common/util/singleton.h"
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 #include "quic/crypto/cryptographer_interface.h"
 
 namespace quicx {

@@ -1,14 +1,14 @@
 #include <gtest/gtest.h>
 #include "quic/frame/type.h"
 #include "quic/frame/stream_frame.h"
-#include "quic/stream/send_state_machine.h"
+#include "quic/stream/state_machine_send.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
 TEST(send_state_machine_utest, normal_state_change) {
-    SendStreamStateMachine state;
+    StreamStateMachineSend state(nullptr);
     EXPECT_EQ(state.GetStatus(), SS_READY);
 
     EXPECT_FALSE(state.OnFrame(FT_STOP_SENDING));
@@ -24,7 +24,7 @@ TEST(send_state_machine_utest, normal_state_change) {
 }
 
 TEST(send_state_machine_utest, wrong_state_change) {
-    SendStreamStateMachine state;
+    StreamStateMachineSend state(nullptr);
     EXPECT_EQ(state.GetStatus(), SS_READY);
 
     EXPECT_FALSE(state.AllAckDone());

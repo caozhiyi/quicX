@@ -9,7 +9,7 @@ namespace quic {
 
 RetireConnectionIDFrame::RetireConnectionIDFrame():
     IFrame(FT_RETIRE_CONNECTION_ID),
-    _sequence_number(0) {
+    sequence_number_(0) {
 
 }
 
@@ -27,8 +27,8 @@ bool RetireConnectionIDFrame::Encode(std::shared_ptr<common::IBufferWrite> buffe
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _sequence_number);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, sequence_number_);
 
     buffer->MoveWritePt(pos - span.GetStart());
     return true;
@@ -40,12 +40,12 @@ bool RetireConnectionIDFrame::Decode(std::shared_ptr<common::IBufferRead> buffer
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_RETIRE_CONNECTION_ID) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_RETIRE_CONNECTION_ID) {
             return false;
         }
     }
-    pos = common::DecodeVarint(pos, end, _sequence_number);
+    pos = common::DecodeVarint(pos, end, sequence_number_);
 
     buffer->MoveReadPt(pos - span.GetStart());
     return true;

@@ -1,5 +1,5 @@
-#ifndef QUIC_FRAME_FRAME_INTERFACE
-#define QUIC_FRAME_FRAME_INTERFACE
+#ifndef QUIC_FRAME_IF_FRAME
+#define QUIC_FRAME_IF_FRAME
 
 #include <memory>
 #include "type.h"
@@ -22,7 +22,7 @@ public:
     virtual uint32_t GetFrameTypeBit();
 
 protected:
-    uint16_t _frame_type;
+    uint16_t frame_type_;
 };
 
 }

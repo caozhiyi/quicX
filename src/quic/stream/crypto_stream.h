@@ -3,9 +3,9 @@
 
 #include <unordered_map>
 #include "quic/crypto/tls/type.h"
+#include "quic/stream/if_send_stream.h"
+#include "quic/stream/if_recv_stream.h"
 #include "common/buffer/buffer_chains.h"
-#include "quic/stream/send_stream_interface.h"
-#include "quic/stream/recv_stream_interface.h"
 
 namespace quicx {
 namespace quic {
@@ -21,8 +21,6 @@ public:
 
     virtual void Reset(uint64_t err);
 
-    virtual void Close(uint64_t err = 0);
-
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
 
     virtual int32_t Send(uint8_t* data, uint32_t len, uint8_t encryption_level);
@@ -34,14 +32,17 @@ protected:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
 private:
-    std::shared_ptr<common::BlockMemoryPool> _alloter;
+    std::shared_ptr<common::BlockMemoryPool> alloter_;
 
-    uint64_t _except_offset;
-    std::shared_ptr<common::IBufferChains> _recv_buffer;
-    std::unordered_map<uint64_t, std::shared_ptr<IFrame>> _out_order_frame;
+    // in order next data offset
+    uint64_t except_offset_;
+    // only use one recv buffer, since write data to ssl library do not need crypto level
+    std::shared_ptr<common::IBufferChains> recv_buffer_;
+    std::unordered_map<uint64_t, std::shared_ptr<IFrame>> out_order_frame_;
 
-    uint64_t _send_offset;
-    std::shared_ptr<common::IBufferChains> _send_buffers[NUM_ENCRYPTION_LEVELS];
+    // local data send offset
+    uint64_t send_offset_;
+    std::shared_ptr<common::IBufferChains> send_buffers_[NUM_ENCRYPTION_LEVELS];
 };
 
 }

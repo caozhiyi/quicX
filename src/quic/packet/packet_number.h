@@ -24,8 +24,8 @@ public:
     static uint64_t Decode(uint64_t largest_pn, uint64_t truncated_pn, uint64_t truncated_pn_bits);
 
 private:
-    PacketNumberSpace _space;
-    uint64_t _cur_packet_number[PNS_NUMBER];
+    PacketNumberSpace space_;
+    uint64_t cur_packet_number_[PNS_NUMBER];
 };
 
 }

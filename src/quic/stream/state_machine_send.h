@@ -1,8 +1,8 @@
-#ifndef QUIC_STREAM_SEND_STATE_MACHINE
-#define QUIC_STREAM_SEND_STATE_MACHINE
+#ifndef QUIC_STREAM_STATE_MACHINE_SEND
+#define QUIC_STREAM_STATE_MACHINE_SEND
 
 #include <cstdint>
-#include "quic/stream/state_machine_interface.h"
+#include "quic/stream/if_state_machine.h"
 
 namespace quicx {
 namespace quic {
@@ -44,11 +44,11 @@ sending stream states
 +-------+                   +-------+
 */
 
-class SendStreamStateMachine:
+class StreamStateMachineSend:
     public IStreamStateMachine {
 public:
-    SendStreamStateMachine(StreamState s = SS_READY);
-    ~SendStreamStateMachine();
+    StreamStateMachineSend(std::function<void()> stream_close_cb, StreamState state = SS_READY);
+    ~StreamStateMachineSend();
 
     // current send frame type
     bool OnFrame(uint16_t frame_type);

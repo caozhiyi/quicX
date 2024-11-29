@@ -2,7 +2,6 @@
 #define QUIC_STREAM_STREAM_ID_GENERATOR
 
 #include <cstdint>
-#include "quic/stream/type.h"
 
 namespace quicx {
 namespace quic {
@@ -27,9 +26,9 @@ public:
     static StreamDirection GetStreamDirection(uint64_t id);
 
 private:
-    StreamStarter _starter;
-    uint64_t _cur_bidirectional_id;
-    uint64_t _cur_unidirectional_id;
+    StreamStarter starter_;
+    uint64_t cur_bidirectional_id_;
+    uint64_t cur_unidirectional_id_;
 };
 
 }

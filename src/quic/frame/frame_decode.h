@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <vector>
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 #include "common/buffer/buffer_read_interface.h"
 
 namespace quicx {

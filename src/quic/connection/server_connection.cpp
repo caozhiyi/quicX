@@ -4,7 +4,7 @@
 #include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
 #include "common/network/io_handle.h"
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 #include "quic/packet/handshake_packet.h"
 #include "common/buffer/buffer_read_view.h"
 #include "quic/packet/header/long_header.h"

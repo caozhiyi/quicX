@@ -2,7 +2,7 @@
 #define QUIC_FRAME_PATH_CHALLENGE_FRAME
 
 #include "common/util/random.h"
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -23,11 +23,11 @@ public:
     bool CompareData(std::shared_ptr<PathResponseFrame> response);
 
     void MakeData();
-    uint8_t* GetData() { return _data; }
+    uint8_t* GetData() { return data_; }
 
 private:
-    uint8_t _data[__path_data_length];  // 8-byte field contains arbitrary data.
-    static std::shared_ptr<common::RangeRandom> _random;
+    uint8_t data_[__path_data_length];  // 8-byte field contains arbitrary data.
+    static std::shared_ptr<common::RangeRandom> random_;
 };
 
 }

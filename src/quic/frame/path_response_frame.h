@@ -17,10 +17,10 @@ public:
     virtual uint32_t EncodeSize();
 
     void SetData(uint8_t* data);
-    uint8_t* GetData() { return _data; }
+    uint8_t* GetData() { return data_; }
 
 private:
-    uint8_t _data[__path_data_length];  // 8-byte field contains arbitrary data.
+    uint8_t data_[__path_data_length];  // 8-byte field contains arbitrary data.
 };
 
 }

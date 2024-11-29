@@ -10,7 +10,7 @@ namespace quic {
 
 PathResponseFrame::PathResponseFrame(): 
     IFrame(FT_PATH_RESPONSE) {
-    memset(_data, 0, __path_data_length);
+    memset(data_, 0, __path_data_length);
 }
 
 PathResponseFrame::~PathResponseFrame() {
@@ -27,10 +27,10 @@ bool PathResponseFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
     buffer->MoveWritePt(pos - span.GetStart());
 
-    buffer->Write(_data, __path_data_length);
+    buffer->Write(data_, __path_data_length);
     return true;
 }
 
@@ -40,13 +40,13 @@ bool PathResponseFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_PATH_RESPONSE) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_PATH_RESPONSE) {
             return false;
         } 
     }
 
-    memcpy(_data, pos, __path_data_length);
+    memcpy(data_, pos, __path_data_length);
     pos += __path_data_length;
 
     buffer->MoveReadPt(pos - span.GetStart());
@@ -58,7 +58,7 @@ uint32_t PathResponseFrame::EncodeSize() {
 }
 
 void PathResponseFrame::SetData(uint8_t* data) {
-    memcpy(_data, data, __path_data_length);
+    memcpy(data_, data, __path_data_length);
 }
 
 }

@@ -4,14 +4,14 @@ namespace quicx {
 namespace quic {
 
 AckRange::AckRange():
-    _gap(0),
-    _ack_range_length(0) {
+    gap_(0),
+    ack_range_length_(0) {
 
 }
 
 AckRange::AckRange(uint64_t gap, uint64_t range):
-    _gap(gap),
-    _ack_range_length(range) {
+    gap_(gap),
+    ack_range_length_(range) {
 
 }
 

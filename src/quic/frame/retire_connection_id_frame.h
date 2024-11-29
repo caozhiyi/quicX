@@ -2,7 +2,7 @@
 #define QUIC_FRAME_RETIRE_CONNECTION_ID_FRAME
 
 #include <cstdint>
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -17,11 +17,11 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetSequenceNumber(uint64_t num) { _sequence_number = num; }
-    uint64_t GetSequenceNumber() { return _sequence_number; }
+    void SetSequenceNumber(uint64_t num) { sequence_number_ = num; }
+    uint64_t GetSequenceNumber() { return sequence_number_; }
 
 private:
-    uint64_t _sequence_number;  // the connection ID being retired.
+    uint64_t sequence_number_;  // the connection ID being retired.
 };
 
 }

@@ -7,8 +7,9 @@
 #include <vector>
 #include <cstdint>
 #include <unordered_map>
+
+#include "quic/stream/if_send_stream.h"
 #include "quic/connection/transport_param.h"
-#include "quic/stream/send_stream_interface.h"
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/connection/controler/flow_control.h"

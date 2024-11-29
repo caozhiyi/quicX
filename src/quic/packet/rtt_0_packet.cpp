@@ -10,18 +10,18 @@ namespace quicx {
 namespace quic {
 
 Rtt0Packet::Rtt0Packet():
-    _length(0),
-    _payload_offset(0),
-    _packet_num_offset(0) {
-    _header.GetLongHeaderFlag().SetPacketType(PT_0RTT);
+    length_(0),
+    payload_offset_(0),
+    packet_num_offset_(0) {
+    header_.GetLongHeaderFlag().SetPacketType(PT_0RTT);
 }
 
 Rtt0Packet::Rtt0Packet(uint8_t flag):
-    _length(0),
-    _payload_offset(0),
-    _packet_num_offset(0),
-    _header(flag) {
-    _header.GetLongHeaderFlag().SetPacketType(PT_0RTT);
+    length_(0),
+    payload_offset_(0),
+    packet_num_offset_(0),
+    header_(flag) {
+    header_.GetLongHeaderFlag().SetPacketType(PT_0RTT);
 }
 
 Rtt0Packet::~Rtt0Packet() {
@@ -29,7 +29,7 @@ Rtt0Packet::~Rtt0Packet() {
 }
 
 bool Rtt0Packet::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
-    if (!_header.EncodeHeader(buffer)) {
+    if (!header_.EncodeHeader(buffer)) {
         common::LOG_ERROR("encode header failed");
         return false;
     }
@@ -40,37 +40,37 @@ bool Rtt0Packet::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint8_t* end = span.GetEnd();
 
     // encode length
-    auto len = _payload.GetLength();
-    auto len1 = _header.GetPacketNumberLength();
-    auto len2 = _crypto_grapher ? _crypto_grapher->GetTagLength() : 0;
-    _length = _payload.GetLength() + _header.GetPacketNumberLength() + (_crypto_grapher ? _crypto_grapher->GetTagLength() : 0);
-    cur_pos = common::EncodeVarint(cur_pos, _length);
+    auto len = payload_.GetLength();
+    auto len1 = header_.GetPacketNumberLength();
+    auto len2 = crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0;
+    length_ = payload_.GetLength() + header_.GetPacketNumberLength() + (crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0);
+    cur_pos = common::EncodeVarint(cur_pos, length_);
 
     // encode packet number
-    _packet_num_offset = cur_pos - start_pos;
-    cur_pos = PacketNumber::Encode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
+    packet_num_offset_ = cur_pos - start_pos;
+    cur_pos = PacketNumber::Encode(cur_pos, header_.GetPacketNumberLength(), packet_number_);
 
     // encode payload 
-    if (!_crypto_grapher) {
-        _payload_offset = cur_pos - start_pos;
-        memcpy(cur_pos, _payload.GetStart(), _payload.GetLength());
-        cur_pos += _payload.GetLength();
+    if (!crypto_grapher_) {
+        payload_offset_ = cur_pos - start_pos;
+        memcpy(cur_pos, payload_.GetStart(), payload_.GetLength());
+        cur_pos += payload_.GetLength();
         buffer->MoveWritePt(cur_pos - span.GetStart());
         return true;
     }
 
      // encode payload whit encrypt
     buffer->MoveWritePt(cur_pos - start_pos);
-    auto header_span = _header.GetHeaderSrcData();
-    if(!_crypto_grapher->EncryptPacket(_packet_number, header_span, _payload, buffer)) {
+    auto header_span = header_.GetHeaderSrcData();
+    if(!crypto_grapher_->EncryptPacket(packet_number_, header_span, payload_, buffer)) {
         common::LOG_ERROR("encrypt payload failed.");
         return false;
     }
 
-    common::BufferSpan sample = common::BufferSpan(start_pos + _packet_num_offset + 4,
-    start_pos + _packet_num_offset + 4 + __header_protect_sample_length);
-    if(!_crypto_grapher->EncryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, _header.GetPacketNumberLength(),
-        _header.GetHeaderType() == PHT_SHORT_HEADER)) {
+    common::BufferSpan sample = common::BufferSpan(start_pos + packet_num_offset_ + 4,
+    start_pos + packet_num_offset_ + 4 + __header_protect_sample_length);
+    if(!crypto_grapher_->EncryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_, header_.GetPacketNumberLength(),
+        header_.GetHeaderType() == PHT_SHORT_HEADER)) {
         common::LOG_ERROR("encrypt header failed.");
         return false;
     }
@@ -79,7 +79,7 @@ bool Rtt0Packet::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
 }
 
 bool Rtt0Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer) {
-    if (!_header.DecodeHeader(buffer)) {
+    if (!header_.DecodeHeader(buffer)) {
         common::LOG_ERROR("decode header failed");
         return false;
     }
@@ -89,14 +89,14 @@ bool Rtt0Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer
     uint8_t* end = span.GetEnd();
 
     // decode length
-    cur_pos = common::DecodeVarint(cur_pos, end, _length);
+    cur_pos = common::DecodeVarint(cur_pos, end, length_);
 
     // decode cipher data
-    _packet_num_offset = cur_pos - span.GetStart();
-    cur_pos += _length;
+    packet_num_offset_ = cur_pos - span.GetStart();
+    cur_pos += length_;
 
     // set src data
-    _packet_src_data = std::move(common::BufferSpan(span.GetStart(), cur_pos));
+    packet_src_data_ = std::move(common::BufferSpan(span.GetStart(), cur_pos));
 
     // move buffer read point
     buffer->MoveReadPt(cur_pos - span.GetStart());
@@ -104,19 +104,19 @@ bool Rtt0Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer
 }
 
 bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
-    auto span = _packet_src_data;
+    auto span = packet_src_data_;
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();
     
-    if (!_crypto_grapher) {
+    if (!crypto_grapher_) {
         // decrypt packet number
-        cur_pos += _packet_num_offset;
-        cur_pos = PacketNumber::Decode(cur_pos, _header.GetPacketNumberLength(), _packet_number);
+        cur_pos += packet_num_offset_;
+        cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), packet_number_);
 
         // decode payload frames
-        _payload = common::BufferSpan(cur_pos, cur_pos + _length - _header.GetPacketNumberLength());
-        std::shared_ptr<common::BufferReadView> view = std::make_shared<common::BufferReadView>(_payload.GetStart(), _payload.GetEnd());
-        if(!DecodeFrames(view, _frames_list)) {
+        payload_ = common::BufferSpan(cur_pos, cur_pos + length_ - header_.GetPacketNumberLength());
+        std::shared_ptr<common::BufferReadView> view = std::make_shared<common::BufferReadView>(payload_.GetStart(), payload_.GetEnd());
+        if(!DecodeFrames(view, frames_list_)) {
             common::LOG_ERROR("decode frame failed.");
             return false;
         }
@@ -125,26 +125,26 @@ bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     
     // decrypt header
     uint8_t packet_num_len = 0;
-    common::BufferSpan header_span = _header.GetHeaderSrcData();
-    common::BufferSpan sample = common::BufferSpan(span.GetStart() + _packet_num_offset + 4,
-        span.GetStart() + _packet_num_offset + 4 + __header_protect_sample_length);
-    if(!_crypto_grapher->DecryptHeader(header_span, sample, header_span.GetLength() + _packet_num_offset, packet_num_len, 
-        _header.GetHeaderType() == PHT_SHORT_HEADER)) {
+    common::BufferSpan header_span = header_.GetHeaderSrcData();
+    common::BufferSpan sample = common::BufferSpan(span.GetStart() + packet_num_offset_ + 4,
+        span.GetStart() + packet_num_offset_ + 4 + __header_protect_sample_length);
+    if(!crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_, packet_num_len, 
+        header_.GetHeaderType() == PHT_SHORT_HEADER)) {
         common::LOG_ERROR("decrypt header failed.");
         return false;
     }
-    _header.SetPacketNumberLength(packet_num_len);
-    cur_pos += _packet_num_offset;
-    cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, _packet_number);
+    header_.SetPacketNumberLength(packet_num_len);
+    cur_pos += packet_num_offset_;
+    cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, packet_number_);
 
     // decrypt packet
-    auto payload = common::BufferSpan(cur_pos, cur_pos + _length - packet_num_len);
-    if(!_crypto_grapher->DecryptPacket(_packet_number, header_span, payload, buffer)) {
+    auto payload = common::BufferSpan(cur_pos, cur_pos + length_ - packet_num_len);
+    if(!crypto_grapher_->DecryptPacket(packet_number_, header_span, payload, buffer)) {
         common::LOG_ERROR("decrypt packet failed.");
         return false;
     }
 
-    if(!DecodeFrames(buffer, _frames_list)) {
+    if(!DecodeFrames(buffer, frames_list_)) {
         common::LOG_ERROR("decode frame failed.");
         return false;
     }
@@ -153,7 +153,7 @@ bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 void Rtt0Packet::SetPayload(common::BufferSpan payload) {
-    _payload = payload;
+    payload_ = payload;
 }
 
 }

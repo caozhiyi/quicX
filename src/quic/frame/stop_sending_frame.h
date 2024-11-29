@@ -2,7 +2,7 @@
 #define QUIC_FRAME_STOP_SENDiNG_FRAME
 
 #include <cstdint>
-#include "quic/frame/stream_frame_interface.h"
+#include "quic/frame/if_stream_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -17,11 +17,11 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetAppErrorCode(uint64_t err_code) { _app_error_code = err_code; }
-    uint64_t GetAppErrorCode() { return _app_error_code; }
+    void SetAppErrorCode(uint64_t err_code) { app_error_code_ = err_code; }
+    uint64_t GetAppErrorCode() { return app_error_code_; }
 
 private:
-    uint64_t _app_error_code; // the application protocol error code.
+    uint64_t app_error_code_; // the application protocol error code.
 };
 
 }

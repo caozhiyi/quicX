@@ -1,7 +1,7 @@
 #ifndef QUIC_FRAME_PADDING_FRAME
 #define QUIC_FRAME_PADDING_FRAME
 
-#include "quic/frame/frame_interface.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {

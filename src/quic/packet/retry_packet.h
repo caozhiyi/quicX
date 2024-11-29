@@ -5,7 +5,7 @@
 #include <memory>
 #include "quic/packet/type.h"
 #include "common/buffer/buffer_span.h"
-#include "quic/packet/packet_interface.h"
+#include "quic/packet/if_packet.h"
 #include "quic/packet/header/long_header.h"
 
 namespace quicx {
@@ -39,18 +39,18 @@ public:
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) { return true; }
 
-    virtual IHeader* GetHeader() { return &_header; }
+    virtual IHeader* GetHeader() { return &header_; }
 
-    void SetRetryToken(common::BufferSpan toekn) { _retry_token = toekn; }
-    common::BufferSpan& GetRetryToken() { return _retry_token; }
+    void SetRetryToken(common::BufferSpan toekn) { retry_token_ = toekn; }
+    common::BufferSpan& GetRetryToken() { return retry_token_; }
 
     void SetRetryIntegrityTag(uint8_t* tag);
     uint8_t* GetRetryIntegrityTag();
 
 private:
-    LongHeader _header;
-    common::BufferSpan _retry_token;
-    uint8_t _retry_integrity_tag[__retry_integrity_tag_length];
+    LongHeader header_;
+    common::BufferSpan retry_token_;
+    uint8_t retry_integrity_tag_[__retry_integrity_tag_length];
 };
 
 }

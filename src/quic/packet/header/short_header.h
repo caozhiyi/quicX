@@ -4,7 +4,7 @@
 
 #include <memory>
 #include "quic/common/constants.h"
-#include "quic/packet/header/header_interface.h"
+#include "quic/packet/header/if_header.h"
 
 namespace quicx {
 namespace quic {
@@ -21,11 +21,11 @@ public:
     virtual uint32_t EncodeHeaderSize();
 
     void SetDestinationConnectionId(uint8_t* id, uint8_t len);
-    uint8_t GetDestinationConnectionIdLength() { return _destination_connection_id_length; }
-    const uint8_t* GetDestinationConnectionId()  { return _destination_connection_id; }
+    uint8_t GetDestinationConnectionIdLength() { return destination_connection_id_length_; }
+    const uint8_t* GetDestinationConnectionId()  { return destination_connection_id_; }
 protected:
-    uint32_t _destination_connection_id_length;
-    uint8_t _destination_connection_id[__max_connection_length];
+    uint32_t destination_connection_id_length_;
+    uint8_t destination_connection_id_[__max_connection_length];
 };
 
 }

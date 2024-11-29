@@ -5,8 +5,8 @@
 #include "quic/frame/type.h"
 #include "quic/packet/type.h"
 #include "common/buffer/buffer_span.h"
-#include "quic/frame/frame_interface.h"
-#include "quic/packet/header/header_interface.h"
+#include "quic/frame/if_frame.h"
+#include "quic/packet/header/if_header.h"
 #include "quic/crypto/cryptographer_interface.h"
 #include "common/buffer/buffer_read_interface.h"
 #include "common/buffer/buffer_write_interface.h"
@@ -16,7 +16,7 @@ namespace quic {
 
 class IPacket {
 public:
-    IPacket(): _frame_type_bit(0), _packet_number(0) {}
+    IPacket(): frame_type_bit_(0), packet_number_(0) {}
     virtual ~IPacket() {}
 
     virtual uint16_t GetCryptoLevel() const = 0;
@@ -28,24 +28,24 @@ public:
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames();
 
     uint32_t GetPacketNumOffset() { return 0; };
-    uint64_t GetPacketNumber() { return _packet_number; }
-    void SetPacketNumber(uint64_t num) { _packet_number = num; }
+    uint64_t GetPacketNumber() { return packet_number_; }
+    void SetPacketNumber(uint64_t num) { packet_number_ = num; }
 
-    common::BufferSpan& GetSrcBuffer() { return _packet_src_data; }
+    common::BufferSpan& GetSrcBuffer() { return packet_src_data_; }
 
-    void AddFrameTypeBit(FrameTypeBit bit) { _frame_type_bit |= bit; }
-    uint32_t GetFrameTypeBit() { return _frame_type_bit; }
+    void AddFrameTypeBit(FrameTypeBit bit) { frame_type_bit_ |= bit; }
+    uint32_t GetFrameTypeBit() { return frame_type_bit_; }
 
     virtual void SetPayload(common::BufferSpan payload) {}
 
-    void SetCryptographer(std::shared_ptr<ICryptographer> crypto_grapher) { _crypto_grapher = crypto_grapher; }
+    void SetCryptographer(std::shared_ptr<ICryptographer> crypto_grapher) { crypto_grapher_ = crypto_grapher; }
     
 protected:
-    uint32_t _frame_type_bit;
-    uint64_t _packet_number; /*encryption protection*/
-    common::BufferSpan _packet_src_data;
+    uint32_t frame_type_bit_;
+    uint64_t packet_number_; /*encryption protection*/
+    common::BufferSpan packet_src_data_;
 
-    std::shared_ptr<ICryptographer> _crypto_grapher;
+    std::shared_ptr<ICryptographer> crypto_grapher_;
 };
 
 }

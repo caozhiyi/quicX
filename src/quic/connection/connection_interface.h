@@ -5,10 +5,10 @@
 #include "quic/crypto/tls/type.h"
 #include "common/network/address.h"
 #include "quic/stream/send_stream.h"
-#include "quic/packet/packet_interface.h"
+#include "quic/packet/if_packet.h"
 #include "quic/crypto/tls/tls_conneciton.h"
 #include "quic/stream/bidirection_stream.h"
-#include "quic/frame/stream_frame_interface.h"
+#include "quic/frame/if_stream_frame.h"
 
 namespace quicx {
 namespace quic {

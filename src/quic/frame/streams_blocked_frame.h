@@ -2,7 +2,7 @@
 #define QUIC_FRAME_STREAMS_BLOCKED_FRAME
 
 #include <cstdint>
-#include "quic/frame/stream_frame_interface.h"
+#include "quic/frame/if_stream_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -17,11 +17,11 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    void SetMaximumStreams(uint64_t max) { _maximum_streams = max; }
-    uint64_t GetMaximumStreams() { return _maximum_streams; }
+    void SetMaximumStreams(uint64_t max) { maximum_streams_ = max; }
+    uint64_t GetMaximumStreams() { return maximum_streams_; }
 
 private:
-    uint32_t _maximum_streams;  // the stream limit at the time the frame was sent.
+    uint32_t maximum_streams_;  // the stream limit at the time the frame was sent.
 };
 
 }

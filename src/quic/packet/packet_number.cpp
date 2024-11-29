@@ -5,11 +5,11 @@ namespace quicx {
 namespace quic {
 
 PacketNumber::PacketNumber() {
-    memset(_cur_packet_number, 0, sizeof(_cur_packet_number));
+    memset(cur_packet_number_, 0, sizeof(cur_packet_number_));
 }
 
 uint64_t PacketNumber::NextPakcetNumber(PacketNumberSpace space) {
-    return ++_cur_packet_number[space];
+    return ++cur_packet_number_[space];
 }
 
 uint32_t PacketNumber::GetPacketNumberLength(uint64_t packet_number) {

@@ -6,7 +6,7 @@
 #include "quic/packet/type.h"
 #include "common/timer/timer_task.h"
 #include "common/timer/timer_interface.h"
-#include "quic/packet/packet_interface.h"
+#include "quic/packet/if_packet.h"
 #include "quic/connection/controler/rtt_calculator.h"
 
 namespace quicx {

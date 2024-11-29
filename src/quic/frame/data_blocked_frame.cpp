@@ -9,7 +9,7 @@ namespace quic {
 
 DataBlockedFrame::DataBlockedFrame():
     IFrame(FT_DATA_BLOCKED),
-    _maximum_data(0) {
+    maximum_data_(0) {
 
 }
 
@@ -28,8 +28,8 @@ bool DataBlockedFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _maximum_data);
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, maximum_data_);
 
     buffer->MoveWritePt(pos - span.GetStart());
     return true;
@@ -41,12 +41,12 @@ bool DataBlockedFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool 
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_DATA_BLOCKED) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_DATA_BLOCKED) {
             return false;
         }
     }
-    pos = common::DecodeVarint(pos, end, _maximum_data);
+    pos = common::DecodeVarint(pos, end, maximum_data_);
 
     buffer->MoveReadPt(pos - span.GetStart());
     return true;

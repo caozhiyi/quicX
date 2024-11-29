@@ -5,7 +5,7 @@
 #include "common/buffer/buffer_chains.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
-#include "quic/stream/recv_state_machine.h"
+#include "quic/stream/state_machine_recv.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/connection/connection_interface.h"
 #include "quic/frame/stream_data_blocked_frame.h"
@@ -15,27 +15,24 @@ namespace quic {
 
 RecvStream::RecvStream(std::shared_ptr<common::BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
     IRecvStream(id),
-    _local_data_limit(init_data_limit),
-    _final_offset(0),
-    _except_offset(0) {
-    _recv_machine = std::shared_ptr<RecvStreamStateMachine>();
-    _recv_machine->SetStreamCloseCB(std::bind(&IStream::NoticeToClose, this));
-    _recv_buffer = std::make_shared<common::BufferChains>(alloter);
-
+    local_data_limit_(init_data_limit),
+    final_offset_(0),
+    except_offset_(0) {
+    recv_buffer_ = std::make_shared<common::BufferChains>(alloter);
 }
 
 RecvStream::~RecvStream() {
 
 }
 
-void RecvStream::Close(uint64_t error) {
-    if (_recv_machine->CanSendStopSendingFrame()) {
+void RecvStream::Reset(uint64_t error) {
+    if (recv_machine_->CanSendStopSendingFrame()) {
         auto stop_frame = std::make_shared<StopSendingFrame>();
-        stop_frame->SetStreamID(_stream_id);
+        stop_frame->SetStreamID(stream_id_);
         stop_frame->SetAppErrorCode(error);
 
-        _frames_list.emplace_back(stop_frame);
-        ActiveToSend();
+        frames_list_.emplace_back(stop_frame);
+        ToSend();
     }
 }
 
@@ -62,9 +59,9 @@ uint32_t RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
 IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
     IStream::TrySendData(nullptr);
 
-    for (auto iter = _frames_list.begin(); iter != _frames_list.end();) {
+    for (auto iter = frames_list_.begin(); iter != frames_list_.end();) {
         if (visitor->HandleFrame(*iter)) {
-            iter = _frames_list.erase(iter);
+            iter = frames_list_.erase(iter);
 
         } else {
             return TSR_FAILED;
@@ -74,15 +71,15 @@ IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
 }
 
 uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
-    if(!_recv_machine->OnFrame(frame->GetType())) {
+    if(!recv_machine_->OnFrame(frame->GetType())) {
         return 0;
     }
 
     // check flow control
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
-    if (stream_frame->GetOffset() + stream_frame->GetLength() > _local_data_limit) {
-        if (_connection_close_cb) {
-            _connection_close_cb(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "stream recv data exceeding flow control limits.");
+    if (stream_frame->GetOffset() + stream_frame->GetLength() > local_data_limit_) {
+        if (connection_close_cb_) {
+            connection_close_cb_(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "stream recv data exceeding flow control limits.");
         }
         return 0;
     }
@@ -90,71 +87,71 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // check stream frame whit fin
     if (stream_frame->IsFin()) {
         uint64_t fin_offset = stream_frame->GetOffset() + stream_frame->GetLength();
-        if (_final_offset != 0 && fin_offset != _final_offset) {
+        if (final_offset_ != 0 && fin_offset != final_offset_) {
             common::LOG_ERROR("invalid final size. size:%d", fin_offset);
-            if (_connection_close_cb) {
-                _connection_close_cb(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
+            if (connection_close_cb_) {
+                connection_close_cb_(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
             }
             return 0;
         }
-        _final_offset = fin_offset;
+        final_offset_ = fin_offset;
     }
     
 
-    if (stream_frame->GetOffset() == _except_offset) {
-        _recv_buffer->Write(stream_frame->GetData(), stream_frame->GetLength());
-        _except_offset += stream_frame->GetLength();
+    if (stream_frame->GetOffset() == except_offset_) {
+        recv_buffer_->Write(stream_frame->GetData(), stream_frame->GetLength());
+        except_offset_ += stream_frame->GetLength();
 
         while (true) {
-            auto iter = _out_order_frame.find(_except_offset);
-            if (iter == _out_order_frame.end()) {
+            auto iter = out_order_frame_.find(except_offset_);
+            if (iter == out_order_frame_.end()) {
                 break;
             }
 
             stream_frame = std::dynamic_pointer_cast<StreamFrame>(iter->second);
-            _recv_buffer->Write(stream_frame->GetData(), stream_frame->GetLength());
-            _except_offset += stream_frame->GetLength();
-            _out_order_frame.erase(iter);
+            recv_buffer_->Write(stream_frame->GetData(), stream_frame->GetLength());
+            except_offset_ += stream_frame->GetLength();
+            out_order_frame_.erase(iter);
         }
         
-        if (_final_offset != 0 && _final_offset == _except_offset && _out_order_frame.empty()) {
-            _recv_machine->RecvAllData();
+        if (final_offset_ != 0 && final_offset_ == except_offset_ && out_order_frame_.empty()) {
+            recv_machine_->RecvAllData();
         }
 
-        if (_recv_cb) {
-            _recv_cb(_recv_buffer, 100); // TODO make error code. close
+        if (recv_cb_) {
+            recv_cb_(recv_buffer_, 100); // TODO make error code. close
         }
 
-        if (_recv_machine->CanAppReadAllData()) {
-            _recv_machine->AppReadAllData();
+        if (recv_machine_->CanAppReadAllData()) {
+            recv_machine_->AppReadAllData();
         }
 
     } else {
         // recv a repeat packet
-        if (_out_order_frame.find(stream_frame->GetOffset()) != _out_order_frame.end() ||
-            stream_frame->GetOffset() < _except_offset) {
+        if (out_order_frame_.find(stream_frame->GetOffset()) != out_order_frame_.end() ||
+            stream_frame->GetOffset() < except_offset_) {
             return 0;
         }
         
-        _out_order_frame[stream_frame->GetOffset()] = stream_frame;
+        out_order_frame_[stream_frame->GetOffset()] = stream_frame;
     }
 
     // TODO put number to config
-    if (_local_data_limit - _except_offset < 3096) {
-        if (_recv_machine->CanSendMaxStrameDataFrame()) {
-            _local_data_limit += 3096;
+    if (local_data_limit_ - except_offset_ < 3096) {
+        if (recv_machine_->CanSendMaxStrameDataFrame()) {
+            local_data_limit_ += 3096;
             auto max_frame = std::make_shared<MaxStreamDataFrame>();
-            max_frame->SetStreamID(_stream_id);
-            max_frame->SetMaximumData(_local_data_limit);
+            max_frame->SetStreamID(stream_id_);
+            max_frame->SetMaximumData(local_data_limit_);
     
-            ActiveToSend();
+            ToSend();
         }
     }
     return stream_frame->GetLength();
 }
 
 void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
-    if(!_recv_machine->OnFrame(frame->GetType())) {
+    if(!recv_machine_->OnFrame(frame->GetType())) {
         return;
     }
     
@@ -162,34 +159,34 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     common::LOG_WARN("peer send block. offset:%d", block_frame->GetMaximumData());
 
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
-    max_frame->SetStreamID(_stream_id);
-    max_frame->SetMaximumData(_local_data_limit + 3096); // TODO. define increase steps
-    _frames_list.emplace_back(max_frame);
+    max_frame->SetStreamID(stream_id_);
+    max_frame->SetMaximumData(local_data_limit_ + 3096); // TODO. define increase steps
+    frames_list_.emplace_back(max_frame);
 
-    ActiveToSend();
+    ToSend();
 }
 
 void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
-    if(!_recv_machine->OnFrame(frame->GetType())) {
+    if(!recv_machine_->OnFrame(frame->GetType())) {
         return;
     }
     
     auto reset_frame = std::dynamic_pointer_cast<ResetStreamFrame>(frame);
     uint64_t fin_offset = reset_frame->GetFinalSize();
 
-    if (_final_offset != 0 && fin_offset != _final_offset) {
+    if (final_offset_ != 0 && fin_offset != final_offset_) {
         common::LOG_ERROR("invalid final size. size:%d", fin_offset);
-        if (_connection_close_cb) {
-            _connection_close_cb(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
+        if (connection_close_cb_) {
+            connection_close_cb_(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
         }
         return;
     }
 
-    _final_offset = fin_offset;
+    final_offset_ = fin_offset;
 
     // TODO delay call it
-    if (_recv_cb) {
-        _recv_cb(_recv_buffer, reset_frame->GetAppErrorCode());
+    if (recv_cb_) {
+        recv_cb_(recv_buffer_, reset_frame->GetAppErrorCode());
     }
 }
 

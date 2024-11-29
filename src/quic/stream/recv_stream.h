@@ -5,8 +5,8 @@
 #include <string>
 #include <functional>
 #include <unordered_map>
-#include "quic/stream/recv_stream_interface.h"
-#include "quic/stream/frame_visitor_interface.h"
+#include "quic/stream/if_recv_stream.h"
+#include "quic/stream/if_frame_visitor.h"
 
 namespace quicx {
 namespace quic {
@@ -18,7 +18,7 @@ public:
     ~RecvStream();
 
     // close the stream
-    virtual void Close(uint64_t error = 0);
+    virtual void Reset(uint64_t error);
 
     // process recv frames
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
@@ -32,13 +32,13 @@ protected:
     void OnResetStreamFrame(std::shared_ptr<IFrame> frame);
 
 protected:
-    uint64_t _final_offset;
+    uint64_t final_offset_;
     // peer send data limit
-    uint32_t _local_data_limit;
+    uint32_t local_data_limit_;
     // next except data offset
-    uint64_t _except_offset;
-    std::shared_ptr<common::IBufferChains> _recv_buffer;
-    std::unordered_map<uint64_t, std::shared_ptr<IFrame>> _out_order_frame;
+    uint64_t except_offset_;
+    std::shared_ptr<common::IBufferChains> recv_buffer_;
+    std::unordered_map<uint64_t, std::shared_ptr<IFrame>> out_order_frame_;
 };
 
 }

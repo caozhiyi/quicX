@@ -9,17 +9,17 @@ namespace quic {
 
 ConnectionCloseFrame::ConnectionCloseFrame():
     IFrame(FT_CONNECTION_CLOSE),
-    _is_application_error(false),
-    _error_code(0),
-    _err_frame_type(0) {
+    is_application_error_(false),
+    error_code_(0),
+    err_frame_type_(0) {
 
 }
 
 ConnectionCloseFrame::ConnectionCloseFrame(uint16_t frame_type):
     IFrame(frame_type),
-     _is_application_error(false),
-    _error_code(0),
-    _err_frame_type(0) {
+     is_application_error_(false),
+    error_code_(0),
+    err_frame_type_(0) {
 
 }
 
@@ -38,13 +38,13 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) 
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, _frame_type);
-    pos = common::EncodeVarint(pos, _error_code);
-    pos = common::EncodeVarint(pos, _err_frame_type);
-    pos = common::EncodeVarint(pos, _reason.length());
+    pos = common::FixedEncodeUint16(pos, frame_type_);
+    pos = common::EncodeVarint(pos, error_code_);
+    pos = common::EncodeVarint(pos, err_frame_type_);
+    pos = common::EncodeVarint(pos, reason_.length());
 
     buffer->MoveWritePt(pos - span.GetStart());
-    buffer->Write((uint8_t*)_reason.data(), _reason.length());
+    buffer->Write((uint8_t*)reason_.data(), reason_.length());
     return true;
 }
 
@@ -56,15 +56,15 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, b
     uint8_t* end = span.GetEnd();
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, _frame_type);
-        if (_frame_type != FT_CONNECTION_CLOSE) {
+        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        if (frame_type_ != FT_CONNECTION_CLOSE) {
             return false;
         }
     }
 
     uint32_t reason_length = 0;
-    pos = common::DecodeVarint(pos, end, _error_code);
-    pos = common::DecodeVarint(pos, end, _err_frame_type);
+    pos = common::DecodeVarint(pos, end, error_code_);
+    pos = common::DecodeVarint(pos, end, err_frame_type_);
     pos = common::DecodeVarint(pos, end, reason_length);
     
     buffer->MoveReadPt(pos - span.GetStart());
@@ -75,8 +75,8 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, b
         return false;
     }
     
-    _reason.clear();
-    _reason.append((const char*)span.GetStart(), reason_length);
+    reason_.clear();
+    reason_.append((const char*)span.GetStart(), reason_length);
     buffer->MoveReadPt(reason_length);
     return true;
 }

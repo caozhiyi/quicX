@@ -17,7 +17,7 @@ public:
     // reset the stream
     virtual void Reset(uint64_t error);
 
-    virtual void Close(uint64_t error = 0);
+    virtual void Close();
 
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
 

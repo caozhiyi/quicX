@@ -4,7 +4,7 @@
 #include <memory>
 #include "quic/packet/type.h"
 #include "quic/common/constants.h"
-#include "quic/packet/header/header_interface.h"
+#include "quic/packet/header/if_header.h"
 
 namespace quicx {
 namespace quic {
@@ -20,25 +20,25 @@ public:
     virtual bool DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false);
     virtual uint32_t EncodeHeaderSize();
 
-    void SetVersion(uint32_t version) { _version = version; } 
-    uint32_t GetVersion() const {  return _version; }
+    void SetVersion(uint32_t version) { version_ = version; } 
+    uint32_t GetVersion() const {  return version_; }
 
     void SetDestinationConnectionId(uint8_t* id, uint8_t len);
-    uint8_t GetDestinationConnectionIdLength() { return _destination_connection_id_length; }
-    const uint8_t* GetDestinationConnectionId()  { return _destination_connection_id; }
+    uint8_t GetDestinationConnectionIdLength() { return destination_connection_id_length_; }
+    const uint8_t* GetDestinationConnectionId()  { return destination_connection_id_; }
 
     void SetSourceConnectionId(uint8_t* id, uint8_t len);
-    uint8_t GetSourceConnectionIdLength() { return _source_connection_id_length; }
-    const uint8_t* GetSourceConnectionId()  { return _source_connection_id; }
+    uint8_t GetSourceConnectionIdLength() { return source_connection_id_length_; }
+    const uint8_t* GetSourceConnectionId()  { return source_connection_id_; }
 
 protected:
-    uint32_t _version;
+    uint32_t version_;
 
-    uint8_t _destination_connection_id_length;
-    uint8_t _destination_connection_id[__max_connection_length];
+    uint8_t destination_connection_id_length_;
+    uint8_t destination_connection_id_[__max_connection_length];
 
-    uint8_t _source_connection_id_length;
-    uint8_t _source_connection_id[__max_connection_length];
+    uint8_t source_connection_id_length_;
+    uint8_t source_connection_id_[__max_connection_length];
 };
 
 }
