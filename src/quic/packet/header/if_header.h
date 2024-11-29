@@ -1,5 +1,5 @@
-#ifndef QUIC_PACKET_HEADER_HEADER_INTERFACE
-#define QUIC_PACKET_HEADER_HEADER_INTERFACE
+#ifndef QUIC_PACKET_HEADER_IF_HEADER
+#define QUIC_PACKET_HEADER_IF_HEADER
 
 
 #include <cstdint>
@@ -26,9 +26,9 @@ public:
     virtual void SetDestinationConnectionId(uint8_t* id, uint8_t len) = 0;
     virtual uint8_t GetDestinationConnectionIdLength() = 0;
     
-    virtual common::BufferSpan& GetHeaderSrcData() { return _header_src_data; }
+    virtual common::BufferSpan& GetHeaderSrcData() { return header_src_data_; }
 protected:
-    common::BufferSpan _header_src_data;
+    common::BufferSpan header_src_data_;
 };
 
 }

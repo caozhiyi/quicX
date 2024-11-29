@@ -1,7 +1,7 @@
 #ifndef QUIC_CONNECTION_PACKET_VISITOR_INTERFACE
 #define QUIC_CONNECTION_PACKET_VISITOR_INTERFACE
 
-#include "quic/packet/packet_interface.h"
+#include "quic/packet/if_packet.h"
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {

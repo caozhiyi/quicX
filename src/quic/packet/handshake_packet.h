@@ -4,7 +4,7 @@
 
 #include <memory>
 #include "quic/packet/type.h"
-#include "quic/packet/packet_interface.h"
+#include "quic/packet/if_packet.h"
 #include "quic/packet/header/long_header.h"
 
 namespace quicx {
@@ -22,23 +22,23 @@ public:
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer);
 
-    virtual IHeader* GetHeader() { return &_header; }
-    virtual uint32_t GetPacketNumOffset() { return _packet_num_offset; }
+    virtual IHeader* GetHeader() { return &header_; }
+    virtual uint32_t GetPacketNumOffset() { return packet_num_offset_; }
 
-    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return _frames_list; }
+    virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return frames_list_; }
 
     void SetPayload(common::BufferSpan payload);
-    common::BufferSpan GetPayload() { return _payload; }
-    uint32_t GetLength() { return _length; }
+    common::BufferSpan GetPayload() { return payload_; }
+    uint32_t GetLength() { return length_; }
 
 private:
-    LongHeader _header;
-    uint32_t _length;
-    common::BufferSpan _payload;
+    LongHeader header_;
+    uint32_t length_;
+    common::BufferSpan payload_;
 
-    uint32_t _payload_offset;
-    uint32_t _packet_num_offset;
-    std::vector<std::shared_ptr<IFrame>> _frames_list;
+    uint32_t payload_offset_;
+    uint32_t packet_num_offset_;
+    std::vector<std::shared_ptr<IFrame>> frames_list_;
 };
 
 }

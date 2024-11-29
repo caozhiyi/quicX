@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 #include "quic/packet/type.h"
-#include "quic/packet/packet_interface.h"
+#include "quic/packet/if_packet.h"
 #include "quic/packet/header/long_header.h"
 
 namespace quicx {
@@ -22,15 +22,15 @@ public:
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) { return true; }
 
-    virtual IHeader* GetHeader() { return &_header; }
+    virtual IHeader* GetHeader() { return &header_; }
 
     void SetSupportVersion(std::vector<uint32_t> versions);
     void AddSupportVersion(uint32_t version);
-    const std::vector<uint32_t>& GetSupportVersion() { return _support_version; }
+    const std::vector<uint32_t>& GetSupportVersion() { return support_version_; }
 
 private:
-    LongHeader _header;
-    std::vector<uint32_t> _support_version;
+    LongHeader header_;
+    std::vector<uint32_t> support_version_;
 };
 
 }

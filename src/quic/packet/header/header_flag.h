@@ -10,35 +10,35 @@ namespace quicx {
 namespace quic {
 
 struct LongHeaderFlag {
-    uint8_t _packet_number_length:2; /*encryption protection*/ // must set when encode and decode
-    uint8_t _reserved_bits:2;        /*encryption protection*/
-    uint8_t _packet_type:2;
-    uint8_t _fix_bit:1;
-    uint8_t _header_form:1;
+    uint8_t packet_number_length_:2; /*encryption protection*/ // must set when encode and decode
+    uint8_t reserved_bits_:2;        /*encryption protection*/
+    uint8_t packet_type_:2;
+    uint8_t fix_bit_:1;
+    uint8_t header_form_:1;
 
-    uint8_t GetReservedBits() { return _reserved_bits; }
-    void SetReservedBits(uint8_t bits) { _reserved_bits = bits; }
+    uint8_t GetReservedBits() { return reserved_bits_; }
+    void SetReservedBits(uint8_t bits) { reserved_bits_ = bits; }
 
-    uint8_t GetPacketType() { return _packet_type; }
-    void SetPacketType(uint8_t type) { _packet_type = type; }
+    uint8_t GetPacketType() { return packet_type_; }
+    void SetPacketType(uint8_t type) { packet_type_ = type; }
 };
 
 struct ShortHeaderFlag {
-    uint8_t _packet_number_length:2; /*encryption protection*/
-    uint8_t _key_phase:1;            /*encryption protection*/
-    uint8_t _reserved_bits:2;        /*encryption protection*/
-    uint8_t _spin_bit:1;
-    uint8_t _fix_bit:1;
-    uint8_t _header_form:1;
+    uint8_t packet_number_length_:2; /*encryption protection*/
+    uint8_t key_phase_:1;            /*encryption protection*/
+    uint8_t reserved_bits_:2;        /*encryption protection*/
+    uint8_t spin_bit_:1;
+    uint8_t fix_bit_:1;
+    uint8_t header_form_:1;
 
-    uint8_t GetKeyPhase() { return _key_phase; }
-    void SetKeyPhase(uint8_t phase) { _key_phase = phase; }
+    uint8_t GetKeyPhase() { return key_phase_; }
+    void SetKeyPhase(uint8_t phase) { key_phase_ = phase; }
 
-    uint8_t GetReservedBits() { return _reserved_bits; }
-    void SetReservedBits(uint8_t bits) { _reserved_bits = bits; }
+    uint8_t GetReservedBits() { return reserved_bits_; }
+    void SetReservedBits(uint8_t bits) { reserved_bits_ = bits; }
 
-    uint8_t GetSpinBit() { return _spin_bit; }
-    void SetSpinBit(uint8_t bit) { _spin_bit = bit; }
+    uint8_t GetSpinBit() { return spin_bit_; }
+    void SetSpinBit(uint8_t bit) { spin_bit_ = bit; }
 };
 
 class HeaderFlag {
@@ -53,25 +53,25 @@ public:
     virtual uint32_t EncodeFlagSize();
 
     virtual PacketHeaderType GetHeaderType() const;
-    uint8_t GetFixBit() const { return _flag._long_header_flag._fix_bit; } 
+    uint8_t GetFixBit() const { return flag_.long_header_flag_.fix_bit_; } 
 
     virtual PacketType GetPacketType();
 
-    uint8_t GetFlag() { return _flag._header_flag; }
+    uint8_t GetFlag() { return flag_.header_flag_; }
 
-    uint8_t GetPacketNumberLength() { return _flag._long_header_flag._packet_number_length; }
+    uint8_t GetPacketNumberLength() { return flag_.long_header_flag_.packet_number_length_; }
     void SetPacketNumberLength(uint8_t len) { 
-        _flag._long_header_flag._packet_number_length = len;
+        flag_.long_header_flag_.packet_number_length_ = len;
     }
-    LongHeaderFlag& GetLongHeaderFlag() { return _flag._long_header_flag; }
-    ShortHeaderFlag& GetShortHeaderFlag() { return _flag._short_header_flag; }
+    LongHeaderFlag& GetLongHeaderFlag() { return flag_.long_header_flag_; }
+    ShortHeaderFlag& GetShortHeaderFlag() { return flag_.short_header_flag_; }
 
 protected:
     union HeaderFlagUnion {
-        uint8_t _header_flag;
-        LongHeaderFlag  _long_header_flag;
-        ShortHeaderFlag _short_header_flag;
-    } _flag;
+        uint8_t header_flag_;
+        LongHeaderFlag  long_header_flag_;
+        ShortHeaderFlag short_header_flag_;
+    } flag_;
 };
 
 }

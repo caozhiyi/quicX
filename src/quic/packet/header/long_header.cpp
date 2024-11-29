@@ -13,17 +13,17 @@ namespace quic {
 
 LongHeader::LongHeader():
     IHeader(PHT_LONG_HEADER),
-    _version(0),
-    _destination_connection_id_length(0),
-    _source_connection_id_length(0) {
+    version_(0),
+    destination_connection_id_length_(0),
+    source_connection_id_length_(0) {
 
 }
 
 LongHeader::LongHeader(uint8_t flag):
     IHeader(flag),
-    _version(0),
-    _destination_connection_id_length(0),
-    _source_connection_id_length(0) {
+    version_(0),
+    destination_connection_id_length_(0),
+    source_connection_id_length_(0) {
 
 }
 
@@ -48,22 +48,22 @@ bool LongHeader::EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) {
     uint8_t* cur_pos = span.GetStart();
 
     // encode version
-    cur_pos = common::FixedEncodeUint32(cur_pos, _version);
+    cur_pos = common::FixedEncodeUint32(cur_pos, version_);
     
     // encode dcid
-    cur_pos = common::FixedEncodeUint8(cur_pos, _destination_connection_id_length);
-    if (_destination_connection_id_length > 0) {
-        memcpy(cur_pos, _destination_connection_id, _destination_connection_id_length);
-        cur_pos += _destination_connection_id_length;
+    cur_pos = common::FixedEncodeUint8(cur_pos, destination_connection_id_length_);
+    if (destination_connection_id_length_ > 0) {
+        memcpy(cur_pos, destination_connection_id_, destination_connection_id_length_);
+        cur_pos += destination_connection_id_length_;
     }
 
     // encode scid
-    cur_pos = common::FixedEncodeUint8(cur_pos, _source_connection_id_length);
-    if (_source_connection_id_length > 0) {
-        memcpy(cur_pos, _source_connection_id, _source_connection_id_length);
-        cur_pos += _source_connection_id_length;
+    cur_pos = common::FixedEncodeUint8(cur_pos, source_connection_id_length_);
+    if (source_connection_id_length_ > 0) {
+        memcpy(cur_pos, source_connection_id_, source_connection_id_length_);
+        cur_pos += source_connection_id_length_;
     }
-    _header_src_data = std::move(common::BufferSpan(span.GetStart() - 1, cur_pos));
+    header_src_data_ = std::move(common::BufferSpan(span.GetStart() - 1, cur_pos));
 
     buffer->MoveWritePt(cur_pos - span.GetStart());
     return true;
@@ -77,7 +77,7 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool 
     }
 
     // check flag fixed bit
-    if (!HeaderFlag::GetLongHeaderFlag()._fix_bit) {
+    if (!HeaderFlag::GetLongHeaderFlag().fix_bit_) {
         common::LOG_ERROR("quic fixed bit is not set");
         return false;
     }
@@ -87,19 +87,19 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool 
     uint8_t* end = span.GetEnd();
 
     // decode version
-    pos = common::FixedDecodeUint32(pos, end, _version);
+    pos = common::FixedDecodeUint32(pos, end, version_);
 
     // decode dcid
-    pos = common::FixedDecodeUint8(pos, end, _destination_connection_id_length);
-    memcpy(&_destination_connection_id, pos, _destination_connection_id_length);
-    pos += _destination_connection_id_length;
+    pos = common::FixedDecodeUint8(pos, end, destination_connection_id_length_);
+    memcpy(&destination_connection_id_, pos, destination_connection_id_length_);
+    pos += destination_connection_id_length_;
 
     // decode scid
-    pos = common::FixedDecodeUint8(pos, end, _source_connection_id_length);
-    memcpy(&_source_connection_id, pos, _source_connection_id_length);
-    pos += _source_connection_id_length;
+    pos = common::FixedDecodeUint8(pos, end, source_connection_id_length_);
+    memcpy(&source_connection_id_, pos, source_connection_id_length_);
+    pos += source_connection_id_length_;
  
-    _header_src_data = std::move(common::BufferSpan(span.GetStart() - 1, pos));
+    header_src_data_ = std::move(common::BufferSpan(span.GetStart() - 1, pos));
     
     buffer->MoveReadPt(pos - span.GetStart());
     return true;
@@ -110,13 +110,13 @@ uint32_t LongHeader::EncodeHeaderSize() {
 }
 
 void LongHeader::SetDestinationConnectionId(uint8_t* id, uint8_t len) {
-    _destination_connection_id_length = len;
-    memcpy(_destination_connection_id, id, len);
+    destination_connection_id_length_ = len;
+    memcpy(destination_connection_id_, id, len);
 }
 
 void LongHeader::SetSourceConnectionId(uint8_t* id, uint8_t len) {
-    _source_connection_id_length = len;
-    memcpy(_source_connection_id, id, len);
+    source_connection_id_length_ = len;
+    memcpy(source_connection_id_, id, len);
 }
 
 }

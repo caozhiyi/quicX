@@ -7,18 +7,18 @@ namespace quicx {
 namespace quic {
 
 HeaderFlag::HeaderFlag() { 
-    _flag._header_flag = 0;
-    _flag._long_header_flag._fix_bit = 1;
+    flag_.header_flag_ = 0;
+    flag_.long_header_flag_.fix_bit_ = 1;
 }
 
 HeaderFlag::HeaderFlag(PacketHeaderType type) {
-    _flag._header_flag = 0;
-    _flag._long_header_flag._header_form = type;
-    _flag._long_header_flag._fix_bit = 1;
+    flag_.header_flag_ = 0;
+    flag_.long_header_flag_.header_form_ = type;
+    flag_.long_header_flag_.fix_bit_ = 1;
 }
 
 HeaderFlag::HeaderFlag(uint8_t flag) {
-    _flag._header_flag = flag;
+    flag_.header_flag_ = flag;
 }
 
 bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBufferWrite> buffer) {
@@ -31,7 +31,7 @@ bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint8(pos, _flag._header_flag);
+    pos = common::FixedEncodeUint8(pos, flag_.header_flag_);
     buffer->MoveWritePt(pos - span.GetStart());
     return true;
 }
@@ -44,7 +44,7 @@ bool HeaderFlag::DecodeFlag(std::shared_ptr<common::IBufferRead> buffer) {
 
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
-    pos = common::FixedDecodeUint8(pos, end, _flag._header_flag);
+    pos = common::FixedDecodeUint8(pos, end, flag_.header_flag_);
     buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
@@ -54,7 +54,7 @@ uint32_t HeaderFlag::EncodeFlagSize() {
 }
 
 PacketHeaderType HeaderFlag::GetHeaderType() const {
-    return _flag._long_header_flag._header_form == 1 ? PHT_LONG_HEADER : PHT_SHORT_HEADER;
+    return flag_.long_header_flag_.header_form_ == 1 ? PHT_LONG_HEADER : PHT_SHORT_HEADER;
 }
 
 PacketType HeaderFlag::GetPacketType() {
@@ -71,7 +71,7 @@ PacketType HeaderFlag::GetPacketType() {
     case 0x03:
         return PT_RETRY;
     default:
-        common::LOG_ERROR("unknow packet type. type:%d", GetLongHeaderFlag()._packet_type);
+        common::LOG_ERROR("unknow packet type. type:%d", GetLongHeaderFlag().packet_type_);
         break;
     }
     return PT_UNKNOW;

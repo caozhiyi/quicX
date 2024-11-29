@@ -6,14 +6,14 @@ namespace quicx {
 namespace quic {
 
 VersionNegotiationPacket::VersionNegotiationPacket() {
-    _header.GetLongHeaderFlag().SetPacketType(PT_NEGOTIATION);
-    _header.SetVersion(0);
+    header_.GetLongHeaderFlag().SetPacketType(PT_NEGOTIATION);
+    header_.SetVersion(0);
 }
 
 VersionNegotiationPacket::VersionNegotiationPacket(uint8_t flag):
-    _header(flag) {
-    _header.GetLongHeaderFlag().SetPacketType(PT_NEGOTIATION);
-    _header.SetVersion(0);
+    header_(flag) {
+    header_.GetLongHeaderFlag().SetPacketType(PT_NEGOTIATION);
+    header_.SetVersion(0);
 
 }
 
@@ -22,7 +22,7 @@ VersionNegotiationPacket::~VersionNegotiationPacket() {
 }
 
 bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
-    if (!_header.EncodeHeader(buffer)) {
+    if (!header_.EncodeHeader(buffer)) {
         common::LOG_ERROR("encode header failed");
         return false;
     }
@@ -31,17 +31,17 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBufferWrite> buff
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
 
-    for (size_t i = 0; i < _support_version.size(); i++) {
-        cur_pos = common::FixedEncodeUint32(cur_pos, _support_version[i]);
+    for (size_t i = 0; i < support_version_.size(); i++) {
+        cur_pos = common::FixedEncodeUint32(cur_pos, support_version_[i]);
     }
     
-    _packet_src_data = std::move(common::BufferSpan(start_pos, cur_pos));
+    packet_src_data_ = std::move(common::BufferSpan(start_pos, cur_pos));
     buffer->MoveWritePt(cur_pos - span.GetStart());
     return true;
 }
 
 bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer) {
-    if (!_header.DecodeHeader(buffer)) {
+    if (!header_.DecodeHeader(buffer)) {
         common::LOG_ERROR("decode header failed");
         return false;
     }
@@ -50,22 +50,22 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
     uint8_t* cur_pos = span.GetStart();
 
     uint32_t version_count = (span.GetEnd() - span.GetStart()) / sizeof(uint32_t);
-    _support_version.resize(version_count);
+    support_version_.resize(version_count);
     for (size_t i = 0; i < version_count; i++) {
-        cur_pos = common::FixedDecodeUint32(cur_pos, span.GetEnd(), _support_version[i]);
+        cur_pos = common::FixedDecodeUint32(cur_pos, span.GetEnd(), support_version_[i]);
     }
 
-    _packet_src_data = std::move(common::BufferSpan(span.GetStart(), cur_pos));
+    packet_src_data_ = std::move(common::BufferSpan(span.GetStart(), cur_pos));
     buffer->MoveReadPt(cur_pos - span.GetStart());
     return true;
 }
 
 void VersionNegotiationPacket::SetSupportVersion(std::vector<uint32_t> versions) {
-    _support_version.insert(_support_version.end(), versions.begin(), versions.end());
+    support_version_.insert(support_version_.end(), versions.begin(), versions.end());
 }
 
 void VersionNegotiationPacket::AddSupportVersion(uint32_t version) {
-    _support_version.push_back(version);
+    support_version_.push_back(version);
 }
 
 }

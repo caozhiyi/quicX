@@ -7,7 +7,7 @@
 #include <cstdint>
 
 #include "common/network/address.h"
-#include "quic/packet/packet_interface.h"
+#include "quic/packet/if_packet.h"
 #include "common/buffer/buffer_interface.h"
 
 namespace quicx {
