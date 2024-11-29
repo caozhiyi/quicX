@@ -5,8 +5,8 @@
 #include "common/buffer/buffer_chains.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
-#include "quic/stream/recv_state_machine.h"
-#include "quic/stream/send_state_machine.h"
+#include "quic/stream/state_machine_recv.h"
+#include "quic/stream/state_machine_send.h"
 #include "quic/stream/bidirection_stream.h"
 
 namespace quicx {
@@ -26,12 +26,12 @@ BidirectionStream::~BidirectionStream() {
 
 void BidirectionStream::Reset(uint64_t error) {
     SendStream::Reset(error);
-    RecvStream::Close(error);
+    RecvStream::Reset(error);
 }
 
-void BidirectionStream::Close(uint64_t error) {
-    RecvStream::Close(error);
-    SendStream::Close(error);
+void BidirectionStream::Close() {
+    RecvStream::Close();
+    SendStream::Close();
 }
 
 uint32_t BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {

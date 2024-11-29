@@ -1,5 +1,5 @@
-#ifndef QUIC_STREAM_FRAME_VISITOR_INTERFACE
-#define QUIC_STREAM_FRAME_VISITOR_INTERFACE
+#ifndef QUIC_STREAM_IF_FRAME_VISITOR
+#define QUIC_STREAM_IF_FRAME_VISITOR
 
 #include <vector>
 #include "quic/crypto/tls/type.h"
@@ -9,13 +9,18 @@
 namespace quicx {
 namespace quic {
 
+/*
+ iterate all frames in connection, try to decode all data that can be sent
+*/
 class IFrameVisitor {
 public:
     IFrameVisitor() {}
     virtual ~IFrameVisitor() {}
 
+    // try to decode frame data, return true if decode success
     virtual bool HandleFrame(std::shared_ptr<IFrame> frame) = 0;
 
+    // return buffer that contains all data that can be sent
     virtual std::shared_ptr<common::IBuffer> GetBuffer() = 0;
 
     virtual uint8_t GetEncryptionLevel() = 0;

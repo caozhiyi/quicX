@@ -1,8 +1,8 @@
-#ifndef QUIC_STREAM_RECV_STATE_MACHINE
-#define QUIC_STREAM_RECV_STATE_MACHINE
+#ifndef QUIC_STREAM_STATE_MACHINE_RECV
+#define QUIC_STREAM_STATE_MACHINE_RECV
 
 #include <string>
-#include "quic/stream/state_machine_interface.h"
+#include "quic/stream/if_state_machine.h"
 
 namespace quicx {
 namespace quic {
@@ -42,10 +42,11 @@ receiving stream states
 +-------+                   +-------+
 */
 
-class RecvStreamStateMachine: public IStreamStateMachine {
+class StreamStateMachineRecv:
+    public IStreamStateMachine {
 public:
-    RecvStreamStateMachine(StreamState s = SS_RECV);
-    ~RecvStreamStateMachine();
+    StreamStateMachineRecv(std::function<void()> stream_close_cb, StreamState state = SS_RECV);
+    ~StreamStateMachineRecv();
 
     // current recv frame type
     bool OnFrame(uint16_t frame_type);

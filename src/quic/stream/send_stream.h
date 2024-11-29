@@ -3,8 +3,8 @@
 
 #include <list>
 #include <string>
+#include "quic/stream/if_send_stream.h"
 #include "common/alloter/pool_alloter.h"
-#include "quic/stream/send_stream_interface.h"
 #include "common/buffer/buffer_chains_interface.h"
 
 namespace quicx {
@@ -23,7 +23,7 @@ public:
     virtual void Reset(uint64_t error);
  
     // close the stream
-    virtual void Close(uint64_t error = 0);
+    virtual void Close();
 
     // process recv frames
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
@@ -36,10 +36,10 @@ protected:
     void OnStopSendingFrame(std::shared_ptr<IFrame> frame);
 
 protected:
-    bool _to_fin;
-    uint64_t _data_offset;
-    uint64_t _peer_data_limit;
-    std::shared_ptr<common::IBufferChains> _send_buffer;
+    bool to_fin_; // whether to send fin
+    uint64_t send_data_offset_; // the offset of data that has been sent
+    uint64_t peer_data_limit_;  // the data limit that peer limit
+    std::shared_ptr<common::IBufferChains> send_buffer_;
 };
 
 }
