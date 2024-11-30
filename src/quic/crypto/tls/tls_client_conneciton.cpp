@@ -19,9 +19,9 @@ bool TLSClientConnection::Init() {
         return false;
     }
 
-    SSL_CTX_set_session_cache_mode(_ctx->GetSSLCtx(), SSL_SESS_CACHE_BOTH);
+    SSL_CTX_set_session_cache_mode(ctx_->GetSSLCtx(), SSL_SESS_CACHE_BOTH);
 
-    SSL_set_connect_state(_ssl.get());
+    SSL_set_connect_state(ssl_.get());
     return true;
 }
 
@@ -35,7 +35,7 @@ bool TLSClientConnection::AddAlpn(uint8_t* alpn, uint32_t len) {
     alpn_buf[0] = len;
     memcpy(&alpn_buf[1], alpn, protos_len);
     alpn_buf[protos_len] = '\0';
-    if (SSL_set_alpn_protos(_ssl.get(), alpn_buf, protos_len) != 0) {
+    if (SSL_set_alpn_protos(ssl_.get(), alpn_buf, protos_len) != 0) {
         common::LOG_ERROR("SSL_set_alpn_protos failed.");
         return false;
     }

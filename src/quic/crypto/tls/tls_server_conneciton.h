@@ -29,7 +29,7 @@ private:
     const unsigned char *in, unsigned int inlen, void *arg);
 
 private:
-    TlsServerHandlerInterface* _ser_handler;
+    TlsServerHandlerInterface* ser_handler_;
 };
 
 }

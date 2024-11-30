@@ -6,16 +6,16 @@ namespace quicx {
 namespace quic {
 
 Aes256GcmCryptographer::Aes256GcmCryptographer() {
-    _aead = EVP_aead_aes_256_gcm();
-    _cipher = EVP_aes_256_ctr();
-    _digest = EVP_sha384();
+    aead_ = EVP_aead_aes_256_gcm();
+    cipher_ = EVP_aes_256_ctr();
+    digest_ = EVP_sha384();
 
-    _aead_key_length = EVP_AEAD_key_length(_aead);
-    _aead_iv_length = EVP_AEAD_nonce_length(_aead);
-    _aead_tag_length = EVP_AEAD_max_tag_len(_aead);
+    aead_key_length_ = EVP_AEAD_key_length(aead_);
+    aead_iv_length_ = EVP_AEAD_nonce_length(aead_);
+    aead_tag_length_ = EVP_AEAD_max_tag_len(aead_);
 
-    _cipher_key_length = EVP_CIPHER_key_length(_cipher); 
-    _cipher_iv_length = EVP_CIPHER_iv_length(_cipher);
+    cipher_key_length_ = EVP_CIPHER_key_length(cipher_); 
+    cipher_iv_length_ = EVP_CIPHER_iv_length(cipher_);
 }
 
 Aes256GcmCryptographer::~Aes256GcmCryptographer() {

@@ -5,7 +5,7 @@
 #include "quic/stream/crypto_stream.h"
 #include "quic/crypto/tls/tls_conneciton.h"
 #include "quic/connection/transport_param.h"
-#include "quic/crypto/cryptographer_interface.h"
+#include "quic/crypto/if_cryptographer.h"
 
 namespace quicx {
 namespace quic {

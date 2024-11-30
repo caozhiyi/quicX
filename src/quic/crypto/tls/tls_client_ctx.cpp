@@ -18,7 +18,7 @@ bool TLSClientCtx::Init() {
     }
 
     // set client config 
-    SSL_CTX_set_session_cache_mode(_ssl_ctx.get(), 
+    SSL_CTX_set_session_cache_mode(ssl_ctx_.get(), 
         SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
 
     return true;

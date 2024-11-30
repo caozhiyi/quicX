@@ -35,6 +35,7 @@ enum FrameType: uint16_t {
     FT_UNKNOW                          = 0xff,
 };
 
+
 enum FrameTypeBit: uint32_t {
     FTB_PADDING                         = 1 << FT_PADDING,
     FTB_PING                            = 1 << FT_PING,

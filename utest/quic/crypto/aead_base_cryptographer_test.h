@@ -2,7 +2,7 @@
 #define UTEST_QUIC_CRYPTO_AEAD_BASE_CRYPTOGRAPHER_TEST
 
 #include <cstdint>
-#include "quic/crypto/cryptographer_interface.h"
+#include "quic/crypto/if_cryptographer.h"
 
 namespace quicx {
 namespace quic {

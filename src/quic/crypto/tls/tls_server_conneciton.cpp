@@ -8,7 +8,7 @@ namespace quic {
 
 TLSServerConnection::TLSServerConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler, TlsServerHandlerInterface* ser_handle):
     TLSConnection(ctx, handler),
-    _ser_handler(ser_handle) {
+    ser_handler_(ser_handle) {
 
 }
 
@@ -21,16 +21,16 @@ bool TLSServerConnection::Init() {
         return false;
     }
     
-    SSL_CTX_set_alpn_select_cb(_ctx->GetSSLCtx(), TLSServerConnection::SSLAlpnSelect, nullptr);
+    SSL_CTX_set_alpn_select_cb(ctx_->GetSSLCtx(), TLSServerConnection::SSLAlpnSelect, nullptr);
 
     if (!TLSConnection::Init()) {
         return false;
     }
     
-    SSL_set_accept_state(_ssl.get());
+    SSL_set_accept_state(ssl_.get());
 
     static std::vector<uint8_t> server_quic_early_data_context_ = {2};
-    SSL_set_quic_early_data_context(_ssl.get(), server_quic_early_data_context_.data(), server_quic_early_data_context_.size());
+    SSL_set_quic_early_data_context(ssl_.get(), server_quic_early_data_context_.data(), server_quic_early_data_context_.size());
 
     return true;
 }
@@ -39,7 +39,7 @@ int TLSServerConnection::SSLAlpnSelect(SSL* ssl, const unsigned char **out, unsi
     const unsigned char *in, unsigned int inlen, void *arg) {
     TLSServerConnection* conn = (TLSServerConnection*)SSL_get_app_data(ssl);
     
-    conn->_ser_handler->SSLAlpnSelect(out, outlen, in, inlen, arg);
+    conn->ser_handler_->SSLAlpnSelect(out, outlen, in, inlen, arg);
 
     return 0;
 }

@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <openssl/ssl.h>
-#include "quic/crypto/cryptographer_interface.h"
+#include "quic/crypto/if_cryptographer.h"
 
 namespace quicx {
 namespace quic {
@@ -30,7 +30,7 @@ public:
     virtual bool EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint8_t pn_offset,
                              size_t pkt_number_len, bool is_short);
 
-    virtual uint32_t GetTagLength() { return _aead_tag_length; }
+    virtual uint32_t GetTagLength() { return aead_tag_length_; }
     
 protected:
     virtual bool MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
@@ -39,24 +39,24 @@ protected:
     uint64_t PktNumberN2L(uint64_t pkt_number);
 protected:
     struct Secret {
-        std::vector<uint8_t> _key;
-        std::vector<uint8_t> _iv;
-        std::vector<uint8_t> _hp;
+        std::vector<uint8_t> key_;
+        std::vector<uint8_t> iv_;
+        std::vector<uint8_t> hp_;
     };
 
-    Secret _read_secret;
-    Secret _write_secret;
+    Secret read_secret_;
+    Secret write_secret_;
 
-    size_t _aead_key_length;
-    size_t _aead_iv_length;
-    size_t _aead_tag_length;
+    size_t aead_key_length_;
+    size_t aead_iv_length_;
+    size_t aead_tag_length_;
 
-    size_t _cipher_key_length;
-    size_t _cipher_iv_length;
+    size_t cipher_key_length_;
+    size_t cipher_iv_length_;
 
-    const EVP_MD *_digest;
-    const EVP_AEAD *_aead;
-    const EVP_CIPHER *_cipher;
+    const EVP_MD *digest_;
+    const EVP_AEAD *aead_;
+    const EVP_CIPHER *cipher_;
 };
 
 }

@@ -16,10 +16,10 @@ public:
     // init ssl library and create global ssl ctx
     virtual bool Init();
     // get ssl ctx
-    virtual SSL_CTX* GetSSLCtx() { return _ssl_ctx.get(); }
+    virtual SSL_CTX* GetSSLCtx() { return ssl_ctx_.get(); }
 
 protected:
-    SSLCtxPtr _ssl_ctx;
+    SSLCtxPtr ssl_ctx_;
 };
 
 

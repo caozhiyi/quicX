@@ -60,9 +60,9 @@ public:
 
     static EncryptionLevel AdapterEncryptionLevel(ssl_encryption_level_t level);
 protected:
-    SSLPtr _ssl;
-    std::shared_ptr<TLSCtx> _ctx;
-    TlsHandlerInterface* _handler;
+    SSLPtr ssl_;
+    std::shared_ptr<TLSCtx> ctx_;
+    TlsHandlerInterface* handler_;
 };
 
 }

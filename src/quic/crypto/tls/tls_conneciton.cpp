@@ -16,9 +16,9 @@ static const SSL_QUIC_METHOD __quic_method = {
 };
 
 TLSConnection::TLSConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler):
-    _ssl(nullptr),
-    _ctx(ctx),
-    _handler(handler) {
+    ssl_(nullptr),
+    ctx_(ctx),
+    handler_(handler) {
     
 }
 
@@ -27,18 +27,18 @@ TLSConnection::~TLSConnection() {
 }
 
 bool TLSConnection::Init() {
-    _ssl = SSL_new(_ctx->GetSSLCtx());
-    if (!_ssl) {
+    ssl_ = SSL_new(ctx_->GetSSLCtx());
+    if (!ssl_) {
         common::LOG_ERROR("create ssl failed.");
         return false;
     }
 
-    if (SSL_set_app_data(_ssl.get(), this) == 0) {
+    if (SSL_set_app_data(ssl_.get(), this) == 0) {
         common::LOG_ERROR("SSL_set_app_data failed.");
         return false;
     }
 
-    if (SSL_set_quic_method(_ssl.get(), &__quic_method) == 0) {
+    if (SSL_set_quic_method(ssl_.get(), &__quic_method) == 0) {
         common::LOG_ERROR("SSL_set_quic_method failed.");
         return false;
     }
@@ -47,10 +47,10 @@ bool TLSConnection::Init() {
 }
 
 bool TLSConnection::DoHandleShake() {
-    int32_t ret = SSL_do_handshake(_ssl.get());
+    int32_t ret = SSL_do_handshake(ssl_.get());
 
     if (ret <= 0) {
-        int32_t ssl_err = SSL_get_error(_ssl.get(), ret);
+        int32_t ssl_err = SSL_get_error(ssl_.get(), ret);
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err = SSL_error_description(ssl_err);
             common::LOG_ERROR("SSL_do_handshake failed. err:%s", err);
@@ -62,7 +62,7 @@ bool TLSConnection::DoHandleShake() {
 }
 
 bool TLSConnection::ProcessCryptoData(uint8_t* data, uint32_t len) {
-    if (!SSL_provide_quic_data(_ssl.get(), SSL_quic_read_level(_ssl.get()), data, len)) {
+    if (!SSL_provide_quic_data(ssl_.get(), SSL_quic_read_level(ssl_.get()), data, len)) {
         common::LOG_ERROR("SSL_provide_quic_data failed.");
         return false;
     }
@@ -72,7 +72,7 @@ bool TLSConnection::ProcessCryptoData(uint8_t* data, uint32_t len) {
 }
 
 bool TLSConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
-    if (SSL_set_quic_transport_params(_ssl.get(), tp, len) == 0) {
+    if (SSL_set_quic_transport_params(ssl_.get(), tp, len) == 0) {
         common::LOG_ERROR("SSL_set_quic_transport_params failed.");
         return false;
     }
@@ -81,7 +81,7 @@ bool TLSConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
 }
 
 EncryptionLevel TLSConnection::GetLevel() {
-    return AdapterEncryptionLevel(SSL_quic_read_level(_ssl.get()));
+    return AdapterEncryptionLevel(SSL_quic_read_level(ssl_.get()));
 }
 
 int32_t TLSConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
@@ -89,7 +89,7 @@ int32_t TLSConnection::SetReadSecret(SSL* ssl, ssl_encryption_level_t level, con
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
     
     TryGetTransportParam(ssl, level);
-    conn->_handler->SetReadSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
+    conn->handler_->SetReadSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
     return 1;
 }
 
@@ -98,7 +98,7 @@ int32_t TLSConnection::SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, co
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
     
     TryGetTransportParam(ssl, level);
-    conn->_handler->SetWriteSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
+    conn->handler_->SetWriteSecret(ssl, AdapterEncryptionLevel(level), cipher, secret, secret_len);
     return 1;
 }
 
@@ -106,21 +106,21 @@ int32_t TLSConnection::AddHandshakeData(SSL* ssl, ssl_encryption_level_t level, 
     size_t len) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
 
-    conn->_handler->WriteMessage(AdapterEncryptionLevel(level), data, len);
+    conn->handler_->WriteMessage(AdapterEncryptionLevel(level), data, len);
     return 1;
 }
 
 int32_t TLSConnection::FlushFlight(SSL* ssl) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
 
-    conn->_handler->FlushFlight();
+    conn->handler_->FlushFlight();
     return 1;
 }
 
 int32_t TLSConnection::SendAlert(SSL* ssl, ssl_encryption_level_t level, uint8_t alert) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
 
-    conn->_handler->SendAlert(AdapterEncryptionLevel(level), alert);
+    conn->handler_->SendAlert(AdapterEncryptionLevel(level), alert);
     return 1;
 }
 
@@ -133,7 +133,7 @@ void TLSConnection::TryGetTransportParam(SSL* ssl, ssl_encryption_level_t level)
     }
 
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
-    conn->_handler->OnTransportParams(AdapterEncryptionLevel(level), peer_tp, tp_len);
+    conn->handler_->OnTransportParams(AdapterEncryptionLevel(level), peer_tp, tp_len);
 }
 
 EncryptionLevel TLSConnection::AdapterEncryptionLevel(ssl_encryption_level_t level) {

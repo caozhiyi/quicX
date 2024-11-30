@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "quic/connection/type.h"
 #include "quic/frame/crypto_frame.h"
 #include "utest/quic/packet/common_test_frame.h"

@@ -3,7 +3,7 @@
 
 #include "common/util/singleton.h"
 #include "quic/frame/if_frame.h"
-#include "quic/crypto/cryptographer_interface.h"
+#include "quic/crypto/if_cryptographer.h"
 
 namespace quicx {
 namespace quic {

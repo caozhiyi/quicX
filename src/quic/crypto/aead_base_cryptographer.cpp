@@ -15,9 +15,9 @@ namespace quicx {
 namespace quic {
 
 AeadBaseCryptographer::AeadBaseCryptographer():
-    _digest(nullptr),
-    _aead(nullptr),
-    _cipher(nullptr) {
+    digest_(nullptr),
+    aead_(nullptr),
+    cipher_(nullptr) {
 
 }
 
@@ -26,24 +26,24 @@ AeadBaseCryptographer::~AeadBaseCryptographer() {
 }
 
 bool AeadBaseCryptographer::InstallSecret(const uint8_t* secret, uint32_t secret_len, bool is_write) {
-    Secret& dest_secret = is_write ? _write_secret : _read_secret;
+    Secret& dest_secret = is_write ? write_secret_ : read_secret_;
     
     // make packet protect key
-    dest_secret._key.resize(_aead_key_length);
+    dest_secret.key_.resize(aead_key_length_);
     size_t len = 0;
-    if (!Hkdf::HkdfExpand(dest_secret._key.data(), _aead_key_length,  secret, secret_len, __tls_label_key, sizeof(__tls_label_key) - 1, _digest)) {
+    if (!Hkdf::HkdfExpand(dest_secret.key_.data(), aead_key_length_,  secret, secret_len, __tls_label_key, sizeof(__tls_label_key) - 1, digest_)) {
         return false;
     }
 
     // make packet protect iv
-    dest_secret._iv.resize(_aead_iv_length);
-    if (!Hkdf::HkdfExpand(dest_secret._iv.data(), _aead_iv_length,  secret, secret_len, __tls_label_iv, sizeof(__tls_label_iv) - 1, _digest)) {
+    dest_secret.iv_.resize(aead_iv_length_);
+    if (!Hkdf::HkdfExpand(dest_secret.iv_.data(), aead_iv_length_,  secret, secret_len, __tls_label_iv, sizeof(__tls_label_iv) - 1, digest_)) {
         return false;
     }
 
     // make header protext key
-    dest_secret._hp.resize(_cipher_key_length);
-    if (!Hkdf::HkdfExpand(dest_secret._hp.data(), _cipher_key_length,  secret, secret_len, __tls_label_hp, sizeof(__tls_label_hp) - 1, _digest)) {
+    dest_secret.hp_.resize(cipher_key_length_);
+    if (!Hkdf::HkdfExpand(dest_secret.hp_.data(), cipher_key_length_,  secret, secret_len, __tls_label_hp, sizeof(__tls_label_hp) - 1, digest_)) {
         return false;
     }
     return true;
@@ -86,26 +86,26 @@ bool AeadBaseCryptographer::InstallInitSecret(const uint8_t* secret, uint32_t se
 
 bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data, common::BufferSpan& ciphertext,
     std::shared_ptr<common::IBufferWrite> out_plaintext) {
-    if (_read_secret._key.empty() || _read_secret._iv.empty()) {
+    if (read_secret_.key_.empty() || read_secret_.iv_.empty()) {
         common::LOG_ERROR("decrypt packet but not install secret");
         return false;
     }
 
     // get nonce
     uint8_t nonce[__packet_nonce_length] = {0};
-    MakePacketNonce(nonce, _read_secret._iv, pkt_number);
+    MakePacketNonce(nonce, read_secret_.iv_, pkt_number);
 
     // encrypt
-    EVPAEADCTXPtr ctx = EVP_AEAD_CTX_new(_aead, _read_secret._key.data(), _read_secret._key.size(), _aead_tag_length);
+    EVPAEADCTXPtr ctx = EVP_AEAD_CTX_new(aead_, read_secret_.key_.data(), read_secret_.key_.size(), aead_tag_length_);
     if (!ctx) {
         common::LOG_ERROR("EVP_AEAD_CTX_new failed");
         return false;
     }
 
     size_t out_length = 0;
-    auto tag_length = _aead_tag_length;
+    auto tag_length = aead_tag_length_;
     auto out_span = out_plaintext->GetWriteSpan();
-    if (EVP_AEAD_CTX_open(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _read_secret._iv.size(),
+    if (EVP_AEAD_CTX_open(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, read_secret_.iv_.size(),
         ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
         common::LOG_ERROR("EVP_AEAD_CTX_open failed");
         return false;
@@ -116,17 +116,17 @@ bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, common::BufferSpa
 
 bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data, common::BufferSpan& plaintext,
     std::shared_ptr<common::IBufferWrite> out_ciphertext) {
-    if (_write_secret._key.empty() || _write_secret._iv.empty()) {
+    if (write_secret_.key_.empty() || write_secret_.iv_.empty()) {
         common::LOG_ERROR("encrypt packet but not install secret");
         return false;
     }
 
     // get nonce
     uint8_t nonce[__packet_nonce_length] = {0};
-    MakePacketNonce(nonce, _write_secret._iv, pkt_number);
+    MakePacketNonce(nonce, write_secret_.iv_, pkt_number);
 
     // encrypt
-    EVPAEADCTXPtr ctx = EVP_AEAD_CTX_new(_aead, _write_secret._key.data(), _write_secret._key.size(), _aead_tag_length);
+    EVPAEADCTXPtr ctx = EVP_AEAD_CTX_new(aead_, write_secret_.key_.data(), write_secret_.key_.size(), aead_tag_length_);
     if (!ctx) {
         common::LOG_ERROR("EVP_AEAD_CTX_new failed");
         return false;
@@ -134,7 +134,7 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, common::BufferSpa
 
     size_t out_length = 0;
     auto out_span = out_ciphertext->GetWriteSpan();
-    if (EVP_AEAD_CTX_seal(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, _write_secret._iv.size(),
+    if (EVP_AEAD_CTX_seal(ctx.get(), out_span.GetStart(), &out_length, out_span.GetLength(), nonce, write_secret_.iv_.size(),
         plaintext.GetStart(), plaintext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
         common::LOG_ERROR("EVP_AEAD_CTX_seal failed");
         return false;
@@ -145,7 +145,7 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, common::BufferSpa
 
 bool AeadBaseCryptographer::DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
     uint8_t& out_packet_num_len, bool is_short) {
-    if (_read_secret._hp.empty()) {
+    if (read_secret_.hp_.empty()) {
         common::LOG_ERROR("decrypt header but not install hp secret");
         return false;
     }
@@ -153,7 +153,7 @@ bool AeadBaseCryptographer::DecryptHeader(common::BufferSpan& ciphertext, common
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
     size_t mask_length = 0;
-    if (!MakeHeaderProtectMask(sample, _read_secret._hp, mask, __header_protect_mask_length, mask_length)) {
+    if (!MakeHeaderProtectMask(sample, read_secret_.hp_, mask, __header_protect_mask_length, mask_length)) {
         common::LOG_ERROR("make header protect mask failed");
         return false;
     }
@@ -185,7 +185,7 @@ bool AeadBaseCryptographer::DecryptHeader(common::BufferSpan& ciphertext, common
 
 bool AeadBaseCryptographer::EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint8_t pn_offset,
     size_t pkt_number_len, bool is_short) {
-    if (_write_secret._hp.empty()) {
+    if (write_secret_.hp_.empty()) {
         common::LOG_ERROR("encrypt header but not install hp secret");
         return false;
     }
@@ -193,7 +193,7 @@ bool AeadBaseCryptographer::EncryptHeader(common::BufferSpan& plaintext, common:
     // get mask 
     uint8_t mask[__header_protect_mask_length] = {0};
     size_t mask_length = 0;
-    if (!MakeHeaderProtectMask(sample, _write_secret._hp, mask, __header_protect_mask_length, mask_length)) {
+    if (!MakeHeaderProtectMask(sample, write_secret_.hp_, mask, __header_protect_mask_length, mask_length)) {
         common::LOG_ERROR("make header protect mask failed");
         return false;
     }
@@ -229,7 +229,7 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, st
         return false;
     }
 
-    if (EVP_EncryptInit_ex(ctx.get(), _cipher, NULL, key.data(), sample.GetStart()) != 1) {
+    if (EVP_EncryptInit_ex(ctx.get(), cipher_, NULL, key.data(), sample.GetStart()) != 1) {
         common::LOG_ERROR("EVP_EncryptInit_ex failed");
         return false;
     }

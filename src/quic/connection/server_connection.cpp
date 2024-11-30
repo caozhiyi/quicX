@@ -9,7 +9,7 @@
 #include "common/buffer/buffer_read_view.h"
 #include "quic/packet/header/long_header.h"
 #include "quic/connection/server_connection.h"
-#include "quic/crypto/cryptographer_interface.h"
+#include "quic/crypto/if_cryptographer.h"
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {

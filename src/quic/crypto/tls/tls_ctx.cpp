@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 TLSCtx::TLSCtx():
-    _ssl_ctx(nullptr) {
+    ssl_ctx_(nullptr) {
 
 }
 
@@ -16,14 +16,14 @@ TLSCtx::~TLSCtx() {
 }
 
 bool TLSCtx::Init() {
-    _ssl_ctx = SSLCtxPtr(SSL_CTX_new(TLS_method()));
-    if (!_ssl_ctx) {
+    ssl_ctx_ = SSLCtxPtr(SSL_CTX_new(TLS_method()));
+    if (!ssl_ctx_) {
         common::LOG_ERROR("create ssl ctx failed");
         return false;
     }
 
-    SSL_CTX_set_min_proto_version(_ssl_ctx.get(), TLS1_3_VERSION);
-    SSL_CTX_set_max_proto_version(_ssl_ctx.get(), TLS1_3_VERSION);
+    SSL_CTX_set_min_proto_version(ssl_ctx_.get(), TLS1_3_VERSION);
+    SSL_CTX_set_max_proto_version(ssl_ctx_.get(), TLS1_3_VERSION);
 
     return true;
 }

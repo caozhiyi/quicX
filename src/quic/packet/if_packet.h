@@ -7,7 +7,7 @@
 #include "common/buffer/buffer_span.h"
 #include "quic/frame/if_frame.h"
 #include "quic/packet/header/if_header.h"
-#include "quic/crypto/cryptographer_interface.h"
+#include "quic/crypto/if_cryptographer.h"
 #include "common/buffer/buffer_read_interface.h"
 #include "common/buffer/buffer_write_interface.h"
 

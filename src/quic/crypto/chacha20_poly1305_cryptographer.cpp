@@ -9,15 +9,15 @@ namespace quicx {
 namespace quic {
 
 ChaCha20Poly1305Cryptographer::ChaCha20Poly1305Cryptographer() {
-    _aead = EVP_aead_chacha20_poly1305();
-    _digest = EVP_sha256();
+    aead_ = EVP_aead_chacha20_poly1305();
+    digest_ = EVP_sha256();
 
-    _aead_key_length = EVP_AEAD_key_length(_aead);
-    _aead_iv_length = EVP_AEAD_nonce_length(_aead);
-    _aead_tag_length = EVP_AEAD_max_tag_len(_aead);
+    aead_key_length_ = EVP_AEAD_key_length(aead_);
+    aead_iv_length_ = EVP_AEAD_nonce_length(aead_);
+    aead_tag_length_ = EVP_AEAD_max_tag_len(aead_);
 
-    _cipher_key_length = 32; 
-    _cipher_iv_length = 16;
+    cipher_key_length_ = 32; 
+    cipher_iv_length_ = 16;
 }
 
 ChaCha20Poly1305Cryptographer::~ChaCha20Poly1305Cryptographer() {
