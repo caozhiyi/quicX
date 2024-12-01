@@ -141,6 +141,8 @@ bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
         return false;
     }
 
+    // TODO check packet length
+
     auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
     uint32_t version = ((LongHeader*)init_packet->GetHeader())->GetVersion();
     if (!VersionCheck(version)) {

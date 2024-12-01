@@ -15,17 +15,13 @@ namespace quic {
 class ClientConnection;
 typedef std::function<void(ClientConnection&)> HandshakeDoneCB;
 
-// TODO
-// 1. 创建一个连接
-// 2. 如果支持, 启用早期数据
-// 3. 当早期数据被服务端接收或拒绝时, 收到通知
 class ClientConnection:
     public BaseConnection {
 public:
     ClientConnection(std::shared_ptr<TLSCtx> ctx,
         std::shared_ptr<common::ITimer> timer,
-        ConnectionIDCB add_conn_id_cb,
-        ConnectionIDCB retire_conn_id_cb);
+        std::function<void(uint64_t/*cid hash*/)> add_conn_id_cb,
+        std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb);
     ~ClientConnection();
 
     // set application protocol
@@ -35,8 +31,6 @@ public:
     void AddTransportParam(TransportParamConfig& tp_config);
 
     bool Dial(const common::Address& addr);
-
-    void Close();
 
     void SetHandshakeDoneCB(HandshakeDoneCB& cb);
 protected:

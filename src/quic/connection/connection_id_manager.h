@@ -5,9 +5,9 @@
 #include <string>
 #include <cstring>
 #include <cstdint>
+#include <functional>
 #include "quic/connection/type.h"
 #include "common/util/singleton.h"
-#include "quic/connection/connection_interface.h"
 
 namespace quicx {
 namespace quic {
@@ -30,7 +30,17 @@ struct ConnectionID {
 
 class ConnectionIDManager {
 public:
-    ConnectionIDManager(): _cur_index(0) {}
+     ConnectionIDManager(): _cur_index(0) {}
+
+    // create a new connection id manager
+    // add_connection_id_cb: callback when a new connection id is generated
+    // retire_connection_id_cb: callback when a connection id is retired
+    ConnectionIDManager(std::function<void(uint64_t/*cid hash*/)> add_connection_id_cb,
+                        std::function<void(uint64_t/*cid hash*/)> retire_connection_id_cb):
+                        _cur_index(0),
+                        _add_connection_id_cb(add_connection_id_cb),
+                        _retire_connection_id_cb(retire_connection_id_cb) {}
+
     ~ConnectionIDManager() {}
 
     ConnectionID Generator();
@@ -38,16 +48,13 @@ public:
     bool RetireIDBySequence(uint64_t sequence);
     bool AddID(ConnectionID& id);
 
-    virtual void SetAddConnectionIDCB(ConnectionIDCB cb) { _add_connection_id_cb = cb; }
-    virtual void SetRetireConnectionIDCB(ConnectionIDCB cb) { _retire_connection_id_cb = cb; }
-
 private:
     int64_t _cur_index;
     ConnectionID _cur_id;
     std::map<uint64_t, ConnectionID> _ids_map;
 
-    ConnectionIDCB _add_connection_id_cb;
-    ConnectionIDCB _retire_connection_id_cb;
+    std::function<void(uint64_t/*cid hash*/)> _add_connection_id_cb;
+    std::function<void(uint64_t/*cid hash*/)> _retire_connection_id_cb;
 };
 
 }

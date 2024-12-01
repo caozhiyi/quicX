@@ -30,8 +30,8 @@ namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
         std::shared_ptr<common::ITimer> timer,
-        ConnectionIDCB add_conn_id_cb,
-        ConnectionIDCB retire_conn_id_cb):
+        std::function<void(uint64_t/*cid hash*/)> add_conn_id_cb,
+        std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb):
     _to_close(false),
     _last_communicate_time(0),
     _recv_control(timer),
@@ -41,9 +41,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
     _flow_control = std::make_shared<FlowControl>(start);
     _remote_conn_id_manager = std::make_shared<ConnectionIDManager>();
-    _local_conn_id_manager = std::make_shared<ConnectionIDManager>();
-    _local_conn_id_manager->SetAddConnectionIDCB(add_conn_id_cb);
-    _local_conn_id_manager->SetRetireConnectionIDCB(retire_conn_id_cb);
+    _local_conn_id_manager = std::make_shared<ConnectionIDManager>(add_conn_id_cb, retire_conn_id_cb);
 
     _send_manager.SetFlowControl(_flow_control);
     _send_manager.SetRemoteConnectionIDManager(_remote_conn_id_manager);
@@ -151,11 +149,10 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     }
 }
 
-void BaseConnection::SetActiveConnectionCB(ActiveConnectionCB cb) {
+void BaseConnection::SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb) {
     _active_connection_cb = cb;
     _recv_control.SetActiveSendCB(std::bind(&BaseConnection::ActiveSend, this));
 }
-
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     // check init packet size
@@ -166,7 +163,6 @@ bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     }
     return OnNormalPacket(packet);
 }
-
 
 bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
