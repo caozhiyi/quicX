@@ -9,9 +9,9 @@
 #include <unordered_map>
 
 #include "quic/stream/if_send_stream.h"
+#include "quic/connection/if_connection.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/connection_crypto.h"
-#include "quic/connection/connection_interface.h"
 #include "quic/connection/controler/flow_control.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/controler/recv_control.h"
@@ -26,8 +26,8 @@ class BaseConnection:
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start,
         std::shared_ptr<common::ITimer> timer,
-        ConnectionIDCB add_conn_id_cb,
-        ConnectionIDCB retire_conn_id_cb);
+        std::function<void(uint64_t/*cid hash*/)> add_conn_id_cb,
+        std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb);
     virtual ~BaseConnection();
 
     virtual std::shared_ptr<ISendStream> MakeSendStream();
@@ -47,7 +47,7 @@ public:
     virtual void SetPeerAddress(const common::Address&& addr) { _peer_addr = std::move(addr); }
     virtual common::Address* GetPeerAddress() { return &_peer_addr; }
 
-    virtual void SetActiveConnectionCB(ActiveConnectionCB cb);
+    virtual void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb);
 
     virtual uint64_t GetConnectionHashCode() { return 0; }
 
@@ -110,7 +110,7 @@ protected:
     std::shared_ptr<ConnectionIDManager> _local_conn_id_manager;
     std::shared_ptr<ConnectionIDManager> _remote_conn_id_manager;
 
-    // wait send frames
+    // waitting send frames
     std::list<std::shared_ptr<IFrame>> _frames_list;
 
     // flow control
@@ -124,8 +124,9 @@ protected:
     // token
     std::string _token;
 
+    // active to send
     bool _is_active_send;
-    ActiveConnectionCB _active_connection_cb;
+    std::function<void(std::shared_ptr<IConnection>)> _active_connection_cb;
 };
 
 }

@@ -17,9 +17,9 @@ namespace quic {
 
 
 ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<common::ITimer> timer,
-        ConnectionIDCB add_conn_id_cb,
-        ConnectionIDCB retire_conn_id_cb):
+    std::shared_ptr<common::ITimer> timer,
+    std::function<void(uint64_t/*cid hash*/)> add_conn_id_cb,
+    std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb):
     BaseConnection(StreamIDGenerator::SS_CLIENT, timer, add_conn_id_cb, retire_conn_id_cb) {
     _tls_connection = std::make_shared<TLSClientConnection>(ctx, &_connection_crypto);
     if (!_tls_connection->Init()) {
@@ -79,10 +79,6 @@ bool ClientConnection::Dial(const common::Address& addr) {
     
     _tls_connection->DoHandleShake();
     return true;
-}
-
-void ClientConnection::Close() {
-
 }
 
 void ClientConnection::SetHandshakeDoneCB(HandshakeDoneCB& cb) {

@@ -1,5 +1,5 @@
-#ifndef QUIC_CONNECTION_CONNECTION_INTERFACE
-#define QUIC_CONNECTION_CONNECTION_INTERFACE
+#ifndef QUIC_CONNECTION_IF_CONNECTION
+#define QUIC_CONNECTION_IF_CONNECTION
 
 #include <memory>
 #include "quic/crypto/tls/type.h"
@@ -13,9 +13,6 @@
 namespace quicx {
 namespace quic {
 
-class IConnection;
-typedef std::function<void(std::shared_ptr<IConnection>)> ActiveConnectionCB;
-typedef std::function<void(uint64_t id_hash)> ConnectionIDCB;
 class IConnection {
 public:
     IConnection() {}
@@ -35,18 +32,7 @@ public:
     virtual void SetPeerAddress(const common::Address&& addr) = 0;
     virtual common::Address* GetPeerAddress() = 0;
 
-    virtual void SetActiveConnectionCB(ActiveConnectionCB cb) = 0;
-protected:
-    virtual bool OnInitialPacket(std::shared_ptr<IPacket> packet) = 0;
-    virtual bool On0rttPacket(std::shared_ptr<IPacket> packet) = 0;
-    virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet) = 0;
-    virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) = 0;
-    virtual bool On1rttPacket(std::shared_ptr<IPacket> packet) = 0;
-
-    virtual bool OnStreamFrame(std::shared_ptr<IFrame> frame) = 0;
-
-    virtual void ActiveSendStream(std::shared_ptr<IStream> stream) = 0;
-    virtual void WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err) = 0;
+    virtual void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb) = 0;
 };
 
 }

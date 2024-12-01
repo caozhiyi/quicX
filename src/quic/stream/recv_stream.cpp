@@ -7,7 +7,6 @@
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/stream/state_machine_recv.h"
 #include "quic/frame/max_stream_data_frame.h"
-#include "quic/connection/connection_interface.h"
 #include "quic/frame/stream_data_blocked_frame.h"
 
 namespace quicx {

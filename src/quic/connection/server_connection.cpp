@@ -16,9 +16,9 @@ namespace quicx {
 namespace quic {
 
 ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<common::ITimer> timer,
-        ConnectionIDCB add_conn_id_cb,
-        ConnectionIDCB retire_conn_id_cb):
+    std::shared_ptr<common::ITimer> timer,
+    std::function<void(uint64_t/*cid hash*/)> add_conn_id_cb,
+    std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb):
     BaseConnection(StreamIDGenerator::SS_SERVER, timer, add_conn_id_cb, retire_conn_id_cb) {
     _tls_connection = std::make_shared<TLSServerConnection>(ctx, &_connection_crypto, this);
     if (!_tls_connection->Init()) {
@@ -39,10 +39,6 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
 }
 
 ServerConnection::~ServerConnection() {
-
-}
-
-void ServerConnection::Close() {
 
 }
 

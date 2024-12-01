@@ -8,8 +8,8 @@
 #include "common/timer/timer.h"
 #include "quic/udp/udp_packet_in.h"
 #include "quic/crypto/tls/tls_ctx.h"
-#include "quic/quicx/processor_interface.h"
-#include "quic/connection/connection_interface.h"
+#include "quic/quicx/if_processor.h"
+#include "quic/connection/if_connection.h"
 
 namespace quicx {
 namespace quic {
@@ -53,9 +53,6 @@ protected:
 
     std::mutex _notify_mutex;
     std::condition_variable _notify;
-
-    ConnectionIDCB _add_connection_id_cb;
-    ConnectionIDCB _retire_connection_id_cb;
 
     uint32_t _max_recv_times;
     RecvFunction _recv_function;
