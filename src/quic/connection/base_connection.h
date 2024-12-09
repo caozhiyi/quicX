@@ -45,7 +45,7 @@ public:
     virtual uint64_t GetSock() { return _send_sock; }
     
     virtual void SetPeerAddress(const common::Address&& addr) { _peer_addr = std::move(addr); }
-    virtual common::Address* GetPeerAddress() { return &_peer_addr; }
+    virtual const common::Address GetPeerAddress() { return _peer_addr; }
 
     virtual void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb);
 

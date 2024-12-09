@@ -41,7 +41,7 @@ SysCallInt32Result Writev(int64_t sockfd, Iovec *vec, uint32_t vec_len) {
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_t flag, Address& addr) {
+SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
     struct sockaddr_in addr_cli;
     addr_cli.sin_family = AF_INET;
     addr_cli.sin_port = htons(addr.GetPort());

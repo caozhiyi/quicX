@@ -13,6 +13,12 @@ Address::Address(AddressType at): _address_type(at),
     
 }
 
+Address::Address(const Address& addr):
+                                _address_type(addr._address_type),
+                                _ip(addr._ip),
+                                _port(addr._port) {
+}
+
 Address::Address(AddressType at, const std::string& ip, uint16_t port):
                                 _address_type(at),
                                 _ip(ip),
@@ -36,7 +42,7 @@ void Address::SetPort(uint16_t port) {
     _port = port;
 }
 
-uint16_t Address::GetPort() {
+uint16_t Address::GetPort() const {
     return _port;
 }
 
@@ -52,6 +58,14 @@ std::ostream& operator<< (std::ostream &out, Address &addr) {
 
 bool operator==(const Address &addr1, const Address &addr2) {
     return addr1._ip == addr2._ip && addr1._port == addr2._port && addr1._port != 0;
+}
+
+AddressType Address::CheckAddressType(const std::string& ip) {
+    if (ip.find(':') == std::string::npos) {
+        return AddressType::AT_IPV4;
+    }
+    
+    return AddressType::AT_IPV6;
 }
 
 }

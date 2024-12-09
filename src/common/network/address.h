@@ -16,6 +16,7 @@ class Address {
 public:
     Address();
     Address(AddressType at);
+    Address(const Address& addr);
     Address(AddressType at, const std::string& ip, uint16_t port);
     ~Address();
 
@@ -23,12 +24,17 @@ public:
     virtual const std::string& GetIp() const;
 
     virtual void SetPort(uint16_t port);
-    virtual uint16_t GetPort();
+    virtual uint16_t GetPort() const;
+
+    virtual void SetAddressType(AddressType address_type) { _address_type = address_type; }
+    virtual AddressType GetAddressType() const { return _address_type; }
 
     virtual const std::string AsString() const;
 
     friend std::ostream& operator<< (std::ostream &out, Address &addr);
     friend bool operator==(const Address &addr1, const Address &addr2);
+
+    static AddressType CheckAddressType(const std::string& ip);
 
 protected:
     AddressType _address_type;

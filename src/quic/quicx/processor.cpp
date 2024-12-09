@@ -1,20 +1,27 @@
 #include "common/log/log.h"
 #include "quic/common/version.h"
 #include "quic/udp/udp_sender.h"
+#include "quic/udp/udp_sender.h"
+#include "quic/udp/udp_receiver.h"
 #include "quic/quicx/processor.h"
 #include "quic/packet/init_packet.h"
-#include "quic/udp/udp_packet_out.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/connection/client_connection.h"
 #include "quic/connection/server_connection.h"
+#include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
 namespace quic {
 
+uint32_t __max_recv_times = 32; // todo add to config
 thread_local std::shared_ptr<common::ITimer> Processor::__timer = common::MakeTimer();
 
-Processor::Processor() {
-
+Processor::Processor(std::shared_ptr<ISender> sender, std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx):
+    _sender(sender),
+    _receiver(receiver),
+    _ctx(ctx),
+    _do_send(false) {
+    _alloter = std::make_shared<common::BlockMemoryPool>(1500, 5); // todo add to config
 }
 
 Processor::~Processor() {
@@ -22,21 +29,18 @@ Processor::~Processor() {
 }
 
 void Processor::Run() {
-    if (!_recv_function) {
-        common::LOG_ERROR("recv function is not set.");
-        return;
-    }
-
+    bool _stop = false;
     while (!_stop) {
-        if (_process_type & Processor::PT_RECV) {
-            ProcessRecv();
-        }
-        
-        if (_process_type & Processor::PT_SEND) {
+        // send all data to network
+        if (_do_send) {
+            _do_send = false;
             ProcessSend();
         }
-        _process_type = 0;
 
+        // try to receive data from network
+        ProcessRecv();
+
+        // check timer and do timer task
         ProcessTimer();
 
         int64_t wait_time = __timer->MinTime();
@@ -47,15 +51,22 @@ void Processor::Run() {
     }
 }
 
-bool Processor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) {
-    common::LOG_INFO("get packet from %s", udp_packet->GetPeerAddress().AsString().c_str());
+bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
+    common::LOG_INFO("get packet from %s", packet->GetAddress().AsString().c_str());
 
+    uint8_t* cid;
+    uint16_t len = 0;
+    std::vector<std::shared_ptr<IPacket>> packets;
+    if (!DecodeNetPakcet(packet, packets, cid, len)) {
+        common::LOG_ERROR("decode packet failed");
+        return false;
+    }
+    
     // dispatch packet
-    auto packets = udp_packet->GetPackets();
-    uint64_t cid_code = udp_packet->GetConnectionHashCode();
+    auto cid_code = ConnectionIDGenerator::Instance().Hash(cid, len);
     auto conn = _conn_map.find(cid_code);
     if (conn != _conn_map.end()) {
-        conn->second->OnPackets(udp_packet->GetRecvTime(), packets);
+        conn->second->OnPackets(packet->GetTime(), packets);
         return true;
     }
 
@@ -64,28 +75,18 @@ bool Processor::HandlePacket(std::shared_ptr<UdpPacketIn> udp_packet) {
         return false;
     }
 
-    uint8_t* cid;
-    uint16_t len = 0;
-    udp_packet->GetConnection(cid, len);
-
+    // create new connection
     auto new_conn = std::make_shared<ServerConnection>(_ctx, __timer, _add_connection_id_cb, _retire_connection_id_cb);
     new_conn->AddRemoteConnectionId(cid, len);
     _conn_map[cid_code] = new_conn;
-    new_conn->OnPackets(udp_packet->GetRecvTime(), packets);
+    new_conn->OnPackets(packet->GetTime(), packets);
 
-    return true;
-}
-
-bool Processor::HandlePackets(const std::vector<std::shared_ptr<UdpPacketIn>>& udp_packets) {
-    for (size_t i = 0; i < udp_packets.size(); i++) {
-        HandlePacket(udp_packets[i]);
-    }
     return true;
 }
 
 void Processor::ActiveSendConnection(std::shared_ptr<IConnection> conn) {
     _active_send_connection_list.push_back(conn);
-    _process_type |= Processor::PT_SEND;
+    _do_send = true;
 }
 
 void Processor::WeakUp() {
@@ -98,14 +99,24 @@ std::shared_ptr<IConnection> Processor::MakeClientConnection() {
 }
 
 void Processor::ProcessRecv() {
-    int times = _max_recv_times;
-    while (times > 0) {
-        auto packet = _recv_function();
-        if (!packet) {
+    int times = __max_recv_times;
+    while (times >= 0) {
+        times--;
+
+        std::shared_ptr<INetPacket> packet = std::make_shared<INetPacket>();
+        auto buffer = std::make_shared<common::Buffer>(_alloter);
+        packet->SetData(buffer);
+
+        auto ret = _receiver->TryRecv(packet);
+        if (ret == IReceiver::RecvResult::RR_FAILED) {
+            common::LOG_ERROR("recv packet failed.");
+            continue;
+        }
+        if (ret == IReceiver::RecvResult::RR_NO_DATA) {
             break;
         }
+
         HandlePacket(packet);
-        times--;
     }
 }
 
@@ -117,20 +128,21 @@ void Processor::ProcessSend() {
     static thread_local uint8_t buf[1500] = {0};
     std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
 
-    std::shared_ptr<UdpPacketOut> packet_out;
+    std::shared_ptr<INetPacket> packet;
     for (auto iter = _active_send_connection_list.begin(); iter != _active_send_connection_list.end(); ++iter) {
         if (!(*iter)->GenerateSendData(buffer)) {
             common::LOG_ERROR("generate send data failed.");
             continue;
         }
 
-        packet_out->SetData(buffer);
-        packet_out->SetOutsocket((*iter)->GetSock());
-        packet_out->SetPeerAddress((*iter)->GetPeerAddress());
+        packet->SetData(buffer);
+        packet->SetSocket((*iter)->GetSock());
+        packet->SetAddress((*iter)->GetPeerAddress());
 
-        if (!UdpSender::DoSend(packet_out)) {
+        if (!_sender->Send(packet)) {
             common::LOG_ERROR("udp send failed.");
         }
+        buffer->Clear();
     }
     _active_send_connection_list.clear();
 }
@@ -154,7 +166,13 @@ bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
 }
 
 
-bool Processor::GetDestConnectionId(const std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
+bool Processor::DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
+    std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
+    if(!DecodePackets(net_packet->GetData(), packets)) {
+        // todo send version negotiate packet
+        return false;
+    }
+
     if (packets.empty()) {
         common::LOG_ERROR("parse packet list is empty.");
         return false;

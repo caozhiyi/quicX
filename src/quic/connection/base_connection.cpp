@@ -155,7 +155,7 @@ void BaseConnection::SetActiveConnectionCB(std::function<void(std::shared_ptr<IC
 }
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
-    // check init packet size
+    // TODO check init packet size
 
     if (!_connection_crypto.InitIsReady()) {
         LongHeader* header = (LongHeader*)packet->GetHeader();
