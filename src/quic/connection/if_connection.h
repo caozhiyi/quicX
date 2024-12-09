@@ -18,7 +18,9 @@ public:
     IConnection() {}
     virtual ~IConnection() {}
 
+    // create a new send stream
     virtual std::shared_ptr<ISendStream> MakeSendStream() = 0;
+    // create a new bidirectional stream
     virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream() = 0;
 
     virtual void Close(uint64_t error) = 0;
@@ -30,7 +32,7 @@ public:
 
     virtual uint64_t GetSock() = 0;
     virtual void SetPeerAddress(const common::Address&& addr) = 0;
-    virtual common::Address* GetPeerAddress() = 0;
+    virtual const common::Address GetPeerAddress() = 0;
 
     virtual void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb) = 0;
 };

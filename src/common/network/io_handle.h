@@ -40,7 +40,7 @@ SysCallInt32Result Bind(int64_t sockfd, Address& addr);
 
 SysCallInt32Result Write(int64_t sockfd, const char *data, uint32_t len);
 SysCallInt32Result Writev(int64_t sockfd, Iovec *vec, uint32_t vec_len);
-SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_t flag, Address& addr);
+SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr);
 SysCallInt32Result SendMsg(int64_t sockfd, const Msghdr* msg, int16_t flag);
 SysCallInt32Result SendmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag);
 
@@ -49,6 +49,8 @@ SysCallInt32Result Readv(int64_t sockfd, Iovec *vec, uint32_t vec_len);
 SysCallInt32Result RecvFrom(int64_t sockfd, char *msg, uint32_t len, uint16_t flag, Address& addr);
 SysCallInt32Result RecvMsg(int64_t sockfd, Msghdr* msg, int16_t flag);
 SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out);
+
+SysCallInt32Result SetSockOpt(int64_t sockfd, int level, int optname, const void *optval, uint32_t optlen);
 
 }
 }

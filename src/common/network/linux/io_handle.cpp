@@ -40,7 +40,7 @@ SysCallInt32Result Writev(int64_t sockfd, Iovec *vec, uint32_t vec_len) {
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_t flag, Address& addr) {
+SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
     struct sockaddr_in addr_cli;
     addr_cli.sin_family = AF_INET;
     addr_cli.sin_port = htons(addr.GetPort());
@@ -81,6 +81,7 @@ SysCallInt32Result RecvFrom(int64_t sockfd, char *buf, uint32_t len, uint16_t fl
 
     addr.SetIp(inet_ntoa(addr_cli.sin_addr));
     addr.SetPort(ntohs(addr_cli.sin_port));
+    addr.SetAddressType(Address::CheckAddressType(addr.GetIp()));
     return {rc, 0};
 }
 
@@ -94,6 +95,11 @@ SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
     time.tv_sec = time_out / 1000;
 
     const int32_t rc = recvmmsg(sockfd, (mmsghdr*)msgvec, vlen, flag, &time);
+    return {rc, rc != -1 ? 0 : errno};
+}
+
+SysCallInt32Result SetSockOpt(int64_t sockfd, int level, int optname, const void *optval, uint32_t optlen) {
+    const int32_t rc = setsockopt(sockfd, level, optname, optval, optlen);
     return {rc, rc != -1 ? 0 : errno};
 }
 
