@@ -15,10 +15,14 @@
 namespace quicx {
 namespace quic {
 
+/*
+ message dispatcher processor, handle packet and timer in one thread
+*/
 class Processor:
     public IProcessor {
 public:
-    Processor(std::shared_ptr<ISender> sender, std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx);
+    Processor(std::shared_ptr<ISender> sender,
+        std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx);
     virtual ~Processor();
 
     void Run();
@@ -32,9 +36,12 @@ public:
     virtual std::shared_ptr<IConnection> MakeClientConnection();
 
 protected:
-    virtual void ProcessRecv();
-    virtual void ProcessTimer();
-    virtual void ProcessSend();
+    void ProcessRecv();
+    void ProcessTimer();
+    void ProcessSend();
+
+    void AddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn);
+    void RetireConnectionId(uint64_t cid_hash);
 
     bool InitPacketCheck(std::shared_ptr<IPacket> packet);
 
@@ -42,11 +49,11 @@ protected:
         std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len);
 
 protected:
+    bool _do_send;
+    
     std::shared_ptr<TLSCtx> _ctx;
     std::shared_ptr<ISender> _sender;
     std::shared_ptr<IReceiver> _receiver;
-
-    thread_local static std::shared_ptr<common::ITimer> __timer;
 
     std::mutex _notify_mutex;
     std::condition_variable _notify;
@@ -55,13 +62,12 @@ protected:
     std::function<void(uint64_t)> _retire_connection_id_cb;
 
     std::shared_ptr<common::BlockMemoryPool> _alloter;
-    
+
     uint32_t _max_recv_times;
     std::list<std::shared_ptr<IConnection>> _active_send_connection_list;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> _conn_map;
 
-private:
-    bool _do_send;
+    thread_local static std::shared_ptr<common::ITimer> __timer;
 };
 
 }

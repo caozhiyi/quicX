@@ -20,7 +20,7 @@ class ClientConnection:
 public:
     ClientConnection(std::shared_ptr<TLSCtx> ctx,
         std::shared_ptr<common::ITimer> timer,
-        std::function<void(uint64_t/*cid hash*/)> add_conn_id_cb,
+        std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> add_conn_id_cb,
         std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb);
     ~ClientConnection();
 

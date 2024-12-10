@@ -30,25 +30,26 @@ namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
         std::shared_ptr<common::ITimer> timer,
-        std::function<void(uint64_t/*cid hash*/)> add_conn_id_cb,
-        std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb):
+        std::function<void(uint64_t, std::shared_ptr<IConnection>)> add_conn_id_cb,
+        std::function<void(uint64_t)> retire_conn_id_cb):
     _to_close(false),
     _last_communicate_time(0),
     _recv_control(timer),
     _send_manager(timer),
-    _is_active_send(false) {
+    _is_active_send(false),
+    _add_conn_id_cb(add_conn_id_cb) {
+
     _alloter = common::MakeBlockMemoryPoolPtr(1024, 4);
     _connection_crypto.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
-    _flow_control = std::make_shared<FlowControl>(start);
-    _remote_conn_id_manager = std::make_shared<ConnectionIDManager>();
-    _local_conn_id_manager = std::make_shared<ConnectionIDManager>(add_conn_id_cb, retire_conn_id_cb);
 
+    _remote_conn_id_manager = std::make_shared<ConnectionIDManager>();
+    _local_conn_id_manager = std::make_shared<ConnectionIDManager>(std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
+        retire_conn_id_cb);
+
+    _flow_control = std::make_shared<FlowControl>(start);
     _send_manager.SetFlowControl(_flow_control);
     _send_manager.SetRemoteConnectionIDManager(_remote_conn_id_manager);
     _send_manager.SetLocalConnectionIDManager(_local_conn_id_manager);
-    
-    // generate local id
-    _local_conn_id_manager->Generator();
 }
 
 BaseConnection::~BaseConnection() {
@@ -386,6 +387,12 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     _transport_param.Merge(remote_tp);
     _flow_control->InitConfig(_transport_param);
+}
+
+void BaseConnection::AddConnectionId(uint64_t cid_hash) {
+    if (_add_conn_id_cb) {
+        _add_conn_id_cb(cid_hash, shared_from_this());
+    }
 }
 
 bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {

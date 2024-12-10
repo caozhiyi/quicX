@@ -26,7 +26,7 @@ class BaseConnection:
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start,
         std::shared_ptr<common::ITimer> timer,
-        std::function<void(uint64_t/*cid hash*/)> add_conn_id_cb,
+        std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> add_conn_id_cb,
         std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb);
     virtual ~BaseConnection();
 
@@ -77,6 +77,8 @@ protected:
     virtual void InnerStreamClose(uint64_t stream_id);
     virtual void OnTransportParams(TransportParam& remote_tp);
 
+    void AddConnectionId(uint64_t cid_hash);
+
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
     void ActiveSend();
 
@@ -109,6 +111,7 @@ protected:
     // connection id
     std::shared_ptr<ConnectionIDManager> _local_conn_id_manager;
     std::shared_ptr<ConnectionIDManager> _remote_conn_id_manager;
+    std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> _add_conn_id_cb;
 
     // waitting send frames
     std::list<std::shared_ptr<IFrame>> _frames_list;

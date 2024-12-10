@@ -17,10 +17,10 @@ uint32_t __max_recv_times = 32; // todo add to config
 thread_local std::shared_ptr<common::ITimer> Processor::__timer = common::MakeTimer();
 
 Processor::Processor(std::shared_ptr<ISender> sender, std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx):
+    _do_send(false),
     _sender(sender),
     _receiver(receiver),
-    _ctx(ctx),
-    _do_send(false) {
+    _ctx(ctx) {
     _alloter = std::make_shared<common::BlockMemoryPool>(1500, 5); // todo add to config
 }
 
@@ -29,7 +29,6 @@ Processor::~Processor() {
 }
 
 void Processor::Run() {
-    bool _stop = false;
     while (!_stop) {
         // send all data to network
         if (_do_send) {
@@ -76,7 +75,9 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     }
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(_ctx, __timer, _add_connection_id_cb, _retire_connection_id_cb);
+    auto new_conn = std::make_shared<ServerConnection>(_ctx, __timer,
+        std::bind(&Processor::AddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&Processor::RetireConnectionId, this, std::placeholders::_1));
     new_conn->AddRemoteConnectionId(cid, len);
     _conn_map[cid_code] = new_conn;
     new_conn->OnPackets(packet->GetTime(), packets);
@@ -94,7 +95,9 @@ void Processor::WeakUp() {
 }
 
 std::shared_ptr<IConnection> Processor::MakeClientConnection() {
-    auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer, _add_connection_id_cb, _retire_connection_id_cb);
+    auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer,
+        std::bind(&Processor::AddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&Processor::RetireConnectionId, this, std::placeholders::_1));
     return new_conn;
 }
 
@@ -145,6 +148,14 @@ void Processor::ProcessSend() {
         buffer->Clear();
     }
     _active_send_connection_list.clear();
+}
+
+void Processor::AddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn) {
+    _conn_map[cid_hash] = conn;
+}
+
+void Processor::RetireConnectionId(uint64_t cid_hash) {
+    _conn_map.erase(cid_hash);
 }
 
 bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {

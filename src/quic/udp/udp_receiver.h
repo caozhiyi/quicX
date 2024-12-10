@@ -9,7 +9,11 @@
 namespace quicx {
 namespace quic {
 
-// to receive udp packet
+/*
+ udp receiver, used to receive packets from udp socket
+ we can process one connection in a single thread since set REUSE_PORT option to udp socket,
+ a fix four set<source ip, source port, dest ip, dest port> is handled by one receiver udp socket.
+*/
 class UdpReceiver:
     public IReceiver {
 public:
