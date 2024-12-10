@@ -20,6 +20,9 @@ ConnectionID ConnectionIDManager::Generator() {
 }
 
 ConnectionID& ConnectionIDManager::GetCurrentID() {
+    if (_ids_map.empty()) {
+        Generator();
+    }
     return _cur_id;
 }
 

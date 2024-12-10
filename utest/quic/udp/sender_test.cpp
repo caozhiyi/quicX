@@ -44,6 +44,7 @@ TEST(UdpSenderTest, Send) {
 
     
     for (int i = 0; i < 5; ++i) {
+        // wait receiver thread ready
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         sender.Send(send_pkt);
     }
