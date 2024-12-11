@@ -1,5 +1,6 @@
 #ifndef QUIC_COMMON_CONSTANTS
 #define QUIC_COMMON_CONSTANTS
+
 #include <cstdint>
 
 namespace quicx {

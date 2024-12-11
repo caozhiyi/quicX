@@ -2,8 +2,9 @@
 #include "quic/common/version.h"
 #include "quic/udp/udp_sender.h"
 #include "quic/udp/udp_sender.h"
-#include "quic/udp/udp_receiver.h"
 #include "quic/quicx/processor.h"
+#include "quic/udp/udp_receiver.h"
+#include "quic/common/constants.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/connection/client_connection.h"
@@ -69,8 +70,11 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
         return true;
     }
 
+    // if pakcet is a short header packet, but we can't find in connection map, the connection may move to other thread.
+    // that may happen when ip of client changed.
     // check init packet?
     if (!InitPacketCheck(packets[0])) {
+        // TODO reset connection
         return false;
     }
 
@@ -106,8 +110,9 @@ void Processor::ProcessRecv() {
     while (times >= 0) {
         times--;
 
+        uint8_t recv_buf[__max_v4_packet_size] = {0};
         std::shared_ptr<INetPacket> packet = std::make_shared<INetPacket>();
-        auto buffer = std::make_shared<common::Buffer>(_alloter);
+        auto buffer = std::make_shared<common::Buffer>(recv_buf, sizeof(recv_buf));
         packet->SetData(buffer);
 
         auto ret = _receiver->TryRecv(packet);
