@@ -31,6 +31,9 @@ public:
     virtual uint64_t GetRecvSocket() { return sock_; }
 
 private:
+    bool TryRecv(std::shared_ptr<INetPacket> pkt);
+
+private:
     uint64_t sock_;
     common::Address local_address_;
 
