@@ -60,7 +60,19 @@ UdpReceiver::~UdpReceiver() {
 }
 
 void UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms) {
-    // if socket queue is not empty, try to recv from it
+    // try recv, if there is socket has data
+    if (TryRecv(pkt)) {
+        return;
+    }
+    
+    // we can't receive any data, so we need to wait
+    action_->Wait(timeout_ms, socket_queue_);
+
+    // try again, check if weakup by data receiveing
+    TryRecv(pkt);
+}
+
+bool UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt) {
     while (!socket_queue_.empty()) {
         uint64_t sock = socket_queue_.front();
         socket_queue_.pop();
@@ -81,11 +93,9 @@ void UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms) 
         pkt->SetAddress(std::move(peer_addr));
         pkt->SetSocket(sock);
         pkt->SetTime(common::UTCTimeMsec());
-        return;
+        return true;
     }
-
-    // we can't receive any data, so we need to wait
-    action_->Wait(timeout_ms, socket_queue_);
+    return false;
 }
 
 }
