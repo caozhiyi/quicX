@@ -13,18 +13,18 @@ UdpSender::UdpSender() {
         return;
     }
     
-    _sock = ret._return_value;
+    sock_ = ret._return_value;
 }
 
 UdpSender::UdpSender(uint64_t sock):
-    _sock(sock) {
+    sock_(sock) {
 
 }
 
 bool UdpSender::Send(std::shared_ptr<INetPacket>& pkt) {
     auto buffer= pkt->GetData();
     auto span = buffer->GetReadSpan();
-    auto ret = common::SendTo(_sock, (const char*)span.GetStart(), span.GetLength(), 0, pkt->GetAddress());
+    auto ret = common::SendTo(sock_, (const char*)span.GetStart(), span.GetLength(), 0, pkt->GetAddress());
     
     return ret.errno_ == 0;
 }

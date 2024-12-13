@@ -16,12 +16,7 @@ public:
     IReceiver() {}
     virtual ~IReceiver() {}
 
-    enum RecvResult {
-        RR_SUCCESS  = 0,
-        RR_FAILED   = 1,
-        RR_NO_DATA  = 2, // there is no packet to read
-    };
-    virtual RecvResult TryRecv(std::shared_ptr<INetPacket> pkt) = 0;
+    virtual void TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms) = 0;
 
     virtual uint64_t GetRecvSocket() = 0;
 };

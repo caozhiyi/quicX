@@ -25,21 +25,17 @@ public:
         std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx);
     virtual ~Processor();
 
-    void Run();
-
-    virtual bool HandlePacket(std::shared_ptr<INetPacket> packet);
-
-    virtual void ActiveSendConnection(std::shared_ptr<IConnection> conn);
-
-    virtual void WeakUp();
+    void Process();
 
     virtual std::shared_ptr<IConnection> MakeClientConnection();
 
 protected:
-    void ProcessRecv();
+    void ProcessRecv(uint32_t timeout_ms);
     void ProcessTimer();
     void ProcessSend();
 
+    bool HandlePacket(std::shared_ptr<INetPacket> packet);
+    void ActiveSendConnection(std::shared_ptr<IConnection> conn);
     void AddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn);
     void RetireConnectionId(uint64_t cid_hash);
 
@@ -50,20 +46,16 @@ protected:
 
 protected:
     bool _do_send;
-    
+
     std::shared_ptr<TLSCtx> _ctx;
     std::shared_ptr<ISender> _sender;
     std::shared_ptr<IReceiver> _receiver;
-
-    std::mutex _notify_mutex;
-    std::condition_variable _notify;
 
     std::function<void(uint64_t)> _add_connection_id_cb;
     std::function<void(uint64_t)> _retire_connection_id_cb;
 
     std::shared_ptr<common::BlockMemoryPool> _alloter;
 
-    uint32_t _max_recv_times;
     std::list<std::shared_ptr<IConnection>> _active_send_connection_list;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> _conn_map;
 
