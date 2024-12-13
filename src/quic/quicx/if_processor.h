@@ -6,13 +6,13 @@
 namespace quicx {
 namespace quic {
 
-class IProcessor:
-    public common::Thread {
+class IProcessor {
 public:
     IProcessor() {}
     virtual ~IProcessor() {}
 
-    std::thread::id GetThreadId() const { return std::this_thread::get_id(); }
+    // does the processing
+    virtual void Process() = 0;
 };
 
 }

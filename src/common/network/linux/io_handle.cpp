@@ -1,4 +1,5 @@
 #ifdef __linux__
+#include <fcntl.h>
 #include <unistd.h>       // for close
 #include <ifaddrs.h>
 #include <sys/uio.h>
@@ -100,6 +101,13 @@ SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 
 SysCallInt32Result SetSockOpt(int64_t sockfd, int level, int optname, const void *optval, uint32_t optlen) {
     const int32_t rc = setsockopt(sockfd, level, optname, optval, optlen);
+    return {rc, rc != -1 ? 0 : errno};
+}
+
+SysCallInt32Result SocketNoblocking(uint64_t sock) {
+    int32_t old_option = fcntl(sock, F_GETFL);
+    int32_t new_option = old_option | O_NONBLOCK;
+    const int32_t rc = fcntl(sock, F_SETFL, new_option);
     return {rc, rc != -1 ? 0 : errno};
 }
 

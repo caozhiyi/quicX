@@ -1,10 +1,13 @@
 #ifndef QUIC_UDP_UDP_RECEIVER
 #define QUIC_UDP_UDP_RECEIVER
 
+#include <queue>
 #include <string>
+#include <memory>
 #include <cstdint>
 #include "quic/udp/if_receiver.h"
 #include "common/network/address.h"
+#include "quic/udp/action/if_udp_action.h"
 
 namespace quicx {
 namespace quic {
@@ -23,13 +26,16 @@ public:
     UdpReceiver(const std::string& ip, uint16_t port);
     ~UdpReceiver();
 
-    IReceiver::RecvResult TryRecv(std::shared_ptr<INetPacket> pkt);
+    void TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms);
 
-    virtual uint64_t GetRecvSocket() { return _sock; }
+    virtual uint64_t GetRecvSocket() { return sock_; }
 
 private:
-    uint64_t _sock;
-    common::Address _local_address;
+    uint64_t sock_;
+    common::Address local_address_;
+
+    std::queue<uint64_t> socket_queue_;
+    std::shared_ptr<IUdpAction> action_;
 };
 
 }

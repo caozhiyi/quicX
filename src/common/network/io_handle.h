@@ -52,6 +52,8 @@ SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 
 SysCallInt32Result SetSockOpt(int64_t sockfd, int level, int optname, const void *optval, uint32_t optlen);
 
+SysCallInt32Result SocketNoblocking(uint64_t sock);
+
 }
 }
 

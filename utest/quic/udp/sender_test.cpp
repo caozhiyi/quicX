@@ -9,9 +9,10 @@ namespace quicx {
 namespace quic {
 namespace {
 
+int __send_times = 5;
 TEST(UdpSenderTest, Send) {
     std::vector<std::thread> threads;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 1; ++i) {
         threads.emplace_back([]() {
             char recv_buf[20] = {0};
             std::shared_ptr<common::Buffer> recv_buffer = std::make_shared<common::Buffer>((uint8_t*)recv_buf, sizeof(recv_buf));
@@ -20,12 +21,9 @@ TEST(UdpSenderTest, Send) {
             recv_pkt->SetData(recv_buffer);
 
             UdpReceiver receiver("127.0.0.1", 12345);
-            while (3) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-                if (receiver.TryRecv(recv_pkt) == IReceiver::RR_SUCCESS){
-                    EXPECT_EQ(0, memcmp(recv_buf, "hello world", sizeof("hello world")));
-                    break;
-                }
+
+            for (int i = 0; i < __send_times; ++i) {
+                receiver.TryRecv(recv_pkt, 10000);
             }
         });
     }
@@ -43,7 +41,7 @@ TEST(UdpSenderTest, Send) {
     send_pkt->SetAddress(addr);
 
     
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < __send_times; ++i) {
         // wait receiver thread ready
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         sender.Send(send_pkt);

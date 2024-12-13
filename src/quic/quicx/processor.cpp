@@ -29,26 +29,70 @@ Processor::~Processor() {
 
 }
 
-void Processor::Run() {
-    while (!_stop) {
-        // send all data to network
-        if (_do_send) {
-            _do_send = false;
-            ProcessSend();
+void Processor::Process() {
+    // send all data to network
+    if (_do_send) {
+        _do_send = false;
+        ProcessSend();
+    }
+
+    int64_t wait_time = __timer->MinTime();
+    wait_time = wait_time < 0 ? 1000 : wait_time;
+
+    // try to receive data from network
+    ProcessRecv(wait_time);
+
+    // check timer and do timer task
+    ProcessTimer();
+}
+
+std::shared_ptr<IConnection> Processor::MakeClientConnection() {
+    auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer,
+        std::bind(&Processor::AddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&Processor::RetireConnectionId, this, std::placeholders::_1));
+    new_conn->SetActiveConnectionCB(std::bind(&Processor::ActiveSendConnection, this, std::placeholders::_1));
+    return new_conn;
+}
+
+void Processor::ProcessRecv(uint32_t timeout_ms) {
+    uint8_t recv_buf[__max_v4_packet_size] = {0};
+    std::shared_ptr<INetPacket> packet = std::make_shared<INetPacket>();
+    auto buffer = std::make_shared<common::Buffer>(recv_buf, sizeof(recv_buf));
+    packet->SetData(buffer);
+
+    _receiver->TryRecv(packet, timeout_ms);
+
+    // if wakeup by timer, there may be no packet.
+    if (packet->GetData()->GetDataLength() > 0) {
+        HandlePacket(packet);
+    }
+}
+
+void Processor::ProcessTimer() {
+    __timer->TimerRun();
+}
+
+void Processor::ProcessSend() {
+    static thread_local uint8_t buf[1500] = {0};
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+
+    std::shared_ptr<INetPacket> packet;
+    for (auto iter = _active_send_connection_list.begin(); iter != _active_send_connection_list.end(); ++iter) {
+        if (!(*iter)->GenerateSendData(buffer)) {
+            common::LOG_ERROR("generate send data failed.");
+            continue;
         }
 
-        // try to receive data from network
-        ProcessRecv();
+        packet->SetData(buffer);
+        packet->SetSocket((*iter)->GetSock());
+        packet->SetAddress((*iter)->GetPeerAddress());
 
-        // check timer and do timer task
-        ProcessTimer();
-
-        int64_t wait_time = __timer->MinTime();
-        wait_time = wait_time < 0 ? 1000 : wait_time;
-
-        std::unique_lock<std::mutex> lock(_notify_mutex);
-        _notify.wait_for(lock, std::chrono::milliseconds(wait_time));
+        if (!_sender->Send(packet)) {
+            common::LOG_ERROR("udp send failed.");
+        }
+        buffer->Clear();
     }
+    _active_send_connection_list.clear();
 }
 
 bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
@@ -82,8 +126,9 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     auto new_conn = std::make_shared<ServerConnection>(_ctx, __timer,
         std::bind(&Processor::AddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Processor::RetireConnectionId, this, std::placeholders::_1));
-    new_conn->AddRemoteConnectionId(cid, len);
     _conn_map[cid_code] = new_conn;
+    new_conn->SetActiveConnectionCB(std::bind(&Processor::ActiveSendConnection, this, std::placeholders::_1));
+    new_conn->AddRemoteConnectionId(cid, len);
     new_conn->OnPackets(packet->GetTime(), packets);
 
     return true;
@@ -92,67 +137,6 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
 void Processor::ActiveSendConnection(std::shared_ptr<IConnection> conn) {
     _active_send_connection_list.push_back(conn);
     _do_send = true;
-}
-
-void Processor::WeakUp() {
-     _notify.notify_one();
-}
-
-std::shared_ptr<IConnection> Processor::MakeClientConnection() {
-    auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer,
-        std::bind(&Processor::AddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&Processor::RetireConnectionId, this, std::placeholders::_1));
-    return new_conn;
-}
-
-void Processor::ProcessRecv() {
-    int times = __max_recv_times;
-    while (times >= 0) {
-        times--;
-
-        uint8_t recv_buf[__max_v4_packet_size] = {0};
-        std::shared_ptr<INetPacket> packet = std::make_shared<INetPacket>();
-        auto buffer = std::make_shared<common::Buffer>(recv_buf, sizeof(recv_buf));
-        packet->SetData(buffer);
-
-        auto ret = _receiver->TryRecv(packet);
-        if (ret == IReceiver::RecvResult::RR_FAILED) {
-            common::LOG_ERROR("recv packet failed.");
-            continue;
-        }
-        if (ret == IReceiver::RecvResult::RR_NO_DATA) {
-            break;
-        }
-
-        HandlePacket(packet);
-    }
-}
-
-void Processor::ProcessTimer() {
-    __timer->TimerRun();
-}
-
-void Processor::ProcessSend() {
-    static thread_local uint8_t buf[1500] = {0};
-    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
-
-    std::shared_ptr<INetPacket> packet;
-    for (auto iter = _active_send_connection_list.begin(); iter != _active_send_connection_list.end(); ++iter) {
-        if (!(*iter)->GenerateSendData(buffer)) {
-            common::LOG_ERROR("generate send data failed.");
-            continue;
-        }
-
-        packet->SetData(buffer);
-        packet->SetSocket((*iter)->GetSock());
-        packet->SetAddress((*iter)->GetPeerAddress());
-
-        if (!_sender->Send(packet)) {
-            common::LOG_ERROR("udp send failed.");
-        }
-        buffer->Clear();
-    }
-    _active_send_connection_list.clear();
 }
 
 void Processor::AddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn) {

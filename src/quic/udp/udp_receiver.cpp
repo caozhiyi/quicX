@@ -9,13 +9,17 @@
 #include "common/network/io_handle.h"
 #include "common/alloter/pool_block.h"
 
+#ifdef __linux__
+#include "quic/udp/action/epoll/udp_action.h"
+#endif
 
 namespace quicx {
 namespace quic {
 
 UdpReceiver::UdpReceiver(uint64_t sock):
-    _sock(sock) {
-
+    sock_(sock) {
+    action_ = std::make_shared<UdpAction>();
+    action_->AddSocket(sock_);
 }
 
 UdpReceiver::UdpReceiver(const std::string& ip, uint16_t port) {
@@ -26,11 +30,11 @@ UdpReceiver::UdpReceiver(const std::string& ip, uint16_t port) {
         return;
     }
     
-    _sock = ret._return_value;
+    sock_ = ret._return_value;
 
     // reuse port
     int opt = 1;
-    auto opt_ret = common::SetSockOpt(_sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+    auto opt_ret = common::SetSockOpt(sock_, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("udp socket reuseport failed. err:%d", opt_ret.errno_);
         abort();
@@ -39,39 +43,49 @@ UdpReceiver::UdpReceiver(const std::string& ip, uint16_t port) {
 
     common::Address addr(common::Address::CheckAddressType(ip), ip, port);
 
-    opt_ret = Bind(_sock, addr);
+    opt_ret = Bind(sock_, addr);
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("bind address failed. err:%d", opt_ret.errno_);
         abort();
     }
+
+    action_ = std::make_shared<UdpAction>();
+    action_->AddSocket(sock_);
 }
 
 UdpReceiver::~UdpReceiver() {
-    if (_sock > 0) {
-        common::Close(_sock);
+    if (sock_ > 0) {
+        common::Close(sock_);
     }
 }
 
-IReceiver::RecvResult UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt) {
-    auto buffer = pkt->GetData();
-    auto span = buffer->GetWriteSpan();
-    common::Address peer_addr;
+void UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms) {
+    // if socket queue is not empty, try to recv from it
+    while (!socket_queue_.empty()) {
+        uint64_t sock = socket_queue_.front();
+        socket_queue_.pop();
 
-    auto ret = common::RecvFrom(_sock, (char*)span.GetStart(), __max_v4_packet_size, MSG_DONTWAIT, peer_addr);
-    if (ret.errno_ != 0) {
-        if (ret.errno_ == EAGAIN) {
-            return IReceiver::RR_NO_DATA;
+        auto buffer = pkt->GetData();
+        auto span = buffer->GetWriteSpan();
+        common::Address peer_addr;
+
+        auto ret = common::RecvFrom(sock, (char*)span.GetStart(), __max_v4_packet_size, MSG_DONTWAIT, peer_addr);
+        if (ret.errno_ != 0) {
+            if (ret.errno_ == EAGAIN) {
+                continue;
+            }
+            common::LOG_ERROR("recv from failed. err:%d", ret.errno_);
+            continue;
         }
-        
-        common::LOG_ERROR("recv from failed. err:%d", ret.errno_);
-        return UdpReceiver::RR_FAILED;
+        buffer->MoveReadPt(ret._return_value);
+        pkt->SetAddress(std::move(peer_addr));
+        pkt->SetSocket(sock);
+        pkt->SetTime(common::UTCTimeMsec());
+        return;
     }
-    buffer->MoveReadPt(ret._return_value);
-    pkt->SetAddress(std::move(peer_addr));
-    pkt->SetSocket(_sock);
-    pkt->SetTime(common::UTCTimeMsec());
 
-    return UdpReceiver::RR_SUCCESS;
+    // we can't receive any data, so we need to wait
+    action_->Wait(timeout_ms, socket_queue_);
 }
 
 }

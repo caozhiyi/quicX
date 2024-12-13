@@ -19,7 +19,7 @@ public:
     bool Send(std::shared_ptr<INetPacket>& pkt);
 
 private:
-    uint64_t _sock;
+    uint64_t sock_;
 };
 
 }
