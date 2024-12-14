@@ -28,8 +28,6 @@ public:
     virtual void Stop();
 
     void Weakeup();
-
-    void CatchConnection(uint64_t target_conn_id, std::thread::id from_thread_id);
     
 protected:
     virtual bool HandlePacket(std::shared_ptr<INetPacket> packet);

@@ -46,18 +46,13 @@ uint8_t* EncodeVarint(uint8_t* dst, uint64_t value) {
 }
 
 uint16_t GetEncodeVarintLength(uint64_t value) {
-    if (value < (1 << 6)) {
+    if (value <= 0x3F) {
         return 1;
-    }
-
-    if (value < (1 << 14)) {
-        return 2;
-    }
-
-    if (value < (1 << 30)) {
+    } else if (value <= 0x3FFF) {
+        return 2; 
+    } else if (value <= 0x3FFFFFFF) {
         return 4;
     }
-
     return 8;
 }
 
