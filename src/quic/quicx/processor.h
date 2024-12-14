@@ -1,5 +1,5 @@
-#ifndef QUIC_QUICX_SERVER_PROCESSOR
-#define QUIC_QUICX_SERVER_PROCESSOR
+#ifndef QUIC_QUICX_PROCESSOR
+#define QUIC_QUICX_PROCESSOR
 
 #include <memory>
 #include <functional>
@@ -45,21 +45,21 @@ protected:
         std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len);
 
 protected:
-    bool _do_send;
+    bool do_send_;
 
-    std::shared_ptr<TLSCtx> _ctx;
-    std::shared_ptr<ISender> _sender;
-    std::shared_ptr<IReceiver> _receiver;
+    std::shared_ptr<TLSCtx> ctx_;
+    std::shared_ptr<ISender> sender_;
+    std::shared_ptr<IReceiver> receiver_;
 
-    std::function<void(uint64_t)> _add_connection_id_cb;
-    std::function<void(uint64_t)> _retire_connection_id_cb;
+    std::function<void(uint64_t)> add_connection_id_cb_;
+    std::function<void(uint64_t)> retire_connection_id_cb_;
 
-    std::shared_ptr<common::BlockMemoryPool> _alloter;
+    std::shared_ptr<common::BlockMemoryPool> alloter_;
 
-    std::list<std::shared_ptr<IConnection>> _active_send_connection_list;
-    std::unordered_map<uint64_t, std::shared_ptr<IConnection>> _conn_map;
+    std::list<std::shared_ptr<IConnection>> active_send_connection_list_;
+    std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_;
 
-    thread_local static std::shared_ptr<common::ITimer> __timer;
+    thread_local static std::shared_ptr<common::ITimer> time_;
 };
 
 }

@@ -56,6 +56,10 @@ BaseConnection::~BaseConnection() {
 
 }
 
+uint64_t BaseConnection::GetConnectionIDHash() {
+    return _local_conn_id_manager->GetCurrentID().Hash();
+}
+
 std::shared_ptr<ISendStream> BaseConnection::MakeSendStream() {
     // check streams limit
     uint64_t stream_id;

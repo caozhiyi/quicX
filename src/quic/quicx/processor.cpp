@@ -14,15 +14,15 @@
 namespace quicx {
 namespace quic {
 
-uint32_t __max_recv_times = 32; // todo add to config
-thread_local std::shared_ptr<common::ITimer> Processor::__timer = common::MakeTimer();
+uint32_t __max_recvtime_s = 32; // todo add to config
+thread_local std::shared_ptr<common::ITimer> Processor::time_ = common::MakeTimer();
 
 Processor::Processor(std::shared_ptr<ISender> sender, std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx):
-    _do_send(false),
-    _sender(sender),
-    _receiver(receiver),
-    _ctx(ctx) {
-    _alloter = std::make_shared<common::BlockMemoryPool>(1500, 5); // todo add to config
+    do_send_(false),
+    sender_(sender),
+    receiver_(receiver),
+    ctx_(ctx) {
+    alloter_ = std::make_shared<common::BlockMemoryPool>(1500, 5); // todo add to config
 }
 
 Processor::~Processor() {
@@ -31,23 +31,23 @@ Processor::~Processor() {
 
 void Processor::Process() {
     // send all data to network
-    if (_do_send) {
-        _do_send = false;
+    if (do_send_) {
+        do_send_ = false;
         ProcessSend();
     }
 
-    int64_t wait_time = __timer->MinTime();
-    wait_time = wait_time < 0 ? 1000 : wait_time;
+    int64_t waittime_ = time_->MinTime();
+    waittime_ = waittime_ < 0 ? 1000 : waittime_;
 
     // try to receive data from network
-    ProcessRecv(wait_time);
+    ProcessRecv(waittime_);
 
     // check timer and do timer task
     ProcessTimer();
 }
 
 std::shared_ptr<IConnection> Processor::MakeClientConnection() {
-    auto new_conn = std::make_shared<ClientConnection>(_ctx, __timer,
+    auto new_conn = std::make_shared<ClientConnection>(ctx_, time_,
         std::bind(&Processor::AddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Processor::RetireConnectionId, this, std::placeholders::_1));
     new_conn->SetActiveConnectionCB(std::bind(&Processor::ActiveSendConnection, this, std::placeholders::_1));
@@ -60,7 +60,7 @@ void Processor::ProcessRecv(uint32_t timeout_ms) {
     auto buffer = std::make_shared<common::Buffer>(recv_buf, sizeof(recv_buf));
     packet->SetData(buffer);
 
-    _receiver->TryRecv(packet, timeout_ms);
+    receiver_->TryRecv(packet, timeout_ms);
 
     // if wakeup by timer, there may be no packet.
     if (packet->GetData()->GetDataLength() > 0) {
@@ -69,7 +69,7 @@ void Processor::ProcessRecv(uint32_t timeout_ms) {
 }
 
 void Processor::ProcessTimer() {
-    __timer->TimerRun();
+    time_->TimerRun();
 }
 
 void Processor::ProcessSend() {
@@ -77,7 +77,7 @@ void Processor::ProcessSend() {
     std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
 
     std::shared_ptr<INetPacket> packet;
-    for (auto iter = _active_send_connection_list.begin(); iter != _active_send_connection_list.end(); ++iter) {
+    for (auto iter = active_send_connection_list_.begin(); iter != active_send_connection_list_.end(); ++iter) {
         if (!(*iter)->GenerateSendData(buffer)) {
             common::LOG_ERROR("generate send data failed.");
             continue;
@@ -87,12 +87,12 @@ void Processor::ProcessSend() {
         packet->SetSocket((*iter)->GetSock());
         packet->SetAddress((*iter)->GetPeerAddress());
 
-        if (!_sender->Send(packet)) {
+        if (!sender_->Send(packet)) {
             common::LOG_ERROR("udp send failed.");
         }
         buffer->Clear();
     }
-    _active_send_connection_list.clear();
+    active_send_connection_list_.clear();
 }
 
 bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
@@ -108,14 +108,12 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     
     // dispatch packet
     auto cid_code = ConnectionIDGenerator::Instance().Hash(cid, len);
-    auto conn = _conn_map.find(cid_code);
-    if (conn != _conn_map.end()) {
+    auto conn = conn_map_.find(cid_code);
+    if (conn != conn_map_.end()) {
         conn->second->OnPackets(packet->GetTime(), packets);
         return true;
     }
 
-    // if pakcet is a short header packet, but we can't find in connection map, the connection may move to other thread.
-    // that may happen when ip of client changed.
     // check init packet?
     if (!InitPacketCheck(packets[0])) {
         // TODO reset connection
@@ -123,10 +121,10 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     }
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(_ctx, __timer,
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, time_,
         std::bind(&Processor::AddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Processor::RetireConnectionId, this, std::placeholders::_1));
-    _conn_map[cid_code] = new_conn;
+    conn_map_[cid_code] = new_conn;
     new_conn->SetActiveConnectionCB(std::bind(&Processor::ActiveSendConnection, this, std::placeholders::_1));
     new_conn->AddRemoteConnectionId(cid, len);
     new_conn->OnPackets(packet->GetTime(), packets);
@@ -135,16 +133,16 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
 }
 
 void Processor::ActiveSendConnection(std::shared_ptr<IConnection> conn) {
-    _active_send_connection_list.push_back(conn);
-    _do_send = true;
+    active_send_connection_list_.push_back(conn);
+    do_send_ = true;
 }
 
 void Processor::AddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn) {
-    _conn_map[cid_hash] = conn;
+    conn_map_[cid_hash] = conn;
 }
 
 void Processor::RetireConnectionId(uint64_t cid_hash) {
-    _conn_map.erase(cid_hash);
+    conn_map_.erase(cid_hash);
 }
 
 bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {

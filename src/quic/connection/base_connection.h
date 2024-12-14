@@ -30,6 +30,7 @@ public:
         std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb);
     virtual ~BaseConnection();
 
+    virtual uint64_t GetConnectionIDHash();
     virtual std::shared_ptr<ISendStream> MakeSendStream();
     virtual std::shared_ptr<BidirectionStream> MakeBidirectionalStream();
 

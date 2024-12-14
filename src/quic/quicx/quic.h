@@ -30,9 +30,9 @@ public:
 
     virtual void SetConnectionStateCallBack(connection_state_callback cb);
 private:
-    std::shared_ptr<TLSCtx> _ctx;
-    std::shared_ptr<IReceiver> _receiver;
-    std::vector<std::shared_ptr<IProcessor>> _processors;
+    std::shared_ptr<TLSCtx> ctx_;
+    std::shared_ptr<IReceiver> receiver_;
+    std::vector<std::shared_ptr<IProcessor>> processors_;
 };
 
 }

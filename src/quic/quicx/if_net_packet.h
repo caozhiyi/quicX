@@ -13,23 +13,23 @@ public:
     INetPacket() {}
     virtual ~INetPacket() {}
 
-    void SetData(std::shared_ptr<common::IBuffer> buffer) { _buffer = buffer; }
-    std::shared_ptr<common::IBuffer> GetData() { return _buffer; }
+    void SetData(std::shared_ptr<common::IBuffer> buffer) { buffer_ = buffer; }
+    std::shared_ptr<common::IBuffer> GetData() { return buffer_; }
 
-    void SetAddress(const common::Address& addr) { _addr = addr; }
-    const common::Address& GetAddress() { return _addr; }
+    void SetAddress(const common::Address& addr) { addr_ = addr; }
+    const common::Address& GetAddress() { return addr_; }
 
-    void SetSocket(uint64_t sock) { _sock = sock; }
-    const uint64_t GetSocket() { return _sock; }
+    void SetSocket(uint64_t sock) { sock_ = sock; }
+    const uint64_t GetSocket() { return sock_; }
 
-    void SetTime(uint64_t time) { _time = time; }
-    uint64_t GetTime() { return _time; } 
+    void SetTime(uint64_t time) { time_ = time; }
+    uint64_t GetTime() { return time_; } 
 
 protected:
-    uint64_t _sock; // socket fd
-    uint64_t _time; // packet generate time
-    common::Address _addr; // peer address
-    std::shared_ptr<common::IBuffer> _buffer;
+    uint64_t sock_; // socket fd
+    uint64_t time_; // packet generate time
+    common::Address addr_; // peer address
+    std::shared_ptr<common::IBuffer> buffer_;
 };
 
 }

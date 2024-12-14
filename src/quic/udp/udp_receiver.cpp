@@ -72,6 +72,10 @@ void UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms) 
     TryRecv(pkt);
 }
 
+void UdpReceiver::Weakup() {
+    action_->Weakup();
+}
+
 bool UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt) {
     while (!socket_queue_.empty()) {
         uint64_t sock = socket_queue_.front();

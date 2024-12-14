@@ -26,7 +26,7 @@
 
 // protected:
 //     UdpReceiver _udp_receiver;
-//     std::shared_ptr<common::BlockMemoryPool> _alloter;
+//     std::shared_ptr<common::BlockMemoryPool> alloter_;
 // };
 
 // }

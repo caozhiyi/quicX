@@ -103,7 +103,7 @@ void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
     }
 }
 
-void UdpAction::WeakUp() {
+void UdpAction::Weakup() {
     write(pipe_[1], "1", 1);
 }
 

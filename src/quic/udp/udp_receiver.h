@@ -30,6 +30,8 @@ public:
 
     virtual uint64_t GetRecvSocket() { return sock_; }
 
+    virtual void Weakup();
+
 private:
     bool TryRecv(std::shared_ptr<INetPacket> pkt);
 
