@@ -17,25 +17,25 @@
 // }
 
 // bool QuicxImpl::Init(uint16_t thread_num) {
-//     _ctx = std::make_shared<TLSCtx>();
-//     if (!_ctx->Init()) {
+//     ctx_ = std::make_shared<TLSCtx>();
+//     if (!ctx_->Init()) {
 //         common::LOG_ERROR("tls ctx init faliled.");
 //         return false;
 //     }
 
 //     if (thread_num == 1) {
-//         _receiver = std::make_shared<Receiver>();
+//         receiver_ = std::make_shared<Receiver>();
 
 //     } else {
-//         _receiver = std::make_shared<ThreadReceiver>();
+//         receiver_ = std::make_shared<ThreadReceiver>();
 //     }
 
 //     _processors.resize(thread_num);
 //     for (size_t i = 0; i < thread_num; i++) {
 //         auto processor = std::make_shared<Processor>();
-//         processor->SetRecvFunction([this] { return _receiver->DoRecv(); });
-//         processor->SetAddConnectionIDCB([this] (uint64_t id) { _receiver->RegisteConnection(std::this_thread::get_id(), id);});
-//         processor->SetRetireConnectionIDCB([this] (uint64_t id) { _receiver->CancelConnection(std::this_thread::get_id(), id);});
+//         processor->SetRecvFunction([this] { return receiver_->DoRecv(); });
+//         processor->SetAddConnectionIDCB([this] (uint64_t id) { receiver_->RegisteConnection(std::this_thread::get_id(), id);});
+//         processor->SetRetireConnectionIDCB([this] (uint64_t id) { receiver_->CancelConnection(std::this_thread::get_id(), id);});
 //         processor->Start();
 //         _processors.emplace_back(processor);
 //     }
@@ -50,8 +50,8 @@
 // }
 
 // void QuicxImpl::Destroy() {
-//     if (_receiver) {
-//         auto receiver = std::dynamic_pointer_cast<ThreadReceiver>(_receiver);
+//     if (receiver_) {
+//         auto receiver = std::dynamic_pointer_cast<ThreadReceiver>(receiver_);
 //         if (receiver) {
 //             receiver->Stop();
 //             receiver->WeakUp();
@@ -73,7 +73,7 @@
 //         auto cli_conn = std::dynamic_pointer_cast<ClientConnection>(conn);
 //         common::Address addr(common::AT_IPV4, ip, port);
 //         if (cli_conn->Dial(addr)) {
-//             _receiver->SetRecvSocket(cli_conn->GetSock());
+//             receiver_->SetRecvSocket(cli_conn->GetSock());
 //             return true;
 //         }
 //     }
@@ -81,8 +81,8 @@
 // }
 
 // bool QuicxImpl::ListenAndAccept(const std::string& ip, uint16_t port) {
-//     if (_receiver) {
-//         return _receiver->Listen(ip, port);
+//     if (receiver_) {
+//         return receiver_->Listen(ip, port);
 //     }
 //     return false;
 // }

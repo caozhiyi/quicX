@@ -24,8 +24,8 @@
 //     virtual bool Connection(const std::string& ip, uint16_t port);
 //     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
 // private:
-//     std::shared_ptr<TLSCtx> _ctx;
-//     std::shared_ptr<IReceiver> _receiver;
+//     std::shared_ptr<TLSCtx> ctx_;
+//     std::shared_ptr<IReceiver> receiver_;
 //     std::vector<std::shared_ptr<IProcessor>> _processors;
 // };
 

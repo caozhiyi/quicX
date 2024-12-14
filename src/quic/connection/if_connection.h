@@ -18,6 +18,8 @@ public:
     IConnection() {}
     virtual ~IConnection() {}
 
+    virtual uint64_t GetConnectionIDHash() = 0;
+
     // create a new send stream
     virtual std::shared_ptr<ISendStream> MakeSendStream() = 0;
     // create a new bidirectional stream
