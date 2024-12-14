@@ -1,5 +1,5 @@
-#ifndef HTTP3_FRAME_DATA_FRAME
-#define HTTP3_FRAME_DATA_FRAME
+#ifndef HTTP3_FRAME_HEADERS_FRAME
+#define HTTP3_FRAME_HEADERS_FRAME
 
 #include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
@@ -7,16 +7,16 @@
 namespace quicx {
 namespace http3 {
 
-class DataFrame:
+class HeadersFrame:
     public IFrame {
 public:
-    DataFrame(): IFrame(FT_DATA), length_(0) {}
+    HeadersFrame(): IFrame(FT_HEADERS), length_(0) {}
 
     uint32_t GetLength() const { return length_; }
     void SetLength(uint32_t length) { length_ = length; }
 
-    const std::vector<uint8_t>& GetData() const { return data_; }
-    void SetData(const std::vector<uint8_t>& data) { data_ = data; }
+    const std::vector<uint8_t>& GetEncodedFields() const { return encoded_fields_; }
+    void SetEncodedFields(const std::vector<uint8_t>& fields) { encoded_fields_ = fields; }
 
     bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
@@ -24,11 +24,12 @@ public:
     uint32_t EvaluatePaloadSize();
 
 private:
-    uint64_t length_;
-    std::vector<uint8_t> data_;
+    uint32_t length_; // Length of the frame
+    std::vector<uint8_t> encoded_fields_; // Encoded Field Section
 };
 
 }
 }
 
 #endif
+

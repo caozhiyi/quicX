@@ -53,29 +53,6 @@ TEST(decode_utest, EncodeVarint64_4) {
     EXPECT_EQ(value, value2);
 }
 
-// TEST(decode_utest, decode_bytes_copy) {
-//     const uint8_t* str = "12345678910";
-//     uint8_t buf[20] = {};
-//     uint8_t* ptr1 = EncodeBytes(buf, buf + 20, str, strlen((const char*)str));
-//     EXPECT_EQ(ptr1 - buf, strlen((const char*)str));
-
-//     uint8_t buf2[20] = {};
-//     uint8_t* bufptr = buf2;
-//     uint8_t* ptr2 = DecodeBytesCopy(buf, buf + 20, bufptr, strlen((const char*)str));
-//     EXPECT_EQ(strcmp((const char*)str, (const char*)bufptr), 0);
-// }
-
-// TEST(decode_utest, decode_bytes_not_copy) {
-//     const uint8_t* str = "12345678910";
-//     uint8_t buf[20] = {};
-//     uint8_t* ptr1 = EncodeBytes(buf, buf + 20, str, strlen((const char*)str));
-//     EXPECT_EQ(ptr1 - buf, strlen((const char*)str));
-
-//     uint8_t* bufptr;
-//     uint8_t* ptr2 = DecodeBytesNoCopy(buf, buf + 20, bufptr, strlen((const char*)str));
-//     EXPECT_EQ(strcmp((const char*)str, (const char*)bufptr), 0);
-// }
-
 }
 }
 }
