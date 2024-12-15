@@ -1,7 +1,7 @@
 #include <openssl/aead.h>
 #include <openssl/evp.h>
 #include <openssl/chacha.h>
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 #include "common/buffer/buffer_read_view.h"
 #include "quic/crypto/chacha20_poly1305_cryptographer.h"
 

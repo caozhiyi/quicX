@@ -5,8 +5,8 @@
 #include "common/decode/decode.h"
 #include "quic/common/constants.h"
 #include "quic/packet/header/long_header.h"
-#include "common/buffer/buffer_interface.h"
-#include "common/alloter/alloter_interface.h"
+#include "common/buffer/if_buffer.h"
+#include "common/alloter/if_alloter.h"
 
 namespace quicx {
 namespace quic {

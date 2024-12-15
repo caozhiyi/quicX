@@ -1,6 +1,6 @@
 #include "common/log/log.h"
 #include "common/decode/decode.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/transport_param_type.h"
 #include "quic/connection/transport_param_config.h"

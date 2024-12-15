@@ -4,8 +4,8 @@
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
 #include "common/util/time.h"
+#include "common/log/if_logger.h"
 #include "common/log/base_logger.h"
-#include "common/log/logger_interface.h"
 #include "common/alloter/normal_alloter.h"
 
 namespace quicx {

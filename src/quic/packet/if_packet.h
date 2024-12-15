@@ -8,8 +8,8 @@
 #include "quic/frame/if_frame.h"
 #include "quic/packet/header/if_header.h"
 #include "quic/crypto/if_cryptographer.h"
-#include "common/buffer/buffer_read_interface.h"
-#include "common/buffer/buffer_write_interface.h"
+#include "common/buffer/if_buffer_read.h"
+#include "common/buffer/if_buffer_write.h"
 
 namespace quicx {
 namespace quic {

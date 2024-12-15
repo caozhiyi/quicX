@@ -7,7 +7,7 @@
 #define COMMON_BUFFER_BUFFER_CHAINS
 
 #include "common/buffer/buffer_block.h"
-#include "common/buffer/buffer_chains_interface.h"
+#include "common/buffer/if_buffer_chains.h"
 
 namespace quicx {
 namespace common {

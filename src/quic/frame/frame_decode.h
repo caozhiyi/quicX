@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 #include "quic/frame/if_frame.h"
-#include "common/buffer/buffer_read_interface.h"
+#include "common/buffer/if_buffer_read.h"
 
 namespace quicx {
 namespace quic {

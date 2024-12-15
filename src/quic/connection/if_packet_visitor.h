@@ -2,7 +2,7 @@
 #define QUIC_CONNECTION_PACKET_VISITOR_INTERFACE
 
 #include "quic/packet/if_packet.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace quic {

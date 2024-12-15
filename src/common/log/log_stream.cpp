@@ -5,7 +5,7 @@
 
 #include "log.h"
 #include "log_stream.h"
-#include "logger_interface.h"
+#include "if_logger.h"
 
 namespace quicx {
 namespace common {

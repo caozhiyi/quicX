@@ -3,7 +3,7 @@
 
 #include <cstdint>
 #include "http3/frame/type.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {

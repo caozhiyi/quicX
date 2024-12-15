@@ -3,7 +3,7 @@
 
 #include <memory>
 #include "common/network/address.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace quic {

@@ -7,8 +7,8 @@
 #define COMMON_BUFFER_BUFFER_INTERFACE
 
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_interface.h"
-#include "common/buffer/buffer_write_interface.h"
+#include "common/buffer/if_buffer_read.h"
+#include "common/buffer/if_buffer_write.h"
 
 namespace quicx {
 namespace common {

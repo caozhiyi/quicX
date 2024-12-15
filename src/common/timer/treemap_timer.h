@@ -9,7 +9,7 @@
 #include <map>
 #include <unordered_map>
 #include "common/util/random.h"
-#include "common/timer/timer_interface.h"
+#include "common/timer/if_timer.h"
 
 namespace quicx {
 namespace common {

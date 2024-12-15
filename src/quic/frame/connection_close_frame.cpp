@@ -1,7 +1,7 @@
 #include "common/log/log.h"
 #include "common/decode/decode.h"
-#include "common/buffer/buffer_interface.h"
-#include "common/alloter/alloter_interface.h"
+#include "common/buffer/if_buffer.h"
+#include "common/alloter/if_alloter.h"
 #include "quic/frame/connection_close_frame.h"
 
 namespace quicx {

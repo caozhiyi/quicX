@@ -5,7 +5,7 @@
 // #include "quic/udp/udp_receiver.h"
 // #include "quic/udp/udp_packet_in.h"
 // #include "common/alloter/pool_block.h"
-// #include "quic/quicx/receiver_interface.h"
+// #include "quic/quicx/if_receiver.h"
 
 // namespace quicx {
 // namespace quic {

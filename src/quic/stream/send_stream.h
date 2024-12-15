@@ -5,7 +5,7 @@
 #include <string>
 #include "quic/stream/if_send_stream.h"
 #include "common/alloter/pool_alloter.h"
-#include "common/buffer/buffer_chains_interface.h"
+#include "common/buffer/if_buffer_chains.h"
 
 namespace quicx {
 namespace quic {

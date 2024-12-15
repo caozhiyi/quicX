@@ -3,7 +3,7 @@
 
 #include <queue>
 #include "common/lock/spin_lock.h"
-#include "common/structure/queue_interface.h"
+#include "common/structure/if_queue.h"
 
 namespace quicx {
 namespace common {

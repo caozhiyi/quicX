@@ -7,7 +7,7 @@
 #define COMMON_BUFFER_BUFFER_READ_WRITE
 
 #include "common/buffer/buffer_span.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace common {

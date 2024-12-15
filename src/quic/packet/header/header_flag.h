@@ -4,7 +4,7 @@
 #include <memory>
 #include "quic/packet/type.h"
 #include "quic/packet/header/type.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace quic {

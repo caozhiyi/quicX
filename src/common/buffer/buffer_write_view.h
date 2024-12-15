@@ -6,7 +6,7 @@
 #ifndef COMMON_BUFFER_BUFFER_WRITE_VIEW
 #define COMMON_BUFFER_BUFFER_WRITE_VIEW
 
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace common {

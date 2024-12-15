@@ -8,7 +8,7 @@
 
 #include <vector>
 #include <cstdint>
-#include "alloter_interface.h"
+#include "if_alloter.h"
 
 namespace quicx {
 namespace common {
