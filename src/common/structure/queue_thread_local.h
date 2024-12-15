@@ -6,8 +6,6 @@
 #include "common/structure/queue_interface.h"
 
 namespace quicx {
-namespace quic {
-
 namespace common {
 
 class QueueSolt;
