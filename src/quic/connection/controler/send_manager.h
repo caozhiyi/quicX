@@ -7,12 +7,12 @@
 #include "quic/packet/if_packet.h"
 #include "quic/stream/if_stream.h"
 #include "quic/packet/packet_number.h"
-#include "common/timer/timer_interface.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/timer/if_timer.h"
+#include "common/buffer/if_buffer.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/controler/send_control.h"
 #include "quic/connection/controler/flow_control.h"
-#include "quic/connection/packet_visitor_interface.h"
+#include "quic/connection/if_packet_visitor.h"
 
 namespace quicx {
 namespace quic {
@@ -28,25 +28,25 @@ public:
     bool GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
     void OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame);
 
-    void SetFlowControl(std::shared_ptr<FlowControl> flow_control) { _flow_control = flow_control; }
-    void SetLocalConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { _local_conn_id_manager = manager; }
-    void SetRemoteConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { _remote_conn_id_manager = manager; }
+    void SetFlowControl(std::shared_ptr<FlowControl> flow_control) { flow_control_ = flow_control; }
+    void SetLocalConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { local_conn_id_manager_ = manager; }
+    void SetRemoteConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { remote_conn_id_manager_ = manager; }
 
 private:
     std::shared_ptr<IPacket> MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
     bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer);
 
 private:
-    SendControl _send_control;
+    SendControl send_control_;
     // packet number
-    PacketNumber _pakcet_number;
-    std::shared_ptr<FlowControl> _flow_control;
-    std::list<std::shared_ptr<IFrame>> _wait_frame_list;
-    std::unordered_set<std::shared_ptr<IStream>> _active_send_stream_set;
+    PacketNumber pakcet_number_;
+    std::shared_ptr<FlowControl> flow_control_;
+    std::list<std::shared_ptr<IFrame>> wait_frame_list_;
+    std::unordered_set<std::shared_ptr<IStream>> active_send_stream_set_;
 
     // connection id
-    std::shared_ptr<ConnectionIDManager> _local_conn_id_manager;
-    std::shared_ptr<ConnectionIDManager> _remote_conn_id_manager;
+    std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
+    std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
 };
 
 }

@@ -3,9 +3,9 @@
 #include "common/util/random.h"
 #include "common/decode/decode.h"
 #include "quic/frame/path_response_frame.h"
-#include "common/buffer/buffer_interface.h"
+#include "common/buffer/if_buffer.h"
 #include "quic/frame/path_challenge_frame.h"
-#include "common/alloter/alloter_interface.h"
+#include "common/alloter/if_alloter.h"
 
 namespace quicx {
 namespace quic {

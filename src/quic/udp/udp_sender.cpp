@@ -13,7 +13,7 @@ UdpSender::UdpSender() {
         return;
     }
     
-    sock_ = ret._return_value;
+    sock_ = ret.return_value_;
 }
 
 UdpSender::UdpSender(uint64_t sock):

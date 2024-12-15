@@ -19,18 +19,18 @@ public:
 
     uint32_t GetPT0Interval(uint32_t max_ack_delay);
 
-    uint32_t GetLatestRtt() { return _latest_rtt; }
-    uint32_t GetRttVar() { return _rtt_var; }
-    uint32_t GetMinRtt() { return _min_rtt; }
-    uint32_t GetSmoothedRtt() { return _smoothed_rtt; }
+    uint32_t GetLatestRtt() { return latest_rtt_; }
+    uint32_t GetRttVar() { return rtt_var_; }
+    uint32_t GetMinRtt() { return min_rtt_; }
+    uint32_t GetSmoothedRtt() { return smoothed_rtt_; }
 
 private:
-    uint32_t _latest_rtt;
-    uint32_t _rtt_var;
-    uint32_t _min_rtt;
-    uint32_t _smoothed_rtt;
+    uint32_t latest_rtt_;
+    uint32_t rtt_var_;
+    uint32_t min_rtt_;
+    uint32_t smoothed_rtt_;
 
-    uint64_t _last_update_time; 
+    uint64_t last_update_time_; 
 
 };
 

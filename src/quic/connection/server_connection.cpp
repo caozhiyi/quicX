@@ -20,22 +20,22 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
     std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> add_conn_id_cb,
     std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb):
     BaseConnection(StreamIDGenerator::SS_SERVER, timer, add_conn_id_cb, retire_conn_id_cb) {
-    _tls_connection = std::make_shared<TLSServerConnection>(ctx, &_connection_crypto, this);
-    if (!_tls_connection->Init()) {
+    tls_connection_ = std::make_shared<TLSServerConnection>(ctx, &connection_crypto_, this);
+    if (!tls_connection_->Init()) {
         common::LOG_ERROR("tls connection init failed.");
     }
-    auto crypto_stream = std::make_shared<CryptoStream>(_alloter);
+    auto crypto_stream = std::make_shared<CryptoStream>(alloter_);
     crypto_stream->SetActiveStreamSendCB(std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1));
     crypto_stream->SetRecvCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
-    _connection_crypto.SetCryptoStream(crypto_stream);
+    connection_crypto_.SetCryptoStream(crypto_stream);
 
     auto ret = common::UdpSocket();
-    if (ret._return_value < 0) {
+    if (ret.return_value_ < 0) {
         common::LOG_ERROR("make send socket failed. err:%d", ret.errno_);
         return;
     }
-    _send_sock = ret._return_value;
+    send_sock_ = ret.return_value_;
 }
 
 ServerConnection::~ServerConnection() {
@@ -44,16 +44,16 @@ ServerConnection::~ServerConnection() {
 
 void ServerConnection::AddRemoteConnectionId(uint8_t* id, uint16_t len) {
     ConnectionID cid(id, len);
-    _remote_conn_id_manager->AddID(cid);
+    remote_conn_id_manager_->AddID(cid);
 }
 
 void ServerConnection::AddTransportParam(TransportParamConfig& tp_config) {
-    _transport_param.Init(tp_config);
+    transport_param_.Init(tp_config);
 
     // set transport param. TODO define tp length
-    std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(_alloter);
-    _transport_param.Encode(buf);
-    _tls_connection->AddTransportParam(buf->GetData(), buf->GetDataLength());
+    std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(alloter_);
+    transport_param_.Encode(buf);
+    tls_connection_->AddTransportParam(buf->GetData(), buf->GetDataLength());
 }
 
 void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
@@ -98,12 +98,12 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<common::IBufferChains> bu
     
     uint8_t data[1450] = {0};
     uint32_t len = buffer->Read(data, 1450);
-    if (!_tls_connection->ProcessCryptoData(data, len)) {
+    if (!tls_connection_->ProcessCryptoData(data, len)) {
         common::LOG_ERROR("process crypto data failed. err:%s", err);
         return;
     }
     
-    if (_tls_connection->DoHandleShake()) {
+    if (tls_connection_->DoHandleShake()) {
         common::LOG_DEBUG("handshake done.");
     }
 }

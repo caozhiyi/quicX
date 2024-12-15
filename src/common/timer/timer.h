@@ -7,7 +7,7 @@
 #define COMMON_TIMER_TIMER
 
 #include <memory>
-#include "common/timer/timer_interface.h"
+#include "common/timer/if_timer.h"
 
 namespace quicx {
 namespace common {

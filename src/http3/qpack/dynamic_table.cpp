@@ -27,7 +27,7 @@ bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& val
     // Update index mapping
     for (uint32_t i = 0; i < headeritem_vec_.size(); i++) {
         const HeaderItem& item = headeritem_vec_[i];
-        headeritem_index_map_[{item._name, item._value}] = i;
+        headeritem_index_map_[{item.name_, item.value_}] = i;
     }
 
     return true;
@@ -55,14 +55,14 @@ void DynamicTable::EvictEntries() {
 
     // Remove oldest entry
     const HeaderItem& item = headeritem_vec_.back();
-    current_size_ -= CalculateEntrySize(item._name, item._value);
+    current_size_ -= CalculateEntrySize(item.name_, item.value_);
     headeritem_vec_.pop_back();
 
     // Update index mapping
     headeritem_index_map_.clear();
     for (uint32_t i = 0; i < headeritem_vec_.size(); i++) {
         const HeaderItem& item = headeritem_vec_[i];
-        headeritem_index_map_[{item._name, item._value}] = i;
+        headeritem_index_map_[{item.name_, item.value_}] = i;
     }
 }
 

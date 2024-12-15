@@ -7,9 +7,9 @@ namespace quicx {
 namespace http3 {
 
 struct HeaderItem {
-    std::string _name;
-    std::string _value;
-    HeaderItem(const std::string& name, const std::string& value) : _name(name), _value(value) {}
+    std::string name_;
+    std::string value_;
+    HeaderItem(const std::string& name, const std::string& value) : name_(name), value_(value) {}
 };
 
 

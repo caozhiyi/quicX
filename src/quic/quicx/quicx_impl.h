@@ -6,7 +6,7 @@
 // #include "quic/include/quicx.h"
 // #include "common/thread/thread.h"
 // #include "quic/crypto/tls/tls_ctx.h"
-// #include "quic/quicx/receiver_interface.h"
+// #include "quic/quicx/if_receiver.h"
 // #include "quic/quicx/processor_interface.h"
 
 // namespace quicx {
@@ -26,7 +26,7 @@
 // private:
 //     std::shared_ptr<TLSCtx> ctx_;
 //     std::shared_ptr<IReceiver> receiver_;
-//     std::vector<std::shared_ptr<IProcessor>> _processors;
+//     std::vector<std::shared_ptr<IProcessor>> processors_;
 // };
 
 // }

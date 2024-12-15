@@ -15,42 +15,42 @@ public:
     ~ThreadSafeBlockQueue() {}
 
     void Push(const T& element) {
-        std::unique_lock<std::mutex> lock(_mutex);
-        _queue.push(element);
-        _empty_notify.notify_all();
+        std::unique_lock<std::mutex> lock(mutex_);
+        queue_.push(element);
+        empty_notify_.notify_all();
     }
 
     T Pop() {
-        std::unique_lock<std::mutex> lock(_mutex);
-        _empty_notify.wait(_mutex, [this]() {return !this->_queue.empty(); });
+        std::unique_lock<std::mutex> lock(mutex_);
+        empty_notify_.wait(mutex_, [this]() {return !this->queue_.empty(); });
 
-        auto ret = std::move(_queue.front());
-        _queue.pop();
+        auto ret = std::move(queue_.front());
+        queue_.pop();
  
         return std::move(ret);
     }
 
     void Clear() {
-        std::unique_lock<std::mutex> lock(_mutex);
-        while (!_queue.empty()) {
-            _queue.pop();
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (!queue_.empty()) {
+            queue_.pop();
         }
     }
 
     uint32_t Size() {
-        std::unique_lock<std::mutex> lock(_mutex);
-        return _queue.size();
+        std::unique_lock<std::mutex> lock(mutex_);
+        return queue_.size();
     }
 
     bool Empty() {
-        std::unique_lock<std::mutex> lock(_mutex);
-        return _queue.empty();
+        std::unique_lock<std::mutex> lock(mutex_);
+        return queue_.empty();
     }
 
 private:
-    std::mutex    _mutex;
-    std::queue<T> _queue;
-    std::condition_variable_any _empty_notify;
+    std::mutex    mutex_;
+    std::queue<T> queue_;
+    std::condition_variable_any empty_notify_;
 };
 
 }

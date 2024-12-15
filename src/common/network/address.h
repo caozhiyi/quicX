@@ -26,8 +26,8 @@ public:
     virtual void SetPort(uint16_t port);
     virtual uint16_t GetPort() const;
 
-    virtual void SetAddressType(AddressType address_type) { _address_type = address_type; }
-    virtual AddressType GetAddressType() const { return _address_type; }
+    virtual void SetAddressType(AddressType address_type) { address_type_ = address_type; }
+    virtual AddressType GetAddressType() const { return address_type_; }
 
     virtual const std::string AsString() const;
 
@@ -37,9 +37,9 @@ public:
     static AddressType CheckAddressType(const std::string& ip);
 
 protected:
-    AddressType _address_type;
-    std::string _ip;
-    uint16_t _port;
+    AddressType address_type_;
+    std::string ip_;
+    uint16_t port_;
 };
 
 }

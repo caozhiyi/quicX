@@ -9,14 +9,14 @@ namespace common {
 template<typename T>
 class LinkedListSolt {
 public:
-    LinkedListSolt(): _next(nullptr) {}
+    LinkedListSolt(): next_(nullptr) {}
     virtual ~LinkedListSolt() {}
 
-    void SetNext(std::shared_ptr<T> v) { _next = v; }
-    std::shared_ptr<T> GetNext() { return _next; }
+    void SetNext(std::shared_ptr<T> v) { next_ = v; }
+    std::shared_ptr<T> GetNext() { return next_; }
 
 protected:
-    std::shared_ptr<T> _next;
+    std::shared_ptr<T> next_;
 };
 
 }

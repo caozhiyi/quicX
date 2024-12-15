@@ -9,27 +9,27 @@ namespace quicx {
 namespace common {
 
 struct Iovec {
-    void      *_iov_base;      // starting address of buffer
-    size_t    _iov_len;        // size of buffer
-    Iovec(void* base, size_t len) : _iov_base(base), _iov_len(len) {}
+    void      *iov_base_;      // starting address of buffer
+    size_t    iov_len_;        // size of buffer
+    Iovec(void* base, size_t len) : iov_base_(base), iov_len_(len) {}
 };
 
 struct Msghdr {
-    void *_msg_name;		/* Address to send to/receive from.  */
-    uint32_t _msg_namelen;	/* Length of address data.  */
+    void *msg_name_;		/* Address to send to/receive from.  */
+    uint32_t msg_namelen_;	/* Length of address data.  */
 
-    struct Iovec *_msg_iov;	/* Vector of data to send/receive into.  */
-    size_t _msg_iovlen;		/* Number of elements in the vector.  */
+    struct Iovec *msg_iov_;	/* Vector of data to send/receive into.  */
+    size_t msg_iovlen_;		/* Number of elements in the vector.  */
 
-    void *_msg_control;		/* Ancillary data (eg BSD filedesc passing). */
-    size_t _msg_controllen;	/* Ancillary data buffer length.*/
+    void *msg_control_;		/* Ancillary data (eg BSD filedesc passing). */
+    size_t msg_controllen_;	/* Ancillary data buffer length.*/
 
-    int16_t _msg_flags;		/* Flags on received message.  */
+    int16_t msg_flags_;		/* Flags on received message.  */
 };
 
 struct MMsghdr {
-    Msghdr   _msg_hdr;		/* Actual message header.  */
-    uint32_t _msg_len;	/* Number of received or sent bytes for the entry.  */
+    Msghdr   msg_hdr_;		/* Actual message header.  */
+    uint32_t msg_len_;	/* Number of received or sent bytes for the entry.  */
 };
 
 SysCallInt64Result UdpSocket();

@@ -7,7 +7,7 @@ namespace quic {
 
 ConnectionIDGenerator::ConnectionIDGenerator() {
     // make key
-    RAND_bytes((unsigned char*)_sip_hash_key, sizeof(_sip_hash_key));
+    RAND_bytes((unsigned char*)sip_hash_key_, sizeof(sip_hash_key_));
 }
 
 ConnectionIDGenerator::~ConnectionIDGenerator() {
@@ -19,7 +19,7 @@ void ConnectionIDGenerator::Generator(uint8_t* cid, uint32_t len) {
 }
 
 uint64_t ConnectionIDGenerator::Hash(uint8_t* cid, uint32_t len) {
-    return SIPHASH_24(_sip_hash_key, cid, len);
+    return SIPHASH_24(sip_hash_key_, cid, len);
 }
 
 }

@@ -3,7 +3,7 @@
 
 #include "quic/stream/if_stream.h"
 #include "quic/stream/state_machine_recv.h"
-#include "common/buffer/buffer_chains_interface.h"
+#include "common/buffer/if_buffer_chains.h"
 
 namespace quicx {
 namespace quic {

@@ -9,7 +9,7 @@
 #include <map>
 #include <unordered_map>
 #include "common/util/random.h"
-#include "common/timer/timer_interface.h"
+#include "common/timer/if_timer.h"
 
 namespace quicx {
 namespace common {
@@ -36,9 +36,9 @@ public:
 
     virtual bool Empty();
 private:
-    RangeRandom _random;
+    RangeRandom random_;
     // time => id => task
-    std::map<uint64_t, std::unordered_map<uint64_t, TimerTask>> _timer_map;
+    std::map<uint64_t, std::unordered_map<uint64_t, TimerTask>> timer_map_;
 };
 
 }

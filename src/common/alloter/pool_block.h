@@ -36,9 +36,9 @@ public:
     virtual void Expansion(uint32_t num = 0);
 
 private:
-    uint32_t                  _number_large_add_nodes; //every time add nodes num
-    uint32_t                  _large_size;             //bulk memory size
-    std::vector<void*>        _free_mem_vec;           //free bulk memory list
+    uint32_t                  number_large_add_nodes_; //every time add nodes num
+    uint32_t                  large_size_;             //bulk memory size
+    std::vector<void*>        free_mem_vec_;           //free bulk memory list
 };
 
 std::shared_ptr<common::BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num);

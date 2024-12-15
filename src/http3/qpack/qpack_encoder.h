@@ -5,8 +5,8 @@
 #include <string>
 #include <unordered_map>
 #include "http3/qpack/dynamic_table.h"
-#include "common/buffer/buffer_read_interface.h"
-#include "common/buffer/buffer_write_interface.h"
+#include "common/buffer/if_buffer_read.h"
+#include "common/buffer/if_buffer_write.h"
 
 namespace quicx {
 namespace http3 {

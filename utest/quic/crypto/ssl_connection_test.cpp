@@ -23,30 +23,30 @@ public:
         R_SERVER,
     };
 
-    MockTransport(Role role): _role(role) {
+    MockTransport(Role role): role_(role) {
         // The caller is expected to configure initial secrets.
-        _levels[EL_INITIAL].write_secret = {1};
-        _levels[EL_INITIAL].read_secret = {1};
+        levels_[EL_INITIAL].write_secret = {1};
+        levels_[EL_INITIAL].read_secret = {1};
     }
 
-    void SetPeer(MockTransport *peer) { _peer = peer; }
+    void SetPeer(MockTransport *peer) { peer_ = peer; }
 
-    bool HasAlert() const { return _has_alert; }
-    EncryptionLevel AlertLevel() const { return _alert_level; }
-    uint8_t Alert() const { return _alert; }
+    bool HasAlert() const { return has_alert_; }
+    EncryptionLevel AlertLevel() const { return alert_level_; }
+    uint8_t Alert() const { return alert_; }
 
     bool PeerSecretsMatch(EncryptionLevel level) const {
-        return _levels[level].write_secret == _peer->_levels[level].read_secret &&
-            _levels[level].read_secret == _peer->_levels[level].write_secret &&
-            _levels[level].cipher == _peer->_levels[level].cipher;
+        return levels_[level].write_secret == peer_->levels_[level].read_secret &&
+            levels_[level].read_secret == peer_->levels_[level].write_secret &&
+            levels_[level].cipher == peer_->levels_[level].cipher;
     }
 
     bool HasReadSecret(EncryptionLevel level) const {
-        return !_levels[level].read_secret.empty();
+        return !levels_[level].read_secret.empty();
     }
 
     bool HasWriteSecret(EncryptionLevel level) const {
-        return !_levels[level].write_secret.empty();
+        return !levels_[level].write_secret.empty();
     }
 
     void SetReadSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
@@ -56,7 +56,7 @@ public:
             return;
         }
 
-        if (_role == Role::R_CLITNE && level == EL_EARLY_DATA) {
+        if (role_ == Role::R_CLITNE && level == EL_EARLY_DATA) {
             ADD_FAILURE() << "Unexpected early data read secret";
             return;
         }
@@ -73,14 +73,14 @@ public:
             return;
         }
 
-        if (level != EL_EARLY_DATA && SSL_CIPHER_get_id(cipher) != _levels[level].cipher) {
+        if (level != EL_EARLY_DATA && SSL_CIPHER_get_id(cipher) != levels_[level].cipher) {
             ADD_FAILURE() << "Cipher suite inconsistent";
             return;
         }
 
-        _levels[level].read_secret.resize(secret_len);
-        memcpy(&(*_levels[level].read_secret.begin()), secret, secret_len);
-        _levels[level].cipher = SSL_CIPHER_get_id(cipher);
+        levels_[level].read_secret.resize(secret_len);
+        memcpy(&(*levels_[level].read_secret.begin()), secret, secret_len);
+        levels_[level].cipher = SSL_CIPHER_get_id(cipher);
     }
 
     void SetWriteSecret(SSL* ssl, EncryptionLevel level, const SSL_CIPHER *cipher,
@@ -90,7 +90,7 @@ public:
             return;
         }
 
-        if (_role == Role::R_SERVER && level == EL_EARLY_DATA) {
+        if (role_ == Role::R_SERVER && level == EL_EARLY_DATA) {
             ADD_FAILURE() << "Unexpected early data write secret";
             return;
         }
@@ -100,15 +100,15 @@ public:
             return;
         }
 
-        _levels[level].write_secret.resize(secret_len);
-        memcpy(&(*_levels[level].write_secret.begin()), secret, secret_len);
-        _levels[level].cipher = SSL_CIPHER_get_id(cipher);
+        levels_[level].write_secret.resize(secret_len);
+        memcpy(&(*levels_[level].write_secret.begin()), secret, secret_len);
+        levels_[level].cipher = SSL_CIPHER_get_id(cipher);
         return;
     }
 
     void WriteMessage(EncryptionLevel level, const uint8_t *data,
         size_t len) {
-        if (_levels[level].write_secret.empty()) {
+        if (levels_[level].write_secret.empty()) {
             ADD_FAILURE() << LevelToString(level)
                     << " write secret not yet configured";
             return;
@@ -119,12 +119,12 @@ public:
                 ADD_FAILURE() << "unexpected handshake data at early data level";
                 return;
             case EL_INITIAL:
-                if (!_levels[EL_HANDSHAKE].write_secret.empty()) {
+                if (!levels_[EL_HANDSHAKE].write_secret.empty()) {
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after handshake keys installed";
                     return;
                 }
           case EL_HANDSHAKE:
-                if (!_levels[EL_APPLICATION].write_secret.empty()) {
+                if (!levels_[EL_APPLICATION].write_secret.empty()) {
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after application keys installed";
                     return;
                 }
@@ -134,7 +134,7 @@ public:
     
         std::vector<uint8_t> tempData(len);
         memcpy(&(*tempData.begin()), data, len);
-        _levels[level].write_data.insert(_levels[level].write_data.end(), tempData.begin(), tempData.end());
+        levels_[level].write_data.insert(levels_[level].write_data.end(), tempData.begin(), tempData.end());
     }
 
     void FlushFlight() {
@@ -142,52 +142,52 @@ public:
     }
 
     void SendAlert(EncryptionLevel level, uint8_t alert) {
-        if (_has_alert) {
+        if (has_alert_) {
             ADD_FAILURE() << "duplicate alert sent";
             return;
         }
 
-        if (_levels[level].write_secret.empty()) {
+        if (levels_[level].write_secret.empty()) {
             ADD_FAILURE() << LevelToString(level) << " write secret not yet configured";
             return;
         }
 
-        _has_alert = true;
-        _alert_level = level;
-        _alert = alert;
+        has_alert_ = true;
+        alert_level_ = level;
+        alert_ = alert;
     }
 
     void OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
-        if (_transport_param_done) {
+        if (transport_param_done_) {
             return;
         }
-        _transport_param_done = true;
+        transport_param_done_ = true;
     }
     
     bool ReadHandshakeData(std::vector<uint8_t> *out, EncryptionLevel level, size_t num = std::numeric_limits<size_t>::max()) {
-        if (_levels[level].read_secret.empty()) {
+        if (levels_[level].read_secret.empty()) {
             ADD_FAILURE() << "data read before keys configured in level " << level;
             return false;
         }
         // The peer may not have configured any keys yet.
-        if (_peer->_levels[level].write_secret.empty()) {
+        if (peer_->levels_[level].write_secret.empty()) {
             out->clear();
             return true;
         }
       
         // Check the peer computed the same key.
-        if (_peer->_levels[level].write_secret != _levels[level].read_secret) {
+        if (peer_->levels_[level].write_secret != levels_[level].read_secret) {
             ADD_FAILURE() << "peer write key does not match read key in level "
                       << level;
             return false;
         }
 
-        if (_peer->_levels[level].cipher != _levels[level].cipher) {
+        if (peer_->levels_[level].cipher != levels_[level].cipher) {
             ADD_FAILURE() << "peer cipher does not match in level " << level;
             return false;
         }
       
-        std::vector<uint8_t> *peer_data = &_peer->_levels[level].write_data;
+        std::vector<uint8_t> *peer_data = &peer_->levels_[level].write_data;
         num = std::min(num, peer_data->size());
         out->assign(peer_data->begin(), peer_data->begin() + num);
         peer_data->erase(peer_data->begin(), peer_data->begin() + num);
@@ -210,13 +210,13 @@ private:
     }
 
 private:
-    Role _role;
-    bool _transport_param_done = false;
-    MockTransport *_peer = nullptr;
+    Role role_;
+    bool transport_param_done_ = false;
+    MockTransport *peer_ = nullptr;
 
-    bool _has_alert = false;
-    EncryptionLevel _alert_level = EL_INITIAL;
-    uint8_t _alert = 0;
+    bool has_alert_ = false;
+    EncryptionLevel alert_level_ = EL_INITIAL;
+    uint8_t alert_ = 0;
 
     struct Level {
         std::vector<uint8_t> write_data;
@@ -224,7 +224,7 @@ private:
         std::vector<uint8_t> read_secret;
         uint32_t cipher = 0;
     };
-    Level _levels[NUM_ENCRYPTION_LEVELS];
+    Level levels_[NUM_ENCRYPTION_LEVELS];
 };
 
 class TestServerHandler:

@@ -13,56 +13,56 @@ namespace common {
 static const uint16_t __max_block_num = 20;
 
 BlockMemoryPool::BlockMemoryPool(uint32_t large_sz, uint32_t add_num) :
-    _number_large_add_nodes(add_num),
-    _large_size(large_sz) {
+    number_large_add_nodes_(add_num),
+    large_size_(large_sz) {
 
 }
 
 BlockMemoryPool::~BlockMemoryPool() {
     // free all memory
-    for (auto iter = _free_mem_vec.begin(); iter != _free_mem_vec.end(); ++iter) {
+    for (auto iter = free_mem_vec_.begin(); iter != free_mem_vec_.end(); ++iter) {
         free(*iter);
     }
-    _free_mem_vec.clear();
+    free_mem_vec_.clear();
 }
 
 void* BlockMemoryPool::PoolLargeMalloc() {
-    if (_free_mem_vec.empty()) {
+    if (free_mem_vec_.empty()) {
         Expansion();
     }
 
-    void* ret = _free_mem_vec.back();
-    _free_mem_vec.pop_back();
+    void* ret = free_mem_vec_.back();
+    free_mem_vec_.pop_back();
     return ret;
 }
 
 void BlockMemoryPool::PoolLargeFree(void* &m) {
-    _free_mem_vec.push_back(m);
-    if (_free_mem_vec.size() > __max_block_num) {
+    free_mem_vec_.push_back(m);
+    if (free_mem_vec_.size() > __max_block_num) {
         // release some block.
         ReleaseHalf();
     }
 }
 
 uint32_t BlockMemoryPool::GetSize() {
-    return (uint32_t)_free_mem_vec.size();
+    return (uint32_t)free_mem_vec_.size();
 }
 
 uint32_t BlockMemoryPool::GetBlockLength() {
-    return _large_size;
+    return large_size_;
 }
 
 void BlockMemoryPool::ReleaseHalf() {
-    size_t size = _free_mem_vec.size();
+    size_t size = free_mem_vec_.size();
     size_t hale = size / 2;
-    for (auto iter = _free_mem_vec.begin(); iter != _free_mem_vec.end();) {
+    for (auto iter = free_mem_vec_.begin(); iter != free_mem_vec_.end();) {
         void* mem = *iter;
 
-        iter = _free_mem_vec.erase(iter);
+        iter = free_mem_vec_.erase(iter);
         free(mem);
         
         size--;
-        if (iter == _free_mem_vec.end() || size <= hale) {
+        if (iter == free_mem_vec_.end() || size <= hale) {
             break;
         }
     }
@@ -70,13 +70,13 @@ void BlockMemoryPool::ReleaseHalf() {
 
 void BlockMemoryPool::Expansion(uint32_t num) {
     if (num == 0) {
-        num = _number_large_add_nodes;
+        num = number_large_add_nodes_;
     }
 
     for (uint32_t i = 0; i < num; ++i) {
-        void* mem = malloc(_large_size);
+        void* mem = malloc(large_size_);
         // not memset!
-        _free_mem_vec.push_back(mem);
+        free_mem_vec_.push_back(mem);
     }
 }
 

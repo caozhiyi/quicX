@@ -15,9 +15,9 @@ public:
     int32_t Random();
 
 private:
-    static std::random_device _random;
-    static std::mt19937       _engine;
-    std::uniform_int_distribution<int32_t> _uniform;
+    static std::random_device random_;
+    static std::mt19937       engine_;
+    std::uniform_int_distribution<int32_t> uniform_;
 };
 
 }

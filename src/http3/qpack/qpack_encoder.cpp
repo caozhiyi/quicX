@@ -76,7 +76,7 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
             uint32_t index = first_byte & 0x7F;
             auto header_item = StaticTable::Instance().FindHeaderItem(index);
             if (header_item) {
-                headers[header_item->_name] = header_item->_value;
+                headers[header_item->name_] = header_item->value_;
             } else {
                 return false;
             }
@@ -95,7 +95,7 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
                 return false;
             }
 
-            headers[header_item->_name] = value;
+            headers[header_item->name_] = value;
         } else {
             // Literal Header Field With Literal Name
             std::string name, value;

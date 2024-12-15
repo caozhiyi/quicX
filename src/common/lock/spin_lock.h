@@ -22,21 +22,21 @@ public:
     // release lock
     void Unlock();
 private:
-    std::atomic_flag _lock;
+    std::atomic_flag lock_;
 };
 
 class UniqueLock {
 public:
-    UniqueLock(SpinLock& l):_lock(&l){
-        _lock->Lock();
+    UniqueLock(SpinLock& l):lock_(&l){
+        lock_->Lock();
     }
 
     ~UniqueLock() {
-        _lock->Unlock();
+        lock_->Unlock();
     }
 
 private:
-    SpinLock* _lock;
+    SpinLock* lock_;
 };
 
 }

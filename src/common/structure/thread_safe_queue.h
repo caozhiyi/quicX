@@ -14,40 +14,40 @@ public:
     ~ThreadSafeQueue() {}
 
     void Push(const T& element) {
-        std::unique_lock<std::mutex> lock(_mutex);
-        _queue.push(element);
+        std::unique_lock<std::mutex> lock(mutex_);
+        queue_.push(element);
     }
 
     bool Pop(T& value) {
-        std::unique_lock<std::mutex> lock(_mutex);
-        if (_queue.empty()) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (queue_.empty()) {
             return false;
         }
-        value = std::move(_queue.front());
-        _queue.pop();
+        value = std::move(queue_.front());
+        queue_.pop();
         return true;
     }
 
     void Clear() {
-        std::unique_lock<std::mutex> lock(_mutex);
-        while (!_queue.empty()) {
-            _queue.pop();
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (!queue_.empty()) {
+            queue_.pop();
         }
     }
 
     size_t Size() {
-        std::unique_lock<std::mutex> lock(_mutex);
-        return _queue.size();
+        std::unique_lock<std::mutex> lock(mutex_);
+        return queue_.size();
     }
 
     bool Empty() {
-        std::unique_lock<std::mutex> lock(_mutex);
-        return _queue.empty();
+        std::unique_lock<std::mutex> lock(mutex_);
+        return queue_.empty();
     }
 
 private:
-    std::queue<T>        _queue;
-    std::mutex           _mutex;
+    std::queue<T>        queue_;
+    std::mutex           mutex_;
 };
 
 }

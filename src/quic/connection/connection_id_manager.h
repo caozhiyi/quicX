@@ -13,16 +13,16 @@ namespace quicx {
 namespace quic {
 
 struct ConnectionID {
-    uint8_t _id[__max_cid_length];
-    uint8_t _len;
-    uint64_t _index;
-    uint64_t _hash;
-    ConnectionID(uint64_t index = 0): _len(0), _index(index), _hash(0) {
-        memset(_id, 0, __max_cid_length);
+    uint8_t id_[__max_cid_length];
+    uint8_t len_;
+    uint64_t index_;
+    uint64_t hash_;
+    ConnectionID(uint64_t index = 0): len_(0), index_(index), hash_(0) {
+        memset(id_, 0, __max_cid_length);
     }
-    ConnectionID(uint8_t* id, uint8_t len, uint64_t index = 0): _len(len), _index(index), _hash(0) {
-        memset(_id, 0, __max_cid_length);
-        memcpy(_id, id, len);
+    ConnectionID(uint8_t* id, uint8_t len, uint64_t index = 0): len_(len), index_(index), hash_(0) {
+        memset(id_, 0, __max_cid_length);
+        memcpy(id_, id, len);
     }
     ~ConnectionID() {}
     uint64_t Hash();
@@ -30,16 +30,16 @@ struct ConnectionID {
 
 class ConnectionIDManager {
 public:
-     ConnectionIDManager(): _cur_index(0) {}
+     ConnectionIDManager(): cur_index_(0) {}
 
     // create a new connection id manager
     // add_connection_id_cb: callback when a new connection id is generated
     // retire_connection_id_cb: callback when a connection id is retired
     ConnectionIDManager(std::function<void(uint64_t/*cid hash*/)> add_connection_id_cb,
                         std::function<void(uint64_t/*cid hash*/)> retire_connection_id_cb):
-                        _cur_index(0),
-                        _add_connection_id_cb(add_connection_id_cb),
-                        _retire_connection_id_cb(retire_connection_id_cb) {}
+                        cur_index_(0),
+                        add_connection_id_cb_(add_connection_id_cb),
+                        retire_connection_id_cb_(retire_connection_id_cb) {}
 
     ~ConnectionIDManager() {}
 
@@ -49,12 +49,12 @@ public:
     bool AddID(ConnectionID& id);
 
 private:
-    int64_t _cur_index;
-    ConnectionID _cur_id;
-    std::map<uint64_t, ConnectionID> _ids_map;
+    int64_t cur_index_;
+    ConnectionID cur_id_;
+    std::map<uint64_t, ConnectionID> ids_map_;
 
-    std::function<void(uint64_t/*cid hash*/)> _add_connection_id_cb;
-    std::function<void(uint64_t/*cid hash*/)> _retire_connection_id_cb;
+    std::function<void(uint64_t/*cid hash*/)> add_connection_id_cb_;
+    std::function<void(uint64_t/*cid hash*/)> retire_connection_id_cb_;
 };
 
 }

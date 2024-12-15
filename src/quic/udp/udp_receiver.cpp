@@ -30,7 +30,7 @@ UdpReceiver::UdpReceiver(const std::string& ip, uint16_t port) {
         return;
     }
     
-    sock_ = ret._return_value;
+    sock_ = ret.return_value_;
 
     // reuse port
     int opt = 1;
@@ -93,7 +93,7 @@ bool UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt) {
             common::LOG_ERROR("recv from failed. err:%d", ret.errno_);
             continue;
         }
-        buffer->MoveReadPt(ret._return_value);
+        buffer->MoveReadPt(ret.return_value_);
         pkt->SetAddress(std::move(peer_addr));
         pkt->SetSocket(sock);
         pkt->SetTime(common::UTCTimeMsec());

@@ -11,23 +11,23 @@ namespace {
 
 TEST(transport_param_utest, test1) {
     TransportParamConfig config;
-    config._original_destination_connection_id = "11231";
-    config._max_idle_timeout = 100;
-    config._stateless_reset_token = "qwe";
-    config._max_udp_payload_size = 11;
-    config._initial_max_data = 12;
-    config._initial_max_stream_data_bidi_local = 13;
-    config._initial_max_stream_data_bidi_remote = 14;
-    config._initial_max_stream_data_uni = 15;
-    config._initial_max_streams_bidi = 16;
-    config._initial_max_streams_uni = 17;
-    config._ack_delay_exponent = 18;
-    config._max_ack_delay = 19;
-    config._disable_active_migration = true;
-    config._preferred_address = "127.0.0.1";
-    config._active_connection_id_limit = 20;
-    config._initial_source_connection_id = "127.0.0.1";
-    config._retry_source_connection_id = "192.168.3.1";
+    config.original_destination_connection_id_ = "11231";
+    config.max_idle_timeout_ = 100;
+    config.stateless_reset_token_ = "qwe";
+    config.max_udp_payload_size_ = 11;
+    config.initial_max_data_ = 12;
+    config.initial_max_stream_data_bidi_local_ = 13;
+    config.initial_max_stream_data_bidi_remote_ = 14;
+    config.initial_max_stream_data_uni_ = 15;
+    config.initial_max_streams_bidi_ = 16;
+    config.initial_max_streams_uni_ = 17;
+    config.ack_delay_exponent_ = 18;
+    config.max_ack_delay_ = 19;
+    config.disable_active_migration_ = true;
+    config.preferred_address_ = "127.0.0.1";
+    config.active_connection_id_limit_ = 20;
+    config.initial_source_connection_id_ = "127.0.0.1";
+    config.retry_source_connection_id_ = "192.168.3.1";
 
     TransportParam tp1;
     tp1.Init(config);

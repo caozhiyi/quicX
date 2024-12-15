@@ -1,8 +1,8 @@
 #include "common/log/log.h"
 #include "common/decode/decode.h"
 #include "quic/frame/reset_stream_frame.h"
-#include "common/buffer/buffer_interface.h"
-#include "common/alloter/alloter_interface.h"
+#include "common/buffer/if_buffer.h"
+#include "common/alloter/if_alloter.h"
 
 namespace quicx {
 namespace quic {

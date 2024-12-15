@@ -5,8 +5,8 @@
 #include <cstdint>
 #include "common/buffer/buffer_span.h"
 #include "quic/packet/header/header_flag.h"
-#include "common/buffer/buffer_read_interface.h"
-#include "common/buffer/buffer_write_interface.h"
+#include "common/buffer/if_buffer_read.h"
+#include "common/buffer/if_buffer_write.h"
 
 namespace quicx {
 namespace quic {

@@ -6,7 +6,7 @@
 #ifndef COMMON_BUFFER_BUFFER_READ_VIEW
 #define COMMON_BUFFER_BUFFER_READ_VIEW
 
-#include "common/buffer/buffer_read_interface.h"
+#include "common/buffer/if_buffer_read.h"
 
 namespace quicx {
 namespace common {
@@ -45,9 +45,9 @@ protected:
     uint32_t Read(uint8_t* data, uint32_t len, bool move_pt);
 
 protected:
-    uint8_t* _read_pos;
-    uint8_t* _buffer_start;
-    uint8_t* _buffer_end;
+    uint8_t* read_pos_;
+    uint8_t* buffer_start_;
+    uint8_t* buffer_end_;
 };
 
 }

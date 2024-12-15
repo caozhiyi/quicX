@@ -7,7 +7,7 @@
 #define QUIC_COMMON_LOG_STDOUT_LOGGER
 
 #include <mutex>
-#include "logger_interface.h"
+#include "if_logger.h"
 
 namespace quicx {
 namespace common {
@@ -26,7 +26,7 @@ public:
     void Fatal(std::shared_ptr<Log>& log);
 
 private:
-    std::mutex _mutex;
+    std::mutex mutex_;
 };
 
 }

@@ -8,7 +8,7 @@ namespace common {
 
 template <typename T>
 struct SysCallResult {
-  T _return_value;
+  T return_value_;
   int32_t errno_;
 };
 

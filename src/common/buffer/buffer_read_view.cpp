@@ -7,22 +7,22 @@ namespace quicx {
 namespace common {
 
 BufferReadView::BufferReadView(BufferSpan span):
-    _read_pos(span.GetStart()),
-    _buffer_start(span.GetStart()),
-    _buffer_end(span.GetEnd()) {
+    read_pos_(span.GetStart()),
+    buffer_start_(span.GetStart()),
+    buffer_end_(span.GetEnd()) {
 
 }
 
 BufferReadView::BufferReadView(uint8_t* start, uint32_t len):
-    _read_pos(start),
-    _buffer_start(start),
-    _buffer_end(start + len) {
+    read_pos_(start),
+    buffer_start_(start),
+    buffer_end_(start + len) {
 }
 
 BufferReadView::BufferReadView(uint8_t* start, uint8_t* end):
-    _read_pos(start),
-    _buffer_start(start),
-    _buffer_end(end) {
+    read_pos_(start),
+    buffer_start_(start),
+    buffer_end_(end) {
 
 }
 
@@ -36,14 +36,14 @@ uint32_t BufferReadView::ReadNotMovePt(uint8_t* data, uint32_t len) {
 
 uint32_t BufferReadView::MoveReadPt(int32_t len) {
     /*s-----------r-------------------e*/
-    if (_read_pos <= _buffer_end) {
-        size_t size = _buffer_end - _read_pos;
+    if (read_pos_ <= buffer_end_) {
+        size_t size = buffer_end_ - read_pos_;
         if (size <= len) {
-            _read_pos += size;
+            read_pos_ += size;
             return (uint32_t)size;
 
         } else {
-            _read_pos += len;
+            read_pos_ += len;
             return len;
         }
 
@@ -63,8 +63,8 @@ uint32_t BufferReadView::Read(uint8_t* data, uint32_t len) {
 
 uint32_t BufferReadView::GetDataLength() {
     /*s-----------r-------------------e*/
-    if (_read_pos <= _buffer_end) {
-        return uint32_t(_buffer_end - _read_pos);
+    if (read_pos_ <= buffer_end_) {
+        return uint32_t(buffer_end_ - read_pos_);
 
     } else {
         // shouldn't be here
@@ -74,38 +74,38 @@ uint32_t BufferReadView::GetDataLength() {
 }
 
 BufferSpan BufferReadView::GetReadSpan() {
-    return std::move(BufferSpan(_read_pos, _buffer_end));
+    return std::move(BufferSpan(read_pos_, buffer_end_));
 }
 
 BufferReadView BufferReadView::GetReadView(uint32_t offset) {
-    return std::move(BufferReadView(_buffer_start + offset, _buffer_end));
+    return std::move(BufferReadView(buffer_start_ + offset, buffer_end_));
 }
 
 std::shared_ptr<common::IBufferRead> BufferReadView::GetReadViewPtr(uint32_t offset) {
-    return std::make_shared<BufferReadView>(_buffer_start + offset, _buffer_end);
+    return std::make_shared<BufferReadView>(buffer_start_ + offset, buffer_end_);
 }
 
 uint8_t* BufferReadView::GetData() {
-    return _read_pos;
+    return read_pos_;
 }
 
 uint32_t BufferReadView::Read(uint8_t* data, uint32_t len, bool move_pt) {
     /*s-----------r-----w-------------e*/
-    if (_read_pos <= _buffer_end) {
-        size_t size = _buffer_end - _read_pos;
+    if (read_pos_ <= buffer_end_) {
+        size_t size = buffer_end_ - read_pos_;
         // data can load all
         if (size <= len) {
-            memcpy(data, _read_pos, size);
+            memcpy(data, read_pos_, size);
             if(move_pt) {
-                _read_pos += size;
+                read_pos_ += size;
             }
             return (uint32_t)size;
 
         // only read len
         } else {
-            memcpy(data, _read_pos, len);
+            memcpy(data, read_pos_, len);
             if(move_pt) {
-                _read_pos += len;
+                read_pos_ += len;
             }
             return len;
         }

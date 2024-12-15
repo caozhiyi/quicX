@@ -7,8 +7,8 @@
 #define COMMON_BUFFER_BUFFER_INTERFACE
 
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_interface.h"
-#include "common/buffer/buffer_write_interface.h"
+#include "common/buffer/if_buffer_read.h"
+#include "common/buffer/if_buffer_write.h"
 
 namespace quicx {
 namespace common {
@@ -17,11 +17,11 @@ class IBuffer:
     public IBufferRead,
     public IBufferWrite {
 public:
-    IBuffer(const std::shared_ptr<common::BlockMemoryPool>& alloter): _alloter(alloter) {}
+    IBuffer(const std::shared_ptr<common::BlockMemoryPool>& alloter): alloter_(alloter) {}
     virtual ~IBuffer() {}
 
 protected:
-    std::weak_ptr<BlockMemoryPool> _alloter;
+    std::weak_ptr<BlockMemoryPool> alloter_;
 };
 
 }

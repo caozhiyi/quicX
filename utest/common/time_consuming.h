@@ -13,8 +13,8 @@ public:
     ~TimeConsuming();
 
 private:
-    std::string _name;
-    std::chrono::system_clock::time_point _start_time;
+    std::string name_;
+    std::chrono::system_clock::time_point start_time_;
 };
 
 }

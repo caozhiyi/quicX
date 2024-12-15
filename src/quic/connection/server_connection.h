@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <cstdint>
-#include "common/timer/timer_interface.h"
+#include "common/timer/if_timer.h"
 #include "quic/connection/base_connection.h"
 #include "quic/crypto/tls/tls_server_conneciton.h"
 
@@ -34,7 +34,7 @@ protected:
 
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err);
 private:
-    std::shared_ptr<TLSServerConnection> _tls_connection;
+    std::shared_ptr<TLSServerConnection> tls_connection_;
 };
 
 }

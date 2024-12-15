@@ -13,18 +13,18 @@ namespace common {
 
 class BufferSpan {
 public:
-    BufferSpan(): _start(nullptr), _end(nullptr) {}
-    BufferSpan(uint8_t* start, uint32_t len): _start(start), _end(start + len) {}
-    BufferSpan(uint8_t* start, uint8_t* end): _start(start), _end(end) {}
+    BufferSpan(): start_(nullptr), end_(nullptr) {}
+    BufferSpan(uint8_t* start, uint32_t len): start_(start), end_(start + len) {}
+    BufferSpan(uint8_t* start, uint8_t* end): start_(start), end_(end) {}
     virtual ~BufferSpan() {}
 
-    uint8_t* GetStart() { return _start; }
-    uint8_t* GetEnd() { return _end; }
-    uint32_t GetLength() { return uint32_t(_end - _start); }
+    uint8_t* GetStart() { return start_; }
+    uint8_t* GetEnd() { return end_; }
+    uint32_t GetLength() { return uint32_t(end_ - start_); }
 
 private:
-    uint8_t* _start;
-    uint8_t* _end;
+    uint8_t* start_;
+    uint8_t* end_;
 };
 
 }

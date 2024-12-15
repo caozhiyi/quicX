@@ -8,21 +8,21 @@ Address::Address() {
 
 }
 
-Address::Address(AddressType at): _address_type(at),
-                                _port(0) {
+Address::Address(AddressType at): address_type_(at),
+                                port_(0) {
     
 }
 
 Address::Address(const Address& addr):
-                                _address_type(addr._address_type),
-                                _ip(addr._ip),
-                                _port(addr._port) {
+                                address_type_(addr.address_type_),
+                                ip_(addr.ip_),
+                                port_(addr.port_) {
 }
 
 Address::Address(AddressType at, const std::string& ip, uint16_t port):
-                                _address_type(at),
-                                _ip(ip),
-                                _port(port) {
+                                address_type_(at),
+                                ip_(ip),
+                                port_(port) {
 
 }
 
@@ -31,23 +31,23 @@ Address::~Address() {
 }
 
 void Address::SetIp(const std::string& ip) {
-    _ip = ip;
+    ip_ = ip;
 }
 
 const std::string& Address::GetIp() const {
-    return _ip;
+    return ip_;
 }
 
 void Address::SetPort(uint16_t port) {
-    _port = port;
+    port_ = port;
 }
 
 uint16_t Address::GetPort() const {
-    return _port;
+    return port_;
 }
 
 const std::string Address::AsString() const {
-    return std::move(_ip + ":" + std::to_string(_port));
+    return std::move(ip_ + ":" + std::to_string(port_));
 }
 
 std::ostream& operator<< (std::ostream &out, Address &addr) {
@@ -57,7 +57,7 @@ std::ostream& operator<< (std::ostream &out, Address &addr) {
 }
 
 bool operator==(const Address &addr1, const Address &addr2) {
-    return addr1._ip == addr2._ip && addr1._port == addr2._port && addr1._port != 0;
+    return addr1.ip_ == addr2.ip_ && addr1.port_ == addr2.port_ && addr1.port_ != 0;
 }
 
 AddressType Address::CheckAddressType(const std::string& ip) {

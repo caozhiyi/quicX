@@ -7,14 +7,14 @@
 namespace quicx {
 namespace quic {
 
-RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer): _set_timer(false), _timer(timer) {
-    memset(_pkt_num_largest_recvd, 0, sizeof(_pkt_num_largest_recvd));
-    memset(_largest_recv_time, 0, sizeof(_largest_recv_time));
+RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer): set_timer_(false), timer_(timer) {
+    memset(pkt_num_largest_recvd_, 0, sizeof(pkt_num_largest_recvd_));
+    memset(largest_recv_time_, 0, sizeof(largest_recv_time_));
 
-    _timer_task = common::TimerTask([this] {
-            _set_timer = false;
-            if (_active_send_cb) {
-                _active_send_cb();
+    timer_task_ = common::TimerTask([this] {
+            set_timer_ = false;
+            if (active_send_cb_) {
+                active_send_cb_();
             }
         });
 }
@@ -25,40 +25,40 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     }
 
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
-    if (_pkt_num_largest_recvd[ns] < packet->GetPacketNumber()) {
-        _pkt_num_largest_recvd[ns] = packet->GetPacketNumber();
-        _largest_recv_time[ns] = time;
+    if (pkt_num_largest_recvd_[ns] < packet->GetPacketNumber()) {
+        pkt_num_largest_recvd_[ns] = packet->GetPacketNumber();
+        largest_recv_time_[ns] = time;
     }
 
-    _wait_ack_packet_numbers[ns].insert(packet->GetPacketNumber());
-    if (!_set_timer) {
-        _set_timer = true;
-        _timer->AddTimer(_timer_task, TransportParamConfig::Instance()._max_ack_delay);
+    wait_ack_packet_numbers_[ns].insert(packet->GetPacketNumber());
+    if (!set_timer_) {
+        set_timer_ = true;
+        timer_->AddTimer(timer_task_, TransportParamConfig::Instance().max_ack_delay_);
     }
 }
 
 std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns) {
-    if (_set_timer) {
-        _timer->RmTimer(_timer_task);
-        _set_timer = false;
+    if (set_timer_) {
+        timer_->RmTimer(timer_task_);
+        set_timer_ = false;
     }
     
-    if (_wait_ack_packet_numbers[ns].empty()) {
+    if (wait_ack_packet_numbers_[ns].empty()) {
         return nullptr;
     }
 
     std::shared_ptr<AckFrame> frame = std::make_shared<AckFrame>();
-    frame->SetLargestAck(_pkt_num_largest_recvd[ns]);
-    frame->SetAckDelay(now - _largest_recv_time[ns]);
+    frame->SetLargestAck(pkt_num_largest_recvd_[ns]);
+    frame->SetAckDelay(now - largest_recv_time_[ns]);
 
     uint32_t first_ack_range = 0;
 
-    uint64_t prev_pkt_num = _pkt_num_largest_recvd[ns];
+    uint64_t prev_pkt_num = pkt_num_largest_recvd_[ns];
     uint64_t prev_largest = prev_pkt_num;
 
     uint32_t gap = 0;
     uint32_t range = 0;
-    for (auto iter = ++(_wait_ack_packet_numbers[ns].cbegin()); iter != _wait_ack_packet_numbers[ns].cend(); iter++) {
+    for (auto iter = ++(wait_ack_packet_numbers_[ns].cbegin()); iter != wait_ack_packet_numbers_[ns].cend(); iter++) {
         if (prev_pkt_num == *iter + 1) {
             prev_pkt_num = *iter;
             range++;

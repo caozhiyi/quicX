@@ -11,31 +11,31 @@ namespace common {
 
 class Thread {
 public:
-    Thread(): _stop(true) {}
+    Thread(): stop_(true) {}
     virtual ~Thread() {}
 
     //base option
     virtual void Start() {
-        _stop = false;
-        if (!_pthread) {
-            _pthread = std::make_shared<std::thread>(std::bind(&Thread::Run, this));
+        stop_ = false;
+        if (!pthread_) {
+            pthread_ = std::make_shared<std::thread>(std::bind(&Thread::Run, this));
         }
     }
 
     virtual void Stop() {
-        _stop = true;
+        stop_ = true;
     }
 
     virtual void Join() {
-        if (_pthread) {
-            _pthread->join();
+        if (pthread_) {
+            pthread_->join();
         }
     }
     //TO DO
     virtual void Run() = 0;
 
     virtual bool IsStop() {
-        return _stop;
+        return stop_;
     }
 
 protected:
@@ -43,8 +43,8 @@ protected:
     Thread& operator=(const Thread&) = delete;
 
 protected:
-    std::atomic_bool _stop;
-    std::shared_ptr<std::thread> _pthread;
+    std::atomic_bool stop_;
+    std::shared_ptr<std::thread> pthread_;
 };
 
 }

@@ -16,19 +16,19 @@ namespace common {
 template<typename T>
 class LinkedList {
 public:
-    LinkedList(): _size(0), _head(nullptr), _tail(nullptr) {}
+    LinkedList(): size_(0), head_(nullptr), tail_(nullptr) {}
     ~LinkedList() {}
 
-    uint32_t Size() { return _size; }
+    uint32_t Size() { return size_; }
 
-    std::shared_ptr<T> GetHead() { return _head; }
-    std::shared_ptr<T> GetTail() { return _tail; }
+    std::shared_ptr<T> GetHead() { return head_; }
+    std::shared_ptr<T> GetTail() { return tail_; }
 
     void Clear() {
-        _size = 0;
+        size_ = 0;
 
-        _head.reset();
-        _tail.reset();
+        head_.reset();
+        tail_.reset();
     }
 
     void PushBack(std::shared_ptr<T> v) {
@@ -36,36 +36,36 @@ public:
             return;
         }
     
-        if (!_tail) {
-            _tail = v;
-            _head = v;
+        if (!tail_) {
+            tail_ = v;
+            head_ = v;
 
         } else {
-            _tail->SetNext(v);
-            _tail = v;
+            tail_->SetNext(v);
+            tail_ = v;
         }
-        _size++;
+        size_++;
     }
 
     std::shared_ptr<T> PopFront() {
-        if (!_head) {
+        if (!head_) {
             return nullptr;
         }
 
-        auto ret = _head;
-        _head = _head->GetNext();
-        if (!_head) {
-            _tail.reset();
+        auto ret = head_;
+        head_ = head_->GetNext();
+        if (!head_) {
+            tail_.reset();
         }
         
-        _size--;
+        size_--;
         return ret;
     }
 
 private:
-    uint32_t _size;
-    std::shared_ptr<T> _head;
-    std::shared_ptr<T> _tail;
+    uint32_t size_;
+    std::shared_ptr<T> head_;
+    std::shared_ptr<T> tail_;
 };
 
 }

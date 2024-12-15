@@ -120,8 +120,8 @@ StaticTable::StaticTable() {
     };
     for (uint32_t i = 0; i < headeritem_vec_.size(); i++) {
         const HeaderItem& iter = headeritem_vec_[i];
-        headeritem_index_map_[{iter._name, iter._value}] = i;
-        headeritem_name_map_[iter._name] = i;
+        headeritem_index_map_[{iter.name_, iter.value_}] = i;
+        headeritem_name_map_[iter.name_] = i;
     }
 }
 

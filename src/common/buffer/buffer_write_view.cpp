@@ -7,9 +7,9 @@ namespace quicx {
 namespace common {
 
 BufferWriteView::BufferWriteView(uint8_t* start, uint8_t* end):
-    _write_pos(start),
-    _buffer_start(start),
-    _buffer_end(end) {
+    write_pos_(start),
+    buffer_start_(start),
+    buffer_end_(end) {
 
 }
 
@@ -19,24 +19,24 @@ BufferWriteView::~BufferWriteView() {
 
 uint32_t BufferWriteView::Write(uint8_t* data, uint32_t len) {
     /*s-----------w-------------------e*/
-    if (_write_pos < _buffer_end) {
-        size_t size = _buffer_end - _write_pos;
+    if (write_pos_ < buffer_end_) {
+        size_t size = buffer_end_ - write_pos_;
         // can save all data
         if (len <= size) {
-            memcpy(_write_pos, data, len);
-            _write_pos += len;
+            memcpy(write_pos_, data, len);
+            write_pos_ += len;
             return len;
 
         // can save a part of data
         } else {
-            memcpy(_write_pos, data, size);
-            _write_pos += size;
+            memcpy(write_pos_, data, size);
+            write_pos_ += size;
 
             return (uint32_t)size;
         }
 
     /*s------------------------------we*/
-    } else if (_write_pos == _buffer_end) {
+    } else if (write_pos_ == buffer_end_) {
         return 0;
 
     } else {
@@ -48,8 +48,8 @@ uint32_t BufferWriteView::Write(uint8_t* data, uint32_t len) {
 
 uint32_t BufferWriteView::GetFreeLength() {
     /*s-----------w-------------------e*/
-    if (_write_pos <= _buffer_end) {
-        return uint32_t(_buffer_end - _write_pos);
+    if (write_pos_ <= buffer_end_) {
+        return uint32_t(buffer_end_ - write_pos_);
 
     } else {
         // shouldn't be here
@@ -59,30 +59,30 @@ uint32_t BufferWriteView::GetFreeLength() {
 }
 
 uint32_t BufferWriteView::MoveWritePt(int32_t len) {
-    if (_buffer_end < _write_pos) {
+    if (buffer_end_ < write_pos_) {
         // shouldn't be here
         abort();
     }
     
-    size_t size = _buffer_end - _write_pos;
+    size_t size = buffer_end_ - write_pos_;
     if (size >= len) {
-        _write_pos += len;
+        write_pos_ += len;
     } else {
-        _write_pos += size;
+        write_pos_ += size;
     }
-    return (uint32_t)(_buffer_end - _write_pos);
+    return (uint32_t)(buffer_end_ - write_pos_);
 }
 
 BufferSpan BufferWriteView::GetWriteSpan() {
-    return std::move(BufferSpan(_write_pos, _buffer_end));
+    return std::move(BufferSpan(write_pos_, buffer_end_));
 }
 
 BufferWriteView BufferWriteView::GetWriteView(uint32_t offset) {
-    return std::move(BufferWriteView(_buffer_start + offset, _buffer_end));
+    return std::move(BufferWriteView(buffer_start_ + offset, buffer_end_));
 }
 
 std::shared_ptr<common::IBufferWrite> BufferWriteView::GetWriteViewPtr(uint32_t offset) {
-    return std::make_shared<BufferWriteView>(_buffer_start + offset, _buffer_end);
+    return std::make_shared<BufferWriteView>(buffer_start_ + offset, buffer_end_);
 }
 
 }
