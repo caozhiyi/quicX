@@ -40,12 +40,12 @@ protected:
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err);
 
 private:
-    AlpnType _alpn_type; // application protocol
-    common::Address _local_addr;
-    common::Address _peer_addr;
+    AlpnType alpn_type_; // application protocol
+    common::Address local_addr_;
+    common::Address peer_addr_;
 
-    HandshakeDoneCB _handshake_done_cb;
-    std::shared_ptr<TLSClientConnection> _tls_connection;
+    HandshakeDoneCB handshake_done_cb_;
+    std::shared_ptr<TLSClientConnection> tls_connection_;
 };
 
 }

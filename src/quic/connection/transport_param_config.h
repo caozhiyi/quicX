@@ -18,23 +18,23 @@ public:
     ~TransportParamConfig();
 
 public:
-    std::string _original_destination_connection_id;
-    uint32_t    _max_idle_timeout;
-    std::string _stateless_reset_token;
-    uint32_t    _max_udp_payload_size;
-    uint32_t    _initial_max_data;
-    uint32_t    _initial_max_stream_data_bidi_local;
-    uint32_t    _initial_max_stream_data_bidi_remote;
-    uint32_t    _initial_max_stream_data_uni;
-    uint32_t    _initial_max_streams_bidi;
-    uint32_t    _initial_max_streams_uni;
-    uint32_t    _ack_delay_exponent;
-    uint32_t    _max_ack_delay;
-    bool        _disable_active_migration;
-    std::string _preferred_address;
-    uint32_t    _active_connection_id_limit;
-    std::string _initial_source_connection_id;
-    std::string _retry_source_connection_id;
+    std::string original_destination_connection_id_;
+    uint32_t    max_idle_timeout_;
+    std::string stateless_reset_token_;
+    uint32_t    max_udp_payload_size_;
+    uint32_t    initial_max_data_;
+    uint32_t    initial_max_stream_data_bidi_local_;
+    uint32_t    initial_max_stream_data_bidi_remote_;
+    uint32_t    initial_max_stream_data_uni_;
+    uint32_t    initial_max_streams_bidi_;
+    uint32_t    initial_max_streams_uni_;
+    uint32_t    ack_delay_exponent_;
+    uint32_t    max_ack_delay_;
+    bool        disable_active_migration_;
+    std::string preferred_address_;
+    uint32_t    active_connection_id_limit_;
+    std::string initial_source_connection_id_;
+    std::string retry_source_connection_id_;
 };
 
 }

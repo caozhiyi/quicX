@@ -33,25 +33,25 @@ public:
 
     EncryptionLevel GetCurEncryptionLevel();
 
-    std::shared_ptr<ICryptographer> GetCryptographer(uint8_t level) { return _cryptographers[level]; }
+    std::shared_ptr<ICryptographer> GetCryptographer(uint8_t level) { return cryptographers_[level]; }
 
     void SetCryptoStream(std::shared_ptr<CryptoStream> crypto_stream);
 
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
-    bool InitIsReady() { return _cryptographers[EL_INITIAL] != nullptr; }
+    bool InitIsReady() { return cryptographers_[EL_INITIAL] != nullptr; }
     bool InstallInitSecret(uint8_t* secret, uint32_t len, bool is_server);
 
     typedef std::function<void(TransportParam&)> RemoteTransportParamCB;
-    void SetRemoteTransportParamCB(RemoteTransportParamCB cb) { _transport_param_cb = cb; }
+    void SetRemoteTransportParamCB(RemoteTransportParamCB cb) { transport_param_cb_ = cb; }
 
 private:
-    bool _transport_param_done;
-    RemoteTransportParamCB _transport_param_cb;
+    bool transport_param_done_;
+    RemoteTransportParamCB transport_param_cb_;
 
-    EncryptionLevel _cur_encryption_level;
-    std::shared_ptr<CryptoStream> _crypto_stream;
-    std::shared_ptr<ICryptographer> _cryptographers[NUM_ENCRYPTION_LEVELS];
+    EncryptionLevel cur_encryption_level_;
+    std::shared_ptr<CryptoStream> crypto_stream_;
+    std::shared_ptr<ICryptographer> cryptographers_[NUM_ENCRYPTION_LEVELS];
 };
 
 }

@@ -31,9 +31,9 @@ public:
     virtual std::shared_ptr<common::IBufferWrite> GetWriteViewPtr(uint32_t offset = 0);
 
 protected:
-    uint8_t* _write_pos;
-    uint8_t* _buffer_start;
-    uint8_t* _buffer_end;
+    uint8_t* write_pos_;
+    uint8_t* buffer_start_;
+    uint8_t* buffer_end_;
 };
 
 }

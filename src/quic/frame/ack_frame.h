@@ -39,7 +39,7 @@ private:
     uint64_t largest_acknowledged_; // A variable-length integer representing the largest packet number the peer is acknowledging.
     uint32_t ack_delay_;            // the time delta in microseconds between when this ACK was sent and when the largest acknowledged packet.
     uint64_t first_ack_range_;      // A variable-length integer indicating the number of contiguous packets preceding the Largest Acknowledged that are being acknowledged
-    // uint64_t _ack_range;         // A variable-length integer specifying the number of ACK Range fields in the frame.
+    // uint64_t ack_range_;         // A variable-length integer specifying the number of ACK Range fields in the frame.
     std::vector<AckRange> ack_ranges_;                 
 };
 

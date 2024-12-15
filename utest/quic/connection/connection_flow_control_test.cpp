@@ -13,20 +13,20 @@ class TransportParamTest:
 public:
     TransportParamTest() {
         TransportParamConfig config;
-        config._initial_max_data = 10000;
-        config._initial_max_stream_data_bidi_local = 8;
-        config._initial_max_stream_data_bidi_remote = 8;
-        config._initial_max_stream_data_uni = 8;
-        config._initial_max_streams_bidi = 8;
-        config._initial_max_streams_uni = 8;
-        _tp.Init(config);
+        config.initial_max_data_ = 10000;
+        config.initial_max_stream_data_bidi_local_ = 8;
+        config.initial_max_stream_data_bidi_remote_ = 8;
+        config.initial_max_stream_data_uni_ = 8;
+        config.initial_max_streams_bidi_ = 8;
+        config.initial_max_streams_uni_ = 8;
+        tp_.Init(config);
     }
 
     ~TransportParamTest() {}
 
-    TransportParam& GetTransportParam() { return _tp; }
+    TransportParam& GetTransportParam() { return tp_; }
 private:
-    TransportParam _tp;
+    TransportParam tp_;
 };
 
 TEST(connection_control_flow, local_send_data) {

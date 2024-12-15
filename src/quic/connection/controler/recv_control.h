@@ -33,18 +33,18 @@ public:
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
     std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns);
 
-    void SetActiveSendCB(ActiveSendCB cb) { _active_send_cb = cb; }
+    void SetActiveSendCB(ActiveSendCB cb) { active_send_cb_ = cb; }
 
 private:
-    uint64_t _pkt_num_largest_recvd[PNS_NUMBER];
-    uint64_t _largest_recv_time[PNS_NUMBER];
-    std::set<uint64_t> _wait_ack_packet_numbers[PNS_NUMBER];
+    uint64_t pkt_num_largest_recvd_[PNS_NUMBER];
+    uint64_t largest_recv_time_[PNS_NUMBER];
+    std::set<uint64_t> wait_ack_packet_numbers_[PNS_NUMBER];
     
-    bool _set_timer;
-    std::shared_ptr<common::ITimer> _timer;
+    bool set_timer_;
+    std::shared_ptr<common::ITimer> timer_;
 
-    common::TimerTask _timer_task;
-    ActiveSendCB _active_send_cb;
+    common::TimerTask timer_task_;
+    ActiveSendCB active_send_cb_;
 };
 
 }

@@ -17,7 +17,7 @@ public:
     uint64_t Hash(uint8_t* cid, uint32_t len);
 
 private: 
-    uint64_t _sip_hash_key[2];    
+    uint64_t sip_hash_key_[2];    
 };
 
 }

@@ -41,12 +41,12 @@ public:
 
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
 
-    virtual EncryptionLevel GetCurEncryptionLevel() { return _connection_crypto.GetCurEncryptionLevel(); }
+    virtual EncryptionLevel GetCurEncryptionLevel() { return connection_crypto_.GetCurEncryptionLevel(); }
 
-    virtual uint64_t GetSock() { return _send_sock; }
+    virtual uint64_t GetSock() { return send_sock_; }
     
-    virtual void SetPeerAddress(const common::Address&& addr) { _peer_addr = std::move(addr); }
-    virtual const common::Address GetPeerAddress() { return _peer_addr; }
+    virtual void SetPeerAddress(const common::Address&& addr) { peer_addr_ = std::move(addr); }
+    virtual const common::Address GetPeerAddress() { return peer_addr_; }
 
     virtual void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb);
 
@@ -92,45 +92,45 @@ private:
     std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamType st);
 
 protected:
-    uint64_t _send_sock;
-    common::Address _peer_addr;
+    uint64_t send_sock_;
+    common::Address peer_addr_;
 
     // connection will to close
-    bool _to_close;
+    bool to_close_;
     // last time communicate, use to idle shutdown
-    uint64_t _last_communicate_time; 
+    uint64_t last_communicate_time_; 
 
     // transport param verify done
-    TransportParam _transport_param;
+    TransportParam transport_param_;
 
     // streams
-    std::unordered_map<uint64_t, std::shared_ptr<IStream>> _streams_map;
+    std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_map_;
 
     // connection memory pool
-    std::shared_ptr<common::BlockMemoryPool> _alloter;
+    std::shared_ptr<common::BlockMemoryPool> alloter_;
     
     // connection id
-    std::shared_ptr<ConnectionIDManager> _local_conn_id_manager;
-    std::shared_ptr<ConnectionIDManager> _remote_conn_id_manager;
-    std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> _add_conn_id_cb;
+    std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
+    std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
+    std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> add_conn_id_cb_;
 
     // waitting send frames
-    std::list<std::shared_ptr<IFrame>> _frames_list;
+    std::list<std::shared_ptr<IFrame>> frames_list_;
 
     // flow control
-    std::shared_ptr<FlowControl> _flow_control;
-    RecvControl _recv_control;
-    SendManager _send_manager;
+    std::shared_ptr<FlowControl> flow_control_;
+    RecvControl recv_control_;
+    SendManager send_manager_;
 
     // crypto
-    ConnectionCrypto _connection_crypto;
+    ConnectionCrypto connection_crypto_;
    
     // token
-    std::string _token;
+    std::string token_;
 
     // active to send
-    bool _is_active_send;
-    std::function<void(std::shared_ptr<IConnection>)> _active_connection_cb;
+    bool is_active_send_;
+    std::function<void(std::shared_ptr<IConnection>)> active_connection_cb_;
 };
 
 }

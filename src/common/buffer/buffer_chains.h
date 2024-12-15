@@ -44,11 +44,11 @@ protected:
     void Clear();
 
 protected:
-    std::shared_ptr<BufferBlock> _read_pos;
-    std::shared_ptr<BufferBlock> _write_pos;
+    std::shared_ptr<BufferBlock> read_pos_;
+    std::shared_ptr<BufferBlock> write_pos_;
     
-    LinkedList<BufferBlock> _buffer_list;
-    std::shared_ptr<common::BlockMemoryPool> _alloter;
+    LinkedList<BufferBlock> buffer_list_;
+    std::shared_ptr<common::BlockMemoryPool> alloter_;
 };
 
 }

@@ -26,9 +26,9 @@ void Swap(std::shared_ptr<Queue>& q);
 
 private:
 
-SpinLock _sp_lock;
+SpinLock sp_lock_;
 typedef std::queue<std::shared_ptr<QueueSolt>> thread_queue;
-static thread_local std::shared_ptr<thread_queue> _queue_ptr;
+static thread_local std::shared_ptr<thread_queue> queue_ptr_;
 
 };
 

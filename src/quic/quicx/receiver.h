@@ -25,7 +25,7 @@
 //     void CancelConnection(std::thread::id id, uint64_t cid_code) {}
 
 // protected:
-//     UdpReceiver _udp_receiver;
+//     UdpReceiver udp_receiver_;
 //     std::shared_ptr<common::BlockMemoryPool> alloter_;
 // };
 

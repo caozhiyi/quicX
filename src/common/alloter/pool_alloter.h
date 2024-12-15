@@ -38,15 +38,15 @@ private:
 
 private:
     union MemNode {
-        MemNode*    _next;
-        uint8_t     _data[1];
+        MemNode*    next_;
+        uint8_t     data_[1];
     };
     
-    uint8_t*  _pool_start;         
-    uint8_t*  _pool_end;
-    std::vector<MemNode*>     _free_list;  
-    std::vector<uint8_t*>     _malloc_vec;
-    std::shared_ptr<IAlloter> _alloter;
+    uint8_t*  pool_start_;         
+    uint8_t*  pool_end_;
+    std::vector<MemNode*>     free_list_;  
+    std::vector<uint8_t*>     malloc_vec_;
+    std::shared_ptr<IAlloter> alloter_;
 };
 
 std::shared_ptr<IAlloter> MakePoolAlloterPtr();

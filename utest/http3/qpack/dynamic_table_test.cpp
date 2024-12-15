@@ -21,8 +21,8 @@ TEST_F(DynamicTableTest, InsertAndLookup) {
     
     // Look up the inserted field
     auto item = table_->FindHeaderItem(1);
-    EXPECT_EQ(item->_name, "content-type");
-    EXPECT_EQ(item->_value, "application/json");
+    EXPECT_EQ(item->name_, "content-type");
+    EXPECT_EQ(item->value_, "application/json");
 }
 
 TEST_F(DynamicTableTest, InsertMultipleEntries) {
@@ -32,16 +32,16 @@ TEST_F(DynamicTableTest, InsertMultipleEntries) {
 
     // Verify all entries can be looked up correctly
     auto item = table_->FindHeaderItem(1);
-    EXPECT_EQ(item->_name, "accept");
-    EXPECT_EQ(item->_value, "*/*");
+    EXPECT_EQ(item->name_, "accept");
+    EXPECT_EQ(item->value_, "*/*");
 
     item = table_->FindHeaderItem(2);
-    EXPECT_EQ(item->_name, "cache-control");
-    EXPECT_EQ(item->_value, "no-cache");
+    EXPECT_EQ(item->name_, "cache-control");
+    EXPECT_EQ(item->value_, "no-cache");
 
     item = table_->FindHeaderItem(3);
-    EXPECT_EQ(item->_name, "content-type");
-    EXPECT_EQ(item->_value, "application/json");
+    EXPECT_EQ(item->name_, "content-type");
+    EXPECT_EQ(item->value_, "application/json");
 }
 
 TEST_F(DynamicTableTest, CapacityEviction) {
@@ -56,17 +56,17 @@ TEST_F(DynamicTableTest, CapacityEviction) {
 
     // Verify old entries are evicted
     auto item = table_->FindHeaderItem(1);
-    EXPECT_EQ(item->_name, "header1");
-    EXPECT_EQ(item->_value, "value1");
+    EXPECT_EQ(item->name_, "header1");
+    EXPECT_EQ(item->value_, "value1");
     item = table_->FindHeaderItem(2);
-    EXPECT_EQ(item->_name, "header2");
-    EXPECT_EQ(item->_value, "value2");
+    EXPECT_EQ(item->name_, "header2");
+    EXPECT_EQ(item->value_, "value2");
     item = table_->FindHeaderItem(3);
-    EXPECT_EQ(item->_name, "header3");
-    EXPECT_EQ(item->_value, "value3");
+    EXPECT_EQ(item->name_, "header3");
+    EXPECT_EQ(item->value_, "value3");
     item = table_->FindHeaderItem(4);
-    EXPECT_EQ(item->_name, "header4");
-    EXPECT_EQ(item->_value, "value4");
+    EXPECT_EQ(item->name_, "header4");
+    EXPECT_EQ(item->value_, "value4");
 }
 
 TEST_F(DynamicTableTest, ResizeTable) {
@@ -79,11 +79,11 @@ TEST_F(DynamicTableTest, ResizeTable) {
 
     // Verify entries are evicted
     auto item = table_->FindHeaderItem(2);
-    EXPECT_EQ(item->_name, "header1");
-    EXPECT_EQ(item->_value, "value1");
+    EXPECT_EQ(item->name_, "header1");
+    EXPECT_EQ(item->value_, "value1");
     item = table_->FindHeaderItem(1);
-    EXPECT_EQ(item->_name, "header2");
-    EXPECT_EQ(item->_value, "value2");
+    EXPECT_EQ(item->name_, "header2");
+    EXPECT_EQ(item->value_, "value2");
 
     // Increase table size
     table_->UpdateMaxTableSize(200);
@@ -97,11 +97,11 @@ TEST_F(DynamicTableTest, DuplicateEntries) {
 
     // Verify both entries exist and are in correct order
     auto item = table_->FindHeaderItem(1);
-    EXPECT_EQ(item->_name, "content-type");
-    EXPECT_EQ(item->_value, "application/json");
+    EXPECT_EQ(item->name_, "content-type");
+    EXPECT_EQ(item->value_, "application/json");
     item = table_->FindHeaderItem(2);
-    EXPECT_EQ(item->_name, "content-type");
-    EXPECT_EQ(item->_value, "application/json");
+    EXPECT_EQ(item->name_, "content-type");
+    EXPECT_EQ(item->value_, "application/json");
 }
 
 TEST_F(DynamicTableTest, InvalidLookup) {
@@ -121,8 +121,8 @@ TEST_F(DynamicTableTest, EmptyStrings) {
     EXPECT_TRUE(table_->AddHeaderItem("", ""));
 
     auto item = table_->FindHeaderItem(1);
-    EXPECT_TRUE(item->_name.empty());
-    EXPECT_TRUE(item->_value.empty());
+    EXPECT_TRUE(item->name_.empty());
+    EXPECT_TRUE(item->value_.empty());
 }
 
 TEST_F(DynamicTableTest, SizeCalculation) {

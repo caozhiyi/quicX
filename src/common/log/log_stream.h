@@ -44,8 +44,8 @@ private:
     LogStream& operator=(const LogStream&) = delete;
 
 private:
-    std::shared_ptr<Log> _log;
-    std::function<void(std::shared_ptr<Log>)> _call_back;
+    std::shared_ptr<Log> log_;
+    std::function<void(std::shared_ptr<Log>)> call_back_;
 };
 
 }

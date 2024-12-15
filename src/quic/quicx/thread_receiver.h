@@ -32,9 +32,9 @@
 //     void RegisteThread(std::thread::id& id, common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>* queue);
 
 // private:
-//     static thread_local std::vector<std::thread::id> _thread_vec;
-//     static thread_local std::unordered_map<uint64_t, std::thread::id> _thread_map;
-//     static thread_local std::unordered_map<std::thread::id, common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>*> _processer_map;
+//     static thread_local std::vector<std::thread::id> thread_vec_;
+//     static thread_local std::unordered_map<uint64_t, std::thread::id> thread_map_;
+//     static thread_local std::unordered_map<std::thread::id, common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>*> processer_map_;
 // };
 
 // }

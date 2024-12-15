@@ -6,9 +6,9 @@
 // namespace quicx {
 // namespace quic {
 
-// thread_local std::vector<std::thread::id> ThreadReceiver::_thread_vec;
-// thread_local std::unordered_map<uint64_t, std::thread::id> ThreadReceiver::_thread_map;
-// thread_local std::unordered_map<std::thread::id, common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>*> ThreadReceiver::_processer_map;
+// thread_local std::vector<std::thread::id> ThreadReceiver::thread_vec_;
+// thread_local std::unordered_map<uint64_t, std::thread::id> ThreadReceiver::thread_map_;
+// thread_local std::unordered_map<std::thread::id, common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>*> ThreadReceiver::processer_map_;
 
 // std::shared_ptr<UdpPacketIn> ThreadReceiver::DoRecv() {
 //     auto id = std::this_thread::get_id();
@@ -37,7 +37,7 @@
 // void ThreadReceiver::RegisteConnection(std::thread::id id, uint64_t cid_code) {
 //     auto local_id = std::this_thread::get_id();
 //     if (local_id == id) {
-//         _thread_map[cid_code] = id;
+//         thread_map_[cid_code] = id;
 
 //     } else {
 //         Push([&id, &cid_code, this] { RegisteConnection(id, cid_code); });
@@ -47,7 +47,7 @@
 // void ThreadReceiver::CancelConnection(std::thread::id id, uint64_t cid_code) {
 //     auto local_id = std::this_thread::get_id();
 //     if (local_id == id) {
-//         _thread_map.erase(cid_code);
+//         thread_map_.erase(cid_code);
 
 //     } else {
 //         Push([&id, &cid_code, this] { CancelConnection(id, cid_code); });
@@ -60,14 +60,14 @@
 
 // void ThreadReceiver::Run() {
 //     // only recv thead
-//     while (!_stop) {
+//     while (!stop_) {
 //         // todo block io to recv
 //         auto packet = Receiver::DoRecv();
 //         if (packet != nullptr) {
 //             DispatcherPacket(packet);
 //         }
         
-//         while (!_queue.Empty()) {
+//         while (!queue_.Empty()) {
 //             auto task = Pop();
 //             if (task) {
 //                 task();
@@ -86,10 +86,10 @@
     
 //     // find a connection
 //     uint64_t hash_code = packet->GetConnectionHashCode();
-//     auto thread_iter = _thread_map.find(hash_code);
-//     if (thread_iter != _thread_map.end()) {
-//         auto processer_iter = _processer_map.find(thread_iter->second);
-//         if (processer_iter != _processer_map.end()) {
+//     auto thread_iter = thread_map_.find(hash_code);
+//     if (thread_iter != thread_map_.end()) {
+//         auto processer_iter = processer_map_.find(thread_iter->second);
+//         if (processer_iter != processer_map_.end()) {
 //             processer_iter->second->Push(packet);
 //         }
 //         return;
@@ -97,19 +97,19 @@
     
 //     // a new connection
 //     static uint32_t index = 0; // TODO random
-//     index = index >= _thread_vec.size() ? index - _thread_vec.size() : index;
-//     auto id = _thread_vec[index];
-//     _thread_map[hash_code] = id;
-//     auto processer_iter = _processer_map.find(id);
-//     if (processer_iter != _processer_map.end()) {
+//     index = index >= thread_vec_.size() ? index - thread_vec_.size() : index;
+//     auto id = thread_vec_[index];
+//     thread_map_[hash_code] = id;
+//     auto processer_iter = processer_map_.find(id);
+//     if (processer_iter != processer_map_.end()) {
 //         processer_iter->second->Push(packet);
 //     }
 //     index++;
 // }
 
 // void ThreadReceiver::RegisteThread(std::thread::id& id, common::ThreadSafeBlockQueue<std::shared_ptr<UdpPacketIn>>* queue) {
-//     _thread_vec.push_back(id);
-//     _processer_map[id] = queue;
+//     thread_vec_.push_back(id);
+//     processer_map_[id] = queue;
 // }
 
 // }

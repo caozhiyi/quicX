@@ -70,7 +70,7 @@ public:
     LogStreamParam GetStreamParam(LogLevel level, const char* file, uint32_t line);
 
 private:
-    std::shared_ptr<BaseLogger> _logger;
+    std::shared_ptr<BaseLogger> logger_;
 };
 
 }

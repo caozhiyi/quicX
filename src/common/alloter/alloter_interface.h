@@ -33,7 +33,7 @@ protected:
 
 class AlloterWrap {
 public:
-    AlloterWrap(std::shared_ptr<IAlloter> a) : _alloter(a) {}
+    AlloterWrap(std::shared_ptr<IAlloter> a) : alloter_(a) {}
     ~AlloterWrap() {}
 
     //for object. invocation of constructors and destructors
@@ -55,14 +55,14 @@ public:
     void PoolFree(T* m, uint32_t len);
 
 private:
-    std::shared_ptr<IAlloter> _alloter;
+    std::shared_ptr<IAlloter> alloter_;
 };
 
 template<typename T, typename... Args>
 T* AlloterWrap::PoolNew(Args&&... args) {
     uint32_t sz = sizeof(T);
     
-    void* data = _alloter->MallocAlign(sz);
+    void* data = alloter_->MallocAlign(sz);
     if (!data) {
         return nullptr;
     }
@@ -87,12 +87,12 @@ void AlloterWrap::PoolDelete(T* c) {
 
     uint32_t len = sizeof(T);
     void* data = (void*)c;
-    _alloter->Free(data, len);
+    alloter_->Free(data, len);
 }
     
 template<typename T>
 T* AlloterWrap::PoolMalloc(uint32_t sz) {  
-    return (T*)_alloter->MallocAlign(sz);
+    return (T*)alloter_->MallocAlign(sz);
 }
 
 template<typename T>
@@ -107,7 +107,7 @@ void AlloterWrap::PoolFree(T* m, uint32_t len) {
         return;
     }
     void* data = (void*)m;
-    _alloter->Free(data, len);
+    alloter_->Free(data, len);
 }
 
 }

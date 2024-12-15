@@ -30,21 +30,21 @@
 //         receiver_ = std::make_shared<ThreadReceiver>();
 //     }
 
-//     _processors.resize(thread_num);
+//     processors_.resize(thread_num);
 //     for (size_t i = 0; i < thread_num; i++) {
 //         auto processor = std::make_shared<Processor>();
 //         processor->SetRecvFunction([this] { return receiver_->DoRecv(); });
 //         processor->SetAddConnectionIDCB([this] (uint64_t id) { receiver_->RegisteConnection(std::this_thread::get_id(), id);});
 //         processor->SetRetireConnectionIDCB([this] (uint64_t id) { receiver_->CancelConnection(std::this_thread::get_id(), id);});
 //         processor->Start();
-//         _processors.emplace_back(processor);
+//         processors_.emplace_back(processor);
 //     }
 //     return true;
 // }
 
 // void QuicxImpl::Join() {
-//     for (size_t i = 0; i < _processors.size(); i++) {
-//         _processors[i]->Join();
+//     for (size_t i = 0; i < processors_.size(); i++) {
+//         processors_[i]->Join();
 //     }
     
 // }
@@ -58,18 +58,18 @@
 //         }
 //     }
 
-//     for (size_t i = 0; i < _processors.size(); i++) {
-//         _processors[i]->Stop();
-//         _processors[i]->WeakUp();
+//     for (size_t i = 0; i < processors_.size(); i++) {
+//         processors_[i]->Stop();
+//         processors_[i]->WeakUp();
 //     }
 // }
 
 // bool QuicxImpl::Connection(const std::string& ip, uint16_t port) {
-//     if (!_processors.empty()) {
+//     if (!processors_.empty()) {
 //         // TODO 
 //         // 1. random select processor
 //         // 2. client connectin manage
-//         auto conn = _processors[0]->MakeClientConnection();
+//         auto conn = processors_[0]->MakeClientConnection();
 //         auto cli_conn = std::dynamic_pointer_cast<ClientConnection>(conn);
 //         common::Address addr(common::AT_IPV4, ip, port);
 //         if (cli_conn->Dial(addr)) {

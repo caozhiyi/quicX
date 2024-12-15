@@ -15,15 +15,15 @@ public:
     virtual ~ThreadWithQueue() {}
 
     uint32_t GetQueueSize() {
-        return _queue.Size();
+        return queue_.Size();
     }
 
     void Push(const T& t) {
-        _queue.Push(t);
+        queue_.Push(t);
     }
 
     T Pop() {
-        return std::move(_queue.Pop());
+        return std::move(queue_.Pop());
     }
 
     //TO DO
@@ -34,7 +34,7 @@ protected:
     ThreadWithQueue& operator=(const ThreadWithQueue&) = delete;
 
 protected:
-    ThreadSafeBlockQueue<T> _queue;
+    ThreadSafeBlockQueue<T> queue_;
 };
 
 }

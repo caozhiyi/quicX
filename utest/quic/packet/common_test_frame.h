@@ -21,8 +21,8 @@ public:
     std::shared_ptr<ICryptographer> GetTestServerCryptographer();
 
 private:
-    std::shared_ptr<ICryptographer> _cli_cryptographer;
-    std::shared_ptr<ICryptographer> _ser_cryptographer;
+    std::shared_ptr<ICryptographer> cli_cryptographer_;
+    std::shared_ptr<ICryptographer> ser_cryptographer_;
 };
 
 }

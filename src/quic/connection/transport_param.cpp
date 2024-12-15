@@ -9,18 +9,18 @@ namespace quicx {
 namespace quic {
 
 TransportParam::TransportParam():
-    _max_idle_timeout(0),
-    _max_udp_payload_size(0),
-    _initial_max_data(0),
-    _initial_max_stream_data_bidi_local(0),
-    _initial_max_stream_data_bidi_remote(0),
-    _initial_max_stream_data_uni(0),
-    _initial_max_streams_bidi(0),
-    _initial_max_streams_uni(0),
-    _ack_delay_exponent(0),
-    _max_ack_delay(0),
-    _disable_active_migration(false),
-    _active_connection_id_limit(0) {
+    max_idle_timeout_(0),
+    max_udp_payload_size_(0),
+    initial_max_data_(0),
+    initial_max_stream_data_bidi_local_(0),
+    initial_max_stream_data_bidi_remote_(0),
+    initial_max_stream_data_uni_(0),
+    initial_max_streams_bidi_(0),
+    initial_max_streams_uni_(0),
+    ack_delay_exponent_(0),
+    max_ack_delay_(0),
+    disable_active_migration_(false),
+    active_connection_id_limit_(0) {
 
 }
 
@@ -29,29 +29,29 @@ TransportParam::~TransportParam() {
 }
 
 void TransportParam::Init(TransportParamConfig& conf) {
-    _original_destination_connection_id = conf._original_destination_connection_id;
-    _max_idle_timeout = conf._max_idle_timeout;
-    _stateless_reset_token = conf._stateless_reset_token;
-    _max_udp_payload_size = conf._max_udp_payload_size;
-    _initial_max_data = conf._initial_max_data;
-    _initial_max_stream_data_bidi_local = conf._initial_max_stream_data_bidi_local;
-    _initial_max_stream_data_bidi_remote = conf._initial_max_stream_data_bidi_remote;
-    _initial_max_stream_data_uni = conf._initial_max_stream_data_uni;
-    _initial_max_streams_bidi = conf._initial_max_streams_bidi;
-    _initial_max_streams_uni = conf._initial_max_streams_uni;
-    _ack_delay_exponent = conf._ack_delay_exponent;
-    _max_ack_delay = conf._max_ack_delay;
-    _disable_active_migration = conf._disable_active_migration;
-    _preferred_address = conf._preferred_address;
-    _active_connection_id_limit = conf._active_connection_id_limit;
-    _initial_source_connection_id = conf._initial_source_connection_id;
-    _retry_source_connection_id = conf._retry_source_connection_id;
+    original_destination_connection_id_ = conf.original_destination_connection_id_;
+    max_idle_timeout_ = conf.max_idle_timeout_;
+    stateless_reset_token_ = conf.stateless_reset_token_;
+    max_udp_payload_size_ = conf.max_udp_payload_size_;
+    initial_max_data_ = conf.initial_max_data_;
+    initial_max_stream_data_bidi_local_ = conf.initial_max_stream_data_bidi_local_;
+    initial_max_stream_data_bidi_remote_ = conf.initial_max_stream_data_bidi_remote_;
+    initial_max_stream_data_uni_ = conf.initial_max_stream_data_uni_;
+    initial_max_streams_bidi_ = conf.initial_max_streams_bidi_;
+    initial_max_streams_uni_ = conf.initial_max_streams_uni_;
+    ack_delay_exponent_ = conf.ack_delay_exponent_;
+    max_ack_delay_ = conf.max_ack_delay_;
+    disable_active_migration_ = conf.disable_active_migration_;
+    preferred_address_ = conf.preferred_address_;
+    active_connection_id_limit_ = conf.active_connection_id_limit_;
+    initial_source_connection_id_ = conf.initial_source_connection_id_;
+    retry_source_connection_id_ = conf.retry_source_connection_id_;
 }
 
  bool TransportParam::Merge(const TransportParam& tp) {
      // the max idle time takes the minimum value
-     if (tp._max_idle_timeout < _max_idle_timeout) {
-         _max_idle_timeout = tp._max_idle_timeout;
+     if (tp.max_idle_timeout_ < max_idle_timeout_) {
+         max_idle_timeout_ = tp.max_idle_timeout_;
      }
      
      return true;
@@ -65,72 +65,72 @@ bool TransportParam::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     auto span = buffer->GetWriteSpan();
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
-    if (!_original_destination_connection_id.empty()) {
-        pos = EncodeString(pos, end, _original_destination_connection_id, TP_ORIGINAL_DESTINATION_CONNECTION_ID);
+    if (!original_destination_connection_id_.empty()) {
+        pos = EncodeString(pos, end, original_destination_connection_id_, TP_ORIGINAL_DESTINATION_CONNECTION_ID);
     }
     
-    if (_max_idle_timeout) {
-        pos = EncodeUint(pos, end, _max_idle_timeout, TP_MAX_IDLE_TIMEOUT);
+    if (max_idle_timeout_) {
+        pos = EncodeUint(pos, end, max_idle_timeout_, TP_MAX_IDLE_TIMEOUT);
     }
     
-    if (!_stateless_reset_token.empty()) {
-        pos = EncodeString(pos, end, _stateless_reset_token, TP_STATELESS_RESET_TOKEN);
+    if (!stateless_reset_token_.empty()) {
+        pos = EncodeString(pos, end, stateless_reset_token_, TP_STATELESS_RESET_TOKEN);
     }
     
-    if (_max_udp_payload_size) {
-        pos = EncodeUint(pos, end, _max_udp_payload_size, TP_MAX_UDP_PAYLOAD_SIZE);
+    if (max_udp_payload_size_) {
+        pos = EncodeUint(pos, end, max_udp_payload_size_, TP_MAX_UDP_PAYLOAD_SIZE);
     }
     
-    if (_initial_max_data) {
-        pos = EncodeUint(pos, end, _initial_max_data, TP_INITIAL_MAX_DATA);
+    if (initial_max_data_) {
+        pos = EncodeUint(pos, end, initial_max_data_, TP_INITIAL_MAX_DATA);
     }
 
-    if (_initial_max_stream_data_bidi_local) {
-        pos = EncodeUint(pos, end, _initial_max_stream_data_bidi_local, TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL);
+    if (initial_max_stream_data_bidi_local_) {
+        pos = EncodeUint(pos, end, initial_max_stream_data_bidi_local_, TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL);
     }
     
-    if (_initial_max_stream_data_bidi_remote) {
-        pos = EncodeUint(pos, end, _initial_max_stream_data_bidi_remote, TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE);
+    if (initial_max_stream_data_bidi_remote_) {
+        pos = EncodeUint(pos, end, initial_max_stream_data_bidi_remote_, TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE);
     }
 
-    if (_initial_max_stream_data_uni) {
-        pos = EncodeUint(pos, end, _initial_max_stream_data_uni, TP_INITIAL_MAX_STREAM_DATA_UNI);
+    if (initial_max_stream_data_uni_) {
+        pos = EncodeUint(pos, end, initial_max_stream_data_uni_, TP_INITIAL_MAX_STREAM_DATA_UNI);
     }
 
-    if (_initial_max_streams_bidi) {
-        pos = EncodeUint(pos, end, _initial_max_streams_bidi, TP_INITIAL_MAX_STREAMS_BIDI);
+    if (initial_max_streams_bidi_) {
+        pos = EncodeUint(pos, end, initial_max_streams_bidi_, TP_INITIAL_MAX_STREAMS_BIDI);
     }
 
-    if (_initial_max_streams_uni) {
-        pos = EncodeUint(pos, end, _initial_max_streams_uni, TP_INITIAL_MAX_STREAMS_UNI);
+    if (initial_max_streams_uni_) {
+        pos = EncodeUint(pos, end, initial_max_streams_uni_, TP_INITIAL_MAX_STREAMS_UNI);
     }
     
-    if (_ack_delay_exponent) {
-        pos = EncodeUint(pos, end, _ack_delay_exponent, TP_ACK_DELAY_EXPONENT);
+    if (ack_delay_exponent_) {
+        pos = EncodeUint(pos, end, ack_delay_exponent_, TP_ACK_DELAY_EXPONENT);
     }
 
-    if (_max_ack_delay) {
-        pos = EncodeUint(pos, end, _max_ack_delay, TP_MAX_ACK_DELAY);
+    if (max_ack_delay_) {
+        pos = EncodeUint(pos, end, max_ack_delay_, TP_MAX_ACK_DELAY);
     }
 
-    if (_disable_active_migration) {
-        pos = EncodeBool(pos, end, _disable_active_migration, TP_DISABLE_ACTIVE_MIGRATION);
+    if (disable_active_migration_) {
+        pos = EncodeBool(pos, end, disable_active_migration_, TP_DISABLE_ACTIVE_MIGRATION);
     }
 
-    if (!_preferred_address.empty()) {
-        pos = EncodeString(pos, end, _preferred_address, TP_PREFERRED_ADDRESS);
+    if (!preferred_address_.empty()) {
+        pos = EncodeString(pos, end, preferred_address_, TP_PREFERRED_ADDRESS);
     }
 
-    if (_active_connection_id_limit) {
-        pos = EncodeUint(pos, end, _active_connection_id_limit, TP_ACTIVE_CONNECTION_ID_LIMIT);
+    if (active_connection_id_limit_) {
+        pos = EncodeUint(pos, end, active_connection_id_limit_, TP_ACTIVE_CONNECTION_ID_LIMIT);
     }
 
-    if (!_initial_source_connection_id.empty()) {
-        pos = EncodeString(pos, end, _initial_source_connection_id, TP_INITIAL_SOURCE_CONNECTION_ID);
+    if (!initial_source_connection_id_.empty()) {
+        pos = EncodeString(pos, end, initial_source_connection_id_, TP_INITIAL_SOURCE_CONNECTION_ID);
     }
 
-    if (!_retry_source_connection_id.empty()) {
-        pos = EncodeString(pos, end, _retry_source_connection_id, TP_RETRY_SOURCE_CONNECTION_ID);
+    if (!retry_source_connection_id_.empty()) {
+        pos = EncodeString(pos, end, retry_source_connection_id_, TP_RETRY_SOURCE_CONNECTION_ID);
     }
 
     buffer->MoveWritePt(pos - span.GetStart());
@@ -146,55 +146,55 @@ bool TransportParam::Decode(std::shared_ptr<common::IBufferRead> buffer) {
         pos = common::DecodeVarint(pos, end, type);
         switch(type) {
         case TP_ORIGINAL_DESTINATION_CONNECTION_ID:
-            pos = DecodeString(pos, end, _original_destination_connection_id);
+            pos = DecodeString(pos, end, original_destination_connection_id_);
             break;
         case TP_MAX_IDLE_TIMEOUT:
-            pos = DecodeUint(pos, end, _max_idle_timeout);
+            pos = DecodeUint(pos, end, max_idle_timeout_);
             break;
         case TP_STATELESS_RESET_TOKEN:
-            pos = DecodeString(pos, end, _stateless_reset_token);
+            pos = DecodeString(pos, end, stateless_reset_token_);
             break;
         case TP_MAX_UDP_PAYLOAD_SIZE:
-            pos = DecodeUint(pos, end, _max_udp_payload_size);
+            pos = DecodeUint(pos, end, max_udp_payload_size_);
             break;
         case TP_INITIAL_MAX_DATA:
-            pos = DecodeUint(pos, end, _initial_max_data);
+            pos = DecodeUint(pos, end, initial_max_data_);
             break;
         case TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL:
-            pos = DecodeUint(pos, end, _initial_max_stream_data_bidi_local);
+            pos = DecodeUint(pos, end, initial_max_stream_data_bidi_local_);
             break;
         case TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE:
-            pos = DecodeUint(pos, end, _initial_max_stream_data_bidi_remote);
+            pos = DecodeUint(pos, end, initial_max_stream_data_bidi_remote_);
             break;
         case TP_INITIAL_MAX_STREAM_DATA_UNI:
-            pos = DecodeUint(pos, end, _initial_max_stream_data_uni);
+            pos = DecodeUint(pos, end, initial_max_stream_data_uni_);
             break;
         case TP_INITIAL_MAX_STREAMS_BIDI:
-            pos = DecodeUint(pos, end, _initial_max_streams_bidi);
+            pos = DecodeUint(pos, end, initial_max_streams_bidi_);
             break;
         case TP_INITIAL_MAX_STREAMS_UNI:
-            pos = DecodeUint(pos, end, _initial_max_streams_uni);
+            pos = DecodeUint(pos, end, initial_max_streams_uni_);
             break;
         case TP_ACK_DELAY_EXPONENT:
-            pos = DecodeUint(pos, end, _ack_delay_exponent);
+            pos = DecodeUint(pos, end, ack_delay_exponent_);
             break;
         case TP_MAX_ACK_DELAY:
-            pos = DecodeUint(pos, end, _max_ack_delay);
+            pos = DecodeUint(pos, end, max_ack_delay_);
             break;
         case TP_DISABLE_ACTIVE_MIGRATION:
-            pos = DecodeBool(pos, end, _disable_active_migration);
+            pos = DecodeBool(pos, end, disable_active_migration_);
             break;
         case TP_PREFERRED_ADDRESS:
-            pos = DecodeString(pos, end, _preferred_address);
+            pos = DecodeString(pos, end, preferred_address_);
             break;
         case TP_ACTIVE_CONNECTION_ID_LIMIT:
-            pos = DecodeUint(pos, end, _active_connection_id_limit);
+            pos = DecodeUint(pos, end, active_connection_id_limit_);
             break;
         case TP_INITIAL_SOURCE_CONNECTION_ID:
-            pos = DecodeString(pos, end, _initial_source_connection_id);
+            pos = DecodeString(pos, end, initial_source_connection_id_);
             break;
         case TP_RETRY_SOURCE_CONNECTION_ID:
-            pos = DecodeString(pos, end, _retry_source_connection_id);
+            pos = DecodeString(pos, end, retry_source_connection_id_);
             break;
         default:
             common::LOG_ERROR("unsupport stransport param. type:%d", type);

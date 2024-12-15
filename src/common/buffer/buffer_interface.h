@@ -17,11 +17,11 @@ class IBuffer:
     public IBufferRead,
     public IBufferWrite {
 public:
-    IBuffer(const std::shared_ptr<common::BlockMemoryPool>& alloter): _alloter(alloter) {}
+    IBuffer(const std::shared_ptr<common::BlockMemoryPool>& alloter): alloter_(alloter) {}
     virtual ~IBuffer() {}
 
 protected:
-    std::weak_ptr<BlockMemoryPool> _alloter;
+    std::weak_ptr<BlockMemoryPool> alloter_;
 };
 
 }

@@ -34,7 +34,7 @@ protected:
 
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err);
 private:
-    std::shared_ptr<TLSServerConnection> _tls_connection;
+    std::shared_ptr<TLSServerConnection> tls_connection_;
 };
 
 }

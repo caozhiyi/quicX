@@ -13,36 +13,36 @@ namespace quicx {
 namespace common {
 
 PoolAlloter::PoolAlloter() : 
-    _pool_start(nullptr),
-    _pool_end(nullptr) {
-    _free_list.resize(__default_number_of_free_lists);
-    memset(&(*_free_list.begin()), 0, sizeof(void*) * __default_number_of_free_lists);
-    _alloter = MakeNormalAlloterPtr();
+    pool_start_(nullptr),
+    pool_end_(nullptr) {
+    free_list_.resize(__default_number_of_free_lists);
+    memset(&(*free_list_.begin()), 0, sizeof(void*) * __default_number_of_free_lists);
+    alloter_ = MakeNormalAlloterPtr();
 }
 
 PoolAlloter::~PoolAlloter() {
-    for (auto iter = _malloc_vec.begin(); iter != _malloc_vec.end(); ++iter) {
+    for (auto iter = malloc_vec_.begin(); iter != malloc_vec_.end(); ++iter) {
         if (*iter) {
             void* data = (void*)*iter;
-            _alloter->Free(data);
+            alloter_->Free(data);
         }
     }
 }
 
 void* PoolAlloter::Malloc(uint32_t size) {
     if (size > __default_max_bytes) {
-        void* ret = _alloter->Malloc(size);
+        void* ret = alloter_->Malloc(size);
         return ret;
     }
 
-    MemNode** my_free = &(_free_list[FreeListIndex(size)]);
+    MemNode** my_free = &(free_list_[FreeListIndex(size)]);
     MemNode* result = *my_free;
     if (result == nullptr) {
         void* bytes = ReFill(Align(size));
         return bytes;
     }
     
-    *my_free = result->_next;
+    *my_free = result->next_;
     return result;
 }
 
@@ -64,15 +64,15 @@ void PoolAlloter::Free(void* &data, uint32_t len) {
     }
     
     if (len > __default_max_bytes) {
-        _alloter->Free(data);
+        alloter_->Free(data);
         data = nullptr;
         return;
     }
 
     MemNode* node = (MemNode*)data;
-    MemNode** my_free = &(_free_list[FreeListIndex(len)]);
+    MemNode** my_free = &(free_list_[FreeListIndex(len)]);
     
-    node->_next = *my_free;
+    node->next_ = *my_free;
     *my_free = node;
     data = nullptr;
 }
@@ -90,18 +90,18 @@ void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
 
     res = (MemNode*)chunk;
     
-    my_free = &(_free_list[FreeListIndex(size)]);
+    my_free = &(free_list_[FreeListIndex(size)]);
 
     *my_free = next = (MemNode*)(chunk + size);
     for (uint32_t i = 1;; i++) {
         current = next;
         next = (MemNode*)((uint8_t*)next + size);
         if (nums - 1 == i) {
-            current->_next = nullptr;
+            current->next_ = nullptr;
             break;
 
         } else {
-            current->_next = next;
+            current->next_ = next;
         }
     }
     return res;
@@ -110,34 +110,34 @@ void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
 void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
     uint8_t* res;
     uint32_t need_bytes = size * nums;
-    uint32_t left_bytes = uint32_t(_pool_end - _pool_start);
+    uint32_t left_bytes = uint32_t(pool_end_ - pool_start_);
 
     //pool is enough
     if (left_bytes >= need_bytes) {
-        res = _pool_start;
-        _pool_start += need_bytes;
+        res = pool_start_;
+        pool_start_ += need_bytes;
         return res;
     
     } else if (left_bytes >= size) {
         nums = left_bytes / size;
         need_bytes = size * nums;
-        res = _pool_start;
-        _pool_start += need_bytes;
+        res = pool_start_;
+        pool_start_ += need_bytes;
         return res;
 
     } 
     uint32_t bytes_to_get = size * nums;
 
     if (left_bytes > 0) {
-        MemNode* my_free = _free_list[FreeListIndex(left_bytes)];
-        ((MemNode*)_pool_start)->_next = my_free;
-        _free_list[FreeListIndex(size)] = (MemNode*)_pool_start;
+        MemNode* my_free = free_list_[FreeListIndex(left_bytes)];
+        ((MemNode*)pool_start_)->next_ = my_free;
+        free_list_[FreeListIndex(size)] = (MemNode*)pool_start_;
     }
 
-    _pool_start = (uint8_t*)_alloter->Malloc(bytes_to_get);
+    pool_start_ = (uint8_t*)alloter_->Malloc(bytes_to_get);
 
-    _malloc_vec.push_back(_pool_start);
-    _pool_end = _pool_start + bytes_to_get;
+    malloc_vec_.push_back(pool_start_);
+    pool_end_ = pool_start_ + bytes_to_get;
     return ChunkAlloc(size, nums);
 }
 

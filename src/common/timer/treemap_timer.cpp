@@ -11,7 +11,7 @@ namespace quicx {
 namespace common {
 
 
-TreeMapTimer::TreeMapTimer(): _random(0, (int32_t)std::numeric_limits<int32_t>::max()) {
+TreeMapTimer::TreeMapTimer(): random_(0, (int32_t)std::numeric_limits<int32_t>::max()) {
     
 }
 
@@ -24,18 +24,18 @@ uint64_t TreeMapTimer::AddTimer(TimerTask& task, uint32_t time, uint64_t now) {
         now = UTCTimeMsec();
     }
 
-    task._time = now + time;
-    task._id = _random.Random();
-    _timer_map[task._time][task._id] = task;
-    return task._id;
+    task.time_ = now + time;
+    task.id_ = random_.Random();
+    timer_map_[task.time_][task.id_] = task;
+    return task.id_;
 }
 
 bool TreeMapTimer::RmTimer(TimerTask& task) {
-    auto iter = _timer_map.find(task._time);
-    if (iter != _timer_map.end()) {
-        iter->second.erase(task._id);
+    auto iter = timer_map_.find(task.time_);
+    if (iter != timer_map_.end()) {
+        iter->second.erase(task.id_);
         if (iter->second.empty()) {
-            _timer_map.erase(iter);
+            timer_map_.erase(iter);
         }
         return true;
     }
@@ -43,28 +43,28 @@ bool TreeMapTimer::RmTimer(TimerTask& task) {
 }
 
 int32_t TreeMapTimer::MinTime(uint64_t now) {
-    if (_timer_map.empty()) {
+    if (timer_map_.empty()) {
         return -1;
     }
     
     if (now == 0) {
         now = UTCTimeMsec();
     }
-    return _timer_map.begin()->first - now;
+    return timer_map_.begin()->first - now;
 }
 
 void TreeMapTimer::TimerRun(uint64_t now) {
     if (now == 0) {
         now = UTCTimeMsec();
     }
-    for (auto iter = _timer_map.begin(); iter != _timer_map.end();) {
+    for (auto iter = timer_map_.begin(); iter != timer_map_.end();) {
         if (iter->first <= now) {
             for (auto task = iter->second.begin(); task != iter->second.end(); task++) {
-                if (task->second._tcb) {
-                    task->second._tcb();
+                if (task->second.tcb_) {
+                    task->second.tcb_();
                 }
             }
-            iter = _timer_map.erase(iter);
+            iter = timer_map_.erase(iter);
         } else {
             break;
         }
@@ -72,7 +72,7 @@ void TreeMapTimer::TimerRun(uint64_t now) {
 }
 
 bool TreeMapTimer::Empty() {
-    return _timer_map.empty();
+    return timer_map_.empty();
 }
 
 }

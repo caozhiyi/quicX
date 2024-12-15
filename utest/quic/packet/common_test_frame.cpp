@@ -15,13 +15,13 @@ PacketTest::PacketTest() {
     uint8_t dcid[__max_cid_length] = {0};
     ConnectionIDGenerator::Instance().Generator(dcid, __max_cid_length);
 
-    _cli_cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-    if (!_cli_cryptographer->InstallInitSecret(dcid, __max_cid_length, __initial_slat, sizeof(__initial_slat), false)) {
+    cli_cryptographer_ = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
+    if (!cli_cryptographer_->InstallInitSecret(dcid, __max_cid_length, __initial_slat, sizeof(__initial_slat), false)) {
         abort();
     }
 
-    _ser_cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-    if (!_ser_cryptographer->InstallInitSecret(dcid, __max_cid_length, __initial_slat, sizeof(__initial_slat), true)) {
+    ser_cryptographer_ = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
+    if (!ser_cryptographer_->InstallInitSecret(dcid, __max_cid_length, __initial_slat, sizeof(__initial_slat), true)) {
         abort();
     }
 }
@@ -56,12 +56,12 @@ bool PacketTest::CheckTestFrame(std::shared_ptr<IFrame> f) {
 }
 
 std::shared_ptr<ICryptographer> PacketTest::GetTestClientCryptographer() {
-    return _cli_cryptographer;
+    return cli_cryptographer_;
     
 }
 
 std::shared_ptr<ICryptographer> PacketTest::GetTestServerCryptographer() {
-    return _ser_cryptographer;
+    return ser_cryptographer_;
 }
 
 }

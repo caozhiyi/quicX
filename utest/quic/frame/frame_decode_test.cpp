@@ -102,12 +102,12 @@ TEST(frame_decode_utest, codec) {
     //EXPECT_EQ(ack_frame1.GetLargestAck(), ack_frame2->GetLargestAck());
     auto range = ack_frame2->GetAckRange();
     EXPECT_EQ(range.size(), 3);
-    /*EXPECT_EQ(range[0]._gap, 3);
-    EXPECT_EQ(range[0]._ack_range, 5);
-    EXPECT_EQ(range[1]._gap, 4);
-    EXPECT_EQ(range[1]._ack_range, 6);
-    EXPECT_EQ(range[2]._gap, 2);
-    EXPECT_EQ(range[2]._ack_range, 3);*/
+    /*EXPECT_EQ(range[0].gap_, 3);
+    EXPECT_EQ(range[0].ack_range_, 5);
+    EXPECT_EQ(range[1].gap_, 4);
+    EXPECT_EQ(range[1].ack_range_, 6);
+    EXPECT_EQ(range[2].gap_, 2);
+    EXPECT_EQ(range[2].ack_range_, 3);*/
 
     // check sending frame
     EXPECT_EQ(stop_frame1.GetType(), stop_frame2->GetType());

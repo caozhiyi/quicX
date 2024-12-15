@@ -13,18 +13,18 @@ SpinLock::~SpinLock() {
 }
 
 bool SpinLock::TryLock() {
-    return !_lock.test_and_set(std::memory_order_acquire);
+    return !lock_.test_and_set(std::memory_order_acquire);
 }
 
 bool SpinLock::Lock() {
-    while (_lock.test_and_set(std::memory_order_acquire)) { 
+    while (lock_.test_and_set(std::memory_order_acquire)) { 
 
     }
     return true;
 }
 
 void SpinLock::Unlock() {
-    _lock.clear(std::memory_order_release);
+    lock_.clear(std::memory_order_release);
 }
 
 }

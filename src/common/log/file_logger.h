@@ -44,29 +44,29 @@ public:
     void Error(std::shared_ptr<Log>& log);
     void Fatal(std::shared_ptr<Log>& log);
 
-    void SetFileName(const std::string& name) { _file_name = name; }
-    std::string GetFileName() { return _file_name; }
+    void SetFileName(const std::string& name) { file_name_ = name; }
+    std::string GetFileName() { return file_name_; }
 
     void SetMaxStoreDays(uint16_t max);
-    uint16_t GetMAxStorDays() { return _max_file_num; }
+    uint16_t GetMAxStorDays() { return max_file_num_; }
 
 private:
     void CheckTime(char* log);
     void CheckExpireFiles();
 
 private:
-    std::string   _file_name;
-    std::fstream  _stream;
+    std::string   file_name_;
+    std::fstream  stream_;
 
     // for time check
-    uint16_t _time_offset;
-    uint8_t  _time_buf_len;
-    FileLoggerSpiltUnit _spilt_unit;
-    char     _time[__file_logger_time_buf_size];
+    uint16_t time_offset_;
+    uint8_t  time_buf_len_;
+    FileLoggerSpiltUnit spilt_unit_;
+    char     time_[__file_logger_time_buf_size];
 
     // for log file delete
-    uint16_t _max_file_num;
-    std::queue<std::string> _history_file_names;
+    uint16_t max_file_num_;
+    std::queue<std::string> history_file_names_;
 };
 
 }

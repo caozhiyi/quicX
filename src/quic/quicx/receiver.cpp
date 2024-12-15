@@ -9,11 +9,11 @@
 // }
 
 // bool Receiver::Listen(const std::string& ip, uint16_t port) {
-//     return _udp_receiver.Listen(ip, port);
+//     return udp_receiver_.Listen(ip, port);
 // }
 
 // void Receiver::SetRecvSocket(uint64_t sock) {
-//     _udp_receiver.SetRecvSocket(sock);
+//     udp_receiver_.SetRecvSocket(sock);
 // }
 
 // std::shared_ptr<UdpPacketIn> Receiver::DoRecv() {
@@ -21,7 +21,7 @@
 //     auto buffer = std::make_shared<common::Buffer>(alloter_);
 //     udp_packet->SetData(buffer);
 
-//     auto ret = _udp_receiver.DoRecv(udp_packet);
+//     auto ret = udp_receiver_.DoRecv(udp_packet);
 //     if (ret == UdpReceiver::RR_SUCCESS) {
 //         return udp_packet;
 //     }

@@ -46,11 +46,11 @@ static uint32_t FormatLog(const char* file, uint32_t line, const char* level, co
 }
 
 BaseLogger::BaseLogger(uint16_t cache_size, uint16_t block_size):
-    _level(LL_INFO),
-    _cache_size(cache_size),
-    _block_size(block_size) {
+    level_(LL_INFO),
+    cache_size_(cache_size),
+    block_size_(block_size) {
 
-    _allocter = MakeNormalAlloterPtr();
+    allocter_ = MakeNormalAlloterPtr();
 }
 
 BaseLogger::~BaseLogger() {
@@ -58,93 +58,93 @@ BaseLogger::~BaseLogger() {
 }
 
 void BaseLogger::SetLevel(LogLevel level) { 
-    _level = level; 
-    if (_level > LL_NULL && _cache_queue.Empty()) {
-        for (uint16_t i = 0; i < _cache_size; i++) {
-            _cache_queue.Push(NewLog());
+    level_ = level; 
+    if (level_ > LL_NULL && cache_queue_.Empty()) {
+        for (uint16_t i = 0; i < cache_size_; i++) {
+            cache_queue_.Push(NewLog());
         }
 
-    } else if (_level == LL_NULL) {
-        size_t size = _cache_queue.Size();
+    } else if (level_ == LL_NULL) {
+        size_t size = cache_queue_.Size();
         Log* log = nullptr;
         void* del = nullptr;
         for (size_t i = 0; i < size; i++) {
-            if (_cache_queue.Pop(log)) {
+            if (cache_queue_.Pop(log)) {
                 del = (void*)log;
-                _allocter->Free(del);
+                allocter_->Free(del);
             }
         }
     }
 }
 
 void BaseLogger::Debug(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(_level & LLM_DEBUG)) {
+    if (!(level_ & LLM_DEBUG)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
-    log->_len = FormatLog(file, line, "DEB", content, list, log->_log, log->_len);
+    log->len_ = FormatLog(file, line, "DEB", content, list, log->log_, log->len_);
 
-    if (_logger) {
-        _logger->Debug(log);
+    if (logger_) {
+        logger_->Debug(log);
     }
 }
 
 void BaseLogger::Info(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(_level & LLM_INFO)) {
+    if (!(level_ & LLM_INFO)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
-    log->_len = FormatLog(file, line, "INF", content, list, log->_log, log->_len);
+    log->len_ = FormatLog(file, line, "INF", content, list, log->log_, log->len_);
 
-    if (_logger) {
-        _logger->Info(log);
+    if (logger_) {
+        logger_->Info(log);
     }
 }
 
 void BaseLogger::Warn(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(_level & LLM_WARN)) {
+    if (!(level_ & LLM_WARN)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
-    log->_len = FormatLog(file, line, "WAR", content, list, log->_log, log->_len);
+    log->len_ = FormatLog(file, line, "WAR", content, list, log->log_, log->len_);
 
-    if (_logger) {
-        _logger->Warn(log);
+    if (logger_) {
+        logger_->Warn(log);
     }
 }
 
 void BaseLogger::Error(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(_level & LLM_ERROR)) {
+    if (!(level_ & LLM_ERROR)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
-    log->_len = FormatLog(file, line, "ERR", content, list, log->_log, log->_len);
+    log->len_ = FormatLog(file, line, "ERR", content, list, log->log_, log->len_);
 
-    if (_logger) {
-        _logger->Error(log);
+    if (logger_) {
+        logger_->Error(log);
     }
 }
 
 void BaseLogger::Fatal(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(_level & LLM_FATAL)) {
+    if (!(level_ & LLM_FATAL)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
-    log->_len = FormatLog(file, line, "FAT", content, list, log->_log, log->_len);
+    log->len_ = FormatLog(file, line, "FAT", content, list, log->log_, log->len_);
 
-    if (_logger) {
-        _logger->Fatal(log);
+    if (logger_) {
+        logger_->Fatal(log);
     }
 }
 
 LogStreamParam BaseLogger::GetStreamParam(LogLevel level, const char* file, uint32_t line) {
     // check log level can print
-    if (level > _level) {
+    if (level > level_) {
         return std::make_pair(nullptr, nullptr);
     }
 
@@ -155,24 +155,24 @@ LogStreamParam BaseLogger::GetStreamParam(LogLevel level, const char* file, uint
     case LL_NULL:
         break;
     case LL_FATAL:
-        cb = [this](std::shared_ptr<Log> l) { _logger->Fatal(l); };
-        log->_len = FormatLog(file, line, "FAT", log->_log, log->_len);
+        cb = [this](std::shared_ptr<Log> l) { logger_->Fatal(l); };
+        log->len_ = FormatLog(file, line, "FAT", log->log_, log->len_);
         break;
     case LL_ERROR:
-        cb = [this](std::shared_ptr<Log> l) { _logger->Error(l); };
-        log->_len = FormatLog(file, line, "ERR", log->_log, log->_len);
+        cb = [this](std::shared_ptr<Log> l) { logger_->Error(l); };
+        log->len_ = FormatLog(file, line, "ERR", log->log_, log->len_);
         break;
     case LL_WARN:
-        cb = [this](std::shared_ptr<Log> l) { _logger->Warn(l); };
-        log->_len = FormatLog(file, line, "WAR", log->_log, log->_len);
+        cb = [this](std::shared_ptr<Log> l) { logger_->Warn(l); };
+        log->len_ = FormatLog(file, line, "WAR", log->log_, log->len_);
         break;
     case LL_INFO:
-        cb = [this](std::shared_ptr<Log> l) { _logger->Info(l); };
-        log->_len = FormatLog(file, line, "INF", log->_log, log->_len);
+        cb = [this](std::shared_ptr<Log> l) { logger_->Info(l); };
+        log->len_ = FormatLog(file, line, "INF", log->log_, log->len_);
         break;
     case LL_DEBUG:
-        cb = [this](std::shared_ptr<Log> l) { _logger->Debug(l); };
-        log->_len = FormatLog(file, line, "DEB", log->_log, log->_len);
+        cb = [this](std::shared_ptr<Log> l) { logger_->Debug(l); };
+        log->len_ = FormatLog(file, line, "DEB", log->log_, log->len_);
         break;
     default:
         return std::make_pair(nullptr, nullptr);
@@ -183,7 +183,7 @@ LogStreamParam BaseLogger::GetStreamParam(LogLevel level, const char* file, uint
 
 std::shared_ptr<Log> BaseLogger::GetLog() {
     Log* log = nullptr;
-    if (_cache_queue.Pop(log)) {
+    if (cache_queue_.Pop(log)) {
 
     } else {
         log = NewLog();
@@ -193,21 +193,21 @@ std::shared_ptr<Log> BaseLogger::GetLog() {
 }
 
 void BaseLogger::FreeLog(Log* log) {
-    if (_cache_queue.Size() > _cache_size) {
+    if (cache_queue_.Size() > cache_size_) {
         void* del = (void*)log;
-        _allocter->Free(del);
+        allocter_->Free(del);
 
     } else {
-        log->_len = _block_size;
-        _cache_queue.Push(log);
+        log->len_ = block_size_;
+        cache_queue_.Push(log);
     }
 }
 
 Log* BaseLogger::NewLog() {
-    Log* item = (Log*)_allocter->MallocAlign(_block_size + sizeof(Log));
+    Log* item = (Log*)allocter_->MallocAlign(block_size_ + sizeof(Log));
 
-    item->_log = (char*)item + sizeof(Log);
-    item->_len = _block_size;
+    item->log_ = (char*)item + sizeof(Log);
+    item->len_ = block_size_;
 
     return item;
 }

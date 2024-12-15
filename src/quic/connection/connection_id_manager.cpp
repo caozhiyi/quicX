@@ -5,43 +5,43 @@ namespace quicx {
 namespace quic {
 
 uint64_t ConnectionID::Hash() {
-    if (_hash == 0) {
-        _hash = ConnectionIDGenerator::Instance().Hash(_id, _len);
+    if (hash_ == 0) {
+        hash_ = ConnectionIDGenerator::Instance().Hash(id_, len_);
     }
-    return _hash;
+    return hash_;
 }
 
 ConnectionID ConnectionIDManager::Generator() {
     ConnectionID id;
-    ConnectionIDGenerator::Instance().Generator(id._id, id._len);
-    id._index = ++_cur_index;
+    ConnectionIDGenerator::Instance().Generator(id.id_, id.len_);
+    id.index_ = ++cur_index_;
     AddID(id);
     return id;
 }
 
 ConnectionID& ConnectionIDManager::GetCurrentID() {
-    if (_ids_map.empty()) {
+    if (ids_map_.empty()) {
         Generator();
     }
-    return _cur_id;
+    return cur_id_;
 }
 
 bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
     bool cur_retire = false;
-    for (auto iter = _ids_map.begin(); iter != _ids_map.end();) {
-        if (iter->second.Hash() == _cur_id.Hash()) {
+    for (auto iter = ids_map_.begin(); iter != ids_map_.end();) {
+        if (iter->second.Hash() == cur_id_.Hash()) {
             cur_retire = true;
         }
-        if (iter->second._index <= sequence) {
-            if (_retire_connection_id_cb) {
-                _retire_connection_id_cb(iter->second.Hash());
+        if (iter->second.index_ <= sequence) {
+            if (retire_connection_id_cb_) {
+                retire_connection_id_cb_(iter->second.Hash());
             }
-            iter = _ids_map.erase(iter);
+            iter = ids_map_.erase(iter);
         }
     }
     
-    if (cur_retire && !_ids_map.empty()){
-        _cur_id = _ids_map.begin()->second;
+    if (cur_retire && !ids_map_.empty()){
+        cur_id_ = ids_map_.begin()->second;
     } else {
         return false;
     }
@@ -49,12 +49,12 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
 }
 
 bool ConnectionIDManager::AddID(ConnectionID& id) {
-    _ids_map[id._index] = id;
-    if (_ids_map.size() == 1) { 
-        _cur_id = id;
+    ids_map_[id.index_] = id;
+    if (ids_map_.size() == 1) { 
+        cur_id_ = id;
     }
-    if (_add_connection_id_cb) {
-        _add_connection_id_cb(id.Hash());
+    if (add_connection_id_cb_) {
+        add_connection_id_cb_(id.Hash());
     }
     return true;
 }

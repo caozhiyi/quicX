@@ -10,20 +10,20 @@ namespace {
 uint32_t __alloter_test_value = 0;
 class AlloterTestClass {
 public:
-    AlloterTestClass(uint64_t v) : _data(v) {
+    AlloterTestClass(uint64_t v) : data_(v) {
         __alloter_test_value++;
     }
     ~AlloterTestClass() {
          __alloter_test_value--;
     }
 
-    uint64_t _data;
+    uint64_t data_;
 };
 
 TEST(alloter_utest, warp1) {
     AlloterWrap IAlloter(std::shared_ptr<IAlloter>(new PoolAlloter()));
     AlloterTestClass* at = IAlloter.PoolNew<AlloterTestClass>(100);
-    ASSERT_EQ(100, at->_data);
+    ASSERT_EQ(100, at->data_);
     IAlloter.PoolDelete<AlloterTestClass>(at);
     ASSERT_EQ(0, __alloter_test_value);
 }
@@ -33,7 +33,7 @@ TEST(alloter_utest, warp2) {
     AlloterWrap IAlloter(std::shared_ptr<IAlloter>(new PoolAlloter()));
     {
         auto at = IAlloter.PoolNewSharePtr<AlloterTestClass>(100);
-        ASSERT_EQ(100, at->_data);
+        ASSERT_EQ(100, at->data_);
     }
     ASSERT_EQ(0, __alloter_test_value);
 }

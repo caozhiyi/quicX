@@ -26,7 +26,7 @@ public:
     void Fatal(std::shared_ptr<Log>& log);
 
 private:
-    std::mutex _mutex;
+    std::mutex mutex_;
 };
 
 }

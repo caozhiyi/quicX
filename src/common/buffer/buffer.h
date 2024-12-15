@@ -62,11 +62,11 @@ private:
     uint32_t InnerWrite(uint8_t* data, uint32_t len);
 
 private:
-    uint8_t* _read_pos;             //read position
-    uint8_t* _write_pos;            //write position
-    bool     _can_read;             //when _read == _write? Is there any data can be read.
-    uint8_t* _buffer_start;
-    uint8_t* _buffer_end;
+    uint8_t* read_pos_;             //read position
+    uint8_t* write_pos_;            //write position
+    bool     can_read_;             //when read_ == write_? Is there any data can be read.
+    uint8_t* buffer_start_;
+    uint8_t* buffer_end_;
 };
 
 }

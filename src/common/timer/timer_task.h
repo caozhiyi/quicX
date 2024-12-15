@@ -17,13 +17,13 @@ typedef std::function<void()> TimerCallback;
 
 class TimerTask {
 public:
-    TimerCallback _tcb;
+    TimerCallback tcb_;
     TimerTask() {}
-    TimerTask(TimerCallback tcb): _tcb(tcb) {}
-    TimerTask(const TimerTask& t): _tcb(t._tcb), _time(t._time), _id(t._id) {}
+    TimerTask(TimerCallback tcb): tcb_(tcb) {}
+    TimerTask(const TimerTask& t): tcb_(t.tcb_), time_(t.time_), id_(t.id_) {}
 private:
-    uint64_t _time;
-    uint64_t _id;
+    uint64_t time_;
+    uint64_t id_;
 friend class TreeMapTimer;
 };
 

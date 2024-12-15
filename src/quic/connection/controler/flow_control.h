@@ -41,22 +41,22 @@ private:
 
 private:
     // data flow control
-    uint64_t _local_send_max_data_limit;
-    uint64_t _local_send_data_size;
-    uint64_t _remote_send_max_data_limit;
-    uint64_t _remote_send_data_size;
+    uint64_t local_send_max_data_limit_;
+    uint64_t local_send_data_size_;
+    uint64_t remote_send_max_data_limit_;
+    uint64_t remote_send_data_size_;
     // streams flow control
-    uint64_t _local_max_bidirectional_stream_id;
-    uint64_t _local_bidirectional_stream_limit;
-    uint64_t _local_max_unidirectional_stream_id;
-    uint64_t _local_unidirectional_stream_limit;
+    uint64_t local_max_bidirectional_stream_id_;
+    uint64_t local_bidirectional_stream_limit_;
+    uint64_t local_max_unidirectional_stream_id_;
+    uint64_t local_unidirectional_stream_limit_;
     
-    uint64_t _remote_max_bidirectional_stream_id;
-    uint64_t _remote_bidirectional_stream_limit;
-    uint64_t _remote_max_unidirectional_stream_id;
-    uint64_t _remote_unidirectional_stream_limit;
+    uint64_t remote_max_bidirectional_stream_id_;
+    uint64_t remote_bidirectional_stream_limit_;
+    uint64_t remote_max_unidirectional_stream_id_;
+    uint64_t remote_unidirectional_stream_limit_;
 
-    StreamIDGenerator _id_generator;
+    StreamIDGenerator id_generator_;
 };
 
 }

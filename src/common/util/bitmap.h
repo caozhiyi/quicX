@@ -40,9 +40,9 @@ public:
 
 private:
     // which index of vector used
-    uint32_t _vec_bitmap;
+    uint32_t vec_bitmap_;
     // all bit
-    std::vector<int64_t> _bitmap;
+    std::vector<int64_t> bitmap_;
 };
 
 }

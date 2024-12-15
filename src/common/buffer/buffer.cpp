@@ -9,43 +9,43 @@ namespace quicx {
 namespace common {
 
 Buffer::Buffer(BufferSpan& span):
-    _can_read(false),
+    can_read_(false),
     IBuffer(nullptr) {
-    _buffer_start = span.GetStart();
-    _buffer_end = span.GetEnd();
-    _read_pos = _write_pos = _buffer_start;
+    buffer_start_ = span.GetStart();
+    buffer_end_ = span.GetEnd();
+    read_pos_ = write_pos_ = buffer_start_;
 }
 
 Buffer::Buffer(uint8_t* start, uint32_t len):
-    _can_read(false),
+    can_read_(false),
     IBuffer(nullptr) {
-    _buffer_start = start;
-    _buffer_end = start + len;
-    _read_pos = _write_pos = _buffer_start;
+    buffer_start_ = start;
+    buffer_end_ = start + len;
+    read_pos_ = write_pos_ = buffer_start_;
 }
 
 Buffer::Buffer(uint8_t* start, uint8_t* end):
-    _can_read(false),
+    can_read_(false),
     IBuffer(nullptr) {
-    _buffer_start = start;
-    _buffer_end = end;
-    _read_pos = _write_pos = _buffer_start;
+    buffer_start_ = start;
+    buffer_end_ = end;
+    read_pos_ = write_pos_ = buffer_start_;
 }
 
 Buffer::Buffer(std::shared_ptr<common::BlockMemoryPool>& alloter):
-    _can_read(false),
+    can_read_(false),
     IBuffer(alloter) {
 
-    _buffer_start = (uint8_t*)alloter->PoolLargeMalloc();
-    _buffer_end = _buffer_start + alloter->GetBlockLength();
-    _read_pos = _write_pos = _buffer_start;
+    buffer_start_ = (uint8_t*)alloter->PoolLargeMalloc();
+    buffer_end_ = buffer_start_ + alloter->GetBlockLength();
+    read_pos_ = write_pos_ = buffer_start_;
 }
 
 Buffer::~Buffer() {
-    if (_buffer_start != nullptr) {
-        auto alloter = _alloter.lock();
+    if (buffer_start_ != nullptr) {
+        auto alloter = alloter_.lock();
         if (alloter) {
-            void* m = (void*)_buffer_start;
+            void* m = (void*)buffer_start_;
             alloter->PoolLargeFree(m);
         }
     }
@@ -59,13 +59,13 @@ uint32_t Buffer::ReadNotMovePt(uint8_t* data, uint32_t len) {
 }
 
 uint32_t Buffer::MoveReadPt(int32_t len) {
-    if (!_buffer_start) {
+    if (!buffer_start_) {
         return 0;
     }
 
     if (len > 0) {
-        if (_read_pos <= _write_pos) {
-            size_t size = _write_pos - _read_pos;
+        if (read_pos_ <= write_pos_) {
+            size_t size = write_pos_ - read_pos_;
             // all buffer will be used
             if ((int32_t)size <= len) {
                 Clear();
@@ -73,7 +73,7 @@ uint32_t Buffer::MoveReadPt(int32_t len) {
 
             // part of buffer will be used
             } else {
-                _read_pos += len;
+                read_pos_ += len;
                 return len;
             }
 
@@ -85,16 +85,16 @@ uint32_t Buffer::MoveReadPt(int32_t len) {
 
     } else {
         len = -len;
-        if (_buffer_start <= _read_pos) {
-            size_t size = _read_pos - _buffer_start;
+        if (buffer_start_ <= read_pos_) {
+            size_t size = read_pos_ - buffer_start_;
             // reread all buffer
             if ((int32_t)size <= len) {
-                _read_pos -= size;
+                read_pos_ -= size;
                 return (int32_t)size;
 
             // only reread part of buffer
             } else {
-                _read_pos -= len;
+                read_pos_ -= len;
                 return len;
             }
 
@@ -114,29 +114,29 @@ uint32_t Buffer::Read(uint8_t* data, uint32_t len) {
 }
 
 uint32_t Buffer::GetDataLength() {
-    return uint32_t(_write_pos - _read_pos); 
+    return uint32_t(write_pos_ - read_pos_); 
 }
 
 BufferSpan Buffer::GetReadSpan() {
-    return std::move(BufferSpan(_read_pos, _write_pos));
+    return std::move(BufferSpan(read_pos_, write_pos_));
 }
 
 BufferReadView Buffer::GetReadView(uint32_t offset) {
-    return std::move(BufferReadView(_read_pos, _write_pos));
+    return std::move(BufferReadView(read_pos_, write_pos_));
 }
 
 std::shared_ptr<common::IBufferRead> Buffer::GetReadViewPtr(uint32_t offset) {
-    return std::make_shared<BufferReadView>(_read_pos, _write_pos);
+    return std::make_shared<BufferReadView>(read_pos_, write_pos_);
 }
 
 uint8_t* Buffer::GetData() {
-    return _read_pos;
+    return read_pos_;
 }
 
 // clear all data
 void Buffer::Clear() {
-    _write_pos = _read_pos = _buffer_start;
-    _can_read = false;
+    write_pos_ = read_pos_ = buffer_start_;
+    can_read_ = false;
 }
 
 uint32_t Buffer::Write(uint8_t* data, uint32_t len) {
@@ -147,26 +147,26 @@ uint32_t Buffer::Write(uint8_t* data, uint32_t len) {
 }
 
 uint32_t Buffer::GetFreeLength() {
-    return uint32_t(_buffer_end - _write_pos);
+    return uint32_t(buffer_end_ - write_pos_);
 }
 
 uint32_t Buffer::MoveWritePt(int32_t len) {
-    if (!_buffer_start) {
+    if (!buffer_start_) {
         return 0;
     }
 
     if (len > 0) {
-        if (_write_pos <= _buffer_end) {
-            size_t size = _buffer_end - _write_pos;
+        if (write_pos_ <= buffer_end_) {
+            size_t size = buffer_end_ - write_pos_;
             // all buffer will be used
             if ((int32_t)size <= len) {
-                _write_pos += size;
-                _can_read = true;
+                write_pos_ += size;
+                can_read_ = true;
                 return (int32_t)size;
 
             // part of buffer will be used
             } else {
-                _write_pos += len;
+                write_pos_ += len;
                 return len;
             }
 
@@ -178,8 +178,8 @@ uint32_t Buffer::MoveWritePt(int32_t len) {
 
     } else {
         len = -len;
-        if (_read_pos <= _write_pos) {
-            size_t size = _write_pos - _read_pos;
+        if (read_pos_ <= write_pos_) {
+            size_t size = write_pos_ - read_pos_;
             // rewrite all buffer
             if ((int32_t)size <= len) {
                 Clear();
@@ -187,7 +187,7 @@ uint32_t Buffer::MoveWritePt(int32_t len) {
 
             // only rewrite part of buffer
             } else {
-                _write_pos -= len;
+                write_pos_ -= len;
                 return len;
             }
         
@@ -200,24 +200,24 @@ uint32_t Buffer::MoveWritePt(int32_t len) {
 }
 
 BufferSpan Buffer::GetWriteSpan() {
-    return std::move(BufferSpan(_write_pos, _buffer_end));
+    return std::move(BufferSpan(write_pos_, buffer_end_));
 }
 
 BufferWriteView Buffer::GetWriteView(uint32_t offset) {
-    return std::move(BufferWriteView(_write_pos, _buffer_end));
+    return std::move(BufferWriteView(write_pos_, buffer_end_));
 }
 
 std::shared_ptr<common::IBufferWrite> Buffer::GetWriteViewPtr(uint32_t offset) {
-    return std::make_shared<BufferWriteView>(_write_pos, _buffer_end);
+    return std::make_shared<BufferWriteView>(write_pos_, buffer_end_);
 }
 
 uint32_t Buffer::InnerRead(uint8_t* data, uint32_t len, bool move_pt) {
     /*s-----------r-----w-------------e*/
-    if (_read_pos <= _write_pos) {
-        size_t size = _write_pos - _read_pos;
+    if (read_pos_ <= write_pos_) {
+        size_t size = write_pos_ - read_pos_;
         // res can load all
         if (size <= len) {
-            memcpy(data, _read_pos, size);
+            memcpy(data, read_pos_, size);
             if(move_pt) {
                 Clear();
             }
@@ -225,9 +225,9 @@ uint32_t Buffer::InnerRead(uint8_t* data, uint32_t len, bool move_pt) {
 
         // only read len
         } else {
-            memcpy(data, _read_pos, len);
+            memcpy(data, read_pos_, len);
             if(move_pt) {
-                _read_pos += len;
+                read_pos_ += len;
             }
             return len;
         }
@@ -240,20 +240,20 @@ uint32_t Buffer::InnerRead(uint8_t* data, uint32_t len, bool move_pt) {
 }
 
 uint32_t Buffer::InnerWrite(uint8_t* data, uint32_t len) {
-    if (_write_pos <= _buffer_end) {
-        size_t size = _buffer_end - _write_pos;
+    if (write_pos_ <= buffer_end_) {
+        size_t size = buffer_end_ - write_pos_;
         // all buffer will be used
         if (size <= len) {
-            memcpy(_write_pos, data, size);
+            memcpy(write_pos_, data, size);
 
-            _write_pos += size;
-            _can_read = true;
+            write_pos_ += size;
+            can_read_ = true;
             return (int32_t)size;
 
         // part of buffer will be used
         } else {
-            memcpy(_write_pos, data, len);
-            _write_pos += len;
+            memcpy(write_pos_, data, len);
+            write_pos_ += len;
             return len;
         }
     } else {

@@ -26,7 +26,7 @@ public:
     BaseLogger(uint16_t cache_size, uint16_t block_size);
     ~BaseLogger();
 
-    void SetLogger(std::shared_ptr<Logger> log) { _logger = log; }
+    void SetLogger(std::shared_ptr<Logger> log) { logger_ = log; }
 
     void SetLevel(LogLevel level);
 
@@ -44,13 +44,13 @@ private:
     Log* NewLog();
 
 protected:
-    uint16_t _level;
-    uint16_t _cache_size;
-    uint16_t _block_size;
+    uint16_t level_;
+    uint16_t cache_size_;
+    uint16_t block_size_;
 
-    std::shared_ptr<IAlloter> _allocter;
-    ThreadSafeQueue<Log*>    _cache_queue;
-    std::shared_ptr<Logger>  _logger;
+    std::shared_ptr<IAlloter> allocter_;
+    ThreadSafeQueue<Log*>    cache_queue_;
+    std::shared_ptr<Logger>  logger_;
 };
 
 }

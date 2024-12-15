@@ -26,7 +26,7 @@
 // private:
 //     std::shared_ptr<TLSCtx> ctx_;
 //     std::shared_ptr<IReceiver> receiver_;
-//     std::vector<std::shared_ptr<IProcessor>> _processors;
+//     std::vector<std::shared_ptr<IProcessor>> processors_;
 // };
 
 // }

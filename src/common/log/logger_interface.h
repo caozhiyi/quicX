@@ -13,8 +13,8 @@ namespace quicx {
 namespace common {
 
 struct Log {
-    char*    _log;
-    uint32_t _len;
+    char*    log_;
+    uint32_t len_;
 };
 
 // inherit this class to print log.
@@ -24,17 +24,17 @@ public:
     Logger() {}
     virtual ~Logger() {}
 
-    void SetLogger(std::shared_ptr<Logger> logger) { _logger = logger; }
-    std::shared_ptr<Logger> GetLogger() { return _logger; }
+    void SetLogger(std::shared_ptr<Logger> logger) { logger_ = logger; }
+    std::shared_ptr<Logger> GetLogger() { return logger_; }
 
-    virtual void Debug(std::shared_ptr<Log>& log) { if(_logger) _logger->Debug(log); }
-    virtual void Info(std::shared_ptr<Log>& log) { if(_logger) _logger->Info(log); }
-    virtual void Warn(std::shared_ptr<Log>& log) { if(_logger) _logger->Warn(log); }
-    virtual void Error(std::shared_ptr<Log>& log) { if(_logger) _logger->Error(log); }
-    virtual void Fatal(std::shared_ptr<Log>& log) { if(_logger) _logger->Fatal(log); }
+    virtual void Debug(std::shared_ptr<Log>& log) { if(logger_) logger_->Debug(log); }
+    virtual void Info(std::shared_ptr<Log>& log) { if(logger_) logger_->Info(log); }
+    virtual void Warn(std::shared_ptr<Log>& log) { if(logger_) logger_->Warn(log); }
+    virtual void Error(std::shared_ptr<Log>& log) { if(logger_) logger_->Error(log); }
+    virtual void Fatal(std::shared_ptr<Log>& log) { if(logger_) logger_->Fatal(log); }
 
 protected:
-    std::shared_ptr<Logger> _logger;
+    std::shared_ptr<Logger> logger_;
 };
 
 }
