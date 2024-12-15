@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include "common/buffer/buffer.h"
-#include "common/buffer/buffer_wrapper.h"
 #include "http3/frame/push_promise_frame.h"
 
 namespace quicx {
@@ -10,15 +9,16 @@ namespace {
 class PushPromiseFrameTest : public testing::Test {
 protected:
     void SetUp() override {
-        buffer_ = std::make_shared<common::Buffer>();
-        write_wrapper_ = std::make_shared<common::BufferWrite>(buffer_);
-        read_wrapper_ = std::make_shared<common::BufferRead>(buffer_);
+        buffer_ = std::make_shared<common::Buffer>(buf_, sizeof(buf_));
+        write_buffer_ = buffer_->GetWriteViewPtr();
+        read_buffer_ = buffer_->GetReadViewPtr();
         frame_ = std::make_shared<PushPromiseFrame>();
     }
 
+    uint8_t buf_[1024];
     std::shared_ptr<common::Buffer> buffer_;
-    std::shared_ptr<common::BufferWrite> write_wrapper_;
-    std::shared_ptr<common::BufferRead> read_wrapper_;
+    std::shared_ptr<common::IBufferWrite> write_buffer_;
+    std::shared_ptr<common::IBufferRead> read_buffer_;
     std::shared_ptr<PushPromiseFrame> frame_;
 };
 
@@ -41,11 +41,11 @@ TEST_F(PushPromiseFrameTest, EncodeAndDecode) {
     frame_->SetEncodedFields(fields);
 
     // Encode
-    EXPECT_TRUE(frame_->Encode(write_wrapper_));
+    EXPECT_TRUE(frame_->Encode(write_buffer_));
 
     // Create new frame for decoding
     auto decode_frame = std::make_shared<PushPromiseFrame>();
-    EXPECT_TRUE(decode_frame->Decode(read_wrapper_, true));
+    EXPECT_TRUE(decode_frame->Decode(read_buffer_, true));
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetPushId(), push_id);

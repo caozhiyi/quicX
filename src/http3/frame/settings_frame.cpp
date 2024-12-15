@@ -6,6 +6,15 @@
 namespace quicx {
 namespace http3 {
 
+bool SettingsFrame::GetSetting(uint64_t id, uint64_t& value) {
+    auto it = settings_.find(id);
+    if (it == settings_.end()) {
+        return false;
+    }
+    value = it->second;
+    return true;
+}
+
 bool SettingsFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (buffer->GetFreeLength() < EvaluateEncodeSize()) {
         return false;

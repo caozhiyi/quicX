@@ -9,6 +9,7 @@ namespace http3 {
 struct HeaderItem {
     std::string _name;
     std::string _value;
+    HeaderItem(const std::string& name, const std::string& value) : _name(name), _value(value) {}
 };
 
 

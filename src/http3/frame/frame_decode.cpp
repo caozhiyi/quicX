@@ -72,5 +72,9 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std:
     return true;
 }
 
+bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+    return FrameDecode::Instance().DecodeFrames(buffer, frames);
+}
+
 }
 }

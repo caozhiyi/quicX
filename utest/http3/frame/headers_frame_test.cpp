@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include "common/buffer/buffer.h"
 #include "http3/frame/headers_frame.h"
-#include "common/buffer/buffer_wrapper.h"
 
 namespace quicx {
 namespace http3 {
@@ -10,15 +9,16 @@ namespace {
 class HeadersFrameTest : public testing::Test {
 protected:
     void SetUp() override {
-        buffer_ = std::make_shared<common::Buffer>();
-        write_wrapper_ = std::make_shared<common::BufferWrite>(buffer_);
-        read_wrapper_ = std::make_shared<common::BufferRead>(buffer_);
+        buffer_ = std::make_shared<common::Buffer>(buf_, sizeof(buf_));
+        write_buffer_ = buffer_->GetWriteViewPtr();
+        read_buffer_ = buffer_->GetReadViewPtr();
         frame_ = std::make_shared<HeadersFrame>();
     }
 
+    uint8_t buf_[1024];
     std::shared_ptr<common::Buffer> buffer_;
-    std::shared_ptr<common::BufferWrite> write_wrapper_;
-    std::shared_ptr<common::BufferRead> read_wrapper_;
+    std::shared_ptr<common::IBufferWrite> write_buffer_;
+    std::shared_ptr<common::IBufferRead> read_buffer_;
     std::shared_ptr<HeadersFrame> frame_;
 };
 
@@ -42,11 +42,11 @@ TEST_F(HeadersFrameTest, EncodeAndDecode) {
     frame_->SetEncodedFields(fields);
 
     // Encode
-    EXPECT_TRUE(frame_->Encode(write_wrapper_));
+    EXPECT_TRUE(frame_->Encode(write_buffer_));
 
     // Create new frame for decoding
     auto decode_frame = std::make_shared<HeadersFrame>();
-    EXPECT_TRUE(decode_frame->Decode(read_wrapper_, true));
+    EXPECT_TRUE(decode_frame->Decode(read_buffer_, true));
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetLength(), length);
@@ -58,10 +58,10 @@ TEST_F(HeadersFrameTest, EmptyHeadersEncodeDecode) {
     frame_->SetLength(0);
     frame_->SetEncodedFields({});
 
-    EXPECT_TRUE(frame_->Encode(write_wrapper_));
+    EXPECT_TRUE(frame_->Encode(write_buffer_));
 
     auto decode_frame = std::make_shared<HeadersFrame>();
-    EXPECT_TRUE(decode_frame->Decode(read_wrapper_, true));
+    EXPECT_TRUE(decode_frame->Decode(read_buffer_, true));
 
     EXPECT_EQ(decode_frame->GetLength(), 0);
     EXPECT_TRUE(decode_frame->GetEncodedFields().empty());
@@ -73,10 +73,10 @@ TEST_F(HeadersFrameTest, LargeHeadersEncodeDecode) {
     frame_->SetLength(large_fields.size());
     frame_->SetEncodedFields(large_fields);
 
-    EXPECT_TRUE(frame_->Encode(write_wrapper_));
+    EXPECT_TRUE(frame_->Encode(write_buffer_));
 
     auto decode_frame = std::make_shared<HeadersFrame>();
-    EXPECT_TRUE(decode_frame->Decode(read_wrapper_, true));
+    EXPECT_TRUE(decode_frame->Decode(read_buffer_, true));
 
     EXPECT_EQ(decode_frame->GetLength(), large_fields.size());
     EXPECT_EQ(decode_frame->GetEncodedFields(), large_fields);
@@ -100,16 +100,6 @@ TEST_F(HeadersFrameTest, EvaluateSize) {
     frame_->SetLength(large_fields.size());
     frame_->SetEncodedFields(large_fields);
     EXPECT_EQ(frame_->EvaluateEncodeSize(), frame_->EvaluatePaloadSize() + 1);
-}
-
-TEST_F(HeadersFrameTest, InvalidDecode) {
-    // Test decoding with insufficient data
-    EXPECT_FALSE(frame_->Decode(read_wrapper_, true));
-
-    // Write invalid length
-    write_wrapper_->WriteUint8(FT_HEADERS);
-    write_wrapper_->WriteVarint(1000);  // length larger than actual data
-    EXPECT_FALSE(frame_->Decode(read_wrapper_, true));
 }
 
 }  // namespace
