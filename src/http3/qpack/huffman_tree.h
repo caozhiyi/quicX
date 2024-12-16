@@ -29,10 +29,10 @@ public:
     HuffmanTree& operator=(const HuffmanTree&) = delete;
 
     // insert a huffman code
-    void Insert(uint32_t code, uint8_t num_bits, uint8_t symbol);
+    void Insert(uint32_t code, uint8_t num_bits, uint32_t symbol);
 
     // find a symbol by code
-    bool Find(uint32_t code, uint8_t num_bits, uint8_t& symbol) const;
+    bool Find(uint32_t code, uint8_t num_bits, uint32_t& symbol) const;
 
     // decode a huffman encoded string
     bool Decode(const std::vector<uint8_t>& input, std::string& output) const;
@@ -42,7 +42,7 @@ private:
     static constexpr uint16_t EOS = 256;  // End of string marker
     
     // decode a symbol
-    bool DecodeSymbol(const HuffmanNode* node, uint8_t& symbol) const;
+    bool DecodeSymbol(const HuffmanNode* node, uint32_t& symbol) const;
 
     // count padding bits
     uint8_t CountPaddingBits(uint8_t last_byte) const;

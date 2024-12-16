@@ -3,8 +3,8 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef COMMON_BUFFER_BUFFER_INTERFACE
-#define COMMON_BUFFER_BUFFER_INTERFACE
+#ifndef COMMON_BUFFER_IF_BUFFER
+#define COMMON_BUFFER_IF_BUFFER
 
 #include "common/alloter/pool_block.h"
 #include "common/buffer/if_buffer_read.h"

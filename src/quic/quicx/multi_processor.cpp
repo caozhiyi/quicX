@@ -61,7 +61,7 @@ bool MultiProcessor::HandlePacket(std::shared_ptr<INetPacket> packet) {
         return true;
     }
 
-    // if pakcet is a short header packet, but we can't find in connection map, the connection may move to other thread.
+    // if pakcet is a short header packet, but we can't find in connection map, the connection may exist in other thread.
     // that may happen when ip of client changed.
     auto pkt_type = packets[0]->GetHeader()->GetPacketType();
     if (pkt_type == PacketType::PT_1RTT && connection_transfor_) {

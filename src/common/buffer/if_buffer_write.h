@@ -3,8 +3,8 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef COMMON_BUFFER_BUFFER_WRITE_INTERFACE
-#define COMMON_BUFFER_BUFFER_WRITE_INTERFACE
+#ifndef COMMON_BUFFER_IF_BUFFER_WRITE
+#define COMMON_BUFFER_IF_BUFFER_WRITE
 
 #include <memory>
 #include "common/buffer/buffer_span.h"

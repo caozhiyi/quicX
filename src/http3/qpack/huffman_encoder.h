@@ -22,14 +22,20 @@ public:
 
     // Encode a string using QPACK Huffman encoding
     // Returns the encoded string
-    std::string Encode(const std::string& input);
+    std::vector<uint8_t> Encode(const std::string& input);
 
     // Decode a QPACK Huffman encoded string
     // Returns the decoded string, or empty string if decoding fails
-    std::string Decode(const std::string& input);
+    std::string Decode(const std::vector<uint8_t>& input);
 private:
     // Helper function to write bits to output
-    void WriteBits(uint32_t bits, uint8_t num_bits, uint32_t& current_byte, uint8_t& bits_left, std::string& output);
+    // code: The code to write
+    // num_bits: Number of bits in the code
+    // current_byte: The current byte to write to
+    // bits_left: Number of bits left in the current byte
+    // output: The output vector to write to
+    void WriteBits(uint32_t code, uint8_t num_bits, uint32_t& current_byte, uint8_t& bits_left, std::vector<uint8_t>& output);
+
 private:
     // Huffman code table entry
     struct HuffmanCode {

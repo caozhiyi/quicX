@@ -3,8 +3,8 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef COMMON_BUFFER_BUFFER_CHAINS_INTERFACE
-#define COMMON_BUFFER_BUFFER_CHAINS_INTERFACE
+#ifndef COMMON_BUFFER_IF_BUFFER_CHAINS
+#define COMMON_BUFFER_IF_BUFFER_CHAINS
 
 #include <memory>
 #include "common/buffer/buffer_block.h"

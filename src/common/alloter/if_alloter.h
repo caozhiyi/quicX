@@ -3,8 +3,8 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef COMMON_ALLOTER_ALLOTER_INTERFACE
-#define COMMON_ALLOTER_ALLOTER_INTERFACE
+#ifndef COMMON_ALLOTER_IF_ALLOTER
+#define COMMON_ALLOTER_IF_ALLOTER
 
 #include <memory>
 #include <cstdint>

@@ -2,8 +2,8 @@
 #define QUIC_COMMON_NETWORK_IO_HANDLE
 
 #include <cstdint>
-#include "address.h"
 #include "common/util/os_return.h"
+#include "common/network/address.h"
 
 namespace quicx {
 namespace common {

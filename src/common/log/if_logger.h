@@ -3,8 +3,8 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef QUIC_COMMON_LOG_LOG_INTERFACE
-#define QUIC_COMMON_LOG_LOG_INTERFACE
+#ifndef COMMON_LOG_IF_LOG
+#define COMMON_LOG_IF_LOG
 
 #include <memory>
 #include <cstdint>

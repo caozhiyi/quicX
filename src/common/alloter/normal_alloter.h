@@ -6,7 +6,7 @@
 #ifndef COMMON_ALLOTER_NORMAL_ALLOTER
 #define COMMON_ALLOTER_NORMAL_ALLOTER
 
-#include "if_alloter.h"
+#include "common/alloter/if_alloter.h"
 
 namespace quicx {
 namespace common {

@@ -3,14 +3,14 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef QUIC_COMMON_LOG_FILE_LOGGER
-#define QUIC_COMMON_LOG_FILE_LOGGER
+#ifndef COMMON_LOG_FILE_LOGGER
+#define COMMON_LOG_FILE_LOGGER
 
 #include <mutex>
 #include <queue>
 #include <fstream>
 
-#include "if_logger.h"
+#include "common/log/if_logger.h"
 #include "common/thread/thread_with_queue.h"
 
 namespace quicx {

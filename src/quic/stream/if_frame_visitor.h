@@ -2,8 +2,8 @@
 #define QUIC_STREAM_IF_FRAME_VISITOR
 
 #include <vector>
-#include "quic/crypto/tls/type.h"
 #include "quic/frame/if_frame.h"
+#include "quic/crypto/tls/type.h"
 #include "common/buffer/if_buffer.h"
 
 namespace quicx {

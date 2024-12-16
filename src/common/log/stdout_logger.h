@@ -3,11 +3,11 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef QUIC_COMMON_LOG_STDOUT_LOGGER
-#define QUIC_COMMON_LOG_STDOUT_LOGGER
+#ifndef COMMON_LOG_STDOUT_LOGGER
+#define COMMON_LOG_STDOUT_LOGGER
 
 #include <mutex>
-#include "if_logger.h"
+#include "common/log/if_logger.h"
 
 namespace quicx {
 namespace common {

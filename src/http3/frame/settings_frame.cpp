@@ -69,12 +69,11 @@ uint32_t SettingsFrame::EvaluateEncodeSize() {
     // Size for the frame type
     size += sizeof(type_);
 
-    // Size for the number of settings
-    size += common::GetEncodeVarintLength(length_);
-
     // Size for each setting (id and value)
     size += EvaluatePaloadSize(); 
 
+    // Size for the number of settings
+    size += common::GetEncodeVarintLength(length_);
     return size;
 }
 

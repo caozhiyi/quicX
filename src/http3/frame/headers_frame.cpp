@@ -18,7 +18,7 @@ bool HeadersFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     // Write length
-    if (!wrapper.EncodeVarint(length_)) {
+    if (!wrapper.EncodeVarint(EvaluatePaloadSize())) {
         return false;
     }
 
@@ -71,7 +71,7 @@ uint32_t HeadersFrame::EvaluateEncodeSize() {
 
 uint32_t HeadersFrame::EvaluatePaloadSize() {
     if (length_ == 0) {
-        return encoded_fields_.size();
+        length_ = encoded_fields_.size();
     }
     return length_;
 }

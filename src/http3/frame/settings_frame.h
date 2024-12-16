@@ -11,7 +11,7 @@ namespace http3 {
 class SettingsFrame:
     public IFrame {
 public:
-    SettingsFrame(): IFrame(FT_SETTINGS) {}
+    SettingsFrame(): IFrame(FT_SETTINGS), length_(0) {}
 
     const std::map<uint64_t, uint64_t>& GetSettings() const { return settings_; }
     void SetSetting(uint64_t id, uint64_t value) { settings_[id] = value; }

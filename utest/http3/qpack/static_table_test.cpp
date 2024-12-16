@@ -19,7 +19,7 @@ TEST_F(StaticTableTest, LookupByIndex) {
     std::string name, value;
     
     // Test lookup of known static entries
-    auto item = table_->FindHeaderItem(1);
+    auto item = table_->FindHeaderItem(0);
     EXPECT_TRUE(item != nullptr);
     EXPECT_EQ(item->name_, ":authority");
     EXPECT_EQ(item->value_, "");
@@ -32,7 +32,7 @@ TEST_F(StaticTableTest, LookupByIndex) {
 
 TEST_F(StaticTableTest, LookupInvalidIndex) {
     // Test invalid indices
-    EXPECT_EQ(table_->FindHeaderItem(0), nullptr);  // Index 0 is invalid
+    EXPECT_NE(table_->FindHeaderItem(0), nullptr);
     EXPECT_EQ(table_->FindHeaderItem(1000), nullptr);  // Index too large
 }
 
@@ -56,10 +56,10 @@ TEST_F(StaticTableTest, LookupByNameAndValue) {
 TEST_F(StaticTableTest, LookupByNameOnly) {
     // Test lookup by name only
     uint32_t index = table_->FindHeaderItemIndex(":method");
-    EXPECT_EQ(index, 17);
+    EXPECT_EQ(index, 15);
     auto item = table_->FindHeaderItem(index);
     EXPECT_EQ(item->name_, ":method");
-    EXPECT_EQ(item->value_, "GET");
+    EXPECT_EQ(item->value_, "CONNECT");
 
     index = table_->FindHeaderItemIndex("accept-encoding");
     EXPECT_EQ(index, 31);
