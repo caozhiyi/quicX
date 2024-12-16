@@ -3,6 +3,8 @@
 namespace quicx {
 namespace http3 {
 
+// The values are defined in the RFC 7541 Appendix B
+// https://datatracker.ietf.org/doc/html/rfc9204#appendix-A
 StaticTable::StaticTable() {
     headeritem_vec_ = {
         // 0
@@ -121,7 +123,10 @@ StaticTable::StaticTable() {
     for (uint32_t i = 0; i < headeritem_vec_.size(); i++) {
         const HeaderItem& iter = headeritem_vec_[i];
         headeritem_index_map_[{iter.name_, iter.value_}] = i;
-        headeritem_name_map_[iter.name_] = i;
+        // if there is multi same name, only save the minimum index
+        if (headeritem_name_map_.count(iter.name_) == 0) {
+            headeritem_name_map_[iter.name_] = i;
+        }
     }
 }
 

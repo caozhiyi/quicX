@@ -18,7 +18,7 @@ public:
 
 private:
     struct SearchingContext {
-        uint64_t cid_hash_; // which connection is searched
+        uint64_t cid_hash_;         // which connection is searched
         std::thread::id thread_id_; // which thread is searching
         std::atomic_int16_t count_; // how many threads
         std::shared_ptr<IConnection> connection_; // if found, this is the connection

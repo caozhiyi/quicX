@@ -20,7 +20,7 @@ protected:
 };
 
 TEST_F(HuffmanTreeTest, InsertAndFind) {
-    uint8_t symbol;
+    uint32_t symbol;
     EXPECT_TRUE(tree_->Find(0b0, 1, symbol));
     EXPECT_EQ(symbol, 'a');
 

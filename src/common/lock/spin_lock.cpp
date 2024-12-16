@@ -1,4 +1,4 @@
-#include "spin_lock.h"
+#include "common/lock/spin_lock.h"
 
 namespace quicx {
 namespace common {

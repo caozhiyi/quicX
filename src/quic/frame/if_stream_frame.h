@@ -2,8 +2,7 @@
 #define QUIC_FRAME_STREAM_FRAME_INTERFACE
 
 #include <memory>
-#include "type.h"
-
+#include "quic/frame/type.h"
 #include "quic/frame/if_frame.h"
 
 namespace quicx {

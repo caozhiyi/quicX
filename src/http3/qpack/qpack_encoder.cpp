@@ -116,15 +116,15 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
 void QpackEncoder::EncodeString(const std::string& str, std::shared_ptr<common::IBufferWrite> buffer) {
     if (HuffmanEncoder::Instance().ShouldHuffmanEncode(str)) {
         // Encode with Huffman
-        std::string encoded;
+        std::vector<uint8_t> encoded;
         encoded = HuffmanEncoder::Instance().Encode(str);
         
         // Write length prefix with H bit set
-        uint8_t len = encoded.length() | 0x80;
+        uint8_t len = encoded.size() | 0x80;
         buffer->Write(&len, 1);
         
         // Write Huffman-encoded string
-        buffer->Write((uint8_t*)encoded.data(), encoded.length());
+        buffer->Write(encoded.data(), encoded.size());
     } else {
         // Write length prefix without H bit
         uint8_t len = str.length();
@@ -144,14 +144,15 @@ bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBufferRead> buffe
     uint32_t length = len_byte & 0x7F;
 
     // Read encoded string
-    std::string encoded;
-    encoded.resize(length);
-    buffer->Read((uint8_t*)encoded.data(), length);
-
     if (huffman) {
+        std::vector<uint8_t> encoded;
+        encoded.resize(length);
+        buffer->Read(encoded.data(), length);
         output = HuffmanEncoder::Instance().Decode(encoded);
+
     } else {
-        output = encoded;
+        output.resize(length);
+        buffer->Read((uint8_t*)output.data(), length);
     }
     return true;
 }

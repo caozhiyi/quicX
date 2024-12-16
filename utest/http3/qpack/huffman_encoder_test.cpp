@@ -17,31 +17,31 @@ protected:
 
 TEST_F(HuffmanEncoderTest, EncodeEmptyString) {
     std::string input;
-    std::string encoded = encoder_->Encode(input);
+    std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_TRUE(encoded.empty());
 }
 
 TEST_F(HuffmanEncoderTest, EncodeSingleCharacter) {
     std::string input = "a";
-    std::string encoded = encoder_->Encode(input);
+    std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
 }
 
 TEST_F(HuffmanEncoderTest, EncodeString) {
     std::string input = "test";
-    std::string encoded = encoder_->Encode(input);
+    std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
 }
 
 TEST_F(HuffmanEncoderTest, EncodeSpecialCharacters) {
     std::string input = "!@#$%";
-    std::string encoded = encoder_->Encode(input);
+    std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
 }
 
 TEST_F(HuffmanEncoderTest, EncodeLongString) {
     std::string input(1000, 'x');  // String with 1000 'x' characters
-    std::string encoded = encoder_->Encode(input);
+    std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
 }
 

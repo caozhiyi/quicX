@@ -3,9 +3,10 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#include "log.h"
-#include "log_stream.h"
-#include "if_logger.h"
+#include "common/log/log.h"
+#include "common/log/if_logger.h"
+#include "common/log/log_stream.h"
+
 
 namespace quicx {
 namespace common {

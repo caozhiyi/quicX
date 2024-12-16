@@ -1,4 +1,4 @@
-#include "buffer_decode_wrapper.h"
+#include "common/buffer/buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace common {

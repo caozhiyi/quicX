@@ -3,8 +3,8 @@
 
 // Author: caozhiyi (caozhiyi5@gmail.com)
 
-#ifndef QUIC_COMMON_LOG_LOG_STREAM
-#define QUIC_COMMON_LOG_LOG_STREAM
+#ifndef COMMON_LOG_LOG_STREAM
+#define COMMON_LOG_LOG_STREAM
 
 #include <memory>
 #include <string>

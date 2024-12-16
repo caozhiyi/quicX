@@ -1,5 +1,5 @@
 #include <ostream>
-#include "address.h"
+#include "common/network/address.h"
 
 namespace quicx {
 namespace common {

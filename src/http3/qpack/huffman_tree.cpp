@@ -1,5 +1,5 @@
-#include "huffman_tree.h"
 #include <cassert>
+#include "http3/qpack/huffman_tree.h"
 
 namespace quicx {
 namespace http3 {
@@ -9,7 +9,7 @@ HuffmanTree::HuffmanTree():
 
 }
 
-void HuffmanTree::Insert(uint32_t code, uint8_t num_bits, uint8_t symbol) {
+void HuffmanTree::Insert(uint32_t code, uint8_t num_bits, uint32_t symbol) {
     HuffmanNode* current = root_.get();
     
     // insert huffman code from high to low
@@ -26,7 +26,7 @@ void HuffmanTree::Insert(uint32_t code, uint8_t num_bits, uint8_t symbol) {
     current->is_terminal = true;
 }
 
-bool HuffmanTree::Find(uint32_t code, uint8_t num_bits, uint8_t& symbol) const {
+bool HuffmanTree::Find(uint32_t code, uint8_t num_bits, uint32_t& symbol) const {
     const HuffmanNode* current = root_.get();
     
     // traverse the tree by huffman code
@@ -65,7 +65,7 @@ bool HuffmanTree::Decode(const std::vector<uint8_t>& input, std::string& output)
             }
             current = current->children[bit].get();
 
-            uint8_t symbol;
+            uint32_t symbol;
             if (DecodeSymbol(current, symbol)) {
                 if (symbol == EOS) {
                     return true;  // end of string
@@ -81,7 +81,7 @@ bool HuffmanTree::Decode(const std::vector<uint8_t>& input, std::string& output)
            ValidatePadding(input.back(), remaining_bits);
 }
 
-bool HuffmanTree::DecodeSymbol(const HuffmanNode* node, uint8_t& symbol) const {
+bool HuffmanTree::DecodeSymbol(const HuffmanNode* node, uint32_t& symbol) const {
     if (!node || !node->is_terminal) {
         return false;
     }

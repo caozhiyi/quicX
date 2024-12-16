@@ -10,8 +10,6 @@ namespace http3 {
 // This table maps each byte value to its corresponding Huffman code and code length
 // The values are defined in the RFC 7541 Appendix B
 // https://datatracker.ietf.org/doc/html/rfc7541#appendix-B
-
-
 const std::vector<HuffmanEncoder::HuffmanCode> HuffmanEncoder::huffman_table_ = {    
     // ASCII: NUL (0x00)
     {0x00, 0x1ff8, 13},
@@ -538,7 +536,7 @@ HuffmanEncoder::HuffmanEncoder() {
 bool HuffmanEncoder::ShouldHuffmanEncode(const std::string& input) {
     size_t encoded_size = 0;
     for (unsigned char c : input) {
-        // QPACK only supports ASCII characters
+        // Huffman only supports ASCII characters
         if (c > 0x7F) {
             return false;
         }
@@ -549,8 +547,8 @@ bool HuffmanEncoder::ShouldHuffmanEncode(const std::string& input) {
     return encoded_size < input.length();
 }
 
-std::string HuffmanEncoder::Encode(const std::string& input) {
-    std::string output;
+std::vector<uint8_t> HuffmanEncoder::Encode(const std::string& input) {
+    std::vector<uint8_t> output;
     uint32_t current_byte = 0;
     uint8_t bits_left = 8;
 
@@ -567,31 +565,25 @@ std::string HuffmanEncoder::Encode(const std::string& input) {
     return output;
 }
 
-std::string HuffmanEncoder::Decode(const std::string& input) {
-    std::vector<uint8_t> input_bytes;
-    input_bytes.reserve(input.length());
-    for (char c : input) {
-        input_bytes.push_back(static_cast<uint8_t>(c));
-    }
-
+std::string HuffmanEncoder::Decode(const std::vector<uint8_t>& input) {
     std::string output;
-    if (!huffman_tree_.Decode(input_bytes, output)) {
+    if (!huffman_tree_.Decode(input, output)) {
         return "";
     }
     return output;
 }
 
-void HuffmanEncoder::WriteBits(uint32_t bits, uint8_t num_bits, uint32_t& current_byte, uint8_t& bits_left, std::string& output) {
+void HuffmanEncoder::WriteBits(uint32_t code, uint8_t num_bits, uint32_t& current_byte, uint8_t& bits_left, std::vector<uint8_t>& output) {
     while (num_bits > 0) {
         uint8_t bits_to_write = std::min(bits_left, num_bits);
         uint32_t mask = ((1 << bits_to_write) - 1);
-        current_byte |= ((bits >> (num_bits - bits_to_write)) & mask) << (bits_left - bits_to_write);
+        current_byte |= ((code >> (num_bits - bits_to_write)) & mask) << (bits_left - bits_to_write);
 
         bits_left -= bits_to_write;
         num_bits -= bits_to_write;
 
         if (bits_left == 0) {
-            output += static_cast<char>(current_byte);
+            output.emplace_back(static_cast<uint8_t>(current_byte));
             current_byte = 0;
             bits_left = 8;
         }

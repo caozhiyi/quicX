@@ -3,8 +3,8 @@
 
 #include <vector>
 #include <cstdint>
-#include "quic/connection/type.h"
 #include "quic/frame/if_frame.h"
+#include "quic/connection/type.h"
 
 namespace quicx {
 namespace quic {
