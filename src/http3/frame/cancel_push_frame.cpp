@@ -38,13 +38,12 @@ bool CancelPushFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool w
     }
 
     // Read length
-    uint32_t length = 0;
+    uint64_t length = 0;
     if (!wrapper.DecodeVarint(length)) {
         return false;
     }
 
     // Read push ID
-    // TODO: check length
     if (!wrapper.DecodeVarint(push_id_)) {
         return false;
     }

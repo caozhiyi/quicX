@@ -37,7 +37,7 @@ bool DataFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_ty
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
             return false;
-        }
+        }   
     }
 
     // Decode length

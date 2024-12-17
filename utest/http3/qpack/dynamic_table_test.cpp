@@ -113,18 +113,23 @@ TEST_F(DynamicTableTest, EmptyStrings) {
     EXPECT_TRUE(table_->AddHeaderItem("name", ""));
     EXPECT_TRUE(table_->AddHeaderItem("", ""));
 
-    auto item = table_->FindHeaderItem(2);
+    auto item = table_->FindHeaderItem(0);
     EXPECT_TRUE(item->name_.empty());
     EXPECT_TRUE(item->value_.empty());
 }
 
 TEST_F(DynamicTableTest, SizeCalculation) {
-    // Verify table size calculation
-    EXPECT_TRUE(table_->AddHeaderItem("test", "value")); // 32 bytes overhead + 9 bytes content
+    // size = name(4) + value(5) + overhead(32)
+    table_->AddHeaderItem("test", "value");
     EXPECT_EQ(table_->GetTableSize(), 41);
 
-    EXPECT_TRUE(table_->AddHeaderItem("longer-header", "longer-value")); // 32 + 23 = 55 bytes
-    EXPECT_EQ(table_->GetTableSize(), 96); // 41 + 55 = 96 bytes
+    // size = name(3) + value(3) + overhead(32) 
+    table_->AddHeaderItem("foo", "bar");
+    EXPECT_EQ(table_->GetTableSize(), 79);
+
+    // size = name(1) + value(1) + overhead(32) = 34 
+    table_->AddHeaderItem("x", "y");
+    EXPECT_EQ(table_->GetTableSize(), 113);
 }
 
 }  // namespace

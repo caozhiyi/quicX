@@ -11,9 +11,9 @@ protected:
     void SetUp() override {
         tree_ = std::make_unique<HuffmanTree>();
         // Insert test huffman codes
-        tree_->Insert(0b0, 1, 'a');  // 'a' -> 0
-        tree_->Insert(0b10, 2, 'b');  // 'b' -> 10
-        tree_->Insert(0b11, 2, 'c');  // 'c' -> 11
+        tree_->Insert(0x61, 0x3, 5);  // 'a'
+        tree_->Insert(0x62, 0x23, 6); // 'b'
+        tree_->Insert(0x63, 0x4, 5);  // 'c'
     }
 
     std::unique_ptr<HuffmanTree> tree_;
@@ -21,13 +21,13 @@ protected:
 
 TEST_F(HuffmanTreeTest, InsertAndFind) {
     uint32_t symbol;
-    EXPECT_TRUE(tree_->Find(0b0, 1, symbol));
+    EXPECT_TRUE(tree_->Find(0x3, 5, symbol));
     EXPECT_EQ(symbol, 'a');
 
-    EXPECT_TRUE(tree_->Find(0b10, 2, symbol));
+    EXPECT_TRUE(tree_->Find(0x23, 6, symbol));
     EXPECT_EQ(symbol, 'b');
 
-    EXPECT_TRUE(tree_->Find(0b11, 2, symbol));
+    EXPECT_TRUE(tree_->Find(0x4, 5, symbol));
     EXPECT_EQ(symbol, 'c');
 
     // Test non-existent code
@@ -38,8 +38,8 @@ TEST_F(HuffmanTreeTest, DecodeSimpleString) {
     // Encode: "abc" -> 0 10 11
     // In binary: 01100000
     std::vector<uint8_t> encoded = {0x60};  // 0110 0000
-    
     std::string decoded;
+    
     EXPECT_TRUE(tree_->Decode(encoded, decoded));
     EXPECT_EQ(decoded, "abc");
 }
