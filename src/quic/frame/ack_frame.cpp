@@ -1,8 +1,7 @@
 #include "common/log/log.h"
 #include "quic/frame/ack_frame.h"
-#include "common/decode/decode.h"
-#include "common/buffer/if_buffer.h"
-#include "common/alloter/if_alloter.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/buffer/buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace quic {
@@ -20,52 +19,45 @@ AckFrame::~AckFrame() {
 bool AckFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     
-    auto span = buffer->GetWriteSpan();
-    auto remain_size = span.GetLength();
-    if (need_size > remain_size) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+    if (need_size > buffer->GetFreeLength()) {
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
     
-    uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, frame_type_);
-    pos = common::EncodeVarint(pos, ack_delay_);
-    pos = common::EncodeVarint(pos, first_ack_range_);
-    pos = common::EncodeVarint(pos, ack_ranges_.size());
+    common::BufferEncodeWrapper wrapper(buffer);
+    wrapper.EncodeFixedUint16(frame_type_);
+    wrapper.EncodeVarint(ack_delay_);
+    wrapper.EncodeVarint(first_ack_range_);
+    wrapper.EncodeVarint(ack_ranges_.size());
 
     for (size_t i = 0; i < ack_ranges_.size(); i++) {
-        pos = common::EncodeVarint(pos, ack_ranges_[i].GetGap());
-        pos = common::EncodeVarint(pos, ack_ranges_[i].GetAckRangeLength());
+        wrapper.EncodeVarint(ack_ranges_[i].GetGap());
+        wrapper.EncodeVarint(ack_ranges_[i].GetAckRangeLength());
     }
-    
-    buffer->MoveWritePt(pos - span.GetStart());
     return true;
 }
 
 bool AckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
-    auto span = buffer->GetReadSpan();
-    
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
+    common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        wrapper.DecodeFixedUint16(frame_type_);
         if (frame_type_ != FT_ACK && frame_type_ != FT_ACK_ECN) {
             return false;
         }
     }
-    pos = common::DecodeVarint(pos, end, ack_delay_);
-    pos = common::DecodeVarint(pos, end, first_ack_range_);
+    
+    wrapper.DecodeVarint(ack_delay_);
+    wrapper.DecodeVarint(first_ack_range_);
     uint32_t ack_range_count = 0;
-    pos = common::DecodeVarint(pos, end, ack_range_count);
+    wrapper.DecodeVarint(ack_range_count);
 
     uint64_t gap;
     uint64_t range;
     for (uint32_t i = 0; i < ack_range_count; i++) {
-        pos = common::DecodeVarint(pos, end, gap);
-        pos = common::DecodeVarint(pos, end, range);
+        wrapper.DecodeVarint(gap);
+        wrapper.DecodeVarint(range);
         ack_ranges_.emplace_back(AckRange(gap, range));
     }
-    buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
 
@@ -106,12 +98,10 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buff
         return false;
     }
     
-    uint8_t* pos = span.GetStart();
-    pos = common::EncodeVarint(pos, ect_0_);
-    pos = common::EncodeVarint(pos, ect_1_);
-    pos = common::EncodeVarint(pos, ecn_ce_);
-
-    buffer->MoveWritePt(pos - span.GetStart());
+    common::BufferEncodeWrapper wrapper(buffer);
+    wrapper.EncodeVarint(ect_0_);
+    wrapper.EncodeVarint(ect_1_);
+    wrapper.EncodeVarint(ecn_ce_);
 
     return true;
 }
@@ -123,13 +113,10 @@ bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffe
 
     auto span = buffer->GetReadSpan();
 
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
-    pos = common::DecodeVarint(pos, end, ect_0_);
-    pos = common::DecodeVarint(pos, end, ect_1_);
-    pos = common::DecodeVarint(pos, end, ecn_ce_);
-
-    buffer->MoveReadPt(pos - span.GetStart());
+    common::BufferDecodeWrapper wrapper(buffer);
+    wrapper.DecodeVarint(ect_0_);
+    wrapper.DecodeVarint(ect_1_);
+    wrapper.DecodeVarint(ecn_ce_);
 
     return true;
 }

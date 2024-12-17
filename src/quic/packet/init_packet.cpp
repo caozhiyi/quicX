@@ -42,7 +42,7 @@ bool InitPacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint8_t* end = span.GetEnd();
 
     // encode token
-    cur_pos = common::EncodeVarint(cur_pos, token_length_);
+    cur_pos = common::EncodeVarint(cur_pos, end, token_length_);
     if (token_length_ > 0) {
         memcpy(cur_pos, token_, token_length_);
         cur_pos += token_length_;
@@ -53,7 +53,7 @@ bool InitPacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     auto len1 = header_.GetPacketNumberLength();
     auto len2 = crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0;
     length_ = payload_.GetLength() + header_.GetPacketNumberLength() + (crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0);
-    cur_pos = common::EncodeVarint(cur_pos, length_);
+    cur_pos = common::EncodeVarint(cur_pos, end, length_);
 
     // encode packet number
     packet_num_offset_ = cur_pos - start_pos;

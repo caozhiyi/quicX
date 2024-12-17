@@ -37,7 +37,7 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
 
     // encode length
     length_ = payload_.GetLength() + header_.GetPacketNumberLength() + (crypto_grapher_ ? crypto_grapher_->GetTagLength() : 0);
-    cur_pos = common::EncodeVarint(cur_pos, length_);
+    cur_pos = common::EncodeVarint(cur_pos, end, length_);
 
     // encode packet number
     packet_num_offset_ = cur_pos - start_pos;

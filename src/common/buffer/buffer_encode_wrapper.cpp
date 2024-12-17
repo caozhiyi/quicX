@@ -23,16 +23,16 @@ void BufferEncodeWrapper::Flush() {
 }
 
 bool BufferEncodeWrapper::EncodeFixedUint8(uint8_t value) {
-    pos_ = common::FixedEncodeUint8(pos_, value);
+    pos_ = common::FixedEncodeUint8(pos_, end_, value);
     if (!pos_) {
         return false;
     }
     flushed_ = false;
     return true;
 }
-
+ 
 bool BufferEncodeWrapper::EncodeFixedUint16(uint16_t value) {
-    pos_ = common::FixedEncodeUint16(pos_, value);
+    pos_ = common::FixedEncodeUint16(pos_, end_, value);
     if (!pos_) {
         return false;
     }
@@ -41,7 +41,7 @@ bool BufferEncodeWrapper::EncodeFixedUint16(uint16_t value) {
 }
 
 bool BufferEncodeWrapper::EncodeFixedUint32(uint32_t value) {
-    pos_ = common::FixedEncodeUint32(pos_, value);
+    pos_ = common::FixedEncodeUint32(pos_, end_, value);
     if (!pos_) {
         return false;
     }
@@ -50,7 +50,7 @@ bool BufferEncodeWrapper::EncodeFixedUint32(uint32_t value) {
 }
 
 bool BufferEncodeWrapper::EncodeFixedUint64(uint64_t value) {
-    pos_ = common::FixedEncodeUint64(pos_, value);
+    pos_ = common::FixedEncodeUint64(pos_, end_, value);
     if (!pos_) {
         return false;
     }
@@ -65,6 +65,10 @@ bool BufferEncodeWrapper::EncodeBytes(uint8_t* in, uint32_t len) {
     }
     flushed_ = false;
     return true;
+}
+
+common::BufferSpan BufferEncodeWrapper::GetDataSpan() const {
+    return common::BufferSpan(buffer_->GetWriteSpan().GetStart(), pos_);
 }
 
 

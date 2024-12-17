@@ -1,3 +1,4 @@
+#include <endian.h>
 #include <arpa/inet.h>
 
 #include "common/log/log.h"
@@ -9,29 +10,45 @@ namespace common {
 const static uint64_t __max_decode = ((uint64_t)-1) >> 2;
 
 #define IntSet(p, value, len, bits)          \
-    (*(p)++ = ((value >> ((len) * 8)) & 0xff) | ((bits) << 6))
+    (*(p)++ = (uint8_t)(((value >> ((len) * 8)) & 0xff) | ((bits) << 6)))
 
-uint8_t* EncodeVarint(uint8_t* dst, uint64_t value) {
-    if (value > __max_decode) {
-        LOG_ERROR("too large decode number");
-        return dst;
+uint8_t* EncodeVarint(uint8_t* start, uint8_t* end, uint64_t value) {
+    if (start >= end) {
+        return nullptr;
     }
 
-    uint8_t* p = dst;
-    if (value < (1 << 6)) {
+    if (value > __max_decode) {
+        LOG_ERROR("too large decode number:0x%lx", value);
+        return nullptr;
+    }
+
+    uint8_t* p = start;
+    if (value < (1ULL << 6)) {
+        if (p + 1 > end) {
+            return nullptr;
+        }
         IntSet(p, value, 0, 0);
 
-    } else if (value < (1 << 14)) {
+    } else if (value < (1ULL << 14)) {
+        if (p + 2 > end) {
+            return nullptr;
+        }
         IntSet(p, value, 1, 1);
         IntSet(p, value, 0, 0);
 
-    } else if (value < (1 << 30)) {
+    } else if (value < (1ULL << 30)) {
+        if (p + 4 > end) {
+            return nullptr;
+        }
         IntSet(p, value, 3, 2);
         IntSet(p, value, 2, 0);
         IntSet(p, value, 1, 0);
         IntSet(p, value, 0, 0);
 
     } else {
+        if (p + 8 > end) {
+            return nullptr;
+        }
         IntSet(p, value, 7, 3);
         IntSet(p, value, 6, 0);
         IntSet(p, value, 5, 0);
@@ -58,7 +75,7 @@ uint16_t GetEncodeVarintLength(uint64_t value) {
 
 uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint64_t& value) {
     if (start >= end) {
-        return NULL;
+        return nullptr;
     }
 
     uint8_t* uend = start;
@@ -68,7 +85,7 @@ uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint64_t& value) {
     value = *p++ & 0x3f;
 
     if ((size_t)(uend - p) < (len - 1)) {
-        return NULL;
+        return nullptr;
     }
 
     while (--len) {
@@ -85,43 +102,67 @@ uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint32_t& value) {
     return ret_pos;
 }
 
-uint8_t* FixedEncodeUint8(uint8_t *start, uint8_t value) {
-    *start++ = *(uint8_t*)&value;
+uint8_t* FixedEncodeUint8(uint8_t *start, uint8_t *end, uint8_t value) {
+    if (start >= end) {
+        return nullptr;
+    }
+    *start++ = value;
     return start;
 }
 
 uint8_t* FixedDecodeUint8(uint8_t *start, uint8_t *end, uint8_t& out) {
-    out = *(uint8_t*)start++;
+    if (start >= end) {
+        return nullptr;
+    }
+    out = *start++;
     return start;
 }
 
-uint8_t* FixedEncodeUint16(uint8_t *start, uint16_t value) {
+uint8_t* FixedEncodeUint16(uint8_t *start, uint8_t *end, uint16_t value) {
+    if (start + sizeof(uint16_t) > end) {
+        return nullptr;
+    }
     *(uint16_t*)start = htons(value);
     return start + sizeof(uint16_t);
 }
 
 uint8_t* FixedDecodeUint16(uint8_t *start, uint8_t *end, uint16_t& out) {
+    if (start + sizeof(uint16_t) > end) {
+        return nullptr;
+    }
     out = ntohs(*(const uint16_t*)start);
     return start + sizeof(uint16_t);
 }
 
-uint8_t* FixedEncodeUint32(uint8_t *start, uint32_t value) {
+uint8_t* FixedEncodeUint32(uint8_t *start, uint8_t *end, uint32_t value) {
+    if (start + sizeof(uint32_t) > end) {
+        return nullptr;
+    }
     *(uint32_t*)start = htonl(value);
     return start + sizeof(uint32_t);
 }
 
 uint8_t* FixedDecodeUint32(uint8_t *start, uint8_t *end, uint32_t& out) {
+    if (start + sizeof(uint32_t) > end) {
+        return nullptr;
+    }
     out = ntohl(*(uint32_t*)start);
     return start + sizeof(uint32_t);
 }
 
-uint8_t* FixedEncodeUint64(uint8_t *start, uint64_t value) {
-    *(uint64_t*)start = htonl(value);
+uint8_t* FixedEncodeUint64(uint8_t *start, uint8_t *end, uint64_t value) {
+    if (start + sizeof(uint64_t) > end) {
+        return nullptr;
+    }
+    *(uint64_t*)start = htobe64(value);
     return start + sizeof(uint64_t);
 }
 
 uint8_t* FixedDecodeUint64(uint8_t *start, uint8_t *end, uint64_t& out) {
-    out = ntohl(*(uint64_t*)start);
+    if (start + sizeof(uint64_t) > end) {
+        return nullptr;
+    }
+    out = be64toh(*(uint64_t*)start);
     return start + sizeof(uint64_t);
 }
 
