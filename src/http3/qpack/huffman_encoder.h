@@ -5,7 +5,7 @@
 #include <vector>
 #include <cstdint>
 #include "common/util/singleton.h"
-#include "http3/qpack/huffman_tree.h"
+#include "http3/qpack/huffman_table.h"
 
 namespace quicx {
 namespace http3 {
@@ -37,18 +37,18 @@ private:
     void WriteBits(uint32_t code, uint8_t num_bits, uint32_t& current_byte, uint8_t& bits_left, std::vector<uint8_t>& output);
 
 private:
-    // Huffman code table entry
+    // Huffman code vector entry
     struct HuffmanCode {
         uint32_t symbol;  // The symbol to encode
         uint32_t code;     // The huffman code bits
         uint8_t num_bits;  // Number of bits in the code
     };
 
-    // Static Huffman code table as defined in QPACK spec
-    static const std::vector<HuffmanCode> huffman_table_;
+    // Static Huffman code vector as defined in QPACK spec
+    static const std::vector<HuffmanCode> huffman_vector_;
 
-    // Huffman tree
-    HuffmanTree huffman_tree_;
+    // Huffman table
+    HuffmanTable huffman_table_;
 
 
 };

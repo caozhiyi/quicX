@@ -3,534 +3,8 @@
 namespace quicx {
 namespace http3 {
 
-// Static Huffman code table initialization
-// Based on QPACK static Huffman code table
-// Huffman code table defined in RFC 9204 Appendix A
-// https://datatracker.ietf.org/doc/html/rfc9204#appendix-A
-// This table maps each byte value to its corresponding Huffman code and code length
-// The values are defined in the RFC 7541 Appendix B
-// https://datatracker.ietf.org/doc/html/rfc7541#appendix-B
-const std::vector<HuffmanEncoder::HuffmanCode> HuffmanEncoder::huffman_table_ = {    
-    // ASCII: NUL (0x00)
-    {0x00, 0x1ff8, 13},
-    // ASCII: SOH (0x01)
-    {0x01, 0x7fffd8, 23},
-    // ASCII: STX (0x02)
-    {0x02, 0xfffffe2, 28},
-    // ASCII: ETX (0x03)
-    {0x03, 0xfffffe3, 28},
-    // ASCII: EOT (0x04)
-    {0x04, 0xfffffe4, 28},
-    // ASCII: ENQ (0x05)
-    {0x05, 0xfffffe5, 28},
-    // ASCII: ACK (0x06)
-    {0x06, 0xfffffe6, 28},
-    // ASCII: BEL (0x07)
-    {0x07, 0xfffffe7, 28},
-    // ASCII: BS (0x08)
-    {0x08, 0xfffffe8, 28},
-    // ASCII: HT (0x09)
-    {0x09, 0xffffea, 24},
-    // ASCII: LF (0x0A)
-    {0x0a, 0x3ffffffc, 30},
-    // ASCII: VT (0x0B)
-    {0x0b, 0xfffffe9, 28},
-    // ASCII: FF (0x0C)
-    {0x0c, 0xfffffea, 28},
-    // ASCII: CR (0x0D)
-    {0x0d, 0x3ffffffd, 30},
-    // ASCII: SO (0x0E)
-    {0x0e, 0xfffffeb, 28},
-    // ASCII: SI (0x0F)
-    {0x0f, 0xfffffec, 28},
-    // ASCII: DLE (0x10)
-    {0x10, 0xfffffed, 28},
-    // ASCII: DC1 (0x11)
-    {0x11, 0xfffffee, 28},
-    // ASCII: DC2 (0x12)
-    {0x12, 0xfffffef, 28},
-    // ASCII: DC3 (0x13)
-    {0x13, 0xffffff0, 28},
-    // ASCII: DC4 (0x14)
-    {0x14, 0xffffff1, 28},
-    // ASCII: NAK (0x15)
-    {0x15, 0xffffff2, 28},
-    // ASCII: SYN (0x16)
-    {0x16, 0x3ffffffe, 30},
-    // ASCII: ETB (0x17)
-    {0x17, 0xffffff3, 28},
-    // ASCII: CAN (0x18)
-    {0x18, 0xffffff4, 28},
-    // ASCII: EM (0x19)
-    {0x19, 0xffffff5, 28},
-    // ASCII: SUB (0x1A)
-    {0x1a, 0xffffff6, 28},
-    // ASCII: ESC (0x1B)
-    {0x1b, 0xffffff7, 28},
-    // ASCII: FS (0x1C)
-    {0x1c, 0xffffff8, 28},
-    // ASCII: GS (0x1D)
-    {0x1d, 0xffffff9, 28},
-    // ASCII: RS (0x1E)
-    {0x1e, 0xffffffa, 28},
-    // ASCII: US (0x1F)
-    {0x1f, 0xffffffb, 28},
-    // ASCII: SP (0x20)
-    {0x20, 0x20, 6},
-    // ASCII: ! (0x21)
-    {0x21, 0x3f8, 10},
-    // ASCII: " (0x22)
-    {0x22, 0x3f9, 10},
-    // ASCII: # (0x23)
-    {0x23, 0xffa, 12},
-    // ASCII: $ (0x24)
-    {0x24, 0x1ff9, 13},
-    // ASCII: % (0x25)
-    {0x25, 0x15, 6},
-    // ASCII: & (0x26)
-    {0x26, 0xf8, 8},
-    // ASCII: ' (0x27)
-    {0x27, 0x7fa, 11},
-    // ASCII: ( (0x28)
-    {0x28, 0x3fa, 10},
-    // ASCII: ) (0x29)
-    {0x29, 0x3fb, 10},
-    // ASCII: * (0x2A)
-    {0x2a, 0xf9, 8},
-    // ASCII: + (0x2B)
-    {0x2b, 0x7fb, 11},
-    // ASCII: , (0x2C)
-    {0x2c, 0xfa, 8},
-    // ASCII: - (0x2D)
-    {0x2d, 0x16, 6},
-    // ASCII: . (0x2E)
-    {0x2e, 0x17, 6},
-    // ASCII: / (0x2F)
-    {0x2f, 0x18, 6},
-    // ASCII: 0 (0x30)
-    {0x30, 0x0, 5},
-    // ASCII: 1 (0x31)
-    {0x31, 0x1, 5},
-    // ASCII: 2 (0x32)
-    {0x32, 0x2, 5},
-    // ASCII: 3 (0x33)
-    {0x33, 0x3, 5},
-    // ASCII: 4 (0x34)
-    {0x34, 0x4, 5},
-    // ASCII: 5 (0x35)
-    {0x35, 0x5, 5}, 
-    // ASCII: 6 (0x36)
-    {0x36, 0x6, 5},
-    // ASCII: 7 (0x37)
-    {0x37, 0x7, 5},
-    // ASCII: 8 (0x38)
-    {0x38, 0x8, 5},
-    // ASCII: 9 (0x39)
-    {0x39, 0x9, 5},
-    // ASCII: : (0x3A)
-    {0x3a, 0x5c, 7},
-    // ASCII: ; (0x3B)
-    {0x3b, 0xfb, 8},
-    // ASCII: < (0x3C)
-    {0x3c, 0x7ffc, 15},
-    // ASCII: = (0x3D)
-    {0x3d, 0x20, 6},
-    // ASCII: > (0x3E)
-    {0x3e, 0xffb, 12},
-    // ASCII: ? (0x3F)
-    {0x3f, 0x3fc, 10},
-    // ASCII: @ (0x40)
-    {0x40, 0x1ffa, 13},
-    // ASCII: A (0x41)
-    {0x41, 0x21, 6},
-    // ASCII: B (0x42)
-    {0x42, 0x5d, 7},
-    // ASCII: C (0x43)
-    {0x43, 0x5e, 7},
-    // ASCII: D (0x44)
-    {0x44, 0x5f, 7},
-    // ASCII: E (0x45)
-    {0x45, 0x60, 7},
-    // ASCII: F (0x46)
-    {0x46, 0x61, 7},
-    // ASCII: G (0x47)
-    {0x47, 0x62, 7},
-    // ASCII: H (0x48)
-    {0x48, 0x63, 7},
-    // ASCII: I (0x49)
-    {0x49, 0x64, 7},
-    // ASCII: J (0x4A)
-    {0x4a, 0x65, 7},
-    // ASCII: K (0x4B)
-    {0x4b, 0x66, 7},
-    // ASCII: L (0x4C)
-    {0x4c, 0x67, 7},
-    // ASCII: M (0x4D)
-    {0x4d, 0x68, 7},
-    // ASCII: N (0x4E)
-    {0x4e, 0x69, 7},
-    // ASCII: O (0x4F)
-    {0x4f, 0x6a, 7},
-    // ASCII: P (0x50)
-    {0x50, 0x6b, 7},
-    // ASCII: Q (0x51)
-    {0x51, 0x6c, 7},
-    // ASCII: R (0x52)
-    {0x52, 0x6d, 7},
-    // ASCII: S (0x53)
-    {0x53, 0x6e, 7},
-    // ASCII: T (0x54)
-    {0x54, 0x6f, 7},
-    // ASCII: U (0x55)
-    {0x55, 0x70, 7},
-    // ASCII: V (0x56)
-    {0x56, 0x71, 7},
-    // ASCII: W (0x57)
-    {0x57, 0x72, 7},
-    // ASCII: X (0x58)
-    {0x58, 0xfc, 8},
-    // ASCII: Y (0x59)
-    {0x59, 0x73, 7},
-    // ASCII: Z (0x5A)
-    {0x5a, 0xfd, 8},
-    // ASCII: [ (0x5B)
-    {0x5b, 0x1ffb, 13},
-    // ASCII: \ (0x5C)
-    {0x5c, 0x7fff0, 19},
-    // ASCII: ] (0x5D)
-    {0x5d, 0x1ffc, 13},
-    // ASCII: ^ (0x5E)
-    {0x5e, 0x3ffc, 14},
-    // ASCII: _ (0x5F)
-    {0x5f, 0x22, 6},
-    // ASCII: ` (0x60)
-    {0x60, 0x7ffd, 15},
-    // ASCII: a (0x61)
-    {0x61, 0x3, 5},
-    // ASCII: b (0x62)
-    {0x62, 0x23, 6},
-    // ASCII: c (0x63)
-    {0x63, 0x4, 5},
-    // ASCII: d (0x64)
-    {0x64, 0x24, 6},
-    // ASCII: e (0x65)
-    {0x65, 0x5, 5},
-    // ASCII: f (0x66)
-    {0x66, 0x25, 6},
-    // ASCII: g (0x67)
-    {0x67, 0x26, 6},
-    // ASCII: h (0x68)
-    {0x68, 0x27, 6},
-    // ASCII: i (0x69)
-    {0x69, 0x6, 5},
-    // ASCII: j (0x6A)
-    {0x6a, 0x74, 7},
-    // ASCII: k (0x6B)
-    {0x6b, 0x75, 7},
-    // ASCII: l (0x6C)
-    {0x6c, 0x28, 6},
-    // ASCII: m (0x6D)
-    {0x6d, 0x29, 6},
-    // ASCII: n (0x6E)
-    {0x6e, 0x2a, 6},
-    // ASCII: o (0x6F)
-    {0x6f, 0x7, 5},
-    // ASCII: p (0x70)
-    {0x70, 0x2b, 6},
-    // ASCII: q (0x71)
-    {0x71, 0x76, 7},
-    // ASCII: r (0x72)
-    {0x72, 0x2c, 6},
-    // ASCII: s (0x73)
-    {0x73, 0x8, 5},
-    // ASCII: t (0x74)
-    {0x74, 0x9, 5},
-    // ASCII: u (0x75)
-    {0x75, 0x2d, 6},
-    // ASCII: v (0x76)
-    {0x76, 0x2e, 6},
-    // ASCII: w (0x77)
-    {0x77, 0x2f, 6},
-    // ASCII: x (0x78)
-    {0x78, 0x30, 6},
-    // ASCII: y (0x79)
-    {0x79, 0x31, 6},
-    // ASCII: z (0x7A)
-    {0x7a, 0x32, 6},
-    // ASCII: { (0x7B)
-    {0x7b, 0x33, 6},
-    // ASCII: | (0x7C)
-    {0x7c, 0x34, 6},
-    // ASCII: } (0x7D)
-    {0x7d, 0x35, 6},
-    // ASCII: ~ (0x7E)
-    {0x7e, 0x36, 6},
-    // ASCII: DEL (0x7F)
-    {0x7f, 0xffffffc, 28},
-    // ASCII: 0x80
-    {0x80, 0xfffe6, 20},
-    // ASCII: 0x81
-    {0x81, 0x3fffd2, 22},
-    // ASCII: 0x82
-    {0x82, 0xfffe7, 20},
-    // ASCII: 0x83
-    {0x83, 0xfffe8, 20},
-    // ASCII: 0x84
-    {0x84, 0x3fffd3, 22},
-    // ASCII: 0x85
-    {0x85, 0x3fffd4, 22},
-    // ASCII: 0x86
-    {0x86, 0x3fffd5, 22},
-    // ASCII: 0x87
-    {0x87, 0x7fffd9, 23},
-    // ASCII: 0x88
-    {0x88, 0x3fffd6, 22},
-    // ASCII: 0x89
-    {0x89, 0x7fffda, 23},
-    // ASCII: 0x8A
-    {0x8a, 0x7fffdb, 23},
-    // ASCII: 0x8B
-    {0x8b, 0x7fffdc, 23},
-    // ASCII: 0x8C
-    {0x8c, 0x7fffdd, 23},
-    // ASCII: 0x8D
-    {0x8d, 0x7fffde, 23},
-    // ASCII: 0x8E
-    {0x8e, 0xffffeb, 24},
-    // ASCII: 0x8F
-    {0x8f, 0x7fffdf, 23},
-    // ASCII: 0x90
-    {0x90, 0xffffec, 24},
-    // ASCII: 0x91
-    {0x91, 0xffffed, 24},
-    // ASCII: 0x92
-    {0x92, 0x3fffd7, 22},
-    // ASCII: 0x93
-    {0x93, 0x7fffe0, 23},
-    // ASCII: 0x94
-    {0x94, 0xffffee, 24},
-    // ASCII: 0x95
-    {0x95, 0x7fffe1, 23},
-    // ASCII: 0x96
-    {0x96, 0x7fffe2, 23},
-    // ASCII: 0x97
-    {0x97, 0x7fffe3, 23},
-    // ASCII: 0x98
-    {0x98, 0x7fffe4, 23},
-    // ASCII: 0x99
-    {0x99, 0x1fffdc, 21},
-    // ASCII: 0x9A
-    {0x9a, 0x3fffd8, 22},
-    // ASCII: 0x9B
-    {0x9b, 0x7fffe5, 23},
-    // ASCII: 0x9C
-    {0x9c, 0x3fffd9, 22},
-    // ASCII: 0x9D
-    {0x9d, 0x7fffe6, 23},
-    // ASCII: 0x9E
-    {0x9e, 0x7fffe7, 23},
-    // ASCII: 0x9F
-    {0x9f, 0xffffef, 24},
-    // ASCII: 0xA0
-    {0xa0, 0x3fffda, 22},
-    // ASCII: 0xA1
-    {0xa1, 0x1fffdd, 21},
-    // ASCII: 0xA2
-    {0xa2, 0xfffe9, 20},
-    // ASCII: 0xA3
-    {0xa3, 0x3fffdb, 22},
-    // ASCII: 0xA4
-    {0xa4, 0x3fffdc, 22},
-    // ASCII: 0xA5
-    {0xa5, 0x7fffe8, 23},
-    // ASCII: 0xA6
-    {0xa6, 0x7fffe9, 23},
-    // ASCII: 0xA7
-    {0xa7, 0x1fffde, 21},
-    // ASCII: 0xA8
-    {0xa8, 0x7fffea, 23},
-    // ASCII: 0xA9
-    {0xa9, 0x3fffdd, 22},
-    // ASCII: 0xAA
-    {0xaa, 0x3fffde, 22},
-    // ASCII: 0xAB
-    {0xab, 0xfffff0, 24},
-    // ASCII: 0xAC
-    {0xac, 0x1fffdf, 21},
-    // ASCII: 0xAD
-    {0xad, 0x3fffdf, 22},
-    // ASCII: 0xAE
-    {0xae, 0x7fffeb, 23},
-    // ASCII: 0xAF
-    {0xaf, 0x7fffec, 23},
-    // ASCII: 0xB0
-    {0xb0, 0x1fffe0, 21},
-    // ASCII: 0xB1
-    {0xb1, 0x1fffe1, 21},
-    // ASCII: 0xB2
-    {0xb2, 0x3fffe0, 22},
-    // ASCII: 0xB3
-    {0xb3, 0x1fffe2, 21},
-    // ASCII: 0xB4
-    {0xb4, 0x7fffed, 23},
-    // ASCII: 0xB5
-    {0xb5, 0x3fffe1, 22},
-    // ASCII: 0xB6
-    {0xb6, 0x7fffee, 23},
-    // ASCII: 0xB7
-    {0xb7, 0x7fffef, 23},
-    // ASCII: 0xB8
-    {0xb8, 0xfffea, 20},
-    // ASCII: 0xB9
-    {0xb9, 0x3fffe2, 22},
-    // ASCII: 0xBA
-    {0xba, 0x3fffe3, 22},
-    // ASCII: 0xBB
-    {0xbb, 0x3fffe4, 22},
-    // ASCII: 0xBC
-    {0xbc, 0x7ffff0, 23},
-    // ASCII: 0xBD
-    {0xbd, 0x3fffe5, 22},
-    // ASCII: 0xBE
-    {0xbe, 0x3fffe6, 22},
-    // ASCII: 0xBF
-    {0xbf, 0x7ffff1, 23},
-    // ASCII: 0xC0
-    {0xc0, 0x3ffffe0, 26},
-    // ASCII: 0xC1
-    {0xc1, 0x3ffffe1, 26},
-    // ASCII: 0xC2
-    {0xc2, 0xfffeb, 20},
-    // ASCII: 0xC3
-    {0xc3, 0x7fff1, 19},
-    // ASCII: 0xC4
-    {0xc4, 0x3fffe7, 22},
-    // ASCII: 0xC5
-    {0xc5, 0x7ffff2, 23},
-    // ASCII: 0xC6
-    {0xc6, 0x3fffe8, 22},
-    // ASCII: 0xC7
-    {0xc7, 0x1ffffec, 25},
-    // ASCII: 0xC8
-    {0xc8, 0x3ffffe2, 26},
-    // ASCII: 0xC9
-    {0xc9, 0x3ffffe3, 26},
-    // ASCII: 0xCA
-    {0xca, 0x3ffffe4, 26},
-    // ASCII: 0xCB
-    {0xcb, 0x7ffffde, 27},
-    // ASCII: 0xCC
-    {0xcc, 0x7ffffdf, 27},
-    // ASCII: 0xCD
-    {0xcd, 0x3ffffe5, 26},
-    // ASCII: 0xCE
-    {0xce, 0xfffff1, 24},
-    // ASCII: 0xCF
-    {0xcf, 0x1ffffed, 25},
-    // ASCII: 0xD0
-    {0xd0, 0x7fff2, 19},
-    // ASCII: 0xD1
-    {0xd1, 0x1fffe3, 21},
-    // ASCII: 0xD2
-    {0xd2, 0x3ffffe6, 26},
-    // ASCII: 0xD3
-    {0xd3, 0x7ffffe0, 27},
-    // ASCII: 0xD4
-    {0xd4, 0x7ffffe1, 27},
-    // ASCII: 0xD5
-    {0xd5, 0x3ffffe7, 26},
-    // ASCII: 0xD6
-    {0xd6, 0x7ffffe2, 27},
-    // ASCII: 0xD7
-    {0xd7, 0xfffff2, 24},
-    // ASCII: 0xD8
-    {0xd8, 0x1fffe4, 21},
-    // ASCII: 0xD9
-    {0xd9, 0x1fffe5, 21},
-    // ASCII: 0xDA
-    {0xda, 0x3ffffe8, 26},
-    // ASCII: 0xDB
-    {0xdb, 0x3ffffe9, 26},
-    // ASCII: 0xDC
-    {0xdc, 0xffffffd, 28},
-    // ASCII: 0xDD
-    {0xdd, 0x7ffffe3, 27},
-    // ASCII: 0xDE
-    {0xde, 0x7ffffe4, 27},
-    // ASCII: 0xDF
-    {0xdf, 0x7ffffe5, 27},
-    // ASCII: 0xE0
-    {0xe0, 0xfffec, 20},
-    // ASCII: 0xE1
-    {0xe1, 0xfffff3, 24},
-    // ASCII: 0xE2
-    {0xe2, 0xfffed, 20},
-    // ASCII: 0xE3
-    {0xe3, 0x1fffe6, 21},
-    // ASCII: 0xE4
-    {0xe4, 0x3fffe9, 22},
-    // ASCII: 0xE5
-    {0xe5, 0x1fffe7, 21},
-    // ASCII: 0xE6
-    {0xe6, 0x1fffe8, 21},
-    // ASCII: 0xE7
-    {0xe7, 0x7ffff3, 23},
-    // ASCII: 0xE8
-    {0xe8, 0x3fffea, 22},
-    // ASCII: 0xE9
-    {0xe9, 0x3fffeb, 22},
-    // ASCII: 0xEA
-    {0xea, 0x1ffffee, 25},
-    // ASCII: 0xEB
-    {0xeb, 0x1ffffef, 25},
-    // ASCII: 0xEC
-    {0xec, 0xfffff4, 24},
-    // ASCII: 0xED
-    {0xed, 0xfffff5, 24},
-    // ASCII: 0xEE
-    {0xee, 0x3ffffea, 26},
-    // ASCII: 0xEF
-    {0xef, 0x7ffff4, 23},
-    // ASCII: 0xF0
-    {0xf0, 0x3ffffeb, 26},
-    // ASCII: 0xF1
-    {0xf1, 0x7ffffe6, 27},
-    // ASCII: 0xF2
-    {0xf2, 0x3ffffec, 26},
-    // ASCII: 0xF3
-    {0xf3, 0x3ffffed, 26},
-    // ASCII: 0xF4
-    {0xf4, 0x7ffffe7, 27},
-    // ASCII: 0xF5
-    {0xf5, 0x7ffffe8, 27},
-    // ASCII: 0xF6
-    {0xf6, 0x7ffffe9, 27},
-    // ASCII: 0xF7
-    {0xf7, 0x7ffffea, 27},
-    // ASCII: 0xF8
-    {0xf8, 0x7ffffeb, 27},
-    // ASCII: 0xF9
-    {0xf9, 0xffffffe, 28},
-    // ASCII: 0xFA
-    {0xfa, 0x7ffffec, 27},
-    // ASCII: 0xFB
-    {0xfb, 0x7ffffed, 27},
-    // ASCII: 0xFC
-    {0xfc, 0x7ffffee, 27},
-    // ASCII: 0xFD
-    {0xfd, 0x7ffffef, 27},
-    // ASCII: 0xFE
-    {0xfe, 0x7fffff0, 27},
-    // ASCII: 0xFF
-    {0xff, 0x3ffffee, 26},
-    // EOS (End of String)
-    {0x0,  0x3fffffff, 30},
-};
-
 HuffmanEncoder::HuffmanEncoder() {
-    for (const auto& code : huffman_table_) {
-        huffman_tree_.Insert(code.code, code.num_bits, code.symbol);
-    }
+
 }
 
 bool HuffmanEncoder::ShouldHuffmanEncode(const std::string& input) {
@@ -540,7 +14,7 @@ bool HuffmanEncoder::ShouldHuffmanEncode(const std::string& input) {
         if (c > 0x7F) {
             return false;
         }
-        encoded_size += huffman_table_[c].num_bits;
+        encoded_size += huffman_vector_[c].num_bits;
     }
     // Convert bits to bytes (rounding up)
     encoded_size = (encoded_size + 7) / 8;
@@ -553,7 +27,7 @@ std::vector<uint8_t> HuffmanEncoder::Encode(const std::string& input) {
     uint8_t bits_left = 8;
 
     for (unsigned char c : input) {
-        const HuffmanCode& code = huffman_table_[c];
+        const HuffmanCode& code = huffman_vector_[c];
         WriteBits(code.code, code.num_bits, current_byte, bits_left, output);
     }
 
@@ -567,7 +41,7 @@ std::vector<uint8_t> HuffmanEncoder::Encode(const std::string& input) {
 
 std::string HuffmanEncoder::Decode(const std::vector<uint8_t>& input) {
     std::string output;
-    if (!huffman_tree_.Decode(input, output)) {
+    if (!huffman_table_.Decode(input, output)) {
         return "";
     }
     return output;
@@ -589,6 +63,273 @@ void HuffmanEncoder::WriteBits(uint32_t code, uint8_t num_bits, uint32_t& curren
         }
     }
 }
+
+// Static Huffman code table initialization
+// Based on QPACK static Huffman code table
+// Huffman code table defined in RFC 9204 Appendix A
+// https://datatracker.ietf.org/doc/html/rfc9204#appendix-A
+// This table maps each byte value to its corresponding Huffman code and code length
+// The values are defined in the RFC 7541 Appendix B
+// https://datatracker.ietf.org/doc/html/rfc7541#appendix-B
+const std::vector<HuffmanEncoder::HuffmanCode> HuffmanEncoder::huffman_vector_ = {    
+    {0, 0x1ff8, 13},
+    {1,   0x7fffd8,   23},
+    {2,   0xfffffe2,  28},
+    {3,   0xfffffe3,  28},
+    {4,   0xfffffe4,  28},
+    {5,   0xfffffe5,  28},
+    {6,   0xfffffe6,  28},
+    {7,   0xfffffe7,  28},
+    {8,   0xfffffe8,  28},
+    {9,   0xffffea,   24},
+    {10,  0x3ffffffc, 30},
+    {11,  0xfffffe9,  28},
+    {12,  0xfffffea,  28},
+    {13,  0x3ffffffd, 30},
+    {14,  0xfffffeb,  28},
+    {15,  0xfffffec,  28},
+    {16,  0xfffffed,  28},
+    {17,  0xfffffee,  28},
+    {18,  0xfffffef,  28},
+    {19,  0xffffff0,  28},
+    {20,  0xffffff1,  28},
+    {21,  0xffffff2,  28},
+    {22,  0x3ffffffe, 30},
+    {23,  0xffffff3,  28},
+    {24,  0xffffff4,  28},
+    {25,  0xffffff5,  28},
+    {26,  0xffffff6,  28},
+    {27,  0xffffff7,  28},
+    {28,  0xffffff8,  28},
+    {29,  0xffffff9,  28},
+    {30,  0xffffffa,  28},
+    {31,  0xffffffb,  28},
+    {32,  0x14,       6}, // 
+    {33,  0x3f8,      10}, // !
+    {34,  0x3f9,      10}, // "
+    {35,  0xffa,      12}, // #
+    {36,  0x1ff9,     13}, // $
+    {37,  0x15,       6}, // %
+    {38,  0xf8,       8}, // &
+    {39,  0x7fa,      11}, // '
+    {40,  0x3fa,      10}, // (
+    {41,  0x3fb,      10}, // )
+    {42,  0xf9,       8}, // *
+    {43,  0x7fb,      11}, // +
+    {44,  0xfa,       8}, // , 
+    {45,  0x16,       6}, // -
+    {46,  0x17,       6}, // .
+    {47,  0x18,       6}, // /
+    {48,  0x0,        5}, // 0
+    {49,  0x1,        5}, // 1
+    {50,  0x2,        5}, // 2
+    {51,  0x19,       6}, // 3
+    {52,  0x1a,       6}, // 4
+    {53,  0x1b,       6}, // 5
+    {54,  0x1c,       6}, // 6
+    {55,  0x1d,       6}, // 7
+    {56,  0x1e,       6}, // 8
+    {57,  0x1f,       6}, // 9
+    {58,  0x5c,       7}, // :
+    {59,  0xfb,       8}, // ;
+    {60,  0x7ffc,     15}, // <
+    {61,  0x20,       6}, // =
+    {62,  0xffb,      12}, // >
+    {63,  0x3fc,      10}, // ?
+    {64,  0x1ffa,     13}, // @
+    {65,  0x21,       6}, // A
+    {66,  0x5d,       7}, // B
+    {67,  0x5e,       7}, // C
+    {68,  0x5f,       7}, // D
+    {69,  0x60,       7}, // E
+    {70,  0x61,       7}, // F
+    {71,  0x62,       7}, // G
+    {72,  0x63,       7}, // H
+    {73,  0x64,       7}, // I
+    {74,  0x65,       7}, // J
+    {75,  0x66,       7}, // K
+    {76,  0x67,       7}, // L
+    {77,  0x68,       7}, // M
+    {78,  0x69,       7}, // N
+    {79,  0x6a,       7}, // O
+    {80,  0x6b,       7}, // P
+    {81,  0x6c,       7}, // Q
+    {82,  0x6d,       7}, // R
+    {83,  0x6e,       7}, // S
+    {84,  0x6f,       7}, // T
+    {85,  0x70,       7}, // U
+    {86,  0x71,       7}, // V
+    {87,  0x72,       7}, // W
+    {88,  0xfc,       8}, // X
+    {89,  0x73,       7}, // Y
+    {90,  0xfd,       8}, // Z
+    {91,  0x1ffb,     13}, // [
+    {92,  0x7fff0,    19}, /*\*/  
+    {93,  0x1ffc,     13}, // ]
+    {94,  0x3ffc,     14}, // ^
+    {95,  0x22,       6}, // _
+    {96,  0x7ffd,     15}, // `
+    {97,  0x3,        5}, // a
+    {98,  0x23,       6}, // b
+    {99,  0x4,        5}, // c
+    {100, 0x24,       6}, // d
+    {101, 0x5,        5}, // e
+    {102, 0x25,       6}, // f
+    {103, 0x26,       6}, // g
+    {104, 0x27,       6}, // h
+    {105, 0x6,        5}, // i
+    {106, 0x74,       7}, // j
+    {107, 0x75,       7}, // k
+    {108, 0x28,       6}, // l
+    {109, 0x29,       6}, // m
+    {110, 0x2a,       6}, // n
+    {111, 0x7,        5}, // o
+    {112, 0x2b,       6}, // p
+    {113, 0x76,       7}, // q
+    {114, 0x2c,       6}, // r
+    {115, 0x8,        5}, // s
+    {116, 0x9,        5}, // t
+    {117, 0x2d,       6}, // u
+    {118, 0x77,       7}, // v
+    {119, 0x78,       7}, // w
+    {120, 0x79,       7}, // x
+    {121, 0x7a,       7}, // y
+    {122, 0x7b,       7}, // z
+    {123, 0x7ffe,     15}, // {
+    {124, 0x7fc,      11}, // |
+    {125, 0x3ffd,     14}, // }
+    {126, 0x1ffd,     13}, // ~
+    {127, 0xffffffc,  28},
+    {128, 0xfffe6,    20},
+    {129, 0x3fffd2,   22},
+    {130, 0xfffe7,    20},
+    {131, 0xfffe8,    20},
+    {132, 0x3fffd3,   22},
+    {133, 0x3fffd4,   22},
+    {134, 0x3fffd5,   22},
+    {135, 0x7fffd9,   23},
+    {136, 0x3fffd6,   22},
+    {137, 0x7fffda,   23},
+    {138, 0x7fffdb,   23},
+    {139, 0x7fffdc,   23},
+    {140, 0x7fffdd,   23},
+    {141, 0x7fffde,   23},
+    {142, 0xffffeb,   24},
+    {143, 0x7fffdf,   23},
+    {144, 0xffffec,   24},
+    {145, 0xffffed,   24},
+    {146, 0x3fffd7,   22},
+    {147, 0x7fffe0,   23},
+    {148, 0xffffee,   24},
+    {149, 0x7fffe1,   23},
+    {150, 0x7fffe2,   23},
+    {151, 0x7fffe3,   23},
+    {152, 0x7fffe4,   23},
+    {153, 0x1fffdc,   21},
+    {154, 0x3fffd8,   22},
+    {155, 0x7fffe5,   23},
+    {156, 0x3fffd9,   22},
+    {157, 0x7fffe6,   23},
+    {158, 0x7fffe7,   23},
+    {159, 0xffffef,   24},
+    {160, 0x3fffda,   22},
+    {161, 0x1fffdd,   21},
+    {162, 0xfffe9,    20},
+    {163, 0x3fffdb,   22},
+    {164, 0x3fffdc,   22},
+    {165, 0x7fffe8,   23},
+    {166, 0x7fffe9,   23},
+    {167, 0x1fffde,   21},
+    {168, 0x7fffea,   23},
+    {169, 0x3fffdd,   22},
+    {170, 0x3fffde,   22},
+    {171, 0xfffff0,   24},
+    {172, 0x1fffdf,   21},
+    {173, 0x3fffdf,   22},
+    {174, 0x7fffeb,   23},
+    {175, 0x7fffec,   23},
+    {176, 0x1fffe0,   21},
+    {177, 0x1fffe1,   21},
+    {178, 0x3fffe0,   22},
+    {179, 0x1fffe2,   21},
+    {180, 0x7fffed,   23},
+    {181, 0x3fffe1,   22},
+    {182, 0x7fffee,   23},
+    {183, 0x7fffef,   23},
+    {184, 0xfffea,    20},
+    {185, 0x3fffe2,   22},
+    {186, 0x3fffe3,   22},
+    {187, 0x3fffe4,   22},
+    {188, 0x7ffff0,   23},
+    {189, 0x3fffe5,   22},
+    {190, 0x3fffe6,   22},
+    {191, 0x7ffff1,   23},
+    {192, 0x3ffffe0,  26},
+    {193, 0x3ffffe1,  26},
+    {194, 0xfffeb,    20},
+    {195, 0x7fff1,    19},
+    {196, 0x3fffe7,   22},
+    {197, 0x7ffff2,   23},
+    {198, 0x3fffe8,   22},
+    {199, 0x1ffffec,  25},
+    {200, 0x3ffffe2,  26},
+    {201, 0x3ffffe3,  26},
+    {202, 0x3ffffe4,  26},
+    {203, 0x7ffffde,  27},
+    {204, 0x7ffffdf,  27},
+    {205, 0x3ffffe5,  26},
+    {206, 0xfffff1,   24},
+    {207, 0x1ffffed,  25},
+    {208, 0x7fff2,    19},
+    {209, 0x1fffe3,   21},
+    {210, 0x3ffffe6,  26},
+    {211, 0x7ffffe0,  27},
+    {212, 0x7ffffe1,  27},
+    {213, 0x3ffffe7,  26},
+    {214, 0x7ffffe2,  27},
+    {215, 0xfffff2,   24},
+    {216, 0x1fffe4,   21},
+    {217, 0x1fffe5,   21},
+    {218, 0x3ffffe8,  26},
+    {219, 0x3ffffe9,  26},
+    {220, 0xffffffd,  28},
+    {221, 0x7ffffe3,  27},
+    {222, 0x7ffffe4,  27},
+    {223, 0x7ffffe5,  27},
+    {224, 0xfffec,    20},
+    {225, 0xfffff3,   24},
+    {226, 0xfffed,    20},
+    {227, 0x1fffe6,   21},
+    {228, 0x3fffe9,   22},
+    {229, 0x1fffe7,   21},
+    {230, 0x1fffe8,   21},
+    {231, 0x7ffff3,   23},
+    {232, 0x3fffea,   22},
+    {233, 0x3fffeb,   22},
+    {234, 0x1ffffee,  25},
+    {235, 0x1ffffef,  25},
+    {236, 0xfffff4,   24},
+    {237, 0xfffff5,   24},
+    {238, 0x3ffffea,  26},
+    {239, 0x7ffff4,   23},
+    {240, 0x3ffffeb,  26},
+    {241, 0x7ffffe6,  27},
+    {242, 0x3ffffec,  26},
+    {243, 0x3ffffed,  26},
+    {244, 0x7ffffe7,  27},
+    {245, 0x7ffffe8,  27},
+    {246, 0x7ffffe9,  27},
+    {247, 0x7ffffea,  27},
+    {248, 0x7ffffeb,  27},
+    {249, 0xffffffe,  28},
+    {250, 0x7ffffec,  27},
+    {251, 0x7ffffed,  27},
+    {252, 0x7ffffee,  27},
+    {253, 0x7ffffef,  27},
+    {254, 0x7fffff0,  27},
+    {255, 0x3ffffee,  26},
+    {256, 0x3fffffff, 30}, // EOS
+};
 
 }
 }

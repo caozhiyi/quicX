@@ -25,24 +25,36 @@ TEST_F(HuffmanEncoderTest, EncodeSingleCharacter) {
     std::string input = "a";
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
+
+    std::string decoded = encoder_->Decode(encoded);
+    EXPECT_EQ(decoded, input);
 }
 
 TEST_F(HuffmanEncoderTest, EncodeString) {
     std::string input = "test";
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
+
+    std::string decoded = encoder_->Decode(encoded);
+    EXPECT_EQ(decoded, input);
 }
 
 TEST_F(HuffmanEncoderTest, EncodeSpecialCharacters) {
     std::string input = "!@#$%";
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
+
+    std::string decoded = encoder_->Decode(encoded);
+    EXPECT_EQ(decoded, input);
 }
 
 TEST_F(HuffmanEncoderTest, EncodeLongString) {
     std::string input(1000, 'x');  // String with 1000 'x' characters
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
+
+    std::string decoded = encoder_->Decode(encoded);
+    EXPECT_EQ(decoded, input);
 }
 
 }  // namespace
