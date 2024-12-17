@@ -1,9 +1,8 @@
 #include <cstring>
 #include "common/log/log.h"
-#include "common/decode/decode.h"
-#include "common/buffer/if_buffer.h"
-#include "common/alloter/if_alloter.h"
 #include "quic/frame/new_connection_id_frame.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/buffer/buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace quic {
@@ -21,42 +20,51 @@ NewConnectionIDFrame::~NewConnectionIDFrame() {
 
 bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
-    auto span = buffer->GetWriteSpan();
-    auto remain_size = span.GetLength();
-    if (need_size > remain_size) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+    if (need_size > buffer->GetFreeLength()) {
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
-    uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, frame_type_);
-    pos = common::EncodeVarint(pos, sequence_number_);
-    pos = common::EncodeVarint(pos, retire_prior_to_);
-    pos = common::FixedEncodeUint8(pos, length_);
-    buffer->MoveWritePt(pos - span.GetStart());
-    buffer->Write(connection_id_, length_);
-    buffer->Write(stateless_reset_token_, __stateless_reset_token_length);
+    common::BufferEncodeWrapper wrapper(buffer);
+    wrapper.EncodeFixedUint16(frame_type_);
+    wrapper.EncodeVarint(sequence_number_);
+    wrapper.EncodeVarint(retire_prior_to_);
+    wrapper.EncodeFixedUint8(length_);
+    wrapper.EncodeBytes(connection_id_, length_);
+    wrapper.EncodeBytes(stateless_reset_token_, __stateless_reset_token_length);
+
     return true;
 }
 
 bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
-    auto span = buffer->GetReadSpan();
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
+    common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        wrapper.DecodeFixedUint16(frame_type_);
+        if (frame_type_ != FT_NEW_CONNECTION_ID) {
+            return false;
+        }
     }
-    pos = common::DecodeVarint(pos, end, sequence_number_);
-    pos = common::DecodeVarint(pos, end, retire_prior_to_);
-    pos = common::FixedDecodeUint8(pos, end, length_);
-    buffer->MoveReadPt(pos - span.GetStart());
-    if (buffer->Read(connection_id_, length_) != length_) {
+    wrapper.DecodeVarint(sequence_number_);
+    wrapper.DecodeVarint(retire_prior_to_);
+    wrapper.DecodeFixedUint8(length_);
+
+    wrapper.Flush();
+    if (length_ > buffer->GetDataLength()) {
+        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
         return false;
     }
-    if (buffer->Read(stateless_reset_token_, __stateless_reset_token_length) != __stateless_reset_token_length) {
+    auto data = (uint8_t*)connection_id_;
+    wrapper.DecodeBytes(data, length_);
+    
+    wrapper.Flush();
+    if (__stateless_reset_token_length > buffer->GetDataLength()) {
+        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), __stateless_reset_token_length);
         return false;
     }
+    data = (uint8_t*)stateless_reset_token_;
+    wrapper.DecodeBytes(data, __stateless_reset_token_length);
+    
     return true;
 }
 

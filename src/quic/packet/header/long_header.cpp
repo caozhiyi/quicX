@@ -40,6 +40,7 @@ bool LongHeader::EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) {
     
     auto span = buffer->GetWriteSpan();
     auto remain_size = span.GetLength();
+    auto end = span.GetEnd();
     if (need_size > remain_size) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
@@ -48,17 +49,17 @@ bool LongHeader::EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) {
     uint8_t* cur_pos = span.GetStart();
 
     // encode version
-    cur_pos = common::FixedEncodeUint32(cur_pos, version_);
+    cur_pos = common::FixedEncodeUint32(cur_pos, end, version_);
     
     // encode dcid
-    cur_pos = common::FixedEncodeUint8(cur_pos, destination_connection_id_length_);
+    cur_pos = common::FixedEncodeUint8(cur_pos, end, destination_connection_id_length_);
     if (destination_connection_id_length_ > 0) {
         memcpy(cur_pos, destination_connection_id_, destination_connection_id_length_);
         cur_pos += destination_connection_id_length_;
     }
 
     // encode scid
-    cur_pos = common::FixedEncodeUint8(cur_pos, source_connection_id_length_);
+    cur_pos = common::FixedEncodeUint8(cur_pos, end, source_connection_id_length_);
     if (source_connection_id_length_ > 0) {
         memcpy(cur_pos, source_connection_id_, source_connection_id_length_);
         cur_pos += source_connection_id_length_;

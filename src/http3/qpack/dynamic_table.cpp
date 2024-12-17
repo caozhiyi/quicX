@@ -8,6 +8,11 @@ DynamicTable::DynamicTable(uint32_t max_size) : max_size_(max_size), current_siz
 }
 
 bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& value) {
+    auto item_key = std::make_pair(name, value);
+    if (headeritem_index_map_.count(item_key) > 0) {
+        return true; // Entry already exists in table
+    }
+    
     uint32_t entry_size = CalculateEntrySize(name, value);
     
     // Check if new entry would exceed max size

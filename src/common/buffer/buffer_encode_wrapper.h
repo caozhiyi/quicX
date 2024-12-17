@@ -31,6 +31,8 @@ public:
     bool EncodeFixedUint64(uint64_t value);
     bool EncodeBytes(uint8_t* in, uint32_t len);
 
+    common::BufferSpan GetDataSpan() const;
+
 private:
     std::shared_ptr<IBufferWrite> buffer_;
     uint8_t* pos_;
@@ -40,10 +42,16 @@ private:
 
 template<typename T>
 bool BufferEncodeWrapper::EncodeVarint(T value) {
-    pos_ = common::EncodeVarint(pos_, value);
-    if (pos_ == nullptr) {
+    if (pos_ >= end_) {
         return false;
     }
+    
+    uint8_t* new_pos = common::EncodeVarint(pos_, end_, value);
+    if (new_pos == nullptr || new_pos > end_) {
+        return false;
+    }
+    
+    pos_ = new_pos;
     flushed_ = false;
     return true;
 }

@@ -30,9 +30,10 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBufferWrite> buff
     auto span = buffer->GetWriteSpan();
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
+    uint8_t* end = span.GetEnd();
 
     for (size_t i = 0; i < support_version_.size(); i++) {
-        cur_pos = common::FixedEncodeUint32(cur_pos, support_version_[i]);
+        cur_pos = common::FixedEncodeUint32(cur_pos, end, support_version_[i]);
     }
     
     packet_src_data_ = std::move(common::BufferSpan(start_pos, cur_pos));

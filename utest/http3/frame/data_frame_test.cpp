@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "common/buffer/buffer.h"
+#include "common/decode/decode.h"
 #include "http3/frame/data_frame.h"
 
 namespace quicx {
@@ -10,14 +11,10 @@ class DataFrameTest : public testing::Test {
 protected:
     void SetUp() override {
         buffer_ = std::make_shared<common::Buffer>(buf_, sizeof(buf_));
-        write_buffer_ = buffer_->GetWriteViewPtr();
-        read_buffer_ = buffer_->GetReadViewPtr();
         frame_ = std::make_shared<DataFrame>();
     }
     uint8_t buf_[1024];
     std::shared_ptr<common::Buffer> buffer_;
-    std::shared_ptr<common::IBufferWrite> write_buffer_;
-    std::shared_ptr<common::IBufferRead> read_buffer_;
     std::shared_ptr<DataFrame> frame_;
 };
 
@@ -41,11 +38,11 @@ TEST_F(DataFrameTest, EncodeAndDecode) {
     frame_->SetData(data);
 
     // Encode
-    EXPECT_TRUE(frame_->Encode(write_buffer_));
+    EXPECT_TRUE(frame_->Encode(buffer_));
 
     // Create new frame for decoding
     auto decode_frame = std::make_shared<DataFrame>();
-    EXPECT_TRUE(decode_frame->Decode(read_buffer_, true));
+    EXPECT_TRUE(decode_frame->Decode(buffer_, true));
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetLength(), length);
@@ -58,9 +55,15 @@ TEST_F(DataFrameTest, EvaluateSize) {
     frame_->SetLength(length);
     frame_->SetData(data);
 
-    // Size should include frame type, length field, and payload
-    uint32_t expected_size = frame_->EvaluateEncodeSize();
-    EXPECT_EQ(expected_size, frame_->EvaluatePaloadSize() + 1); // +1 for frame type
+    // Size should include:
+    // 1. frame type (2 bytes)
+    // 2. length field (varint)
+    // 3. payload
+    uint32_t payload_size = frame_->EvaluatePaloadSize();
+    uint32_t length_field_size = common::GetEncodeVarintLength(payload_size);
+    uint32_t expected_size = sizeof(uint16_t) + length_field_size + payload_size;
+
+    EXPECT_EQ(expected_size, frame_->EvaluateEncodeSize());
 }
 
 }  // namespace

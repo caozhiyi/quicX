@@ -31,6 +31,8 @@ public:
     bool DecodeFixedUint64(uint64_t& value);
     bool DecodeBytes(uint8_t*& out, uint32_t len, bool copy = true);
 
+    common::BufferSpan GetDataSpan() const;
+
 private:
     std::shared_ptr<IBufferRead> buffer_;
     uint8_t* pos_;
@@ -47,7 +49,6 @@ bool BufferDecodeWrapper::DecodeVarint(T& value) {
     flushed_ = false;
     return true;
 }
-
 
 }
 }

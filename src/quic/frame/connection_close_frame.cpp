@@ -1,8 +1,7 @@
 #include "common/log/log.h"
-#include "common/decode/decode.h"
-#include "common/buffer/if_buffer.h"
-#include "common/alloter/if_alloter.h"
 #include "quic/frame/connection_close_frame.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/buffer/buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace quic {
@@ -30,54 +29,46 @@ ConnectionCloseFrame::~ConnectionCloseFrame() {
 bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
 
-    auto span = buffer->GetWriteSpan();
-    auto remain_size = span.GetLength();
-    if (need_size > remain_size) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+    if (need_size > buffer->GetFreeLength()) {
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
-    uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, frame_type_);
-    pos = common::EncodeVarint(pos, error_code_);
-    pos = common::EncodeVarint(pos, err_frame_type_);
-    pos = common::EncodeVarint(pos, reason_.length());
+    common::BufferEncodeWrapper wrapper(buffer);
+    wrapper.EncodeFixedUint16(frame_type_);
+    wrapper.EncodeVarint(error_code_);
+    wrapper.EncodeVarint(err_frame_type_);
+    wrapper.EncodeVarint(reason_.length());
 
-    buffer->MoveWritePt(pos - span.GetStart());
-    buffer->Write((uint8_t*)reason_.data(), reason_.length());
+    wrapper.EncodeBytes((uint8_t*)reason_.data(), reason_.length());
     return true;
 }
 
 bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
     uint16_t size = EncodeSize();
 
-    auto span = buffer->GetReadSpan();
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
-
+    
+    common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        wrapper.DecodeFixedUint16(frame_type_);
         if (frame_type_ != FT_CONNECTION_CLOSE) {
             return false;
         }
     }
 
     uint32_t reason_length = 0;
-    pos = common::DecodeVarint(pos, end, error_code_);
-    pos = common::DecodeVarint(pos, end, err_frame_type_);
-    pos = common::DecodeVarint(pos, end, reason_length);
+    wrapper.DecodeVarint(error_code_);
+    wrapper.DecodeVarint(err_frame_type_);
+    wrapper.DecodeVarint(reason_length);
+    wrapper.Flush();
     
-    buffer->MoveReadPt(pos - span.GetStart());
-
-    span = buffer->GetReadSpan();
-    auto remain_size = span.GetLength();
-    if (reason_length > remain_size) {
+    if (reason_length > buffer->GetDataLength()) {
         return false;
     }
     
-    reason_.clear();
-    reason_.append((const char*)span.GetStart(), reason_length);
-    buffer->MoveReadPt(reason_length);
+    reason_.resize(reason_length);
+    auto data = (uint8_t*)reason_.data();
+    wrapper.DecodeBytes(data, reason_length);
     return true;
 }
 

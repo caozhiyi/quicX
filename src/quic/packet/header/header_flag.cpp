@@ -25,13 +25,14 @@ bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBufferWrite> buffer) {
     uint16_t need_size = EncodeFlagSize();
     auto span = buffer->GetWriteSpan();
     auto remain_size = span.GetLength();
+    auto end = span.GetEnd();
     if (need_size > remain_size) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
         return false;
     }
 
     uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint8(pos, flag_.header_flag_);
+    pos = common::FixedEncodeUint8(pos, end, flag_.header_flag_);
     buffer->MoveWritePt(pos - span.GetStart());
     return true;
 }

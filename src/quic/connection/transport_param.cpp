@@ -210,23 +210,23 @@ uint32_t TransportParam::EncodeSize() {
 }
 
 uint8_t* TransportParam::EncodeUint(uint8_t* start, uint8_t* end, uint32_t value, uint32_t type) {
-    start = common::EncodeVarint(start, type);
-    start = common::EncodeVarint(start, common::GetEncodeVarintLength(value));
-    start = common::EncodeVarint(start, value);
+    start = common::EncodeVarint(start, end, type);
+    start = common::EncodeVarint(start, end, common::GetEncodeVarintLength(value));
+    start = common::EncodeVarint(start, end, value);
     return start;
 }
 
 uint8_t* TransportParam::EncodeString(uint8_t* start, uint8_t* end, const std::string& value, uint32_t type) {
-    start = common::EncodeVarint(start, type);
-    start = common::EncodeVarint(start, value.length());
+    start = common::EncodeVarint(start, end, type);
+    start = common::EncodeVarint(start, end, value.length());
     start = common::EncodeBytes(start, end, (uint8_t*)value.c_str(), value.length());
     return start;
 }
 
 uint8_t* TransportParam::EncodeBool(uint8_t* start, uint8_t* end, bool value, uint32_t type) {
-    start = common::EncodeVarint(start, type);
-    start = common::EncodeVarint(start, 1);
-    start = common::EncodeVarint(start, value ? 1 : 0);
+    start = common::EncodeVarint(start, end, type);
+    start = common::EncodeVarint(start, end, 1);
+    start = common::EncodeVarint(start, end, value ? 1 : 0);
     return start;
 }
 

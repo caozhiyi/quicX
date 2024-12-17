@@ -60,6 +60,8 @@ bool SettingsFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool wit
         }
         settings_[id] = value;
     }*/
+    wrapper.Flush();
+    buffer->MoveReadPt(length_);
     return true;
 }
 

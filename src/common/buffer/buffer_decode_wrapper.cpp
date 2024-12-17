@@ -71,5 +71,9 @@ bool BufferDecodeWrapper::DecodeBytes(uint8_t*& out, uint32_t len, bool copy) {
     return true;
 }
 
+common::BufferSpan BufferDecodeWrapper::GetDataSpan() const {
+    return common::BufferSpan(buffer_->GetReadSpan().GetStart(), pos_);
+}
+
 }
 } 

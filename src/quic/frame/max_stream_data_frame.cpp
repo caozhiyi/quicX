@@ -1,8 +1,7 @@
 #include "common/log/log.h"
-#include "common/decode/decode.h"
-#include "common/buffer/if_buffer.h"
 #include "quic/frame/max_stream_data_frame.h"
-#include "common/alloter/if_alloter.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/buffer/buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace quic {
@@ -20,37 +19,31 @@ MaxStreamDataFrame::~MaxStreamDataFrame() {
 
 bool MaxStreamDataFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
-    auto span = buffer->GetWriteSpan();
-    auto remain_size = span.GetLength();
-    if (need_size > remain_size) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+    if (need_size > buffer->GetFreeLength()) {
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
-    uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint16(pos, frame_type_);
-    pos = common::EncodeVarint(pos, stream_id_);
-    pos = common::EncodeVarint(pos, maximum_data_);
+    common::BufferEncodeWrapper wrapper(buffer);
+    wrapper.EncodeFixedUint16(frame_type_);
+    wrapper.EncodeVarint(stream_id_);
+    wrapper.EncodeVarint(maximum_data_);
 
-    buffer->MoveWritePt(pos - span.GetStart());
     return true;
 }
 
 bool MaxStreamDataFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
-    auto span = buffer->GetReadSpan();
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
+    common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        pos = common::FixedDecodeUint16(pos, end, frame_type_);
+        wrapper.DecodeFixedUint16(frame_type_);
         if (frame_type_ != FT_MAX_STREAM_DATA) {
             return false;
         }
     }
-    pos = common::DecodeVarint(pos, end, stream_id_);
-    pos = common::DecodeVarint(pos, end, maximum_data_);
+    wrapper.DecodeVarint(stream_id_);
+    wrapper.DecodeVarint(maximum_data_);
 
-    buffer->MoveReadPt(pos - span.GetStart());
     return true;
 }
 
