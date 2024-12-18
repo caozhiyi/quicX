@@ -9,8 +9,14 @@ HuffmanTable::HuffmanTable() {
 }
 
 bool HuffmanTable::Decode(const std::vector<uint8_t>& input, std::string& output) const {
+    if (input.empty()) {
+        output.clear();
+        return true;
+    }
+
     uint8_t state = 0;
-    uint8_t ending = 0;
+    uint8_t ending = 1;
+    output.clear();
 
     for (size_t i = 0; i < input.size(); i++) {
         uint8_t bits = input[i];
@@ -21,13 +27,23 @@ bool HuffmanTable::Decode(const std::vector<uint8_t>& input, std::string& output
         if (!DecodeBits(state, ending, bits & 0x0F, output)) {
             return false;
         }
-    }
 
-    return ending > 0 ? true : false;
+        // check padding bits
+        if (i == input.size() - 1) {
+            uint8_t padding_bits = CountPaddingBits(bits);
+            if (!ValidatePadding(bits, padding_bits)) {
+                return false;
+            }
+        }
+    }
+    if (ending == 0 || output.empty()) {
+        return false;
+    }
+    return true;
 }
 
 bool HuffmanTable::DecodeBits(uint8_t& state, uint8_t& ending, uint8_t bits, std::string& output) const {
-    HuffmanNode node = huffman_table_[state][bits];
+    const HuffmanNode& node = huffman_table_[state][bits];
 
     if (node.next == state) {
         return false;
@@ -40,6 +56,35 @@ bool HuffmanTable::DecodeBits(uint8_t& state, uint8_t& ending, uint8_t bits, std
     ending = node.ending;
     state = node.next;
     return true;
+}
+
+uint8_t HuffmanTable::CountPaddingBits(uint8_t last_byte) const {
+    uint8_t padding_bits = 0;
+    uint8_t mask = 0x01;  // 从最低位开始检查
+    
+    // 从最低位开始，计算连续的1的个数
+    while ((last_byte & mask) == mask && padding_bits < 7) {
+        padding_bits++;
+        mask <<= 1;  // 左移一位继续检查
+    }
+    
+    return padding_bits;
+}
+
+bool HuffmanTable::ValidatePadding(uint8_t last_byte, uint8_t padding_bits) const {
+    if (padding_bits == 0) {
+        return true;  // 没有填充位，直接返回true
+    }
+    
+    // 创建填充位掩码：例如padding_bits=3时，掩码为0b00000111
+    uint8_t padding_mask = (1 << padding_bits) - 1;
+    
+    // 检查填充位是否全为1
+    // 例如：last_byte = 0b10101111, padding_bits = 3
+    // padding_mask = 0b00000111
+    // (last_byte & padding_mask) = 0b00000111
+    // 应该等于 padding_mask
+    return (last_byte & padding_mask) == padding_mask;
 }
 
 HuffmanTable::HuffmanNode HuffmanTable::huffman_table_[256][16] = {
