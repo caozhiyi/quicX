@@ -60,12 +60,12 @@ bool HuffmanTable::DecodeBits(uint8_t& state, uint8_t& ending, uint8_t bits, std
 
 uint8_t HuffmanTable::CountPaddingBits(uint8_t last_byte) const {
     uint8_t padding_bits = 0;
-    uint8_t mask = 0x01;  // 从最低位开始检查
+    uint8_t mask = 0x01;  // Start checking from least significant bit
     
-    // 从最低位开始，计算连续的1的个数
+    // Count consecutive 1s from least significant bit
     while ((last_byte & mask) == mask && padding_bits < 7) {
         padding_bits++;
-        mask <<= 1;  // 左移一位继续检查
+        mask <<= 1;  // Left shift one bit to continue checking
     }
     
     return padding_bits;
@@ -73,17 +73,17 @@ uint8_t HuffmanTable::CountPaddingBits(uint8_t last_byte) const {
 
 bool HuffmanTable::ValidatePadding(uint8_t last_byte, uint8_t padding_bits) const {
     if (padding_bits == 0) {
-        return true;  // 没有填充位，直接返回true
+        return true;  // No padding bits, return true directly
     }
     
-    // 创建填充位掩码：例如padding_bits=3时，掩码为0b00000111
+    // Create padding bits mask: e.g. when padding_bits=3, mask is 0b00000111
     uint8_t padding_mask = (1 << padding_bits) - 1;
     
-    // 检查填充位是否全为1
-    // 例如：last_byte = 0b10101111, padding_bits = 3
+    // Check if padding bits are all 1s
+    // Example: last_byte = 0b10101111, padding_bits = 3
     // padding_mask = 0b00000111
     // (last_byte & padding_mask) = 0b00000111
-    // 应该等于 padding_mask
+    // Should equal padding_mask
     return (last_byte & padding_mask) == padding_mask;
 }
 
