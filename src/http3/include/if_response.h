@@ -1,6 +1,9 @@
 #ifndef HTTP3_HTTP_IF_RESPONSE
 #define HTTP3_HTTP_IF_RESPONSE
 
+#include <string>
+#include <unordered_map>
+
 namespace quicx {
 namespace http3 {
 
@@ -8,7 +11,7 @@ namespace http3 {
 class IResponse {
 public:
     IResponse() {}
-    virtual ~IResponse() {}
+    virtual ~IResponse() = default;
 
     // Status code and reason
     virtual void SetStatusCode(uint32_t status_code) = 0;
