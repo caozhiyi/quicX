@@ -2,22 +2,28 @@
 #define HTTP3_INCLUDE_TYPE
 
 #include <functional>
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
+#include "if_request.h"
+#include "if_response.h"
 
 namespace quicx {
 namespace http3 {
 
-enum MothedType {
-    MT_GET     = 0x0001,
-    MT_HEAD    = 0x0002,
-    MT_POST    = 0x0004,
-    MT_PUT     = 0x0008,
-    MT_DELETE  = 0x0010,
-    MT_CONNECT = 0x0020,
-    MT_OPTIONS = 0x0040,
-    MT_TRACE   = 0x0080,
-    MT_PATCH   = 0x0100,
+enum HttpMothed: uint16_t {
+    HM_GET     = 0x0001,
+    HM_HEAD    = 0x0002,
+    HM_POST    = 0x0004,
+    HM_PUT     = 0x0008,
+    HM_DELETE  = 0x0010,
+    HM_CONNECT = 0x0020,
+    HM_OPTIONS = 0x0040,
+    HM_TRACE   = 0x0080,
+    HM_PATCH   = 0x0100,
+    HM_ANY     = HM_GET|HM_HEAD|HM_POST|HM_PUT|HM_DELETE|HM_CONNECT|HM_OPTIONS|HM_TRACE|HM_PATCH,
+};
+
+enum MiddlewarePosition: uint8_t {
+    MP_BEGIN = 0x01,
+    MP_END   = 0x02,
 };
 
 typedef std::function<void(const IRequest& request, IResponse& response)> http_handler;

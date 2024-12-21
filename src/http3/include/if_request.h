@@ -3,6 +3,7 @@
 
 #include <string>
 #include <unordered_map>
+#include "type.h"
 
 namespace quicx {
 namespace http3 {
@@ -11,11 +12,11 @@ namespace http3 {
 class IRequest {
 public:
     IRequest() {}
-    virtual ~IRequest() {}
+    virtual ~IRequest() = default;
 
-    // HTTP method (GET, POST, etc)
-    virtual void SetMethod(const std::string& method) = 0;
-    virtual std::string GetMethod() const = 0;
+    // HTTP method
+    virtual void SetMethod(HttpMothed method) = 0;
+    virtual HttpMothed GetMethod() const = 0;
 
     // Request path
     virtual void SetPath(const std::string& path) = 0;
