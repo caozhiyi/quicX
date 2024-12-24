@@ -60,6 +60,7 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
         return false;
     }
 
+    // get encrypt sample, which is defined in RFC9001
     common::BufferSpan sample = common::BufferSpan(start_pos + packet_num_offset_ + 4,
     start_pos + packet_num_offset_ + 4 + __header_protect_sample_length);
     if(!crypto_grapher_->EncryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_, header_.GetPacketNumberLength(),
@@ -120,6 +121,7 @@ bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) 
     // decrypt header
     uint8_t packet_num_len = 0;
     common::BufferSpan header_span = header_.GetHeaderSrcData();
+    // get decrypt sample, which is defined in RFC9001
     common::BufferSpan sample = common::BufferSpan(span.GetStart() + packet_num_offset_ + 4,
         span.GetStart() + packet_num_offset_ + 4 + __header_protect_sample_length);
     if(!crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_, packet_num_len, 

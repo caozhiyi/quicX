@@ -2,8 +2,6 @@
 #define HTTP3_INCLUDE_TYPE
 
 #include <functional>
-#include "if_request.h"
-#include "if_response.h"
 
 namespace quicx {
 namespace http3 {
@@ -26,6 +24,8 @@ enum MiddlewarePosition: uint8_t {
     MP_END   = 0x02,
 };
 
+class IRequest;
+class IResponse;
 typedef std::function<void(const IRequest& request, IResponse& response)> http_handler;
 
 }

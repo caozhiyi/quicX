@@ -1,7 +1,8 @@
 #include "common/log/log.h"
 #include "quic/packet/type.h"
-#include "common/decode/decode.h"
 #include "quic/packet/header/header_flag.h"
+#include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
 
 namespace quicx {
 namespace quic {
@@ -23,30 +24,23 @@ HeaderFlag::HeaderFlag(uint8_t flag) {
 
 bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBufferWrite> buffer) {
     uint16_t need_size = EncodeFlagSize();
-    auto span = buffer->GetWriteSpan();
-    auto remain_size = span.GetLength();
-    auto end = span.GetEnd();
-    if (need_size > remain_size) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+    if (need_size > buffer->GetFreeLength()) {
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
-
-    uint8_t* pos = span.GetStart();
-    pos = common::FixedEncodeUint8(pos, end, flag_.header_flag_);
-    buffer->MoveWritePt(pos - span.GetStart());
+    
+    common::BufferEncodeWrapper wrapper(buffer);
+    wrapper.EncodeFixedUint8(flag_.header_flag_);
     return true;
 }
 
 bool HeaderFlag::DecodeFlag(std::shared_ptr<common::IBufferRead> buffer) {
-    auto span = buffer->GetReadSpan();
     if (buffer->GetDataLength() < EncodeFlagSize()) {
         return false;
     }
 
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
-    pos = common::FixedDecodeUint8(pos, end, flag_.header_flag_);
-    buffer->MoveReadPt(pos - span.GetStart());
+    common::BufferDecodeWrapper wrapper(buffer);
+    wrapper.DecodeFixedUint8(flag_.header_flag_);
     return true;
 }
 
