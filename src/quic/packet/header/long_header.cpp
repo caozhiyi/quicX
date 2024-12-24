@@ -2,11 +2,11 @@
 #include <cstring>
 
 #include "common/log/log.h"
-#include "common/decode/decode.h"
 #include "quic/common/constants.h"
-#include "common/buffer/if_buffer.h"
 #include "common/alloter/if_alloter.h"
 #include "quic/packet/header/long_header.h"
+#include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
 
 namespace quicx {
 namespace quic {
@@ -37,36 +37,28 @@ bool LongHeader::EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     uint16_t need_size = EncodeHeaderSize();
-    
-    auto span = buffer->GetWriteSpan();
-    auto remain_size = span.GetLength();
-    auto end = span.GetEnd();
-    if (need_size > remain_size) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+    if (need_size > buffer->GetFreeLength()) {
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
     
-    uint8_t* cur_pos = span.GetStart();
+    common::BufferEncodeWrapper wrapper(buffer);
 
     // encode version
-    cur_pos = common::FixedEncodeUint32(cur_pos, end, version_);
-    
-    // encode dcid
-    cur_pos = common::FixedEncodeUint8(cur_pos, end, destination_connection_id_length_);
+    wrapper.EncodeFixedUint32(version_);
+    wrapper.EncodeFixedUint8(destination_connection_id_length_);
     if (destination_connection_id_length_ > 0) {
-        memcpy(cur_pos, destination_connection_id_, destination_connection_id_length_);
-        cur_pos += destination_connection_id_length_;
+        wrapper.EncodeBytes(destination_connection_id_, destination_connection_id_length_);
     }
-
-    // encode scid
-    cur_pos = common::FixedEncodeUint8(cur_pos, end, source_connection_id_length_);
+    wrapper.EncodeFixedUint8(source_connection_id_length_);
     if (source_connection_id_length_ > 0) {
-        memcpy(cur_pos, source_connection_id_, source_connection_id_length_);
-        cur_pos += source_connection_id_length_;
+        wrapper.EncodeBytes(source_connection_id_, source_connection_id_length_);
     }
-    header_src_data_ = std::move(common::BufferSpan(span.GetStart() - 1, cur_pos));
 
-    buffer->MoveWritePt(cur_pos - span.GetStart());
+    auto data_span = wrapper.GetDataSpan();
+    // the header src include header flag
+    header_src_data_ = common::BufferSpan(data_span.GetStart() - 1, data_span.GetEnd());
+
     return true;
 }
 
@@ -83,26 +75,27 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool 
         return false;
     }
     
-    auto span = buffer->GetReadSpan();
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
-
+    common::BufferDecodeWrapper wrapper(buffer);
     // decode version
-    pos = common::FixedDecodeUint32(pos, end, version_);
+    wrapper.DecodeFixedUint32(version_);
 
     // decode dcid
-    pos = common::FixedDecodeUint8(pos, end, destination_connection_id_length_);
-    memcpy(&destination_connection_id_, pos, destination_connection_id_length_);
-    pos += destination_connection_id_length_;
+    wrapper.DecodeFixedUint8(destination_connection_id_length_);
+    if (destination_connection_id_length_ > 0) {
+        auto cid = (uint8_t*)destination_connection_id_;
+        wrapper.DecodeBytes(cid, destination_connection_id_length_);
+    }
 
     // decode scid
-    pos = common::FixedDecodeUint8(pos, end, source_connection_id_length_);
-    memcpy(&source_connection_id_, pos, source_connection_id_length_);
-    pos += source_connection_id_length_;
- 
-    header_src_data_ = std::move(common::BufferSpan(span.GetStart() - 1, pos));
+    wrapper.DecodeFixedUint8(source_connection_id_length_);
+    if (source_connection_id_length_ > 0) {
+        auto cid = (uint8_t*)source_connection_id_;
+        wrapper.DecodeBytes(cid, source_connection_id_length_);
+    }
     
-    buffer->MoveReadPt(pos - span.GetStart());
+    auto data_span = wrapper.GetDataSpan();
+    // the header src include header flag
+    header_src_data_ = common::BufferSpan(data_span.GetStart() - 1, data_span.GetEnd());
     return true;
 }
 

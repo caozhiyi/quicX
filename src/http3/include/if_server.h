@@ -3,8 +3,8 @@
 
 #include <string>
 #include <cstdint>
-#include "if_request.h"
-#include "if_response.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 
 namespace quicx {
 namespace http3 {
