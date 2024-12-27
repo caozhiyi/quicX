@@ -1,12 +1,12 @@
-#ifndef HTTP3_HTTP_ROUTER_ROUTER_NODE
-#define HTTP3_HTTP_ROUTER_ROUTER_NODE
+#ifndef HTTP3_ROUTER_ROUTER_NODE
+#define HTTP3_ROUTER_ROUTER_NODE
 
 #include <memory>
 #include <vector>
 #include <unordered_map>
-#include "http3/http/router/util.h"
-#include "http3/http/router/if_router.h"
-#include "http3/http/router/if_router_node.h"
+#include "http3/router/util.h"
+#include "http3/router/if_router.h"
+#include "http3/router/if_router_node.h"
 
 namespace quicx {
 namespace http3 {

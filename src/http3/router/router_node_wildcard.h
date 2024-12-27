@@ -1,21 +1,21 @@
-#ifndef HTTP3_HTTP_ROUTER_ROUTER_NODE_STATIC_PATH
-#define HTTP3_HTTP_ROUTER_ROUTER_NODE_STATIC_PATH
+#ifndef HTTP3_ROUTER_ROUTER_NODE_WILDCARD
+#define HTTP3_ROUTER_ROUTER_NODE_WILDCARD
 
 #include <string>
-#include "http3/http/router/router_node.h"
+#include "http3/router/router_node.h"
 
 namespace quicx {
 namespace http3 {
 
 /*
-* indicates a static path node
+* indicates a wildcard node
 */
-class RouterNodeStaticPath:
+class RouterNodeWildcard:
     public RouterNode {
 public:
-    RouterNodeStaticPath(RouterNodeType type, const std::string& section,
+    RouterNodeWildcard(const std::string& section,
         const std::string& full_path, const http_handler& handler);
-    virtual ~RouterNodeStaticPath() {}
+    virtual ~RouterNodeWildcard() {}
 
     // router match
     virtual bool Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result);

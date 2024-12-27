@@ -1,8 +1,8 @@
-#include "http3/http/router/util.h"
-#include "http3/http/router/router_node.h"
-#include "http3/http/router/router_node_wildcard.h"
-#include "http3/http/router/router_node_static_path.h"
-#include "http3/http/router/router_node_dynamic_param.h"
+#include "http3/router/util.h"
+#include "http3/router/router_node.h"
+#include "http3/router/router_node_wildcard.h"
+#include "http3/router/router_node_static_path.h"
+#include "http3/router/router_node_dynamic_param.h"
 
 namespace quicx {
 namespace http3 {

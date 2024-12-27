@@ -1,5 +1,5 @@
-#ifndef HTTP3_HTTP_ROUTER_IF_ROUTER
-#define HTTP3_HTTP_ROUTER_IF_ROUTER
+#ifndef HTTP3_ROUTER_IF_ROUTER
+#define HTTP3_ROUTER_IF_ROUTER
 
 #include <string>
 #include <unordered_map>
