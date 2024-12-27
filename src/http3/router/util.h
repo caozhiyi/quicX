@@ -1,5 +1,5 @@
-#ifndef HTTP3_HTTP_ROUTER_UTIL
-#define HTTP3_HTTP_ROUTER_UTIL
+#ifndef HTTP3_ROUTER_UTIL
+#define HTTP3_ROUTER_UTIL
 
 #include <string>
 
