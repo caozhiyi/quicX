@@ -44,7 +44,7 @@ private:
     uint32_t CalculateEntrySize(const std::string& name, const std::string& value);
 
     std::vector<HeaderItem> headeritem_vec_;  // Dynamic table entries
-
+    // TODO dynamic table support for duplicate entries
     std::unordered_map<std::pair<std::string, std::string>, uint32_t, pair_hash> headeritem_index_map_;
 
     uint32_t max_size_;      // Maximum allowed size of dynamic table

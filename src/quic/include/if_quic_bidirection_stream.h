@@ -11,8 +11,8 @@ namespace quic {
  bidirection stream interface
 */
 class IQuicBidirectionStream:
-    public virtual IQuicRecvStream,
-    public virtual IQuicSendStream {
+    public IQuicRecvStream,
+    public IQuicSendStream {
 public:
     IQuicBidirectionStream() {}
     virtual ~IQuicBidirectionStream() {}

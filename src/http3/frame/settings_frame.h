@@ -13,9 +13,9 @@ class SettingsFrame:
 public:
     SettingsFrame(): IFrame(FT_SETTINGS), length_(0) {}
 
-    const std::map<uint64_t, uint64_t>& GetSettings() const { return settings_; }
-    void SetSetting(uint64_t id, uint64_t value) { settings_[id] = value; }
-    bool GetSetting(uint64_t id, uint64_t& value);
+    const std::map<uint16_t, uint64_t>& GetSettings() const { return settings_; }
+    void SetSetting(uint16_t id, uint64_t value) { settings_[id] = value; }
+    bool GetSetting(uint16_t id, uint64_t& value);
 
     bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
@@ -24,7 +24,7 @@ public:
 
 private:
     uint64_t length_;
-    std::map<uint64_t, uint64_t> settings_;
+    std::map<uint16_t, uint64_t> settings_;
 };
 
 }
