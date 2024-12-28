@@ -86,7 +86,7 @@ TEST_F(FrameDecodeTest, DecodeSettingsFrame) {
 }
 
 TEST_F(FrameDecodeTest, DecodeGoAwayFrame) {
-    GoAwayFrame goaway_frame;
+    GoawayFrame goaway_frame;
     goaway_frame.SetStreamId(100);
     goaway_frame.Encode(buffer_);
     auto read_buffer = buffer_->GetReadViewPtr();
@@ -97,7 +97,7 @@ TEST_F(FrameDecodeTest, DecodeGoAwayFrame) {
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FT_GOAWAY);
 
-    auto decode_frame = std::dynamic_pointer_cast<GoAwayFrame>(frame);
+    auto decode_frame = std::dynamic_pointer_cast<GoawayFrame>(frame);
     EXPECT_NE(decode_frame, nullptr);
     EXPECT_EQ(decode_frame->GetStreamId(), 100);
 }

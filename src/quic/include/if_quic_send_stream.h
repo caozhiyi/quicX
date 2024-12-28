@@ -12,7 +12,7 @@ namespace quic {
  who send data create this stream actively, remote peer can't create this stream.
 */
 class IQuicSendStream:
-    public IQuicStream {
+    public virtual IQuicStream {
 public:
     IQuicSendStream() {}
     virtual ~IQuicSendStream() {}

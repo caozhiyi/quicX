@@ -11,7 +11,7 @@ namespace quic {
  the first thing you should do is set read callback function when you get the stream.
 */
 class IQuicRecvStream:
-    public IQuicStream {
+    public virtual IQuicStream {
 public:
     IQuicRecvStream() {}
     virtual ~IQuicRecvStream() {}

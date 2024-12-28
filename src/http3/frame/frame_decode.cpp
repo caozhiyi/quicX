@@ -35,7 +35,7 @@ FrameDecode::FrameDecode() {
     __frame_creater_map[FT_CANCEL_PUSH]         = []() -> std::shared_ptr<IFrame> { return std::make_shared<CancelPushFrame>(); };
     __frame_creater_map[FT_SETTINGS]            = []() -> std::shared_ptr<IFrame> { return std::make_shared<SettingsFrame>(); };
     __frame_creater_map[FT_PUSH_PROMISE]        = []() -> std::shared_ptr<IFrame> { return std::make_shared<PushPromiseFrame>(); };
-    __frame_creater_map[FT_GOAWAY]              = []() -> std::shared_ptr<IFrame> { return std::make_shared<GoAwayFrame>(); };
+    __frame_creater_map[FT_GOAWAY]              = []() -> std::shared_ptr<IFrame> { return std::make_shared<GoawayFrame>(); };
     __frame_creater_map[FT_MAX_PUSH_ID]         = []() -> std::shared_ptr<IFrame> { return std::make_shared<MaxPushIdFrame>(); };
 }
 
