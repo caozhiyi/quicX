@@ -30,7 +30,7 @@ bool ControlStream::SendSettings(const std::unordered_map<SettingsType, uint64_t
         return false;
     }
     
-    return stream_->Send(buffer->GetData(), buffer->GetDataLength()) > 0;
+    return stream_->Send(buffer) > 0;
 }
 
 bool ControlStream::SendGoaway(uint64_t id) {
@@ -42,7 +42,7 @@ bool ControlStream::SendGoaway(uint64_t id) {
     if (!frame.Encode(buffer)) {
         return false;
     }
-    return stream_->Send(buffer->GetData(), buffer->GetDataLength()) > 0;
+    return stream_->Send(buffer) > 0;
 }
 
 bool ControlStream::SendMaxPushId(uint64_t push_id) {
@@ -54,7 +54,7 @@ bool ControlStream::SendMaxPushId(uint64_t push_id) {
     if (!frame.Encode(buffer)) {
         return false;
     }
-    return stream_->Send(buffer->GetData(), buffer->GetDataLength()) > 0;
+    return stream_->Send(buffer) > 0;
 }
 
 bool ControlStream::SendCancelPush(uint64_t push_id) {
@@ -66,7 +66,7 @@ bool ControlStream::SendCancelPush(uint64_t push_id) {
     if (!frame.Encode(buffer)) {
         return false;
     }
-    return stream_->Send(buffer->GetData(), buffer->GetDataLength()) > 0;
+    return stream_->Send(buffer) > 0;
 }
 
 void ControlStream::OnFrame(std::shared_ptr<IFrame> frame) {

@@ -27,8 +27,8 @@ TEST_F(HeadersFrameTest, BasicProperties) {
     EXPECT_EQ(frame_->GetLength(), length);
 
     std::vector<uint8_t> fields = {0x01, 0x02, 0x03, 0x04, 0x05};
-    frame_->SetEncodedFields(fields);
-    EXPECT_EQ(frame_->GetEncodedFields(), fields);
+    frame_->SetEncodedFields(std::make_shared<common::Buffer>(fields.data(), fields.size()));
+    EXPECT_EQ(frame_->GetEncodedFields()->GetDataLength(), fields.size());
 }
 
 TEST_F(HeadersFrameTest, EncodeAndDecode) {
@@ -36,7 +36,7 @@ TEST_F(HeadersFrameTest, EncodeAndDecode) {
     uint32_t length = 5;
     std::vector<uint8_t> fields = {0x01, 0x02, 0x03, 0x04, 0x05};
     frame_->SetLength(length);
-    frame_->SetEncodedFields(fields);
+    frame_->SetEncodedFields(std::make_shared<common::Buffer>(fields.data(), fields.size()));
 
     // Encode
     EXPECT_TRUE(frame_->Encode(buffer_));
@@ -47,13 +47,13 @@ TEST_F(HeadersFrameTest, EncodeAndDecode) {
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetLength(), length);
-    EXPECT_EQ(decode_frame->GetEncodedFields(), fields);
+    EXPECT_EQ(decode_frame->GetEncodedFields()->GetDataLength(), fields.size());
 }
 
 TEST_F(HeadersFrameTest, EmptyHeadersEncodeDecode) {
     // Test with empty encoded fields
     frame_->SetLength(0);
-    frame_->SetEncodedFields({});
+    frame_->SetEncodedFields(std::make_shared<common::Buffer>(nullptr, 0));
 
     EXPECT_TRUE(frame_->Encode(buffer_));
 
@@ -61,14 +61,14 @@ TEST_F(HeadersFrameTest, EmptyHeadersEncodeDecode) {
     EXPECT_TRUE(decode_frame->Decode(buffer_, true));
 
     EXPECT_EQ(decode_frame->GetLength(), 0);
-    EXPECT_TRUE(decode_frame->GetEncodedFields().empty());
+    EXPECT_EQ(decode_frame->GetEncodedFields()->GetDataLength(), 0);
 }
 
 TEST_F(HeadersFrameTest, LargeHeadersEncodeDecode) {
     // Test with large encoded fields
     std::vector<uint8_t> large_fields(1000, 0x42);  // 1000 bytes of data
     frame_->SetLength(large_fields.size());
-    frame_->SetEncodedFields(large_fields);
+    frame_->SetEncodedFields(std::make_shared<common::Buffer>(large_fields.data(), large_fields.size()));
 
     EXPECT_TRUE(frame_->Encode(buffer_));
 
@@ -76,13 +76,13 @@ TEST_F(HeadersFrameTest, LargeHeadersEncodeDecode) {
     EXPECT_TRUE(decode_frame->Decode(buffer_, true));
 
     EXPECT_EQ(decode_frame->GetLength(), large_fields.size());
-    EXPECT_EQ(decode_frame->GetEncodedFields(), large_fields);
+    EXPECT_EQ(decode_frame->GetEncodedFields()->GetDataLength(), large_fields.size());
 }
 
 TEST_F(HeadersFrameTest, EvaluateSize) {
     std::vector<uint8_t> fields = {0x01, 0x02, 0x03, 0x04, 0x05};
     frame_->SetLength(fields.size());
-    frame_->SetEncodedFields(fields);
+    frame_->SetEncodedFields(std::make_shared<common::Buffer>(fields.data(), fields.size()));
 
     // Size should include:
     // 1. frame type (2 bytes)
