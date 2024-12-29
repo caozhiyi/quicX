@@ -4,7 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include <functional>
-#include "quic/include/if_quic_buffer.h"
+#include "common/buffer/if_buffer_read.h"
 
 namespace quicx {
 namespace quic {
@@ -31,7 +31,7 @@ typedef std::function<void(std::shared_ptr<IStream> stream, uint32_t error)> str
 
 // stream read callback, call this callback when stream get data from peer
 // data: data buffer
-typedef std::function<void(std::shared_ptr<IQuicBuffer> data, uint32_t error)> stream_read_callback;
+typedef std::function<void(std::shared_ptr<common::IBufferRead> data, uint32_t error)> stream_read_callback;
 
 // stream write callback, call this callback when stream write data ready to send
 // length: data length

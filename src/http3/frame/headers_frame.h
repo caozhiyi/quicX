@@ -3,6 +3,7 @@
 
 #include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
+#include "common/buffer/buffer_span.h"
 
 namespace quicx {
 namespace http3 {
@@ -15,8 +16,8 @@ public:
     uint32_t GetLength() const { return length_; }
     void SetLength(uint32_t length) { length_ = length; }
 
-    const std::vector<uint8_t>& GetEncodedFields() const { return encoded_fields_; }
-    void SetEncodedFields(const std::vector<uint8_t>& fields) { encoded_fields_ = fields; }
+    std::shared_ptr<common::IBufferRead> GetEncodedFields() const { return encoded_fields_; }
+    void SetEncodedFields(std::shared_ptr<common::IBufferRead> fields) { encoded_fields_ = fields; }
 
     bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
@@ -25,11 +26,12 @@ public:
 
 private:
     uint32_t length_; // Length of the frame
-    std::vector<uint8_t> encoded_fields_; // Encoded Field Section
+    std::shared_ptr<common::IBufferRead> encoded_fields_;
 };
 
 }
 }
 
 #endif
+
 

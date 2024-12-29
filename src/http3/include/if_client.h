@@ -20,7 +20,7 @@ public:
     virtual bool Init(uint16_t thread_num) = 0;
 
     // Send a request to the server
-    virtual bool DoRequest(const std::string& url, const IRequest& request, const http_handler handler) = 0;
+    virtual bool DoRequest(const std::string& url, const IRequest& request, const http_response_handler& handler) = 0;
 };
 
 }

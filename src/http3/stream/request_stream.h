@@ -1,5 +1,5 @@
-#ifndef HTTP3_STREAM_REQ_RESP_STREAM
-#define HTTP3_STREAM_REQ_RESP_STREAM
+#ifndef HTTP3_STREAM_REQUEST_STREAM
+#define HTTP3_STREAM_REQUEST_STREAM
 
 #include <memory>
 #include "http3/stream/if_stream.h"
@@ -11,23 +11,26 @@
 namespace quicx {
 namespace http3 {
 
-class ReqRespStream:
+class RequestStream:
     public IStream {
 public:
-    ReqRespStream(std::shared_ptr<QpackEncoder> qpack_encoder,
+    RequestStream(std::shared_ptr<QpackEncoder> qpack_encoder,
         std::shared_ptr<quic::IQuicBidirectionStream> stream);
-    virtual ~ReqRespStream();
+    virtual ~RequestStream();
 
     // Implement IStream interface
     virtual StreamType GetType() override { return ST_REQ_RESP; }
 
     // Send request/response
-    bool SendRequest(std::shared_ptr<IRequest> request);
-    bool SendResponse(std::shared_ptr<IResponse> response);
+    bool SendRequest(const IRequest& request, const http_response_handler& handler);
+
+private:
+    void OnResponse(std::shared_ptr<common::IBufferRead> data, uint32_t error);
 
 private:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::shared_ptr<quic::IQuicBidirectionStream> stream_;
+    http_response_handler handler_;
 };
 
 }
