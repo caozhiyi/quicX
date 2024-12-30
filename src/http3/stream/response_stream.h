@@ -1,32 +1,34 @@
 #ifndef HTTP3_STREAM_RESPONSE_STREAM
 #define HTTP3_STREAM_RESPONSE_STREAM
 
+#include <string>
 #include <memory>
+#include <unordered_map>
+
 #include "http3/include/type.h"
-#include "http3/stream/if_stream.h"
 #include "http3/qpack/qpack_encoder.h"
+#include "http3/stream/req_resp_base_stream.h"
 #include "quic/include/if_quic_bidirection_stream.h"
 
 namespace quicx {
 namespace http3 {
 
 class ResponseStream:
-    public IStream {
+    public ReqRespBaseStream {
 public:
     ResponseStream(std::shared_ptr<QpackEncoder> qpack_encoder,
         std::shared_ptr<quic::IQuicBidirectionStream> stream,
         http_handler handler);
     virtual ~ResponseStream();
 
-    // Implement IStream interface
-    virtual StreamType GetType() override { return ST_REQ_RESP; }
+    void SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id);
 
 private:
-    void OnRequest(std::shared_ptr<common::IBufferRead> data, uint32_t error);
+    virtual void HandleFrame(std::shared_ptr<IFrame> frame) override;
+    virtual void HandleBody() override;
+    void HandleCancelPush(std::shared_ptr<IFrame> frame);
 
 private:
-    std::shared_ptr<QpackEncoder> qpack_encoder_;
-    std::shared_ptr<quic::IQuicBidirectionStream> stream_;
     http_handler handler_;
 };
 

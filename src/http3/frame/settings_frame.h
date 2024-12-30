@@ -1,7 +1,7 @@
 #ifndef HTTP3_FRAME_SETTINGS_FRAME
 #define HTTP3_FRAME_SETTINGS_FRAME
 
-#include <map>
+#include <unordered_map>
 #include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
 
@@ -13,7 +13,7 @@ class SettingsFrame:
 public:
     SettingsFrame(): IFrame(FT_SETTINGS), length_(0) {}
 
-    const std::map<uint16_t, uint64_t>& GetSettings() const { return settings_; }
+    const std::unordered_map<uint16_t, uint64_t>& GetSettings() const { return settings_; }
     void SetSetting(uint16_t id, uint64_t value) { settings_[id] = value; }
     bool GetSetting(uint16_t id, uint64_t& value);
 
@@ -24,7 +24,7 @@ public:
 
 private:
     uint64_t length_;
-    std::map<uint16_t, uint64_t> settings_;
+    std::unordered_map<uint16_t, uint64_t> settings_;
 };
 
 }

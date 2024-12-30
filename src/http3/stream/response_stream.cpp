@@ -5,6 +5,7 @@
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
 #include "http3/stream/response_stream.h"
+#include "http3/frame/push_promise_frame.h"
 
 namespace quicx {
 namespace http3 {
@@ -12,13 +13,9 @@ namespace http3 {
 ResponseStream::ResponseStream(std::shared_ptr<QpackEncoder> qpack_encoder,
     std::shared_ptr<quic::IQuicBidirectionStream> stream,
     http_handler handler) :
-    qpack_encoder_(qpack_encoder),
-    stream_(stream),
+    ReqRespBaseStream(qpack_encoder, stream),
     handler_(handler) {
 
-    // Set callback for receiving request data
-    stream_->SetStreamReadCallBack(std::bind(&ResponseStream::OnRequest, 
-        this, std::placeholders::_1, std::placeholders::_2));
 }
 
 ResponseStream::~ResponseStream() {
@@ -27,41 +24,58 @@ ResponseStream::~ResponseStream() {
     }
 }
 
-void ResponseStream::OnRequest(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
-    // decode request
+void ResponseStream::SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id) {
+    // Create and encode push promise frame
+    PushPromiseFrame push_frame;
+    push_frame.SetPushId(push_id);
+
+    // Encode headers using qpack
+    uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
+    auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
+    if (!qpack_encoder_->Encode(headers, headers_buffer)) {
+        common::LOG_ERROR("ResponseStream::SendPushPromise qpack encode error");
+        return;
+    }
+
+    // Set encoded fields in push promise frame
+    std::vector<uint8_t> encoded_fields(headers_buffer->GetData(), headers_buffer->GetData() + headers_buffer->GetDataLength());
+    push_frame.SetEncodedFields(encoded_fields);
+
+    // Encode push promise frame
+    uint8_t frame_buf[4096]; // TODO: Use dynamic buffer
+    auto frame_buffer = std::make_shared<common::Buffer>(frame_buf, sizeof(frame_buf));
+    if (!push_frame.Encode(frame_buffer)) {
+        common::LOG_ERROR("ResponseStream::SendPushPromise frame encode error");
+        return;
+    }
+
+    // Send frame to client
+    stream_->Send(frame_buffer);
+}
+
+void ResponseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
+    switch (frame->GetType()) {
+        case FT_HEADERS:
+            HandleHeaders(frame);
+            break;
+        case FT_DATA:
+            HandleData(frame);
+            break;
+        case FT_CANCEL_PUSH:
+            HandleCancelPush(frame);
+            break;
+    }
+}
+
+void ResponseStream::HandleBody() {
     Request request;
-    if (error != 0) {
-        common::LOG_ERROR("ResponseStream::OnRequest error: %d", error);
-        return;
-    }
+    request.SetHeaders(headers_);
+    request.SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
 
-    // decode response headers
-    HeadersFrame request_headers_frame;
-    if (!request_headers_frame.Decode(data)) {
-        common::LOG_ERROR("ResponseStream::OnRequest error");
-        return;
-    }
-
-    // decode response body
-    DataFrame request_data_frame;
-    if (!request_data_frame.Decode(data)) {
-        common::LOG_ERROR("ResponseStream::OnRequest error");
-        return;
-    }
-
-    // qpack decode headers
-    std::unordered_map<std::string, std::string> headers;
-    if (!qpack_encoder_->Decode(request_headers_frame.GetEncodedFields(), headers)) {
-        common::LOG_ERROR("ResponseStream::OnRequest error");
-        return;
-    }
-    request.SetHeaders(headers);
-    request.SetBody(std::string(request_data_frame.GetData().begin(), request_data_frame.GetData().end()));
-
-    // handle request
     Response response;
     handler_(request, response);
 
+    // send response
     // Decode request headers
     uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
@@ -72,7 +86,8 @@ void ResponseStream::OnRequest(std::shared_ptr<common::IBufferRead> data, uint32
     
     // Send HEADERS frame
     HeadersFrame response_headers_frame;
-    response_headers_frame.SetEncodedFields(headers_buffer);
+    std::vector<uint8_t> encoded_fields(headers_buffer->GetData(), headers_buffer->GetData() + headers_buffer->GetDataLength());
+    response_headers_frame.SetEncodedFields(encoded_fields);
 
     uint8_t frame_buf[4096]; // TODO: Use dynamic buffer
     auto frame_buffer = std::make_shared<common::Buffer>(frame_buf, sizeof(frame_buf));
@@ -102,6 +117,10 @@ void ResponseStream::OnRequest(std::shared_ptr<common::IBufferRead> data, uint32
             return;
         }
     }
+}
+
+void ResponseStream::HandleCancelPush(std::shared_ptr<IFrame> frame) {
+    // TODO: Handle cancel push
 }
 
 }

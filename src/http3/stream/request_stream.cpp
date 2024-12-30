@@ -1,3 +1,4 @@
+#include "common/log/log.h"
 #include "http3/http/response.h"
 #include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
@@ -10,12 +11,8 @@ namespace http3 {
 
 RequestStream::RequestStream(std::shared_ptr<QpackEncoder> qpack_encoder,
     std::shared_ptr<quic::IQuicBidirectionStream> stream) :
-    qpack_encoder_(qpack_encoder),
-    stream_(stream) {
+    ReqRespBaseStream(qpack_encoder, stream) {
 
-    // Set callback for receiving response data
-    stream_->SetStreamReadCallBack(std::bind(&RequestStream::OnResponse, 
-        this, std::placeholders::_1, std::placeholders::_2));
 }
 
 RequestStream::~RequestStream() {
@@ -35,7 +32,8 @@ bool RequestStream::SendRequest(const IRequest& request, const http_response_han
     
     // Send HEADERS frame
     HeadersFrame headers_frame;
-    headers_frame.SetEncodedFields(headers_buffer);
+    std::vector<uint8_t> encoded_fields(headers_buffer->GetData(), headers_buffer->GetData() + headers_buffer->GetDataLength());
+    headers_frame.SetEncodedFields(encoded_fields);
 
     uint8_t frame_buf[4096]; // TODO: Use dynamic buffer
     auto frame_buffer = std::make_shared<common::Buffer>(frame_buf, sizeof(frame_buf));
@@ -65,39 +63,32 @@ bool RequestStream::SendRequest(const IRequest& request, const http_response_han
     return true;
 }
 
-void RequestStream::OnResponse(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
+void RequestStream::HandleFrame(std::shared_ptr<IFrame> frame) {
+    switch (frame->GetType()) {
+        case FT_HEADERS:
+            HandleHeaders(frame);
+            break;
+        case FT_DATA:
+            HandleData(frame);
+            break;
+        case FT_PUSH_PROMISE:
+            HandlePushPromise(frame);
+            break;
+        default:
+            common::LOG_ERROR("RequestStream::HandleFrame unknown frame type: %d", frame->GetType());
+            break;
+    }
+}
+
+void RequestStream::HandleBody() {
     Response response;
-    if (error != 0) {
-        handler_(response, error);
-        return;
-    }
-
-    // decode response headers
-    HeadersFrame headers_frame;
-    if (!headers_frame.Decode(data)) {
-        handler_(response, -1);
-        return;
-    }
-
-    // decode response body
-    DataFrame data_frame;
-    if (!data_frame.Decode(data)) {
-        handler_(response, -1);
-        return;
-    }
-
-    // qpack decode headers
-    std::unordered_map<std::string, std::string> headers;
-    if (!qpack_encoder_->Decode(headers_frame.GetEncodedFields(), headers)) {
-        handler_(response, -1);
-        return;
-    }
-    response.SetStatusCode(std::stoi(headers[":status"]));
-    response.SetHeaders(headers);
-    response.SetBody(std::string(data_frame.GetData().begin(), data_frame.GetData().end()));
-
-    // handle response
+    response.SetHeaders(headers_);
+    response.SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
     handler_(response, 0);
+}
+
+void RequestStream::HandlePushPromise(std::shared_ptr<IFrame> frame) {
+    // TODO: Handle push promise
 }
 
 }

@@ -1,5 +1,5 @@
-#ifndef HTTP3_STREAM_CONTROL_STREAM
-#define HTTP3_STREAM_CONTROL_STREAM
+#ifndef HTTP3_STREAM_CONTROL_SENDER_STREAM
+#define HTTP3_STREAM_CONTROL_SENDER_STREAM
 
 #include <memory>
 #include <unordered_map>
@@ -11,11 +11,11 @@
 namespace quicx {
 namespace http3 {
 
-class ControlStream:
+class ControlSenderStream:
     public IStream {
 public:
-    ControlStream(std::shared_ptr<quic::IQuicSendStream> stream);
-    virtual ~ControlStream();
+    ControlSenderStream(std::shared_ptr<quic::IQuicSendStream> stream);
+    virtual ~ControlSenderStream();
 
     virtual StreamType GetType() { return StreamType::ST_CONTROL; }
 
@@ -25,15 +25,7 @@ public:
     // Send GOAWAY frame
     virtual bool SendGoaway(uint64_t id);
 
-    // Send MAX_PUSH_ID frame
-    virtual bool SendMaxPushId(uint64_t push_id);
-
-    // Send CANCEL_PUSH frame
-    virtual bool SendCancelPush(uint64_t push_id);
-
-    virtual void OnFrame(std::shared_ptr<IFrame> frame);
-
-private:
+protected:
     std::shared_ptr<quic::IQuicSendStream> stream_;
 };
 
