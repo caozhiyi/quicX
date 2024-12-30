@@ -23,7 +23,7 @@ bool HeadersFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     // Write encoded fields
-    if (!wrapper.EncodeBytes(encoded_fields_->GetData(), encoded_fields_->GetDataLength())) {
+    if (!wrapper.EncodeBytes(encoded_fields_.data(), encoded_fields_.size())) {
         return false;
     }
 
@@ -44,8 +44,9 @@ bool HeadersFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with
         return false;
     }
     // Read encoded fields
-    uint8_t* ptr = encoded_fields_->GetData();
-    if (!wrapper.DecodeBytes(ptr, length_, false)) {
+    encoded_fields_.resize(length_);
+    uint8_t* ptr = encoded_fields_.data();
+    if (!wrapper.DecodeBytes(ptr, encoded_fields_.size())) {
         return false;
     }
     return true;
@@ -68,7 +69,7 @@ uint32_t HeadersFrame::EvaluateEncodeSize() {
 
 uint32_t HeadersFrame::EvaluatePaloadSize() {
     if (length_ == 0) {
-        length_ = encoded_fields_->GetDataLength();
+        length_ = encoded_fields_.size();
     }
     return length_;
 }

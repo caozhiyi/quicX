@@ -1,9 +1,7 @@
 #ifndef HTTP3_STREAM_IF_STREAM
 #define HTTP3_STREAM_IF_STREAM
 
-#include <memory>
 #include "http3/stream/type.h"
-#include "http3/frame/if_frame.h"
 
 namespace quicx {
 namespace http3 {

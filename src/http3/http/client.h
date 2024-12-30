@@ -2,6 +2,7 @@
 #define HTTP3_HTTP_CLIENT
 
 #include <memory>
+#include <string>
 #include "quic/include/if_quic.h"
 #include "http3/include/if_client.h"
 #include "quic/include/if_quic_connection.h"
@@ -16,7 +17,7 @@ public:
     virtual ~Client();
 
     // Initialize the client with a certificate and a key
-    virtual bool Init(uint16_t thread_num) override;
+    virtual bool Init(uint16_t thread_num);
 
     // Send a request to the server
     virtual bool DoRequest(const std::string& url, const IRequest& request, const http_response_handler& handler);

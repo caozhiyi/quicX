@@ -16,8 +16,8 @@ public:
     uint32_t GetLength() const { return length_; }
     void SetLength(uint32_t length) { length_ = length; }
 
-    std::shared_ptr<common::IBufferRead> GetEncodedFields() const { return encoded_fields_; }
-    void SetEncodedFields(std::shared_ptr<common::IBufferRead> fields) { encoded_fields_ = fields; }
+    const std::vector<uint8_t>& GetEncodedFields() const { return encoded_fields_; }
+    void SetEncodedFields(const std::vector<uint8_t>& fields) { encoded_fields_ = fields; }
 
     bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
@@ -26,7 +26,7 @@ public:
 
 private:
     uint32_t length_; // Length of the frame
-    std::shared_ptr<common::IBufferRead> encoded_fields_;
+    std::vector<uint8_t> encoded_fields_; // Encoded fields
 };
 
 }
