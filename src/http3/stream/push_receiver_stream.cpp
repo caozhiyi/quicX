@@ -1,32 +1,32 @@
 #include "common/log/log.h"
+#include "http3/http/response.h"
 #include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/frame_decode.h"
 #include "http3/frame/headers_frame.h"
-#include "http3/stream/req_resp_base_stream.h"
+#include "http3/stream/push_receiver_stream.h"
 
 namespace quicx {
 namespace http3 {
 
-ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
-    const std::function<void(uint64_t id, int32_t error)>& error_handler):
+PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<quic::IQuicRecvStream>& stream,
+    const std::function<void(uint64_t id, int32_t error)>& error_handler,
+    const http_response_handler& response_handler):
     IStream(error_handler),
-    body_length_(0),
     qpack_encoder_(qpack_encoder),
-    stream_(stream) {
+    stream_(stream),
+    response_handler_(response_handler) {
 
-    stream_->SetStreamReadCallBack(std::bind(&ReqRespBaseStream::OnData,
-        this, std::placeholders::_1, std::placeholders::_2));
 }
 
-ReqRespBaseStream::~ReqRespBaseStream() {
+PushReceiverStream::~PushReceiverStream() {
     if (stream_) {
         stream_->Close();
     }
 }
 
-void ReqRespBaseStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
+ void PushReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("IStream::OnData error: %d", error);
         return;
@@ -39,11 +39,22 @@ void ReqRespBaseStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32
     }
 
     for (const auto& frame : frames) {
-        HandleFrame(frame);
+        switch (frame->GetType()) {
+            case FT_HEADERS:
+                HandleHeaders(frame);
+                break;
+            case FT_DATA:
+                HandleData(frame);
+                break;
+            default:
+                common::LOG_ERROR("PushReceiverStream::OnData unknown frame type: %d", frame->GetType());
+                error_handler_(GetStreamID(), -1); // TODO: error code
+                break;
+        }
     }
-}
+ }
 
-void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
+ void PushReceiverStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     auto headers_frame = std::dynamic_pointer_cast<HeadersFrame>(frame);
     if (!headers_frame) {   
         common::LOG_ERROR("IStream::HandleHeaders error");
@@ -64,16 +75,15 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     if (body_length_ == 0) {
         HandleBody();
     }
-}
+ }
 
-void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
+ void PushReceiverStream::HandleData(std::shared_ptr<IFrame> frame) {
     auto data_frame = std::dynamic_pointer_cast<DataFrame>(frame);
     if (!data_frame) {
         common::LOG_ERROR("IStream::HandleData error");
         return;
     }
 
-    // Append data to body
     const auto& data = data_frame->GetData();
     body_.insert(body_.end(), data.begin(), data.end());
     body_length_ += data.size();
@@ -81,21 +91,14 @@ void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
     if (body_length_ == body_.size()) {
         HandleBody();
     }
-}
+ }
 
-void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    switch (frame->GetType()) {
-        case FT_HEADERS:
-            HandleHeaders(frame);
-            break;
-        case FT_DATA:
-            HandleData(frame);
-            break;
-        default:
-            common::LOG_ERROR("IStream::HandleFrame error");
-            break;
-    }
-}
+ void PushReceiverStream::HandleBody() {
+    Response response;
+    response.SetHeaders(headers_);
+    response.SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+    response_handler_(response, 0);
+ }
 
 }
 }

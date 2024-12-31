@@ -2,6 +2,8 @@
 #define HTTP3_STREAM_REQUEST_STREAM
 
 #include <memory>
+#include <unordered_map>
+
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -14,12 +16,15 @@ namespace http3 {
 class RequestStream:
     public ReqRespBaseStream {
 public:
-    RequestStream(std::shared_ptr<QpackEncoder> qpack_encoder,
-        std::shared_ptr<quic::IQuicBidirectionStream> stream);
+    RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+        const std::function<void(uint64_t id, int32_t error)>& error_handler,
+        const http_response_handler& response_handler,
+        const std::function<void(std::unordered_map<std::string, std::string>&)>& push_promise_handler);
     virtual ~RequestStream();
 
     // Send request/response
-    bool SendRequest(const IRequest& request, const http_response_handler& handler);
+    bool SendRequest(const IRequest& request);
 
 private:
     virtual void HandleFrame(std::shared_ptr<IFrame> frame) override;
@@ -27,7 +32,8 @@ private:
     void HandlePushPromise(std::shared_ptr<IFrame> frame);
 
 private:
-    http_response_handler handler_;
+    http_response_handler response_handler_;
+    std::function<void(std::unordered_map<std::string, std::string>&)> push_promise_handler_;
 };
 
 }

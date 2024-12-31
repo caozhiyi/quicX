@@ -14,17 +14,19 @@ namespace http3 {
 class ReqRespBaseStream:
     public IStream {
 public:
-    ReqRespBaseStream(std::shared_ptr<QpackEncoder> qpack_encoder,
-        std::shared_ptr<quic::IQuicBidirectionStream> stream);
+    ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+        const std::function<void(uint64_t id, int32_t error)>& error_handler);
     virtual ~ReqRespBaseStream();
     virtual StreamType GetType() override { return ST_REQ_RESP; }
+    virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
 
 protected:
     virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
     virtual void HandleHeaders(std::shared_ptr<IFrame> frame);
     virtual void HandleData(std::shared_ptr<IFrame> frame);
 
-    virtual void HandleFrame(std::shared_ptr<IFrame> frame) = 0;
+    virtual void HandleFrame(std::shared_ptr<IFrame> frame);
     virtual void HandleBody() = 0;
 
 protected:

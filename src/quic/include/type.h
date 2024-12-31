@@ -9,10 +9,8 @@
 namespace quicx {
 namespace quic {
 
-class IStream;
-class IConnection;
-class ISendStream;
-class IRecvStream;
+class IQuicStream;
+class IQuicConnection;
 class IBidirectionStream;
 
 enum StreamDirection {
@@ -23,11 +21,11 @@ enum StreamDirection {
 
 // connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
 // conn: connection instance which state changed
-typedef std::function<void(std::shared_ptr<IConnection> conn, uint32_t error)> connection_state_callback;
+typedef std::function<void(std::shared_ptr<IQuicConnection> conn, uint32_t error)> connection_state_callback;
 
 // stream state callback, call this callback when stream state changed, like created, closed, etc.
 // stream: stream instance which state changed
-typedef std::function<void(std::shared_ptr<IStream> stream, uint32_t error)> stream_state_callback;
+typedef std::function<void(std::shared_ptr<IQuicStream> stream, uint32_t error)> stream_state_callback;
 
 // stream read callback, call this callback when stream get data from peer
 // data: data buffer

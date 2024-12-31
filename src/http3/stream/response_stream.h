@@ -16,20 +16,19 @@ namespace http3 {
 class ResponseStream:
     public ReqRespBaseStream {
 public:
-    ResponseStream(std::shared_ptr<QpackEncoder> qpack_encoder,
-        std::shared_ptr<quic::IQuicBidirectionStream> stream,
-        http_handler handler);
+    ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+        const std::function<void(uint64_t id, int32_t error)>& error_handler,
+        const http_handler& http_handler);
     virtual ~ResponseStream();
 
     void SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id);
-
+    void SendResponse(const IResponse& response);
 private:
-    virtual void HandleFrame(std::shared_ptr<IFrame> frame) override;
     virtual void HandleBody() override;
-    void HandleCancelPush(std::shared_ptr<IFrame> frame);
 
 private:
-    http_handler handler_;
+    http_handler http_handler_;
 };
 
 }

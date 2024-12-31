@@ -2,6 +2,7 @@
 #define HTTP3_STREAM_CONTROL_SENDER_STREAM
 
 #include <memory>
+#include <functional>
 #include <unordered_map>
 
 #include "http3/stream/type.h"
@@ -14,10 +15,13 @@ namespace http3 {
 class ControlSenderStream:
     public IStream {
 public:
-    ControlSenderStream(std::shared_ptr<quic::IQuicSendStream> stream);
+    ControlSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
+        const std::function<void(uint64_t id, int32_t error)>& error_handler);
     virtual ~ControlSenderStream();
 
     virtual StreamType GetType() { return StreamType::ST_CONTROL; }
+
+    virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
 
     // Send SETTINGS frame
     virtual bool SendSettings(const std::unordered_map<SettingsType, uint64_t>& settings);

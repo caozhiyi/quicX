@@ -28,7 +28,7 @@ public:
     virtual void Reset() = 0;
 
     // create a new stream, only supported send stream and bidirection stream.
-    virtual std::shared_ptr<ISendStream> MakeStream(StreamDirection type) = 0;
+    virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) = 0;
 
     // set the callback function to handle the stream state change.
     virtual void SetStreamStateCallBack(stream_state_callback cb) = 0;
