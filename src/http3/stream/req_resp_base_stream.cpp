@@ -8,8 +8,10 @@
 namespace quicx {
 namespace http3 {
 
-ReqRespBaseStream::ReqRespBaseStream(std::shared_ptr<QpackEncoder> qpack_encoder,
-    std::shared_ptr<quic::IQuicBidirectionStream> stream) :
+ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+    const std::function<void(int32_t)>& error_handler):
+    IStream(error_handler),
     body_length_(0),
     qpack_encoder_(qpack_encoder),
     stream_(stream) {
@@ -78,6 +80,20 @@ void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
 
     if (body_length_ == body_.size()) {
         HandleBody();
+    }
+}
+
+void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
+    switch (frame->GetType()) {
+        case FT_HEADERS:
+            HandleHeaders(frame);
+            break;
+        case FT_DATA:
+            HandleData(frame);
+            break;
+        default:
+            common::LOG_ERROR("IStream::HandleFrame error");
+            break;
     }
 }
 

@@ -7,9 +7,11 @@
 namespace quicx {
 namespace http3 {
 
-PushStream::PushStream(std::shared_ptr<QpackEncoder> qpack_encoder,
-    std::shared_ptr<quic::IQuicSendStream> stream,
-    uint64_t push_id) :
+PushStream::PushStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<quic::IQuicSendStream>& stream,
+    const std::function<void(int32_t)>& error_handler,
+    uint64_t push_id):
+    IStream(error_handler),
     qpack_encoder_(qpack_encoder),
     stream_(stream),
     push_id_(push_id) {

@@ -10,11 +10,12 @@ namespace http3 {
 class ControlServerReceiverStream:
     public ControlReceiverStream {
 public:
-    ControlServerReceiverStream(std::shared_ptr<quic::IQuicRecvStream> stream,
-        std::function<void(uint64_t id)> goaway_handler,
-        std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)> settings_handler,
-        std::function<void(uint64_t push_id)> max_push_id_handler,
-        std::function<void(uint64_t id)> cancel_handler);
+    ControlServerReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
+        const std::function<void(int32_t)>& error_handler,
+        const std::function<void(uint64_t id)>& goaway_handler,
+        const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler,
+        const std::function<void(uint64_t push_id)>& max_push_id_handler,
+        const std::function<void(uint64_t id)>& cancel_handler);
     virtual ~ControlServerReceiverStream();
 
     virtual StreamType GetType() { return StreamType::ST_CONTROL; }

@@ -15,8 +15,9 @@ namespace http3 {
 class PushStream:
     public IStream {
 public:
-    PushStream(std::shared_ptr<QpackEncoder> qpack_encoder,
-        std::shared_ptr<quic::IQuicSendStream> stream,
+    PushStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<quic::IQuicSendStream>& stream,
+        const std::function<void(int32_t)>& error_handler,
         uint64_t push_id);
     virtual ~PushStream();
 
