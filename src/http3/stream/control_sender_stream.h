@@ -16,10 +16,12 @@ class ControlSenderStream:
     public IStream {
 public:
     ControlSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
-        const std::function<void(int32_t)>& error_handler);
+        const std::function<void(uint64_t id, int32_t error)>& error_handler);
     virtual ~ControlSenderStream();
 
     virtual StreamType GetType() { return StreamType::ST_CONTROL; }
+
+    virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
 
     // Send SETTINGS frame
     virtual bool SendSettings(const std::unordered_map<SettingsType, uint64_t>& settings);

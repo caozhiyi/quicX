@@ -18,9 +18,9 @@ class RequestStream:
 public:
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
-        const std::function<void(int32_t)>& error_handler,
+        const std::function<void(uint64_t id, int32_t error)>& error_handler,
         const http_response_handler& response_handler,
-        const std::function<void(std::unordered_map<std::string, std::string>)>& push_promise_handler);
+        const std::function<void(std::unordered_map<std::string, std::string>&)>& push_promise_handler);
     virtual ~RequestStream();
 
     // Send request/response
@@ -33,7 +33,7 @@ private:
 
 private:
     http_response_handler response_handler_;
-    std::function<void(std::unordered_map<std::string, std::string>)> push_promise_handler_;
+    std::function<void(std::unordered_map<std::string, std::string>&)> push_promise_handler_;
 };
 
 }

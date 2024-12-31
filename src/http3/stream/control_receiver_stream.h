@@ -16,12 +16,14 @@ class ControlReceiverStream:
     public IStream {
 public:
     ControlReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
-        const std::function<void(int32_t)>& error_handler,
+        const std::function<void(uint64_t id, int32_t error)>& error_handler,
         const std::function<void(uint64_t id)>& goaway_handler,
         const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler);
     virtual ~ControlReceiverStream();
 
     virtual StreamType GetType() { return StreamType::ST_CONTROL; }
+
+    virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
 
 protected:
     virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);

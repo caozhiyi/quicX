@@ -8,7 +8,7 @@ namespace quicx {
 namespace http3 {
 
 ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
-    const std::function<void(int32_t)>& error_handler,
+    const std::function<void(uint64_t id, int32_t error)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
     const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler):
     IStream(error_handler),
@@ -54,7 +54,7 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
         }
         default:
             common::LOG_ERROR("IStream::OnData unknown frame type: %d", frame->GetType());
-            error_handler_(496); // FRAME_UNEXPECTED TODO
+            error_handler_(stream_->GetStreamID(), 496); // FRAME_UNEXPECTED TODO
             break;
     }
 }

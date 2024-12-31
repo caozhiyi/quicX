@@ -18,17 +18,17 @@ class ResponseStream:
 public:
     ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
-        const std::function<void(int32_t)>& error_handler,
-        const std::function<void(const IRequest&)>& request_handler);
+        const std::function<void(uint64_t id, int32_t error)>& error_handler,
+        const http_handler& http_handler);
     virtual ~ResponseStream();
 
     void SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id);
-    void SendResponse(const IResponse& request);
+    void SendResponse(const IResponse& response);
 private:
     virtual void HandleBody() override;
 
 private:
-    std::function<void(const IRequest&)> request_handler_;
+    http_handler http_handler_;
 };
 
 }

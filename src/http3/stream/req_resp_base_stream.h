@@ -16,9 +16,10 @@ class ReqRespBaseStream:
 public:
     ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
-        const std::function<void(int32_t)>& error_handler);
+        const std::function<void(uint64_t id, int32_t error)>& error_handler);
     virtual ~ReqRespBaseStream();
     virtual StreamType GetType() override { return ST_REQ_RESP; }
+    virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
 
 protected:
     virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);

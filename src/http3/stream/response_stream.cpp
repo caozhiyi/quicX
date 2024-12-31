@@ -13,10 +13,10 @@ namespace http3 {
 
 ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
-    const std::function<void(int32_t)>& error_handler,
-    const std::function<void(const IRequest&)>& request_handler):
+    const std::function<void(uint64_t id, int32_t error)>& error_handler,
+    const http_handler& http_handler):
     ReqRespBaseStream(qpack_encoder, stream, error_handler),
-    request_handler_(request_handler) {
+    http_handler_(http_handler) {
 
 }
 
@@ -105,7 +105,10 @@ void ResponseStream::HandleBody() {
     request.SetHeaders(headers_);
     request.SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
 
-    request_handler_(request);
+    Response response;
+    http_handler_(request, response);
+
+    SendResponse(response);
 }
 
 }

@@ -7,7 +7,7 @@ namespace quicx {
 namespace http3 {
 
 ControlClientSenderStream::ControlClientSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
-    const std::function<void(int32_t)>& error_handler): 
+    const std::function<void(uint64_t id, int32_t error)>& error_handler): 
     ControlSenderStream(stream, error_handler) {
 }
 
