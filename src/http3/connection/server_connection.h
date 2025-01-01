@@ -19,7 +19,7 @@ namespace http3 {
 class ServerConnection {
 public:
     ServerConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-        const std::function<void(int32_t error)>& error_handler,
+        const std::function<void(uint32_t error)>& error_handler,
         const http_handler& http_handler);
     virtual ~ServerConnection();
 
@@ -44,7 +44,7 @@ private:
     // handle cancel push frame
     void HandleCancelPush(uint64_t push_id);
     // handle error
-    void HandleError(uint64_t stream_id, int32_t error);
+    void HandleError(uint64_t stream_id, uint32_t error);
 
 private:
     std::function<void(int32_t)> error_handler_;

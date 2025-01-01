@@ -1,3 +1,5 @@
+#include "common/log/log.h"
+#include "http3/http/error.h"
 #include "common/buffer/buffer.h"
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/settings_frame.h"
@@ -9,7 +11,7 @@ namespace quicx {
 namespace http3 {
 
 ControlSenderStream::ControlSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
-    const std::function<void(uint64_t id, int32_t error)>& error_handler):
+    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IStream(error_handler),
     stream_(stream) {
 }
@@ -29,6 +31,8 @@ bool ControlSenderStream::SendSettings(const std::unordered_map<SettingsType, ui
     uint8_t buf[1024]; // TODO: Use dynamic buffer
     auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
     if (!frame.Encode(buffer)) {
+        common::LOG_ERROR("ControlSenderStream::SendSettings: Failed to encode SettingsFrame");
+        error_handler_(stream_->GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
         return false;
     }
     
@@ -42,6 +46,8 @@ bool ControlSenderStream::SendGoaway(uint64_t id) {
     uint8_t buf[1024]; // TODO: Use dynamic buffer
     auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
     if (!frame.Encode(buffer)) {
+        common::LOG_ERROR("ControlSenderStream::SendGoaway: Failed to encode GoawayFrame");
+        error_handler_(stream_->GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
         return false;
     }
     return stream_->Send(buffer) > 0;

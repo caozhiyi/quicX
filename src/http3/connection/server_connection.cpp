@@ -8,7 +8,7 @@ namespace quicx {
 namespace http3 {
 
 ServerConnection::ServerConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-    const std::function<void(int32_t error)>& error_handler,
+    const std::function<void(uint32_t error)>& error_handler,
     const http_handler& http_handler):
     error_handler_(error_handler),
     http_handler_(http_handler),
@@ -99,7 +99,7 @@ void ServerConnection::HandleCancelPush(uint64_t push_id) {
     // TODO: implement cancel push
 }
 
-void ServerConnection::HandleError(uint64_t stream_id, int32_t error) {
+void ServerConnection::HandleError(uint64_t stream_id, uint32_t error) {
     if (error == 0) {
         // stream is closed by peer
         streams_.erase(stream_id);

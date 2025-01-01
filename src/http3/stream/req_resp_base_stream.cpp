@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "http3/http/error.h"
 #include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/frame_decode.h"
@@ -10,7 +11,7 @@ namespace http3 {
 
 ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
-    const std::function<void(uint64_t id, int32_t error)>& error_handler):
+    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IStream(error_handler),
     body_length_(0),
     qpack_encoder_(qpack_encoder),
@@ -29,12 +30,14 @@ ReqRespBaseStream::~ReqRespBaseStream() {
 void ReqRespBaseStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("IStream::OnData error: %d", error);
+        error_handler_(GetStreamID(), error);
         return;
     }
 
     std::vector<std::shared_ptr<IFrame>> frames;
     if (!DecodeFrames(data, frames)) {
         common::LOG_ERROR("IStream::OnData decode frames error");
+        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
         return;
     }
 
@@ -47,6 +50,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     auto headers_frame = std::dynamic_pointer_cast<HeadersFrame>(frame);
     if (!headers_frame) {   
         common::LOG_ERROR("IStream::HandleHeaders error");
+        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
         return;
     }
 
@@ -57,6 +61,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<common::IBufferRead> headers_buffer = std::make_shared<common::Buffer>(encoded_fields.data(), encoded_fields.size());
     if (!qpack_encoder_->Decode(headers_buffer, headers_)) {
         common::LOG_ERROR("IStream::HandleHeaders error");
+        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
         return;
     }
 
@@ -70,6 +75,7 @@ void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
     auto data_frame = std::dynamic_pointer_cast<DataFrame>(frame);
     if (!data_frame) {
         common::LOG_ERROR("IStream::HandleData error");
+        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
         return;
     }
 
@@ -93,6 +99,7 @@ void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
             break;
         default:
             common::LOG_ERROR("IStream::HandleFrame error");
+            error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_FRAME_UNEXPECTED);
             break;
     }
 }

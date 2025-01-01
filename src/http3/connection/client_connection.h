@@ -19,7 +19,7 @@ namespace http3 {
 class ClientConnection {
 public:
     ClientConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-        const std::function<void(int32_t error)>& error_handler,
+        const std::function<void(uint32_t error)>& error_handler,
         const std::function<void(std::unordered_map<std::string, std::string>&)>& push_promise_handler,
         const http_response_handler& push_handler);
     virtual ~ClientConnection();
@@ -40,7 +40,7 @@ private:
     // handle goaway frame
     void HandleGoaway(uint64_t id);
     // handle error
-    void HandleError(uint64_t stream_id, int32_t error);
+    void HandleError(uint64_t stream_id, uint32_t error);
     // handle push promise
     void HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
     

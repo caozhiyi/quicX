@@ -30,7 +30,7 @@ class IResponse;
 typedef std::function<void(const IRequest& request, IResponse& response)> http_handler;
 
 // http response handler, error is 0 means success, otherwise means error
-typedef std::function<void(IResponse& response, int32_t error)> http_response_handler;
+typedef std::function<void(IResponse& response, uint32_t error)> http_response_handler;
 
 }
 }
