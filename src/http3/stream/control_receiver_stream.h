@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "http3/stream/type.h"
+#include "http3/frame/if_frame.h"
 #include "http3/stream/if_stream.h"
 #include "quic/include/if_quic_recv_stream.h"
 

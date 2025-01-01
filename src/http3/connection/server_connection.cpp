@@ -10,32 +10,14 @@ namespace http3 {
 ServerConnection::ServerConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
     const std::function<void(uint32_t error)>& error_handler,
     const http_handler& http_handler):
-    error_handler_(error_handler),
+    IConnection(quic_connection, error_handler),
     http_handler_(http_handler),
-    quic_connection_(quic_connection),
     max_push_id_(0) {
 
-    // create control streams
-    auto control_stream = quic_connection_->MakeStream(quic::SD_SEND);
-    control_sender_stream_ = std::make_shared<ControlSenderStream>(
-        std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
-        std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-
-    quic_connection_->SetStreamStateCallBack(std::bind(&ServerConnection::HandleStream, this, 
-        std::placeholders::_1, std::placeholders::_2));
-    
-    qpack_encoder_ = std::make_shared<QpackEncoder>();
 }
 
 ServerConnection::~ServerConnection() {
     Close(0);
-}
-
-void ServerConnection::Close(uint64_t error_code) {
-    if (quic_connection_) {
-        quic_connection_->Close();
-        quic_connection_.reset();
-    }
 }
 
 bool ServerConnection::SendPushPromise(const std::unordered_map<std::string, std::string>& headers) {
@@ -85,10 +67,7 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
 
 void ServerConnection::HandleGoaway(uint64_t id) {
     // TODO: implement goaway
-}
-
-void ServerConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
-    settings_ = settings;
+    Close(0);
 }
 
 void ServerConnection::HandleMaxPushId(uint64_t max_push_id) {
