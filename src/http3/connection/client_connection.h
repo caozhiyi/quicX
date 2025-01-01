@@ -26,7 +26,7 @@ public:
     virtual ~ClientConnection();
 
     // send request
-    virtual bool DoRequest(const std::string& url, const IRequest& request, const http_response_handler& handler);
+    virtual bool DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler);
     virtual void SetMaxPushID(uint64_t max_push_id);
     virtual void CancelPush(uint64_t push_id);
 

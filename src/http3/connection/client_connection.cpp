@@ -22,7 +22,7 @@ ClientConnection::~ClientConnection() {
     Close(0);
 }
 
-bool ClientConnection::DoRequest(const std::string& url, const IRequest& request, const http_response_handler& handler) {
+bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler) {
     // create request stream
     auto stream = quic_connection_->MakeStream(quic::SD_BIDI);
     if (!stream) {

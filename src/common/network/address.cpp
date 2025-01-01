@@ -4,7 +4,8 @@
 namespace quicx {
 namespace common {
 
-Address::Address() {
+Address::Address(): address_type_(AddressType::AT_IPV4),
+                   port_(0) {
 
 }
 

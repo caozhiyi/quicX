@@ -3,9 +3,13 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include "common/http/url.h"
+#include "http3/http/request.h"
 #include "quic/include/if_quic.h"
 #include "http3/include/if_client.h"
 #include "quic/include/if_quic_connection.h"
+#include "http3/connection/client_connection.h"
 
 namespace quicx {
 namespace http3 {
@@ -20,11 +24,26 @@ public:
     virtual bool Init(uint16_t thread_num);
 
     // Send a request to the server
-    virtual bool DoRequest(const std::string& url, const IRequest& request, const http_response_handler& handler);
+    virtual bool DoRequest(const std::string& url, std::shared_ptr<IRequest> request, const http_response_handler& handler);
+
+private:
+    void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error);
+
+    void HandleError(uint32_t error_code);
+    void HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
+    void HandlePush(IResponse& response, uint32_t error);
 
 private:
     std::shared_ptr<quic::IQuic> quic_;
-    std::shared_ptr<quic::IQuicConnection> conn_;
+    std::unordered_map<std::string, std::shared_ptr<ClientConnection>> conn_map_;
+
+    struct WaitRequestContext {
+        common::URL url;
+        std::shared_ptr<IRequest> request;
+
+        http_response_handler handler;
+    };
+    std::unordered_map<std::string, WaitRequestContext> wait_request_map_;
 };
 
 }
