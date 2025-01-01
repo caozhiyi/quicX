@@ -54,6 +54,8 @@ SysCallInt32Result SetSockOpt(int64_t sockfd, int level, int optname, const void
 
 SysCallInt32Result SocketNoblocking(uint64_t sock);
 
+bool LookupAddress(const std::string& host, Address& addr);
+
 }
 }
 

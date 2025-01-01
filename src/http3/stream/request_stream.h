@@ -24,7 +24,7 @@ public:
     virtual ~RequestStream();
 
     // Send request/response
-    bool SendRequest(const IRequest& request);
+    bool SendRequest(std::shared_ptr<IRequest> request);
 
 private:
     virtual void HandleFrame(std::shared_ptr<IFrame> frame) override;

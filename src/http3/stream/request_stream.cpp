@@ -28,10 +28,10 @@ RequestStream::~RequestStream() {
     }
 }
 
-bool RequestStream::SendRequest(const IRequest& request) {
+bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
-    if (!qpack_encoder_->Encode(request.GetHeaders(), headers_buffer)) {
+    if (!qpack_encoder_->Encode(request->GetHeaders(), headers_buffer)) {
         common::LOG_ERROR("RequestStream::SendRequest error");
         error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
         return false;
@@ -56,9 +56,9 @@ bool RequestStream::SendRequest(const IRequest& request) {
     }
 
     // Send DATA frame if body exists
-    if (request.GetBody().length() > 0) {
+    if (request->GetBody().length() > 0) {
         DataFrame data_frame; // TODO: may send more than one DATA frame
-        std::vector<uint8_t> body(request.GetBody().begin(), request.GetBody().end());
+        std::vector<uint8_t> body(request->GetBody().begin(), request->GetBody().end());
         data_frame.SetData(body);           
 
         uint8_t data_buf[4096]; // TODO: Use dynamic buffer
