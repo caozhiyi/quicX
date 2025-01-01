@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "http3/http/error.h"
 #include "http3/stream/request_stream.h"
 #include "http3/stream/control_receiver_stream.h"
 #include "http3/stream/push_receiver_stream.h"
@@ -8,41 +9,24 @@ namespace quicx {
 namespace http3 {
 
 ClientConnection::ClientConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-    const std::function<void(uint32_t error)>& error_handler,
-    const std::function<void(std::unordered_map<std::string, std::string>&)>& push_promise_handler,
+    const std::function<void(uint32_t error_code)>& error_handler,
+    const std::function<void(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
     const http_response_handler& push_handler):
-    error_handler_(error_handler),
+    IConnection(quic_connection, error_handler),
     push_promise_handler_(push_promise_handler),
-    push_handler_(push_handler),
-    quic_connection_(quic_connection) {
+    push_handler_(push_handler) {
 
-    // create control streams
-    auto control_stream = quic_connection_->MakeStream(quic::SD_SEND);
-    control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
-        std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
-        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-
-    quic_connection_->SetStreamStateCallBack(std::bind(&ClientConnection::HandleStream, this, 
-        std::placeholders::_1, std::placeholders::_2));
-    
-    qpack_encoder_ = std::make_shared<QpackEncoder>();
 }
 
 ClientConnection::~ClientConnection() {
     Close(0);
 }
 
-void ClientConnection::Close(uint64_t error_code) {
-    if (quic_connection_) {
-        quic_connection_->Close();
-        quic_connection_.reset();
-    }
-}
-
 bool ClientConnection::DoRequest(const std::string& url, const IRequest& request, const http_response_handler& handler) {
     // create request stream
     auto stream = quic_connection_->MakeStream(quic::SD_BIDI);
     if (!stream) {
+        common::LOG_ERROR("ClientConnection::DoRequest make stream error");
         return false;
     }
 
@@ -66,15 +50,18 @@ void ClientConnection::CancelPush(uint64_t push_id) {
     control_sender_stream_->SendCancelPush(push_id);
 }
 
-void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error) {
-    if (error != 0) {
-        common::LOG_ERROR("IStream::OnData error: %d", error);
+void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error_code) {
+    if (error_code != 0) {
+        common::LOG_ERROR("ClientConnection::HandleStream error: %d", error_code);
         return;
     }
 
     if (stream->GetDirection() == quic::SD_BIDI) {
-        // TODO: error handling
-    } else if (stream->GetDirection() == quic::SD_RECV) {
+        quic_connection_->Reset(HTTP3_ERROR_CODE::H3EC_STREAM_CREATION_ERROR);
+        return;
+    }
+    
+    if (stream->GetDirection() == quic::SD_RECV) {
         // TODO: check stream id, control stream or push stream
         if (stream->GetStreamID() == 1) {
             // control stream
@@ -96,17 +83,13 @@ void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
     }
 }
 
-void ClientConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
-    settings_ = settings;
-}
-
 void ClientConnection::HandleGoaway(uint64_t id) {
     common::LOG_INFO("ClientConnection::HandleGoaway id: %llu", id);
     Close(0);
 }
 
-void ClientConnection::HandleError(uint64_t stream_id, uint32_t error) {
-    if (error == 0) {
+void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
+    if (error_code == 0) {
         // stream is closed by peer
         streams_.erase(stream_id);
         return;
@@ -114,7 +97,7 @@ void ClientConnection::HandleError(uint64_t stream_id, uint32_t error) {
 
     // something wrong, notify error handler
     if (error_handler_) {
-        error_handler_(error);
+        error_handler_(error_code);
     }
 }
 

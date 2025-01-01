@@ -25,7 +25,7 @@ public:
     virtual void Close() = 0;
 
     // close the connection immediately. that means all the streams will be closed immediately.
-    virtual void Reset() = 0;
+    virtual void Reset(uint32_t error_code) = 0;
 
     // create a new stream, only supported send stream and bidirection stream.
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) = 0;
