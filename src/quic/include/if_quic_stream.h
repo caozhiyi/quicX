@@ -26,7 +26,7 @@ public:
 
     // close the stream immediately, the stream will be closed immediately even if there are some data inflight.
     // error code will be sent to the peer.
-    virtual void Reset(int32_t error) = 0;
+    virtual void Reset(uint32_t error) = 0;
 };
 
 }

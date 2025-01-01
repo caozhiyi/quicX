@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "http3/http/error.h"
 #include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
@@ -9,7 +10,7 @@ namespace http3 {
 
 PushSenderStream::PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<quic::IQuicSendStream>& stream,
-    const std::function<void(uint64_t id, int32_t error)>& error_handler,
+    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     uint64_t push_id):
     IStream(error_handler),
     qpack_encoder_(qpack_encoder),
@@ -43,10 +44,12 @@ bool PushSenderStream::SendPushResponse(const std::unordered_map<std::string, st
     auto frame_buffer = std::make_shared<common::Buffer>(frame_buf, sizeof(frame_buf));
     if (!headers_frame.Encode(frame_buffer)) {
         common::LOG_ERROR("PushSenderStream::SendPushResponse headers frame encode error");
+        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
         return false;
     }
     if (stream_->Send(frame_buffer) <= 0) {
         common::LOG_ERROR("PushSenderStream::SendPushResponse send headers error");
+        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_CLOSED_CRITICAL_STREAM);
         return false;
     }
 
@@ -60,10 +63,12 @@ bool PushSenderStream::SendPushResponse(const std::unordered_map<std::string, st
         auto data_buffer = std::make_shared<common::Buffer>(data_buf, sizeof(data_buf));
         if (!data_frame.Encode(data_buffer)) {
             common::LOG_ERROR("PushSenderStream::SendPushResponse data frame encode error");
+            error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
             return false;
         }
         if (stream_->Send(data_buffer) <= 0) {
             common::LOG_ERROR("PushSenderStream::SendPushResponse send data error");
+            error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_CLOSED_CRITICAL_STREAM);
             return false;
         }
     }

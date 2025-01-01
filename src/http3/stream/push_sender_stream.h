@@ -17,7 +17,7 @@ class PushSenderStream:
 public:
     PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<quic::IQuicSendStream>& stream,
-        const std::function<void(uint64_t id, int32_t error)>& error_handler,
+        const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         uint64_t push_id);
     virtual ~PushSenderStream();
 

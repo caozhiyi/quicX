@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "http3/http/error.h"
 #include "http3/frame/frame_decode.h"
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/settings_frame.h"
@@ -8,7 +9,7 @@ namespace quicx {
 namespace http3 {
 
 ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
-    const std::function<void(uint64_t id, int32_t error)>& error_handler,
+    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
     const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler):
     IStream(error_handler),
@@ -26,12 +27,14 @@ ControlReceiverStream::~ControlReceiverStream() {
 void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("IStream::OnData error: %d", error);
+        error_handler_(stream_->GetStreamID(), error);
         return;
     }
 
     std::vector<std::shared_ptr<IFrame>> frames;
     if (!DecodeFrames(data, frames)) {
         common::LOG_ERROR("IStream::OnData decode frames error");
+        error_handler_(stream_->GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
         return;
     }
 
@@ -54,7 +57,7 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
         }
         default:
             common::LOG_ERROR("IStream::OnData unknown frame type: %d", frame->GetType());
-            error_handler_(stream_->GetStreamID(), 496); // FRAME_UNEXPECTED TODO
+            error_handler_(stream_->GetStreamID(), HTTP3_ERROR_CODE::H3EC_FRAME_UNEXPECTED);
             break;
     }
 }

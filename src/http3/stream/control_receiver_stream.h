@@ -16,7 +16,7 @@ class ControlReceiverStream:
     public IStream {
 public:
     ControlReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
-        const std::function<void(uint64_t id, int32_t error)>& error_handler,
+        const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(uint64_t id)>& goaway_handler,
         const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler);
     virtual ~ControlReceiverStream();
