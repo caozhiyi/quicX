@@ -24,7 +24,7 @@ public:
 
 private:
     std::shared_ptr<quic::IQuic> quic_;
-    std::shared_ptr<quic::IQuicConnection> _conn;
+    std::shared_ptr<quic::IQuicConnection> conn_;
 };
 
 }

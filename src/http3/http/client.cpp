@@ -5,7 +5,7 @@ namespace http3 {
 
 Client::Client() {
     quic_ = nullptr;
-    _conn = nullptr;
+    conn_ = nullptr;
 }
 
 Client::~Client() {
