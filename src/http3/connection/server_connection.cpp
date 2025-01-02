@@ -7,10 +7,11 @@
 namespace quicx {
 namespace http3 {
 
-ServerConnection::ServerConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-    const std::function<void(uint32_t error)>& error_handler,
+ServerConnection::ServerConnection(const std::string& unique_id,
+    const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+    const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
     const http_handler& http_handler):
-    IConnection(quic_connection, error_handler),
+    IConnection(unique_id, quic_connection, error_handler),
     http_handler_(http_handler),
     max_push_id_(0) {
 
@@ -87,10 +88,9 @@ void ServerConnection::HandleError(uint64_t stream_id, uint32_t error) {
 
     // something wrong, notify error handler
     if (error_handler_) {
-        error_handler_(error);
+        error_handler_(unique_id_, error);
     }
 }
-
 
 }
 }

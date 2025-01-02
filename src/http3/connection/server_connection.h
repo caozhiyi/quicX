@@ -20,8 +20,9 @@ namespace http3 {
 class ServerConnection:
     public IConnection {
 public:
-    ServerConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-        const std::function<void(uint32_t error_code)>& error_handler,
+    ServerConnection(const std::string& unique_id,
+        const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+        const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
         const http_handler& http_handler);
     virtual ~ServerConnection();
 

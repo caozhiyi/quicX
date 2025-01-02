@@ -2,6 +2,7 @@
 #define HTTP3_INCLUDE_IF_SERVER
 
 #include <string>
+#include <memory>
 #include <cstdint>
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
@@ -31,9 +32,13 @@ public:
 
     // Register a middleware for a specific mothed and position
     virtual void AddMiddleware(HttpMothed mothed, MiddlewarePosition mp, const http_handler& handler) = 0;
+
+    // Create a server instance
+    static std::unique_ptr<IServer> Create();
 };
 
 }
 }
 
 #endif
+

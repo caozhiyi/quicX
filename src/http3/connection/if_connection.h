@@ -17,9 +17,12 @@ namespace http3 {
 
 class IConnection {
 public:
-    IConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-        const std::function<void(uint32_t error_code)>& error_handler);
+    IConnection(const std::string& unique_id,
+        const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+        const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler);
     virtual ~IConnection();
+
+    const std::string& GetUniqueId() const { return unique_id_; }
 
     // close connection
     virtual void Close(uint32_t error_code);
@@ -33,7 +36,10 @@ protected:
     virtual void HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings);
     
 protected:
-    std::function<void(uint32_t error_code)> error_handler_;
+    // indicate the unique id of the connection
+    std::string unique_id_;
+
+    std::function<void(const std::string& unique_id, uint32_t error_code)> error_handler_;
     std::unordered_map<uint16_t, uint64_t> settings_;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_;
 
