@@ -2,6 +2,7 @@
 #define HTTP3_HTTP_IF_RESPONSE
 
 #include <string>
+#include <memory>
 #include <unordered_map>
 
 namespace quicx {
@@ -27,6 +28,9 @@ public:
     // Response body
     virtual void SetBody(const std::string& body) = 0;
     virtual std::string GetBody() const = 0;
+
+    // Create a response instance
+    static std::unique_ptr<IResponse> Create();
 };
 
 }

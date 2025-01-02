@@ -1,5 +1,5 @@
-#include "common/http/url.h"
 #include <sstream>
+#include "common/http/url.h"
 
 namespace quicx {
 namespace common {

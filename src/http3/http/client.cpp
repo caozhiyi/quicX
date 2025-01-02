@@ -7,6 +7,10 @@
 namespace quicx {
 namespace http3 {
 
+std::unique_ptr<IClient> IClient::Create() {
+    return std::make_unique<Client>();
+}
+
 Client::Client() {
     quic_ = nullptr;
 }
@@ -68,17 +72,18 @@ void Client::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t 
     }
 
     auto context = it->second;
-    auto client_conn = std::make_shared<ClientConnection>(conn,
-        std::bind(&Client::HandleError, this, std::placeholders::_1),
+    auto client_conn = std::make_shared<ClientConnection>(context.url.host, conn,
+        std::bind(&Client::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Client::HandlePushPromise, this, std::placeholders::_1),
         std::bind(&Client::HandlePush, this, std::placeholders::_1, std::placeholders::_2));
 
+    wait_request_map_.erase(it);
     conn_map_[context.url.host] = client_conn;
     client_conn->DoRequest(context.request, context.handler);
 }
 
-void Client::HandleError(uint32_t error_code) {
-
+void Client::HandleError(const std::string& unique_id, uint32_t error_code) {
+    common::LOG_ERROR("handle error. unique_id: %s, error_code: %d", unique_id.c_str(), error_code);
 }
 
 void Client::HandlePushPromise(std::unordered_map<std::string, std::string>& headers) {

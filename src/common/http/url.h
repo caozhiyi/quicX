@@ -2,6 +2,7 @@
 #define COMMON_HTTP_URL
 
 #include <string>
+#include <cstdint>
 #include <unordered_map>
 
 namespace quicx {

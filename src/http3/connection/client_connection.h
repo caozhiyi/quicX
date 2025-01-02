@@ -19,8 +19,9 @@ namespace http3 {
 class ClientConnection
     :public IConnection {
 public:
-    ClientConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-        const std::function<void(uint32_t error_code)>& error_handler,
+    ClientConnection(const std::string& unique_id,
+        const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+        const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
         const std::function<void(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
         const http_response_handler& push_handler);
     virtual ~ClientConnection();

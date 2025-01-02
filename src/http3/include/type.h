@@ -21,8 +21,8 @@ enum HttpMothed: uint16_t {
 };
 
 enum MiddlewarePosition: uint8_t {
-    MP_BEGIN = 0x01,
-    MP_END   = 0x02,
+    MP_BEFORE = 0x01,
+    MP_AFTER  = 0x02,
 };
 
 class IRequest;

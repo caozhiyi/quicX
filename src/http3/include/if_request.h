@@ -2,6 +2,7 @@
 #define HTTP3_HTTP_IF_REQUEST
 
 #include <string>
+#include <memory>
 #include <unordered_map>
 #include "http3/include/type.h"
 
@@ -31,9 +32,13 @@ public:
     // Request body
     virtual void SetBody(const std::string& body) = 0;
     virtual std::string GetBody() const = 0;
+
+    // Create a request instance
+    static std::unique_ptr<IRequest> Create();
 };
 
 }
 }
 
 #endif
+

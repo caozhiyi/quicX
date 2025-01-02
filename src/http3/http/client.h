@@ -29,7 +29,7 @@ public:
 private:
     void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error);
 
-    void HandleError(uint32_t error_code);
+    void HandleError(const std::string& unique_id, uint32_t error_code);
     void HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
     void HandlePush(IResponse& response, uint32_t error);
 

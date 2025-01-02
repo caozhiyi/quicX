@@ -8,11 +8,12 @@
 namespace quicx {
 namespace http3 {
 
-ClientConnection::ClientConnection(const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-    const std::function<void(uint32_t error_code)>& error_handler,
+ClientConnection::ClientConnection(const std::string& unique_id,
+    const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+    const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
     const http_response_handler& push_handler):
-    IConnection(quic_connection, error_handler),
+    IConnection(unique_id, quic_connection, error_handler),
     push_promise_handler_(push_promise_handler),
     push_handler_(push_handler) {
 
@@ -97,7 +98,7 @@ void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
 
     // something wrong, notify error handler
     if (error_handler_) {
-        error_handler_(error_code);
+        error_handler_(unique_id_, error_code);
     }
 }
 
