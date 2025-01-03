@@ -45,13 +45,14 @@ int32_t MockQuicRecvStream::Send(uint8_t* data, uint32_t len) {
 }
 
 int32_t MockQuicRecvStream::Send(std::shared_ptr<common::IBufferRead> buffer) {
+    int len = buffer->GetDataLength();
     if (write_cb_) {
-        write_cb_(buffer->GetDataLength(), 0);
+        write_cb_(len, 0);
     }
     if (read_cb_) {
         read_cb_(buffer, 0);
     }
-    return buffer->GetDataLength();
+    return len;
 }
 
 void MockQuicRecvStream::SetStreamWriteCallBack(quic::stream_write_callback cb) {

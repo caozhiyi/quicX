@@ -1,9 +1,9 @@
 #include "common/log/log.h"
 #include "http3/http/error.h"
-#include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/frame_decode.h"
 #include "http3/frame/headers_frame.h"
+#include "common/buffer/buffer_read_view.h"
 #include "http3/stream/req_resp_base_stream.h"
 
 namespace quicx {
@@ -58,14 +58,20 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 
     // Decode headers using QPACK
     std::vector<uint8_t> encoded_fields = headers_frame->GetEncodedFields();
-    std::shared_ptr<common::IBufferRead> headers_buffer = std::make_shared<common::Buffer>(encoded_fields.data(), encoded_fields.size());
+    auto headers_buffer = (std::make_shared<common::BufferReadView>(encoded_fields.data(), encoded_fields.size()));
     if (!qpack_encoder_->Decode(headers_buffer, headers_)) {
         common::LOG_ERROR("IStream::HandleHeaders error");
         error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
         return;
     }
 
-    body_length_ = std::stoul(headers_["content-length"]);
+    if (headers_.find("content-length") != headers_.end()) {
+        body_length_ = std::stoul(headers_["content-length"]);
+
+    } else {
+        body_length_ = 0;
+    }
+
     if (body_length_ == 0) {
         HandleBody();
     }
