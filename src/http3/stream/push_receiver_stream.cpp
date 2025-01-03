@@ -19,6 +19,8 @@ PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpac
     stream_(stream),
     response_handler_(response_handler) {
 
+    stream_->SetStreamReadCallBack(std::bind(&PushReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2));
+    // TODO send callback
 }
 
 PushReceiverStream::~PushReceiverStream() {
@@ -100,9 +102,9 @@ PushReceiverStream::~PushReceiverStream() {
  }
 
  void PushReceiverStream::HandleBody() {
-    Response response;
-    response.SetHeaders(headers_);
-    response.SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+    std::shared_ptr<IResponse> response = std::make_shared<Response>();
+    response->SetHeaders(headers_);
+    response->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
     response_handler_(response, 0);
  }
 

@@ -90,9 +90,9 @@ void RequestStream::HandleFrame(std::shared_ptr<IFrame> frame) {
 }
 
 void RequestStream::HandleBody() {
-    Response response;
-    response.SetHeaders(headers_);
-    response.SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+    std::shared_ptr<IResponse> response = std::make_shared<Response>();
+    response->SetHeaders(headers_);
+    response->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
     response_handler_(response, 0);
 }
 

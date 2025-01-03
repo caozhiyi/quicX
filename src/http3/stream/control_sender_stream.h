@@ -24,7 +24,7 @@ public:
     virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
 
     // Send SETTINGS frame
-    virtual bool SendSettings(const std::unordered_map<SettingsType, uint64_t>& settings);
+    virtual bool SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings);
 
     // Send GOAWAY frame
     virtual bool SendGoaway(uint64_t id);

@@ -23,7 +23,7 @@ public:
     virtual ~ResponseStream();
 
     void SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id);
-    void SendResponse(const IResponse& response);
+    void SendResponse(const std::shared_ptr<IResponse> response);
 private:
     virtual void HandleBody() override;
 

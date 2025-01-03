@@ -58,12 +58,12 @@ void ResponseStream::SendPushPromise(const std::unordered_map<std::string, std::
     stream_->Send(frame_buffer);
 }
 
-void ResponseStream::SendResponse(const IResponse& response) {
+void ResponseStream::SendResponse(const std::shared_ptr<IResponse> response) {
     // send response
     // Decode request headers
     uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
-    if (!qpack_encoder_->Encode(response.GetHeaders(), headers_buffer)) {
+    if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer)) {
         common::LOG_ERROR("ResponseStream::SendResponse error");
         error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
         return;
@@ -88,9 +88,9 @@ void ResponseStream::SendResponse(const IResponse& response) {
     }
 
     // Send DATA frame if body exists
-    if (response.GetBody().length() > 0) {
+    if (response->GetBody().length() > 0) {
         DataFrame data_frame; // TODO: may send more than one DATA frame
-        std::vector<uint8_t> body(response.GetBody().begin(), response.GetBody().end());
+        std::vector<uint8_t> body(response->GetBody().begin(), response->GetBody().end());
         data_frame.SetData(body);           
 
         uint8_t data_buf[4096]; // TODO: Use dynamic buffer
@@ -109,14 +109,14 @@ void ResponseStream::SendResponse(const IResponse& response) {
 }
 
 void ResponseStream::HandleBody() {
-    Request request;
-    request.SetHeaders(headers_);
-    request.SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+    std::unique_ptr<IRequest> request;
+    request->SetHeaders(headers_);
+    request->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
 
-    Response response;
-    http_handler_(request, response);
+    std::unique_ptr<IResponse> response;
+    http_handler_(std::move(request), std::move(response));
 
-    SendResponse(response);
+    SendResponse(std::move(response));
 }
 
 }

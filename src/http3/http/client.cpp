@@ -90,7 +90,7 @@ void Client::HandlePushPromise(std::unordered_map<std::string, std::string>& hea
 
 }
 
-void Client::HandlePush(IResponse& response, uint32_t error) {
+void Client::HandlePush(std::shared_ptr<IResponse> response, uint32_t error) {
 
 }
 
