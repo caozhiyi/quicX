@@ -89,6 +89,7 @@ TEST_F(PushStreamTest, SendHeaders) {
 TEST_F(PushStreamTest, SendHeadersAndBody) {
     std::unordered_map<std::string, std::string> headers = {{"Content-Type", "text/plain"}};
     std::string body = "Hello, World!";
+    headers["content-length"] = std::to_string(body.size());
     EXPECT_TRUE(server_connection_->SendPushResponse(headers, body));
     EXPECT_EQ(client_connection_->GetResponse()->GetHeaders(), headers);
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), body);
@@ -97,8 +98,7 @@ TEST_F(PushStreamTest, SendHeadersAndBody) {
 TEST_F(PushStreamTest, SendBody) {
     std::unordered_map<std::string, std::string> headers;
     std::string body = "Hello, World!";
-    EXPECT_TRUE(server_connection_->SendPushResponse(headers, body));
-    EXPECT_EQ(client_connection_->GetResponse()->GetBody(), body);
+    EXPECT_FALSE(server_connection_->SendPushResponse(headers, body));
 }
 
 }  // namespace

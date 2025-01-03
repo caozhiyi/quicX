@@ -27,6 +27,10 @@ PushSenderStream::~PushSenderStream() {
 
 bool PushSenderStream::SendPushResponse(const std::unordered_map<std::string, std::string>& headers,
                                 const std::string& body) {
+    if (headers.empty()) {
+        common::LOG_ERROR("PushSenderStream::SendPushResponse headers is empty");
+        return false;
+    }
     // Encode headers using qpack
     uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
