@@ -16,6 +16,9 @@ ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<quic::IQuicRe
     stream_(stream),
     goaway_handler_(goaway_handler),
     settings_handler_(settings_handler) {
+
+    stream_->SetStreamReadCallBack(std::bind(&ControlReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2));
+    // TODO send callback
 }
 
 ControlReceiverStream::~ControlReceiverStream() {

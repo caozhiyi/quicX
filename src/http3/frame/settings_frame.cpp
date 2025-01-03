@@ -52,16 +52,18 @@ bool SettingsFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool wit
         return false;
     }   
 
-    // TODO: check length_
-    /*for (uint64_t i = 0; i < settings_count; ++i) {
+    if (length_ == 0) {
+        return true;
+    }
+
+    int32_t len = (int32_t)length_;
+    while (len > 0) { // TODO: check max loop times
         uint64_t id, value;
-        if (!wrapper.DecodeVarint(id) || !wrapper.DecodeVarint(value)) {
+        if (!wrapper.DecodeVarint(id, len) || !wrapper.DecodeVarint(value, len)) {
             return false;
         }
         settings_[id] = value;
-    }*/
-    wrapper.Flush();
-    buffer->MoveReadPt(length_);
+    }
     return true;
 }
 

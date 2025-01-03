@@ -1,6 +1,7 @@
 #ifndef HTTP3_INCLUDE_TYPE
 #define HTTP3_INCLUDE_TYPE
 
+#include <memory>
 #include <cstdint>
 #include <functional>
 
@@ -27,10 +28,10 @@ enum MiddlewarePosition: uint8_t {
 
 class IRequest;
 class IResponse;
-typedef std::function<void(const IRequest& request, IResponse& response)> http_handler;
+typedef std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> http_handler;
 
 // http response handler, error is 0 means success, otherwise means error
-typedef std::function<void(IResponse& response, uint32_t error)> http_response_handler;
+typedef std::function<void(std::shared_ptr<IResponse> response, uint32_t error)> http_response_handler;
 
 }
 }

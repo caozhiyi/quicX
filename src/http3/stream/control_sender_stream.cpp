@@ -22,7 +22,7 @@ ControlSenderStream::~ControlSenderStream() {
     }
 }
 
-bool ControlSenderStream::SendSettings(const std::unordered_map<SettingsType, uint64_t>& settings) {
+bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
     SettingsFrame frame;
     for (const auto& setting : settings) {
         frame.SetSetting(setting.first, setting.second);

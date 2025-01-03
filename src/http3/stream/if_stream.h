@@ -13,7 +13,7 @@ public:
     virtual ~IStream() {}
     virtual StreamType GetType() = 0;
     virtual uint64_t GetStreamID() = 0;
-
+    virtual void Close(uint32_t error_code) {} // TODO: implement
 protected:
     std::function<void(uint64_t stream_id, uint32_t error_code)> error_handler_;
 };

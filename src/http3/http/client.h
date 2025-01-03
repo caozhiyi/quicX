@@ -31,7 +31,7 @@ private:
 
     void HandleError(const std::string& unique_id, uint32_t error_code);
     void HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
-    void HandlePush(IResponse& response, uint32_t error);
+    void HandlePush(std::shared_ptr<IResponse> response, uint32_t error);
 
 private:
     std::shared_ptr<quic::IQuic> quic_;

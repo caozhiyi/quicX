@@ -65,14 +65,14 @@ void Server::HandleError(const std::string& unique_id, uint32_t error_code) {
     conn_map_.erase(unique_id);
 }
 
-void Server::HandleRequest(const IRequest& request, IResponse& response) {
-    std::string path = request.GetPath();
-    HttpMothed mothed = request.GetMethod();
+void Server::HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+    std::string path = request->GetPath();
+    HttpMothed mothed = request->GetMethod();
 
     auto match_result = router_->Match(mothed, path);
     if (!match_result.is_match) {
-        response.SetStatusCode(404);
-        response.SetBody("Not Found");
+        response->SetStatusCode(404);
+        response->SetBody("Not Found");
         return;
     }
 

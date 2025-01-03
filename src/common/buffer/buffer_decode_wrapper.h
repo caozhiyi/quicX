@@ -25,6 +25,9 @@ public:
     template<typename T>
     bool DecodeVarint(T& value);
 
+    template<typename T>
+    bool DecodeVarint(T& value, int32_t& len);
+
     bool DecodeFixedUint8(uint8_t& value);
     bool DecodeFixedUint16(uint16_t& value);
     bool DecodeFixedUint32(uint32_t& value);
@@ -47,6 +50,18 @@ bool BufferDecodeWrapper::DecodeVarint(T& value) {
         return false;
     }
     flushed_ = false;
+    return true;
+}
+
+template<typename T>
+bool BufferDecodeWrapper::DecodeVarint(T& value, int32_t& len) {
+    auto new_pos_ = common::DecodeVarint(pos_, end_, value);
+    if (new_pos_ == nullptr) {
+        return false;
+    }
+    flushed_ = false;
+    len -= (new_pos_ - pos_);
+    pos_ = new_pos_;
     return true;
 }
 

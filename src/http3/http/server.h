@@ -39,7 +39,7 @@ public:
 private:
     void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error);
     void HandleError(const std::string& unique_id, uint32_t error_code);
-    void HandleRequest(const IRequest& request, IResponse& response);
+    void HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response);
 
 private:
     std::shared_ptr<quic::IQuic> quic_;

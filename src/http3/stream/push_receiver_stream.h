@@ -34,7 +34,6 @@ private:
     virtual void HandleData(std::shared_ptr<IFrame> frame);
     virtual void HandleBody();
 
-
 private:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::shared_ptr<quic::IQuicRecvStream> stream_;
