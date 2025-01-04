@@ -5,9 +5,8 @@
 #include <string>
 #include <unordered_map>
 #include "http3/router/router.h"
-#include "quic/include/if_quic.h"
 #include "http3/include/if_server.h"
-#include "quic/include/if_quic_connection.h"
+#include "quic/include/if_quic_server.h"
 #include "http3/connection/server_connection.h"
 
 namespace quicx {
@@ -42,7 +41,7 @@ private:
     void HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response);
 
 private:
-    std::shared_ptr<quic::IQuic> quic_;
+    std::shared_ptr<quic::IServerQuic> quic_;
 
     std::shared_ptr<Router> router_;
     std::unordered_map<std::string, std::shared_ptr<ServerConnection>> conn_map_;

@@ -21,7 +21,8 @@ namespace quic {
 class Processor:
     public IProcessor {
 public:
-    Processor(std::shared_ptr<TLSCtx> ctx);
+    Processor(std::shared_ptr<TLSCtx> ctx,
+        std::function<void(std::shared_ptr<IConnection>)> connection_handler);
     virtual ~Processor();
 
     virtual void Process();
@@ -62,6 +63,8 @@ protected:
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_;
 
     thread_local static std::shared_ptr<common::ITimer> time_;
+
+    std::function<void(std::shared_ptr<IConnection>)> connection_handler_;
 };
 
 }

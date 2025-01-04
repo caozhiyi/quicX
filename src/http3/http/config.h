@@ -1,6 +1,8 @@
 #ifndef HTTP3_HTTP_CONFIG
 #define HTTP3_HTTP_CONFIG
 
+#include <cstdint>
+
 namespace quicx {
 namespace http3 {
 

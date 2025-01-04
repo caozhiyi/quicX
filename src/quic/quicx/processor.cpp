@@ -16,9 +16,11 @@ namespace quic {
 uint32_t __max_recvtime_s = 32; // todo add to config
 thread_local std::shared_ptr<common::ITimer> Processor::time_ = common::MakeTimer();
 
-Processor::Processor(std::shared_ptr<TLSCtx> ctx):
+Processor::Processor(std::shared_ptr<TLSCtx> ctx,
+    std::function<void(std::shared_ptr<IConnection>)> connection_handler):
     do_send_(false),
-    ctx_(ctx) {
+    ctx_(ctx),
+    connection_handler_(connection_handler) {
     alloter_ = std::make_shared<common::BlockMemoryPool>(1500, 5); // todo add to config
 
     receiver_ = std::make_shared<UdpReceiver>();
@@ -137,6 +139,7 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     new_conn->AddRemoteConnectionId(cid, len);
     new_conn->OnPackets(packet->GetTime(), packets);
 
+    connection_handler_(new_conn);
     return true;
 }
 
