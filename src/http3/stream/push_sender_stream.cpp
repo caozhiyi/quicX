@@ -3,6 +3,7 @@
 #include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
+#include "http3/stream/pseudo-header.h"
 #include "http3/stream/push_sender_stream.h"
 
 namespace quicx {
@@ -26,6 +27,8 @@ PushSenderStream::~PushSenderStream() {
 }
 
 bool PushSenderStream::SendPushResponse(std::shared_ptr<IResponse> response) {
+    PseudoHeader::Instance().EncodeResponse(response);
+
     if (!response->GetBody().empty()) {
         response->AddHeader("content-length", std::to_string(response->GetBody().size()));
     }

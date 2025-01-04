@@ -4,6 +4,7 @@
 #include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
+#include "http3/stream/pseudo-header.h"
 #include "http3/stream/request_stream.h"
 #include "http3/frame/push_promise_frame.h"
 
@@ -29,6 +30,12 @@ RequestStream::~RequestStream() {
 }
 
 bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
+    PseudoHeader::Instance().EncodeRequest(request);
+
+    if (!request->GetBody().empty()) {
+        request->AddHeader("content-length", std::to_string(request->GetBody().size()));
+    }
+
     uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
     if (!qpack_encoder_->Encode(request->GetHeaders(), headers_buffer)) {
@@ -93,6 +100,8 @@ void RequestStream::HandleBody() {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
     response->SetHeaders(headers_);
     response->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+
+    PseudoHeader::Instance().DecodeResponse(response);
     response_handler_(response, 0);
 }
 

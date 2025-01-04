@@ -23,7 +23,7 @@ public:
     virtual bool GetHeader(const std::string& name, std::string& value) const;
 
     virtual void SetHeaders(const std::unordered_map<std::string, std::string>& headers);
-    virtual const std::unordered_map<std::string, std::string>& GetHeaders() const { return headers_; }
+    virtual std::unordered_map<std::string, std::string>& GetHeaders() { return headers_; }
 
     // Response body
     virtual void SetBody(const std::string& body) { body_ = body; }

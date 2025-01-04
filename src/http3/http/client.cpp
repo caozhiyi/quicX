@@ -23,7 +23,8 @@ bool Client::Init(uint16_t thread_num) {
     return true;
 }
 
-bool Client::DoRequest(const std::string& url, std::shared_ptr<IRequest> request, const http_response_handler& handler) {
+bool Client::DoRequest(const std::string& url, HttpMothed mothed,
+        std::shared_ptr<IRequest> request, const http_response_handler& handler) {
     // parse url
     common::URL url_info;
     if (!common::ParseURL(url, url_info)) {
@@ -32,6 +33,10 @@ bool Client::DoRequest(const std::string& url, std::shared_ptr<IRequest> request
     }
 
     request->SetPath(url_info.path);
+    request->SetMethod(mothed);
+    request->SetScheme(url_info.scheme);
+    request->SetAuthority(url_info.host);
+
     // check if the connection is already established   
     auto it = conn_map_.find(url_info.host);
     if (it != conn_map_.end()) {

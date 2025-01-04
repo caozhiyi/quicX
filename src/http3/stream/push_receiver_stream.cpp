@@ -4,6 +4,7 @@
 #include "http3/frame/data_frame.h"
 #include "http3/frame/frame_decode.h"
 #include "http3/frame/headers_frame.h"
+#include "http3/stream/pseudo-header.h"
 #include "common/buffer/buffer_read_view.h"
 #include "http3/stream/push_receiver_stream.h"
 
@@ -110,6 +111,8 @@ PushReceiverStream::~PushReceiverStream() {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
     response->SetHeaders(headers_);
     response->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+
+    PseudoHeader::Instance().DecodeResponse(response);
     response_handler_(response, 0);
  }
 
