@@ -27,7 +27,7 @@ public:
 
     // Response body
     virtual void SetBody(const std::string& body) { body_ = body; }
-    virtual std::string GetBody() const { return body_; }
+    virtual const std::string& GetBody() const { return body_; }
 
 private:
     uint32_t status_code_;

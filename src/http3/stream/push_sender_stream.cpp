@@ -33,7 +33,7 @@ bool PushSenderStream::SendPushResponse(std::shared_ptr<IResponse> response) {
     // Encode headers using qpack
     uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
-        if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer)) {
+    if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer)) {
         common::LOG_ERROR("PushSenderStream::SendPushResponse qpack encode error");
         return false;
     }
@@ -59,7 +59,7 @@ bool PushSenderStream::SendPushResponse(std::shared_ptr<IResponse> response) {
     // Send DATA frame if body exists
     if (!response->GetBody().empty()) {
         DataFrame data_frame;
-        std::vector<uint8_t> body_data(response->GetBody().begin(), response->GetBody().end());
+        std::vector<uint8_t> body_data(response->GetBody().begin(), response->GetBody().begin() + response->GetBody().size());
         data_frame.SetData(body_data);
 
         uint8_t data_buf[4096]; // TODO: Use dynamic buffer
