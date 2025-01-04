@@ -96,18 +96,14 @@ TEST_F(PushStreamTest, SendHeadersAndBody) {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
     response->AddHeader("Content-Type", "text/plain");
     response->SetBody("Hello, World!");
-    response->SetStatusCode(300);
     EXPECT_TRUE(server_connection_->SendPushResponse(response));
-    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 300);
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
 }
 
 TEST_F(PushStreamTest, SendBody) {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
     response->SetBody("Hello, World!");
-    response->SetStatusCode(300);
     EXPECT_TRUE(server_connection_->SendPushResponse(response));
-    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 300);
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
 }
 

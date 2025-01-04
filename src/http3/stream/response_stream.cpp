@@ -88,9 +88,9 @@ void ResponseStream::SendResponse(const std::shared_ptr<IResponse> response) {
     }
 
     // Send DATA frame if body exists
-    if (response->GetBody().length() > 0) {
+    if (!response->GetBody().empty()) {
         DataFrame data_frame; // TODO: may send more than one DATA frame
-        std::vector<uint8_t> body(response->GetBody().begin(), response->GetBody().end());
+        std::vector<uint8_t> body(response->GetBody().begin(), response->GetBody().begin() + response->GetBody().size());
         data_frame.SetData(body);           
 
         uint8_t data_buf[4096]; // TODO: Use dynamic buffer

@@ -56,9 +56,9 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     }
 
     // Send DATA frame if body exists
-    if (request->GetBody().length() > 0) {
-        DataFrame data_frame; // TODO: may send more than one DATA frame
-        std::vector<uint8_t> body(request->GetBody().begin(), request->GetBody().end());
+    if (!request->GetBody().empty()) {
+        DataFrame data_frame;
+        std::vector<uint8_t> body(request->GetBody().begin(), request->GetBody().begin() + request->GetBody().size());
         data_frame.SetData(body);           
 
         uint8_t data_buf[4096]; // TODO: Use dynamic buffer

@@ -27,7 +27,7 @@ public:
 
     // Response body
     virtual void SetBody(const std::string& body) = 0;
-    virtual std::string GetBody() const = 0;
+    virtual const std::string& GetBody() const = 0;
 
     // Create a response instance
     static std::unique_ptr<IResponse> Create();
