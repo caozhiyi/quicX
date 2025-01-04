@@ -1,5 +1,6 @@
+#include "http3/connection/type.h"
 #include "http3/connection/if_connection.h"
-#include "common/log/log.h"
+
 
 namespace quicx {
 namespace http3 {
@@ -20,6 +21,13 @@ IConnection::IConnection(const std::string& unique_id,
     quic_connection_->SetStreamStateCallBack(std::bind(&IConnection::HandleStream, this, 
         std::placeholders::_1, std::placeholders::_2));
     
+    std::unordered_map<uint16_t, uint64_t> settings;
+    settings[SETTINGS_TYPE::ST_MAX_HEADER_LIST_SIZE] = 100;
+    settings[SETTINGS_TYPE::ST_QPACK_MAX_TABLE_CAPACITY] = 0;
+    settings[SETTINGS_TYPE::ST_QPACK_BLOCKED_STREAMS] = 0;
+    settings[SETTINGS_TYPE::ST_ENABLE_PUSH] = 0;
+    control_sender_stream_->SendSettings(settings);
+
     qpack_encoder_ = std::make_shared<QpackEncoder>();
 }
 

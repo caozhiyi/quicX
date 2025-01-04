@@ -20,7 +20,8 @@ TEST(UdpSenderTest, Send) {
             std::shared_ptr<INetPacket> recv_pkt = std::make_shared<INetPacket>();
             recv_pkt->SetData(recv_buffer);
 
-            UdpReceiver receiver("127.0.0.1", 12345);
+            UdpReceiver receiver;
+            receiver.AddReceiver("127.0.0.1", 12345);
 
             for (int i = 0; i < __send_times; ++i) {
                 receiver.TryRecv(recv_pkt, 10000);

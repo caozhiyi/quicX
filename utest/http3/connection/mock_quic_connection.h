@@ -13,7 +13,7 @@ namespace quic {
 class MockQuicConnection:
     public IQuicConnection {
 public:
-    MockQuicConnection() {}
+    MockQuicConnection(): user_data_(nullptr), stream_state_cb_(nullptr) {}
 
     void SetPeer(std::shared_ptr<MockQuicConnection> peer) { peer_ = peer; }
 

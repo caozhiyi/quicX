@@ -1,7 +1,6 @@
 #include "common/log/log.h"
 #include "quic/common/version.h"
 #include "quic/udp/udp_sender.h"
-#include "quic/udp/udp_sender.h"
 #include "quic/quicx/processor.h"
 #include "quic/udp/udp_receiver.h"
 #include "quic/common/constants.h"
@@ -17,12 +16,13 @@ namespace quic {
 uint32_t __max_recvtime_s = 32; // todo add to config
 thread_local std::shared_ptr<common::ITimer> Processor::time_ = common::MakeTimer();
 
-Processor::Processor(std::shared_ptr<ISender> sender, std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx):
+Processor::Processor(std::shared_ptr<TLSCtx> ctx):
     do_send_(false),
-    sender_(sender),
-    receiver_(receiver),
     ctx_(ctx) {
     alloter_ = std::make_shared<common::BlockMemoryPool>(1500, 5); // todo add to config
+
+    receiver_ = std::make_shared<UdpReceiver>();
+    sender_ = std::make_shared<UdpSender>();
 }
 
 Processor::~Processor() {
@@ -44,6 +44,14 @@ void Processor::Process() {
 
     // check timer and do timer task
     ProcessTimer();
+}
+
+void Processor::AddReceiver(uint64_t socket_fd) {
+    receiver_->AddReceiver(socket_fd);
+}
+
+void Processor::AddReceiver(const std::string& ip, uint16_t port) {
+    receiver_->AddReceiver(ip, port);
 }
 
 std::shared_ptr<IConnection> Processor::MakeClientConnection() {
@@ -167,7 +175,7 @@ bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
 bool Processor::DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
     std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
     if(!DecodePackets(net_packet->GetData(), packets)) {
-        // todo send version negotiate packet
+        // TODO send version negotiate packet
         return false;
     }
 
@@ -178,7 +186,7 @@ bool Processor::DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
     
     auto first_packet_header = packets[0]->GetHeader();
     if (first_packet_header->GetHeaderType() == PHT_SHORT_HEADER) {
-        // todo get short header dcid
+        // TODO get short header dcid
     } else {
         auto long_header = dynamic_cast<LongHeader*>(first_packet_header);
         len = long_header->GetDestinationConnectionIdLength();

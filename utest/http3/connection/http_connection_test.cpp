@@ -67,7 +67,7 @@ private:
     http_handler http_handler_;
 };
 
-class ConnectionTest
+class HttpConnectionTest
     :public testing::Test {
 protected:
     void SetUp() override {
@@ -88,7 +88,7 @@ protected:
 };
 
 
-TEST_F(ConnectionTest, DoRequest) {
+TEST_F(HttpConnectionTest, DoRequest) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->SetMethod(HttpMethod::HM_GET);
     request->SetPath("/");

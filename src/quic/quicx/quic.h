@@ -1,13 +1,10 @@
-#ifndef QUIC_QUICX_QUICX_IMPL
+#ifndef QUIC_QUICX_QUIC
 #define QUIC_QUICX_QUIC
 
 #include <memory>
 #include <vector>
-#include "quic/include/quicx.h"
-#include "common/thread/thread.h"
-#include "quic/crypto/tls/tls_ctx.h"
-#include "quic/quicx/if_receiver.h"
-#include "quic/quicx/processor_interface.h"
+#include "quic/include/if_quic.h"
+#include "quic/quicx/if_processor.h"
 
 namespace quicx {
 namespace quic {
@@ -18,7 +15,9 @@ public:
     Quic();
     virtual ~Quic();
 
-    virtual bool Init(uint16_t thread_num);
+    virtual bool Init(uint16_t thread_num = 1);
+    virtual bool Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num = 1);
+    virtual bool Init(const char* cert_pem, const char* key_pem, uint16_t thread_num = 1);
 
     virtual void Join();
 
@@ -29,9 +28,8 @@ public:
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
 
     virtual void SetConnectionStateCallBack(connection_state_callback cb);
+
 private:
-    std::shared_ptr<TLSCtx> ctx_;
-    std::shared_ptr<IReceiver> receiver_;
     std::vector<std::shared_ptr<IProcessor>> processors_;
 };
 
