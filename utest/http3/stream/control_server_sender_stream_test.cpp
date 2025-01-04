@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "mock_quic_recv_stream.h"
 #include "http3/stream/control_sender_stream.h"
 #include "http3/stream/control_receiver_stream.h"
+#include "utest/http3/stream/mock_quic_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -70,8 +70,8 @@ class ControlServerSenderStreamTest
     : public testing::Test {
 protected:
     void SetUp() override {
-        mock_stream_1_ = std::make_shared<quic::MockQuicRecvStream>();
-        mock_stream_2_ = std::make_shared<quic::MockQuicRecvStream>();
+        mock_stream_1_ = std::make_shared<quic::MockQuicStream>();
+        mock_stream_2_ = std::make_shared<quic::MockQuicStream>();
         
         mock_stream_2_->SetPeer(mock_stream_1_);
         mock_stream_1_->SetPeer(mock_stream_2_);
@@ -80,8 +80,8 @@ protected:
         server_connection_ = std::make_shared<MockServerConnection>(mock_stream_2_);
     }
 
-    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_1_;
-    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_2_;
+    std::shared_ptr<quic::MockQuicStream> mock_stream_1_;
+    std::shared_ptr<quic::MockQuicStream> mock_stream_2_;
     std::shared_ptr<MockClientConnection> client_connection_;
     std::shared_ptr<MockServerConnection> server_connection_;
 };

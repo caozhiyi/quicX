@@ -16,13 +16,19 @@
 namespace quicx {
 namespace quic {
 
-UdpReceiver::UdpReceiver(uint64_t sock):
-    sock_(sock) {
+UdpReceiver::UdpReceiver() {
     action_ = std::make_shared<UdpAction>();
-    action_->AddSocket(sock_);
 }
 
-UdpReceiver::UdpReceiver(const std::string& ip, uint16_t port) {
+UdpReceiver::~UdpReceiver() {
+
+}
+
+void UdpReceiver::AddReceiver(uint64_t socket_fd) {
+    action_->AddSocket(socket_fd);
+}
+
+void UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
     auto ret = common::UdpSocket();
     if (ret.errno_ != 0) {
         common::LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
@@ -30,11 +36,11 @@ UdpReceiver::UdpReceiver(const std::string& ip, uint16_t port) {
         return;
     }
     
-    sock_ = ret.return_value_;
+    auto sock = ret.return_value_;
 
     // reuse port
     int opt = 1;
-    auto opt_ret = common::SetSockOpt(sock_, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+    auto opt_ret = common::SetSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("udp socket reuseport failed. err:%d", opt_ret.errno_);
         abort();
@@ -43,20 +49,12 @@ UdpReceiver::UdpReceiver(const std::string& ip, uint16_t port) {
 
     common::Address addr(common::Address::CheckAddressType(ip), ip, port);
 
-    opt_ret = Bind(sock_, addr);
+    opt_ret = Bind(sock, addr);
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("bind address failed. err:%d", opt_ret.errno_);
         abort();
     }
-
-    action_ = std::make_shared<UdpAction>();
-    action_->AddSocket(sock_);
-}
-
-UdpReceiver::~UdpReceiver() {
-    if (sock_ > 0) {
-        common::Close(sock_);
-    }
+    action_->AddSocket(sock);
 }
 
 void UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms) {

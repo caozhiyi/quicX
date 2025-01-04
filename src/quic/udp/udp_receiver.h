@@ -21,14 +21,13 @@ class UdpReceiver:
     public IReceiver {
 public:
     // create a receiver with socket, may be used as a client
-    UdpReceiver(uint64_t sock);
-    // create a receiver with ip and port, may be used as a server
-    UdpReceiver(const std::string& ip, uint16_t port);
+    UdpReceiver();
     ~UdpReceiver();
 
-    void TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms);
+    void AddReceiver(uint64_t socket_fd);
+    void AddReceiver(const std::string& ip, uint16_t port);
 
-    virtual uint64_t GetRecvSocket() { return sock_; }
+    void TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms);
 
     virtual void Weakup();
 
@@ -36,9 +35,6 @@ private:
     bool TryRecv(std::shared_ptr<INetPacket> pkt);
 
 private:
-    uint64_t sock_;
-    common::Address local_address_;
-
     std::queue<uint64_t> socket_queue_;
     std::shared_ptr<IUdpAction> action_;
 };

@@ -67,35 +67,35 @@ void PseudoHeader::DecodeResponse(std::shared_ptr<IResponse> response) {
     }
 }
 
-std::string PseudoHeader::MethodToString(HttpMothed method) {
+std::string PseudoHeader::MethodToString(HttpMethod method) {
     switch (method) {
-        case HttpMothed::HM_GET:     return "GET";
-        case HttpMothed::HM_POST:    return "POST";
-        case HttpMothed::HM_PUT:     return "PUT";
-        case HttpMothed::HM_DELETE:  return "DELETE";
-        case HttpMothed::HM_CONNECT: return "CONNECT";
-        case HttpMothed::HM_OPTIONS: return "OPTIONS";
-        case HttpMothed::HM_TRACE:   return "TRACE";
-        case HttpMothed::HM_PATCH:   return "PATCH";
-        case HttpMothed::HM_ANY:     return "ANY";
+        case HttpMethod::HM_GET:     return "GET";
+        case HttpMethod::HM_POST:    return "POST";
+        case HttpMethod::HM_PUT:     return "PUT";
+        case HttpMethod::HM_DELETE:  return "DELETE";
+        case HttpMethod::HM_CONNECT: return "CONNECT";
+        case HttpMethod::HM_OPTIONS: return "OPTIONS";
+        case HttpMethod::HM_TRACE:   return "TRACE";
+        case HttpMethod::HM_PATCH:   return "PATCH";
+        case HttpMethod::HM_ANY:     return "ANY";
     }
     common::LOG_FATAL("Invalid method: %d", method);
     return "GET";
 }
 
-HttpMothed PseudoHeader::StringToMethod(const std::string& method) {
-    if (method == "GET")     return HttpMothed::HM_GET;
-    if (method == "POST")    return HttpMothed::HM_POST;
-    if (method == "PUT")     return HttpMothed::HM_PUT;
-    if (method == "DELETE")  return HttpMothed::HM_DELETE;
-    if (method == "CONNECT") return HttpMothed::HM_CONNECT;
-    if (method == "OPTIONS") return HttpMothed::HM_OPTIONS;
-    if (method == "TRACE")   return HttpMothed::HM_TRACE;
-    if (method == "PATCH")   return HttpMothed::HM_PATCH;
-    if (method == "ANY")     return HttpMothed::HM_ANY;
+HttpMethod PseudoHeader::StringToMethod(const std::string& method) {
+    if (method == "GET")     return HttpMethod::HM_GET;
+    if (method == "POST")    return HttpMethod::HM_POST;
+    if (method == "PUT")     return HttpMethod::HM_PUT;
+    if (method == "DELETE")  return HttpMethod::HM_DELETE;
+    if (method == "CONNECT") return HttpMethod::HM_CONNECT;
+    if (method == "OPTIONS") return HttpMethod::HM_OPTIONS;
+    if (method == "TRACE")   return HttpMethod::HM_TRACE;
+    if (method == "PATCH")   return HttpMethod::HM_PATCH;
+    if (method == "ANY")     return HttpMethod::HM_ANY;
 
     common::LOG_FATAL("Invalid method: %s", method.c_str());
-    return HttpMothed::HM_GET;
+    return HttpMethod::HM_GET;
 }
 
 }

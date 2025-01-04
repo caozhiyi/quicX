@@ -19,8 +19,7 @@ class MultiProcessor:
     public Processor,
     public common::ThreadWithQueue<std::function<void()>> {
 public:
-    MultiProcessor(std::shared_ptr<ISender> sender,
-        std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx);
+    MultiProcessor(std::shared_ptr<TLSCtx> ctx);
     virtual ~MultiProcessor();
 
     virtual void Run();

@@ -21,11 +21,13 @@ namespace quic {
 class Processor:
     public IProcessor {
 public:
-    Processor(std::shared_ptr<ISender> sender,
-        std::shared_ptr<IReceiver> receiver, std::shared_ptr<TLSCtx> ctx);
+    Processor(std::shared_ptr<TLSCtx> ctx);
     virtual ~Processor();
 
-    void Process();
+    virtual void Process();
+
+    virtual void AddReceiver(uint64_t socket_fd);
+    virtual void AddReceiver(const std::string& ip, uint16_t port);
 
     virtual std::shared_ptr<IConnection> MakeClientConnection();
 

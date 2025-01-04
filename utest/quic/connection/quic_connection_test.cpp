@@ -61,7 +61,7 @@ bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<I
     return true;
 }
 
-TEST(connnection_utest, handshake) {
+TEST(quic_connection_utest, handshake) {
     BIO* cert_bio = BIO_new_mem_buf(__cert_pem, strlen(__cert_pem));
     EXPECT_TRUE(cert_bio != nullptr);
     common::CSmartPtr<X509, X509_free> cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);

@@ -20,7 +20,7 @@ public:
     virtual bool Init(uint16_t thread_num) = 0;
 
     // Send a request to the server
-    virtual bool DoRequest(const std::string& url, HttpMothed mothed,
+    virtual bool DoRequest(const std::string& url, HttpMethod mothed,
         std::shared_ptr<IRequest> request, const http_response_handler& handler) = 0;
 
     // Create a client instance

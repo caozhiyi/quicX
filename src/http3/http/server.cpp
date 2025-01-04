@@ -30,11 +30,11 @@ void Server::Stop() {
 
 }
 
-void Server::AddHandler(HttpMothed mothed, const std::string& path, const http_handler& handler) {
+void Server::AddHandler(HttpMethod mothed, const std::string& path, const http_handler& handler) {
     router_->AddRoute(mothed, path, handler);
 }
 
-void Server::AddMiddleware(HttpMothed mothed, MiddlewarePosition mp, const http_handler& handler) {
+void Server::AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_handler& handler) {
     if (mp == MiddlewarePosition::MP_BEFORE) {
         before_middlewares_.push_back(handler);
     } else {
@@ -67,7 +67,7 @@ void Server::HandleError(const std::string& unique_id, uint32_t error_code) {
 
 void Server::HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
     std::string path = request->GetPath();
-    HttpMothed mothed = request->GetMethod();
+    HttpMethod mothed = request->GetMethod();
 
     auto match_result = router_->Match(mothed, path);
     if (!match_result.is_match) {

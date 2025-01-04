@@ -28,10 +28,10 @@ public:
     virtual void Stop() = 0;
 
     // Register a handler for a specific path
-    virtual void AddHandler(HttpMothed mothed, const std::string& path, const http_handler& handler) = 0;
+    virtual void AddHandler(HttpMethod mothed, const std::string& path, const http_handler& handler) = 0;
 
     // Register a middleware for a specific mothed and position
-    virtual void AddMiddleware(HttpMothed mothed, MiddlewarePosition mp, const http_handler& handler) = 0;
+    virtual void AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_handler& handler) = 0;
 
     // Create a server instance
     static std::unique_ptr<IServer> Create();

@@ -16,8 +16,8 @@ public:
     virtual ~IRequest() = default;
 
     // HTTP method
-    virtual void SetMethod(HttpMothed method) = 0;
-    virtual HttpMothed GetMethod() const = 0;
+    virtual void SetMethod(HttpMethod method) = 0;
+    virtual HttpMethod GetMethod() const = 0;
 
     // Request path
     virtual void SetPath(const std::string& path) = 0;

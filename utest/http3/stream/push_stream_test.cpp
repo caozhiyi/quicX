@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 #include "http3/http/response.h"
-#include "mock_quic_recv_stream.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/push_sender_stream.h"
 #include "http3/stream/push_receiver_stream.h"
+#include "utest/http3/stream/mock_quic_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -68,8 +68,8 @@ protected:
     void SetUp() override {
         qpack_encoder_ = std::make_shared<QpackEncoder>();
         
-        mock_stream_1_ = std::make_shared<quic::MockQuicRecvStream>();
-        mock_stream_2_ = std::make_shared<quic::MockQuicRecvStream>();
+        mock_stream_1_ = std::make_shared<quic::MockQuicStream>();
+        mock_stream_2_ = std::make_shared<quic::MockQuicStream>();
 
         mock_stream_2_->SetPeer(mock_stream_1_);
         mock_stream_1_->SetPeer(mock_stream_2_);
@@ -79,8 +79,8 @@ protected:
     }
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
-    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_1_;
-    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_2_;
+    std::shared_ptr<quic::MockQuicStream> mock_stream_1_;
+    std::shared_ptr<quic::MockQuicStream> mock_stream_2_;
     std::shared_ptr<MockClientConnection> client_connection_;
     std::shared_ptr<MockServerConnection> server_connection_;
 };

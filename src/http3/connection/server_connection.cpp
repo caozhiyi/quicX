@@ -1,6 +1,6 @@
 #include "common/log/log.h"
-#include "http3/http/response.h"
 #include "http3/stream/response_stream.h"
+#include "http3/stream/push_sender_stream.h"
 #include "http3/connection/server_connection.h"
 #include "http3/stream/control_server_receiver_stream.h"
 
@@ -30,12 +30,19 @@ bool ServerConnection::SendPushPromise(const std::unordered_map<std::string, std
     return true;
 }
 
-bool ServerConnection::SendPush(const IResponse& response) {
+bool ServerConnection::SendPush(std::shared_ptr<IResponse> response) {
     if (max_push_id_ == 0) {
         return false;
     }
 
-    // TODO: implement push
+    auto stream = quic_connection_->MakeStream(quic::SD_SEND);
+
+    std::shared_ptr<PushSenderStream> push_stream = std::make_shared<PushSenderStream>(qpack_encoder_,
+        std::dynamic_pointer_cast<quic::IQuicSendStream>(stream),
+        std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2), 
+        0); // TODO: implement push id
+    
+    push_stream->SendPushResponse(response);
     return true;
 }
 

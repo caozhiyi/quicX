@@ -63,7 +63,6 @@ void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
     }
     
     if (stream->GetDirection() == quic::SD_RECV) {
-        // TODO: check stream id, control stream or push stream
         if (stream->GetStreamID() == 1) {
             // control stream
             std::shared_ptr<ControlReceiverStream> control_stream = std::make_shared<ControlReceiverStream>(
