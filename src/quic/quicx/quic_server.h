@@ -1,0 +1,39 @@
+#ifndef QUIC_QUICX_QUIC_SERVER
+#define QUIC_QUICX_QUIC_SERVER
+
+#include <memory>
+#include <vector>
+
+#include "quic/quicx/if_processor.h"
+#include "quic/include/if_quic_server.h"
+#include "quic/crypto/tls/tls_server_ctx.h"
+
+namespace quicx {
+namespace quic {
+
+class QuicServer:
+    public IServerQuic {
+public:
+    QuicServer();
+    virtual ~QuicServer();
+
+    virtual bool Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num = 1);
+    virtual bool Init(const char* cert_pem, const char* key_pem, uint16_t thread_num = 1);
+
+    virtual void Join();
+
+    virtual void Destroy();
+
+    virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
+
+    virtual void SetConnectionStateCallBack(connection_state_callback cb);
+
+private:
+    std::shared_ptr<TLSServerCtx> tls_ctx_;
+    std::vector<std::shared_ptr<IProcessor>> processors_;
+};
+
+}
+}
+
+#endif

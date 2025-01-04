@@ -10,8 +10,9 @@ namespace quic {
 
 std::unordered_map<std::thread::id, MultiProcessor*> MultiProcessor::processor_map__;
 
-MultiProcessor::MultiProcessor(std::shared_ptr<TLSCtx> ctx):
-    Processor(ctx) {
+MultiProcessor::MultiProcessor(std::shared_ptr<TLSCtx> ctx,
+    std::function<void(std::shared_ptr<IConnection>)> connection_handler):
+    Processor(ctx, connection_handler) {
 }
 
 MultiProcessor::~MultiProcessor() {
