@@ -67,14 +67,20 @@ class PushStreamTest
 protected:
     void SetUp() override {
         qpack_encoder_ = std::make_shared<QpackEncoder>();
-        mock_stream_ = std::make_shared<quic::MockQuicRecvStream>();
+        
+        mock_stream_1_ = std::make_shared<quic::MockQuicRecvStream>();
+        mock_stream_2_ = std::make_shared<quic::MockQuicRecvStream>();
 
-        client_connection_ = std::make_shared<MockClientConnection>(qpack_encoder_, mock_stream_);
-        server_connection_ = std::make_shared<MockServerConnection>(qpack_encoder_, mock_stream_);
+        mock_stream_2_->SetPeer(mock_stream_1_);
+        mock_stream_1_->SetPeer(mock_stream_2_);
+
+        client_connection_ = std::make_shared<MockClientConnection>(qpack_encoder_, mock_stream_1_);
+        server_connection_ = std::make_shared<MockServerConnection>(qpack_encoder_, mock_stream_2_);
     }
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
-    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_;
+    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_1_;
+    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_2_;
     std::shared_ptr<MockClientConnection> client_connection_;
     std::shared_ptr<MockServerConnection> server_connection_;
 };

@@ -88,7 +88,6 @@ void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
     // Append data to body
     const auto& data = data_frame->GetData();
     body_.insert(body_.end(), data.begin(), data.end());
-    body_length_ += data.size();
 
     if (body_length_ == body_.size()) {
         HandleBody();

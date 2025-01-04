@@ -37,9 +37,11 @@ int32_t MockQuicRecvStream::Send(uint8_t* data, uint32_t len) {
     if (write_cb_) {
         write_cb_(len, 0);
     }
-    if (read_cb_) {
+
+    auto peer = peer_.lock();
+    if (peer || peer->read_cb_) {
         std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(data, len);
-        read_cb_(buffer, 0);
+        peer->read_cb_(buffer, 0);
     }
     return len;
 }
@@ -49,8 +51,10 @@ int32_t MockQuicRecvStream::Send(std::shared_ptr<common::IBufferRead> buffer) {
     if (write_cb_) {
         write_cb_(len, 0);
     }
-    if (read_cb_) {
-        read_cb_(buffer, 0);
+
+    auto peer = peer_.lock();
+    if (peer || peer->read_cb_) {
+        peer->read_cb_(buffer, 0);
     }
     return len;
 }
