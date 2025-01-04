@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "http3/stream/if_stream.h"
+#include "http3/include/if_response.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "quic/include/if_quic_send_stream.h"
 
@@ -27,8 +28,7 @@ public:
     virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
 
     // Send push response headers and data
-    bool SendPushResponse(const std::unordered_map<std::string, std::string>& headers,
-                         const std::string& body = "");
+    bool SendPushResponse(std::shared_ptr<IResponse> response);
 
 private:
     std::shared_ptr<QpackEncoder> qpack_encoder_;

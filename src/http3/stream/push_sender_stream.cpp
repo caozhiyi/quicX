@@ -25,16 +25,15 @@ PushSenderStream::~PushSenderStream() {
     }
 }
 
-bool PushSenderStream::SendPushResponse(const std::unordered_map<std::string, std::string>& headers,
-                                const std::string& body) {
-    if (headers.empty()) {
-        common::LOG_ERROR("PushSenderStream::SendPushResponse headers is empty");
-        return false;
+bool PushSenderStream::SendPushResponse(std::shared_ptr<IResponse> response) {
+    if (!response->GetBody().empty()) {
+        response->AddHeader("content-length", std::to_string(response->GetBody().size()));
     }
+
     // Encode headers using qpack
     uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
-    if (!qpack_encoder_->Encode(headers, headers_buffer)) {
+        if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer)) {
         common::LOG_ERROR("PushSenderStream::SendPushResponse qpack encode error");
         return false;
     }
@@ -58,9 +57,9 @@ bool PushSenderStream::SendPushResponse(const std::unordered_map<std::string, st
     }
 
     // Send DATA frame if body exists
-    if (!body.empty()) {
+    if (!response->GetBody().empty()) {
         DataFrame data_frame;
-        std::vector<uint8_t> body_data(body.begin(), body.end());
+        std::vector<uint8_t> body_data(response->GetBody().begin(), response->GetBody().end());
         data_frame.SetData(body_data);
 
         uint8_t data_buf[4096]; // TODO: Use dynamic buffer

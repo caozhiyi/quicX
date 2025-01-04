@@ -47,9 +47,8 @@ public:
     }
     ~MockServerConnection() {}
 
-    bool SendPushResponse(const std::unordered_map<std::string, std::string>& headers,
-                         const std::string& body = "") {
-        return sender_stream_->SendPushResponse(headers, body);
+    bool SendPushResponse(std::shared_ptr<IResponse> response) {
+        return sender_stream_->SendPushResponse(response);
     }
 
     void ErrorHandle(uint64_t stream_id, uint32_t error_code) {
@@ -81,24 +80,35 @@ protected:
 };
 
 TEST_F(PushStreamTest, SendHeaders) {
-    std::unordered_map<std::string, std::string> headers = {{"Content-Type", "text/plain"}};
-    EXPECT_TRUE(server_connection_->SendPushResponse(headers));
-    EXPECT_EQ(client_connection_->GetResponse()->GetHeaders(), headers);
+    std::shared_ptr<IResponse> response = std::make_shared<Response>();
+    response->AddHeader("Content-Type", "text/plain");
+
+    EXPECT_TRUE(server_connection_->SendPushResponse(response));
+
+    std::string content_type;
+    EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
+    EXPECT_EQ(content_type, "text/plain");
+
+    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
 }
 
 TEST_F(PushStreamTest, SendHeadersAndBody) {
-    std::unordered_map<std::string, std::string> headers = {{"Content-Type", "text/plain"}};
-    std::string body = "Hello, World!";
-    headers["content-length"] = std::to_string(body.size());
-    EXPECT_TRUE(server_connection_->SendPushResponse(headers, body));
-    EXPECT_EQ(client_connection_->GetResponse()->GetHeaders(), headers);
-    EXPECT_EQ(client_connection_->GetResponse()->GetBody(), body);
+    std::shared_ptr<IResponse> response = std::make_shared<Response>();
+    response->AddHeader("Content-Type", "text/plain");
+    response->SetBody("Hello, World!");
+    response->SetStatusCode(300);
+    EXPECT_TRUE(server_connection_->SendPushResponse(response));
+    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 300);
+    EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
 }
 
 TEST_F(PushStreamTest, SendBody) {
-    std::unordered_map<std::string, std::string> headers;
-    std::string body = "Hello, World!";
-    EXPECT_FALSE(server_connection_->SendPushResponse(headers, body));
+    std::shared_ptr<IResponse> response = std::make_shared<Response>();
+    response->SetBody("Hello, World!");
+    response->SetStatusCode(300);
+    EXPECT_TRUE(server_connection_->SendPushResponse(response));
+    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 300);
+    EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
 }
 
 }  // namespace

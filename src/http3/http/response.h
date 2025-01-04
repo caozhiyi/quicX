@@ -11,7 +11,7 @@ namespace http3 {
 class Response:
     public IResponse {
 public:
-    Response() {}
+    Response(): status_code_(200) {}
     virtual ~Response() {}
 
     // Set/get status code
