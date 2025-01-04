@@ -20,21 +20,32 @@ public:
 
     // Request path
     virtual void SetPath(const std::string& path) { path_ = path; }
-    virtual std::string GetPath() const { return path_; }
+    virtual const std::string& GetPath() const { return path_; }
+
+    // Request scheme
+    virtual void SetScheme(const std::string& scheme) { scheme_ = scheme; }
+    virtual const std::string& GetScheme() const { return scheme_; }
+
+    // Request authority
+    virtual void SetAuthority(const std::string& authority) { authority_ = authority; }
+    virtual const std::string& GetAuthority() const { return authority_; }
 
     // Headers
     virtual void AddHeader(const std::string& name, const std::string& value);
     virtual bool GetHeader(const std::string& name, std::string& value) const;
     virtual void SetHeaders(const std::unordered_map<std::string, std::string>& headers) { headers_ = headers; }
-    virtual const std::unordered_map<std::string, std::string>& GetHeaders() const { return headers_; }
+    virtual std::unordered_map<std::string, std::string>& GetHeaders() { return headers_; }
     
     // Request body
     virtual void SetBody(const std::string& body) { body_ = body; }
-    virtual std::string GetBody() const { return body_; }
+    virtual const std::string& GetBody() const { return body_; }
 
 private:
     HttpMothed method_;
     std::string path_;
+    std::string scheme_;
+    std::string authority_;
+
     std::unordered_map<std::string, std::string> headers_;
     std::string body_;
 };

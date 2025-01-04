@@ -13,6 +13,8 @@ class MockQuicRecvStream:
     public IQuicBidirectionStream {
 public:
     MockQuicRecvStream() {}
+    
+    void SetPeer(std::shared_ptr<MockQuicRecvStream> peer) { peer_ = peer; }
 
     virtual void SetUserData(void* user_data) override;
     virtual void* GetUserData() override;
@@ -35,6 +37,8 @@ private:
     void* user_data_;
     stream_read_callback read_cb_;
     stream_write_callback write_cb_;
+
+    std::weak_ptr<MockQuicRecvStream> peer_;
 };
 
 }

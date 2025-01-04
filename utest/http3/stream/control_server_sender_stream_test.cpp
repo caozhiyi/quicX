@@ -70,12 +70,18 @@ class ControlServerSenderStreamTest
     : public testing::Test {
 protected:
     void SetUp() override {
-        mock_stream_ = std::make_shared<quic::MockQuicRecvStream>();
-        client_connection_ = std::make_shared<MockClientConnection>(mock_stream_);
-        server_connection_ = std::make_shared<MockServerConnection>(mock_stream_);
+        mock_stream_1_ = std::make_shared<quic::MockQuicRecvStream>();
+        mock_stream_2_ = std::make_shared<quic::MockQuicRecvStream>();
+        
+        mock_stream_2_->SetPeer(mock_stream_1_);
+        mock_stream_1_->SetPeer(mock_stream_2_);
+
+        client_connection_ = std::make_shared<MockClientConnection>(mock_stream_1_);
+        server_connection_ = std::make_shared<MockServerConnection>(mock_stream_2_);
     }
 
-    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_;
+    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_1_;
+    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_2_;
     std::shared_ptr<MockClientConnection> client_connection_;
     std::shared_ptr<MockServerConnection> server_connection_;
 };

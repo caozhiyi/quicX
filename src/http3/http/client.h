@@ -24,7 +24,8 @@ public:
     virtual bool Init(uint16_t thread_num);
 
     // Send a request to the server
-    virtual bool DoRequest(const std::string& url, std::shared_ptr<IRequest> request, const http_response_handler& handler);
+    virtual bool DoRequest(const std::string& url, HttpMothed mothed,
+        std::shared_ptr<IRequest> request, const http_response_handler& handler);
 
 private:
     void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error);

@@ -5,6 +5,7 @@
 #include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
+#include "http3/stream/pseudo-header.h"
 #include "http3/stream/response_stream.h"
 #include "http3/frame/cancel_push_frame.h"
 #include "http3/frame/push_promise_frame.h"
@@ -58,7 +59,13 @@ void ResponseStream::SendPushPromise(const std::unordered_map<std::string, std::
     stream_->Send(frame_buffer);
 }
 
-void ResponseStream::SendResponse(const std::shared_ptr<IResponse> response) {
+void ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
+    PseudoHeader::Instance().EncodeResponse(response);
+
+    if (!response->GetBody().empty()) {
+        response->AddHeader("content-length", std::to_string(response->GetBody().size()));
+    }
+    
     // send response
     // Decode request headers
     uint8_t headers_buf[4096]; // TODO: Use dynamic buffer
@@ -109,14 +116,18 @@ void ResponseStream::SendResponse(const std::shared_ptr<IResponse> response) {
 }
 
 void ResponseStream::HandleBody() {
-    std::unique_ptr<IRequest> request;
+    std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->SetHeaders(headers_);
-    request->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+    if (!body_.empty()) {
+        request->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+    }
 
-    std::unique_ptr<IResponse> response;
-    http_handler_(std::move(request), std::move(response));
+    PseudoHeader::Instance().DecodeRequest(request);
 
-    SendResponse(std::move(response));
+    std::shared_ptr<IResponse> response = std::make_shared<Response>();
+    http_handler_(request, response);
+
+    SendResponse(response);
 }
 
 }
