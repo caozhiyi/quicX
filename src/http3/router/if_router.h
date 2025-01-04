@@ -43,10 +43,10 @@ public:
     virtual ~IRouter() {}
 
     // add route context
-    virtual bool AddRoute(HttpMothed mothed, const std::string& path, const http_handler& handler) = 0;
+    virtual bool AddRoute(HttpMethod mothed, const std::string& path, const http_handler& handler) = 0;
 
     // router match
-    virtual MatchResult Match(HttpMothed mothed, const std::string& path) = 0;
+    virtual MatchResult Match(HttpMethod mothed, const std::string& path) = 0;
 };
 
 }

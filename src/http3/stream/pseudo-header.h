@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 #include "common/util/singleton.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
@@ -23,8 +24,8 @@ public:
     void DecodeResponse(std::shared_ptr<IResponse> response);
 
 private:
-    std::string MethodToString(HttpMothed method);
-    HttpMothed StringToMethod(const std::string& method);
+    std::string MethodToString(HttpMethod method);
+    HttpMethod StringToMethod(const std::string& method);
 
 private:
     std::vector<std::string> request_pseudo_headers_;

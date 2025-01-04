@@ -19,7 +19,7 @@ protected:
 
 // Test Request Encoding
 TEST_F(PseudoHeaderTest, EncodeRequestGET) {
-    request_->SetMethod(HttpMothed::HM_GET);
+    request_->SetMethod(HttpMethod::HM_GET);
     request_->SetPath("/test");
     request_->SetScheme("https");
     request_->SetAuthority("example.com");
@@ -34,7 +34,7 @@ TEST_F(PseudoHeaderTest, EncodeRequestGET) {
 }
 
 TEST_F(PseudoHeaderTest, EncodeRequestPOST) {
-    request_->SetMethod(HttpMothed::HM_POST);
+    request_->SetMethod(HttpMethod::HM_POST);
     request_->SetPath("/api/data");
     request_->SetScheme("http");
     request_->SetAuthority("api.example.com");
@@ -60,7 +60,7 @@ TEST_F(PseudoHeaderTest, DecodeRequest) {
 
     PseudoHeader::Instance().DecodeRequest(request_);
 
-    EXPECT_EQ(request_->GetMethod(), HttpMothed::HM_GET);
+    EXPECT_EQ(request_->GetMethod(), HttpMethod::HM_GET);
     EXPECT_EQ(request_->GetPath(), "/test");
     EXPECT_EQ(request_->GetScheme(), "https");
     EXPECT_EQ(request_->GetAuthority(), "example.com");
@@ -99,7 +99,7 @@ TEST_F(PseudoHeaderTest, DecodeResponse) {
 
 
 TEST_F(PseudoHeaderTest, RequestWithCustomHeaders) {
-    request_->SetMethod(HttpMothed::HM_POST);
+    request_->SetMethod(HttpMethod::HM_POST);
     request_->SetPath("/api/data");
     request_->SetScheme("https");
     request_->SetAuthority("api.example.com");
@@ -133,7 +133,7 @@ TEST_F(PseudoHeaderTest, ResponseWithCustomHeaders) {
 // Test Encode-Decode Combined Cases
 TEST_F(PseudoHeaderTest, RequestEncodeDecodeCombined) {
     // Set initial request values
-    request_->SetMethod(HttpMothed::HM_PUT);
+    request_->SetMethod(HttpMethod::HM_PUT);
     request_->SetPath("/api/v1/resource");
     request_->SetScheme("https");
     request_->SetAuthority("api.test.com");
@@ -151,7 +151,7 @@ TEST_F(PseudoHeaderTest, RequestEncodeDecodeCombined) {
     PseudoHeader::Instance().DecodeRequest(decoded_request);
 
     // Verify all fields match
-    EXPECT_EQ(decoded_request->GetMethod(), HttpMothed::HM_PUT);
+    EXPECT_EQ(decoded_request->GetMethod(), HttpMethod::HM_PUT);
     EXPECT_EQ(decoded_request->GetPath(), "/api/v1/resource");
     EXPECT_EQ(decoded_request->GetScheme(), "https");
     EXPECT_EQ(decoded_request->GetAuthority(), "api.test.com");
@@ -185,7 +185,7 @@ TEST_F(PseudoHeaderTest, ResponseEncodeDecodeCombined) {
 
 TEST_F(PseudoHeaderTest, RequestComplexPathEncodeDecodeCombined) {
     // Test with complex path containing query parameters and fragments
-    request_->SetMethod(HttpMothed::HM_GET);
+    request_->SetMethod(HttpMethod::HM_GET);
     request_->SetPath("/search?q=test&page=1#results");
     request_->SetScheme("https");
     request_->SetAuthority("search.example.com:8443");
@@ -201,7 +201,7 @@ TEST_F(PseudoHeaderTest, RequestComplexPathEncodeDecodeCombined) {
     PseudoHeader::Instance().DecodeRequest(decoded_request);
 
     // Verify the complex path is preserved
-    EXPECT_EQ(decoded_request->GetMethod(), HttpMothed::HM_GET);
+    EXPECT_EQ(decoded_request->GetMethod(), HttpMethod::HM_GET);
     EXPECT_EQ(decoded_request->GetPath(), "/search?q=test&page=1#results");
     EXPECT_EQ(decoded_request->GetScheme(), "https");
     EXPECT_EQ(decoded_request->GetAuthority(), "search.example.com:8443");

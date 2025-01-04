@@ -16,12 +16,12 @@ public:
     Router() {}
     virtual ~Router() {}
 
-    virtual bool AddRoute(HttpMothed mothed, const std::string& path, const http_handler& handler);
+    virtual bool AddRoute(HttpMethod mothed, const std::string& path, const http_handler& handler);
 
-    virtual MatchResult Match(HttpMothed mothed, const std::string& path);
+    virtual MatchResult Match(HttpMethod mothed, const std::string& path);
 
 private:
-    std::unordered_map<HttpMothed, std::shared_ptr<IRouterNode>> router_map_; // mothed type => router node
+    std::unordered_map<HttpMethod, std::shared_ptr<IRouterNode>> router_map_; // mothed type => router node
 };
 
 

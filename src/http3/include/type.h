@@ -8,7 +8,7 @@
 namespace quicx {
 namespace http3 {
 
-enum HttpMothed: uint16_t {
+enum HttpMethod: uint16_t {
     HM_GET     = 0x0001,
     HM_HEAD    = 0x0002,
     HM_POST    = 0x0004,

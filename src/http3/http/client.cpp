@@ -23,7 +23,7 @@ bool Client::Init(uint16_t thread_num) {
     return true;
 }
 
-bool Client::DoRequest(const std::string& url, HttpMothed mothed,
+bool Client::DoRequest(const std::string& url, HttpMethod mothed,
         std::shared_ptr<IRequest> request, const http_response_handler& handler) {
     // parse url
     common::URL url_info;

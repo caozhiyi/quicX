@@ -30,7 +30,7 @@ public:
     virtual bool SendPushPromise(const std::unordered_map<std::string, std::string>& headers);
 
     // send push
-    virtual bool SendPush(const IResponse& response);
+    virtual bool SendPush(std::shared_ptr<IResponse> response);
 
 private:
     void HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error_code);

@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 #include "http3/http/request.h"
 #include "http3/http/response.h"
-#include "mock_quic_recv_stream.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/request_stream.h"
 #include "http3/stream/response_stream.h"
+#include "utest/http3/stream/mock_quic_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -83,8 +83,8 @@ protected:
     void SetUp() override {
         qpack_encoder_ = std::make_shared<QpackEncoder>();
         
-        mock_stream_1_ = std::make_shared<quic::MockQuicRecvStream>();
-        mock_stream_2_ = std::make_shared<quic::MockQuicRecvStream>();
+        mock_stream_1_ = std::make_shared<quic::MockQuicStream>();
+        mock_stream_2_ = std::make_shared<quic::MockQuicStream>();
 
         mock_stream_2_->SetPeer(mock_stream_1_);
         mock_stream_1_->SetPeer(mock_stream_2_);
@@ -95,8 +95,8 @@ protected:
     }
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
-    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_1_;
-    std::shared_ptr<quic::MockQuicRecvStream> mock_stream_2_;
+    std::shared_ptr<quic::MockQuicStream> mock_stream_1_;
+    std::shared_ptr<quic::MockQuicStream> mock_stream_2_;
     std::shared_ptr<MockClientConnection> client_connection_;
     std::shared_ptr<MockServerConnection> server_connection_;
 };
@@ -104,7 +104,7 @@ protected:
 TEST_F(RequestResponseStreamTest, SendHeaders) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->AddHeader("Content-Type", "text/plain");
-    request->SetMethod(HttpMothed::HM_GET);
+    request->SetMethod(HttpMethod::HM_GET);
     request->SetPath("/api/data");
     request->SetScheme("http");
     request->SetAuthority("api.example.com");
@@ -131,7 +131,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->AddHeader("Content-Type", "text/plain");
     request->SetBody("Hello, Server!");
-    request->SetMethod(HttpMothed::HM_POST);
+    request->SetMethod(HttpMethod::HM_POST);
     request->SetPath("/api/data");
     request->SetScheme("http");
     request->SetAuthority("api.example.com");
@@ -141,11 +141,12 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
         EXPECT_TRUE(request->GetHeader("Content-Type", content_type));
         EXPECT_EQ(content_type, "text/plain");
         EXPECT_EQ(request->GetBody(), "Hello, Server!");
-        EXPECT_EQ(request->GetMethod(), HttpMothed::HM_POST);
+        EXPECT_EQ(request->GetMethod(), HttpMethod::HM_POST);
         EXPECT_EQ(request->GetPath(), "/api/data");
         EXPECT_EQ(request->GetScheme(), "http");
         EXPECT_EQ(request->GetAuthority(), "api.example.com");
 
+        response->SetStatusCode(400);
         response->AddHeader("Content-Type", "text/plain");
         response->SetBody("Hello, Client!");
     };
@@ -157,12 +158,13 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
     EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
     EXPECT_EQ(content_type, "text/plain");
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, Client!");
+    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 400);
 }
 
 TEST_F(RequestResponseStreamTest, SendBody) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->SetBody("Hello, Server!");
-    request->SetMethod(HttpMothed::HM_POST);
+    request->SetMethod(HttpMethod::HM_POST);
 
     auto http_handler = [](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
         EXPECT_EQ(request->GetBody(), "Hello, Server!");

@@ -1,20 +1,18 @@
-#ifndef MOCK_QUIC_RECV_STREAM
-#define MOCK_QUIC_RECV_STREAM
+#ifndef UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
+#define UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
 
-#include <vector>
 #include <cstdint>
-#include <cstring>
 #include "quic/include/if_quic_bidirection_stream.h"
 
 namespace quicx {
 namespace quic {
 
-class MockQuicRecvStream:
+class MockQuicStream:
     public IQuicBidirectionStream {
 public:
-    MockQuicRecvStream() {}
+    MockQuicStream() {}
     
-    void SetPeer(std::shared_ptr<MockQuicRecvStream> peer) { peer_ = peer; }
+    void SetPeer(std::shared_ptr<MockQuicStream> peer) { peer_ = peer; }
 
     virtual void SetUserData(void* user_data) override;
     virtual void* GetUserData() override;
@@ -38,7 +36,7 @@ private:
     stream_read_callback read_cb_;
     stream_write_callback write_cb_;
 
-    std::weak_ptr<MockQuicRecvStream> peer_;
+    std::weak_ptr<MockQuicStream> peer_;
 };
 
 }

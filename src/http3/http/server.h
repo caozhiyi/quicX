@@ -31,10 +31,10 @@ public:
     virtual void Stop();
 
     // Register a handler for a specific path
-    virtual void AddHandler(HttpMothed mothed, const std::string& path, const http_handler& handler);
+    virtual void AddHandler(HttpMethod mothed, const std::string& path, const http_handler& handler);
 
     // Register a middleware for a specific mothed and position
-    virtual void AddMiddleware(HttpMothed mothed, MiddlewarePosition mp, const http_handler& handler);
+    virtual void AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_handler& handler);
 
 private:
     void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error);

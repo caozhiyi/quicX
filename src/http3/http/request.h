@@ -15,8 +15,8 @@ public:
     virtual ~Request() {}
 
     // Set request method (GET, POST, etc)
-    virtual void SetMethod(HttpMothed method) { method_ = method; }
-    virtual HttpMothed GetMethod() const { return method_; }
+    virtual void SetMethod(HttpMethod method) { method_ = method; }
+    virtual HttpMethod GetMethod() const { return method_; }
 
     // Request path
     virtual void SetPath(const std::string& path) { path_ = path; }
@@ -41,7 +41,7 @@ public:
     virtual const std::string& GetBody() const { return body_; }
 
 private:
-    HttpMothed method_;
+    HttpMethod method_;
     std::string path_;
     std::string scheme_;
     std::string authority_;
