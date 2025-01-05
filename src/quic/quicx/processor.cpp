@@ -4,6 +4,7 @@
 #include "quic/quicx/processor.h"
 #include "quic/udp/udp_receiver.h"
 #include "quic/common/constants.h"
+#include "common/network/address.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/connection/client_connection.h"
@@ -16,7 +17,7 @@ namespace quic {
 thread_local std::shared_ptr<common::ITimer> Processor::time_ = common::MakeTimer();
 
 Processor::Processor(std::shared_ptr<TLSCtx> ctx,
-    std::function<void(std::shared_ptr<IConnection>)> connection_handler):
+    connection_state_callback connection_handler):
     do_send_(false),
     ctx_(ctx),
     connection_handler_(connection_handler) {
@@ -55,15 +56,16 @@ void Processor::AddReceiver(const std::string& ip, uint16_t port) {
     receiver_->AddReceiver(ip, port);
 }
 
-std::shared_ptr<IConnection> Processor::MakeClientConnection() {
-    auto new_conn = std::make_shared<ClientConnection>(ctx_, time_,
+void Processor::Connect(const std::string& ip, uint16_t port) {
+    auto conn = std::make_shared<ClientConnection>(ctx_, time_,
         std::bind(&Processor::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&Processor::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&Processor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Processor::HandleRetireConnectionId, this, std::placeholders::_1));
     
-    connecting_map_[new_conn->GetConnectionIDHash()] = new_conn;
-    return new_conn;
+    connecting_map_[conn->GetConnectionIDHash()] = conn;
+    conn->Dial(common::Address(ip, port));
+    // TODO add timer to check connection status
 }
 
 void Processor::ProcessRecv(uint32_t timeout_ms) {
@@ -96,7 +98,6 @@ void Processor::ProcessSend() {
         }
 
         packet->SetData(buffer);
-        //packet->SetSocket((*iter)->GetSock());
         packet->SetAddress((*iter)->GetPeerAddress());
 
         if (!sender_->Send(packet)) {
@@ -139,6 +140,7 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
         std::bind(&Processor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Processor::HandleRetireConnectionId, this, std::placeholders::_1));
     connecting_map_[cid_code] = new_conn;
+    // TODO add timer to check connection status
 
     new_conn->AddRemoteConnectionId(cid, len);
     new_conn->OnPackets(packet->GetTime(), packets);
@@ -148,7 +150,7 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
 void Processor::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     connecting_map_.erase(conn->GetConnectionIDHash());
     conn_map_[conn->GetConnectionIDHash()] = conn;
-    connection_handler_(conn);
+    connection_handler_(conn, 0);
 }
 
 void Processor::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {

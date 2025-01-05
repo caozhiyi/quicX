@@ -47,7 +47,7 @@ void UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
         return;
     }
 
-    common::Address addr(common::Address::CheckAddressType(ip), ip, port);
+    common::Address addr(ip, port);
 
     opt_ret = Bind(sock, addr);
     if (opt_ret.errno_ != 0) {

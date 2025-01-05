@@ -17,6 +17,16 @@ public:
     IQuicSendStream() {}
     virtual ~IQuicSendStream() {}
 
+    virtual StreamDirection GetDirection() = 0;
+    virtual uint64_t GetStreamID() = 0;
+
+    // close the stream gracefully, the stream will be closed after all data transported.
+    virtual void Close() = 0;
+
+    // close the stream immediately, the stream will be closed immediately even if there are some data inflight.
+    // error code will be sent to the peer.
+    virtual void Reset(uint32_t error) = 0;
+
     // send data to peer, return the number of bytes sended.
     virtual int32_t Send(uint8_t* data, uint32_t len) = 0;
     virtual int32_t Send(std::shared_ptr<common::IBufferRead> buffer) = 0;

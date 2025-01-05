@@ -9,28 +9,23 @@
 #include "quic/stream/type.h"
 #include "quic/frame/if_frame.h"
 #include "quic/stream/if_frame_visitor.h"
+#include "quic/include/if_quic_stream.h"
 
 namespace quicx {
 namespace quic {
 
 class IStream:
+    public virtual IQuicStream,
     public std::enable_shared_from_this<IStream> {
 public:
-    IStream(uint64_t id = 0): stream_id_(id), is_active_send_(0) {}
-    virtual ~IStream() {}
-
-    // close the stream
-    virtual void Close() {}
-
-    // reset the stream
-    virtual void Reset(uint64_t err) = 0;
-
+    IStream(uint64_t id,
+        std::function<void(std::shared_ptr<IStream>)> active_send_cb,
+        std::function<void(uint64_t stream_id)> stream_close_cb,
+        std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);
+    virtual ~IStream();
     // process recv frames
     // return stream data size
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) = 0;
-
-    void SetStreamID(uint64_t id) { stream_id_ = id; }
-    uint64_t GetStreamID() { return stream_id_; }
 
     // try generate data to send
     enum TrySendResult {
@@ -39,21 +34,14 @@ public:
         TSR_BREAK   = 2  // generate data need send alone
     };
     virtual TrySendResult TrySendData(IFrameVisitor* visitor);
-
-    void SetActiveStreamSendCB(std::function<void(std::shared_ptr<IStream> /*stream*/)> cb)
-        { active_send_cb_ = cb; }
-
-    void SetConnectionCloseCB(std::function<void(uint64_t/*errro*/, uint16_t/*tigger frame*/, const std::string&/*resion*/)> cb)
-        { connection_close_cb_ = cb; }
-
-    void SetStreamCloseCB(std::function<void(uint64_t/*stream id*/)> cb)
-        { stream_close_cb_ = cb; }
     
 protected:
     void ToClose();
     void ToSend();
     
 protected:
+    void* user_data_;
+
     uint64_t stream_id_;
     // is already active to send?
     bool is_active_send_;
@@ -61,12 +49,11 @@ protected:
     std::list<std::shared_ptr<IFrame>> frames_list_;
 
     // stream close call back
-    std::function<void(uint64_t/*stream id*/)> stream_close_cb_;
+    std::function<void(uint64_t stream_id)> stream_close_cb_;
     // put stream to active send list callback
-    std::function<void(std::shared_ptr<IStream> /*stream*/)> active_send_cb_;
+    std::function<void(std::shared_ptr<IStream> stream)> active_send_cb_;
     // inner connection close callback
-    std::function<void(uint64_t/*errro*/, uint16_t/*tigger frame*/, const std::string&/*resion*/)> connection_close_cb_;
-    
+    std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb_;
 };
 
 }

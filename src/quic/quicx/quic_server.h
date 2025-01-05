@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 
+#include "quic/quicx/quic_base.h"
 #include "quic/quicx/if_processor.h"
 #include "quic/include/if_quic_server.h"
 #include "quic/crypto/tls/tls_server_ctx.h"
@@ -12,7 +13,8 @@ namespace quicx {
 namespace quic {
 
 class QuicServer:
-    public IServerQuic {
+    public IServerQuic,
+    public QuicBase {
 public:
     QuicServer();
     virtual ~QuicServer();
@@ -27,10 +29,6 @@ public:
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
 
     virtual void SetConnectionStateCallBack(connection_state_callback cb);
-
-private:
-    std::shared_ptr<TLSServerCtx> tls_ctx_;
-    std::vector<std::shared_ptr<IProcessor>> processors_;
 };
 
 }

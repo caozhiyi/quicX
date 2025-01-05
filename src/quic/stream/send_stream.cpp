@@ -14,16 +14,43 @@
 namespace quicx {
 namespace quic {
 
-SendStream::SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
-    ISendStream(id),
+SendStream::SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
+    uint64_t init_data_limit,
+    uint64_t id,
+    std::function<void(std::shared_ptr<IStream>)> active_send_cb,
+    std::function<void(uint64_t stream_id)> stream_close_cb,
+    std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
+    IStream(id, active_send_cb, stream_close_cb, connection_close_cb),
     to_fin_(false),
     send_data_offset_(0),
-    peer_data_limit_(init_data_limit) {
-    send_buffer_ = std::make_shared<common::BufferChains>(alloter);
+    peer_data_limit_(init_data_limit),
+    send_buffer_(std::make_shared<common::BufferChains>(alloter)) {
+    send_machine_ = std::make_shared<StreamStateMachineSend>(std::bind(&SendStream::Close, this));
 }
 
 SendStream::~SendStream() {
 
+}
+
+void SendStream::Close() {
+    to_fin_ = true;
+    if (active_send_cb_) {
+        active_send_cb_(shared_from_this());
+    }
+}
+
+void SendStream::Reset(uint32_t error) {
+    // check status
+    if(!send_machine_->OnFrame(FT_RESET_STREAM)) {
+        return;
+    }
+
+    auto frame = std::make_shared<ResetStreamFrame>();
+    frame->SetStreamID(stream_id_);
+    frame->SetFinalSize(send_data_offset_);
+    frame->SetAppErrorCode(error);
+
+    frames_list_.emplace_back(frame);
 }
 
 int32_t SendStream::Send(uint8_t* data, uint32_t len) {
@@ -38,25 +65,16 @@ int32_t SendStream::Send(uint8_t* data, uint32_t len) {
     return ret;
 }
 
-void SendStream::Reset(uint64_t error) {
-    // check status
-    if(!send_machine_->OnFrame(FT_RESET_STREAM)) {
-        return;
+int32_t SendStream::Send(std::shared_ptr<common::IBufferRead> buffer) {
+    if (!send_machine_->CanSendAppData()) {
+        return -1;
     }
-
-    auto frame = std::make_shared<ResetStreamFrame>();
-    frame->SetStreamID(stream_id_);
-    frame->SetFinalSize(send_data_offset_);
-    frame->SetAppErrorCode(error);
-
-    frames_list_.emplace_back(frame);
-}
-
-void SendStream::Close() {
-    to_fin_ = true;
+    
+    int32_t ret = send_buffer_->Write(buffer->GetData(), buffer->GetDataLength());
     if (active_send_cb_) {
         active_send_cb_(shared_from_this());
     }
+    return ret;
 }
 
 uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {

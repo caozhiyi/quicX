@@ -14,7 +14,7 @@ public:
     ~TLSServerCtx();
     // init ssl library and create global ssl ctx
     virtual bool Init(const std::string& cert_file, const std::string& key_file);
-    virtual bool Init(X509* cert, EVP_PKEY* key);
+    virtual bool Init(const char* cert_pem, const char* key_pem);
 
 private:
     bool Init();
