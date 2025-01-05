@@ -17,9 +17,11 @@ namespace quic {
 
 ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
     std::shared_ptr<common::ITimer> timer,
-    std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb):
-    BaseConnection(StreamIDGenerator::SS_SERVER, timer, add_conn_id_cb, retire_conn_id_cb) {
+    std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+    std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
+    std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
+    std::function<void(uint64_t cid_hash)> retire_conn_id_cb):
+    BaseConnection(StreamIDGenerator::SS_SERVER, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb) {
     tls_connection_ = std::make_shared<TLSServerConnection>(ctx, &connection_crypto_, this);
     if (!tls_connection_->Init()) {
         common::LOG_ERROR("tls connection init failed.");
@@ -29,13 +31,6 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
     crypto_stream->SetRecvCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
-
-    auto ret = common::UdpSocket();
-    if (ret.return_value_ < 0) {
-        common::LOG_ERROR("make send socket failed. err:%d", ret.errno_);
-        return;
-    }
-    send_sock_ = ret.return_value_;
 }
 
 ServerConnection::~ServerConnection() {
@@ -45,15 +40,6 @@ ServerConnection::~ServerConnection() {
 void ServerConnection::AddRemoteConnectionId(uint8_t* id, uint16_t len) {
     ConnectionID cid(id, len);
     remote_conn_id_manager_->AddID(cid);
-}
-
-void ServerConnection::AddTransportParam(TransportParamConfig& tp_config) {
-    transport_param_.Init(tp_config);
-
-    // set transport param. TODO define tp length
-    std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(alloter_);
-    transport_param_.Encode(buf);
-    tls_connection_->AddTransportParam(buf->GetData(), buf->GetDataLength());
 }
 
 void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
@@ -82,30 +68,8 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
     }
 }
 
-bool ServerConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
-    return true;
-}
-
 bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
-}
-
-void ServerConnection::WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err) {
-    if (err != 0) {
-        common::LOG_ERROR("get crypto data failed. err:%s", err);
-        return;
-    }
-    
-    uint8_t data[1450] = {0};
-    uint32_t len = buffer->Read(data, 1450);
-    if (!tls_connection_->ProcessCryptoData(data, len)) {
-        common::LOG_ERROR("process crypto data failed. err:%s", err);
-        return;
-    }
-    
-    if (tls_connection_->DoHandleShake()) {
-        common::LOG_DEBUG("handshake done.");
-    }
 }
 
 }

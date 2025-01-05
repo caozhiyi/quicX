@@ -32,10 +32,10 @@ public:
 protected:
     virtual bool HandlePacket(std::shared_ptr<INetPacket> packet);
 
+    // transfer a connection from other processor
+    void TransferConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn);
     // all threads can't find the connection
-    void ConnectionIDNoexist();
-    // add a connection from other processor
-    void AddConnection(std::shared_ptr<IConnection>& conn);
+    void ConnectionIDNoexist(uint64_t cid_hash, std::shared_ptr<IConnection>& conn);
     // catch a connection from local map if there is target conn
     void CatchConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn);
 

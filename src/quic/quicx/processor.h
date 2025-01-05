@@ -38,14 +38,14 @@ protected:
     void ProcessSend();
 
     bool HandlePacket(std::shared_ptr<INetPacket> packet);
-    void ActiveSendConnection(std::shared_ptr<IConnection> conn);
-    void AddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn);
-    void RetireConnectionId(uint64_t cid_hash);
-
     bool InitPacketCheck(std::shared_ptr<IPacket> packet);
-
     static bool DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
         std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len);
+
+    void HandleHandshakeDone(std::shared_ptr<IConnection> conn);
+    void HandleActiveSendConnection(std::shared_ptr<IConnection> conn);
+    void HandleAddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn);
+    void HandleRetireConnectionId(uint64_t cid_hash);
 
 protected:
     bool do_send_;
@@ -61,6 +61,7 @@ protected:
 
     std::list<std::shared_ptr<IConnection>> active_send_connection_list_;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_;
+    std::unordered_map<uint64_t, std::shared_ptr<IConnection>> connecting_map_;
 
     thread_local static std::shared_ptr<common::ITimer> time_;
 

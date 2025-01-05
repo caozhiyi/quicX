@@ -16,25 +16,20 @@ class ServerConnection:
 public:
     ServerConnection(std::shared_ptr<TLSCtx> ctx,
         std::shared_ptr<common::ITimer> timer,
-        std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb);
+        std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+        std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
+        std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
+        std::function<void(uint64_t cid_hash)> retire_conn_id_cb);
     virtual ~ServerConnection();
 
     virtual void AddRemoteConnectionId(uint8_t* id, uint16_t len);
 
-    // set transport param
-    void AddTransportParam(TransportParamConfig& tp_config);
-
+private:
     void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg);
 
 protected:
-    virtual bool On0rttPacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
-
-    virtual void WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err);
-private:
-    std::shared_ptr<TLSServerConnection> tls_connection_;
 };
 
 }

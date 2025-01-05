@@ -6,11 +6,6 @@
 namespace quicx {
 namespace quic {
 
-enum AlpnType {
-    AT_HTTP3     = 1,
-    AT_TRANSPORT = 2,
-};
-
 // alpn define
 static uint8_t __alpn_h3[] = {'h', '3'};
 static uint8_t __alpn_transport[] = {'t', 'r', 'a', 'n', 's', 'p', 'o', 'r', 't'};

@@ -18,9 +18,11 @@ namespace quic {
 
 ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx,
     std::shared_ptr<common::ITimer> timer,
-    std::function<void(uint64_t/*cid hash*/, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(uint64_t/*cid hash*/)> retire_conn_id_cb):
-    BaseConnection(StreamIDGenerator::SS_CLIENT, timer, add_conn_id_cb, retire_conn_id_cb) {
+    std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+    std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
+    std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
+    std::function<void(uint64_t cid_hash)> retire_conn_id_cb):
+    BaseConnection(StreamIDGenerator::SS_CLIENT, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb) {
     tls_connection_ = std::make_shared<TLSClientConnection>(ctx, &connection_crypto_);
     if (!tls_connection_->Init()) {
         common::LOG_ERROR("tls connection init failed.");
@@ -41,14 +43,11 @@ void ClientConnection::AddAlpn(AlpnType at) {
     alpn_type_ = at;
 }
 
-void ClientConnection::AddTransportParam(TransportParamConfig& tp_config) {
-    transport_param_.Init(tp_config);
-}
-
 bool ClientConnection::Dial(const common::Address& addr) {
+    auto tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
     // set application protocol
     if (alpn_type_ == AT_HTTP3) {
-        if(!tls_connection_->AddAlpn(__alpn_h3, 2)) {
+        if(!tls_conn->AddAlpn(__alpn_h3, 2)) {
             common::LOG_ERROR("add alpn failed. alpn:%s", __alpn_h3);
             return false;
         }
@@ -58,16 +57,7 @@ bool ClientConnection::Dial(const common::Address& addr) {
     std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(alloter_);
     
     transport_param_.Encode(buf);
-    tls_connection_->AddTransportParam(buf->GetData(), buf->GetDataLength());
-
-    // create socket
-    auto ret = common::UdpSocket();
-    if (ret.errno_ != 0) {
-        common::LOG_ERROR("create udp socket failed.");
-        return false;
-    }
-
-    send_sock_ = ret.return_value_;
+    tls_conn->AddTransportParam(buf->GetData(), buf->GetDataLength());
 
     flow_control_->InitConfig(transport_param_);
 
@@ -77,39 +67,12 @@ bool ClientConnection::Dial(const common::Address& addr) {
     // install initial secret
     connection_crypto_.InstallInitSecret(dcid.id_, dcid.len_, false);
     
-    tls_connection_->DoHandleShake();
-    return true;
-}
-
-void ClientConnection::SetHandshakeDoneCB(HandshakeDoneCB& cb) {
-    handshake_done_cb_ = cb;
-}
-
-bool ClientConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
+    tls_conn->DoHandleShake();
     return true;
 }
 
 bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
-}
-
-void ClientConnection::WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err) {
-    if (err != 0) {
-        common::LOG_ERROR("get crypto data failed. err:%s", err);
-        return;
-    }
-    
-    // TODO do not copy data
-    uint8_t data[1450] = {0};
-    uint32_t len = buffer->Read(data, 1450);
-    if (!tls_connection_->ProcessCryptoData(data, len)) {
-        common::LOG_ERROR("process crypto data failed. err:%s", err);
-        return;
-    }
-    
-    if (tls_connection_->DoHandleShake()) {
-        common::LOG_DEBUG("handshake done.");
-    }
 }
 
 }

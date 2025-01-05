@@ -13,10 +13,15 @@ class IQuicStream;
 class IQuicConnection;
 class IBidirectionStream;
 
-enum StreamDirection {
+enum StreamDirection: uint8_t {
     SD_SEND = 0x01, // send stream
     SD_RECV = 0x02, // recv stream
     SD_BIDI = 0x03, // bidirection stream
+};
+
+enum AlpnType: uint8_t {
+    AT_HTTP3     = 1,
+    AT_TRANSPORT = 2,
 };
 
 // connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
