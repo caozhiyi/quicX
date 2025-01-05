@@ -22,7 +22,7 @@ class Processor:
     public IProcessor {
 public:
     Processor(std::shared_ptr<TLSCtx> ctx,
-        std::function<void(std::shared_ptr<IConnection>)> connection_handler);
+        connection_state_callback connection_handler);
     virtual ~Processor();
 
     virtual void Process();
@@ -30,7 +30,7 @@ public:
     virtual void AddReceiver(uint64_t socket_fd);
     virtual void AddReceiver(const std::string& ip, uint16_t port);
 
-    virtual std::shared_ptr<IConnection> MakeClientConnection();
+    virtual void Connect(const std::string& ip, uint16_t port);
 
 protected:
     void ProcessRecv(uint32_t timeout_ms);
@@ -65,7 +65,7 @@ protected:
 
     thread_local static std::shared_ptr<common::ITimer> time_;
 
-    std::function<void(std::shared_ptr<IConnection>)> connection_handler_;
+    connection_state_callback connection_handler_;
 };
 
 }

@@ -17,7 +17,7 @@ public:
     Address();
     Address(AddressType at);
     Address(const Address& addr);
-    Address(AddressType at, const std::string& ip, uint16_t port);
+    Address(const std::string& ip, uint16_t port);
     ~Address();
 
     virtual void SetIp(const std::string& ip);

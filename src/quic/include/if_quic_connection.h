@@ -18,7 +18,6 @@ public:
     virtual void SetUserData(void* user_data) = 0;
     virtual void* GetUserData() = 0;
 
-    virtual void GetLocalAddr(std::string& addr, uint32_t& port) = 0;
     virtual void GetRemoteAddr(std::string& addr, uint32_t& port) = 0;
 
     // close the connection gracefully. that means all the streams will be closed gracefully.

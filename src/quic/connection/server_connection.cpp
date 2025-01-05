@@ -26,9 +26,11 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
     if (!tls_connection_->Init()) {
         common::LOG_ERROR("tls connection init failed.");
     }
-    auto crypto_stream = std::make_shared<CryptoStream>(alloter_);
-    crypto_stream->SetActiveStreamSendCB(std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1));
-    crypto_stream->SetRecvCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
+    auto crypto_stream = std::make_shared<CryptoStream>(alloter_,
+        std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1),
+        std::bind(&ServerConnection::InnerStreamClose, this, std::placeholders::_1),
+        std::bind(&ServerConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    crypto_stream->SetStreamReadCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 }

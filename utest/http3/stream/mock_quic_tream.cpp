@@ -5,14 +5,6 @@
 namespace quicx {
 namespace quic {
 
-void MockQuicStream::SetUserData(void* user_data) {
-    user_data_ = user_data;
-}
-
-void* MockQuicStream::GetUserData() {
-    return user_data_;
-}
-
 quic::StreamDirection MockQuicStream::GetDirection() {
     return quic::StreamDirection::SD_BIDI;
 }

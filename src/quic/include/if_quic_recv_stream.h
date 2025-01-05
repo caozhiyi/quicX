@@ -16,6 +16,13 @@ public:
     IQuicRecvStream() {}
     virtual ~IQuicRecvStream() {}
 
+    virtual StreamDirection GetDirection() = 0;
+    virtual uint64_t GetStreamID() = 0;
+
+    // close the stream immediately, the stream will be closed immediately even if there are some data inflight.
+    // error code will be sent to the peer.
+    virtual void Reset(uint32_t error) = 0;
+
     // when there are some data received, the callback function will be called.
     // the callback function will be called in the recv thread. so you should not do any blocking operation in the callback function.
     // you should set the callback function firstly, otherwise the data received will be discarded.

@@ -28,9 +28,11 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx,
         common::LOG_ERROR("tls connection init failed.");
     }
 
-    auto crypto_stream = std::make_shared<CryptoStream>(alloter_);
-    crypto_stream->SetActiveStreamSendCB(std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1));
-    crypto_stream->SetRecvCallBack(std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
+    auto crypto_stream = std::make_shared<CryptoStream>(alloter_,
+        std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1),
+        std::bind(&ClientConnection::InnerStreamClose, this, std::placeholders::_1),
+        std::bind(&ClientConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    crypto_stream->SetStreamReadCallBack(std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 }
@@ -52,6 +54,8 @@ bool ClientConnection::Dial(const common::Address& addr) {
             return false;
         }
     }
+
+    SetPeerAddress(std::move(addr));
 
     // set transport param. TODO define tp length
     std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(alloter_);

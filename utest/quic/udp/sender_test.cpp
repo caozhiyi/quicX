@@ -38,7 +38,7 @@ TEST(UdpSenderTest, Send) {
     std::shared_ptr<INetPacket> send_pkt = std::make_shared<INetPacket>();
     send_pkt->SetData(send_buffer);
 
-    common::Address addr(common::AddressType::AT_IPV4, "127.0.0.1", 12345);
+    common::Address addr("127.0.0.1", 12345);
     send_pkt->SetAddress(addr);
 
     

@@ -62,22 +62,10 @@ bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<I
 }
 
 TEST(quic_connection_utest, handshake) {
-    BIO* cert_bio = BIO_new_mem_buf(__cert_pem, strlen(__cert_pem));
-    EXPECT_TRUE(cert_bio != nullptr);
-    common::CSmartPtr<X509, X509_free> cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
-    EXPECT_TRUE(cert != nullptr);
-    BIO_free(cert_bio);
-
-    BIO* key_bio = BIO_new_mem_buf(__key_pem, strlen(__key_pem));
-    EXPECT_TRUE(key_bio != nullptr);
-    common::CSmartPtr<EVP_PKEY, EVP_PKEY_free> key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
-    EXPECT_TRUE(key != nullptr);
-    BIO_free(key_bio);
-
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(cert.get(), key.get());
+    server_ctx->Init(__cert_pem, __key_pem);
 
-    std::shared_ptr<TLSCtx> client_ctx = std::make_shared<TLSClientCtx>();
+    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init();
 
     auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);

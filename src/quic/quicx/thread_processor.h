@@ -15,13 +15,13 @@ namespace quic {
  multi processor, supports multiple threads
 */
 class ConnectionTransfor;
-class MultiProcessor:
+class ThreadProcessor:
     public Processor,
     public common::ThreadWithQueue<std::function<void()>> {
 public:
-    MultiProcessor(std::shared_ptr<TLSCtx> ctx,
-        std::function<void(std::shared_ptr<IConnection>)> connection_handler);
-    virtual ~MultiProcessor();
+    ThreadProcessor(std::shared_ptr<TLSCtx> ctx,
+        connection_state_callback connection_handler);
+    virtual ~ThreadProcessor();
 
     virtual void Run();
 
@@ -43,7 +43,7 @@ private:
     friend class ConnectionTransfor;
     std::shared_ptr<ConnectionTransfor> connection_transfor_;
 
-    static std::unordered_map<std::thread::id, MultiProcessor*> processor_map__;
+    static std::unordered_map<std::thread::id, ThreadProcessor*> processor_map__;
 };
 
 }

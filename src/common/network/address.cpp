@@ -4,27 +4,28 @@
 namespace quicx {
 namespace common {
 
-Address::Address(): address_type_(AddressType::AT_IPV4),
-                   port_(0) {
+Address::Address():
+    address_type_(AddressType::AT_IPV4),
+    port_(0) {
 
 }
 
-Address::Address(AddressType at): address_type_(at),
-                                port_(0) {
+Address::Address(AddressType at):
+    address_type_(at),
+    port_(0) {
     
 }
 
 Address::Address(const Address& addr):
-                                address_type_(addr.address_type_),
-                                ip_(addr.ip_),
-                                port_(addr.port_) {
+    address_type_(addr.address_type_),
+    ip_(addr.ip_),
+    port_(addr.port_) {
 }
 
-Address::Address(AddressType at, const std::string& ip, uint16_t port):
-                                address_type_(at),
-                                ip_(ip),
-                                port_(port) {
-
+Address::Address(const std::string& ip, uint16_t port):
+    ip_(ip),
+    port_(port) {
+    address_type_ = CheckAddressType(ip);
 }
 
 Address::~Address() {

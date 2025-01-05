@@ -2,20 +2,22 @@
 #define UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
 
 #include <cstdint>
+#include "quic/include/if_quic_stream.h"
+#include "quic/include/if_quic_send_stream.h"
+#include "quic/include/if_quic_recv_stream.h"
 #include "quic/include/if_quic_bidirection_stream.h"
 
 namespace quicx {
 namespace quic {
 
 class MockQuicStream:
-    public IQuicBidirectionStream {
+    public virtual IQuicBidirectionStream,
+    public virtual IQuicSendStream,
+    public virtual IQuicRecvStream {
 public:
     MockQuicStream() {}
     
     void SetPeer(std::shared_ptr<MockQuicStream> peer) { peer_ = peer; }
-
-    virtual void SetUserData(void* user_data) override;
-    virtual void* GetUserData() override;
 
     virtual quic::StreamDirection GetDirection() override;
     virtual uint64_t GetStreamID() override;

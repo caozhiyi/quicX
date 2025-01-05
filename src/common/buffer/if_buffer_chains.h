@@ -8,7 +8,7 @@
 
 #include <memory>
 #include "common/buffer/buffer_block.h"
-#include "common/buffer/if_buffer.h"
+#include "common/buffer/if_buffer_read.h"
 
 namespace quicx {
 namespace common {

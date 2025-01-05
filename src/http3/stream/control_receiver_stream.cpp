@@ -23,7 +23,7 @@ ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<quic::IQuicRe
 
 ControlReceiverStream::~ControlReceiverStream() {
     if (stream_) {
-        stream_->Close();
+        stream_->Reset(0); // TODO error code
     }
 }
 

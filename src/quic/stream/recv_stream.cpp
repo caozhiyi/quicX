@@ -12,19 +12,25 @@
 namespace quicx {
 namespace quic {
 
-RecvStream::RecvStream(std::shared_ptr<common::BlockMemoryPool>& alloter, uint64_t init_data_limit, uint64_t id):
-    IRecvStream(id),
+RecvStream::RecvStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
+    uint64_t init_data_limit,
+    uint64_t id,
+    std::function<void(std::shared_ptr<IStream>)> active_send_cb,
+    std::function<void(uint64_t stream_id)> stream_close_cb,
+    std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
+    IStream(id, active_send_cb, stream_close_cb, connection_close_cb),
     local_data_limit_(init_data_limit),
     final_offset_(0),
     except_offset_(0) {
-    recv_buffer_ = std::make_shared<common::BufferChains>(alloter);
+    buffer_ = std::make_shared<common::Buffer>(buf_, sizeof(buf_));
+    recv_machine_ = std::make_shared<StreamStateMachineRecv>(std::bind(&RecvStream::Reset, this, 0)); // TODO make error code
 }
 
 RecvStream::~RecvStream() {
 
 }
 
-void RecvStream::Reset(uint64_t error) {
+void RecvStream::Reset(uint32_t error) {
     if (recv_machine_->CanSendStopSendingFrame()) {
         auto stop_frame = std::make_shared<StopSendingFrame>();
         stop_frame->SetStreamID(stream_id_);
@@ -98,7 +104,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     
 
     if (stream_frame->GetOffset() == except_offset_) {
-        recv_buffer_->Write(stream_frame->GetData(), stream_frame->GetLength());
+        buffer_->Write(stream_frame->GetData(), stream_frame->GetLength());
         except_offset_ += stream_frame->GetLength();
 
         while (true) {
@@ -108,7 +114,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             }
 
             stream_frame = std::dynamic_pointer_cast<StreamFrame>(iter->second);
-            recv_buffer_->Write(stream_frame->GetData(), stream_frame->GetLength());
+            buffer_->Write(stream_frame->GetData(), stream_frame->GetLength());
             except_offset_ += stream_frame->GetLength();
             out_order_frame_.erase(iter);
         }
@@ -118,7 +124,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         }
 
         if (recv_cb_) {
-            recv_cb_(recv_buffer_, 100); // TODO make error code. close
+            recv_cb_(buffer_, 100); // TODO make error code. close
         }
 
         if (recv_machine_->CanAppReadAllData()) {
@@ -185,7 +191,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     // TODO delay call it
     if (recv_cb_) {
-        recv_cb_(recv_buffer_, reset_frame->GetAppErrorCode());
+        recv_cb_(buffer_, reset_frame->GetAppErrorCode());
     }
 }
 
