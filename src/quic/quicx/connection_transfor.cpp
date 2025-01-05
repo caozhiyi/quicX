@@ -48,7 +48,7 @@ void ConnectionTransfor::TryCatchConnection(uint64_t cid_hash) {
 void ConnectionTransfor::ExistConnection(std::shared_ptr<SearchingContext> context) {
     auto iter = MultiProcessor::processor_map__.find(context->thread_id_);
     iter->second->Push([iter, context]()->void{
-        iter->second->CatchConnection(context->cid_hash_, context->connection_);
+        iter->second->TransferConnection(context->cid_hash_, context->connection_);
     });
     iter->second->Weakeup();
 }
@@ -56,7 +56,7 @@ void ConnectionTransfor::ExistConnection(std::shared_ptr<SearchingContext> conte
 void ConnectionTransfor::NoExistConnection(std::shared_ptr<SearchingContext> context) {
     auto iter = MultiProcessor::processor_map__.find(context->thread_id_);
     iter->second->Push([iter, context]()->void{
-        iter->second->ConnectionIDNoexist();
+        iter->second->ConnectionIDNoexist(context->cid_hash_, context->connection_);
     });
     iter->second->Weakeup();
 }

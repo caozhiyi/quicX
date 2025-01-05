@@ -80,7 +80,7 @@ TEST(quic_connection_utest, handshake) {
     std::shared_ptr<TLSCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init();
 
-    std::shared_ptr<ClientConnection> client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
     client_conn->AddAlpn(AT_HTTP3);
     client_conn->AddTransportParam(TransportParamConfig::Instance());
 
@@ -90,7 +90,7 @@ TEST(quic_connection_utest, handshake) {
 
     client_conn->Dial(addr);
     
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(TransportParamConfig::Instance());
 
     // client -------init-----> server

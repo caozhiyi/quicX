@@ -29,27 +29,35 @@ namespace quicx {
 namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
-        std::shared_ptr<common::ITimer> timer,
-        std::function<void(uint64_t, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(uint64_t)> retire_conn_id_cb):
+    std::shared_ptr<common::ITimer> timer,
+    std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+    std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
+    std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
+    std::function<void(uint64_t cid_hash)> retire_conn_id_cb):
     to_close_(false),
     last_communicate_time_(0),
     recv_control_(timer),
     send_manager_(timer),
     is_active_send_(false),
-    add_conn_id_cb_(add_conn_id_cb) {
+    add_conn_id_cb_(add_conn_id_cb),
+    retire_conn_id_cb_(retire_conn_id_cb),
+    active_connection_cb_(active_connection_cb),
+    handshake_done_cb_(handshake_done_cb) {
 
-    alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4);
+    alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4); // TODO: make it configurable
     connection_crypto_.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
     remote_conn_id_manager_ = std::make_shared<ConnectionIDManager>();
-    local_conn_id_manager_ = std::make_shared<ConnectionIDManager>(std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
-        retire_conn_id_cb);
+    local_conn_id_manager_ = std::make_shared<ConnectionIDManager>(
+        std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
+        std::bind(&BaseConnection::RetireConnectionId, this, std::placeholders::_1));
 
     flow_control_ = std::make_shared<FlowControl>(start);
     send_manager_.SetFlowControl(flow_control_);
     send_manager_.SetRemoteConnectionIDManager(remote_conn_id_manager_);
     send_manager_.SetLocalConnectionIDManager(local_conn_id_manager_);
+
+    recv_control_.SetActiveSendCB(std::bind(&BaseConnection::ActiveSend, this));
 }
 
 BaseConnection::~BaseConnection() {
@@ -58,6 +66,16 @@ BaseConnection::~BaseConnection() {
 
 uint64_t BaseConnection::GetConnectionIDHash() {
     return local_conn_id_manager_->GetCurrentID().Hash();
+}
+
+void BaseConnection::AddTransportParam(TransportParamConfig& tp_config) {
+    transport_param_.Init(tp_config);
+
+    // set transport param. TODO define tp length
+    uint8_t tp_data[1024] = {0};
+    std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(tp_data, sizeof(tp_data));
+    transport_param_.Encode(buf);
+    tls_connection_->AddTransportParam(buf->GetData(), buf->GetDataLength());
 }
 
 std::shared_ptr<ISendStream> BaseConnection::MakeSendStream() {
@@ -72,7 +90,7 @@ std::shared_ptr<ISendStream> BaseConnection::MakeSendStream() {
         return nullptr;
     }
 
-    auto stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, BaseConnection::StreamType::ST_SEND);
+    auto stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::SD_SEND);
     return std::dynamic_pointer_cast<ISendStream>(stream);
 }
 
@@ -88,7 +106,7 @@ std::shared_ptr<BidirectionStream> BaseConnection::MakeBidirectionalStream() {
         return nullptr;
     }
     
-    auto stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiLocal(), stream_id, BaseConnection::StreamType::ST_BIDIRECTIONAL);
+    auto stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiLocal(), stream_id, StreamDirection::SD_BIDI);
     return std::dynamic_pointer_cast<BidirectionStream>(stream);
 }
 
@@ -154,11 +172,6 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     }
 }
 
-void BaseConnection::SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb) {
-    active_connection_cb_ = cb;
-    recv_control_.SetActiveSendCB(std::bind(&BaseConnection::ActiveSend, this));
-}
-
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     // TODO check init packet size
 
@@ -177,12 +190,31 @@ bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
     return OnNormalPacket(packet);
 }
 
-bool BaseConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
-    return true;
-}
-
 bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
     return OnNormalPacket(packet);
+}
+
+bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
+    std::shared_ptr<ICryptographer> cryptographer = connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
+    if (!cryptographer) {
+        common::LOG_ERROR("decrypt grapher is not ready.");
+        return false;
+    }
+    
+    packet->SetCryptographer(cryptographer);
+    
+    uint8_t buf[1450] = {0};
+    std::shared_ptr<common::IBuffer> out_plaintext = std::make_shared<common::Buffer>(buf, 1450);
+    if (!packet->DecodeWithCrypto(out_plaintext)) {
+        common::LOG_ERROR("decode packet after decrypt failed.");
+        return false;
+    }
+
+    if (!OnFrames(packet->GetFrames(), packet->GetCryptoLevel())) {
+        common::LOG_ERROR("process frames failed.");
+        return false;
+    }
+    return true;
 }
 
 bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level) {
@@ -238,12 +270,6 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
     return false;
 }
 
-bool BaseConnection::OnAckFrame(std::shared_ptr<IFrame> frame,  uint16_t crypto_level) {
-    auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
-    send_manager_.OnPacketAck(ns, frame);
-    return true;
-}
-
 bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
     
@@ -268,10 +294,10 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // create new stream
     std::shared_ptr<IStream> new_stream;
     if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::SD_BIDIRECTIONAL) {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiRemote(), stream_id, BaseConnection::StreamType::ST_BIDIRECTIONAL);
+        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiRemote(), stream_id, StreamDirection::SD_BIDI);
         
     } else {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, BaseConnection::StreamType::ST_RECV);
+        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::SD_RECV);
     }
     streams_map_[stream_id] = new_stream;
     flow_control_->AddRemoteSendData(new_stream->OnFrame(frame));
@@ -285,6 +311,12 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         frames_list_.push_back(send_frame);
     }
 
+    return true;
+}
+
+bool BaseConnection::OnAckFrame(std::shared_ptr<IFrame> frame,  uint16_t crypto_level) {
+    auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
+    send_manager_.OnPacketAck(ns, frame);
     return true;
 }
 
@@ -365,6 +397,34 @@ bool BaseConnection::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 
+void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
+    transport_param_.Merge(remote_tp);
+    flow_control_->InitConfig(transport_param_);
+}
+
+void BaseConnection::WriteCryptoData(std::shared_ptr<common::IBufferChains> buffer, int32_t err) {
+    if (err != 0) {
+        common::LOG_ERROR("get crypto data failed. err:%s", err);
+        return;
+    }
+    
+    // TODO do not copy data
+    uint8_t data[1450] = {0};
+    uint32_t len = buffer->Read(data, 1450);
+    if (!tls_connection_->ProcessCryptoData(data, len)) {
+        common::LOG_ERROR("process crypto data failed. err:%s", err);
+        return;
+    }
+    
+    if (tls_connection_->DoHandleShake()) {
+        common::LOG_DEBUG("handshake done.");
+        if (handshake_done_cb_) {
+            handshake_done_cb_(shared_from_this());
+            handshake_done_cb_ = nullptr; // reset callback, so it will not be called again
+        }
+    }
+}
+
 void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
     send_manager_.AddActiveStream(stream);
     ActiveSend();
@@ -388,38 +448,16 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
     }
 }
 
-void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
-    transport_param_.Merge(remote_tp);
-    flow_control_->InitConfig(transport_param_);
-}
-
 void BaseConnection::AddConnectionId(uint64_t cid_hash) {
     if (add_conn_id_cb_) {
         add_conn_id_cb_(cid_hash, shared_from_this());
     }
 }
 
-bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
-    std::shared_ptr<ICryptographer> cryptographer = connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
-    if (!cryptographer) {
-        common::LOG_ERROR("decrypt grapher is not ready.");
-        return false;
+void BaseConnection::RetireConnectionId(uint64_t cid_hash) {
+    if (retire_conn_id_cb_) {
+        retire_conn_id_cb_(cid_hash);
     }
-    
-    packet->SetCryptographer(cryptographer);
-    
-    uint8_t buf[1450] = {0};
-    std::shared_ptr<common::IBuffer> out_plaintext = std::make_shared<common::Buffer>(buf, 1450);
-    if (!packet->DecodeWithCrypto(out_plaintext)) {
-        common::LOG_ERROR("decode packet after decrypt failed.");
-        return false;
-    }
-
-    if (!OnFrames(packet->GetFrames(), packet->GetCryptoLevel())) {
-        common::LOG_ERROR("process frames failed.");
-        return false;
-    }
-    return true;
 }
 
 void BaseConnection::ActiveSend() {
@@ -431,12 +469,12 @@ void BaseConnection::ActiveSend() {
     }
 }
 
-std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id, StreamType st) {
+std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd) {
     std::shared_ptr<IStream> new_stream;
-    if (st == BaseConnection::ST_BIDIRECTIONAL) {
+    if (sd == StreamDirection::SD_BIDI) {
         new_stream = std::make_shared<BidirectionStream>(alloter_, init_size, stream_id);
 
-    } else if (st == BaseConnection::ST_SEND) {
+    } else if (sd == StreamDirection::SD_SEND) {
         new_stream = std::make_shared<SendStream>(alloter_, init_size, stream_id);
 
     } else {

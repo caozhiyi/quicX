@@ -77,31 +77,38 @@ bool MultiProcessor::HandlePacket(std::shared_ptr<INetPacket> packet) {
 
     // create new connection
     auto new_conn = std::make_shared<ServerConnection>(ctx_, time_,
-        std::bind(&MultiProcessor::AddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&MultiProcessor::RetireConnectionId, this, std::placeholders::_1));
-    conn_map_[cid_code] = new_conn;
-    new_conn->SetActiveConnectionCB(std::bind(&MultiProcessor::ActiveSendConnection, this, std::placeholders::_1));
+        std::bind(&MultiProcessor::HandleActiveSendConnection, this, std::placeholders::_1),
+        std::bind(&MultiProcessor::HandleHandshakeDone, this, std::placeholders::_1),
+        std::bind(&MultiProcessor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&MultiProcessor::HandleRetireConnectionId, this, std::placeholders::_1));
+
     new_conn->AddRemoteConnectionId(cid, len);
     new_conn->OnPackets(packet->GetTime(), packets);
 
+    conn_map_[cid_code] = new_conn;
     return true;
 }
 
-void MultiProcessor::ConnectionIDNoexist() {
-    // TODO reset connection
+void MultiProcessor::TransferConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {
+    conn->SetTimer(Processor::time_);
+    conn->SetActiveConnectionCB(std::bind(&MultiProcessor::HandleActiveSendConnection, this, std::placeholders::_1));
+    conn->SetHandshakeDoneCB(std::bind(&MultiProcessor::HandleHandshakeDone, this, std::placeholders::_1));
+    conn->SetAddConnectionIdCB(std::bind(&MultiProcessor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2));
+    conn->SetRetireConnectionIdCB(std::bind(&MultiProcessor::HandleRetireConnectionId, this, std::placeholders::_1));
+    conn_map_[cid_hash] = conn;
 }
 
-void MultiProcessor::AddConnection(std::shared_ptr<IConnection>& conn) {
-    conn->SetActiveConnectionCB(std::bind(&MultiProcessor::ActiveSendConnection, this, std::placeholders::_1));
-    // TODO add other callback
-    conn_map_[conn->GetConnectionIDHash()] = conn;
+void MultiProcessor::ConnectionIDNoexist(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {
+    // do nothing
 }
 
 void MultiProcessor::CatchConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {
+    // return the connection to outside
     auto iter = conn_map_.find(cid_hash);
     if (iter != conn_map_.end()) {
         conn = iter->second;
     }
+    // remove from map
     conn_map_.erase(iter);
 }
 
