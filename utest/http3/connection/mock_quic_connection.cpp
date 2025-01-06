@@ -17,20 +17,12 @@ std::shared_ptr<IQuicStream> MockQuicConnection::MakeStream(StreamDirection type
     auto stream2 = std::make_shared<MockQuicStream>();
     stream1->SetPeer(stream2);
     stream2->SetPeer(stream1);
-
-    if (type == StreamDirection::SD_SEND) {
-        auto peer = peer_.lock();
-        if (peer || peer->stream_state_cb_) {
-            peer->stream_state_cb_(stream2, StreamDirection::SD_RECV);
-        }
-        
-
-    } else {
-        auto peer = peer_.lock();
-        if (peer || peer->stream_state_cb_) {
-            peer->stream_state_cb_(stream2, StreamDirection::SD_BIDI);
-        }
+    
+    auto peer = peer_.lock();
+    if (peer && peer->stream_state_cb_) {
+        peer->stream_state_cb_(stream2, 0);
     }
+    
     return stream1;
 }
 
