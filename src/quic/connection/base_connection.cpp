@@ -458,30 +458,6 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     flow_control_->InitConfig(transport_param_);
 }
 
-void BaseConnection::WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) {
-    if (err != 0) {
-        common::LOG_ERROR("get crypto data failed. err:%s", err);
-        return;
-    }
-    
-    // TODO do not copy data
-    uint8_t data[1450] = {0};
-    uint32_t len = buffer->Read(data, 1450);
-    if (!tls_connection_->ProcessCryptoData(data, len)) {
-        common::LOG_ERROR("process crypto data failed. err:%s", err);
-        return;
-    }
-    
-    if (tls_connection_->DoHandleShake()) {
-        common::LOG_DEBUG("handshake done.");
-        if (handshake_done_cb_) {
-            handshake_done_cb_(shared_from_this());
-            handshake_done_cb_ = nullptr; // reset callback, so it will not be called again
-        }
-    }
-}
-
-
 void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {
     send_manager_.ToSendFrame(frame);
     ActiveSend();

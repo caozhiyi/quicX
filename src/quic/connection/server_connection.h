@@ -28,10 +28,14 @@ public:
 protected:
     virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
-
+    virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err);
+    
 private:
     void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg);
+
+protected:
+    virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
 };
 
 }

@@ -75,7 +75,6 @@ protected:
     void OnTransportParams(TransportParam& remote_tp);
 
 protected:
-    void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err);
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveSendStream(std::shared_ptr<IStream> stream);
     void ActiveSend();
@@ -87,6 +86,8 @@ protected:
     void RetireConnectionId(uint64_t cid_hash);
     
     std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd);
+
+    virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) = 0;
 
 protected:
     // transport param verify done

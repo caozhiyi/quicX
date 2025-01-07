@@ -32,6 +32,7 @@ public:
 protected:
     virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
+    virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err);
 
 private:
     AlpnType alpn_type_; // application protocol
