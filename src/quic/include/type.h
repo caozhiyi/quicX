@@ -26,7 +26,7 @@ enum AlpnType: uint8_t {
 
 // connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
 // conn: connection instance which state changed
-typedef std::function<void(std::shared_ptr<IQuicConnection> conn, uint32_t error)> connection_state_callback;
+typedef std::function<void(std::shared_ptr<IQuicConnection> conn, uint32_t error, const std::string& reason)> connection_state_callback;
 
 // stream state callback, call this callback when stream state changed, like created, closed, etc.
 // stream: stream instance which state changed

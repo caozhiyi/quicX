@@ -22,8 +22,10 @@ public:
     SendManager(std::shared_ptr<common::ITimer> timer);
     ~SendManager();
 
-    void AddFrame(std::shared_ptr<IFrame> frame);
-    void AddActiveStream(std::shared_ptr<IStream> stream);
+    bool IsAllSendDone();
+
+    void ToSendFrame(std::shared_ptr<IFrame> frame);
+    void ActiveStream(std::shared_ptr<IStream> stream);
 
     bool GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
     void OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame);

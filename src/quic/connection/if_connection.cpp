@@ -47,5 +47,9 @@ void IConnection::SetRetireConnectionIdCB(std::function<void(uint64_t cid_hash)>
     retire_conn_id_cb_ = cb;
 }
 
+void IConnection::SetConnectionCloseCB(std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> cb) {
+    connection_close_cb_ = cb;
+}
+
 }
 }

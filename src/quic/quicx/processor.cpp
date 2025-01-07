@@ -34,8 +34,8 @@ Processor::~Processor() {
 void Processor::Process() {
     // send all data to network
     if (do_send_) {
-        do_send_ = false;
         ProcessSend();
+        do_send_ = active_send_connection_set_.empty();
     }
 
     int64_t waittime_ = time_->MinTime();
@@ -61,7 +61,8 @@ void Processor::Connect(const std::string& ip, uint16_t port) {
         std::bind(&Processor::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&Processor::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&Processor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&Processor::HandleRetireConnectionId, this, std::placeholders::_1));
+        std::bind(&Processor::HandleRetireConnectionId, this, std::placeholders::_1),
+        std::bind(&Processor::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     
     connecting_map_[conn->GetConnectionIDHash()] = conn;
     conn->Dial(common::Address(ip, port));
@@ -91,9 +92,11 @@ void Processor::ProcessSend() {
     std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
 
     std::shared_ptr<INetPacket> packet;
-    for (auto iter = active_send_connection_list_.begin(); iter != active_send_connection_list_.end(); ++iter) {
-        if (!(*iter)->GenerateSendData(buffer)) {
+    bool send_done = false;
+    for (auto iter = active_send_connection_set_.begin(); iter != active_send_connection_set_.end();) {
+        if (!(*iter)->GenerateSendData(buffer, send_done)) {
             common::LOG_ERROR("generate send data failed.");
+            iter = active_send_connection_set_.erase(iter);
             continue;
         }
 
@@ -104,8 +107,12 @@ void Processor::ProcessSend() {
             common::LOG_ERROR("udp send failed.");
         }
         buffer->Clear();
+        if (send_done) {
+            iter = active_send_connection_set_.erase(iter);
+        } else {
+            iter++;
+        }
     }
-    active_send_connection_list_.clear();
 }
 
 bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
@@ -138,7 +145,8 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
         std::bind(&Processor::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&Processor::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&Processor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&Processor::HandleRetireConnectionId, this, std::placeholders::_1));
+        std::bind(&Processor::HandleRetireConnectionId, this, std::placeholders::_1),
+        std::bind(&Processor::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     connecting_map_[cid_code] = new_conn;
     // TODO add timer to check connection status
 
@@ -150,11 +158,11 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
 void Processor::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     connecting_map_.erase(conn->GetConnectionIDHash());
     conn_map_[conn->GetConnectionIDHash()] = conn;
-    connection_handler_(conn, 0);
+    connection_handler_(conn, 0, "");
 }
 
 void Processor::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
-    active_send_connection_list_.push_back(conn);
+    active_send_connection_set_.insert(conn);
     do_send_ = true;
 }
 
@@ -164,6 +172,11 @@ void Processor::HandleAddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnec
 
 void Processor::HandleRetireConnectionId(uint64_t cid_hash) {
     conn_map_.erase(cid_hash);
+}
+
+void Processor::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
+    conn_map_.erase(conn->GetConnectionIDHash());
+    connection_handler_(conn, error, reason);
 }
 
 bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {

@@ -50,7 +50,8 @@ static const char __key_pem[] =
 bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn) {
     uint8_t buf[1500] = {0};
     std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + 1500);
-    send_conn->GenerateSendData(buffer);
+    bool done = false;
+    send_conn->GenerateSendData(buffer, done);
 
     std::vector<std::shared_ptr<IPacket>> packets;
     if (!DecodePackets(buffer, packets)) {
@@ -68,7 +69,7 @@ TEST(quic_connection_utest, handshake) {
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init();
 
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     client_conn->AddAlpn(AT_HTTP3);
     client_conn->AddTransportParam(TransportParamConfig::Instance());
 
@@ -78,7 +79,7 @@ TEST(quic_connection_utest, handshake) {
 
     client_conn->Dial(addr);
     
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(TransportParamConfig::Instance());
 
     // client -------init-----> server

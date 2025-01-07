@@ -22,11 +22,15 @@ SendManager::~SendManager() {
 
 }
 
-void SendManager::AddFrame(std::shared_ptr<IFrame> frame) {
+bool SendManager::IsAllSendDone() {
+    return wait_frame_list_.empty() && active_send_stream_set_.empty();
+}
+
+void SendManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
     wait_frame_list_.emplace_front(frame);
 }
 
-void SendManager::AddActiveStream(std::shared_ptr<IStream> stream) {
+void SendManager::ActiveStream(std::shared_ptr<IStream> stream) {
     active_send_stream_set_.insert(stream);
 }
 
@@ -45,16 +49,18 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
         uint32_t can_send_size;
         std::shared_ptr<IFrame> frame;
         if (!flow_control_->CheckLocalSendDataLimit(can_send_size, frame)) {
+            common::LOG_WARN("local send data limited.");
             return false;
         }
         if (frame) {
-            AddFrame(frame);
+            ToSendFrame(frame);
         }
     
         FixBufferFrameVisitor frame_visitor(1450); // TODO put 1450 to config
         frame_visitor.SetStreamDataSizeLimit(can_send_size);
         auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
         if (!packet) {
+            common::LOG_ERROR("make packet failed.");
             return false;
         }
         return PacketInit(packet, buffer);
@@ -73,6 +79,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
             iter = wait_frame_list_.erase(iter);
 
         } else {
+            common::LOG_ERROR("handle frame failed.");
             return nullptr;
         }
     }

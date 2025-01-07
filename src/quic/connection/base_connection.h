@@ -28,7 +28,8 @@ public:
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(uint64_t cid_hash)> retire_conn_id_cb);
+        std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
+        std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb);
     virtual ~BaseConnection();
     //*************** outside interface ***************//
     virtual void Close();
@@ -40,7 +41,7 @@ public:
     void AddTransportParam(TransportParamConfig& tp_config);
     virtual uint64_t GetConnectionIDHash();
     // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, bool& send_done);
     // handle packets
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
     virtual EncryptionLevel GetCurEncryptionLevel() { return connection_crypto_.GetCurEncryptionLevel(); }
@@ -65,21 +66,26 @@ protected:
     bool OnMaxStreamFrame(std::shared_ptr<IFrame> frame);
     bool OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame);
     bool OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame);
-    
+    bool OnConnectionCloseFrame(std::shared_ptr<IFrame> frame);
+    bool OnConnectionCloseAppFrame(std::shared_ptr<IFrame> frame);
+    bool OnPathChallengeFrame(std::shared_ptr<IFrame> frame);
+    bool OnPathResponseFrame(std::shared_ptr<IFrame> frame);
+    virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) = 0;
+
     void OnTransportParams(TransportParam& remote_tp);
 
 protected:
     void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err);
+    void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveSendStream(std::shared_ptr<IStream> stream);
+    void ActiveSend();
 
     void InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string resion);
     void InnerStreamClose(uint64_t stream_id);
 
     void AddConnectionId(uint64_t cid_hash);
     void RetireConnectionId(uint64_t cid_hash);
-    void ActiveSend();
-
-private:
+    
     std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd);
 
 protected:
@@ -96,8 +102,6 @@ protected:
     // connection id
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
     std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
-    // waitting send frames
-    std::list<std::shared_ptr<IFrame>> frames_list_;
     // flow control
     std::shared_ptr<FlowControl> flow_control_;
     RecvControl recv_control_;
@@ -106,8 +110,6 @@ protected:
     ConnectionCrypto connection_crypto_;
     // token
     std::string token_;
-    // active to send
-    bool is_active_send_;
     std::shared_ptr<TLSConnection> tls_connection_;
 };
 
