@@ -86,7 +86,8 @@ bool ThreadProcessor::HandlePacket(std::shared_ptr<INetPacket> packet) {
         std::bind(&ThreadProcessor::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ThreadProcessor::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ThreadProcessor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&ThreadProcessor::HandleRetireConnectionId, this, std::placeholders::_1));
+        std::bind(&ThreadProcessor::HandleRetireConnectionId, this, std::placeholders::_1),
+        std::bind(&ThreadProcessor::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
     new_conn->AddRemoteConnectionId(cid, len);
     new_conn->OnPackets(packet->GetTime(), packets);
@@ -101,6 +102,7 @@ void ThreadProcessor::TransferConnection(uint64_t cid_hash, std::shared_ptr<ICon
     conn->SetHandshakeDoneCB(std::bind(&ThreadProcessor::HandleHandshakeDone, this, std::placeholders::_1));
     conn->SetAddConnectionIdCB(std::bind(&ThreadProcessor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2));
     conn->SetRetireConnectionIdCB(std::bind(&ThreadProcessor::HandleRetireConnectionId, this, std::placeholders::_1));
+    conn->SetConnectionCloseCB(std::bind(&ThreadProcessor::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     conn_map_[cid_hash] = conn;
 }
 

@@ -21,8 +21,9 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
     std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(uint64_t cid_hash)> retire_conn_id_cb):
-    BaseConnection(StreamIDGenerator::SS_CLIENT, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb) {
+    std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
+    std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
+    BaseConnection(StreamIDGenerator::SS_CLIENT, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb) {
     tls_connection_ = std::make_shared<TLSClientConnection>(ctx, &connection_crypto_);
     if (!tls_connection_->Init()) {
         common::LOG_ERROR("tls connection init failed.");
@@ -75,8 +76,31 @@ bool ClientConnection::Dial(const common::Address& addr) {
     return true;
 }
 
+bool ClientConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
+    return true;
+}
+
 bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
+}
+
+void ClientConnection::WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) {
+    if (err != 0) {
+        common::LOG_ERROR("get crypto data failed. err:%s", err);
+        return;
+    }
+    
+    // TODO do not copy data
+    uint8_t data[1450] = {0};
+    uint32_t len = buffer->Read(data, 1450);
+    if (!tls_connection_->ProcessCryptoData(data, len)) {
+        common::LOG_ERROR("process crypto data failed. err:%s", err);
+        return;
+    }
+    
+    if (tls_connection_->DoHandleShake()) {
+        common::LOG_DEBUG("handshake done.");
+    }
 }
 
 }

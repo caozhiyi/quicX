@@ -19,6 +19,8 @@
 #include "quic/packet/handshake_packet.h"
 #include "quic/frame/data_blocked_frame.h"
 #include "quic/stream/bidirection_stream.h"
+#include "quic/frame/path_response_frame.h"
+#include "quic/frame/path_challenge_frame.h"
 #include "quic/connection/base_connection.h"
 #include "quic/frame/streams_blocked_frame.h"
 #include "quic/frame/connection_close_frame.h"
@@ -33,13 +35,13 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
     std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(uint64_t cid_hash)> retire_conn_id_cb):
+    std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
+    std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
     IConnection(active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb),
     to_close_(false),
     last_communicate_time_(0),
     recv_control_(timer),
-    send_manager_(timer),
-    is_active_send_(false) {
+    send_manager_(timer) {
 
     alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4); // TODO: make it configurable
     connection_crypto_.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
@@ -65,14 +67,14 @@ void BaseConnection::Close() {
     to_close_ = true;
     auto frame = std::make_shared<ConnectionCloseFrame>();
     frame->SetErrorCode(0);
-    frames_list_.push_back(frame);
+    ToSendFrame(frame);
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
     to_close_ = true;
     auto frame = std::make_shared<ConnectionCloseFrame>();
     frame->SetErrorCode(error_code);
-    frames_list_.push_back(frame);
+    ToSendFrame(frame);
 }
 
 std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
@@ -81,7 +83,7 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
     std::shared_ptr<IFrame> frame;
     bool can_make_stream = flow_control_->CheckLocalUnidirectionStreamLimit(stream_id, frame);
     if (frame) {
-        frames_list_.push_back(frame);
+        ToSendFrame(frame);
     }
     if (!can_make_stream) {
         return nullptr;
@@ -109,7 +111,7 @@ uint64_t BaseConnection::GetConnectionIDHash() {
     return local_conn_id_manager_->GetCurrentID().Hash();
 }
 
-bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer) {
+bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, bool& send_done) {
     // make quic packet
     uint8_t encrypto_level = GetCurEncryptionLevel();
     auto crypto_grapher = connection_crypto_.GetCryptographer(encrypto_level);
@@ -120,10 +122,18 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer) {
 
     auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), CryptoLevel2PacketNumberSpace(encrypto_level));
     if (ack_frame) {
-        send_manager_.AddFrame(ack_frame);
+        send_manager_.ToSendFrame(ack_frame);
     }
     
-    return send_manager_.GetSendData(buffer, encrypto_level, crypto_grapher);
+    bool ret = send_manager_.GetSendData(buffer, encrypto_level, crypto_grapher);
+    if (!ret) {
+        common::LOG_ERROR("get send data failed.");
+    }
+    send_done = send_manager_.IsAllSendDone();
+    if (send_done && to_close_) {
+        InnerConnectionClose(QUIC_ERROR_CODE::QEC_NO_ERROR, 0, "connection closed by local.");
+    }
+    return ret;
 }
 
 void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
@@ -241,11 +251,17 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
             return OnNewConnectionIDFrame(frames[i]);
         case FT_RETIRE_CONNECTION_ID:
             return OnRetireConnectionIDFrame(frames[i]);
-        case FT_PATH_CHALLENGE: break;
-        case FT_PATH_RESPONSE: break;
-        case FT_CONNECTION_CLOSE: break;
-        case FT_CONNECTION_CLOSE_APP: break;
-        case FT_HANDSHAKE_DONE: break;
+        case FT_PATH_CHALLENGE: 
+            return OnPathChallengeFrame(frames[i]);
+        case FT_PATH_RESPONSE: 
+            return OnPathResponseFrame(frames[i]);
+        case FT_CONNECTION_CLOSE:
+            return OnConnectionCloseFrame(frames[i]);
+        case FT_CONNECTION_CLOSE_APP:
+            return OnConnectionCloseAppFrame(frames[i]);
+        case FT_HANDSHAKE_DONE:
+            return OnHandshakeDoneFrame(frames[i]);
+        // ********** stream frame **********
         case FT_RESET_STREAM:
         case FT_STOP_SENDING:
         case FT_STREAM_DATA_BLOCKED:
@@ -277,7 +293,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
     bool can_make_stream = flow_control_->CheckRemoteStreamLimit(stream_id, send_frame);
     if (send_frame) {
-        frames_list_.push_back(send_frame);
+        ToSendFrame(send_frame);
     }
     if (!can_make_stream) {
         return false;
@@ -300,7 +316,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     if (send_frame) {
-        frames_list_.push_back(send_frame);
+        ToSendFrame(send_frame);
     }
     if (stream_state_cb_) {
         stream_state_cb_(new_stream, 0);
@@ -345,7 +361,7 @@ bool BaseConnection::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
     flow_control_->CheckRemoteSendDataLimit(send_frame);
     if (send_frame) {
-        frames_list_.push_back(send_frame);
+        ToSendFrame(send_frame);
     }
     return true;
 }
@@ -354,7 +370,7 @@ bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
     flow_control_->CheckRemoteStreamLimit(0, send_frame);
     if (send_frame) {
-        frames_list_.push_back(send_frame);
+        ToSendFrame(send_frame);
     }
     return true;
 }
@@ -391,37 +407,71 @@ bool BaseConnection::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 
+bool BaseConnection::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
+    auto close_frame = std::dynamic_pointer_cast<ConnectionCloseFrame>(frame);
+    if (!close_frame) {
+        common::LOG_ERROR("invalid connection close frame.");
+        return false;
+    }
+    connection_close_cb_(shared_from_this(), close_frame->GetErrorCode(), close_frame->GetReason());
+    return true;
+}
+
+bool BaseConnection::OnConnectionCloseAppFrame(std::shared_ptr<IFrame> frame) {
+    auto close_frame = std::dynamic_pointer_cast<ConnectionCloseFrame>(frame);
+    if (!close_frame) {
+        common::LOG_ERROR("invalid connection close app frame.");
+        return false;
+    }
+    connection_close_cb_(shared_from_this(), close_frame->GetErrorCode(), close_frame->GetReason());
+    return true;
+}
+
+bool BaseConnection::OnPathChallengeFrame(std::shared_ptr<IFrame> frame) {
+    auto challenge_frame = std::dynamic_pointer_cast<PathChallengeFrame>(frame);
+    if (!challenge_frame) {
+        common::LOG_ERROR("invalid path challenge frame.");
+        return false;
+    }
+    auto data = challenge_frame->GetData();
+    auto response_frame = std::make_shared<PathResponseFrame>();
+    response_frame->SetData(data);
+    ToSendFrame(response_frame);
+    return true;
+}
+
+bool BaseConnection::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
+    auto response_frame = std::dynamic_pointer_cast<PathResponseFrame>(frame);
+    if (!response_frame) {
+        common::LOG_ERROR("invalid path response frame.");
+        return false;
+    }
+    auto data = response_frame->GetData();
+    if (data) {
+        // TODO: check data
+    }
+    return true;
+}
+
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     transport_param_.Merge(remote_tp);
     flow_control_->InitConfig(transport_param_);
 }
 
-void BaseConnection::WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) {
-    if (err != 0) {
-        common::LOG_ERROR("get crypto data failed. err:%s", err);
-        return;
-    }
-    
-    // TODO do not copy data
-    uint8_t data[1450] = {0};
-    uint32_t len = buffer->Read(data, 1450);
-    if (!tls_connection_->ProcessCryptoData(data, len)) {
-        common::LOG_ERROR("process crypto data failed. err:%s", err);
-        return;
-    }
-    
-    if (tls_connection_->DoHandleShake()) {
-        common::LOG_DEBUG("handshake done.");
-        if (handshake_done_cb_) {
-            handshake_done_cb_(shared_from_this());
-            handshake_done_cb_ = nullptr; // reset callback, so it will not be called again
-        }
-    }
+void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {
+    send_manager_.ToSendFrame(frame);
+    ActiveSend();
 }
 
 void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
-    send_manager_.AddActiveStream(stream);
+    send_manager_.ActiveStream(stream);
     ActiveSend();
+}
+
+void BaseConnection::ActiveSend() {
+    if (active_connection_cb_) {
+        active_connection_cb_(shared_from_this());
+    }
 }
 
 void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string resion) {
@@ -431,7 +481,7 @@ void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame,
     frame->SetErrorCode(error);
     frame->SetErrFrameType(tigger_frame);
     frame->SetReason(resion);
-    frames_list_.push_back(frame);
+    ToSendFrame(frame);
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {
@@ -451,15 +501,6 @@ void BaseConnection::AddConnectionId(uint64_t cid_hash) {
 void BaseConnection::RetireConnectionId(uint64_t cid_hash) {
     if (retire_conn_id_cb_) {
         retire_conn_id_cb_(cid_hash);
-    }
-}
-
-void BaseConnection::ActiveSend() {
-    if (!is_active_send_) {
-        is_active_send_ = true;
-    }
-    if (active_connection_cb_) {
-        active_connection_cb_(shared_from_this());
     }
 }
 

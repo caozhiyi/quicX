@@ -4,6 +4,7 @@
 #include <memory>
 #include <functional>
 #include <unordered_map>
+#include <unordered_set>
 #include <condition_variable>
 #include "quic/udp/if_sender.h"
 #include "common/timer/timer.h"
@@ -46,6 +47,7 @@ protected:
     void HandleActiveSendConnection(std::shared_ptr<IConnection> conn);
     void HandleAddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn);
     void HandleRetireConnectionId(uint64_t cid_hash);
+    void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason);
 
 protected:
     bool do_send_;
@@ -59,7 +61,7 @@ protected:
 
     std::shared_ptr<common::BlockMemoryPool> alloter_;
 
-    std::list<std::shared_ptr<IConnection>> active_send_connection_list_;
+    std::unordered_set<std::shared_ptr<IConnection>> active_send_connection_set_;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> connecting_map_;
 

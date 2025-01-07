@@ -12,14 +12,14 @@ IConnection::IConnection(const std::string& unique_id,
     error_handler_(error_handler),
     quic_connection_(quic_connection) {
 
+    quic_connection_->SetStreamStateCallBack(std::bind(&IConnection::HandleStream, this, 
+        std::placeholders::_1, std::placeholders::_2));
+
     // create control streams
     auto control_stream = quic_connection_->MakeStream(quic::SD_SEND);
     control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
         std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
         std::bind(&IConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-
-    quic_connection_->SetStreamStateCallBack(std::bind(&IConnection::HandleStream, this, 
-        std::placeholders::_1, std::placeholders::_2));
     
     std::unordered_map<uint16_t, uint64_t> settings;
     settings[SETTINGS_TYPE::ST_MAX_HEADER_LIST_SIZE] = 100;

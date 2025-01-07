@@ -40,14 +40,14 @@ public:
 
     // create a new stream, only supported send stream and bidirection stream.
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) = 0;
-        // set the callback function to handle the stream state change.
+    // set the callback function to handle the stream state change.
     virtual void SetStreamStateCallBack(stream_state_callback cb) { stream_state_cb_ = cb; }
 
     //*************** inner interface ***************//
     virtual void AddTransportParam(TransportParamConfig& tp_config) = 0;
     virtual uint64_t GetConnectionIDHash() = 0;
     // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer) = 0;
+    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, bool& send_done) = 0;
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
     virtual EncryptionLevel GetCurEncryptionLevel() = 0;
 
@@ -61,6 +61,7 @@ public:
     virtual void SetHandshakeDoneCB(std::function<void(std::shared_ptr<IConnection>)> cb);
     virtual void SetAddConnectionIdCB(std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> cb);
     virtual void SetRetireConnectionIdCB(std::function<void(uint64_t cid_hash)> cb);
+    virtual void SetConnectionCloseCB(std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> cb);
 
 protected:
     void* user_data_;
@@ -70,6 +71,7 @@ protected:
     std::function<void(uint64_t cid_hash)> retire_conn_id_cb_;
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb_;
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb_;
+    std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb_;
 
     stream_state_callback stream_state_cb_;
 
