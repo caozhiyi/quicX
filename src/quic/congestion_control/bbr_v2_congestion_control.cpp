@@ -1,4 +1,5 @@
 #include <algorithm>
+#include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v2_congestion_control.h"
 
 namespace quicx {
@@ -31,6 +32,7 @@ BBRv2CongestionControl::BBRv2CongestionControl() :
     congestion_window_ = MIN_WINDOW;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
+    pacer_ = std::make_unique<NormalPacer>();
 }
 
 BBRv2CongestionControl::~BBRv2CongestionControl() {
@@ -38,6 +40,7 @@ BBRv2CongestionControl::~BBRv2CongestionControl() {
 
 void BBRv2CongestionControl::OnPacketSent(size_t bytes, uint64_t sent_time) {
     bytes_in_flight_ = bytes_in_flight_ + bytes;
+    pacer_->OnPacketSent(sent_time, bytes);
 }
 
 void BBRv2CongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
@@ -49,6 +52,7 @@ void BBRv2CongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
 
     CheckCyclePhase(ack_time);
     UpdateInflightModel();
+    pacer_->OnPacingRateUpdated(GetPacingRate());
 }
 
 void BBRv2CongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
@@ -61,6 +65,7 @@ void BBRv2CongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
             static_cast<size_t>(congestion_window_ * BETA_LOSS));
         inflight_too_high_ = true;
     }
+    pacer_->OnPacingRateUpdated(GetPacingRate());
 }
 
 void BBRv2CongestionControl::OnRttUpdated(uint64_t rtt) {
@@ -69,6 +74,7 @@ void BBRv2CongestionControl::OnRttUpdated(uint64_t rtt) {
         min_rtt_ = rtt;
         min_rtt_timestamp_ = smoothed_rtt_;
     }
+    pacer_->OnPacingRateUpdated(GetPacingRate());
 }
 
 size_t BBRv2CongestionControl::GetCongestionWindow() const {
@@ -82,12 +88,39 @@ size_t BBRv2CongestionControl::GetBytesInFlight() const {
     return bytes_in_flight_;
 }
 
-bool BBRv2CongestionControl::CanSend(size_t bytes_in_flight) const {
-    return bytes_in_flight < GetCongestionWindow();
+bool BBRv2CongestionControl::CanSend(uint64_t now, uint32_t& can_send_bytes) const {
+    uint32_t max_send_bytes = GetCongestionWindow() - bytes_in_flight_;
+    can_send_bytes = std::min(max_send_bytes, can_send_bytes);
+    return pacer_->CanSend(now);
 }
 
 uint64_t BBRv2CongestionControl::GetPacingRate() const {
-    return max_bandwidth_ * pacing_gain_;
+    if (mode_ == PROBE_RTT) {
+        // in PROBE_RTT, use conservative rate
+        return max_bandwidth_;
+    }
+    
+    // calculate bandwidth
+    uint64_t bandwidth = max_bandwidth_;
+    if (bandwidth == 0) {
+        // if no bandwidth samples, use conservative estimate based on window
+        if (min_rtt_ > 0) {
+            bandwidth = (congestion_window_ * 1000000) / min_rtt_;
+        } else {
+            // if no RTT, use conservative default value
+            bandwidth = (congestion_window_ * 1000000) / 100000;  // TODO: assume 100ms RTT
+        }
+    }
+
+    // apply pacing gain
+    uint64_t pacing_rate = bandwidth * pacing_gain_;
+
+    // ensure minimum pacing rate
+    const uint64_t min_pacing_rate = (MIN_WINDOW * 1000000) / 
+        std::max(min_rtt_, static_cast<uint64_t>(1000)); // at least 1ms
+    pacing_rate = std::max(pacing_rate, min_pacing_rate);
+
+    return pacing_rate;
 }
 
 void BBRv2CongestionControl::Reset() {

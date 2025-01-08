@@ -18,7 +18,7 @@ public:
     void OnRttUpdated(uint64_t rtt) override;
     size_t GetCongestionWindow() const override;
     size_t GetBytesInFlight() const override;
-    bool CanSend(size_t bytes_in_flight) const override;
+    bool CanSend(uint64_t now, uint32_t& can_send_bytes) const override;
     uint64_t GetPacingRate() const override;
     void Reset() override;
     size_t GetInitialWindow() const { return MIN_WINDOW; }

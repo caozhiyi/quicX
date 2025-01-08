@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <cstdint>
+#include "quic/congestion_control/if_pacer.h"
 
 namespace quicx {
 namespace quic {
@@ -30,7 +31,8 @@ public:
     virtual size_t GetBytesInFlight() const = 0;
 
     // check if can send new packet
-    virtual bool CanSend(size_t bytes_in_flight) const = 0;
+    // return true if can send, and set can_send_bytes to the number of bytes that can be sent
+    virtual bool CanSend(uint64_t now, uint32_t& can_send_bytes) const = 0;
 
     // get current send rate
     virtual uint64_t GetPacingRate() const = 0;
@@ -39,6 +41,8 @@ public:
     virtual void Reset() = 0;
 
 protected:
+    std::unique_ptr<IPacer> pacer_;
+
     // base state
     size_t congestion_window_; // congestion window size
     size_t bytes_in_flight_;   // bytes in flight

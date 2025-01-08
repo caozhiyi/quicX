@@ -35,6 +35,13 @@ void SendManager::ActiveStream(std::shared_ptr<IStream> stream) {
 }
 
 bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
+    uint32_t can_send_size = 1500; // TODO: set to mtu size
+    send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
+    if (can_send_size == 0) {
+        common::LOG_WARN("congestion control send data limited.");
+        return true;
+    }
+
     // firstly, send resend packet
     if (send_control_.NeedReSend()) {
         auto lost_list = send_control_.GetLostPacket();
@@ -46,7 +53,6 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
     } else {
         // secondly, send new packet
         // check flow control
-        uint32_t can_send_size;
         std::shared_ptr<IFrame> frame;
         if (!flow_control_->CheckLocalSendDataLimit(can_send_size, frame)) {
             common::LOG_WARN("local send data limited.");
@@ -155,7 +161,7 @@ bool SendManager::PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<c
         return false;
     }
 
-    send_control_.OnPacketSend(common::UTCTimeMsec(), packet);
+    send_control_.OnPacketSend(common::UTCTimeMsec(), packet, buffer->GetDataLength());
     return true;
 }
 

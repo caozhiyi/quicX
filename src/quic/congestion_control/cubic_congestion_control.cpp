@@ -1,5 +1,6 @@
 #include <cmath>
 #include <algorithm>
+#include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/cubic_congestion_control.h"
 
 // Define static constants
@@ -21,6 +22,7 @@ CubicCongestionControl::CubicCongestionControl() :
     congestion_window_ = MIN_WINDOW;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
+    pacer_ = std::make_unique<NormalPacer>();
 }
 
 CubicCongestionControl::~CubicCongestionControl() {
@@ -28,6 +30,7 @@ CubicCongestionControl::~CubicCongestionControl() {
 
 void CubicCongestionControl::OnPacketSent(size_t bytes, uint64_t sent_time) {
     bytes_in_flight_ = bytes_in_flight_ + bytes;
+    pacer_->OnPacketSent(sent_time, bytes);
 }
 
 void CubicCongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
@@ -57,6 +60,7 @@ void CubicCongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
         
         congestion_window_ = target;
     }
+    pacer_->OnPacingRateUpdated(GetPacingRate());
 }
 
 void CubicCongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
@@ -74,10 +78,12 @@ void CubicCongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
     w_max_ = congestion_window_;
     k_ = 0;
     in_slow_start_ = false;
+    pacer_->OnPacingRateUpdated(GetPacingRate());
 }
 
 void CubicCongestionControl::OnRttUpdated(uint64_t rtt) {
     smoothed_rtt_ = rtt;
+    pacer_->OnPacingRateUpdated(GetPacingRate());
 }
 
 size_t CubicCongestionControl::GetCongestionWindow() const {
@@ -88,11 +94,16 @@ size_t CubicCongestionControl::GetBytesInFlight() const {
     return bytes_in_flight_;
 }
 
-bool CubicCongestionControl::CanSend(size_t bytes_in_flight) const {
-    return bytes_in_flight < congestion_window_;
+bool CubicCongestionControl::CanSend(uint64_t now, uint32_t& can_send_bytes) const {
+    uint32_t max_send_bytes = congestion_window_ - bytes_in_flight_;
+    can_send_bytes = std::min(max_send_bytes, can_send_bytes);
+    return pacer_->CanSend(now);
 }
 
 uint64_t CubicCongestionControl::GetPacingRate() const {
+    if (smoothed_rtt_ == 0) {
+        return MIN_WINDOW; // Avoid division by zero
+    }
     // Simple pacing rate calculation
     return congestion_window_ * 1000000 / smoothed_rtt_; // bytes per second
 }
