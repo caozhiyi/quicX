@@ -23,8 +23,6 @@ namespace quic {
 6. 接收方在每个ACK帧中都应该（SHOULD）包含一个ACK Range，该Range包含最大接收包号
 */
 
-typedef std::function<void()> ActiveSendCB;
-
 class RecvControl {
 public:
     RecvControl(std::shared_ptr<common::ITimer> timer);
@@ -33,7 +31,7 @@ public:
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
     std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns);
 
-    void SetActiveSendCB(ActiveSendCB cb) { active_send_cb_ = cb; }
+    void SetActiveSendCB(std::function<void()> cb) { active_send_cb_ = cb; }
 
 private:
     uint64_t pkt_num_largest_recvd_[PNS_NUMBER];
@@ -44,7 +42,7 @@ private:
     std::shared_ptr<common::ITimer> timer_;
 
     common::TimerTask timer_task_;
-    ActiveSendCB active_send_cb_;
+    std::function<void()> active_send_cb_;
 };
 
 }

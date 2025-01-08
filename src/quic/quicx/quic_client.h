@@ -13,7 +13,7 @@ namespace quicx {
 namespace quic {
 
 class QuicClient:
-    public IClientQuic,
+    public IQuicClient,
     public QuicBase {
 public:
     QuicClient();

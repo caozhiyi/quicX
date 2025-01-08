@@ -33,7 +33,7 @@ private:
     void HandlePush(std::shared_ptr<IResponse> response, uint32_t error);
 
 private:
-    std::shared_ptr<quic::IClientQuic> quic_;
+    std::shared_ptr<quic::IQuicClient> quic_;
     std::unordered_map<std::string, std::shared_ptr<ClientConnection>> conn_map_;
 
     struct WaitRequestContext {

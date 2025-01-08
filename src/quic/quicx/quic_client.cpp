@@ -4,6 +4,11 @@
 namespace quicx {
 namespace quic {
 
+std::shared_ptr<IQuicClient> IQuicClient::Create() {
+    return std::make_shared<QuicClient>();
+}
+
+
 QuicClient::QuicClient() {
 
 }

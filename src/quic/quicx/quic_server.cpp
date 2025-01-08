@@ -4,6 +4,9 @@
 namespace quicx {
 namespace quic {
 
+std::shared_ptr<IQuicServer> IQuicServer::Create() {
+    return std::make_shared<QuicServer>();
+}
 
 QuicServer::QuicServer() {
 

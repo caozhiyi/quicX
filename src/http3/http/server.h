@@ -41,7 +41,7 @@ private:
     void HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response);
 
 private:
-    std::shared_ptr<quic::IServerQuic> quic_;
+    std::shared_ptr<quic::IQuicServer> quic_;
 
     std::shared_ptr<Router> router_;
     std::unordered_map<std::string, std::shared_ptr<ServerConnection>> conn_map_;

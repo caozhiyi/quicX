@@ -1,3 +1,4 @@
+#include <cstdint>
 #include "quic/common/version.h"
 
 namespace quicx {
