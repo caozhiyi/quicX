@@ -33,9 +33,6 @@ protected:
 private:
     void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg);
-
-protected:
-    virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
 };
 
 }
