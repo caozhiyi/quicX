@@ -3,7 +3,7 @@
 #include "common/buffer/buffer.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
-#include "http3/stream/pseudo-header.h"
+#include "http3/stream/pseudo_header.h"
 #include "http3/stream/push_sender_stream.h"
 
 namespace quicx {

@@ -11,10 +11,10 @@ namespace quic {
  user can use this interface to create a quic server.
  a quic server instance manage io threads, every one connection lives in a single thread whole life time.
 */
-class IServerQuic {
+class IQuicServer {
 public:
-    IServerQuic() {}
-    virtual ~IServerQuic() {}
+    IQuicServer() {}
+    virtual ~IQuicServer() {}
 
     // init quic libary
     // thread_num: io thread number
@@ -34,7 +34,11 @@ public:
     // called when connection state changed, like connected, disconnected, etc
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost
     virtual void SetConnectionStateCallBack(connection_state_callback cb) = 0;
+
+    static std::shared_ptr<IQuicServer> Create();
 };
+
+
 
 }
 }

@@ -13,7 +13,7 @@ namespace quicx {
 namespace quic {
 
 class QuicServer:
-    public IServerQuic,
+    public IQuicServer,
     public QuicBase {
 public:
     QuicServer();

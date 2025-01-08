@@ -4,7 +4,7 @@
 #include "http3/frame/data_frame.h"
 #include "http3/frame/frame_decode.h"
 #include "http3/frame/headers_frame.h"
-#include "http3/stream/pseudo-header.h"
+#include "http3/stream/pseudo_header.h"
 #include "common/buffer/buffer_read_view.h"
 #include "http3/stream/push_receiver_stream.h"
 

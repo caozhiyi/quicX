@@ -1,6 +1,7 @@
 #include "common/log/log.h"
 #include "http3/http/server.h"
 #include "common/network/address.h"
+#include "quic/include/if_quic_server.h"
 
 namespace quicx {
 namespace http3 {
@@ -10,7 +11,7 @@ std::unique_ptr<IServer> IServer::Create() {
 }
 
 Server::Server() {
-    quic_ = nullptr;
+    quic_ = quic::IQuicServer::Create();
     router_ = std::make_shared<Router>();
 }
 
@@ -19,15 +20,19 @@ Server::~Server() {
 }
 
 bool Server::Init(const std::string& cert, const std::string& key, uint16_t thread_num) {
+    if (!quic_->Init(cert, key, thread_num)) {
+        common::LOG_ERROR("init quic server failed.");
+        return false;
+    }
     return true;
 }
 
 bool Server::Start(const std::string& addr, uint16_t port) {
-    return true;
+    return quic_->ListenAndAccept(addr, port);
 }
 
 void Server::Stop() {
-
+    quic_->Destroy();
 }
 
 void Server::AddHandler(HttpMethod mothed, const std::string& path, const http_handler& handler) {

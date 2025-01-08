@@ -12,7 +12,7 @@ std::unique_ptr<IClient> IClient::Create() {
 }
 
 Client::Client() {
-    quic_ = nullptr;
+    quic_ = quic::IQuicClient::Create();
 }
 
 Client::~Client() {
@@ -20,7 +20,7 @@ Client::~Client() {
 }
 
 bool Client::Init(uint16_t thread_num) {
-    return true;
+    return quic_->Init(thread_num);
 }
 
 bool Client::DoRequest(const std::string& url, HttpMethod mothed,
