@@ -9,3 +9,4 @@ gtest
 *.log
 quicx-utest
 third
+libquicx.a

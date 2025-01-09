@@ -3,6 +3,10 @@
 namespace quicx {
 namespace http3 {
 
+std::shared_ptr<IRequest> IRequest::Create() {
+    return std::make_shared<Request>();
+}
+
 void Request::AddHeader(const std::string& name, const std::string& value) { 
     headers_[name] = value; 
 }

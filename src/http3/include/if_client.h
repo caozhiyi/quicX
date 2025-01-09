@@ -14,7 +14,7 @@ namespace http3 {
 class IClient {
 public:
     IClient() {}
-    virtual ~IClient() = default;
+    virtual ~IClient() {};
 
     // Initialize the server with a certificate and a key
     virtual bool Init(uint16_t thread_num) = 0;

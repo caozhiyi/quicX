@@ -14,7 +14,7 @@ QuicBase::~QuicBase() {
 }
 
 bool QuicBase::Init(uint16_t thread_num) {
-    processors_.resize(thread_num);
+    processors_.reserve(thread_num);
     for (size_t i = 0; i < thread_num; i++) {
         auto processor = std::make_shared<ThreadProcessor>(tls_ctx_, connection_state_cb_);
         processor->Start();

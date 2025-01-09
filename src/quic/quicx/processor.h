@@ -49,6 +49,9 @@ protected:
     void HandleRetireConnectionId(uint64_t cid_hash);
     void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason);
 
+private:
+    void SendVersionNegotiatePacket(std::shared_ptr<INetPacket> packet);
+
 protected:
     bool do_send_;
 

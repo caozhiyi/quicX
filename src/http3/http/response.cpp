@@ -3,6 +3,10 @@
 namespace quicx {
 namespace http3 {
 
+std::shared_ptr<IResponse> IResponse::Create() {
+    return std::make_shared<Response>();
+}
+
 void Response::AddHeader(const std::string& name, const std::string& value) {
     headers_[name] = value;
 }

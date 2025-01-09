@@ -30,7 +30,7 @@ public:
     virtual const std::string& GetBody() const = 0;
 
     // Create a response instance
-    static std::unique_ptr<IResponse> Create();
+    static std::shared_ptr<IResponse> Create();
 };
 
 }

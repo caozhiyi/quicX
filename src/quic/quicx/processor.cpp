@@ -7,8 +7,11 @@
 #include "common/network/address.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/packet_decode.h"
+#include "quic/packet/header/long_header.h"
+#include "quic/packet/header/short_header.h"
 #include "quic/connection/client_connection.h"
 #include "quic/connection/server_connection.h"
+#include "quic/packet/version_negotiation_packet.h"
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
@@ -123,6 +126,7 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     std::vector<std::shared_ptr<IPacket>> packets;
     if (!DecodeNetPakcet(packet, packets, cid, len)) {
         common::LOG_ERROR("decode packet failed");
+        SendVersionNegotiatePacket(packet);
         return false;
     }
     
@@ -134,9 +138,10 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
         return true;
     }
 
-    // check init packet?
+    // check init packet
     if (!InitPacketCheck(packets[0])) {
-        // TODO reset connection
+        common::LOG_ERROR("init packet check failed");
+        SendVersionNegotiatePacket(packet);
         return false;
     }
 
@@ -179,18 +184,40 @@ void Processor::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_
     connection_handler_(conn, error, reason);
 }
 
+void Processor::SendVersionNegotiatePacket(std::shared_ptr<INetPacket> packet) {
+    VersionNegotiationPacket version_negotiation_packet;
+    for (auto version : __quic_versions) {
+        version_negotiation_packet.AddSupportVersion(version);
+    }
+
+    uint8_t buf[1500] = {0};
+    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    version_negotiation_packet.Encode(buffer);
+
+    auto net_packet = std::make_shared<INetPacket>();
+    net_packet->SetData(buffer);
+    net_packet->SetAddress(packet->GetAddress());
+    net_packet->SetSocket(packet->GetSocket());
+    sender_->Send(net_packet);
+}
+
 bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
     if (packet->GetHeader()->GetPacketType() != PT_INITIAL) {
         common::LOG_ERROR("recv packet whitout connection.");
         return false;
     }
 
-    // TODO check packet length
+    // check init packet length according to RFC9000
+    // Initial packets MUST be sent with a payload length of at least 1200 bytes
+    // unless the client knows that the server supports a larger minimum PMTU
+    if (packet->GetSrcBuffer().GetLength() < 1200) {
+        common::LOG_ERROR("init packet length too small. length:%d", packet->GetSrcBuffer().GetLength());
+        return false;
+    }
 
     auto init_packet = std::dynamic_pointer_cast<InitPacket>(packet);
     uint32_t version = ((LongHeader*)init_packet->GetHeader())->GetVersion();
     if (!VersionCheck(version)) {
-        // TODO may generate a version negotiation packet
         return false;
     }
 
@@ -201,7 +228,7 @@ bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
 bool Processor::DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
     std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
     if(!DecodePackets(net_packet->GetData(), packets)) {
-        // TODO send version negotiate packet
+        common::LOG_ERROR("decode packet failed");
         return false;
     }
 
@@ -212,7 +239,10 @@ bool Processor::DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
     
     auto first_packet_header = packets[0]->GetHeader();
     if (first_packet_header->GetHeaderType() == PHT_SHORT_HEADER) {
-        // TODO get short header dcid
+        auto short_header = dynamic_cast<ShortHeader*>(first_packet_header);
+        len = short_header->GetDestinationConnectionIdLength();
+        cid = (uint8_t*)short_header->GetDestinationConnectionId();
+
     } else {
         auto long_header = dynamic_cast<LongHeader*>(first_packet_header);
         len = long_header->GetDestinationConnectionIdLength();

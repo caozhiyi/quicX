@@ -3,6 +3,7 @@
 #include "http3/http/client.h"
 #include "common/network/address.h"
 #include "common/network/io_handle.h"
+#include "common/log/stdout_logger.h"
 
 namespace quicx {
 namespace http3 {
@@ -20,6 +21,9 @@ Client::~Client() {
 }
 
 bool Client::Init(uint16_t thread_num) {
+    std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
+    common::LOG_SET(log);
+    common::LOG_SET_LEVEL(common::LL_DEBUG);
     return quic_->Init(thread_num);
 }
 

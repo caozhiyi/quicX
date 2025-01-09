@@ -31,7 +31,6 @@ private:
     uint32_t smoothed_rtt_;
 
     uint64_t last_update_time_; 
-
 };
 
 }

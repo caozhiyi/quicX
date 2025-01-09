@@ -42,7 +42,7 @@ public:
     virtual const std::string& GetBody() const = 0;
 
     // Create a request instance
-    static std::unique_ptr<IRequest> Create();
+    static std::shared_ptr<IRequest> Create();
 };
 
 }

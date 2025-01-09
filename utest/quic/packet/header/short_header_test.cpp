@@ -10,7 +10,7 @@ namespace {
 TEST(short_header_utest, codec) {
     ShortHeader header;
 
-    uint8_t dest_id[4] = {1,2,3,4};
+    uint8_t dest_id[20] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
     header.SetDestinationConnectionId(dest_id, sizeof(dest_id));
 
 
@@ -21,7 +21,6 @@ TEST(short_header_utest, codec) {
     EXPECT_TRUE(header.EncodeHeader(buffer));
 
     ShortHeader new_header;
-    new_header.SetDestinationConnectionId(nullptr, sizeof(dest_id));
     EXPECT_TRUE(new_header.DecodeHeader(buffer, true));
 
 

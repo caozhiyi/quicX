@@ -17,7 +17,7 @@ struct ConnectionID {
     uint8_t len_;
     uint64_t index_;
     uint64_t hash_;
-    ConnectionID(uint64_t index = 0): len_(0), index_(index), hash_(0) {
+    ConnectionID(uint64_t index = 0): len_(__max_cid_length), index_(index), hash_(0) {
         memset(id_, 0, __max_cid_length);
     }
     ConnectionID(uint8_t* id, uint8_t len, uint64_t index = 0): len_(len), index_(index), hash_(0) {

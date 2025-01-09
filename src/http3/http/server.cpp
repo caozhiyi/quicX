@@ -1,6 +1,7 @@
 #include "common/log/log.h"
 #include "http3/http/server.h"
 #include "common/network/address.h"
+#include "common/log/stdout_logger.h"
 #include "quic/include/if_quic_server.h"
 
 namespace quicx {
@@ -19,8 +20,20 @@ Server::~Server() {
     Stop();
 }
 
-bool Server::Init(const std::string& cert, const std::string& key, uint16_t thread_num) {
-    if (!quic_->Init(cert, key, thread_num)) {
+bool Server::Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num) {
+    std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
+    common::LOG_SET(log);
+    common::LOG_SET_LEVEL(common::LL_DEBUG);
+
+    if (!quic_->Init(cert_file, key_file, thread_num)) {
+        common::LOG_ERROR("init quic server failed.");
+        return false;
+    }
+    return true;
+}
+
+bool Server::Init(const char* cert_pem, const char* key_pem, uint16_t thread_num) {
+    if (!quic_->Init(cert_pem, key_pem, thread_num)) {
         common::LOG_ERROR("init quic server failed.");
         return false;
     }
@@ -33,6 +46,10 @@ bool Server::Start(const std::string& addr, uint16_t port) {
 
 void Server::Stop() {
     quic_->Destroy();
+}
+
+void Server::Join() {
+    quic_->Join();
 }
 
 void Server::AddHandler(HttpMethod mothed, const std::string& path, const http_handler& handler) {
