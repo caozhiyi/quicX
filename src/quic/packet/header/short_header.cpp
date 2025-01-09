@@ -8,13 +8,13 @@ namespace quicx {
 namespace quic {
 
 ShortHeader::ShortHeader():
-    destination_connection_id_length_(0),
+    destination_connection_id_length_(20), // TODO: get from config
     IHeader(PHT_SHORT_HEADER) {
 
 }
 
 ShortHeader::ShortHeader(uint8_t flag):
-    destination_connection_id_length_(0),
+    destination_connection_id_length_(0), // TODO: get from config
     IHeader(flag) {
 }
 
@@ -55,7 +55,6 @@ bool ShortHeader::DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool
         common::LOG_ERROR("quic fixed bit is not set");
         return false;
     }
-    
     
     common::BufferDecodeWrapper wrapper(buffer);
      if (destination_connection_id_length_ > 0) {

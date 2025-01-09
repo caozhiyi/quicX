@@ -19,8 +19,8 @@ public:
     virtual ~Server();
 
     // Initialize the server with a certificate and a key
-    virtual bool Init(const std::string& cert, const std::string& key,
-                       uint16_t thread_num);
+    virtual bool Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num = 1);
+    virtual bool Init(const char* cert_pem, const char* key_pem, uint16_t thread_num = 1);
 
     // Start the server on the given address and port
     // server will block until the server is stopped
@@ -28,6 +28,8 @@ public:
 
     // Stop the server
     virtual void Stop();
+
+    virtual void Join();
 
     // Register a handler for a specific path
     virtual void AddHandler(HttpMethod mothed, const std::string& path, const http_handler& handler);
