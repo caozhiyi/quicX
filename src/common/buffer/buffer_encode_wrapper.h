@@ -32,6 +32,7 @@ public:
     bool EncodeBytes(uint8_t* in, uint32_t len);
 
     common::BufferSpan GetDataSpan() const;
+    uint32_t GetDataLength() const;
 
 private:
     std::shared_ptr<IBufferWrite> buffer_;

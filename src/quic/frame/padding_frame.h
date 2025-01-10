@@ -11,6 +11,16 @@ class PaddingFrame:
 public:
     PaddingFrame(): IFrame(FT_PADDING) {}
     ~PaddingFrame() {}
+
+    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    virtual uint32_t EncodeSize();
+
+    void SetPaddingLength(uint32_t length) { padding_length_ = length; }
+    uint32_t GetPaddingLength() { return padding_length_; }
+
+private:
+    uint32_t padding_length_;
 };
 
 }

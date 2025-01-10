@@ -10,3 +10,4 @@ gtest
 quicx-utest
 third
 libquicx.a
+libhttp3.a

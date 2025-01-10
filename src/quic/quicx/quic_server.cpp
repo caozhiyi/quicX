@@ -16,24 +16,24 @@ QuicServer::~QuicServer() {
 
 }
 
-bool QuicServer::Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num) {
+bool QuicServer::Init(const std::string& cert_file, const std::string& key_file, const std::string& alpn, uint16_t thread_num) {
     auto tls_ctx = std::make_shared<TLSServerCtx>();
     if (!tls_ctx->Init(cert_file, key_file)) {
         common::LOG_ERROR("tls ctx init faliled.");
         return false;
     }
     tls_ctx_ = tls_ctx;
-    return QuicBase::Init(thread_num);
+    return QuicBase::Init(alpn, thread_num);
 }
 
-bool QuicServer::Init(const char* cert_pem, const char* key_pem, uint16_t thread_num) {
+bool QuicServer::Init(const char* cert_pem, const char* key_pem, const std::string& alpn, uint16_t thread_num) {
     auto tls_ctx = std::make_shared<TLSServerCtx>();
     if (!tls_ctx->Init(cert_pem, key_pem)) {
         common::LOG_ERROR("tls ctx init faliled.");
         return false;
     }
     tls_ctx_ = tls_ctx;
-    return QuicBase::Init(thread_num);
+    return QuicBase::Init(alpn, thread_num);
 }
 
 void QuicServer::Join() {

@@ -42,29 +42,24 @@ ClientConnection::~ClientConnection() {
     
 }
 
-void ClientConnection::AddAlpn(AlpnType at) {
-    alpn_type_ = at;
-}
-
-bool ClientConnection::Dial(const common::Address& addr) {
+bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn) {
     auto tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
     // set application protocol
-    if (alpn_type_ == AT_HTTP3) {
-        if(!tls_conn->AddAlpn(__alpn_h3, 2)) {
-            common::LOG_ERROR("add alpn failed. alpn:%s", __alpn_h3);
-            return false;
-        }
+    uint8_t* alpn_data = (uint8_t*)alpn.c_str();
+    if(!tls_conn->AddAlpn(alpn_data, alpn.size())) {
+        common::LOG_ERROR("add alpn failed. alpn:%s", alpn.c_str());
+        return false;
     }
-
+    
     SetPeerAddress(std::move(addr));
+
+    transport_param_.Init(TransportParamConfig::Instance());
+    flow_control_->InitConfig(transport_param_);
 
     // set transport param. TODO define tp length
     std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(alloter_);
-    
     transport_param_.Encode(buf);
     tls_conn->AddTransportParam(buf->GetData(), buf->GetDataLength());
-
-    flow_control_->InitConfig(transport_param_);
 
     // generate connection id
     auto dcid = remote_conn_id_manager_->Generator();
@@ -77,6 +72,9 @@ bool ClientConnection::Dial(const common::Address& addr) {
 }
 
 bool ClientConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
+    if (handshake_done_cb_) {
+        handshake_done_cb_(shared_from_this());
+    }
     return true;
 }
 

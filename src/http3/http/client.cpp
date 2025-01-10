@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "http3/http/type.h"
 #include "common/http/url.h"
 #include "http3/http/client.h"
 #include "common/network/address.h"
@@ -14,6 +15,8 @@ std::unique_ptr<IClient> IClient::Create() {
 
 Client::Client() {
     quic_ = quic::IQuicClient::Create();
+    quic_->SetConnectionStateCallBack(std::bind(&Client::OnConnection, this, 
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 Client::~Client() {
@@ -56,16 +59,16 @@ bool Client::DoRequest(const std::string& url, HttpMethod mothed,
         common::LOG_ERROR("lookup address failed. host: %s", url_info.host.c_str());
         return false;
     }
-
+    addr.SetPort(url_info.port);
     // create connection
-    quic_->Connection(addr.GetIp(), addr.GetPort(), 10000); // TODO: timeout add to config
+    quic_->Connection(addr.GetIp(), addr.GetPort(), http3_alpn__, 10000); // TODO: timeout add to config
     wait_request_map_[addr.AsString()] = WaitRequestContext{url_info, request, handler};
     return true;
 }
 
-void Client::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error) {
+void Client::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error, const std::string& reason) {
     if (error != 0) {
-        common::LOG_ERROR("create connection failed. error: %d", error);
+        common::LOG_ERROR("create connection failed. error: %d, reason: %s", error, reason.c_str());
         return;
     }
 

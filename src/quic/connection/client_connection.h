@@ -24,18 +24,12 @@ public:
         std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb);
     ~ClientConnection();
 
-    // set application protocol
-    void AddAlpn(AlpnType at);
-
-    bool Dial(const common::Address& addr);
+    bool Dial(const common::Address& addr, const std::string& alpn);
 
 protected:
     virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err);
-
-private:
-    AlpnType alpn_type_; // application protocol
 };
 
 }

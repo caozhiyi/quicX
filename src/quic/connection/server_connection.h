@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_SERVER_CONNECTION
 #define QUIC_CONNECTION_SERVER_CONNECTION
 
+#include <string>
 #include <memory>
 #include <cstdint>
 #include "common/timer/if_timer.h"
@@ -15,6 +16,7 @@ class ServerConnection:
     public TlsServerHandlerInterface {
 public:
     ServerConnection(std::shared_ptr<TLSCtx> ctx,
+        const std::string& alpn,
         std::shared_ptr<common::ITimer> timer,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
@@ -29,10 +31,12 @@ protected:
     virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err);
-    
+
 private:
     void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg);
+private:
+    std::string server_alpn_;
 };
 
 }

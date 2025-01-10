@@ -12,6 +12,7 @@
 #include "quic/packet/header/long_header.h"
 #include "quic/frame/path_response_frame.h"
 #include "quic/frame/path_challenge_frame.h"
+#include "quic/frame/handshake_done_frame.h"
 #include "quic/connection/server_connection.h"
 #include "quic/connection/transport_param_config.h"
 
@@ -19,6 +20,7 @@ namespace quicx {
 namespace quic {
 
 ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
+    const std::string& alpn,
     std::shared_ptr<common::ITimer> timer,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
@@ -74,7 +76,8 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<common::IBufferRead> buff
     
     if (tls_connection_->DoHandleShake()) {
         common::LOG_DEBUG("handshake done.");
-        // TODO: send handshake done frame
+        std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
+        ToSendFrame(frame);
     }
 }
 
@@ -89,18 +92,18 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
         i += len;
     }
     
-    // TODO server support alpn list
-    static std::vector<std::string> server_protos = {"h3", "transport"};
-    
     // find a alpn
     for (auto const& client_proto : client_protos) {
-        for (auto const& server_proto : server_protos) {
-            if (client_proto == server_proto) {
-                *out = (unsigned char*)server_proto.c_str();
-                *outlen = server_proto.length();
-                return;
-            }
+        if (client_proto == server_alpn_) {
+            *out = (unsigned char*)server_alpn_.c_str();
+            *outlen = server_alpn_.length();
+            return;
         }
+    }
+
+    common::LOG_ERROR("no alpn found. server alpn:%s", server_alpn_.c_str());
+    for (auto const& client_proto : client_protos) {
+        common::LOG_ERROR("client alpn:%s", client_proto.c_str());
     }
 }
 

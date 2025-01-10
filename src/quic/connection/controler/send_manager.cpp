@@ -2,6 +2,7 @@
 #include "common/util/time.h"
 #include "quic/connection/util.h"
 #include "quic/packet/init_packet.h"
+#include "quic/frame/padding_frame.h"
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
@@ -121,6 +122,10 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     switch (encrypto_level) {
         case EL_INITIAL: {
             packet = std::make_shared<InitPacket>();
+            // add padding frame
+            auto padding_frame = std::make_shared<PaddingFrame>();
+            padding_frame->SetPaddingLength(1300 - visitor->GetBuffer()->GetDataLength());
+            visitor->HandleFrame(padding_frame);
             break;
         }
         case EL_EARLY_DATA: {
@@ -147,6 +152,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     packet->GetHeader()->SetDestinationConnectionId(cid.id_, cid.len_);
     packet->SetPayload(visitor->GetBuffer()->GetReadSpan());
     packet->SetCryptographer(cryptographer);
+
     return packet;
 }
 

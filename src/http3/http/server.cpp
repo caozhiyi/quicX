@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "http3/http/type.h"
 #include "http3/http/server.h"
 #include "common/network/address.h"
 #include "common/log/stdout_logger.h"
@@ -25,7 +26,7 @@ bool Server::Init(const std::string& cert_file, const std::string& key_file, uin
     common::LOG_SET(log);
     common::LOG_SET_LEVEL(common::LL_DEBUG);
 
-    if (!quic_->Init(cert_file, key_file, thread_num)) {
+    if (!quic_->Init(cert_file, key_file, http3_alpn__, thread_num)) {
         common::LOG_ERROR("init quic server failed.");
         return false;
     }
@@ -33,7 +34,7 @@ bool Server::Init(const std::string& cert_file, const std::string& key_file, uin
 }
 
 bool Server::Init(const char* cert_pem, const char* key_pem, uint16_t thread_num) {
-    if (!quic_->Init(cert_pem, key_pem, thread_num)) {
+    if (!quic_->Init(cert_pem, key_pem, http3_alpn__, thread_num)) {
         common::LOG_ERROR("init quic server failed.");
         return false;
     }

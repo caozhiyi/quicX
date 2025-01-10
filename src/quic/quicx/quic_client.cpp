@@ -33,10 +33,11 @@ void QuicClient::Destroy() {
     QuicBase::Destroy();
 }
 
-bool QuicClient::Connection(const std::string& ip, uint16_t port, int32_t timeout_ms) {
+bool QuicClient::Connection(const std::string& ip, uint16_t port,
+    const std::string& alpn, int32_t timeout_ms) {
     if (!processors_.empty()) {
         // TODO: random select processor
-        processors_[0]->Connect(ip, port);
+        processors_[0]->Connect(ip, port, alpn, timeout_ms);
         return true;
     }
     return false;

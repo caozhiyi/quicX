@@ -72,5 +72,9 @@ common::BufferSpan BufferEncodeWrapper::GetDataSpan() const {
 }
 
 
+uint32_t BufferEncodeWrapper::GetDataLength() const {
+    return pos_ - buffer_->GetWriteSpan().GetStart();
+}
+
 } // namespace common
 } // namespace quicx

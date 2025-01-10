@@ -28,10 +28,12 @@ public:
 
     virtual void Process();
 
+    virtual void SetServerAlpn(const std::string& alpn);
     virtual void AddReceiver(uint64_t socket_fd);
     virtual void AddReceiver(const std::string& ip, uint16_t port);
 
-    virtual void Connect(const std::string& ip, uint16_t port);
+    virtual void Connect(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms);
 
 protected:
     void ProcessRecv(uint32_t timeout_ms);
@@ -54,6 +56,7 @@ private:
 
 protected:
     bool do_send_;
+    std::string server_alpn_;
 
     std::shared_ptr<TLSCtx> ctx_;
     std::shared_ptr<ISender> sender_;

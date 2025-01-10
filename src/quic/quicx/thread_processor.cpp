@@ -82,7 +82,7 @@ bool ThreadProcessor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     }
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, time_,
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, server_alpn_, time_,
         std::bind(&ThreadProcessor::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ThreadProcessor::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ThreadProcessor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),

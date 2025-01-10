@@ -18,6 +18,7 @@ public:
     virtual ~QuicBase();
 
     virtual bool Init(uint16_t thread_num = 1);
+    virtual bool Init(const std::string& alpn, uint16_t thread_num = 1);
 
     virtual void Join();
 

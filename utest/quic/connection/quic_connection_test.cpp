@@ -70,16 +70,15 @@ TEST(quic_connection_utest, handshake) {
     client_ctx->Init();
 
     auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
-    client_conn->AddAlpn(AT_HTTP3);
     client_conn->AddTransportParam(TransportParamConfig::Instance());
 
     common::Address addr(common::AT_IPV4);
     addr.SetIp("127.0.0.1");
     addr.SetPort(9432);
 
-    client_conn->Dial(addr);
+    client_conn->Dial(addr, "h3");
     
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(TransportParamConfig::Instance());
 
     // client -------init-----> server
