@@ -19,11 +19,6 @@ enum StreamDirection: uint8_t {
     SD_BIDI = 0x03, // bidirection stream
 };
 
-enum AlpnType: uint8_t {
-    AT_HTTP3     = 1,
-    AT_TRANSPORT = 2,
-};
-
 // connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
 // conn: connection instance which state changed
 typedef std::function<void(std::shared_ptr<IQuicConnection> conn, uint32_t error, const std::string& reason)> connection_state_callback;

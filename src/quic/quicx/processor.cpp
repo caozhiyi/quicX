@@ -42,13 +42,17 @@ void Processor::Process() {
     }
 
     int64_t waittime_ = time_->MinTime();
-    waittime_ = waittime_ < 0 ? 1000 : waittime_;
+    waittime_ = waittime_ < 0 ? 100000 : waittime_;
 
     // try to receive data from network
     ProcessRecv(waittime_);
 
     // check timer and do timer task
     ProcessTimer();
+}
+
+void Processor::SetServerAlpn(const std::string& alpn) {
+    server_alpn_ = alpn;
 }
 
 void Processor::AddReceiver(uint64_t socket_fd) {
@@ -59,7 +63,8 @@ void Processor::AddReceiver(const std::string& ip, uint16_t port) {
     receiver_->AddReceiver(ip, port);
 }
 
-void Processor::Connect(const std::string& ip, uint16_t port) {
+void Processor::Connect(const std::string& ip, uint16_t port,
+    const std::string& alpn, int32_t timeout_ms) {
     auto conn = std::make_shared<ClientConnection>(ctx_, time_,
         std::bind(&Processor::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&Processor::HandleHandshakeDone, this, std::placeholders::_1),
@@ -68,7 +73,7 @@ void Processor::Connect(const std::string& ip, uint16_t port) {
         std::bind(&Processor::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     
     connecting_map_[conn->GetConnectionIDHash()] = conn;
-    conn->Dial(common::Address(ip, port));
+    conn->Dial(common::Address(ip, port), alpn);
     // TODO add timer to check connection status
 }
 
@@ -94,7 +99,7 @@ void Processor::ProcessSend() {
     static thread_local uint8_t buf[1500] = {0};
     std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
 
-    std::shared_ptr<INetPacket> packet;
+    std::shared_ptr<INetPacket> packet = std::make_shared<INetPacket>();
     bool send_done = false;
     for (auto iter = active_send_connection_set_.begin(); iter != active_send_connection_set_.end();) {
         if (!(*iter)->GenerateSendData(buffer, send_done)) {
@@ -146,7 +151,7 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     }
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, time_,
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, server_alpn_, time_,
         std::bind(&Processor::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&Processor::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&Processor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
@@ -169,6 +174,7 @@ void Processor::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 void Processor::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
     active_send_connection_set_.insert(conn);
     do_send_ = true;
+    receiver_->Weakup();
 }
 
 void Processor::HandleAddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn) {

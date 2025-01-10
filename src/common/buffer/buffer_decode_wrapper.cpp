@@ -75,5 +75,10 @@ common::BufferSpan BufferDecodeWrapper::GetDataSpan() const {
     return common::BufferSpan(buffer_->GetReadSpan().GetStart(), pos_);
 }
 
+
+uint32_t BufferDecodeWrapper::GetDataLength() const {
+    return buffer_->GetReadSpan().GetEnd() - pos_;
+}
+
 }
 } 

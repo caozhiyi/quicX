@@ -28,7 +28,8 @@ public:
     virtual void Destroy() = 0;
 
     // connect to a quic server
-    virtual bool Connection(const std::string& ip, uint16_t port, int32_t timeout_ms) = 0;
+    virtual bool Connection(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms) = 0;
 
     // called when connection state changed, like connected, disconnected, etc
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost

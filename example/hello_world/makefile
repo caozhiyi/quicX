@@ -12,7 +12,7 @@ INCLUDES = -I./          \
 #debug
 CCFLAGS = -fPIC -m64 -g -std=c++14 -lstdc++ -pipe -lpthread
 
-QUICXLIB = ../../libquicx.a
+QUICXLIB = ../../libhttp3.a
 CRYPTOLIB = ../../third/lib/libcrypto.a
 SSLLIB = ../../third/lib/libssl.a
 

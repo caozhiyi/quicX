@@ -23,6 +23,17 @@ bool QuicBase::Init(uint16_t thread_num) {
     return true;
 }
 
+bool QuicBase::Init(const std::string& alpn, uint16_t thread_num) {
+    processors_.reserve(thread_num);
+    for (size_t i = 0; i < thread_num; i++) {
+        auto processor = std::make_shared<ThreadProcessor>(tls_ctx_, connection_state_cb_);
+        processor->SetServerAlpn(alpn);
+        processor->Start();
+        processors_.emplace_back(processor);
+    }
+    return true;
+}
+
 void QuicBase::Join() {
     for (auto& processor : processors_) {
         processor->Join();

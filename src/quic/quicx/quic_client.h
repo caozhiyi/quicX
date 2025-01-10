@@ -25,7 +25,8 @@ public:
 
     virtual void Destroy();
 
-    virtual bool Connection(const std::string& ip, uint16_t port, int32_t timeout_ms);
+    virtual bool Connection(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms);
 
     virtual void SetConnectionStateCallBack(connection_state_callback cb);
 };

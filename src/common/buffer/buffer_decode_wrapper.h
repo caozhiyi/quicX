@@ -35,6 +35,7 @@ public:
     bool DecodeBytes(uint8_t*& out, uint32_t len, bool copy = true);
 
     common::BufferSpan GetDataSpan() const;
+    uint32_t GetDataLength() const;
 
 private:
     std::shared_ptr<IBufferRead> buffer_;
