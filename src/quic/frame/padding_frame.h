@@ -9,8 +9,8 @@ namespace quic {
 class PaddingFrame:
     public IFrame {
 public:
-    PaddingFrame(): IFrame(FT_PADDING) {}
-    ~PaddingFrame() {}
+    PaddingFrame();
+    ~PaddingFrame();
 
     virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);

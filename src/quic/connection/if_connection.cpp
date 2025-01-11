@@ -20,6 +20,10 @@ void IConnection::GetRemoteAddr(std::string& addr, uint32_t& port) {
     port = peer_addr_.GetPort();
 }
 
+void IConnection::SetPeerAddress(const common::Address& addr) {
+    peer_addr_ = addr;
+}
+
 void IConnection::SetPeerAddress(const common::Address&& addr) {
     peer_addr_ = std::move(addr); 
 }

@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
+#include "quic/common/version.h"
 #include "quic/connection/util.h"
 #include "quic/packet/init_packet.h"
 #include "quic/frame/padding_frame.h"
@@ -145,7 +146,8 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     auto header = packet->GetHeader();
     if (header->GetHeaderType() == PHT_LONG_HEADER) {
         auto cid = local_conn_id_manager_->GetCurrentID();
-        ((LongHeader*)packet->GetHeader())->SetSourceConnectionId(cid.id_, cid.len_);
+        ((LongHeader*)header)->SetSourceConnectionId(cid.id_, cid.len_);
+        ((LongHeader*)header)->SetVersion(__quic_versions[0]);
     }
 
     auto cid = remote_conn_id_manager_->GetCurrentID();

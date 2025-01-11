@@ -52,6 +52,7 @@ public:
     virtual EncryptionLevel GetCurEncryptionLevel() = 0;
 
     // peer address
+    virtual void SetPeerAddress(const common::Address& addr);
     virtual void SetPeerAddress(const common::Address&& addr);
     virtual const common::Address& GetPeerAddress();
 

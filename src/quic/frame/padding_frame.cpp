@@ -6,6 +6,16 @@
 namespace quicx {
 namespace quic {
 
+PaddingFrame::PaddingFrame():
+    IFrame(FT_PADDING),
+    padding_length_(0) {
+
+}
+
+PaddingFrame::~PaddingFrame() {
+
+}
+
 bool PaddingFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
