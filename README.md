@@ -1,5 +1,3 @@
-# QuicX
-
 <p align="left"><img width="500" src="./doc/image/logo.png" alt="cppnet logo"></p>
 
 <p align="left">
