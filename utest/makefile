@@ -17,7 +17,7 @@ GTESTLIB = ../third/lib/libgtest.a
 CRYPTOLIB = ../third/lib/libcrypto.a
 SSLLIB = ../third/lib/libssl.a
 
-BIN = quicx-utest
+BIN = quicx_utest
 
 all:$(BIN)
 

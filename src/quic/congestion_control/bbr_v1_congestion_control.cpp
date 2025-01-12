@@ -1,3 +1,4 @@
+#include <memory>
 #include <algorithm>
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v1_congestion_control.h"
@@ -13,7 +14,7 @@ constexpr size_t BBRv1CongestionControl::MIN_WINDOW;
 constexpr uint64_t BBRv1CongestionControl::PROBE_RTT_INTERVAL;
 constexpr uint64_t BBRv1CongestionControl::PROBE_RTT_DURATION;
 
-BBRv1CongestionControl::BBRv1CongestionControl() :
+BBRv1CongestionControl::BBRv1CongestionControl():
     mode_(STARTUP),
     min_rtt_timestamp_(0),
     probe_rtt_done_timestamp_(0),
@@ -25,7 +26,7 @@ BBRv1CongestionControl::BBRv1CongestionControl() :
     congestion_window_ = MIN_WINDOW;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
-    pacer_ = std::make_unique<NormalPacer>();
+    pacer_ = std::unique_ptr<NormalPacer>(new NormalPacer());
 }
 
 BBRv1CongestionControl::~BBRv1CongestionControl() {
