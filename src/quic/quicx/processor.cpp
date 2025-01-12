@@ -28,6 +28,7 @@ Processor::Processor(std::shared_ptr<TLSCtx> ctx,
 
     receiver_ = std::make_shared<UdpReceiver>();
     sender_ = std::make_shared<UdpSender>();
+    receiver_->AddReceiver(sender_->GetSocket());
 }
 
 Processor::~Processor() {

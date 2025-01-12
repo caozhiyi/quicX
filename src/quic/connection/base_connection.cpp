@@ -222,6 +222,7 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
 bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level) {
     for (size_t i = 0; i < frames.size(); i++) {
         uint16_t type = frames[i]->GetType();
+        common::LOG_DEBUG("get frame type: %s", FrameType2String(type).c_str());
         switch (type)
         {
         case FT_PADDING:

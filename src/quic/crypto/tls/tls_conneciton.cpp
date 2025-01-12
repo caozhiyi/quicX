@@ -62,12 +62,11 @@ bool TLSConnection::DoHandleShake() {
 }
 
 bool TLSConnection::ProcessCryptoData(uint8_t* data, uint32_t len) {
+    common::LOG_DEBUG("process crypto data level: %d, len: %d", SSL_quic_read_level(ssl_.get()), len);
     if (!SSL_provide_quic_data(ssl_.get(), SSL_quic_read_level(ssl_.get()), data, len)) {
         common::LOG_ERROR("SSL_provide_quic_data failed.");
         return false;
     }
-
-    // todo handshake done, send handle done frame
     return true;
 }
 
@@ -105,7 +104,7 @@ int32_t TLSConnection::SetWriteSecret(SSL* ssl, ssl_encryption_level_t level, co
 int32_t TLSConnection::AddHandshakeData(SSL* ssl, ssl_encryption_level_t level, const uint8_t *data,
     size_t len) {
     TLSConnection* conn = (TLSConnection*)SSL_get_app_data(ssl);
-
+    common::LOG_DEBUG("add handshake data level: %d, len: %d", AdapterEncryptionLevel(level), len);
     conn->handler_->WriteMessage(AdapterEncryptionLevel(level), data, len);
     return 1;
 }

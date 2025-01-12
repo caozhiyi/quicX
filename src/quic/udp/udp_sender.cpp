@@ -25,7 +25,7 @@ bool UdpSender::Send(std::shared_ptr<INetPacket>& pkt) {
     auto buffer= pkt->GetData();
     auto span = buffer->GetReadSpan();
     auto ret = common::SendTo(sock_, (const char*)span.GetStart(), span.GetLength(), 0, pkt->GetAddress());
-    
+    common::LOG_DEBUG("send packet to: %s, len: %d", pkt->GetAddress().AsString().c_str(), span.GetLength());
     return ret.errno_ == 0;
 }
 
