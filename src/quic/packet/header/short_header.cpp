@@ -14,7 +14,7 @@ ShortHeader::ShortHeader():
 }
 
 ShortHeader::ShortHeader(uint8_t flag):
-    destination_connection_id_length_(0), // TODO: get from config
+    destination_connection_id_length_(20), // TODO: get from config
     IHeader(flag) {
 }
 

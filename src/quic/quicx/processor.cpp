@@ -160,6 +160,7 @@ bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
     connecting_map_[cid_code] = new_conn;
     // TODO add timer to check connection status
 
+    new_conn->SetPeerAddress(packet->GetAddress());
     new_conn->AddRemoteConnectionId(cid, len);
     new_conn->OnPackets(packet->GetTime(), packets);
     return true;

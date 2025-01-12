@@ -57,9 +57,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     flow_control_->InitConfig(transport_param_);
 
     // set transport param. TODO define tp length
-    std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(alloter_);
-    transport_param_.Encode(buf);
-    tls_conn->AddTransportParam(buf->GetData(), buf->GetDataLength());
+    AddTransportParam(TransportParamConfig::Instance());
 
     // generate connection id
     auto dcid = remote_conn_id_manager_->Generator();

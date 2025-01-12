@@ -70,7 +70,6 @@ TEST(quic_connection_utest, handshake) {
     client_ctx->Init();
 
     auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
-    client_conn->AddTransportParam(TransportParamConfig::Instance());
 
     common::Address addr(common::AT_IPV4);
     addr.SetIp("127.0.0.1");

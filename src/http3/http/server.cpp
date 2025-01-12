@@ -34,6 +34,9 @@ bool Server::Init(const std::string& cert_file, const std::string& key_file, uin
 }
 
 bool Server::Init(const char* cert_pem, const char* key_pem, uint16_t thread_num) {
+    std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
+    common::LOG_SET(log);
+    common::LOG_SET_LEVEL(common::LL_DEBUG);
     if (!quic_->Init(cert_pem, key_pem, http3_alpn__, thread_num)) {
         common::LOG_ERROR("init quic server failed.");
         return false;

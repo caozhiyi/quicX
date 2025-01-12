@@ -14,7 +14,7 @@ TEST(UdpSenderTest, Send) {
     std::vector<std::thread> threads;
     for (int i = 0; i < 1; ++i) {
         threads.emplace_back([]() {
-            char recv_buf[20] = {0};
+            char recv_buf[200] = {0};
             std::shared_ptr<common::Buffer> recv_buffer = std::make_shared<common::Buffer>((uint8_t*)recv_buf, sizeof(recv_buf));
 
             std::shared_ptr<INetPacket> recv_pkt = std::make_shared<INetPacket>();
