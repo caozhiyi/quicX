@@ -18,6 +18,8 @@ public:
 
     bool Send(std::shared_ptr<INetPacket>& pkt);
 
+    uint64_t GetSocket() const { return sock_; }
+
 private:
     uint64_t sock_;
 };

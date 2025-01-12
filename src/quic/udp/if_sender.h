@@ -17,9 +17,11 @@ public:
     virtual ~ISender() {}
 
     virtual bool Send(std::shared_ptr<INetPacket>& pkt) = 0;
+
+    virtual uint64_t GetSocket() const = 0;
 };
 
 }
 }
 
-#endif
+#endifcd
