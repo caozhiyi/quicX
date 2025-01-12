@@ -55,7 +55,9 @@ public:
     }
 
     void HttpHandler(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
-        http_handler_(request, response);
+        if (http_handler_) {
+            http_handler_(request, response);
+        }
     }
 
     void SetHttpHandler(const http_handler& handler) {
