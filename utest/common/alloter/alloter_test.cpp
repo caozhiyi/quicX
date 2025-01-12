@@ -7,7 +7,7 @@ namespace quicx {
 namespace common {
 namespace {
 
-uint32_t __alloter_test_value = 0;
+static uint32_t __alloter_test_value = 0;
 class AlloterTestClass {
 public:
     AlloterTestClass(uint64_t v) : data_(v) {

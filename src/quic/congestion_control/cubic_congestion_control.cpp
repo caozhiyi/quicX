@@ -22,7 +22,7 @@ CubicCongestionControl::CubicCongestionControl() :
     congestion_window_ = MIN_WINDOW;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
-    pacer_ = std::make_unique<NormalPacer>();
+    pacer_ = std::unique_ptr<NormalPacer>(new NormalPacer());
 }
 
 CubicCongestionControl::~CubicCongestionControl() {
