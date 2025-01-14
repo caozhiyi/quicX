@@ -45,8 +45,13 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/third/boringssl/include
 )
 
-# Add subdirectories for source files
-add_subdirectory(src)
+collect_sources(${PROJECT_SOURCE_DIR}/src/common common_files)
+collect_sources(${PROJECT_SOURCE_DIR}/src/quic quic_files)
+collect_sources(${PROJECT_SOURCE_DIR}/src/http3 http3_files)
+
+SET(common_source ${common_files} PARENT_SCOPE)
+SET(quic_source ${quic_files} PARENT_SCOPE)
+SET(http3_source ${http3_files} PARENT_SCOPE)
 
 # Define static libraries
 add_library(quicx STATIC ${common_source} ${quic_source})
