@@ -6,7 +6,7 @@
 
 #include "quic/include/type.h"
 #include "quic/quicx/if_processor.h"
-#include "quic/quicx/thread_processor.h"
+#include "quic/quicx/processor_base.h"
 #include "quic/crypto/tls/tls_client_ctx.h"
 
 namespace quicx {
@@ -17,9 +17,6 @@ public:
     QuicBase();
     virtual ~QuicBase();
 
-    virtual bool Init(uint16_t thread_num = 1);
-    virtual bool Init(const std::string& alpn, uint16_t thread_num = 1);
-
     virtual void Join();
 
     virtual void Destroy();
@@ -28,7 +25,7 @@ public:
 
 protected:
     std::shared_ptr<TLSCtx> tls_ctx_;
-    std::vector<std::shared_ptr<ThreadProcessor>> processors_;
+    std::vector<std::shared_ptr<ProcessorBase>> processors_;
 
     connection_state_callback connection_state_cb_;
 };

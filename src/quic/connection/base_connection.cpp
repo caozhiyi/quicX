@@ -111,7 +111,7 @@ uint64_t BaseConnection::GetConnectionIDHash() {
     return local_conn_id_manager_->GetCurrentID().Hash();
 }
 
-bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, bool& send_done) {
+bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation) {
     // make quic packet
     uint8_t encrypto_level = GetCurEncryptionLevel();
     auto crypto_grapher = connection_crypto_.GetCryptographer(encrypto_level);
@@ -129,8 +129,8 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, b
     if (!ret) {
         common::LOG_ERROR("get send data failed.");
     }
-    send_done = send_manager_.IsAllSendDone();
-    if (send_done && to_close_) {
+    send_operation = send_manager_.GetSendOperation();
+    if (send_operation == SendOperation::SO_ALL_SEND_DONE && to_close_) {
         InnerConnectionClose(QUIC_ERROR_CODE::QEC_NO_ERROR, 0, "connection closed by local.");
     }
     return ret;

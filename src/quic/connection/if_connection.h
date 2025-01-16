@@ -5,6 +5,7 @@
 #include <functional>
 #include "common/timer/timer.h"
 #include "quic/crypto/tls/type.h"
+#include "quic/connection/type.h"
 #include "quic/packet/if_packet.h"
 #include "common/network/address.h"
 #include "quic/stream/send_stream.h"
@@ -47,7 +48,7 @@ public:
     virtual void AddTransportParam(TransportParamConfig& tp_config) = 0;
     virtual uint64_t GetConnectionIDHash() = 0;
     // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, bool& send_done) = 0;
+    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_done) = 0;
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
     virtual EncryptionLevel GetCurEncryptionLevel() = 0;
 

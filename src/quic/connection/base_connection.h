@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "quic/include/type.h"
+#include "quic/connection/type.h"
 #include "quic/connection/if_connection.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/connection_crypto.h"
@@ -41,7 +42,7 @@ public:
     void AddTransportParam(TransportParamConfig& tp_config);
     virtual uint64_t GetConnectionIDHash();
     // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, bool& send_done);
+    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation);
     // handle packets
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
     virtual EncryptionLevel GetCurEncryptionLevel() { return connection_crypto_.GetCurEncryptionLevel(); }

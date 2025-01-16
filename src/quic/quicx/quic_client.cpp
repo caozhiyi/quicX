@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "quic/quicx/quic_client.h"
+#include "quic/quicx/processor_client.h"
 
 namespace quicx {
 namespace quic {
@@ -22,7 +23,13 @@ bool QuicClient::Init(uint16_t thread_num) {
         common::LOG_ERROR("tls ctx init faliled.");
         return false;
     }
-    return QuicBase::Init(thread_num);
+    processors_.reserve(thread_num);
+    for (size_t i = 0; i < thread_num; i++) {
+        auto processor = std::make_shared<ProcessorClient>(tls_ctx_, connection_state_cb_);
+        processor->Start();
+        processors_.emplace_back(processor);
+    }
+    return true;
 }
 
 void QuicClient::Join() {
@@ -37,7 +44,7 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port,
     const std::string& alpn, int32_t timeout_ms) {
     if (!processors_.empty()) {
         // TODO: random select processor
-        processors_[0]->Connect(ip, port, alpn, timeout_ms);
+        std::dynamic_pointer_cast<ProcessorClient>(processors_[0])->Connect(ip, port, alpn, timeout_ms);
         return true;
     }
     return false;

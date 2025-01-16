@@ -24,8 +24,19 @@ SendManager::~SendManager() {
 
 }
 
-bool SendManager::IsAllSendDone() {
-    return wait_frame_list_.empty() && active_send_stream_set_.empty();
+SendOperation SendManager::GetSendOperation() {
+    if (wait_frame_list_.empty() && active_send_stream_set_.empty()) {
+        return SendOperation::SO_ALL_SEND_DONE;
+
+    } else {
+        uint32_t can_send_size = 1500; // TODO: set to mtu size
+        send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
+        if (can_send_size == 0) {
+            common::LOG_WARN("congestion control send data limited.");
+            return SendOperation::SO_NEXT_PERIOD;
+        }
+    }
+    return SendOperation::SO_SEND_AGAIN_IMMEDIATELY;
 }
 
 void SendManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
