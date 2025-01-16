@@ -1,0 +1,70 @@
+#include "common/log/log.h"
+#include "quic/quicx/processor_client.h"
+#include "quic/connection/client_connection.h"
+#include "quic/connection/connection_id_generator.h"
+
+namespace quicx {
+namespace quic {
+
+ProcessorClient::ProcessorClient(std::shared_ptr<TLSCtx> ctx,
+    connection_state_callback connection_handler):
+    ProcessorBase(ctx, connection_handler) {
+
+}
+    
+ProcessorClient::~ProcessorClient() {
+
+}
+
+void ProcessorClient::Connect(const std::string& ip, uint16_t port,
+    const std::string& alpn, int32_t timeout_ms) {
+    auto conn = std::make_shared<ClientConnection>(ctx_, time_,
+        std::bind(&ProcessorClient::HandleActiveSendConnection, this, std::placeholders::_1),
+        std::bind(&ProcessorClient::HandleHandshakeDone, this, std::placeholders::_1),
+        std::bind(&ProcessorClient::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&ProcessorClient::HandleRetireConnectionId, this, std::placeholders::_1),
+        std::bind(&ProcessorClient::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    
+    connecting_map_[conn->GetConnectionIDHash()] = conn;
+    conn->Dial(common::Address(ip, port), alpn);
+    // TODO add timer to check connection status
+}
+
+bool ProcessorClient::HandlePacket(std::shared_ptr<INetPacket> packet) {
+    common::LOG_INFO("get packet from %s", packet->GetAddress().AsString().c_str());
+
+    uint8_t* cid;
+    uint16_t len = 0;
+    std::vector<std::shared_ptr<IPacket>> packets;
+    if (!DecodeNetPakcet(packet, packets, cid, len)) {
+        common::LOG_ERROR("decode packet failed");
+        return false;
+    }
+    
+    // dispatch packet
+    auto cid_code = ConnectionIDGenerator::Instance().Hash(cid, len);
+    auto conn = conn_map_.find(cid_code);
+    if (conn != conn_map_.end()) {
+        conn->second->OnPackets(packet->GetTime(), packets);
+        return true;
+    }
+
+    if (packets[0]->GetHeader()->GetPacketType() == PT_NEGOTIATION) {
+        common::LOG_DEBUG("get a negotiation packet"); // TODO handle negotiation packet
+        return true;
+    }
+
+    // if pakcet is a short header packet, but we can't find in connection map, the connection may exist in other thread.
+    // that may happen when ip of client changed.
+    auto pkt_type = packets[0]->GetHeader()->GetPacketType();
+    if (pkt_type == PacketType::PT_1RTT && connection_transfor_) {
+        connection_transfor_->TryCatchConnection(cid_code);
+        return true;
+    }
+
+    common::LOG_ERROR("get a packet with unknown connection id");
+    return false;
+}
+
+}
+}

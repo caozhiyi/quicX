@@ -1,6 +1,6 @@
 #include "common/log/log.h"
 #include "quic/quicx/quic_server.h"
-
+#include "quic/quicx/processor_server.h"
 namespace quicx {
 namespace quic {
 
@@ -23,7 +23,15 @@ bool QuicServer::Init(const std::string& cert_file, const std::string& key_file,
         return false;
     }
     tls_ctx_ = tls_ctx;
-    return QuicBase::Init(alpn, thread_num);
+
+    processors_.reserve(thread_num);
+    for (size_t i = 0; i < thread_num; i++) {
+        auto processor = std::make_shared<ProcessorServer>(tls_ctx_, connection_state_cb_);
+        processor->SetServerAlpn(alpn);
+        processor->Start();
+        processors_.emplace_back(processor);
+    }
+    return true;
 }
 
 bool QuicServer::Init(const char* cert_pem, const char* key_pem, const std::string& alpn, uint16_t thread_num) {
@@ -33,7 +41,15 @@ bool QuicServer::Init(const char* cert_pem, const char* key_pem, const std::stri
         return false;
     }
     tls_ctx_ = tls_ctx;
-    return QuicBase::Init(alpn, thread_num);
+    
+    processors_.reserve(thread_num);
+    for (size_t i = 0; i < thread_num; i++) {
+        auto processor = std::make_shared<ProcessorServer>(tls_ctx_, connection_state_cb_);
+        processor->SetServerAlpn(alpn);
+        processor->Start();
+        processors_.emplace_back(processor);
+    }
+    return true;
 }
 
 void QuicServer::Join() {

@@ -1,5 +1,5 @@
-#ifndef QUIC_QUICX_PROCESSOR
-#define QUIC_QUICX_PROCESSOR
+#ifndef QUIC_QUICX_PROCESSOR_BASE
+#define QUIC_QUICX_PROCESSOR_BASE
 
 #include <memory>
 #include <functional>
@@ -12,35 +12,38 @@
 #include "quic/crypto/tls/tls_ctx.h"
 #include "quic/quicx/if_processor.h"
 #include "quic/connection/if_connection.h"
+#include "quic/quicx/connection_transfor.h"
+#include "common/thread/thread_with_queue.h"
 
 namespace quicx {
 namespace quic {
 
 /*
- message dispatcher processor, handle packet and timer in one thread
+ message dispatcher processor
 */
-class Processor:
-    public IProcessor {
+class ProcessorBase:
+    public IProcessor,
+    public common::ThreadWithQueue<std::function<void()>>  {
 public:
-    Processor(std::shared_ptr<TLSCtx> ctx,
+    ProcessorBase(std::shared_ptr<TLSCtx> ctx,
         connection_state_callback connection_handler);
-    virtual ~Processor();
+    virtual ~ProcessorBase();
+
+    virtual void Run();
+
+    virtual void Stop();
+
+    void Weakeup();
 
     virtual void Process();
-
-    virtual void SetServerAlpn(const std::string& alpn);
     virtual void AddReceiver(uint64_t socket_fd);
     virtual void AddReceiver(const std::string& ip, uint16_t port);
-
-    virtual void Connect(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms);
 
 protected:
     void ProcessRecv(uint32_t timeout_ms);
     void ProcessTimer();
     void ProcessSend();
 
-    bool HandlePacket(std::shared_ptr<INetPacket> packet);
     bool InitPacketCheck(std::shared_ptr<IPacket> packet);
     static bool DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
         std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len);
@@ -51,8 +54,16 @@ protected:
     void HandleRetireConnectionId(uint64_t cid_hash);
     void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason);
 
-private:
-    void SendVersionNegotiatePacket(std::shared_ptr<INetPacket> packet);
+    virtual bool HandlePacket(std::shared_ptr<INetPacket> packet) = 0;
+
+protected:
+    // transfer a connection from other processor
+    void TransferConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn);
+    // all threads can't find the connection
+    void ConnectionIDNoexist(uint64_t cid_hash, std::shared_ptr<IConnection>& conn);
+    // catch a connection from local map if there is target conn
+    void CatchConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn);
+
 
 protected:
     bool do_send_;
@@ -74,6 +85,12 @@ protected:
     thread_local static std::shared_ptr<common::ITimer> time_;
 
     connection_state_callback connection_handler_;
+
+protected:
+    friend class ConnectionTransfor;
+    std::shared_ptr<ConnectionTransfor> connection_transfor_;
+
+    static std::unordered_map<std::thread::id, ProcessorBase*> processor_map__;
 };
 
 }

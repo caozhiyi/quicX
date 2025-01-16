@@ -4,6 +4,7 @@
 #include <list>
 #include <memory>
 #include <unordered_set>
+#include "quic/connection/type.h"
 #include "quic/packet/if_packet.h"
 #include "quic/stream/if_stream.h"
 #include "common/timer/if_timer.h"
@@ -21,8 +22,8 @@ class SendManager {
 public:
     SendManager(std::shared_ptr<common::ITimer> timer);
     ~SendManager();
-
-    bool IsAllSendDone();
+    
+    SendOperation GetSendOperation();
 
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveStream(std::shared_ptr<IStream> stream);

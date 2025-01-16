@@ -1,15 +1,15 @@
 #include "common/log/log.h"
 #include "quic/common/version.h"
 #include "quic/udp/udp_sender.h"
-#include "quic/quicx/processor.h"
 #include "quic/udp/udp_receiver.h"
 #include "quic/common/constants.h"
 #include "common/network/address.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/packet_decode.h"
+#include "quic/quicx/processor_base.h"
 #include "quic/packet/header/long_header.h"
+#include "quic/quicx/connection_transfor.h"
 #include "quic/packet/header/short_header.h"
-#include "quic/connection/client_connection.h"
 #include "quic/connection/server_connection.h"
 #include "quic/packet/version_negotiation_packet.h"
 #include "quic/connection/connection_id_generator.h"
@@ -17,9 +17,10 @@
 namespace quicx {
 namespace quic {
 
-thread_local std::shared_ptr<common::ITimer> Processor::time_ = common::MakeTimer();
+thread_local std::shared_ptr<common::ITimer> ProcessorBase::time_ = common::MakeTimer();
+std::unordered_map<std::thread::id, ProcessorBase*> ProcessorBase::processor_map__;
 
-Processor::Processor(std::shared_ptr<TLSCtx> ctx,
+ProcessorBase::ProcessorBase(std::shared_ptr<TLSCtx> ctx,
     connection_state_callback connection_handler):
     do_send_(false),
     ctx_(ctx),
@@ -31,11 +32,40 @@ Processor::Processor(std::shared_ptr<TLSCtx> ctx,
     receiver_->AddReceiver(sender_->GetSocket());
 }
 
-Processor::~Processor() {
+ProcessorBase::~ProcessorBase() {
 
 }
 
-void Processor::Process() {
+void ProcessorBase::Run() {
+    // register processor in woker thread
+    processor_map__[std::this_thread::get_id()] = this;
+    connection_transfor_ = std::make_shared<ConnectionTransfor>();
+    while (!IsStop()) {
+        Process();
+
+        while (GetQueueSize() > 0) {
+            auto func = Pop();
+            func();
+        }
+    }
+}
+
+void ProcessorBase::Stop() {
+    // close all connections
+    for (auto& conn : conn_map_) {
+        conn.second->Close();
+    }
+
+    // TODO: wait all connections closed
+    Thread::Stop();
+    Weakeup();
+}
+
+void ProcessorBase::Weakeup() {
+    receiver_->Weakup();
+}
+
+void ProcessorBase::Process() {
     // send all data to network
     if (do_send_) {
         ProcessSend();
@@ -52,33 +82,15 @@ void Processor::Process() {
     ProcessTimer();
 }
 
-void Processor::SetServerAlpn(const std::string& alpn) {
-    server_alpn_ = alpn;
-}
-
-void Processor::AddReceiver(uint64_t socket_fd) {
+void ProcessorBase::AddReceiver(uint64_t socket_fd) {
     receiver_->AddReceiver(socket_fd);
 }
 
-void Processor::AddReceiver(const std::string& ip, uint16_t port) {
+void ProcessorBase::AddReceiver(const std::string& ip, uint16_t port) {
     receiver_->AddReceiver(ip, port);
 }
 
-void Processor::Connect(const std::string& ip, uint16_t port,
-    const std::string& alpn, int32_t timeout_ms) {
-    auto conn = std::make_shared<ClientConnection>(ctx_, time_,
-        std::bind(&Processor::HandleActiveSendConnection, this, std::placeholders::_1),
-        std::bind(&Processor::HandleHandshakeDone, this, std::placeholders::_1),
-        std::bind(&Processor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&Processor::HandleRetireConnectionId, this, std::placeholders::_1),
-        std::bind(&Processor::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    
-    connecting_map_[conn->GetConnectionIDHash()] = conn;
-    conn->Dial(common::Address(ip, port), alpn);
-    // TODO add timer to check connection status
-}
-
-void Processor::ProcessRecv(uint32_t timeout_ms) {
+void ProcessorBase::ProcessRecv(uint32_t timeout_ms) {
     uint8_t recv_buf[__max_v4_packet_size] = {0};
     std::shared_ptr<INetPacket> packet = std::make_shared<INetPacket>();
     auto buffer = std::make_shared<common::Buffer>(recv_buf, sizeof(recv_buf));
@@ -92,18 +104,18 @@ void Processor::ProcessRecv(uint32_t timeout_ms) {
     }
 }
 
-void Processor::ProcessTimer() {
+void ProcessorBase::ProcessTimer() {
     time_->TimerRun();
 }
 
-void Processor::ProcessSend() {
+void ProcessorBase::ProcessSend() {
     static thread_local uint8_t buf[1500] = {0};
     std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
 
     std::shared_ptr<INetPacket> packet = std::make_shared<INetPacket>();
-    bool send_done = false;
+    SendOperation send_operation;
     for (auto iter = active_send_connection_set_.begin(); iter != active_send_connection_set_.end();) {
-        if (!(*iter)->GenerateSendData(buffer, send_done)) {
+        if (!(*iter)->GenerateSendData(buffer, send_operation)) {
             common::LOG_ERROR("generate send data failed.");
             iter = active_send_connection_set_.erase(iter);
             continue;
@@ -116,100 +128,70 @@ void Processor::ProcessSend() {
             common::LOG_ERROR("udp send failed.");
         }
         buffer->Clear();
-        if (send_done) {
-            iter = active_send_connection_set_.erase(iter);
-        } else {
-            iter++;
+        switch (send_operation) {
+            case SendOperation::SO_ALL_SEND_DONE:
+                iter = active_send_connection_set_.erase(iter);
+                break;
+            case SendOperation::SO_NEXT_PERIOD:
+                iter++;
+                break;
+            case SendOperation::SO_SEND_AGAIN_IMMEDIATELY: // do nothing, send again immediately
+            default:
+                break;
         }
     }
 }
 
-bool Processor::HandlePacket(std::shared_ptr<INetPacket> packet) {
-    common::LOG_INFO("get packet from %s", packet->GetAddress().AsString().c_str());
-
-    uint8_t* cid;
-    uint16_t len = 0;
-    std::vector<std::shared_ptr<IPacket>> packets;
-    if (!DecodeNetPakcet(packet, packets, cid, len)) {
-        common::LOG_ERROR("decode packet failed");
-        SendVersionNegotiatePacket(packet);
-        return false;
-    }
-    
-    // dispatch packet
-    auto cid_code = ConnectionIDGenerator::Instance().Hash(cid, len);
-    auto conn = conn_map_.find(cid_code);
-    if (conn != conn_map_.end()) {
-        conn->second->OnPackets(packet->GetTime(), packets);
-        return true;
-    }
-
-    // check init packet
-    if (!InitPacketCheck(packets[0])) {
-        common::LOG_ERROR("init packet check failed");
-        SendVersionNegotiatePacket(packet);
-        return false;
-    }
-
-    // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, server_alpn_, time_,
-        std::bind(&Processor::HandleActiveSendConnection, this, std::placeholders::_1),
-        std::bind(&Processor::HandleHandshakeDone, this, std::placeholders::_1),
-        std::bind(&Processor::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&Processor::HandleRetireConnectionId, this, std::placeholders::_1),
-        std::bind(&Processor::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    connecting_map_[cid_code] = new_conn;
-    // TODO add timer to check connection status
-
-    new_conn->SetPeerAddress(packet->GetAddress());
-    new_conn->AddRemoteConnectionId(cid, len);
-    new_conn->OnPackets(packet->GetTime(), packets);
-    return true;
-}
-
-void Processor::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
+void ProcessorBase::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     connecting_map_.erase(conn->GetConnectionIDHash());
     conn_map_[conn->GetConnectionIDHash()] = conn;
     connection_handler_(conn, 0, "");
 }
 
-void Processor::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
+void ProcessorBase::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
     active_send_connection_set_.insert(conn);
     do_send_ = true;
     receiver_->Weakup();
 }
 
-void Processor::HandleAddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn) {
+void ProcessorBase::HandleAddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn) {
     conn_map_[cid_hash] = conn;
 }
 
-void Processor::HandleRetireConnectionId(uint64_t cid_hash) {
+void ProcessorBase::HandleRetireConnectionId(uint64_t cid_hash) {
     conn_map_.erase(cid_hash);
 }
 
-void Processor::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
+void ProcessorBase::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
     conn_map_.erase(conn->GetConnectionIDHash());
     connection_handler_(conn, error, reason);
 }
 
-void Processor::SendVersionNegotiatePacket(std::shared_ptr<INetPacket> packet) {
-    VersionNegotiationPacket version_negotiation_packet;
-    for (auto version : __quic_versions) {
-        version_negotiation_packet.AddSupportVersion(version);
-    }
-
-    uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
-    version_negotiation_packet.Encode(buffer);
-
-    auto net_packet = std::make_shared<INetPacket>();
-    net_packet->SetData(buffer);
-    net_packet->SetAddress(packet->GetAddress());
-    net_packet->SetSocket(packet->GetSocket());
-    sender_->Send(net_packet);
+void ProcessorBase::TransferConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {
+    conn->SetTimer(ProcessorBase::time_);
+    conn->SetActiveConnectionCB(std::bind(&ProcessorBase::HandleActiveSendConnection, this, std::placeholders::_1));
+    conn->SetHandshakeDoneCB(std::bind(&ProcessorBase::HandleHandshakeDone, this, std::placeholders::_1));
+    conn->SetAddConnectionIdCB(std::bind(&ProcessorBase::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2));
+    conn->SetRetireConnectionIdCB(std::bind(&ProcessorBase::HandleRetireConnectionId, this, std::placeholders::_1));
+    conn->SetConnectionCloseCB(std::bind(&ProcessorBase::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    conn_map_[cid_hash] = conn;
 }
 
-bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
+void ProcessorBase::ConnectionIDNoexist(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {
+    // do nothing
+}
+
+void ProcessorBase::CatchConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {
+    // return the connection to outside
+    auto iter = conn_map_.find(cid_hash);
+    if (iter != conn_map_.end()) {
+        conn = iter->second;
+    }
+    // remove from map
+    conn_map_.erase(iter);
+}
+
+bool ProcessorBase::InitPacketCheck(std::shared_ptr<IPacket> packet) {
     if (packet->GetHeader()->GetPacketType() != PT_INITIAL) {
         common::LOG_ERROR("recv packet whitout connection.");
         return false;
@@ -233,7 +215,7 @@ bool Processor::InitPacketCheck(std::shared_ptr<IPacket> packet) {
 }
 
 
-bool Processor::DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
+bool ProcessorBase::DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
     std::vector<std::shared_ptr<IPacket>>& packets, uint8_t* &cid, uint16_t& len) {
     if(!DecodePackets(net_packet->GetData(), packets)) {
         common::LOG_ERROR("decode packet failed");
