@@ -21,7 +21,8 @@ void ProcessorServer::SetServerAlpn(const std::string& alpn) {
 }
 
 bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
-    common::LOG_INFO("get packet from %s", packet->GetAddress().AsString().c_str());
+    common::LOG_DEBUG("get packet. peer addr:%s, packet len:%d",
+        packet->GetAddress().AsString().c_str(), packet->GetData()->GetDataLength());
 
     uint8_t* cid;
     uint16_t len = 0;
@@ -34,6 +35,7 @@ bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
     
     // dispatch packet
     auto cid_code = ConnectionIDGenerator::Instance().Hash(cid, len);
+    common::LOG_DEBUG("get packet. dcid:%llu", cid_code);
     auto conn = conn_map_.find(cid_code);
     if (conn != conn_map_.end()) {
         conn->second->OnPackets(packet->GetTime(), packets);
@@ -63,11 +65,17 @@ bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
         std::bind(&ProcessorServer::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ProcessorServer::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     connecting_map_[cid_code] = new_conn;
-    // TODO add timer to check connection status
 
-    new_conn->SetPeerAddress(packet->GetAddress());
+    // set remote connection id
+    auto first_packet_header = packets[0]->GetHeader();
+    auto long_header = dynamic_cast<LongHeader*>(first_packet_header);
+    len = long_header->GetSourceConnectionIdLength();
+    cid = (uint8_t*)long_header->GetSourceConnectionId();
     new_conn->AddRemoteConnectionId(cid, len);
+    new_conn->SetPeerAddress(packet->GetAddress());
     new_conn->OnPackets(packet->GetTime(), packets);
+
+    // TODO add timer to check connection status
     return true;
 }
 
@@ -86,6 +94,7 @@ void ProcessorServer::SendVersionNegotiatePacket(std::shared_ptr<INetPacket> pac
     net_packet->SetAddress(packet->GetAddress());
     net_packet->SetSocket(packet->GetSocket());
     sender_->Send(net_packet);
+    common::LOG_DEBUG("send version negotiate packet. packet size:%d", buffer->GetDataLength());
 }
 
 }

@@ -1,7 +1,5 @@
 #include "common/log/log.h"
 #include "quic/common/version.h"
-#include "quic/udp/udp_sender.h"
-#include "quic/udp/udp_receiver.h"
 #include "quic/common/constants.h"
 #include "common/network/address.h"
 #include "quic/packet/init_packet.h"
@@ -18,7 +16,6 @@ namespace quicx {
 namespace quic {
 
 thread_local std::shared_ptr<common::ITimer> ProcessorBase::time_ = common::MakeTimer();
-std::unordered_map<std::thread::id, ProcessorBase*> ProcessorBase::processor_map__;
 
 ProcessorBase::ProcessorBase(std::shared_ptr<TLSCtx> ctx,
     connection_state_callback connection_handler):
@@ -26,43 +23,10 @@ ProcessorBase::ProcessorBase(std::shared_ptr<TLSCtx> ctx,
     ctx_(ctx),
     connection_handler_(connection_handler) {
     alloter_ = std::make_shared<common::BlockMemoryPool>(1500, 5); // todo add to config
-
-    receiver_ = std::make_shared<UdpReceiver>();
-    sender_ = std::make_shared<UdpSender>();
-    receiver_->AddReceiver(sender_->GetSocket());
 }
 
 ProcessorBase::~ProcessorBase() {
 
-}
-
-void ProcessorBase::Run() {
-    // register processor in woker thread
-    processor_map__[std::this_thread::get_id()] = this;
-    connection_transfor_ = std::make_shared<ConnectionTransfor>();
-    while (!IsStop()) {
-        Process();
-
-        while (GetQueueSize() > 0) {
-            auto func = Pop();
-            func();
-        }
-    }
-}
-
-void ProcessorBase::Stop() {
-    // close all connections
-    for (auto& conn : conn_map_) {
-        conn.second->Close();
-    }
-
-    // TODO: wait all connections closed
-    Thread::Stop();
-    Weakeup();
-}
-
-void ProcessorBase::Weakeup() {
-    receiver_->Weakup();
 }
 
 void ProcessorBase::Process() {
@@ -121,6 +85,12 @@ void ProcessorBase::ProcessSend() {
             continue;
         }
 
+        if (buffer->GetDataLength() == 0) {
+            common::LOG_WARN("generate send data length is 0.");
+            iter = active_send_connection_set_.erase(iter);
+            continue;
+        }
+
         packet->SetData(buffer);
         packet->SetAddress((*iter)->GetPeerAddress());
 
@@ -175,20 +145,6 @@ void ProcessorBase::TransferConnection(uint64_t cid_hash, std::shared_ptr<IConne
     conn->SetRetireConnectionIdCB(std::bind(&ProcessorBase::HandleRetireConnectionId, this, std::placeholders::_1));
     conn->SetConnectionCloseCB(std::bind(&ProcessorBase::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     conn_map_[cid_hash] = conn;
-}
-
-void ProcessorBase::ConnectionIDNoexist(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {
-    // do nothing
-}
-
-void ProcessorBase::CatchConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {
-    // return the connection to outside
-    auto iter = conn_map_.find(cid_hash);
-    if (iter != conn_map_.end()) {
-        conn = iter->second;
-    }
-    // remove from map
-    conn_map_.erase(iter);
 }
 
 bool ProcessorBase::InitPacketCheck(std::shared_ptr<IPacket> packet) {

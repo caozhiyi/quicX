@@ -31,7 +31,8 @@ void ProcessorClient::Connect(const std::string& ip, uint16_t port,
 }
 
 bool ProcessorClient::HandlePacket(std::shared_ptr<INetPacket> packet) {
-    common::LOG_INFO("get packet from %s", packet->GetAddress().AsString().c_str());
+    common::LOG_INFO("get packet. peer addr:%s, packet len:%d",
+        packet->GetAddress().AsString().c_str(), packet->GetData()->GetDataLength());
 
     uint8_t* cid;
     uint16_t len = 0;
@@ -43,6 +44,7 @@ bool ProcessorClient::HandlePacket(std::shared_ptr<INetPacket> packet) {
     
     // dispatch packet
     auto cid_code = ConnectionIDGenerator::Instance().Hash(cid, len);
+    common::LOG_DEBUG("get packet. dcid:%llu", cid_code);
     auto conn = conn_map_.find(cid_code);
     if (conn != conn_map_.end()) {
         conn->second->OnPackets(packet->GetTime(), packets);

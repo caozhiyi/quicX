@@ -37,6 +37,8 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
                 retire_connection_id_cb_(iter->second.Hash());
             }
             iter = ids_map_.erase(iter);
+        } else {
+            break;
         }
     }
     
@@ -56,6 +58,20 @@ bool ConnectionIDManager::AddID(ConnectionID& id) {
     if (add_connection_id_cb_) {
         add_connection_id_cb_(id.Hash());
     }
+    return true;
+}
+
+bool ConnectionIDManager::AddID(const uint8_t* id, uint16_t len) {
+    ConnectionID conn_id((uint8_t*)id, len, ++cur_index_);
+    return AddID(conn_id);
+}
+
+bool ConnectionIDManager::UseNextID() {
+    if (ids_map_.empty() || ids_map_.size() == 1) {
+        return false;
+    }
+
+    RetireIDBySequence(cur_id_.index_); // retire current id
     return true;
 }
 

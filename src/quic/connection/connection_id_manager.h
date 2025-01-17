@@ -47,6 +47,8 @@ public:
     ConnectionID& GetCurrentID();
     bool RetireIDBySequence(uint64_t sequence);
     bool AddID(ConnectionID& id);
+    bool AddID(const uint8_t* id, uint16_t len);
+    bool UseNextID();
 
 private:
     int64_t cur_index_;

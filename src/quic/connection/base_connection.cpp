@@ -188,10 +188,6 @@ bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
-    return OnNormalPacket(packet);
-}
-
 bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
     return OnNormalPacket(packet);
 }
@@ -219,12 +215,15 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
+bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
+    return OnNormalPacket(packet);
+}
+
 bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level) {
     for (size_t i = 0; i < frames.size(); i++) {
         uint16_t type = frames[i]->GetType();
         common::LOG_DEBUG("get frame type: %s", FrameType2String(type).c_str());
-        switch (type)
-        {
+        switch (type) {
         case FT_PADDING:
             // do nothing
             break;

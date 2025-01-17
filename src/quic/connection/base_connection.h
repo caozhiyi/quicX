@@ -50,9 +50,9 @@ public:
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     bool On0rttPacket(std::shared_ptr<IPacket> packet);
-    bool OnHandshakePacket(std::shared_ptr<IPacket> packet);
     bool On1rttPacket(std::shared_ptr<IPacket> packet);
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
+    virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) = 0;
 
     // handle frames

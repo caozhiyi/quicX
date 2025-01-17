@@ -159,6 +159,9 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
         auto cid = local_conn_id_manager_->GetCurrentID();
         ((LongHeader*)header)->SetSourceConnectionId(cid.id_, cid.len_);
         ((LongHeader*)header)->SetVersion(__quic_versions[0]);
+
+        common::LOG_DEBUG("send long header packet. packet type:%d, packet size:%d, scid:%llu",
+            encrypto_level, visitor->GetBuffer()->GetDataLength(), cid.Hash());
     }
 
     auto cid = remote_conn_id_manager_->GetCurrentID();
@@ -166,6 +169,9 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     packet->SetPayload(visitor->GetBuffer()->GetReadSpan());
     packet->SetCryptographer(cryptographer);
 
+    common::LOG_DEBUG("send packet. packet type:%d, packet size:%d, dcid:%llu",
+        encrypto_level, visitor->GetBuffer()->GetDataLength(), cid.Hash());
+    
     return packet;
 }
 
