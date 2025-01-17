@@ -27,6 +27,7 @@ public:
     bool Dial(const common::Address& addr, const std::string& alpn);
 
 protected:
+    virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);
     virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err);

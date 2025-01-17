@@ -69,6 +69,22 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     return true;
 }
 
+bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
+    auto handshake_packet = std::dynamic_pointer_cast<HandshakePacket>(packet);
+    if (!handshake_packet) {
+        common::LOG_ERROR("packet type is not handshake packet.");
+        return false;
+    }
+
+    // client side should update remote connection id here
+    auto long_header = static_cast<LongHeader*>(handshake_packet->GetHeader());
+    const uint8_t* dcid = long_header->GetDestinationConnectionId();
+    uint32_t dcid_len = long_header->GetDestinationConnectionIdLength();
+    remote_conn_id_manager_->AddID(dcid, dcid_len);
+    remote_conn_id_manager_->UseNextID();
+    return OnNormalPacket(packet);
+}
+
 bool ClientConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
     if (handshake_done_cb_) {
         handshake_done_cb_(shared_from_this());
