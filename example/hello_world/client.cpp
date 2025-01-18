@@ -16,9 +16,10 @@ int main() {
         quicx::http3::HttpMethod::HM_GET,
         request, 
         [](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
-            std::cout << response->GetBody() << std::endl;
+            std::cout << "status: " << response->GetStatusCode() << std::endl;
+            std::cout << "response: " << response->GetBody() << std::endl;
         }
     );
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 }
