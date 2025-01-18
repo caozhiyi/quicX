@@ -78,8 +78,8 @@ bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
 
     // client side should update remote connection id here
     auto long_header = static_cast<LongHeader*>(handshake_packet->GetHeader());
-    const uint8_t* dcid = long_header->GetDestinationConnectionId();
-    uint32_t dcid_len = long_header->GetDestinationConnectionIdLength();
+    const uint8_t* dcid = long_header->GetSourceConnectionId();
+    uint32_t dcid_len = long_header->GetSourceConnectionIdLength();
     remote_conn_id_manager_->AddID(dcid, dcid_len);
     remote_conn_id_manager_->UseNextID();
     return OnNormalPacket(packet);
