@@ -50,8 +50,8 @@ static const char __key_pem[] =
 bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn) {
     uint8_t buf[1500] = {0};
     std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + 1500);
-    bool done = false;
-    send_conn->GenerateSendData(buffer, done);
+    quic::SendOperation send_operation;
+    send_conn->GenerateSendData(buffer, send_operation);
 
     std::vector<std::shared_ptr<IPacket>> packets;
     if (!DecodePackets(buffer, packets)) {
