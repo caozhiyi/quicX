@@ -2,8 +2,8 @@
 #include "http3/include/type.h"
 #include "http3/http/request.h"
 #include "http3/http/response.h"
-#include "http3/connection/client_connection.h"
-#include "http3/connection/server_connection.h"
+#include "http3/connection/connection_client.h"
+#include "http3/connection/connection_server.h"
 #include "utest/http3/connection/mock_quic_connection.h"
 
 namespace quicx {

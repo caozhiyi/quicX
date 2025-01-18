@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "http3/http/type.h"
+#include "common/util/time.h"
 #include "http3/http/server.h"
 #include "common/network/address.h"
 #include "common/log/stdout_logger.h"
@@ -15,6 +16,7 @@ std::unique_ptr<IServer> IServer::Create() {
 Server::Server() {
     quic_ = quic::IQuicServer::Create();
     router_ = std::make_shared<Router>();
+    quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this, std::placeholders::_1, std::placeholders::_2));
 }
 
 Server::~Server() {
@@ -102,6 +104,8 @@ void Server::HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IR
         return;
     }
 
+    uint64_t start_time = common::UTCTimeMsec();
+    common::LOG_DEBUG("start handle request. path: %s, method: %d", path.c_str(), mothed);
     for (auto& handler : before_middlewares_) {
         handler(request, response);
     }
@@ -111,6 +115,7 @@ void Server::HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IR
     for (auto& handler : after_middlewares_) {
         handler(request, response);
     }
+    common::LOG_DEBUG("end handle request. path: %s, method: %d, time: %llums", path.c_str(), mothed, common::UTCTimeMsec() - start_time);
 }
 
 }

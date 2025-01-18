@@ -3,7 +3,7 @@
 #include "http3/stream/request_stream.h"
 #include "http3/stream/control_receiver_stream.h"
 #include "http3/stream/push_receiver_stream.h"
-#include "http3/connection/client_connection.h"
+#include "http3/connection/connection_client.h"
 
 namespace quicx {
 namespace http3 {

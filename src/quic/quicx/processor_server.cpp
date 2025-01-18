@@ -1,7 +1,7 @@
 #include "common/log/log.h"
 #include "quic/common/version.h"
 #include "quic/quicx/processor_server.h"
-#include "quic/connection/server_connection.h"
+#include "quic/connection/connection_server.h"
 #include "quic/packet/version_negotiation_packet.h"
 #include "quic/connection/connection_id_generator.h"
 

@@ -124,7 +124,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         }
 
         if (recv_cb_) {
-            recv_cb_(buffer_, 100); // TODO make error code. close
+            recv_cb_(buffer_, 0);
         }
 
         if (recv_machine_->CanAppReadAllData()) {

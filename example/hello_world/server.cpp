@@ -39,7 +39,7 @@ static const char key_pem[] =
     server->AddHandler(quicx::http3::HttpMethod::HM_GET,
         "/hello",
         [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
-        resp->SetBody("hello world");
+            resp->SetBody("hello world");
         }
     );
     server->Init(cert_pem, key_pem, 1);

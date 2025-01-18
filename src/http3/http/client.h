@@ -8,7 +8,7 @@
 #include "http3/http/request.h"
 #include "quic/include/if_quic_client.h"
 #include "quic/include/if_quic_connection.h"
-#include "http3/connection/client_connection.h"
+#include "http3/connection/connection_client.h"
 
 namespace quicx {
 namespace http3 {

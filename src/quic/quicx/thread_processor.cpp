@@ -3,7 +3,7 @@
 #include "quic/udp/udp_receiver.h"
 #include "quic/quicx/thread_processor.h"
 #include "quic/quicx/connection_transfor.h"
-#include "quic/connection/server_connection.h"
+#include "quic/connection/connection_server.h"
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {

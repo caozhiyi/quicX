@@ -5,8 +5,8 @@
 #include "quic/packet/packet_decode.h"
 #include "quic/crypto/tls/tls_client_ctx.h"
 #include "quic/crypto/tls/tls_server_ctx.h"
-#include "quic/connection/client_connection.h"
-#include "quic/connection/server_connection.h"
+#include "quic/connection/connection_client.h"
+#include "quic/connection/connection_server.h"
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {

@@ -1,7 +1,7 @@
 #include "common/log/log.h"
 #include "http3/stream/response_stream.h"
 #include "http3/stream/push_sender_stream.h"
-#include "http3/connection/server_connection.h"
+#include "http3/connection/connection_server.h"
 #include "http3/stream/control_server_receiver_stream.h"
 
 namespace quicx {
