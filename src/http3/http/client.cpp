@@ -77,9 +77,9 @@ void Client::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t 
     conn->GetRemoteAddr(addr, port);
 
     std::string host = addr + ":" + std::to_string(port);
-    auto it = wait_request_map_.find(addr);
+    auto it = wait_request_map_.find(host);
     if (it == wait_request_map_.end()) {
-        common::LOG_ERROR("no wait request context found. addr: %s", addr.c_str());
+        common::LOG_ERROR("no wait request context found. host: %s", host.c_str());
         return;
     }
 
