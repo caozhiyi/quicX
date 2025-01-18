@@ -1,6 +1,6 @@
 #include "common/log/log.h"
 #include "quic/quicx/processor_client.h"
-#include "quic/connection/client_connection.h"
+#include "quic/connection/connection_client.h"
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {

@@ -13,7 +13,7 @@
 #include "quic/frame/path_response_frame.h"
 #include "quic/frame/path_challenge_frame.h"
 #include "quic/frame/handshake_done_frame.h"
-#include "quic/connection/server_connection.h"
+#include "quic/connection/connection_server.h"
 #include "quic/connection/transport_param_config.h"
 
 namespace quicx {
@@ -82,6 +82,11 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<common::IBufferRead> buff
         common::LOG_DEBUG("handshake done.");
         std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
         ToSendFrame(frame);
+
+        // notify handshake done
+        if (handshake_done_cb_) {
+            handshake_done_cb_(shared_from_this());
+        }
     }
 }
 

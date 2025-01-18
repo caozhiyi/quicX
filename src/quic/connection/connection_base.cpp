@@ -21,7 +21,7 @@
 #include "quic/stream/bidirection_stream.h"
 #include "quic/frame/path_response_frame.h"
 #include "quic/frame/path_challenge_frame.h"
-#include "quic/connection/base_connection.h"
+#include "quic/connection/connection_base.h"
 #include "quic/frame/streams_blocked_frame.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/new_connection_id_frame.h"
@@ -37,7 +37,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
     std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
-    IConnection(active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb),
+    IConnection(active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     to_close_(false),
     last_communicate_time_(0),
     recv_control_(timer),
@@ -81,10 +81,16 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
     // check streams limit
     uint64_t stream_id;
     std::shared_ptr<IFrame> frame;
-    bool can_make_stream = flow_control_->CheckLocalUnidirectionStreamLimit(stream_id, frame);
+    bool can_make_stream = false;
+    if (type == StreamDirection::SD_SEND) {
+        can_make_stream = flow_control_->CheckLocalUnidirectionStreamLimit(stream_id, frame);
+    } else {
+        can_make_stream = flow_control_->CheckLocalBidirectionStreamLimit(stream_id, frame);
+    }
     if (frame) {
         ToSendFrame(frame);
     }
+
     if (!can_make_stream) {
         return nullptr;
     }
@@ -307,9 +313,6 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     } else {
         new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::SD_RECV);
     }
-    streams_map_[stream_id] = new_stream;
-    flow_control_->AddRemoteSendData(new_stream->OnFrame(frame));
-
     // check peer data limit
     if (!flow_control_->CheckRemoteSendDataLimit(send_frame)) {
         InnerConnectionClose(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "flow control stream data limit.");
@@ -318,9 +321,13 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if (send_frame) {
         ToSendFrame(send_frame);
     }
+    // notify stream state
     if (stream_state_cb_) {
         stream_state_cb_(new_stream, 0);
     }
+    // new stream process frame
+    streams_map_[stream_id] = new_stream;
+    flow_control_->AddRemoteSendData(new_stream->OnFrame(frame));
     return true;
 }
 

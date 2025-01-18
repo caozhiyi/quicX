@@ -8,7 +8,7 @@
 #include "quic/packet/header/long_header.h"
 #include "quic/quicx/connection_transfor.h"
 #include "quic/packet/header/short_header.h"
-#include "quic/connection/server_connection.h"
+#include "quic/connection/connection_server.h"
 #include "quic/packet/version_negotiation_packet.h"
 #include "quic/connection/connection_id_generator.h"
 

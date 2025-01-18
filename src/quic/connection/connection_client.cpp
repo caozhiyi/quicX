@@ -8,13 +8,12 @@
 #include "quic/stream/crypto_stream.h"
 #include "quic/packet/handshake_packet.h"
 #include "common/buffer/buffer_read_view.h"
-#include "quic/connection/client_connection.h"
+#include "quic/connection/connection_client.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
 namespace quic {
-
 
 ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx,
     std::shared_ptr<common::ITimer> timer,
