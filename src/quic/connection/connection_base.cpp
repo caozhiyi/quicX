@@ -95,12 +95,14 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
         return nullptr;
     }
 
+    std::shared_ptr<IStream> new_stream;
     if (type == StreamDirection::SD_SEND) {
-        return MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::SD_SEND);
-    } else if (type == StreamDirection::SD_BIDI) {
-        return MakeStream(transport_param_.GetInitialMaxStreamDataBidiLocal(), stream_id, StreamDirection::SD_BIDI);
+        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::SD_SEND);
+    } else {
+        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiLocal(), stream_id, StreamDirection::SD_BIDI);
     }
-    return nullptr;
+    streams_map_[stream_id] = new_stream;
+    return new_stream;
 }
 
 void BaseConnection::AddTransportParam(TransportParamConfig& tp_config) {
