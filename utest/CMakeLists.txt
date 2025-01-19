@@ -13,27 +13,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-include(GoogleTest)
+# check if googletest is populated
+FetchContent_GetProperties(googletest)
+if(NOT googletest_POPULATED)
+    message(FATAL_ERROR "GoogleTest was not populated correctly")
+endif()
 
-enable_testing()
+include_directories(
+    ${gtest_SOURCE_DIR}/include
+    ${gmock_SOURCE_DIR}/include
+)
+
 add_executable(${PROJECT_NAME} ${test_files} test.cpp)
 
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME}
-        PRIVATE
-        http3
-        crypto
-        ssl
-        ws2_32
-        ${GTEST_LIBRARIES}
-    )
+    target_link_libraries(${PROJECT_NAME} PRIVATE http3 crypto ssl ws2_32 GTest::gtest GTest::gtest_main)
 else()
-    target_link_libraries(${PROJECT_NAME}
-        PRIVATE
-        http3
-        crypto
-        ssl
-        pthread
-        ${GTEST_LIBRARIES}
-    )
+    target_link_libraries(${PROJECT_NAME} PRIVATE http3 crypto ssl pthread GTest::gtest GTest::gtest_main)
 endif()
