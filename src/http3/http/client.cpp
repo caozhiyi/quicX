@@ -21,6 +21,7 @@ Client::Client() {
 
 Client::~Client() {
     quic_->Destroy();
+    quic_->Join();
 }
 
 bool Client::Init(uint16_t thread_num) {
