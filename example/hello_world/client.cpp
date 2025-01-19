@@ -7,7 +7,7 @@
 int main() {
     auto client = quicx::http3::IClient::Create();
 
-    client->Init(1);
+    client->Init();
 
     auto request = quicx::http3::IRequest::Create();
     request->SetBody("hello world");

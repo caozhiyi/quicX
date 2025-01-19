@@ -20,7 +20,7 @@ public:
     virtual ~Client();
 
     // Initialize the client with a certificate and a key
-    virtual bool Init(uint16_t thread_num);
+    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LL_NULL);
 
     // Send a request to the server
     virtual bool DoRequest(const std::string& url, HttpMethod mothed,

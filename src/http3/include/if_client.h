@@ -16,8 +16,8 @@ public:
     IClient() {}
     virtual ~IClient() {};
 
-    // Initialize the server with a certificate and a key
-    virtual bool Init(uint16_t thread_num) = 0;
+    // thread_num: the number of threads to handle requests
+    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LL_NULL) = 0;
 
     // Send a request to the server
     virtual bool DoRequest(const std::string& url, HttpMethod mothed,

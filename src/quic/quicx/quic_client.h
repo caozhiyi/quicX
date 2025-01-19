@@ -19,7 +19,7 @@ public:
     QuicClient();
     virtual ~QuicClient();
 
-    virtual bool Init(uint16_t thread_num = 1);
+    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LL_NULL);
 
     virtual void Join();
 

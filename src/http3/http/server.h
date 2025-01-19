@@ -19,8 +19,8 @@ public:
     virtual ~Server();
 
     // Initialize the server with a certificate and a key
-    virtual bool Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num = 1);
-    virtual bool Init(const char* cert_pem, const char* key_pem, uint16_t thread_num = 1);
+    virtual bool Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num = 1, LogLevel level = LL_NULL);
+    virtual bool Init(const char* cert_pem, const char* key_pem, uint16_t thread_num = 1, LogLevel level = LL_NULL);
 
     // Start the server on the given address and port
     // server will block until the server is stopped

@@ -17,7 +17,10 @@ QuicClient::~QuicClient() {
 
 }
 
-bool QuicClient::Init(uint16_t thread_num) {
+bool QuicClient::Init(uint16_t thread_num, LogLevel level) {
+    if (level != LL_NULL) {
+        InitLogger(level);
+    }
     tls_ctx_ = std::make_shared<TLSClientCtx>();
     if (!tls_ctx_->Init()) {
         common::LOG_ERROR("tls ctx init faliled.");

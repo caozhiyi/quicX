@@ -26,6 +26,15 @@ enum MiddlewarePosition: uint8_t {
     MP_AFTER  = 0x02,
 };
 
+enum LogLevel: uint8_t {
+    LL_NULL         = 0x00, // not print log
+    LL_FATAL        = 0x01,
+    LL_ERROR        = 0x02 | LL_FATAL,
+    LL_WARN         = 0x04 | LL_ERROR,
+    LL_INFO         = 0x08 | LL_WARN,
+    LL_DEBUG        = 0x10 | LL_INFO,
+};
+
 class IRequest;
 class IResponse;
 typedef std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> http_handler;
