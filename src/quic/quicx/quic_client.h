@@ -7,7 +7,7 @@
 #include "quic/quicx/quic_base.h"
 #include "quic/quicx/if_processor.h"
 #include "quic/include/if_quic_client.h"
-#include "quic/crypto/tls/tls_client_ctx.h"
+#include "quic/crypto/tls/tls_ctx_client.h"
 
 namespace quicx {
 namespace quic {
