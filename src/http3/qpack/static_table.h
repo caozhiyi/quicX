@@ -2,6 +2,7 @@
 #define HTTP3_QPACK_STATIC_TABLE
 
 #include <vector>
+#include <cstdint>
 #include <utility> // for std::pair
 #include <functional> // for std::hash
 #include <unordered_map>
