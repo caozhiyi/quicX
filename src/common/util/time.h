@@ -2,6 +2,7 @@
 #define COMMON_UTIL_TIME
 
 #include <string>
+#include <cstdint>
 
 namespace quicx {
 namespace common {
