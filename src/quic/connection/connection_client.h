@@ -7,7 +7,7 @@
 #include "quic/connection/type.h"
 #include "common/network/address.h"
 #include "quic/connection/connection_base.h"
-#include "quic/crypto/tls/tls_client_conneciton.h"
+#include "quic/crypto/tls/tls_conneciton_client.h"
 
 namespace quicx {
 namespace quic {
