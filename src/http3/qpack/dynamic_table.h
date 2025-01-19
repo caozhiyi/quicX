@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <utility>
+#include <cstdint>
 #include <functional>
 #include <unordered_map>
 #include "http3/qpack/type.h"
