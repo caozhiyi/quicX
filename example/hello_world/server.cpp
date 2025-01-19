@@ -1,3 +1,4 @@
+#include <iostream>
 #include "http3/include/if_server.h"
 
 int main() {
@@ -39,10 +40,15 @@ static const char key_pem[] =
     server->AddHandler(quicx::http3::HttpMethod::HM_GET,
         "/hello",
         [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+            std::cout << "get request method: " << req->GetMethodString() << std::endl;
+            std::cout << "get request path: " << req->GetPath() << std::endl;
+            std::cout << "get request body: " << req->GetBody() << std::endl;
+
             resp->SetBody("hello world");
+            resp->SetStatusCode(200);
         }
     );
-    server->Init(cert_pem, key_pem, 1);
+    server->Init(cert_pem, key_pem);
     server->Start("0.0.0.0", 8882);
     server->Join();
 }

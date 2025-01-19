@@ -24,6 +24,9 @@ public:
     virtual void SetConnectionStateCallBack(connection_state_callback cb);
 
 protected:
+    void InitLogger(LogLevel level);
+
+protected:
     std::shared_ptr<TLSCtx> tls_ctx_;
     std::vector<std::shared_ptr<ProcessorBase>> processors_;
 

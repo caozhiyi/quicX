@@ -19,6 +19,15 @@ enum StreamDirection: uint8_t {
     SD_BIDI = 0x03, // bidirection stream
 };
 
+enum LogLevel: uint8_t {
+    LL_NULL         = 0x00, // not print log
+    LL_FATAL        = 0x01,
+    LL_ERROR        = 0x02 | LL_FATAL,
+    LL_WARN         = 0x04 | LL_ERROR,
+    LL_INFO         = 0x08 | LL_WARN,
+    LL_DEBUG        = 0x10 | LL_INFO,
+};
+
 // connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
 // conn: connection instance which state changed
 typedef std::function<void(std::shared_ptr<IQuicConnection> conn, uint32_t error, const std::string& reason)> connection_state_callback;

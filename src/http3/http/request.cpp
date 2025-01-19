@@ -1,3 +1,4 @@
+#include "http3/http/util.h"
 #include "http3/http/request.h"
 
 namespace quicx {
@@ -5,6 +6,10 @@ namespace http3 {
 
 std::shared_ptr<IRequest> IRequest::Create() {
     return std::make_shared<Request>();
+}
+
+std::string Request::GetMethodString() const {
+    return HttpMethodToString(method_);
 }
 
 void Request::AddHeader(const std::string& name, const std::string& value) { 

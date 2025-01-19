@@ -16,7 +16,7 @@ namespace quicx {
 namespace common {
 
 // log level and switch
-enum LogLevel {
+enum LogLevel: uint8_t {
     LL_NULL         = 0x00, // not print log
     LL_FATAL        = 0x01,
     LL_ERROR        = 0x02 | LL_FATAL,

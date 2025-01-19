@@ -18,7 +18,7 @@ public:
     // HTTP method
     virtual void SetMethod(HttpMethod method) = 0;
     virtual HttpMethod GetMethod() const = 0;
-
+    virtual std::string GetMethodString() const = 0;
     // Request path
     virtual void SetPath(const std::string& path) = 0;
     virtual const std::string& GetPath() const = 0;

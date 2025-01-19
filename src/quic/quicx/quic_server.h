@@ -20,8 +20,8 @@ public:
     QuicServer();
     virtual ~QuicServer();
 
-    virtual bool Init(const std::string& cert_file, const std::string& key_file, const std::string& alpn, uint16_t thread_num = 1);
-    virtual bool Init(const char* cert_pem, const char* key_pem, const std::string& alpn, uint16_t thread_num = 1);
+    virtual bool Init(const std::string& cert_file, const std::string& key_file, const std::string& alpn, uint16_t thread_num = 1, LogLevel level = LL_NULL);
+    virtual bool Init(const char* cert_pem, const char* key_pem, const std::string& alpn, uint16_t thread_num = 1, LogLevel level = LL_NULL);
 
     virtual void Join();
 
