@@ -1,7 +1,9 @@
-- [ ] packet ack
+- [x] packet ack
 - [x] stream unit test
-- [ ] ack packet enc
 - [x] manage conection id
-- [ ] bbr
-- [ ] http push implement
+- [x] bbr
+- [ ] ack packet enc
+- [ ] http3 push implement
 - [ ] http3 qpack dynamic table update implement
+- [ ] zero memory copy
+- [ ] 0 rtt handshake
