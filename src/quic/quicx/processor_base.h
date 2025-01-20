@@ -25,6 +25,7 @@ class ProcessorBase:
     public ThreadProcessor  {
 public:
     ProcessorBase(std::shared_ptr<TLSCtx> ctx,
+        const QuicTransportParams& params,
         connection_state_callback connection_handler);
     virtual ~ProcessorBase();
 
@@ -53,6 +54,7 @@ protected:
 protected:
     bool do_send_;
     std::string server_alpn_;
+    QuicTransportParams params_;
 
     std::shared_ptr<TLSCtx> ctx_;
 

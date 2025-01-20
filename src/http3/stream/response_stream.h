@@ -14,12 +14,13 @@ namespace quicx {
 namespace http3 {
 
 class ResponseStream:
-    public ReqRespBaseStream {
+    public ReqRespBaseStream,
+    public std::enable_shared_from_this<ResponseStream> {
 public:
     ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-        const http_handler& http_handler);
+        const std::function<void(std::shared_ptr<IRequest>, std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)>& http_handler);
     virtual ~ResponseStream();
 
     void SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id);
@@ -28,7 +29,7 @@ private:
     virtual void HandleBody() override;
 
 private:
-    http_handler http_handler_;
+    std::function<void(std::shared_ptr<IRequest>, std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> http_handler_;
 };
 
 }

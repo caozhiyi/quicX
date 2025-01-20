@@ -28,8 +28,9 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
     } else {
         min_rtt_ = std::min(min_rtt_, latest_rtt_);
 
-        // TODO 应该（SHOULD）忽略对端的max_ack_delay直到握手确认
-        // 必须（MUST）使用确认延迟和握手确认后对端的max_ack_delay中较小的一个
+        // TODO:
+        // SHOULD ignore the peer's max_ack_delay until the handshake is confirmed
+        // MUST use the smaller of the acknowledgment delay and the peer's max_ack_delay after the handshake is confirmed
 
         uint32_t adjusted_rtt = latest_rtt_;
         if (latest_rtt_ >= (min_rtt_ + ack_delay)) {

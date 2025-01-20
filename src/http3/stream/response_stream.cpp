@@ -16,7 +16,7 @@ namespace http3 {
 ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-    const http_handler& http_handler):
+    const std::function<void(std::shared_ptr<IRequest>, std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)>& http_handler):
     ReqRespBaseStream(qpack_encoder, stream, error_handler),
     http_handler_(http_handler) {
 
@@ -125,7 +125,7 @@ void ResponseStream::HandleBody() {
     PseudoHeader::Instance().DecodeRequest(request);
 
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
-    http_handler_(request, response);
+    http_handler_(request, response, shared_from_this());
 
     SendResponse(response);
 }

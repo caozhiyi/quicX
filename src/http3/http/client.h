@@ -16,7 +16,7 @@ namespace http3 {
 class Client:
     public IClient {
 public:
-    Client();
+    Client(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
     virtual ~Client();
 
     // Initialize the client with a certificate and a key
@@ -26,11 +26,14 @@ public:
     virtual bool DoRequest(const std::string& url, HttpMethod mothed,
         std::shared_ptr<IRequest> request, const http_response_handler& handler);
 
+    virtual void SetPushPromiseHandler(const http_push_promise_handler& push_promise_handler);
+    virtual void SetPushHandler(const http_response_handler& push_handler);
+
 private:
     void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error, const std::string& reason);
 
     void HandleError(const std::string& unique_id, uint32_t error_code);
-    void HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
+    bool HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
     void HandlePush(std::shared_ptr<IResponse> response, uint32_t error);
 
 private:
@@ -44,6 +47,11 @@ private:
         http_response_handler handler;
     };
     std::unordered_map<std::string, WaitRequestContext> wait_request_map_;
+
+    http_response_handler push_handler_;
+    http_push_promise_handler push_promise_handler_;
+
+    Http3Settings settings_;
 };
 
 }

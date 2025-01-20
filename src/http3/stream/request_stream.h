@@ -20,7 +20,7 @@ public:
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const http_response_handler& response_handler,
-        const std::function<void(std::unordered_map<std::string, std::string>&)>& push_promise_handler);
+        const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler);
     virtual ~RequestStream();
 
     // Send request/response
@@ -33,7 +33,7 @@ private:
 
 private:
     http_response_handler response_handler_;
-    std::function<void(std::unordered_map<std::string, std::string>&)> push_promise_handler_;
+    std::function<void(std::unordered_map<std::string, std::string>&, uint64_t)> push_promise_handler_;
 };
 
 }

@@ -4,11 +4,12 @@
 namespace quicx {
 namespace quic {
 
-std::shared_ptr<IQuicServer> IQuicServer::Create() {
-    return std::make_shared<QuicServer>();
+std::shared_ptr<IQuicServer> IQuicServer::Create(const QuicTransportParams& params) {
+    return std::make_shared<QuicServer>(params);
 }
 
-QuicServer::QuicServer() {
+QuicServer::QuicServer(const QuicTransportParams& params):
+    QuicBase(params) {
 
 }
 
@@ -29,7 +30,7 @@ bool QuicServer::Init(const std::string& cert_file, const std::string& key_file,
 
     processors_.reserve(thread_num);
     for (size_t i = 0; i < thread_num; i++) {
-        auto processor = std::make_shared<ProcessorServer>(tls_ctx_, connection_state_cb_);
+        auto processor = std::make_shared<ProcessorServer>(tls_ctx_, params_, connection_state_cb_);
         processor->SetServerAlpn(alpn);
         processor->Start();
         processors_.emplace_back(processor);
@@ -50,7 +51,7 @@ bool QuicServer::Init(const char* cert_pem, const char* key_pem, const std::stri
     
     processors_.reserve(thread_num);
     for (size_t i = 0; i < thread_num; i++) {
-        auto processor = std::make_shared<ProcessorServer>(tls_ctx_, connection_state_cb_);
+        auto processor = std::make_shared<ProcessorServer>(tls_ctx_, params_, connection_state_cb_);
         processor->SetServerAlpn(alpn);
         processor->Start();
         processors_.emplace_back(processor);

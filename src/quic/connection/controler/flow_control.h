@@ -16,7 +16,7 @@ public:
     ~FlowControl() {}
 
     // set init flow control from transport param
-    void InitConfig(TransportParam& tp);
+    void UpdateConfig(const TransportParam& tp);
 
     // check local send data limit
     void AddLocalSendData(uint32_t size);

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "quic/include/type.h"
 #include "quic/connection/type.h"
 #include "quic/frame/frame_decode.h"
 #include "quic/quicx/if_net_packet.h"
@@ -7,7 +8,6 @@
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
-#include "quic/connection/transport_param_config.h"
 
 namespace quicx {
 namespace quic {
@@ -75,10 +75,10 @@ TEST(quic_connection_utest, handshake) {
     addr.SetIp("127.0.0.1");
     addr.SetPort(9432);
 
-    client_conn->Dial(addr, "h3");
+    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
     
     auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(TransportParamConfig::Instance());
+    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // client -------init-----> server
     ConnectionProcess(client_conn, server_conn);

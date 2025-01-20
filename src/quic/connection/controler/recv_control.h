@@ -6,23 +6,21 @@
 #include "quic/packet/type.h"
 #include "common/timer/if_timer.h"
 #include "quic/packet/if_packet.h"
-
+#include "quic/connection/transport_param.h"
 namespace quicx {
 namespace quic {
 
 // controller of receiver. 
-
 /*
-1. max_ack_delay 时间内必须回复一个ack make a timer.
-2. 立即确认所有Initial和Handshake触发包 以及在通告的max_ack_delay内确认所有0-RTT和1-RTT触发包，以下情况除外：在握手确认之前，终端可能没有可用的秘钥在收到Handshake、0-RTT或1-RTT包时对其解密
-3. 不得（MUST NOT）发送非ACK触发包来响应非ACK触发包
-4. 为了帮助发送方进行丢包检测，终端应该（SHOULD）在接收到ACK触发包时立即生成并发送一个ACK帧：
-   当收到的数据包的编号小于另一个已收到的ACK触发包时；
-   当数据包的编号大于已接收到的最高编号的ACK触发包，并且编号不连续时
-5. 接收方应该（SHOULD）在收到至少两个ACK触发包后才发送一个ACK帧
-6. 接收方在每个ACK帧中都应该（SHOULD）包含一个ACK Range，该Range包含最大接收包号
+1. An ACK must be sent within the max_ack_delay time, so make a timer.
+2. Immediately acknowledge all Initial and Handshake trigger packets, and acknowledge all 0-RTT and 1-RTT trigger packets within the announced max_ack_delay, except in the following cases: before handshake confirmation, the endpoint may not have the keys available to decrypt Handshake, 0-RTT, or 1-RTT packets upon receipt.
+3. MUST NOT send non-ACK trigger packets in response to non-ACK trigger packets.
+4. To help the sender with loss detection, the endpoint SHOULD generate and send an ACK frame immediately upon receiving an ACK trigger packet:
+   When the packet number of the received packet is less than another received ACK trigger packet;
+   When the packet number of the received packet is greater than the highest packet number of any received ACK trigger packet, and the packet numbers are not contiguous.
+5. The receiver SHOULD send an ACK frame only after receiving at least two ACK trigger packets.
+6. The receiver SHOULD include an ACK Range in each ACK frame, which contains the largest received packet number.
 */
-
 class RecvControl {
 public:
     RecvControl(std::shared_ptr<common::ITimer> timer);
@@ -32,6 +30,7 @@ public:
     std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns);
 
     void SetActiveSendCB(std::function<void()> cb) { active_send_cb_ = cb; }
+    void UpdateConfig(const TransportParam& tp);
 
 private:
     uint64_t pkt_num_largest_recvd_[PNS_NUMBER];
@@ -43,6 +42,8 @@ private:
 
     common::TimerTask timer_task_;
     std::function<void()> active_send_cb_;
+
+    uint32_t max_ack_delay_;
 };
 
 }

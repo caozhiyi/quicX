@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
+#include "quic/include/type.h"
 #include "common/util/singleton.h"
 #include "quic/connection/transport_param.h"
-#include "quic/connection/transport_param_config.h"
 #include "quic/connection/controler/flow_control.h"
 
 namespace quicx {
@@ -12,14 +12,7 @@ class TransportParamTest:
     public common::Singleton<TransportParamTest> {
 public:
     TransportParamTest() {
-        TransportParamConfig config;
-        config.initial_max_data_ = 10000;
-        config.initial_max_stream_data_bidi_local_ = 8;
-        config.initial_max_stream_data_bidi_remote_ = 8;
-        config.initial_max_stream_data_uni_ = 8;
-        config.initial_max_streams_bidi_ = 8;
-        config.initial_max_streams_uni_ = 8;
-        tp_.Init(config);
+        tp_.Init(DEFAULT_QUIC_TRANSPORT_PARAMS);
     }
 
     ~TransportParamTest() {}
@@ -31,7 +24,7 @@ private:
 
 TEST(connection_control_flow, local_send_data) {
     FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
-    flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
+    flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint32_t can_send_size = 0;
     std::shared_ptr<IFrame> frame;
@@ -63,7 +56,7 @@ TEST(connection_control_flow, local_send_data) {
 
 TEST(connection_control_flow, remote_send_data) {
     FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
-    flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
+    flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     std::shared_ptr<IFrame> frame;
     EXPECT_TRUE(flow_control.CheckRemoteSendDataLimit(frame));
@@ -85,7 +78,7 @@ TEST(connection_control_flow, remote_send_data) {
 
 TEST(connection_control_flow, local_bidirection_streams) {
     FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
-    flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
+    flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint64_t stream_id = 0;
     std::shared_ptr<IFrame> frame;
@@ -109,7 +102,7 @@ TEST(connection_control_flow, local_bidirection_streams) {
 
 TEST(connection_control_flow, local_unidirection_streams) {
     FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
-    flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
+    flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint64_t stream_id = 0;
     std::shared_ptr<IFrame> frame;
@@ -133,7 +126,7 @@ TEST(connection_control_flow, local_unidirection_streams) {
 
 TEST(connection_control_flow, remote_bidirection_streams) {
     FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
-    flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
+    flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::SS_SERVER);
 
@@ -157,7 +150,7 @@ TEST(connection_control_flow, remote_bidirection_streams) {
 
 TEST(connection_control_flow, remote_unidirection_streams) {
     FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
-    flow_control.InitConfig(TransportParamTest::Instance().GetTransportParam());
+    flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::SS_SERVER);
 

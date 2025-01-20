@@ -1,4 +1,6 @@
 #include "common/log/log.h"
+#include "http3/http/error.h"
+#include "http3/connection/type.h"
 #include "http3/stream/response_stream.h"
 #include "http3/stream/push_sender_stream.h"
 #include "http3/connection/connection_server.h"
@@ -8,47 +10,91 @@ namespace quicx {
 namespace http3 {
 
 ServerConnection::ServerConnection(const std::string& unique_id,
+    const Http3Settings& settings,
+    std::shared_ptr<quic::IQuicServer> quic_server,
     const std::shared_ptr<quic::IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
     const http_handler& http_handler):
     IConnection(unique_id, quic_connection, error_handler),
+    quic_server_(quic_server),
     http_handler_(http_handler),
     max_push_id_(0) {
 
+    // create control streams
+    auto control_stream = quic_connection_->MakeStream(quic::SD_SEND);
+    control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
+        std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
+        std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
+    
+    settings_ = IConnection::AdaptSettings(settings);
+    control_sender_stream_->SendSettings(settings_);
 }
 
 ServerConnection::~ServerConnection() {
     Close(0);
 }
 
-bool ServerConnection::SendPushPromise(const std::unordered_map<std::string, std::string>& headers) {
-    if (max_push_id_ == 0) {
-        return false;
-    }
-
-    // TODO: implement push promise
-    return true;
-}
-
 bool ServerConnection::SendPush(std::shared_ptr<IResponse> response) {
-    if (max_push_id_ == 0) {
+    if (streams_.size() >= settings_[SETTINGS_TYPE::ST_MAX_CONCURRENT_STREAMS]) {
+        common::LOG_ERROR("ServerConnection::SendPush max concurrent streams reached");
         return false;
     }
 
     auto stream = quic_connection_->MakeStream(quic::SD_SEND);
+    if (!stream) {
+        common::LOG_ERROR("ServerConnection::SendPush make stream failed");
+        return false;
+    }
 
     std::shared_ptr<PushSenderStream> push_stream = std::make_shared<PushSenderStream>(qpack_encoder_,
         std::dynamic_pointer_cast<quic::IQuicSendStream>(stream),
-        std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2), 
-        0); // TODO: implement push id
+        std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
     
     push_stream->SendPushResponse(response);
     return true;
 }
 
+void ServerConnection::HandleHttp(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response, std::shared_ptr<ResponseStream> response_stream) {
+    if (http_handler_) {
+        http_handler_(request, response);
+    }
+
+    if (!IsEnabledPush()) {
+        return;
+    }
+
+    // check if push is enabled
+    auto push_responses = response->GetPushResponses();
+    for (auto& push_response : push_responses) {
+        if (!CanPush()) {
+            break;
+        }
+
+        // send push promise
+        response_stream->SendPushPromise(push_response->GetHeaders(), next_push_id_++);
+        push_responses_[next_push_id_] = push_response;
+    }
+    if (send_limit_push_id_ < next_push_id_) {
+        send_limit_push_id_ = next_push_id_;
+
+        // TODO: set time out time to config
+        quic_server_->AddTimer(20, std::bind(&ServerConnection::HandleTimer, this));
+    }
+}
+
 void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("ServerConnection::HandleStream error: %d", error);
+        if (stream) {
+            streams_.erase(stream->GetStreamID());
+        }
+        return;
+    }
+
+    // TODO: implement stand line to create stream
+    if (streams_.size() >= settings_[SETTINGS_TYPE::ST_MAX_CONCURRENT_STREAMS]) {
+        common::LOG_ERROR("ServerConnection::HandleStream max concurrent streams reached");
+        Close(HTTP3_ERROR_CODE::H3EC_STREAM_CREATION_ERROR);
         return;
     }
 
@@ -57,7 +103,7 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
         std::shared_ptr<ResponseStream> response_stream = std::make_shared<ResponseStream>(qpack_encoder_,
             std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
             std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
-            http_handler_);
+            std::bind(&ServerConnection::HandleHttp, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
         streams_[response_stream->GetStreamID()] = response_stream;
 
     } else if (stream->GetDirection() == quic::SD_RECV) {
@@ -83,7 +129,7 @@ void ServerConnection::HandleMaxPushId(uint64_t max_push_id) {
 }
 
 void ServerConnection::HandleCancelPush(uint64_t push_id) {
-    // TODO: implement cancel push
+    push_responses_.erase(push_id);
 }
 
 void ServerConnection::HandleError(uint64_t stream_id, uint32_t error) {
@@ -97,6 +143,26 @@ void ServerConnection::HandleError(uint64_t stream_id, uint32_t error) {
     if (error_handler_) {
         error_handler_(unique_id_, error);
     }
+}
+
+void ServerConnection::HandleTimer() {
+    for (auto iter = push_responses_.begin(); iter != push_responses_.end();) {
+        if (iter->first < send_limit_push_id_) {
+            SendPush(iter->second);
+            iter = push_responses_.erase(iter);
+            continue;
+        }
+        break;
+    }
+}
+
+bool ServerConnection::IsEnabledPush() const {
+    return settings_.find(SETTINGS_TYPE::ST_ENABLE_PUSH) != settings_.end()
+        && settings_.at(SETTINGS_TYPE::ST_ENABLE_PUSH) == 1;
+}
+
+bool ServerConnection::CanPush() const {
+    return next_push_id_ < max_push_id_;
 }
 
 }

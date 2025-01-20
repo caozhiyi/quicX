@@ -22,7 +22,9 @@ class SendManager {
 public:
     SendManager(std::shared_ptr<common::ITimer> timer);
     ~SendManager();
-    
+
+    void UpdateConfig(const TransportParam& tp);
+
     SendOperation GetSendOperation();
 
     void ToSendFrame(std::shared_ptr<IFrame> frame);
@@ -31,7 +33,7 @@ public:
     bool GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
     void OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame);
 
-    void SetFlowControl(std::shared_ptr<FlowControl> flow_control) { flow_control_ = flow_control; }
+    void SetFlowControl(FlowControl* flow_control) { flow_control_ = flow_control; }
     void SetLocalConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { local_conn_id_manager_ = manager; }
     void SetRemoteConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { remote_conn_id_manager_ = manager; }
 
@@ -43,7 +45,7 @@ private:
     SendControl send_control_;
     // packet number
     PacketNumber pakcet_number_;
-    std::shared_ptr<FlowControl> flow_control_;
+    FlowControl* flow_control_;
     std::list<std::shared_ptr<IFrame>> wait_frame_list_;
     std::unordered_set<std::shared_ptr<IStream>> active_send_stream_set_;
 

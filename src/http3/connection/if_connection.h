@@ -5,6 +5,7 @@
 #include <functional>
 #include <unordered_map>
 
+#include "http3/include/type.h"
 #include "common/timer/timer_task.h"
 #include "http3/include/if_client.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -35,6 +36,8 @@ protected:
     // handle settings
     virtual void HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings);
     
+    static const std::unordered_map<uint16_t, uint64_t> AdaptSettings(const Http3Settings& settings);
+
 protected:
     // indicate the unique id of the connection
     std::string unique_id_;
@@ -46,9 +49,6 @@ protected:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
 
     std::shared_ptr<quic::IQuicConnection> quic_connection_;
-    std::shared_ptr<ControlReceiverStream> control_recv_stream_;
-    std::shared_ptr<ControlClientSenderStream> control_sender_stream_;
-    
 };
 
 }

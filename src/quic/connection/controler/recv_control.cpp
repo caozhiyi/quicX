@@ -2,12 +2,14 @@
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/connection/controler/recv_control.h"
-#include "quic/connection/transport_param_config.h"
 
 namespace quicx {
 namespace quic {
 
-RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer): set_timer_(false), timer_(timer) {
+RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
+    set_timer_(false),
+    timer_(timer),
+    max_ack_delay_(10) {
     memset(pkt_num_largest_recvd_, 0, sizeof(pkt_num_largest_recvd_));
     memset(largest_recv_time_, 0, sizeof(largest_recv_time_));
 
@@ -33,7 +35,7 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     wait_ack_packet_numbers_[ns].insert(packet->GetPacketNumber());
     if (!set_timer_) {
         set_timer_ = true;
-        timer_->AddTimer(timer_task_, TransportParamConfig::Instance().max_ack_delay_);
+        timer_->AddTimer(timer_task_, max_ack_delay_);
     }
 }
 
@@ -82,6 +84,10 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     
     frame->SetFirstAckRange(first_ack_range);
     return frame;
+}
+
+void RecvControl::UpdateConfig(const TransportParam& tp) {
+    max_ack_delay_ = tp.GetMaxAckDelay();
 }
 
 }

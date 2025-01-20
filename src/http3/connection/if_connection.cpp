@@ -15,19 +15,6 @@ IConnection::IConnection(const std::string& unique_id,
     quic_connection_->SetStreamStateCallBack(std::bind(&IConnection::HandleStream, this, 
         std::placeholders::_1, std::placeholders::_2));
 
-    // create control streams
-    auto control_stream = quic_connection_->MakeStream(quic::SD_SEND);
-    control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
-        std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
-        std::bind(&IConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-    
-    std::unordered_map<uint16_t, uint64_t> settings;
-    settings[SETTINGS_TYPE::ST_MAX_HEADER_LIST_SIZE] = 100;
-    settings[SETTINGS_TYPE::ST_QPACK_MAX_TABLE_CAPACITY] = 0;
-    settings[SETTINGS_TYPE::ST_QPACK_BLOCKED_STREAMS] = 0;
-    settings[SETTINGS_TYPE::ST_ENABLE_PUSH] = 0;
-    control_sender_stream_->SendSettings(settings);
-
     qpack_encoder_ = std::make_shared<QpackEncoder>();
 }
 
@@ -47,7 +34,26 @@ void IConnection::Close(uint32_t error_code) {
 }
 
 void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
-    settings_ = settings;
+    // merge settings
+    for (auto iter = settings.begin(); iter != settings.end(); ++iter) {
+        settings_[iter->first] = std::min(settings_[iter->first], iter->second);
+    }
+}
+
+const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Http3Settings& settings) {
+    std::unordered_map<uint16_t, uint64_t> settings_map;
+    settings_map[SETTINGS_TYPE::ST_MAX_HEADER_LIST_SIZE] = settings.max_header_list_size;
+    settings_map[SETTINGS_TYPE::ST_ENABLE_PUSH] = settings.enable_push;
+    settings_map[SETTINGS_TYPE::ST_MAX_CONCURRENT_STREAMS] = settings.max_concurrent_streams;
+    settings_map[SETTINGS_TYPE::ST_MAX_FRAME_SIZE] = settings.max_frame_size;
+    settings_map[SETTINGS_TYPE::ST_MAX_FIELD_SECTION_SIZE] = settings.max_field_section_size;
+
+    // TODO: implement below settings
+    settings_map[SETTINGS_TYPE::ST_QPACK_MAX_TABLE_CAPACITY] = 0;
+    settings_map[SETTINGS_TYPE::ST_QPACK_BLOCKED_STREAMS] = 0;
+    settings_map[SETTINGS_TYPE::ST_ENABLE_CONNECT_PROTOCOL] = 0;
+
+    return settings_map;
 }
 
 }

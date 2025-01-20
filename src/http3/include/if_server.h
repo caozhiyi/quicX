@@ -36,7 +36,7 @@ public:
     virtual void AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_handler& handler) = 0;
 
     // Create a server instance
-    static std::unique_ptr<IServer> Create();
+    static std::unique_ptr<IServer> Create(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
 };
 
 }

@@ -15,7 +15,7 @@ namespace http3 {
 class Server:
     public IServer {
 public:
-    Server();
+    Server(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
     virtual ~Server();
 
     // Initialize the server with a certificate and a key
@@ -51,6 +51,7 @@ private:
     std::vector<http_handler> before_middlewares_;
     std::vector<http_handler> after_middlewares_;
 
+    Http3Settings settings_;
 };
 
 }

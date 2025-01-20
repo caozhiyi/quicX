@@ -24,6 +24,10 @@ SendManager::~SendManager() {
 
 }
 
+void SendManager::UpdateConfig(const TransportParam& tp) {
+    send_control_.UpdateConfig(tp);
+}
+
 SendOperation SendManager::GetSendOperation() {
     if (wait_frame_list_.empty() && active_send_stream_set_.empty()) {
         return SendOperation::SO_ALL_SEND_DONE;

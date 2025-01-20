@@ -5,11 +5,12 @@
 namespace quicx {
 namespace quic {
 
-std::shared_ptr<IQuicClient> IQuicClient::Create() {
-    return std::make_shared<QuicClient>();
+std::shared_ptr<IQuicClient> IQuicClient::Create(const QuicTransportParams& params) {
+    return std::make_shared<QuicClient>(params);
 }
 
-QuicClient::QuicClient() {
+QuicClient::QuicClient(const QuicTransportParams& params):
+    QuicBase(params) {
 
 }
 
@@ -28,7 +29,7 @@ bool QuicClient::Init(uint16_t thread_num, LogLevel level) {
     }
     processors_.reserve(thread_num);
     for (size_t i = 0; i < thread_num; i++) {
-        auto processor = std::make_shared<ProcessorClient>(tls_ctx_, connection_state_cb_);
+        auto processor = std::make_shared<ProcessorClient>(tls_ctx_, params_, connection_state_cb_);
         processor->Start();
         processors_.emplace_back(processor);
     }

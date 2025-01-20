@@ -42,8 +42,7 @@ public:
     MockServerConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         std::shared_ptr<quic::IQuicSendStream> stream) {
         sender_stream_ = std::make_shared<PushSenderStream>(qpack_encoder, stream,
-            std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
-            0);
+            std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
     }
     ~MockServerConnection() {}
 

@@ -41,7 +41,7 @@ ClientConnection::~ClientConnection() {
     
 }
 
-bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn) {
+bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config) {
     auto tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
     // set application protocol
     uint8_t* alpn_data = (uint8_t*)alpn.c_str();
@@ -52,11 +52,8 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     
     SetPeerAddress(std::move(addr));
 
-    transport_param_.Init(TransportParamConfig::Instance());
-    flow_control_->InitConfig(transport_param_);
-
     // set transport param. TODO define tp length
-    AddTransportParam(TransportParamConfig::Instance());
+    AddTransportParam(tp_config);
 
     // generate connection id
     auto dcid = remote_conn_id_manager_->Generator();

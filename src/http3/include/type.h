@@ -4,10 +4,12 @@
 #include <memory>
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 
 namespace quicx {
 namespace http3 {
 
+// http method
 enum HttpMethod: uint16_t {
     HM_GET     = 0x0001,
     HM_HEAD    = 0x0002,
@@ -21,11 +23,13 @@ enum HttpMethod: uint16_t {
     HM_ANY     = HM_GET|HM_HEAD|HM_POST|HM_PUT|HM_DELETE|HM_CONNECT|HM_OPTIONS|HM_TRACE|HM_PATCH,
 };
 
+// middleware position
 enum MiddlewarePosition: uint8_t {
     MP_BEFORE = 0x01,
     MP_AFTER  = 0x02,
 };
 
+// log level
 enum LogLevel: uint8_t {
     LL_NULL         = 0x00, // not print log
     LL_FATAL        = 0x01,
@@ -35,12 +39,24 @@ enum LogLevel: uint8_t {
     LL_DEBUG        = 0x10 | LL_INFO,
 };
 
+// http3 settings
+struct Http3Settings {
+    uint64_t max_header_list_size = 100;
+    uint64_t enable_push = 0;
+    uint64_t max_concurrent_streams = 100;
+    uint64_t max_frame_size = 16384;
+    uint64_t max_field_section_size = 16384;
+};
+static const Http3Settings DEFAULT_HTTP3_SETTINGS;
+
 class IRequest;
 class IResponse;
+// http handler
 typedef std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> http_handler;
-
 // http response handler, error is 0 means success, otherwise means error
 typedef std::function<void(std::shared_ptr<IResponse> response, uint32_t error)> http_response_handler;
+// http push promise handler, return true means do not cancel push, return false means cancel push
+typedef std::function<bool(std::unordered_map<std::string, std::string>& headers)> http_push_promise_handler;
 
 }
 }

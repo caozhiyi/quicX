@@ -5,7 +5,8 @@
 namespace quicx {
 namespace quic {
 
-QuicBase::QuicBase() {
+QuicBase::QuicBase(const QuicTransportParams& params):
+    params_(params) {
 
 }
 

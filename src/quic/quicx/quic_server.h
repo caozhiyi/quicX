@@ -17,7 +17,7 @@ class QuicServer:
     public IQuicServer,
     public QuicBase {
 public:
-    QuicServer();
+    QuicServer(const QuicTransportParams& params);
     virtual ~QuicServer();
 
     virtual bool Init(const std::string& cert_file, const std::string& key_file, const std::string& alpn, uint16_t thread_num = 1, LogLevel level = LL_NULL);
@@ -26,6 +26,8 @@ public:
     virtual void Join();
 
     virtual void Destroy();
+
+    virtual void AddTimer(uint32_t interval_ms, timer_callback cb) { /* TODO: implement this */ }
 
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
 

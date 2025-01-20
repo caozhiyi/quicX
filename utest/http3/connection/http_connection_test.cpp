@@ -13,7 +13,7 @@ namespace {
 class MockClient {
 public:
     MockClient(std::shared_ptr<quic::IQuicConnection> conn) {
-        conn_ = std::make_shared<ClientConnection>("", conn,
+        conn_ = std::make_shared<ClientConnection>("", DEFAULT_HTTP3_SETTINGS, conn,
             std::bind(&MockClient::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClient::PushPromiseHandler, this, std::placeholders::_1),
             std::bind(&MockClient::PushHandler, this, std::placeholders::_1, std::placeholders::_2));
@@ -22,8 +22,9 @@ public:
     void ErrorHandler(const std::string& unique_id, uint32_t error_code) {
         // TODO: implement this
     }
-    void PushPromiseHandler(std::unordered_map<std::string, std::string>& headers) {
+    bool PushPromiseHandler(std::unordered_map<std::string, std::string>& headers) {
         // TODO: implement this
+        return true;
     }
     void PushHandler(std::shared_ptr<IResponse> response, uint32_t error) {
         // TODO: implement this
@@ -45,7 +46,7 @@ private:
 class MockServer {
 public:
     MockServer(std::shared_ptr<quic::IQuicConnection> conn) {
-        conn_ = std::make_shared<ServerConnection>("", conn,
+        conn_ = std::make_shared<ServerConnection>("", DEFAULT_HTTP3_SETTINGS, nullptr, conn,
             std::bind(&MockServer::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockServer::HttpHandler, this, std::placeholders::_1, std::placeholders::_2));
     }

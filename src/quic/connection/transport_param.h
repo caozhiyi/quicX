@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include "quic/include/type.h"
 #include "common/buffer/if_buffer_read.h"
 #include "common/buffer/if_buffer_write.h"
 
@@ -17,8 +18,10 @@ public:
     TransportParam();
     ~TransportParam();
 
+    void AddTransportParamListener(std::function<void(const TransportParam&)> listener);
+
     // init transport param with local config
-    void Init(TransportParamConfig& conf);
+    void Init(const QuicTransportParams& conf);
 
     // merge client and server transport param
     bool Merge(const TransportParam& tp);
@@ -33,23 +36,23 @@ public:
     /**
      * get transmission parameter interface cluster
      */
-    const std::string& GetOriginalDestinationConnectionId() { return original_destination_connection_id_; }
-    uint32_t GetMaxIdleTimeout() { return max_idle_timeout_; }
-    const std::string& GetStatelessResetToken() { return stateless_reset_token_; }
-    uint32_t GetmaxUdpPayloadSize() { return max_udp_payload_size_; }
-    uint32_t GetInitialMaxData() { return initial_max_data_; }
+    const std::string& GetOriginalDestinationConnectionId() const { return original_destination_connection_id_; }
+    uint32_t GetMaxIdleTimeout() const { return max_idle_timeout_; }
+    const std::string& GetStatelessResetToken() const { return stateless_reset_token_; }
+    uint32_t GetmaxUdpPayloadSize() const { return max_udp_payload_size_; }
+    uint32_t GetInitialMaxData() const { return initial_max_data_; }
     uint32_t GetInitialMaxStreamDataBidiLocal() { return initial_max_stream_data_bidi_local_; }
-    uint32_t GetInitialMaxStreamDataBidiRemote() { return initial_max_stream_data_bidi_remote_; }
-    uint32_t GetInitialMaxStreamDataUni() { return initial_max_stream_data_uni_; }
-    uint32_t GetInitialMaxStreamsBidi() { return initial_max_streams_bidi_; }
-    uint32_t GetInitialMaxStreamsUni() { return initial_max_streams_uni_; }
-    uint32_t GetackDelayExponent() { return ack_delay_exponent_; }
-    uint32_t GetMaxAckDelay() { return max_ack_delay_; }
-    bool GetDisableActiveMigration() { return disable_active_migration_; }
-    const std::string& GetPreferredAddress() { return preferred_address_; }
-    uint32_t GetActiveConnectionIdLimit() { return active_connection_id_limit_; }
-    const std::string& GetInitialSourceConnectionId() { return initial_source_connection_id_; }
-    const std::string& GetRetrySourceConnectionId() { return retry_source_connection_id_; }
+    uint32_t GetInitialMaxStreamDataBidiRemote() const { return initial_max_stream_data_bidi_remote_; }
+    uint32_t GetInitialMaxStreamDataUni() const { return initial_max_stream_data_uni_; }
+    uint32_t GetInitialMaxStreamsBidi() const { return initial_max_streams_bidi_; }
+    uint32_t GetInitialMaxStreamsUni() const { return initial_max_streams_uni_; }
+    uint32_t GetackDelayExponent() const { return ack_delay_exponent_; }
+    uint32_t GetMaxAckDelay() const { return max_ack_delay_; }
+    bool GetDisableActiveMigration() const { return disable_active_migration_; }
+    const std::string& GetPreferredAddress() const { return preferred_address_; }
+    uint32_t GetActiveConnectionIdLimit() const { return active_connection_id_limit_; }
+    const std::string& GetInitialSourceConnectionId() const { return initial_source_connection_id_; }
+    const std::string& GetRetrySourceConnectionId() const { return retry_source_connection_id_; }
 
 private:
     /*
@@ -80,6 +83,9 @@ private:
     uint32_t    active_connection_id_limit_;
     std::string initial_source_connection_id_; // no client
     std::string retry_source_connection_id_;   // no client
+
+private:
+    std::vector<std::function<void(const TransportParam&)>> transport_param_listeners_;
 };
 
 }

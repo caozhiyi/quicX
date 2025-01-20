@@ -23,8 +23,13 @@ public:
     virtual bool DoRequest(const std::string& url, HttpMethod mothed,
         std::shared_ptr<IRequest> request, const http_response_handler& handler) = 0;
 
+    // Set push promise handler
+    virtual void SetPushPromiseHandler(const http_push_promise_handler& push_promise_handler) = 0;
+    // Set push handler
+    virtual void SetPushHandler(const http_response_handler& push_handler) = 0;
+
     // Create a client instance
-    static std::unique_ptr<IClient> Create();
+    static std::unique_ptr<IClient> Create(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
 };
 
 }

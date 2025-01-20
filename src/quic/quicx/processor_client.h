@@ -13,6 +13,7 @@ class ProcessorClient:
     public ProcessorBase {
 public:
     ProcessorClient(std::shared_ptr<TLSCtx> ctx,
+        const QuicTransportParams& params,
         connection_state_callback connection_handler);
     virtual ~ProcessorClient();
 
