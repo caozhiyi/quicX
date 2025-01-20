@@ -16,7 +16,7 @@ namespace http3 {
 class Client:
     public IClient {
 public:
-    Client();
+    Client(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
     virtual ~Client();
 
     // Initialize the client with a certificate and a key
@@ -50,6 +50,8 @@ private:
 
     http_response_handler push_handler_;
     http_push_promise_handler push_promise_handler_;
+
+    Http3Settings settings_;
 };
 
 }

@@ -13,7 +13,7 @@ namespace {
 class MockClient {
 public:
     MockClient(std::shared_ptr<quic::IQuicConnection> conn) {
-        conn_ = std::make_shared<ClientConnection>("", conn,
+        conn_ = std::make_shared<ClientConnection>("", DEFAULT_HTTP3_SETTINGS, conn,
             std::bind(&MockClient::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClient::PushPromiseHandler, this, std::placeholders::_1),
             std::bind(&MockClient::PushHandler, this, std::placeholders::_1, std::placeholders::_2));
@@ -46,7 +46,7 @@ private:
 class MockServer {
 public:
     MockServer(std::shared_ptr<quic::IQuicConnection> conn) {
-        conn_ = std::make_shared<ServerConnection>("", nullptr, conn,
+        conn_ = std::make_shared<ServerConnection>("", DEFAULT_HTTP3_SETTINGS, nullptr, conn,
             std::bind(&MockServer::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockServer::HttpHandler, this, std::placeholders::_1, std::placeholders::_2));
     }

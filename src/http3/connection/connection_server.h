@@ -14,7 +14,7 @@
 #include "http3/connection/if_connection.h"
 #include "quic/include/if_quic_connection.h"
 #include "http3/stream/control_sender_stream.h"
-#include "http3/stream/control_receiver_stream.h"
+#include "http3/stream/control_server_receiver_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -22,7 +22,9 @@ namespace http3 {
 class ServerConnection:
     public IConnection {
 public:
-    ServerConnection(const std::string& unique_id, std::shared_ptr<quic::IQuicServer> quic_server,
+    ServerConnection(const std::string& unique_id,
+        const Http3Settings& settings,
+        std::shared_ptr<quic::IQuicServer> quic_server,
         const std::shared_ptr<quic::IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
         const http_handler& http_handler);
@@ -58,6 +60,9 @@ private:
     std::shared_ptr<quic::IQuicServer> quic_server_;
     // push responses, push id -> response
     std::unordered_map<uint64_t, std::shared_ptr<IResponse>> push_responses_;
+
+    std::shared_ptr<ControlSenderStream> control_sender_stream_;
+    std::shared_ptr<ControlServerReceiverStream> control_recv_stream_;
 };
 
 }

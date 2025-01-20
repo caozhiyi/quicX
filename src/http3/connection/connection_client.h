@@ -20,6 +20,7 @@ class ClientConnection
     :public IConnection {
 public:
     ClientConnection(const std::string& unique_id,
+        const Http3Settings& settings,
         const std::shared_ptr<quic::IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
         const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
@@ -43,6 +44,9 @@ private:
 private:
     http_response_handler push_handler_;
     std::function<bool(std::unordered_map<std::string, std::string>&)> push_promise_handler_;
+
+    std::shared_ptr<ControlClientSenderStream> control_sender_stream_;
+    std::shared_ptr<ControlReceiverStream> control_recv_stream_;
 };
 
 }

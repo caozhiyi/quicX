@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "http3/http/error.h"
+#include "http3/connection/type.h"
 #include "http3/stream/request_stream.h"
 #include "http3/stream/control_receiver_stream.h"
 #include "http3/stream/push_receiver_stream.h"
@@ -9,6 +10,7 @@ namespace quicx {
 namespace http3 {
 
 ClientConnection::ClientConnection(const std::string& unique_id,
+    const Http3Settings& settings,
     const std::shared_ptr<quic::IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
     const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
@@ -17,6 +19,14 @@ ClientConnection::ClientConnection(const std::string& unique_id,
     push_promise_handler_(push_promise_handler),
     push_handler_(push_handler) {
 
+    // create control streams
+    auto control_stream = quic_connection_->MakeStream(quic::SD_SEND);
+    control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
+        std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
+    
+    settings_ = IConnection::AdaptSettings(settings);
+    control_sender_stream_->SendSettings(settings_);
 }
 
 ClientConnection::~ClientConnection() {
@@ -24,6 +34,11 @@ ClientConnection::~ClientConnection() {
 }
 
 bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler) {
+    if (streams_.size() >= settings_[SETTINGS_TYPE::ST_MAX_CONCURRENT_STREAMS]) {
+        common::LOG_ERROR("ClientConnection::DoRequest max concurrent streams reached");
+        return false;
+    }
+
     // create request stream
     auto stream = quic_connection_->MakeStream(quic::SD_BIDI);
     if (!stream) {
@@ -54,11 +69,21 @@ void ClientConnection::CancelPush(uint64_t push_id) {
 void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error_code) {
     if (error_code != 0) {
         common::LOG_ERROR("ClientConnection::HandleStream error: %d", error_code);
+        if (stream) {
+            streams_.erase(stream->GetStreamID());
+        }
         return;
     }
 
     if (stream->GetDirection() == quic::SD_BIDI) {
         quic_connection_->Reset(HTTP3_ERROR_CODE::H3EC_STREAM_CREATION_ERROR);
+        return;
+    }
+
+    // TODO: implement stand line to create stream
+    if (streams_.size() >= settings_[SETTINGS_TYPE::ST_MAX_CONCURRENT_STREAMS]) {
+        common::LOG_ERROR("ClientConnection::HandleStream max concurrent streams reached");
+        Close(HTTP3_ERROR_CODE::H3EC_STREAM_CREATION_ERROR);
         return;
     }
     

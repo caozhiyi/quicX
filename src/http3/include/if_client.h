@@ -29,7 +29,7 @@ public:
     virtual void SetPushHandler(const http_response_handler& push_handler) = 0;
 
     // Create a client instance
-    static std::unique_ptr<IClient> Create();
+    static std::unique_ptr<IClient> Create(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
 };
 
 }

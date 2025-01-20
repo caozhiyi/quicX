@@ -8,11 +8,12 @@
 namespace quicx {
 namespace http3 {
 
-std::unique_ptr<IServer> IServer::Create() {
-    return std::make_unique<Server>();
+std::unique_ptr<IServer> IServer::Create(const Http3Settings& settings) {
+    return std::make_unique<Server>(settings);
 }
 
-Server::Server() {
+Server::Server(const Http3Settings& settings):
+    settings_(settings) {
     quic_ = quic::IQuicServer::Create();
     router_ = std::make_shared<Router>();
     quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this, std::placeholders::_1, std::placeholders::_2));
@@ -73,7 +74,7 @@ void Server::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t 
     conn->GetRemoteAddr(addr, port);
     std::string unique_id = addr + ":" + std::to_string(port);
 
-    auto server_conn = std::make_shared<ServerConnection>(unique_id, quic_, conn,
+    auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, quic_, conn,
         std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Server::HandleRequest, this, std::placeholders::_1, std::placeholders::_2));
 

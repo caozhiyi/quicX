@@ -7,7 +7,7 @@ x64
 .VSCodeCounter
 gtest
 *.log
-quicx-utest
+quicx_utest
 third
 libquicx.a
 libhttp3.a
