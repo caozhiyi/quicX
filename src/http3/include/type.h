@@ -4,6 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 
 namespace quicx {
 namespace http3 {
@@ -37,10 +38,13 @@ enum LogLevel: uint8_t {
 
 class IRequest;
 class IResponse;
-typedef std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> http_handler;
 
+// http handler
+typedef std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> http_handler;
 // http response handler, error is 0 means success, otherwise means error
 typedef std::function<void(std::shared_ptr<IResponse> response, uint32_t error)> http_response_handler;
+// http push promise handler, return true means do not cancel push, return false means cancel push
+typedef std::function<bool(std::unordered_map<std::string, std::string>& headers)> http_push_promise_handler;
 
 }
 }

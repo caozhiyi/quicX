@@ -11,7 +11,7 @@ namespace http3 {
 ClientConnection::ClientConnection(const std::string& unique_id,
     const std::shared_ptr<quic::IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
-    const std::function<void(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
+    const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
     const http_response_handler& push_handler):
     IConnection(unique_id, quic_connection, error_handler),
     push_promise_handler_(push_promise_handler),
@@ -35,7 +35,7 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_r
         std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         handler,
-        std::bind(&ClientConnection::HandlePushPromise, this, std::placeholders::_1));
+        std::bind(&ClientConnection::HandlePushPromise, this, std::placeholders::_1, std::placeholders::_2));
 
     streams_[request_stream->GetStreamID()] = request_stream;
 
@@ -101,9 +101,13 @@ void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
     }
 }
 
-void ClientConnection::HandlePushPromise(std::unordered_map<std::string, std::string>& headers) {
-    if (push_promise_handler_) {
-        push_promise_handler_(headers);
+void ClientConnection::HandlePushPromise(std::unordered_map<std::string, std::string>& headers, uint64_t push_id) {
+    if (!push_promise_handler_) {
+        return;
+    }
+    bool do_recv = push_promise_handler_(headers);
+    if (!do_recv) {
+        CancelPush(push_id);
     }
 }
 

@@ -26,6 +26,10 @@ ServerConnection::~ServerConnection() {
 
 bool ServerConnection::SendPush(std::shared_ptr<IResponse> response) {
     auto stream = quic_connection_->MakeStream(quic::SD_SEND);
+    if (!stream) {
+        common::LOG_ERROR("ServerConnection::SendPush make stream failed");
+        return false;
+    }
 
     std::shared_ptr<PushSenderStream> push_stream = std::make_shared<PushSenderStream>(qpack_encoder_,
         std::dynamic_pointer_cast<quic::IQuicSendStream>(stream),

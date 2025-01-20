@@ -22,8 +22,9 @@ public:
     void ErrorHandler(const std::string& unique_id, uint32_t error_code) {
         // TODO: implement this
     }
-    void PushPromiseHandler(std::unordered_map<std::string, std::string>& headers) {
+    bool PushPromiseHandler(std::unordered_map<std::string, std::string>& headers) {
         // TODO: implement this
+        return true;
     }
     void PushHandler(std::shared_ptr<IResponse> response, uint32_t error) {
         // TODO: implement this
