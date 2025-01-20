@@ -2,6 +2,7 @@
 #define HTTP3_HTTP_RESPONSE
 
 #include <string>
+#include <vector>
 #include <unordered_map>
 #include "http3/include/if_response.h"
 
@@ -29,10 +30,17 @@ public:
     virtual void SetBody(const std::string& body) { body_ = body; }
     virtual const std::string& GetBody() const { return body_; }
 
+    // server push response, can be called multiple times
+    // if push response is not enabled, it will be ignored
+    virtual void AppendPush(std::shared_ptr<IResponse> response);
+    virtual std::vector<std::shared_ptr<IResponse>>& GetPushResponses() { return push_responses_; }
+
 private:
     uint32_t status_code_;
     std::unordered_map<std::string, std::string> headers_;
     std::string body_;
+
+    std::vector<std::shared_ptr<IResponse>> push_responses_;
 };
 
 }

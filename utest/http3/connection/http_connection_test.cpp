@@ -45,7 +45,7 @@ private:
 class MockServer {
 public:
     MockServer(std::shared_ptr<quic::IQuicConnection> conn) {
-        conn_ = std::make_shared<ServerConnection>("", conn,
+        conn_ = std::make_shared<ServerConnection>("", nullptr, conn,
             std::bind(&MockServer::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockServer::HttpHandler, this, std::placeholders::_1, std::placeholders::_2));
     }

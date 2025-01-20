@@ -30,6 +30,9 @@ public:
     // all connections will be closed
     virtual void Destroy() = 0;
 
+    // set timer callback
+    virtual void AddTimer(uint32_t interval_ms, timer_callback cb) = 0;
+
     // listen and accept a quic connection
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port) = 0;
 

@@ -18,8 +18,7 @@ class PushSenderStream:
 public:
     PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<quic::IQuicSendStream>& stream,
-        const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-        uint64_t push_id);
+        const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~PushSenderStream();
 
     // Implement IStream interface
@@ -33,7 +32,6 @@ public:
 private:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::shared_ptr<quic::IQuicSendStream> stream_;
-    uint64_t push_id_;
 };
 
 }

@@ -3,6 +3,7 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 #include <unordered_map>
 
 namespace quicx {
@@ -28,6 +29,11 @@ public:
     // Response body
     virtual void SetBody(const std::string& body) = 0;
     virtual const std::string& GetBody() const = 0;
+
+    // server push response, can be called multiple times
+    // if push response is not enabled, it will be ignored
+    virtual void AppendPush(std::shared_ptr<IResponse> response) = 0;
+    virtual std::vector<std::shared_ptr<IResponse>>& GetPushResponses() = 0;
 
     // Create a response instance
     static std::shared_ptr<IResponse> Create();

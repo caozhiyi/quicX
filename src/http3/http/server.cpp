@@ -73,7 +73,7 @@ void Server::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t 
     conn->GetRemoteAddr(addr, port);
     std::string unique_id = addr + ":" + std::to_string(port);
 
-    auto server_conn = std::make_shared<ServerConnection>(unique_id, conn,
+    auto server_conn = std::make_shared<ServerConnection>(unique_id, quic_, conn,
         std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Server::HandleRequest, this, std::placeholders::_1, std::placeholders::_2));
 
@@ -97,7 +97,7 @@ void Server::HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IR
     }
 
     uint64_t start_time = common::UTCTimeMsec();
-    common::LOG_DEBUG("start handle request. path: %s, method: %d", path.c_str(), mothed);
+    common::LOG_INFO("start handle request. path: %s, method: %d", path.c_str(), mothed);
     for (auto& handler : before_middlewares_) {
         handler(request, response);
     }
@@ -107,7 +107,8 @@ void Server::HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IR
     for (auto& handler : after_middlewares_) {
         handler(request, response);
     }
-    common::LOG_DEBUG("end handle request. path: %s, method: %d, time: %llums", path.c_str(), mothed, common::UTCTimeMsec() - start_time);
+    common::LOG_INFO("end handle request. path: %s, method: %d, status: %d, time: %llums",
+        path.c_str(), mothed, response->GetStatusCode(), common::UTCTimeMsec() - start_time);
 }
 
 }

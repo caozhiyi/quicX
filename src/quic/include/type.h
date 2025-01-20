@@ -44,6 +44,9 @@ typedef std::function<void(std::shared_ptr<common::IBufferRead> data, uint32_t e
 // length: data length
 typedef std::function<void(uint32_t length, uint32_t error)> stream_write_callback;
 
+// timer callback, call this callback when timer expired
+typedef std::function<void()> timer_callback;
+
 }
 }
 

@@ -27,6 +27,8 @@ public:
 
     virtual void Destroy();
 
+    virtual void AddTimer(uint32_t interval_ms, timer_callback cb) { /* TODO: implement this */ }
+
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
 
     virtual void SetConnectionStateCallBack(connection_state_callback cb);

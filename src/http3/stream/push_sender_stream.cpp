@@ -11,12 +11,10 @@ namespace http3 {
 
 PushSenderStream::PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<quic::IQuicSendStream>& stream,
-    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-    uint64_t push_id):
+    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IStream(error_handler),
-    qpack_encoder_(qpack_encoder),
-    stream_(stream),
-    push_id_(push_id) {
+    qpack_encoder_(qpack_encoder),  
+    stream_(stream) {
 
 }
 

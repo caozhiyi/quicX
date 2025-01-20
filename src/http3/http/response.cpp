@@ -24,5 +24,9 @@ void Response::SetHeaders(const std::unordered_map<std::string, std::string>& he
     headers_ = headers;
 }
 
+void Response::AppendPush(std::shared_ptr<IResponse> response) {
+    push_responses_.push_back(response);
+}
+
 }
 }
