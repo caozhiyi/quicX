@@ -7,3 +7,4 @@
 - [ ] http3 qpack dynamic table update implement
 - [ ] zero memory copy
 - [ ] 0 rtt handshake
+- [ ] http3 settings control
