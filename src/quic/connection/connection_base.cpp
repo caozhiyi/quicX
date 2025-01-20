@@ -40,6 +40,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     IConnection(active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     to_close_(false),
     last_communicate_time_(0),
+    flow_control_(start),
     recv_control_(timer),
     send_manager_(timer) {
 
@@ -51,12 +52,15 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
         std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
         std::bind(&BaseConnection::RetireConnectionId, this, std::placeholders::_1));
 
-    flow_control_ = std::make_shared<FlowControl>(start);
-    send_manager_.SetFlowControl(flow_control_);
+    send_manager_.SetFlowControl(&flow_control_);
     send_manager_.SetRemoteConnectionIDManager(remote_conn_id_manager_);
     send_manager_.SetLocalConnectionIDManager(local_conn_id_manager_);
 
     recv_control_.SetActiveSendCB(std::bind(&BaseConnection::ActiveSend, this));
+
+    transport_param_.AddTransportParamListener(std::bind(&RecvControl::UpdateConfig, &recv_control_, std::placeholders::_1));
+    transport_param_.AddTransportParamListener(std::bind(&SendManager::UpdateConfig, &send_manager_, std::placeholders::_1));
+    transport_param_.AddTransportParamListener(std::bind(&FlowControl::UpdateConfig, &flow_control_, std::placeholders::_1));
 }
 
 BaseConnection::~BaseConnection() {
@@ -83,9 +87,9 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
     std::shared_ptr<IFrame> frame;
     bool can_make_stream = false;
     if (type == StreamDirection::SD_SEND) {
-        can_make_stream = flow_control_->CheckLocalUnidirectionStreamLimit(stream_id, frame);
+        can_make_stream = flow_control_.CheckLocalUnidirectionStreamLimit(stream_id, frame);
     } else {
-        can_make_stream = flow_control_->CheckLocalBidirectionStreamLimit(stream_id, frame);
+        can_make_stream = flow_control_.CheckLocalBidirectionStreamLimit(stream_id, frame);
     }
     if (frame) {
         ToSendFrame(frame);
@@ -105,7 +109,7 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
     return new_stream;
 }
 
-void BaseConnection::AddTransportParam(TransportParamConfig& tp_config) {
+void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     transport_param_.Init(tp_config);
 
     // set transport param. TODO define tp length
@@ -293,13 +297,13 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     uint64_t stream_id = stream_frame->GetStreamID();
     auto stream = streams_map_.find(stream_id);
     if (stream != streams_map_.end()) {
-        flow_control_->AddRemoteSendData(stream->second->OnFrame(frame));
+        flow_control_.AddRemoteSendData(stream->second->OnFrame(frame));
         return true;
     }
 
     // check streams limit    
     std::shared_ptr<IFrame> send_frame;
-    bool can_make_stream = flow_control_->CheckRemoteStreamLimit(stream_id, send_frame);
+    bool can_make_stream = flow_control_.CheckRemoteStreamLimit(stream_id, send_frame);
     if (send_frame) {
         ToSendFrame(send_frame);
     }
@@ -316,7 +320,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::SD_RECV);
     }
     // check peer data limit
-    if (!flow_control_->CheckRemoteSendDataLimit(send_frame)) {
+    if (!flow_control_.CheckRemoteSendDataLimit(send_frame)) {
         InnerConnectionClose(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "flow control stream data limit.");
         return false;
     }
@@ -329,7 +333,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     }
     // new stream process frame
     streams_map_[stream_id] = new_stream;
-    flow_control_->AddRemoteSendData(new_stream->OnFrame(frame));
+    flow_control_.AddRemoteSendData(new_stream->OnFrame(frame));
     return true;
 }
 
@@ -362,13 +366,13 @@ bool BaseConnection::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     uint64_t max_data_size = max_data_frame->GetMaximumData();
-    flow_control_->UpdateLocalSendDataLimit(max_data_size);
+    flow_control_.UpdateLocalSendDataLimit(max_data_size);
     return true;
 }
 
 bool BaseConnection::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
-    flow_control_->CheckRemoteSendDataLimit(send_frame);
+    flow_control_.CheckRemoteSendDataLimit(send_frame);
     if (send_frame) {
         ToSendFrame(send_frame);
     }
@@ -377,7 +381,7 @@ bool BaseConnection::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
 
 bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
-    flow_control_->CheckRemoteStreamLimit(0, send_frame);
+    flow_control_.CheckRemoteStreamLimit(0, send_frame);
     if (send_frame) {
         ToSendFrame(send_frame);
     }
@@ -387,10 +391,10 @@ bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_block_frame = std::dynamic_pointer_cast<MaxStreamsFrame>(frame);
     if (stream_block_frame->GetType() == FT_MAX_STREAMS_BIDIRECTIONAL) {
-        flow_control_->UpdateLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
+        flow_control_.UpdateLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
 
     } else {
-        flow_control_->UpdateLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
+        flow_control_.UpdateLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
     }
     return true;
 }
@@ -464,7 +468,6 @@ bool BaseConnection::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
 
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     transport_param_.Merge(remote_tp);
-    flow_control_->InitConfig(transport_param_);
 }
 
 void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {

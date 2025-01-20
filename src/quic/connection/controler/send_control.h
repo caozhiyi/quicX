@@ -7,6 +7,7 @@
 #include "common/timer/if_timer.h"
 #include "quic/packet/if_packet.h"
 #include "common/timer/timer_task.h"
+#include "quic/connection/transport_param.h"
 #include "quic/connection/controler/rtt_calculator.h"
 #include "quic/congestion_control/if_congestion_control.h"
 
@@ -24,6 +25,8 @@ public:
     void CanSend(uint64_t now, uint32_t& can_send_bytes);
     bool NeedReSend() { return !lost_packets_.empty(); }
     std::list<std::shared_ptr<IPacket>>& GetLostPacket() { return lost_packets_; }
+
+    void UpdateConfig(const TransportParam& tp);
 
 private:
     std::list<std::shared_ptr<IPacket>> lost_packets_;
@@ -43,6 +46,8 @@ private:
     RttCalculator rtt_calculator_;
     std::shared_ptr<common::ITimer> timer_;
     std::unique_ptr<ICongestionControl> congestion_control_;
+
+    uint32_t max_ack_delay_;
 };
 
 }

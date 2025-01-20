@@ -7,8 +7,9 @@ namespace quicx {
 namespace quic {
 
 ProcessorClient::ProcessorClient(std::shared_ptr<TLSCtx> ctx,
+    const QuicTransportParams& params,
     connection_state_callback connection_handler):
-    ProcessorBase(ctx, connection_handler) {
+    ProcessorBase(ctx, params, connection_handler) {
 
 }
     
@@ -24,9 +25,9 @@ void ProcessorClient::Connect(const std::string& ip, uint16_t port,
         std::bind(&ProcessorClient::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ProcessorClient::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ProcessorClient::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    
+
     connecting_map_[conn->GetConnectionIDHash()] = conn;
-    conn->Dial(common::Address(ip, port), alpn);
+    conn->Dial(common::Address(ip, port), alpn, params_);
     // TODO add timer to check connection status
 }
 

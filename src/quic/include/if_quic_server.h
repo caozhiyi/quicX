@@ -40,7 +40,7 @@ public:
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost
     virtual void SetConnectionStateCallBack(connection_state_callback cb) = 0;
 
-    static std::shared_ptr<IQuicServer> Create();
+    static std::shared_ptr<IQuicServer> Create(const QuicTransportParams& params = DEFAULT_QUIC_TRANSPORT_PARAMS);
 };
 
 

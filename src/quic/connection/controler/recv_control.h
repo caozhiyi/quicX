@@ -6,7 +6,7 @@
 #include "quic/packet/type.h"
 #include "common/timer/if_timer.h"
 #include "quic/packet/if_packet.h"
-
+#include "quic/connection/transport_param.h"
 namespace quicx {
 namespace quic {
 
@@ -30,6 +30,7 @@ public:
     std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns);
 
     void SetActiveSendCB(std::function<void()> cb) { active_send_cb_ = cb; }
+    void UpdateConfig(const TransportParam& tp);
 
 private:
     uint64_t pkt_num_largest_recvd_[PNS_NUMBER];
@@ -41,6 +42,8 @@ private:
 
     common::TimerTask timer_task_;
     std::function<void()> active_send_cb_;
+
+    uint32_t max_ack_delay_;
 };
 
 }

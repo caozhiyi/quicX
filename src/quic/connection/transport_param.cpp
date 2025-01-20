@@ -1,9 +1,8 @@
 #include "common/log/log.h"
+#include "quic/connection/type.h"
 #include "common/decode/decode.h"
 #include "common/buffer/if_buffer.h"
 #include "quic/connection/transport_param.h"
-#include "quic/connection/transport_param_type.h"
-#include "quic/connection/transport_param_config.h"
 
 namespace quicx {
 namespace quic {
@@ -28,9 +27,13 @@ TransportParam::~TransportParam() {
 
 }
 
-void TransportParam::Init(TransportParamConfig& conf) {
+void TransportParam::AddTransportParamListener(std::function<void(const TransportParam&)> listener) {
+    transport_param_listeners_.push_back(listener);
+}
+
+void TransportParam::Init(const QuicTransportParams& conf) {
     original_destination_connection_id_ = conf.original_destination_connection_id_;
-    max_idle_timeout_ = conf.max_idle_timeout_;
+    max_idle_timeout_ = conf.max_idle_timeout_ms_;
     stateless_reset_token_ = conf.stateless_reset_token_;
     max_udp_payload_size_ = conf.max_udp_payload_size_;
     initial_max_data_ = conf.initial_max_data_;
@@ -39,22 +42,39 @@ void TransportParam::Init(TransportParamConfig& conf) {
     initial_max_stream_data_uni_ = conf.initial_max_stream_data_uni_;
     initial_max_streams_bidi_ = conf.initial_max_streams_bidi_;
     initial_max_streams_uni_ = conf.initial_max_streams_uni_;
-    ack_delay_exponent_ = conf.ack_delay_exponent_;
-    max_ack_delay_ = conf.max_ack_delay_;
+    ack_delay_exponent_ = conf.ack_delay_exponent_ms_;
+    max_ack_delay_ = conf.max_ack_delay_ms_;
     disable_active_migration_ = conf.disable_active_migration_;
     preferred_address_ = conf.preferred_address_;
     active_connection_id_limit_ = conf.active_connection_id_limit_;
     initial_source_connection_id_ = conf.initial_source_connection_id_;
     retry_source_connection_id_ = conf.retry_source_connection_id_;
+    for (auto& listener : transport_param_listeners_) {
+        listener(*this);
+    }
 }
 
  bool TransportParam::Merge(const TransportParam& tp) {
-     // the max idle time takes the minimum value
-     if (tp.max_idle_timeout_ < max_idle_timeout_) {
-         max_idle_timeout_ = tp.max_idle_timeout_;
-     }
-     
-     return true;
+    // merge transport param
+    max_idle_timeout_ = std::min(tp.max_idle_timeout_, max_idle_timeout_);
+    max_udp_payload_size_ = std::min(tp.max_udp_payload_size_, max_udp_payload_size_);
+    initial_max_data_ = std::min(tp.initial_max_data_, initial_max_data_);
+    initial_max_stream_data_bidi_local_ = std::min(tp.initial_max_stream_data_bidi_local_, initial_max_stream_data_bidi_local_);
+    initial_max_stream_data_bidi_remote_ = std::min(tp.initial_max_stream_data_bidi_remote_, initial_max_stream_data_bidi_remote_);
+    initial_max_stream_data_uni_ = std::min(tp.initial_max_stream_data_uni_, initial_max_stream_data_uni_);
+    initial_max_streams_bidi_ = std::min(tp.initial_max_streams_bidi_, initial_max_streams_bidi_);
+    initial_max_streams_uni_ = std::min(tp.initial_max_streams_uni_, initial_max_streams_uni_);
+    ack_delay_exponent_ = std::min(tp.ack_delay_exponent_, ack_delay_exponent_);
+    max_ack_delay_ = std::min(tp.max_ack_delay_, max_ack_delay_);
+    disable_active_migration_ = disable_active_migration_ || tp.disable_active_migration_;
+    preferred_address_ = tp.preferred_address_;
+    active_connection_id_limit_ = std::min(tp.active_connection_id_limit_, active_connection_id_limit_);
+    initial_source_connection_id_ = tp.initial_source_connection_id_;
+    retry_source_connection_id_ = tp.retry_source_connection_id_;
+    for (auto& listener : transport_param_listeners_) {
+        listener(*this);
+    }
+    return true;
  }
 
 bool TransportParam::Encode(std::shared_ptr<common::IBufferWrite> buffer) {

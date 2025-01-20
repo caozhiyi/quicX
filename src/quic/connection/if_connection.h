@@ -13,7 +13,6 @@
 #include "quic/crypto/tls/tls_conneciton.h"
 #include "quic/stream/bidirection_stream.h"
 #include "quic/include/if_quic_connection.h"
-#include "quic/connection/transport_param_config.h"
 
 namespace quicx {
 namespace quic {
@@ -46,7 +45,7 @@ public:
     virtual void SetStreamStateCallBack(stream_state_callback cb) { stream_state_cb_ = cb; }
 
     //*************** inner interface ***************//
-    virtual void AddTransportParam(TransportParamConfig& tp_config) = 0;
+    virtual void AddTransportParam(const QuicTransportParams& tp_config) = 0;
     virtual uint64_t GetConnectionIDHash() = 0;
     // try to build a quic message
     virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_done) = 0;

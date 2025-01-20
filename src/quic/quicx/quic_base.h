@@ -14,7 +14,7 @@ namespace quic {
 
 class QuicBase {
 public:
-    QuicBase();
+    QuicBase(const QuicTransportParams& params);
     virtual ~QuicBase();
 
     virtual void Join();
@@ -31,6 +31,7 @@ protected:
     std::vector<std::shared_ptr<ProcessorBase>> processors_;
 
     connection_state_callback connection_state_cb_;
+    QuicTransportParams params_;
 };
 
 }

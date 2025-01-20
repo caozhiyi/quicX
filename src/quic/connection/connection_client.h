@@ -24,7 +24,7 @@ public:
         std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb);
     ~ClientConnection();
 
-    bool Dial(const common::Address& addr, const std::string& alpn);
+    bool Dial(const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config);
 
 protected:
     virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);

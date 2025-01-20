@@ -9,8 +9,9 @@ namespace quicx {
 namespace quic {
 
 ProcessorServer::ProcessorServer(std::shared_ptr<TLSCtx> ctx,
+    const QuicTransportParams& params,
     connection_state_callback connection_handler):
-    ProcessorBase(ctx, connection_handler) {
+    ProcessorBase(ctx, params, connection_handler) {
 }
 
 ProcessorServer::~ProcessorServer() {
@@ -64,6 +65,7 @@ bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
         std::bind(&ProcessorServer::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ProcessorServer::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ProcessorServer::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    new_conn->AddTransportParam(params_);
     connecting_map_[cid_code] = new_conn;
 
     // set remote connection id

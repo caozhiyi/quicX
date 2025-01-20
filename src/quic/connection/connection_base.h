@@ -39,7 +39,7 @@ public:
 
     // *************** inner interface ***************//
     // set transport param
-    void AddTransportParam(TransportParamConfig& tp_config);
+    void AddTransportParam(const QuicTransportParams& tp_config);
     virtual uint64_t GetConnectionIDHash();
     // try to build a quic message
     virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation);
@@ -105,7 +105,7 @@ protected:
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
     std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
     // flow control
-    std::shared_ptr<FlowControl> flow_control_;
+    FlowControl flow_control_;
     RecvControl recv_control_;
     SendManager send_manager_;
     // crypto

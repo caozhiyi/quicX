@@ -18,7 +18,7 @@ FlowControl::FlowControl(StreamIDGenerator::StreamStarter starter):
 
 }
 
-void FlowControl::InitConfig(TransportParam& tp) {
+void FlowControl::UpdateConfig(const TransportParam& tp) {
     local_send_max_data_limit_ = tp.GetInitialMaxData();
     remote_send_max_data_limit_ = tp.GetInitialMaxData();
     local_bidirectional_stream_limit_ = tp.GetInitialMaxStreamsBidi();

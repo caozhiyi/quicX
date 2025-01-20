@@ -14,7 +14,6 @@
 #include "quic/frame/path_challenge_frame.h"
 #include "quic/frame/handshake_done_frame.h"
 #include "quic/connection/connection_server.h"
-#include "quic/connection/transport_param_config.h"
 
 namespace quicx {
 namespace quic {
@@ -40,9 +39,6 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
     crypto_stream->SetStreamReadCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
-
-    // set transport param
-    AddTransportParam(TransportParamConfig::Instance());
 }
 
 ServerConnection::~ServerConnection() {

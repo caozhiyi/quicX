@@ -18,9 +18,11 @@ namespace quic {
 thread_local std::shared_ptr<common::ITimer> ProcessorBase::time_ = common::MakeTimer();
 
 ProcessorBase::ProcessorBase(std::shared_ptr<TLSCtx> ctx,
+    const QuicTransportParams& params,
     connection_state_callback connection_handler):
     do_send_(false),
     ctx_(ctx),
+    params_(params),
     connection_handler_(connection_handler) {
     alloter_ = std::make_shared<common::BlockMemoryPool>(1500, 5); // todo add to config
 }
