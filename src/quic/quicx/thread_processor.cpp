@@ -26,6 +26,11 @@ void ThreadProcessor::Run() {
     // register processor in woker thread
     processor_map__[std::this_thread::get_id()] = this;
     connection_transfor_ = std::make_shared<ConnectionTransfor>();
+    current_thread_id_ = std::this_thread::get_id();
+    
+    current_thread_id_set_ = true;
+    current_thread_id_cv_.notify_all();
+
     while (!IsStop()) {
         Process();
 
@@ -49,6 +54,12 @@ void ThreadProcessor::Stop() {
 
 void ThreadProcessor::Weakeup() {
     receiver_->Weakup();
+}
+
+std::thread::id ThreadProcessor::GetCurrentThreadId() {
+    std::unique_lock<std::mutex> lock(current_thread_id_mutex_);
+    current_thread_id_cv_.wait(lock, [this]() { return current_thread_id_set_; });
+    return current_thread_id_;
 }
 
 void ThreadProcessor::ConnectionIDNoexist(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {

@@ -13,13 +13,11 @@
 namespace quicx {
 namespace common {
 
-typedef std::function<void()> TimerCallback;
-
 class TimerTask {
 public:
-    TimerCallback tcb_;
+    std::function<void()> tcb_;
     TimerTask() {}
-    TimerTask(TimerCallback tcb): tcb_(tcb) {}
+    TimerTask(std::function<void()> tcb): tcb_(tcb) {}
     TimerTask(const TimerTask& t): tcb_(t.tcb_), time_(t.time_), id_(t.id_) {}
 private:
     uint64_t time_;

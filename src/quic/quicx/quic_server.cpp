@@ -28,12 +28,12 @@ bool QuicServer::Init(const std::string& cert_file, const std::string& key_file,
     }
     tls_ctx_ = tls_ctx;
 
-    processors_.reserve(thread_num);
+    processors_map_.reserve(thread_num);
     for (size_t i = 0; i < thread_num; i++) {
         auto processor = std::make_shared<ProcessorServer>(tls_ctx_, params_, connection_state_cb_);
         processor->SetServerAlpn(alpn);
         processor->Start();
-        processors_.emplace_back(processor);
+        processors_map_.emplace(processor->GetCurrentThreadId(), processor);
     }
     return true;
 }
@@ -49,12 +49,12 @@ bool QuicServer::Init(const char* cert_pem, const char* key_pem, const std::stri
     }
     tls_ctx_ = tls_ctx;
     
-    processors_.reserve(thread_num);
+    processors_map_.reserve(thread_num);
     for (size_t i = 0; i < thread_num; i++) {
         auto processor = std::make_shared<ProcessorServer>(tls_ctx_, params_, connection_state_cb_);
         processor->SetServerAlpn(alpn);
         processor->Start();
-        processors_.emplace_back(processor);
+        processors_map_.emplace(processor->GetCurrentThreadId(), processor);
     }
     return true;
 }
@@ -67,9 +67,13 @@ void QuicServer::Destroy() {
     QuicBase::Destroy();
 }
 
+void QuicServer::AddTimer(uint32_t interval_ms, timer_callback cb) {
+    QuicBase::AddTimer(interval_ms, cb);
+}
+
 bool QuicServer::ListenAndAccept(const std::string& ip, uint16_t port) {
-    for (auto& processor : processors_) {
-        processor->AddReceiver(ip, port);
+    for (auto& processor : processors_map_) {
+        processor.second->AddReceiver(ip, port);
     }
     return true;
 }

@@ -2,6 +2,7 @@
 #include "quic/common/version.h"
 #include "quic/common/constants.h"
 #include "common/network/address.h"
+#include "common/timer/timer_task.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/quicx/processor_base.h"
@@ -54,6 +55,11 @@ void ProcessorBase::AddReceiver(uint64_t socket_fd) {
 
 void ProcessorBase::AddReceiver(const std::string& ip, uint16_t port) {
     receiver_->AddReceiver(ip, port);
+}
+
+void ProcessorBase::AddTimer(uint32_t interval_ms, timer_callback cb) {
+    common::TimerTask task(cb);
+    time_->AddTimer(task, interval_ms);
 }
 
 void ProcessorBase::ProcessRecv(uint32_t timeout_ms) {
