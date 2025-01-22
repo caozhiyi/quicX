@@ -35,8 +35,8 @@ struct QuicTransportParams {
     uint32_t    initial_max_stream_data_bidi_local_ = 1472*10;
     uint32_t    initial_max_stream_data_bidi_remote_ = 1472*10;
     uint32_t    initial_max_stream_data_uni_ = 1472*10;
-    uint32_t    initial_max_streams_bidi_ = 6;
-    uint32_t    initial_max_streams_uni_ = 6;
+    uint32_t    initial_max_streams_bidi_ = 20;
+    uint32_t    initial_max_streams_uni_ = 20;
     uint32_t    ack_delay_exponent_ms_ = 5;
     uint32_t    max_ack_delay_ms_ = 5;
     bool        disable_active_migration_ = false;

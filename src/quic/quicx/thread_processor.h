@@ -28,6 +28,8 @@ public:
     virtual void Stop();
 
     void Weakeup();
+
+    std::thread::id GetCurrentThreadId();
     
 protected:
     // transfer a connection from other processor
@@ -42,10 +44,14 @@ protected:
     std::shared_ptr<IReceiver> receiver_;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_; // all connections
 
-
     friend class ConnectionTransfor;
     std::shared_ptr<ConnectionTransfor> connection_transfor_;
     static std::unordered_map<std::thread::id, ThreadProcessor*> processor_map__;
+    std::thread::id current_thread_id_;
+
+    bool current_thread_id_set_;
+    std::mutex current_thread_id_mutex_;
+    std::condition_variable current_thread_id_cv_;
 };
 
 }

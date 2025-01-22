@@ -32,6 +32,7 @@ public:
     virtual void Process();
     virtual void AddReceiver(uint64_t socket_fd);
     virtual void AddReceiver(const std::string& ip, uint16_t port);
+    virtual void AddTimer(uint32_t interval_ms, timer_callback cb);
 
 protected:
     void ProcessRecv(uint32_t timeout_ms);

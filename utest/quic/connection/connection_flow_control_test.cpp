@@ -12,7 +12,14 @@ class TransportParamTest:
     public common::Singleton<TransportParamTest> {
 public:
     TransportParamTest() {
-        tp_.Init(DEFAULT_QUIC_TRANSPORT_PARAMS);
+        QuicTransportParams tp;
+        tp.initial_max_data_ = 10000;
+        tp.initial_max_stream_data_bidi_local_ = 8;
+        tp.initial_max_stream_data_bidi_remote_ = 8;
+        tp.initial_max_stream_data_uni_ = 8;
+        tp.initial_max_streams_bidi_ = 8;
+        tp.initial_max_streams_uni_ = 8;
+        tp_.Init(tp);
     }
 
     ~TransportParamTest() {}

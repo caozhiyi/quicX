@@ -25,7 +25,7 @@ public:
 
     virtual void Destroy();
 
-    virtual void AddTimer(uint32_t interval_ms, timer_callback cb) { /* TODO: implement this */ }
+    virtual void AddTimer(uint32_t interval_ms, timer_callback cb);
 
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms);
