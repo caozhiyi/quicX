@@ -27,7 +27,7 @@ void ThreadProcessor::Run() {
     processor_map__[std::this_thread::get_id()] = this;
     connection_transfor_ = std::make_shared<ConnectionTransfor>();
     current_thread_id_ = std::this_thread::get_id();
-    
+
     current_thread_id_set_ = true;
     current_thread_id_cv_.notify_all();
 
@@ -49,10 +49,10 @@ void ThreadProcessor::Stop() {
 
     // TODO: wait all connections closed
     Thread::Stop();
-    Weakeup();
+    Weakup();
 }
 
-void ThreadProcessor::Weakeup() {
+void ThreadProcessor::Weakup() {
     receiver_->Weakup();
 }
 

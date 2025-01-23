@@ -21,6 +21,7 @@ public:
         const std::string& alpn, int32_t timeout_ms);
 private:
     bool HandlePacket(std::shared_ptr<INetPacket> packet);
+    void HandleConnectionTimeout(std::shared_ptr<IConnection> conn);
 };
 
 }

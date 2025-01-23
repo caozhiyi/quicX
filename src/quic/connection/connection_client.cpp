@@ -49,7 +49,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
         common::LOG_ERROR("add alpn failed. alpn:%s", alpn.c_str());
         return false;
     }
-    
+
     SetPeerAddress(std::move(addr));
 
     // set transport param. TODO define tp length

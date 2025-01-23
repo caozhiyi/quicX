@@ -77,7 +77,13 @@ bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
     new_conn->SetPeerAddress(packet->GetAddress());
     new_conn->OnPackets(packet->GetTime(), packets);
 
-    // TODO add timer to check connection status
+    common::TimerTask task([new_conn, this]() {
+        if (connecting_map_.find(new_conn->GetConnectionIDHash()) != connecting_map_.end()) {
+            connecting_map_.erase(new_conn->GetConnectionIDHash());
+            common::LOG_DEBUG("connection timeout. cid:%llu", new_conn->GetConnectionIDHash());
+        }
+    });
+    time_->AddTimer(task, 1000); // TODO add timeout to config
     return true;
 }
 
