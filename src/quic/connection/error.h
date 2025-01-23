@@ -1,10 +1,13 @@
 #ifndef QUIC_CONNECTION_ERROR
 #define QUIC_CONNECTION_ERROR
 
+#include <string>
+#include <cstdint>
+
 namespace quicx {
 namespace quic {
 
-enum QUIC_ERROR_CODE {
+enum QUIC_ERROR_CODE: uint32_t {
     QEC_NO_ERROR                  = 0x00, // an endpoint uses this with CONNECTION_CLOSE to signal that the connection is being closed abruptly in the absence of any error.
     QEC_INTERNAL_ERROR            = 0x01, // the endpoint encountered an internal error and cannot continue with the connection.
     QEC_SERVER_BUSY               = 0x02, // the server is currently busy and does not accept any new connections.
@@ -19,7 +22,10 @@ enum QUIC_ERROR_CODE {
     QEC_INVALID_TOKEN             = 0x0b, // received a Retry Token in a client Initial that is invalid.
     QEC_CRYPTO_BUFFER_EXCEEDED    = 0x0d, // received more data in CRYPTO frames than it can buffer.
     QEC_CRYPTO_ERROR              = 0x10, // cryptographic handshake failed.
+    QEC_CONNECTION_TIMEOUT        = 0x11, // connection timeout.
 };
+
+const std::string& GetErrorString(QUIC_ERROR_CODE code);
 
 }
 }

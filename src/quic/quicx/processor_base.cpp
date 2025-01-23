@@ -121,9 +121,11 @@ void ProcessorBase::ProcessSend() {
 }
 
 void ProcessorBase::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
-    connecting_map_.erase(conn->GetConnectionIDHash());
-    conn_map_[conn->GetConnectionIDHash()] = conn;
-    connection_handler_(conn, 0, "");
+    if (connecting_map_.find(conn->GetConnectionIDHash()) != connecting_map_.end()) {
+        connecting_map_.erase(conn->GetConnectionIDHash());
+        conn_map_[conn->GetConnectionIDHash()] = conn;
+        connection_handler_(conn, 0, "");
+    }
 }
 
 void ProcessorBase::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {

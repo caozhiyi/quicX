@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "quic/connection/error.h"
 #include "quic/quicx/processor_client.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_id_generator.h"
@@ -12,7 +13,7 @@ ProcessorClient::ProcessorClient(std::shared_ptr<TLSCtx> ctx,
     ProcessorBase(ctx, params, connection_handler) {
 
 }
-    
+
 ProcessorClient::~ProcessorClient() {
 
 }
@@ -28,7 +29,11 @@ void ProcessorClient::Connect(const std::string& ip, uint16_t port,
 
     connecting_map_[conn->GetConnectionIDHash()] = conn;
     conn->Dial(common::Address(ip, port), alpn, params_);
-    // TODO add timer to check connection status
+
+    common::TimerTask task([conn, this]() {
+        HandleConnectionTimeout(conn);
+    });
+    time_->AddTimer(task, timeout_ms);
 }
 
 bool ProcessorClient::HandlePacket(std::shared_ptr<INetPacket> packet) {
@@ -67,6 +72,13 @@ bool ProcessorClient::HandlePacket(std::shared_ptr<INetPacket> packet) {
 
     common::LOG_ERROR("get a packet with unknown connection id");
     return false;
+}
+
+void ProcessorClient::HandleConnectionTimeout(std::shared_ptr<IConnection> conn) {
+    if (conn_map_.find(conn->GetConnectionIDHash()) != conn_map_.end()) {
+        conn_map_.erase(conn->GetConnectionIDHash());
+        connection_handler_(conn, QUIC_ERROR_CODE::QEC_CONNECTION_TIMEOUT, GetErrorString(QUIC_ERROR_CODE::QEC_CONNECTION_TIMEOUT));
+    }
 }
 
 }

@@ -27,7 +27,7 @@ public:
 
     virtual void Stop();
 
-    void Weakeup();
+    void Weakup();
 
     std::thread::id GetCurrentThreadId();
     

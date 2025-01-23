@@ -53,7 +53,17 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port,
     if (!processors_map_.empty()) {
         auto iter = processors_map_.begin();
         std::advance(iter, rand() % processors_map_.size());
-        std::dynamic_pointer_cast<ProcessorClient>(iter->second)->Connect(ip, port, alpn, timeout_ms);
+        auto processor = std::dynamic_pointer_cast<ProcessorClient>(iter->second);
+        // if the current thread is the same as the processor's thread, then connect directly
+        if (std::this_thread::get_id() == iter->first) {
+           processor->Connect(ip, port, alpn, timeout_ms);
+
+        } else {
+            iter->second->Push([ip, port, alpn, timeout_ms, processor]() {
+                processor->Connect(ip, port, alpn, timeout_ms);
+            });
+            iter->second->Weakup();
+        }
         return true;
     }
     return false;
