@@ -2,6 +2,7 @@
 #define HTTP3_INCLUDE_TYPE
 
 #include <memory>
+#include <string>
 #include <cstdint>
 #include <functional>
 #include <unordered_map>

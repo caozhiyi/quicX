@@ -1,5 +1,16 @@
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#define htobe64(x) htonll(x)
+#define htole64(x) (x)
+#define be64toh(x) ntohll(x)
+#define le64toh(x) (x)
+
+#else
 #include <endian.h>
 #include <arpa/inet.h>
+#endif
 
 #include "common/log/log.h"
 #include "common/decode/decode.h"

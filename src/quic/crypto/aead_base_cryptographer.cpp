@@ -1,5 +1,10 @@
 #include <cstring>
-#include <netinet/in.h>	
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <netinet/in.h>
+#endif
 #include <openssl/aead.h>
 #include <openssl/evp.h>
 #include "common/log/log.h"

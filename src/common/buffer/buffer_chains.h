@@ -23,7 +23,7 @@ public:
     virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len);
     // move read point
     // return the length of the data actually move
-    virtual uint32_t MoveReadPt(int32_t len);
+    virtual int32_t MoveReadPt(int32_t len);
     // return the length of the data actually read
     virtual uint32_t Read(uint8_t* data, uint32_t len);
     // return remaining length of readable data
@@ -36,7 +36,7 @@ public:
     // return the remaining length that can be written
     virtual uint32_t GetFreeLength();
     // return the length of the data actually move
-    virtual uint32_t MoveWritePt(int32_t len);
+    virtual int32_t MoveWritePt(int32_t len);
     // return buffer write list
     virtual std::shared_ptr<BufferBlock> GetWriteBuffers(uint32_t len);
 
