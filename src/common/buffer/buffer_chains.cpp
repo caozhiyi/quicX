@@ -30,8 +30,8 @@ uint32_t BufferChains::ReadNotMovePt(uint8_t* data, uint32_t len) {
     return size;
 }
 
-uint32_t BufferChains::MoveReadPt(int32_t len) {
-    uint32_t size = 0;
+int32_t BufferChains::MoveReadPt(int32_t len) {
+    int32_t size = 0;
     for (; read_pos_ && read_pos_->GetDataLength() > 0; read_pos_ = read_pos_->GetNext()) {
         size += read_pos_->MoveReadPt(len - size);
         if (size >= len) {
@@ -100,8 +100,8 @@ uint32_t BufferChains::GetFreeLength() {
     return size;
 }
 
-uint32_t BufferChains::MoveWritePt(int32_t len) {
-    uint32_t size = 0;
+int32_t BufferChains::MoveWritePt(int32_t len) {
+    int32_t size = 0;
     for (; write_pos_ && write_pos_->GetFreeLength() > 0; write_pos_ = write_pos_->GetNext()) {
         size += write_pos_->MoveWritePt(len - size);
         if (size >= len) {

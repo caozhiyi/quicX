@@ -50,7 +50,7 @@ int32_t TreeMapTimer::MinTime(uint64_t now) {
     if (now == 0) {
         now = UTCTimeMsec();
     }
-    return timer_map_.begin()->first - now;
+    return (int32_t)(timer_map_.begin()->first - now);
 }
 
 void TreeMapTimer::TimerRun(uint64_t now) {

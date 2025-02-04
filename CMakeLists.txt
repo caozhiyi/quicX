@@ -16,6 +16,11 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/google/boringssl.git
   GIT_TAG fips-20220613
 )
+if(WIN32)
+    set(OPENSSL_NO_ASM ON)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /w")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /w")
+endif()
 FetchContent_MakeAvailable(boringssl)
 
 # check if boringssl is populated

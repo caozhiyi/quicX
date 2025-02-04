@@ -1,6 +1,11 @@
 #include <memory>
 #include <cstdlib>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
+#endif
 #include "common/log/log.h"
 #include "common/util/time.h"
 #include "common/buffer/buffer.h"
@@ -11,6 +16,9 @@
 
 #ifdef __linux__
 #include "quic/udp/action/epoll/udp_action.h"
+#endif
+#ifdef _WIN32
+#include "quic/udp//action/select/udp_action.h"
 #endif
 
 namespace quicx {
