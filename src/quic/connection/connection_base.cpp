@@ -366,7 +366,7 @@ bool BaseConnection::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     uint64_t max_data_size = max_data_frame->GetMaximumData();
-    flow_control_.UpdateLocalSendDataLimit(max_data_size);
+    flow_control_.AddLocalSendDataLimit(max_data_size);
     return true;
 }
 
@@ -391,10 +391,10 @@ bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
 bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_block_frame = std::dynamic_pointer_cast<MaxStreamsFrame>(frame);
     if (stream_block_frame->GetType() == FT_MAX_STREAMS_BIDIRECTIONAL) {
-        flow_control_.UpdateLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
+        flow_control_.AddLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
 
     } else {
-        flow_control_.UpdateLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
+        flow_control_.AddLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
     }
     return true;
 }

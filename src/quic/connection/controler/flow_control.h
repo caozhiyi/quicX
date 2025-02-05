@@ -19,21 +19,36 @@ public:
     void UpdateConfig(const TransportParam& tp);
 
     // check local send data limit
+    // add local send data offset when send data
     void AddLocalSendData(uint32_t size);
-    void UpdateLocalSendDataLimit(uint64_t limit);
+    // add local send data limit when receive max stream data frame
+    void AddLocalSendDataLimit(uint64_t limit);
+    // check local send data limit, return true if can send data
+    // if return true, can_send_size is the size of data can send
+    // send_frame is the stream data block frame to send
     bool CheckLocalSendDataLimit(uint32_t& can_send_size, std::shared_ptr<IFrame>& send_frame);
+
     // check remote send data 
+    // add remote send data offset when receive stream data frame
     void AddRemoteSendData(uint32_t size);
+    // check if remote send data limit, return true if can send data
+    // send_frame is the stream data block frame to send
     bool CheckRemoteSendDataLimit(std::shared_ptr<IFrame>& send_frame);
 
-    // check local bidirection stream limit
-    void UpdateLocalBidirectionStreamLimit(uint64_t limit);
+    // check count of local stream limit
+    // add local bidirection stream limit when receive max streams frame
+    void AddLocalBidirectionStreamLimit(uint64_t limit);    
+    // check local bidirection stream limit, return true if not limit
+    // send_frame is the stream block frame to send
     bool CheckLocalBidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame);
-    // check local unidirection stream limit
-    void UpdateLocalUnidirectionStreamLimit(uint64_t limit);
+    // add local unidirection stream limit when receive max streams frame
+    void AddLocalUnidirectionStreamLimit(uint64_t limit);
+    // check local unidirection stream limit, return true if not limit
+    // send_frame is the stream block frame to send
     bool CheckLocalUnidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame);
 
     // check remote stream limit
+    // send_frame is the stream block frame to send
     bool CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& send_frame) ;
 private:
     bool CheckRemoteBidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame);

@@ -46,7 +46,7 @@ TEST(connection_control_flow, local_send_data) {
     EXPECT_EQ(can_send_size, 5000);
     EXPECT_TRUE(frame != nullptr);
 
-    flow_control.UpdateLocalSendDataLimit(20000);
+    flow_control.AddLocalSendDataLimit(20000);
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckLocalSendDataLimit(can_send_size, frame));
@@ -99,7 +99,7 @@ TEST(connection_control_flow, local_bidirection_streams) {
     EXPECT_EQ(stream_id, 5 << 2 | StreamIDGenerator::StreamStarter::SS_CLIENT | StreamIDGenerator::StreamDirection::SD_BIDIRECTIONAL);
     EXPECT_TRUE(frame != nullptr);
 
-    flow_control.UpdateLocalBidirectionStreamLimit(16);
+    flow_control.AddLocalBidirectionStreamLimit(16);
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckLocalBidirectionStreamLimit(stream_id, frame));
@@ -123,7 +123,7 @@ TEST(connection_control_flow, local_unidirection_streams) {
     EXPECT_EQ(stream_id, 5 << 2 | StreamIDGenerator::StreamStarter::SS_CLIENT | StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL);
     EXPECT_TRUE(frame != nullptr);
 
-    flow_control.UpdateLocalUnidirectionStreamLimit(16);
+    flow_control.AddLocalUnidirectionStreamLimit(16);
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckLocalUnidirectionStreamLimit(stream_id, frame));
