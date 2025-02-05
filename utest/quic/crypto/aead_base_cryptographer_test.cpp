@@ -1,8 +1,9 @@
 #include <cstring>
 #include <gtest/gtest.h>
+#include "common/buffer/buffer.h"
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_read_view.h"
-#include "common/buffer/buffer.h"
+#include "quic/packet/header/short_header.h"
 #include "common/buffer/buffer_write_view.h"
 #include "utest/quic/crypto/aead_base_cryptographer_test.h"
 
@@ -57,45 +58,47 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
 }
 
 bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_ptr<ICryptographer> decrypter) {
-    std::shared_ptr<common::BlockMemoryPool> pool = std::make_shared<common::BlockMemoryPool>(2048, 5);
-
-    static const uint32_t __plaintext_length = 5;
+    static const uint32_t __plaintext_length = 128;
     // make test plaintext
-    std::shared_ptr<common::Buffer> plaintext = std::make_shared<common::Buffer>(pool);
-    auto plaintext_span = plaintext->GetWriteSpan();
-    uint8_t* plaintext_pos = plaintext_span.GetStart();
-    for (uint16_t i = 0; i < __plaintext_length; i++) {
-        *(plaintext_pos + i) = i;
-    }
-    plaintext->MoveWritePt(__plaintext_length);
+    uint8_t src_plaintext[__plaintext_length] = {0};
+    auto plaintext_span = common::BufferSpan((uint8_t*)src_plaintext, (uint8_t*)src_plaintext + sizeof(src_plaintext));
 
-    std::shared_ptr<common::Buffer> src_ciphertext = std::make_shared<common::Buffer>(pool);
-    auto plsrc_write_span = src_ciphertext->GetWriteSpan();
-    memcpy(plsrc_write_span.GetStart(), plaintext_span.GetStart(), __plaintext_length);
-    src_ciphertext->MoveWritePt(__plaintext_length);
-    uint8_t* plsrc_write_pos = plsrc_write_span.GetStart();
+    ShortHeader header;
+    header.SetDestinationConnectionId((uint8_t*)__dest_connnection_id, sizeof(__dest_connnection_id));
+    header.SetPacketNumberLength(2);
 
-    auto span = plaintext->GetReadSpan();
-    uint64_t pkt_num = 102154;
+    std::shared_ptr<common::Buffer> plaintext = std::make_shared<common::Buffer>(plaintext_span);
+    header.EncodeHeader(plaintext);
+
+    uint8_t src_ciphertext[__plaintext_length] = {0};
+    auto src_ciphertext_span = common::BufferSpan((uint8_t*)src_ciphertext, (uint8_t*)src_ciphertext + sizeof(src_ciphertext));
+    memcpy(src_ciphertext_span.GetStart(), plaintext_span.GetStart(), __plaintext_length);
+    
+    common::BufferSpan sample_span = common::BufferSpan((uint8_t*)__sample, (uint8_t*)__sample + sizeof(__sample));
     uint64_t pn_offset = 2;
-    uint64_t pkt_length = 1;
-    /*
-    if (!encrypter->EncryptHeader(span, pn_offset, pkt_length, true)) {
+
+    if (!encrypter->EncryptHeader(src_ciphertext_span, sample_span, pn_offset, header.GetPacketNumberLength(), true)) {
         ADD_FAILURE() << encrypter->GetName() << " EncryptHeader failed";
         return false;
     }
 
-    if (!decrypter->DecryptHeader(span, pn_offset, true)) {
-        ADD_FAILURE() << encrypter->GetName() << " DecryptHeader failed";
+    uint8_t pkt_number_len = 0;
+    if (!decrypter->DecryptHeader(src_ciphertext_span, sample_span, pn_offset, pkt_number_len, true)) {
+        ADD_FAILURE() << decrypter->GetName() << " DecryptHeader failed";
+        return false;
+    }
+
+    if (header.GetPacketNumberLength() != pkt_number_len) {
+        ADD_FAILURE() << decrypter->GetName() << " DecryptHeader packet number length not equal";
         return false;
     }
 
     for (uint16_t i = 0; i < __plaintext_length; i++) {
-        if (*(plaintext_pos + i) != *(plsrc_write_pos + i)) {
+        if (src_plaintext[i] != src_ciphertext[i]) {
             ADD_FAILURE() << decrypter->GetName() << " DecryptHeader context not equal";
             return false;
         }
-    }*/
+    }
     return true;
 }
 

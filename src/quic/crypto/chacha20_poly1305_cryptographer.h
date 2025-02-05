@@ -17,7 +17,7 @@ public:
     virtual CryptographerId GetCipherId();
 
 protected:
-    virtual bool MakeHeaderProtectMask(common::BufferReadView sample, std::vector<uint8_t>& key,
+    virtual bool MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
                             uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length);
 };
 
