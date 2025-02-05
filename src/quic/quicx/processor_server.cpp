@@ -66,7 +66,7 @@ bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
         std::bind(&ProcessorServer::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ProcessorServer::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     new_conn->AddTransportParam(params_);
-    connecting_map_[cid_code] = new_conn;
+    connecting_set_.insert(new_conn);
 
     // set remote connection id
     auto first_packet_header = packets[0]->GetHeader();
@@ -78,8 +78,8 @@ bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
     new_conn->OnPackets(packet->GetTime(), packets);
 
     common::TimerTask task([new_conn, this]() {
-        if (connecting_map_.find(new_conn->GetConnectionIDHash()) != connecting_map_.end()) {
-            connecting_map_.erase(new_conn->GetConnectionIDHash());
+        if (connecting_set_.find(new_conn) != connecting_set_.end()) {
+            connecting_set_.erase(new_conn);
             common::LOG_DEBUG("connection timeout. cid:%llu", new_conn->GetConnectionIDHash());
         }
     });

@@ -27,7 +27,7 @@ void ProcessorClient::Connect(const std::string& ip, uint16_t port,
         std::bind(&ProcessorClient::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ProcessorClient::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
-    connecting_map_[conn->GetConnectionIDHash()] = conn;
+    connecting_set_.insert(conn);
     conn->Dial(common::Address(ip, port), alpn, params_);
 
     common::TimerTask task([conn, this]() {

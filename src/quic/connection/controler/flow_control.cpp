@@ -31,7 +31,7 @@ void FlowControl::AddLocalSendData(uint32_t size) {
     local_send_data_size_ += size;
 }
 
-void FlowControl::UpdateLocalSendDataLimit(uint64_t limit) {
+void FlowControl::AddLocalSendDataLimit(uint64_t limit) {
     if (local_send_max_data_limit_ < limit) {
         local_send_max_data_limit_ = limit;
     }
@@ -76,7 +76,7 @@ bool FlowControl::CheckRemoteSendDataLimit(std::shared_ptr<IFrame>& send_frame) 
     return true;
 }
 
-void FlowControl::UpdateLocalBidirectionStreamLimit(uint64_t limit) {
+void FlowControl::AddLocalBidirectionStreamLimit(uint64_t limit) {
     if (local_bidirectional_stream_limit_ < limit) {
         local_bidirectional_stream_limit_ = limit;
     }
@@ -102,7 +102,7 @@ bool FlowControl::CheckLocalBidirectionStreamLimit(uint64_t& stream_id, std::sha
     return true;
 }
 
-void FlowControl::UpdateLocalUnidirectionStreamLimit(uint64_t limit) {
+void FlowControl::AddLocalUnidirectionStreamLimit(uint64_t limit) {
     if (local_unidirectional_stream_limit_ < limit) {
         local_unidirectional_stream_limit_ = limit;
     }

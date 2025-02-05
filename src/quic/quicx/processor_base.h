@@ -65,7 +65,7 @@ protected:
     std::shared_ptr<common::BlockMemoryPool> alloter_;
 
     std::unordered_set<std::shared_ptr<IConnection>> active_send_connection_set_;
-    std::unordered_map<uint64_t, std::shared_ptr<IConnection>> connecting_map_;
+    std::unordered_set<std::shared_ptr<IConnection>> connecting_set_;
 
     connection_state_callback connection_handler_;
     thread_local static std::shared_ptr<common::ITimer> time_;
