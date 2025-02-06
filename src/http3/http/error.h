@@ -1,5 +1,5 @@
-#ifndef HTTP3_HTTP_CLIENT
-#define HTTP3_HTTP_CLIENT
+#ifndef HTTP3_HTTP_ERROR
+#define HTTP3_HTTP_ERROR
 
 #include <cstdint>
 

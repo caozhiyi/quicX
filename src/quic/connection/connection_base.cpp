@@ -151,7 +151,7 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
 void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
     for (size_t i = 0; i < packets.size(); i++) {
         recv_control_.OnPacketRecv(now, packets[i]);
-
+        common::LOG_DEBUG("get packet. type:%d", packets[i]->GetHeader()->GetPacketType());
         switch (packets[i]->GetHeader()->GetPacketType())
         {
         case PT_INITIAL:

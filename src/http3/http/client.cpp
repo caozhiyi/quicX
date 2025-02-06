@@ -1,6 +1,7 @@
 #include "common/log/log.h"
 #include "http3/http/type.h"
 #include "common/http/url.h"
+#include "http3/http/error.h"
 #include "http3/http/client.h"
 #include "common/network/address.h"
 #include "common/network/io_handle.h"

@@ -40,6 +40,7 @@ protected:
     void CatchConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn);
 
 protected:
+    bool wait_close_;
     std::shared_ptr<ISender> sender_;
     std::shared_ptr<IReceiver> receiver_;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_; // all connections
