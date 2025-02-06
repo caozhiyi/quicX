@@ -12,7 +12,8 @@ namespace quic {
 
 std::unordered_map<std::thread::id, ThreadProcessor*> ThreadProcessor::processor_map__;
 
-ThreadProcessor::ThreadProcessor() {
+ThreadProcessor::ThreadProcessor():
+    wait_close_(false) {
     receiver_ = std::make_shared<UdpReceiver>();
     sender_ = std::make_shared<UdpSender>();
     receiver_->AddReceiver(sender_->GetSocket());
@@ -38,17 +39,25 @@ void ThreadProcessor::Run() {
             auto func = Pop();
             func();
         }
+
+        // wait all connections closed
+        if (wait_close_ && conn_map_.empty()) {
+            Thread::Stop();
+        }
     }
 }
 
 void ThreadProcessor::Stop() {
-    // close all connections
-    for (auto& conn : conn_map_) {
-        conn.second->Close();
-    }
+    if (conn_map_.empty()) {
+        Thread::Stop();
 
-    // TODO: wait all connections closed
-    Thread::Stop();
+    } else {
+        // close all connections
+        for (auto& conn : conn_map_) {
+            conn.second->Close();
+        }
+        wait_close_ = true;
+    }
     Weakup();
 }
 
