@@ -44,8 +44,8 @@ protected:
     std::unique_ptr<IPacer> pacer_;
 
     // base state
-    size_t congestion_window_; // congestion window size
-    size_t bytes_in_flight_;   // bytes in flight
+    uint64_t congestion_window_; // congestion window size
+    uint64_t bytes_in_flight_;   // bytes in flight
     bool in_slow_start_;       // in slow start
     uint64_t pacing_rate_;     // send rate
 
@@ -56,9 +56,9 @@ protected:
     uint64_t rtt_variance_;
 
     // config
-    size_t max_congestion_window_;
-    size_t min_congestion_window_;
-    size_t initial_congestion_window_;
+    uint64_t max_congestion_window_;
+    uint64_t min_congestion_window_;
+    uint64_t initial_congestion_window_;
 };
 
 }

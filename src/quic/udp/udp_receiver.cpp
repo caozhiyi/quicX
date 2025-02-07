@@ -20,6 +20,9 @@
 #ifdef _WIN32
 #include "quic/udp//action/select/udp_action.h"
 #endif
+#ifdef __APPLE__
+#include "quic/udp/action/kqueue/udp_action.h"
+#endif
 
 namespace quicx {
 namespace quic {

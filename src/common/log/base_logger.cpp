@@ -189,7 +189,7 @@ std::shared_ptr<Log> BaseLogger::GetLog() {
         log = NewLog();
     }
 
-    return std::shared_ptr<Log>(log, [this](Log* &l) { FreeLog(l); });
+    return std::shared_ptr<Log>(log, [this](Log* l) { FreeLog(l); });
 }
 
 void BaseLogger::FreeLog(Log* log) {

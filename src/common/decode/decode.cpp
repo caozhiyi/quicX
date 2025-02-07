@@ -6,8 +6,22 @@
 #define htole64(x) (x)
 #define be64toh(x) ntohll(x)
 #define le64toh(x) (x)
+#endif
 
-#else
+#ifdef __APPLE__
+#include <libkern/OSByteOrder.h>
+
+#define htobe16(x) OSSwapHostToBigInt16(x)
+#define htole16(x) OSSwapHostToLittleInt16(x)
+#define be16toh(x) OSSwapBigToHostInt16(x)
+#define le16toh(x) OSSwapLittleToHostInt16(x)
+#define htobe64(x) OSSwapHostToBigInt64(x)
+#define be64toh(x) OSSwapBigToHostInt64(x)
+#define htole64(x) OSSwapHostToLittleInt64(x)
+#define le64toh(x) OSSwapLittleToHostInt64(x)
+#endif
+
+#ifdef __linux__
 #include <endian.h>
 #include <arpa/inet.h>
 #endif

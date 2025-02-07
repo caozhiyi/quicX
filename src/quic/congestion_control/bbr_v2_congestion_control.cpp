@@ -10,7 +10,7 @@ constexpr double BBRv2CongestionControl::HIGH_GAIN;
 constexpr double BBRv2CongestionControl::DRAIN_GAIN;
 constexpr double BBRv2CongestionControl::PACING_GAIN;
 constexpr double BBRv2CongestionControl::LOW_GAIN;
-constexpr size_t BBRv2CongestionControl::MIN_WINDOW;
+constexpr uint64_t BBRv2CongestionControl::MIN_WINDOW;
 constexpr uint64_t BBRv2CongestionControl::PROBE_RTT_INTERVAL;
 constexpr uint64_t BBRv2CongestionControl::PROBE_RTT_DURATION; 
 constexpr double BBRv2CongestionControl::BETA_ECN;
@@ -62,7 +62,7 @@ void BBRv2CongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
     // Reduce congestion window on loss
     if (loss_rounds_ > 1) {
         congestion_window_ = std::max(MIN_WINDOW, 
-            static_cast<size_t>(congestion_window_ * BETA_LOSS));
+            static_cast<uint64_t>(congestion_window_ * BETA_LOSS));
         inflight_too_high_ = true;
     }
     pacer_->OnPacingRateUpdated(GetPacingRate());
@@ -211,8 +211,8 @@ uint64_t BBRv2CongestionControl::GetTargetCwnd() const {
 void BBRv2CongestionControl::AdaptLowerBounds() {
     if (loss_rounds_ > 0 || ecn_ce_rounds_ > 0) {
         // Adapt minimum window based on loss/ECN signals
-        size_t min_cwnd = std::max(MIN_WINDOW, 
-            static_cast<size_t>(GetTargetCwnd() * std::min(BETA_LOSS, BETA_ECN)));
+        uint64_t min_cwnd = std::max(MIN_WINDOW, 
+            static_cast<uint64_t>(GetTargetCwnd() * std::min(BETA_LOSS, BETA_ECN)));
         congestion_window_ = std::max(congestion_window_, min_cwnd);
     }
 }
@@ -222,7 +222,7 @@ void BBRv2CongestionControl::HandleEcnFeedback(bool ecn_ce) {
         ecn_ce_rounds_++;
         if (ecn_ce_rounds_ > 1) {
             congestion_window_ = std::max(MIN_WINDOW, 
-                static_cast<size_t>(congestion_window_ * BETA_ECN));
+                static_cast<uint64_t>(congestion_window_ * BETA_ECN));
             inflight_too_high_ = true;
         }
     }
