@@ -80,7 +80,7 @@ LogStream& LogStream::operator<<(int64_t v) {
 #ifdef __win__
     log_->len_ += snprintf(log_->log_ + log_->len_, __log_block_size - log_->len_, "%I64d", v);
 #else
-    log_->len_ += snprintf(log_->log_ + log_->len_, __log_block_size - log_->len_, "%ld", v);
+    log_->len_ += snprintf(log_->log_ + log_->len_, __log_block_size - log_->len_, "%lld", v);
 #endif
     return *this;
 }
@@ -90,7 +90,7 @@ LogStream& LogStream::operator<<(uint64_t v) {
 #ifdef __win__
     log_->len_ += snprintf(log_->log_ + log_->len_, __log_block_size - log_->len_, "%I64u", v);
 #else
-    log_->len_ += snprintf(log_->log_ + log_->len_, __log_block_size - log_->len_, "%lu", v);
+    log_->len_ += snprintf(log_->log_ + log_->len_, __log_block_size - log_->len_, "%llu", v);
 #endif
     return *this;
 }

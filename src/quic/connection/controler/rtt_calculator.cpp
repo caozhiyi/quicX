@@ -38,13 +38,13 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
         }
 
         // smoothed_rtt = 7/8 * smoothed_rtt + 1/8 * adjusted_rtt
-        smoothed_rtt_ = smoothed_rtt_ - smoothed_rtt_ >> 3 + adjusted_rtt >> 3;
+        smoothed_rtt_ = smoothed_rtt_ - (smoothed_rtt_ >> 3) + (adjusted_rtt >> 3);
 
         // rttvar_sample = abs(smoothed_rtt - adjusted_rtt)
         uint32_t rttvar_sample = smoothed_rtt_ > adjusted_rtt ? smoothed_rtt_ - adjusted_rtt : adjusted_rtt - smoothed_rtt_;
 
         // rttvar = 3/4 * rttvar + 1/4 * rttvar_sample
-        rtt_var_ = rtt_var_ - rtt_var_ >> 2 + rttvar_sample >> 2;
+        rtt_var_ = rtt_var_ - (rtt_var_ >> 2) + (rttvar_sample >> 2);
     }
     last_update_time_ = now;
 

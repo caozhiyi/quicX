@@ -38,7 +38,7 @@ private:
     static constexpr double DRAIN_GAIN = 1.0 / HIGH_GAIN;
     static constexpr double PACING_GAIN = 1.25;
     static constexpr double LOW_GAIN = 0.75;
-    static constexpr size_t MIN_WINDOW = 4 * 1460;
+    static constexpr uint64_t MIN_WINDOW = 4 * 1460;
     static constexpr uint64_t PROBE_RTT_INTERVAL = 10000000;  // 10s in microseconds
     static constexpr uint64_t PROBE_RTT_DURATION = 200000;    // 200ms in microseconds
     static constexpr double BETA_ECN = 0.7;                   // ECN response factor

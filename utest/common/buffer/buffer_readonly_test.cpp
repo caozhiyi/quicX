@@ -12,7 +12,7 @@ TEST(buffer_readonly_utest, buffer) {
     std::shared_ptr<Buffer> buffer = std::make_shared<Buffer>(block);
     const char* str = "it is a test str";
     auto span = buffer->GetWriteSpan();
-    memcpy(span.GetStart(), str, sizeof(str));
+    memcpy(span.GetStart(), str, strlen(str));
 
     buffer->MoveWritePt(strlen(str));
 

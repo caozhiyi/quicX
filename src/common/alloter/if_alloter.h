@@ -74,7 +74,7 @@ T* AlloterWrap::PoolNew(Args&&... args) {
 template<typename T, typename... Args >
 std::shared_ptr<T> AlloterWrap::PoolNewSharePtr(Args&&... args) {
     T* ret = PoolNew<T>(std::forward<Args>(args)...);
-    return std::shared_ptr<T>(ret, [this](T* &c) { PoolDelete(c); });
+    return std::shared_ptr<T>(ret, [this](T* c) { PoolDelete(c); });
 }
 
 template<typename T>
@@ -98,7 +98,7 @@ T* AlloterWrap::PoolMalloc(uint32_t sz) {
 template<typename T>
 std::shared_ptr<T> AlloterWrap::PoolMallocSharePtr(uint32_t size) {
     T* ret = PoolMalloc<T>(size);
-    return std::shared_ptr<T>(ret, [this, size](T* &c) { PoolFree(c, size); });
+    return std::shared_ptr<T>(ret, [this, size](T* c) { PoolFree(c, size); });
 }
     
 template<typename T>

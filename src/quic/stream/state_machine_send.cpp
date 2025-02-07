@@ -52,8 +52,10 @@ bool StreamStateMachineSend::OnFrame(uint16_t frame_type) {
             return true;
         }
         break;
+    default:
+        common::LOG_ERROR("current status not allow send this frame. status:%d, frame type:%d", state_, frame_type);
+        break;
     }
-    common::LOG_ERROR("current status not allow send this frame. status:%d, frame type:%d", state_, frame_type);
     return false;
 }
 
