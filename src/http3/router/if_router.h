@@ -13,17 +13,17 @@ router manage all route context. there are three matching rules in router:
 1. normal static path. like "/department/user/info", when user request "/department/user/info", it will match this route.
 "/department/user" or "/department/user/info/1" will not match.
 2. dynamic param path. like "/department/user/:id", when user request "/department/user/1", it will match this route.
-3. wildcard path. like "/department/user/*", when user request "/department/user/info", it will match this route.
+3. wildcard path. like "/department/user/\*", when user request "/department/user/info", it will match this route.
 wildcard only locate at the end of path.
 
 router prority:
 1. static path > dynamic path > wildcard path, for example:
 if add route "/department/user/info" and "/department/user/:id", when user request "/department/user/info", it will match "/department/user/info".
-if add route "/department/user/:id" and "/department/user/*", when user request "/department/user/info", it will match "/department/user/:id".
+if add route "/department/user/:id" and "/department/user/\*", when user request "/department/user/info", it will match "/department/user/:id".
 
 2. try to match longest path, for example:
 if add route "/department/user/info" and "/department/user/:info/:id", when user request "/department/user/info/1", it will match "/department/user/:info/:id".
-if add route "/department/user/*" and "/department/user/info/:id", when user request "/department/user/info/1", it will match "/department/user/info/:id".
+if add route "/department/user/\*" and "/department/user/info/:id", when user request "/department/user/info/1", it will match "/department/user/info/:id".
 
 THINKING:
 1. handler is associated with http, if it can implement as a templete type, it will be more flexible and easy to test, 

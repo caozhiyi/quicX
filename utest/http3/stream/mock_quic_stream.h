@@ -26,12 +26,12 @@ public:
 
     virtual void Reset(uint32_t error) override;
 
-    virtual void SetStreamReadCallBack(quic::stream_read_callback cb);
+    virtual void SetStreamReadCallBack(quic::stream_read_callback cb) override;
 
-    virtual int32_t Send(uint8_t* data, uint32_t len);
-    virtual int32_t Send(std::shared_ptr<common::IBufferRead> buffer);
+    virtual int32_t Send(uint8_t* data, uint32_t len) override;
+    virtual int32_t Send(std::shared_ptr<common::IBufferRead> buffer) override;
 
-    virtual void SetStreamWriteCallBack(stream_write_callback cb);
+    virtual void SetStreamWriteCallBack(stream_write_callback cb) override;
 
 private:
     void* user_data_;

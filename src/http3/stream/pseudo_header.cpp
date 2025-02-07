@@ -78,9 +78,10 @@ std::string PseudoHeader::MethodToString(HttpMethod method) {
         case HttpMethod::HM_TRACE:   return "TRACE";
         case HttpMethod::HM_PATCH:   return "PATCH";
         case HttpMethod::HM_ANY:     return "ANY";
+        default:
+        common::LOG_FATAL("Invalid method: %d", method);
+        return "GET";
     }
-    common::LOG_FATAL("Invalid method: %d", method);
-    return "GET";
 }
 
 HttpMethod PseudoHeader::StringToMethod(const std::string& method) {

@@ -123,13 +123,15 @@ public:
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after handshake keys installed";
                     return;
                 }
-          case EL_HANDSHAKE:
+            case EL_HANDSHAKE:
                 if (!levels_[EL_APPLICATION].write_secret.empty()) {
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after application keys installed";
                     return;
                 }
-          case EL_APPLICATION:
-            break;
+            case EL_APPLICATION:
+                break;
+            default:
+                break;
         }
     
         std::vector<uint8_t> tempData(len);
@@ -205,6 +207,8 @@ private:
             return "handshake";
         case EL_APPLICATION:
             return "application";
+        default:
+            break;
         }
         return "<unknown>";
     }

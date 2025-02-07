@@ -51,9 +51,10 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
             return true;
         }
         break;
+    default:
+        common::LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", state_, frame_type);
+        break;
     }
-
-    common::LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", state_, frame_type);
     return false;
 }
 
@@ -78,8 +79,10 @@ bool StreamStateMachineRecv::RecvAllData() {
     case SS_RESET_RECVD:
         state_ = SS_RESET_RECVD;
         return true;
+    default:
+        common::LOG_ERROR("current status not allow recv all data. status:%d", state_);
+        break;
     }
-    common::LOG_ERROR("current status not allow recv all data. status:%d", state_);
     return false;
 }
 

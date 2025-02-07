@@ -19,9 +19,8 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~ControlSenderStream();
 
-    virtual StreamType GetType() { return StreamType::ST_CONTROL; }
-
-    virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
+    virtual StreamType GetType() override { return StreamType::ST_CONTROL; }
+    virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
     // Send SETTINGS frame
     virtual bool SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings);

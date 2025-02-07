@@ -23,8 +23,7 @@ public:
 
     // Implement IStream interface
     virtual StreamType GetType() override { return ST_PUSH; }
-
-    virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
+    virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
     // Send push response headers and data
     bool SendPushResponse(std::shared_ptr<IResponse> response);

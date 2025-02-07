@@ -19,7 +19,7 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~ReqRespBaseStream();
     virtual StreamType GetType() override { return ST_REQ_RESP; }
-    virtual uint64_t GetStreamID() { return stream_->GetStreamID(); }
+    virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
 protected:
     virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
