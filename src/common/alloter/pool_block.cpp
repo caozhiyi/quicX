@@ -10,7 +10,7 @@
 namespace quicx {
 namespace common {
 
-static const uint16_t __max_block_num = 20;
+static const uint16_t kMaxBlockNum = 20;
 
 BlockMemoryPool::BlockMemoryPool(uint32_t large_sz, uint32_t add_num) :
     number_large_add_nodes_(add_num),
@@ -38,7 +38,7 @@ void* BlockMemoryPool::PoolLargeMalloc() {
 
 void BlockMemoryPool::PoolLargeFree(void* &m) {
     free_mem_vec_.push_back(m);
-    if (free_mem_vec_.size() > __max_block_num) {
+    if (free_mem_vec_.size() > kMaxBlockNum) {
         // release some block.
         ReleaseHalf();
     }

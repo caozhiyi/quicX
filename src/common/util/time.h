@@ -7,30 +7,30 @@
 namespace quicx {
 namespace common {
 
-static const uint8_t __format_time_buf_size = sizeof("xxxx-xx-xx:xx:xx:xx:xxx");
+static const uint8_t kFormatTimeBufSize = sizeof("xxxx-xx-xx:xx:xx:xx:xxx");
 
 enum FormatTimeUnit {
-    FTU_YEAR        = 1, // 2021
-    FTU_MONTH       = 2, // 2021-03
-    FTU_DAY         = 3, // 2021-03-16
-    FTU_HOUR        = 4, // 2021-03-16:10
-    FTU_MINUTE      = 5, // 2021-03-16:10:03
-    FTU_SECOND      = 6, // 2021-03-16:10:03:33
-    FTU_MILLISECOND = 7, // 2021-03-16:10:03:33:258
+    kYearFormat        = 1, // 2021
+    kMonthFormat       = 2, // 2021-03
+    kDayFormat         = 3, // 2021-03-16
+    kHourFormat        = 4, // 2021-03-16:10
+    kMinuteFormat      = 5, // 2021-03-16:10:03
+    kSecondFormat      = 6, // 2021-03-16:10:03:33
+    kMillisecondFormat = 7, // 2021-03-16:10:03:33:258
 };
 
 enum TimeUnit {
-    TU_MILLISECOND = 1,
-    TU_SECOND      = TU_MILLISECOND * 1000,
-    TU_MINUTE      = TU_SECOND * 60,
-    TU_HOUR        = TU_MINUTE * 60,
-    TU_DAY         = TU_HOUR * 24,
+    kMillisecond = 1,
+    kSecond      = kMillisecond * 1000,
+    kMinute      = kSecond * 60,
+    kHour        = kMinute * 60,
+    kDay         = kHour * 24,
 };
 
 // get format time string [xxxx-xx-xx xx:xx:xx]
-std::string GetFormatTime(FormatTimeUnit unit = FTU_MILLISECOND);
+std::string GetFormatTime(FormatTimeUnit unit = FormatTimeUnit::kMillisecondFormat);
 // get format time string as [xxxx-xx-xx xx:xx:xx]
-void GetFormatTime(char* buf, uint32_t& len, FormatTimeUnit unit = FTU_MILLISECOND);
+void GetFormatTime(char* buf, uint32_t& len, FormatTimeUnit unit = FormatTimeUnit::kMillisecondFormat);
 
 // get utc time
 uint64_t UTCTimeSec();

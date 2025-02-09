@@ -71,7 +71,7 @@ TEST(quic_connection_utest, handshake) {
 
     auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
 
-    common::Address addr(common::AT_IPV4);
+    common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
     addr.SetPort(9432);
 

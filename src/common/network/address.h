@@ -7,9 +7,9 @@
 namespace quicx {
 namespace common {
 
-enum AddressType {
-    AT_IPV4  = 0x1,
-    AT_IPV6  = 0x2,
+enum class AddressType {
+    kIpv4  = 0x1,
+    kIpv6  = 0x2,
 };
 
 class Address {

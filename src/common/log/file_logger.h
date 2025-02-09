@@ -18,9 +18,9 @@ namespace common {
 
 static const uint8_t __file_logger_time_buf_size = sizeof("xxxx-xx-xx:xx");
 
-enum FileLoggerSpiltUnit {
-    FLSU_DAY  = 1,
-    FLSU_HOUR = 2,
+enum class FileLoggerSpiltUnit {
+    kDay  = 1,
+    kHour = 2,
 };
 
 class FileLogger: 
@@ -29,7 +29,7 @@ class FileLogger:
 
 public:
     FileLogger(const std::string& file, 
-        FileLoggerSpiltUnit unit = FLSU_DAY, 
+        FileLoggerSpiltUnit unit = FileLoggerSpiltUnit::kDay, 
         uint16_t max_store_days = 3,
         uint16_t time_offset = 5);
 

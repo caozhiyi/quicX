@@ -5,7 +5,7 @@ namespace quicx {
 namespace common {
 
 Address::Address():
-    address_type_(AddressType::AT_IPV4),
+    address_type_(AddressType::kIpv4),
     port_(0) {
 
 }
@@ -64,10 +64,10 @@ bool operator==(const Address &addr1, const Address &addr2) {
 
 AddressType Address::CheckAddressType(const std::string& ip) {
     if (ip.find(':') == std::string::npos) {
-        return AddressType::AT_IPV4;
+        return AddressType::kIpv4;
     }
     
-    return AddressType::AT_IPV6;
+    return AddressType::kIpv6;
 }
 
 }

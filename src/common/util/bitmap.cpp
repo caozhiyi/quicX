@@ -9,8 +9,8 @@
 namespace quicx {
 namespace common {
 
-static const uint32_t __step_size = sizeof(int64_t) * 8;
-static const uint64_t __setp_base = 1;
+static const uint32_t kStepSize = sizeof(int64_t) * 8;
+static const uint64_t kSetpBase = 1;
 
 Bitmap::Bitmap():
     vec_bitmap_(0) {
@@ -22,12 +22,12 @@ Bitmap::~Bitmap() {
 }
 
 bool Bitmap::Init(uint32_t size) {
-    uint32_t vec_size = size / __step_size;
+    uint32_t vec_size = size / kStepSize;
     // too large size
     if (vec_size > sizeof(vec_bitmap_) * 8) {
         return false;
     }
-    if (size % __step_size > 0) {
+    if (size % kStepSize > 0) {
         vec_size++;
     }
     bitmap_.resize(vec_size);
@@ -38,48 +38,48 @@ bool Bitmap::Init(uint32_t size) {
 }
 
 bool Bitmap::Insert(uint32_t index) {
-    if (index > bitmap_.size() * __step_size) {
+    if (index > bitmap_.size() * kStepSize) {
         return false;
     }
 
     // get index in vector
-    uint32_t bitmap_index = index / __step_size;
+    uint32_t bitmap_index = index / kStepSize;
     // get index in uint64_t
-    uint32_t bit_index = index % __step_size;
+    uint32_t bit_index = index % kStepSize;
 
-    bitmap_[bitmap_index] |= __setp_base << bit_index;
-    vec_bitmap_ |= __setp_base << bitmap_index;
+    bitmap_[bitmap_index] |= kSetpBase << bit_index;
+    vec_bitmap_ |= kSetpBase << bitmap_index;
 
     return true;
 }
 
 bool Bitmap::Remove(uint32_t index) {
-    if (index > bitmap_.size() * __step_size) {
+    if (index > bitmap_.size() * kStepSize) {
         return false;
     }
 
     // get index in vector
-    uint32_t bitmap_index = index / __step_size;
+    uint32_t bitmap_index = index / kStepSize;
     // get index in uint64_t
-    uint32_t bit_index = index % __step_size;
+    uint32_t bit_index = index % kStepSize;
 
-    bitmap_[bitmap_index] &= ~(__setp_base << bit_index);
+    bitmap_[bitmap_index] &= ~(kSetpBase << bit_index);
     if (bitmap_[bitmap_index] == 0) {
-        vec_bitmap_ &= ~(__setp_base << bitmap_index);
+        vec_bitmap_ &= ~(kSetpBase << bitmap_index);
     }
     return true;
 }
 
 int32_t Bitmap::GetMinAfter(uint32_t index) {
     // get next bit.
-    if (index >= bitmap_.size() * __step_size || Empty()) {
+    if (index >= bitmap_.size() * kStepSize || Empty()) {
         return -1;
     }
 
     // get index in vector
-    uint32_t bitmap_index = index / __step_size;
+    uint32_t bitmap_index = index / kStepSize;
     // filter smaller bitmap index
-    uint32_t ret = bitmap_index * __step_size;
+    uint32_t ret = bitmap_index * kStepSize;
 
     // find current uint64_t have next 1?
     if (bitmap_[bitmap_index] != 0) {
@@ -89,7 +89,7 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
 
         // don't have next 1
         if (cur_bitmap == 0) {
-            ret += __step_size;
+            ret += kStepSize;
 
         // find next 1
         } else {
@@ -99,7 +99,7 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
         }
 
     } else {
-        ret += __step_size;
+        ret += kStepSize;
     }
 
     // find next used vector index 
@@ -115,7 +115,7 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
     }
 
     int64_t cur_bitmap = bitmap_[target_vec_index];
-    ret += (next_vec_index - 1) * __step_size;
+    ret += (next_vec_index - 1) * kStepSize;
     ret += (uint32_t)std::log2f(float(cur_bitmap & (-cur_bitmap) + 1));
 
     return ret;

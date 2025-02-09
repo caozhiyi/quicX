@@ -12,11 +12,11 @@ namespace quicx {
 namespace common {
 
 enum LogLevelMask {
-    LLM_FATAL        = 0x01,
-    LLM_ERROR        = 0x02,
-    LLM_WARN         = 0x04,
-    LLM_INFO         = 0x08,
-    LLM_DEBUG        = 0x10,
+    kFatalMask  = 0x01,
+    kErrorMask  = 0x02,
+    kWarnMask   = 0x04,
+    kInfoMask   = 0x08,
+    kDebugMask  = 0x10,
 };
 
 static uint32_t FormatLog(const char* file, uint32_t line, const char* level, char* buf, uint32_t len) {
@@ -24,7 +24,7 @@ static uint32_t FormatLog(const char* file, uint32_t line, const char* level, ch
     uint32_t curlen = snprintf(buf, len, "[%s|", level);
 
     // format time
-    uint32_t size = __format_time_buf_size;
+    uint32_t size = kFormatTimeBufSize;
     GetFormatTime(buf + curlen, size);
     curlen += size;
 
@@ -46,7 +46,7 @@ static uint32_t FormatLog(const char* file, uint32_t line, const char* level, co
 }
 
 BaseLogger::BaseLogger(uint16_t cache_size, uint16_t block_size):
-    level_(LL_INFO),
+    level_(LogLevel::kInfo),
     cache_size_(cache_size),
     block_size_(block_size) {
 
@@ -54,17 +54,17 @@ BaseLogger::BaseLogger(uint16_t cache_size, uint16_t block_size):
 }
 
 BaseLogger::~BaseLogger() {
-    SetLevel(LL_NULL);
+    SetLevel(LogLevel::kNull);
 }
 
 void BaseLogger::SetLevel(LogLevel level) { 
     level_ = level; 
-    if (level_ > LL_NULL && cache_queue_.Empty()) {
+    if (level_ > LogLevel::kNull && cache_queue_.Empty()) {
         for (uint16_t i = 0; i < cache_size_; i++) {
             cache_queue_.Push(NewLog());
         }
 
-    } else if (level_ == LL_NULL) {
+    } else if (level_ == LogLevel::kNull) {
         size_t size = cache_queue_.Size();
         Log* log = nullptr;
         void* del = nullptr;
@@ -78,7 +78,7 @@ void BaseLogger::SetLevel(LogLevel level) {
 }
 
 void BaseLogger::Debug(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & LLM_DEBUG)) {
+    if (!(level_ & kDebugMask)) {
         return;
     }
 
@@ -91,7 +91,7 @@ void BaseLogger::Debug(const char* file, uint32_t line, const char* content, va_
 }
 
 void BaseLogger::Info(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & LLM_INFO)) {
+    if (!(level_ & kInfoMask)) {
         return;
     }
 
@@ -104,7 +104,7 @@ void BaseLogger::Info(const char* file, uint32_t line, const char* content, va_l
 }
 
 void BaseLogger::Warn(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & LLM_WARN)) {
+    if (!(level_ & kWarnMask)) {
         return;
     }
 
@@ -117,7 +117,7 @@ void BaseLogger::Warn(const char* file, uint32_t line, const char* content, va_l
 }
 
 void BaseLogger::Error(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & LLM_ERROR)) {
+    if (!(level_ & kErrorMask)) {
         return;
     }
 
@@ -130,7 +130,7 @@ void BaseLogger::Error(const char* file, uint32_t line, const char* content, va_
 }
 
 void BaseLogger::Fatal(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & LLM_FATAL)) {
+    if (!(level_ & kFatalMask)) {
         return;
     }
 
@@ -152,25 +152,25 @@ LogStreamParam BaseLogger::GetStreamParam(LogLevel level, const char* file, uint
     std::function<void(std::shared_ptr<Log>)> cb;
     switch (level)
     {
-    case LL_NULL:
+    case LogLevel::kNull:
         break;
-    case LL_FATAL:
+    case LogLevel::kFatal:
         cb = [this](std::shared_ptr<Log> l) { logger_->Fatal(l); };
         log->len_ = FormatLog(file, line, "FAT", log->log_, log->len_);
         break;
-    case LL_ERROR:
+    case LogLevel::kError:
         cb = [this](std::shared_ptr<Log> l) { logger_->Error(l); };
         log->len_ = FormatLog(file, line, "ERR", log->log_, log->len_);
         break;
-    case LL_WARN:
+    case LogLevel::kWarn:
         cb = [this](std::shared_ptr<Log> l) { logger_->Warn(l); };
         log->len_ = FormatLog(file, line, "WAR", log->log_, log->len_);
         break;
-    case LL_INFO:
+    case LogLevel::kInfo:
         cb = [this](std::shared_ptr<Log> l) { logger_->Info(l); };
         log->len_ = FormatLog(file, line, "INF", log->log_, log->len_);
         break;
-    case LL_DEBUG:
+    case LogLevel::kDebug:
         cb = [this](std::shared_ptr<Log> l) { logger_->Debug(l); };
         log->len_ = FormatLog(file, line, "DEB", log->log_, log->len_);
         break;
