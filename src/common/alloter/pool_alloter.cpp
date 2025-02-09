@@ -15,8 +15,8 @@ namespace common {
 PoolAlloter::PoolAlloter() : 
     pool_start_(nullptr),
     pool_end_(nullptr) {
-    free_list_.resize(__default_number_of_free_lists);
-    memset(&(*free_list_.begin()), 0, sizeof(void*) * __default_number_of_free_lists);
+    free_list_.resize(kDefaultNumberOfFreeLists);
+    memset(&(*free_list_.begin()), 0, sizeof(void*) * kDefaultNumberOfFreeLists);
     alloter_ = MakeNormalAlloterPtr();
 }
 
@@ -30,7 +30,7 @@ PoolAlloter::~PoolAlloter() {
 }
 
 void* PoolAlloter::Malloc(uint32_t size) {
-    if (size > __default_max_bytes) {
+    if (size > kDefaultMaxBytes) {
         void* ret = alloter_->Malloc(size);
         return ret;
     }
@@ -63,7 +63,7 @@ void PoolAlloter::Free(void* &data, uint32_t len) {
         return;
     }
     
-    if (len > __default_max_bytes) {
+    if (len > kDefaultMaxBytes) {
         alloter_->Free(data);
         data = nullptr;
         return;

@@ -12,7 +12,7 @@ namespace quicx {
 namespace common {
 
 SingletonLogger::SingletonLogger() {
-    logger_ = std::make_shared<BaseLogger>(__log_cache_size, __log_block_size);
+    logger_ = std::make_shared<BaseLogger>(kLogCacheSize, kLogBlockSize);
 }
 
 SingletonLogger::~SingletonLogger() {

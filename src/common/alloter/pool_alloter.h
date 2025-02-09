@@ -13,9 +13,9 @@
 namespace quicx {
 namespace common {
 
-static const uint32_t __default_max_bytes = 256;
-static const uint32_t __default_number_of_free_lists = __default_max_bytes / __align;
-static const uint32_t __default_number_add_nodes = 20;
+static const uint32_t kDefaultMaxBytes = 256;
+static const uint32_t kDefaultNumberOfFreeLists = kDefaultMaxBytes / kAlign;
+static const uint32_t kDefaultNumberAddNodes = 20;
 
 class PoolAlloter:
     public IAlloter {
@@ -29,11 +29,11 @@ public:
 
     void Free(void* &data, uint32_t len);
 private:
-    uint32_t FreeListIndex(uint32_t size, uint32_t align = __align) {
+    uint32_t FreeListIndex(uint32_t size, uint32_t align = kAlign) {
         return (size + align - 1) / align - 1;
     }
     
-    void* ReFill(uint32_t size, uint32_t num = __default_number_add_nodes);
+    void* ReFill(uint32_t size, uint32_t num = kDefaultNumberAddNodes);
     void* ChunkAlloc(uint32_t size, uint32_t& nums);
 
 private:

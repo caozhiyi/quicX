@@ -10,7 +10,7 @@ namespace {
 TEST(stdlogger_utest, print1) {
     std::shared_ptr<Logger> log = std::make_shared<StdoutLogger>();
     LOG_SET(log);
-    LOG_SET_LEVEL(LL_ERROR);
+    LOG_SET_LEVEL(LogLevel::kError);
     
     LOG_DEBUG("it is a debug test log.");
     LOG_INFO("%s %d", "it is a info test num", 100191);
@@ -25,7 +25,7 @@ TEST(filelogger_utest, debug) {
     std::shared_ptr<Logger> std_log = std::make_shared<StdoutLogger>();
     file_log->SetLogger(std_log);
     LOG_SET(file_log);
-    LOG_SET_LEVEL(LL_DEBUG);
+    LOG_SET_LEVEL(LogLevel::kDebug);
     
     LOG_DEBUG("it is a debug test log.");
     LOG_INFO("%s %d", "it is a info test num", 100191);

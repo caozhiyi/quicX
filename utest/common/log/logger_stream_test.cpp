@@ -10,7 +10,7 @@ namespace {
 TEST(stdlogger_stream_utest, print1) {
     std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
     LOG_SET(log);
-    LOG_SET_LEVEL(LL_ERROR);
+    LOG_SET_LEVEL(LogLevel::kError);
     
     LOG_DEBUG_S << "it is a debug test log.";
     LOG_INFO_S << "it is a info test num";
@@ -24,7 +24,7 @@ TEST(filelogger_stream_utest, debug) {
     std::shared_ptr<Logger> std_log = std::make_shared<StdoutLogger>();
     file_log->SetLogger(std_log);
     LOG_SET(file_log);
-    LOG_SET_LEVEL(LL_DEBUG);
+    LOG_SET_LEVEL(LogLevel::kDebug);
     
     LOG_DEBUG_S << "it is a debug test log.";
     LOG_INFO_S << "it is a info test num";
@@ -38,7 +38,7 @@ TEST(filelogger_stream_utest, value) {
     std::shared_ptr<Logger> std_log = std::make_shared<StdoutLogger>();
     file_log->SetLogger(std_log);
     LOG_SET(file_log);
-    LOG_SET_LEVEL(LL_DEBUG);
+    LOG_SET_LEVEL(LogLevel::kDebug);
     
     LOG_FATAL_S <<  "bool value:" << true;
     LOG_FATAL_S <<  "int8 value:" << int8_t(32);

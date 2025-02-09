@@ -43,17 +43,17 @@ TEST(treemap_timer_utest, mintime) {
     uint64_t now = UTCTimeMsec();
     auto timer = MakeTimer();
 
-    EXPECT_TRUE(timer->AddTimer(t1, 10 * TU_SECOND, now));
-    EXPECT_TRUE(timer->AddTimer(t2, 30 * TU_SECOND, now));
-    EXPECT_TRUE(timer->AddTimer(t3, 40 * TU_MINUTE, now));
+    EXPECT_TRUE(timer->AddTimer(t1, 10 * TimeUnit::kSecond, now));
+    EXPECT_TRUE(timer->AddTimer(t2, 30 * TimeUnit::kSecond, now));
+    EXPECT_TRUE(timer->AddTimer(t3, 40 * TimeUnit::kMinute, now));
 
-    EXPECT_EQ(10 * TU_SECOND, timer->MinTime());
+    EXPECT_EQ(10 * TimeUnit::kSecond, timer->MinTime());
 
     timer->RmTimer(t1);
-    EXPECT_EQ(30 * TU_SECOND, timer->MinTime());
+    EXPECT_EQ(30 * TimeUnit::kSecond, timer->MinTime());
 
     timer->RmTimer(t2);
-    EXPECT_EQ(40 * TU_MINUTE, timer->MinTime());
+    EXPECT_EQ(40 * TimeUnit::kMinute, timer->MinTime());
 }
 
 TEST(treemap_timer_utest, timerrun1) {
@@ -61,9 +61,9 @@ TEST(treemap_timer_utest, timerrun1) {
     uint64_t now = UTCTimeMsec();
     auto timer = MakeTimer();
 
-    EXPECT_TRUE(timer->AddTimer(t1, 20 * TU_MILLISECOND, now));
-    EXPECT_TRUE(timer->AddTimer(t2, 30 * TU_SECOND, now));
-    EXPECT_TRUE(timer->AddTimer(t3, 40 * TU_MINUTE, now));
+    EXPECT_TRUE(timer->AddTimer(t1, 20 * TimeUnit::kMillisecond, now));
+    EXPECT_TRUE(timer->AddTimer(t2, 30 * TimeUnit::kSecond, now));
+    EXPECT_TRUE(timer->AddTimer(t3, 40 * TimeUnit::kMinute, now));
 
     EXPECT_EQ(20, timer->MinTime());
 
@@ -89,9 +89,9 @@ TEST(treemap_timer_utest, timerrun2) {
     uint64_t now = UTCTimeMsec();
     auto timer = MakeTimer();
 
-    EXPECT_TRUE(timer->AddTimer(t1, 20 * TU_MILLISECOND, now));
-    EXPECT_TRUE(timer->AddTimer(t2, 31 * TU_SECOND, now));
-    EXPECT_TRUE(timer->AddTimer(t3, 1 * TU_MINUTE, now));
+    EXPECT_TRUE(timer->AddTimer(t1, 20 * TimeUnit::kMillisecond, now));
+    EXPECT_TRUE(timer->AddTimer(t2, 31 * TimeUnit::kSecond, now));
+    EXPECT_TRUE(timer->AddTimer(t3, 1 * TimeUnit::kMinute, now));
 
     EXPECT_EQ(20, timer->MinTime(now));
 
@@ -117,8 +117,8 @@ TEST(treemap_timer_utest, timerrun3) {
     uint64_t now = UTCTimeMsec();
     auto timer = MakeTimer();
 
-    EXPECT_TRUE(timer->AddTimer(t1, 20 * TU_MILLISECOND, now));
-    EXPECT_TRUE(timer->AddTimer(t2, 31 * TU_SECOND, now));
+    EXPECT_TRUE(timer->AddTimer(t1, 20 * TimeUnit::kMillisecond, now));
+    EXPECT_TRUE(timer->AddTimer(t2, 31 * TimeUnit::kSecond, now));
 
     EXPECT_EQ(20, timer->MinTime(now));
 
@@ -130,7 +130,7 @@ TEST(treemap_timer_utest, timerrun3) {
     timer->TimerRun(now);
     EXPECT_EQ(30970, timer->MinTime(now));
 
-    EXPECT_TRUE(timer->AddTimer(t1, 40 * TU_MILLISECOND, now));
+    EXPECT_TRUE(timer->AddTimer(t1, 40 * TimeUnit::kMillisecond, now));
     EXPECT_EQ(40, timer->MinTime(now));
 
     now += 40;

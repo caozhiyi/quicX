@@ -17,12 +17,12 @@ namespace common {
 
 // log level and switch
 enum LogLevel: uint8_t {
-    LL_NULL         = 0x00, // not print log
-    LL_FATAL        = 0x01,
-    LL_ERROR        = 0x02 | LL_FATAL,
-    LL_WARN         = 0x04 | LL_ERROR,
-    LL_INFO         = 0x08 | LL_WARN,
-    LL_DEBUG        = 0x10 | LL_INFO,
+    kNull  = 0x00, // not print log
+    kFatal = 0x01,
+    kError = 0x02 | kFatal,
+    kWarn  = 0x04 | kError,
+    kInfo  = 0x08 | kWarn,
+    kDebug = 0x10 | kInfo,
 };
 
 // log interface for user
@@ -35,15 +35,15 @@ enum LogLevel: uint8_t {
 #define LOG_ERROR(log, ...)  SingletonLogger::Instance().Error(__FILE__, __LINE__, log, ##__VA_ARGS__)
 #define LOG_FATAL(log, ...)  SingletonLogger::Instance().Fatal(__FILE__, __LINE__, log, ##__VA_ARGS__)
 
-#define LOG_DEBUG_S LogStream(SingletonLogger::Instance().GetStreamParam(LL_DEBUG, __FILE__, __LINE__))
-#define LOG_INFO_S  LogStream(SingletonLogger::Instance().GetStreamParam(LL_INFO, __FILE__, __LINE__))
-#define LOG_WARN_S  LogStream(SingletonLogger::Instance().GetStreamParam(LL_WARN, __FILE__, __LINE__))
-#define LOG_ERROR_S LogStream(SingletonLogger::Instance().GetStreamParam(LL_ERROR, __FILE__, __LINE__))
-#define LOG_FATAL_S LogStream(SingletonLogger::Instance().GetStreamParam(LL_FATAL, __FILE__, __LINE__))
+#define LOG_DEBUG_S LogStream(SingletonLogger::Instance().GetStreamParam(LogLevel::kDebug, __FILE__, __LINE__))
+#define LOG_INFO_S  LogStream(SingletonLogger::Instance().GetStreamParam(LogLevel::kInfo, __FILE__, __LINE__))
+#define LOG_WARN_S  LogStream(SingletonLogger::Instance().GetStreamParam(LogLevel::kWarn, __FILE__, __LINE__))
+#define LOG_ERROR_S LogStream(SingletonLogger::Instance().GetStreamParam(LogLevel::kError, __FILE__, __LINE__))
+#define LOG_FATAL_S LogStream(SingletonLogger::Instance().GetStreamParam(LogLevel::kFatal, __FILE__, __LINE__))
 
 // log cache config
-static const uint16_t __log_cache_size = 20;
-static const uint16_t __log_block_size = 2048;
+static const uint16_t kLogCacheSize = 20;
+static const uint16_t kLogBlockSize = 2048;
 
 
 class Logger;

@@ -135,11 +135,11 @@ bool LookupAddress(const std::string& host, Address& addr) {
         if (rp->ai_family == AF_INET) { // IPv4
             struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
             addr_ptr = &(ipv4->sin_addr);
-            addr.SetAddressType(AddressType::AT_IPV4);
+            addr.SetAddressType(AddressType::kIpv4);
         } else { // IPv6
             struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)rp->ai_addr;
             addr_ptr = &(ipv6->sin6_addr);
-            addr.SetAddressType(AddressType::AT_IPV6);
+            addr.SetAddressType(AddressType::kIpv6);
         }
 
         // Convert IP to string

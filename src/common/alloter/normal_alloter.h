@@ -11,7 +11,8 @@
 namespace quicx {
 namespace common {
 
-class NormalAlloter : public IAlloter {
+class NormalAlloter:
+    public IAlloter {
 public:
     NormalAlloter();
     ~NormalAlloter();

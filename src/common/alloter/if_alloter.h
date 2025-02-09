@@ -12,7 +12,7 @@
 namespace quicx {
 namespace common {
 
-static const uint16_t __align = sizeof(unsigned long);
+static const uint16_t kAlign = sizeof(unsigned long);
 
 class IAlloter {
 public:
@@ -27,7 +27,7 @@ public:
 
 protected:
     uint32_t Align(uint32_t size) {
-        return ((size + __align - 1) & ~(__align - 1));
+        return ((size + kAlign - 1) & ~(kAlign - 1));
     }
 };
 

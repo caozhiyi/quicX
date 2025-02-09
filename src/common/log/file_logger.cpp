@@ -20,7 +20,7 @@ FileLogger::FileLogger(const std::string& file,
     time_offset_(time_offset),
     spilt_unit_(unit) {
 
-    if (unit == FLSU_HOUR) {
+    if (unit == FileLoggerSpiltUnit::kHour) {
         time_buf_len_ = 13; // xxxx-xx-xx:xx
         max_file_num_ = max_store_days * 24;
 
@@ -88,7 +88,7 @@ void FileLogger::Fatal(std::shared_ptr<Log>& log) {
 }
 
 void FileLogger::SetMaxStoreDays(uint16_t max) {
-    if (spilt_unit_ == FLSU_HOUR) {
+    if (spilt_unit_ == FileLoggerSpiltUnit::kHour) {
         time_buf_len_ = 13; // xxxx-xx-xx:xx
         max_file_num_ = max * 24;
 
