@@ -24,7 +24,7 @@ Server::~Server() {
 }
 
 bool Server::Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num, LogLevel level) {
-    if (!quic_->Init(cert_file, key_file, http3_alpn__, thread_num, quic::LogLevel(level))) {
+    if (!quic_->Init(cert_file, key_file, kHttp3Alpn, thread_num, quic::LogLevel(level))) {
         common::LOG_ERROR("init quic server failed.");
         return false;
     }
@@ -32,7 +32,7 @@ bool Server::Init(const std::string& cert_file, const std::string& key_file, uin
 }
 
 bool Server::Init(const char* cert_pem, const char* key_pem, uint16_t thread_num, LogLevel level) {
-    if (!quic_->Init(cert_pem, key_pem, http3_alpn__, thread_num, quic::LogLevel(level))) {
+    if (!quic_->Init(cert_pem, key_pem, kHttp3Alpn, thread_num, quic::LogLevel(level))) {
         common::LOG_ERROR("init quic server failed.");
         return false;
     }
@@ -56,7 +56,7 @@ void Server::AddHandler(HttpMethod mothed, const std::string& path, const http_h
 }
 
 void Server::AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_handler& handler) {
-    if (mp == MiddlewarePosition::MP_BEFORE) {
+    if (mp == MiddlewarePosition::kBefore) {
         before_middlewares_.push_back(handler);
     } else {
         after_middlewares_.push_back(handler);

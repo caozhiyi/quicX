@@ -5,25 +5,25 @@ namespace http3 {
 
 std::string HttpMethodToString(HttpMethod method) {
     switch (method) {
-        case HM_GET:
+        case HttpMethod::kGet:
             return "GET";
-        case HM_HEAD:
+        case HttpMethod::kHead:
             return "HEAD";
-        case HM_POST:
+        case HttpMethod::kPost:
             return "POST";
-        case HM_PUT:
+        case HttpMethod::kPut:
             return "PUT";
-        case HM_DELETE:
+        case HttpMethod::kDelete:
             return "DELETE";
-        case HM_CONNECT:
+        case HttpMethod::kConnect:
             return "CONNECT";
-        case HM_OPTIONS:
+        case HttpMethod::kOptions:
             return "OPTIONS";
-        case HM_TRACE:
+        case HttpMethod::kTrace:
             return "TRACE";
-        case HM_PATCH:
+        case HttpMethod::kPatch:
             return "PATCH";
-        case HM_ANY:
+        case HttpMethod::kAny:
             return "ANY";
         default:
             return "UNKNOWN";

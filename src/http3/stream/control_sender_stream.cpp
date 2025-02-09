@@ -25,14 +25,14 @@ ControlSenderStream::~ControlSenderStream() {
 bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
     SettingsFrame frame;
     for (const auto& setting : settings) {
-        frame.SetSetting(setting.first, setting.second);
+        frame.SetSetting(static_cast<uint16_t>(setting.first), setting.second);
     }
 
     uint8_t buf[1024]; // TODO: Use dynamic buffer
     auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
     if (!frame.Encode(buffer)) {
         common::LOG_ERROR("ControlSenderStream::SendSettings: Failed to encode SettingsFrame");
-        error_handler_(stream_->GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
+        error_handler_(stream_->GetStreamID(), Http3ErrorCode::kMessageError);
         return false;
     }
     
@@ -47,7 +47,7 @@ bool ControlSenderStream::SendGoaway(uint64_t id) {
     auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
     if (!frame.Encode(buffer)) {
         common::LOG_ERROR("ControlSenderStream::SendGoaway: Failed to encode GoawayFrame");
-        error_handler_(stream_->GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
+        error_handler_(stream_->GetStreamID(), Http3ErrorCode::kInternalError);
         return false;
     }
     return stream_->Send(buffer) > 0;

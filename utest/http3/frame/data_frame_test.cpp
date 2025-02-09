@@ -19,7 +19,7 @@ protected:
 };
 
 TEST_F(DataFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), FT_DATA);
+    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kData));
     
     uint32_t length = 100;
     frame_->SetLength(length);

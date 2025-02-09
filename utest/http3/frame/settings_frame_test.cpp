@@ -20,7 +20,7 @@ protected:
 };
 
 TEST_F(SettingsFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), FT_SETTINGS);
+    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kSettings));
     
     // Test setting and getting values
     uint64_t id = 1;
@@ -47,16 +47,6 @@ TEST_F(SettingsFrameTest, EncodeAndDecode) {
     // Create new frame for decoding
     auto decode_frame = std::make_shared<SettingsFrame>();
     EXPECT_TRUE(decode_frame->Decode(buffer_, true));
-
-    // TODO : Verify decoded settings
-    // Verify decoded settings
-    // uint64_t value;
-    // EXPECT_TRUE(decode_frame->GetSetting(1, value));
-    // EXPECT_EQ(value, 100);
-    // EXPECT_TRUE(decode_frame->GetSetting(2, value));
-    // EXPECT_EQ(value, 200);
-    // EXPECT_TRUE(decode_frame->GetSetting(3, value));
-    // EXPECT_EQ(value, 300);
 }
 
 TEST_F(SettingsFrameTest, EvaluateSize) {

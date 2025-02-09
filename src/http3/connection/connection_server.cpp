@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "http3/http/error.h"
+#include "http3/http/config.h"
 #include "http3/connection/type.h"
 #include "http3/stream/response_stream.h"
 #include "http3/stream/push_sender_stream.h"
@@ -35,7 +36,7 @@ ServerConnection::~ServerConnection() {
 }
 
 bool ServerConnection::SendPush(std::shared_ptr<IResponse> response) {
-    if (streams_.size() >= settings_[SETTINGS_TYPE::ST_MAX_CONCURRENT_STREAMS]) {
+    if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
         common::LOG_ERROR("ServerConnection::SendPush max concurrent streams reached");
         return false;
     }
@@ -77,8 +78,8 @@ void ServerConnection::HandleHttp(std::shared_ptr<IRequest> request, std::shared
     if (send_limit_push_id_ < next_push_id_) {
         send_limit_push_id_ = next_push_id_;
 
-        // TODO: set time out time to config
-        quic_server_->AddTimer(20, std::bind(&ServerConnection::HandleTimer, this));
+        // wait if client cancel push
+        quic_server_->AddTimer(kServerPushWaitTimeMs, std::bind(&ServerConnection::HandleTimer, this));
     }
 }
 
@@ -92,9 +93,9 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
     }
 
     // TODO: implement stand line to create stream
-    if (streams_.size() >= settings_[SETTINGS_TYPE::ST_MAX_CONCURRENT_STREAMS]) {
+    if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
         common::LOG_ERROR("ServerConnection::HandleStream max concurrent streams reached");
-        Close(HTTP3_ERROR_CODE::H3EC_STREAM_CREATION_ERROR);
+        Close(Http3ErrorCode::kStreamCreationError);
         return;
     }
 
@@ -157,8 +158,8 @@ void ServerConnection::HandleTimer() {
 }
 
 bool ServerConnection::IsEnabledPush() const {
-    return settings_.find(SETTINGS_TYPE::ST_ENABLE_PUSH) != settings_.end()
-        && settings_.at(SETTINGS_TYPE::ST_ENABLE_PUSH) == 1;
+    return settings_.find(SettingsType::kEnablePush) != settings_.end()
+        && settings_.at(SettingsType::kEnablePush) == 1;
 }
 
 bool ServerConnection::CanPush() const {

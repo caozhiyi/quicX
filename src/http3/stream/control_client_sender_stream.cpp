@@ -25,7 +25,7 @@ bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {
     auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
     if (!frame.Encode(buffer)) {
         common::LOG_ERROR("ControlClientSenderStream::SendMaxPushId: Failed to encode MaxPushIdFrame");
-        error_handler_(0, HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
+        error_handler_(0, Http3ErrorCode::kMessageError);
         return false;
     }
     return stream_->Send(buffer) > 0;
@@ -39,7 +39,7 @@ bool ControlClientSenderStream::SendCancelPush(uint64_t push_id) {
     auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
     if (!frame.Encode(buffer)) {
         common::LOG_ERROR("ControlClientSenderStream::SendCancelPush: Failed to encode CancelPushFrame");
-        error_handler_(0, HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
+        error_handler_(0, Http3ErrorCode::kInternalError);
         return false;
     }
     return stream_->Send(buffer) > 0;

@@ -10,7 +10,7 @@ namespace http3 {
 class CancelPushFrame:
     public IFrame {
 public:
-    CancelPushFrame(): IFrame(FT_CANCEL_PUSH), push_id_(0) {}
+    CancelPushFrame(): IFrame(FrameType::kCancelPush), push_id_(0) {}
 
     uint64_t GetPushId() const { return push_id_; }
     void SetPushId(uint64_t id) { push_id_ = id; }

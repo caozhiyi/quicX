@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 #include "common/util/singleton.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
@@ -24,8 +25,10 @@ public:
     void DecodeResponse(std::shared_ptr<IResponse> response);
 
 private:
-    std::string MethodToString(HttpMethod method);
-    HttpMethod StringToMethod(const std::string& method);
+    static std::string MethodToString(HttpMethod method);
+    static HttpMethod StringToMethod(const std::string& method);
+    static const std::unordered_map<std::string, HttpMethod> kStringToMethodMap;
+    static const std::unordered_map<HttpMethod, std::string> kMethodToStringMap;
 
 private:
     std::vector<std::string> request_pseudo_headers_;

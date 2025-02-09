@@ -7,29 +7,29 @@ namespace {
 
 TEST(router, add_router) {
     Router router;
-    EXPECT_TRUE(router.AddRoute(HttpMethod::HM_GET, "/test/:paramA/:paramB", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::HM_GET, "/test/:paramA/user/:paramB", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::HM_GET, "/test/home/*", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::HM_POST, "/", nullptr));
-    EXPECT_FALSE(router.AddRoute(HttpMethod::HM_POST, "", nullptr));
-    EXPECT_FALSE(router.AddRoute(HttpMethod::HM_POST, "/test/home/*/other", nullptr));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/:paramB", nullptr));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/user/:paramB", nullptr));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/home/*", nullptr));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kPost, "/", nullptr));
+    EXPECT_FALSE(router.AddRoute(HttpMethod::kPost, "", nullptr));
+    EXPECT_FALSE(router.AddRoute(HttpMethod::kPost, "/test/home/*/other", nullptr));
 }
 
 TEST(router, match) {
     Router router;
-    EXPECT_TRUE(router.AddRoute(HttpMethod::HM_GET, "/test/:paramA/:paramB", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::HM_GET, "/test/:paramC/user/:paramD", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::HM_GET, "/test/home/*", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::HM_GET, "/", nullptr));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/:paramB", nullptr));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramC/user/:paramD", nullptr));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/home/*", nullptr));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/", nullptr));
 
-    EXPECT_TRUE(router.Match(HttpMethod::HM_GET, "/test/123/456").is_match);
-    EXPECT_TRUE(router.Match(HttpMethod::HM_GET, "/test/123/user/456").is_match);
-    EXPECT_TRUE(router.Match(HttpMethod::HM_GET, "/test/home/123").is_match);
-    EXPECT_TRUE(router.Match(HttpMethod::HM_GET, "/").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/test/123/456").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/test/123/user/456").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/test/home/123").is_match);
+    EXPECT_TRUE(router.Match(HttpMethod::kGet, "/").is_match);
     
-    EXPECT_FALSE(router.Match(HttpMethod::HM_GET, "/test/other").is_match);
-    EXPECT_FALSE(router.Match(HttpMethod::HM_GET, "").is_match);
-    EXPECT_FALSE(router.Match(HttpMethod::HM_POST, "/test/123/456").is_match);
+    EXPECT_FALSE(router.Match(HttpMethod::kGet, "/test/other").is_match);
+    EXPECT_FALSE(router.Match(HttpMethod::kGet, "").is_match);
+    EXPECT_FALSE(router.Match(HttpMethod::kPost, "/test/123/456").is_match);
 }
 
 }

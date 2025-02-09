@@ -1,6 +1,4 @@
-#include "http3/connection/type.h"
 #include "http3/connection/if_connection.h"
-
 
 namespace quicx {
 namespace http3 {
@@ -42,16 +40,16 @@ void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& s
 
 const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Http3Settings& settings) {
     std::unordered_map<uint16_t, uint64_t> settings_map;
-    settings_map[SETTINGS_TYPE::ST_MAX_HEADER_LIST_SIZE] = settings.max_header_list_size;
-    settings_map[SETTINGS_TYPE::ST_ENABLE_PUSH] = settings.enable_push;
-    settings_map[SETTINGS_TYPE::ST_MAX_CONCURRENT_STREAMS] = settings.max_concurrent_streams;
-    settings_map[SETTINGS_TYPE::ST_MAX_FRAME_SIZE] = settings.max_frame_size;
-    settings_map[SETTINGS_TYPE::ST_MAX_FIELD_SECTION_SIZE] = settings.max_field_section_size;
+    settings_map[SettingsType::kMaxHeaderListSize] = settings.max_header_list_size;
+    settings_map[SettingsType::kEnablePush] = settings.enable_push;
+    settings_map[SettingsType::kMaxConcurrentStreams] = settings.max_concurrent_streams;
+    settings_map[SettingsType::kMaxFrameSize] = settings.max_frame_size;
+    settings_map[SettingsType::kMaxFieldSectionSize] = settings.max_field_section_size;
 
     // TODO: implement below settings
-    settings_map[SETTINGS_TYPE::ST_QPACK_MAX_TABLE_CAPACITY] = 0;
-    settings_map[SETTINGS_TYPE::ST_QPACK_BLOCKED_STREAMS] = 0;
-    settings_map[SETTINGS_TYPE::ST_ENABLE_CONNECT_PROTOCOL] = 0;
+    settings_map[SettingsType::kQpackMaxTableCapacity] = 0;
+    settings_map[SettingsType::kQpackBlockedStreams] = 0;
+    settings_map[SettingsType::kEnableConnectProtocol] = 0;
 
     return settings_map;
 }

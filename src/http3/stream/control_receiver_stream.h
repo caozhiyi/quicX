@@ -22,7 +22,7 @@ public:
         const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler);
     virtual ~ControlReceiverStream();
 
-    virtual StreamType GetType() override { return StreamType::ST_CONTROL; }
+    virtual StreamType GetType() override { return StreamType::kControl; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
 protected:

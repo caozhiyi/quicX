@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
+#include <unordered_map>
+#include "http3/connection/type.h"
 #include "http3/stream/control_sender_stream.h"
-#include "http3/stream/control_receiver_stream.h"
 #include "utest/http3/stream/mock_quic_stream.h"
+#include "http3/stream/control_receiver_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -92,10 +94,11 @@ TEST_F(ControlServerSenderStreamTest, SendGoAway) {
 }   
 
 TEST_F(ControlServerSenderStreamTest, SendSettings) {
-    std::unordered_map<uint16_t, uint64_t> settings = {{1, 100}, {2, 200}};
+    std::unordered_map<uint16_t, uint64_t> settings = {{SettingsType::kMaxHeaderListSize, 100}, {SettingsType::kMaxConcurrentStreams, 200}};
     server_connection_->SendSettings(settings);
     EXPECT_EQ(client_connection_->GetSettings(), settings);
 }
+
 
 }  // namespace
 }  // namespace http3

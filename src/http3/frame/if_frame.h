@@ -10,7 +10,7 @@ namespace http3 {
 
 class IFrame {
 public:
-    IFrame(uint16_t ft = FT_UNKNOW): type_(ft) {}
+    IFrame(FrameType ft = FrameType::kUnknown): type_(static_cast<uint16_t>(ft)) {}
     virtual ~IFrame() {}
 
     uint16_t GetType() { return type_; }

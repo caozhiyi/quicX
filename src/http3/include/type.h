@@ -11,33 +11,33 @@ namespace quicx {
 namespace http3 {
 
 // http method
-enum HttpMethod: uint16_t {
-    HM_GET     = 0x0001,
-    HM_HEAD    = 0x0002,
-    HM_POST    = 0x0004,
-    HM_PUT     = 0x0008,
-    HM_DELETE  = 0x0010,
-    HM_CONNECT = 0x0020,
-    HM_OPTIONS = 0x0040,
-    HM_TRACE   = 0x0080,
-    HM_PATCH   = 0x0100,
-    HM_ANY     = HM_GET|HM_HEAD|HM_POST|HM_PUT|HM_DELETE|HM_CONNECT|HM_OPTIONS|HM_TRACE|HM_PATCH,
+enum class HttpMethod: uint16_t {
+    kGet     = 0x0001,
+    kHead    = 0x0002,
+    kPost    = 0x0004,
+    kPut     = 0x0008,
+    kDelete  = 0x0010,
+    kConnect = 0x0020,
+    kOptions = 0x0040,
+    kTrace   = 0x0080,
+    kPatch   = 0x0100,
+    kAny     = kGet|kHead|kPost|kPut|kDelete|kConnect|kOptions|kTrace|kPatch,
 };
 
 // middleware position
-enum MiddlewarePosition: uint8_t {
-    MP_BEFORE = 0x01,
-    MP_AFTER  = 0x02,
+enum class MiddlewarePosition: uint8_t {
+    kBefore = 0x01,
+    kAfter  = 0x02,
 };
 
 // log level
-enum LogLevel: uint8_t {
-    LL_NULL         = 0x00, // not print log
-    LL_FATAL        = 0x01,
-    LL_ERROR        = 0x02 | LL_FATAL,
-    LL_WARN         = 0x04 | LL_ERROR,
-    LL_INFO         = 0x08 | LL_WARN,
-    LL_DEBUG        = 0x10 | LL_INFO,
+enum class LogLevel: uint8_t {
+    kNull   = 0x00, // not print log
+    kFatal  = 0x01,
+    kError  = 0x02 | kFatal,
+    kWarn   = 0x04 | kError,
+    kInfo   = 0x08 | kWarn,
+    kDebug  = 0x10 | kInfo,
 };
 
 // http3 settings
@@ -48,7 +48,7 @@ struct Http3Settings {
     uint64_t max_frame_size = 16384;
     uint64_t max_field_section_size = 16384;
 };
-static const Http3Settings DEFAULT_HTTP3_SETTINGS;
+static const Http3Settings kDefaultHttp3Settings;
 
 class IRequest;
 class IResponse;

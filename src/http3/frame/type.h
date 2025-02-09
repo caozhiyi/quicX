@@ -6,16 +6,16 @@
 namespace quicx {
 namespace http3 {
 
-enum FrameType: uint16_t {
-    FT_DATA          = 0x00,
-    FT_HEADERS       = 0x01,
-    FT_CANCEL_PUSH   = 0x03,
-    FT_SETTINGS      = 0x04,
-    FT_PUSH_PROMISE  = 0x05,
-    FT_GOAWAY        = 0x07,
-    FT_MAX_PUSH_ID   = 0x0d,
+enum class FrameType: uint16_t {
+    kData            = 0x00,
+    kHeaders         = 0x01,
+    kCancelPush      = 0x03,
+    kSettings        = 0x04,
+    kPushPromise     = 0x05,
+    kGoaway          = 0x07,
+    kMaxPushId       = 0x0d,
 
-    FT_UNKNOW        = 0xff,
+    kUnknown         = 0xff,
 };
 
 }

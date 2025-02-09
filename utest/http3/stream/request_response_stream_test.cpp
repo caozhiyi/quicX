@@ -106,7 +106,7 @@ protected:
 TEST_F(RequestResponseStreamTest, SendHeaders) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->AddHeader("Content-Type", "text/plain");
-    request->SetMethod(HttpMethod::HM_GET);
+    request->SetMethod(HttpMethod::kGet);
     request->SetPath("/api/data");
     request->SetScheme("http");
     request->SetAuthority("api.example.com");
@@ -133,7 +133,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->AddHeader("Content-Type", "text/plain");
     request->SetBody("Hello, Server!");
-    request->SetMethod(HttpMethod::HM_POST);
+    request->SetMethod(HttpMethod::kPost);
     request->SetPath("/api/data");
     request->SetScheme("http");
     request->SetAuthority("api.example.com");
@@ -143,7 +143,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
         EXPECT_TRUE(request->GetHeader("Content-Type", content_type));
         EXPECT_EQ(content_type, "text/plain");
         EXPECT_EQ(request->GetBody(), "Hello, Server!");
-        EXPECT_EQ(request->GetMethod(), HttpMethod::HM_POST);
+        EXPECT_EQ(request->GetMethod(), HttpMethod::kPost);
         EXPECT_EQ(request->GetPath(), "/api/data");
         EXPECT_EQ(request->GetScheme(), "http");
         EXPECT_EQ(request->GetAuthority(), "api.example.com");
@@ -166,7 +166,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
 TEST_F(RequestResponseStreamTest, SendBody) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->SetBody("Hello, Server!");
-    request->SetMethod(HttpMethod::HM_POST);
+    request->SetMethod(HttpMethod::kPost);
 
     auto http_handler = [](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
         EXPECT_EQ(request->GetBody(), "Hello, Server!");

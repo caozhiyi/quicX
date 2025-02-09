@@ -4,10 +4,10 @@
 namespace quicx {
 namespace http3 {
 
-enum StreamType {
-    ST_CONTROL  = 0x00,
-    ST_REQ_RESP = 0x01,
-    ST_PUSH     = 0x02,
+enum class StreamType {
+    kControl    = 0x00, // control stream
+    kReqResp    = 0x01, // request response stream
+    kPush       = 0x02, // push stream
 };
 
 }

@@ -11,7 +11,7 @@ namespace http3 {
 class SettingsFrame:
     public IFrame {
 public:
-    SettingsFrame(): IFrame(FT_SETTINGS), length_(0) {}
+    SettingsFrame(): IFrame(FrameType::kSettings), length_(0) {}
 
     const std::unordered_map<uint16_t, uint64_t>& GetSettings() const { return settings_; }
     void SetSetting(uint16_t id, uint64_t value) { settings_[id] = value; }

@@ -18,7 +18,7 @@ public:
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~ReqRespBaseStream();
-    virtual StreamType GetType() override { return ST_REQ_RESP; }
+    virtual StreamType GetType() override { return StreamType::kReqResp; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
 protected:
