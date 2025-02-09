@@ -37,7 +37,7 @@ private:
     uint64_t sequence_number_;  // the connection ID by the sender.
     uint64_t retire_prior_to_;  // which connection IDs should be retired.
     uint8_t  length_;           // the length of the connection ID.
-    uint8_t  connection_id_[__max_cid_length];    // a connection ID of the specified length.
+    uint8_t  connection_id_[kMaxCidLength];    // a connection ID of the specified length.
 
     uint8_t stateless_reset_token_[__stateless_reset_token_length];  // a 128-bit value that will be used for a stateless reset when the associated connection ID is used.
 };

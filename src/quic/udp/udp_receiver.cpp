@@ -94,7 +94,7 @@ bool UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt) {
         auto span = buffer->GetWriteSpan();
         common::Address peer_addr;
 
-        auto ret = common::RecvFrom(sock, (char*)span.GetStart(), __max_v4_packet_size, MSG_DONTWAIT, peer_addr);
+        auto ret = common::RecvFrom(sock, (char*)span.GetStart(), kMaxV4PacketSize, MSG_DONTWAIT, peer_addr);
         if (ret.errno_ != 0) {
             if (ret.errno_ == EAGAIN) {
                 continue;

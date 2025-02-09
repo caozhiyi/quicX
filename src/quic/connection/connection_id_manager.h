@@ -13,15 +13,15 @@ namespace quicx {
 namespace quic {
 
 struct ConnectionID {
-    uint8_t id_[__max_cid_length];
+    uint8_t id_[kMaxCidLength];
     uint8_t len_;
     uint64_t index_;
     uint64_t hash_;
-    ConnectionID(uint64_t index = 0): len_(__max_cid_length), index_(index), hash_(0) {
-        memset(id_, 0, __max_cid_length);
+    ConnectionID(uint64_t index = 0): len_(kMaxCidLength), index_(index), hash_(0) {
+        memset(id_, 0, kMaxCidLength);
     }
     ConnectionID(uint8_t* id, uint8_t len, uint64_t index = 0): len_(len), index_(index), hash_(0) {
-        memset(id_, 0, __max_cid_length);
+        memset(id_, 0, kMaxCidLength);
         memcpy(id_, id, len);
     }
     ~ConnectionID() {}

@@ -30,17 +30,17 @@ void SendManager::UpdateConfig(const TransportParam& tp) {
 
 SendOperation SendManager::GetSendOperation() {
     if (wait_frame_list_.empty() && active_send_stream_set_.empty()) {
-        return SendOperation::SO_ALL_SEND_DONE;
+        return SendOperation::kAllSendDone;
 
     } else {
         uint32_t can_send_size = 1500; // TODO: set to mtu size
         send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
         if (can_send_size == 0) {
             common::LOG_WARN("congestion control send data limited.");
-            return SendOperation::SO_NEXT_PERIOD;
+            return SendOperation::kNextPeriod;
         }
     }
-    return SendOperation::SO_SEND_AGAIN_IMMEDIATELY;
+    return SendOperation::kSendAgainImmediately;
 }
 
 void SendManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
@@ -136,7 +136,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     }
 
     switch (encrypto_level) {
-        case EL_INITIAL: {
+        case kInitial: {
             packet = std::make_shared<InitPacket>();
             // add padding frame
             auto padding_frame = std::make_shared<PaddingFrame>();
@@ -144,15 +144,15 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
             visitor->HandleFrame(padding_frame);
             break;
         }
-        case EL_EARLY_DATA: {
+        case kEarlyData: {
             packet = std::make_shared<Rtt0Packet>();
             break;
         }
-        case EL_HANDSHAKE: {
+        case kHandshake: {
             packet = std::make_shared<HandshakePacket>();
             break;
         }
-        case EL_APPLICATION: {
+        case kApplication: {
             packet = std::make_shared<Rtt1Packet>();
             break;
         }
@@ -162,7 +162,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     if (header->GetHeaderType() == PHT_LONG_HEADER) {
         auto cid = local_conn_id_manager_->GetCurrentID();
         ((LongHeader*)header)->SetSourceConnectionId(cid.id_, cid.len_);
-        ((LongHeader*)header)->SetVersion(__quic_versions[0]);
+        ((LongHeader*)header)->SetVersion(kQuicVersions[0]);
 
         common::LOG_DEBUG("send long header packet. packet type:%d, packet size:%d, scid:%llu",
             encrypto_level, visitor->GetBuffer()->GetDataLength(), cid.Hash());

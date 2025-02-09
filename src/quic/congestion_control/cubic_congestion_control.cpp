@@ -7,9 +7,9 @@
 namespace quicx {
 namespace quic {
 
-constexpr double CubicCongestionControl::BETA_CUBIC;
-constexpr double CubicCongestionControl::C;
-constexpr size_t CubicCongestionControl::MIN_WINDOW;
+constexpr double CubicCongestionControl::kBetaCubic;
+constexpr double CubicCongestionControl::kC;
+constexpr size_t CubicCongestionControl::kMinWindow;
 
 CubicCongestionControl::CubicCongestionControl() :
     epoch_start_(0),
@@ -19,7 +19,7 @@ CubicCongestionControl::CubicCongestionControl() :
     origin_point_(0),
     tcp_friendliness_(true) {
     
-    congestion_window_ = MIN_WINDOW;
+    congestion_window_ = kMinWindow;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
     pacer_ = std::unique_ptr<NormalPacer>(new NormalPacer());
@@ -46,7 +46,7 @@ void CubicCongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
         if (epoch_start_ == 0) {
             epoch_start_ = ack_time;
             w_max_ = congestion_window_;
-            k_ = std::cbrt((w_max_ * (1 - BETA_CUBIC)) / C);
+            k_ = std::cbrt((w_max_ * (1 - kBetaCubic)) / kC);
             origin_point_ = w_max_;
         }
         
@@ -70,8 +70,8 @@ void CubicCongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
     w_last_max_ = congestion_window_;
     
     // Multiplicative decrease
-    congestion_window_ = std::max(MIN_WINDOW, 
-                                static_cast<size_t>(congestion_window_ * BETA_CUBIC));
+    congestion_window_ = std::max(kMinWindow, 
+                                static_cast<size_t>(congestion_window_ * kBetaCubic));
     
     // Reset cubic state
     epoch_start_ = 0;
@@ -102,14 +102,14 @@ bool CubicCongestionControl::CanSend(uint64_t now, uint32_t& can_send_bytes) con
 
 uint64_t CubicCongestionControl::GetPacingRate() const {
     if (smoothed_rtt_ == 0) {
-        return MIN_WINDOW; // Avoid division by zero
+        return kMinWindow; // Avoid division by zero
     }
     // Simple pacing rate calculation
     return congestion_window_ * 1000000 / smoothed_rtt_; // bytes per second
 }
 
 void CubicCongestionControl::Reset() {
-    congestion_window_ = MIN_WINDOW;
+    congestion_window_ = kMinWindow;
     bytes_in_flight_ = 0;
     epoch_start_ = 0;
     w_max_ = 0;
@@ -121,15 +121,15 @@ void CubicCongestionControl::Reset() {
 size_t CubicCongestionControl::CubicWindowSize(uint64_t elapsed_time) {
     double t = elapsed_time / 1000000.0; // Convert to seconds
     double tx = t - k_;
-    double w_cubic = C * tx * tx * tx + origin_point_;
+    double w_cubic = kC * tx * tx * tx + origin_point_;
     return static_cast<size_t>(w_cubic);
 }
 
 size_t CubicCongestionControl::TcpFriendlyWindowSize() {
     // TCP Reno-like window growth
     double rtt = smoothed_rtt_ / 1000000.0; // Convert to seconds
-    double w_tcp = w_max_ * BETA_CUBIC + 
-                  (3 * (1 - BETA_CUBIC) / (1 + BETA_CUBIC)) * 
+    double w_tcp = w_max_ * kBetaCubic + 
+                  (3 * (1 - kBetaCubic) / (1 + kBetaCubic)) * 
                   (congestion_window_ / rtt);
     return static_cast<size_t>(w_tcp);
 }

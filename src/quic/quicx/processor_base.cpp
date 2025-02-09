@@ -63,7 +63,7 @@ void ProcessorBase::AddTimer(uint32_t interval_ms, timer_callback cb) {
 }
 
 void ProcessorBase::ProcessRecv(uint32_t timeout_ms) {
-    uint8_t recv_buf[__max_v4_packet_size] = {0};
+    uint8_t recv_buf[kMaxV4PacketSize] = {0};
     std::shared_ptr<INetPacket> packet = std::make_shared<INetPacket>();
     auto buffer = std::make_shared<common::Buffer>(recv_buf, sizeof(recv_buf));
     packet->SetData(buffer);
@@ -107,13 +107,13 @@ void ProcessorBase::ProcessSend() {
         }
         buffer->Clear();
         switch (send_operation) {
-            case SendOperation::SO_ALL_SEND_DONE:
+            case SendOperation::kAllSendDone:
                 iter = active_send_connection_set_.erase(iter);
                 break;
-            case SendOperation::SO_NEXT_PERIOD:
+            case SendOperation::kNextPeriod:
                 iter++;
                 break;
-            case SendOperation::SO_SEND_AGAIN_IMMEDIATELY: // do nothing, send again immediately
+            case SendOperation::kSendAgainImmediately: // do nothing, send again immediately
             default:
                 break;
         }

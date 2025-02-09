@@ -89,7 +89,7 @@ bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
 
 void ProcessorServer::SendVersionNegotiatePacket(std::shared_ptr<INetPacket> packet) {
     VersionNegotiationPacket version_negotiation_packet;
-    for (auto version : __quic_versions) {
+    for (auto version : kQuicVersions) {
         version_negotiation_packet.AddSupportVersion(version);
     }
 

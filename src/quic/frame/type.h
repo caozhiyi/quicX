@@ -63,7 +63,6 @@ enum FrameTypeBit: uint32_t {
     FTB_HANDSHAKE_DONE                  = 1 << FT_HANDSHAKE_DONE,
 };
 
-
 }
 }
 

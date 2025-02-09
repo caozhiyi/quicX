@@ -51,7 +51,7 @@ void ServerConnection::AddRemoteConnectionId(uint8_t* id, uint16_t len) {
 }
 
 bool ServerConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
-    InnerConnectionClose(QUIC_ERROR_CODE::QEC_PROTOCOL_VIOLATION, 0, "server handshake done frame received");
+    InnerConnectionClose(QuicErrorCode::kProtocolViolation, 0, "server handshake done frame received");
     return true;
 }
 

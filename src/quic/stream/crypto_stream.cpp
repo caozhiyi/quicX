@@ -26,27 +26,27 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
     TrySendResult ret = TSR_SUCCESS;
     std::shared_ptr<common::IBufferChains> buffer;
     uint8_t level;
-    if (send_buffers_[EL_INITIAL] && send_buffers_[EL_INITIAL]->GetDataLength() > 0) {
-        buffer = send_buffers_[EL_INITIAL];
-        level = EL_INITIAL;
+    if (send_buffers_[kInitial] && send_buffers_[kInitial]->GetDataLength() > 0) {
+        buffer = send_buffers_[kInitial];
+        level = kInitial;
     }
 
-    if (send_buffers_[EL_HANDSHAKE] && send_buffers_[EL_HANDSHAKE]->GetDataLength() > 0) {
+    if (send_buffers_[kHandshake] && send_buffers_[kHandshake]->GetDataLength() > 0) {
         if (!buffer) {
-            buffer = send_buffers_[EL_HANDSHAKE];
-            level = EL_HANDSHAKE;
-            send_buffers_[EL_INITIAL] = nullptr;
+            buffer = send_buffers_[kHandshake];
+            level = kHandshake;
+            send_buffers_[kInitial] = nullptr;
 
         } else {
             ret = TSR_BREAK;
         }
     }
 
-    if (send_buffers_[EL_APPLICATION] && send_buffers_[EL_APPLICATION]->GetDataLength() > 0) {
+    if (send_buffers_[kApplication] && send_buffers_[kApplication]->GetDataLength() > 0) {
         if (!buffer) {
-            buffer = send_buffers_[EL_APPLICATION];
-            level = EL_APPLICATION;
-            send_buffers_[EL_HANDSHAKE] = nullptr;
+            buffer = send_buffers_[kApplication];
+            level = kApplication;
+            send_buffers_[kHandshake] = nullptr;
 
         } else {
             ret = TSR_BREAK;
@@ -119,11 +119,11 @@ int32_t CryptoStream::Send(std::shared_ptr<common::IBufferRead> buffer) {
 }
 
 uint8_t CryptoStream::GetWaitSendEncryptionLevel() {
-    uint8_t level = EL_APPLICATION;
-    if (send_buffers_[EL_INITIAL] && send_buffers_[EL_INITIAL]->GetDataLength() > 0) {
-        level = EL_INITIAL;
-    } else if (send_buffers_[EL_HANDSHAKE] && send_buffers_[EL_HANDSHAKE]->GetDataLength() > 0) {
-        level = EL_HANDSHAKE;
+    uint8_t level = kApplication;
+    if (send_buffers_[kInitial] && send_buffers_[kInitial]->GetDataLength() > 0) {
+        level = kInitial;
+    } else if (send_buffers_[kHandshake] && send_buffers_[kHandshake]->GetDataLength() > 0) {
+        level = kHandshake;
     }
     return level;
 }

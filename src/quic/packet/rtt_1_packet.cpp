@@ -54,7 +54,7 @@ bool Rtt1Packet::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     common::BufferSpan sample = common::BufferSpan(start_pos + 4,
-    start_pos + 4 + __header_protect_sample_length);
+    start_pos + 4 + kHeaderProtectSampleLength);
     if(!crypto_grapher_->EncryptHeader(header_span, sample, header_span.GetLength(), header_.GetPacketNumberLength(),
         header_.GetHeaderType() == PHT_SHORT_HEADER)) {
         common::LOG_ERROR("encrypt header failed.");
@@ -101,7 +101,7 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t packet_num_len = 0;
     common::BufferSpan header_span = header_.GetHeaderSrcData();
     common::BufferSpan sample = common::BufferSpan(span.GetStart() + 4,
-        span.GetStart() + 4 + __header_protect_sample_length);
+        span.GetStart() + 4 + kHeaderProtectSampleLength);
     if(!crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength(), packet_num_len, 
         header_.GetHeaderType() == PHT_SHORT_HEADER)) {
         common::LOG_ERROR("decrypt header failed.");

@@ -84,7 +84,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
     if (stream_frame->GetOffset() + stream_frame->GetLength() > local_data_limit_) {
         if (connection_close_cb_) {
-            connection_close_cb_(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "stream recv data exceeding flow control limits.");
+            connection_close_cb_(QuicErrorCode::kFlowControlError, frame->GetType(), "stream recv data exceeding flow control limits.");
         }
         return 0;
     }
@@ -95,7 +95,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         if (final_offset_ != 0 && fin_offset != final_offset_) {
             common::LOG_ERROR("invalid final size. size:%d", fin_offset);
             if (connection_close_cb_) {
-                connection_close_cb_(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
+                connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "final size change.");
             }
             return 0;
         }
@@ -182,7 +182,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     if (final_offset_ != 0 && fin_offset != final_offset_) {
         common::LOG_ERROR("invalid final size. size:%d", fin_offset);
         if (connection_close_cb_) {
-            connection_close_cb_(QEC_FINAL_SIZE_ERROR, frame->GetType(), "final size change.");
+            connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "final size change.");
         }
         return;
     }

@@ -39,7 +39,7 @@ public:
 
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
-    bool InitIsReady() { return cryptographers_[EL_INITIAL] != nullptr; }
+    bool InitIsReady() { return cryptographers_[kInitial] != nullptr; }
     bool InstallInitSecret(uint8_t* secret, uint32_t len, bool is_server);
 
     typedef std::function<void(TransportParam&)> RemoteTransportParamCB;
@@ -51,7 +51,7 @@ private:
 
     EncryptionLevel cur_encryption_level_;
     std::shared_ptr<CryptoStream> crypto_stream_;
-    std::shared_ptr<ICryptographer> cryptographers_[NUM_ENCRYPTION_LEVELS];
+    std::shared_ptr<ICryptographer> cryptographers_[kNumEncryptionLevels];
 };
 
 }

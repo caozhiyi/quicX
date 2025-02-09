@@ -6,7 +6,7 @@
 namespace quicx {
 namespace quic {
 
-static const uint32_t __quic_versions[] = {
+static const uint32_t kQuicVersions[] = {
     0x00000001, // QUICv1
 };
 

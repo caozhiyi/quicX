@@ -8,12 +8,7 @@
 namespace quicx {
 namespace quic {
 
-const uint16_t aes_128_key_length = 16;
-
-const uint16_t iv_length = 12;
-
 // Additional cipher suite IDs, not IANA-assigned.
-
 #define TLS_AES_128_GCM_SHA256 0x1301
 #define TLS_AES_256_GCM_SHA384 0x1302
 #define TLS_CHACHA20_POLY1305_SHA256 0x1303
@@ -28,12 +23,11 @@ const uint16_t iv_length = 12;
 // to be specified so that it is retransmitted at a level which the peer can
 // understand.
 enum EncryptionLevel: int8_t {
-    EL_INITIAL           = 0,
-    EL_EARLY_DATA        = 1,
-    EL_HANDSHAKE         = 2,
-    EL_APPLICATION       = 3,
-
-    NUM_ENCRYPTION_LEVELS,
+    kInitial             = 0,
+    kEarlyData           = 1,
+    kHandshake           = 2,
+    kApplication         = 3,
+    kNumEncryptionLevels = 4,
 };
 
 using SSLCtxPtr = common::CSmartPtr<SSL_CTX, SSL_CTX_free>;

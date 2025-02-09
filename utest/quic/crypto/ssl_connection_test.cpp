@@ -25,8 +25,8 @@ public:
 
     MockTransport(Role role): role_(role) {
         // The caller is expected to configure initial secrets.
-        levels_[EL_INITIAL].write_secret = {1};
-        levels_[EL_INITIAL].read_secret = {1};
+        levels_[kInitial].write_secret = {1};
+        levels_[kInitial].read_secret = {1};
     }
 
     void SetPeer(MockTransport *peer) { peer_ = peer; }
@@ -56,13 +56,13 @@ public:
             return;
         }
 
-        if (role_ == Role::R_CLITNE && level == EL_EARLY_DATA) {
+        if (role_ == Role::R_CLITNE && level == kEarlyData) {
             ADD_FAILURE() << "Unexpected early data read secret";
             return;
         }
 
         EncryptionLevel ack_level =
-        level == EL_EARLY_DATA ? EL_APPLICATION : level;
+        level == kEarlyData ? kApplication : level;
         if (!HasWriteSecret(ack_level)) {
             ADD_FAILURE() << LevelToString(level) << " read secret configured before ACK write secret";
             return;
@@ -73,7 +73,7 @@ public:
             return;
         }
 
-        if (level != EL_EARLY_DATA && SSL_CIPHER_get_id(cipher) != levels_[level].cipher) {
+        if (level != kEarlyData && SSL_CIPHER_get_id(cipher) != levels_[level].cipher) {
             ADD_FAILURE() << "Cipher suite inconsistent";
             return;
         }
@@ -90,7 +90,7 @@ public:
             return;
         }
 
-        if (role_ == Role::R_SERVER && level == EL_EARLY_DATA) {
+        if (role_ == Role::R_SERVER && level == kEarlyData) {
             ADD_FAILURE() << "Unexpected early data write secret";
             return;
         }
@@ -115,20 +115,20 @@ public:
         }
 
         switch (level) {
-            case EL_EARLY_DATA:
+            case kEarlyData:
                 ADD_FAILURE() << "unexpected handshake data at early data level";
                 return;
-            case EL_INITIAL:
-                if (!levels_[EL_HANDSHAKE].write_secret.empty()) {
+            case kInitial:
+                if (!levels_[kHandshake].write_secret.empty()) {
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after handshake keys installed";
                     return;
                 }
-            case EL_HANDSHAKE:
-                if (!levels_[EL_APPLICATION].write_secret.empty()) {
+            case kHandshake:
+                if (!levels_[kApplication].write_secret.empty()) {
                     ADD_FAILURE() << LevelToString(level) << " handshake data written after application keys installed";
                     return;
                 }
-            case EL_APPLICATION:
+            case kApplication:
                 break;
             default:
                 break;
@@ -199,13 +199,13 @@ public:
 private:
     const char* LevelToString(EncryptionLevel level) {
         switch (level) {
-        case EL_INITIAL:
+        case kInitial:
             return "initial";
-        case EL_EARLY_DATA:
+        case kEarlyData:
             return "early data";
-        case EL_HANDSHAKE:
+        case kHandshake:
             return "handshake";
-        case EL_APPLICATION:
+        case kApplication:
             return "application";
         default:
             break;
@@ -219,7 +219,7 @@ private:
     MockTransport *peer_ = nullptr;
 
     bool has_alert_ = false;
-    EncryptionLevel alert_level_ = EL_INITIAL;
+    EncryptionLevel alert_level_ = kInitial;
     uint8_t alert_ = 0;
 
     struct Level {
@@ -228,7 +228,7 @@ private:
         std::vector<uint8_t> read_secret;
         uint32_t cipher = 0;
     };
-    Level levels_[NUM_ENCRYPTION_LEVELS];
+    Level levels_[kNumEncryptionLevels];
 };
 
 class TestServerHandler:
@@ -333,7 +333,7 @@ TEST(crypto_ssl_connection_utest, test1) {
         }
     }
 
-    EXPECT_TRUE(ser_handler->PeerSecretsMatch(EL_APPLICATION));
+    EXPECT_TRUE(ser_handler->PeerSecretsMatch(kApplication));
     EXPECT_FALSE(ser_handler->HasAlert());
     EXPECT_FALSE(cli_handler->HasAlert());
 }

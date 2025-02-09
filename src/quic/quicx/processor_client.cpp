@@ -77,7 +77,7 @@ bool ProcessorClient::HandlePacket(std::shared_ptr<INetPacket> packet) {
 void ProcessorClient::HandleConnectionTimeout(std::shared_ptr<IConnection> conn) {
     if (conn_map_.find(conn->GetConnectionIDHash()) != conn_map_.end()) {
         conn_map_.erase(conn->GetConnectionIDHash());
-        connection_handler_(conn, QUIC_ERROR_CODE::QEC_CONNECTION_TIMEOUT, GetErrorString(QUIC_ERROR_CODE::QEC_CONNECTION_TIMEOUT));
+        connection_handler_(conn, QuicErrorCode::kConnectionTimeout, GetErrorString(QuicErrorCode::kConnectionTimeout));
     }
 }
 

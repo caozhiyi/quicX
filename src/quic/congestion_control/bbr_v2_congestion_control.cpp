@@ -6,30 +6,30 @@ namespace quicx {
 namespace quic {
 
 // BBRv2 specific parameters
-constexpr double BBRv2CongestionControl::HIGH_GAIN;
-constexpr double BBRv2CongestionControl::DRAIN_GAIN;
-constexpr double BBRv2CongestionControl::PACING_GAIN;
-constexpr double BBRv2CongestionControl::LOW_GAIN;
-constexpr uint64_t BBRv2CongestionControl::MIN_WINDOW;
-constexpr uint64_t BBRv2CongestionControl::PROBE_RTT_INTERVAL;
-constexpr uint64_t BBRv2CongestionControl::PROBE_RTT_DURATION; 
-constexpr double BBRv2CongestionControl::BETA_ECN;
-constexpr double BBRv2CongestionControl::BETA_LOSS;
+constexpr double BBRv2CongestionControl::kHighGain;
+constexpr double BBRv2CongestionControl::kDrainGain;
+constexpr double BBRv2CongestionControl::kPacingGain;
+constexpr double BBRv2CongestionControl::kLowGain;
+constexpr uint64_t BBRv2CongestionControl::kMinWindow;
 
+constexpr uint64_t BBRv2CongestionControl::kProbeRttInterval;
+constexpr uint64_t BBRv2CongestionControl::kProbeRttDuration; 
+constexpr double BBRv2CongestionControl::kBetaEcn;
+constexpr double BBRv2CongestionControl::kBetaLoss;
 
 BBRv2CongestionControl::BBRv2CongestionControl() :
-    mode_(STARTUP),
+    mode_(kStartup),
     min_rtt_timestamp_(0),
     probe_rtt_done_timestamp_(0),
     probe_rtt_round_done_(false),
-    pacing_gain_(HIGH_GAIN),
-    cwnd_gain_(HIGH_GAIN),
+    pacing_gain_(kHighGain),
+    cwnd_gain_(kHighGain),
     max_bandwidth_(0),
     loss_rounds_(0),
     ecn_ce_rounds_(0),
     inflight_too_high_(false) {
-    
-    congestion_window_ = MIN_WINDOW;
+        
+    congestion_window_ = kMinWindow;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
     pacer_ = std::unique_ptr<NormalPacer>(new NormalPacer());
@@ -61,10 +61,11 @@ void BBRv2CongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
     
     // Reduce congestion window on loss
     if (loss_rounds_ > 1) {
-        congestion_window_ = std::max(MIN_WINDOW, 
-            static_cast<uint64_t>(congestion_window_ * BETA_LOSS));
+        congestion_window_ = std::max(kMinWindow, 
+            static_cast<uint64_t>(congestion_window_ * kBetaLoss));
         inflight_too_high_ = true;
     }
+
     pacer_->OnPacingRateUpdated(GetPacingRate());
 }
 
@@ -78,8 +79,8 @@ void BBRv2CongestionControl::OnRttUpdated(uint64_t rtt) {
 }
 
 size_t BBRv2CongestionControl::GetCongestionWindow() const {
-    if (mode_ == PROBE_RTT) {
-        return MIN_WINDOW;
+    if (mode_ == kProbeRtt) {
+        return kMinWindow;
     }
     return std::min(GetTargetCwnd(), max_congestion_window_);
 }
@@ -95,11 +96,11 @@ bool BBRv2CongestionControl::CanSend(uint64_t now, uint32_t& can_send_bytes) con
 }
 
 uint64_t BBRv2CongestionControl::GetPacingRate() const {
-    if (mode_ == PROBE_RTT) {
+    if (mode_ == kProbeRtt) {
         // in PROBE_RTT, use conservative rate
         return max_bandwidth_;
     }
-    
+
     // calculate bandwidth
     uint64_t bandwidth = max_bandwidth_;
     if (bandwidth == 0) {
@@ -116,7 +117,7 @@ uint64_t BBRv2CongestionControl::GetPacingRate() const {
     uint64_t pacing_rate = bandwidth * pacing_gain_;
 
     // ensure minimum pacing rate
-    const uint64_t min_pacing_rate = (MIN_WINDOW * 1000000) / 
+    const uint64_t min_pacing_rate = (kMinWindow * 1000000) / 
         std::max(min_rtt_, static_cast<uint64_t>(1000)); // at least 1ms
     pacing_rate = std::max(pacing_rate, min_pacing_rate);
 
@@ -124,18 +125,18 @@ uint64_t BBRv2CongestionControl::GetPacingRate() const {
 }
 
 void BBRv2CongestionControl::Reset() {
-    mode_ = STARTUP;
+    mode_ = kStartup;
     min_rtt_timestamp_ = 0;
     probe_rtt_done_timestamp_ = 0;
     probe_rtt_round_done_ = false;
-    pacing_gain_ = HIGH_GAIN;
-    cwnd_gain_ = HIGH_GAIN;
+    pacing_gain_ = kHighGain;
+    cwnd_gain_ = kHighGain;
     max_bandwidth_ = 0;
     loss_rounds_ = 0;
     ecn_ce_rounds_ = 0;
     inflight_too_high_ = false;
     bandwidth_samples_.clear();
-    congestion_window_ = MIN_WINDOW;
+    congestion_window_ = kMinWindow;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
 }
@@ -158,49 +159,50 @@ void BBRv2CongestionControl::UpdateBandwidth(uint64_t bandwidth, uint64_t timest
 }
 
 void BBRv2CongestionControl::EnterStartup() {
-    mode_ = STARTUP;
-    pacing_gain_ = HIGH_GAIN;
-    cwnd_gain_ = HIGH_GAIN;
+    mode_ = kStartup;
+    pacing_gain_ = kHighGain;
+    cwnd_gain_ = kHighGain;
 }
 
 void BBRv2CongestionControl::EnterDrain() {
-    mode_ = DRAIN;
-    pacing_gain_ = DRAIN_GAIN;
-    cwnd_gain_ = HIGH_GAIN;
+    mode_ = kDrain;
+    pacing_gain_ = kDrainGain;
+    cwnd_gain_ = kHighGain;
 }
 
 void BBRv2CongestionControl::EnterProbeBW() {
-    mode_ = PROBE_BW;
-    pacing_gain_ = PACING_GAIN;
+    mode_ = kProbeBW;
+    pacing_gain_ = kPacingGain;
     cwnd_gain_ = 2;
 }
 
 void BBRv2CongestionControl::EnterProbeRTT() {
-    mode_ = PROBE_RTT;
+    mode_ = kProbeRtt;
     pacing_gain_ = 1;
     cwnd_gain_ = 1;
 }
 
 void BBRv2CongestionControl::CheckCyclePhase(uint64_t now) {
-    if (mode_ == STARTUP && !bandwidth_samples_.empty() && 
+    if (mode_ == kStartup && !bandwidth_samples_.empty() && 
         bandwidth_samples_.back().bandwidth <= max_bandwidth_) {
         EnterDrain();
     }
 
-    if (mode_ == DRAIN && bytes_in_flight_ <= GetTargetCwnd()) {
+    if (mode_ == kDrain && bytes_in_flight_ <= GetTargetCwnd()) {
         EnterProbeBW();
     }
 
-    if (now - min_rtt_timestamp_ > PROBE_RTT_INTERVAL) {
+    if (now - min_rtt_timestamp_ > kProbeRttInterval) {
         EnterProbeRTT();
-        probe_rtt_done_timestamp_ = now + PROBE_RTT_DURATION;
+        probe_rtt_done_timestamp_ = now + kProbeRttDuration;
         probe_rtt_round_done_ = false;
     }
 
-    if (mode_ == PROBE_RTT && now > probe_rtt_done_timestamp_ && probe_rtt_round_done_) {
+    if (mode_ == kProbeRtt && now > probe_rtt_done_timestamp_ && probe_rtt_round_done_) {
         min_rtt_timestamp_ = now;
         EnterProbeBW();
     }
+
 }
 
 uint64_t BBRv2CongestionControl::GetTargetCwnd() const {
@@ -211,8 +213,8 @@ uint64_t BBRv2CongestionControl::GetTargetCwnd() const {
 void BBRv2CongestionControl::AdaptLowerBounds() {
     if (loss_rounds_ > 0 || ecn_ce_rounds_ > 0) {
         // Adapt minimum window based on loss/ECN signals
-        uint64_t min_cwnd = std::max(MIN_WINDOW, 
-            static_cast<uint64_t>(GetTargetCwnd() * std::min(BETA_LOSS, BETA_ECN)));
+        uint64_t min_cwnd = std::max(kMinWindow, 
+            static_cast<uint64_t>(GetTargetCwnd() * std::min(kBetaLoss, kBetaEcn)));
         congestion_window_ = std::max(congestion_window_, min_cwnd);
     }
 }
@@ -221,8 +223,8 @@ void BBRv2CongestionControl::HandleEcnFeedback(bool ecn_ce) {
     if (ecn_ce) {
         ecn_ce_rounds_++;
         if (ecn_ce_rounds_ > 1) {
-            congestion_window_ = std::max(MIN_WINDOW, 
-                static_cast<uint64_t>(congestion_window_ * BETA_ECN));
+            congestion_window_ = std::max(kMinWindow, 
+                static_cast<uint64_t>(congestion_window_ * kBetaEcn));
             inflight_too_high_ = true;
         }
     }

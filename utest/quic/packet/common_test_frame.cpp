@@ -12,16 +12,16 @@ static uint64_t __offset = 1024;
 static uint8_t __level = 1;
 
 PacketTest::PacketTest() {
-    uint8_t dcid[__max_cid_length] = {0};
-    ConnectionIDGenerator::Instance().Generator(dcid, __max_cid_length);
+    uint8_t dcid[kMaxCidLength] = {0};
+    ConnectionIDGenerator::Instance().Generator(dcid, kMaxCidLength);
 
-    cli_cryptographer_ = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-    if (!cli_cryptographer_->InstallInitSecret(dcid, __max_cid_length, __initial_slat, sizeof(__initial_slat), false)) {
+    cli_cryptographer_ = MakeCryptographer(kCipherIdAes128GcmSha256);
+    if (!cli_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt, sizeof(kInitialSalt), false)) {
         abort();
     }
 
-    ser_cryptographer_ = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-    if (!ser_cryptographer_->InstallInitSecret(dcid, __max_cid_length, __initial_slat, sizeof(__initial_slat), true)) {
+    ser_cryptographer_ = MakeCryptographer(kCipherIdAes128GcmSha256);
+    if (!ser_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt, sizeof(kInitialSalt), true)) {
         abort();
     }
 }

@@ -5,16 +5,16 @@
 namespace quicx {
 namespace quic {
 
-constexpr size_t RenoCongestionControl::INITIAL_WINDOW;
-constexpr double RenoCongestionControl::BETA_RENO;
-constexpr size_t RenoCongestionControl::MIN_WINDOW;
+constexpr size_t RenoCongestionControl::kInitialWindow;
+constexpr double RenoCongestionControl::kBetaReno;
+constexpr size_t RenoCongestionControl::kMinWindow;
 
 RenoCongestionControl::RenoCongestionControl() :
     ssthresh_(UINT64_MAX),
     recovery_start_(0),
     in_recovery_(false) {
     
-    congestion_window_ = INITIAL_WINDOW;
+    congestion_window_ = kInitialWindow;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
     pacer_ = std::unique_ptr<NormalPacer>(new NormalPacer());
@@ -48,7 +48,7 @@ void RenoCongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
         }
     } else {
         // In congestion avoidance, grow window linearly
-        congestion_window_ += (INITIAL_WINDOW * bytes) / congestion_window_;
+        congestion_window_ += (kInitialWindow * bytes) / congestion_window_;
     }
     pacer_->OnPacingRateUpdated(GetPacingRate());
 }
@@ -56,8 +56,8 @@ void RenoCongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
 void RenoCongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
     bytes_in_flight_ = (bytes_in_flight_ > bytes) ? bytes_in_flight_ - bytes : 0;
     if (!in_recovery_) {
-        ssthresh_ = congestion_window_ * BETA_RENO;
-        congestion_window_ = std::max(MIN_WINDOW, ssthresh_);
+        ssthresh_ = congestion_window_ * kBetaReno;
+        congestion_window_ = std::max(kMinWindow, ssthresh_);
         in_recovery_ = true;
         recovery_start_ = lost_time;
         in_slow_start_ = false;
@@ -86,14 +86,14 @@ bool RenoCongestionControl::CanSend(uint64_t now, uint32_t& can_send_bytes) cons
 
 uint64_t RenoCongestionControl::GetPacingRate() const {
      if (smoothed_rtt_ == 0) {
-        return MIN_WINDOW; // Avoid division by zero
+        return kMinWindow; // Avoid division by zero
     }
     // Simple pacing rate calculation
     return congestion_window_ * 1000000 / smoothed_rtt_; // bytes per second
 }
 
 void RenoCongestionControl::Reset() {
-    congestion_window_ = INITIAL_WINDOW;
+    congestion_window_ = kInitialWindow;
     bytes_in_flight_ = 0;
     ssthresh_ = UINT64_MAX;
     in_recovery_ = false;

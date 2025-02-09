@@ -53,7 +53,7 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
 
 void RttCalculator::Reset() {
     latest_rtt_ = 0;
-    smoothed_rtt_ = __init_rtt * 1000;
+    smoothed_rtt_ = kInitRtt * 1000;
     rtt_var_ = smoothed_rtt_ / 2;
     min_rtt_ = std::numeric_limits<uint32_t>::max();
 

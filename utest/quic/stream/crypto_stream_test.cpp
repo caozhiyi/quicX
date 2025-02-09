@@ -79,9 +79,9 @@ TEST(crypto_stream_utest, send) {
     std::shared_ptr<CryptoStream> stream = std::make_shared<CryptoStream>(alloter, nullptr, nullptr, nullptr);
 
     uint8_t data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30};
-    stream->Send(data, 5, EL_INITIAL);
-    stream->Send(data + 5, 10, EL_HANDSHAKE);
-    stream->Send(data + 15, 15, EL_APPLICATION);
+    stream->Send(data, 5, kInitial);
+    stream->Send(data + 5, 10, kHandshake);
+    stream->Send(data + 15, 15, kApplication);
 
     FixBufferFrameVisitor frame_visitor(1450);
     EXPECT_EQ(stream->TrySendData(&frame_visitor), IStream::TSR_BREAK);

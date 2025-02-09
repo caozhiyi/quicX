@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t size):
-    encryption_level_(EL_APPLICATION),
+    encryption_level_(kApplication),
     cur_data_offset_(0),
     limit_data_offset_(0) {
     cache_ = new uint8_t[size];

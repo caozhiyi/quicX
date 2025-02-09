@@ -52,7 +52,7 @@ private:
 
     // local data send offset
     uint64_t send_offset_;
-    std::shared_ptr<common::IBufferChains> send_buffers_[NUM_ENCRYPTION_LEVELS];
+    std::shared_ptr<common::IBufferChains> send_buffers_[kNumEncryptionLevels];
     stream_read_callback recv_cb_;
 };
 
