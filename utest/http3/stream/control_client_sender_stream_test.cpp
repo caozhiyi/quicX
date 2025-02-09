@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <unordered_map>
+#include "http3/connection/type.h"
 #include "utest/http3/stream/mock_quic_stream.h"
 #include "http3/stream/control_client_sender_stream.h"
 #include "http3/stream/control_server_receiver_stream.h"
@@ -126,7 +128,7 @@ TEST_F(ControlClientSenderStreamTest, SendGoAway) {
 }   
 
 TEST_F(ControlClientSenderStreamTest, SendSettings) {
-    std::unordered_map<uint16_t, uint64_t> settings = {{1, 100}, {2, 200}};
+    std::unordered_map<uint16_t, uint64_t> settings = {{SettingsType::kMaxHeaderListSize, 100}, {SettingsType::kMaxConcurrentStreams, 200}};
     client_connection_->SendSettings(settings);
     EXPECT_EQ(server_connection_->GetSettings(), settings);
 }

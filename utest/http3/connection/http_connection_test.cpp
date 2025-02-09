@@ -13,7 +13,7 @@ namespace {
 class MockClient {
 public:
     MockClient(std::shared_ptr<quic::IQuicConnection> conn) {
-        conn_ = std::make_shared<ClientConnection>("", DEFAULT_HTTP3_SETTINGS, conn,
+        conn_ = std::make_shared<ClientConnection>("", kDefaultHttp3Settings, conn,
             std::bind(&MockClient::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClient::PushPromiseHandler, this, std::placeholders::_1),
             std::bind(&MockClient::PushHandler, this, std::placeholders::_1, std::placeholders::_2));
@@ -46,7 +46,7 @@ private:
 class MockServer {
 public:
     MockServer(std::shared_ptr<quic::IQuicConnection> conn) {
-        conn_ = std::make_shared<ServerConnection>("", DEFAULT_HTTP3_SETTINGS, nullptr, conn,
+        conn_ = std::make_shared<ServerConnection>("", kDefaultHttp3Settings, nullptr, conn,
             std::bind(&MockServer::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockServer::HttpHandler, this, std::placeholders::_1, std::placeholders::_2));
     }
@@ -93,7 +93,7 @@ protected:
 
 TEST_F(HttpConnectionTest, DoRequest) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
-    request->SetMethod(HttpMethod::HM_GET);
+    request->SetMethod(HttpMethod::kGet);
     request->SetPath("/");
     request->SetScheme("http");
     request->SetAuthority("localhost");
@@ -113,7 +113,7 @@ TEST_F(HttpConnectionTest, DoRequest) {
         EXPECT_EQ(content, "*/*");
 
         // check pseudo headers
-        EXPECT_EQ(request->GetMethod(), HttpMethod::HM_GET);
+        EXPECT_EQ(request->GetMethod(), HttpMethod::kGet);
         EXPECT_EQ(request->GetPath(), "/");
         EXPECT_EQ(request->GetScheme(), "http");
         EXPECT_EQ(request->GetAuthority(), "localhost");

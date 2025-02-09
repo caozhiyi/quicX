@@ -4,6 +4,7 @@
 
 namespace quicx {
 namespace http3 {
+
 bool CancelPushFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (buffer->GetFreeLength() < EvaluateEncodeSize()) {
         return false;

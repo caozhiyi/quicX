@@ -20,7 +20,7 @@ protected:
 };
 
 TEST_F(PushPromiseFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), FT_PUSH_PROMISE);
+    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kPushPromise));
     
     uint64_t push_id = 100;
     frame_->SetPushId(push_id);

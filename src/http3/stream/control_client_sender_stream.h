@@ -13,7 +13,7 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~ControlClientSenderStream();
 
-    virtual StreamType GetType() override { return StreamType::ST_CONTROL; }
+    virtual StreamType GetType() override { return StreamType::kControl; }
     // Send MAX_PUSH_ID frame
     virtual bool SendMaxPushId(uint64_t push_id);
 

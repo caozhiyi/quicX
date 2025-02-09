@@ -68,36 +68,48 @@ void PseudoHeader::DecodeResponse(std::shared_ptr<IResponse> response) {
 }
 
 std::string PseudoHeader::MethodToString(HttpMethod method) {
-    switch (method) {
-        case HttpMethod::HM_GET:     return "GET";
-        case HttpMethod::HM_POST:    return "POST";
-        case HttpMethod::HM_PUT:     return "PUT";
-        case HttpMethod::HM_DELETE:  return "DELETE";
-        case HttpMethod::HM_CONNECT: return "CONNECT";
-        case HttpMethod::HM_OPTIONS: return "OPTIONS";
-        case HttpMethod::HM_TRACE:   return "TRACE";
-        case HttpMethod::HM_PATCH:   return "PATCH";
-        case HttpMethod::HM_ANY:     return "ANY";
-        default:
-        common::LOG_FATAL("Invalid method: %d", method);
-        return "GET";
+    auto iter = kMethodToStringMap.find(method);
+    if (iter != kMethodToStringMap.end()) {
+        return iter->second;
     }
+
+    common::LOG_FATAL("Invalid method: %d", method);
+    return "";
 }
 
 HttpMethod PseudoHeader::StringToMethod(const std::string& method) {
-    if (method == "GET")     return HttpMethod::HM_GET;
-    if (method == "POST")    return HttpMethod::HM_POST;
-    if (method == "PUT")     return HttpMethod::HM_PUT;
-    if (method == "DELETE")  return HttpMethod::HM_DELETE;
-    if (method == "CONNECT") return HttpMethod::HM_CONNECT;
-    if (method == "OPTIONS") return HttpMethod::HM_OPTIONS;
-    if (method == "TRACE")   return HttpMethod::HM_TRACE;
-    if (method == "PATCH")   return HttpMethod::HM_PATCH;
-    if (method == "ANY")     return HttpMethod::HM_ANY;
+    auto iter = kStringToMethodMap.find(method);
+    if (iter != kStringToMethodMap.end()) {
+        return iter->second;
+    }
 
     common::LOG_FATAL("Invalid method: %s", method.c_str());
-    return HttpMethod::HM_GET;
+    return HttpMethod::kGet;
 }
+
+const std::unordered_map<std::string, HttpMethod> PseudoHeader::kStringToMethodMap = {
+    {"GET", HttpMethod::kGet},
+    {"POST", HttpMethod::kPost},
+    {"PUT", HttpMethod::kPut},
+    {"DELETE", HttpMethod::kDelete},
+    {"CONNECT", HttpMethod::kConnect},
+    {"OPTIONS", HttpMethod::kOptions},
+    {"TRACE", HttpMethod::kTrace},
+    {"PATCH", HttpMethod::kPatch},
+    {"ANY", HttpMethod::kAny},
+};
+
+const std::unordered_map<HttpMethod, std::string> PseudoHeader::kMethodToStringMap = {
+    {HttpMethod::kGet, "GET"},
+    {HttpMethod::kPost, "POST"},
+    {HttpMethod::kPut, "PUT"},
+    {HttpMethod::kDelete, "DELETE"},
+    {HttpMethod::kConnect, "CONNECT"},
+    {HttpMethod::kOptions, "OPTIONS"},
+    {HttpMethod::kTrace, "TRACE"},
+    {HttpMethod::kPatch, "PATCH"},
+    {HttpMethod::kAny, "ANY"},
+};
 
 }
 }

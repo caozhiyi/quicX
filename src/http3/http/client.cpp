@@ -3,6 +3,7 @@
 #include "common/http/url.h"
 #include "http3/http/error.h"
 #include "http3/http/client.h"
+#include "http3/http/config.h"
 #include "common/network/address.h"
 #include "common/network/io_handle.h"
 
@@ -60,7 +61,7 @@ bool Client::DoRequest(const std::string& url, HttpMethod mothed,
     }
     addr.SetPort(url_info.port);
     // create connection
-    quic_->Connection(addr.GetIp(), addr.GetPort(), http3_alpn__, 10000); // TODO: timeout add to config
+    quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, kClientConnectionTimeoutMs);
     wait_request_map_[addr.AsString()] = WaitRequestContext{url_info, request, handler};
     return true;
 }

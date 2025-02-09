@@ -48,14 +48,16 @@ bool PushSenderStream::SendPushResponse(std::shared_ptr<IResponse> response) {
     auto frame_buffer = std::make_shared<common::Buffer>(frame_buf, sizeof(frame_buf));
     if (!headers_frame.Encode(frame_buffer)) {
         common::LOG_ERROR("PushSenderStream::SendPushResponse headers frame encode error");
-        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
+        error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return false;
+
     }
     if (stream_->Send(frame_buffer) <= 0) {
         common::LOG_ERROR("PushSenderStream::SendPushResponse send headers error");
-        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_CLOSED_CRITICAL_STREAM);
+        error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
         return false;
     }
+
 
     // Send DATA frame if body exists
     if (!response->GetBody().empty()) {
@@ -67,12 +69,13 @@ bool PushSenderStream::SendPushResponse(std::shared_ptr<IResponse> response) {
         auto data_buffer = std::make_shared<common::Buffer>(data_buf, sizeof(data_buf));
         if (!data_frame.Encode(data_buffer)) {
             common::LOG_ERROR("PushSenderStream::SendPushResponse data frame encode error");
-            error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
+            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             return false;
         }
+
         if (stream_->Send(data_buffer) <= 0) {
             common::LOG_ERROR("PushSenderStream::SendPushResponse send data error");
-            error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_CLOSED_CRITICAL_STREAM);
+            error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
             return false;
         }
     }

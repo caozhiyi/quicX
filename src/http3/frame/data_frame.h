@@ -10,7 +10,7 @@ namespace http3 {
 class DataFrame:
     public IFrame {
 public:
-    DataFrame(): IFrame(FT_DATA), length_(0) {}
+    DataFrame(): IFrame(FrameType::kData), length_(0) {}
 
     uint32_t GetLength() const { return length_; }
     void SetLength(uint32_t length) { length_ = length; }

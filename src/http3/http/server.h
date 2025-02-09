@@ -15,12 +15,12 @@ namespace http3 {
 class Server:
     public IServer {
 public:
-    Server(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
+    Server(const Http3Settings& settings = kDefaultHttp3Settings);
     virtual ~Server();
 
     // Initialize the server with a certificate and a key
-    virtual bool Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num = 1, LogLevel level = LL_NULL);
-    virtual bool Init(const char* cert_pem, const char* key_pem, uint16_t thread_num = 1, LogLevel level = LL_NULL);
+    virtual bool Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num = 1, LogLevel level = LogLevel::kNull);
+    virtual bool Init(const char* cert_pem, const char* key_pem, uint16_t thread_num = 1, LogLevel level = LogLevel::kNull);
 
     // Start the server on the given address and port
     // server will block until the server is stopped

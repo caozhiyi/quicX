@@ -11,7 +11,7 @@ namespace http3 {
 class HeadersFrame:
     public IFrame {
 public:
-    HeadersFrame(): IFrame(FT_HEADERS), length_(0) {}
+    HeadersFrame(): IFrame(FrameType::kHeaders), length_(0) {}
 
     uint32_t GetLength() const { return length_; }
     void SetLength(uint32_t length) { length_ = length; }

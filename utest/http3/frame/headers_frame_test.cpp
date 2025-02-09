@@ -20,7 +20,7 @@ protected:
 };
 
 TEST_F(HeadersFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), FT_HEADERS);
+    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kHeaders));
     
     uint32_t length = 100;
     frame_->SetLength(length);

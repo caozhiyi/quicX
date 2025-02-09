@@ -19,7 +19,7 @@ protected:
 };
 
 TEST_F(CancelPushFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), FT_CANCEL_PUSH);
+    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kCancelPush));
     
     uint64_t push_id = 100;
     frame_->SetPushId(push_id);

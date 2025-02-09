@@ -37,7 +37,7 @@ static const char key_pem[] =
       "-----END RSA PRIVATE KEY-----\n"; 
 
     auto server = quicx::http3::IServer::Create();
-    server->AddHandler(quicx::http3::HttpMethod::HM_GET,
+    server->AddHandler(quicx::http3::HttpMethod::kGet,
         "/hello",
         [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
             std::cout << "get request method: " << req->GetMethodString() << std::endl;
@@ -48,7 +48,7 @@ static const char key_pem[] =
             resp->SetStatusCode(200);
         }
     );
-    server->Init(cert_pem, key_pem, 1, quicx::http3::LL_DEBUG);
+    server->Init(cert_pem, key_pem, 1, quicx::http3::LogLevel::kDebug);
     server->Start("0.0.0.0", 8882);
     server->Join();
 }

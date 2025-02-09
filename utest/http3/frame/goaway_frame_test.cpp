@@ -20,7 +20,7 @@ protected:
 };
 
 TEST_F(GoAwayFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), FT_GOAWAY);
+    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kGoaway));
     
     uint64_t stream_id = 100;
     frame_->SetStreamId(stream_id);

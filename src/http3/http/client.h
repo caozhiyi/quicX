@@ -16,11 +16,11 @@ namespace http3 {
 class Client:
     public IClient {
 public:
-    Client(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
+    Client(const Http3Settings& settings = kDefaultHttp3Settings);
     virtual ~Client();
 
     // Initialize the client with a certificate and a key
-    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LL_NULL);
+    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LogLevel::kNull);
 
     // Send a request to the server
     virtual bool DoRequest(const std::string& url, HttpMethod mothed,

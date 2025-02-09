@@ -4,7 +4,7 @@
 namespace quicx {
 namespace http3 {
 
-static const char* http3_alpn__ = "h3";
+static const char* kHttp3Alpn = "h3";
 
 }
 }

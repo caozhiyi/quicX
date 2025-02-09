@@ -17,7 +17,7 @@ public:
     virtual ~IClient() {};
 
     // thread_num: the number of threads to handle requests
-    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LL_NULL) = 0;
+    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LogLevel::kNull) = 0;
 
     // Send a request to the server
     virtual bool DoRequest(const std::string& url, HttpMethod mothed,
@@ -29,7 +29,7 @@ public:
     virtual void SetPushHandler(const http_response_handler& push_handler) = 0;
 
     // Create a client instance
-    static std::unique_ptr<IClient> Create(const Http3Settings& settings = DEFAULT_HTTP3_SETTINGS);
+    static std::unique_ptr<IClient> Create(const Http3Settings& settings = kDefaultHttp3Settings);
 };
 
 }

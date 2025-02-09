@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "http3/include/type.h"
+#include "http3/connection/type.h"
 #include "common/timer/timer_task.h"
 #include "http3/include/if_client.h"
 #include "http3/qpack/qpack_encoder.h"

@@ -10,7 +10,7 @@ namespace http3 {
 class PushPromiseFrame:
     public IFrame {
 public:
-    PushPromiseFrame(): IFrame(FT_PUSH_PROMISE), length_(0), push_id_(0) {}
+    PushPromiseFrame(): IFrame(FrameType::kPushPromise), length_(0), push_id_(0) {}
 
     uint64_t GetPushId() const { return push_id_; }
     void SetPushId(uint64_t id) { push_id_ = id; }

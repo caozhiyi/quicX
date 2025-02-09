@@ -38,7 +38,7 @@ void ResponseStream::SendPushPromise(const std::unordered_map<std::string, std::
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
     if (!qpack_encoder_->Encode(headers, headers_buffer)) {
         common::LOG_ERROR("ResponseStream::SendPushPromise qpack encode error");
-        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
+        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         return;
     }
 
@@ -51,7 +51,7 @@ void ResponseStream::SendPushPromise(const std::unordered_map<std::string, std::
     auto frame_buffer = std::make_shared<common::Buffer>(frame_buf, sizeof(frame_buf));
     if (!push_frame.Encode(frame_buffer)) {
         common::LOG_ERROR("ResponseStream::SendPushPromise frame encode error");
-        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
+        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         return;
     }
 
@@ -72,7 +72,7 @@ void ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
     auto headers_buffer = std::make_shared<common::Buffer>(headers_buf, sizeof(headers_buf));
     if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer)) {
         common::LOG_ERROR("ResponseStream::SendResponse error");
-        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
+        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         return;
     }
     
@@ -85,12 +85,12 @@ void ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
     auto frame_buffer = std::make_shared<common::Buffer>(frame_buf, sizeof(frame_buf));
     if (!response_headers_frame.Encode(frame_buffer)) {
         common::LOG_ERROR("ResponseStream::SendResponse error");
-        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
+        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         return;
     }
     if (stream_->Send(frame_buffer) <= 0) {
         common::LOG_ERROR("ResponseStream::SendResponse error");
-        error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_CLOSED_CRITICAL_STREAM);
+        error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
         return;
     }
 
@@ -104,12 +104,12 @@ void ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
         auto data_buffer = std::make_shared<common::Buffer>(data_buf, sizeof(data_buf));
         if (!data_frame.Encode(data_buffer)) {
             common::LOG_ERROR("ResponseStream::SendResponse error");
-            error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_INTERNAL_ERROR);
+            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             return;
         }
         if (stream_->Send(data_buffer) <= 0) {
             common::LOG_ERROR("ResponseStream::SendResponse error");
-            error_handler_(GetStreamID(), HTTP3_ERROR_CODE::H3EC_CLOSED_CRITICAL_STREAM);
+            error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
             return;
         }
     }

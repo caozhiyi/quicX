@@ -14,36 +14,17 @@
 namespace quicx {
 namespace http3 {
 
-class FrameDecode:
-    public common::Singleton<FrameDecode> {
-public:
-    FrameDecode();
-    ~FrameDecode();
-
-    bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
-private:
-    typedef std::function<std::shared_ptr<IFrame>()> FrameCreater;
-    // frame type to craeter function map
-    static std::unordered_map<uint16_t, FrameCreater> __frame_creater_map;
+static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>()>> kFrameCreaterMap = {
+    {static_cast<uint16_t>(FrameType::kData),         []() -> std::shared_ptr<IFrame> { return std::make_shared<DataFrame>(); }},
+    {static_cast<uint16_t>(FrameType::kHeaders),      []() -> std::shared_ptr<IFrame> { return std::make_shared<HeadersFrame>(); }},
+    {static_cast<uint16_t>(FrameType::kCancelPush),   []() -> std::shared_ptr<IFrame> { return std::make_shared<CancelPushFrame>(); }},
+    {static_cast<uint16_t>(FrameType::kSettings),     []() -> std::shared_ptr<IFrame> { return std::make_shared<SettingsFrame>(); }},
+    {static_cast<uint16_t>(FrameType::kPushPromise),  []() -> std::shared_ptr<IFrame> { return std::make_shared<PushPromiseFrame>(); }},
+    {static_cast<uint16_t>(FrameType::kGoaway),       []() -> std::shared_ptr<IFrame> { return std::make_shared<GoawayFrame>(); }},
+    {static_cast<uint16_t>(FrameType::kMaxPushId),    []() -> std::shared_ptr<IFrame> { return std::make_shared<MaxPushIdFrame>(); }},
 };
 
-std::unordered_map<uint16_t, FrameDecode::FrameCreater> FrameDecode::__frame_creater_map;
-
-FrameDecode::FrameDecode() {
-    __frame_creater_map[FT_DATA]                = []() -> std::shared_ptr<IFrame> { return std::make_shared<DataFrame>(); };
-    __frame_creater_map[FT_HEADERS]             = []() -> std::shared_ptr<IFrame> { return std::make_shared<HeadersFrame>(); };
-    __frame_creater_map[FT_CANCEL_PUSH]         = []() -> std::shared_ptr<IFrame> { return std::make_shared<CancelPushFrame>(); };
-    __frame_creater_map[FT_SETTINGS]            = []() -> std::shared_ptr<IFrame> { return std::make_shared<SettingsFrame>(); };
-    __frame_creater_map[FT_PUSH_PROMISE]        = []() -> std::shared_ptr<IFrame> { return std::make_shared<PushPromiseFrame>(); };
-    __frame_creater_map[FT_GOAWAY]              = []() -> std::shared_ptr<IFrame> { return std::make_shared<GoawayFrame>(); };
-    __frame_creater_map[FT_MAX_PUSH_ID]         = []() -> std::shared_ptr<IFrame> { return std::make_shared<MaxPushIdFrame>(); };
-}
-
-FrameDecode::~FrameDecode() {
-
-}
-
-bool FrameDecode::DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     if(buffer->GetDataLength() == 0) {
         return false;
     }
@@ -56,8 +37,8 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std:
         }
         wrapper.Flush();
 
-        auto creater = __frame_creater_map.find(frame_type);
-        if(creater == __frame_creater_map.end()) {
+        auto creater = kFrameCreaterMap.find(frame_type);
+        if(creater == kFrameCreaterMap.end()) {
             return false;
         }
 
@@ -70,10 +51,6 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std:
     }
 
     return true;
-}
-
-bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
-    return FrameDecode::Instance().DecodeFrames(buffer, frames);
 }
 
 }

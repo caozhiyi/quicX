@@ -26,17 +26,18 @@ ControlServerReceiverStream::~ControlServerReceiverStream() {
 }
 
 void ControlServerReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    switch (frame->GetType()) {
-        case FT_MAX_PUSH_ID: {
+    switch (static_cast<FrameType>(frame->GetType())) {
+        case FrameType::kMaxPushId: {
             auto max_push_id_frame = std::dynamic_pointer_cast<MaxPushIdFrame>(frame);
             max_push_id_handler_(max_push_id_frame->GetPushId());
             break;
         }
-        case FT_CANCEL_PUSH: {
+        case FrameType::kCancelPush: {
             auto cancel_push_frame = std::dynamic_pointer_cast<CancelPushFrame>(frame);
             cancel_handler_(cancel_push_frame->GetPushId());
             break;
         }
+
         default:
             ControlReceiverStream::HandleFrame(frame);
             break;

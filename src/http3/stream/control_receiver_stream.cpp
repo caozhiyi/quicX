@@ -37,7 +37,7 @@ void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, ui
     std::vector<std::shared_ptr<IFrame>> frames;
     if (!DecodeFrames(data, frames)) {
         common::LOG_ERROR("IStream::OnData decode frames error");
-        error_handler_(stream_->GetStreamID(), HTTP3_ERROR_CODE::H3EC_MESSAGE_ERROR);
+        error_handler_(stream_->GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
 
@@ -47,20 +47,20 @@ void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, ui
 }
 
 void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    switch (frame->GetType()) {
-        case FT_GOAWAY: {
+    switch (static_cast<FrameType>(frame->GetType())) {
+        case FrameType::kGoaway: {
             auto goaway_frame = std::static_pointer_cast<GoawayFrame>(frame);
             goaway_handler_(goaway_frame->GetStreamId());
             break;
         }
-        case FT_SETTINGS: {
+        case FrameType::kSettings: {
             auto settings_frame = std::static_pointer_cast<SettingsFrame>(frame);
             settings_handler_(settings_frame->GetSettings());
             break;
         }
         default:
             common::LOG_ERROR("IStream::OnData unknown frame type: %d", frame->GetType());
-            error_handler_(stream_->GetStreamID(), HTTP3_ERROR_CODE::H3EC_FRAME_UNEXPECTED);
+            error_handler_(stream_->GetStreamID(), Http3ErrorCode::kFrameUnexpected);
             break;
     }
 }

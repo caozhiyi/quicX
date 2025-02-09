@@ -20,7 +20,7 @@ protected:
 };
 
 TEST_F(MaxPushIdFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), FT_MAX_PUSH_ID);
+    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kMaxPushId));
     
     uint64_t push_id = 100;
     frame_->SetPushId(push_id);

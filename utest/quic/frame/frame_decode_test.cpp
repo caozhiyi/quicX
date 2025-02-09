@@ -16,7 +16,7 @@ namespace quic {
 namespace {
 
 TEST(frame_decode_utest, codec) {
-    auto alloter = common::MakeBlockMemoryPoolPtr(1024, 2);
+    auto alloter = common::MakeBlockMemoryPoolPtr(4096, 2);
     std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
     std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
