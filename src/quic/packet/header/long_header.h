@@ -35,10 +35,10 @@ protected:
     uint32_t version_;
 
     uint8_t destination_connection_id_length_;
-    uint8_t destination_connection_id_[__max_connection_length];
+    uint8_t destination_connection_id_[kMaxConnectionLength];
 
     uint8_t source_connection_id_length_;
-    uint8_t source_connection_id_[__max_connection_length];
+    uint8_t source_connection_id_[kMaxConnectionLength];
 };
 
 }

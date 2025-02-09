@@ -29,7 +29,7 @@ const char* ChaCha20Poly1305Cryptographer::GetName() {
 }
 
 CryptographerId ChaCha20Poly1305Cryptographer::GetCipherId() {
-    return CI_TLS1_CK_CHACHA20_POLY1305_SHA256;
+    return kCipherIdChaCha20Poly1305Sha256;
 }
 
 bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
@@ -39,9 +39,9 @@ bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(common::BufferSpan& sa
     uint32_t *counter = (uint32_t *)(sample_pos);
     sample_pos += sizeof(uint32_t);
 
-    CRYPTO_chacha_20(out_mask, __header_mask, sizeof(__header_mask) - 1, key.data(), sample_pos, *counter);
+    CRYPTO_chacha_20(out_mask, kHeaderMask, sizeof(kHeaderMask) - 1, key.data(), sample_pos, *counter);
 
-    out_mask_length = sizeof(__header_mask);
+    out_mask_length = sizeof(kHeaderMask);
     return true;
 }
 

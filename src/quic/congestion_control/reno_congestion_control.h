@@ -22,14 +22,14 @@ public:
     uint64_t GetPacingRate() const override;
     void Reset() override;
 
-    
-    size_t GetInitialWindow() const { return INITIAL_WINDOW; }
+    size_t GetInitialWindow() const { return kInitialWindow; }
+
 
 private:
     // Reno specific parameters
-    static constexpr size_t INITIAL_WINDOW = 10 * 1460; // Initial window size
-    static constexpr double BETA_RENO = 0.5;            // Beta for multiplicative decrease
-    static constexpr size_t MIN_WINDOW = 2 * 1460;      // Minimum window size
+    static constexpr size_t kInitialWindow = 10 * 1460; // Initial window size
+    static constexpr double kBetaReno = 0.5;            // Beta for multiplicative decrease
+    static constexpr size_t kMinWindow = 2 * 1460;      // Minimum window size
     
     // Reno state variables
     size_t ssthresh_;           // Slow start threshold

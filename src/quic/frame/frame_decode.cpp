@@ -32,60 +32,42 @@
 namespace quicx {
 namespace quic {
 
-class FrameDecode:
-    public common::Singleton<FrameDecode> {
-public:
-    FrameDecode();
-    ~FrameDecode();
-
-    bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
-private:
-    typedef std::function<std::shared_ptr<IFrame>(uint16_t)> FrameCreater;
-    // frame type to craeter function map
-    static std::unordered_map<uint16_t, FrameCreater> __frame_creater_map;
+// frame type to craeter function map
+static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>(uint16_t)>> kFrameCreaterMap = {
+    {FT_PADDING,                         [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<PaddingFrame>(); }},
+    {FT_PING,                            [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<PingFrame>(); }},
+    {FT_ACK,                             [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<AckFrame>(); }},
+    {FT_ACK_ECN,                         [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<AckEcnFrame>(); }},
+    {FT_RESET_STREAM,                    [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<ResetStreamFrame>(); }},
+    {FT_STOP_SENDING,                    [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StopSendingFrame>(); }},
+    {FT_CRYPTO,                          [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<CryptoFrame>(); }},
+    {FT_NEW_TOKEN,                       [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<NewTokenFrame>(); }},
+    {FT_STREAM,                          [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
+    {FT_STREAM + 1,                      [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
+    {FT_STREAM + 2,                      [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
+    {FT_STREAM + 3,                      [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
+    {FT_STREAM + 4,                      [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
+    {FT_STREAM + 5,                      [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
+    {FT_STREAM + 6,                      [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
+    {FT_STREAM + 7,                      [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); }},
+    {FT_MAX_DATA,                        [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxDataFrame>(); }},
+    {FT_MAX_STREAM_DATA,                 [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamDataFrame>(); }},
+    {FT_MAX_STREAMS_BIDIRECTIONAL,       [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamsFrame>(type); }},
+    {FT_MAX_STREAMS_UNIDIRECTIONAL,      [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamsFrame>(type); }},
+    {FT_DATA_BLOCKED,                    [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<DataBlockedFrame>(); }},
+    {FT_STREAM_DATA_BLOCKED,             [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamDataBlockedFrame>(); }},
+    {FT_STREAMS_BLOCKED_BIDIRECTIONAL,   [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamsBlockedFrame>(type); }},
+    {FT_STREAMS_BLOCKED_UNIDIRECTIONAL,  [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamsBlockedFrame>(type); }},
+    {FT_NEW_CONNECTION_ID,               [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<NewConnectionIDFrame>(); }},
+    {FT_RETIRE_CONNECTION_ID,            [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<RetireConnectionIDFrame>(); }},
+    {FT_PATH_CHALLENGE,                  [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<PathChallengeFrame>(); }},
+    {FT_PATH_RESPONSE,                   [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<PathResponseFrame>(); }},
+    {FT_CONNECTION_CLOSE,                [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<ConnectionCloseFrame>(type); }},
+    {FT_CONNECTION_CLOSE_APP,            [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<ConnectionCloseFrame>(type); }},
+    {FT_HANDSHAKE_DONE,                  [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<HandshakeDoneFrame>(); }},
 };
 
-std::unordered_map<uint16_t, FrameDecode::FrameCreater> FrameDecode::__frame_creater_map;
-
-FrameDecode::FrameDecode() {
-    __frame_creater_map[FT_PADDING]                         = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<PaddingFrame>(); };
-    __frame_creater_map[FT_PING]                            = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<PingFrame>(); };
-    __frame_creater_map[FT_ACK]                             = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<AckFrame>(); };
-    __frame_creater_map[FT_ACK_ECN]                         = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<AckEcnFrame>(); };
-    __frame_creater_map[FT_RESET_STREAM]                    = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<ResetStreamFrame>(); };
-    __frame_creater_map[FT_STOP_SENDING]                    = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StopSendingFrame>(); };
-    __frame_creater_map[FT_CRYPTO]                          = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<CryptoFrame>(); };
-    __frame_creater_map[FT_NEW_TOKEN]                       = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<NewTokenFrame>(); };
-    __frame_creater_map[FT_STREAM]                          = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_STREAM + 1]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_STREAM + 2]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_STREAM + 3]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_STREAM + 4]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_STREAM + 5]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_STREAM + 6]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_STREAM + 7]                      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamFrame>(type); };
-    __frame_creater_map[FT_MAX_DATA]                        = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxDataFrame>(); };
-    __frame_creater_map[FT_MAX_STREAM_DATA]                 = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamDataFrame>(); };
-    __frame_creater_map[FT_MAX_STREAMS_BIDIRECTIONAL]       = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamsFrame>(type); };
-    __frame_creater_map[FT_MAX_STREAMS_UNIDIRECTIONAL]      = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<MaxStreamsFrame>(type); };
-    __frame_creater_map[FT_DATA_BLOCKED]                    = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<DataBlockedFrame>(); };
-    __frame_creater_map[FT_STREAM_DATA_BLOCKED]             = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamDataBlockedFrame>(); };
-    __frame_creater_map[FT_STREAMS_BLOCKED_BIDIRECTIONAL]   = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamsBlockedFrame>(type); };
-    __frame_creater_map[FT_STREAMS_BLOCKED_UNIDIRECTIONAL]  = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<StreamsBlockedFrame>(type); };
-    __frame_creater_map[FT_NEW_CONNECTION_ID]               = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<NewConnectionIDFrame>(); };
-    __frame_creater_map[FT_RETIRE_CONNECTION_ID]            = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<RetireConnectionIDFrame>(); };
-    __frame_creater_map[FT_PATH_CHALLENGE]                  = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<PathChallengeFrame>(); };
-    __frame_creater_map[FT_PATH_RESPONSE]                   = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<PathResponseFrame>(); };
-    __frame_creater_map[FT_CONNECTION_CLOSE]                = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<ConnectionCloseFrame>(type); };
-    __frame_creater_map[FT_CONNECTION_CLOSE_APP]            = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<ConnectionCloseFrame>(type); };
-    __frame_creater_map[FT_HANDSHAKE_DONE]                  = [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<HandshakeDoneFrame>(); };
-}
-
-FrameDecode::~FrameDecode() {
-
-}
-
-bool FrameDecode::DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     if(buffer->GetDataLength() == 0) {
         return false;
     }
@@ -104,8 +86,8 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std:
         }
         common::FixedDecodeUint16(type_buf, type_buf + __type_buf_length, frame_type);
 
-        auto creater = __frame_creater_map.find(frame_type);
-        if (creater != __frame_creater_map.end()) {
+        auto creater = kFrameCreaterMap.find(frame_type);
+        if (creater != kFrameCreaterMap.end()) {
             // create frame
             frame = creater->second(frame_type);
 
@@ -122,10 +104,6 @@ bool FrameDecode::DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std:
         frames.push_back(frame);
     }
     return true;
-}
-
-bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
-    return FrameDecode::Instance().DecodeFrames(buffer, frames);
 }
 
 }

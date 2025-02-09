@@ -7,9 +7,9 @@ namespace quicx {
 namespace quic {
 
 ConnectionCrypto::ConnectionCrypto():
-    cur_encryption_level_(EL_INITIAL),
+    cur_encryption_level_(kInitial),
     transport_param_done_(false) {
-    memset(cryptographers_, 0, sizeof(std::shared_ptr<ICryptographer>) * NUM_ENCRYPTION_LEVELS);
+    memset(cryptographers_, 0, sizeof(std::shared_ptr<ICryptographer>) * kNumEncryptionLevels);
 }
 
 ConnectionCrypto::~ConnectionCrypto() {
@@ -82,14 +82,14 @@ void ConnectionCrypto::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 }
 
 bool ConnectionCrypto::InstallInitSecret(uint8_t* secret, uint32_t len, bool is_server) {
-    if (cryptographers_[EL_INITIAL]) {
+    if (cryptographers_[kInitial]) {
         return false;
     }
     
     // make initial cryptographer
-    std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(CI_TLS1_CK_AES_128_GCM_SHA256);
-    cryptographer->InstallInitSecret(secret, len, __initial_slat, sizeof(__initial_slat), is_server);
-    cryptographers_[EL_INITIAL] = cryptographer;
+    std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(kCipherIdAes128GcmSha256);
+    cryptographer->InstallInitSecret(secret, len, kInitialSalt, sizeof(kInitialSalt), is_server);
+    cryptographers_[kInitial] = cryptographer;
     return true;
 }
 

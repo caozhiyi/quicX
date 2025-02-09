@@ -142,8 +142,8 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
         common::LOG_ERROR("get send data failed.");
     }
     send_operation = send_manager_.GetSendOperation();
-    if (send_operation == SendOperation::SO_ALL_SEND_DONE && to_close_) {
-        InnerConnectionClose(QUIC_ERROR_CODE::QEC_NO_ERROR, 0, "connection closed by local.");
+    if (send_operation == SendOperation::kAllSendDone && to_close_) {
+        InnerConnectionClose(QuicErrorCode::kNoError, 0, "connection closed by local.");
     }
     return ret;
 }
@@ -321,7 +321,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     }
     // check peer data limit
     if (!flow_control_.CheckRemoteSendDataLimit(send_frame)) {
-        InnerConnectionClose(QEC_FLOW_CONTROL_ERROR, frame->GetType(), "flow control stream data limit.");
+        InnerConnectionClose(QuicErrorCode::kFlowControlError, frame->GetType(), "flow control stream data limit.");
         return false;
     }
     if (send_frame) {

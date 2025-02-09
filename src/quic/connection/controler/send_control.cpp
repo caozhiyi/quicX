@@ -15,7 +15,7 @@ SendControl::SendControl(std::shared_ptr<common::ITimer> timer):
     memset(pkt_num_largest_sent_, 0, sizeof(pkt_num_largest_sent_));
     memset(pkt_num_largest_acked_, 0, sizeof(pkt_num_largest_acked_));
     memset(largest_sent_time_, 0, sizeof(largest_sent_time_));
-    congestion_control_ = Create(CongestionControlType::CCT_RENO);
+    congestion_control_ = CreateCongestionControl(CongestionControlType::kReno);
 }
 
 void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len) {

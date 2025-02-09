@@ -21,14 +21,15 @@ public:
     bool CanSend(uint64_t now, uint32_t& can_send_bytes) const override;
     uint64_t GetPacingRate() const override;
     void Reset() override;
-    size_t GetInitialWindow() const { return MIN_WINDOW; }
+    size_t GetInitialWindow() const { return kMinWindow; }
 
 private:
     // CUBIC specific parameters
-    static constexpr double BETA_CUBIC = 0.7;    // Beta for multiplicative decrease
-    static constexpr double C = 0.4;             // Cubic scaling factor
-    static constexpr size_t MIN_WINDOW = 2 * 1460; // Minimum window size
+    static constexpr double kBetaCubic = 0.7;    // Beta for multiplicative decrease
+    static constexpr double kC = 0.4;             // Cubic scaling factor
+    static constexpr size_t kMinWindow = 2 * 1460; // Minimum window size
     
+
     // CUBIC state variables
     uint64_t epoch_start_;       // Time when current epoch started
     size_t w_max_;               // Window size before last reduction

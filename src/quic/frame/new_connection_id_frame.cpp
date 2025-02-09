@@ -73,8 +73,8 @@ uint32_t NewConnectionIDFrame::EncodeSize() {
 }
 
 void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {
-    if (len > __max_cid_length) {
-        common::LOG_ERROR("too max connecion id length. len:%d, max:%d", len, __max_cid_length);
+    if (len > kMaxCidLength) {
+        common::LOG_ERROR("too max connecion id length. len:%d, max:%d", len, kMaxCidLength);
         return;
     }
     memcpy(connection_id_, id, len);

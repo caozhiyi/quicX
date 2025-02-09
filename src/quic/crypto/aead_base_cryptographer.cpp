@@ -36,19 +36,19 @@ bool AeadBaseCryptographer::InstallSecret(const uint8_t* secret, uint32_t secret
     // make packet protect key
     dest_secret.key_.resize(aead_key_length_);
     size_t len = 0;
-    if (!Hkdf::HkdfExpand(dest_secret.key_.data(), aead_key_length_,  secret, secret_len, __tls_label_key, sizeof(__tls_label_key) - 1, digest_)) {
+    if (!Hkdf::HkdfExpand(dest_secret.key_.data(), aead_key_length_,  secret, secret_len, kTlsLabelKey, sizeof(kTlsLabelKey) - 1, digest_)) {
         return false;
     }
 
     // make packet protect iv
     dest_secret.iv_.resize(aead_iv_length_);
-    if (!Hkdf::HkdfExpand(dest_secret.iv_.data(), aead_iv_length_,  secret, secret_len, __tls_label_iv, sizeof(__tls_label_iv) - 1, digest_)) {
+    if (!Hkdf::HkdfExpand(dest_secret.iv_.data(), aead_iv_length_,  secret, secret_len, kTlsLabelIv, sizeof(kTlsLabelIv) - 1, digest_)) {
         return false;
     }
 
     // make header protext key
     dest_secret.hp_.resize(cipher_key_length_);
-    if (!Hkdf::HkdfExpand(dest_secret.hp_.data(), cipher_key_length_,  secret, secret_len, __tls_label_hp, sizeof(__tls_label_hp) - 1, digest_)) {
+    if (!Hkdf::HkdfExpand(dest_secret.hp_.data(), cipher_key_length_,  secret, secret_len, kTlsLabelHp, sizeof(kTlsLabelHp) - 1, digest_)) {
         return false;
     }
     return true;
@@ -58,31 +58,31 @@ bool AeadBaseCryptographer::InstallInitSecret(const uint8_t* secret, uint32_t se
     const EVP_MD *digest = EVP_sha256();
 
     // make init secret
-    uint8_t init_secret[__max_init_secret_length] = {0};
-    if (!Hkdf::HkdfExtract(init_secret, __max_init_secret_length, secret, secret_len, salt, saltlen, digest)) {
+    uint8_t init_secret[kMaxInitSecretLength] = {0};
+    if (!Hkdf::HkdfExtract(init_secret, kMaxInitSecretLength, secret, secret_len, salt, saltlen, digest)) {
         return false;
     }
 
-    const uint8_t* read_label = is_server ? __tls_label_client : __tls_label_server;
-    const uint8_t* write_label = is_server ? __tls_label_server : __tls_label_client;
+    const uint8_t* read_label = is_server ? kTlsLabelClient : kTlsLabelServer;
+    const uint8_t* write_label = is_server ? kTlsLabelServer : kTlsLabelClient;
 
-    uint8_t init_read_secret[__max_init_secret_length] = {0};
-    if (!Hkdf::HkdfExpand(init_read_secret, __max_init_secret_length,  init_secret,
-        __max_init_secret_length, read_label, sizeof(read_label) - 1, digest)) {
+    uint8_t init_read_secret[kMaxInitSecretLength] = {0};
+    if (!Hkdf::HkdfExpand(init_read_secret, kMaxInitSecretLength,  init_secret,
+        kMaxInitSecretLength, read_label, sizeof(read_label) - 1, digest)) {
         return false;
     }
 
-    uint8_t init_write_secret[__max_init_secret_length] = {0};
-    if (!Hkdf::HkdfExpand(init_write_secret, __max_init_secret_length,  init_secret,
-        __max_init_secret_length, write_label, sizeof(write_label) - 1, digest)) {
+    uint8_t init_write_secret[kMaxInitSecretLength] = {0};
+    if (!Hkdf::HkdfExpand(init_write_secret, kMaxInitSecretLength,  init_secret,
+        kMaxInitSecretLength, write_label, sizeof(write_label) - 1, digest)) {
         return false;
     }
 
-    if (!InstallSecret(init_read_secret, __max_init_secret_length, false)) {
+    if (!InstallSecret(init_read_secret, kMaxInitSecretLength, false)) {
         return false;
     }
 
-    if (!InstallSecret(init_write_secret, __max_init_secret_length, true)) {
+    if (!InstallSecret(init_write_secret, kMaxInitSecretLength, true)) {
         return false;
     }
 
@@ -97,7 +97,7 @@ bool AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, common::BufferSpa
     }
 
     // get nonce
-    uint8_t nonce[__packet_nonce_length] = {0};
+    uint8_t nonce[kPacketNonceLength] = {0};
     MakePacketNonce(nonce, read_secret_.iv_, pkt_number);
 
     // encrypt
@@ -127,7 +127,7 @@ bool AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, common::BufferSpa
     }
 
     // get nonce
-    uint8_t nonce[__packet_nonce_length] = {0};
+    uint8_t nonce[kPacketNonceLength] = {0};
     MakePacketNonce(nonce, write_secret_.iv_, pkt_number);
 
     // encrypt
@@ -156,13 +156,13 @@ bool AeadBaseCryptographer::DecryptHeader(common::BufferSpan& ciphertext, common
     }
 
     // get mask 
-    uint8_t mask[__header_protect_mask_length] = {0};
+    uint8_t mask[kHeaderProtectMaskLength] = {0};
     size_t mask_length = 0;
-    if (!MakeHeaderProtectMask(sample, read_secret_.hp_, mask, __header_protect_mask_length, mask_length)) {
+    if (!MakeHeaderProtectMask(sample, read_secret_.hp_, mask, kHeaderProtectMaskLength, mask_length)) {
         common::LOG_ERROR("make header protect mask failed");
         return false;
     }
-    if (mask_length < __header_protect_mask_length) {
+    if (mask_length < kHeaderProtectMaskLength) {
         common::LOG_ERROR("make header protect mask too short");
         return false;
     }
@@ -196,13 +196,13 @@ bool AeadBaseCryptographer::EncryptHeader(common::BufferSpan& plaintext, common:
     }
     
     // get mask 
-    uint8_t mask[__header_protect_mask_length] = {0};
+    uint8_t mask[kHeaderProtectMaskLength] = {0};
     size_t mask_length = 0;
-    if (!MakeHeaderProtectMask(sample, write_secret_.hp_, mask, __header_protect_mask_length, mask_length)) {
+    if (!MakeHeaderProtectMask(sample, write_secret_.hp_, mask, kHeaderProtectMaskLength, mask_length)) {
         common::LOG_ERROR("make header protect mask failed");
         return false;
     }
-    if (mask_length < __header_protect_mask_length) {
+    if (mask_length < kHeaderProtectMaskLength) {
         common::LOG_ERROR("make header protect mask too short");
         return false;
     }
@@ -240,7 +240,7 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, st
     }
 
     int len = 0;
-    if (EVP_EncryptUpdate(ctx.get(), out_mask, &len, __header_mask, sizeof(__header_mask) - 1) != 1) {
+    if (EVP_EncryptUpdate(ctx.get(), out_mask, &len, kHeaderMask, sizeof(kHeaderMask) - 1) != 1) {
         common::LOG_ERROR("EVP_EncryptUpdate failed");
         return false;
     }

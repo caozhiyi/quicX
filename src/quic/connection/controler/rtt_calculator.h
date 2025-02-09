@@ -6,7 +6,7 @@
 namespace quicx {
 namespace quic {
 
-const static uint32_t __init_rtt = 250;
+const static uint32_t kInitRtt = 250;
 
 class RttCalculator {
 public:

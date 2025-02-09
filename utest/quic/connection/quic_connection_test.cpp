@@ -91,8 +91,8 @@ TEST(quic_connection_utest, handshake) {
     // client <----session----- server
     ConnectionProcess(server_conn, client_conn);
 
-    EXPECT_EQ(server_conn->GetCurEncryptionLevel(), EL_APPLICATION);
-    EXPECT_EQ(client_conn->GetCurEncryptionLevel(), EL_APPLICATION);
+    EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
+    EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
 }
 
 }

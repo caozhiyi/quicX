@@ -138,10 +138,10 @@ void TLSConnection::TryGetTransportParam(SSL* ssl, ssl_encryption_level_t level)
 EncryptionLevel TLSConnection::AdapterEncryptionLevel(ssl_encryption_level_t level) {
     switch (level)
     {
-    case ssl_encryption_initial: return EL_INITIAL;
-    case ssl_encryption_early_data: return EL_EARLY_DATA;
-    case ssl_encryption_handshake: return EL_HANDSHAKE;
-    case ssl_encryption_application: return EL_APPLICATION;
+    case ssl_encryption_initial: return kInitial;
+    case ssl_encryption_early_data: return kEarlyData;
+    case ssl_encryption_handshake: return kHandshake;
+    case ssl_encryption_application: return kApplication;
     default:
         common::LOG_ERROR("unknow encryption level. level:%d", level);
         abort();

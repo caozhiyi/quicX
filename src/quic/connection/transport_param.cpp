@@ -86,71 +86,71 @@ bool TransportParam::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
     if (!original_destination_connection_id_.empty()) {
-        pos = EncodeString(pos, end, original_destination_connection_id_, TP_ORIGINAL_DESTINATION_CONNECTION_ID);
+        pos = EncodeString(pos, end, original_destination_connection_id_, static_cast<uint32_t>(TransportParamType::kOriginalDestinationConnectionId));
     }
     
     if (max_idle_timeout_) {
-        pos = EncodeUint(pos, end, max_idle_timeout_, TP_MAX_IDLE_TIMEOUT);
+        pos = EncodeUint(pos, end, max_idle_timeout_, static_cast<uint32_t>(TransportParamType::kMaxIdleTimeout));
     }
     
     if (!stateless_reset_token_.empty()) {
-        pos = EncodeString(pos, end, stateless_reset_token_, TP_STATELESS_RESET_TOKEN);
+        pos = EncodeString(pos, end, stateless_reset_token_, static_cast<uint32_t>(TransportParamType::kStatelessResetToken));
     }
     
     if (max_udp_payload_size_) {
-        pos = EncodeUint(pos, end, max_udp_payload_size_, TP_MAX_UDP_PAYLOAD_SIZE);
+        pos = EncodeUint(pos, end, max_udp_payload_size_, static_cast<uint32_t>(TransportParamType::kMaxUdpPayloadSize));
     }
     
     if (initial_max_data_) {
-        pos = EncodeUint(pos, end, initial_max_data_, TP_INITIAL_MAX_DATA);
+        pos = EncodeUint(pos, end, initial_max_data_, static_cast<uint32_t>(TransportParamType::kInitialMaxData));
     }
 
     if (initial_max_stream_data_bidi_local_) {
-        pos = EncodeUint(pos, end, initial_max_stream_data_bidi_local_, TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL);
+        pos = EncodeUint(pos, end, initial_max_stream_data_bidi_local_, static_cast<uint32_t>(TransportParamType::kInitialMaxStreamDataBidiLocal));
     }
     
     if (initial_max_stream_data_bidi_remote_) {
-        pos = EncodeUint(pos, end, initial_max_stream_data_bidi_remote_, TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE);
+        pos = EncodeUint(pos, end, initial_max_stream_data_bidi_remote_, static_cast<uint32_t>(TransportParamType::kInitialMaxStreamDataBidiRemote));
     }
 
     if (initial_max_stream_data_uni_) {
-        pos = EncodeUint(pos, end, initial_max_stream_data_uni_, TP_INITIAL_MAX_STREAM_DATA_UNI);
+        pos = EncodeUint(pos, end, initial_max_stream_data_uni_, static_cast<uint32_t>(TransportParamType::kInitialMaxStreamDataUni));
     }
 
     if (initial_max_streams_bidi_) {
-        pos = EncodeUint(pos, end, initial_max_streams_bidi_, TP_INITIAL_MAX_STREAMS_BIDI);
+        pos = EncodeUint(pos, end, initial_max_streams_bidi_, static_cast<uint32_t>(TransportParamType::kInitialMaxStreamsBidi));
     }
 
     if (initial_max_streams_uni_) {
-        pos = EncodeUint(pos, end, initial_max_streams_uni_, TP_INITIAL_MAX_STREAMS_UNI);
+        pos = EncodeUint(pos, end, initial_max_streams_uni_, static_cast<uint32_t>(TransportParamType::kInitialMaxStreamsUni));
     }
     
     if (ack_delay_exponent_) {
-        pos = EncodeUint(pos, end, ack_delay_exponent_, TP_ACK_DELAY_EXPONENT);
+        pos = EncodeUint(pos, end, ack_delay_exponent_, static_cast<uint32_t>(TransportParamType::kAckDelayExponent));
     }
 
     if (max_ack_delay_) {
-        pos = EncodeUint(pos, end, max_ack_delay_, TP_MAX_ACK_DELAY);
+        pos = EncodeUint(pos, end, max_ack_delay_, static_cast<uint32_t>(TransportParamType::kMaxAckDelay));
     }
 
     if (disable_active_migration_) {
-        pos = EncodeBool(pos, end, disable_active_migration_, TP_DISABLE_ACTIVE_MIGRATION);
+        pos = EncodeBool(pos, end, disable_active_migration_, static_cast<uint32_t>(TransportParamType::kDisableActiveMigration));
     }
 
     if (!preferred_address_.empty()) {
-        pos = EncodeString(pos, end, preferred_address_, TP_PREFERRED_ADDRESS);
+        pos = EncodeString(pos, end, preferred_address_, static_cast<uint32_t>(TransportParamType::kPreferredAddress));
     }
 
     if (active_connection_id_limit_) {
-        pos = EncodeUint(pos, end, active_connection_id_limit_, TP_ACTIVE_CONNECTION_ID_LIMIT);
+        pos = EncodeUint(pos, end, active_connection_id_limit_, static_cast<uint32_t>(TransportParamType::kActiveConnectionIdLimit));
     }
 
     if (!initial_source_connection_id_.empty()) {
-        pos = EncodeString(pos, end, initial_source_connection_id_, TP_INITIAL_SOURCE_CONNECTION_ID);
+        pos = EncodeString(pos, end, initial_source_connection_id_, static_cast<uint32_t>(TransportParamType::kInitialSourceConnectionId));
     }
 
     if (!retry_source_connection_id_.empty()) {
-        pos = EncodeString(pos, end, retry_source_connection_id_, TP_RETRY_SOURCE_CONNECTION_ID);
+        pos = EncodeString(pos, end, retry_source_connection_id_, static_cast<uint32_t>(TransportParamType::kRetrySourceConnectionId));
     }
 
     buffer->MoveWritePt(pos - span.GetStart());
@@ -164,56 +164,56 @@ bool TransportParam::Decode(std::shared_ptr<common::IBufferRead> buffer) {
     uint8_t* end = span.GetEnd();
     while (pos < end) {
         pos = common::DecodeVarint(pos, end, type);
-        switch(type) {
-        case TP_ORIGINAL_DESTINATION_CONNECTION_ID:
+        switch(static_cast<TransportParamType>(type)) {
+        case TransportParamType::kOriginalDestinationConnectionId:
             pos = DecodeString(pos, end, original_destination_connection_id_);
             break;
-        case TP_MAX_IDLE_TIMEOUT:
+        case TransportParamType::kMaxIdleTimeout:
             pos = DecodeUint(pos, end, max_idle_timeout_);
             break;
-        case TP_STATELESS_RESET_TOKEN:
+        case TransportParamType::kStatelessResetToken:
             pos = DecodeString(pos, end, stateless_reset_token_);
             break;
-        case TP_MAX_UDP_PAYLOAD_SIZE:
+        case TransportParamType::kMaxUdpPayloadSize:
             pos = DecodeUint(pos, end, max_udp_payload_size_);
             break;
-        case TP_INITIAL_MAX_DATA:
+        case TransportParamType::kInitialMaxData:
             pos = DecodeUint(pos, end, initial_max_data_);
             break;
-        case TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL:
+        case TransportParamType::kInitialMaxStreamDataBidiLocal:
             pos = DecodeUint(pos, end, initial_max_stream_data_bidi_local_);
             break;
-        case TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE:
+        case TransportParamType::kInitialMaxStreamDataBidiRemote:
             pos = DecodeUint(pos, end, initial_max_stream_data_bidi_remote_);
             break;
-        case TP_INITIAL_MAX_STREAM_DATA_UNI:
+        case TransportParamType::kInitialMaxStreamDataUni:
             pos = DecodeUint(pos, end, initial_max_stream_data_uni_);
             break;
-        case TP_INITIAL_MAX_STREAMS_BIDI:
+        case TransportParamType::kInitialMaxStreamsBidi:
             pos = DecodeUint(pos, end, initial_max_streams_bidi_);
             break;
-        case TP_INITIAL_MAX_STREAMS_UNI:
+        case TransportParamType::kInitialMaxStreamsUni:
             pos = DecodeUint(pos, end, initial_max_streams_uni_);
             break;
-        case TP_ACK_DELAY_EXPONENT:
+        case TransportParamType::kAckDelayExponent:
             pos = DecodeUint(pos, end, ack_delay_exponent_);
             break;
-        case TP_MAX_ACK_DELAY:
+        case TransportParamType::kMaxAckDelay:
             pos = DecodeUint(pos, end, max_ack_delay_);
             break;
-        case TP_DISABLE_ACTIVE_MIGRATION:
+        case TransportParamType::kDisableActiveMigration:
             pos = DecodeBool(pos, end, disable_active_migration_);
             break;
-        case TP_PREFERRED_ADDRESS:
+        case TransportParamType::kPreferredAddress:
             pos = DecodeString(pos, end, preferred_address_);
             break;
-        case TP_ACTIVE_CONNECTION_ID_LIMIT:
+        case TransportParamType::kActiveConnectionIdLimit:
             pos = DecodeUint(pos, end, active_connection_id_limit_);
             break;
-        case TP_INITIAL_SOURCE_CONNECTION_ID:
+        case TransportParamType::kInitialSourceConnectionId:
             pos = DecodeString(pos, end, initial_source_connection_id_);
             break;
-        case TP_RETRY_SOURCE_CONNECTION_ID:
+        case TransportParamType::kRetrySourceConnectionId:
             pos = DecodeString(pos, end, retry_source_connection_id_);
             break;
         default:

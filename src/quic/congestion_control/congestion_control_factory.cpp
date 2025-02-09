@@ -7,20 +7,20 @@
 namespace quicx {
 namespace quic {
 
-std::unique_ptr<ICongestionControl> Create(CongestionControlType type) {
+std::unique_ptr<ICongestionControl> CreateCongestionControl(CongestionControlType type) {
     switch (type) {
-        case CCT_CUBIC:
+        case CongestionControlType::kCubic:
             return std::unique_ptr<CubicCongestionControl>(new CubicCongestionControl());
-        case CCT_RENO:
+        case CongestionControlType::kReno:
             return std::unique_ptr<RenoCongestionControl>(new RenoCongestionControl());
-        case CCT_BBR_V1:
+        case CongestionControlType::kBbrV1:
             return std::unique_ptr<BBRv1CongestionControl>(new BBRv1CongestionControl());
-        case CCT_BBR_V2:
+        case CongestionControlType::kBbrV2:
             return std::unique_ptr<BBRv2CongestionControl>(new BBRv2CongestionControl());
         default:
             return nullptr;
     }
 }
 
-} // namespace quic
-} // namespace quicx
+}
+}

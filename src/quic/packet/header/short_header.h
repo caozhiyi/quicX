@@ -25,7 +25,7 @@ public:
     const uint8_t* GetDestinationConnectionId()  { return destination_connection_id_; }
 protected:
     uint32_t destination_connection_id_length_;
-    uint8_t destination_connection_id_[__max_connection_length];
+    uint8_t destination_connection_id_[kMaxConnectionLength];
 };
 
 }
