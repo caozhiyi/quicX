@@ -25,7 +25,7 @@ public:
     virtual ~SendStream();
 
     // *************** outside interface ***************//
-    virtual StreamDirection GetDirection() { return StreamDirection::SD_SEND; }
+    virtual StreamDirection GetDirection() { return StreamDirection::kSend; }
     virtual uint64_t GetStreamID() { return stream_id_; }
 
     virtual void Close();

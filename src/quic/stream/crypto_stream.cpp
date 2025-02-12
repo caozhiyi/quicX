@@ -89,7 +89,7 @@ void CryptoStream::Close() {
 
 uint32_t CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
-    if (frame_type == FT_CRYPTO) {
+    if (frame_type == FrameType::kCrypto) {
         OnCryptoFrame(frame);
         return 0;
     }

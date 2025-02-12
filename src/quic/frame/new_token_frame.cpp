@@ -8,7 +8,7 @@ namespace quicx {
 namespace quic {
 
 NewTokenFrame::NewTokenFrame():
-    IFrame(FT_NEW_TOKEN) {
+    IFrame(FrameType::kNewToken) {
 
 }
 
@@ -35,7 +35,8 @@ bool NewTokenFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool wit
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_NEW_TOKEN) {
+        if (frame_type_ != FrameType::kNewToken) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

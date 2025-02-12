@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 StreamDataBlockedFrame::StreamDataBlockedFrame():
-    IStreamFrame(FT_STREAM_DATA_BLOCKED),
+    IStreamFrame(FrameType::kStreamDataBlocked),
     maximum_data_(0) {
 
 }
@@ -36,7 +36,8 @@ bool StreamDataBlockedFrame::Decode(std::shared_ptr<common::IBufferRead> buffer,
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_STREAM_DATA_BLOCKED) {
+        if (frame_type_ != FrameType::kStreamDataBlocked) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

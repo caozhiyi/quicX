@@ -65,12 +65,12 @@ uint32_t DataFrame::EvaluateEncodeSize() {
     size += common::GetEncodeVarintLength(length_);
     
     // Data size
-    size += EvaluatePaloadSize();
+    size += EvaluatePayloadSize();
     
     return size;
 }
 
-uint32_t DataFrame::EvaluatePaloadSize() {
+uint32_t DataFrame::EvaluatePayloadSize() {
     if (length_ == 0) { 
         length_ = data_.size();
     }

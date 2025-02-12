@@ -10,7 +10,7 @@ namespace quic {
 
 class IFrame {
 public:
-    IFrame(uint16_t ft = FT_UNKNOW);
+    IFrame(uint16_t ft = FrameType::kUnknown);
     virtual ~IFrame();
 
     uint16_t GetType();

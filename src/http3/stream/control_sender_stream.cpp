@@ -40,13 +40,13 @@ bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64
 }
 
 bool ControlSenderStream::SendGoaway(uint64_t id) {
-    GoawayFrame frame;
+    GoAwayFrame frame;
     frame.SetStreamId(id);
     
     uint8_t buf[1024]; // TODO: Use dynamic buffer
     auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
     if (!frame.Encode(buffer)) {
-        common::LOG_ERROR("ControlSenderStream::SendGoaway: Failed to encode GoawayFrame");
+        common::LOG_ERROR("ControlSenderStream::SendGoaway: Failed to encode GoAwayFrame");
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kInternalError);
         return false;
     }

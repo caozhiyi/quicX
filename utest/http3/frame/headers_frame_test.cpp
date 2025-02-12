@@ -20,7 +20,7 @@ protected:
 };
 
 TEST_F(HeadersFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kHeaders));
+    EXPECT_EQ(frame_->GetType(), FrameType::kHeaders);
     
     uint32_t length = 100;
     frame_->SetLength(length);
@@ -88,7 +88,7 @@ TEST_F(HeadersFrameTest, EvaluateSize) {
     // 1. frame type (2 bytes)
     // 2. length field (varint)
     // 3. payload (encoded fields)
-    uint32_t payload_size = frame_->EvaluatePaloadSize();
+    uint32_t payload_size = frame_->EvaluatePayloadSize();
     uint32_t length_field_size = common::GetEncodeVarintLength(payload_size);
     uint32_t expected_size = sizeof(uint16_t) + length_field_size + payload_size;
 

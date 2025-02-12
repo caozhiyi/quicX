@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 PaddingFrame::PaddingFrame():
-    IFrame(FT_PADDING),
+    IFrame(FrameType::kPadding),
     padding_length_(0) {
 
 }
@@ -36,7 +36,8 @@ bool PaddingFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_PADDING) {
+        if (frame_type_ != FrameType::kPadding) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

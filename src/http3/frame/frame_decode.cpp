@@ -14,14 +14,14 @@
 namespace quicx {
 namespace http3 {
 
-static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>()>> kFrameCreaterMap = {
-    {static_cast<uint16_t>(FrameType::kData),         []() -> std::shared_ptr<IFrame> { return std::make_shared<DataFrame>(); }},
-    {static_cast<uint16_t>(FrameType::kHeaders),      []() -> std::shared_ptr<IFrame> { return std::make_shared<HeadersFrame>(); }},
-    {static_cast<uint16_t>(FrameType::kCancelPush),   []() -> std::shared_ptr<IFrame> { return std::make_shared<CancelPushFrame>(); }},
-    {static_cast<uint16_t>(FrameType::kSettings),     []() -> std::shared_ptr<IFrame> { return std::make_shared<SettingsFrame>(); }},
-    {static_cast<uint16_t>(FrameType::kPushPromise),  []() -> std::shared_ptr<IFrame> { return std::make_shared<PushPromiseFrame>(); }},
-    {static_cast<uint16_t>(FrameType::kGoaway),       []() -> std::shared_ptr<IFrame> { return std::make_shared<GoawayFrame>(); }},
-    {static_cast<uint16_t>(FrameType::kMaxPushId),    []() -> std::shared_ptr<IFrame> { return std::make_shared<MaxPushIdFrame>(); }},
+static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>()>> kFrameCreatorMap = {
+    {FrameType::kData,         []() -> std::shared_ptr<IFrame> { return std::make_shared<DataFrame>(); }},
+    {FrameType::kHeaders,      []() -> std::shared_ptr<IFrame> { return std::make_shared<HeadersFrame>(); }},
+    {FrameType::kCancelPush,   []() -> std::shared_ptr<IFrame> { return std::make_shared<CancelPushFrame>(); }},
+    {FrameType::kSettings,     []() -> std::shared_ptr<IFrame> { return std::make_shared<SettingsFrame>(); }},
+    {FrameType::kPushPromise,  []() -> std::shared_ptr<IFrame> { return std::make_shared<PushPromiseFrame>(); }},
+    {FrameType::kGoAway,       []() -> std::shared_ptr<IFrame> { return std::make_shared<GoAwayFrame>(); }},
+    {FrameType::kMaxPushId,    []() -> std::shared_ptr<IFrame> { return std::make_shared<MaxPushIdFrame>(); }},
 };
 
 bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
@@ -37,12 +37,12 @@ bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::
         }
         wrapper.Flush();
 
-        auto creater = kFrameCreaterMap.find(frame_type);
-        if(creater == kFrameCreaterMap.end()) {
+        auto creator = kFrameCreatorMap.find(frame_type);
+        if(creator == kFrameCreatorMap.end()) {
             return false;
         }
 
-        std::shared_ptr<IFrame> frame = creater->second();
+        std::shared_ptr<IFrame> frame = creator->second();
         if(!frame->Decode(buffer)) {
             return false;
         }

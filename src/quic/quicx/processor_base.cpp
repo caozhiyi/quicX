@@ -194,7 +194,7 @@ bool ProcessorBase::DecodeNetPakcet(std::shared_ptr<INetPacket> net_packet,
     }
     
     auto first_packet_header = packets[0]->GetHeader();
-    if (first_packet_header->GetHeaderType() == PHT_SHORT_HEADER) {
+    if (first_packet_header->GetHeaderType() == PacketHeaderType::kShortHeader) {
         auto short_header = dynamic_cast<ShortHeader*>(first_packet_header);
         len = short_header->GetDestinationConnectionIdLength();
         cid = (uint8_t*)short_header->GetDestinationConnectionId();

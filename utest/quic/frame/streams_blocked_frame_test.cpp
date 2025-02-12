@@ -9,8 +9,8 @@ namespace quic {
 namespace {
 
 TEST(streams_blocked_frame_utest, codec) {
-    StreamsBlockedFrame frame1(FT_STREAMS_BLOCKED_BIDIRECTIONAL);
-    StreamsBlockedFrame frame2(FT_STREAMS_BLOCKED_BIDIRECTIONAL);
+    StreamsBlockedFrame frame1(FrameType::kStreamsBlockedBidirectional);
+    StreamsBlockedFrame frame2(FrameType::kStreamsBlockedBidirectional);
 
     auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
     std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);

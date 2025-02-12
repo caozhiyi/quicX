@@ -159,7 +159,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     }
 
     auto header = packet->GetHeader();
-    if (header->GetHeaderType() == PHT_LONG_HEADER) {
+    if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
         auto cid = local_conn_id_manager_->GetCurrentID();
         ((LongHeader*)header)->SetSourceConnectionId(cid.id_, cid.len_);
         ((LongHeader*)header)->SetVersion(kQuicVersions[0]);

@@ -10,7 +10,7 @@ namespace http3 {
 
 class IFrame {
 public:
-    IFrame(FrameType ft = FrameType::kUnknown): type_(static_cast<uint16_t>(ft)) {}
+    IFrame(FrameType ft = FrameType::kUnknown): type_(ft) {}
     virtual ~IFrame() {}
 
     uint16_t GetType() { return type_; }
@@ -18,7 +18,7 @@ public:
     virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer) = 0;
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false) = 0;
     virtual uint32_t EvaluateEncodeSize() = 0;
-    virtual uint32_t EvaluatePaloadSize() = 0;
+    virtual uint32_t EvaluatePayloadSize() = 0;
 
 protected:
     uint16_t type_;

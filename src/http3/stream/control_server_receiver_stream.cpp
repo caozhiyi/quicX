@@ -26,7 +26,7 @@ ControlServerReceiverStream::~ControlServerReceiverStream() {
 }
 
 void ControlServerReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    switch (static_cast<FrameType>(frame->GetType())) {
+    switch (frame->GetType()) {
         case FrameType::kMaxPushId: {
             auto max_push_id_frame = std::dynamic_pointer_cast<MaxPushIdFrame>(frame);
             max_push_id_handler_(max_push_id_frame->GetPushId());

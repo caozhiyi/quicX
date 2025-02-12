@@ -34,7 +34,9 @@ bool StreamsBlockedFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bo
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_STREAMS_BLOCKED_BIDIRECTIONAL && frame_type_ != FT_STREAMS_BLOCKED_BIDIRECTIONAL) {
+        if (frame_type_ != FrameType::kStreamsBlockedBidirectional &&
+            frame_type_ != FrameType::kStreamsBlockedUnidirectional) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

@@ -18,7 +18,7 @@ public:
     bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     uint32_t EvaluateEncodeSize();
-    uint32_t EvaluatePaloadSize();
+    uint32_t EvaluatePayloadSize();
 private:
     uint64_t push_id_;
 };

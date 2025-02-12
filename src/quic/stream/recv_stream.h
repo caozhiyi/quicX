@@ -27,7 +27,7 @@ public:
     ~RecvStream();
 
     // *************** outside interface ***************//
-    virtual StreamDirection GetDirection() { return StreamDirection::SD_RECV; }
+    virtual StreamDirection GetDirection() { return StreamDirection::kRecv; }
     virtual uint64_t GetStreamID() { return stream_id_; }
     virtual void Reset(uint32_t error);
     virtual void SetStreamReadCallBack(stream_read_callback cb) { recv_cb_ = cb; }

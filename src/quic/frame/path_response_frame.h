@@ -20,7 +20,7 @@ public:
     uint8_t* GetData() { return data_; }
 
 private:
-    uint8_t data_[__path_data_length];  // 8-byte field contains arbitrary data.
+    uint8_t data_[kPathDataLength];  // 8-byte field contains arbitrary data.
 };
 
 }

@@ -9,7 +9,7 @@
 namespace quicx {
 namespace quic {
 
-static const uint16_t __stateless_reset_token_length = 128;
+static const uint16_t kStatelessResetTokenLength = 128;
 
 class NewConnectionIDFrame:
     public IFrame {
@@ -39,7 +39,7 @@ private:
     uint8_t  length_;           // the length of the connection ID.
     uint8_t  connection_id_[kMaxCidLength];    // a connection ID of the specified length.
 
-    uint8_t stateless_reset_token_[__stateless_reset_token_length];  // a 128-bit value that will be used for a stateless reset when the associated connection ID is used.
+    uint8_t stateless_reset_token_[kStatelessResetTokenLength];  // a 128-bit value that will be used for a stateless reset when the associated connection ID is used.
 };
 
 }

@@ -45,10 +45,10 @@ uint32_t RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     switch (frame_type)
     {
-    case FT_STREAM_DATA_BLOCKED:
+    case FrameType::kStreamDataBlocked:
         OnStreamDataBlockFrame(frame);
         break;
-    case FT_RESET_STREAM:
+    case FrameType::kResetStream:
         OnResetStreamFrame(frame);
         break;
     default:

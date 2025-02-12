@@ -8,11 +8,11 @@
 namespace quicx {
 namespace quic {
 
-enum StreamFrameFlag {
-    SFF_FIN  = 0x01,
-    SFF_LEN  = 0x02,
-    SFF_OFF  = 0x04,
-    SFF_MASK = 0x07,
+enum StreamFrameFlag: uint8_t {
+    kFinFlag  = 0x01,
+    kLenFlag  = 0x02,
+    kOffFlag  = 0x04,
+    kMaskFlag = 0x07,
 };
 
 class Buffer;
@@ -27,14 +27,14 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-    bool HasOffset() { return frame_type_ & SFF_OFF; }
+    bool HasOffset() { return frame_type_ & kOffFlag; }
     void SetOffset(uint64_t offset);
     uint64_t GetOffset() { return offset_; }
 
-    void SetFin() { frame_type_ |= SFF_FIN; }
-    bool IsFin() { return frame_type_ & SFF_FIN; }
+    void SetFin() { frame_type_ |= kFinFlag; }
+    bool IsFin() { return frame_type_ & kFinFlag; }
 
-    bool HasLength() { return frame_type_ & SFF_LEN; }
+    bool HasLength() { return frame_type_ & kLenFlag; }
     void SetData(uint8_t* data, uint32_t send_len);
     uint8_t* GetData() { return data_; }
     uint32_t GetLength() { return length_; }

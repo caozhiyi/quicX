@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 RetireConnectionIDFrame::RetireConnectionIDFrame():
-    IFrame(FT_RETIRE_CONNECTION_ID),
+    IFrame(FrameType::kRetireConnectionId),
     sequence_number_(0) {
 
 }
@@ -34,7 +34,8 @@ bool RetireConnectionIDFrame::Decode(std::shared_ptr<common::IBufferRead> buffer
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_RETIRE_CONNECTION_ID) {
+        if (frame_type_ != FrameType::kRetireConnectionId) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

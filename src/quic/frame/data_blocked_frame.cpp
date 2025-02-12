@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 DataBlockedFrame::DataBlockedFrame():
-    IFrame(FT_DATA_BLOCKED),
+    IFrame(FrameType::kDataBlocked),
     maximum_data_(0) {
 
 }
@@ -35,7 +35,8 @@ bool DataBlockedFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool 
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_DATA_BLOCKED) {
+        if (frame_type_ != FrameType::kDataBlocked) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 MaxDataFrame::MaxDataFrame(): 
-    IFrame(FT_MAX_DATA),
+    IFrame(FrameType::kMaxData),
     maximum_data_(0) {
 
 }
@@ -35,7 +35,8 @@ bool MaxDataFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_MAX_DATA) {
+        if (frame_type_ != FrameType::kMaxData) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

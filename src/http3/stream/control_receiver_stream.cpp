@@ -47,9 +47,9 @@ void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, ui
 }
 
 void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    switch (static_cast<FrameType>(frame->GetType())) {
-        case FrameType::kGoaway: {
-            auto goaway_frame = std::static_pointer_cast<GoawayFrame>(frame);
+    switch (frame->GetType()) {
+        case FrameType::kGoAway: {
+            auto goaway_frame = std::static_pointer_cast<GoAwayFrame>(frame);
             goaway_handler_(goaway_frame->GetStreamId());
             break;
         }

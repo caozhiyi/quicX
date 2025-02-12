@@ -20,7 +20,7 @@ ClientConnection::ClientConnection(const std::string& unique_id,
     push_handler_(push_handler) {
 
     // create control streams
-    auto control_stream = quic_connection_->MakeStream(quic::SD_SEND);
+    auto control_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
     control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
         std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
@@ -40,7 +40,7 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_r
     }
 
     // create request stream
-    auto stream = quic_connection_->MakeStream(quic::SD_BIDI);
+    auto stream = quic_connection_->MakeStream(quic::StreamDirection::kBidi);
     if (!stream) {
         common::LOG_ERROR("ClientConnection::DoRequest make stream error");
         return false;
@@ -75,7 +75,7 @@ void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
         return;
     }
 
-    if (stream->GetDirection() == quic::SD_BIDI) {
+    if (stream->GetDirection() == quic::StreamDirection::kBidi) {
         quic_connection_->Reset(Http3ErrorCode::kStreamCreationError);
         return;
     }
@@ -87,7 +87,7 @@ void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
         return;
     }
     
-    if (stream->GetDirection() == quic::SD_RECV) {
+    if (stream->GetDirection() == quic::StreamDirection::kRecv) {
         if (stream->GetStreamID() == 1) {
             // control stream
             std::shared_ptr<ControlReceiverStream> control_stream = std::make_shared<ControlReceiverStream>(

@@ -41,7 +41,7 @@ void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, ui
 }
 
 void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
-    if (frame->GetType() != FT_ACK) {
+    if (frame->GetType() != FrameType::kAck) {
         common::LOG_ERROR("invalid frame on packet ack.");
         return;
     }

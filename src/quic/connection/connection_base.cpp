@@ -86,7 +86,7 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
     uint64_t stream_id;
     std::shared_ptr<IFrame> frame;
     bool can_make_stream = false;
-    if (type == StreamDirection::SD_SEND) {
+    if (type == StreamDirection::kSend) {
         can_make_stream = flow_control_.CheckLocalUnidirectionStreamLimit(stream_id, frame);
     } else {
         can_make_stream = flow_control_.CheckLocalBidirectionStreamLimit(stream_id, frame);
@@ -100,10 +100,10 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
     }
 
     std::shared_ptr<IStream> new_stream;
-    if (type == StreamDirection::SD_SEND) {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::SD_SEND);
+    if (type == StreamDirection::kSend) {
+        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::kSend);
     } else {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiLocal(), stream_id, StreamDirection::SD_BIDI);
+        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiLocal(), stream_id, StreamDirection::kBidi);
     }
     streams_map_[stream_id] = new_stream;
     return new_stream;
@@ -236,48 +236,48 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
         uint16_t type = frames[i]->GetType();
         common::LOG_DEBUG("get frame type: %s", FrameType2String(type).c_str());
         switch (type) {
-        case FT_PADDING:
+        case FrameType::kPadding:
             // do nothing
             break;
-        case FT_PING: 
+        case FrameType::kPing: 
             last_communicate_time_ = common::UTCTimeMsec();
             break;
-        case FT_ACK:
-        case FT_ACK_ECN:
+        case FrameType::kAck:
+        case FrameType::kAckEcn:
             return OnAckFrame(frames[i], crypto_level);
-        case FT_CRYPTO:
+        case FrameType::kCrypto:
             return OnCryptoFrame(frames[i]);
-        case FT_NEW_TOKEN:
+        case FrameType::kNewToken:
             return OnNewTokenFrame(frames[i]);
-        case FT_MAX_DATA:
+        case FrameType::kMaxData:
             return OnMaxDataFrame(frames[i]);
-        case FT_MAX_STREAMS_BIDIRECTIONAL:
-        case FT_MAX_STREAMS_UNIDIRECTIONAL:
+        case FrameType::kMaxStreamsBidirectional:
+        case FrameType::kMaxStreamsUnidirectional:
             return OnMaxStreamFrame(frames[i]);
-        case FT_DATA_BLOCKED: 
+        case FrameType::kDataBlocked: 
             return OnDataBlockFrame(frames[i]);
-        case FT_STREAMS_BLOCKED_BIDIRECTIONAL:
-        case FT_STREAMS_BLOCKED_UNIDIRECTIONAL:
+        case FrameType::kStreamsBlockedBidirectional:
+        case FrameType::kStreamsBlockedUnidirectional:
             return OnStreamBlockFrame(frames[i]);
-        case FT_NEW_CONNECTION_ID: 
+        case FrameType::kNewConnectionId: 
             return OnNewConnectionIDFrame(frames[i]);
-        case FT_RETIRE_CONNECTION_ID:
+        case FrameType::kRetireConnectionId:
             return OnRetireConnectionIDFrame(frames[i]);
-        case FT_PATH_CHALLENGE: 
+        case FrameType::kPathChallenge: 
             return OnPathChallengeFrame(frames[i]);
-        case FT_PATH_RESPONSE: 
+        case FrameType::kPathResponse: 
             return OnPathResponseFrame(frames[i]);
-        case FT_CONNECTION_CLOSE:
+        case FrameType::kConnectionClose:
             return OnConnectionCloseFrame(frames[i]);
-        case FT_CONNECTION_CLOSE_APP:
+        case FrameType::kConnectionCloseApp:
             return OnConnectionCloseAppFrame(frames[i]);
-        case FT_HANDSHAKE_DONE:
+        case FrameType::kHandshakeDone:
             return OnHandshakeDoneFrame(frames[i]);
         // ********** stream frame **********
-        case FT_RESET_STREAM:
-        case FT_STOP_SENDING:
-        case FT_STREAM_DATA_BLOCKED:
-        case FT_MAX_STREAM_DATA:
+        case FrameType::kResetStream:
+        case FrameType::kStopSending:
+        case FrameType::kStreamDataBlocked:
+        case FrameType::kMaxStreamData:
             return OnStreamFrame(frames[i]);
         default:
             if (StreamFrame::IsStreamFrame(type)) {
@@ -314,10 +314,10 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // create new stream
     std::shared_ptr<IStream> new_stream;
     if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::SD_BIDIRECTIONAL) {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiRemote(), stream_id, StreamDirection::SD_BIDI);
+        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiRemote(), stream_id, StreamDirection::kBidi);
         
     } else {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::SD_RECV);
+        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::kRecv);
     }
     // check peer data limit
     if (!flow_control_.CheckRemoteSendDataLimit(send_frame)) {
@@ -390,7 +390,7 @@ bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
 
 bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_block_frame = std::dynamic_pointer_cast<MaxStreamsFrame>(frame);
-    if (stream_block_frame->GetType() == FT_MAX_STREAMS_BIDIRECTIONAL) {
+    if (stream_block_frame->GetType() == FrameType::kMaxStreamsBidirectional) {
         flow_control_.AddLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
 
     } else {
@@ -518,13 +518,13 @@ void BaseConnection::RetireConnectionId(uint64_t cid_hash) {
 
 std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd) {
     std::shared_ptr<IStream> new_stream;
-    if (sd == StreamDirection::SD_BIDI) {
+    if (sd == StreamDirection::kBidi) {
         new_stream = std::make_shared<BidirectionStream>(alloter_, init_size, stream_id,
             std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
-    } else if (sd == StreamDirection::SD_SEND) {
+    } else if (sd == StreamDirection::kSend) {
         new_stream = std::make_shared<SendStream>(alloter_, init_size, stream_id,
             std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),

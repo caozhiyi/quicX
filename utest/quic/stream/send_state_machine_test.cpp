@@ -11,13 +11,13 @@ TEST(send_state_machine_utest, normal_state_change) {
     StreamStateMachineSend state(nullptr);
     EXPECT_EQ(state.GetStatus(), SS_READY);
 
-    EXPECT_FALSE(state.OnFrame(FT_STOP_SENDING));
-    EXPECT_FALSE(state.OnFrame(FT_PADDING));
+    EXPECT_FALSE(state.OnFrame(FrameType::kStopSending));
+    EXPECT_FALSE(state.OnFrame(FrameType::kPadding));
 
-    EXPECT_TRUE(state.OnFrame(FT_STREAM));
+    EXPECT_TRUE(state.OnFrame(FrameType::kStream));
     EXPECT_EQ(state.GetStatus(), SS_SEND);
 
-    EXPECT_TRUE(state.OnFrame(FT_STREAM | SFF_FIN));
+    EXPECT_TRUE(state.OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag));
     EXPECT_EQ(state.GetStatus(), SS_DATA_SENT);
 
     EXPECT_TRUE(state.AllAckDone());
@@ -29,13 +29,13 @@ TEST(send_state_machine_utest, wrong_state_change) {
 
     EXPECT_FALSE(state.AllAckDone());
 
-    EXPECT_TRUE(state.OnFrame(FT_STREAM));
+    EXPECT_TRUE(state.OnFrame(FrameType::kStream));
     EXPECT_EQ(state.GetStatus(), SS_SEND);
 
-    EXPECT_TRUE(state.OnFrame(FT_RESET_STREAM));
+    EXPECT_TRUE(state.OnFrame(FrameType::kResetStream));
     EXPECT_EQ(state.GetStatus(), SS_RESET_SENT);
 
-    EXPECT_FALSE(state.OnFrame(FT_STREAM));
+    EXPECT_FALSE(state.OnFrame(FrameType::kStream));
     EXPECT_TRUE(state.AllAckDone());
 }
 

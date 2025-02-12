@@ -9,7 +9,7 @@ namespace quic {
 class HandshakeDoneFrame:
     public IFrame {
 public:
-    HandshakeDoneFrame(): IFrame(FT_HANDSHAKE_DONE) {}
+    HandshakeDoneFrame(): IFrame(FrameType::kHandshakeDone) {}
     ~HandshakeDoneFrame() {}
 };
 

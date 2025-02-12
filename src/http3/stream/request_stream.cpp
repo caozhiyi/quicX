@@ -86,7 +86,7 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
 }
 
 void RequestStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    switch (static_cast<FrameType>(frame->GetType())) {
+    switch (frame->GetType()) {
         case FrameType::kPushPromise:
             HandlePushPromise(frame);
             break;

@@ -7,10 +7,10 @@
 namespace quicx {
 namespace http3 {
 
-class GoawayFrame:
+class GoAwayFrame:
     public IFrame {
 public:
-    GoawayFrame(): IFrame(FrameType::kGoaway), stream_id_(0) {}
+    GoAwayFrame(): IFrame(FrameType::kGoAway), stream_id_(0) {}
 
     uint64_t GetStreamId() const { return stream_id_; }
     void SetStreamId(uint64_t id) { stream_id_ = id; }
@@ -18,7 +18,7 @@ public:
     bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
     uint32_t EvaluateEncodeSize();
-    uint32_t EvaluatePaloadSize();
+    uint32_t EvaluatePayloadSize();
 
 private:
     uint64_t stream_id_;

@@ -35,7 +35,7 @@ TEST_F(FrameDecodeTest, DecodeDataFrame) {
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
     EXPECT_EQ(frames.size(), 1);
     auto frame = frames[0];
-    EXPECT_EQ(frame->GetType(), static_cast<uint16_t>(FrameType::kData));
+    EXPECT_EQ(frame->GetType(), FrameType::kData);
 
     auto decode_frame = std::dynamic_pointer_cast<DataFrame>(frame);
     EXPECT_NE(decode_frame, nullptr);
@@ -54,7 +54,7 @@ TEST_F(FrameDecodeTest, DecodeHeadersFrame) {
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
     EXPECT_EQ(frames.size(), 1);
     auto frame = frames[0];
-    EXPECT_EQ(frame->GetType(), static_cast<uint16_t>(FrameType::kHeaders));
+    EXPECT_EQ(frame->GetType(), FrameType::kHeaders);
 
     auto decode_frame = std::dynamic_pointer_cast<HeadersFrame>(frame);
     EXPECT_NE(decode_frame, nullptr);
@@ -73,14 +73,14 @@ TEST_F(FrameDecodeTest, DecodeSettingsFrame) {
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
     EXPECT_EQ(frames.size(), 1);
     auto frame = frames[0];
-    EXPECT_EQ(frame->GetType(), static_cast<uint16_t>(FrameType::kSettings));
+    EXPECT_EQ(frame->GetType(), FrameType::kSettings);
 
     auto decode_frame = std::dynamic_pointer_cast<SettingsFrame>(frame);
     EXPECT_NE(decode_frame, nullptr);
 }
 
 TEST_F(FrameDecodeTest, DecodeGoAwayFrame) {
-    GoawayFrame goaway_frame;
+    GoAwayFrame goaway_frame;
     goaway_frame.SetStreamId(100);
     goaway_frame.Encode(buffer_);
     auto read_buffer = buffer_->GetReadViewPtr();
@@ -89,9 +89,9 @@ TEST_F(FrameDecodeTest, DecodeGoAwayFrame) {
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
     EXPECT_EQ(frames.size(), 1);
     auto frame = frames[0];
-    EXPECT_EQ(frame->GetType(), static_cast<uint16_t>(FrameType::kGoaway));
+    EXPECT_EQ(frame->GetType(), FrameType::kGoAway);
 
-    auto decode_frame = std::dynamic_pointer_cast<GoawayFrame>(frame);
+    auto decode_frame = std::dynamic_pointer_cast<GoAwayFrame>(frame);
     EXPECT_NE(decode_frame, nullptr);
     EXPECT_EQ(decode_frame->GetStreamId(), 100);
 }
@@ -108,7 +108,7 @@ TEST_F(FrameDecodeTest, DecodePushPromiseFrame) {
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
     EXPECT_EQ(frames.size(), 1);
     auto frame = frames[0];
-    EXPECT_EQ(frame->GetType(), static_cast<uint16_t>(FrameType::kPushPromise));
+    EXPECT_EQ(frame->GetType(), FrameType::kPushPromise);
 
     auto decode_frame = std::dynamic_pointer_cast<PushPromiseFrame>(frame);
     EXPECT_NE(decode_frame, nullptr);
@@ -165,10 +165,10 @@ TEST_F(FrameDecodeTest, DecodeMultipleFrames) {
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
     EXPECT_EQ(frames.size(), 2);
     auto frame = frames[0];
-    EXPECT_EQ(frame->GetType(), static_cast<uint16_t>(FrameType::kData));
+    EXPECT_EQ(frame->GetType(), FrameType::kData);
 
     frame = frames[1];
-    EXPECT_EQ(frame->GetType(), static_cast<uint16_t>(FrameType::kHeaders));
+    EXPECT_EQ(frame->GetType(), FrameType::kHeaders);
 }
 
 }  // namespace

@@ -46,8 +46,8 @@ TEST(new_connection_id_frame_utest, codec) {
     uint8_t cid_len = 20;
     frame2.GetConnectionID(cid_ptr, cid_len);
     EXPECT_EQ(std::string((char*)cid_ptr, cid_len), std::string((char*)cid, len));
-    EXPECT_EQ(std::string((char*)frame1.GetStatelessResetToken(), __stateless_reset_token_length), 
-        std::string((char*)frame2.GetStatelessResetToken(), __stateless_reset_token_length));
+    EXPECT_EQ(std::string((char*)frame1.GetStatelessResetToken(), kStatelessResetTokenLength), 
+        std::string((char*)frame2.GetStatelessResetToken(), kStatelessResetTokenLength));
 }
 
 }

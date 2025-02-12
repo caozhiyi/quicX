@@ -20,34 +20,34 @@ bool StreamStateMachineSend::OnFrame(uint16_t frame_type) {
     case SS_READY:
         if (StreamFrame::IsStreamFrame(frame_type)) {
             state_ = SS_SEND;
-            if (frame_type & SFF_FIN) {
+            if (frame_type & StreamFrameFlag::kFinFlag) {
                 state_ = SS_DATA_SENT;
             }
             return true;
         }
-        if (frame_type == FT_STREAM_DATA_BLOCKED) {
+        if (frame_type == FrameType::kStreamDataBlocked) {
             state_ = SS_SEND;
             return true;
         }
-        if (frame_type == FT_RESET_STREAM) {
+        if (frame_type == FrameType::kResetStream) {
             state_ = SS_RESET_SENT;
             return true;
         }
         break;
     case SS_SEND:
         if (StreamFrame::IsStreamFrame(frame_type)) {
-            if (frame_type & SFF_FIN) {
+            if (frame_type & StreamFrameFlag::kFinFlag) {
                 state_ = SS_DATA_SENT;
             }
             return true;
         }
-        if (frame_type == FT_RESET_STREAM) {
+        if (frame_type == FrameType::kResetStream) {
             state_ = SS_RESET_SENT;
             return true;
         }
         break;
     case SS_DATA_SENT:
-        if (frame_type == FT_RESET_STREAM) {
+        if (frame_type == FrameType::kResetStream) {
             state_ = SS_RESET_SENT;
             return true;
         }

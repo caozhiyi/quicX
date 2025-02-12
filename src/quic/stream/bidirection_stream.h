@@ -22,7 +22,7 @@ public:
     virtual ~BidirectionStream();
 
     // *************** outside interface ***************//
-    virtual StreamDirection GetDirection() { return StreamDirection::SD_BIDI; }
+    virtual StreamDirection GetDirection() { return StreamDirection::kBidi; }
     virtual uint64_t GetStreamID() { return stream_id_; }
 
     // close the stream gracefully, the stream will be closed after all data transported.

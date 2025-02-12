@@ -8,7 +8,7 @@ namespace quicx {
 namespace quic {
 
 StreamFrame::StreamFrame():
-    IStreamFrame(FT_STREAM),
+    IStreamFrame(FrameType::kStream),
     offset_(0),
     length_(0) {
 
@@ -72,19 +72,19 @@ uint32_t StreamFrame::EncodeSize() {
 
 void StreamFrame::SetOffset(uint64_t offset) {
     offset_ = offset;
-    frame_type_ |= SFF_OFF;
+    frame_type_ |= kOffFlag;
 }
 
 void StreamFrame::SetData(uint8_t* data, uint32_t send_len) {
     if (send_len > 0) {
-        frame_type_ |= SFF_LEN;
+        frame_type_ |= kLenFlag;
         data_ = data;
         length_ = send_len;
     }
 }
 
 bool StreamFrame::IsStreamFrame(uint16_t frame_type) {
-    return (frame_type & ~SFF_MASK) == FT_STREAM;
+    return (frame_type & ~kMaskFlag) == FrameType::kStream;
 }
 
 }

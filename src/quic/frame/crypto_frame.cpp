@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 CryptoFrame::CryptoFrame():
-    IFrame(FT_CRYPTO),
+    IFrame(FrameType::kCrypto),
     offset_(0) {
 
 }
@@ -36,7 +36,8 @@ bool CryptoFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_CRYPTO){
+        if (frame_type_ != FrameType::kCrypto) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

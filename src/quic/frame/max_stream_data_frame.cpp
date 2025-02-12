@@ -8,7 +8,7 @@ namespace quic {
 
 
 MaxStreamDataFrame::MaxStreamDataFrame():
-    IStreamFrame(FT_MAX_STREAM_DATA),
+    IStreamFrame(FrameType::kMaxStreamData),
     maximum_data_(0) {
 
 }
@@ -37,7 +37,8 @@ bool MaxStreamDataFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, boo
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_MAX_STREAM_DATA) {
+        if (frame_type_ != FrameType::kMaxStreamData) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

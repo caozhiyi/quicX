@@ -17,7 +17,7 @@ public:
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);
     virtual ~CryptoStream();
-    virtual StreamDirection GetDirection() { return StreamDirection::SD_BIDI; }
+    virtual StreamDirection GetDirection() { return StreamDirection::kBidi; }
 
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
 
