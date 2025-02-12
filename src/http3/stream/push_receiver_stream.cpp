@@ -45,7 +45,7 @@ PushReceiverStream::~PushReceiverStream() {
     }
 
     for (const auto& frame : frames) {
-        switch (static_cast<FrameType>(frame->GetType())) {
+        switch (frame->GetType()) {
         case FrameType::kHeaders:
             HandleHeaders(frame);
             break;

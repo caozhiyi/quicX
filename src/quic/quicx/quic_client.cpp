@@ -19,7 +19,7 @@ QuicClient::~QuicClient() {
 }
 
 bool QuicClient::Init(uint16_t thread_num, LogLevel level) {
-    if (level != LL_NULL) {
+    if (level != LogLevel::kNull) {
         InitLogger(level);
     }
     tls_ctx_ = std::make_shared<TLSClientCtx>();

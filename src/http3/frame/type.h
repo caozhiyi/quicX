@@ -6,13 +6,13 @@
 namespace quicx {
 namespace http3 {
 
-enum class FrameType: uint16_t {
+enum FrameType: uint16_t {
     kData            = 0x00,
     kHeaders         = 0x01,
     kCancelPush      = 0x03,
     kSettings        = 0x04,
     kPushPromise     = 0x05,
-    kGoaway          = 0x07,
+    kGoAway          = 0x07,
     kMaxPushId       = 0x0d,
 
     kUnknown         = 0xff,

@@ -41,7 +41,7 @@ void SendStream::Close() {
 
 void SendStream::Reset(uint32_t error) {
     // check status
-    if(!send_machine_->OnFrame(FT_RESET_STREAM)) {
+    if(!send_machine_->OnFrame(FrameType::kResetStream)) {
         return;
     }
 
@@ -81,10 +81,10 @@ uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     switch (frame_type)
     {
-    case FT_MAX_STREAM_DATA:
+    case FrameType::kMaxStreamData:
         OnMaxStreamDataFrame(frame);
         break;
-    case FT_STOP_SENDING:
+    case FrameType::kStopSending:
         OnStopSendingFrame(frame);
         break;
     default:

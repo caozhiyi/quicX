@@ -10,21 +10,21 @@
 namespace quicx {
 namespace quic {
 
-enum StreamDirection: uint8_t {
-    SD_SEND = 0x01, // send stream
-    SD_RECV = 0x02, // recv stream
-    SD_BIDI = 0x03, // bidirection stream
+enum class StreamDirection: uint8_t {
+    kSend = 0x01, // send stream
+    kRecv = 0x02, // recv stream
+    kBidi = 0x03, // bidirection stream
 };
 
-enum LogLevel: uint8_t {
-    LL_NULL         = 0x00, // not print log
-    LL_FATAL        = 0x01,
-    LL_ERROR        = 0x02 | LL_FATAL,
-    LL_WARN         = 0x04 | LL_ERROR,
-    LL_INFO         = 0x08 | LL_WARN,
-    LL_DEBUG        = 0x10 | LL_INFO,
+// log level
+enum class LogLevel: uint8_t {
+    kNull   = 0x00, // not print log
+    kFatal  = 0x01,
+    kError  = 0x02 | kFatal,
+    kWarn   = 0x04 | kError,
+    kInfo   = 0x08 | kWarn,
+    kDebug  = 0x10 | kInfo,
 };
-
 
 struct QuicTransportParams {
     std::string original_destination_connection_id_ = "";

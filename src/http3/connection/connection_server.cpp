@@ -22,7 +22,7 @@ ServerConnection::ServerConnection(const std::string& unique_id,
     max_push_id_(0) {
 
     // create control streams
-    auto control_stream = quic_connection_->MakeStream(quic::SD_SEND);
+    auto control_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
     control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
         std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
         std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
@@ -41,7 +41,7 @@ bool ServerConnection::SendPush(std::shared_ptr<IResponse> response) {
         return false;
     }
 
-    auto stream = quic_connection_->MakeStream(quic::SD_SEND);
+    auto stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
     if (!stream) {
         common::LOG_ERROR("ServerConnection::SendPush make stream failed");
         return false;
@@ -99,7 +99,7 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
         return;
     }
 
-    if (stream->GetDirection() == quic::SD_BIDI) {
+    if (stream->GetDirection() == quic::StreamDirection::kBidi) {
         // request stream
         std::shared_ptr<ResponseStream> response_stream = std::make_shared<ResponseStream>(qpack_encoder_,
             std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
@@ -107,7 +107,7 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
             std::bind(&ServerConnection::HandleHttp, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
         streams_[response_stream->GetStreamID()] = response_stream;
 
-    } else if (stream->GetDirection() == quic::SD_RECV) {
+    } else if (stream->GetDirection() == quic::StreamDirection::kRecv) {
         // control stream
         std::shared_ptr<ControlServerReceiverStream> control_stream = std::make_shared<ControlServerReceiverStream>(
             std::dynamic_pointer_cast<quic::IQuicRecvStream>(stream),

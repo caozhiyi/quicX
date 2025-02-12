@@ -19,15 +19,15 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
     switch (state_) {
     case SS_RECV:
         if (StreamFrame::IsStreamFrame(frame_type)) {
-            if (frame_type & SFF_FIN) {
+            if (frame_type & StreamFrameFlag::kFinFlag) {
                 state_ = SS_SIZE_KNOWN;
             }
             return true;
         }
-        if (frame_type == FT_STREAM_DATA_BLOCKED) {
+        if (frame_type == FrameType::kStreamDataBlocked) {
             return true;
         }
-        if (frame_type == FT_RESET_STREAM) {
+        if (frame_type == FrameType::kResetStream) {
             state_ = SS_RESET_RECVD;
             return true;
         }
@@ -37,10 +37,10 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
         if (StreamFrame::IsStreamFrame(frame_type)) {
             return true;
         }
-        if (frame_type == FT_STREAM_DATA_BLOCKED) {
+        if (frame_type == FrameType::kStreamDataBlocked) {
             return true;
         }
-        if (frame_type == FT_RESET_STREAM) {
+        if (frame_type == FrameType::kResetStream) {
             state_ = SS_RESET_RECVD;
             return true;
         }

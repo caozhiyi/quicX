@@ -9,7 +9,7 @@ namespace quic {
 class PingFrame:
     public IFrame {
 public:
-    PingFrame(): IFrame(FT_PING) {}
+    PingFrame(): IFrame(FrameType::kPing) {}
     ~PingFrame() {}
 };
 

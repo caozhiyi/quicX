@@ -48,7 +48,7 @@ uint32_t IFrame::EncodeSize() {
 
 uint32_t IFrame::GetFrameTypeBit() {
     if (StreamFrame::IsStreamFrame(frame_type_)) {
-        return FTB_STREAM;
+        return FrameTypeBit::kStreamBit;
     }
     
     return (uint32_t)1 << frame_type_;

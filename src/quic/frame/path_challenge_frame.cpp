@@ -12,8 +12,8 @@ namespace quic {
 std::shared_ptr<common::RangeRandom> PathChallengeFrame::random_ = std::make_shared<common::RangeRandom>(0, 62);
 
 PathChallengeFrame::PathChallengeFrame():
-    IFrame(FT_PATH_CHALLENGE) {
-    memset(data_, 0, __path_data_length);
+    IFrame(FrameType::kPathChallenge) {
+    memset(data_, 0, kPathDataLength);
 }
 
 PathChallengeFrame::~PathChallengeFrame() {
@@ -29,7 +29,7 @@ bool PathChallengeFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
 
     common::BufferEncodeWrapper wrapper(buffer);
     wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeBytes(data_, __path_data_length);
+    wrapper.EncodeBytes(data_, kPathDataLength);
     return true;
 }
 
@@ -37,17 +37,18 @@ bool PathChallengeFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, boo
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_PATH_CHALLENGE) {
+        if (frame_type_ != FrameType::kPathChallenge) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
     wrapper.Flush();
-    if (__path_data_length > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), __path_data_length);
+    if (kPathDataLength > buffer->GetDataLength()) {
+        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), kPathDataLength);
         return false;
     }
     auto data = (uint8_t*)data_;
-    wrapper.DecodeBytes(data, __path_data_length);
+    wrapper.DecodeBytes(data, kPathDataLength);
     return true;
 }
 
@@ -56,11 +57,11 @@ uint32_t PathChallengeFrame::EncodeSize() {
 }
 
 bool PathChallengeFrame::CompareData(std::shared_ptr<PathResponseFrame> response) {
-    return strncmp((const char*)data_, (const char*)response->GetData(), __path_data_length) == 0;
+    return strncmp((const char*)data_, (const char*)response->GetData(), kPathDataLength) == 0;
 }
 
 void PathChallengeFrame::MakeData() {
-    for (uint32_t i = 0; i < __path_data_length; i++) {
+    for (uint32_t i = 0; i < kPathDataLength; i++) {
         int32_t randomChar = random_->Random();        
         if (randomChar < 26) {
             data_[i] = 'a' + randomChar;

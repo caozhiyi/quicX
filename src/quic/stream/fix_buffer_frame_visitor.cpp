@@ -19,7 +19,7 @@ FixBufferFrameVisitor::~FixBufferFrameVisitor() {
 }
 
 bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
-    if (frame->GetType() == FT_CRYPTO) {
+    if (frame->GetType() == FrameType::kCrypto) {
         auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frame);
         encryption_level_ = crypto_frame->GetEncryptionLevel();
     }

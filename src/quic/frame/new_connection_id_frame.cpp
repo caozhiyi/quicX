@@ -8,10 +8,10 @@ namespace quicx {
 namespace quic {
 
 NewConnectionIDFrame::NewConnectionIDFrame():
-    IFrame(FT_NEW_CONNECTION_ID),
+    IFrame(FrameType::kNewConnectionId),
     sequence_number_(0),
     retire_prior_to_(0) {
-    memset(stateless_reset_token_, 0, __stateless_reset_token_length);
+    memset(stateless_reset_token_, 0, kStatelessResetTokenLength);
 }
 
 NewConnectionIDFrame::~NewConnectionIDFrame() {
@@ -31,7 +31,7 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) 
     wrapper.EncodeVarint(retire_prior_to_);
     wrapper.EncodeFixedUint8(length_);
     wrapper.EncodeBytes(connection_id_, length_);
-    wrapper.EncodeBytes(stateless_reset_token_, __stateless_reset_token_length);
+    wrapper.EncodeBytes(stateless_reset_token_, kStatelessResetTokenLength);
 
     return true;
 }
@@ -41,7 +41,8 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, b
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_NEW_CONNECTION_ID) {
+        if (frame_type_ != FrameType::kNewConnectionId) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
@@ -58,23 +59,23 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, b
     wrapper.DecodeBytes(data, length_);
     
     wrapper.Flush();
-    if (__stateless_reset_token_length > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), __stateless_reset_token_length);
+    if (kStatelessResetTokenLength > buffer->GetDataLength()) {
+        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), kStatelessResetTokenLength);
         return false;
     }
     data = (uint8_t*)stateless_reset_token_;
-    wrapper.DecodeBytes(data, __stateless_reset_token_length);
+    wrapper.DecodeBytes(data, kStatelessResetTokenLength);
     
     return true;
 }
 
 uint32_t NewConnectionIDFrame::EncodeSize() {
-    return sizeof(NewConnectionIDFrame) - __stateless_reset_token_length + length_;
+    return sizeof(NewConnectionIDFrame) - kStatelessResetTokenLength + length_;
 }
 
 void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {
     if (len > kMaxCidLength) {
-        common::LOG_ERROR("too max connecion id length. len:%d, max:%d", len, kMaxCidLength);
+        common::LOG_ERROR("too max connection id length. len:%d, max:%d", len, kMaxCidLength);
         return;
     }
     memcpy(connection_id_, id, len);
@@ -92,7 +93,7 @@ void NewConnectionIDFrame::GetConnectionID(uint8_t* id, uint8_t& len) {
 }
 
 void NewConnectionIDFrame::SetStatelessResetToken(uint8_t* token) {
-    memcpy(stateless_reset_token_, token, __stateless_reset_token_length);
+    memcpy(stateless_reset_token_, token, kStatelessResetTokenLength);
 }
 
 }

@@ -9,8 +9,8 @@ namespace quic {
 namespace {
 
 TEST(max_streams_frame_utest, codec) {
-    MaxStreamsFrame frame1(FT_MAX_STREAMS_BIDIRECTIONAL);
-    MaxStreamsFrame frame2(FT_MAX_STREAMS_BIDIRECTIONAL);
+    MaxStreamsFrame frame1(FrameType::kMaxStreamsBidirectional);
+    MaxStreamsFrame frame2(FrameType::kMaxStreamsBidirectional);
 
     auto alloter = common::MakeBlockMemoryPoolPtr(128, 2);
     std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);

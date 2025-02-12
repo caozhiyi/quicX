@@ -27,7 +27,7 @@ bool SettingsFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     // Write the number of settings
-    if (!wrapper.EncodeVarint(EvaluatePaloadSize())) {
+    if (!wrapper.EncodeVarint(EvaluatePayloadSize())) {
         return false;
     }
 
@@ -74,14 +74,14 @@ uint32_t SettingsFrame::EvaluateEncodeSize() {
     size += sizeof(type_);
 
     // Size for each setting (id and value)
-    size += EvaluatePaloadSize(); 
+    size += EvaluatePayloadSize(); 
 
     // Size for the number of settings
     size += common::GetEncodeVarintLength(length_);
     return size;
 }
 
-uint32_t SettingsFrame::EvaluatePaloadSize() {
+uint32_t SettingsFrame::EvaluatePayloadSize() {
     if (length_ == 0) {
         // Size for each setting (id and value)
         for (const auto& setting : settings_) {

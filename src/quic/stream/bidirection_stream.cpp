@@ -57,16 +57,16 @@ uint32_t BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
     uint16_t frame_type = frame->GetType();
     switch (frame_type)
     {
-    case FT_STREAM_DATA_BLOCKED:
+    case FrameType::kStreamDataBlocked:
         OnStreamDataBlockFrame(frame);
         break;
-    case FT_RESET_STREAM:
+    case FrameType::kResetStream:
         OnResetStreamFrame(frame);
         break;
-    case FT_MAX_STREAM_DATA:
+    case FrameType::kMaxStreamData:
         OnMaxStreamDataFrame(frame);
         break;
-    case FT_STOP_SENDING:
+    case FrameType::kStopSending:
         OnStopSendingFrame(frame);
         break;
     default:

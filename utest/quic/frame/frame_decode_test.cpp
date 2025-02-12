@@ -63,8 +63,8 @@ TEST(frame_decode_utest, codec) {
     // new connection id frame
     new_frame1.SetRetirePriorTo(10086);
     new_frame1.SetSequenceNumber(2352632);
-    char toekn[128] = "123456789012345678901234567890123456789801234567890";
-    new_frame1.SetStatelessResetToken((uint8_t*)toekn);
+    char token[128] = "123456789012345678901234567890123456789801234567890";
+    new_frame1.SetStatelessResetToken((uint8_t*)token);
     EXPECT_TRUE(new_frame1.Encode(write_buffer));
 
     // retire connection id frame
@@ -127,8 +127,8 @@ TEST(frame_decode_utest, codec) {
     EXPECT_EQ(new_frame1.GetType(), new_frame2->GetType());
     EXPECT_EQ(new_frame1.GetRetirePriorTo(), new_frame2->GetRetirePriorTo());
     EXPECT_EQ(new_frame1.GetSequenceNumber(), new_frame2->GetSequenceNumber());
-    EXPECT_EQ(std::string((char*)new_frame1.GetStatelessResetToken(), __stateless_reset_token_length), 
-        std::string((char*)new_frame2->GetStatelessResetToken(), __stateless_reset_token_length));
+    EXPECT_EQ(std::string((char*)new_frame1.GetStatelessResetToken(), kStatelessResetTokenLength), 
+        std::string((char*)new_frame2->GetStatelessResetToken(), kStatelessResetTokenLength));
 
     // check retire connection id frame
     EXPECT_EQ(retire_frame1.GetType(), retire_frame2->GetType());

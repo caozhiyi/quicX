@@ -14,7 +14,7 @@ HeaderFlag::HeaderFlag() {
 
 HeaderFlag::HeaderFlag(PacketHeaderType type) {
     flag_.header_flag_ = 0;
-    flag_.long_header_flag_.header_form_ = type;
+    flag_.long_header_flag_.header_form_ = type == PacketHeaderType::kShortHeader ? 0 : 1;
     flag_.long_header_flag_.fix_bit_ = 1;
 }
 
@@ -49,11 +49,11 @@ uint32_t HeaderFlag::EncodeFlagSize() {
 }
 
 PacketHeaderType HeaderFlag::GetHeaderType() const {
-    return flag_.long_header_flag_.header_form_ == 1 ? PHT_LONG_HEADER : PHT_SHORT_HEADER;
+    return flag_.long_header_flag_.header_form_ == 1 ? PacketHeaderType::kLongHeader : PacketHeaderType::kShortHeader;
 }
 
 PacketType HeaderFlag::GetPacketType() {
-    if (GetHeaderType() == PHT_SHORT_HEADER) {
+    if (GetHeaderType() == PacketHeaderType::kShortHeader) {
         return PT_1RTT;
     }
     switch (GetLongHeaderFlag().GetPacketType()) {

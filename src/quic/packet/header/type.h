@@ -4,9 +4,9 @@
 namespace quicx {
 namespace quic {
 
-enum PacketHeaderType {
-    PHT_SHORT_HEADER = 0x0,
-    PHT_LONG_HEADER  = 0x1,
+enum class PacketHeaderType {
+    kShortHeader = 0x0,
+    kLongHeader  = 0x1,
 };
 
 }

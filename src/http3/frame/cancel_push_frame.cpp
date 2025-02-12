@@ -17,7 +17,7 @@ bool CancelPushFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     // Write length
-    if (!wrapper.EncodeVarint(EvaluatePaloadSize())) {
+    if (!wrapper.EncodeVarint(EvaluatePayloadSize())) {
         return false;
     }
 
@@ -59,7 +59,7 @@ uint32_t CancelPushFrame::EvaluateEncodeSize() {
     size += sizeof(type_);
     
     // Size for length field
-    size += common::GetEncodeVarintLength(EvaluatePaloadSize());
+    size += common::GetEncodeVarintLength(EvaluatePayloadSize());
     
     // Size for push ID
     size += common::GetEncodeVarintLength(push_id_);
@@ -67,7 +67,7 @@ uint32_t CancelPushFrame::EvaluateEncodeSize() {
     return size;
 }
 
-uint32_t CancelPushFrame::EvaluatePaloadSize() {
+uint32_t CancelPushFrame::EvaluatePayloadSize() {
     return common::GetEncodeVarintLength(push_id_);
 }
 

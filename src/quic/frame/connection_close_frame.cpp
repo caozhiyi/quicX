@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 ConnectionCloseFrame::ConnectionCloseFrame():
-    IFrame(FT_CONNECTION_CLOSE),
+    IFrame(FrameType::kConnectionClose),
     is_application_error_(false),
     error_code_(0),
     err_frame_type_(0) {
@@ -51,7 +51,8 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, b
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_CONNECTION_CLOSE) {
+        if (frame_type_ != FrameType::kConnectionClose) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

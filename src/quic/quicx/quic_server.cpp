@@ -18,7 +18,7 @@ QuicServer::~QuicServer() {
 }
 
 bool QuicServer::Init(const std::string& cert_file, const std::string& key_file, const std::string& alpn, uint16_t thread_num, LogLevel level) {
-    if (level != LL_NULL) {
+    if (level != LogLevel::kNull) {
         InitLogger(level);
     }
     auto tls_ctx = std::make_shared<TLSServerCtx>();
@@ -39,7 +39,7 @@ bool QuicServer::Init(const std::string& cert_file, const std::string& key_file,
 }
 
 bool QuicServer::Init(const char* cert_pem, const char* key_pem, const std::string& alpn, uint16_t thread_num, LogLevel level) {
-    if (level != LL_NULL) {
+    if (level != LogLevel::kNull) {
         InitLogger(level);
     }
     auto tls_ctx = std::make_shared<TLSServerCtx>();

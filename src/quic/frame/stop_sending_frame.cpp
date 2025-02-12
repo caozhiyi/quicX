@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 StopSendingFrame::StopSendingFrame(): 
-    IStreamFrame(FT_STOP_SENDING),
+    IStreamFrame(FrameType::kStopSending),
     app_error_code_(0) {
 
 }
@@ -35,7 +35,8 @@ bool StopSendingFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool 
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_STOP_SENDING) {
+        if (frame_type_ != FrameType::kStopSending) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

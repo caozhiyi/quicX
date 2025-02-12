@@ -9,7 +9,7 @@ namespace quic {
 
 ShortHeader::ShortHeader():
     destination_connection_id_length_(20), // TODO: get from config
-    IHeader(PHT_SHORT_HEADER) {
+    IHeader(PacketHeaderType::kShortHeader) {
 
 }
 

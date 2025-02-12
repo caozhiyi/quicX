@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 AckFrame::AckFrame():
-    IFrame(FT_ACK),
+    IFrame(FrameType::kAck),
     ack_delay_(0) {
 
 }
@@ -41,7 +41,8 @@ bool AckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_typ
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FT_ACK && frame_type_ != FT_ACK_ECN) {
+        if (frame_type_ != FrameType::kAck && frame_type_ != FrameType::kAckEcn) {
+            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
@@ -66,14 +67,14 @@ uint32_t AckFrame::EncodeSize() {
 }
 
 AckFrame::AckFrame(FrameType ft):
-    IFrame(ft),
+    IFrame(static_cast<uint16_t>(ft)),
     ack_delay_(0) {
 
 }
 
 
 AckEcnFrame::AckEcnFrame():
-    AckFrame(FT_ACK_ECN),
+    AckFrame(static_cast<FrameType>(FrameType::kAckEcn)),
     ect_0_(0),
     ect_1_(0),
     ecn_ce_(0) {

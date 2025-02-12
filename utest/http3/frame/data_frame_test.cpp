@@ -19,7 +19,7 @@ protected:
 };
 
 TEST_F(DataFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), static_cast<uint16_t>(FrameType::kData));
+    EXPECT_EQ(frame_->GetType(), FrameType::kData);
     
     uint32_t length = 100;
     frame_->SetLength(length);
@@ -59,7 +59,7 @@ TEST_F(DataFrameTest, EvaluateSize) {
     // 1. frame type (2 bytes)
     // 2. length field (varint)
     // 3. payload
-    uint32_t payload_size = frame_->EvaluatePaloadSize();
+    uint32_t payload_size = frame_->EvaluatePayloadSize();
     uint32_t length_field_size = common::GetEncodeVarintLength(payload_size);
     uint32_t expected_size = sizeof(uint16_t) + length_field_size + payload_size;
 

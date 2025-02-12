@@ -99,7 +99,7 @@ void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
 }
 
 void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    switch (static_cast<FrameType>(frame->GetType())) {
+    switch (frame->GetType()) {
     case FrameType::kHeaders:
         HandleHeaders(frame);
         break;

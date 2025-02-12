@@ -11,7 +11,7 @@ namespace quic {
 class IStreamFrame:
     public IFrame {
 public:
-    IStreamFrame(uint16_t ft = FT_UNKNOW): IFrame(ft), stream_id_(0) {}
+    IStreamFrame(uint16_t ft = FrameType::kUnknown): IFrame(ft), stream_id_(0) {}
     virtual ~IStreamFrame() {}
 
     void SetStreamID(uint64_t id) { stream_id_ = id; }

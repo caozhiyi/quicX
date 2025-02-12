@@ -12,7 +12,7 @@ namespace quicx {
 namespace quic {
 
 LongHeader::LongHeader():
-    IHeader(PHT_LONG_HEADER),
+    IHeader(PacketHeaderType::kLongHeader),
     version_(0),
     destination_connection_id_length_(0),
     source_connection_id_length_(0) {

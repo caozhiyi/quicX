@@ -18,7 +18,7 @@ bool HeadersFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     }
 
     // Write length
-    if (!wrapper.EncodeVarint(EvaluatePaloadSize())) {
+    if (!wrapper.EncodeVarint(EvaluatePayloadSize())) {
         return false;
     }
 
@@ -62,12 +62,12 @@ uint32_t HeadersFrame::EvaluateEncodeSize() {
     size += common::GetEncodeVarintLength(length_);
     
     // Size for encoded fields
-    size += EvaluatePaloadSize();
+    size += EvaluatePayloadSize();
 
     return size;
 }
 
-uint32_t HeadersFrame::EvaluatePaloadSize() {
+uint32_t HeadersFrame::EvaluatePayloadSize() {
     if (length_ == 0) {
         length_ = encoded_fields_.size();
     }

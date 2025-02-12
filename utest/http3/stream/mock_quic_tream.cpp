@@ -6,7 +6,7 @@ namespace quicx {
 namespace quic {
 
 quic::StreamDirection MockQuicStream::GetDirection() {
-    return quic::StreamDirection::SD_BIDI;
+    return quic::StreamDirection::kBidi;
 }
 
 uint64_t MockQuicStream::GetStreamID() {
