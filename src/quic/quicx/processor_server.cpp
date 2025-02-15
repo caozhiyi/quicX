@@ -46,7 +46,7 @@ bool ProcessorServer::HandlePacket(std::shared_ptr<INetPacket> packet) {
     // if pakcet is a short header packet, but we can't find in connection map, the connection may exist in other thread.
     // that may happen when ip of client changed.
     auto pkt_type = packets[0]->GetHeader()->GetPacketType();
-    if (pkt_type == PacketType::PT_1RTT && connection_transfor_) {
+    if (pkt_type == PacketType::k1RttPacketType && connection_transfor_) {
         connection_transfor_->TryCatchConnection(cid_code);
         return true;
     }

@@ -37,11 +37,11 @@ private:
         PacketTimerInfo() {}
         PacketTimerInfo(uint64_t t, uint32_t len, const common::TimerTask& task): send_time_(t), pkt_len_(len), timer_task_(task) {}
     };
-    std::unordered_map<uint64_t, PacketTimerInfo> unacked_packets_[PNS_NUMBER];
+    std::unordered_map<uint64_t, PacketTimerInfo> unacked_packets_[PacketNumberSpace::kNumberSpaceCount];
 
-    uint64_t pkt_num_largest_sent_[PNS_NUMBER];
-    uint64_t pkt_num_largest_acked_[PNS_NUMBER];
-    uint64_t largest_sent_time_[PNS_NUMBER];
+    uint64_t pkt_num_largest_sent_[PacketNumberSpace::kNumberSpaceCount];
+    uint64_t pkt_num_largest_acked_[PacketNumberSpace::kNumberSpaceCount];
+    uint64_t largest_sent_time_[PacketNumberSpace::kNumberSpaceCount];
 
     RttCalculator rtt_calculator_;
     std::shared_ptr<common::ITimer> timer_;

@@ -13,7 +13,7 @@ Rtt0Packet::Rtt0Packet():
     length_(0),
     payload_offset_(0),
     packet_num_offset_(0) {
-    header_.GetLongHeaderFlag().SetPacketType(PT_0RTT);
+    header_.GetLongHeaderFlag().SetPacketType(PacketType::k0RttPacketType);
 }
 
 Rtt0Packet::Rtt0Packet(uint8_t flag):
@@ -21,7 +21,7 @@ Rtt0Packet::Rtt0Packet(uint8_t flag):
     payload_offset_(0),
     packet_num_offset_(0),
     header_(flag) {
-    header_.GetLongHeaderFlag().SetPacketType(PT_0RTT);
+    header_.GetLongHeaderFlag().SetPacketType(PacketType::k0RttPacketType);
 }
 
 Rtt0Packet::~Rtt0Packet() {

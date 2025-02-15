@@ -7,7 +7,7 @@ namespace quicx {
 namespace quic {
 
 RetryPacket::RetryPacket() {
-    header_.GetLongHeaderFlag().SetPacketType(PT_RETRY);
+    header_.GetLongHeaderFlag().SetPacketType(PacketType::kRetryPacketType);
 }
 
 RetryPacket::RetryPacket(uint8_t flag):
@@ -34,8 +34,8 @@ bool RetryPacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     cur_pos += retry_token_.GetLength();
 
     // encode retry integrity tag 
-    memcpy(cur_pos, retry_integrity_tag_, __retry_integrity_tag_length);
-    cur_pos += __retry_integrity_tag_length;
+    memcpy(cur_pos, retry_integrity_tag_, kRetryIntegrityTagLength);
+    cur_pos += kRetryIntegrityTagLength;
     buffer->MoveWritePt(cur_pos - span.GetStart());
     return true;
 }
@@ -48,21 +48,21 @@ bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffe
 
     auto span = buffer->GetReadSpan();
     uint8_t* cur_pos = span.GetStart();
-    uint32_t token_len = span.GetLength() - __retry_integrity_tag_length;
+    uint32_t token_len = span.GetLength() - kRetryIntegrityTagLength;
 
     // decode retry token
     retry_token_ = std::move(common::BufferSpan(span.GetStart(), token_len));
     cur_pos += token_len;
 
     // decode retry integrity tag 
-    memcpy(retry_integrity_tag_, cur_pos, __retry_integrity_tag_length);
-    cur_pos += __retry_integrity_tag_length;
+    memcpy(retry_integrity_tag_, cur_pos, kRetryIntegrityTagLength);
+    cur_pos += kRetryIntegrityTagLength;
     buffer->MoveReadPt(cur_pos - span.GetStart());
     return true;
 }
 
 void RetryPacket::SetRetryIntegrityTag(uint8_t* tag) {
-    memcpy(retry_integrity_tag_, tag, __retry_integrity_tag_length);
+    memcpy(retry_integrity_tag_, tag, kRetryIntegrityTagLength);
 }
 
 uint8_t* RetryPacket::GetRetryIntegrityTag() {

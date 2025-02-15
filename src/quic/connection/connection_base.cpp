@@ -154,27 +154,27 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         common::LOG_DEBUG("get packet. type:%d", packets[i]->GetHeader()->GetPacketType());
         switch (packets[i]->GetHeader()->GetPacketType())
         {
-        case PT_INITIAL:
+        case PacketType::kInitialPacketType:
             if (!OnInitialPacket(std::dynamic_pointer_cast<InitPacket>(packets[i]))) {
                 common::LOG_ERROR("init packet handle failed.");
             }
             break;
-        case PT_0RTT:
+        case PacketType::k0RttPacketType:
             if (!On0rttPacket(std::dynamic_pointer_cast<Rtt0Packet>(packets[i]))) {
                 common::LOG_ERROR("0 rtt packet handle failed.");
             }
             break;
-        case PT_HANDSHAKE:
+        case PacketType::kHandshakePacketType:
             if (!OnHandshakePacket(std::dynamic_pointer_cast<HandshakePacket>(packets[i]))) {
                 common::LOG_ERROR("handshakee packet handle failed.");
             }
             break;
-        case PT_RETRY:
+        case PacketType::kRetryPacketType:
             if (!OnRetryPacket(std::dynamic_pointer_cast<RetryPacket>(packets[i]))) {
                 common::LOG_ERROR("retry packet handle failed.");
             }
             break;
-        case PT_1RTT:
+        case PacketType::k1RttPacketType:
             if (!On1rttPacket(std::dynamic_pointer_cast<Rtt1Packet>(packets[i]))) {
                 common::LOG_ERROR("1 rtt packet handle failed.");
             }

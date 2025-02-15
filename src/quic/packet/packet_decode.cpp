@@ -32,19 +32,19 @@ bool DecodePackets(std::shared_ptr<common::IBufferRead> buffer, std::vector<std:
             common::LOG_DEBUG("get packet type:%s", PacketTypeToString(flag.GetPacketType()));
             switch (flag.GetPacketType())
             {
-            case PT_INITIAL:
+            case PacketType::kInitialPacketType:
                 packet = std::make_shared<InitPacket>(flag.GetFlag());
                 break;
-            case PT_0RTT:
+            case PacketType::k0RttPacketType:
                 packet = std::make_shared<Rtt0Packet>(flag.GetFlag());
                 break;
-            case PT_HANDSHAKE:
+            case PacketType::kHandshakePacketType:
                 packet = std::make_shared<HandshakePacket>(flag.GetFlag());
                 break;
-            case PT_RETRY:
+            case PacketType::kRetryPacketType:
                 packet = std::make_shared<RetryPacket>(flag.GetFlag());
                 break;
-            case PT_NEGOTIATION:
+            case PacketType::kNegotiationPacketType:
                 packet = std::make_shared<VersionNegotiationPacket>(flag.GetFlag());
                 break;
             default:

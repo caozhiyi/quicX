@@ -8,8 +8,8 @@ namespace quic {
 namespace {
 
 TEST(retry_packet_utest, codec) {
-    uint8_t tag[__retry_integrity_tag_length];
-    for (size_t i = 0; i < __retry_integrity_tag_length; i++) {
+    uint8_t tag[kRetryIntegrityTagLength];
+    for (size_t i = 0; i < kRetryIntegrityTagLength; i++) {
         tag[i] = i;
     }
 
@@ -30,7 +30,7 @@ TEST(retry_packet_utest, codec) {
     EXPECT_TRUE(new_packet.DecodeWithoutCrypto(buffer));
 
     auto new_tag = new_packet.GetRetryIntegrityTag();
-    for (uint32_t i = 0; i < __retry_integrity_tag_length; i++) {
+    for (uint32_t i = 0; i < kRetryIntegrityTagLength; i++) {
         EXPECT_EQ(*(new_tag + i), i);
     }
 
