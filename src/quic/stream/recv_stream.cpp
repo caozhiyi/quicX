@@ -69,10 +69,10 @@ IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
             iter = frames_list_.erase(iter);
 
         } else {
-            return TSR_FAILED;
+            return TrySendResult::kFailed;
         }
     }
-    return TSR_SUCCESS;
+    return TrySendResult::kSuccess;
 }
 
 uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {

@@ -16,7 +16,7 @@
 namespace quicx {
 namespace common {
 
-static const uint8_t __file_logger_time_buf_size = sizeof("xxxx-xx-xx:xx");
+static const uint8_t kFileLoggerTimeBufSize = sizeof("xxxx-xx-xx:xx");
 
 enum class FileLoggerSpiltUnit {
     kDay  = 1,
@@ -62,7 +62,7 @@ private:
     uint16_t time_offset_;
     uint8_t  time_buf_len_;
     FileLoggerSpiltUnit spilt_unit_;
-    char     time_[__file_logger_time_buf_size];
+    char     time_[kFileLoggerTimeBufSize];
 
     // for log file delete
     uint16_t max_file_num_;

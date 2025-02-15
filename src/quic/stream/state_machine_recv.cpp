@@ -17,10 +17,10 @@ StreamStateMachineRecv::~StreamStateMachineRecv() {
 
 bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
     switch (state_) {
-    case SS_RECV:
+    case StreamState::kRecv:
         if (StreamFrame::IsStreamFrame(frame_type)) {
             if (frame_type & StreamFrameFlag::kFinFlag) {
-                state_ = SS_SIZE_KNOWN;
+                state_ = StreamState::kSizeKnown;
             }
             return true;
         }
@@ -28,12 +28,12 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
             return true;
         }
         if (frame_type == FrameType::kResetStream) {
-            state_ = SS_RESET_RECVD;
+            state_ = StreamState::kResetRecvd;
             return true;
         }
         break;
 
-    case SS_SIZE_KNOWN:
+    case StreamState::kSizeKnown:
         if (StreamFrame::IsStreamFrame(frame_type)) {
             return true;
         }
@@ -41,12 +41,12 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
             return true;
         }
         if (frame_type == FrameType::kResetStream) {
-            state_ = SS_RESET_RECVD;
+            state_ = StreamState::kResetRecvd;
             return true;
         }
         break;
         
-    case SS_RESET_RECVD:
+    case StreamState::kResetRecvd:
         if (StreamFrame::IsStreamFrame(frame_type)) {
             return true;
         }
@@ -59,25 +59,25 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
 }
 
 bool StreamStateMachineRecv::CanSendMaxStrameDataFrame() {
-    return state_ == SS_RECV;
+    return state_ == StreamState::kRecv;
 }
 
 bool StreamStateMachineRecv::CanSendStopSendingFrame() {
-    return state_ != SS_RESET_READ &&
-           state_ != SS_RESET_RECVD;
+    return state_ != StreamState::kResetRead &&
+           state_ != StreamState::kResetRecvd;
 }
 
 bool StreamStateMachineRecv::CanAppReadAllData() {
-    return state_ == SS_DATA_RECVD;
+    return state_ == StreamState::kDataRecvd;
 }
 
 bool StreamStateMachineRecv::RecvAllData() {
     switch (state_) {
-    case SS_SIZE_KNOWN:
-        state_ = SS_DATA_RECVD;
+    case StreamState::kSizeKnown:
+        state_ = StreamState::kDataRecvd;
         return true;
-    case SS_RESET_RECVD:
-        state_ = SS_RESET_RECVD;
+    case StreamState::kResetRecvd:
+        state_ = StreamState::kResetRecvd;
         return true;
     default:
         common::LOG_ERROR("current status not allow recv all data. status:%d", state_);
@@ -88,17 +88,17 @@ bool StreamStateMachineRecv::RecvAllData() {
 
 bool StreamStateMachineRecv::AppReadAllData() {
     switch (state_) {
-    case SS_DATA_RECVD:
-        state_ = SS_DATA_READ;
+    case StreamState::kDataRecvd:
+        state_ = StreamState::kDataRead;
         break;
-    case SS_RESET_RECVD:
-        state_ = SS_RESET_READ;
+    case StreamState::kResetRecvd:
+        state_ = StreamState::kResetRead;
         break;
     default:
         common::LOG_ERROR("current status not allow read all data. status:%d", state_);
         return false;
     }
-    if (state_ == SS_DATA_READ || state_ == SS_RESET_READ) {
+    if (state_ == StreamState::kDataRead || state_ == StreamState::kResetRead) {
         if (stream_close_cb_) {
             stream_close_cb_();
         }

@@ -47,7 +47,7 @@ protected:
 
     friend class ConnectionTransfor;
     std::shared_ptr<ConnectionTransfor> connection_transfor_;
-    static std::unordered_map<std::thread::id, ThreadProcessor*> processor_map__;
+    static std::unordered_map<std::thread::id, ThreadProcessor*> s_processor_map;
     std::thread::id current_thread_id_;
 
     bool current_thread_id_set_;

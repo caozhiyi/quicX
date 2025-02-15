@@ -29,7 +29,7 @@ FileLogger::FileLogger(const std::string& file,
         max_file_num_ = max_store_days;
     }
 
-    memset(time_, 0, __file_logger_time_buf_size);
+    memset(time_, 0, kFileLoggerTimeBufSize);
 
     Start();
 }

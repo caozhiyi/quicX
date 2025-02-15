@@ -17,38 +17,38 @@ StreamStateMachineSend::~StreamStateMachineSend() {
 
 bool StreamStateMachineSend::OnFrame(uint16_t frame_type) {
     switch (state_) {
-    case SS_READY:
+    case StreamState::kReady:
         if (StreamFrame::IsStreamFrame(frame_type)) {
-            state_ = SS_SEND;
+            state_ = StreamState::kSend;
             if (frame_type & StreamFrameFlag::kFinFlag) {
-                state_ = SS_DATA_SENT;
+                state_ = StreamState::kDataSent;
             }
             return true;
         }
         if (frame_type == FrameType::kStreamDataBlocked) {
-            state_ = SS_SEND;
+            state_ = StreamState::kSend;
             return true;
         }
         if (frame_type == FrameType::kResetStream) {
-            state_ = SS_RESET_SENT;
+            state_ = StreamState::kResetSent;
             return true;
         }
         break;
-    case SS_SEND:
+    case StreamState::kSend:
         if (StreamFrame::IsStreamFrame(frame_type)) {
             if (frame_type & StreamFrameFlag::kFinFlag) {
-                state_ = SS_DATA_SENT;
+                state_ = StreamState::kDataSent;
             }
             return true;
         }
         if (frame_type == FrameType::kResetStream) {
-            state_ = SS_RESET_SENT;
+            state_ = StreamState::kResetSent;
             return true;
         }
         break;
-    case SS_DATA_SENT:
+    case StreamState::kDataSent:
         if (frame_type == FrameType::kResetStream) {
-            state_ = SS_RESET_SENT;
+            state_ = StreamState::kResetSent;
             return true;
         }
         break;
@@ -61,17 +61,17 @@ bool StreamStateMachineSend::OnFrame(uint16_t frame_type) {
 
 bool StreamStateMachineSend::AllAckDone() {
     switch (state_) {
-    case SS_DATA_SENT:
-        state_ = SS_DATA_RECVD;
+    case StreamState::kDataSent:
+        state_ = StreamState::kDataRecvd;
         break;
-    case SS_RESET_SENT:
-        state_ = SS_RESET_RECVD;
+    case StreamState::kResetSent:
+        state_ = StreamState::kResetRecvd;
         break;
     default:
         common::LOG_ERROR("current status not allow ack done. status:%d", state_);
         return false;
     }
-    if (state_ == SS_DATA_RECVD || state_ == SS_RESET_RECVD) {
+    if (state_ == StreamState::kDataRecvd || state_ == StreamState::kResetRecvd) {
         if (stream_close_cb_) {
             stream_close_cb_();
         }
@@ -80,25 +80,25 @@ bool StreamStateMachineSend::AllAckDone() {
 }
 
 bool StreamStateMachineSend::CanSendStrameFrame() {
-    return state_ == SS_READY ||
-           state_ == SS_SEND  ||
-           state_ == SS_DATA_SENT;
+    return state_ == StreamState::kReady ||
+           state_ == StreamState::kSend  ||
+           state_ == StreamState::kDataSent;
 }
 
 bool StreamStateMachineSend::CanSendAppData() {
-    return state_ == SS_READY ||
-           state_ == SS_SEND;
+    return state_ == StreamState::kReady ||
+           state_ == StreamState::kSend;
 }
 
 bool StreamStateMachineSend::CanSendDataBlockFrame() {
-    return state_ == SS_READY ||
-           state_ == SS_SEND;
+    return state_ == StreamState::kReady ||
+           state_ == StreamState::kSend;
 }
 
 bool StreamStateMachineSend::CanSendResetStreamFrame() {
-    return state_ == SS_READY ||
-           state_ == SS_SEND  ||
-           state_ == SS_DATA_SENT;
+    return state_ == StreamState::kReady ||
+           state_ == StreamState::kSend  ||
+           state_ == StreamState::kDataSent;
 }
 
 }

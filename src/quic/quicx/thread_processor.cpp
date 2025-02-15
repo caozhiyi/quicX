@@ -10,7 +10,7 @@ namespace quicx {
 namespace quic {
 
 
-std::unordered_map<std::thread::id, ThreadProcessor*> ThreadProcessor::processor_map__;
+std::unordered_map<std::thread::id, ThreadProcessor*> ThreadProcessor::s_processor_map;
 
 ThreadProcessor::ThreadProcessor():
     wait_close_(false) {
@@ -25,7 +25,7 @@ ThreadProcessor::~ThreadProcessor() {
 
 void ThreadProcessor::Run() {
     // register processor in woker thread
-    processor_map__[std::this_thread::get_id()] = this;
+    s_processor_map[std::this_thread::get_id()] = this;
     connection_transfor_ = std::make_shared<ConnectionTransfor>();
     current_thread_id_ = std::this_thread::get_id();
 

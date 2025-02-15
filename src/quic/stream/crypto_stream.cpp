@@ -23,7 +23,7 @@ CryptoStream::~CryptoStream() {
 
 IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
     // TODO not copy buffer
-    TrySendResult ret = TSR_SUCCESS;
+    TrySendResult ret = TrySendResult::kSuccess;
     std::shared_ptr<common::IBufferChains> buffer;
     uint8_t level;
     if (send_buffers_[kInitial] && send_buffers_[kInitial]->GetDataLength() > 0) {
@@ -38,7 +38,7 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
             send_buffers_[kInitial] = nullptr;
 
         } else {
-            ret = TSR_BREAK;
+            ret = TrySendResult::kBreak;
         }
     }
 
@@ -49,7 +49,7 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
             send_buffers_[kHandshake] = nullptr;
 
         } else {
-            ret = TSR_BREAK;
+            ret = TrySendResult::kBreak;
         }
     }
     
@@ -69,7 +69,7 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
     frame->SetData(buf, size);
 
     if (!visitor->HandleFrame(frame)) {
-        ret = TSR_FAILED;
+        ret = TrySendResult::kFailed;
         return ret;
     }
 
