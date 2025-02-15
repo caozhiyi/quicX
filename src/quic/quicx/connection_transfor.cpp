@@ -17,9 +17,9 @@ void ConnectionTransfor::TryCatchConnection(uint64_t cid_hash) {
     std::shared_ptr<SearchingContext> context = std::make_shared<SearchingContext>();
     context->cid_hash_ = cid_hash;
     context->thread_id_ = thread_id_;
-    context->count_ = ProcessorBase::processor_map__.size() - 1;
+    context->count_ = ProcessorBase::s_processor_map.size() - 1;
 
-    for (auto iter = ProcessorBase::processor_map__.begin(); iter != ProcessorBase::processor_map__.end(); iter++) {
+    for (auto iter = ProcessorBase::s_processor_map.begin(); iter != ProcessorBase::s_processor_map.end(); iter++) {
         if (iter->first == thread_id_) {
             continue;
         }
@@ -46,7 +46,7 @@ void ConnectionTransfor::TryCatchConnection(uint64_t cid_hash) {
 }
 
 void ConnectionTransfor::ExistConnection(std::shared_ptr<SearchingContext> context) {
-    auto iter = ProcessorBase::processor_map__.find(context->thread_id_);
+    auto iter = ProcessorBase::s_processor_map.find(context->thread_id_);
     iter->second->Push([iter, context]()->void{
         iter->second->TransferConnection(context->cid_hash_, context->connection_);
     });
@@ -54,7 +54,7 @@ void ConnectionTransfor::ExistConnection(std::shared_ptr<SearchingContext> conte
 }
 
 void ConnectionTransfor::NoExistConnection(std::shared_ptr<SearchingContext> context) {
-    auto iter = ProcessorBase::processor_map__.find(context->thread_id_);
+    auto iter = ProcessorBase::s_processor_map.find(context->thread_id_);
     iter->second->Push([iter, context]()->void{
         iter->second->ConnectionIDNoexist(context->cid_hash_, context->connection_);
     });

@@ -54,8 +54,8 @@ uint64_t PacketNumber::Decode(uint64_t largest_pn, uint64_t truncated_pn, uint64
 
     uint64_t candidate_pn = (expected_pn & ~pn_mask) | truncated_pn;
 
-    static const uint64_t __max_number = (uint64_t)1 << 62;
-    if (candidate_pn <= expected_pn - pn_hwin && candidate_pn < (__max_number - pn_win)) {
+    static const uint64_t s_max_number = (uint64_t)1 << 62;
+    if (candidate_pn <= expected_pn - pn_hwin && candidate_pn < (s_max_number - pn_win)) {
         return candidate_pn + pn_win;
     }
 

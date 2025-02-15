@@ -116,14 +116,14 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
         // then sending frames of stream
         for (auto iter = active_send_stream_set_.begin(); iter != active_send_stream_set_.end();) {
             auto ret = (*iter)->TrySendData(visitor);
-            if (ret == IStream::TSR_SUCCESS) {
+            if (ret == IStream::TrySendResult::kSuccess) {
                 iter = active_send_stream_set_.erase(iter);
     
-            } else if (ret == IStream::TSR_FAILED) {
+            } else if (ret == IStream::TrySendResult::kFailed) {
                 common::LOG_ERROR("get stream send data failed.");
                 return nullptr;
     
-            } else if (ret == IStream::TSR_BREAK) {
+            } else if (ret == IStream::TrySendResult::kBreak) {
                 need_break = true;
                 break;
             }

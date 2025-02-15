@@ -20,7 +20,7 @@ IStream::~IStream() {
 
 IStream::TrySendResult IStream::TrySendData(IFrameVisitor* visitor) {
     is_active_send_ = false;
-    return TSR_SUCCESS;
+    return TrySendResult::kSuccess;
 }
 
 void IStream::ToClose() {

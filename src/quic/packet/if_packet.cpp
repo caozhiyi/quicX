@@ -4,8 +4,8 @@ namespace quicx {
 namespace quic {
 
 std::vector<std::shared_ptr<IFrame>>& IPacket::GetFrames() {
-    static std::vector<std::shared_ptr<IFrame>> __no_use;
-    return __no_use;
+    static std::vector<std::shared_ptr<IFrame>> s_no_use;
+    return s_no_use;
 }
 
 }

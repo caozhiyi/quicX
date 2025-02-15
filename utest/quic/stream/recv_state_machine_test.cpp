@@ -9,44 +9,44 @@ namespace {
 
 TEST(recv_state_machine_utest, normal_state_change) {
     StreamStateMachineRecv state(nullptr);
-    EXPECT_EQ(state.GetStatus(), SS_RECV);
+    EXPECT_EQ(state.GetStatus(), StreamState::kRecv);
 
     EXPECT_FALSE(state.OnFrame(FrameType::kStopSending));
     EXPECT_FALSE(state.OnFrame(FrameType::kPadding));
 
     EXPECT_TRUE(state.OnFrame(FrameType::kStream));
-    EXPECT_EQ(state.GetStatus(), SS_RECV);
+    EXPECT_EQ(state.GetStatus(), StreamState::kRecv);
 
     EXPECT_TRUE(state.OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag));
-    EXPECT_EQ(state.GetStatus(), SS_SIZE_KNOWN);
+    EXPECT_EQ(state.GetStatus(), StreamState::kSizeKnown);
 
     EXPECT_TRUE(state.RecvAllData());
 
-    EXPECT_EQ(state.GetStatus(), SS_DATA_RECVD);
+    EXPECT_EQ(state.GetStatus(), StreamState::kDataRecvd);
 
     EXPECT_TRUE(state.AppReadAllData());
 
-    EXPECT_EQ(state.GetStatus(), SS_DATA_READ);
+    EXPECT_EQ(state.GetStatus(), StreamState::kDataRead);
 }
 
 TEST(recv_state_machine_utest, wrong_state_change) {
     StreamStateMachineRecv state(nullptr);
-    EXPECT_EQ(state.GetStatus(), SS_RECV);
+    EXPECT_EQ(state.GetStatus(), StreamState::kRecv);
 
     EXPECT_FALSE(state.RecvAllData());
 
     EXPECT_TRUE(state.OnFrame(FrameType::kStream));
-    EXPECT_EQ(state.GetStatus(), SS_RECV);
+    EXPECT_EQ(state.GetStatus(), StreamState::kRecv);
 
     EXPECT_TRUE(state.OnFrame(FrameType::kResetStream));
-    EXPECT_EQ(state.GetStatus(), SS_RESET_RECVD);
+    EXPECT_EQ(state.GetStatus(), StreamState::kResetRecvd);
 
     EXPECT_TRUE(state.OnFrame(FrameType::kStream));
     EXPECT_TRUE(state.RecvAllData());
 
     EXPECT_TRUE(state.AppReadAllData());
 
-    EXPECT_EQ(state.GetStatus(), SS_RESET_READ);
+    EXPECT_EQ(state.GetStatus(), StreamState::kResetRead);
 }
 
 }

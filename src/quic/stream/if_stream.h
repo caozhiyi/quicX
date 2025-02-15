@@ -28,11 +28,12 @@ public:
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) = 0;
 
     // try generate data to send
-    enum TrySendResult {
-        TSR_SUCCESS = 0, // generate data done
-        TSR_FAILED  = 1, // generate data failed
-        TSR_BREAK   = 2  // generate data need send alone
+    enum class TrySendResult {
+        kSuccess = 0, // generate data done
+        kFailed  = 1, // generate data failed
+        kBreak   = 2  // generate data need send alone
     };
+
     virtual TrySendResult TrySendData(IFrameVisitor* visitor);
     
 protected:

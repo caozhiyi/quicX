@@ -16,7 +16,7 @@ class IStreamStateMachine {
 public:
     // stream_close_cb: called when stream is going to close
     // state: initial state
-    IStreamStateMachine(std::function<void()> stream_close_cb, StreamState state = SS_UNKNOW):
+    IStreamStateMachine(std::function<void()> stream_close_cb, StreamState state = StreamState::kUnknown):
         stream_close_cb_(stream_close_cb), state_(state) {}
     virtual ~IStreamStateMachine() {}
 

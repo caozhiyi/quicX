@@ -45,7 +45,7 @@ receiving stream states
 class StreamStateMachineRecv:
     public IStreamStateMachine {
 public:
-    StreamStateMachineRecv(std::function<void()> stream_close_cb, StreamState state = SS_RECV);
+    StreamStateMachineRecv(std::function<void()> stream_close_cb, StreamState state = StreamState::kRecv);
     ~StreamStateMachineRecv();
 
     // current recv frame type

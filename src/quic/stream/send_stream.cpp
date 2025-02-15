@@ -106,13 +106,13 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
             frame->SetMaximumData(peer_data_limit_);
     
             if (!visitor->HandleFrame(frame)) {
-                return TSR_FAILED;
+                return TrySendResult::kFailed;
             }
         }
     }
 
     if (peer_data_limit_ <= send_data_offset_) {
-        return TSR_FAILED;
+        return TrySendResult::kFailed;
     }
     
     for (auto iter = frames_list_.begin(); iter != frames_list_.end();) {
@@ -120,12 +120,12 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
             iter = frames_list_.erase(iter);
 
         } else {
-            return TSR_FAILED;
+            return TrySendResult::kFailed;
         }
     }
 
     if (!send_machine_->CanSendStrameFrame()) {
-        return TSR_SUCCESS;
+        return TrySendResult::kSuccess;
     }
 
     // make stream frame
@@ -147,7 +147,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     frame->SetData(buf, size);
 
     if (!visitor->HandleFrame(frame)) {
-        return TSR_FAILED;
+        return TrySendResult::kFailed;
     }
     visitor->AddStreamDataSize(send_size);
 
@@ -157,7 +157,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     if (sended_cb_) {
         sended_cb_(size, 0);
     }
-    return TSR_SUCCESS;
+    return TrySendResult::kSuccess;
 }
 
 void SendStream::OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {

@@ -47,7 +47,7 @@ sending stream states
 class StreamStateMachineSend:
     public IStreamStateMachine {
 public:
-    StreamStateMachineSend(std::function<void()> stream_close_cb, StreamState state = SS_READY);
+    StreamStateMachineSend(std::function<void()> stream_close_cb, StreamState state = StreamState::kReady);
     ~StreamStateMachineSend();
 
     // current send frame type

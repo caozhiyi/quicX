@@ -7,7 +7,7 @@
 namespace quicx {
 namespace quic {
 
-static const SSL_QUIC_METHOD __quic_method = {
+static const SSL_QUIC_METHOD gQuicMethod = {
     TLSConnection::SetReadSecret,
     TLSConnection::SetWriteSecret,
     TLSConnection::AddHandshakeData,
@@ -38,7 +38,7 @@ bool TLSConnection::Init() {
         return false;
     }
 
-    if (SSL_set_quic_method(ssl_.get(), &__quic_method) == 0) {
+    if (SSL_set_quic_method(ssl_.get(), &gQuicMethod) == 0) {
         common::LOG_ERROR("SSL_set_quic_method failed.");
         return false;
     }
