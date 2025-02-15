@@ -33,9 +33,9 @@ public:
     void UpdateConfig(const TransportParam& tp);
 
 private:
-    uint64_t pkt_num_largest_recvd_[PNS_NUMBER];
-    uint64_t largest_recv_time_[PNS_NUMBER];
-    std::set<uint64_t> wait_ack_packet_numbers_[PNS_NUMBER];
+    uint64_t pkt_num_largest_recvd_[PacketNumberSpace::kNumberSpaceCount];
+    uint64_t largest_recv_time_[PacketNumberSpace::kNumberSpaceCount];
+    std::set<uint64_t> wait_ack_packet_numbers_[PacketNumberSpace::kNumberSpaceCount];
     
     bool set_timer_;
     std::shared_ptr<common::ITimer> timer_;

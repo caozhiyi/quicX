@@ -15,7 +15,7 @@ InitPacket::InitPacket():
     payload_offset_(0),
     packet_num_offset_(0),
     token_length_(0) {
-    header_.GetLongHeaderFlag().SetPacketType(PT_INITIAL);
+    header_.GetLongHeaderFlag().SetPacketType(PacketType::kInitialPacketType);
 }
 
 InitPacket::InitPacket(uint8_t flag):

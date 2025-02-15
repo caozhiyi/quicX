@@ -6,17 +6,17 @@ namespace quic {
 const char* PacketTypeToString(PacketType type) {
     switch (type)
     {
-    case PT_INITIAL:
+    case PacketType::kInitialPacketType:
         return "initial";
-    case PT_0RTT:
+    case PacketType::k0RttPacketType:
         return "0rtt";
-    case PT_HANDSHAKE:
+    case PacketType::kHandshakePacketType:
         return "handshake";
-    case PT_RETRY:
+    case PacketType::kRetryPacketType:
         return "retry";
-    case PT_NEGOTIATION:
+    case PacketType::kNegotiationPacketType:
         return "negotiation";
-    case PT_1RTT:
+    case PacketType::k1RttPacketType:
         return "1rtt";
     default:
         return "unkonw";

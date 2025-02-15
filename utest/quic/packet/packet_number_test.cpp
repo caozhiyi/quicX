@@ -10,10 +10,10 @@ TEST(packet_number_utest, codec) {
     PacketNumber packet_number;
 
     for (size_t i = 0; i < 1000; i++) {
-        packet_number.NextPakcetNumber(PNS_APPLICATION);
+        packet_number.NextPakcetNumber(PacketNumberSpace::kApplicationNumberSpace);
     }
 
-    uint64_t pn = packet_number.NextPakcetNumber(PNS_APPLICATION);
+    uint64_t pn = packet_number.NextPakcetNumber(PacketNumberSpace::kApplicationNumberSpace);
     EXPECT_EQ(pn, 1001);
 
     uint8_t buf[4] = {0};

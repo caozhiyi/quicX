@@ -6,13 +6,13 @@ namespace quicx {
 namespace quic {
 
 VersionNegotiationPacket::VersionNegotiationPacket() {
-    header_.GetLongHeaderFlag().SetPacketType(PT_NEGOTIATION);
+    header_.GetLongHeaderFlag().SetPacketType(PacketType::kNegotiationPacketType);
     header_.SetVersion(0);
 }
 
 VersionNegotiationPacket::VersionNegotiationPacket(uint8_t flag):
     header_(flag) {
-    header_.GetLongHeaderFlag().SetPacketType(PT_NEGOTIATION);
+    header_.GetLongHeaderFlag().SetPacketType(PacketType::kNegotiationPacketType);
     header_.SetVersion(0);
 
 }

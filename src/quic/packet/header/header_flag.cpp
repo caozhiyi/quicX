@@ -54,22 +54,22 @@ PacketHeaderType HeaderFlag::GetHeaderType() const {
 
 PacketType HeaderFlag::GetPacketType() {
     if (GetHeaderType() == PacketHeaderType::kShortHeader) {
-        return PT_1RTT;
+        return PacketType::k1RttPacketType;
     }
     switch (GetLongHeaderFlag().GetPacketType()) {
     case 0x00:
-        return PT_INITIAL;
+        return PacketType::kInitialPacketType;
     case 0x01:
-        return PT_0RTT;
+        return PacketType::k0RttPacketType;
     case 0x02:
-        return PT_HANDSHAKE;
+        return PacketType::kHandshakePacketType;
     case 0x03:
-        return PT_RETRY;
+        return PacketType::kRetryPacketType;
     default:
         common::LOG_ERROR("unknow packet type. type:%d", GetLongHeaderFlag().packet_type_);
         break;
     }
-    return PT_UNKNOW;
+    return PacketType::kUnknownPacketType;
 }
 
 }

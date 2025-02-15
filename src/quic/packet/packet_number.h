@@ -25,7 +25,7 @@ public:
 
 private:
     PacketNumberSpace space_;
-    uint64_t cur_packet_number_[PNS_NUMBER];
+    uint64_t cur_packet_number_[PacketNumberSpace::kNumberSpaceCount];
 };
 
 }

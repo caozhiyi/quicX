@@ -13,10 +13,10 @@ bool IsAckElictingPacket(uint32_t frame_type) {
 
 PacketNumberSpace CryptoLevel2PacketNumberSpace(uint16_t level) {
     switch (level) {
-    case PCL_INITIAL: return PNS_INITIAL;
-    case PCL_HANDSHAKE:  return PNS_HANDSHAKE;
-    case PCL_ELAY_DATA:
-    case PCL_APPLICATION: return PNS_APPLICATION;
+    case PakcetCryptoLevel::kInitialCryptoLevel: return PacketNumberSpace::kInitialNumberSpace;
+    case PakcetCryptoLevel::kHandshakeCryptoLevel:  return PacketNumberSpace::kHandshakeNumberSpace;
+    case PakcetCryptoLevel::kEarlyDataCryptoLevel:
+    case PakcetCryptoLevel::kApplicationCryptoLevel: return PacketNumberSpace::kApplicationNumberSpace;
     default:
         abort(); // TODO
     }

@@ -17,7 +17,7 @@ public:
     HandshakePacket(uint8_t flag);
     virtual ~HandshakePacket();
 
-    virtual uint16_t GetCryptoLevel() const { return PCL_HANDSHAKE; }
+    virtual uint16_t GetCryptoLevel() const { return PakcetCryptoLevel::kHandshakeCryptoLevel; }
     virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer);

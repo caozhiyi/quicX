@@ -34,7 +34,7 @@ public:
     RetryPacket(uint8_t flag);
     virtual ~RetryPacket();
 
-    virtual uint16_t GetCryptoLevel() const { return PCL_UNCRYPTO; }
+    virtual uint16_t GetCryptoLevel() const { return PakcetCryptoLevel::kUnknownCryptoLevel; }
     virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) { return true; }
@@ -50,7 +50,7 @@ public:
 private:
     LongHeader header_;
     common::BufferSpan retry_token_;
-    uint8_t retry_integrity_tag_[__retry_integrity_tag_length];
+    uint8_t retry_integrity_tag_[kRetryIntegrityTagLength];
 };
 
 }

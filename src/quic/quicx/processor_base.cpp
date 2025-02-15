@@ -158,7 +158,7 @@ void ProcessorBase::TransferConnection(uint64_t cid_hash, std::shared_ptr<IConne
 }
 
 bool ProcessorBase::InitPacketCheck(std::shared_ptr<IPacket> packet) {
-    if (packet->GetHeader()->GetPacketType() != PT_INITIAL) {
+    if (packet->GetHeader()->GetPacketType() != PacketType::kInitialPacketType) {
         common::LOG_ERROR("recv packet whitout connection.");
         return false;
     }

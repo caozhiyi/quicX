@@ -12,7 +12,7 @@ namespace quicx {
 namespace quic {
 
 HandshakePacket::HandshakePacket() {
-    header_.GetLongHeaderFlag().SetPacketType(PT_HANDSHAKE);
+    header_.GetLongHeaderFlag().SetPacketType(PacketType::kHandshakePacketType);
 }
 
 HandshakePacket::HandshakePacket(uint8_t flag):

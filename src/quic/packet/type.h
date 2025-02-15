@@ -6,36 +6,34 @@
 namespace quicx {
 namespace quic {
 
-enum PacketType {
-    PT_INITIAL     = 0x00,
-    PT_0RTT        = 0x01,
-    PT_HANDSHAKE   = 0x02,
-    PT_RETRY       = 0x03,
-    PT_NEGOTIATION = 0x04,
-    PT_1RTT        = 0x05,
+enum PacketType : uint16_t {
+    kInitialPacketType     = 0x00,
+    k0RttPacketType        = 0x01,
+    kHandshakePacketType   = 0x02,
+    kRetryPacketType       = 0x03,
+    kNegotiationPacketType = 0x04,
+    k1RttPacketType        = 0x05,
 
-    PT_UNKNOW      = 0xFF,
+    kUnknownPacketType      = 0xFF,
 };
 
 enum PakcetCryptoLevel: uint16_t {
-    PCL_INITIAL     = 0,
-    PCL_ELAY_DATA   = 1,
-    PCL_HANDSHAKE   = 2,
-    PCL_APPLICATION = 3,
-
-    PCL_UNCRYPTO    = 4,
+    kInitialCryptoLevel     = 0,
+    kEarlyDataCryptoLevel   = 1,
+    kHandshakeCryptoLevel   = 2,
+    kApplicationCryptoLevel = 3,
+    kUnknownCryptoLevel     = 4,
 };
 
 enum PacketNumberSpace: uint8_t {
-    PNS_INITIAL     = 0,
-    PNS_HANDSHAKE   = 1,
-    PNS_APPLICATION = 2,
+    kInitialNumberSpace     = 0,
+    kHandshakeNumberSpace   = 1,
+    kApplicationNumberSpace = 2,
 
-    PNS_NUMBER      = 3,
+    kNumberSpaceCount       = 3,
 };
 
-static const uint8_t __packent_number_length = 4;
-static const uint32_t __retry_integrity_tag_length = 128;
+static const uint32_t kRetryIntegrityTagLength = 128;
 
 const char* PacketTypeToString(PacketType type);
 
