@@ -30,7 +30,7 @@ private:
 };
 
 TEST(connection_control_flow, local_send_data) {
-    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::kClient);
     flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint32_t can_send_size = 0;
@@ -62,7 +62,7 @@ TEST(connection_control_flow, local_send_data) {
 }
 
 TEST(connection_control_flow, remote_send_data) {
-    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::kClient);
     flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     std::shared_ptr<IFrame> frame;
@@ -84,96 +84,96 @@ TEST(connection_control_flow, remote_send_data) {
 
 
 TEST(connection_control_flow, local_bidirection_streams) {
-    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::kClient);
     flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint64_t stream_id = 0;
     std::shared_ptr<IFrame> frame;
     for (size_t i = 1; i <= 4; i++) {
         EXPECT_TRUE(flow_control.CheckLocalBidirectionStreamLimit(stream_id, frame));
-        EXPECT_EQ(stream_id, i << 2 | StreamIDGenerator::StreamStarter::SS_CLIENT | StreamIDGenerator::StreamDirection::SD_BIDIRECTIONAL);
+        EXPECT_EQ(stream_id, i << 2 | StreamIDGenerator::StreamStarter::kClient | StreamIDGenerator::StreamDirection::kBidirectional);
         EXPECT_TRUE(frame == nullptr);
     }
     
     EXPECT_TRUE(flow_control.CheckLocalBidirectionStreamLimit(stream_id, frame));
-    EXPECT_EQ(stream_id, 5 << 2 | StreamIDGenerator::StreamStarter::SS_CLIENT | StreamIDGenerator::StreamDirection::SD_BIDIRECTIONAL);
+    EXPECT_EQ(stream_id, 5 << 2 | StreamIDGenerator::StreamStarter::kClient | StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_TRUE(frame != nullptr);
 
     flow_control.AddLocalBidirectionStreamLimit(16);
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckLocalBidirectionStreamLimit(stream_id, frame));
-    EXPECT_EQ(stream_id, 6 << 2 | StreamIDGenerator::StreamStarter::SS_CLIENT | StreamIDGenerator::StreamDirection::SD_BIDIRECTIONAL);
+    EXPECT_EQ(stream_id, 6 << 2 | StreamIDGenerator::StreamStarter::kClient | StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_TRUE(frame == nullptr);
 }
 
 TEST(connection_control_flow, local_unidirection_streams) {
-    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::kClient);
     flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
     uint64_t stream_id = 0;
     std::shared_ptr<IFrame> frame;
     for (size_t i = 1; i <= 4; i++) {
         EXPECT_TRUE(flow_control.CheckLocalUnidirectionStreamLimit(stream_id, frame));
-        EXPECT_EQ(stream_id, i << 2 | StreamIDGenerator::StreamStarter::SS_CLIENT | StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL);
+        EXPECT_EQ(stream_id, i << 2 | StreamIDGenerator::StreamStarter::kClient | StreamIDGenerator::StreamDirection::kUnidirectional);
         EXPECT_TRUE(frame == nullptr);
     }
     
     EXPECT_TRUE(flow_control.CheckLocalUnidirectionStreamLimit(stream_id, frame));
-    EXPECT_EQ(stream_id, 5 << 2 | StreamIDGenerator::StreamStarter::SS_CLIENT | StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL);
+    EXPECT_EQ(stream_id, 5 << 2 | StreamIDGenerator::StreamStarter::kClient | StreamIDGenerator::StreamDirection::kUnidirectional);
     EXPECT_TRUE(frame != nullptr);
 
     flow_control.AddLocalUnidirectionStreamLimit(16);
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckLocalUnidirectionStreamLimit(stream_id, frame));
-    EXPECT_EQ(stream_id, 6 << 2 | StreamIDGenerator::StreamStarter::SS_CLIENT | StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL);
+    EXPECT_EQ(stream_id, 6 << 2 | StreamIDGenerator::StreamStarter::kClient | StreamIDGenerator::StreamDirection::kUnidirectional);
     EXPECT_TRUE(frame == nullptr);
 }
 
 TEST(connection_control_flow, remote_bidirection_streams) {
-    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::kClient);
     flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
-    StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::SS_SERVER);
+    StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::kServer);
 
     std::shared_ptr<IFrame> frame;
     for (size_t i = 0; i < 4; i++) {
-        uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::SD_BIDIRECTIONAL);
+        uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
         EXPECT_TRUE(flow_control.CheckRemoteStreamLimit(stream_id, frame));
         EXPECT_TRUE(frame == nullptr);
     }
     
-    uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::SD_BIDIRECTIONAL);
+    uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_TRUE(flow_control.CheckRemoteStreamLimit(stream_id, frame));
     EXPECT_TRUE(frame != nullptr);
     
     frame = nullptr;
-    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::SD_BIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_TRUE(flow_control.CheckRemoteStreamLimit(stream_id, frame));
     EXPECT_TRUE(frame == nullptr);
 }
 
 
 TEST(connection_control_flow, remote_unidirection_streams) {
-    FlowControl flow_control(StreamIDGenerator::StreamStarter::SS_CLIENT);
+    FlowControl flow_control(StreamIDGenerator::StreamStarter::kClient);
     flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
-    StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::SS_SERVER);
+    StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::kServer);
 
     std::shared_ptr<IFrame> frame;
     for (size_t i = 0; i < 4; i++) {
-        uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL);
+        uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
         EXPECT_TRUE(flow_control.CheckRemoteStreamLimit(stream_id, frame));
         EXPECT_TRUE(frame == nullptr);
     }
     
-    uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL);
+    uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
     EXPECT_TRUE(flow_control.CheckRemoteStreamLimit(stream_id, frame));
     EXPECT_TRUE(frame != nullptr);
     
     frame = nullptr;
-    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL);
+    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
     EXPECT_TRUE(flow_control.CheckRemoteStreamLimit(stream_id, frame));
     EXPECT_TRUE(frame == nullptr);
 }
