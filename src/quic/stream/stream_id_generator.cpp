@@ -19,10 +19,10 @@ uint64_t StreamIDGenerator::NextStreamID(StreamDirection direction) {
     uint64_t next_stream = 0;
     switch (direction)
     {
-    case SD_BIDIRECTIONAL:
+    case StreamDirection::kBidirectional:
         next_stream = ++cur_bidirectional_id_;
         break;
-    case SD_UNIDIRECTIONAL:
+    case StreamDirection::kUnidirectional:
         next_stream = ++cur_unidirectional_id_;
         break;
     default:
@@ -33,10 +33,10 @@ uint64_t StreamIDGenerator::NextStreamID(StreamDirection direction) {
 }
 
 StreamIDGenerator::StreamDirection StreamIDGenerator::GetStreamDirection(uint64_t id) {
-    if (id & SD_UNIDIRECTIONAL) {
-        return SD_UNIDIRECTIONAL;
+    if (id & StreamDirection::kUnidirectional) {
+        return StreamDirection::kUnidirectional;
     }
-    return SD_BIDIRECTIONAL;
+    return StreamDirection::kBidirectional;
 }
 
 }

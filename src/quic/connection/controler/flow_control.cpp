@@ -83,7 +83,7 @@ void FlowControl::AddLocalBidirectionStreamLimit(uint64_t limit) {
 }
 
 bool FlowControl::CheckLocalBidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame) {
-    stream_id = id_generator_.NextStreamID(StreamIDGenerator::SD_BIDIRECTIONAL);
+    stream_id = id_generator_.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     // reaching the upper limit of flow control
     if (stream_id >> 2 > local_bidirectional_stream_limit_) {
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedBidirectional);
@@ -109,7 +109,7 @@ void FlowControl::AddLocalUnidirectionStreamLimit(uint64_t limit) {
 }
 
 bool FlowControl::CheckLocalUnidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame) {
-    stream_id = id_generator_.NextStreamID(StreamIDGenerator::SD_UNIDIRECTIONAL);
+    stream_id = id_generator_.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
     // reaching the upper limit of flow control
     if (stream_id >> 2 > local_unidirectional_stream_limit_) {
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedUnidirectional);
@@ -129,7 +129,7 @@ bool FlowControl::CheckLocalUnidirectionStreamLimit(uint64_t& stream_id, std::sh
 }
 
 bool FlowControl::CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& send_frame) {
-    if (StreamIDGenerator::GetStreamDirection(id) == StreamIDGenerator::StreamDirection::SD_UNIDIRECTIONAL)  {
+    if (StreamIDGenerator::GetStreamDirection(id) == StreamIDGenerator::StreamDirection::kUnidirectional)  {
         if (id > 0) {
             remote_max_unidirectional_stream_id_ = id;
         }

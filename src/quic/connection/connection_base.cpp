@@ -313,7 +313,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     
     // create new stream
     std::shared_ptr<IStream> new_stream;
-    if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::SD_BIDIRECTIONAL) {
+    if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::StreamDirection::kBidirectional) {
         new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiRemote(), stream_id, StreamDirection::kBidi);
         
     } else {

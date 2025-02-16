@@ -9,13 +9,13 @@ namespace quic {
 class StreamIDGenerator {
 public:
     enum StreamStarter {
-        SS_CLIENT = 0x0,
-        SS_SERVER = 0x1,
+        kClient = 0x0,
+        kServer = 0x1,
     };
 
     enum StreamDirection {
-        SD_BIDIRECTIONAL  = 0x0,
-        SD_UNIDIRECTIONAL = 0x2,
+        kBidirectional  = 0x0,
+        kUnidirectional = 0x2,
     };
 
     StreamIDGenerator(StreamStarter starter);
