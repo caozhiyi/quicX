@@ -8,7 +8,7 @@
 namespace quicx {
 namespace quic {
 
-static const uint8_t __buf_len = 128;
+static const uint8_t kBufLength = 128;
 class PacketTest:
     public common::Singleton<PacketTest> {
 public:

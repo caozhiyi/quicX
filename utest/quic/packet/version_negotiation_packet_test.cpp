@@ -13,9 +13,9 @@ TEST(version_negotiation_packet_utest, codec) {
     packet.SetSupportVersion(versions);
     packet.AddSupportVersion(5);
 
-    static const uint8_t __buf_len = 128;
-    uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, __buf_len);
+    static const uint8_t s_buf_len = 128;
+    uint8_t buf[s_buf_len] = {0};
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, s_buf_len);
 
     EXPECT_TRUE(packet.Encode(buffer));
 

@@ -17,9 +17,9 @@ TEST(retry_packet_utest, codec) {
     packet.SetRetryIntegrityTag(tag);
     packet.SetRetryToken(common::BufferSpan(tag, 64));
 
-    static const uint32_t __buf_len = 256;
-    uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, __buf_len);
+    static const uint32_t s_buf_len = 256;
+    uint8_t buf[s_buf_len] = {0};
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, s_buf_len);
 
     EXPECT_TRUE(packet.Encode(buffer));
 

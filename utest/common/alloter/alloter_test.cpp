@@ -7,14 +7,14 @@ namespace quicx {
 namespace common {
 namespace {
 
-static uint32_t __alloter_test_value = 0;
+static uint32_t kAlloterTestValue = 0;
 class AlloterTestClass {
 public:
     AlloterTestClass(uint64_t v) : data_(v) {
-        __alloter_test_value++;
+        kAlloterTestValue++;
     }
     ~AlloterTestClass() {
-         __alloter_test_value--;
+         kAlloterTestValue--;
     }
 
     uint64_t data_;
@@ -25,7 +25,7 @@ TEST(alloter_utest, warp1) {
     AlloterTestClass* at = IAlloter.PoolNew<AlloterTestClass>(100);
     ASSERT_EQ(100, at->data_);
     IAlloter.PoolDelete<AlloterTestClass>(at);
-    ASSERT_EQ(0, __alloter_test_value);
+    ASSERT_EQ(0, kAlloterTestValue);
 }
 
 
@@ -35,7 +35,7 @@ TEST(alloter_utest, warp2) {
         auto at = IAlloter.PoolNewSharePtr<AlloterTestClass>(100);
         ASSERT_EQ(100, at->data_);
     }
-    ASSERT_EQ(0, __alloter_test_value);
+    ASSERT_EQ(0, kAlloterTestValue);
 }
 
 TEST(alloter_utest, warp3) {
