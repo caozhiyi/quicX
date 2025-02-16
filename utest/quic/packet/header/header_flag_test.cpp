@@ -44,9 +44,9 @@ TEST(header_flag_utest, rtt1_codec) {
     flag.GetShortHeaderFlag().SetReservedBits(1);
     flag.GetShortHeaderFlag().SetSpinBit(1);
 
-    static const uint8_t __buf_len = 2;
-    uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, buf + __buf_len);
+    static const uint8_t s_buf_len = 2;
+    uint8_t buf[s_buf_len] = {0};
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, buf + s_buf_len);
 
     EXPECT_TRUE(flag.EncodeFlag(buffer));
     EXPECT_EQ(buffer->GetDataLength(), 1);
@@ -69,9 +69,9 @@ TEST(header_flag_utest, init_codec) {
     flag.GetLongHeaderFlag().SetPacketType(PacketType::kInitialPacketType);
     flag.GetLongHeaderFlag().SetReservedBits(1);
 
-    static const uint8_t __buf_len = 2;
-    uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, buf + __buf_len);
+    static const uint8_t s_buf_len = 2;
+    uint8_t buf[s_buf_len] = {0};
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, buf + s_buf_len);
 
     EXPECT_TRUE(flag.EncodeFlag(buffer));
     EXPECT_EQ(buffer->GetDataLength(), 1);

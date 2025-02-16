@@ -13,8 +13,8 @@ namespace {
 TEST(rtt_1_packet_utest, codec) {
     auto frame = PacketTest::GetTestFrame();
 
-    uint8_t frame_buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> frame_buffer = std::make_shared<common::Buffer>(frame_buf, __buf_len);
+    uint8_t frame_buf[kBufLength] = {0};
+    std::shared_ptr<common::IBuffer> frame_buffer = std::make_shared<common::Buffer>(frame_buf, kBufLength);
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
     Rtt1Packet packet;
@@ -23,8 +23,8 @@ TEST(rtt_1_packet_utest, codec) {
     packet.GetHeader()->SetPacketNumberLength(2);
 
     
-    uint8_t packet_buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> packet_buffer = std::make_shared<common::Buffer>(packet_buf, __buf_len);
+    uint8_t packet_buf[kBufLength] = {0};
+    std::shared_ptr<common::IBuffer> packet_buffer = std::make_shared<common::Buffer>(packet_buf, kBufLength);
     EXPECT_TRUE(packet.Encode(packet_buffer));
 
     HeaderFlag flag;
@@ -44,8 +44,8 @@ TEST(rtt_1_packet_utest, codec) {
 TEST(rtt_1_packet_utest, crypto_codec) {
     auto frame = PacketTest::GetTestFrame();
 
-    uint8_t frame_buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> frame_buffer = std::make_shared<common::Buffer>(frame_buf, frame_buf + __buf_len);
+    uint8_t frame_buf[kBufLength] = {0};
+    std::shared_ptr<common::IBuffer> frame_buffer = std::make_shared<common::Buffer>(frame_buf, frame_buf + kBufLength);
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
     Rtt1Packet packet;
@@ -54,8 +54,8 @@ TEST(rtt_1_packet_utest, crypto_codec) {
     packet.GetHeader()->SetPacketNumberLength(2);
     packet.SetCryptographer(PacketTest::Instance().GetTestClientCryptographer());
 
-    uint8_t packet_buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> packet_buffer = std::make_shared<common::Buffer>(packet_buf, packet_buf + __buf_len);
+    uint8_t packet_buf[kBufLength] = {0};
+    std::shared_ptr<common::IBuffer> packet_buffer = std::make_shared<common::Buffer>(packet_buf, packet_buf + kBufLength);
     EXPECT_TRUE(packet.Encode(packet_buffer));
 
     HeaderFlag flag;
@@ -65,8 +65,8 @@ TEST(rtt_1_packet_utest, crypto_codec) {
     new_packet.SetCryptographer(PacketTest::Instance().GetTestServerCryptographer());
     EXPECT_TRUE(new_packet.DecodeWithoutCrypto(packet_buffer));
 
-    uint8_t plaintext_buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> plaintext_buffer = std::make_shared<common::Buffer>(plaintext_buf, __buf_len);
+    uint8_t plaintext_buf[kBufLength] = {0};
+    std::shared_ptr<common::IBuffer> plaintext_buffer = std::make_shared<common::Buffer>(plaintext_buf, kBufLength);
     EXPECT_TRUE(new_packet.DecodeWithCrypto(plaintext_buffer));
 
     auto frames = new_packet.GetFrames();

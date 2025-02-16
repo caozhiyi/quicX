@@ -7,9 +7,9 @@
 namespace quicx {
 namespace quic {
 
-static uint8_t __data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30};
-static uint64_t __offset = 1024;
-static uint8_t __level = 1;
+static uint8_t kData[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30};
+static uint64_t kOffset = 1024;
+static uint8_t kLevel = 1;
 
 PacketTest::PacketTest() {
     uint8_t dcid[kMaxCidLength] = {0};
@@ -28,26 +28,26 @@ PacketTest::PacketTest() {
 
 std::shared_ptr<IFrame> PacketTest::GetTestFrame() {
     std::shared_ptr<CryptoFrame> frame = std::make_shared<CryptoFrame>();
-    frame->SetData(__data, sizeof(__data));
-    frame->SetOffset(__offset);
-    frame->SetEncryptionLevel(__level);
+    frame->SetData(kData, sizeof(kData));
+    frame->SetOffset(kOffset);
+    frame->SetEncryptionLevel(kLevel);
 
     return frame;
 }
 
 bool PacketTest::CheckTestFrame(std::shared_ptr<IFrame> f) {
     std::shared_ptr<CryptoFrame> frame = std::dynamic_pointer_cast<CryptoFrame>(f);
-    if (frame->GetOffset() != __offset) {
+    if (frame->GetOffset() != kOffset) {
         return false;
     }
     
-    if (frame->GetLength() != sizeof(__data)) {
+    if (frame->GetLength() != sizeof(kData)) {
         return false;
     }
     
     uint8_t* data = frame->GetData();
     for (size_t i = 0; i < frame->GetLength(); i++) {
-        if (*(data + i) != __data[i]) {
+        if (*(data + i) != kData[i]) {
             return false;
         }
     }

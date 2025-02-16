@@ -16,9 +16,9 @@ TEST(long_header_utest, codec) {
     uint8_t src_id[4] = {5,6,7,8};
     header.SetSourceConnectionId(src_id, sizeof(src_id));
 
-    static const uint8_t __buf_len = 128;
-    uint8_t buf[__buf_len] = {0};
-    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, buf + __buf_len);
+    static const uint8_t s_buf_len = 128;
+    uint8_t buf[s_buf_len] = {0};
+    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, buf + s_buf_len);
 
     EXPECT_TRUE(header.EncodeHeader(buffer));
 

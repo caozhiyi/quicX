@@ -13,7 +13,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-static const char __cert_pem[] =
+static const char kCertPem[] =
       "-----BEGIN CERTIFICATE-----\n"
       "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
       "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
@@ -30,7 +30,7 @@ static const char __cert_pem[] =
       "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
       "-----END CERTIFICATE-----\n";
 
-static const char __key_pem[] =
+static const char kKeyPem[] =
       "-----BEGIN RSA PRIVATE KEY-----\n"
       "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
       "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
@@ -64,7 +64,7 @@ bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<I
 
 TEST(quic_connection_utest, handshake) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(__cert_pem, __key_pem);
+    server_ctx->Init(kCertPem, kKeyPem);
 
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init();
