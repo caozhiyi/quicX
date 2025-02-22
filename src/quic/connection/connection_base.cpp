@@ -37,7 +37,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
     std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
-    IConnection(active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
+    IConnection(timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     to_close_(false),
     last_communicate_time_(0),
     flow_control_(start),
@@ -184,6 +184,10 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
             break;
         }
     }
+
+    // reset idle timeout timer task
+    timer_->RmTimer(idle_timeout_task_);
+    timer_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0); 
 }
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
@@ -468,6 +472,22 @@ bool BaseConnection::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
 
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     transport_param_.Merge(remote_tp);
+    idle_timeout_task_.SetTimeoutCallback(std::bind(&BaseConnection::OnIdleTimeout, this));
+    timer_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
+}
+
+void BaseConnection::ThreadTransferBefore() {
+    // remove idle timeout timer task from old timer
+    timer_->RmTimer(idle_timeout_task_); 
+}
+
+void BaseConnection::ThreadTransferAfter() {
+    // add idle timeout timer task to new timer
+    timer_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);  
+}
+
+void BaseConnection::OnIdleTimeout() {
+    InnerConnectionClose(QuicErrorCode::kNoError, 0, "idle timeout.");
 }
 
 void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {

@@ -76,6 +76,11 @@ protected:
     void OnTransportParams(TransportParam& remote_tp);
 
 protected:
+    virtual void ThreadTransferBefore(); 
+    virtual void ThreadTransferAfter();
+    // idle timeout
+    void OnIdleTimeout();
+
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveSendStream(std::shared_ptr<IStream> stream);
     void ActiveSend();
@@ -91,6 +96,8 @@ protected:
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) = 0;
 
 protected:
+    // timer task
+    common::TimerTask idle_timeout_task_;
     // transport param verify done
     TransportParam transport_param_;
     // connection memory pool

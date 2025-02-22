@@ -19,12 +19,12 @@ TreeMapTimer::~TreeMapTimer() {
 
 }
 
-uint64_t TreeMapTimer::AddTimer(TimerTask& task, uint32_t time, uint64_t now) {
+uint64_t TreeMapTimer::AddTimer(TimerTask& task, uint32_t time_ms, uint64_t now) {
     if (now == 0) {
         now = UTCTimeMsec();
     }
 
-    task.time_ = now + time;
+    task.time_ = now + time_ms;
     task.id_ = random_.Random();
     timer_map_[task.time_][task.id_] = task;
     return task.id_;

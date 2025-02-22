@@ -20,7 +20,8 @@ namespace quic {
 class IConnection:
     public IQuicConnection {
 public:
-    IConnection(std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+    IConnection(std::shared_ptr<common::ITimer> timer,
+        std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
         std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
@@ -52,13 +53,17 @@ public:
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
     virtual EncryptionLevel GetCurEncryptionLevel() = 0;
 
+    // connection transfer between threads
+    virtual void ThreadTransferBefore() = 0; 
+    virtual void ThreadTransferAfter() = 0;
+
     // peer address
     virtual void SetPeerAddress(const common::Address& addr);
     virtual void SetPeerAddress(const common::Address&& addr);
     virtual const common::Address& GetPeerAddress();
 
     // if connection is transferred from other thread, below callbacks need to current thread
-    virtual void SetTimer(std::shared_ptr<common::ITimer> timer) { /* TODO: implement */ }
+    virtual void SetTimer(std::shared_ptr<common::ITimer> timer) { timer_ = timer; }
     virtual void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb);
     virtual void SetHandshakeDoneCB(std::function<void(std::shared_ptr<IConnection>)> cb);
     virtual void SetAddConnectionIdCB(std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> cb);
@@ -68,6 +73,7 @@ public:
 protected:
     void* user_data_;
     common::Address peer_addr_;
+    std::shared_ptr<common::ITimer> timer_;
     // callback
     std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb_;
     std::function<void(uint64_t cid_hash)> retire_conn_id_cb_;
