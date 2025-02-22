@@ -4,11 +4,13 @@ namespace quicx {
 namespace quic {
 
 
-IConnection::IConnection(std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+IConnection::IConnection(std::shared_ptr<common::ITimer> timer,
+        std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
         std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
         std::function<void(std::shared_ptr<IConnection>, uint64_t, const std::string&)> connection_close_cb):
+        timer_(timer),
         active_connection_cb_(active_connection_cb),
         handshake_done_cb_(handshake_done_cb),
         add_conn_id_cb_(add_conn_id_cb),
