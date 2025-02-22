@@ -120,6 +120,15 @@ protected:
     // token
     std::string token_;
     std::shared_ptr<TLSConnection> tls_connection_;
+
+    // connection state
+    enum class ConnectionStateType {
+        kStateConnecting,
+        kStateConnected,
+        kStateDraining,
+        kStateClosed,
+    };
+    ConnectionStateType state_;
 };
 
 }
