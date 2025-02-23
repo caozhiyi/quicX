@@ -37,7 +37,9 @@ static const char key_pem[] =
       "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
       "-----END RSA PRIVATE KEY-----\n"; 
 
-    auto server = quicx::http3::IServer::Create();
+    quicx::http3::Http3Settings settings = quicx::http3::kDefaultHttp3Settings;
+    settings.enable_push = 1;
+    auto server = quicx::http3::IServer::Create(settings);
     server->AddHandler(quicx::http3::HttpMethod::kGet,
         "/hello",
         [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {

@@ -48,7 +48,7 @@ static const char key_pem[] =
             resp->SetStatusCode(200);
         }
     );
-    server->Init(cert_pem, key_pem, 1, quicx::http3::LogLevel::kDebug);
+    server->Init(cert_pem, key_pem, 1, quicx::http3::LogLevel::kError);
     server->Start("0.0.0.0", 8882);
     server->Join();
 }
