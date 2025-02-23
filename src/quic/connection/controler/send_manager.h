@@ -27,6 +27,7 @@ public:
 
     SendOperation GetSendOperation();
 
+    uint32_t GetRtt() { return send_control_.GetRtt(); }
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveStream(std::shared_ptr<IStream> stream);
 

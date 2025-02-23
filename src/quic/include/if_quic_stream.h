@@ -15,6 +15,7 @@ public:
     IQuicStream() {}
     virtual ~IQuicStream() {}
 
+    virtual void Reset(uint32_t error) = 0;
     virtual StreamDirection GetDirection() = 0;
     virtual uint64_t GetStreamID() = 0;
 };

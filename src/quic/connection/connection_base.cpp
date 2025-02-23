@@ -38,11 +38,11 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
     IConnection(timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
-    to_close_(false),
     last_communicate_time_(0),
     flow_control_(start),
     recv_control_(timer),
-    send_manager_(timer) {
+    send_manager_(timer),
+    state_(ConnectionStateType::kStateConnecting) {
 
     alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4); // TODO: make it configurable
     connection_crypto_.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
@@ -68,17 +68,24 @@ BaseConnection::~BaseConnection() {
 }
 
 void BaseConnection::Close() {
-    to_close_ = true;
-    auto frame = std::make_shared<ConnectionCloseFrame>();
-    frame->SetErrorCode(0);
-    ToSendFrame(frame);
+    if (state_ != ConnectionStateType::kStateConnected) {
+        state_ = ConnectionStateType::kStateDraining;
+    }
+
+    // there is no data to send, send connection close frame
+    if (send_manager_.GetSendOperation() == SendOperation::kAllSendDone) {
+        auto frame = std::make_shared<ConnectionCloseFrame>();
+        frame->SetErrorCode(0);
+        ToSendFrame(frame);
+
+        // wait closing period
+        common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
+        timer_->AddTimer(task, send_manager_.GetRtt() * 3, 0); // wait 3 rtt time to close
+    }
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
-    to_close_ = true;
-    auto frame = std::make_shared<ConnectionCloseFrame>();
-    frame->SetErrorCode(error_code);
-    ToSendFrame(frame);
+    ImmediateClose(error_code, 0, "application reset.");
 }
 
 std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
@@ -142,8 +149,15 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
         common::LOG_ERROR("get send data failed.");
     }
     send_operation = send_manager_.GetSendOperation();
-    if (send_operation == SendOperation::kAllSendDone && to_close_) {
-        InnerConnectionClose(QuicErrorCode::kNoError, 0, "connection closed by local.");
+    if (send_operation == SendOperation::kAllSendDone && state_ == ConnectionStateType::kStateDraining) {
+        state_ = ConnectionStateType::kStateClosed;
+        auto frame = std::make_shared<ConnectionCloseFrame>();
+        frame->SetErrorCode(0);
+        ToSendFrame(frame);
+
+        // wait closing period
+        common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
+        timer_->AddTimer(task, send_manager_.GetRtt() * 3, 0); // wait 3 rtt time to close
     }
     return ret;
 }
@@ -295,6 +309,10 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
 }
 
 bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
+    if (state_ != ConnectionStateType::kStateConnected) {
+        return false;
+    }
+
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
     
     // find stream
@@ -490,6 +508,13 @@ void BaseConnection::OnIdleTimeout() {
     InnerConnectionClose(QuicErrorCode::kNoError, 0, "idle timeout.");
 }
 
+void BaseConnection::OnClosingTimeout() {
+    // wait closing period done, notify connection close
+    connection_close_cb_(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
+    // cancel timers
+    timer_->RmTimer(idle_timeout_task_);
+}
+
 void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {
     send_manager_.ToSendFrame(frame);
     ActiveSend();
@@ -506,14 +531,35 @@ void BaseConnection::ActiveSend() {
     }
 }
 
-void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string resion) {
-    to_close_ = true;
-    // make connection close frame
+void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason) {
+    if (error != QuicErrorCode::kNoError) {
+        ImmediateClose(error, tigger_frame, reason);
+
+    } else {
+        Close(); 
+    }
+}
+
+void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason) {
+    if (state_ == ConnectionStateType::kStateConnected) { 
+        state_ = ConnectionStateType::kStateClosed;
+    }
+
+    // cancel all streams
+    for (auto& stream : streams_map_) {
+        stream.second->Reset(error);
+    }
+
+    // send connection close frame
     auto frame = std::make_shared<ConnectionCloseFrame>();
     frame->SetErrorCode(error);
     frame->SetErrFrameType(tigger_frame);
-    frame->SetReason(resion);
+    frame->SetReason(reason);
     ToSendFrame(frame);
+
+    // wait closing period
+    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
+    timer_->AddTimer(task, send_manager_.GetRtt(), 0); // wait 1 rtt time to close
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {

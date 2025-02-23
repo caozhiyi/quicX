@@ -82,6 +82,7 @@ bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool ClientConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
+    state_ = ConnectionStateType::kStateConnected;
     if (handshake_done_cb_) {
         handshake_done_cb_(shared_from_this());
     }

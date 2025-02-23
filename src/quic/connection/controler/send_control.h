@@ -20,6 +20,7 @@ public:
     SendControl(std::shared_ptr<common::ITimer> timer);
     ~SendControl() {}
 
+    uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
     void OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len);
     void OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> ack_frame);
     void CanSend(uint64_t now, uint32_t& can_send_bytes);
