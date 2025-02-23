@@ -80,12 +80,14 @@ protected:
     virtual void ThreadTransferAfter();
     // idle timeout
     void OnIdleTimeout();
+    void OnClosingTimeout();
 
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveSendStream(std::shared_ptr<IStream> stream);
     void ActiveSend();
 
-    void InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string resion);
+    void InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason);
+    void ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason);
     void InnerStreamClose(uint64_t stream_id);
 
     void AddConnectionId(uint64_t cid_hash);
@@ -102,8 +104,6 @@ protected:
     TransportParam transport_param_;
     // connection memory pool
     std::shared_ptr<common::BlockMemoryPool> alloter_;
-    // connection will to close
-    bool to_close_;
     // last time communicate, use to idle shutdown
     uint64_t last_communicate_time_; 
     // streams

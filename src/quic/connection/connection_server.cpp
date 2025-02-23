@@ -79,6 +79,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<common::IBufferRead> buff
         std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
         ToSendFrame(frame);
 
+        state_ = ConnectionStateType::kStateConnected;
         // notify handshake done
         if (handshake_done_cb_) {
             handshake_done_cb_(shared_from_this());
