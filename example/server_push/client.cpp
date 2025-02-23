@@ -5,7 +5,9 @@
 
 
 int main() {
-    auto client = quicx::http3::IClient::Create();
+    quicx::http3::Http3Settings settings = quicx::http3::kDefaultHttp3Settings;
+    settings.enable_push = 1;
+    auto client = quicx::http3::IClient::Create(settings);
 
     client->Init(1, quicx::http3::LogLevel::kDebug);
 
