@@ -33,17 +33,16 @@ ProcessorBase::~ProcessorBase() {
 }
 
 void ProcessorBase::Process() {
+    int64_t waittime_ = time_->MinTime();
+    waittime_ = waittime_ < 0 ? 100000 : waittime_;
+    // try to receive data from network
+    ProcessRecv(waittime_);
+
     // send all data to network
     if (do_send_) {
         ProcessSend();
         do_send_ = active_send_connection_set_.empty();
     }
-
-    int64_t waittime_ = time_->MinTime();
-    waittime_ = waittime_ < 0 ? 100000 : waittime_;
-
-    // try to receive data from network
-    ProcessRecv(waittime_);
 
     // check timer and do timer task
     ProcessTimer();
@@ -124,7 +123,7 @@ void ProcessorBase::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     if (connecting_set_.find(conn) != connecting_set_.end()) {
         connecting_set_.erase(conn);
         conn_map_[conn->GetConnectionIDHash()] = conn;
-        connection_handler_(conn, 0, "");
+        connection_handler_(conn, ConnectionOperation::kConnectionCreate, 0, "");
     }
 }
 
@@ -144,7 +143,11 @@ void ProcessorBase::HandleRetireConnectionId(uint64_t cid_hash) {
 
 void ProcessorBase::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
     conn_map_.erase(conn->GetConnectionIDHash());
-    connection_handler_(conn, error, reason);
+    if (error > 0) {
+        connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
+    } else {
+        connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
+    }
 }
 
 void ProcessorBase::TransferConnection(uint64_t cid_hash, std::shared_ptr<IConnection>& conn) {

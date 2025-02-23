@@ -81,6 +81,7 @@ protected:
     // idle timeout
     void OnIdleTimeout();
     void OnClosingTimeout();
+    uint32_t GetCloseWaitTime();
 
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveSendStream(std::shared_ptr<IStream> stream);

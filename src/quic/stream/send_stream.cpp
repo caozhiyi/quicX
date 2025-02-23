@@ -149,7 +149,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     if (!visitor->HandleFrame(frame)) {
         return TrySendResult::kFailed;
     }
-    visitor->AddStreamDataSize(send_size);
+    visitor->AddStreamDataSize(size);
 
     send_buffer_->MoveReadPt(size);
     send_data_offset_ += size;

@@ -16,7 +16,8 @@ Server::Server(const Http3Settings& settings):
     settings_(settings) {
     quic_ = quic::IQuicServer::Create();
     router_ = std::make_shared<Router>();
-    quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this, std::placeholders::_1, std::placeholders::_2));
+    quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this,
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
 }
 
 Server::~Server() {
@@ -63,17 +64,19 @@ void Server::AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_
     }
 }
 
-void Server::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error) {
-    if (error != 0) {
-        common::LOG_ERROR("create connection failed. error: %d", error);
-        return;
-    }
-
+void Server::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::ConnectionOperation operation, uint32_t error, const std::string& reason) {
     std::string addr;
     uint32_t port;
     conn->GetRemoteAddr(addr, port);
     std::string unique_id = addr + ":" + std::to_string(port);
 
+    if (operation == quic::ConnectionOperation::kConnectionClose) {
+        common::LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
+        conn_map_.erase(unique_id);
+        return;
+    }
+
+    // create a new server connection
     auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, quic_, conn,
         std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Server::HandleRequest, this, std::placeholders::_1, std::placeholders::_2));

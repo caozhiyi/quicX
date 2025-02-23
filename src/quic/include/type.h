@@ -47,13 +47,18 @@ struct QuicTransportParams {
 };
 static const QuicTransportParams DEFAULT_QUIC_TRANSPORT_PARAMS;
 
+enum class ConnectionOperation: uint32_t {
+    kConnectionCreate   = 0x00,
+    kConnectionClose    = 0x01
+};
+
 class IQuicStream;
 class IQuicConnection;
 class IBidirectionStream;
 
 // connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
 // conn: connection instance which state changed
-typedef std::function<void(std::shared_ptr<IQuicConnection> conn, uint32_t error, const std::string& reason)> connection_state_callback;
+typedef std::function<void(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason)> connection_state_callback;
 
 // stream state callback, call this callback when stream state changed, like created, closed, etc.
 // stream: stream instance which state changed
