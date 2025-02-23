@@ -14,7 +14,9 @@ ControlClientSenderStream::ControlClientSenderStream(const std::shared_ptr<quic:
 }
 
 ControlClientSenderStream::~ControlClientSenderStream() {
-
+    if (stream_) {
+        stream_->Close();
+    }
 }
 
 bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {

@@ -18,7 +18,7 @@ Client::Client(const Http3Settings& settings):
     settings_(settings) {
     quic_ = quic::IQuicClient::Create();
     quic_->SetConnectionStateCallBack(std::bind(&Client::OnConnection, this, 
-        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
 }
 
 Client::~Client() {
@@ -74,17 +74,18 @@ void Client::SetPushHandler(const http_response_handler& push_handler) {
     push_handler_ = push_handler;
 }
 
-void Client::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error, const std::string& reason) {
-    if (error != 0) {
-        common::LOG_ERROR("create connection failed. error: %d, reason: %s", error, reason.c_str());
-        return;
-    }
-
+void Client::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::ConnectionOperation operation, uint32_t error, const std::string& reason) {
     std::string addr;
     uint32_t port;
     conn->GetRemoteAddr(addr, port);
 
     std::string host = addr + ":" + std::to_string(port);
+    if (operation == quic::ConnectionOperation::kConnectionClose) {
+        common::LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
+        conn_map_.erase(host);
+        return;
+    }
+
     auto it = wait_request_map_.find(host);
     if (it == wait_request_map_.end()) {
         common::LOG_ERROR("no wait request context found. host: %s", host.c_str());

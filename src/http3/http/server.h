@@ -38,7 +38,7 @@ public:
     virtual void AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_handler& handler);
 
 private:
-    void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, uint32_t error);
+    void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::ConnectionOperation operation, uint32_t error, const std::string& reason);
     void HandleError(const std::string& unique_id, uint32_t error_code);
     void HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response);
 
