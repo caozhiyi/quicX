@@ -49,7 +49,7 @@ void SendStream::Reset(uint32_t error) {
     frame->SetStreamID(stream_id_);
     frame->SetFinalSize(send_data_offset_);
     frame->SetAppErrorCode(error);
-
+    common::LOG_DEBUG("stream send reset stream. stream id:%d, error:%d", stream_id_, error);
     frames_list_.emplace_back(frame);
 }
 
@@ -104,7 +104,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
             std::shared_ptr<StreamDataBlockedFrame> frame = std::make_shared<StreamDataBlockedFrame>();
             frame->SetStreamID(stream_id_);
             frame->SetMaximumData(peer_data_limit_);
-    
+            common::LOG_DEBUG("stream send data blocked. stream id:%d, peer data limit:%d", stream_id_, peer_data_limit_);
             if (!visitor->HandleFrame(frame)) {
                 return TrySendResult::kFailed;
             }
@@ -150,6 +150,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
         return TrySendResult::kFailed;
     }
     visitor->AddStreamDataSize(size);
+    common::LOG_DEBUG("stream send data. stream id:%d, send size:%d", stream_id_, size);
 
     send_buffer_->MoveReadPt(size);
     send_data_offset_ += size;
@@ -175,6 +176,7 @@ void SendStream::OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     if (send_buffer_->GetDataLength() > 0) {
         ToSend();
     }
+    common::LOG_DEBUG("stream recv max stream data. stream id:%d, new limit:%d", stream_id_, new_limit);
 }
 
 void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
@@ -188,6 +190,7 @@ void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
     if (sended_cb_) {
         sended_cb_(0, err);
     }
+    common::LOG_DEBUG("stream recv stop sending. stream id:%d, error:%d", stream_id_, err);
 }
 
 }
