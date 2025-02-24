@@ -11,7 +11,7 @@ namespace quicx {
 namespace http3 {
 
 std::unique_ptr<IClient> IClient::Create(const Http3Settings& settings) {
-    return std::make_unique<Client>();
+    return std::make_unique<Client>(settings);
 }
 
 Client::Client(const Http3Settings& settings):

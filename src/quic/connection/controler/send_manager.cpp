@@ -29,7 +29,7 @@ void SendManager::UpdateConfig(const TransportParam& tp) {
 }
 
 SendOperation SendManager::GetSendOperation() {
-    if (wait_frame_list_.empty() && active_send_stream_set_.empty()) {
+    if (wait_frame_list_.empty() && active_send_stream_ids_.empty()) {
         return SendOperation::kAllSendDone;
 
     } else {
@@ -48,7 +48,11 @@ void SendManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
 }
 
 void SendManager::ActiveStream(std::shared_ptr<IStream> stream) {
-    active_send_stream_set_.insert(stream);
+    common::LOG_DEBUG("active stream. stream id:%d", stream->GetStreamID());
+    if (active_send_stream_ids_.find(stream->GetStreamID()) == active_send_stream_ids_.end()) {
+        active_send_stream_ids_.insert(stream->GetStreamID());
+        active_send_stream_queue_.push(stream);
+    }
 }
 
 bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
@@ -109,15 +113,19 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
 
     bool need_break = false;
     while (true) {
-        if (active_send_stream_set_.empty() || need_break) {
+        if (active_send_stream_ids_.empty() || need_break) {
             break;
         }
         
         // then sending frames of stream
-        for (auto iter = active_send_stream_set_.begin(); iter != active_send_stream_set_.end();) {
-            auto ret = (*iter)->TrySendData(visitor);
+        while (!active_send_stream_queue_.empty()) {
+            auto stream = active_send_stream_queue_.front();
+
+            common::LOG_DEBUG("try make send stream data. stream id:%d", stream->GetStreamID());
+            auto ret = (stream)->TrySendData(visitor);
             if (ret == IStream::TrySendResult::kSuccess) {
-                iter = active_send_stream_set_.erase(iter);
+                active_send_stream_queue_.pop();
+                active_send_stream_ids_.erase(stream->GetStreamID());
     
             } else if (ret == IStream::TrySendResult::kFailed) {
                 common::LOG_ERROR("get stream send data failed.");

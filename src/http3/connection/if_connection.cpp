@@ -1,3 +1,4 @@
+#include "common/log/log.h"
 #include "http3/connection/if_connection.h"
 
 namespace quicx {
@@ -35,6 +36,7 @@ void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& s
     // merge settings
     for (auto iter = settings.begin(); iter != settings.end(); ++iter) {
         settings_[iter->first] = std::min(settings_[iter->first], iter->second);
+        common::LOG_DEBUG("settings. key:%d, value:%d", iter->first, settings_[iter->first]);
     }
 }
 

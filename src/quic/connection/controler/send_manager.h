@@ -2,6 +2,7 @@
 #define QUIC_CONNECTION_CONTROLER_SEND_MANAGER
 
 #include <list>
+#include <queue>
 #include <memory>
 #include <unordered_set>
 #include "quic/connection/type.h"
@@ -48,7 +49,10 @@ private:
     PacketNumber pakcet_number_;
     FlowControl* flow_control_;
     std::list<std::shared_ptr<IFrame>> wait_frame_list_;
-    std::unordered_set<std::shared_ptr<IStream>> active_send_stream_set_;
+
+    // active stream
+    std::unordered_set<uint64_t> active_send_stream_ids_;
+    std::queue<std::shared_ptr<IStream>> active_send_stream_queue_;
 
     // connection id
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
