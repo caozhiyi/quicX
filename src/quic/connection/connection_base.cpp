@@ -266,44 +266,91 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
             break;
         case FrameType::kAck:
         case FrameType::kAckEcn:
-            return OnAckFrame(frames[i], crypto_level);
+            if (!OnAckFrame(frames[i], crypto_level)) {
+                return false;
+            }
+            break;
         case FrameType::kCrypto:
-            return OnCryptoFrame(frames[i]);
+            if (!OnCryptoFrame(frames[i])) {
+                return false;
+            }
+            break;
         case FrameType::kNewToken:
-            return OnNewTokenFrame(frames[i]);
+            if (!OnNewTokenFrame(frames[i])) {
+                return false;
+            }
+            break;
         case FrameType::kMaxData:
-            return OnMaxDataFrame(frames[i]);
+            if (!OnMaxDataFrame(frames[i])) {
+                return false;
+            }
+            break;
         case FrameType::kMaxStreamsBidirectional:
         case FrameType::kMaxStreamsUnidirectional:
-            return OnMaxStreamFrame(frames[i]);
+            if (!OnMaxStreamFrame(frames[i])) {
+                return false;
+            }
+            break;
         case FrameType::kDataBlocked: 
-            return OnDataBlockFrame(frames[i]);
+            if (!OnDataBlockFrame(frames[i])) {
+                return false;
+            }
+            break;
         case FrameType::kStreamsBlockedBidirectional:
         case FrameType::kStreamsBlockedUnidirectional:
-            return OnStreamBlockFrame(frames[i]);
+            if (!OnStreamBlockFrame(frames[i])) {
+                return false;
+            }
+            break;
         case FrameType::kNewConnectionId: 
-            return OnNewConnectionIDFrame(frames[i]);
+            if (!OnNewConnectionIDFrame(frames[i])) {
+                return false;
+            }
+            break;
         case FrameType::kRetireConnectionId:
-            return OnRetireConnectionIDFrame(frames[i]);
+            if (!OnRetireConnectionIDFrame(frames[i])) { 
+                return false;
+            }
+            break;
         case FrameType::kPathChallenge: 
-            return OnPathChallengeFrame(frames[i]);
+            if (!OnPathChallengeFrame(frames[i])) { 
+                return false;
+            }
+            break;
         case FrameType::kPathResponse: 
-            return OnPathResponseFrame(frames[i]);
+            if (!OnPathResponseFrame(frames[i])) { 
+                return false;
+            }
+            break;
         case FrameType::kConnectionClose:
-            return OnConnectionCloseFrame(frames[i]);
+            if (!OnConnectionCloseFrame(frames[i])) { 
+                return false;
+            }
+            break;
         case FrameType::kConnectionCloseApp:
-            return OnConnectionCloseAppFrame(frames[i]);
+            if (!OnConnectionCloseAppFrame(frames[i])) {
+                return false;
+            }
+            break;
         case FrameType::kHandshakeDone:
-            return OnHandshakeDoneFrame(frames[i]);
+            if (!OnHandshakeDoneFrame(frames[i])) {
+                return false;
+            }
+            break;
         // ********** stream frame **********
         case FrameType::kResetStream:
         case FrameType::kStopSending:
         case FrameType::kStreamDataBlocked:
         case FrameType::kMaxStreamData:
-            return OnStreamFrame(frames[i]);
+            if (!OnStreamFrame(frames[i])) {
+                return false;
+            }
+            break;
         default:
             if (StreamFrame::IsStreamFrame(type)) {
-                return OnStreamFrame(frames[i]);
+                if (!OnStreamFrame(frames[i])) { 
+                    return false; 
+                }
             } else {
                 common::LOG_ERROR("invalid frame type. type:%s", type);
             }
@@ -504,6 +551,7 @@ bool BaseConnection::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     transport_param_.Merge(remote_tp);
     idle_timeout_task_.SetTimeoutCallback(std::bind(&BaseConnection::OnIdleTimeout, this));
+    // TODO: modify idle timer set point
     timer_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
 }
 

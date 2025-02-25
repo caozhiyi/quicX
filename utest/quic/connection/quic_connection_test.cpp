@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "quic/include/type.h"
+#include "common/timer/timer.h"
 #include "quic/connection/type.h"
 #include "quic/frame/frame_decode.h"
 #include "quic/quicx/if_net_packet.h"
@@ -69,7 +70,7 @@ TEST(quic_connection_utest, handshake) {
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init();
 
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -77,7 +78,7 @@ TEST(quic_connection_utest, handshake) {
 
     client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
     
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // client -------init-----> server
