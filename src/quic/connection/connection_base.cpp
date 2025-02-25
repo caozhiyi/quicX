@@ -318,7 +318,7 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     }
 
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
-    
+    common::LOG_DEBUG("process stream data frame. stream id:%d", stream_frame->GetStreamID());
     // find stream
     uint64_t stream_id = stream_frame->GetStreamID();
     auto stream = streams_map_.find(stream_id);

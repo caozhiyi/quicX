@@ -7,6 +7,7 @@
 #include "common/util/singleton.h"
 #include "common/buffer/if_buffer.h"
 
+#include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/ping_frame.h"
 #include "quic/frame/stream_frame.h"
@@ -101,6 +102,7 @@ bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::
             common::LOG_ERROR("decode frame failed. frame type:%d", frame_type);
             return false;
         }
+        common::LOG_DEBUG("decode from from packet. type:%s", FrameType2String(frame->GetType()).c_str());
         frames.push_back(frame);
     }
     return true;

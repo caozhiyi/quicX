@@ -1,4 +1,6 @@
+#include "common/log/log.h"
 #include "common/buffer/buffer.h"
+#include "quic/connection/util.h"
 #include "quic/frame/crypto_frame.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 
@@ -23,7 +25,7 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
         auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frame);
         encryption_level_ = crypto_frame->GetEncryptionLevel();
     }
-
+    common::LOG_DEBUG("encode to packet. type:%s", FrameType2String(frame->GetType()).c_str());
     return frame->Encode(buffer_);
 }
 

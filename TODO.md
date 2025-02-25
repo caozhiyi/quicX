@@ -8,3 +8,5 @@
 - [ ] zero memory copy
 - [ ] 0 rtt handshake
 - [ ] http3 settings control
+- [ ] connection graceful close
+- [ ] congestion control test
