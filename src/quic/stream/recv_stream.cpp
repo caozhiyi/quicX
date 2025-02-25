@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "quic/connection/util.h"
 #include "quic/connection/error.h"
 #include "quic/stream/recv_stream.h"
 #include "quic/frame/stream_frame.h"
