@@ -20,10 +20,10 @@ uint64_t StreamIDGenerator::NextStreamID(StreamDirection direction) {
     switch (direction)
     {
     case StreamDirection::kBidirectional:
-        next_stream = ++cur_bidirectional_id_;
+        next_stream = cur_bidirectional_id_++;
         break;
     case StreamDirection::kUnidirectional:
-        next_stream = ++cur_unidirectional_id_;
+        next_stream = cur_unidirectional_id_++;
         break;
     default:
         abort();

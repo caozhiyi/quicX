@@ -67,6 +67,7 @@ void ClientConnection::CancelPush(uint64_t push_id) {
 }
 
 void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error_code) {
+    common::LOG_DEBUG("ClientConnection::HandleStream stream. stream id: %llu, error: %d", stream->GetStreamID(), error_code);
     if (error_code != 0) {
         common::LOG_ERROR("ClientConnection::HandleStream error: %d", error_code);
         if (stream) {
@@ -88,7 +89,8 @@ void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
     }
     
     if (stream->GetDirection() == quic::StreamDirection::kRecv) {
-        if (stream->GetStreamID() == 1) {
+        // the first server unidirectional stream id is 3
+        if (stream->GetStreamID() == 3) {
             // control stream
             std::shared_ptr<ControlReceiverStream> control_stream = std::make_shared<ControlReceiverStream>(
                 std::dynamic_pointer_cast<quic::IQuicRecvStream>(stream),
