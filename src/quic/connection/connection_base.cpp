@@ -356,15 +356,21 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
             }
         }
     }
-    return false;
+    return true;
 }
 
 bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
+    auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
+    if (!stream_frame) {
+        common::LOG_ERROR("invalid new token frame.");
+        return false;
+    }
+    
     if (state_ != ConnectionStateType::kStateConnected) {
+        common::LOG_ERROR("process stream frame but connection isn't ready. stream id:%d", stream_frame->GetStreamID());
         return false;
     }
 
-    auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
     common::LOG_DEBUG("process stream data frame. stream id:%d", stream_frame->GetStreamID());
     // find stream
     uint64_t stream_id = stream_frame->GetStreamID();

@@ -19,7 +19,7 @@ ServerConnection::ServerConnection(const std::string& unique_id,
     IConnection(unique_id, quic_connection, error_handler),
     quic_server_(quic_server),
     http_handler_(http_handler),
-    max_push_id_(0) {
+    max_push_id_(5/*TODO: get from client*/) {
 
     // create control streams
     auto control_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
@@ -61,6 +61,7 @@ void ServerConnection::HandleHttp(std::shared_ptr<IRequest> request, std::shared
     }
 
     if (!IsEnabledPush()) {
+        common::LOG_DEBUG("ServerConnection::HandleHttp push is disabled");
         return;
     }
 
@@ -84,6 +85,7 @@ void ServerConnection::HandleHttp(std::shared_ptr<IRequest> request, std::shared
 }
 
 void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error) {
+    common::LOG_DEBUG("ServerConnection::HandleStream stream. stream id: %llu, error: %d", stream->GetStreamID(), error);
     if (error != 0) {
         common::LOG_ERROR("ServerConnection::HandleStream error: %d", error);
         if (stream) {
