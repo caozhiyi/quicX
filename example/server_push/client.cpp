@@ -25,8 +25,9 @@ int main() {
     client->SetPushPromiseHandler(
         [](std::unordered_map<std::string, std::string>& headers)->bool{
             for (auto iter : headers) {
-                std::cout << "get push promise. header:" << iter.first << "value:" << iter.second << std::endl;
+                std::cout << "get push promise. header:" << iter.first << " value:" << iter.second << std::endl;
             }
+            std::cout << std::endl;
             return true;
         }
     );
