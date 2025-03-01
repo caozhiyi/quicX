@@ -110,7 +110,8 @@ void RequestStream::HandlePushPromise(std::shared_ptr<IFrame> frame) {
     // Decode headers using QPACK
     std::unordered_map<std::string, std::string> headers;
     std::vector<uint8_t> encoded_fields = push_promise_frame->GetEncodedFields();
-    std::shared_ptr<common::IBufferRead> headers_buffer = std::make_shared<common::Buffer>(encoded_fields.data(), encoded_fields.size());
+    std::shared_ptr<common::Buffer> headers_buffer = std::make_shared<common::Buffer>(encoded_fields.data(), encoded_fields.size());
+    headers_buffer->MoveWritePt(encoded_fields.size());
     if (!qpack_encoder_->Decode(headers_buffer, headers)) {
         common::LOG_ERROR("RequestStream::HandlePushPromise error");
         error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);

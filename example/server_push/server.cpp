@@ -51,6 +51,8 @@ static const char key_pem[] =
             resp->SetStatusCode(200);
 
             auto push_resp = quicx::http3::IResponse::Create();
+            push_resp->AddHeader("push-key1", "test1");
+            push_resp->AddHeader("push-key2", "test2");
             push_resp->SetBody("hello push");
             push_resp->SetStatusCode(200);
             resp->AppendPush(push_resp);

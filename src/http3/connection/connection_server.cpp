@@ -150,7 +150,7 @@ void ServerConnection::HandleError(uint64_t stream_id, uint32_t error) {
 
 void ServerConnection::HandleTimer() {
     for (auto iter = push_responses_.begin(); iter != push_responses_.end();) {
-        if (iter->first < send_limit_push_id_) {
+        if (iter->first <= send_limit_push_id_) {
             SendPush(iter->second);
             iter = push_responses_.erase(iter);
             continue;

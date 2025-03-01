@@ -353,6 +353,7 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
                 }
             } else {
                 common::LOG_ERROR("invalid frame type. type:%s", type);
+                return false;
             }
         }
     }
@@ -362,7 +363,7 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
 bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
     if (!stream_frame) {
-        common::LOG_ERROR("invalid new token frame.");
+        common::LOG_ERROR("invalid stream frame.");
         return false;
     }
     
