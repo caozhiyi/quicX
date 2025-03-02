@@ -3,10 +3,10 @@
 - [x] manage conection id
 - [x] bbr
 - [x] http3 push implement
+- [x] connection graceful close
 - [ ] ack packet enc
 - [ ] http3 qpack dynamic table update implement
 - [ ] zero memory copy
 - [ ] 0 rtt handshake
 - [ ] http3 settings control
-- [ ] connection graceful close
 - [ ] congestion control test
