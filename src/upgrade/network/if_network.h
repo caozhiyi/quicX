@@ -14,8 +14,13 @@ public:
     IAction() {}
     virtual ~IAction() {}
 
-    virtual void Listen(const std::string& addr, uint16_t port) = 0;
-    virtual void SetSocketHandler(std::shared_ptr<IfSocketHandler> handler) = 0;
+    virtual void AddListener(std::shared_ptr<ISocket> socket) = 0;
+    virtual void AddReceiver(std::shared_ptr<ISocket> socket) = 0;
+    virtual void AddSender(std::shared_ptr<ISocket> socket) = 0;
+    virtual void Remove(std::shared_ptr<ISocket> socket) = 0;
+
+    virtual void Wait(uint32_t timeout_ms) = 0;
+    virtual void Wakeup() = 0;
 };
 
 }
