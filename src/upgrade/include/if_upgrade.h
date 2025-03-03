@@ -19,7 +19,7 @@ public:
     virtual bool Init(LogLevel level = LogLevel::kNull) = 0;
 
     // Start the server
-    virtual bool Start(UpgradeSettings& settings) = 0;
+    virtual bool AddListener(UpgradeSettings& settings) = 0;
 
     // Stop the server
     virtual void Stop() = 0;

@@ -6,14 +6,15 @@
 namespace quicx {
 namespace upgrade {
 
-class UpgradeServer: public IUpgrade {
+class UpgradeServer:
+    public IUpgrade {
 public:
     UpgradeServer() {}
     virtual ~UpgradeServer() {}
 
     virtual bool Init(LogLevel level = LogLevel::kNull) override;
 
-    virtual bool Start(UpgradeSettings& settings) override;
+    virtual bool AddListener(UpgradeSettings& settings) override;
     virtual void Stop() override;
     virtual void Join() override;
 };

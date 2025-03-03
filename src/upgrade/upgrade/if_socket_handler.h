@@ -14,8 +14,12 @@ public:
     IfSocketHandler() {}
     virtual ~IfSocketHandler() {}
 
-    virtual void HandleSocketConnect(std::shared_ptr<ISocket> socket) = 0;
-    virtual void HandleSocketData(std::shared_ptr<ISocket> socket, std::shared_ptr<common::IBufferRead> buffer) = 0;
+    virtual void HandleSocketConnect(uint64_t listen_socket) = 0;
+    virtual void HandleSocketData(std::shared_ptr<ISocket> socket) = 0;
+    virtual void HandleSocketClose(std::shared_ptr<ISocket> socket) = 0;
+
+    virtual void ReadData(std::shared_ptr<ISocket> socket) = 0;
+    virtual void WriteData(std::shared_ptr<ISocket> socket) = 0;
 };
 
 }
