@@ -10,12 +10,12 @@ namespace quicx {
 namespace upgrade {
 
 class CryptoHandler:
-    public IfSocketHandler {
+    public ISocketHandler {
 public:
     CryptoHandler() {}
     virtual ~CryptoHandler() {}
 
-    virtual void RegisterHandler(HttpVersion http_version, std::shared_ptr<IfSocketHandler> handler);
+    virtual void RegisterHandler(HttpVersion http_version, std::shared_ptr<ISocketHandler> handler);
 
     virtual void HandleSocketConnect(uint64_t listen_socket) override;
     virtual void HandleSocketData(std::shared_ptr<ISocket> socket) = 0;

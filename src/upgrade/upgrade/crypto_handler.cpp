@@ -3,7 +3,7 @@
 namespace quicx {
 namespace upgrade {
 
-void CryptoHandler::RegisterHandler(HttpVersion http_version, std::shared_ptr<IfSocketHandler> handler) {
+void CryptoHandler::RegisterHandler(HttpVersion http_version, std::shared_ptr<ISocketHandler> handler) {
 
 }
 

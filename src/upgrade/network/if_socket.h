@@ -25,8 +25,8 @@ public:
     virtual void SetReadBuffer(std::shared_ptr<common::IBuffer> buffer) = 0;
     virtual std::shared_ptr<common::IBuffer> GetReadBuffer() = 0;
 
-    virtual void SetHandler(std::shared_ptr<IfSocketHandler> handler) = 0;
-    virtual std::shared_ptr<IfSocketHandler> GetHandler() = 0;
+    virtual void SetHandler(std::shared_ptr<ISocketHandler> handler) = 0;
+    virtual std::shared_ptr<ISocketHandler> GetHandler() = 0;
 
     virtual void Send(std::shared_ptr<common::IBufferWrite> buffer) = 0;
 };
