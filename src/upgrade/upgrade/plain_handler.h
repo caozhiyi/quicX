@@ -10,12 +10,12 @@ namespace quicx {
 namespace upgrade {
 
 class PlainHandler:
-    public IfSocketHandler {
+    public ISocketHandler {
 public:
     PlainHandler() {}
     virtual ~PlainHandler() {}
 
-    void RegisterHandler(HttpVersion http_version, std::shared_ptr<IfSocketHandler> handler);
+    void RegisterHandler(HttpVersion http_version, std::shared_ptr<ISocketHandler> handler);
 
     virtual void HandleSocketConnect(uint64_t listen_socket) override;
     virtual void HandleSocketData(std::shared_ptr<ISocket> socket) = 0;
