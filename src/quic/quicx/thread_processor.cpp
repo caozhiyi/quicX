@@ -58,11 +58,11 @@ void ThreadProcessor::Stop() {
         }
         wait_close_ = true;
     }
-    Weakup();
+    Wakeup();
 }
 
-void ThreadProcessor::Weakup() {
-    receiver_->Weakup();
+void ThreadProcessor::Wakeup() {
+    receiver_->Wakeup();
 }
 
 std::thread::id ThreadProcessor::GetCurrentThreadId() {

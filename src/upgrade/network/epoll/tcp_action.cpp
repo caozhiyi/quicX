@@ -6,12 +6,12 @@
 #include <unistd.h>
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
-#include "quic/udp/action/epoll/udp_action.h"
+#include "upgrade/network/epoll/tcp_action.h"
 
 namespace quicx {
-namespace quic {
+namespace upgrade {
 
-UdpAction::UdpAction():
+TcpAction::TcpAction():
     epoll_handler_(-1) {
 
     active_list_.resize(16);
@@ -42,45 +42,41 @@ UdpAction::UdpAction():
     }
 }
 
-UdpAction::~UdpAction() {
+TcpAction::~TcpAction() {
     if (epoll_handler_ != -1) {
         close(epoll_handler_);
     }
 }
 
-bool UdpAction::AddSocket(uint64_t socket) {
-    if (epoll_event_map_.find(socket) != epoll_event_map_.end()) {
-        return true;
-    }
-    
+void TcpAction::AddListener(std::shared_ptr<ISocket> socket) {    
     epoll_event ep_event;
     ep_event.events = EPOLLIN;
     ep_event.data.fd = socket;
     int ret = epoll_ctl(epoll_handler_, EPOLL_CTL_ADD, socket, &ep_event);
 
     if (ret == 0) {
-        epoll_event_map_[socket] = ep_event;
-        return true;
+        common::LOG_ERROR("add event to epoll failed! error :%d, sock: %d", errno, socket);
+        return false;
     }
-    common::LOG_ERROR("add event to epoll failed! error :%d, sock: %d", errno, socket);
-    return false;
+    socket_map_[socket->GetSocket()] = socket;
+    return true;
 }
 
-void UdpAction::RemoveSocket(uint64_t socket) {
-    auto iter = epoll_event_map_.find(socket);
-    if (iter == epoll_event_map_.end()) {
-        return;
-    }
-    int ret = epoll_ctl(epoll_handler_, EPOLL_CTL_DEL, socket, &iter->second);
-    epoll_event_map_.erase(socket);
+void TcpAction::AddReceiver(std::shared_ptr<ISocket> socket) {
+    epoll_event ep_event;
+    ep_event.events = EPOLLIN;
+    ep_event.data.fd = socket;
+    int ret = epoll_ctl(epoll_handler_, EPOLL_CTL_ADD, socket, &ep_event);
+
     if (ret == 0) {
-        epoll_event_map_.erase(socket);
-        return;
+        common::LOG_ERROR("add event to epoll failed! error :%d, sock: %d", errno, socket);
+        return false;
     }
-    common::LOG_ERROR("remove event from epoll failed! error :%d, sock: %d", errno, socket);
+    socket_map_[socket->GetSocket()] = socket;
+    return true;
 }
 
-void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
+void TcpAction::Wait(uint32_t timeout_ms, std::queue<uint64_t>& sockets) {
     int16_t ret = epoll_wait(epoll_handler_, &*active_list_.begin(), (int)active_list_.size(), timeout_ms);
     if (ret == -1) {
         if (errno == EINTR) {
@@ -103,7 +99,7 @@ void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
     }
 }
 
-void UdpAction::Wakeup() {
+void TcpAction::Wakeup() {
     write(pipe_[1], "1", 1);
 }
 

@@ -62,7 +62,7 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port,
             iter->second->Push([ip, port, alpn, timeout_ms, processor]() {
                 processor->Connect(ip, port, alpn, timeout_ms);
             });
-            iter->second->Weakup();
+            iter->second->Wakeup();
         }
         return true;
     }

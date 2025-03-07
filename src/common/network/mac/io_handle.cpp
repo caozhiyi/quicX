@@ -34,6 +34,23 @@ SysCallInt32Result Bind(int64_t sockfd, Address& addr) {
     return {rc, rc != -1 ? 0 : errno};
 }
 
+SysCallInt64Result Accept(int64_t sockfd, Address& addr) {
+    struct sockaddr_in addr_cli;
+    socklen_t fromlen = sizeof(sockaddr);
+
+    const int32_t rc = accept(sockfd, (sockaddr*)&addr_cli, &fromlen);
+    if (rc == -1) {
+        if (errno == EWOULDBLOCK || errno == EAGAIN || errno == ECONNABORTED) {
+            return {-1, 0};
+        }
+        return {-1, errno};
+    }
+
+    addr.SetIp(inet_ntoa(addr_cli.sin_addr));
+    addr.SetPort(ntohs(addr_cli.sin_port));
+    return {rc, 0};
+}
+
 SysCallInt32Result Write(int64_t sockfd, const char *data, uint32_t len) {
     const int32_t rc = write(sockfd, data, len);
     return {rc, rc != -1 ? 0 : errno};

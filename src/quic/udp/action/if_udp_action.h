@@ -27,7 +27,7 @@ public:
     virtual void Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) = 0;
 
     // notify the action to wake up
-    virtual void Weakup() = 0;
+    virtual void Wakeup() = 0;
 };
 
 }

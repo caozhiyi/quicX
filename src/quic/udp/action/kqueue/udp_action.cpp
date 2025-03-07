@@ -83,7 +83,7 @@ void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
     }
 }
 
-void UdpAction::Weakup() {
+void UdpAction::Wakeup() {
     char buf[1] = {'w'};
     write(pipe_[1], buf, 1);
 }

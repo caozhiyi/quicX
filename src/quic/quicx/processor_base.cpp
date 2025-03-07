@@ -130,7 +130,7 @@ void ProcessorBase::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 void ProcessorBase::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
     active_send_connection_set_.insert(conn);
     do_send_ = true;
-    receiver_->Weakup();
+    receiver_->Wakeup();
 }
 
 void ProcessorBase::HandleAddConnectionId(uint64_t cid_hash, std::shared_ptr<IConnection> conn) {

@@ -29,7 +29,7 @@ public:
 
     void TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms);
 
-    virtual void Weakup();
+    virtual void Wakeup();
 
 private:
     bool TryRecv(std::shared_ptr<INetPacket> pkt);

@@ -23,7 +23,7 @@ public:
 
     virtual void Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets);
 
-    virtual void Weakup();
+    virtual void Wakeup();
     
 private:
     uint32_t pipe_[2];
