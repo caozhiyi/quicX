@@ -7,7 +7,7 @@
 namespace quicx {
 namespace upgrade {
 
-void PlainHandler::HandleConnect(std::shared_ptr<TcpSocket> socket, ITcpAction* action) {
+void PlainHandler::HandleConnect(std::shared_ptr<TcpSocket> socket, std::shared_ptr<ITcpAction> action) {
     uint64_t sock = socket->GetSocket();
 
     // try to accept all connection
@@ -21,7 +21,14 @@ void PlainHandler::HandleConnect(std::shared_ptr<TcpSocket> socket, ITcpAction* 
             break;
         }
 
-        auto new_socket = std::make_shared<TcpSocket>(ret.return_value_, addr, shared_from_this(), pool_block_);
+        auto no_block_ret = common::SocketNoblocking(ret.return_value_);
+        if (no_block_ret.return_value_ == -1) {
+            common::LOG_ERROR("set socket no blocking failed. error:%d", no_block_ret.errno_);
+            common::Close(ret.return_value_);
+            continue;
+        }
+
+        auto new_socket = std::make_shared<TcpSocket>(ret.return_value_, addr, action, shared_from_this(), pool_block_);
         sockets_[ret.return_value_] = new_socket;
         common::LOG_DEBUG("accept a new tcp socket. socket: %d", ret.return_value_);
         action->AddReceiver(new_socket);
@@ -53,52 +60,31 @@ void PlainHandler::HandleRead(std::shared_ptr<TcpSocket> socket) {
         }
     }
 
-    // check which http handler to use
-    char data[14] = {0};
-    read_buffer->ReadNotMovePt((uint8_t*)data, 14);
+    DispatchHttpHandler(socket);
 
-    // check if it's HTTP/2 by looking for the connection preface "PRI * HTTP/2.0"
-    if (strncmp(data, "PRI * HTTP/2.0", 14) == 0) {
-        auto iter = http_handlers_.find(HttpVersion::kHttp2);
-        if (iter != http_handlers_.end()) {
-            common::LOG_DEBUG("handle http2 request");
-            iter->second->HandleRequest(socket);
-
-        } else {
-            common::LOG_ERROR("no http2 handler registered");
-            HandleClose(socket);
-        }
-        return;
-    }
-
-    // check if it's HTTP/1.x by looking for common methods
-    if (strncmp(data, "GET ", 4) == 0 || 
-        strncmp(data, "POST ", 5) == 0 ||
-        strncmp(data, "HEAD ", 5) == 0 ||
-        strncmp(data, "PUT ", 4) == 0 ||
-        strncmp(data, "DELETE ", 7) == 0 ||
-        strncmp(data, "OPTIONS ", 8) == 0 ||
-        strncmp(data, "TRACE ", 6) == 0 ||
-        strncmp(data, "CONNECT ", 8) == 0) {
-        auto iter = http_handlers_.find(HttpVersion::kHttp1);
-        if (iter != http_handlers_.end()) {
-            common::LOG_DEBUG("handle http1 request");
-            iter->second->HandleRequest(socket);
-
-        } else {
-            common::LOG_ERROR("no http1 handler registered");
-            HandleClose(socket);
-        }
-        return;
-    }
-
-    // unknown protocol
-    common::LOG_ERROR("unknown protocol");
-    HandleClose(socket);
+    // process send data
+    HandleWrite(socket);
 }
 
 void PlainHandler::HandleWrite(std::shared_ptr<TcpSocket> socket) {
     auto write_buffer = socket->GetWriteBuffer();
+    if (!write_buffer) {
+        common::LOG_ERROR("write buffer is nullptr");
+        HandleClose(socket);
+        return;
+    }
+
+    // if write buffer is empty, return
+    if (write_buffer->GetDataLength() == 0) {
+        return;
+    }
+
+    auto action = socket->GetAction();
+    if (!action) {
+        common::LOG_ERROR("action is nullptr");
+        HandleClose(socket);
+        return;
+    }
 
     // write data to socket
     while (write_buffer->GetDataLength() > 0) {
@@ -111,7 +97,7 @@ void PlainHandler::HandleWrite(std::shared_ptr<TcpSocket> socket) {
             // if write data is less than block size, break
             if (ret.return_value_ < block->GetDataLength()) {
                 // need to write more data
-                // action->AddSender(socket);
+                action->AddSender(socket);
                 break;
             }
 

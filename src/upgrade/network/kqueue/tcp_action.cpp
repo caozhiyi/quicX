@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
+#include "upgrade/network/tcp_socket.h"
 #include "upgrade/network/kqueue/tcp_action.h"
 
 namespace quicx {
@@ -43,11 +44,11 @@ TcpAction::~TcpAction() {
     close(pipe_[1]);
 }
 
-bool TcpAction::AddListener(std::shared_ptr<ISocket> socket) {
+bool TcpAction::AddListener(std::shared_ptr<TcpSocket> socket) {
     listener_set_.insert(socket->GetSocket());
     return AddReceiver(socket);
 }
-bool TcpAction::AddReceiver(std::shared_ptr<ISocket> socket) {
+bool TcpAction::AddReceiver(std::shared_ptr<TcpSocket> socket) {
     struct kevent event;
     EV_SET(&event, socket->GetSocket(), EVFILT_READ, EV_ADD, 0, 0, NULL);
     if (kevent(kqueue_handler_, &event, 1, NULL, 0, NULL) == -1) {
@@ -57,7 +58,7 @@ bool TcpAction::AddReceiver(std::shared_ptr<ISocket> socket) {
     return true;
 }
 
-bool TcpAction::AddSender(std::shared_ptr<ISocket> socket) {
+bool TcpAction::AddSender(std::shared_ptr<TcpSocket> socket) {
     struct kevent event;
     EV_SET(&event, socket->GetSocket(), EVFILT_WRITE, EV_ADD, 0, 0, NULL);
     if (kevent(kqueue_handler_, &event, 1, NULL, 0, NULL) == -1) {
@@ -67,7 +68,7 @@ bool TcpAction::AddSender(std::shared_ptr<ISocket> socket) {
     return true;
 }
 
-void TcpAction::Remove(std::shared_ptr<ISocket> socket) {
+void TcpAction::Remove(std::shared_ptr<TcpSocket> socket) {
     struct kevent event;
     EV_SET(&event, socket->GetSocket(), EVFILT_READ|EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
     kevent(kqueue_handler_, &event, 1, NULL, 0, NULL);
@@ -108,7 +109,7 @@ void TcpAction::Wait(uint32_t timeout_ms) {
         }
         if (active_list_[i].filter & EVFILT_READ) {
             if (listener_set_.find(socket->GetSocket()) != listener_set_.end()) {
-                handler->HandleConnect(socket->GetSocket(), this);
+                handler->HandleConnect(socket, this);
 
             } else {
                 handler->HandleRead(socket);

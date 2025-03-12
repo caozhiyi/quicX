@@ -8,7 +8,8 @@ namespace quicx {
 namespace upgrade {
 
 class TcpSocket;
-class ITcpAction {
+class ITcpAction:
+    public std::enable_shared_from_this<ITcpAction> {
 public:
     ITcpAction() {}
     virtual ~ITcpAction() {}

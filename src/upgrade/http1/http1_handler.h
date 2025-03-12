@@ -12,7 +12,7 @@ public:
     Http1Handler() {}
     virtual ~Http1Handler() {}
 
-    virtual void HandleRequest(std::shared_ptr<ISocket> socket) override;
+    virtual void HandleRequest(std::shared_ptr<TcpSocket> socket) override;
 };
 
 }

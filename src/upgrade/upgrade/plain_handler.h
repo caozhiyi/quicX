@@ -15,7 +15,7 @@ public:
     PlainHandler() {}
     virtual ~PlainHandler() {}
 
-    virtual void HandleConnect(std::shared_ptr<TcpSocket> socket, ITcpAction* action) override;
+    virtual void HandleConnect(std::shared_ptr<TcpSocket> socket, std::shared_ptr<ITcpAction> action) override;
     virtual void HandleRead(std::shared_ptr<TcpSocket> socket) override;
     virtual void HandleWrite(std::shared_ptr<TcpSocket> socket) override;
     virtual void HandleClose(std::shared_ptr<TcpSocket> socket) override;

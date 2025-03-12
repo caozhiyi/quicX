@@ -19,10 +19,10 @@ public:
     TcpAction();
     virtual ~TcpAction();
 
-    virtual bool AddListener(std::shared_ptr<ISocket> socket) override;
-    virtual bool AddReceiver(std::shared_ptr<ISocket> socket) override;
-    virtual bool AddSender(std::shared_ptr<ISocket> socket) override;
-    virtual void Remove(std::shared_ptr<ISocket> socket) override;
+    virtual bool AddListener(std::shared_ptr<TcpSocket> socket) override;
+    virtual bool AddReceiver(std::shared_ptr<TcpSocket> socket) override;
+    virtual bool AddSender(std::shared_ptr<TcpSocket> socket) override;
+    virtual void Remove(std::shared_ptr<TcpSocket> socket) override;
 
     virtual void Wait(uint32_t timeout_ms) override;
     virtual void Wakeup() override;
@@ -34,7 +34,7 @@ private:
     struct kevent pipe_content_;
     std::vector<struct kevent> active_list_;
     std::unordered_set<uint64_t> listener_set_;
-    std::unordered_map<uint64_t, std::weak_ptr<ISocket>> socket_map_;
+    std::unordered_map<uint64_t, std::weak_ptr<TcpSocket>> socket_map_;
 };
 
 }
