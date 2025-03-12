@@ -81,8 +81,8 @@ void UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms) 
     TryRecv(pkt);
 }
 
-void UdpReceiver::Weakup() {
-    action_->Weakup();
+void UdpReceiver::Wakeup() {
+    action_->Wakeup();
 }
 
 bool UdpReceiver::TryRecv(std::shared_ptr<INetPacket> pkt) {

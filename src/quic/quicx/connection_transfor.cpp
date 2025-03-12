@@ -41,7 +41,7 @@ void ConnectionTransfor::TryCatchConnection(uint64_t cid_hash) {
                 }
             }
         });
-        iter->second->Weakup();
+        iter->second->Wakeup();
     }
 }
 
@@ -50,7 +50,7 @@ void ConnectionTransfor::ExistConnection(std::shared_ptr<SearchingContext> conte
     iter->second->Push([iter, context]()->void{
         iter->second->TransferConnection(context->cid_hash_, context->connection_);
     });
-    iter->second->Weakup();
+    iter->second->Wakeup();
 }
 
 void ConnectionTransfor::NoExistConnection(std::shared_ptr<SearchingContext> context) {
@@ -58,7 +58,7 @@ void ConnectionTransfor::NoExistConnection(std::shared_ptr<SearchingContext> con
     iter->second->Push([iter, context]()->void{
         iter->second->ConnectionIDNoexist(context->cid_hash_, context->connection_);
     });
-    iter->second->Weakup();
+    iter->second->Wakeup();
 }
 
 }

@@ -37,6 +37,7 @@ SysCallInt64Result UdpSocket();
 SysCallInt32Result Close(int64_t sockfd);
 
 SysCallInt32Result Bind(int64_t sockfd, Address& addr);
+SysCallInt64Result Accept(int64_t sockfd, Address& addr);
 
 SysCallInt32Result Write(int64_t sockfd, const char *data, uint32_t len);
 SysCallInt32Result Writev(int64_t sockfd, Iovec *vec, uint32_t vec_len);

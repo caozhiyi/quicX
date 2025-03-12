@@ -18,7 +18,7 @@ public:
 
     virtual void TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms) = 0;
 
-    virtual void Weakup() = 0;
+    virtual void Wakeup() = 0;
 
     virtual void AddReceiver(uint64_t socket_fd) = 0;
     virtual void AddReceiver(const std::string& ip, uint16_t port) = 0;

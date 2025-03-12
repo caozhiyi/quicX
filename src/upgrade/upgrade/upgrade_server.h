@@ -2,6 +2,7 @@
 #define UPGRADE_UPGRADE_UPGRADE_SERVER
 
 #include "upgrade/include/if_upgrade.h"
+#include "upgrade/network/if_tcp_action.h"
 
 namespace quicx {
 namespace upgrade {
@@ -17,6 +18,9 @@ public:
     virtual bool AddListener(UpgradeSettings& settings) override;
     virtual void Stop() override;
     virtual void Join() override;
+
+private:
+    std::shared_ptr<ITcpAction> tcp_action_;
 };
 
 }

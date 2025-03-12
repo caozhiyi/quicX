@@ -15,14 +15,10 @@ public:
     PlainHandler() {}
     virtual ~PlainHandler() {}
 
-    void RegisterHandler(HttpVersion http_version, std::shared_ptr<ISocketHandler> handler);
-
-    virtual void HandleSocketConnect(uint64_t listen_socket) override;
-    virtual void HandleSocketData(std::shared_ptr<ISocket> socket) = 0;
-    virtual void HandleSocketClose(std::shared_ptr<ISocket> socket) override;
-
-    virtual void ReadData(std::shared_ptr<ISocket> socket) override;
-    virtual void WriteData(std::shared_ptr<ISocket> socket) override;
+    virtual void HandleConnect(std::shared_ptr<TcpSocket> socket, std::shared_ptr<ITcpAction> action) override;
+    virtual void HandleRead(std::shared_ptr<TcpSocket> socket) override;
+    virtual void HandleWrite(std::shared_ptr<TcpSocket> socket) override;
+    virtual void HandleClose(std::shared_ptr<TcpSocket> socket) override;
 };
 
 }
