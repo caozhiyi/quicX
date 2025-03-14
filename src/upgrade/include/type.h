@@ -18,7 +18,6 @@ enum class LogLevel: uint8_t {
     kDebug  = 0x10 | kInfo,
 };
 
-
 // upgrade settings
 struct UpgradeSettings {
     uint16_t upgrade_h3_port = 443;
