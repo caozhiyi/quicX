@@ -1,4 +1,4 @@
-#include "upgrade/http2/http2_handler.h"
+#include "upgrade/http/http2/http2_handler.h"
 
 namespace quicx {
 namespace upgrade {

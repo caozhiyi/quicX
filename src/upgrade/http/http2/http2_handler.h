@@ -1,5 +1,5 @@
-#ifndef UPGRADE_HTTP2_HTTP2_HANDLER
-#define UPGRADE_HTTP2_HTTP2_HANDLER
+#ifndef UPGRADE_HTTP_HTTP2_HTTP2_HANDLER
+#define UPGRADE_HTTP_HTTP2_HTTP2_HANDLER
 
 #include "upgrade/upgrade/if_http_handler.h"
 

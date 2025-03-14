@@ -8,6 +8,7 @@ bool UpgradeServer::Init(LogLevel level) {
 }
 
 bool UpgradeServer::AddListener(UpgradeSettings& settings) {
+    
     return true;
 }
 
