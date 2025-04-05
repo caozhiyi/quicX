@@ -26,7 +26,7 @@ PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpac
 
 PushReceiverStream::~PushReceiverStream() {
     if (stream_) {
-        stream_->Reset(0); // TODO error code
+        stream_->Reset(0);
     }
 }
 
