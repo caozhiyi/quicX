@@ -44,6 +44,11 @@ struct UpgradeSettings {
     
     // Logging configuration
     LogLevel log_level = LogLevel::kInfo;
+    
+    // Check if HTTPS is enabled based on certificate configuration
+    bool IsHTTPSEnabled() const {
+        return !cert_file.empty() || !key_file.empty() || cert_pem != nullptr || key_pem != nullptr;
+    }
 };
 
 } // namespace upgrade

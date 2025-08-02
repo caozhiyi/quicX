@@ -30,7 +30,7 @@ void TcpSocketWrapper::Close() {
 }
 
 // TcpAction implementation
-bool TcpAction::Init(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) {
+bool TcpAction::Init(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) {
     handler_ = handler;
     listen_addr_ = addr;
     listen_port_ = port;
@@ -191,14 +191,14 @@ void TcpAction::HandleEvents(const std::vector<Event>& events) {
                 
                 switch (event.type) {
                     case EventType::READ:
-                        handler_->HandleRead(socket_wrapper);
+                        handler_->HandleRead(socket_wrapper->GetSocket());
                         break;
                     case EventType::WRITE:
-                        handler_->HandleWrite(socket_wrapper);
+                        handler_->HandleWrite(socket_wrapper->GetSocket());
                         break;
                     case EventType::ERROR:
                     case EventType::CLOSE:
-                        handler_->HandleClose(socket_wrapper);
+                        handler_->HandleClose(socket_wrapper->GetSocket());
                         event_driver_->RemoveFd(event.fd);
                         connections_.erase(it);
                         break;
@@ -239,7 +239,7 @@ void TcpAction::HandleNewConnection() {
     connections_[client_fd] = socket_wrapper;
     
     // Notify handler
-    handler_->HandleConnect(socket_wrapper);
+    handler_->HandleConnect(socket_wrapper->GetSocket(), std::shared_ptr<ITcpAction>(this, [](ITcpAction*){}));
     
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
