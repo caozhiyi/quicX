@@ -53,7 +53,7 @@ int TcpSocket::Send(const std::vector<uint8_t>& data) {
 #endif
 
     if (result < 0) {
-        common::LOG_ERROR("Send failed: {}", strerror(errno));
+        common::LOG_ERROR("Send failed: %s", strerror(errno));
     }
 
     return result;
@@ -71,7 +71,7 @@ int TcpSocket::Send(const std::string& data) {
 #endif
 
     if (result < 0) {
-        common::LOG_ERROR("Send failed: {}", strerror(errno));
+        common::LOG_ERROR("Send failed: %s", strerror(errno));
     }
 
     return result;
@@ -92,7 +92,7 @@ int TcpSocket::Recv(std::vector<uint8_t>& data, size_t max_size) {
 #endif
 
     if (result < 0) {
-        common::LOG_ERROR("Recv failed: {}", strerror(errno));
+        common::LOG_ERROR("Recv failed: %s", strerror(errno));
         data.clear();
         return -1;
     }
@@ -115,7 +115,7 @@ int TcpSocket::Recv(std::string& data, size_t max_size) {
 #endif
 
     if (result < 0) {
-        common::LOG_ERROR("Recv failed: {}", strerror(errno));
+        common::LOG_ERROR("Recv failed: %s", strerror(errno));
         data.clear();
         return -1;
     }

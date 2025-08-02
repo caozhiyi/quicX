@@ -64,7 +64,7 @@ bool TcpAction::Init(const std::string& addr, uint16_t port, std::shared_ptr<ISm
     running_ = true;
     event_thread_ = std::thread(&TcpAction::EventLoop, this);
     
-    common::LOG_INFO("TCP action initialized on {}:{}", addr, port);
+    common::LOG_INFO("TCP action initialized on %s:%d", addr.c_str(), port);
     return true;
 }
 
@@ -94,14 +94,14 @@ bool TcpAction::CreateListenSocket() {
     // Create socket
     listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_fd_ < 0) {
-        common::LOG_ERROR("Failed to create socket: {}", strerror(errno));
+        common::LOG_ERROR("Failed to create socket: %s", strerror(errno));
         return false;
     }
     
     // Set socket options
     int opt = 1;
     if (setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        common::LOG_ERROR("Failed to set SO_REUSEADDR: {}", strerror(errno));
+        common::LOG_ERROR("Failed to set SO_REUSEADDR: %s", strerror(errno));
         close(listen_fd_);
         listen_fd_ = -1;
         return false;
@@ -110,14 +110,14 @@ bool TcpAction::CreateListenSocket() {
     // Set non-blocking
     int flags = fcntl(listen_fd_, F_GETFL, 0);
     if (flags < 0) {
-        common::LOG_ERROR("Failed to get socket flags: {}", strerror(errno));
+        common::LOG_ERROR("Failed to get socket flags: %s", strerror(errno));
         close(listen_fd_);
         listen_fd_ = -1;
         return false;
     }
     
     if (fcntl(listen_fd_, F_SETFL, flags | O_NONBLOCK) < 0) {
-        common::LOG_ERROR("Failed to set non-blocking: {}", strerror(errno));
+        common::LOG_ERROR("Failed to set non-blocking: %s", strerror(errno));
         close(listen_fd_);
         listen_fd_ = -1;
         return false;
@@ -130,7 +130,7 @@ bool TcpAction::CreateListenSocket() {
     addr.sin_addr.s_addr = inet_addr(listen_addr_.c_str());
     
     if (bind(listen_fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
-        common::LOG_ERROR("Failed to bind socket: {}", strerror(errno));
+        common::LOG_ERROR("Failed to bind socket: %s", strerror(errno));
         close(listen_fd_);
         listen_fd_ = -1;
         return false;
@@ -138,13 +138,13 @@ bool TcpAction::CreateListenSocket() {
     
     // Listen
     if (listen(listen_fd_, SOMAXCONN) < 0) {
-        common::LOG_ERROR("Failed to listen: {}", strerror(errno));
+        common::LOG_ERROR("Failed to listen: %s", strerror(errno));
         close(listen_fd_);
         listen_fd_ = -1;
         return false;
     }
     
-    common::LOG_INFO("Listening socket created on {}:{}", listen_addr_, listen_port_);
+    common::LOG_INFO("Listening socket created on %s:%d", listen_addr_.c_str(), listen_port_);
     return true;
 }
 
@@ -214,7 +214,7 @@ void TcpAction::HandleNewConnection() {
     
     int client_fd = accept(listen_fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
     if (client_fd < 0) {
-        common::LOG_ERROR("Failed to accept connection: {}", strerror(errno));
+        common::LOG_ERROR("Failed to accept connection: %s", strerror(errno));
         return;
     }
     

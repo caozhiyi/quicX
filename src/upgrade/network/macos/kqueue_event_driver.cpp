@@ -26,7 +26,7 @@ KqueueEventDriver::~KqueueEventDriver() {
 bool KqueueEventDriver::Init() {
     kqueue_fd_ = kqueue();
     if (kqueue_fd_ < 0) {
-        common::LOG_ERROR("Failed to create kqueue instance: {}", strerror(errno));
+        common::LOG_ERROR("Failed to create kqueue instance: %s", strerror(errno));
         return false;
     }
     
@@ -45,7 +45,7 @@ bool KqueueEventDriver::AddFd(int fd, EventType events, void* user_data) {
     if (kqueue_events & EVFILT_READ) {
         EV_SET(&kev, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, user_data);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
-            common::LOG_ERROR("Failed to add read event for fd {} to kqueue: {}", fd, strerror(errno));
+            common::LOG_ERROR("Failed to add read event for fd %d to kqueue: %s", fd, strerror(errno));
             return false;
         }
     }
@@ -53,13 +53,13 @@ bool KqueueEventDriver::AddFd(int fd, EventType events, void* user_data) {
     if (kqueue_events & EVFILT_WRITE) {
         EV_SET(&kev, fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, user_data);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
-            common::LOG_ERROR("Failed to add write event for fd {} to kqueue: {}", fd, strerror(errno));
+            common::LOG_ERROR("Failed to add write event for fd %d to kqueue: %s", fd, strerror(errno));
             return false;
         }
     }
 
     fd_user_data_[fd] = user_data;
-    common::LOG_DEBUG("Added fd {} to kqueue monitoring", fd);
+    common::LOG_DEBUG("Added fd %d to kqueue monitoring", fd);
     return true;
 }
 
@@ -79,7 +79,7 @@ bool KqueueEventDriver::RemoveFd(int fd) {
     kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr);
 
     fd_user_data_.erase(fd);
-    common::LOG_DEBUG("Removed fd {} from kqueue monitoring", fd);
+    common::LOG_DEBUG("Removed fd %d from kqueue monitoring", fd);
     return true;
 }
 
@@ -110,7 +110,7 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             // Interrupted by signal, return 0 events
             return 0;
         }
-        common::LOG_ERROR("kevent failed: {}", strerror(errno));
+        common::LOG_ERROR("kevent failed: %s", strerror(errno));
         return -1;
     }
 

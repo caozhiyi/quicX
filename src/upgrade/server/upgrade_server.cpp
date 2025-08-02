@@ -48,11 +48,11 @@ void UpgradeServer::StartListener(const UpgradeSettings& settings) {
     
     if (tcp_action->Init(settings.listen_addr, port, handler)) {
         listeners_.push_back(tcp_action);
-        common::LOG_INFO("{} listener started on {}:{}", 
+        common::LOG_INFO("%s listener started on %s:%d", 
                         settings.IsHTTPSEnabled() ? "HTTPS" : "HTTP", 
                         settings.listen_addr, port);
     } else {
-        common::LOG_ERROR("Failed to start {} listener on {}:{}", 
+        common::LOG_ERROR("Failed to start %s listener on %s:%d", 
                          settings.IsHTTPSEnabled() ? "HTTPS" : "HTTP", 
                          settings.listen_addr, port);
     }

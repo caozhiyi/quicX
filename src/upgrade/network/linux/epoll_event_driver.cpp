@@ -26,7 +26,7 @@ EpollEventDriver::~EpollEventDriver() {
 bool EpollEventDriver::Init() {
     epoll_fd_ = epoll_create1(EPOLL_CLOEXEC);
     if (epoll_fd_ < 0) {
-        common::LOG_ERROR("Failed to create epoll instance: {}", strerror(errno));
+        common::LOG_ERROR("Failed to create epoll instance: %s", strerror(errno));
         return false;
     }
     
@@ -44,12 +44,12 @@ bool EpollEventDriver::AddFd(int fd, EventType events, void* user_data) {
     ev.data.ptr = user_data;
 
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        common::LOG_ERROR("Failed to add fd {} to epoll: {}", fd, strerror(errno));
+        common::LOG_ERROR("Failed to add fd %d to epoll: %s", fd, strerror(errno));
         return false;
     }
 
     fd_user_data_[fd] = user_data;
-    common::LOG_DEBUG("Added fd {} to epoll monitoring", fd);
+    common::LOG_DEBUG("Added fd %d to epoll monitoring", fd);
     return true;
 }
 
@@ -59,12 +59,12 @@ bool EpollEventDriver::RemoveFd(int fd) {
     }
 
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) < 0) {
-        common::LOG_ERROR("Failed to remove fd {} from epoll: {}", fd, strerror(errno));
+        common::LOG_ERROR("Failed to remove fd %d from epoll: %s", fd, strerror(errno));
         return false;
     }
 
     fd_user_data_.erase(fd);
-    common::LOG_DEBUG("Removed fd {} from epoll monitoring", fd);
+    common::LOG_DEBUG("Removed fd %d from epoll monitoring", fd);
     return true;
 }
 
@@ -78,12 +78,12 @@ bool EpollEventDriver::ModifyFd(int fd, EventType events, void* user_data) {
     ev.data.ptr = user_data;
 
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) < 0) {
-        common::LOG_ERROR("Failed to modify fd {} in epoll: {}", fd, strerror(errno));
+        common::LOG_ERROR("Failed to modify fd %d in epoll: %s", fd, strerror(errno));
         return false;
     }
 
     fd_user_data_[fd] = user_data;
-    common::LOG_DEBUG("Modified fd {} in epoll monitoring", fd);
+    common::LOG_DEBUG("Modified fd %d in epoll monitoring", fd);
     return true;
 }
 
@@ -101,7 +101,7 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             // Interrupted by signal, return 0 events
             return 0;
         }
-        common::LOG_ERROR("epoll_wait failed: {}", strerror(errno));
+        common::LOG_ERROR("epoll_wait failed: %s", strerror(errno));
         return -1;
     }
 
