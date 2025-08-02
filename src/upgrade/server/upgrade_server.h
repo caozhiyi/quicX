@@ -6,7 +6,7 @@
 #include <atomic>
 #include "upgrade/include/if_upgrade.h"
 #include "upgrade/network/if_tcp_action.h"
-#include "upgrade/handlers/smart_handler.h"
+#include "upgrade/handlers/smart_handler_factory.h"
 
 namespace quicx {
 namespace upgrade {
@@ -30,13 +30,10 @@ public:
     virtual void Join() override;
 
 private:
-    // Start HTTP/1.1 listener
-    void StartHTTP1Listener(const UpgradeSettings& settings);
+    // Start listener with appropriate handler
+    void StartListener(const UpgradeSettings& settings);
     
-    // Start HTTPS listener
-    void StartHTTPSListener(const UpgradeSettings& settings);
-    
-    std::shared_ptr<SmartHandler> handler_;
+    std::vector<std::shared_ptr<ISmartHandler>> handlers_;
     std::vector<std::shared_ptr<ITcpAction>> listeners_;
     std::atomic<bool> running_{false};
     LogLevel log_level_ = LogLevel::kNull;

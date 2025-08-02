@@ -1,4 +1,4 @@
-#include "upgrade/handlers/smart_handler.h"
+#include "upgrade/handlers/base_smart_handler.h"
 #include "upgrade/core/protocol_detector.h"
 #include "upgrade/network/if_tcp_socket.h"
 #include "common/log/log.h"
@@ -6,41 +6,47 @@
 namespace quicx {
 namespace upgrade {
 
-SmartHandler::SmartHandler(const UpgradeSettings& settings) 
+BaseSmartHandler::BaseSmartHandler(const UpgradeSettings& settings) 
     : settings_(settings) {
     manager_ = std::make_shared<UpgradeManager>(settings);
 }
 
-void SmartHandler::HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) {
+void BaseSmartHandler::HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) {
+    // Initialize connection-specific resources
+    if (!InitializeConnection(socket)) {
+        common::LOG_ERROR("Failed to initialize {} connection", GetHandlerType());
+        return;
+    }
+    
     // Create connection context
     ConnectionContext context(socket);
     context_map_[socket] = context;
     
-    common::LOG_INFO("New connection established");
+    common::LOG_INFO("New {} connection established", GetHandlerType());
 }
 
-void SmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
+void BaseSmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
     auto it = context_map_.find(socket);
     if (it == context_map_.end()) {
-        common::LOG_ERROR("Socket not found in contexts");
+        common::LOG_ERROR("Socket not found in {} contexts", GetHandlerType());
         return;
     }
     
     ConnectionContext& context = it->second;
     
-    // Read data from socket
+    // Read data from socket using subclass implementation
     std::vector<uint8_t> data;
-    int bytes_read = socket->Recv(data, 4096); // Read up to 4KB
+    int bytes_read = ReadData(socket, data);
     
     if (bytes_read < 0) {
-        common::LOG_ERROR("Failed to read from socket: {}", socket->GetFd());
+        common::LOG_ERROR("Failed to read from {} socket: {}", GetHandlerType(), socket->GetFd());
         HandleClose(socket);
         return;
     }
     
     if (bytes_read == 0) {
         // Connection closed by peer
-        common::LOG_INFO("Connection closed by peer, socket: {}", socket->GetFd());
+        common::LOG_INFO("{} connection closed by peer, socket: {}", GetHandlerType(), socket->GetFd());
         HandleClose(socket);
         return;
     }
@@ -48,6 +54,7 @@ void SmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
     // Resize data to actual bytes read
     data.resize(bytes_read);
     
+    // Handle data based on connection state
     if (context.state == ConnectionState::INITIAL) {
         // First read, perform protocol detection
         HandleProtocolDetection(socket, data);
@@ -61,18 +68,18 @@ void SmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
     } else if (context.state == ConnectionState::UPGRADING) {
         // Protocol upgrade in progress, forward data to upgrade manager
         // TODO: Forward data to upgrade manager for processing
-        common::LOG_DEBUG("Upgrade in progress, received {} bytes", bytes_read);
+        common::LOG_DEBUG("{} upgrade in progress, received {} bytes", GetHandlerType(), bytes_read);
     } else if (context.state == ConnectionState::UPGRADED) {
         // Protocol upgraded, data should be handled by the upgraded protocol
         // TODO: Forward data to the upgraded protocol handler
-        common::LOG_DEBUG("Protocol upgraded, received {} bytes", bytes_read);
+        common::LOG_DEBUG("{} protocol upgraded, received {} bytes", GetHandlerType(), bytes_read);
     } else {
         // Failed state, ignore data
-        common::LOG_WARN("Connection in failed state, ignoring data");
+        common::LOG_WARN("{} connection in failed state, ignoring data", GetHandlerType());
     }
 }
 
-void SmartHandler::HandleWrite(std::shared_ptr<ITcpSocket> socket) {
+void BaseSmartHandler::HandleWrite(std::shared_ptr<ITcpSocket> socket) {
     auto it = context_map_.find(socket);
     if (it == context_map_.end()) {
         return;
@@ -84,23 +91,27 @@ void SmartHandler::HandleWrite(std::shared_ptr<ITcpSocket> socket) {
     if (context.state == ConnectionState::NEGOTIATING) {
         // Send upgrade response if available
         // TODO: Send upgrade response data
-        common::LOG_DEBUG("Sending upgrade response");
+        common::LOG_DEBUG("Sending {} upgrade response", GetHandlerType());
     } else if (context.state == ConnectionState::UPGRADING) {
         // Send upgrade data
         // TODO: Send upgrade data
-        common::LOG_DEBUG("Sending upgrade data");
+        common::LOG_DEBUG("Sending {} upgrade data", GetHandlerType());
     }
 }
 
-void SmartHandler::HandleClose(std::shared_ptr<ITcpSocket> socket) {
+void BaseSmartHandler::HandleClose(std::shared_ptr<ITcpSocket> socket) {
     auto it = context_map_.find(socket);
     if (it != context_map_.end()) {
-        common::LOG_INFO("Connection closed, socket: {}", socket->GetFd());
+        common::LOG_INFO("{} connection closed, socket: {}", GetHandlerType(), socket->GetFd());
+        
+        // Clean up connection-specific resources
+        CleanupConnection(socket);
+        
         context_map_.erase(it);
     }
 }
 
-void SmartHandler::HandleProtocolDetection(std::shared_ptr<ITcpSocket> socket, const std::vector<uint8_t>& data) {
+void BaseSmartHandler::HandleProtocolDetection(std::shared_ptr<ITcpSocket> socket, const std::vector<uint8_t>& data) {
     auto it = context_map_.find(socket);
     if (it == context_map_.end()) {
         return;
@@ -125,10 +136,10 @@ void SmartHandler::HandleProtocolDetection(std::shared_ptr<ITcpSocket> socket, c
     }
 }
 
-void SmartHandler::OnProtocolDetected(ConnectionContext& context) {
+void BaseSmartHandler::OnProtocolDetected(ConnectionContext& context) {
     context.state = ConnectionState::NEGOTIATING;
     
-    common::LOG_INFO("Protocol detected: {}", static_cast<int>(context.detected_protocol));
+    common::LOG_INFO("{} protocol detected: {}", GetHandlerType(), static_cast<int>(context.detected_protocol));
     
     // Execute upgrade negotiation
     try {
@@ -139,14 +150,14 @@ void SmartHandler::OnProtocolDetected(ConnectionContext& context) {
     }
 }
 
-void SmartHandler::OnUpgradeComplete(ConnectionContext& context) {
+void BaseSmartHandler::OnUpgradeComplete(ConnectionContext& context) {
     context.state = ConnectionState::UPGRADED;
-    common::LOG_INFO("Upgrade completed successfully");
+    common::LOG_INFO("{} upgrade completed successfully", GetHandlerType());
 }
 
-void SmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::string& error) {
+void BaseSmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::string& error) {
     context.state = ConnectionState::FAILED;
-    common::LOG_ERROR("Upgrade failed: {}", error);
+    common::LOG_ERROR("{} upgrade failed: {}", GetHandlerType(), error);
     
     // Send error response to client
     if (context.socket && context.socket->IsValid()) {
@@ -156,7 +167,7 @@ void SmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::string
             "Content-Length: " + std::to_string(error.length()) + "\r\n"
             "\r\n" + error;
         
-        context.socket->Send(error_response);
+        WriteData(context.socket, error_response);
     }
     
     // Clean up connection

@@ -29,42 +29,32 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
         running_ = true;
     }
     
-    // Create smart handler
-    handler_ = std::make_shared<SmartHandler>(settings);
-    
-    // Start HTTP/1.1 listener
-    if (settings.enable_http1) {
-        StartHTTP1Listener(settings);
-    }
-    
-    // Start HTTPS listener
-    if (settings.enable_http2 || settings.enable_http3) {
-        StartHTTPSListener(settings);
-    }
+    // Start listener with appropriate handler
+    StartListener(settings);
     
     common::LOG_INFO("Listeners added successfully");
     return true;
 }
 
-void UpgradeServer::StartHTTP1Listener(const UpgradeSettings& settings) {
+void UpgradeServer::StartListener(const UpgradeSettings& settings) {
+    // Create appropriate smart handler based on settings
+    auto handler = SmartHandlerFactory::CreateHandler(settings);
+    handlers_.push_back(handler);
+    
+    // Determine which port to use based on HTTPS configuration
+    uint16_t port = settings.IsHTTPSEnabled() ? settings.https_port : settings.http_port;
+    
     auto tcp_action = std::make_shared<TcpAction>();
     
-    if (tcp_action->Init(settings.listen_addr, settings.http_port, handler_)) {
+    if (tcp_action->Init(settings.listen_addr, port, handler)) {
         listeners_.push_back(tcp_action);
-        common::LOG_INFO("HTTP/1.1 listener started on {}:{}", settings.listen_addr, settings.http_port);
+        common::LOG_INFO("{} listener started on {}:{}", 
+                        settings.IsHTTPSEnabled() ? "HTTPS" : "HTTP", 
+                        settings.listen_addr, port);
     } else {
-        common::LOG_ERROR("Failed to start HTTP/1.1 listener on {}:{}", settings.listen_addr, settings.http_port);
-    }
-}
-
-void UpgradeServer::StartHTTPSListener(const UpgradeSettings& settings) {
-    auto tcp_action = std::make_shared<TcpAction>();
-    
-    if (tcp_action->Init(settings.listen_addr, settings.https_port, handler_)) {
-        listeners_.push_back(tcp_action);
-        common::LOG_INFO("HTTPS listener started on {}:{}", settings.listen_addr, settings.https_port);
-    } else {
-        common::LOG_ERROR("Failed to start HTTPS listener on {}:{}", settings.listen_addr, settings.https_port);
+        common::LOG_ERROR("Failed to start {} listener on {}:{}", 
+                         settings.IsHTTPSEnabled() ? "HTTPS" : "HTTP", 
+                         settings.listen_addr, port);
     }
 }
 

@@ -9,7 +9,7 @@
 #include "upgrade/network/if_tcp_action.h"
 #include "upgrade/network/if_event_driver.h"
 #include "upgrade/network/tcp_socket.h"
-#include "upgrade/upgrade/if_socket_handler.h"
+#include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
 namespace upgrade {
@@ -40,7 +40,7 @@ public:
     virtual ~TcpAction() = default;
 
     // Initialize TCP action with address, port and handler
-    virtual bool Init(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) override;
+    virtual bool Init(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) override;
     
     // Stop the TCP action
     virtual void Stop() override;
@@ -58,7 +58,7 @@ private:
     // Create listening socket
     bool CreateListenSocket();
 
-    std::shared_ptr<ISocketHandler> handler_;
+    std::shared_ptr<ISmartHandler> handler_;
     std::shared_ptr<IEventDriver> event_driver_;
     std::thread event_thread_;
     std::atomic<bool> running_{false};
