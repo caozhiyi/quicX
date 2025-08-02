@@ -58,7 +58,7 @@ bool IocpEventDriver::AddFd(int fd, EventType events, void* user_data) {
         PostWriteOperation(socket, user_data);
     }
 
-    common::LOG_DEBUG("Added socket {} to IOCP monitoring", fd);
+    common::LOG_DEBUG("Added socket %d to IOCP monitoring", fd);
     return true;
 }
 
@@ -67,7 +67,7 @@ bool IocpEventDriver::RemoveFd(int fd) {
     socket_user_data_.erase(socket);
     closesocket(socket);
     
-    common::LOG_DEBUG("Removed socket {} from IOCP monitoring", fd);
+    common::LOG_DEBUG("Removed socket %d from IOCP monitoring", fd);
     return true;
 }
 

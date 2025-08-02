@@ -61,12 +61,12 @@ bool HttpsSmartHandler::InitializeSSL() {
     // Load certificate and private key
     if (!settings_.cert_file.empty() && !settings_.key_file.empty()) {
         if (SSL_CTX_use_certificate_file(ssl_ctx_, settings_.cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
-            common::LOG_ERROR("Failed to load certificate file: {}", settings_.cert_file);
+            common::LOG_ERROR("Failed to load certificate file: %s", settings_.cert_file.c_str());
             return false;
         }
         
         if (SSL_CTX_use_PrivateKey_file(ssl_ctx_, settings_.key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
-            common::LOG_ERROR("Failed to load private key file: {}", settings_.key_file);
+            common::LOG_ERROR("Failed to load private key file: %s", settings_.key_file.c_str());
             return false;
         }
     } else if (settings_.cert_pem && settings_.key_pem) {
@@ -184,7 +184,7 @@ int HttpsSmartHandler::ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<
             // Need more data or can't write, this is normal
             return 0;
         } else {
-            common::LOG_ERROR("SSL read error: {}", ssl_error);
+            common::LOG_ERROR("SSL read error: %d", ssl_error);
             return -1;
         }
     }
@@ -232,14 +232,14 @@ void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
     if (ret == 1) {
         // SSL handshake completed successfully
         ssl_ctx.handshake_completed = true;
-        common::LOG_INFO("SSL handshake completed for socket: {}", socket->GetFd());
+        common::LOG_INFO("SSL handshake completed for socket: %d", socket->GetFd());
         
         // Get client certificate info if available
         X509* client_cert = SSL_get_peer_certificate(ssl_ctx.ssl);
         if (client_cert) {
             char subject[256];
             X509_NAME_oneline(X509_get_subject_name(client_cert), subject, sizeof(subject));
-            common::LOG_INFO("Client certificate: {}", subject);
+            common::LOG_INFO("Client certificate: %s", subject);
             X509_free(client_cert);
         }
         
@@ -253,7 +253,7 @@ void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
             // Handshake in progress, this is normal
             return;
         } else {
-            common::LOG_ERROR("SSL handshake failed: {}", ssl_error);
+            common::LOG_ERROR("SSL handshake failed: %d", ssl_error);
             // Connection will be cleaned up by the base class
         }
     }

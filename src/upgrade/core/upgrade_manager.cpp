@@ -96,7 +96,7 @@ void UpgradeManager::SendHTTP2GoAway(ConnectionContext& context) {
 }
 
 void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std::string& error) {
-    common::LOG_ERROR("Upgrade failed: {}", error);
+    common::LOG_ERROR("Upgrade failed: %s", error.c_str());
     
     // Send error response
     std::string error_response = 

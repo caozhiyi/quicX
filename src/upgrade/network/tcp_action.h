@@ -7,31 +7,13 @@
 #include <atomic>
 #include <unordered_map>
 #include "upgrade/network/if_tcp_action.h"
+#include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/network/if_event_driver.h"
-#include "upgrade/network/tcp_socket.h"
 #include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
 namespace upgrade {
 
-// TCP socket wrapper for backward compatibility
-class TcpSocketWrapper : public TcpSocket {
-public:
-    explicit TcpSocketWrapper(std::shared_ptr<ITcpSocket> socket);
-    virtual ~TcpSocketWrapper() = default;
-
-    // Get the underlying TCP socket
-    virtual std::shared_ptr<ITcpSocket> GetSocket() const override { return socket_; }
-
-    // Send data
-    virtual int Send(const std::string& data) override;
-
-    // Close the socket
-    virtual void Close() override;
-
-private:
-    std::shared_ptr<ITcpSocket> socket_;
-};
 
 // TCP action implementation
 class TcpAction : public ITcpAction {
@@ -58,6 +40,9 @@ private:
     // Create listening socket
     bool CreateListenSocket();
 
+    // Handle new connection
+    void HandleNewConnection();
+
     std::shared_ptr<ISmartHandler> handler_;
     std::shared_ptr<IEventDriver> event_driver_;
     std::thread event_thread_;
@@ -65,7 +50,7 @@ private:
     std::string listen_addr_;
     uint16_t listen_port_;
     int listen_fd_ = -1;
-    std::unordered_map<int, std::shared_ptr<TcpSocketWrapper>> connections_;
+    std::unordered_map<int, std::shared_ptr<ITcpSocket>> connections_;
 };
 
 } // namespace upgrade
