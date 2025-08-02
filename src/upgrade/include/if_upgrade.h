@@ -1,37 +1,35 @@
-#ifndef UPGRADE_INCLUDE_IF_UPGRADE
-#define UPGRADE_INCLUDE_IF_UPGRADE
+#ifndef UPGRADE_INCLUDE_IF_UPGRADE_H
+#define UPGRADE_INCLUDE_IF_UPGRADE_H
 
-#include <string>
 #include <memory>
-#include <cstdint>
 #include "upgrade/include/type.h"
 
 namespace quicx {
 namespace upgrade {
 
-// HTTP3 client interface
+// HTTP upgrade server interface
 class IUpgrade {
 public:
-    IUpgrade() {}
-    virtual ~IUpgrade() {};
+    IUpgrade() = default;
+    virtual ~IUpgrade() = default;
 
-    // Initialize the server with a certificate and a key
+    // Initialize the upgrade server
     virtual bool Init(LogLevel level = LogLevel::kNull) = 0;
 
-    // Start the server
+    // Add a listener with specified settings
     virtual bool AddListener(UpgradeSettings& settings) = 0;
 
-    // Stop the server
+    // Stop the upgrade server
     virtual void Stop() = 0;
 
-    // Join the server
+    // Wait for the server to finish
     virtual void Join() = 0;
 
     // Create a server instance
     static std::unique_ptr<IUpgrade> Create();
 };
 
-}
-}
+} // namespace upgrade
+} // namespace quicx
 
-#endif
+#endif // UPGRADE_INCLUDE_IF_UPGRADE_H 

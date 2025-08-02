@@ -1,47 +1,65 @@
-#ifndef UPGRADE_NETWORK_IF_SOCKET
-#define UPGRADE_NETWORK_IF_SOCKET
+#ifndef UPGRADE_NETWORK_TCP_SOCKET_H
+#define UPGRADE_NETWORK_TCP_SOCKET_H
 
-#include <string>
 #include <memory>
-#include <cstdint>
-#include "common/network/address.h"
-#include "common/buffer/if_buffer_chains.h"
-#include "upgrade/upgrade/if_socket_handler.h"
+#include "upgrade/network/if_tcp_socket.h"
 
 namespace quicx {
 namespace upgrade {
 
-class TcpSocket {
+// TCP socket implementation
+class TcpSocket:
+    public ITcpSocket {
 public:
-    TcpSocket(uint64_t socket,
-        common::Address remote_address,
-        std::shared_ptr<ITcpAction> action,
-        std::shared_ptr<ISocketHandler> handler,
-        std::shared_ptr<common::BlockMemoryPool> pool_block);
-    ~TcpSocket();
+    TcpSocket();
+    explicit TcpSocket(int fd);
+    virtual ~TcpSocket();
 
-    uint32_t GetSocket() { return socket_; }
-    const common::Address& GetRemoteAddress() { return remote_address_; }
+    // Get the socket file descriptor
+    virtual int GetFd() const override { return fd_; }
 
-    std::shared_ptr<common::IBufferChains> GetWriteBuffer() { return write_buffer_; }
-    std::shared_ptr<common::IBufferChains> GetReadBuffer() { return read_buffer_; }
-    std::shared_ptr<ISocketHandler> GetHandler() { return handler_; }
-    std::shared_ptr<ITcpAction> GetAction() { return action_.lock(); }
+    // Send data
+    virtual int Send(const std::vector<uint8_t>& data) override;
+    virtual int Send(const std::string& data) override;
 
-    void SetContext(void* context) { context_ = context; }
-    void* GetContext() { return context_; }
+    // Receive data
+    virtual int Recv(std::vector<uint8_t>& data, size_t max_size = 4096) override;
+    virtual int Recv(std::string& data, size_t max_size = 4096) override;
+
+    // Close the socket
+    virtual void Close() override;
+
+    // Check if socket is valid
+    virtual bool IsValid() const override { return fd_ >= 0; }
+
+    // Get remote address information
+    virtual std::string GetRemoteAddress() const override;
+    virtual uint16_t GetRemotePort() const override;
+
+    // Get local address information
+    virtual std::string GetLocalAddress() const override;
+    virtual uint16_t GetLocalPort() const override;
+
+    // Set socket to non-blocking mode
+    bool SetNonBlocking(bool non_blocking = true);
+
+    // Set socket options
+    bool SetReuseAddr(bool reuse = true);
+    bool SetKeepAlive(bool keep_alive = true);
 
 private:
-    void* context_;
-    uint64_t socket_;
-    common::Address remote_address_;
-    std::weak_ptr<ITcpAction> action_;
-    std::shared_ptr<ISocketHandler> handler_;
-    std::shared_ptr<common::IBufferChains> read_buffer_;
-    std::shared_ptr<common::IBufferChains> write_buffer_;
+    int fd_ = -1;
+    mutable std::string remote_address_;
+    mutable uint16_t remote_port_ = 0;
+    mutable std::string local_address_;
+    mutable uint16_t local_port_ = 0;
+    mutable bool address_cached_ = false;
+
+    // Cache address information
+    void CacheAddressInfo() const;
 };
 
-}
-}
+} // namespace upgrade
+} // namespace quicx
 
-#endif
+#endif // UPGRADE_NETWORK_TCP_SOCKET_H 
