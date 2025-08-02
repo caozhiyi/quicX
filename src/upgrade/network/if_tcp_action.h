@@ -1,29 +1,33 @@
-#ifndef UPGRADE_NETWORK_IF_TCP_ACTION
-#define UPGRADE_NETWORK_IF_TCP_ACTION
+#ifndef UPGRADE_NETWORK_IF_TCP_ACTION_H
+#define UPGRADE_NETWORK_IF_TCP_ACTION_H
 
 #include <memory>
+#include <string>
 #include <cstdint>
 
 namespace quicx {
 namespace upgrade {
 
-class TcpSocket;
-class ITcpAction:
-    public std::enable_shared_from_this<ITcpAction> {
+// Forward declaration
+class ITcpSocket;
+class ISocketHandler;
+
+// TCP action interface
+class ITcpAction {
 public:
-    ITcpAction() {}
-    virtual ~ITcpAction() {}
+    virtual ~ITcpAction() = default;
 
-    virtual bool AddListener(std::shared_ptr<TcpSocket> socket) = 0;
-    virtual bool AddReceiver(std::shared_ptr<TcpSocket> socket) = 0;
-    virtual bool AddSender(std::shared_ptr<TcpSocket> socket) = 0;
-    virtual void Remove(std::shared_ptr<TcpSocket> socket) = 0;
-
-    virtual void Wait(uint32_t timeout_ms) = 0;
-    virtual void Wakeup() = 0;
+    // Initialize TCP action with address, port and handler
+    virtual bool Init(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) = 0;
+    
+    // Stop the TCP action
+    virtual void Stop() = 0;
+    
+    // Wait for TCP action to finish
+    virtual void Join() = 0;
 };
 
-}
-}
+} // namespace upgrade
+} // namespace quicx
 
-#endif
+#endif // UPGRADE_NETWORK_IF_TCP_ACTION_H 
