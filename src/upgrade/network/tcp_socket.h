@@ -40,6 +40,10 @@ public:
     virtual std::string GetLocalAddress() const override;
     virtual uint16_t GetLocalPort() const override;
 
+    // Socket handler management
+    virtual void SetHandler(std::shared_ptr<ISocketHandler> handler) override;
+    virtual std::shared_ptr<ISocketHandler> GetHandler() const override;
+
     // Set socket to non-blocking mode
     bool SetNonBlocking(bool non_blocking = true);
 
@@ -54,6 +58,9 @@ private:
     mutable std::string local_address_;
     mutable uint16_t local_port_ = 0;
     mutable bool address_cached_ = false;
+
+    // Socket handler
+    std::weak_ptr<ISocketHandler> handler_;
 
     // Cache address information
     void CacheAddressInfo() const;

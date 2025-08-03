@@ -11,7 +11,7 @@ namespace upgrade {
 
 // Event types
 enum class EventType {
-    READ = 0x01,
+    READ  = 0x01,
     WRITE = 0x02,
     ERROR = 0x04,
     CLOSE = 0x08
@@ -21,7 +21,6 @@ enum class EventType {
 struct Event {
     int fd = -1;
     EventType type = EventType::READ;
-    void* user_data = nullptr;
 };
 
 // Event driver interface
@@ -33,13 +32,13 @@ public:
     virtual bool Init() = 0;
 
     // Add a file descriptor to monitor
-    virtual bool AddFd(int fd, EventType events, void* user_data = nullptr) = 0;
+    virtual bool AddFd(int fd, EventType events) = 0;
 
     // Remove a file descriptor from monitoring
     virtual bool RemoveFd(int fd) = 0;
 
     // Modify events for a file descriptor
-    virtual bool ModifyFd(int fd, EventType events, void* user_data = nullptr) = 0;
+    virtual bool ModifyFd(int fd, EventType events) = 0;
 
     // Wait for events with timeout (in milliseconds)
     // Returns the number of events that occurred
@@ -47,6 +46,9 @@ public:
 
     // Get the maximum number of events that can be processed in one iteration
     virtual int GetMaxEvents() const = 0;
+
+    // Wake up from Wait() call (thread-safe)
+    virtual void Wakeup() = 0;
 
     // Create platform-specific event driver
     static std::unique_ptr<IEventDriver> Create();

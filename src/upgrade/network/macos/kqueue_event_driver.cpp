@@ -1,13 +1,14 @@
 #ifdef __APPLE__
 
-#include "upgrade/network/macos/kqueue_event_driver.h"
-#include "common/log/log.h"
-#include <sys/event.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <cstring>
+#include <unistd.h>
+#include <sys/event.h>
+#include <sys/types.h>
+
+#include "common/log/log.h"
+#include "upgrade/network/macos/kqueue_event_driver.h"
 
 namespace quicx {
 namespace upgrade {
@@ -17,6 +18,14 @@ KqueueEventDriver::KqueueEventDriver() {
 }
 
 KqueueEventDriver::~KqueueEventDriver() {
+    if (wakeup_write_fd_ >= 0) {
+        close(wakeup_write_fd_);
+        wakeup_write_fd_ = -1;
+    }
+    if (wakeup_fd_ >= 0) {
+        close(wakeup_fd_);
+        wakeup_fd_ = -1;
+    }
     if (kqueue_fd_ >= 0) {
         close(kqueue_fd_);
         kqueue_fd_ = -1;
@@ -30,11 +39,40 @@ bool KqueueEventDriver::Init() {
         return false;
     }
     
-    common::LOG_INFO("Kqueue event driver initialized");
+    // Create pipe for wakeup
+    int pipe_fds[2];
+    if (pipe2(pipe_fds, O_CLOEXEC | O_NONBLOCK) < 0) {
+        common::LOG_ERROR("Failed to create wakeup pipe: %s", strerror(errno));
+        close(kqueue_fd_);
+        kqueue_fd_ = -1;
+        return false;
+    }
+    
+    wakeup_fd_ = pipe_fds[0];  // Read end
+    int write_fd = pipe_fds[1]; // Write end
+    
+    // Add read end to kqueue for wakeup events
+    struct kevent kev;
+    EV_SET(&kev, wakeup_fd_, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
+    
+    if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
+        common::LOG_ERROR("Failed to add wakeup fd to kqueue: %s", strerror(errno));
+        close(write_fd);
+        close(wakeup_fd_);
+        close(kqueue_fd_);
+        wakeup_fd_ = -1;
+        kqueue_fd_ = -1;
+        return false;
+    }
+    
+    // Store write fd for wakeup calls
+    wakeup_write_fd_ = write_fd;
+    
+    common::LOG_INFO("Kqueue event driver initialized with wakeup support");
     return true;
 }
 
-bool KqueueEventDriver::AddFd(int fd, EventType events, void* user_data) {
+bool KqueueEventDriver::AddFd(int fd, EventType events) {
     if (kqueue_fd_ < 0) {
         return false;
     }
@@ -43,7 +81,7 @@ bool KqueueEventDriver::AddFd(int fd, EventType events, void* user_data) {
     uint32_t kqueue_events = ConvertToKqueueEvents(events);
     
     if (kqueue_events & EVFILT_READ) {
-        EV_SET(&kev, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, user_data);
+        EV_SET(&kev, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
             common::LOG_ERROR("Failed to add read event for fd %d to kqueue: %s", fd, strerror(errno));
             return false;
@@ -51,14 +89,13 @@ bool KqueueEventDriver::AddFd(int fd, EventType events, void* user_data) {
     }
     
     if (kqueue_events & EVFILT_WRITE) {
-        EV_SET(&kev, fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, user_data);
+        EV_SET(&kev, fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
             common::LOG_ERROR("Failed to add write event for fd %d to kqueue: %s", fd, strerror(errno));
             return false;
         }
     }
 
-    fd_user_data_[fd] = user_data;
     common::LOG_DEBUG("Added fd %d to kqueue monitoring", fd);
     return true;
 }
@@ -78,15 +115,14 @@ bool KqueueEventDriver::RemoveFd(int fd) {
     EV_SET(&kev, fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
     kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr);
 
-    fd_user_data_.erase(fd);
     common::LOG_DEBUG("Removed fd %d from kqueue monitoring", fd);
     return true;
 }
 
-bool KqueueEventDriver::ModifyFd(int fd, EventType events, void* user_data) {
+bool KqueueEventDriver::ModifyFd(int fd, EventType events) {
     // Remove and re-add the fd
     RemoveFd(fd);
-    return AddFd(fd, events, user_data);
+    return AddFd(fd, events);
 }
 
 int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
@@ -117,16 +153,27 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     // Clear and resize vector to avoid unnecessary allocations
     events.clear();
     if (nfds > 0) {
-        events.resize(nfds);
+        events.reserve(nfds);  // Reserve space but don't resize yet
         
         for (int i = 0; i < nfds; ++i) {
-            events[i].fd = static_cast<int>(kqueue_events[i].ident);
-            events[i].type = ConvertFromKqueueEvents(kqueue_events[i].filter);
-            events[i].user_data = kqueue_events[i].udata;
+            // Check if this is a wakeup event
+            if (kqueue_events[i].ident == wakeup_fd_) {
+                // This is a wakeup event, consume the data
+                char buffer[64];
+                while (read(wakeup_fd_, buffer, sizeof(buffer)) > 0) {
+                    // Consume all wakeup data
+                }
+                continue;  // Skip adding wakeup events to the result
+            }
+            
+            events.push_back(Event{
+                static_cast<int>(kqueue_events[i].ident),
+                ConvertFromKqueueEvents(kqueue_events[i].filter)
+            });
         }
     }
 
-    return nfds;
+    return events.size();
 }
 
 uint32_t KqueueEventDriver::ConvertToKqueueEvents(EventType events) const {
@@ -159,6 +206,17 @@ EventType KqueueEventDriver::ConvertFromKqueueEvents(uint32_t kqueue_events) con
     }
 
     return events;
+}
+
+void KqueueEventDriver::Wakeup() {
+    if (wakeup_write_fd_ >= 0) {
+        // Write a byte to wake up the kevent
+        char data = 'w';
+        ssize_t written = write(wakeup_write_fd_, &data, 1);
+        if (written < 0) {
+            common::LOG_ERROR("Failed to write to wakeup pipe: %s", strerror(errno));
+        }
+    }
 }
 
 } // namespace upgrade

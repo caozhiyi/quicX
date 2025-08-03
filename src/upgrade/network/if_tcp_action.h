@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <functional>
 
 namespace quicx {
 namespace upgrade {
@@ -28,6 +29,12 @@ public:
     
     // Wait for TCP action to finish
     virtual void Join() = 0;
+    
+    // Add timer with callback function and timeout in milliseconds
+    virtual uint64_t AddTimer(std::function<void()> callback, uint32_t timeout_ms) = 0;
+    
+    // Remove timer by ID
+    virtual bool RemoveTimer(uint64_t timer_id) = 0;
 };
 
 } // namespace upgrade

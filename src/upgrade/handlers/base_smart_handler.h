@@ -37,6 +37,7 @@ protected:
     void OnProtocolDetected(ConnectionContext& context);
     void OnUpgradeComplete(ConnectionContext& context);
     void OnUpgradeFailed(ConnectionContext& context, const std::string& error);
+    void HandleNegotiationTimeout(std::shared_ptr<ITcpSocket> socket);
     
     // Get negotiated protocol (for HTTPS connections)
     virtual std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const { return ""; }
@@ -52,7 +53,7 @@ protected:
     std::shared_ptr<UpgradeManager> manager_;
     std::unordered_map<std::shared_ptr<ITcpSocket>, ConnectionContext> connections_;
     std::weak_ptr<ITcpAction> tcp_action_;
-    std::shared_ptr<IEventDriver> event_driver_;
+    std::weak_ptr<IEventDriver> event_driver_;
 };
 
 } // namespace upgrade

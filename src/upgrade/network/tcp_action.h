@@ -6,6 +6,8 @@
 #include <thread>
 #include <atomic>
 #include <unordered_map>
+
+#include "common/timer/timer.h"
 #include "upgrade/network/if_tcp_action.h"
 #include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/network/if_event_driver.h"
@@ -16,7 +18,9 @@ namespace upgrade {
 
 
 // TCP action implementation
-class TcpAction : public ITcpAction {
+class TcpAction:
+ public ITcpAction,
+ public std::enable_shared_from_this<TcpAction> {
 public:
     TcpAction() = default;
     virtual ~TcpAction() = default;
@@ -32,6 +36,12 @@ public:
     
     // Wait for TCP action to finish
     virtual void Join() override;
+    
+    // Add timer with callback function and timeout in milliseconds
+    virtual uint64_t AddTimer(std::function<void()> callback, uint32_t timeout_ms) override;
+    
+    // Remove timer by ID
+    virtual bool RemoveTimer(uint64_t timer_id) override;
 
 private:
     // Main event loop
@@ -51,7 +61,10 @@ private:
     std::atomic<bool> running_{false};
     std::unordered_map<int, std::shared_ptr<ISocketHandler>> listeners_;  // fd -> handler
     std::unordered_map<int, std::shared_ptr<ITcpSocket>> connections_;   // fd -> socket
-    std::unordered_map<int, std::shared_ptr<ISocketHandler>> connection_handlers_;  // fd -> handler
+    
+    // Timer support
+    std::shared_ptr<quicx::common::ITimer> timer_;
+    std::unordered_map<uint64_t, quicx::common::TimerTask> timer_tasks_;  // timer_id -> task
 };
 
 } // namespace upgrade
