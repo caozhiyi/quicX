@@ -14,14 +14,11 @@ NegotiationResult VersionNegotiator::Negotiate(
         return {false, Protocol::UNKNOWN, "", {}, "Protocol detection failed"};
     }
     
-    // Step 2: ALPN parsing
-    ParseALPN(context);
-    
-    // Step 3: Select optimal protocol
+    // Step 2: Select optimal protocol
     Protocol target = SelectBestProtocol(context, settings);
     context.target_protocol = target;
     
-    // Step 4: Generate upgrade strategy
+    // Step 3: Generate upgrade strategy
     return GenerateUpgradeStrategy(context, settings);
 }
 
@@ -34,35 +31,18 @@ bool VersionNegotiator::DetectProtocol(ConnectionContext& context) {
     return context.detected_protocol != Protocol::UNKNOWN;
 }
 
-bool VersionNegotiator::ParseALPN(ConnectionContext& context) {
-    if (context.initial_data.empty()) {
-        return false;
-    }
-    
-    context.alpn_protocols = ProtocolDetector::ParseALPNProtocols(context.initial_data);
-    return !context.alpn_protocols.empty();
-}
-
 Protocol VersionNegotiator::SelectBestProtocol(const ConnectionContext& context, const UpgradeSettings& settings) {
-    // If QUIC is detected, return HTTP/3 directly
+    // Always prefer HTTP/3 if client supports it
     if (context.detected_protocol == Protocol::HTTP3) {
         return Protocol::HTTP3;
     }
     
-    // Select optimal protocol based on client capabilities and server configuration
-    if (settings.enable_http3 && SupportsProtocol(context.alpn_protocols, "h3")) {
+    // Check ALPN protocols (from HttpsSmartHandler)
+    if (SupportsProtocol(context.alpn_protocols, "h3")) {
         return Protocol::HTTP3;
     }
     
-    if (settings.enable_http2 && SupportsProtocol(context.alpn_protocols, "h2")) {
-        return Protocol::HTTP2;
-    }
-    
-    if (settings.enable_http1) {
-        return Protocol::HTTP1_1;
-    }
-    
-    // Default to detected protocol
+    // If HTTP/3 is not supported, fall back to detected protocol
     return context.detected_protocol;
 }
 
@@ -78,28 +58,27 @@ NegotiationResult VersionNegotiator::GenerateUpgradeStrategy(
         return result;
     }
     
-    // Generate upgrade strategy based on detected protocol
-    switch (context.detected_protocol) {
-        case Protocol::HTTP1_1:
-            if (context.target_protocol == Protocol::HTTP3) {
-                result.success = true;
-                result.upgrade_token = "h3";
+    // Only support upgrade to HTTP/3
+    if (context.target_protocol == Protocol::HTTP3) {
+        result.success = true;
+        result.upgrade_token = "h3";
+        
+        // Generate upgrade data based on detected protocol
+        switch (context.detected_protocol) {
+            case Protocol::HTTP1_1:
                 result.upgrade_data = GenerateHTTP1UpgradeData();
-            }
-            break;
-            
-        case Protocol::HTTP2:
-            if (context.target_protocol == Protocol::HTTP3) {
-                result.success = true;
-                result.upgrade_token = "h3";
+                break;
+            case Protocol::HTTP2:
                 result.upgrade_data = GenerateHTTP2UpgradeData();
-            }
-            break;
-            
-        default:
-            result.success = false;
-            result.error_message = "Unsupported upgrade path";
-            break;
+                break;
+            default:
+                result.success = false;
+                result.error_message = "Unsupported upgrade path to HTTP/3";
+                break;
+        }
+    } else {
+        result.success = false;
+        result.error_message = "Only HTTP/3 upgrades are supported";
     }
     
     return result;

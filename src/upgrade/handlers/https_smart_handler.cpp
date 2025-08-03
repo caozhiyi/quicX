@@ -2,6 +2,7 @@
 #include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/core/protocol_detector.h"
 #include "upgrade/handlers/https_smart_handler.h"
+#include <cstring>
 
 // BoringSSL includes
 #include "third/boringssl/include/openssl/ssl.h"
@@ -57,6 +58,12 @@ bool HttpsSmartHandler::InitializeSSL() {
     
     // Set SSL options
     SSL_CTX_set_options(ssl_ctx_, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
+    
+    // Set up ALPN
+    if (!SetupALPN()) {
+        common::LOG_ERROR("Failed to set up ALPN");
+        return false;
+    }
     
     // Load certificate and private key
     if (!settings_.cert_file.empty() && !settings_.key_file.empty()) {
@@ -234,6 +241,17 @@ void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
         ssl_ctx.handshake_completed = true;
         common::LOG_INFO("SSL handshake completed for socket: %d", socket->GetFd());
         
+        // Get ALPN negotiated protocol
+        const unsigned char* alpn_protocol;
+        unsigned int alpn_len;
+        SSL_get0_alpn_selected(ssl_ctx.ssl, &alpn_protocol, &alpn_len);
+        if (alpn_protocol && alpn_len > 0) {
+            ssl_ctx.negotiated_protocol = std::string(reinterpret_cast<const char*>(alpn_protocol), alpn_len);
+            common::LOG_INFO("ALPN negotiated protocol: %s", ssl_ctx.negotiated_protocol.c_str());
+        } else {
+            common::LOG_INFO("No ALPN protocol negotiated");
+        }
+        
         // Get client certificate info if available
         X509* client_cert = SSL_get_peer_certificate(ssl_ctx.ssl);
         if (client_cert) {
@@ -267,6 +285,80 @@ void HttpsSmartHandler::CleanupSSL(SSLContext* ssl_ctx) {
         SSL_free(ssl_ctx->ssl);
         ssl_ctx->ssl = nullptr;
     }
+}
+
+bool HttpsSmartHandler::SetupALPN() {
+    // Define supported protocols in order of preference
+    // h3 = HTTP/3, h2 = HTTP/2, http/1.1 = HTTP/1.1
+    const unsigned char alpn_protocols[] = {
+        0x02, 'h3',           // h3 (HTTP/3)
+        0x02, 'h2',           // h2 (HTTP/2) 
+        0x08, 'h', 't', 't', 'p', '/', '1', '.', '1'  // http/1.1
+    };
+    
+    // Set ALPN protocols
+    if (SSL_CTX_set_alpn_protos(ssl_ctx_, alpn_protocols, sizeof(alpn_protocols)) != 0) {
+        common::LOG_ERROR("Failed to set ALPN protocols");
+        return false;
+    }
+    
+    // Set ALPN select callback
+    SSL_CTX_set_alpn_select_cb(ssl_ctx_, ALPNSelectCallback, this);
+    
+    common::LOG_INFO("ALPN setup completed");
+    return true;
+}
+
+int HttpsSmartHandler::ALPNSelectCallback(SSL* ssl, const unsigned char** out, 
+                                         unsigned char* outlen, const unsigned char* in, 
+                                         unsigned int inlen, void* arg) {
+    HttpsSmartHandler* handler = static_cast<HttpsSmartHandler*>(arg);
+    
+    // Log client's ALPN protocols
+    std::string client_protocols;
+    for (unsigned int i = 0; i < inlen;) {
+        if (i > 0) client_protocols += ", ";
+        unsigned char len = in[i++];
+        if (i + len <= inlen) {
+            client_protocols += std::string(reinterpret_cast<const char*>(&in[i]), len);
+            i += len;
+        }
+    }
+    common::LOG_INFO("Client ALPN protocols: %s", client_protocols.c_str());
+    
+    // Prefer HTTP/3 (h3), then HTTP/2 (h2), then HTTP/1.1
+    const char* preferred_protocols[] = {"h3", "h2", "http/1.1"};
+    
+    for (const char* preferred : preferred_protocols) {
+        size_t preferred_len = strlen(preferred);
+        
+        for (unsigned int i = 0; i < inlen;) {
+            unsigned char len = in[i++];
+            if (i + len <= inlen) {
+                std::string protocol(reinterpret_cast<const char*>(&in[i]), len);
+                if (protocol == preferred) {
+                    // Found a match, select this protocol
+                    *out = &in[i];
+                    *outlen = len;
+                    common::LOG_INFO("Selected ALPN protocol: %s", preferred);
+                    return SSL_TLSEXT_ERR_OK;
+                }
+                i += len;
+            }
+        }
+    }
+    
+    // No match found, this will cause the handshake to fail
+    common::LOG_WARN("No compatible ALPN protocol found");
+    return SSL_TLSEXT_ERR_NOACK;
+}
+
+std::string HttpsSmartHandler::GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const {
+    auto ssl_it = ssl_context_map_.find(socket);
+    if (ssl_it != ssl_context_map_.end()) {
+        return ssl_it->second.negotiated_protocol;
+    }
+    return "";
 }
 
 } // namespace upgrade

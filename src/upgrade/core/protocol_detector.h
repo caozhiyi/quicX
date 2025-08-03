@@ -14,21 +14,12 @@ public:
     // Detect protocol from initial data
     static Protocol Detect(const std::vector<uint8_t>& data);
     
-    // Parse ALPN protocols from TLS handshake data
-    static std::vector<std::string> ParseALPNProtocols(const std::vector<uint8_t>& data);
-    
 private:
     // Check if data represents HTTP/1.1 protocol
     static bool IsHTTP1_1(const std::vector<uint8_t>& data);
     
     // Check if data represents HTTP/2 protocol
     static bool IsHTTP2(const std::vector<uint8_t>& data);
-    
-    // Check if data contains ALPN extension
-    static bool HasALPN(const std::vector<uint8_t>& data);
-    
-    // Extract ALPN data from TLS handshake
-    static std::string ExtractALPNData(const std::vector<uint8_t>& data);
 };
 
 } // namespace upgrade

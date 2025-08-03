@@ -8,8 +8,8 @@ namespace upgrade {
 
 UpgradeManager::UpgradeManager(const UpgradeSettings& settings) 
     : settings_(settings) {
-    // Initialize QUIC and HTTP/3 servers
-    // TODO: Actual implementation needs to create these server instances
+    // Upgrade manager only handles protocol negotiation
+    // HTTP/3 implementation should be handled externally
 }
 
 void UpgradeManager::HandleConnection(std::shared_ptr<ITcpSocket> socket) {
@@ -28,77 +28,36 @@ void UpgradeManager::HandleConnection(std::shared_ptr<ITcpSocket> socket) {
 
 void UpgradeManager::ProcessUpgrade(ConnectionContext& context) {
     // Perform version negotiation
-    auto result = VersionNegotiator::Negotiate(context, settings_);
+    last_result_ = VersionNegotiator::Negotiate(context, settings_);
     
-    if (!result.success) {
-        HandleUpgradeFailure(context, result.error_message);
+    if (!last_result_.success) {
+        HandleUpgradeFailure(context, last_result_.error_message);
         return;
     }
     
-    // Execute corresponding upgrade logic based on negotiation result
-    switch (result.target_protocol) {
-        case Protocol::HTTP3:
-            HandleHTTP3Upgrade(context);
-            break;
-        case Protocol::HTTP2:
-            HandleHTTP2Upgrade(context);
-            break;
-        case Protocol::HTTP1_1:
-            // Keep HTTP/1.1, no upgrade needed
-            break;
-        default:
-            HandleUpgradeFailure(context, "Unsupported protocol");
-            break;
+    // Send appropriate response based on negotiation result
+    SendUpgradeResponse(context, last_result_);
+}
+
+void UpgradeManager::SendUpgradeResponse(ConnectionContext& context, const NegotiationResult& result) {
+    if (result.target_protocol == Protocol::HTTP3) {
+        // Send upgrade response indicating HTTP/3 is preferred
+        if (result.upgrade_data.empty()) {
+            // No upgrade data means client doesn't support HTTP/3
+            SendFailureResponse(context, "HTTP/3 not supported by client");
+            return;
+        }
+        
+        // Send the upgrade response
+        context.socket->Send(std::string(result.upgrade_data.begin(), result.upgrade_data.end()));
+        common::LOG_INFO("Sent upgrade response for HTTP/3");
+    } else {
+        // For other protocols, just log the result
+        common::LOG_INFO("Protocol negotiation completed: %d", static_cast<int>(result.target_protocol));
     }
 }
 
-void UpgradeManager::HandleHTTP1Upgrade(ConnectionContext& context) {
-    // Send HTTP/1.1 upgrade response
-    std::string response = 
-        "HTTP/1.1 101 Switching Protocols\r\n"
-        "Upgrade: h3\r\n"
-        "Connection: Upgrade\r\n"
-        "\r\n";
-    
-    context.socket->Send(response);
-    
-    // Start HTTP/3 connection
-    StartHTTP3Connection(context);
-}
-
-void UpgradeManager::HandleHTTP2Upgrade(ConnectionContext& context) {
-    // Send HTTP/2 GOAWAY frame
-    SendHTTP2GoAway(context);
-    
-    // Start HTTP/3 connection
-    StartHTTP3Connection(context);
-}
-
-void UpgradeManager::HandleHTTP3Upgrade(ConnectionContext& context) {
-    // Start HTTP/3 connection directly
-    StartHTTP3Connection(context);
-}
-
-void UpgradeManager::StartHTTP3Connection(ConnectionContext& context) {
-    // TODO: Implement HTTP/3 connection startup logic
-    // 1. Create QUIC connection
-    // 2. Establish HTTP/3 stream
-    // 3. Handle HTTP/3 requests
-    
-    common::LOG_INFO("Starting HTTP/3 connection for socket");
-}
-
-void UpgradeManager::SendHTTP2GoAway(ConnectionContext& context) {
-    // TODO: Implement HTTP/2 GOAWAY frame sending
-    // This needs to generate correct HTTP/2 frame format
-    
-    common::LOG_INFO("Sending HTTP/2 GOAWAY frame");
-}
-
-void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std::string& error) {
-    common::LOG_ERROR("Upgrade failed: %s", error.c_str());
-    
-    // Send error response
+void UpgradeManager::SendFailureResponse(ConnectionContext& context, const std::string& error) {
     std::string error_response = 
         "HTTP/1.1 400 Bad Request\r\n"
         "Content-Type: text/plain\r\n"
@@ -106,6 +65,11 @@ void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std:
         "\r\n" + error;
     
     context.socket->Send(error_response);
+    common::LOG_ERROR("Upgrade failed: %s", error.c_str());
+}
+
+void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std::string& error) {
+    SendFailureResponse(context, error);
     context.socket->Close();
     
     // Clean up connection context

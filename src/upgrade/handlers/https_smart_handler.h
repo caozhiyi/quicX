@@ -16,6 +16,7 @@ struct SSLContext {
     ssl_st* ssl = nullptr;
     bool handshake_completed = false;
     std::vector<uint8_t> pending_data;
+    std::string negotiated_protocol;  // ALPN negotiated protocol
     
     SSLContext(std::shared_ptr<ITcpSocket> sock) : socket(sock) {}
     ~SSLContext();
@@ -34,15 +35,26 @@ protected:
     int WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) override;
     void CleanupConnection(std::shared_ptr<ITcpSocket> socket) override;
     std::string GetHandlerType() const override { return "HTTPS"; }
+    
+    // Get negotiated ALPN protocol
+    std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const override;
 
 private:
     bool InitializeSSL();
     void HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket);
     void CleanupSSL(SSLContext* ssl_ctx);
+    
+    // ALPN callback function
+    static int ALPNSelectCallback(SSL* ssl, const unsigned char** out, 
+                                 unsigned char* outlen, const unsigned char* in, 
+                                 unsigned int inlen, void* arg);
+    
+    // Set up ALPN protocols
+    bool SetupALPN();
 
 private:
     ssl_ctx_st* ssl_ctx_ = nullptr;
-    std::unordered_map<std::shared_ptr<ITcpSocket>, SSLContext> ssl_context_map_;
+    mutable std::unordered_map<std::shared_ptr<ITcpSocket>, SSLContext> ssl_context_map_;
 };
 
 } // namespace upgrade

@@ -36,6 +36,9 @@ protected:
     void OnProtocolDetected(ConnectionContext& context);
     void OnUpgradeComplete(ConnectionContext& context);
     void OnUpgradeFailed(ConnectionContext& context, const std::string& error);
+    
+    // Get negotiated protocol (for HTTPS connections)
+    virtual std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const { return ""; }
 
     // Common member variables
     UpgradeSettings settings_;

@@ -28,9 +28,6 @@ private:
     // Detect protocol from connection context
     static bool DetectProtocol(ConnectionContext& context);
     
-    // Parse ALPN protocols from connection context
-    static bool ParseALPN(ConnectionContext& context);
-    
     // Select the best protocol based on client capabilities and server settings
     static Protocol SelectBestProtocol(const ConnectionContext& context, const UpgradeSettings& settings);
     
