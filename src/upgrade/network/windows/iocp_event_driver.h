@@ -20,13 +20,13 @@ public:
     virtual bool Init() override;
 
     // Add a socket to IOCP monitoring
-    virtual bool AddFd(int fd, EventType events, void* user_data = nullptr) override;
+    virtual bool AddFd(int fd, EventType events) override;
 
     // Remove a socket from IOCP monitoring
     virtual bool RemoveFd(int fd) override;
 
     // Modify events for a socket
-    virtual bool ModifyFd(int fd, EventType events, void* user_data = nullptr) override;
+    virtual bool ModifyFd(int fd, EventType events) override;
 
     // Wait for events with timeout
     virtual int Wait(std::vector<Event>& events, int timeout_ms = -1) override;
@@ -39,15 +39,14 @@ public:
 
 private:
     // Post read operation to IOCP
-    bool PostReadOperation(SOCKET socket, void* user_data);
+    bool PostReadOperation(SOCKET socket);
     
     // Post write operation to IOCP
-    bool PostWriteOperation(SOCKET socket, void* user_data);
+    bool PostWriteOperation(SOCKET socket);
 
     HANDLE iocp_handle_ = INVALID_HANDLE_VALUE;
     HANDLE wakeup_event_ = INVALID_HANDLE_VALUE;  // Event for wakeup
     int max_events_ = 1024;
-    std::unordered_map<SOCKET, void*> socket_user_data_;
 };
 
 } // namespace upgrade

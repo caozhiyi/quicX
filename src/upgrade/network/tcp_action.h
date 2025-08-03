@@ -6,18 +6,21 @@
 #include <thread>
 #include <atomic>
 #include <unordered_map>
+
+#include "common/timer/timer.h"
 #include "upgrade/network/if_tcp_action.h"
 #include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/network/if_event_driver.h"
 #include "upgrade/network/if_socket_handler.h"
-#include "common/timer/timer.h"
 
 namespace quicx {
 namespace upgrade {
 
 
 // TCP action implementation
-class TcpAction : public ITcpAction {
+class TcpAction:
+ public ITcpAction,
+ public std::enable_shared_from_this<TcpAction> {
 public:
     TcpAction() = default;
     virtual ~TcpAction() = default;
@@ -58,12 +61,10 @@ private:
     std::atomic<bool> running_{false};
     std::unordered_map<int, std::shared_ptr<ISocketHandler>> listeners_;  // fd -> handler
     std::unordered_map<int, std::shared_ptr<ITcpSocket>> connections_;   // fd -> socket
-    std::unordered_map<int, std::shared_ptr<ISocketHandler>> connection_handlers_;  // fd -> handler
     
     // Timer support
     std::shared_ptr<quicx::common::ITimer> timer_;
     std::unordered_map<uint64_t, quicx::common::TimerTask> timer_tasks_;  // timer_id -> task
-    uint64_t next_timer_id_ = 1;
 };
 
 } // namespace upgrade

@@ -101,6 +101,14 @@ int TcpSocket::Recv(std::vector<uint8_t>& data, size_t max_size) {
     return result;
 }
 
+void TcpSocket::SetHandler(std::shared_ptr<ISocketHandler> handler) {
+    handler_ = handler;
+}
+
+std::shared_ptr<ISocketHandler> TcpSocket::GetHandler() const {
+    return handler_.lock();
+}
+
 int TcpSocket::Recv(std::string& data, size_t max_size) {
     if (!IsValid()) {
         return -1;

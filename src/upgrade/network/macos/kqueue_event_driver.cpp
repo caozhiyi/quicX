@@ -1,13 +1,14 @@
 #ifdef __APPLE__
 
-#include "upgrade/network/macos/kqueue_event_driver.h"
-#include "common/log/log.h"
-#include <sys/event.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <cstring>
+#include <unistd.h>
+#include <sys/event.h>
+#include <sys/types.h>
+
+#include "common/log/log.h"
+#include "upgrade/network/macos/kqueue_event_driver.h"
 
 namespace quicx {
 namespace upgrade {
@@ -71,7 +72,7 @@ bool KqueueEventDriver::Init() {
     return true;
 }
 
-bool KqueueEventDriver::AddFd(int fd, EventType events, void* user_data) {
+bool KqueueEventDriver::AddFd(int fd, EventType events) {
     if (kqueue_fd_ < 0) {
         return false;
     }
@@ -80,7 +81,7 @@ bool KqueueEventDriver::AddFd(int fd, EventType events, void* user_data) {
     uint32_t kqueue_events = ConvertToKqueueEvents(events);
     
     if (kqueue_events & EVFILT_READ) {
-        EV_SET(&kev, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, user_data);
+        EV_SET(&kev, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
             common::LOG_ERROR("Failed to add read event for fd %d to kqueue: %s", fd, strerror(errno));
             return false;
@@ -88,14 +89,13 @@ bool KqueueEventDriver::AddFd(int fd, EventType events, void* user_data) {
     }
     
     if (kqueue_events & EVFILT_WRITE) {
-        EV_SET(&kev, fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, user_data);
+        EV_SET(&kev, fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
             common::LOG_ERROR("Failed to add write event for fd %d to kqueue: %s", fd, strerror(errno));
             return false;
         }
     }
 
-    fd_user_data_[fd] = user_data;
     common::LOG_DEBUG("Added fd %d to kqueue monitoring", fd);
     return true;
 }
@@ -115,15 +115,14 @@ bool KqueueEventDriver::RemoveFd(int fd) {
     EV_SET(&kev, fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
     kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr);
 
-    fd_user_data_.erase(fd);
     common::LOG_DEBUG("Removed fd %d from kqueue monitoring", fd);
     return true;
 }
 
-bool KqueueEventDriver::ModifyFd(int fd, EventType events, void* user_data) {
+bool KqueueEventDriver::ModifyFd(int fd, EventType events) {
     // Remove and re-add the fd
     RemoveFd(fd);
-    return AddFd(fd, events, user_data);
+    return AddFd(fd, events);
 }
 
 int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
@@ -158,7 +157,7 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         
         for (int i = 0; i < nfds; ++i) {
             // Check if this is a wakeup event
-            if (kqueue_events[i].udata == nullptr) {
+            if (kqueue_events[i].ident == wakeup_fd_) {
                 // This is a wakeup event, consume the data
                 char buffer[64];
                 while (read(wakeup_fd_, buffer, sizeof(buffer)) > 0) {
@@ -169,8 +168,7 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             
             events.push_back(Event{
                 static_cast<int>(kqueue_events[i].ident),
-                ConvertFromKqueueEvents(kqueue_events[i].filter),
-                kqueue_events[i].udata
+                ConvertFromKqueueEvents(kqueue_events[i].filter)
             });
         }
     }

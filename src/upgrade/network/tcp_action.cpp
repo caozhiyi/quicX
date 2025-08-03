@@ -53,7 +53,7 @@ bool TcpAction::AddListener(const std::string& addr, uint16_t port, std::shared_
     }
     
     // Add listening socket to event driver
-    if (!event_driver_->AddFd(listen_fd, EventType::READ, this)) {
+    if (!event_driver_->AddFd(listen_fd, EventType::READ)) {
         common::LOG_ERROR("Failed to add listening socket to event driver");
         close(listen_fd);
         return false;
@@ -68,6 +68,7 @@ bool TcpAction::AddListener(const std::string& addr, uint16_t port, std::shared_
 
 void TcpAction::Stop() {
     running_ = false;
+    event_driver_->Wakeup();
     
     // Close all listening sockets
     for (auto& listener : listeners_) {
@@ -77,7 +78,6 @@ void TcpAction::Stop() {
     
     // Close all connections
     connections_.clear();
-    connection_handlers_.clear();
     
     common::LOG_INFO("TCP action stopped");
 }
@@ -198,25 +198,29 @@ void TcpAction::HandleEvents(const std::vector<Event>& events) {
         } else {
             // Existing connection
             auto it = connections_.find(event.fd);
-            auto handler_it = connection_handlers_.find(event.fd);
-            if (it != connections_.end() && handler_it != connection_handlers_.end()) {
+            if (it != connections_.end()) {
                 auto socket = it->second;
-                auto handler = handler_it->second;
+                auto handler = socket->GetHandler();
                 
-                switch (event.type) {
-                    case EventType::READ:
-                        handler->HandleRead(socket);
-                        break;
-                    case EventType::WRITE:
-                        handler->HandleWrite(socket);
-                        break;
-                    case EventType::ERROR:
-                    case EventType::CLOSE:
-                        handler->HandleClose(socket);
-                        event_driver_->RemoveFd(event.fd);
-                        connections_.erase(it);
-                        connection_handlers_.erase(handler_it);
-                        break;
+                if (handler) {
+                    switch (event.type) {
+                        case EventType::READ:
+                            handler->HandleRead(socket);
+                            break;
+                        case EventType::WRITE:
+                            handler->HandleWrite(socket);
+                            break;
+                        case EventType::ERROR:
+                        case EventType::CLOSE:
+                            handler->HandleClose(socket);
+                            event_driver_->RemoveFd(event.fd);
+                            connections_.erase(it);
+                            break;
+                    }
+                } else {
+                    common::LOG_ERROR("No handler found for socket %d", event.fd);
+                    event_driver_->RemoveFd(event.fd);
+                    connections_.erase(it);
                 }
             }
         }
@@ -242,19 +246,21 @@ void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandle
     // Create TcpSocket
     auto tcp_socket = std::make_shared<quicx::upgrade::TcpSocket>(client_fd);
     
+    // Set handler for the socket
+    tcp_socket->SetHandler(handler);
+    
     // Add to event driver
-    if (!event_driver_->AddFd(client_fd, EventType::READ, this)) {
+    if (!event_driver_->AddFd(client_fd, EventType::READ)) {
         common::LOG_ERROR("Failed to add client socket to event driver");
         close(client_fd);
         return;
     }
     
-    // Store connection with its handler
+    // Store connection
     connections_[client_fd] = tcp_socket;
-    connection_handlers_[client_fd] = handler;
     
     // Notify handler
-    handler->HandleConnect(tcp_socket, std::shared_ptr<ITcpAction>(this, [](ITcpAction*){}));
+    handler->HandleConnect(tcp_socket, shared_from_this());
     
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);

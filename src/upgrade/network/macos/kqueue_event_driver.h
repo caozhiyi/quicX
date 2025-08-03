@@ -3,14 +3,15 @@
 #ifndef UPGRADE_NETWORK_MACOS_KQUEUE_EVENT_DRIVER_H
 #define UPGRADE_NETWORK_MACOS_KQUEUE_EVENT_DRIVER_H
 
-#include "upgrade/network/if_event_driver.h"
 #include <unordered_map>
+#include "upgrade/network/if_event_driver.h"
 
 namespace quicx {
 namespace upgrade {
 
 // Kqueue event driver implementation for macOS
-class KqueueEventDriver : public IEventDriver {
+class KqueueEventDriver:
+    public IEventDriver {
 public:
     KqueueEventDriver();
     virtual ~KqueueEventDriver();
@@ -19,13 +20,13 @@ public:
     virtual bool Init() override;
 
     // Add a file descriptor to kqueue monitoring
-    virtual bool AddFd(int fd, EventType events, void* user_data = nullptr) override;
+    virtual bool AddFd(int fd, EventType events) override;
 
     // Remove a file descriptor from kqueue monitoring
     virtual bool RemoveFd(int fd) override;
 
     // Modify events for a file descriptor
-    virtual bool ModifyFd(int fd, EventType events, void* user_data = nullptr) override;
+    virtual bool ModifyFd(int fd, EventType events) override;
 
     // Wait for events with timeout
     virtual int Wait(std::vector<Event>& events, int timeout_ms = -1) override;
@@ -47,7 +48,6 @@ private:
     int wakeup_fd_ = -1;  // Pipe for wakeup
     int wakeup_write_fd_ = -1;  // Pipe write end for wakeup
     int max_events_ = 1024;
-    std::unordered_map<int, void*> fd_user_data_;
 };
 
 } // namespace upgrade

@@ -52,7 +52,7 @@ protected:
     std::shared_ptr<UpgradeManager> manager_;
     std::unordered_map<std::shared_ptr<ITcpSocket>, ConnectionContext> connections_;
     std::weak_ptr<ITcpAction> tcp_action_;
-    std::shared_ptr<IEventDriver> event_driver_;
+    std::weak_ptr<IEventDriver> event_driver_;
 };
 
 } // namespace upgrade

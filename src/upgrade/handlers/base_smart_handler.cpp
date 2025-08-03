@@ -200,14 +200,16 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
             context.response_sent = 0;
             
             // Remove WRITE event since we're done
-            if (event_driver_) {
-                event_driver_->ModifyFd(context.socket->GetFd(), EventType::READ);
+            auto event_driver = event_driver_.lock();
+            if (event_driver) {
+                event_driver->ModifyFd(context.socket->GetFd(), EventType::READ);
             }
         } else {
             // Partial send, register WRITE event to continue
             common::LOG_DEBUG("Partial response sent (%d/%zu bytes), registering WRITE event", bytes_sent, context.pending_response.size());
-            if (event_driver_) {
-                event_driver_->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::READ) | static_cast<int>(EventType::WRITE)));
+            auto event_driver = event_driver_.lock();
+            if (event_driver) {
+                event_driver->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::READ) | static_cast<int>(EventType::WRITE)));
             }
         }
     } else if (bytes_sent < 0) {
@@ -217,14 +219,18 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
         context.response_sent = 0;
         
         // Remove WRITE event on error
-        if (event_driver_) {
-            event_driver_->ModifyFd(context.socket->GetFd(), EventType::READ);
+        auto event_driver = event_driver_.lock();
+        if (event_driver) {
+            auto event_driver = event_driver_.lock();
+            event_driver->ModifyFd(context.socket->GetFd(), EventType::READ);
         }
     } else {
         // bytes_sent == 0 means would block, register WRITE event to retry
         common::LOG_DEBUG("Send would block, registering WRITE event");
-        if (event_driver_) {
-            event_driver_->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::READ) | static_cast<int>(EventType::WRITE)));
+        auto event_driver = event_driver_.lock();
+        if (event_driver) {
+            auto event_driver = event_driver_.lock();
+            event_driver->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::READ) | static_cast<int>(EventType::WRITE)));
         }
     }
 }

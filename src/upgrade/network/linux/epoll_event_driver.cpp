@@ -72,21 +72,20 @@ bool EpollEventDriver::Init() {
     return true;
 }
 
-bool EpollEventDriver::AddFd(int fd, EventType events, void* user_data) {
+bool EpollEventDriver::AddFd(int fd, EventType events) {
     if (epoll_fd_ < 0) {
         return false;
     }
 
     struct epoll_event ev;
     ev.events = ConvertToEpollEvents(events);
-    ev.data.ptr = user_data;
+    ev.data.ptr = nullptr;
 
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0) {
         common::LOG_ERROR("Failed to add fd %d to epoll: %s", fd, strerror(errno));
         return false;
     }
 
-    fd_user_data_[fd] = user_data;
     common::LOG_DEBUG("Added fd %d to epoll monitoring", fd);
     return true;
 }
@@ -101,26 +100,24 @@ bool EpollEventDriver::RemoveFd(int fd) {
         return false;
     }
 
-    fd_user_data_.erase(fd);
     common::LOG_DEBUG("Removed fd %d from epoll monitoring", fd);
     return true;
 }
 
-bool EpollEventDriver::ModifyFd(int fd, EventType events, void* user_data) {
+bool EpollEventDriver::ModifyFd(int fd, EventType events) {
     if (epoll_fd_ < 0) {
         return false;
     }
 
     struct epoll_event ev;
     ev.events = ConvertToEpollEvents(events);
-    ev.data.ptr = user_data;
+    ev.data.fd = fd;
 
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) < 0) {
         common::LOG_ERROR("Failed to modify fd %d in epoll: %s", fd, strerror(errno));
         return false;
     }
 
-    fd_user_data_[fd] = user_data;
     common::LOG_DEBUG("Modified fd %d in epoll monitoring", fd);
     return true;
 }
@@ -150,7 +147,7 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         
         for (int i = 0; i < nfds; ++i) {
             // Check if this is a wakeup event
-            if (epoll_events[i].data.ptr == nullptr) {
+            if (epoll_events[i].data.fd == wakeup_fd_) {
                 // This is a wakeup event, consume the data
                 char buffer[64];
                 while (read(wakeup_fd_, buffer, sizeof(buffer)) > 0) {
@@ -160,9 +157,8 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             }
             
             events.push_back(Event{
-                static_cast<int>(reinterpret_cast<intptr_t>(epoll_events[i].data.ptr)),
-                ConvertFromEpollEvents(epoll_events[i].events),
-                epoll_events[i].data.ptr
+                epoll_events[i].data.fd,
+                ConvertFromEpollEvents(epoll_events[i].events)
             });
         }
     }

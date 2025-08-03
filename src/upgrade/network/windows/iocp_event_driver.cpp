@@ -1,10 +1,11 @@
 #ifdef _WIN32
 
-#include "upgrade/network/windows/iocp_event_driver.h"
-#include "common/log/log.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
+
+#include "common/log/log.h"
+#include "upgrade/network/windows/iocp_event_driver.h"
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "mswsock.lib")
@@ -47,7 +48,7 @@ bool IocpEventDriver::Init() {
     return true;
 }
 
-bool IocpEventDriver::AddFd(int fd, EventType events, void* user_data) {
+bool IocpEventDriver::AddFd(int fd, EventType events) {
     if (iocp_handle_ == INVALID_HANDLE_VALUE) {
         return false;
     }
@@ -56,19 +57,17 @@ bool IocpEventDriver::AddFd(int fd, EventType events, void* user_data) {
     
     // Associate socket with IOCP
     if (CreateIoCompletionPort(reinterpret_cast<HANDLE>(socket), iocp_handle_, 
-                              reinterpret_cast<ULONG_PTR>(user_data), 0) == nullptr) {
+                              reinterpret_cast<ULONG_PTR>(nullptr), 0) == nullptr) {
         common::LOG_ERROR("Failed to associate socket with IOCP");
         return false;
     }
 
-    socket_user_data_[socket] = user_data;
-
     // Post initial operations based on events
     if (static_cast<int>(events) & static_cast<int>(EventType::READ)) {
-        PostReadOperation(socket, user_data);
+        PostReadOperation(socket);
     }
     if (static_cast<int>(events) & static_cast<int>(EventType::WRITE)) {
-        PostWriteOperation(socket, user_data);
+        PostWriteOperation(socket);
     }
 
     common::LOG_DEBUG("Added socket %d to IOCP monitoring", fd);
@@ -77,17 +76,16 @@ bool IocpEventDriver::AddFd(int fd, EventType events, void* user_data) {
 
 bool IocpEventDriver::RemoveFd(int fd) {
     SOCKET socket = static_cast<SOCKET>(fd);
-    socket_user_data_.erase(socket);
     closesocket(socket);
     
     common::LOG_DEBUG("Removed socket %d from IOCP monitoring", fd);
     return true;
 }
 
-bool IocpEventDriver::ModifyFd(int fd, EventType events, void* user_data) {
+bool IocpEventDriver::ModifyFd(int fd, EventType events) {
     // Remove and re-add the socket
     RemoveFd(fd);
-    return AddFd(fd, events, user_data);
+    return AddFd(fd, events);
 }
 
 int IocpEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
@@ -123,14 +121,12 @@ int IocpEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             events.push_back(Event{
                 static_cast<int>(reinterpret_cast<SOCKET>(completion_key)),
                 EventType::ERROR,
-                reinterpret_cast<void*>(completion_key)
             });
         } else {
             // Handle successful completion
             events.push_back(Event{
                 static_cast<int>(reinterpret_cast<SOCKET>(completion_key)),
                 EventType::READ,  // Simplified - actual implementation would determine type
-                reinterpret_cast<void*>(completion_key)
             });
         }
     }
@@ -149,7 +145,6 @@ int IocpEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             events.push_back(Event{
                 static_cast<int>(reinterpret_cast<SOCKET>(completion_key)),
                 EventType::READ,
-                reinterpret_cast<void*>(completion_key)
             });
         }
     }
@@ -157,12 +152,12 @@ int IocpEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     return events.size();
 }
 
-bool IocpEventDriver::PostReadOperation(SOCKET socket, void* user_data) {
+bool IocpEventDriver::PostReadOperation(SOCKET socket) {
     // Simplified implementation - actual implementation would need proper overlapped structures
     return true;
 }
 
-bool IocpEventDriver::PostWriteOperation(SOCKET socket, void* user_data) {
+bool IocpEventDriver::PostWriteOperation(SOCKET socket) {
     // Simplified implementation - actual implementation would need proper overlapped structures
     return true;
 }

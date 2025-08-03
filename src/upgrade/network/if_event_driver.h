@@ -21,7 +21,6 @@ enum class EventType {
 struct Event {
     int fd = -1;
     EventType type = EventType::READ;
-    void* user_data = nullptr;
 };
 
 // Event driver interface
@@ -33,13 +32,13 @@ public:
     virtual bool Init() = 0;
 
     // Add a file descriptor to monitor
-    virtual bool AddFd(int fd, EventType events, void* user_data = nullptr) = 0;
+    virtual bool AddFd(int fd, EventType events) = 0;
 
     // Remove a file descriptor from monitoring
     virtual bool RemoveFd(int fd) = 0;
 
     // Modify events for a file descriptor
-    virtual bool ModifyFd(int fd, EventType events, void* user_data = nullptr) = 0;
+    virtual bool ModifyFd(int fd, EventType events) = 0;
 
     // Wait for events with timeout (in milliseconds)
     // Returns the number of events that occurred
