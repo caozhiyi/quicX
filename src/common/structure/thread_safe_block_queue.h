@@ -3,6 +3,7 @@
 
 #include <queue>
 #include <mutex>
+#include <chrono>
 #include <condition_variable>
 
 namespace quicx {
@@ -22,19 +23,40 @@ public:
 
     T Pop() {
         std::unique_lock<std::mutex> lock(mutex_);
-        empty_notify_.wait(mutex_, [this]() {return !this->queue_.empty(); });
+        empty_notify_.wait(lock, [this]() {return !this->queue_.empty(); });
 
         auto ret = std::move(queue_.front());
         queue_.pop();
  
-        return std::move(ret);
+        return ret;
+    }
+
+    // Try to pop without blocking
+    bool TryPop(T& element) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (queue_.empty()) {
+            return false;
+        }
+        element = std::move(queue_.front());
+        queue_.pop();
+        return true;
+    }
+
+    // Try to pop with timeout
+    bool TryPop(T& element, std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!empty_notify_.wait_for(lock, timeout, [this]() {return !this->queue_.empty(); })) {
+            return false;
+        }
+        element = std::move(queue_.front());
+        queue_.pop();
+        return true;
     }
 
     void Clear() {
         std::unique_lock<std::mutex> lock(mutex_);
-        while (!queue_.empty()) {
-            queue_.pop();
-        }
+        std::queue<T> empty;
+        queue_.swap(empty);
     }
 
     uint32_t Size() {
