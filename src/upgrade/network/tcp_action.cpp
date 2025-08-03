@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <chrono>
 
 #include "common/log/log.h"
 #include "upgrade/network/tcp_action.h"
@@ -28,11 +29,18 @@ bool TcpAction::Init() {
         return false;
     }
     
+    // Create timer
+    timer_ = quicx::common::MakeTimer();
+    if (!timer_) {
+        common::LOG_ERROR("Failed to create timer");
+        return false;
+    }
+    
     // Start event loop thread
     running_ = true;
     event_thread_ = std::thread(&TcpAction::EventLoop, this);
     
-    common::LOG_INFO("TCP action initialized");
+    common::LOG_INFO("TCP action initialized with timer support");
     return true;
 }
 
@@ -141,8 +149,24 @@ void TcpAction::EventLoop() {
     common::LOG_INFO("Starting TCP event loop");
     
     while (running_) {
+        // Get current time for timer
+        uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()
+        ).count();
+        
+        // Run timer wheel
+        timer_->TimerRun(now);
+        
+        // Calculate timeout for event driver based on next timer
+        int32_t next_timer_ms = timer_->MinTime(now);
+        int timeout_ms = 1000; // Default 1 second timeout
+        
+        if (next_timer_ms >= 0) {
+            timeout_ms = static_cast<int>(next_timer_ms);
+        }
+        
         // Wait for events with timeout
-        int nfds = event_driver_->Wait(events, 1000); // 1 second timeout
+        int nfds = event_driver_->Wait(events, timeout_ms);
         
         if (nfds < 0) {
             // Error occurred
@@ -235,6 +259,60 @@ void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandle
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
     common::LOG_INFO("New connection from %s:%d", client_ip, ntohs(client_addr.sin_port));
+}
+
+uint64_t TcpAction::AddTimer(std::function<void()> callback, uint32_t timeout_ms) {
+    if (!timer_) {
+        common::LOG_ERROR("Timer not initialized");
+        return 0;
+    }
+    
+    // Create timer task
+    quicx::common::TimerTask task(callback);
+    
+    // Get current time
+    uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
+    
+    // Add timer to timer wheel
+    uint64_t timer_id = timer_->AddTimer(task, timeout_ms, now);
+    
+    if (timer_id > 0) {
+        // Store timer task
+        timer_tasks_[timer_id] = task;
+        common::LOG_DEBUG("Timer added with ID: %lu, timeout: %u ms", timer_id, timeout_ms);
+    } else {
+        common::LOG_ERROR("Failed to add timer");
+    }
+    
+    return timer_id;
+}
+
+bool TcpAction::RemoveTimer(uint64_t timer_id) {
+    if (!timer_) {
+        common::LOG_ERROR("Timer not initialized");
+        return false;
+    }
+    
+    // Find timer task
+    auto it = timer_tasks_.find(timer_id);
+    if (it == timer_tasks_.end()) {
+        common::LOG_ERROR("Timer not found: %lu", timer_id);
+        return false;
+    }
+    
+    // Remove from timer wheel
+    bool success = timer_->RmTimer(it->second);
+    
+    if (success) {
+        timer_tasks_.erase(it);
+        common::LOG_DEBUG("Timer removed: %lu", timer_id);
+    } else {
+        common::LOG_ERROR("Failed to remove timer: %lu", timer_id);
+    }
+    
+    return success;
 }
 
 } // namespace upgrade

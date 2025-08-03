@@ -11,7 +11,7 @@ namespace upgrade {
 
 // Event types
 enum class EventType {
-    READ = 0x01,
+    READ  = 0x01,
     WRITE = 0x02,
     ERROR = 0x04,
     CLOSE = 0x08
@@ -47,6 +47,9 @@ public:
 
     // Get the maximum number of events that can be processed in one iteration
     virtual int GetMaxEvents() const = 0;
+
+    // Wake up from Wait() call (thread-safe)
+    virtual void Wakeup() = 0;
 
     // Create platform-specific event driver
     static std::unique_ptr<IEventDriver> Create();

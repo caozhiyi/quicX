@@ -17,6 +17,10 @@ IocpEventDriver::IocpEventDriver() {
 }
 
 IocpEventDriver::~IocpEventDriver() {
+    if (wakeup_event_ != INVALID_HANDLE_VALUE) {
+        CloseHandle(wakeup_event_);
+        wakeup_event_ = INVALID_HANDLE_VALUE;
+    }
     if (iocp_handle_ != INVALID_HANDLE_VALUE) {
         CloseHandle(iocp_handle_);
         iocp_handle_ = INVALID_HANDLE_VALUE;
@@ -30,7 +34,16 @@ bool IocpEventDriver::Init() {
         return false;
     }
     
-    common::LOG_INFO("IOCP event driver initialized");
+    // Create wakeup event
+    wakeup_event_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    if (wakeup_event_ == INVALID_HANDLE_VALUE) {
+        common::LOG_ERROR("Failed to create wakeup event");
+        CloseHandle(iocp_handle_);
+        iocp_handle_ = INVALID_HANDLE_VALUE;
+        return false;
+    }
+    
+    common::LOG_INFO("IOCP event driver initialized with wakeup support");
     return true;
 }
 
@@ -82,44 +95,66 @@ int IocpEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         return -1;
     }
 
+    events.clear();
+    events.reserve(max_events_);
+
+    // Wait for multiple completion events
     DWORD bytes_transferred;
     ULONG_PTR completion_key;
     LPOVERLAPPED overlapped;
     DWORD timeout = timeout_ms >= 0 ? static_cast<DWORD>(timeout_ms) : INFINITE;
 
-    BOOL result = GetQueuedCompletionStatus(
-        iocp_handle_,
-        &bytes_transferred,
-        &completion_key,
-        &overlapped,
-        timeout
-    );
+    // Try to get multiple completion events
+    for (int i = 0; i < max_events_; ++i) {
+        BOOL result = GetQueuedCompletionStatus(
+            iocp_handle_,
+            &bytes_transferred,
+            &completion_key,
+            &overlapped,
+            0  // Non-blocking for multiple events
+        );
 
-    if (!result) {
-        if (overlapped == nullptr) {
-            // Timeout or error
-            return 0;
+        if (!result) {
+            if (overlapped == nullptr) {
+                // No more events available
+                break;
+            }
+            // Handle error
+            events.push_back(Event{
+                static_cast<int>(reinterpret_cast<SOCKET>(completion_key)),
+                EventType::ERROR,
+                reinterpret_cast<void*>(completion_key)
+            });
+        } else {
+            // Handle successful completion
+            events.push_back(Event{
+                static_cast<int>(reinterpret_cast<SOCKET>(completion_key)),
+                EventType::READ,  // Simplified - actual implementation would determine type
+                reinterpret_cast<void*>(completion_key)
+            });
         }
-        // Handle error
-        events.clear();
-        events.resize(1);
-        events[0].fd = static_cast<int>(reinterpret_cast<SOCKET>(completion_key));
-        events[0].type = EventType::ERROR;
-        events[0].user_data = reinterpret_cast<void*>(completion_key);
-        return 1;
     }
 
-    // Handle successful completion
-    events.clear();
-    events.resize(1);
-    events[0].fd = static_cast<int>(reinterpret_cast<SOCKET>(completion_key));
-    events[0].user_data = reinterpret_cast<void*>(completion_key);
-    
-    // Determine event type based on overlapped operation
-    // This is a simplified implementation
-    events[0].type = EventType::READ;
-    
-    return 1;
+    // If no events were found, wait for at least one with timeout
+    if (events.empty()) {
+        BOOL result = GetQueuedCompletionStatus(
+            iocp_handle_,
+            &bytes_transferred,
+            &completion_key,
+            &overlapped,
+            timeout
+        );
+
+        if (result) {
+            events.push_back(Event{
+                static_cast<int>(reinterpret_cast<SOCKET>(completion_key)),
+                EventType::READ,
+                reinterpret_cast<void*>(completion_key)
+            });
+        }
+    }
+
+    return events.size();
 }
 
 bool IocpEventDriver::PostReadOperation(SOCKET socket, void* user_data) {
@@ -130,6 +165,13 @@ bool IocpEventDriver::PostReadOperation(SOCKET socket, void* user_data) {
 bool IocpEventDriver::PostWriteOperation(SOCKET socket, void* user_data) {
     // Simplified implementation - actual implementation would need proper overlapped structures
     return true;
+}
+
+void IocpEventDriver::Wakeup() {
+    if (wakeup_event_ != INVALID_HANDLE_VALUE) {
+        // Signal the wakeup event
+        SetEvent(wakeup_event_);
+    }
 }
 
 } // namespace upgrade

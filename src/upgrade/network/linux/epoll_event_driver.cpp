@@ -17,6 +17,14 @@ EpollEventDriver::EpollEventDriver() {
 }
 
 EpollEventDriver::~EpollEventDriver() {
+    if (wakeup_write_fd_ >= 0) {
+        close(wakeup_write_fd_);
+        wakeup_write_fd_ = -1;
+    }
+    if (wakeup_fd_ >= 0) {
+        close(wakeup_fd_);
+        wakeup_fd_ = -1;
+    }
     if (epoll_fd_ >= 0) {
         close(epoll_fd_);
         epoll_fd_ = -1;
@@ -30,7 +38,37 @@ bool EpollEventDriver::Init() {
         return false;
     }
     
-    common::LOG_INFO("Epoll event driver initialized");
+    // Create pipe for wakeup
+    int pipe_fds[2];
+    if (pipe2(pipe_fds, O_CLOEXEC | O_NONBLOCK) < 0) {
+        common::LOG_ERROR("Failed to create wakeup pipe: %s", strerror(errno));
+        close(epoll_fd_);
+        epoll_fd_ = -1;
+        return false;
+    }
+    
+    wakeup_fd_ = pipe_fds[0];  // Read end
+    int write_fd = pipe_fds[1]; // Write end
+    
+    // Add read end to epoll for wakeup events
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.ptr = nullptr;  // Special marker for wakeup
+    
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, wakeup_fd_, &ev) < 0) {
+        common::LOG_ERROR("Failed to add wakeup fd to epoll: %s", strerror(errno));
+        close(write_fd);
+        close(wakeup_fd_);
+        close(epoll_fd_);
+        wakeup_fd_ = -1;
+        epoll_fd_ = -1;
+        return false;
+    }
+    
+    // Store write fd for wakeup calls
+    wakeup_write_fd_ = write_fd;
+    
+    common::LOG_INFO("Epoll event driver initialized with wakeup support");
     return true;
 }
 
@@ -108,16 +146,28 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     // Clear and resize vector to avoid unnecessary allocations
     events.clear();
     if (nfds > 0) {
-        events.resize(nfds);
+        events.reserve(nfds);  // Reserve space but don't resize yet
         
         for (int i = 0; i < nfds; ++i) {
-            events[i].fd = static_cast<int>(reinterpret_cast<intptr_t>(epoll_events[i].data.ptr));
-            events[i].type = ConvertFromEpollEvents(epoll_events[i].events);
-            events[i].user_data = epoll_events[i].data.ptr;
+            // Check if this is a wakeup event
+            if (epoll_events[i].data.ptr == nullptr) {
+                // This is a wakeup event, consume the data
+                char buffer[64];
+                while (read(wakeup_fd_, buffer, sizeof(buffer)) > 0) {
+                    // Consume all wakeup data
+                }
+                continue;  // Skip adding wakeup events to the result
+            }
+            
+            events.push_back(Event{
+                static_cast<int>(reinterpret_cast<intptr_t>(epoll_events[i].data.ptr)),
+                ConvertFromEpollEvents(epoll_events[i].events),
+                epoll_events[i].data.ptr
+            });
         }
     }
 
-    return nfds;
+    return events.size();
 }
 
 uint32_t EpollEventDriver::ConvertToEpollEvents(EventType events) const {
@@ -156,6 +206,17 @@ EventType EpollEventDriver::ConvertFromEpollEvents(uint32_t epoll_events) const 
     }
 
     return events;
+}
+
+void EpollEventDriver::Wakeup() {
+    if (wakeup_write_fd_ >= 0) {
+        // Write a byte to wake up the epoll_wait
+        char data = 'w';
+        ssize_t written = write(wakeup_write_fd_, &data, 1);
+        if (written < 0) {
+            common::LOG_ERROR("Failed to write to wakeup pipe: %s", strerror(errno));
+        }
+    }
 }
 
 } // namespace upgrade

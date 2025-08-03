@@ -1,8 +1,10 @@
+#ifdef __linux__
+
 #ifndef UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER_H
 #define UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER_H
 
-#include "upgrade/network/if_event_driver.h"
 #include <unordered_map>
+#include "upgrade/network/if_event_driver.h"
 
 namespace quicx {
 namespace upgrade {
@@ -31,6 +33,9 @@ public:
     // Get the maximum number of events
     virtual int GetMaxEvents() const override { return max_events_; }
 
+    // Wake up from Wait() call
+    virtual void Wakeup() override;
+
 private:
     // Convert EventType to epoll events
     uint32_t ConvertToEpollEvents(EventType events) const;
@@ -39,6 +44,8 @@ private:
     EventType ConvertFromEpollEvents(uint32_t epoll_events) const;
 
     int epoll_fd_ = -1;
+    int wakeup_fd_ = -1;  // Pipe read end for wakeup
+    int wakeup_write_fd_ = -1;  // Pipe write end for wakeup
     int max_events_ = 1024;
     std::unordered_map<int, void*> fd_user_data_;
 };
@@ -47,3 +54,4 @@ private:
 } // namespace quicx
 
 #endif // UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER_H 
+#endif // __linux__

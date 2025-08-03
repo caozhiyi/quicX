@@ -1,3 +1,5 @@
+#ifdef __APPLE__
+
 #ifndef UPGRADE_NETWORK_MACOS_KQUEUE_EVENT_DRIVER_H
 #define UPGRADE_NETWORK_MACOS_KQUEUE_EVENT_DRIVER_H
 
@@ -31,6 +33,9 @@ public:
     // Get the maximum number of events
     virtual int GetMaxEvents() const override { return max_events_; }
 
+    // Wake up from Wait() call
+    virtual void Wakeup() override;
+
 private:
     // Convert EventType to kqueue events
     uint32_t ConvertToKqueueEvents(EventType events) const;
@@ -39,6 +44,8 @@ private:
     EventType ConvertFromKqueueEvents(uint32_t kqueue_events) const;
 
     int kqueue_fd_ = -1;
+    int wakeup_fd_ = -1;  // Pipe for wakeup
+    int wakeup_write_fd_ = -1;  // Pipe write end for wakeup
     int max_events_ = 1024;
     std::unordered_map<int, void*> fd_user_data_;
 };
@@ -47,3 +54,4 @@ private:
 } // namespace quicx
 
 #endif // UPGRADE_NETWORK_MACOS_KQUEUE_EVENT_DRIVER_H 
+#endif // __APPLE__
