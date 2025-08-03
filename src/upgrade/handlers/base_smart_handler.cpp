@@ -65,13 +65,8 @@ void BaseSmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
     } else if (context.state == ConnectionState::NEGOTIATING) {
         // Protocol negotiation in progress, store additional data
         context.initial_data.insert(context.initial_data.end(), data.begin(), data.end());
-    } else if (context.state == ConnectionState::UPGRADING) {
-        // Protocol upgrade in progress, forward data to upgrade manager
-        // TODO: Forward data to upgrade manager for processing
-        common::LOG_DEBUG("%s upgrade in progress, received %d bytes", GetType().c_str(), bytes_read);
     } else if (context.state == ConnectionState::UPGRADED) {
         // Protocol upgraded, data should be handled by the upgraded protocol
-        // TODO: Forward data to the upgraded protocol handler
         common::LOG_DEBUG("%s protocol upgraded, received %d bytes", GetType().c_str(), bytes_read);
     } else {
         // Failed state, ignore data
@@ -84,18 +79,10 @@ void BaseSmartHandler::HandleWrite(std::shared_ptr<ITcpSocket> socket) {
     if (!context_ptr) {
         return;
     }
-    
-    ConnectionContext& context = *context_ptr;
-    
     // Handle write events based on connection state
-    if (context.state == ConnectionState::NEGOTIATING) {
-        // Send upgrade response if available
-        // TODO: Send upgrade response data
-        common::LOG_DEBUG("Sending %s upgrade response", GetType().c_str());
-    } else if (context.state == ConnectionState::UPGRADING) {
-        // Send upgrade data
-        // TODO: Send upgrade data
-        common::LOG_DEBUG("Sending %s upgrade data", GetType().c_str());
+    if (context_ptr->state == ConnectionState::NEGOTIATING) {
+        common::LOG_DEBUG("Continuing to send %s upgrade response", GetType().c_str());
+        manager_->ContinueSendResponse(socket);
     }
 }
 

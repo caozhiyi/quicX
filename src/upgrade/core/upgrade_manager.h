@@ -30,6 +30,9 @@ public:
     // Get connection context
     ConnectionContext* GetConnectionContext(std::shared_ptr<ITcpSocket> socket);
     
+    // Continue sending pending response (called from HandleWrite)
+    void ContinueSendResponse(std::shared_ptr<ITcpSocket> socket);
+    
     // Add connection context
     void AddConnectionContext(std::shared_ptr<ITcpSocket> socket, const ConnectionContext& context);
     
@@ -42,6 +45,9 @@ private:
     
     // Send failure response
     void SendFailureResponse(ConnectionContext& context, const std::string& error);
+    
+    // Try to send pending response (handles partial sends)
+    void TrySendResponse(ConnectionContext& context);
     
     UpgradeSettings settings_;
     NegotiationResult last_result_;

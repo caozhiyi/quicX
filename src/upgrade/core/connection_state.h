@@ -17,7 +17,6 @@ enum class ConnectionState {
     INITIAL,           // Initial state
     DETECTING,         // Protocol detection in progress
     NEGOTIATING,       // Protocol negotiation in progress
-    UPGRADING,         // Protocol upgrade in progress
     UPGRADED,          // Successfully upgraded
     FAILED             // Upgrade failed
 };
@@ -40,6 +39,10 @@ struct ConnectionContext {
     std::unordered_map<std::string, std::string> headers;
     std::vector<std::string> alpn_protocols;
     std::chrono::steady_clock::time_point created_time;
+    
+    // Pending response data for partial sends
+    std::vector<uint8_t> pending_response;
+    size_t response_sent = 0;  // Bytes already sent
     
     // Constructor initializes the connection context
     ConnectionContext(std::shared_ptr<ITcpSocket> sock) 
