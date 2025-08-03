@@ -24,6 +24,11 @@ include_directories(
     ${gmock_SOURCE_DIR}/include
 )
 
+# Add upgrade test subdirectories
+add_subdirectory(upgrade/core)
+add_subdirectory(upgrade/network)
+add_subdirectory(upgrade/handlers)
+
 add_executable(${PROJECT_NAME} ${test_files} test.cpp)
 
 if(WIN32)
