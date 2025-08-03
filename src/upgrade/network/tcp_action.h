@@ -21,8 +21,11 @@ public:
     TcpAction() = default;
     virtual ~TcpAction() = default;
 
-    // Initialize TCP action with address, port and handler
-    virtual bool Init(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) override;
+    // Initialize TCP action (call once)
+    virtual bool Init() override;
+    
+    // Add listener with address, port and handler
+    virtual bool AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) override;
     
     // Stop the TCP action
     virtual void Stop() override;
@@ -38,19 +41,17 @@ private:
     void HandleEvents(const std::vector<Event>& events);
 
     // Create listening socket
-    bool CreateListenSocket();
+    int CreateListenSocket(const std::string& addr, uint16_t port);
 
     // Handle new connection
-    void HandleNewConnection();
+    void HandleNewConnection(int listen_fd, std::shared_ptr<ISmartHandler> handler);
 
-    std::shared_ptr<ISmartHandler> handler_;
     std::shared_ptr<IEventDriver> event_driver_;
     std::thread event_thread_;
     std::atomic<bool> running_{false};
-    std::string listen_addr_;
-    uint16_t listen_port_;
-    int listen_fd_ = -1;
-    std::unordered_map<int, std::shared_ptr<ITcpSocket>> connections_;
+    std::unordered_map<int, std::shared_ptr<ISmartHandler>> listeners_;  // fd -> handler
+    std::unordered_map<int, std::shared_ptr<ITcpSocket>> connections_;   // fd -> socket
+    std::unordered_map<int, std::shared_ptr<ISmartHandler>> connection_handlers_;  // fd -> handler
 };
 
 } // namespace upgrade

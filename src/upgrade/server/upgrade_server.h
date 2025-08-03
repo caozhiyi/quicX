@@ -30,11 +30,9 @@ public:
     virtual void Join() override;
 
 private:
-    // Start listener with appropriate handler
-    void StartListener(const UpgradeSettings& settings);
-    
+    // Single TCP action that manages all listeners
+    std::shared_ptr<ITcpAction> tcp_action_;
     std::vector<std::shared_ptr<ISmartHandler>> handlers_;
-    std::vector<std::shared_ptr<ITcpAction>> listeners_;
     std::atomic<bool> running_{false};
     LogLevel log_level_ = LogLevel::kNull;
 };

@@ -17,8 +17,11 @@ class ITcpAction {
 public:
     virtual ~ITcpAction() = default;
 
-    // Initialize TCP action with address, port and handler
-    virtual bool Init(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) = 0;
+    // Initialize TCP action (call once)
+    virtual bool Init() = 0;
+    
+    // Add listener with address, port and handler
+    virtual bool AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) = 0;
     
     // Stop the TCP action
     virtual void Stop() = 0;
