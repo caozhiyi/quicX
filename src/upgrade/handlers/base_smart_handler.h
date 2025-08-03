@@ -29,7 +29,7 @@ protected:
     virtual int ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) = 0;
     virtual int WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) = 0;
     virtual void CleanupConnection(std::shared_ptr<ITcpSocket> socket) = 0;
-    virtual std::string GetHandlerType() const = 0;
+    virtual std::string GetType() const = 0;
 
     // Common helper methods
     void HandleProtocolDetection(std::shared_ptr<ITcpSocket> socket, const std::vector<uint8_t>& data);
@@ -43,7 +43,6 @@ protected:
     // Common member variables
     UpgradeSettings settings_;
     std::shared_ptr<UpgradeManager> manager_;
-    std::unordered_map<std::shared_ptr<ITcpSocket>, ConnectionContext> context_map_;
 };
 
 } // namespace upgrade

@@ -36,7 +36,7 @@ bool TcpAction::Init() {
     return true;
 }
 
-bool TcpAction::AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) {
+bool TcpAction::AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) {
     // Create listening socket
     int listen_fd = CreateListenSocket(addr, port);
     if (listen_fd < 0) {
@@ -199,7 +199,7 @@ void TcpAction::HandleEvents(const std::vector<Event>& events) {
     }
 }
 
-void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISmartHandler> handler) {
+void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandler> handler) {
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
     

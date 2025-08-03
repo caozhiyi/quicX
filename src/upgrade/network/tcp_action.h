@@ -9,7 +9,7 @@
 #include "upgrade/network/if_tcp_action.h"
 #include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/network/if_event_driver.h"
-#include "upgrade/handlers/if_smart_handler.h"
+#include "upgrade/network/if_socket_handler.h"
 
 namespace quicx {
 namespace upgrade {
@@ -25,7 +25,7 @@ public:
     virtual bool Init() override;
     
     // Add listener with address, port and handler
-    virtual bool AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) override;
+    virtual bool AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) override;
     
     // Stop the TCP action
     virtual void Stop() override;
@@ -44,14 +44,14 @@ private:
     int CreateListenSocket(const std::string& addr, uint16_t port);
 
     // Handle new connection
-    void HandleNewConnection(int listen_fd, std::shared_ptr<ISmartHandler> handler);
+    void HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandler> handler);
 
     std::shared_ptr<IEventDriver> event_driver_;
     std::thread event_thread_;
     std::atomic<bool> running_{false};
-    std::unordered_map<int, std::shared_ptr<ISmartHandler>> listeners_;  // fd -> handler
+    std::unordered_map<int, std::shared_ptr<ISocketHandler>> listeners_;  // fd -> handler
     std::unordered_map<int, std::shared_ptr<ITcpSocket>> connections_;   // fd -> socket
-    std::unordered_map<int, std::shared_ptr<ISmartHandler>> connection_handlers_;  // fd -> handler
+    std::unordered_map<int, std::shared_ptr<ISocketHandler>> connection_handlers_;  // fd -> handler
 };
 
 } // namespace upgrade

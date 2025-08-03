@@ -17,7 +17,7 @@ protected:
     int ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override;
     int WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) override;
     void CleanupConnection(std::shared_ptr<ITcpSocket> socket) override;
-    std::string GetHandlerType() const override { return "HTTP"; }
+    std::string GetType() const override { return "HTTP"; }
 };
 
 } // namespace upgrade

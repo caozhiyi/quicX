@@ -9,21 +9,6 @@ namespace upgrade {
 UpgradeManager::UpgradeManager(const UpgradeSettings& settings) 
     : settings_(settings) {
     // Upgrade manager only handles protocol negotiation
-    // HTTP/3 implementation should be handled externally
-}
-
-void UpgradeManager::HandleConnection(std::shared_ptr<ITcpSocket> socket) {
-    // Create connection context
-    ConnectionContext context(socket);
-    connections_[socket] = context;
-    
-    // Read initial data
-    std::vector<uint8_t> initial_data;
-    // TODO: Read initial data from socket
-    context.initial_data = initial_data;
-    
-    // Process upgrade
-    ProcessUpgrade(context);
 }
 
 void UpgradeManager::ProcessUpgrade(ConnectionContext& context) {
@@ -74,6 +59,22 @@ void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std:
     
     // Clean up connection context
     connections_.erase(context.socket);
+}
+
+ConnectionContext* UpgradeManager::GetConnectionContext(std::shared_ptr<ITcpSocket> socket) {
+    auto it = connections_.find(socket);
+    if (it != connections_.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
+void UpgradeManager::AddConnectionContext(std::shared_ptr<ITcpSocket> socket, const ConnectionContext& context) {
+    connections_[socket] = context;
+}
+
+void UpgradeManager::RemoveConnectionContext(std::shared_ptr<ITcpSocket> socket) {
+    connections_.erase(socket);
 }
 
 } // namespace upgrade

@@ -45,11 +45,11 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
     // Add listener to the single TCP action
     if (tcp_action_->AddListener(settings.listen_addr, port, handler)) {
         common::LOG_INFO("%s listener added on %s:%d", 
-                        settings.IsHTTPSEnabled() ? "HTTPS" : "HTTP", 
+                        handler->GetType().c_str(), 
                         settings.listen_addr, port);
     } else {
         common::LOG_ERROR("Failed to add %s listener on %s:%d", 
-                         settings.IsHTTPSEnabled() ? "HTTPS" : "HTTP", 
+                         handler->GetType().c_str(), 
                          settings.listen_addr, port);
         return false;
     }

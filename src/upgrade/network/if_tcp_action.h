@@ -10,7 +10,7 @@ namespace upgrade {
 
 // Forward declaration
 class ITcpSocket;
-class ISmartHandler;
+class ISocketHandler;
 
 // TCP action interface
 class ITcpAction {
@@ -21,7 +21,7 @@ public:
     virtual bool Init() = 0;
     
     // Add listener with address, port and handler
-    virtual bool AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) = 0;
+    virtual bool AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) = 0;
     
     // Stop the TCP action
     virtual void Stop() = 0;

@@ -18,9 +18,6 @@ public:
     explicit UpgradeManager(const UpgradeSettings& settings);
     ~UpgradeManager() = default;
 
-    // Handle new connection
-    void HandleConnection(std::shared_ptr<ITcpSocket> socket);
-    
     // Process upgrade for a connection
     void ProcessUpgrade(ConnectionContext& context);
     
@@ -29,6 +26,15 @@ public:
     
     // Get upgrade result for external handling
     const NegotiationResult& GetUpgradeResult() const { return last_result_; }
+    
+    // Get connection context
+    ConnectionContext* GetConnectionContext(std::shared_ptr<ITcpSocket> socket);
+    
+    // Add connection context
+    void AddConnectionContext(std::shared_ptr<ITcpSocket> socket, const ConnectionContext& context);
+    
+    // Remove connection context
+    void RemoveConnectionContext(std::shared_ptr<ITcpSocket> socket);
     
 private:
     // Send upgrade response based on negotiation result
