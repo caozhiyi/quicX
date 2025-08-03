@@ -42,6 +42,9 @@ struct ConnectionContext {
     std::vector<uint8_t> pending_response;
     size_t response_sent = 0;  // Bytes already sent
     
+    // Negotiation timeout timer ID
+    uint64_t negotiation_timer_id = 0;
+    
     // Constructor initializes the connection context
     ConnectionContext(std::shared_ptr<ITcpSocket> sock) 
         : socket(sock), created_time(std::chrono::steady_clock::now()) {}
