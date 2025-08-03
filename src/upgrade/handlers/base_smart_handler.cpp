@@ -1,7 +1,7 @@
-#include "upgrade/handlers/base_smart_handler.h"
-#include "upgrade/core/protocol_detector.h"
-#include "upgrade/network/if_tcp_socket.h"
 #include "common/log/log.h"
+#include "upgrade/network/if_tcp_socket.h"
+#include "upgrade/core/protocol_detector.h"
+#include "upgrade/handlers/base_smart_handler.h"
 
 namespace quicx {
 namespace upgrade {
@@ -12,6 +12,9 @@ BaseSmartHandler::BaseSmartHandler(const UpgradeSettings& settings)
 }
 
 void BaseSmartHandler::HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) {
+    // Store TCP action weak pointer
+    tcp_action_ = action;
+    
     // Initialize connection-specific resources
     if (!InitializeConnection(socket)) {
         common::LOG_ERROR("Failed to initialize %s connection", GetType().c_str());
@@ -20,19 +23,19 @@ void BaseSmartHandler::HandleConnect(std::shared_ptr<ITcpSocket> socket, std::sh
     
     // Create connection context
     ConnectionContext context(socket);
-    manager_->AddConnectionContext(socket, context);
+    connections_[socket] = context;
     
     common::LOG_INFO("New %s connection established", GetType().c_str());
 }
 
 void BaseSmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
-    ConnectionContext* context_ptr = manager_->GetConnectionContext(socket);
-    if (!context_ptr) {
+    auto it = connections_.find(socket);
+    if (it == connections_.end()) {
         common::LOG_ERROR("Socket not found in %s contexts", GetType().c_str());
         return;
     }
     
-    ConnectionContext& context = *context_ptr;
+    ConnectionContext& context = it->second;
     
     // Read data from socket using subclass implementation
     std::vector<uint8_t> data;
@@ -75,36 +78,39 @@ void BaseSmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
 }
 
 void BaseSmartHandler::HandleWrite(std::shared_ptr<ITcpSocket> socket) {
-    ConnectionContext* context_ptr = manager_->GetConnectionContext(socket);
-    if (!context_ptr) {
+    auto it = connections_.find(socket);
+    if (it == connections_.end()) {
         return;
     }
+    
+    ConnectionContext& context = it->second;
+    
     // Handle write events based on connection state
-    if (context_ptr->state == ConnectionState::NEGOTIATING) {
+    if (context.state == ConnectionState::NEGOTIATING) {
         common::LOG_DEBUG("Continuing to send %s upgrade response", GetType().c_str());
-        manager_->ContinueSendResponse(socket);
+        TrySendResponse(context);
     }
 }
 
 void BaseSmartHandler::HandleClose(std::shared_ptr<ITcpSocket> socket) {
-    ConnectionContext* context_ptr = manager_->GetConnectionContext(socket);
-    if (context_ptr) {
+    auto it = connections_.find(socket);
+    if (it != connections_.end()) {
         common::LOG_INFO("%s connection closed, socket: %d", GetType().c_str(), socket->GetFd());
         
         // Clean up connection-specific resources
         CleanupConnection(socket);
         
-        manager_->RemoveConnectionContext(socket);
+        connections_.erase(it);
     }
 }
 
 void BaseSmartHandler::HandleProtocolDetection(std::shared_ptr<ITcpSocket> socket, const std::vector<uint8_t>& data) {
-    ConnectionContext* context_ptr = manager_->GetConnectionContext(socket);
-    if (!context_ptr) {
+    auto it = connections_.find(socket);
+    if (it == connections_.end()) {
         return;
     }
     
-    ConnectionContext& context = *context_ptr;
+    ConnectionContext& context = it->second;
     context.state = ConnectionState::DETECTING;
     context.initial_data = data;
     
@@ -154,12 +160,8 @@ void BaseSmartHandler::OnProtocolDetected(ConnectionContext& context) {
     common::LOG_INFO("%s protocol detected: %d", GetType().c_str(), static_cast<int>(context.detected_protocol));
     
     // Execute upgrade negotiation
-    try {
-        manager_->ProcessUpgrade(context);
-        OnUpgradeComplete(context);
-    } catch (const std::exception& e) {
-        OnUpgradeFailed(context, e.what());
-    }
+    manager_->ProcessUpgrade(context);
+    OnUpgradeComplete(context);
 }
 
 void BaseSmartHandler::OnUpgradeComplete(ConnectionContext& context) {
@@ -170,20 +172,61 @@ void BaseSmartHandler::OnUpgradeComplete(ConnectionContext& context) {
 void BaseSmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::string& error) {
     context.state = ConnectionState::FAILED;
     common::LOG_ERROR("%s upgrade failed: %s", GetType().c_str(), error.c_str());
-    
-    // Send error response to client
-    if (context.socket && context.socket->IsValid()) {
-        std::string error_response = 
-            "HTTP/1.1 400 Bad Request\r\n"
-            "Content-Type: text/plain\r\n"
-            "Content-Length: " + std::to_string(error.length()) + "\r\n"
-            "\r\n" + error;
-        
-        WriteData(context.socket, error_response);
+
+    manager_->HandleUpgradeFailure(context, error);
+    TrySendResponse(context);
+}
+
+void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
+    if (context.pending_response.empty() || context.response_sent >= context.pending_response.size()) {
+        return; // No pending response or already sent completely
     }
     
-    // Clean up connection
-    manager_->RemoveConnectionContext(context.socket);
+    // Send remaining data
+    std::vector<uint8_t> data_to_send(
+        context.pending_response.begin() + context.response_sent,
+        context.pending_response.end()
+    );
+    
+    int bytes_sent = context.socket->Send(data_to_send);
+    
+    if (bytes_sent > 0) {
+        context.response_sent += bytes_sent;
+        
+        if (context.response_sent >= context.pending_response.size()) {
+            // Response sent completely
+            common::LOG_INFO("Response sent completely (%zu bytes)", context.pending_response.size());
+            context.pending_response.clear();
+            context.response_sent = 0;
+            
+            // Remove WRITE event since we're done
+            if (event_driver_) {
+                event_driver_->ModifyFd(context.socket->GetFd(), EventType::READ);
+            }
+        } else {
+            // Partial send, register WRITE event to continue
+            common::LOG_DEBUG("Partial response sent (%d/%zu bytes), registering WRITE event", bytes_sent, context.pending_response.size());
+            if (event_driver_) {
+                event_driver_->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::READ) | static_cast<int>(EventType::WRITE)));
+            }
+        }
+    } else if (bytes_sent < 0) {
+        // Send error
+        common::LOG_ERROR("Failed to send response");
+        context.pending_response.clear();
+        context.response_sent = 0;
+        
+        // Remove WRITE event on error
+        if (event_driver_) {
+            event_driver_->ModifyFd(context.socket->GetFd(), EventType::READ);
+        }
+    } else {
+        // bytes_sent == 0 means would block, register WRITE event to retry
+        common::LOG_DEBUG("Send would block, registering WRITE event");
+        if (event_driver_) {
+            event_driver_->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::READ) | static_cast<int>(EventType::WRITE)));
+        }
+    }
 }
 
 } // namespace upgrade

@@ -4,8 +4,9 @@
 #include <memory>
 #include <unordered_map>
 #include "upgrade/handlers/if_smart_handler.h"
-#include "upgrade/core/connection_state.h"
+#include "upgrade/handlers/connection_context.h"
 #include "upgrade/core/upgrade_manager.h"
+#include "upgrade/network/if_event_driver.h"
 #include "upgrade/include/type.h"
 
 namespace quicx {
@@ -39,10 +40,19 @@ protected:
     
     // Get negotiated protocol (for HTTPS connections)
     virtual std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const { return ""; }
+    
+    // Try to send pending response (handles partial sends)
+    void TrySendResponse(ConnectionContext& context);
+    
+    // Set event driver for registering write events
+    void SetEventDriver(std::shared_ptr<IEventDriver> event_driver) { event_driver_ = event_driver; }
 
     // Common member variables
     UpgradeSettings settings_;
     std::shared_ptr<UpgradeManager> manager_;
+    std::unordered_map<std::shared_ptr<ITcpSocket>, ConnectionContext> connections_;
+    std::weak_ptr<ITcpAction> tcp_action_;
+    std::shared_ptr<IEventDriver> event_driver_;
 };
 
 } // namespace upgrade

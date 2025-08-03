@@ -1,7 +1,6 @@
+#include "common/log/log.h"
 #include "upgrade/core/upgrade_manager.h"
 #include "upgrade/core/version_negotiator.h"
-#include "common/log/log.h"
-#include <sstream>
 
 namespace quicx {
 namespace upgrade {
@@ -37,8 +36,7 @@ void UpgradeManager::SendUpgradeResponse(ConnectionContext& context, const Negot
         context.pending_response = result.upgrade_data;
         context.response_sent = 0;
         
-        // Try to send the response
-        TrySendResponse(context);
+        common::LOG_INFO("Upgrade response prepared for HTTP/3");
     } else {
         // For other protocols, just log the result
         common::LOG_INFO("Protocol negotiation completed: %d", static_cast<int>(result.target_protocol));
@@ -56,75 +54,11 @@ void UpgradeManager::SendFailureResponse(ConnectionContext& context, const std::
     context.pending_response = std::vector<uint8_t>(error_response.begin(), error_response.end());
     context.response_sent = 0;
     
-    // Try to send the response
-    TrySendResponse(context);
     common::LOG_ERROR("Upgrade failed: %s", error.c_str());
-}
-
-void UpgradeManager::TrySendResponse(ConnectionContext& context) {
-    if (context.pending_response.empty() || context.response_sent >= context.pending_response.size()) {
-        return; // No pending response or already sent completely
-    }
-    
-    // Send remaining data
-    size_t remaining = context.pending_response.size() - context.response_sent;
-    std::vector<uint8_t> data_to_send(
-        context.pending_response.begin() + context.response_sent,
-        context.pending_response.end()
-    );
-    
-    int bytes_sent = context.socket->Send(data_to_send);
-    
-    if (bytes_sent > 0) {
-        context.response_sent += bytes_sent;
-        
-        if (context.response_sent >= context.pending_response.size()) {
-            // Response sent completely
-            common::LOG_INFO("Response sent completely (%zu bytes)", context.pending_response.size());
-            context.pending_response.clear();
-            context.response_sent = 0;
-        } else {
-            // Partial send, will continue in HandleWrite
-            common::LOG_DEBUG("Partial response sent (%d/%zu bytes)", bytes_sent, context.pending_response.size());
-        }
-    } else if (bytes_sent < 0) {
-        // Send error
-        common::LOG_ERROR("Failed to send response");
-        context.pending_response.clear();
-        context.response_sent = 0;
-    }
-    // bytes_sent == 0 means would block, will retry in HandleWrite
 }
 
 void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std::string& error) {
     SendFailureResponse(context, error);
-    context.socket->Close();
-    
-    // Clean up connection context
-    connections_.erase(context.socket);
-}
-
-ConnectionContext* UpgradeManager::GetConnectionContext(std::shared_ptr<ITcpSocket> socket) {
-    auto it = connections_.find(socket);
-    if (it != connections_.end()) {
-        return &it->second;
-    }
-    return nullptr;
-}
-
-void UpgradeManager::AddConnectionContext(std::shared_ptr<ITcpSocket> socket, const ConnectionContext& context) {
-    connections_[socket] = context;
-}
-
-void UpgradeManager::RemoveConnectionContext(std::shared_ptr<ITcpSocket> socket) {
-    connections_.erase(socket);
-}
-
-void UpgradeManager::ContinueSendResponse(std::shared_ptr<ITcpSocket> socket) {
-    ConnectionContext* context = GetConnectionContext(socket);
-    if (context) {
-        TrySendResponse(*context);
-    }
 }
 
 } // namespace upgrade

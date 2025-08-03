@@ -1,12 +1,11 @@
-#ifndef UPGRADE_CORE_CONNECTION_STATE_H
-#define UPGRADE_CORE_CONNECTION_STATE_H
+#ifndef UPGRADE_HANDLERS_CONNECTION_CONTEXT_H
+#define UPGRADE_HANDLERS_CONNECTION_CONTEXT_H
 
 #include <memory>
 #include <vector>
 #include <string>
-#include <unordered_map>
 #include <chrono>
-#include "upgrade/network/if_tcp_action.h"
+#include <unordered_map>
 #include "upgrade/network/if_tcp_socket.h"
 
 namespace quicx {
@@ -36,7 +35,6 @@ struct ConnectionContext {
     Protocol detected_protocol = Protocol::UNKNOWN;
     Protocol target_protocol = Protocol::UNKNOWN;
     std::vector<uint8_t> initial_data;
-    std::unordered_map<std::string, std::string> headers;
     std::vector<std::string> alpn_protocols;
     std::chrono::steady_clock::time_point created_time;
     
@@ -52,4 +50,4 @@ struct ConnectionContext {
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_CORE_CONNECTION_STATE_H 
+#endif // UPGRADE_HANDLERS_CONNECTION_CONTEXT_H 
