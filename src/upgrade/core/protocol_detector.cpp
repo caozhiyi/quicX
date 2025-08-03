@@ -61,27 +61,5 @@ bool ProtocolDetector::IsHTTP2(const std::vector<uint8_t>& data) {
     return std::equal(http2_preface.begin(), http2_preface.end(), data.begin());
 }
 
-bool ProtocolDetector::HasALPN(const std::vector<uint8_t>& data) {
-    // Look for ALPN extension in TLS ClientHello
-    // Simplified implementation - actual implementation needs to parse TLS handshake
-    return ExtractALPNData(data).length() > 0;
-}
-
-std::string ProtocolDetector::ExtractALPNData(const std::vector<uint8_t>& data) {
-    // Simplified implementation - actual implementation needs to parse TLS ClientHello completely
-    // Returns empty string indicating no ALPN data found
-    return "";
-}
-
-std::vector<std::string> ProtocolDetector::ParseALPNProtocols(const std::vector<uint8_t>& data) {
-    std::vector<std::string> protocols;
-    
-    // Simplified implementation - actual implementation needs to parse TLS ALPN extension
-    // Returns default supported protocol list
-    protocols = {"h3", "h2", "http/1.1"};
-    
-    return protocols;
-}
-
 } // namespace upgrade
 } // namespace quicx 

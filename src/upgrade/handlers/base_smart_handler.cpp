@@ -121,7 +121,32 @@ void BaseSmartHandler::HandleProtocolDetection(std::shared_ptr<ITcpSocket> socke
     context.state = ConnectionState::DETECTING;
     context.initial_data = data;
     
-    // Detect protocol
+    // Check if we have ALPN negotiated protocol (for HTTPS connections)
+    std::string alpn_protocol = GetNegotiatedProtocol(socket);
+    if (!alpn_protocol.empty()) {
+        common::LOG_INFO("ALPN negotiated protocol: %s", alpn_protocol.c_str());
+        
+        // Store ALPN protocols for negotiation
+        context.alpn_protocols.push_back(alpn_protocol);
+        
+        // Map ALPN protocol to our Protocol enum for detection
+        if (alpn_protocol == "h3") {
+            context.detected_protocol = Protocol::HTTP3;
+        } else if (alpn_protocol == "h2") {
+            context.detected_protocol = Protocol::HTTP2;
+        } else if (alpn_protocol == "http/1.1") {
+            context.detected_protocol = Protocol::HTTP1_1;
+        } else {
+            common::LOG_WARN("Unknown ALPN protocol: %s", alpn_protocol.c_str());
+        }
+        
+        if (context.detected_protocol != Protocol::UNKNOWN) {
+            OnProtocolDetected(context);
+            return;
+        }
+    }
+    
+    // Fall back to protocol detection from data
     Protocol detected = ProtocolDetector::Detect(data);
     context.detected_protocol = detected;
     

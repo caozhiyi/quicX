@@ -27,23 +27,18 @@ public:
     // Handle upgrade failure
     void HandleUpgradeFailure(ConnectionContext& context, const std::string& error);
     
+    // Get upgrade result for external handling
+    const NegotiationResult& GetUpgradeResult() const { return last_result_; }
+    
 private:
-    // Handle HTTP/1.1 to HTTP/3 upgrade
-    void HandleHTTP1Upgrade(ConnectionContext& context);
+    // Send upgrade response based on negotiation result
+    void SendUpgradeResponse(ConnectionContext& context, const NegotiationResult& result);
     
-    // Handle HTTP/2 to HTTP/3 upgrade
-    void HandleHTTP2Upgrade(ConnectionContext& context);
-    
-    // Handle direct HTTP/3 connection
-    void HandleHTTP3Upgrade(ConnectionContext& context);
-    
-    // Start HTTP/3 connection
-    void StartHTTP3Connection(ConnectionContext& context);
-    
-    // Send HTTP/2 GOAWAY frame
-    void SendHTTP2GoAway(ConnectionContext& context);
+    // Send failure response
+    void SendFailureResponse(ConnectionContext& context, const std::string& error);
     
     UpgradeSettings settings_;
+    NegotiationResult last_result_;
     std::unordered_map<std::shared_ptr<ITcpSocket>, ConnectionContext> connections_;
 };
 
