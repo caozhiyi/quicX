@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <string>
-#include "upgrade/core/connection_state.h"
+#include "upgrade/handlers/connection_context.h"
 
 namespace quicx {
 namespace upgrade {

@@ -1,12 +1,11 @@
-#ifndef UPGRADE_CORE_CONNECTION_STATE_H
-#define UPGRADE_CORE_CONNECTION_STATE_H
+#ifndef UPGRADE_HANDLERS_CONNECTION_CONTEXT_H
+#define UPGRADE_HANDLERS_CONNECTION_CONTEXT_H
 
 #include <memory>
 #include <vector>
 #include <string>
-#include <unordered_map>
 #include <chrono>
-#include "upgrade/network/if_tcp_action.h"
+#include <unordered_map>
 #include "upgrade/network/if_tcp_socket.h"
 
 namespace quicx {
@@ -17,7 +16,6 @@ enum class ConnectionState {
     INITIAL,           // Initial state
     DETECTING,         // Protocol detection in progress
     NEGOTIATING,       // Protocol negotiation in progress
-    UPGRADING,         // Protocol upgrade in progress
     UPGRADED,          // Successfully upgraded
     FAILED             // Upgrade failed
 };
@@ -37,9 +35,12 @@ struct ConnectionContext {
     Protocol detected_protocol = Protocol::UNKNOWN;
     Protocol target_protocol = Protocol::UNKNOWN;
     std::vector<uint8_t> initial_data;
-    std::unordered_map<std::string, std::string> headers;
     std::vector<std::string> alpn_protocols;
     std::chrono::steady_clock::time_point created_time;
+    
+    // Pending response data for partial sends
+    std::vector<uint8_t> pending_response;
+    size_t response_sent = 0;  // Bytes already sent
     
     // Constructor initializes the connection context
     ConnectionContext(std::shared_ptr<ITcpSocket> sock) 
@@ -49,4 +50,4 @@ struct ConnectionContext {
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_CORE_CONNECTION_STATE_H 
+#endif // UPGRADE_HANDLERS_CONNECTION_CONTEXT_H 

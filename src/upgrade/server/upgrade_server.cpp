@@ -25,18 +25,16 @@ bool UpgradeServer::Init(LogLevel level) {
 }
 
 bool UpgradeServer::AddListener(UpgradeSettings& settings) {
-    if (!running_) {
+    // Initialize TCP action if not already done
+    if (!tcp_action_) {
+        tcp_action_ = std::make_shared<TcpAction>();
+        if (!tcp_action_->Init()) {
+            common::LOG_ERROR("Failed to initialize TCP action");
+            return false;
+        }
         running_ = true;
     }
     
-    // Start listener with appropriate handler
-    StartListener(settings);
-    
-    common::LOG_INFO("Listeners added successfully");
-    return true;
-}
-
-void UpgradeServer::StartListener(const UpgradeSettings& settings) {
     // Create appropriate smart handler based on settings
     auto handler = SmartHandlerFactory::CreateHandler(settings);
     handlers_.push_back(handler);
@@ -44,35 +42,37 @@ void UpgradeServer::StartListener(const UpgradeSettings& settings) {
     // Determine which port to use based on HTTPS configuration
     uint16_t port = settings.IsHTTPSEnabled() ? settings.https_port : settings.http_port;
     
-    auto tcp_action = std::make_shared<TcpAction>();
-    
-    if (tcp_action->Init(settings.listen_addr, port, handler)) {
-        listeners_.push_back(tcp_action);
-        common::LOG_INFO("%s listener started on %s:%d", 
-                        settings.IsHTTPSEnabled() ? "HTTPS" : "HTTP", 
+    // Add listener to the single TCP action
+    if (tcp_action_->AddListener(settings.listen_addr, port, handler)) {
+        common::LOG_INFO("%s listener added on %s:%d", 
+                        handler->GetType().c_str(), 
                         settings.listen_addr, port);
     } else {
-        common::LOG_ERROR("Failed to start %s listener on %s:%d", 
-                         settings.IsHTTPSEnabled() ? "HTTPS" : "HTTP", 
+        common::LOG_ERROR("Failed to add %s listener on %s:%d", 
+                         handler->GetType().c_str(), 
                          settings.listen_addr, port);
+        return false;
     }
+    
+    common::LOG_INFO("Listener added successfully");
+    return true;
 }
 
 void UpgradeServer::Stop() {
     running_ = false;
     
-    // Stop all listeners
-    for (auto& listener : listeners_) {
-        listener->Stop();
+    // Stop the single TCP action
+    if (tcp_action_) {
+        tcp_action_->Stop();
     }
     
     common::LOG_INFO("Upgrade server stopped");
 }
 
 void UpgradeServer::Join() {
-    // Wait for all listener threads to finish
-    for (auto& listener : listeners_) {
-        listener->Join();
+    // Wait for the TCP action thread to finish
+    if (tcp_action_) {
+        tcp_action_->Join();
     }
     
     common::LOG_INFO("Upgrade server joined");

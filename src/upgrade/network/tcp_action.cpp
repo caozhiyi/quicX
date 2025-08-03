@@ -13,20 +13,8 @@
 namespace quicx {
 namespace upgrade {
 
-
-
 // TcpAction implementation
-bool TcpAction::Init(const std::string& addr, uint16_t port, std::shared_ptr<ISmartHandler> handler) {
-    handler_ = handler;
-    listen_addr_ = addr;
-    listen_port_ = port;
-    
-    // Create listening socket
-    if (!CreateListenSocket()) {
-        common::LOG_ERROR("Failed to create listening socket");
-        return false;
-    }
-    
+bool TcpAction::Init() {
     // Create event driver
     event_driver_ = IEventDriver::Create();
     if (!event_driver_) {
@@ -40,31 +28,48 @@ bool TcpAction::Init(const std::string& addr, uint16_t port, std::shared_ptr<ISm
         return false;
     }
     
-    // Add listening socket to event driver
-    if (!event_driver_->AddFd(listen_fd_, EventType::READ, this)) {
-        common::LOG_ERROR("Failed to add listening socket to event driver");
-        return false;
-    }
-    
     // Start event loop thread
     running_ = true;
     event_thread_ = std::thread(&TcpAction::EventLoop, this);
     
-    common::LOG_INFO("TCP action initialized on %s:%d", addr.c_str(), port);
+    common::LOG_INFO("TCP action initialized");
+    return true;
+}
+
+bool TcpAction::AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) {
+    // Create listening socket
+    int listen_fd = CreateListenSocket(addr, port);
+    if (listen_fd < 0) {
+        common::LOG_ERROR("Failed to create listening socket on %s:%d", addr.c_str(), port);
+        return false;
+    }
+    
+    // Add listening socket to event driver
+    if (!event_driver_->AddFd(listen_fd, EventType::READ, this)) {
+        common::LOG_ERROR("Failed to add listening socket to event driver");
+        close(listen_fd);
+        return false;
+    }
+    
+    // Store listener
+    listeners_[listen_fd] = handler;
+    
+    common::LOG_INFO("Listener added on %s:%d", addr.c_str(), port);
     return true;
 }
 
 void TcpAction::Stop() {
     running_ = false;
     
-    // Close listening socket
-    if (listen_fd_ >= 0) {
-        close(listen_fd_);
-        listen_fd_ = -1;
+    // Close all listening sockets
+    for (auto& listener : listeners_) {
+        close(listener.first);
     }
+    listeners_.clear();
     
     // Close all connections
     connections_.clear();
+    connection_handlers_.clear();
     
     common::LOG_INFO("TCP action stopped");
 }
@@ -76,62 +81,57 @@ void TcpAction::Join() {
     common::LOG_INFO("TCP action joined");
 }
 
-bool TcpAction::CreateListenSocket() {
+int TcpAction::CreateListenSocket(const std::string& addr, uint16_t port) {
     // Create socket
-    listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd_ < 0) {
+    int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_fd < 0) {
         common::LOG_ERROR("Failed to create socket: %s", strerror(errno));
-        return false;
+        return -1;
     }
     
     // Set socket options
     int opt = 1;
-    if (setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         common::LOG_ERROR("Failed to set SO_REUSEADDR: %s", strerror(errno));
-        close(listen_fd_);
-        listen_fd_ = -1;
-        return false;
+        close(listen_fd);
+        return -1;
     }
     
     // Set non-blocking
-    int flags = fcntl(listen_fd_, F_GETFL, 0);
+    int flags = fcntl(listen_fd, F_GETFL, 0);
     if (flags < 0) {
         common::LOG_ERROR("Failed to get socket flags: %s", strerror(errno));
-        close(listen_fd_);
-        listen_fd_ = -1;
-        return false;
+        close(listen_fd);
+        return -1;
     }
     
-    if (fcntl(listen_fd_, F_SETFL, flags | O_NONBLOCK) < 0) {
+    if (fcntl(listen_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
         common::LOG_ERROR("Failed to set non-blocking: %s", strerror(errno));
-        close(listen_fd_);
-        listen_fd_ = -1;
-        return false;
+        close(listen_fd);
+        return -1;
     }
     
     // Bind socket
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(listen_port_);
-    addr.sin_addr.s_addr = inet_addr(listen_addr_.c_str());
+    struct sockaddr_in sock_addr;
+    sock_addr.sin_family = AF_INET;
+    sock_addr.sin_port = htons(port);
+    sock_addr.sin_addr.s_addr = inet_addr(addr.c_str());
     
-    if (bind(listen_fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+    if (bind(listen_fd, reinterpret_cast<struct sockaddr*>(&sock_addr), sizeof(sock_addr)) < 0) {
         common::LOG_ERROR("Failed to bind socket: %s", strerror(errno));
-        close(listen_fd_);
-        listen_fd_ = -1;
-        return false;
+        close(listen_fd);
+        return -1;
     }
     
     // Listen
-    if (listen(listen_fd_, SOMAXCONN) < 0) {
+    if (listen(listen_fd, SOMAXCONN) < 0) {
         common::LOG_ERROR("Failed to listen: %s", strerror(errno));
-        close(listen_fd_);
-        listen_fd_ = -1;
-        return false;
+        close(listen_fd);
+        return -1;
     }
     
-    common::LOG_INFO("Listening socket created on %s:%d", listen_addr_.c_str(), listen_port_);
-    return true;
+    common::LOG_INFO("Listening socket created on %s:%d", addr.c_str(), port);
+    return listen_fd;
 }
 
 void TcpAction::EventLoop() {
@@ -166,27 +166,32 @@ void TcpAction::EventLoop() {
 
 void TcpAction::HandleEvents(const std::vector<Event>& events) {
     for (const auto& event : events) {
-        if (event.fd == listen_fd_) {
-            // New connection
-            HandleNewConnection();
+        // Check if this is a listening socket
+        auto listener_it = listeners_.find(event.fd);
+        if (listener_it != listeners_.end()) {
+            // New connection on this listener
+            HandleNewConnection(event.fd, listener_it->second);
         } else {
             // Existing connection
             auto it = connections_.find(event.fd);
-            if (it != connections_.end()) {
+            auto handler_it = connection_handlers_.find(event.fd);
+            if (it != connections_.end() && handler_it != connection_handlers_.end()) {
                 auto socket = it->second;
+                auto handler = handler_it->second;
                 
                 switch (event.type) {
                     case EventType::READ:
-                        handler_->HandleRead(socket);
+                        handler->HandleRead(socket);
                         break;
                     case EventType::WRITE:
-                        handler_->HandleWrite(socket);
+                        handler->HandleWrite(socket);
                         break;
                     case EventType::ERROR:
                     case EventType::CLOSE:
-                        handler_->HandleClose(socket);
+                        handler->HandleClose(socket);
                         event_driver_->RemoveFd(event.fd);
                         connections_.erase(it);
+                        connection_handlers_.erase(handler_it);
                         break;
                 }
             }
@@ -194,11 +199,11 @@ void TcpAction::HandleEvents(const std::vector<Event>& events) {
     }
 }
 
-void TcpAction::HandleNewConnection() {
+void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandler> handler) {
     struct sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
     
-    int client_fd = accept(listen_fd_, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
+    int client_fd = accept(listen_fd, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
     if (client_fd < 0) {
         common::LOG_ERROR("Failed to accept connection: %s", strerror(errno));
         return;
@@ -220,11 +225,12 @@ void TcpAction::HandleNewConnection() {
         return;
     }
     
-    // Store connection
+    // Store connection with its handler
     connections_[client_fd] = tcp_socket;
+    connection_handlers_[client_fd] = handler;
     
     // Notify handler
-    handler_->HandleConnect(tcp_socket, std::shared_ptr<ITcpAction>(this, [](ITcpAction*){}));
+    handler->HandleConnect(tcp_socket, std::shared_ptr<ITcpAction>(this, [](ITcpAction*){}));
     
     char client_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);

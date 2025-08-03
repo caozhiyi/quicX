@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include "upgrade/include/type.h"
-#include "upgrade/core/connection_state.h"
+#include "upgrade/handlers/connection_context.h"
 
 namespace quicx {
 namespace upgrade {

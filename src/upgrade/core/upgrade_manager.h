@@ -2,12 +2,9 @@
 #define UPGRADE_CORE_UPGRADE_MANAGER_H
 
 #include <memory>
-#include <unordered_map>
 #include "upgrade/include/type.h"
-#include "upgrade/core/connection_state.h"
-#include "upgrade/network/if_tcp_action.h"
-#include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/core/version_negotiator.h"
+#include "upgrade/handlers/connection_context.h"
 
 namespace quicx {
 namespace upgrade {
@@ -18,9 +15,6 @@ public:
     explicit UpgradeManager(const UpgradeSettings& settings);
     ~UpgradeManager() = default;
 
-    // Handle new connection
-    void HandleConnection(std::shared_ptr<ITcpSocket> socket);
-    
     // Process upgrade for a connection
     void ProcessUpgrade(ConnectionContext& context);
     
@@ -39,7 +33,6 @@ private:
     
     UpgradeSettings settings_;
     NegotiationResult last_result_;
-    std::unordered_map<std::shared_ptr<ITcpSocket>, ConnectionContext> connections_;
 };
 
 } // namespace upgrade

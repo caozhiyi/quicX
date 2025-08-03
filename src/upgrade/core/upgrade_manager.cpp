@@ -1,7 +1,6 @@
+#include "common/log/log.h"
 #include "upgrade/core/upgrade_manager.h"
 #include "upgrade/core/version_negotiator.h"
-#include "common/log/log.h"
-#include <sstream>
 
 namespace quicx {
 namespace upgrade {
@@ -9,21 +8,6 @@ namespace upgrade {
 UpgradeManager::UpgradeManager(const UpgradeSettings& settings) 
     : settings_(settings) {
     // Upgrade manager only handles protocol negotiation
-    // HTTP/3 implementation should be handled externally
-}
-
-void UpgradeManager::HandleConnection(std::shared_ptr<ITcpSocket> socket) {
-    // Create connection context
-    ConnectionContext context(socket);
-    connections_[socket] = context;
-    
-    // Read initial data
-    std::vector<uint8_t> initial_data;
-    // TODO: Read initial data from socket
-    context.initial_data = initial_data;
-    
-    // Process upgrade
-    ProcessUpgrade(context);
 }
 
 void UpgradeManager::ProcessUpgrade(ConnectionContext& context) {
@@ -48,9 +32,11 @@ void UpgradeManager::SendUpgradeResponse(ConnectionContext& context, const Negot
             return;
         }
         
-        // Send the upgrade response
-        context.socket->Send(std::string(result.upgrade_data.begin(), result.upgrade_data.end()));
-        common::LOG_INFO("Sent upgrade response for HTTP/3");
+        // Store the upgrade response for potential partial sends
+        context.pending_response = result.upgrade_data;
+        context.response_sent = 0;
+        
+        common::LOG_INFO("Upgrade response prepared for HTTP/3");
     } else {
         // For other protocols, just log the result
         common::LOG_INFO("Protocol negotiation completed: %d", static_cast<int>(result.target_protocol));
@@ -64,16 +50,15 @@ void UpgradeManager::SendFailureResponse(ConnectionContext& context, const std::
         "Content-Length: " + std::to_string(error.length()) + "\r\n"
         "\r\n" + error;
     
-    context.socket->Send(error_response);
+    // Store error response for potential partial sends
+    context.pending_response = std::vector<uint8_t>(error_response.begin(), error_response.end());
+    context.response_sent = 0;
+    
     common::LOG_ERROR("Upgrade failed: %s", error.c_str());
 }
 
 void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std::string& error) {
     SendFailureResponse(context, error);
-    context.socket->Close();
-    
-    // Clean up connection context
-    connections_.erase(context.socket);
 }
 
 } // namespace upgrade

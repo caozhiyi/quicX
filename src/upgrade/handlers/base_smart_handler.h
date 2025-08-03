@@ -4,8 +4,9 @@
 #include <memory>
 #include <unordered_map>
 #include "upgrade/handlers/if_smart_handler.h"
-#include "upgrade/core/connection_state.h"
+#include "upgrade/handlers/connection_context.h"
 #include "upgrade/core/upgrade_manager.h"
+#include "upgrade/network/if_event_driver.h"
 #include "upgrade/include/type.h"
 
 namespace quicx {
@@ -29,7 +30,7 @@ protected:
     virtual int ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) = 0;
     virtual int WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) = 0;
     virtual void CleanupConnection(std::shared_ptr<ITcpSocket> socket) = 0;
-    virtual std::string GetHandlerType() const = 0;
+    virtual std::string GetType() const = 0;
 
     // Common helper methods
     void HandleProtocolDetection(std::shared_ptr<ITcpSocket> socket, const std::vector<uint8_t>& data);
@@ -39,11 +40,19 @@ protected:
     
     // Get negotiated protocol (for HTTPS connections)
     virtual std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const { return ""; }
+    
+    // Try to send pending response (handles partial sends)
+    void TrySendResponse(ConnectionContext& context);
+    
+    // Set event driver for registering write events
+    void SetEventDriver(std::shared_ptr<IEventDriver> event_driver) { event_driver_ = event_driver; }
 
     // Common member variables
     UpgradeSettings settings_;
     std::shared_ptr<UpgradeManager> manager_;
-    std::unordered_map<std::shared_ptr<ITcpSocket>, ConnectionContext> context_map_;
+    std::unordered_map<std::shared_ptr<ITcpSocket>, ConnectionContext> connections_;
+    std::weak_ptr<ITcpAction> tcp_action_;
+    std::shared_ptr<IEventDriver> event_driver_;
 };
 
 } // namespace upgrade
