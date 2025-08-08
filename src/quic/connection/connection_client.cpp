@@ -19,8 +19,8 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx,
     std::shared_ptr<common::ITimer> timer,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-    std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
+    std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
+    std::function<void(ConnectionID&)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
     BaseConnection(StreamIDGenerator::StreamStarter::kClient, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb) {
     tls_connection_ = std::make_shared<TLSClientConnection>(ctx, &connection_crypto_);
@@ -59,7 +59,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     auto dcid = remote_conn_id_manager_->Generator();
 
     // install initial secret
-    connection_crypto_.InstallInitSecret(dcid.id_, dcid.len_, false);
+    connection_crypto_.InstallInitSecret(dcid.ID(), dcid.Len(), false);
     
     tls_conn->DoHandleShake();
     return true;

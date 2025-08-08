@@ -23,8 +23,8 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
     std::shared_ptr<common::ITimer> timer,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-    std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
+    std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
+    std::function<void(ConnectionID&)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
     BaseConnection(StreamIDGenerator::StreamStarter::kServer, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     server_alpn_(alpn) {
@@ -45,9 +45,8 @@ ServerConnection::~ServerConnection() {
 
 }
 
-void ServerConnection::AddRemoteConnectionId(uint8_t* id, uint16_t len) {
-    ConnectionID cid(id, len);
-    remote_conn_id_manager_->AddID(cid);
+void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
+    remote_conn_id_manager_->AddID(id);
 }
 
 bool ServerConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include "quic/frame/if_frame.h"
 #include "quic/connection/type.h"
+#include "quic/connection/connection_id.h"
 
 namespace quicx {
 namespace quic {
@@ -28,7 +29,7 @@ public:
     uint64_t GetRetirePriorTo() { return retire_prior_to_; }
 
     void SetConnectionID(uint8_t* id, uint8_t len);
-    void GetConnectionID(uint8_t* id, uint8_t& len);
+    void GetConnectionID(ConnectionID& id);
 
     void SetStatelessResetToken(uint8_t* token);
     const uint8_t* GetStatelessResetToken() { return stateless_reset_token_; }

@@ -1,10 +1,9 @@
 #ifndef QUIC_UDP_UDP_SENDER
 #define QUIC_UDP_UDP_SENDER
 
-#include <string>
 #include <cstdint>
 #include "quic/udp/if_sender.h"
-#include "quic/quicx/if_net_packet.h"
+#include "quic/udp/net_packet.h"
 
 namespace quicx {
 namespace quic {
@@ -16,7 +15,7 @@ public:
     UdpSender(uint64_t sock);
     ~UdpSender() {}
 
-    bool Send(std::shared_ptr<INetPacket>& pkt);
+    bool Send(std::shared_ptr<NetPacket>& pkt);
 
     uint64_t GetSocket() const { return sock_; }
 

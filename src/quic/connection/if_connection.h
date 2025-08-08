@@ -10,6 +10,7 @@
 #include "common/network/address.h"
 #include "quic/stream/send_stream.h"
 #include "quic/frame/if_stream_frame.h"
+#include "quic/connection/connection_id.h"
 #include "quic/crypto/tls/tls_conneciton.h"
 #include "quic/stream/bidirection_stream.h"
 #include "quic/include/if_quic_connection.h"
@@ -23,8 +24,8 @@ public:
     IConnection(std::shared_ptr<common::ITimer> timer,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-        std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
+        std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
+        std::function<void(ConnectionID&)> retire_conn_id_cb,
         std::function<void(std::shared_ptr<IConnection>, uint64_t, const std::string&)> connection_close_cb);
     virtual ~IConnection();
 
@@ -62,21 +63,13 @@ public:
     virtual void SetPeerAddress(const common::Address&& addr);
     virtual const common::Address& GetPeerAddress();
 
-    // if connection is transferred from other thread, below callbacks need to current thread
-    virtual void SetTimer(std::shared_ptr<common::ITimer> timer) { timer_ = timer; }
-    virtual void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb);
-    virtual void SetHandshakeDoneCB(std::function<void(std::shared_ptr<IConnection>)> cb);
-    virtual void SetAddConnectionIdCB(std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> cb);
-    virtual void SetRetireConnectionIdCB(std::function<void(uint64_t cid_hash)> cb);
-    virtual void SetConnectionCloseCB(std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> cb);
-
 protected:
     void* user_data_;
     common::Address peer_addr_;
     std::shared_ptr<common::ITimer> timer_;
     // callback
-    std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb_;
-    std::function<void(uint64_t cid_hash)> retire_conn_id_cb_;
+    std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb_;
+    std::function<void(ConnectionID&)> retire_conn_id_cb_;
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb_;
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb_;
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb_;

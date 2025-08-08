@@ -40,7 +40,7 @@ public:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
     bool InitIsReady() { return cryptographers_[kInitial] != nullptr; }
-    bool InstallInitSecret(uint8_t* secret, uint32_t len, bool is_server);
+    bool InstallInitSecret(const uint8_t* secret, uint32_t len, bool is_server);
 
     typedef std::function<void(TransportParam&)> RemoteTransportParamCB;
     void SetRemoteTransportParamCB(RemoteTransportParamCB cb) { transport_param_cb_ = cb; }

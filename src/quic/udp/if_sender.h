@@ -3,7 +3,7 @@
 
 #include <string>
 #include <cstdint>
-#include "quic/quicx/if_net_packet.h"
+#include "quic/udp/net_packet.h"
 
 namespace quicx {
 namespace quic {
@@ -16,9 +16,11 @@ public:
     ISender() {}
     virtual ~ISender() {}
 
-    virtual bool Send(std::shared_ptr<INetPacket>& pkt) = 0;
+    virtual bool Send(std::shared_ptr<NetPacket>& pkt) = 0;
 
     virtual uint64_t GetSocket() const = 0;
+
+    static std::shared_ptr<ISender> MakeSender();
 };
 
 }

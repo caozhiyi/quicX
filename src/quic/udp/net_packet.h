@@ -1,5 +1,5 @@
-#ifndef QUIC_QUICX_IF_NET_PACKET
-#define QUIC_QUICX_IF_NET_PACKET
+#ifndef QUIC_UDP_NET_PACKET
+#define QUIC_UDP_NET_PACKET
 
 #include <memory>
 #include "common/network/address.h"
@@ -8,10 +8,10 @@
 namespace quicx {
 namespace quic {
 
-class INetPacket {
+class NetPacket {
 public:
-    INetPacket() {}
-    virtual ~INetPacket() {}
+    NetPacket() {}
+    virtual ~NetPacket() {}
 
     void SetData(std::shared_ptr<common::IBuffer> buffer) { buffer_ = buffer; }
     std::shared_ptr<common::IBuffer> GetData() { return buffer_; }
