@@ -27,7 +27,7 @@ bool DecodePackets(std::shared_ptr<common::IBufferRead> buffer, std::vector<std:
         std::shared_ptr<IPacket> packet;
         if (flag.GetHeaderType() == PacketHeaderType::kShortHeader) {
             packet = std::make_shared<Rtt1Packet>(flag.GetFlag());
-           
+
         } else {
             common::LOG_DEBUG("get packet type:%s", PacketTypeToString(flag.GetPacketType()));
             switch (flag.GetPacketType())

@@ -27,12 +27,12 @@ public:
     void AddReceiver(uint64_t socket_fd);
     void AddReceiver(const std::string& ip, uint16_t port);
 
-    void TryRecv(std::shared_ptr<INetPacket> pkt, uint32_t timeout_ms);
+    void TryRecv(std::shared_ptr<NetPacket> pkt, uint32_t timeout_ms);
 
     virtual void Wakeup();
 
 private:
-    bool TryRecv(std::shared_ptr<INetPacket> pkt);
+    bool TryRecv(std::shared_ptr<NetPacket> pkt);
 
 private:
     std::queue<uint64_t> socket_queue_;

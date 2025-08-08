@@ -34,8 +34,8 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     std::shared_ptr<common::ITimer> timer,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-    std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
+    std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
+    std::function<void(ConnectionID&)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
     IConnection(timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     last_communicate_time_(0),
@@ -209,8 +209,6 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
 }
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
-    // TODO check init packet size
-
     if (!connection_crypto_.InitIsReady()) {
         LongHeader* header = (LongHeader*)packet->GetHeader();
         connection_crypto_.InstallInitSecret((uint8_t*)header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(), true);
@@ -488,8 +486,7 @@ bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     
     remote_conn_id_manager_->RetireIDBySequence(new_cid_frame->GetRetirePriorTo());
     ConnectionID id;
-    new_cid_frame->GetConnectionID(id.id_, id.len_);
-    id.index_ = new_cid_frame->GetSequenceNumber();
+    new_cid_frame->GetConnectionID(id);
     remote_conn_id_manager_->AddID(id);
     return true;
 }
@@ -650,15 +647,15 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
     }
 }
 
-void BaseConnection::AddConnectionId(uint64_t cid_hash) {
+void BaseConnection::AddConnectionId(ConnectionID& id) {
     if (add_conn_id_cb_) {
-        add_conn_id_cb_(cid_hash, shared_from_this());
+        add_conn_id_cb_(id, shared_from_this());
     }
 }
 
-void BaseConnection::RetireConnectionId(uint64_t cid_hash) {
+void BaseConnection::RetireConnectionId(ConnectionID& id) {
     if (retire_conn_id_cb_) {
-        retire_conn_id_cb_(cid_hash);
+        retire_conn_id_cb_(id);
     }
 }
 

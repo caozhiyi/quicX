@@ -81,7 +81,7 @@ void ConnectionCrypto::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     crypto_stream_->OnFrame(frame);
 }
 
-bool ConnectionCrypto::InstallInitSecret(uint8_t* secret, uint32_t len, bool is_server) {
+bool ConnectionCrypto::InstallInitSecret(const uint8_t* secret, uint32_t len, bool is_server) {
     if (cryptographers_[kInitial]) {
         return false;
     }

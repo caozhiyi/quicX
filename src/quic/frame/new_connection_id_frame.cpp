@@ -82,14 +82,9 @@ void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {
     length_ = len;
 }
 
-void NewConnectionIDFrame::GetConnectionID(uint8_t* id, uint8_t& len) { 
-    if (len < length_) {
-        common::LOG_ERROR("insufficient remaining id space. remain_size:%d, need_size:%d", len, length_);
-        return;
-    }
-    
-    memcpy(id, connection_id_, length_); 
-    len = length_;
+void NewConnectionIDFrame::GetConnectionID(ConnectionID& id) {    
+    id.SetID(connection_id_, length_); 
+    id.SetSequenceNumber(sequence_number_);
 }
 
 void NewConnectionIDFrame::SetStatelessResetToken(uint8_t* token) {

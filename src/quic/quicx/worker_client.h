@@ -1,26 +1,24 @@
-#ifndef QUIC_QUICX_PROCESSOR_CLIENT
-#define QUIC_QUICX_PROCESSOR_CLIENT
+#ifndef QUIC_QUICX_SERVER_WORKER
+#define QUIC_QUICX_SERVER_WORKER
 
-#include "quic/quicx/processor_base.h"
+#include "quic/quicx/worker.h"
 
 namespace quicx {
 namespace quic {
 
-/*
- client processor
-*/
-class ProcessorClient:
-    public ProcessorBase {
+// a normal worker
+class ClientWorker:
+    public Worker {
 public:
-    ProcessorClient(std::shared_ptr<TLSCtx> ctx,
+    ClientWorker(std::shared_ptr<TLSCtx> ctx,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
-    virtual ~ProcessorClient();
+    virtual ~ClientWorker();
 
     virtual void Connect(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms);
 private:
-    bool HandlePacket(std::shared_ptr<INetPacket> packet);
+    virtual bool InnerHandlePacket(PacketInfo& packet_info) override;
     void HandleConnectionTimeout(std::shared_ptr<IConnection> conn);
 };
 

@@ -28,8 +28,8 @@ public:
         std::shared_ptr<common::ITimer> timer,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-        std::function<void(uint64_t cid_hash, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(uint64_t cid_hash)> retire_conn_id_cb,
+        std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
+        std::function<void(ConnectionID&)> retire_conn_id_cb,
         std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb);
     virtual ~BaseConnection();
     //*************** outside interface ***************//
@@ -91,8 +91,8 @@ protected:
     void ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason);
     void InnerStreamClose(uint64_t stream_id);
 
-    void AddConnectionId(uint64_t cid_hash);
-    void RetireConnectionId(uint64_t cid_hash);
+    void AddConnectionId(ConnectionID& id);
+    void RetireConnectionId(ConnectionID& id);
     
     std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd);
 
