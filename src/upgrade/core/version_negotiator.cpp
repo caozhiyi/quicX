@@ -9,9 +9,11 @@ namespace upgrade {
 NegotiationResult VersionNegotiator::Negotiate(
     ConnectionContext& context, const UpgradeSettings& settings) {
     
-    // Step 1: Protocol detection
-    if (!DetectProtocol(context)) {
-        return {false, Protocol::UNKNOWN, "", {}, "Protocol detection failed"};
+    // Step 1: Protocol detection (skip if already known)
+    if (context.detected_protocol == Protocol::UNKNOWN) {
+        if (!DetectProtocol(context)) {
+            return {false, Protocol::UNKNOWN, "", {}, "Protocol detection failed"};
+        }
     }
     
     // Step 2: Select optimal protocol
@@ -32,17 +34,23 @@ bool VersionNegotiator::DetectProtocol(ConnectionContext& context) {
 }
 
 Protocol VersionNegotiator::SelectBestProtocol(const ConnectionContext& context, const UpgradeSettings& settings) {
-    // Always prefer HTTP/3 if client supports it
+    // Always prefer HTTP/3 if client already using it
     if (context.detected_protocol == Protocol::HTTP3) {
         return Protocol::HTTP3;
     }
-    
-    // Check ALPN protocols (from HttpsSmartHandler)
+
+    // Prefer HTTP/3 if advertised via ALPN
     if (SupportsProtocol(context.alpn_protocols, "h3")) {
         return Protocol::HTTP3;
     }
-    
-    // If HTTP/3 is not supported, fall back to detected protocol
+
+    // Prefer upgrading HTTP/1.1 or HTTP/2 to HTTP/3 if enabled
+    if (settings.enable_http3 &&
+        (context.detected_protocol == Protocol::HTTP1_1 || context.detected_protocol == Protocol::HTTP2)) {
+        return Protocol::HTTP3;
+    }
+
+    // Otherwise, keep detected protocol
     return context.detected_protocol;
 }
 
@@ -70,6 +78,10 @@ NegotiationResult VersionNegotiator::GenerateUpgradeStrategy(
                 break;
             case Protocol::HTTP2:
                 result.upgrade_data = GenerateHTTP2UpgradeData();
+                break;
+            case Protocol::HTTP3:
+                // Direct HTTP/3: no upgrade payload required
+                result.upgrade_data.clear();
                 break;
             default:
                 result.success = false;

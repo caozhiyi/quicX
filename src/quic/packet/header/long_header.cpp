@@ -103,14 +103,18 @@ uint32_t LongHeader::EncodeHeaderSize() {
     return sizeof(LongHeader);
 }
 
-void LongHeader::SetDestinationConnectionId(uint8_t* id, uint8_t len) {
+void LongHeader::SetDestinationConnectionId(const uint8_t* id, uint8_t len) {
     destination_connection_id_length_ = len;
-    memcpy(destination_connection_id_, id, len);
+    if (id != nullptr) {
+        memcpy(destination_connection_id_, id, len);
+    }
 }
 
-void LongHeader::SetSourceConnectionId(uint8_t* id, uint8_t len) {
+void LongHeader::SetSourceConnectionId(const uint8_t* id, uint8_t len) {
     source_connection_id_length_ = len;
-    memcpy(source_connection_id_, id, len);
+    if (id != nullptr) {
+        memcpy(source_connection_id_, id, len);
+    }
 }
 
 }

@@ -11,7 +11,8 @@ namespace quicx {
 namespace quic {
 
 Master::Master() {
-    receiver_ = std::make_shared<IReceiver>();
+    timer_ = common::MakeTimer();
+    receiver_ = IReceiver::MakeReceiver();
 }
 
 Master::~Master() {
@@ -72,6 +73,11 @@ bool Master::InitAsServer(int32_t thread_num, const char* cert_pem, const char* 
 
     Start();
     return true;
+}
+
+void Master::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
+    common::TimerTask task(cb);
+    timer_->AddTimer(task, timeout_ms);
 }
 
 void Master::Destroy() {

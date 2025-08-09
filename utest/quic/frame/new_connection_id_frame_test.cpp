@@ -26,9 +26,9 @@ TEST(new_connection_id_frame_utest, codec) {
     
     frame1.SetStatelessResetToken((uint8_t*)toekn);
 
-    uint8_t cid[] = {1,2,3,4,5,6,7,8};
-    uint8_t len = sizeof(cid);
-    frame1.SetConnectionID(cid, len);
+    uint8_t cid_bytes[] = {1,2,3,4,5,6,7,8};
+    uint8_t len = sizeof(cid_bytes);
+    frame1.SetConnectionID(cid_bytes, len);
 
     EXPECT_TRUE(frame1.Encode(write_buffer));
 
@@ -42,10 +42,9 @@ TEST(new_connection_id_frame_utest, codec) {
     EXPECT_EQ(frame1.GetRetirePriorTo(), frame2.GetRetirePriorTo());
     EXPECT_EQ(frame1.GetSequenceNumber(), frame2.GetSequenceNumber());
 
-    uint8_t cid_ptr[20] = {};
-    uint8_t cid_len = 20;
-    frame2.GetConnectionID(cid_ptr, cid_len);
-    EXPECT_EQ(std::string((char*)cid_ptr, cid_len), std::string((char*)cid, len));
+    ConnectionID cid;
+    frame2.GetConnectionID(cid);
+    EXPECT_EQ(std::string((char*)cid.GetID(), cid.GetLength()), std::string((char*)cid_bytes, len));
     EXPECT_EQ(std::string((char*)frame1.GetStatelessResetToken(), kStatelessResetTokenLength), 
         std::string((char*)frame2.GetStatelessResetToken(), kStatelessResetTokenLength));
 }

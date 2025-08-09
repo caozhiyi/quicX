@@ -23,11 +23,11 @@ public:
     void SetVersion(uint32_t version) { version_ = version; } 
     uint32_t GetVersion() const {  return version_; }
 
-    void SetDestinationConnectionId(uint8_t* id, uint8_t len);
+    void SetDestinationConnectionId(const uint8_t* id, uint8_t len);
     uint8_t GetDestinationConnectionIdLength() { return destination_connection_id_length_; }
     const uint8_t* GetDestinationConnectionId()  { return destination_connection_id_; }
 
-    void SetSourceConnectionId(uint8_t* id, uint8_t len);
+    void SetSourceConnectionId(const uint8_t* id, uint8_t len);
     uint8_t GetSourceConnectionIdLength() { return source_connection_id_length_; }
     const uint8_t* GetSourceConnectionId()  { return source_connection_id_; }
 

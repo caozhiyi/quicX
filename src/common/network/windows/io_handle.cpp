@@ -8,6 +8,30 @@
 namespace quicx {
 namespace common {
 
+// Retrieve WSARecvMsg function pointer at runtime (not always declared by headers)
+static LPFN_WSARECVMSG ResolveWSARecvMsg(SOCKET sockfd) {
+    static LPFN_WSARECVMSG wsa_recv_msg = nullptr;
+    static bool initialized = false;
+    if (!initialized) {
+        GUID guid = WSAID_WSARECVMSG;
+        DWORD bytes = 0;
+        if (WSAIoctl(sockfd,
+                     SIO_GET_EXTENSION_FUNCTION_POINTER,
+                     &guid, sizeof(guid),
+                     &wsa_recv_msg, sizeof(wsa_recv_msg),
+                     &bytes, NULL, NULL) == SOCKET_ERROR) {
+            wsa_recv_msg = nullptr;
+        }
+        initialized = true;
+    }
+    return wsa_recv_msg;
+}
+
+SysCallInt64Result TcpSocket() {
+    int64_t sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    return {sock, sock != INVALID_SOCKET ? 0 : WSAGetLastError()};
+}
+
 SysCallInt64Result UdpSocket() {
     int64_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     return {sock, sock != INVALID_SOCKET ? 0 : WSAGetLastError()};
@@ -25,6 +49,30 @@ SysCallInt32Result Bind(int64_t sockfd, Address& addr) {
     inet_pton(AF_INET, addr.GetIp().c_str(), &addr_in.sin_addr);
 
     const int32_t rc = bind(sockfd, (sockaddr*)&addr_in, sizeof(addr_in));
+    return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
+}
+
+SysCallInt64Result Accept(int64_t sockfd, Address& addr) {
+    struct sockaddr_in addr_cli;
+    socklen_t fromlen = sizeof(sockaddr);
+
+    const int32_t rc = accept(sockfd, (sockaddr*)&addr_cli, &fromlen);
+    if (rc == SOCKET_ERROR) {
+        if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAECONNABORTED) {
+            return {-1, 0};
+        }
+        return {-1, WSAGetLastError()};
+    }
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &addr_cli.sin_addr, ip, sizeof(ip));
+    addr.SetIp(ip);
+    addr.SetPort(ntohs(addr_cli.sin_port));
+    addr.SetAddressType(Address::CheckAddressType(addr.GetIp()));
+    return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
+}
+
+SysCallInt32Result Listen(int64_t sockfd, int32_t backlog) {
+    const int32_t rc = listen(sockfd, backlog);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
@@ -94,15 +142,23 @@ SysCallInt32Result RecvFrom(int64_t sockfd, char *msg, uint32_t len, uint16_t fl
 
 SysCallInt32Result RecvMsg(int64_t sockfd, Msghdr* msg, int16_t flag) {
     DWORD bytes_received;
-    const int32_t rc = WSARecvMsg(sockfd, (LPWSAMSG)msg, &bytes_received, NULL, NULL);
+    LPFN_WSARECVMSG fn = ResolveWSARecvMsg((SOCKET)sockfd);
+    if (!fn) {
+        return {SOCKET_ERROR, WSAEOPNOTSUPP};
+    }
+    const int32_t rc = fn((SOCKET)sockfd, (LPWSAMSG)msg, &bytes_received, NULL, NULL);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
 SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out) {
     DWORD bytes_received;
     int32_t rc = 0;
+    LPFN_WSARECVMSG fn = ResolveWSARecvMsg((SOCKET)sockfd);
+    if (!fn) {
+        return {SOCKET_ERROR, WSAEOPNOTSUPP};
+    }
     for (uint32_t i = 0; i < vlen; ++i) {
-        rc = WSARecvMsg(sockfd, (LPWSAMSG)&msgvec[i].msg_hdr_, &bytes_received, NULL, NULL);
+        rc = fn((SOCKET)sockfd, (LPWSAMSG)&msgvec[i].msg_hdr_, &bytes_received, NULL, NULL);
         if (rc == SOCKET_ERROR) {
             return {rc, WSAGetLastError()};
         }

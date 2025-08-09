@@ -1,9 +1,6 @@
 #include <gtest/gtest.h>
-#include "quic/include/type.h"
-#include "common/timer/timer.h"
-#include "quic/connection/type.h"
-#include "quic/frame/frame_decode.h"
-#include "quic/quicx/if_net_packet.h"
+
+#include "common/buffer/buffer.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"

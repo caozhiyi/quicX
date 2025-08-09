@@ -17,11 +17,12 @@ public:
     ~ConnectionID();
 
     uint64_t Hash();
-    uint64_t SequenceNumber() const;
-    const uint8_t* ID() const;
-    uint8_t Len() const;
-
+    
+    const uint8_t* GetID() const;
+    uint8_t GetLength() const;
     void SetID(uint8_t* id, uint8_t len);
+
+    uint64_t GetSequenceNumber() const;
     void SetSequenceNumber(uint64_t sequence_number) { sequence_number_ = sequence_number; }
 
     void operator=(const ConnectionID& other);
@@ -32,7 +33,7 @@ private:
     friend class ConnectionIDManager;
 
     uint8_t id_[kMaxCidLength];
-    uint8_t len_;
+    uint8_t length_;
     uint64_t sequence_number_;
     uint64_t hash_;
 };

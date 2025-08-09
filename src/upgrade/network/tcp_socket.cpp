@@ -162,6 +162,13 @@ std::string TcpSocket::GetLocalAddress() const {
     if (!address_cached_) {
         CacheAddressInfo();
     }
+    if (!IsValid()) {
+        return std::string();
+    }
+    // If not bound, normalize to empty string instead of 0.0.0.0
+    if (local_address_ == "0.0.0.0" || local_port_ == 0) {
+        return std::string();
+    }
     return local_address_;
 }
 
@@ -169,7 +176,7 @@ uint16_t TcpSocket::GetLocalPort() const {
     if (!address_cached_) {
         CacheAddressInfo();
     }
-    return local_port_;
+    return IsValid() ? local_port_ : 0;
 }
 
 bool TcpSocket::SetNonBlocking(bool non_blocking) {

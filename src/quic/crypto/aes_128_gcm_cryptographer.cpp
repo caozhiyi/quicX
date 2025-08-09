@@ -1,5 +1,5 @@
-#include <openssl/aead.h>
-#include <openssl/evp.h>
+#include "third/boringssl/include/openssl/aead.h"
+#include "third/boringssl/include/openssl/evp.h"
 #include "quic/crypto/aes_128_gcm_cryptographer.h"
 
 namespace quicx {

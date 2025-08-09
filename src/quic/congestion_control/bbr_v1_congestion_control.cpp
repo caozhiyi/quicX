@@ -1,193 +1,212 @@
-#include <memory>
-#include <algorithm>
-#include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v1_congestion_control.h"
+#include "quic/congestion_control/normal_pacer.h"
+#include <algorithm>
 
 namespace quicx {
 namespace quic {
 
-constexpr double BBRv1CongestionControl::kHighGain;
-constexpr double BBRv1CongestionControl::kDrainGain;
-constexpr double BBRv1CongestionControl::kPacingGain;
-constexpr double BBRv1CongestionControl::kLowGain;
-constexpr size_t BBRv1CongestionControl::kMinWindow;
+static inline uint64_t MulDiv(uint64_t a, uint64_t num, uint64_t den) {
+    if (den == 0) return 0;
+    __int128 t = static_cast<__int128>(a) * static_cast<__int128>(num);
+    return static_cast<uint64_t>(t / den);
+}
 
-constexpr uint64_t BBRv1CongestionControl::kProbeRttInterval;
-constexpr uint64_t BBRv1CongestionControl::kProbeRttDuration;
+BBRv1CongestionControl::BBRv1CongestionControl() {
+    Configure({});
+}
 
-BBRv1CongestionControl::BBRv1CongestionControl():
-    mode_(kStartup),
-    min_rtt_timestamp_(0),
-    probe_rtt_done_timestamp_(0),
-    probe_rtt_round_done_(false),
-    pacing_gain_(kHighGain),
-    cwnd_gain_(kHighGain),
+BBRv1CongestionControl::~BBRv1CongestionControl() = default;
 
-    max_bandwidth_(0) {
-    
-    congestion_window_ = kMinWindow;
+void BBRv1CongestionControl::Configure(const CcConfigV2& cfg) {
+    cfg_ = cfg;
+    cwnd_bytes_ = std::max<uint64_t>(cfg_.initial_cwnd_bytes, 4 * cfg_.mss_bytes);
+    ssthresh_bytes_ = UINT64_MAX;
     bytes_in_flight_ = 0;
-    in_slow_start_ = true;
-    pacer_ = std::unique_ptr<NormalPacer>(new NormalPacer());
+
+    srtt_us_ = 0;
+    min_rtt_us_ = 0;
+    min_rtt_stamp_us_ = 0;
+
+    bw_window_.clear();
+    max_bw_bps_ = 0;
+    full_bw_bps_ = 0;
+    full_bw_cnt_ = 0;
+    end_of_round_pn_ = 0;
+
+    mode_ = Mode::kStartup;
+    pacing_gain_ = 2.885; // STARTUP gain ~ 2/ln(2)
+    cwnd_gain_ = 2.0;
+
+    cycle_index_ = 0;
+    cycle_start_us_ = 0;
+
+    probe_rtt_done_stamp_valid_ = false;
+    probe_rtt_done_stamp_us_ = 0;
+
+    pacer_.reset(new NormalPacer());
 }
 
-BBRv1CongestionControl::~BBRv1CongestionControl() {
+void BBRv1CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
+    bytes_in_flight_ += ev.bytes;
+    if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
 }
 
-void BBRv1CongestionControl::OnPacketSent(size_t bytes, uint64_t sent_time) {
-    bytes_in_flight_ = bytes_in_flight_ + bytes;
-    pacer_->OnPacketSent(sent_time, bytes);
-}
+void BBRv1CongestionControl::OnPacketAcked(const AckEvent& ev) {
+    bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
 
-void BBRv1CongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
-    bytes_in_flight_ = (bytes_in_flight_ > bytes) ? bytes_in_flight_ - bytes : 0;
-
-    // Calculate delivery rate
-    uint64_t bandwidth = bytes * 1000000 / smoothed_rtt_; // bytes per second
-    UpdateBandwidth(bandwidth, ack_time);
-
-    CheckCyclePhase(ack_time);
-    pacer_->OnPacingRateUpdated(GetPacingRate());
-}
-
-void BBRv1CongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
-    bytes_in_flight_ = (bytes_in_flight_ > bytes) ? bytes_in_flight_ - bytes : 0;
-    pacer_->OnPacingRateUpdated(GetPacingRate());
-}
-
-void BBRv1CongestionControl::OnRttUpdated(uint64_t rtt) {
-    smoothed_rtt_ = rtt;
-    if (min_rtt_timestamp_ == 0 || rtt < min_rtt_) {
-        min_rtt_ = rtt;
-        min_rtt_timestamp_ = smoothed_rtt_;
-    }
-    pacer_->OnPacingRateUpdated(GetPacingRate());
-}
-
-size_t BBRv1CongestionControl::GetCongestionWindow() const {
-    if (mode_ == kProbeRtt) {
-        return kMinWindow;
-    }
-    return std::min(GetTargetCwnd(), max_congestion_window_);
-}
-
-size_t BBRv1CongestionControl::GetBytesInFlight() const {
-    return bytes_in_flight_;
-}
-
-bool BBRv1CongestionControl::CanSend(uint64_t now, uint32_t& can_send_bytes) const {
-    uint32_t max_send_bytes = GetCongestionWindow() - bytes_in_flight_;
-    can_send_bytes = std::min(max_send_bytes, can_send_bytes);
-    return pacer_->CanSend(now);
-}
-
-uint64_t BBRv1CongestionControl::GetPacingRate() const {
-    if (mode_ == kProbeRtt) {
-        // in PROBE_RTT, use conservative rate
-        return max_bandwidth_;
+    // bandwidth sample: acked_bytes / srtt
+    if (srtt_us_ > 0) {
+        uint64_t sample_bps = MulDiv(ev.bytes_acked, 8ull * 1000000ull, srtt_us_); // bits/sec
+        sample_bps /= 8; // convert to bytes/sec
+        UpdateMaxBandwidth(sample_bps, ev.ack_time);
     }
 
-    // calculate bandwidth
-    uint64_t bandwidth = max_bandwidth_;
-    if (bandwidth == 0) {
-        // if no bandwidth samples, use conservative estimate based on window
-        if (min_rtt_ > 0) {
-            bandwidth = (congestion_window_ * 1000000) / min_rtt_;
-        } else {
-            // if no RTT, use conservative default value
-            bandwidth = (congestion_window_ * 1000000) / 100000;  // TODO: assume 100ms RTT
+    CheckFullBandwidthReached(ev.ack_time);
+    MaybeEnterOrExitProbeRtt(ev.ack_time);
+
+    // Update cwnd based on BDP * cwnd_gain_
+    uint64_t target = BdpBytes(static_cast<uint64_t>(cwnd_gain_ * 1000), 1000);
+    if (cwnd_bytes_ < target) cwnd_bytes_ += ev.bytes_acked; // grow by acked bytes
+    cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, target);
+    cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, cfg_.max_cwnd_bytes);
+
+    // Advance ProbeBW cycle if needed
+    if (mode_ == Mode::kProbeBw) {
+        AdvanceProbeBwCycle(ev.ack_time);
+    }
+    UpdatePacingRate();
+}
+
+void BBRv1CongestionControl::OnPacketLost(const LossEvent& ev) {
+    bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
+    // In STARTUP, loss exits to DRAIN
+    if (mode_ == Mode::kStartup) {
+        mode_ = Mode::kDrain;
+        pacing_gain_ = 1.0 / 2.885; // drain faster by pacing below bw
+        cwnd_gain_ = 2.0;
+    }
+    UpdatePacingRate();
+}
+
+void BBRv1CongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
+    (void)ack_delay;
+    if (srtt_us_ == 0) srtt_us_ = latest_rtt;
+    srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
+    if (min_rtt_us_ == 0 || latest_rtt < min_rtt_us_) {
+        min_rtt_us_ = latest_rtt;
+        min_rtt_stamp_us_ = 0; // force ProbeRTT timer refresh at caller time base
+    }
+}
+
+ICongestionControl::SendState BBRv1CongestionControl::CanSend(uint64_t now, uint64_t& can_send_bytes) const {
+    (void)now;
+    uint64_t target = BdpBytes(static_cast<uint64_t>(cwnd_gain_ * 1000), 1000);
+    uint64_t left = (target > bytes_in_flight_) ? (target - bytes_in_flight_) : 0;
+    can_send_bytes = left;
+    if (left == 0) return SendState::kBlockedByCwnd;
+    return SendState::kOk;
+}
+
+uint64_t BBRv1CongestionControl::GetPacingRateBps() const {
+    if (max_bw_bps_ == 0) {
+        if (srtt_us_ == 0) return cfg_.min_cwnd_bytes * 8;
+        // fallback: cwnd/srtt
+        return MulDiv(cwnd_bytes_, 8ull * 1000000ull, srtt_us_);
+    }
+    return static_cast<uint64_t>(max_bw_bps_ * pacing_gain_);
+}
+
+uint64_t BBRv1CongestionControl::NextSendTime(uint64_t now) const {
+    if (!pacer_) return 0;
+    (void)now;
+    return pacer_->TimeUntilSend();
+}
+
+uint64_t BBRv1CongestionControl::BdpBytes(uint64_t gain_num, uint64_t gain_den) const {
+    if (min_rtt_us_ == 0) {
+        // Fallback to SRTT or MSS-based cwnd
+        return std::max<uint64_t>(cwnd_bytes_, 4 * cfg_.mss_bytes);
+    }
+    uint64_t bw = (max_bw_bps_ > 0) ? max_bw_bps_ : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
+    uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull); // bytes
+    __int128 t = static_cast<__int128>(bdp) * static_cast<__int128>(gain_num);
+    return static_cast<uint64_t>(t / gain_den);
+}
+
+void BBRv1CongestionControl::SetPacingGain(double gain) { pacing_gain_ = gain; }
+void BBRv1CongestionControl::SetCwndGain(double gain) { cwnd_gain_ = gain; }
+void BBRv1CongestionControl::UpdatePacingRate() {
+    if (!pacer_) return;
+    pacer_->OnPacingRateUpdated(GetPacingRateBps());
+}
+
+void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
+    // Every 10s, enter ProbeRTT for 200ms
+    if (!probe_rtt_done_stamp_valid_ || now_us - probe_rtt_done_stamp_us_ > kProbeRttIntervalUs) {
+        mode_ = Mode::kProbeRtt;
+        SetPacingGain(1.0);
+        SetCwndGain(1.0);
+        probe_rtt_done_stamp_valid_ = true;
+        probe_rtt_done_stamp_us_ = now_us + kProbeRttTimeUs;
+    }
+    if (mode_ == Mode::kProbeRtt && now_us >= probe_rtt_done_stamp_us_) {
+        // Return to PROBE_BW after ProbeRTT completes
+        mode_ = Mode::kProbeBw;
+        SetPacingGain(1.0);
+        SetCwndGain(2.0);
+        cycle_index_ = 0;
+        cycle_start_us_ = now_us;
+    }
+}
+
+void BBRv1CongestionControl::AdvanceProbeBwCycle(uint64_t now_us) {
+    static const double kGainCycle[8] = {1.25, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    uint64_t cycle_len_us = std::max<uint64_t>(min_rtt_us_, 1000); // at least 1ms
+    if (now_us - cycle_start_us_ >= cycle_len_us) {
+        cycle_index_ = (cycle_index_ + 1) % 8;
+        cycle_start_us_ = now_us;
+        SetPacingGain(kGainCycle[cycle_index_]);
+    }
+}
+
+void BBRv1CongestionControl::UpdateMaxBandwidth(uint64_t sample_bps, uint64_t now_us) {
+    // sliding window max filter
+    bw_window_.push_back({now_us, sample_bps});
+    while (bw_window_.size() > kBwWindow) bw_window_.erase(bw_window_.begin());
+    uint64_t m = 0;
+    for (const auto& s : bw_window_) m = std::max<uint64_t>(m, s.bytes_per_sec);
+    max_bw_bps_ = m;
+}
+
+void BBRv1CongestionControl::CheckFullBandwidthReached(uint64_t now_us) {
+    (void)now_us;
+    if (max_bw_bps_ == 0) return;
+    if (full_bw_bps_ == 0 || max_bw_bps_ > full_bw_bps_ * 125 / 100) {
+        full_bw_bps_ = max_bw_bps_;
+        full_bw_cnt_ = 0;
+    } else {
+        full_bw_cnt_++;
+        if (mode_ == Mode::kStartup && full_bw_cnt_ >= 3) {
+            // Exit STARTUP to DRAIN
+            mode_ = Mode::kDrain;
+            SetPacingGain(1.0 / 2.885);
+            SetCwndGain(2.0);
         }
     }
-
-    // apply pacing gain
-    uint64_t pacing_rate = bandwidth * pacing_gain_;
-
-    // ensure minimum pacing rate
-    const uint64_t min_pacing_rate = (kMinWindow * 1000000) / 
-        std::max(min_rtt_, static_cast<uint64_t>(1000)); // at least 1ms
-    pacing_rate = std::max(pacing_rate, min_pacing_rate);
-
-    return pacing_rate;
-}
-
-void BBRv1CongestionControl::Reset() {
-    mode_ = kStartup;
-    min_rtt_timestamp_ = 0;
-    probe_rtt_done_timestamp_ = 0;
-    probe_rtt_round_done_ = false;
-    pacing_gain_ = kHighGain;
-    cwnd_gain_ = kHighGain;
-    max_bandwidth_ = 0;
-    bandwidth_samples_.clear();
-    congestion_window_ = kMinWindow;
-    bytes_in_flight_ = 0;
-    in_slow_start_ = true;
-}
-
-void BBRv1CongestionControl::UpdateBandwidth(uint64_t bandwidth, uint64_t timestamp) {
-    bandwidth_samples_.push_back({bandwidth, timestamp});
-    while (!bandwidth_samples_.empty() && 
-           timestamp - bandwidth_samples_.front().timestamp > smoothed_rtt_) {
-        bandwidth_samples_.pop_front();
-    }
-
-    uint64_t max_bw = 0;
-    for (const auto& sample : bandwidth_samples_) {
-        max_bw = std::max(max_bw, sample.bandwidth);
-    }
-    max_bandwidth_ = max_bw;
-}
-
-void BBRv1CongestionControl::EnterStartup() {
-    mode_ = kStartup;
-    pacing_gain_ = kHighGain;
-    cwnd_gain_ = kHighGain;
-}
-
-void BBRv1CongestionControl::EnterDrain() {
-    mode_ = kDrain;
-    pacing_gain_ = kDrainGain;
-    cwnd_gain_ = kHighGain;
-}
-
-void BBRv1CongestionControl::EnterProbeBW() {
-    mode_ = kProbeBW;
-    pacing_gain_ = kPacingGain;
-    cwnd_gain_ = 2;
-}
-
-void BBRv1CongestionControl::EnterProbeRTT() {
-    mode_ = kProbeRtt;
-    pacing_gain_ = 1;
-    cwnd_gain_ = 1;
-}
-
-void BBRv1CongestionControl::CheckCyclePhase(uint64_t now) {
-    if (mode_ == kStartup && !bandwidth_samples_.empty() && 
-        bandwidth_samples_.back().bandwidth <= max_bandwidth_) {
-        EnterDrain();
-    }
-
-    if (mode_ == kDrain && bytes_in_flight_ <= GetTargetCwnd()) {
-        EnterProbeBW();
-    }
-
-
-    if (now - min_rtt_timestamp_ > kProbeRttInterval) {
-        EnterProbeRTT();
-        probe_rtt_done_timestamp_ = now + kProbeRttDuration;
-        probe_rtt_round_done_ = false;
-    }
-
-    if (mode_ == kProbeRtt && now > probe_rtt_done_timestamp_ && probe_rtt_round_done_) {
-        min_rtt_timestamp_ = now;
-        EnterProbeBW();
+    if (mode_ == Mode::kDrain) {
+        // Drain until in-flight <= BDP
+        uint64_t bdp = BdpBytes(1000, 1000);
+        if (bytes_in_flight_ <= bdp) {
+            mode_ = Mode::kProbeBw;
+            SetPacingGain(1.0);
+            SetCwndGain(2.0);
+            cycle_index_ = 0;
+            cycle_start_us_ = now_us;
+        }
     }
 }
 
-uint64_t BBRv1CongestionControl::GetTargetCwnd() const {
-    return max_bandwidth_ * std::min(smoothed_rtt_, min_rtt_) * cwnd_gain_ / 1000000;
-}
+} // namespace quic
+} // namespace quicx
 
-}
-}
+

@@ -2,7 +2,7 @@
 #define QUIC_CRYPTO_TLS_TLS_SERVER_CONNECTION
 
 #include <memory>
-#include "quic/crypto/tls/tls_conneciton.h"
+#include "quic/crypto/tls/tls_connection.h"
 
 namespace quicx {
 namespace quic {

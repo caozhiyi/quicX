@@ -114,12 +114,14 @@ TEST(thread_safe_block_queue_utest, thread_safety_single_producer_single_consume
     std::vector<int> received_values;
     std::mutex received_mutex;
     
-    // Consumer thread
+    // Consumer thread (use timed TryPop to avoid indefinite blocking)
     std::thread consumer([&]() {
-        while (!stop_flag.load()) {
-            int value = queue.Pop();
-            std::lock_guard<std::mutex> lock(received_mutex);
-            received_values.push_back(value);
+        while (!stop_flag.load() || !queue.Empty()) {
+            int value;
+            if (queue.TryPop(value, std::chrono::milliseconds(10))) {
+                std::lock_guard<std::mutex> lock(received_mutex);
+                received_values.push_back(value);
+            }
         }
     });
     
@@ -181,12 +183,14 @@ TEST(thread_safe_block_queue_utest, thread_safety_multiple_consumers) {
     std::atomic<int> total_received(0);
     std::vector<std::thread> consumers;
     
-    // Start multiple consumer threads
+    // Start multiple consumer threads (use timed TryPop to avoid indefinite blocking)
     for (int i = 0; i < 4; ++i) {
         consumers.emplace_back([&]() {
-            while (!stop_flag.load()) {
-                int value = queue.Pop();
-                total_received.fetch_add(1);
+            while (!stop_flag.load() || !queue.Empty()) {
+                int value;
+                if (queue.TryPop(value, std::chrono::milliseconds(10))) {
+                    total_received.fetch_add(1);
+                }
             }
         });
     }
@@ -250,12 +254,15 @@ TEST(thread_safe_block_queue_utest, stress_test) {
         });
     }
     
-    // Start consumers
+    // Start consumers (use timed TryPop to avoid indefinite blocking)
     for (int i = 0; i < num_consumers; ++i) {
         consumers.emplace_back([&]() {
-            while (total_consumed.load() < num_producers * elements_per_producer) {
-                int value = queue.Pop();
-                total_consumed.fetch_add(1);
+            const int target = num_producers * elements_per_producer;
+            while (total_consumed.load() < target || !queue.Empty()) {
+                int value;
+                if (queue.TryPop(value, std::chrono::milliseconds(10))) {
+                    total_consumed.fetch_add(1);
+                }
             }
         });
     }

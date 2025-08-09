@@ -88,7 +88,7 @@ bool ConnectionCrypto::InstallInitSecret(const uint8_t* secret, uint32_t len, bo
     
     // make initial cryptographer
     std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(kCipherIdAes128GcmSha256);
-    cryptographer->InstallInitSecret(secret, len, kInitialSalt, sizeof(kInitialSalt), is_server);
+    cryptographer->InstallInitSecret(secret, len, kInitialSalt.data(), kInitialSalt.size(), is_server);
     cryptographers_[kInitial] = cryptographer;
     return true;
 }

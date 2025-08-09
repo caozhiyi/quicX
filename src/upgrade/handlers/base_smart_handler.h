@@ -3,17 +3,19 @@
 
 #include <memory>
 #include <unordered_map>
-#include "upgrade/handlers/if_smart_handler.h"
-#include "upgrade/handlers/connection_context.h"
+
+#include "upgrade/include/type.h"
 #include "upgrade/core/upgrade_manager.h"
 #include "upgrade/network/if_event_driver.h"
-#include "upgrade/include/type.h"
+#include "upgrade/handlers/if_smart_handler.h"
+#include "upgrade/handlers/connection_context.h"
 
 namespace quicx {
 namespace upgrade {
 
 // Base smart handler containing common logic
-class BaseSmartHandler : public ISmartHandler {
+class BaseSmartHandler:
+    public ISmartHandler {
 public:
     explicit BaseSmartHandler(const UpgradeSettings& settings);
     virtual ~BaseSmartHandler() = default;
@@ -48,6 +50,7 @@ protected:
     // Set event driver for registering write events
     void SetEventDriver(std::shared_ptr<IEventDriver> event_driver) { event_driver_ = event_driver; }
 
+protected:
     // Common member variables
     UpgradeSettings settings_;
     std::shared_ptr<UpgradeManager> manager_;
@@ -59,4 +62,4 @@ protected:
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_HANDLERS_BASE_SMART_HANDLER_H 
+#endif

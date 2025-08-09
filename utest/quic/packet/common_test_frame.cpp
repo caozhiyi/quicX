@@ -16,12 +16,12 @@ PacketTest::PacketTest() {
     ConnectionIDGenerator::Instance().Generator(dcid, kMaxCidLength);
 
     cli_cryptographer_ = MakeCryptographer(kCipherIdAes128GcmSha256);
-    if (!cli_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt, sizeof(kInitialSalt), false)) {
+    if (cli_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt.data(), kInitialSalt.size(), false) != ICryptographer::Result::kOk) {
         abort();
     }
 
     ser_cryptographer_ = MakeCryptographer(kCipherIdAes128GcmSha256);
-    if (!ser_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt, sizeof(kInitialSalt), true)) {
+    if (ser_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt.data(), kInitialSalt.size(), true) != ICryptographer::Result::kOk) {
         abort();
     }
 }

@@ -72,16 +72,18 @@ bool InitPacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     buffer->MoveWritePt(cur_pos - start_pos);
     auto header_span = header_.GetHeaderSrcData();
     
-    if(!crypto_grapher_->EncryptPacket(packet_number_, header_span, payload_, buffer)) {
-        common::LOG_ERROR("encrypt payload failed.");
+    auto result = crypto_grapher_->EncryptPacket(packet_number_, header_span, payload_, buffer);
+    if(result != ICryptographer::Result::kOk) {
+        common::LOG_ERROR("encrypt payload failed. result:%d", result);
         return false;
     }
 
     common::BufferSpan sample = common::BufferSpan(start_pos + packet_num_offset_ + 4,
     start_pos + packet_num_offset_ + 4 + kHeaderProtectSampleLength);
-    if(!crypto_grapher_->EncryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_, header_.GetPacketNumberLength(),
-        header_.GetHeaderType() == PacketHeaderType::kShortHeader)) {
-        common::LOG_ERROR("encrypt header failed.");
+    result = crypto_grapher_->EncryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_, header_.GetPacketNumberLength(),
+        header_.GetHeaderType() == PacketHeaderType::kShortHeader);
+    if(result != ICryptographer::Result::kOk) {
+        common::LOG_ERROR("encrypt header failed. result:%d", result);
         return false;
     }
 
@@ -146,9 +148,10 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     common::BufferSpan header_span = header_.GetHeaderSrcData();
     common::BufferSpan sample = common::BufferSpan(span.GetStart() + packet_num_offset_ + 4,
         span.GetStart() + packet_num_offset_ + 4 + kHeaderProtectSampleLength);
-    if(!crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_, packet_num_len, 
-        header_.GetHeaderType() == PacketHeaderType::kShortHeader)) {
-        common::LOG_ERROR("decrypt header failed.");
+    auto result = crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_, packet_num_len, 
+        header_.GetHeaderType() == PacketHeaderType::kShortHeader);
+    if(result != ICryptographer::Result::kOk) {
+        common::LOG_ERROR("decrypt header failed. result:%d", result);
         return false;
     }
     header_.SetPacketNumberLength(packet_num_len);
@@ -157,8 +160,9 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 
     // decrypt packet
     auto payload = common::BufferSpan(cur_pos, cur_pos + length_ - packet_num_len);
-    if(!crypto_grapher_->DecryptPacket(packet_number_, header_span, payload, buffer)) {
-        common::LOG_ERROR("decrypt packet failed.");
+    result = crypto_grapher_->DecryptPacket(packet_number_, header_span, payload, buffer);
+    if(result != ICryptographer::Result::kOk) {
+        common::LOG_ERROR("decrypt packet failed. result:%d", result);
         return false;
     }
     if(!DecodeFrames(buffer, frames_list_)) {

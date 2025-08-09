@@ -33,7 +33,7 @@ TEST(connection_control_flow, local_send_data) {
     FlowControl flow_control(StreamIDGenerator::StreamStarter::kClient);
     flow_control.UpdateConfig(TransportParamTest::Instance().GetTransportParam());
 
-    uint32_t can_send_size = 0;
+    uint64_t can_send_size = 0;
     std::shared_ptr<IFrame> frame;
     EXPECT_TRUE(flow_control.CheckLocalSendDataLimit(can_send_size, frame));
     EXPECT_EQ(can_send_size, 10000);

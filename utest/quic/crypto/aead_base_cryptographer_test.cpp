@@ -28,7 +28,7 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     std::shared_ptr<common::Buffer> out_ciphertext = std::make_shared<common::Buffer>(pool);
     common::BufferSpan associated_data_span = common::BufferSpan((uint8_t*)kAssociatedData, (uint8_t*)kAssociatedData + sizeof(kAssociatedData));
     common::BufferSpan plaintext_span2 = plaintext->GetReadSpan();
-    if (!encrypter->EncryptPacket(pkt_num, associated_data_span, plaintext_span2, out_ciphertext)) {
+    if (encrypter->EncryptPacket(pkt_num, associated_data_span, plaintext_span2, out_ciphertext) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << encrypter->GetName() << " EncryptPacket failed";
         return false;
     }
@@ -36,7 +36,7 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     std::shared_ptr<common::Buffer> out_plaintext = std::make_shared<common::Buffer>(pool);
     common::BufferSpan associated_data_span1 = common::BufferSpan((uint8_t*)kAssociatedData,  (uint8_t*)kAssociatedData + sizeof(kAssociatedData));
     common::BufferSpan plaintext_span1 = out_ciphertext->GetReadSpan();
-    if (!decrypter->DecryptPacket(pkt_num, associated_data_span1, plaintext_span1, out_plaintext)) {
+    if (decrypter->DecryptPacket(pkt_num, associated_data_span1, plaintext_span1, out_plaintext) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << decrypter->GetName() << " DecryptPacket failed";
         return false;
     }
@@ -77,13 +77,13 @@ bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     common::BufferSpan sample_span = common::BufferSpan((uint8_t*)kSample, (uint8_t*)kSample + sizeof(kSample));
     uint64_t pn_offset = 2;
 
-    if (!encrypter->EncryptHeader(src_ciphertext_span, sample_span, pn_offset, header.GetPacketNumberLength(), true)) {
+    if (encrypter->EncryptHeader(src_ciphertext_span, sample_span, pn_offset, header.GetPacketNumberLength(), true) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << encrypter->GetName() << " EncryptHeader failed";
         return false;
     }
 
     uint8_t pkt_number_len = 0;
-    if (!decrypter->DecryptHeader(src_ciphertext_span, sample_span, pn_offset, pkt_number_len, true)) {
+    if (decrypter->DecryptHeader(src_ciphertext_span, sample_span, pn_offset, pkt_number_len, true) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << decrypter->GetName() << " DecryptHeader failed";
         return false;
     }

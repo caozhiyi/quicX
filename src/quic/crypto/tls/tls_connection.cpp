@@ -2,7 +2,7 @@
 #include "openssl/base.h"
 #include "common/log/log.h"
 #include "quic/crypto/tls/tls_ctx.h"
-#include "quic/crypto/tls/tls_conneciton.h"
+#include "quic/crypto/tls/tls_connection.h"
 
 namespace quicx {
 namespace quic {

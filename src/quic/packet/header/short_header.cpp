@@ -71,7 +71,7 @@ uint32_t ShortHeader::EncodeHeaderSize() {
     return sizeof(ShortHeader);
 }
 
-void ShortHeader::SetDestinationConnectionId(uint8_t* id, uint8_t len) {
+void ShortHeader::SetDestinationConnectionId(const uint8_t* id, uint8_t len) {
     destination_connection_id_length_ = len;
     if (id != nullptr) {
         memcpy(destination_connection_id_, id, len);

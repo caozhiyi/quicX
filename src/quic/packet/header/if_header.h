@@ -23,7 +23,7 @@ public:
     virtual bool DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeHeaderSize() = 0;
 
-    virtual void SetDestinationConnectionId(uint8_t* id, uint8_t len) = 0;
+    virtual void SetDestinationConnectionId(const uint8_t* id, uint8_t len) = 0;
     virtual uint8_t GetDestinationConnectionIdLength() = 0;
     
     virtual common::BufferSpan& GetHeaderSrcData() { return header_src_data_; }

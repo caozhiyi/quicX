@@ -26,7 +26,7 @@ public:
     // check local send data limit, return true if can send data
     // if return true, can_send_size is the size of data can send
     // send_frame is the stream data block frame to send
-    bool CheckLocalSendDataLimit(uint32_t& can_send_size, std::shared_ptr<IFrame>& send_frame);
+    bool CheckLocalSendDataLimit(uint64_t& can_send_size, std::shared_ptr<IFrame>& send_frame);
 
     // check remote send data 
     // add remote send data offset when receive stream data frame

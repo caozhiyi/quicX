@@ -27,6 +27,9 @@ public:
     // all connections will be closed
     virtual void Destroy() = 0;
 
+    // add a timer
+    virtual void AddTimer(uint32_t timeout_ms, std::function<void()> cb) = 0;
+
     // connect to a quic server
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms) = 0;

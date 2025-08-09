@@ -1,5 +1,5 @@
-#ifndef QUIC_CONGESTION_CONTROL_BBR_V2_CONGESTION_CONTROL
-#define QUIC_CONGESTION_CONTROL_BBR_V2_CONGESTION_CONTROL
+#ifndef QUIC_CONGESTION_CONTROL_BBR_V3_CONGESTION_CONTROL
+#define QUIC_CONGESTION_CONTROL_BBR_V3_CONGESTION_CONTROL
 
 #include <cstdint>
 #include <vector>
@@ -11,10 +11,10 @@ namespace quicx {
 namespace quic {
 
 
-class BBRv2CongestionControl : public ICongestionControl {
+class BBRv3CongestionControl : public ICongestionControl {
 public:
-    BBRv2CongestionControl();
-    ~BBRv2CongestionControl() override = default;
+    BBRv3CongestionControl();
+    ~BBRv3CongestionControl() override = default;
 
     void Configure(const CcConfigV2& cfg) override;
     void OnPacketSent(const SentPacketEvent& ev) override;
@@ -38,12 +38,15 @@ private:
 
     struct BwSample { uint64_t time_us; uint64_t bytes_per_sec; };
 
-    // Helpers
     void MaybeEnterOrExitProbeRtt(uint64_t now_us);
     void AdvanceProbeBwCycle(uint64_t now_us);
     void UpdateMaxBandwidth(uint64_t sample_bps, uint64_t now_us);
     void CheckStartupFullBandwidth(uint64_t now_us);
     void UpdatePacingRate();
+
+    void StartNewRound(uint64_t pn);
+    void AdaptInflightBoundsOnLoss(uint64_t now_us);
+    void AdaptOnEcn();
 
     uint64_t BdpBytes(uint64_t gain_num, uint64_t gain_den) const; // BDP * gain
 
@@ -80,12 +83,18 @@ private:
     bool probe_rtt_done_stamp_valid_ = false;
     uint64_t probe_rtt_done_stamp_us_ = 0;
 
-    // BBRv2 inflight limits (bytes)
+    // v3: inflight bounds and loss accounting per round
     uint64_t inflight_hi_bytes_ = UINT64_MAX;
     uint64_t inflight_lo_bytes_ = 0;
+    uint64_t end_of_round_pn_ = 0;
+    uint64_t round_delivered_bytes_ = 0;
+    uint64_t round_lost_bytes_ = 0;
 
-    // Loss tracking (very lightweight)
-    uint64_t loss_event_count_in_round_ = 0;
+    // Loss threshold (approx v3 behavior). 2% default
+    double loss_thresh_ = 0.02;
+
+    // ECN handling
+    bool ecn_seen_in_round_ = false;
 
     // Pacer
     std::unique_ptr<IPacer> pacer_;

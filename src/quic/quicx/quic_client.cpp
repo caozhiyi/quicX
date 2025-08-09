@@ -32,6 +32,10 @@ void QuicClient::Destroy() {
     Quic::Destroy();
 }
 
+void QuicClient::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
+    master_->AddTimer(timeout_ms, cb);
+}
+
 bool QuicClient::Connection(const std::string& ip, uint16_t port,
     const std::string& alpn, int32_t timeout_ms) {
     return master_->Connection(ip, port, alpn, timeout_ms);

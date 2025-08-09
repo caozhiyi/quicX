@@ -17,6 +17,8 @@ public:
     virtual void RetireConnectionID(ConnectionID& cid) = 0;
 };
 
+// TODO how to implement a worker without new thread?
+
 // Worker interface
 // Worker handles packets in local thread or other thread
 class IWorker {

@@ -42,6 +42,10 @@ void QuicServer::Destroy() {
     Quic::Destroy();
 }
 
+void QuicServer::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
+    master_->AddTimer(timeout_ms, cb);
+}
+
 bool QuicServer::ListenAndAccept(const std::string& ip, uint16_t port) {
     master_->AddListener(ip, port);
     return true;

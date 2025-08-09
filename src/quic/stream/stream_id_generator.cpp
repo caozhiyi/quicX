@@ -6,8 +6,8 @@ namespace quic {
 
 StreamIDGenerator::StreamIDGenerator(StreamStarter starter):
     starter_(starter),
-    cur_bidirectional_id_(0),
-    cur_unidirectional_id_(0) {
+    cur_bidirectional_id_(1),
+    cur_unidirectional_id_(1) {
 
 }
 
