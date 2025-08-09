@@ -49,11 +49,10 @@ void UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
     
     auto sock = ret.return_value_;
 
-    // reuse port
-    int opt = 1;
-    auto opt_ret = common::SetSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+    // set noblocking
+    auto opt_ret = common::SocketNoblocking(sock);
     if (opt_ret.errno_ != 0) {
-        common::LOG_ERROR("udp socket reuseport failed. err:%d", opt_ret.errno_);
+        common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.errno_);
         abort();
         return;
     }
@@ -94,7 +93,7 @@ bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket> pkt) {
         auto span = buffer->GetWriteSpan();
         common::Address peer_addr;
 
-        auto ret = common::RecvFrom(sock, (char*)span.GetStart(), kMaxV4PacketSize, MSG_DONTWAIT, peer_addr);
+        auto ret = common::RecvFrom(sock, (char*)span.GetStart(), kMaxV4PacketSize, 0, peer_addr);
         if (ret.errno_ != 0) {
             if (ret.errno_ == EAGAIN) {
                 continue;
