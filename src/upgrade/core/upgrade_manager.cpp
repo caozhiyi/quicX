@@ -26,17 +26,15 @@ void UpgradeManager::ProcessUpgrade(ConnectionContext& context) {
 void UpgradeManager::SendUpgradeResponse(ConnectionContext& context, const NegotiationResult& result) {
     if (result.target_protocol == Protocol::HTTP3) {
         // Send upgrade response indicating HTTP/3 is preferred
-        if (result.upgrade_data.empty()) {
-            // No upgrade data means client doesn't support HTTP/3
-            SendFailureResponse(context, "HTTP/3 not supported by client");
-            return;
+        if (!result.upgrade_data.empty()) {
+            // Store the upgrade response for potential partial sends
+            context.pending_response = result.upgrade_data;
+            context.response_sent = 0;
+            common::LOG_INFO("Upgrade response prepared for HTTP/3");
+        } else {
+            // Direct HTTP/3, nothing to send
+            common::LOG_INFO("Direct HTTP/3 detected, no upgrade response needed");
         }
-        
-        // Store the upgrade response for potential partial sends
-        context.pending_response = result.upgrade_data;
-        context.response_sent = 0;
-        
-        common::LOG_INFO("Upgrade response prepared for HTTP/3");
     } else {
         // For other protocols, just log the result
         common::LOG_INFO("Protocol negotiation completed: %d", static_cast<int>(result.target_protocol));
@@ -59,6 +57,9 @@ void UpgradeManager::SendFailureResponse(ConnectionContext& context, const std::
 
 void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std::string& error) {
     SendFailureResponse(context, error);
+    if (context.socket) {
+        context.socket->Close();
+    }
 }
 
 } // namespace upgrade

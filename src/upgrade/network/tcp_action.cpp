@@ -45,6 +45,14 @@ bool TcpAction::Init() {
 }
 
 bool TcpAction::AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) {
+    if (!event_driver_) {
+        common::LOG_ERROR("TCP action not initialized");
+        return false;
+    }
+    if (port == 0 || port > 65535) {
+        common::LOG_ERROR("Invalid listen port: %u", port);
+        return false;
+    }
     // Create listening socket
     int listen_fd = CreateListenSocket(addr, port);
     if (listen_fd < 0) {
@@ -68,7 +76,9 @@ bool TcpAction::AddListener(const std::string& addr, uint16_t port, std::shared_
 
 void TcpAction::Stop() {
     running_ = false;
-    event_driver_->Wakeup();
+    if (event_driver_) {
+        event_driver_->Wakeup();
+    }
     
     // Close all listening sockets
     for (auto& listener : listeners_) {
@@ -288,6 +298,10 @@ uint64_t TcpAction::AddTimer(std::function<void()> callback, uint32_t timeout_ms
         // Store timer task
         timer_tasks_[timer_id] = task;
         common::LOG_DEBUG("Timer added with ID: %lu, timeout: %u ms", timer_id, timeout_ms);
+        // Wake up event loop to recompute timeout based on the new timer
+        if (event_driver_) {
+            event_driver_->Wakeup();
+        }
     } else {
         common::LOG_ERROR("Failed to add timer");
     }

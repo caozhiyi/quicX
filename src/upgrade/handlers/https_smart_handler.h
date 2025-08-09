@@ -57,6 +57,7 @@ private:
 
 private:
     SSL_CTX* ssl_ctx_ = nullptr;
+    bool ssl_ready_ = false;
     mutable std::unordered_map<std::shared_ptr<ITcpSocket>, SSLContext> ssl_context_map_;
 };
 
