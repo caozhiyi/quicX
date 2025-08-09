@@ -7,8 +7,8 @@
 #include "common/util/c_smart_ptr.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
-#include "quic/crypto/tls/tls_conneciton_client.h"
-#include "quic/crypto/tls/tls_conneciton_server.h"
+#include "quic/crypto/tls/tls_connection_client.h"
+#include "quic/crypto/tls/tls_connection_server.h"
 
 static uint8_t kALPNProtos[] = {0x03, 'f', 'o', 'o'};
 namespace quicx {

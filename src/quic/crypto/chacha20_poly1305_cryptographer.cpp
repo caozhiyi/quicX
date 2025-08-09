@@ -39,9 +39,9 @@ bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(common::BufferSpan& sa
     uint32_t *counter = (uint32_t *)(sample_pos);
     sample_pos += sizeof(uint32_t);
 
-    CRYPTO_chacha_20(out_mask, kHeaderMask, sizeof(kHeaderMask) - 1, key.data(), sample_pos, *counter);
+    CRYPTO_chacha_20(out_mask, kHeaderMask.data(), kHeaderMask.size(), key.data(), sample_pos, *counter);
 
-    out_mask_length = sizeof(kHeaderMask);
+    out_mask_length = kHeaderMask.size();
     return true;
 }
 

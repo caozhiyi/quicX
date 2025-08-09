@@ -11,7 +11,7 @@
 #include "quic/stream/send_stream.h"
 #include "quic/frame/if_stream_frame.h"
 #include "quic/connection/connection_id.h"
-#include "quic/crypto/tls/tls_conneciton.h"
+#include "quic/crypto/tls/tls_connection.h"
 #include "quic/stream/bidirection_stream.h"
 #include "quic/include/if_quic_connection.h"
 
