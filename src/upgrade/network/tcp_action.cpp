@@ -2,12 +2,10 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <cstring>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <chrono>
 
 #include "common/log/log.h"
+#include "common/network/io_handle.h"
 #include "upgrade/network/tcp_action.h"
 #include "upgrade/network/tcp_socket.h"
 
@@ -101,49 +99,26 @@ void TcpAction::Join() {
 
 int TcpAction::CreateListenSocket(const std::string& addr, uint16_t port) {
     // Create socket
-    int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (listen_fd < 0) {
-        common::LOG_ERROR("Failed to create socket: %s", strerror(errno));
+    auto result = common::TcpSocket();
+    if (result.errno_ != 0) {
+        common::LOG_ERROR("Failed to create socket: %s", strerror(result.errno_));
         return -1;
     }
-    
-    // Set socket options
-    int opt = 1;
-    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        common::LOG_ERROR("Failed to set SO_REUSEADDR: %s", strerror(errno));
-        close(listen_fd);
-        return -1;
-    }
-    
+    uint64_t listen_fd = result.return_value_;
+
     // Set non-blocking
-    int flags = fcntl(listen_fd, F_GETFL, 0);
-    if (flags < 0) {
-        common::LOG_ERROR("Failed to get socket flags: %s", strerror(errno));
-        close(listen_fd);
-        return -1;
-    }
-    
-    if (fcntl(listen_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-        common::LOG_ERROR("Failed to set non-blocking: %s", strerror(errno));
+    auto ret = common::SocketNoblocking(listen_fd);
+    if (ret.errno_ != 0) {
+        common::LOG_ERROR("Failed to get socket flags: %s", strerror(ret.errno_));
         close(listen_fd);
         return -1;
     }
     
     // Bind socket
-    struct sockaddr_in sock_addr;
-    sock_addr.sin_family = AF_INET;
-    sock_addr.sin_port = htons(port);
-    sock_addr.sin_addr.s_addr = inet_addr(addr.c_str());
-    
-    if (bind(listen_fd, reinterpret_cast<struct sockaddr*>(&sock_addr), sizeof(sock_addr)) < 0) {
-        common::LOG_ERROR("Failed to bind socket: %s", strerror(errno));
-        close(listen_fd);
-        return -1;
-    }
-    
-    // Listen
-    if (listen(listen_fd, SOMAXCONN) < 0) {
-        common::LOG_ERROR("Failed to listen: %s", strerror(errno));
+    common::Address address(addr, port);
+    ret = common::Bind(listen_fd, address);
+    if (ret.errno_ != 0) {
+        common::LOG_ERROR("Failed to bind socket: %s", strerror(ret.errno_));
         close(listen_fd);
         return -1;
     }
@@ -238,19 +213,23 @@ void TcpAction::HandleEvents(const std::vector<Event>& events) {
 }
 
 void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandler> handler) {
-    struct sockaddr_in client_addr;
-    socklen_t addr_len = sizeof(client_addr);
-    
-    int client_fd = accept(listen_fd, reinterpret_cast<struct sockaddr*>(&client_addr), &addr_len);
+    common::Address client_addr;
+    auto ret = common::Accept(listen_fd, client_addr);
+    if (ret.errno_ != 0) {
+        common::LOG_ERROR("Failed to accept connection: %s", strerror(ret.errno_));
+        return;
+    }
+    uint64_t client_fd = ret.return_value_;
     if (client_fd < 0) {
-        common::LOG_ERROR("Failed to accept connection: %s", strerror(errno));
+        common::LOG_ERROR("Failed to accept connection: %s", strerror(ret.errno_));
         return;
     }
     
     // Set non-blocking
-    int flags = fcntl(client_fd, F_GETFL, 0);
-    if (flags >= 0) {
-        fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+    auto noblock_ret = common::SocketNoblocking(client_fd);
+    if (noblock_ret.errno_ != 0) {
+        common::LOG_ERROR("Failed to set socket non-blocking: %s", strerror(noblock_ret.errno_));
+        return;
     }
     
     // Create TcpSocket
@@ -272,9 +251,7 @@ void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandle
     // Notify handler
     handler->HandleConnect(tcp_socket, shared_from_this());
     
-    char client_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
-    common::LOG_INFO("New connection from %s:%d", client_ip, ntohs(client_addr.sin_port));
+    common::LOG_INFO("New connection from %s:%d", client_addr.GetIp().c_str(), client_addr.GetPort());
 }
 
 uint64_t TcpAction::AddTimer(std::function<void()> callback, uint32_t timeout_ms) {

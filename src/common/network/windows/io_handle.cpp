@@ -52,6 +52,30 @@ SysCallInt32Result Bind(int64_t sockfd, Address& addr) {
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
+SysCallInt64Result Accept(int64_t sockfd, Address& addr) {
+    struct sockaddr_in addr_cli;
+    socklen_t fromlen = sizeof(sockaddr);
+
+    const int32_t rc = accept(sockfd, (sockaddr*)&addr_cli, &fromlen);
+    if (rc == SOCKET_ERROR) {
+        if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAECONNABORTED) {
+            return {-1, 0};
+        }
+        return {-1, WSAGetLastError()};
+    }
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &addr_cli.sin_addr, ip, sizeof(ip));
+    addr.SetIp(ip);
+    addr.SetPort(ntohs(addr_cli.sin_port));
+    addr.SetAddressType(Address::CheckAddressType(addr.GetIp()));
+    return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
+}
+
+SysCallInt32Result Listen(int64_t sockfd, int32_t backlog) {
+    const int32_t rc = listen(sockfd, backlog);
+    return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
+}
+
 SysCallInt32Result Write(int64_t sockfd, const char *data, uint32_t len) {
     const int32_t rc = send(sockfd, data, len, 0);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
