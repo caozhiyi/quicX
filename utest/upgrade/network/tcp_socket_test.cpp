@@ -3,6 +3,7 @@
 #include <string>
 #include <gtest/gtest.h>
 
+#include "common/network/io_handle.h"
 #include "upgrade/network/tcp_socket.h"
 #include "upgrade/network/if_socket_handler.h"
 
@@ -41,8 +42,9 @@ TEST_F(TcpSocketTest, SocketCreation) {
 // Test socket creation with specific file descriptor
 TEST_F(TcpSocketTest, SocketCreationWithFd) {
     // Create a socket first
-    int test_fd = socket(AF_INET, SOCK_STREAM, 0);
-    ASSERT_GT(test_fd, 0);
+    auto result = common::TcpSocket();
+    ASSERT_EQ(result.errno_, 0);
+    int test_fd = result.return_value_;
     
     auto socket = std::make_unique<TcpSocket>(test_fd);
     

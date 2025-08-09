@@ -14,11 +14,11 @@ TEST(ConnectionIDTest, DefaultConstructorAndHash) {
     ConnectionID cid;
 
     // Defaults
-    EXPECT_EQ(cid.Len(), kMaxCidLength);
-    EXPECT_EQ(cid.SequenceNumber(), 0u);
+    EXPECT_EQ(cid.GetLength(), kMaxCidLength);
+    EXPECT_EQ(cid.GetSequenceNumber(), 0u);
 
     // ID buffer should be zero-initialized
-    const uint8_t* id = cid.ID();
+    const uint8_t* id = cid.GetID();
     for (uint16_t i = 0; i < kMaxCidLength; ++i) {
         EXPECT_EQ(id[i], 0u) << "Byte index " << i << " expected 0";
     }
@@ -29,7 +29,7 @@ TEST(ConnectionIDTest, DefaultConstructorAndHash) {
     EXPECT_EQ(h1, h2);
 
     // Matches generator on the same bytes/length
-    uint64_t gen = ConnectionIDGenerator::Instance().Hash(const_cast<uint8_t*>(cid.ID()), cid.Len());
+    uint64_t gen = ConnectionIDGenerator::Instance().Hash(const_cast<uint8_t*>(cid.GetID()), cid.GetLength());
     EXPECT_EQ(h1, gen);
 }
 
@@ -40,18 +40,18 @@ TEST(ConnectionIDTest, ParamConstructorAndAccessors) {
 
     ConnectionID cid(raw, len, seq);
 
-    EXPECT_EQ(cid.Len(), len);
-    EXPECT_EQ(cid.SequenceNumber(), seq);
+    EXPECT_EQ(cid.GetLength(), len);
+    EXPECT_EQ(cid.GetSequenceNumber(), seq);
 
     // Bytes copied correctly (prefix of kMaxCidLength)
-    const uint8_t* id = cid.ID();
+    const uint8_t* id = cid.GetID();
     for (uint8_t i = 0; i < len; ++i) {
         EXPECT_EQ(id[i], raw[i]) << "Mismatch at index " << static_cast<int>(i);
     }
 
     // Hash is deterministic and equals generator's
     uint64_t h = cid.Hash();
-    uint64_t gen = ConnectionIDGenerator::Instance().Hash(const_cast<uint8_t*>(cid.ID()), cid.Len());
+    uint64_t gen = ConnectionIDGenerator::Instance().Hash(const_cast<uint8_t*>(cid.GetID()), cid.GetLength());
     EXPECT_EQ(h, gen);
 }
 
@@ -61,18 +61,18 @@ TEST(ConnectionIDTest, CopyConstructorAndAssignment) {
 
     // Copy constructor
     ConnectionID cid_b(cid_a);
-    EXPECT_EQ(cid_b.Len(), cid_a.Len());
-    EXPECT_EQ(cid_b.SequenceNumber(), cid_a.SequenceNumber());
-    EXPECT_EQ(std::memcmp(cid_b.ID(), cid_a.ID(), kMaxCidLength), 0);
+    EXPECT_EQ(cid_b.GetLength(), cid_a.GetLength());
+    EXPECT_EQ(cid_b.GetSequenceNumber(), cid_a.GetSequenceNumber());
+    EXPECT_EQ(std::memcmp(cid_b.GetID(), cid_a.GetID(), kMaxCidLength), 0);
     EXPECT_EQ(cid_b.Hash(), cid_a.Hash());
 
     // Assignment
     uint8_t c[6] = {1,1,2,2,3,3};
     ConnectionID cid_c(c, 6, 11);
     cid_b = cid_c;
-    EXPECT_EQ(cid_b.Len(), cid_c.Len());
-    EXPECT_EQ(cid_b.SequenceNumber(), cid_c.SequenceNumber());
-    EXPECT_EQ(std::memcmp(cid_b.ID(), cid_c.ID(), kMaxCidLength), 0);
+    EXPECT_EQ(cid_b.GetLength(), cid_c.GetLength());
+    EXPECT_EQ(cid_b.GetSequenceNumber(), cid_c.GetSequenceNumber());
+    EXPECT_EQ(std::memcmp(cid_b.GetID(), cid_c.GetID(), kMaxCidLength), 0);
     EXPECT_EQ(cid_b.Hash(), cid_c.Hash());
 }
 
@@ -99,8 +99,8 @@ TEST(ConnectionIDTest, SetIDUpdatesBytesAndLength) {
     uint8_t b[6] = {4,3,2,1,9,8};
     cid.SetID(b, 6);
 
-    EXPECT_EQ(cid.Len(), 6);
-    const uint8_t* id = cid.ID();
+    EXPECT_EQ(cid.GetLength(), 6);
+    const uint8_t* id = cid.GetID();
     for (int i = 0; i < 6; ++i) {
         EXPECT_EQ(id[i], b[i]);
     }

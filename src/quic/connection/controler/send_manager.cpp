@@ -169,7 +169,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     auto header = packet->GetHeader();
     if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
         auto cid = local_conn_id_manager_->GetCurrentID();
-        ((LongHeader*)header)->SetSourceConnectionId(cid.id_, cid.len_);
+        ((LongHeader*)header)->SetSourceConnectionId(cid.GetID(), cid.GetLength());
         ((LongHeader*)header)->SetVersion(kQuicVersions[0]);
 
         common::LOG_DEBUG("send long header packet. packet type:%d, packet size:%d, scid:%llu",
@@ -177,7 +177,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
     }
 
     auto cid = remote_conn_id_manager_->GetCurrentID();
-    packet->GetHeader()->SetDestinationConnectionId(cid.id_, cid.len_);
+    packet->GetHeader()->SetDestinationConnectionId(cid.GetID(), cid.GetLength());
     packet->SetPayload(visitor->GetBuffer()->GetReadSpan());
     packet->SetCryptographer(cryptographer);
 

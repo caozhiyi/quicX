@@ -36,6 +36,8 @@ struct ConnectionContext {
     Protocol target_protocol = Protocol::UNKNOWN;
     std::vector<uint8_t> initial_data;
     std::vector<std::string> alpn_protocols;
+    // Optional HTTP headers parsed from the initial data (used by negotiator tests)
+    std::unordered_map<std::string, std::string> headers;
     std::chrono::steady_clock::time_point created_time;
     
     // Pending response data for partial sends
@@ -46,8 +48,8 @@ struct ConnectionContext {
     uint64_t negotiation_timer_id = 0;
     
     // Constructor initializes the connection context
-    ConnectionContext(std::shared_ptr<ITcpSocket> sock) 
-        : socket(sock), created_time(std::chrono::steady_clock::now()) {}
+    ConnectionContext(std::shared_ptr<ITcpSocket> sock):
+        socket(sock), created_time(std::chrono::steady_clock::now()) {}
 };
 
 } // namespace upgrade

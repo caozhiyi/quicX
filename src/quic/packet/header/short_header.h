@@ -20,7 +20,7 @@ public:
     virtual bool DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false);
     virtual uint32_t EncodeHeaderSize();
 
-    void SetDestinationConnectionId(uint8_t* id, uint8_t len);
+    void SetDestinationConnectionId(const uint8_t* id, uint8_t len);
     uint8_t GetDestinationConnectionIdLength() { return destination_connection_id_length_; }
     const uint8_t* GetDestinationConnectionId()  { return destination_connection_id_; }
 protected:

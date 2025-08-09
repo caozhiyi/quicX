@@ -32,6 +32,9 @@ struct MMsghdr {
     uint32_t msg_len_;	/* Number of received or sent bytes for the entry.  */
 };
 
+
+SysCallInt64Result TcpSocket();
+
 SysCallInt64Result UdpSocket();
 
 SysCallInt32Result Close(int64_t sockfd);

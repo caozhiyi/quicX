@@ -1,10 +1,10 @@
+#include <cstring>
+
 #include "common/log/log.h"
 #include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/core/protocol_detector.h"
 #include "upgrade/handlers/https_smart_handler.h"
-#include <cstring>
 
-// BoringSSL includes
 #include "third/boringssl/include/openssl/ssl.h"
 #include "third/boringssl/include/openssl/err.h"
 #include "third/boringssl/include/openssl/pem.h"
@@ -150,9 +150,7 @@ bool HttpsSmartHandler::InitializeConnection(std::shared_ptr<ITcpSocket> socket)
     // Set the socket file descriptor
     SSL_set_fd(ssl_ctx.ssl, socket->GetFd());
     
-    // Store SSL context
-    ssl_context_map_[socket] = ssl_ctx;
-    
+    ssl_context_map_.emplace(socket, std::move(ssl_ctx));
     return true;
 }
 
@@ -277,8 +275,6 @@ void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
     }
 }
 
-
-
 void HttpsSmartHandler::CleanupSSL(SSLContext* ssl_ctx) {
     if (ssl_ctx && ssl_ctx->ssl) {
         SSL_shutdown(ssl_ctx->ssl);
@@ -291,8 +287,8 @@ bool HttpsSmartHandler::SetupALPN() {
     // Define supported protocols in order of preference
     // h3 = HTTP/3, h2 = HTTP/2, http/1.1 = HTTP/1.1
     const unsigned char alpn_protocols[] = {
-        0x02, 'h3',           // h3 (HTTP/3)
-        0x02, 'h2',           // h2 (HTTP/2) 
+        0x02, 'h', '3',           // h3 (HTTP/3)
+        0x02, 'h', '2',           // h2 (HTTP/2) 
         0x08, 'h', 't', 't', 'p', '/', '1', '.', '1'  // http/1.1
     };
     

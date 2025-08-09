@@ -3,7 +3,9 @@
 
 #include <memory>
 #include <thread>
+#include <unordered_map>
 
+#include "common/timer/if_timer.h"
 #include "quic/udp/if_receiver.h"
 #include "common/thread/thread.h"
 #include "quic/quicx/if_master.h"
@@ -39,6 +41,9 @@ public:
     // Join
     virtual void Join() override;
 
+    // add a timer
+    virtual void AddTimer(uint32_t timeout_ms, std::function<void()> cb) override;
+
     // connect to a quic server
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms) override;
@@ -71,6 +76,7 @@ private:
     common::ThreadSafeQueue<ConnectionOpInfo> connection_op_queue_;
 
 private:
+    std::shared_ptr<common::ITimer> timer_;
     std::shared_ptr<IReceiver> receiver_;
     std::unordered_map<uint64_t, std::thread::id> cid_worker_map_;
     std::unordered_map<std::thread::id, std::shared_ptr<IWorker>> worker_map_;

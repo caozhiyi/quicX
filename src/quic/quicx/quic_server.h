@@ -27,6 +27,9 @@ public:
     // all connections will be closed
     virtual void Destroy();
 
+    // add a timer
+    virtual void AddTimer(uint32_t timeout_ms, std::function<void()> cb) override;
+
     // listen and accept a quic connection
     virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
 

@@ -6,7 +6,7 @@ namespace quic {
 
 ConnectionID ConnectionIDManager::Generator() {
     ConnectionID id;
-    ConnectionIDGenerator::Instance().Generator(id.id_, id.len_);
+    ConnectionIDGenerator::Instance().Generator(id.id_, id.length_);
     id.sequence_number_ = ++cur_sequence_number_;
     AddID(id);
     return id;
@@ -25,7 +25,7 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
         if (iter->second == cur_id_) {
             cur_retire = true;
         }
-        if (iter->second.SequenceNumber() <= sequence) {
+        if (iter->second.GetSequenceNumber() <= sequence) {
             if (retire_connection_id_cb_) {
                 retire_connection_id_cb_(iter->second);
             }
@@ -44,7 +44,7 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
 }
 
 bool ConnectionIDManager::AddID(ConnectionID& id) {
-    sequence_cid_map_[id.SequenceNumber()] = id;
+    sequence_cid_map_[id.GetSequenceNumber()] = id;
     if (sequence_cid_map_.size() == 1) { 
         cur_id_ = id;
     }
@@ -64,7 +64,7 @@ bool ConnectionIDManager::UseNextID() {
         return false;
     }
 
-    RetireIDBySequence(cur_id_.SequenceNumber()); // retire current id
+    RetireIDBySequence(cur_id_.GetSequenceNumber()); // retire current id
     return true;
 }
 

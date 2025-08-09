@@ -3,6 +3,7 @@
 #include <chrono>
 #include <atomic>
 #include <vector>
+#include <algorithm>
 #include <string>
 #include <gtest/gtest.h>
 

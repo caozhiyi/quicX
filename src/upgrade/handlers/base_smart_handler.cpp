@@ -6,8 +6,8 @@
 namespace quicx {
 namespace upgrade {
 
-BaseSmartHandler::BaseSmartHandler(const UpgradeSettings& settings) 
-    : settings_(settings) {
+BaseSmartHandler::BaseSmartHandler(const UpgradeSettings& settings):
+    settings_(settings) {
     manager_ = std::make_shared<UpgradeManager>(settings);
 }
 
@@ -21,9 +21,9 @@ void BaseSmartHandler::HandleConnect(std::shared_ptr<ITcpSocket> socket, std::sh
         return;
     }
     
-    // Create connection context
-    ConnectionContext context(socket);
-    connections_[socket] = context;
+    // Create and store connection context directly in the map (avoid default construction)
+    auto insert_result = connections_.emplace(socket, ConnectionContext(socket));
+    ConnectionContext& context = insert_result.first->second;
     
     // Add negotiation timeout timer (30 seconds)
     if (auto tcp_action = tcp_action_.lock()) {
@@ -65,7 +65,7 @@ void BaseSmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
     
     if (bytes_read == 0) {
         // Connection closed by peer
-        common::LOG_INFO("%s connection closed by peer, socket: %d", GetType().c_str(), socket->GetFd());
+        common::LOG_INFO("%s connection closed by peer, socket: %d", GetType().c_str(), (int)socket->GetFd());
         HandleClose(socket);
         return;
     }

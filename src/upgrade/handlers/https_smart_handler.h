@@ -6,6 +6,9 @@
 // Forward declarations for BoringSSL
 struct ssl_st;
 struct ssl_ctx_st;
+// Typedefs to match BoringSSL/OpenSSL common aliases without including ssl.h in header
+typedef struct ssl_st SSL;
+typedef struct ssl_ctx_st SSL_CTX;
 
 namespace quicx {
 namespace upgrade {
@@ -53,7 +56,7 @@ private:
     bool SetupALPN();
 
 private:
-    ssl_ctx_st* ssl_ctx_ = nullptr;
+    SSL_CTX* ssl_ctx_ = nullptr;
     mutable std::unordered_map<std::shared_ptr<ITcpSocket>, SSLContext> ssl_context_map_;
 };
 

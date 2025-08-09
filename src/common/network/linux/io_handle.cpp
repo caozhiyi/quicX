@@ -14,6 +14,11 @@
 namespace quicx {
 namespace common {
 
+SysCallInt64Result TcpSocket() {
+    int64_t sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    return {sock, sock != -1 ? 0 : errno};
+}
+
 SysCallInt64Result UdpSocket() {
     int64_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     return {sock, sock != -1 ? 0 : errno};

@@ -59,7 +59,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     auto dcid = remote_conn_id_manager_->Generator();
 
     // install initial secret
-    connection_crypto_.InstallInitSecret(dcid.ID(), dcid.Len(), false);
+    connection_crypto_.InstallInitSecret(dcid.GetID(), dcid.GetLength(), false);
     
     tls_conn->DoHandleShake();
     return true;
@@ -74,9 +74,7 @@ bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
 
     // client side should update remote connection id here
     auto long_header = static_cast<LongHeader*>(handshake_packet->GetHeader());
-    const uint8_t* dcid = long_header->GetSourceConnectionId();
-    uint32_t dcid_len = long_header->GetSourceConnectionIdLength();
-    remote_conn_id_manager_->AddID(dcid, dcid_len);
+    remote_conn_id_manager_->AddID(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
     remote_conn_id_manager_->UseNextID();
     return OnNormalPacket(packet);
 }

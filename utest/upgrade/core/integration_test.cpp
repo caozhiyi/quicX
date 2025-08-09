@@ -12,7 +12,8 @@ namespace quicx {
 namespace upgrade {
 
 // Mock TCP socket for integration testing
-class MockTcpSocket : public ITcpSocket {
+class MockTcpSocket:
+    public ITcpSocket {
 public:
     MockTcpSocket() : fd_(123) {}
     explicit MockTcpSocket(int fd) : fd_(fd) {}
@@ -22,7 +23,7 @@ public:
     virtual int Send(const std::string& data) override { return data.size(); }
     virtual int Recv(std::vector<uint8_t>& data, size_t max_size = 4096) override { return 0; }
     virtual int Recv(std::string& data, size_t max_size = 4096) override { return 0; }
-    virtual void Close() override {}
+    virtual void Close() override { closed_ = true; }
     virtual bool IsValid() const override { return true; }
     virtual std::string GetRemoteAddress() const override { return "127.0.0.1"; }
     virtual uint16_t GetRemotePort() const override { return 8080; }
@@ -31,8 +32,11 @@ public:
     virtual void SetHandler(std::shared_ptr<ISocketHandler> handler) override {}
     virtual std::shared_ptr<ISocketHandler> GetHandler() const override { return nullptr; }
     
+    bool IsClosed() const { return closed_; }
+    
 private:
     int fd_;
+    bool closed_ = false;
 };
 
 class IntegrationTest : public ::testing::Test {

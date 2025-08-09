@@ -3,7 +3,6 @@
 #include "quic/udp/udp_sender.h"
 #include "common/buffer/buffer.h"
 #include "quic/udp/udp_receiver.h"
-#include "quic/quicx/if_net_packet.h"
 
 namespace quicx {
 namespace quic {
@@ -17,7 +16,7 @@ TEST(UdpSenderTest, Send) {
             char recv_buf[200] = {0};
             std::shared_ptr<common::Buffer> recv_buffer = std::make_shared<common::Buffer>((uint8_t*)recv_buf, sizeof(recv_buf));
 
-            std::shared_ptr<INetPacket> recv_pkt = std::make_shared<INetPacket>();
+            std::shared_ptr<NetPacket> recv_pkt = std::make_shared<NetPacket>();
             recv_pkt->SetData(recv_buffer);
 
             UdpReceiver receiver;
@@ -35,7 +34,7 @@ TEST(UdpSenderTest, Send) {
     std::shared_ptr<common::Buffer> send_buffer = std::make_shared<common::Buffer>((uint8_t*)send_buf, sizeof(send_buf));
     send_buffer->Write((uint8_t*)("hello world"), sizeof("hello world"));
 
-    std::shared_ptr<INetPacket> send_pkt = std::make_shared<INetPacket>();
+    std::shared_ptr<NetPacket> send_pkt = std::make_shared<NetPacket>();
     send_pkt->SetData(send_buffer);
 
     common::Address addr("127.0.0.1", 12345);
