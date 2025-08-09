@@ -37,7 +37,7 @@ void FlowControl::AddLocalSendDataLimit(uint64_t limit) {
     }
 }
 
-bool FlowControl::CheckLocalSendDataLimit(uint32_t& can_send_size, std::shared_ptr<IFrame>& send_frame) {
+bool FlowControl::CheckLocalSendDataLimit(uint64_t& can_send_size, std::shared_ptr<IFrame>& send_frame) {
     // reaching the upper limit of flow control
     if (local_send_data_size_ >= local_send_max_data_limit_) {
         auto frame = std::make_shared<DataBlockedFrame>();

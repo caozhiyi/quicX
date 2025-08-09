@@ -27,14 +27,14 @@ void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, ui
     pkt_num_largest_sent_[ns] = packet->GetPacketNumber();
     largest_sent_time_[ns] = common::UTCTimeMsec();
 
-    congestion_control_->OnPacketSent(pkt_len, now);
+    congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, now, false});
 
     if (!IsAckElictingPacket(packet->GetFrameTypeBit())) {
         return;
     }
     auto timer_task = common::TimerTask([this, pkt_len, packet]{
         lost_packets_.push_back(packet);
-        congestion_control_->OnPacketLost(pkt_len, common::UTCTimeMsec());
+        congestion_control_->OnPacketLost(LossEvent{packet->GetPacketNumber(), pkt_len, common::UTCTimeMsec()});
     });
     timer_->AddTimer(timer_task, rtt_calculator_.GetPT0Interval(max_ack_delay_));
     unacked_packets_[ns][packet->GetPacketNumber()] = PacketTimerInfo(largest_sent_time_[ns], pkt_len, timer_task);
@@ -55,8 +55,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
         auto iter = unacked_packets_[ns].find(pkt_num);
         if (iter != unacked_packets_[ns].end()) {
             rtt_calculator_.UpdateRtt(iter->second.send_time_, now, ack_frame->GetAckDelay());
-            congestion_control_->OnPacketAcked(iter->second.pkt_len_, now);
-            congestion_control_->OnRttUpdated(rtt_calculator_.GetSmoothedRtt());
+            congestion_control_->OnPacketAcked(AckEvent{iter->second.pkt_len_, now, now, ack_frame->GetAckDelay(), false});
+            congestion_control_->OnRoundTripSample(rtt_calculator_.GetSmoothedRtt(), ack_frame->GetAckDelay());
         }
     }
 
@@ -80,7 +80,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
 }
 
 
-void SendControl::CanSend(uint64_t now, uint32_t& can_send_bytes) {
+void SendControl::CanSend(uint64_t now, uint64_t& can_send_bytes) {
     congestion_control_->CanSend(now, can_send_bytes);
 }
 

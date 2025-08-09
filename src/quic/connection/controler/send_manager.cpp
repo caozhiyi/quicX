@@ -33,7 +33,7 @@ SendOperation SendManager::GetSendOperation() {
         return SendOperation::kAllSendDone;
 
     } else {
-        uint32_t can_send_size = 1500; // TODO: set to mtu size
+        uint64_t can_send_size = 1500; // TODO: set to mtu size
         send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
         if (can_send_size == 0) {
             common::LOG_WARN("congestion control send data limited.");
@@ -56,7 +56,7 @@ void SendManager::ActiveStream(std::shared_ptr<IStream> stream) {
 }
 
 bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
-    uint32_t can_send_size = 1500; // TODO: set to mtu size
+    uint64_t can_send_size = 1500; // TODO: set to mtu size
     send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
     if (can_send_size == 0) {
         common::LOG_WARN("congestion control send data limited.");

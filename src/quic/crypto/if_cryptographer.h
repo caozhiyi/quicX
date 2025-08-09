@@ -6,6 +6,9 @@
 #include "quic/crypto/type.h"
 #include "common/buffer/if_buffer.h"
 
+// Forward declare BoringSSL cipher type in global namespace to avoid including SSL headers here
+struct ssl_cipher_st;
+
 namespace quicx {
 namespace quic {
 
@@ -54,9 +57,7 @@ public:
     static CryptographerId AdapterCryptographerType(uint32_t cipher_id);
 };
 
-// Forward declare BoringSSL cipher type to avoid pulling SSL headers in the public API
-struct ssl_cipher_st;
-std::shared_ptr<ICryptographer> MakeCryptographer(const ssl_cipher_st *cipher);
+std::shared_ptr<ICryptographer> MakeCryptographer(const ::ssl_cipher_st *cipher);
 std::shared_ptr<ICryptographer> MakeCryptographer(CryptographerId cipher);
 
 }

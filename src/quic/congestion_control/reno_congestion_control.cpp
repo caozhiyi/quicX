@@ -5,101 +5,114 @@
 namespace quicx {
 namespace quic {
 
-constexpr size_t RenoCongestionControl::kInitialWindow;
-constexpr double RenoCongestionControl::kBetaReno;
-constexpr size_t RenoCongestionControl::kMinWindow;
+RenoCongestionControl::RenoCongestionControl() {
+    Configure({});
+}
 
-RenoCongestionControl::RenoCongestionControl() :
-    ssthresh_(UINT64_MAX),
-    recovery_start_(0),
-    in_recovery_(false) {
-    
-    congestion_window_ = kInitialWindow;
+void RenoCongestionControl::Configure(const CcConfigV2& cfg) {
+    cfg_ = cfg;
+    cwnd_bytes_ = cfg_.initial_cwnd_bytes;
+    ssthresh_bytes_ = UINT64_MAX;
     bytes_in_flight_ = 0;
     in_slow_start_ = true;
-    pacer_ = std::unique_ptr<NormalPacer>(new NormalPacer());
-}
-
-RenoCongestionControl::~RenoCongestionControl() {
-
-}
-
-void RenoCongestionControl::OnPacketSent(size_t bytes, uint64_t sent_time) {
-    bytes_in_flight_ = bytes_in_flight_ + bytes;
-    pacer_->OnPacketSent(sent_time, bytes);
-}
-
-void RenoCongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
-    bytes_in_flight_ = (bytes_in_flight_ > bytes) ? bytes_in_flight_ - bytes : 0;
-
-    if (in_recovery_) {
-        // In recovery phase, don't increase window
-        if (ack_time > recovery_start_) {
-            in_recovery_ = false;
-        }
-        return;
+    in_recovery_ = false;
+    recovery_start_time_ = 0;
+    if (!pacer_) {
+        pacer_.reset(new NormalPacer());
     }
+}
 
+void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
+    bytes_in_flight_ += ev.bytes;
+    if (pacer_) {
+        pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
+    }
+}
+
+void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
+    bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
+    if (in_recovery_) {
+        if (ev.ack_time > recovery_start_time_) {
+            in_recovery_ = false;
+        } else {
+            return;
+        }
+    }
+    IncreaseOnAck(ev.bytes_acked);
+    UpdatePacingRate();
+}
+
+void RenoCongestionControl::OnPacketLost(const LossEvent& ev) {
+    bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
+    if (!in_recovery_) {
+        EnterRecovery(ev.lost_time);
+    }
+    UpdatePacingRate();
+}
+
+void RenoCongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
+    (void)ack_delay;
+    if (srtt_us_ == 0) {
+        srtt_us_ = latest_rtt;
+    }
+    srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
+}
+
+RenoCongestionControl::SendState RenoCongestionControl::CanSend(uint64_t now, uint64_t& can_send_bytes) const {
+    (void)now;
+    uint64_t left = (cwnd_bytes_ > bytes_in_flight_) ? (cwnd_bytes_ - bytes_in_flight_) : 0;
+    can_send_bytes = left;
+    if (left == 0) {
+        return SendState::kBlockedByCwnd;
+    }
+    return SendState::kOk;
+}
+
+uint64_t RenoCongestionControl::GetPacingRateBps() const {
+    if (srtt_us_ == 0) {
+        return cfg_.min_cwnd_bytes * 8;
+    }
+    return (cwnd_bytes_ * 8ull * 1000000ull) / srtt_us_;
+}
+
+uint64_t RenoCongestionControl::NextSendTime(uint64_t now) const {
+    (void)now;
+    if (!pacer_) {
+        return 0;
+    }
+    return pacer_->TimeUntilSend();
+}
+
+void RenoCongestionControl::IncreaseOnAck(uint64_t bytes_acked) {
     if (in_slow_start_) {
-        // In slow start, grow window exponentially
-        congestion_window_ += bytes;
-        if (congestion_window_ >= ssthresh_) {
+        cwnd_bytes_ += bytes_acked;
+        if (cwnd_bytes_ >= ssthresh_bytes_) {
             in_slow_start_ = false;
         }
     } else {
-        // In congestion avoidance, grow window linearly
-        congestion_window_ += (kInitialWindow * bytes) / congestion_window_;
+        // Reno: cwnd += MSS*MSS / cwnd per ACK aggregate; approximate via cfg_.mss_bytes
+        uint64_t add = (cfg_.mss_bytes * cfg_.mss_bytes) / std::max<uint64_t>(cwnd_bytes_, 1);
+        cwnd_bytes_ += std::max<uint64_t>(add, 1);
     }
-    pacer_->OnPacingRateUpdated(GetPacingRate());
+    cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, cfg_.max_cwnd_bytes);
 }
 
-void RenoCongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
-    bytes_in_flight_ = (bytes_in_flight_ > bytes) ? bytes_in_flight_ - bytes : 0;
-    if (!in_recovery_) {
-        ssthresh_ = congestion_window_ * kBetaReno;
-        congestion_window_ = std::max(kMinWindow, ssthresh_);
-        in_recovery_ = true;
-        recovery_start_ = lost_time;
-        in_slow_start_ = false;
+void RenoCongestionControl::EnterRecovery(uint64_t now) {
+    ssthresh_bytes_ = static_cast<uint64_t>(cwnd_bytes_ * cfg_.beta);
+    cwnd_bytes_ = std::max<uint64_t>(cfg_.min_cwnd_bytes, ssthresh_bytes_);
+    in_recovery_ = true;
+    recovery_start_time_ = now;
+    in_slow_start_ = false;
+}
+
+void RenoCongestionControl::UpdatePacingRate() {
+    if (!pacer_) {
+        return;
     }
-    pacer_->OnPacingRateUpdated(GetPacingRate());
+    pacer_->OnPacingRateUpdated(GetPacingRateBps());
 }
 
-void RenoCongestionControl::OnRttUpdated(uint64_t rtt) {
-    smoothed_rtt_ = rtt;
-    pacer_->OnPacingRateUpdated(GetPacingRate());
-}
+} // namespace quic
+} // namespace quicx
 
-size_t RenoCongestionControl::GetCongestionWindow() const {
-    return congestion_window_;
-}
 
-size_t RenoCongestionControl::GetBytesInFlight() const {
-    return bytes_in_flight_;
-}
-
-bool RenoCongestionControl::CanSend(uint64_t now, uint32_t& can_send_bytes) const {
-    uint32_t max_send_bytes = congestion_window_ - bytes_in_flight_;
-    can_send_bytes = std::min(max_send_bytes, can_send_bytes);
-    return pacer_->CanSend(now);
-}
-
-uint64_t RenoCongestionControl::GetPacingRate() const {
-     if (smoothed_rtt_ == 0) {
-        return kMinWindow; // Avoid division by zero
-    }
-    // Simple pacing rate calculation
-    return congestion_window_ * 1000000 / smoothed_rtt_; // bytes per second
-}
-
-void RenoCongestionControl::Reset() {
-    congestion_window_ = kInitialWindow;
-    bytes_in_flight_ = 0;
-    ssthresh_ = UINT64_MAX;
-    in_recovery_ = false;
-    recovery_start_ = 0;
-    in_slow_start_ = true;
-}
-
-}
-}

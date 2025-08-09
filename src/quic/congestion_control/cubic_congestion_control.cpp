@@ -1,138 +1,156 @@
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/cubic_congestion_control.h"
 
-// Define static constants
 namespace quicx {
 namespace quic {
 
-constexpr double CubicCongestionControl::kBetaCubic;
-constexpr double CubicCongestionControl::kC;
-constexpr size_t CubicCongestionControl::kMinWindow;
+static inline double BytesToPkts(uint64_t bytes, uint64_t mss) {
+    return static_cast<double>(bytes) / static_cast<double>(mss);
+}
 
-CubicCongestionControl::CubicCongestionControl() :
-    epoch_start_(0),
-    w_max_(0),
-    w_last_max_(0), 
-    k_(0),
-    origin_point_(0),
-    tcp_friendliness_(true) {
-    
-    congestion_window_ = kMinWindow;
+static inline uint64_t PktsToBytes(double pkts, uint64_t mss) {
+    double v = pkts * static_cast<double>(mss);
+    if (v < 0.0) v = 0.0;
+    return static_cast<uint64_t>(v);
+}
+
+CubicCongestionControl::CubicCongestionControl() {
+    Configure({});
+}
+
+void CubicCongestionControl::Configure(const CcConfigV2& cfg) {
+    cfg_ = cfg;
+    cwnd_bytes_ = cfg_.initial_cwnd_bytes;
+    ssthresh_bytes_ = UINT64_MAX;
     bytes_in_flight_ = 0;
+    srtt_us_ = 0;
+
+    w_max_pkts_ = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
+    w_last_pkts_ = w_max_pkts_;
+    epoch_start_us_ = 0;
+    k_time_sec_ = 0.0;
+
     in_slow_start_ = true;
-    pacer_ = std::unique_ptr<NormalPacer>(new NormalPacer());
+    in_recovery_ = false;
+    recovery_start_time_us_ = 0;
+    if (!pacer_) pacer_.reset(new NormalPacer());
 }
 
-CubicCongestionControl::~CubicCongestionControl() {
+void CubicCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
+    bytes_in_flight_ += ev.bytes;
+    if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
 }
 
-void CubicCongestionControl::OnPacketSent(size_t bytes, uint64_t sent_time) {
-    bytes_in_flight_ = bytes_in_flight_ + bytes;
-    pacer_->OnPacketSent(sent_time, bytes);
-}
+void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
+    bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
 
-void CubicCongestionControl::OnPacketAcked(size_t bytes, uint64_t ack_time) {
-    bytes_in_flight_ = (bytes_in_flight_ > bytes) ? bytes_in_flight_ - bytes : 0;
-
+    // Slow start phase
     if (in_slow_start_) {
-        // During slow start, cwnd grows by the number of bytes acknowledged
-        congestion_window_ += bytes;
-        if (congestion_window_ >= w_last_max_) {
+        cwnd_bytes_ += ev.bytes_acked;
+        if (cwnd_bytes_ >= ssthresh_bytes_) {
             in_slow_start_ = false;
+            ResetEpoch(ev.ack_time);
         }
-    } else {
-        if (epoch_start_ == 0) {
-            epoch_start_ = ack_time;
-            w_max_ = congestion_window_;
-            k_ = std::cbrt((w_max_ * (1 - kBetaCubic)) / kC);
-            origin_point_ = w_max_;
-        }
-        
-        uint64_t elapsed_time = ack_time - epoch_start_;
-        size_t target = CubicWindowSize(elapsed_time);
-        
-        if (tcp_friendliness_) {
-            size_t tcp_window = TcpFriendlyWindowSize();
-            target = std::max(target, tcp_window);
-        }
-        
-        congestion_window_ = target;
+        return;
     }
-    pacer_->OnPacingRateUpdated(GetPacingRate());
+
+    if (in_recovery_) {
+        if (ev.ack_time > recovery_start_time_us_) {
+            in_recovery_ = false;
+            ResetEpoch(ev.ack_time);
+        } else {
+            return;
+        }
+    }
+
+    IncreaseOnAck(ev.bytes_acked, ev.ack_time);
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
 }
 
-void CubicCongestionControl::OnPacketLost(size_t bytes, uint64_t lost_time) {
-    bytes_in_flight_ = (bytes_in_flight_ > bytes) ? bytes_in_flight_ - bytes : 0;
+void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
+    bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
 
-    // Save cwnd before reducing it
-    w_last_max_ = congestion_window_;
-    
+    // Update Wmax to last cwnd before loss
+    w_max_pkts_ = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
     // Multiplicative decrease
-    congestion_window_ = std::max(kMinWindow, 
-                                static_cast<size_t>(congestion_window_ * kBetaCubic));
-    
-    // Reset cubic state
-    epoch_start_ = 0;
-    w_max_ = congestion_window_;
-    k_ = 0;
+    uint64_t new_cwnd = static_cast<uint64_t>(cwnd_bytes_ * kBetaCubic);
+    cwnd_bytes_ = std::max<uint64_t>(new_cwnd, cfg_.min_cwnd_bytes);
+    ssthresh_bytes_ = cwnd_bytes_;
+
+    in_recovery_ = true;
     in_slow_start_ = false;
-    pacer_->OnPacingRateUpdated(GetPacingRate());
+    recovery_start_time_us_ = ev.lost_time;
+    epoch_start_us_ = 0; // force reset on next ACK
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
 }
 
-void CubicCongestionControl::OnRttUpdated(uint64_t rtt) {
-    smoothed_rtt_ = rtt;
-    pacer_->OnPacingRateUpdated(GetPacingRate());
+void CubicCongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
+    (void)ack_delay;
+    if (srtt_us_ == 0) srtt_us_ = latest_rtt;
+    srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
 }
 
-size_t CubicCongestionControl::GetCongestionWindow() const {
-    return congestion_window_;
+ICongestionControl::SendState CubicCongestionControl::CanSend(uint64_t now, uint64_t& can_send_bytes) const {
+    (void)now;
+    uint64_t left = (cwnd_bytes_ > bytes_in_flight_) ? (cwnd_bytes_ - bytes_in_flight_) : 0;
+    can_send_bytes = left;
+    if (left == 0) return SendState::kBlockedByCwnd;
+    return SendState::kOk;
 }
 
-size_t CubicCongestionControl::GetBytesInFlight() const {
-    return bytes_in_flight_;
+uint64_t CubicCongestionControl::GetPacingRateBps() const {
+    if (srtt_us_ == 0) return cfg_.min_cwnd_bytes * 8;
+    return (cwnd_bytes_ * 8ull * 1000000ull) / srtt_us_;
 }
 
-bool CubicCongestionControl::CanSend(uint64_t now, uint32_t& can_send_bytes) const {
-    uint32_t max_send_bytes = congestion_window_ - bytes_in_flight_;
-    can_send_bytes = std::min(max_send_bytes, can_send_bytes);
-    return pacer_->CanSend(now);
+uint64_t CubicCongestionControl::NextSendTime(uint64_t now) const {
+    (void)now;
+    if (!pacer_) return 0;
+    return pacer_->TimeUntilSend();
 }
 
-uint64_t CubicCongestionControl::GetPacingRate() const {
-    if (smoothed_rtt_ == 0) {
-        return kMinWindow; // Avoid division by zero
+void CubicCongestionControl::ResetEpoch(uint64_t now) {
+    epoch_start_us_ = now;
+    double w_c_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
+    // K = cbrt((Wmax - Wc)/C)
+    double diff = w_max_pkts_ - w_c_pkts;
+    if (diff < 0) diff = 0;
+    // Use pow for cubic root for maximal portability
+    k_time_sec_ = std::pow(diff / kCubicC, 1.0 / 3.0);
+    w_last_pkts_ = w_c_pkts;
+}
+
+void CubicCongestionControl::IncreaseOnAck(uint64_t bytes_acked, uint64_t now) {
+    if (epoch_start_us_ == 0) ResetEpoch(now);
+
+    // t = (now - epoch_start)/1e6
+    double t_sec = static_cast<double>(now - epoch_start_us_) / 1e6;
+    double t_k = t_sec - k_time_sec_;
+    if (t_k < 0) t_k = -t_k; // account for pre-K period
+
+    // CUBIC window in packets: W_cubic(t) = C*(t - K)^3 + Wmax
+    double w_cubic_pkts = kCubicC * t_k * t_k * t_k + w_max_pkts_;
+
+    // TCP-friendly Reno variant for fairness: W_reno = W_last + (3*bytes_acked)/(2*W_last) in packets
+    double w_last = w_last_pkts_;
+    if (w_last < 1.0) w_last = 1.0;
+    double w_reno_pkts = w_last + (3.0 * BytesToPkts(bytes_acked, cfg_.mss_bytes)) / (2.0 * w_last);
+
+    // Choose the larger of cubic and reno
+    double w_target_pkts = std::max(w_cubic_pkts, w_reno_pkts);
+    uint64_t target_bytes = PktsToBytes(w_target_pkts, cfg_.mss_bytes);
+
+    if (target_bytes > cwnd_bytes_) {
+        cwnd_bytes_ = target_bytes;
+        cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, cfg_.max_cwnd_bytes);
     }
-    // Simple pacing rate calculation
-    return congestion_window_ * 1000000 / smoothed_rtt_; // bytes per second
+
+    w_last_pkts_ = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
 }
 
-void CubicCongestionControl::Reset() {
-    congestion_window_ = kMinWindow;
-    bytes_in_flight_ = 0;
-    epoch_start_ = 0;
-    w_max_ = 0;
-    w_last_max_ = 0;
-    k_ = 0;
-    in_slow_start_ = true;
-}
+} // namespace quic
+} // namespace quicx
 
-size_t CubicCongestionControl::CubicWindowSize(uint64_t elapsed_time) {
-    double t = elapsed_time / 1000000.0; // Convert to seconds
-    double tx = t - k_;
-    double w_cubic = kC * tx * tx * tx + origin_point_;
-    return static_cast<size_t>(w_cubic);
-}
 
-size_t CubicCongestionControl::TcpFriendlyWindowSize() {
-    // TCP Reno-like window growth
-    double rtt = smoothed_rtt_ / 1000000.0; // Convert to seconds
-    double w_tcp = w_max_ * kBetaCubic + 
-                  (3 * (1 - kBetaCubic) / (1 + kBetaCubic)) * 
-                  (congestion_window_ / rtt);
-    return static_cast<size_t>(w_tcp);
-}
-
-}
-}

@@ -1,85 +1,92 @@
 #include "common/util/time.h"
 #include "quic/congestion_control/normal_pacer.h"
 
-
 namespace quicx {
 namespace quic {
 
-NormalPacer::NormalPacer() : 
-    burst_tokens_(0),
-    max_burst_size_(16 * 1024), // TODO: 16KB default max burst
-    max_burst_tokens_(10),      // TODO: Example value for max burst tokens
-    pacing_interval_(100),      // TODO: Default pacing interval in milliseconds
-    last_replenish_time_(0) {
-    pacing_rate_ = 0;
-    last_send_time_ = 0;
-    bytes_in_flight_ = 0;
+NormalPacer::NormalPacer() {
+    pacing_rate_bytes_per_sec_ = 0;
+    next_send_time_ms_ = 0;
+    last_update_ms_ = 0;
+    max_burst_bytes_ = 16 * 1024; // 16KB default burst
+    burst_budget_bytes_ = max_burst_bytes_;
 }
 
-NormalPacer::~NormalPacer() {
-
-}
+NormalPacer::~NormalPacer() {}
 
 void NormalPacer::OnPacingRateUpdated(uint64_t pacing_rate) {
-    pacing_rate_ = pacing_rate;
+    pacing_rate_bytes_per_sec_ = pacing_rate;
 }
 
-bool NormalPacer::CanSend(uint64_t now) const {
-    if (pacing_rate_ == 0) {
+bool NormalPacer::CanSend(uint64_t now_ms) const {
+    if (pacing_rate_bytes_per_sec_ == 0) {
         return true;
     }
-
-    // Allow sending if we have burst tokens or enough time has passed
-    if (burst_tokens_ > 0) {
+    if (burst_budget_bytes_ > 0) {
         return true;
     }
-
-    return TimeUntilSend() <= now;
+    return now_ms >= next_send_time_ms_;
 }
 
 uint64_t NormalPacer::TimeUntilSend() const {
-    if (pacing_rate_ == 0 || last_send_time_ == 0) {
+    if (pacing_rate_bytes_per_sec_ == 0) {
         return 0;
     }
-
-    // Calculate time needed between packets based on pacing rate
-    uint64_t delay = (1000 * bytes_in_flight_) / pacing_rate_; // Convert to milliseconds
-    uint64_t next_send_time = last_send_time_ + delay;
-    uint64_t now = common::UTCTimeMsec();
-
-    if (next_send_time <= now) {
+    uint64_t now_ms = common::UTCTimeMsec();
+    if (now_ms >= next_send_time_ms_) {
         return 0;
     }
-    return next_send_time - now;
+    return next_send_time_ms_ - now_ms;
 }
 
-void NormalPacer::OnPacketSent(uint64_t sent_time, size_t bytes) {
-    last_send_time_ = sent_time;
-    bytes_in_flight_ = bytes;
+void NormalPacer::OnPacketSent(uint64_t sent_time_ms, uint64_t bytes) {
+    RefillBurstBudget(sent_time_ms);
 
-    // Consume burst tokens if available
-    if (burst_tokens_ >= bytes) {
-        burst_tokens_ -= bytes;
-    } else {
-        burst_tokens_ = 0;
+    if (burst_budget_bytes_ >= bytes) {
+        burst_budget_bytes_ -= bytes;
+        next_send_time_ms_ = sent_time_ms; // still can send immediately within burst budget
+        return;
     }
-    ReplenishTokens();
+
+    // No burst budget: schedule next send by pacing rate
+    burst_budget_bytes_ = 0;
+    if (pacing_rate_bytes_per_sec_ > 0) {
+        // time delta in ms to transmit 'bytes' at pacing rate
+        uint64_t ms = (bytes * 1000ull + pacing_rate_bytes_per_sec_ - 1) / pacing_rate_bytes_per_sec_;
+        next_send_time_ms_ = sent_time_ms + ms;
+    } else {
+        next_send_time_ms_ = sent_time_ms;
+    }
 }
 
 void NormalPacer::Reset() {
-    pacing_rate_ = 0;
-    last_send_time_ = 0;
-    bytes_in_flight_ = 0;
-    burst_tokens_ = max_burst_size_;
+    pacing_rate_bytes_per_sec_ = 0;
+    next_send_time_ms_ = 0;
+    last_update_ms_ = 0;
+    burst_budget_bytes_ = max_burst_bytes_;
 }
 
-void NormalPacer::ReplenishTokens() {
-    uint64_t current_time = common::UTCTimeMsec();
-    if (current_time - last_replenish_time_ >= pacing_interval_) {
-        burst_tokens_ = std::min(burst_tokens_ + 1, max_burst_tokens_);
-        last_replenish_time_ = current_time;
+void NormalPacer::RefillBurstBudget(uint64_t now_ms) {
+    if (last_update_ms_ == 0) {
+        last_update_ms_ = now_ms;
+        return;
     }
+    if (pacing_rate_bytes_per_sec_ == 0) {
+        burst_budget_bytes_ = max_burst_bytes_;
+        last_update_ms_ = now_ms;
+        return;
+    }
+
+    uint64_t elapsed_ms = now_ms - last_update_ms_;
+    if (elapsed_ms == 0) {
+        return;
+    }
+
+    // Refill proportional to elapsed time and pacing rate, bounded by max burst
+    uint64_t refill = (pacing_rate_bytes_per_sec_ * elapsed_ms) / 1000ull;
+    burst_budget_bytes_ = std::min<uint64_t>(max_burst_bytes_, burst_budget_bytes_ + refill);
+    last_update_ms_ = now_ms;
 }
 
-}
-}
+} // namespace quic
+} // namespace quicx

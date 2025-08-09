@@ -10,7 +10,7 @@ class NormalPacer:
     public IPacer {
 public:
     NormalPacer();
-    virtual ~NormalPacer();
+    ~NormalPacer() override;
 
     void OnPacingRateUpdated(uint64_t pacing_rate) override;
 
@@ -18,23 +18,22 @@ public:
 
     uint64_t TimeUntilSend() const override;
 
-    void OnPacketSent(uint64_t sent_time, size_t bytes) override;
+    void OnPacketSent(uint64_t sent_time, uint64_t bytes) override;
 
     void Reset() override;
 
 private:
-    void ReplenishTokens();
+    void RefillBurstBudget(uint64_t now_ms);
 
 private:
-    size_t burst_tokens_;     // Available burst allowance in bytes
-    size_t max_burst_size_;   // Maximum allowed burst size
-    size_t max_burst_tokens_; // Maximum number of burst tokens allowed
-    size_t bytes_in_flight_;  // Bytes currently in flight
+    // Pacing configuration/state
+    uint64_t pacing_rate_bytes_per_sec_; // bytes per second
+    uint64_t next_send_time_ms_;         // absolute time in ms when next send is allowed
+    uint64_t last_update_ms_;            // last time we refilled burst budget
 
-    uint64_t last_replenish_time_; // Last time tokens were replenished
-    uint64_t pacing_interval_;     // Interval for pacing
-    uint64_t pacing_rate_;         // Current pacing rate in bytes per second
-    uint64_t last_send_time_;      // Time of last packet sent
+    // Simple burst budget to allow small bursts without delay
+    uint64_t max_burst_bytes_;
+    uint64_t burst_budget_bytes_;
 };
 
 }
