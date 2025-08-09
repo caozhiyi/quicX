@@ -151,7 +151,8 @@ void BBRv2CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
         mode_ = Mode::kProbeBw;
         pacing_gain_ = 1.0;
         cwnd_gain_ = 2.0;
-        cycle_index_ = 0;
+        // Start so that the first cycle advance goes to index 0 (gain 1.25)
+        cycle_index_ = 7;
         cycle_start_us_ = now_us;
     }
 }

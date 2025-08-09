@@ -111,7 +111,8 @@ uint64_t BBRv1CongestionControl::GetPacingRateBps() const {
     if (max_bw_bps_ == 0) {
         if (srtt_us_ == 0) return cfg_.min_cwnd_bytes * 8;
         // fallback: cwnd/srtt
-        return MulDiv(cwnd_bytes_, 8ull * 1000000ull, srtt_us_);
+        uint64_t bw_bytes_per_sec = MulDiv(cwnd_bytes_, 1000000ull, srtt_us_);
+        return static_cast<uint64_t>(bw_bytes_per_sec * pacing_gain_);
     }
     return static_cast<uint64_t>(max_bw_bps_ * pacing_gain_);
 }
@@ -154,6 +155,7 @@ void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
         mode_ = Mode::kProbeBw;
         SetPacingGain(1.0);
         SetCwndGain(2.0);
+        // Start so that the first cycle advance goes to index 1 (gain 0.75)
         cycle_index_ = 0;
         cycle_start_us_ = now_us;
     }
