@@ -46,6 +46,22 @@ void CubicCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
 void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
 
+    // ECN-CE: treat as early congestion signal, exit slow start and reduce cwnd
+    if (ev.ecn_ce) {
+        if (in_slow_start_) in_slow_start_ = false;
+        if (!in_recovery_) {
+            // Reduce cwnd multiplicatively (similar to loss path)
+            uint64_t new_cwnd = static_cast<uint64_t>(cwnd_bytes_ * kBetaCubic);
+            cwnd_bytes_ = std::max<uint64_t>(new_cwnd, cfg_.min_cwnd_bytes);
+            ssthresh_bytes_ = cwnd_bytes_;
+            in_recovery_ = true;
+            recovery_start_time_us_ = ev.ack_time;
+            epoch_start_us_ = 0; // force cubic epoch reset
+        }
+        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+        return;
+    }
+
     // Slow start phase
     if (in_slow_start_) {
         cwnd_bytes_ += ev.bytes_acked;

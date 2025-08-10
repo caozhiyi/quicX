@@ -31,6 +31,8 @@ protected:
 
 protected:
     uint32_t body_length_;
+    uint64_t header_block_key_{0};
+    uint32_t next_section_number_{0};
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::shared_ptr<quic::IQuicBidirectionStream> stream_;
 

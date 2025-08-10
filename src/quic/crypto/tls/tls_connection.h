@@ -63,6 +63,9 @@ protected:
     SSLPtr ssl_;
     std::shared_ptr<TLSCtx> ctx_;
     TlsHandlerInterface* handler_;
+public:
+    // expose SSL pointer for session get/save by upper layer
+    SSL* GetSSL() { return ssl_.get(); }
 };
 
 }

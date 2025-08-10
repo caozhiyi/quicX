@@ -110,5 +110,15 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<common::IBufferRead> buff
     }
 }
 
+bool ClientConnection::ExportResumptionSession(std::string& out_session_der) {
+    out_session_der.clear();
+    auto tls_cli = GetTLSConnection();
+    if (!tls_cli) {
+        common::LOG_ERROR("tls connection is not initialized.");
+        return false;
+    }
+    return tls_cli->ExportSession(out_session_der);
+}
+
 }
 }

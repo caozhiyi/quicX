@@ -6,6 +6,7 @@
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
+#include "quic/include/if_quic_send_stream.h"
 
 namespace quicx {
 namespace quic {
@@ -91,6 +92,96 @@ TEST(quic_connection_utest, handshake) {
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
+}
+
+TEST(quic_connection_utest, resume_0rtt_basic) {
+    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
+    server_ctx->Init(kCertPem, kKeyPem);
+
+    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
+    client_ctx->Init();
+
+    // 1) First connection: full handshake to obtain resumption session
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+
+    common::Address addr(common::AddressType::kIpv4);
+    addr.SetIp("127.0.0.1");
+    addr.SetPort(9432);
+
+    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
+
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
+
+    // client -------init-----> server
+    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    // client <------init------ server
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+    // client <---handshake---- server
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+    // client ----handshake---> server
+    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    // client <----session----- server
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+
+    EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
+    EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
+
+    std::string session_der;
+    ASSERT_TRUE(client_conn->ExportResumptionSession(session_der));
+    ASSERT_FALSE(session_der.empty());
+
+    // 2) Second connection: provide session to enable 0-RTT and send early data
+    std::shared_ptr<TLSClientCtx> client_ctx2 = std::make_shared<TLSClientCtx>();
+    client_ctx2->Init();
+    auto client_conn2 = std::make_shared<ClientConnection>(client_ctx2, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto tls_cli2 = client_conn2->GetTLSConnection();
+    ASSERT_TRUE(tls_cli2->SetSession(reinterpret_cast<const uint8_t*>(session_der.data()), session_der.size()));
+
+    client_conn2->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
+
+    auto server_conn2 = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    server_conn2->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
+
+    // queue early application data before handshake completes
+    auto s_base = client_conn2->MakeStream(StreamDirection::kSend);
+    auto s = std::dynamic_pointer_cast<IQuicSendStream>(s_base);
+    ASSERT_NE(s, nullptr);
+    const char* early = "hello 0rtt";
+    ASSERT_GT(s->Send((uint8_t*)early, (uint32_t)strlen(early)), 0);
+
+    // First flight from client should be Initial
+    uint8_t buf1[1500] = {0};
+    std::shared_ptr<common::Buffer> buffer1 = std::make_shared<common::Buffer>(buf1, buf1 + 1500);
+    quic::SendOperation op1;
+    ASSERT_TRUE(client_conn2->GenerateSendData(buffer1, op1));
+    std::vector<std::shared_ptr<IPacket>> pkts1;
+    ASSERT_TRUE(DecodePackets(buffer1, pkts1));
+    ASSERT_FALSE(pkts1.empty());
+    EXPECT_EQ(pkts1[0]->GetHeader()->GetPacketType(), PacketType::kInitialPacketType);
+
+    // Deliver to server to let it process ClientHello
+    server_conn2->OnPackets(0, pkts1);
+
+    // Next flight from client should contain 0-RTT (if keys available and stream data queued)
+    bool found_0rtt = false;
+    for (int i = 0; i < 4 && !found_0rtt; ++i) {
+        uint8_t bufn[1500] = {0};
+        auto buffern = std::make_shared<common::Buffer>(bufn, bufn + 1500);
+        quic::SendOperation opn;
+        ASSERT_TRUE(client_conn2->GenerateSendData(buffern, opn));
+        std::vector<std::shared_ptr<IPacket>> pktsn;
+        ASSERT_TRUE(DecodePackets(buffern, pktsn));
+        for (auto& p : pktsn) {
+            if (p->GetHeader()->GetPacketType() == PacketType::k0RttPacketType) {
+                found_0rtt = true;
+                break;
+            }
+        }
+        // feed to server to advance state even if 0-RTT not yet present
+        if (!pktsn.empty()) server_conn2->OnPackets(0, pktsn);
+    }
+    EXPECT_TRUE(found_0rtt);
 }
 
 }

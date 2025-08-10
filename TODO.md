@@ -7,6 +7,6 @@
 - [ ] ack packet enc
 - [ ] http3 qpack dynamic table update implement
 - [ ] zero memory copy
-- [ ] 0 rtt handshake
-- [ ] http3 settings control
+- [x] 0 rtt handshake
+- [x] http3 settings control
 - [ ] congestion control test

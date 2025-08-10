@@ -18,7 +18,11 @@ public:
     virtual bool DoHandleShake();
 
     // add alpn
-    virtual bool AddAlpn(uint8_t* alpn, uint32_t len); 
+    virtual bool AddAlpn(uint8_t* alpn, uint32_t len);
+
+    // opaque session bytes APIs to hide SSL types from upper layers
+    bool SetSession(const uint8_t* session_der, size_t session_len);
+    bool ExportSession(std::string& out_session_der);
 };
 
 }

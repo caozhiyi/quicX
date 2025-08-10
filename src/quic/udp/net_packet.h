@@ -25,11 +25,15 @@ public:
     void SetTime(uint64_t time) { time_ = time; }
     uint64_t GetTime() { return time_; } 
 
+    void SetEcn(uint8_t ecn) { ecn_ = ecn; }
+    uint8_t GetEcn() const { return ecn_; }
+
 protected:
     uint64_t sock_; // socket fd
     uint64_t time_; // packet generate time
     common::Address addr_; // peer address
     std::shared_ptr<common::IBuffer> buffer_;
+    uint8_t ecn_ {0}; // IP ECN codepoint (2 LSB of IP TOS/TCLASS): 0=Not-ECT, 1=ECT(1), 2=ECT(0), 3=CE
 };
 
 }

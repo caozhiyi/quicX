@@ -5,8 +5,6 @@
 #include <functional>
 #include <unordered_map>
 
-#include "http3/stream/type.h"
-#include "http3/connection/type.h"
 #include "http3/stream/if_stream.h"
 #include "quic/include/if_quic_send_stream.h"
 
@@ -28,6 +26,9 @@ public:
 
     // Send GOAWAY frame
     virtual bool SendGoaway(uint64_t id);
+
+    // Send QPACK encoder instructions blob on control stream (demo integration)
+    virtual bool SendQpackInstructions(const std::vector<uint8_t>& blob);
 
 protected:
     std::shared_ptr<quic::IQuicSendStream> stream_;

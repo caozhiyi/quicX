@@ -4,6 +4,7 @@
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/settings_frame.h"
 #include "http3/stream/control_receiver_stream.h"
+#include "http3/qpack/qpack_encoder.h"
 
 namespace quicx {
 namespace http3 {
@@ -34,15 +35,15 @@ void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, ui
         return;
     }
 
+    // Try parse HTTP/3 frames; if fails, treat as raw QPACK instruction blob (demo)
     std::vector<std::shared_ptr<IFrame>> frames;
-    if (!DecodeFrames(data, frames)) {
-        common::LOG_ERROR("IStream::OnData decode frames error");
-        error_handler_(stream_->GetStreamID(), Http3ErrorCode::kMessageError);
-        return;
-    }
-
-    for (const auto& frame : frames) {
-        HandleFrame(frame);
+    auto snapshot = data; // shallow copy
+    if (DecodeFrames(snapshot, frames)) {
+        for (const auto& frame : frames) {
+            HandleFrame(frame);
+        }
+    } else {
+        HandleRawData(data);
     }
 }
 
@@ -63,6 +64,12 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
             error_handler_(stream_->GetStreamID(), Http3ErrorCode::kFrameUnexpected);
             break;
     }
+}
+
+void ControlReceiverStream::HandleRawData(std::shared_ptr<common::IBufferRead> data) {
+    // Interpret as QPACK encoder instructions and update dynamic table
+    QpackEncoder enc;
+    enc.DecodeEncoderInstructions(data);
 }
 
 }

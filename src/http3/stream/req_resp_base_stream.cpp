@@ -5,6 +5,7 @@
 #include "http3/frame/headers_frame.h"
 #include "common/buffer/buffer_read_view.h"
 #include "http3/stream/req_resp_base_stream.h"
+#include "http3/qpack/blocked_registry.h"
 
 namespace quicx {
 namespace http3 {
@@ -58,14 +59,38 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 
     // TODO check if headers is complete and headers length is correct
 
+    // Assign a real header-block-id = (stream_id << 32) | section_number
+    if (header_block_key_ == 0) {
+        uint64_t sid = GetStreamID();
+        uint64_t secno = static_cast<uint64_t>(++next_section_number_);
+        header_block_key_ = (sid << 32) | secno;
+    }
     // Decode headers using QPACK
     std::vector<uint8_t> encoded_fields = headers_frame->GetEncodedFields();
     auto headers_buffer = (std::make_shared<common::BufferReadView>(encoded_fields.data(), encoded_fields.size()));
     if (!qpack_encoder_->Decode(headers_buffer, headers_)) {
-        common::LOG_ERROR("IStream::HandleHeaders error");
-        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        // If blocked (RIC not satisfied), enqueue a retry once insert count increases
+        ::quicx::http3::QpackBlockedRegistry::Instance().Add(header_block_key_, [this, encoded_fields]() {
+            auto view = std::make_shared<common::BufferReadView>(const_cast<uint8_t*>(encoded_fields.data()), static_cast<uint32_t>(encoded_fields.size()));
+            std::unordered_map<std::string, std::string> tmp;
+            if (qpack_encoder_->Decode(view, tmp)) {
+                headers_ = std::move(tmp);
+                if (headers_.find("content-length") != headers_.end()) {
+                    body_length_ = std::stoul(headers_["content-length"]);
+                } else {
+                    body_length_ = 0;
+                }
+                if (body_length_ == 0) {
+                    HandleBody();
+                }
+                // emit Section Ack
+                qpack_encoder_->EmitDecoderFeedback(0x00, header_block_key_);
+            }
+        });
         return;
     }
+    // emit Section Ack
+    qpack_encoder_->EmitDecoderFeedback(0x00, header_block_key_);
 
 
     if (headers_.find("content-length") != headers_.end()) {

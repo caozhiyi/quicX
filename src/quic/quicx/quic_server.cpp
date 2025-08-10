@@ -16,21 +16,16 @@ QuicServer::~QuicServer() {
 
 }
 
-bool QuicServer::Init(const std::string& cert_file, const std::string& key_file, const std::string& alpn,
-    uint16_t thread_num, LogLevel level) {
-    if (level != LogLevel::kNull) {
-        InitLogger(level);
+bool QuicServer::Init(const QuicServerConfig& config) {
+    if (config.config_.log_level_ != LogLevel::kNull) {
+        InitLogger(config.config_.log_level_);
     }
-    master_->InitAsServer(thread_num, cert_file, key_file, alpn, params_, connection_state_cb_);
-    return true;
-}
 
-bool QuicServer::Init(const char* cert_pem, const char* key_pem, const std::string& alpn,
-    uint16_t thread_num, LogLevel level) {
-    if (level != LogLevel::kNull) {
-        InitLogger(level);
+    if (config.cert_pem != nullptr && config.key_pem != nullptr) {
+        master_->InitAsServer(config.config_, config.cert_pem, config.key_pem, config.alpn_, params_, connection_state_cb_);
+    } else {
+        master_->InitAsServer(config.config_, config.cert_file_, config.key_file_, config.alpn_, params_, connection_state_cb_);
     }
-    master_->InitAsServer(thread_num, cert_pem, key_pem, alpn, params_, connection_state_cb_);
     return true;
 }
 

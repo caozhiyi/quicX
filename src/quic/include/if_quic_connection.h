@@ -31,6 +31,10 @@ public:
 
     // set the callback function to handle the stream state change.
     virtual void SetStreamStateCallBack(stream_state_callback cb) = 0;
+
+    // export TLS resumption session (DER bytes) for future 0-RTT
+    // return true and fill out if available; only meaningful on client connections
+    virtual bool ExportResumptionSession(std::string& out_session_der) = 0;
 };
 
 }

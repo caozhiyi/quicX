@@ -11,7 +11,6 @@
 #include "quic/quicx/if_master.h"
 #include "quic/quicx/if_worker.h"
 #include "common/structure/thread_safe_queue.h"
-#include "quic/connection/connection_id_manager.h"
 
 namespace quicx {
 namespace quic {
@@ -26,11 +25,11 @@ public:
     virtual ~Master();
 
     // Initialize as client
-    virtual bool InitAsClient(int32_t thread_num, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
+    virtual bool InitAsClient(const QuicConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
     // Initialize as server
-    virtual bool InitAsServer(int32_t thread_num, const std::string& cert_file, const std::string& key_file, const std::string& alpn, 
+    virtual bool InitAsServer(const QuicConfig& config, const std::string& cert_file, const std::string& key_file, const std::string& alpn, 
         const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
-    virtual bool InitAsServer(int32_t thread_num, const char* cert_pem, const char* key_pem, const std::string& alpn, 
+    virtual bool InitAsServer(const QuicConfig& config, const char* cert_pem, const char* key_pem, const std::string& alpn, 
         const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
     // Destroy
     virtual void Destroy() override;
@@ -47,6 +46,10 @@ public:
     // connect to a quic server
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms) override;
+    // connect to a quic server with a specific resumption session (DER bytes) for this connection
+    // passing non-empty session enables 0-RTT on resumption if ticket allows
+    virtual bool Connection(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) override;
     
     // add listener
     virtual void AddListener(uint64_t listener_sock) override;
@@ -76,6 +79,7 @@ private:
     common::ThreadSafeQueue<ConnectionOpInfo> connection_op_queue_;
 
 private:
+    bool ecn_enabled_;
     std::shared_ptr<common::ITimer> timer_;
     std::shared_ptr<IReceiver> receiver_;
     std::unordered_map<uint64_t, std::thread::id> cid_worker_map_;

@@ -8,6 +8,7 @@ namespace quicx {
 namespace quic {
 
 Worker::Worker(std::shared_ptr<TLSCtx> ctx,
+        bool ecn_enabled,
         const QuicTransportParams& params,
         connection_state_callback connection_handler):
     ctx_(ctx),

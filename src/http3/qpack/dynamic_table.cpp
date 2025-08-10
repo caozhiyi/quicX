@@ -7,6 +7,11 @@ DynamicTable::DynamicTable(uint32_t max_size) : max_size_(max_size), current_siz
 
 }
 
+DynamicTable& DynamicTable::Instance() {
+    static DynamicTable g_table(4096); // default 4KB, adjustable via UpdateMaxTableSize
+    return g_table;
+}
+
 bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& value) {
     auto item_key = std::make_pair(name, value);
     if (headeritem_index_map_.count(item_key) > 0) {
@@ -49,6 +54,13 @@ int32_t DynamicTable::FindHeaderItemIndex(const std::string& name, const std::st
     auto iter = headeritem_index_map_.find({name, value});
     if (iter != headeritem_index_map_.end()) {
         return iter->second;
+    }
+    return -1;
+}
+
+int32_t DynamicTable::FindHeaderNameIndex(const std::string& name) {
+    for (uint32_t i = 0; i < headeritem_vec_.size(); ++i) {
+        if (headeritem_vec_[i].name_ == name) return static_cast<int32_t>(i);
     }
     return -1;
 }

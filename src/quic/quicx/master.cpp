@@ -10,7 +10,8 @@
 namespace quicx {
 namespace quic {
 
-Master::Master() {
+Master::Master():
+    ecn_enabled_(false) {
     timer_ = common::MakeTimer();
     receiver_ = IReceiver::MakeReceiver();
 }
@@ -19,25 +20,29 @@ Master::~Master() {
 
 }
 
-bool Master::InitAsClient(int32_t thread_num, const QuicTransportParams& params, connection_state_callback connection_state_cb) {
+bool Master::InitAsClient(const QuicConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) {
     auto tls_ctx = std::make_shared<TLSClientCtx>();
     if (!tls_ctx->Init()) {
         common::LOG_ERROR("tls ctx init faliled.");
         return false;
     }
 
-    worker_map_.reserve(thread_num);
-    for (size_t i = 0; i < thread_num; i++) {
-        auto worker = IWorker::MakeWorker(IWorker::kClientWorker, tls_ctx, params, connection_state_cb);
+    ecn_enabled_ = config.enable_ecn_;
+
+    worker_map_.reserve(config.thread_num_);
+    for (size_t i = 0; i < config.thread_num_; i++) {
+        auto worker = IWorker::MakeWorker(IWorker::kClientWorker, ecn_enabled_, tls_ctx, params, connection_state_cb);
         worker->Init(shared_from_this());
         worker_map_.emplace(worker->GetCurrentThreadId(), worker);
     }
+    // propagate ECN enable to receiver
+    receiver_->SetEcnEnabled(ecn_enabled_);
 
     Start();
     return true;
 }
 
-bool Master::InitAsServer(int32_t thread_num, const std::string& cert_file, const std::string& key_file, const std::string& alpn, 
+bool Master::InitAsServer(const QuicConfig& config, const std::string& cert_file, const std::string& key_file, const std::string& alpn, 
     const QuicTransportParams& params, connection_state_callback connection_state_cb) {
     auto tls_ctx = std::make_shared<TLSServerCtx>();
     if (!tls_ctx->Init(cert_file, key_file)) {
@@ -45,18 +50,21 @@ bool Master::InitAsServer(int32_t thread_num, const std::string& cert_file, cons
         return false;
     }
 
-    worker_map_.reserve(thread_num);
-    for (size_t i = 0; i < thread_num; i++) {
-        auto worker = IWorker::MakeWorker(IWorker::kServerWorker, tls_ctx, params, connection_state_cb);
+    ecn_enabled_ = config.enable_ecn_;
+
+    worker_map_.reserve(config.thread_num_);
+    for (size_t i = 0; i < config.thread_num_; i++) {
+        auto worker = IWorker::MakeWorker(IWorker::kServerWorker, ecn_enabled_, tls_ctx, params, connection_state_cb);
         worker->Init(shared_from_this());
         worker_map_.emplace(worker->GetCurrentThreadId(), worker);
     }
+    receiver_->SetEcnEnabled(ecn_enabled_);
 
     Start();
     return true;
 }
 
-bool Master::InitAsServer(int32_t thread_num, const char* cert_pem, const char* key_pem, const std::string& alpn, 
+bool Master::InitAsServer(const QuicConfig& config, const char* cert_pem, const char* key_pem, const std::string& alpn, 
     const QuicTransportParams& params, connection_state_callback connection_state_cb) {
     auto tls_ctx = std::make_shared<TLSServerCtx>();
     if (!tls_ctx->Init(cert_pem, key_pem)) {
@@ -64,12 +72,15 @@ bool Master::InitAsServer(int32_t thread_num, const char* cert_pem, const char* 
         return false;
     }
 
-    worker_map_.reserve(thread_num);
-    for (size_t i = 0; i < thread_num; i++) {
-        auto worker = IWorker::MakeWorker(IWorker::kServerWorker, tls_ctx, params, connection_state_cb);
+    ecn_enabled_ = config.enable_ecn_;
+
+    worker_map_.reserve(config.thread_num_);
+    for (size_t i = 0; i < config.thread_num_; i++) {
+        auto worker = IWorker::MakeWorker(IWorker::kServerWorker, ecn_enabled_,tls_ctx, params, connection_state_cb);
         worker->Init(shared_from_this());
         worker_map_.emplace(worker->GetCurrentThreadId(), worker);
     }
+    receiver_->SetEcnEnabled(ecn_enabled_);
 
     Start();
     return true;
@@ -101,6 +112,21 @@ bool Master::Connection(const std::string& ip, uint16_t port,
         auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
         worker->Push([ip, port, alpn, timeout_ms, worker]() {
             worker->Connect(ip, port, alpn, timeout_ms);
+        });
+        worker->Weakup();
+        return true;
+    }
+    return false;
+}
+
+bool Master::Connection(const std::string& ip, uint16_t port,
+    const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
+    if (!worker_map_.empty()) {
+        auto iter = worker_map_.begin();
+        std::advance(iter, rand() % worker_map_.size());
+        auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
+        worker->Push([ip, port, alpn, timeout_ms, worker, resumption_session_der]() {
+            worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
         });
         worker->Weakup();
         return true;
@@ -142,8 +168,15 @@ void Master::DoRecv() {
     receiver_->TryRecv(packet, 10000); // TODO add timeout to config
     
     if (packet->GetData()->GetDataLength() > 0) {
+        if (!ecn_enabled_) {
+            // If ECN is disabled, zero the ECN field to avoid propagating
+            packet->SetEcn(0);
+        }
         PacketInfo packet_info;
         if (MsgParser::ParsePacket(packet, packet_info)) {
+            if (!ecn_enabled_) {
+                packet_info.ecn_ = 0;
+            }
             auto iter = cid_worker_map_.find(packet_info.cid_.Hash());
             if (iter != cid_worker_map_.end()) {
                 auto worker = worker_map_.find(iter->second);

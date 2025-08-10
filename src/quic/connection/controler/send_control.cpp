@@ -41,7 +41,7 @@ void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, ui
 }
 
 void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
-    if (frame->GetType() != FrameType::kAck) {
+    if (frame->GetType() != FrameType::kAck && frame->GetType() != FrameType::kAckEcn) {
         common::LOG_ERROR("invalid frame on packet ack.");
         return;
     }
@@ -55,7 +55,32 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
         auto iter = unacked_packets_[ns].find(pkt_num);
         if (iter != unacked_packets_[ns].end()) {
             rtt_calculator_.UpdateRtt(iter->second.send_time_, now, ack_frame->GetAckDelay());
-            congestion_control_->OnPacketAcked(AckEvent{iter->second.pkt_len_, now, now, ack_frame->GetAckDelay(), false});
+            bool ecn_ce = false;
+            if (frame->GetType() == FrameType::kAckEcn) {
+                auto ack_ecn = std::dynamic_pointer_cast<AckEcnFrame>(frame);
+                if (ack_ecn) {
+                    // Validate ECN counters are non-decreasing per RFC (§13.4 of RFC9000)
+                    uint64_t ect0 = ack_ecn->GetEct0();
+                    uint64_t ect1 = ack_ecn->GetEct1();
+                    uint64_t ce = ack_ecn->GetEcnCe();
+                    auto& prev_ect0 = prev_ect0_[ns];
+                    auto& prev_ect1 = prev_ect1_[ns];
+                    auto& prev_ce = prev_ce_[ns];
+                    auto& state = ecn_state_[ns];
+                    if (state == EcnState::kUnknown) {
+                        state = EcnState::kValidated; // optimistic start
+                    }
+                    if (ect0 < prev_ect0 || ect1 < prev_ect1 || ce < prev_ce) {
+                        state = EcnState::kFailed; // disable ECN responses if invalid
+                    } else {
+                        prev_ect0 = ect0;
+                        prev_ect1 = ect1;
+                        prev_ce = ce;
+                        if (ce > 0) ecn_ce = true;
+                    }
+                }
+            }
+            congestion_control_->OnPacketAcked(AckEvent{pkt_num, iter->second.pkt_len_, now, ack_frame->GetAckDelay(), ecn_ce});
             congestion_control_->OnRoundTripSample(rtt_calculator_.GetSmoothedRtt(), ack_frame->GetAckDelay());
         }
     }

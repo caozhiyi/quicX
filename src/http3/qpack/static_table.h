@@ -4,8 +4,8 @@
 #include <vector>
 #include <cstdint>
 #include <utility> // for std::pair
-#include <functional> // for std::hash
 #include <unordered_map>
+
 #include "http3/qpack/type.h"
 #include "http3/qpack/util.h"
 #include "common/util/singleton.h"

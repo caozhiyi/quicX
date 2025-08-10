@@ -3,8 +3,7 @@
 #include "common/buffer/buffer.h"
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/settings_frame.h"
-#include "http3/frame/max_push_id_frame.h"
-#include "http3/frame/cancel_push_frame.h"
+#include "http3/frame/settings_frame.h"
 #include "http3/stream/control_sender_stream.h"
 
 namespace quicx {
@@ -50,6 +49,13 @@ bool ControlSenderStream::SendGoaway(uint64_t id) {
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kInternalError);
         return false;
     }
+    return stream_->Send(buffer) > 0;
+}
+
+bool ControlSenderStream::SendQpackInstructions(const std::vector<uint8_t>& blob) {
+    if (blob.empty()) return true;
+    auto buffer = std::make_shared<common::Buffer>((uint8_t*)blob.data(), blob.size());
+    buffer->MoveWritePt(blob.size());
     return stream_->Send(buffer) > 0;
 }
 

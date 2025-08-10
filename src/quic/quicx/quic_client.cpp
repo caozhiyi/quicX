@@ -16,11 +16,12 @@ QuicClient::~QuicClient() {
 
 }
 
-bool QuicClient::Init(uint16_t thread_num, LogLevel level) {
-    if (level != LogLevel::kNull) {
-        InitLogger(level);
+bool QuicClient::Init(const QuicConfig& config) {
+    if (config.log_level_ != LogLevel::kNull) {
+        InitLogger(config.log_level_);
     }
-    master_->InitAsClient(thread_num, params_, connection_state_cb_);
+    
+    master_->InitAsClient(config, params_, connection_state_cb_);
     return true;
 }
 
@@ -39,6 +40,11 @@ void QuicClient::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
 bool QuicClient::Connection(const std::string& ip, uint16_t port,
     const std::string& alpn, int32_t timeout_ms) {
     return master_->Connection(ip, port, alpn, timeout_ms);
+}
+
+bool QuicClient::Connection(const std::string& ip, uint16_t port,
+    const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
+    return master_->Connection(ip, port, alpn, timeout_ms, resumption_session_der);
 }
 
 void QuicClient::SetConnectionStateCallBack(connection_state_callback cb) {

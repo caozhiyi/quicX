@@ -14,6 +14,8 @@ UdpSender::UdpSender() {
     }
     
     sock_ = ret.return_value_;
+
+    // marking deferred; controlled by config in master
 }
 
 UdpSender::UdpSender(uint64_t sock):

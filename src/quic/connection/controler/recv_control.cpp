@@ -12,6 +12,9 @@ RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
     max_ack_delay_(10) {
     memset(pkt_num_largest_recvd_, 0, sizeof(pkt_num_largest_recvd_));
     memset(largest_recv_time_, 0, sizeof(largest_recv_time_));
+    memset(ect0_count_, 0, sizeof(ect0_count_));
+    memset(ect1_count_, 0, sizeof(ect1_count_));
+    memset(ce_count_, 0, sizeof(ce_count_));
 
     timer_task_ = common::TimerTask([this] {
             set_timer_ = false;
@@ -39,7 +42,24 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     }
 }
 
-std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns) {
+void RecvControl::OnEcnCounters(uint8_t ecn, PacketNumberSpace ns) {
+    // ECN codepoints per RFC: 0b00 Not-ECT, 0b10 ECT(0), 0b01 ECT(1), 0b11 CE
+    switch (ecn & 0x03) {
+        case 0x02: // ECT(0)
+            ++ect0_count_[ns];
+            break;
+        case 0x01: // ECT(1)
+            ++ect1_count_[ns];
+            break;
+        case 0x03: // CE
+            ++ce_count_[ns];
+            break;
+        default:
+            break;
+    }
+}
+
+std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled) {
     if (set_timer_) {
         timer_->RmTimer(timer_task_);
         set_timer_ = false;
@@ -49,7 +69,17 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
         return nullptr;
     }
 
-    std::shared_ptr<AckFrame> frame = std::make_shared<AckFrame>();
+    // Generate ACK or ACK_ECN frame based on ECN enable
+    std::shared_ptr<AckFrame> frame;
+    if (ecn_enabled) {
+        auto f = std::make_shared<AckEcnFrame>();
+        f->SetEct0(ect0_count_[ns]);
+        f->SetEct1(ect1_count_[ns]);
+        f->SetEcnCe(ce_count_[ns]);
+        frame = f;
+    } else {
+        frame = std::make_shared<AckFrame>();
+    }
     frame->SetLargestAck(pkt_num_largest_recvd_[ns]);
     frame->SetAckDelay(now - largest_recv_time_[ns]);
 

@@ -36,6 +36,7 @@ bool MsgParser::ParsePacket(std::shared_ptr<NetPacket> net_packet, PacketInfo& p
     packet_info.cid_.SetID(cid_buf, cid_len);
     packet_info.addr_ = net_packet->GetAddress();
     packet_info.recv_time_ = net_packet->GetTime();
+    packet_info.ecn_ = net_packet->GetEcn();
     return true;
 }
 

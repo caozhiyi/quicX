@@ -11,12 +11,16 @@ class ClientWorker:
     public Worker {
 public:
     ClientWorker(std::shared_ptr<TLSCtx> ctx,
+        bool ecn_enabled,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
     virtual ~ClientWorker();
 
     virtual void Connect(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms);
+    virtual void Connect(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der);
+
 private:
     virtual bool InnerHandlePacket(PacketInfo& packet_info) override;
     void HandleConnectionTimeout(std::shared_ptr<IConnection> conn);

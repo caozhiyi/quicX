@@ -15,10 +15,7 @@ public:
     virtual ~QuicServer();
 
     // thread_num: io thread number
-    virtual bool Init(const std::string& cert_file, const std::string& key_file, const std::string& alpn,
-        uint16_t thread_num = 1, LogLevel level = LogLevel::kNull);
-    virtual bool Init(const char* cert_pem, const char* key_pem, const std::string& alpn,
-        uint16_t thread_num = 1, LogLevel level = LogLevel::kNull);
+    virtual bool Init(const QuicServerConfig& config);
 
     // join io threads
     virtual void Join();

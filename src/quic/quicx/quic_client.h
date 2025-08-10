@@ -14,7 +14,7 @@ public:
     QuicClient(const QuicTransportParams& params);
     virtual ~QuicClient();
     // thread_num: io thread number
-    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LogLevel::kNull);
+    virtual bool Init(const QuicConfig& config);
 
     // join io threads
     virtual void Join();
@@ -30,9 +30,16 @@ public:
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms);
 
+    // connect to a quic server with a specific resumption session (DER bytes) for this connection
+    virtual bool Connection(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der);
+
     // called when connection state changed, like connected, disconnected, etc
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost
     virtual void SetConnectionStateCallBack(connection_state_callback cb);
+
+private:
+    // remove client-global session cache; session is per-connection, exposed via IQuicConnection now
 };
 
 }

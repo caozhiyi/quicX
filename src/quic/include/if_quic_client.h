@@ -18,7 +18,7 @@ public:
 
     // init quic libary
     // thread_num: io thread number
-    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LogLevel::kNull) = 0;
+    virtual bool Init(const QuicConfig& config) = 0;
 
     // join io threads
     virtual void Join() = 0;
@@ -33,6 +33,11 @@ public:
     // connect to a quic server
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms) = 0;
+
+    // connect to a quic server with a specific resumption session (DER bytes) for this connection
+    // passing non-empty session enables 0-RTT on resumption if ticket allows
+    virtual bool Connection(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) = 0;
 
     // called when connection state changed, like connected, disconnected, etc
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost

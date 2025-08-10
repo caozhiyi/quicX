@@ -12,17 +12,14 @@
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
-#include "quic/stream/crypto_stream.h"
 #include "quic/frame/max_data_frame.h"
 #include "quic/frame/new_token_frame.h"
 #include "quic/frame/max_streams_frame.h"
 #include "quic/packet/handshake_packet.h"
-#include "quic/frame/data_blocked_frame.h"
 #include "quic/stream/bidirection_stream.h"
 #include "quic/frame/path_response_frame.h"
 #include "quic/frame/path_challenge_frame.h"
 #include "quic/connection/connection_base.h"
-#include "quic/frame/streams_blocked_frame.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
@@ -31,6 +28,7 @@ namespace quicx {
 namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
+    bool ecn_enabled,
     std::shared_ptr<common::ITimer> timer,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
@@ -38,6 +36,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     std::function<void(ConnectionID&)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
     IConnection(timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
+    ecn_enabled_(ecn_enabled),
     last_communicate_time_(0),
     flow_control_(start),
     recv_control_(timer),
@@ -139,11 +138,19 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
     uint8_t encrypto_level = GetCurEncryptionLevel();
     auto crypto_grapher = connection_crypto_.GetCryptographer(encrypto_level);
     if (!crypto_grapher) {
+        // fallback to Initial keys if available (early handshake bootstrap)
+        auto init_crypto = connection_crypto_.GetCryptographer(kInitial);
+        if (init_crypto) {
+            encrypto_level = kInitial;
+            crypto_grapher = init_crypto;
+        }
+    }
+    if (!crypto_grapher) {
         common::LOG_ERROR("encrypt grapher is not ready.");
         return false;
     }
 
-    auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), CryptoLevel2PacketNumberSpace(encrypto_level));
+    auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), CryptoLevel2PacketNumberSpace(encrypto_level), ecn_enabled_);
     if (ack_frame) {
         send_manager_.ToSendFrame(ack_frame);
     }
@@ -167,6 +174,11 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
 }
 
 void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
+    // Accumulate ECN to ACK_ECN counters based on first packet number space
+    if (!packets.empty() && ecn_enabled_) {
+        auto ns = CryptoLevel2PacketNumberSpace(packets[0]->GetCryptoLevel());
+        recv_control_.OnEcnCounters(pending_ecn_, ns);
+    }
     for (size_t i = 0; i < packets.size(); i++) {
         recv_control_.OnPacketRecv(now, packets[i]);
         common::LOG_DEBUG("get packet. type:%d", packets[i]->GetHeader()->GetPacketType());
@@ -217,7 +229,8 @@ bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
-    return true;
+    // Handle 0-RTT packet like normal packet using early-data keys if available
+    return OnNormalPacket(packet);
 }
 
 bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
@@ -365,11 +378,9 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     
-    if (state_ != ConnectionStateType::kStateConnected) {
-        common::LOG_ERROR("process stream frame but connection isn't ready. stream id:%d", stream_frame->GetStreamID());
-        return false;
-    }
-
+    // Allow processing of application data only when encryption is ready; 0-RTT stream frames
+    // arrive before handshake confirmation and must be accepted per RFC (subject to anti-replay policy
+    // which is handled at TLS/session level). Here we don't gate on connection state.
     common::LOG_DEBUG("process stream data frame. stream id:%d", stream_frame->GetStreamID());
     // find stream
     uint64_t stream_id = stream_frame->GetStreamID();
@@ -597,8 +608,21 @@ void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
     if (state_ == ConnectionStateType::kStateClosed || state_ == ConnectionStateType::kStateDraining) {
         return;
     }
+    if (stream->GetStreamID() != 0) {
+        has_app_send_pending_ = true;
+    }
     send_manager_.ActiveStream(stream);
     ActiveSend();
+}
+
+EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
+    auto level = connection_crypto_.GetCurEncryptionLevel();
+    if (has_app_send_pending_ && level == kInitial) {
+        if (connection_crypto_.GetCryptographer(kEarlyData)) {
+            return kEarlyData;
+        }
+    }
+    return level;
 }
 
 void BaseConnection::ActiveSend() {

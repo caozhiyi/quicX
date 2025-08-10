@@ -8,9 +8,10 @@ namespace quicx {
 namespace quic {
 
 ServerWorker::ServerWorker(std::shared_ptr<TLSCtx> ctx,
+        bool ecn_enabled,
         const QuicTransportParams& params,
         connection_state_callback connection_handler):
-    Worker(ctx, params, connection_handler) {
+    Worker(ctx, ecn_enabled, params, connection_handler) {
 }
 
 ServerWorker::~ServerWorker() {
@@ -21,6 +22,7 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     common::LOG_DEBUG("get packet. dcid:%llu", packet_info.cid_.Hash());
     auto conn = conn_map_.find(packet_info.cid_.Hash());
     if (conn != conn_map_.end()) {
+        conn->second->SetPendingEcn(packet_info.ecn_);
         conn->second->OnPackets(packet_info.recv_time_, packet_info.packets_);
         return true;
     }
@@ -33,7 +35,10 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     }
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, server_alpn_, time_,
+    auto new_conn = std::make_shared<ServerConnection>(ctx_,
+        ecn_enabled_,
+        time_,
+        server_alpn_,
         std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
@@ -44,6 +49,7 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
 
     new_conn->AddRemoteConnectionId(packet_info.cid_);
     new_conn->SetPeerAddress(packet_info.addr_);
+    new_conn->SetPendingEcn(packet_info.ecn_);
     new_conn->OnPackets(packet_info.recv_time_, packet_info.packets_);
 
     common::TimerTask task([new_conn, this]() {

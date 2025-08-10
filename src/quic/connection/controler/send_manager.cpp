@@ -111,36 +111,56 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
         }
     }
 
-    bool need_break = false;
-    while (true) {
-        if (active_send_stream_ids_.empty() || need_break) {
-            break;
-        }
-        
-        // then sending frames of stream
-        while (!active_send_stream_queue_.empty()) {
-            auto stream = active_send_stream_queue_.front();
-
-            common::LOG_DEBUG("try make send stream data. stream id:%d", stream->GetStreamID());
-            auto ret = (stream)->TrySendData(visitor);
-            if (ret == IStream::TrySendResult::kSuccess) {
-                active_send_stream_queue_.pop();
-                active_send_stream_ids_.erase(stream->GetStreamID());
-    
-            } else if (ret == IStream::TrySendResult::kFailed) {
-                common::LOG_ERROR("get stream send data failed.");
-                return nullptr;
-    
-            } else if (ret == IStream::TrySendResult::kBreak) {
-                need_break = true;
+    // Attach stream frames with encryption-level awareness:
+    // - Crypto stream (id == 0) may be sent at any level (Initial/Handshake/1-RTT)
+    // - Application streams (id != 0) only at 0-RTT or 1-RTT
+    {
+        bool need_break = false;
+        while (true) {
+            if (active_send_stream_ids_.empty() || need_break) {
                 break;
+            }
+            
+            // then sending frames of stream
+            while (!active_send_stream_queue_.empty()) {
+                auto stream = active_send_stream_queue_.front();
+                uint64_t sid = stream->GetStreamID();
+                // filter by level for non-crypto streams
+                if (sid != 0 && !(encrypto_level == kEarlyData || encrypto_level == kApplication)) {
+                    // cannot send app stream at this level; stop attaching streams for this packet
+                    need_break = true;
+                    break;
+                }
+
+                common::LOG_DEBUG("try make send stream data. stream id:%d", stream->GetStreamID());
+                auto ret = (stream)->TrySendData(visitor);
+                if (ret == IStream::TrySendResult::kSuccess) {
+                    active_send_stream_queue_.pop();
+                    active_send_stream_ids_.erase(stream->GetStreamID());
+        
+                } else if (ret == IStream::TrySendResult::kFailed) {
+                    common::LOG_ERROR("get stream send data failed.");
+                    return nullptr;
+        
+                } else if (ret == IStream::TrySendResult::kBreak) {
+                    need_break = true;
+                    break;
+                }
             }
         }
     }
 
     if (visitor->GetBuffer()->GetDataLength() == 0) {
-        common::LOG_INFO("there is no data to send.");
-        return nullptr;
+        // If nothing scheduled, but the current encryption level is Initial, we still must send at least
+        // an Initial with PADDING to progress handshake when TLS produced data earlier.
+        if (encrypto_level == kInitial) {
+            auto padding_frame = std::make_shared<PaddingFrame>();
+            padding_frame->SetPaddingLength(1200); // RFC9000: >=1200
+            visitor->HandleFrame(padding_frame);
+        } else {
+            common::LOG_INFO("there is no data to send.");
+            return nullptr;
+        }
     }
 
     switch (encrypto_level) {

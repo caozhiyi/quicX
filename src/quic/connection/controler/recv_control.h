@@ -27,7 +27,8 @@ public:
     ~RecvControl() {}
 
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
-    std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns);
+    void OnEcnCounters(uint8_t ecn, PacketNumberSpace ns);
+    std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled = true);
 
     void SetActiveSendCB(std::function<void()> cb) { active_send_cb_ = cb; }
     void UpdateConfig(const TransportParam& tp);
@@ -36,6 +37,10 @@ private:
     uint64_t pkt_num_largest_recvd_[PacketNumberSpace::kNumberSpaceCount];
     uint64_t largest_recv_time_[PacketNumberSpace::kNumberSpaceCount];
     std::set<uint64_t> wait_ack_packet_numbers_[PacketNumberSpace::kNumberSpaceCount];
+    // ECN counters per PN space
+    uint64_t ect0_count_[PacketNumberSpace::kNumberSpaceCount] {0};
+    uint64_t ect1_count_[PacketNumberSpace::kNumberSpaceCount] {0};
+    uint64_t ce_count_[PacketNumberSpace::kNumberSpaceCount] {0};
     
     bool set_timer_;
     std::shared_ptr<common::ITimer> timer_;

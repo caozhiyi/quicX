@@ -60,6 +60,17 @@ SysCallInt32Result SocketNoblocking(uint64_t sock);
 
 bool LookupAddress(const std::string& host, Address& addr);
 
+// UDP ECN helpers
+// Enable receiving ECN/TOS (IPv4) and Traffic Class (IPv6) on the socket for ECN extraction
+SysCallInt32Result EnableUdpEcn(int64_t sockfd);
+// Receive a datagram and extract ECN codepoint from ancillary data if available
+// ECN values: 0b00 Not-ECT, 0b10 ECT(0), 0b01 ECT(1), 0b11 CE
+SysCallInt32Result RecvFromWithEcn(int64_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn);
+
+// Set default ECN marking on outgoing UDP packets (via IP_TOS/IPV6_TCLASS)
+// ecn_codepoint: 0x00 Not-ECT, 0x01 ECT(1), 0x02 ECT(0), 0x03 CE (not recommended)
+SysCallInt32Result EnableUdpEcnMarking(int64_t sockfd, uint8_t ecn_codepoint);
+
 }
 }
 
