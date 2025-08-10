@@ -27,6 +27,12 @@ bool TLSClientConnection::Init() {
     // 0-RTT will be enabled automatically on resumption when session ticket allows it.
     // If your BoringSSL has SSL_set_quic_early_data_context and you want extra binding,
     // you can add it here to match server policy.
+#if defined(OPENSSL_IS_BORINGSSL)
+    static const char kEarlyDataCtx[] = "quic-early-data";
+    SSL_set_quic_early_data_context(ssl_.get(), reinterpret_cast<const uint8_t*>(kEarlyDataCtx), sizeof(kEarlyDataCtx) - 1);
+    // Explicitly enable early data usage on client
+    SSL_set_early_data_enabled(ssl_.get(), 1);
+#endif
     return true;
 }
 

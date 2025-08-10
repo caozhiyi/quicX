@@ -30,5 +30,10 @@ void MockQuicConnection::SetStreamStateCallBack(stream_state_callback cb) {
     stream_state_cb_ = cb;
 }
 
+bool MockQuicConnection::ExportResumptionSession(std::string& out_session_der) {
+    // TODO: implement this
+    return false;
+}
+
 }
 }

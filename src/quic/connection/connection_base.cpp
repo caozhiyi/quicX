@@ -139,6 +139,14 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
     uint8_t encrypto_level = GetCurEncryptionLevel();
     auto crypto_grapher = connection_crypto_.GetCryptographer(encrypto_level);
     if (!crypto_grapher) {
+        // fallback to Initial keys if available (early handshake bootstrap)
+        auto init_crypto = connection_crypto_.GetCryptographer(kInitial);
+        if (init_crypto) {
+            encrypto_level = kInitial;
+            crypto_grapher = init_crypto;
+        }
+    }
+    if (!crypto_grapher) {
         common::LOG_ERROR("encrypt grapher is not ready.");
         return false;
     }
@@ -366,11 +374,9 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     
-    if (state_ != ConnectionStateType::kStateConnected) {
-        common::LOG_ERROR("process stream frame but connection isn't ready. stream id:%d", stream_frame->GetStreamID());
-        return false;
-    }
-
+    // Allow processing of application data only when encryption is ready; 0-RTT stream frames
+    // arrive before handshake confirmation and must be accepted per RFC (subject to anti-replay policy
+    // which is handled at TLS/session level). Here we don't gate on connection state.
     common::LOG_DEBUG("process stream data frame. stream id:%d", stream_frame->GetStreamID());
     // find stream
     uint64_t stream_id = stream_frame->GetStreamID();
@@ -598,8 +604,21 @@ void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
     if (state_ == ConnectionStateType::kStateClosed || state_ == ConnectionStateType::kStateDraining) {
         return;
     }
+    if (stream->GetStreamID() != 0) {
+        has_app_send_pending_ = true;
+    }
     send_manager_.ActiveStream(stream);
     ActiveSend();
+}
+
+EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
+    auto level = connection_crypto_.GetCurEncryptionLevel();
+    if (has_app_send_pending_ && level == kInitial) {
+        if (connection_crypto_.GetCryptographer(kEarlyData)) {
+            return kEarlyData;
+        }
+    }
+    return level;
 }
 
 void BaseConnection::ActiveSend() {

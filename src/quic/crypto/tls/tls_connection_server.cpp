@@ -31,9 +31,20 @@ bool TLSServerConnection::Init() {
     
     SSL_set_accept_state(ssl_.get());
 
-    // Advertise and enable server-side 0-RTT (early data) support via session tickets.
-    // The value indicates the max accepted early data size embedded in new tickets.
+    // Advertise and enable server-side 0-RTT (early data) support via session tickets (OpenSSL >= 1.1.1).
+    // BoringSSL does not use SSL_CTX_set_max_early_data; skip for BoringSSL to keep compatibility.
+#if !defined(OPENSSL_IS_BORINGSSL)
+#  if defined(OPENSSL_VERSION_NUMBER) && (OPENSSL_VERSION_NUMBER >= 0x10101000L)
     SSL_CTX_set_max_early_data(ctx_->GetSSLCtx(), 65536);
+#  endif
+#endif
+
+    // For BoringSSL QUIC, the server must configure an early data context to allow 0-RTT on future resumptions.
+    // Use a fixed context string. It must remain consistent across resumptions to accept early data.
+#if defined(OPENSSL_IS_BORINGSSL)
+    static const char kEarlyDataCtx[] = "quic-early-data";
+    SSL_set_quic_early_data_context(ssl_.get(), reinterpret_cast<const uint8_t*>(kEarlyDataCtx), sizeof(kEarlyDataCtx) - 1);
+#endif
 
     // Optional: early data context binding. If your BoringSSL exposes SSL_set_quic_early_data_context,
     // you may set a context here on both client and server to further constrain 0-RTT acceptance.

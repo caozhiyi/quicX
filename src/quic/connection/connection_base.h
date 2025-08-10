@@ -45,7 +45,7 @@ public:
     virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation);
     // handle packets
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
-    virtual EncryptionLevel GetCurEncryptionLevel() { return connection_crypto_.GetCurEncryptionLevel(); }
+    virtual EncryptionLevel GetCurEncryptionLevel();
 
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
@@ -130,6 +130,9 @@ protected:
         kStateClosed,
     };
     ConnectionStateType state_;
+
+    // hint for early-data scheduling: whether any application stream (id != 0) has pending send
+    bool has_app_send_pending_ = false;
 };
 
 }
