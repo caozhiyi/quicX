@@ -4,7 +4,6 @@
 #include <vector>
 #include <utility>
 #include <cstdint>
-#include <functional>
 #include <unordered_map>
 #include "http3/qpack/type.h"
 #include "http3/qpack/util.h"
@@ -17,6 +16,9 @@ public:
     DynamicTable(uint32_t max_size);
     virtual ~DynamicTable() {}
 
+    // Singleton accessor for shared dynamic table context
+    static DynamicTable& Instance();
+
     // Add a new header item to dynamic table
     // Returns the index of the added item, or -1 if failed
     bool AddHeaderItem(const std::string& name, const std::string& value);
@@ -28,6 +30,9 @@ public:
     // Returns -1 if not found
     int32_t FindHeaderItemIndex(const std::string& name, const std::string& value);
 
+    // Get header item index by name only (first match), returns -1 if not found
+    int32_t FindHeaderNameIndex(const std::string& name);
+
     // Evict entries to ensure table size doesn't exceed max_size_
     void EvictEntries();
 
@@ -36,6 +41,8 @@ public:
 
     // Get maximum allowed size of dynamic table
     uint32_t GetMaxTableSize() const { return max_size_; }
+    // Get entry count
+    uint32_t GetEntryCount() const { return static_cast<uint32_t>(headeritem_vec_.size()); }
 
     // Update maximum size of dynamic table
     void UpdateMaxTableSize(uint32_t new_size);

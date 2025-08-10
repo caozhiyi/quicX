@@ -14,7 +14,7 @@ public:
     QuicClient(const QuicTransportParams& params);
     virtual ~QuicClient();
     // thread_num: io thread number
-    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LogLevel::kNull);
+    virtual bool Init(const QuicConfig& config);
 
     // join io threads
     virtual void Join();

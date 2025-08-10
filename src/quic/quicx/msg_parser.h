@@ -16,6 +16,7 @@ struct PacketInfo {
     ConnectionID cid_;
     common::Address addr_;
     std::vector<std::shared_ptr<IPacket>> packets_;
+    uint8_t ecn_{0};
     PacketInfo(): recv_time_(0) {}
 };
 

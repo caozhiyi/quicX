@@ -9,6 +9,8 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
 #include "common/network/io_handle.h"
 
 namespace quicx {
@@ -174,6 +176,77 @@ bool LookupAddress(const std::string& host, Address& addr) {
 
     freeaddrinfo(result);
     return false;
+}
+
+SysCallInt32Result EnableUdpEcn(int64_t sockfd) {
+    int on = 1;
+    int rc1 = setsockopt(sockfd, IPPROTO_IP, IP_RECVTOS, &on, sizeof(on));
+#ifdef IPV6_RECVTCLASS
+    int rc2 = setsockopt(sockfd, IPPROTO_IPV6, IPV6_RECVTCLASS, &on, sizeof(on));
+#else
+    int rc2 = 0;
+#endif
+    int ok = (rc1 == -1 || rc2 == -1) ? -1 : 0;
+    return {ok, ok != -1 ? 0 : errno};
+}
+
+SysCallInt32Result RecvFromWithEcn(int64_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
+    struct sockaddr_storage addr_ss; memset(&addr_ss, 0, sizeof(addr_ss));
+    struct iovec iov; iov.iov_base = (void*)buf; iov.iov_len = len;
+    char cbuf[128]; memset(cbuf, 0, sizeof(cbuf));
+    struct msghdr msg; memset(&msg, 0, sizeof(msg));
+    msg.msg_name = &addr_ss; msg.msg_namelen = sizeof(addr_ss);
+    msg.msg_iov = &iov; msg.msg_iovlen = 1;
+    msg.msg_control = cbuf; msg.msg_controllen = sizeof(cbuf);
+
+    int32_t rc = recvmsg(sockfd, &msg, flag);
+    if (rc == -1) {
+        return {rc, errno};
+    }
+    // address
+    char ipstr[INET6_ADDRSTRLEN] = {0};
+    if (addr_ss.ss_family == AF_INET) {
+        auto* sin = (struct sockaddr_in*)&addr_ss;
+        inet_ntop(AF_INET, &sin->sin_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin->sin_port));
+        addr.SetAddressType(AddressType::kIpv4);
+    } else if (addr_ss.ss_family == AF_INET6) {
+        auto* sin6 = (struct sockaddr_in6*)&addr_ss;
+        inet_ntop(AF_INET6, &sin6->sin6_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin6->sin6_port));
+        addr.SetAddressType(AddressType::kIpv6);
+    }
+    // ECN
+    ecn = 0;
+    for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TOS) {
+            int tos = 0; memcpy(&tos, CMSG_DATA(cmsg), sizeof(tos));
+            ecn = static_cast<uint8_t>(tos & 0x03);
+        }
+#ifdef IPV6_TCLASS
+        if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_TCLASS) {
+            int tclass = 0; memcpy(&tclass, CMSG_DATA(cmsg), sizeof(tclass));
+            ecn = static_cast<uint8_t>(tclass & 0x03);
+        }
+#endif
+    }
+    return {rc, 0};
+}
+
+SysCallInt32Result EnableUdpEcnMarking(int64_t sockfd, uint8_t ecn_codepoint) {
+    // Set TOS low 2 bits (ECN field). Keep upper bits 0.
+    int tos = static_cast<int>(ecn_codepoint & 0x03);
+    int rc1 = setsockopt(sockfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+#ifdef IPV6_TCLASS
+    int tclass = static_cast<int>(ecn_codepoint & 0x03);
+    int rc2 = setsockopt(sockfd, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
+#else
+    int rc2 = 0;
+#endif
+    int ok = (rc1 == -1 || rc2 == -1) ? -1 : 0;
+    return {ok, ok != -1 ? 0 : errno};
 }
 
 }

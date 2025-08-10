@@ -18,7 +18,7 @@ public:
 
     // init quic libary
     // thread_num: io thread number
-    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LogLevel::kNull) = 0;
+    virtual bool Init(const QuicConfig& config) = 0;
 
     // join io threads
     virtual void Join() = 0;

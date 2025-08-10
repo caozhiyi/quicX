@@ -16,11 +16,12 @@ QuicClient::~QuicClient() {
 
 }
 
-bool QuicClient::Init(uint16_t thread_num, LogLevel level) {
-    if (level != LogLevel::kNull) {
-        InitLogger(level);
+bool QuicClient::Init(const QuicConfig& config) {
+    if (config.log_level_ != LogLevel::kNull) {
+        InitLogger(config.log_level_);
     }
-    master_->InitAsClient(thread_num, params_, connection_state_cb_);
+    
+    master_->InitAsClient(config, params_, connection_state_cb_);
     return true;
 }
 

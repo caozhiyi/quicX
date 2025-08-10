@@ -28,12 +28,15 @@ public:
 protected:
     virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
     virtual void HandleFrame(std::shared_ptr<IFrame> frame);
+    // Handle raw QPACK instruction data on control stream (demo)
+    void HandleRawData(std::shared_ptr<common::IBufferRead> data);
 
 protected:
     std::shared_ptr<quic::IQuicRecvStream> stream_;
 
     std::function<void(uint64_t id)> goaway_handler_;
     std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)> settings_handler_;
+    std::function<void(std::shared_ptr<common::IBufferRead>)> qpack_instr_handler_;
     
 };
 

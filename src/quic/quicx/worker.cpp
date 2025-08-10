@@ -3,12 +3,12 @@
 #include "common/timer/timer.h"
 #include "quic/common/version.h"
 #include "quic/packet/init_packet.h"
-#include "quic/connection/connection_client.h"
 
 namespace quicx {
 namespace quic {
 
 Worker::Worker(std::shared_ptr<TLSCtx> ctx,
+        bool ecn_enabled,
         const QuicTransportParams& params,
         connection_state_callback connection_handler):
     ctx_(ctx),

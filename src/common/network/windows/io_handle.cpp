@@ -200,6 +200,25 @@ bool LookupAddress(const std::string& host, Address& addr) {
     return true;
 }
 
+SysCallInt32Result EnableUdpEcn(int64_t sockfd) {
+    (void)sockfd;
+    // TODO: Implement via WSARecvMsg ancillary data options if needed
+    return {0, 0};
+}
+
+SysCallInt32Result RecvFromWithEcn(int64_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
+    // Fallback to RecvFrom without ECN on Windows for now
+    auto ret = RecvFrom(sockfd, buf, len, flag, addr);
+    ecn = 0;
+    return ret;
+}
+
+SysCallInt32Result EnableUdpEcnMarking(int64_t sockfd, uint8_t ecn_codepoint) {
+    (void)sockfd; (void)ecn_codepoint;
+    // TODO: implement IP_TOS/TrafficClass on Windows if required
+    return {0, 0};
+}
+
 }
 }
 

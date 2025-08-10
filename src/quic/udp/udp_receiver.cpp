@@ -5,14 +5,16 @@
 #include <ws2tcpip.h>
 #else
 #include <sys/socket.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #endif
 #include "common/log/log.h"
 #include "common/util/time.h"
-#include "common/buffer/buffer.h"
 #include "quic/udp/udp_receiver.h"
 #include "quic/common/constants.h"
 #include "common/network/io_handle.h"
-#include "common/alloter/pool_block.h"
 
 #ifdef __linux__
 #include "quic/udp/action/epoll/udp_action.h"
@@ -59,6 +61,11 @@ void UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
 
     common::Address addr(ip, port);
 
+    if (ecn_enabled_) {
+        // enable receiving TOS/TCLASS for ECN via io_handle abstraction
+        common::EnableUdpEcn(sock);
+    }
+
     opt_ret = Bind(sock, addr);
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("bind address failed. err:%d", opt_ret.errno_);
@@ -91,9 +98,11 @@ bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket> pkt) {
 
         auto buffer = pkt->GetData();
         auto span = buffer->GetWriteSpan();
-        common::Address peer_addr;
 
-        auto ret = common::RecvFrom(sock, (char*)span.GetStart(), kMaxV4PacketSize, 0, peer_addr);
+        // Use platform abstraction to capture ECN and peer address
+        common::Address peer_addr;
+        uint8_t ecn = 0;
+        auto ret = common::RecvFromWithEcn(sock, (char*)span.GetStart(), kMaxV4PacketSize, 0, peer_addr, ecn);
         if (ret.errno_ != 0) {
             if (ret.errno_ == EAGAIN) {
                 continue;
@@ -105,6 +114,7 @@ bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket> pkt) {
         pkt->SetAddress(std::move(peer_addr));
         pkt->SetSocket(sock);
         pkt->SetTime(common::UTCTimeMsec());
+        pkt->SetEcn(ecn_enabled_ ? ecn : 0);
         return true;
     }
     return false;

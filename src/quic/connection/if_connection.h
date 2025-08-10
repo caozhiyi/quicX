@@ -3,16 +3,16 @@
 
 #include <memory>
 #include <functional>
-#include "common/timer/timer.h"
+#include "common/timer/timer.h" // NOLINT
 #include "quic/crypto/tls/type.h"
 #include "quic/connection/type.h"
 #include "quic/packet/if_packet.h"
 #include "common/network/address.h"
-#include "quic/stream/send_stream.h"
-#include "quic/frame/if_stream_frame.h"
+#include "quic/stream/send_stream.h" // NOLINT
+#include "quic/frame/if_stream_frame.h" // NOLINT
 #include "quic/connection/connection_id.h"
-#include "quic/crypto/tls/tls_connection.h"
-#include "quic/stream/bidirection_stream.h"
+#include "quic/crypto/tls/tls_connection.h" // NOLINT
+#include "quic/stream/bidirection_stream.h" // NOLINT
 #include "quic/include/if_quic_connection.h"
 
 namespace quicx {
@@ -52,6 +52,8 @@ public:
     // try to build a quic message
     virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_done) = 0;
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
+    // provide ECN value for the next OnPackets call (per received datagram)
+    virtual void SetPendingEcn(uint8_t ecn) = 0;
     virtual EncryptionLevel GetCurEncryptionLevel() = 0;
 
     // connection transfer between threads

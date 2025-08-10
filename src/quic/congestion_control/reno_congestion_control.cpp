@@ -31,6 +31,14 @@ void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
 
 void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
+    // Treat ECN-CE as a congestion signal similar to loss (RFC3168 behavior)
+    if (ev.ecn_ce) {
+        if (!in_recovery_) {
+            EnterRecovery(ev.ack_time);
+        }
+        UpdatePacingRate();
+        return;
+    }
     if (in_recovery_) {
         if (ev.ack_time > recovery_start_time_) {
             in_recovery_ = false;

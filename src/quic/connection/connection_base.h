@@ -1,8 +1,8 @@
 #ifndef QUIC_CONNECTION_CONNECTION_BASE
 #define QUIC_CONNECTION_CONNECTION_BASE
 
-#include <set>
-#include <list>
+// #include <set>
+// #include <list>
 #include <memory>
 #include <vector>
 #include <cstdint>
@@ -25,6 +25,7 @@ class BaseConnection:
     public std::enable_shared_from_this<BaseConnection> {
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start,
+        bool ecn_enabled,
         std::shared_ptr<common::ITimer> timer,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
@@ -33,19 +34,20 @@ public:
         std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb);
     virtual ~BaseConnection();
     //*************** outside interface ***************//
-    virtual void Close();
-    virtual void Reset(uint32_t error_code);
-    virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type);
+    virtual void Close() override;
+    virtual void Reset(uint32_t error_code) override;
+    virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) override;
 
     // *************** inner interface ***************//
     // set transport param
-    void AddTransportParam(const QuicTransportParams& tp_config);
-    virtual uint64_t GetConnectionIDHash();
+    void AddTransportParam(const QuicTransportParams& tp_config) override;
+    virtual uint64_t GetConnectionIDHash() override;
     // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation);
+    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation) override;
     // handle packets
-    virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
-    virtual EncryptionLevel GetCurEncryptionLevel();
+    virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) override;
+    virtual void SetPendingEcn(uint8_t ecn) override { pending_ecn_ = ecn; }
+    virtual EncryptionLevel GetCurEncryptionLevel() override;
 
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
@@ -76,8 +78,8 @@ protected:
     void OnTransportParams(TransportParam& remote_tp);
 
 protected:
-    virtual void ThreadTransferBefore(); 
-    virtual void ThreadTransferAfter();
+    virtual void ThreadTransferBefore() override; 
+    virtual void ThreadTransferAfter() override;
     // idle timeout
     void OnIdleTimeout();
     void OnClosingTimeout();
@@ -112,6 +114,9 @@ protected:
     // connection id
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
     std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
+
+    uint8_t pending_ecn_ {0};
+    bool ecn_enabled_;
     // flow control
     FlowControl flow_control_;
     RecvControl recv_control_;

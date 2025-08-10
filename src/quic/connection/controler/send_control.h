@@ -30,6 +30,7 @@ public:
     void UpdateConfig(const TransportParam& tp);
 
 private:
+    enum class EcnState { kUnknown, kValidated, kFailed };
     std::list<std::shared_ptr<IPacket>> lost_packets_;
     struct PacketTimerInfo {
         uint64_t send_time_;
@@ -43,6 +44,12 @@ private:
     uint64_t pkt_num_largest_sent_[PacketNumberSpace::kNumberSpaceCount];
     uint64_t pkt_num_largest_acked_[PacketNumberSpace::kNumberSpaceCount];
     uint64_t largest_sent_time_[PacketNumberSpace::kNumberSpaceCount];
+
+    // ECN validation state per packet number space
+    uint64_t prev_ect0_[PacketNumberSpace::kNumberSpaceCount] = {0};
+    uint64_t prev_ect1_[PacketNumberSpace::kNumberSpaceCount] = {0};
+    uint64_t prev_ce_[PacketNumberSpace::kNumberSpaceCount] = {0};
+    EcnState ecn_state_[PacketNumberSpace::kNumberSpaceCount] = {EcnState::kUnknown};
 
     RttCalculator rtt_calculator_;
     std::shared_ptr<common::ITimer> timer_;

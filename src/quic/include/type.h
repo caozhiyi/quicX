@@ -26,6 +26,13 @@ enum class LogLevel: uint8_t {
     kDebug  = 0x10 | kInfo,
 };
 
+struct QuicConfig {
+    uint16_t thread_num_ = 1;
+    LogLevel log_level_ = LogLevel::kNull;
+
+    bool enable_ecn_ = false;
+};
+
 struct QuicTransportParams {
     std::string original_destination_connection_id_ = "";
     uint32_t    max_idle_timeout_ms_ = 120000; // 2 minutes

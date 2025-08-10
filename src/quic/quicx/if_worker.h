@@ -49,6 +49,7 @@ public:
     };
     // Make a worker
     static std::shared_ptr<IWorker> MakeWorker(WorkerType type, 
+        bool ecn_enabled,
         std::shared_ptr<TLSCtx> ctx, 
         const QuicTransportParams& params,
         connection_state_callback connection_handler);

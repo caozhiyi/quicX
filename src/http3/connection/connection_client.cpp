@@ -5,6 +5,10 @@
 #include "http3/stream/push_receiver_stream.h"
 #include "http3/connection/connection_client.h"
 #include "http3/stream/control_receiver_stream.h"
+#include "http3/stream/qpack_encoder_sender_stream.h"
+#include "http3/stream/qpack_decoder_receiver_stream.h"
+#include "http3/stream/qpack_decoder_sender_stream.h"
+#include "common/buffer/buffer.h"
 
 namespace quicx {
 namespace http3 {
@@ -19,14 +23,55 @@ ClientConnection::ClientConnection(const std::string& unique_id,
     push_promise_handler_(push_promise_handler),
     push_handler_(push_handler) {
 
-    // create control streams
+    // create control streams and QPACK unidirectional streams
     auto control_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
+    auto qpack_enc_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
+    auto qpack_dec_stream = quic_connection_->MakeStream(quic::StreamDirection::kRecv);
+    auto qpack_dec_sender_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
     control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
         std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
     
     settings_ = IConnection::AdaptSettings(settings);
     control_sender_stream_->SendSettings(settings_);
+
+    // Wire QPACK instruction sender to QPACK encoder stream
+    auto encoder_sender = std::make_shared<quicx::http3::QpackEncoderSenderStream>(
+        std::dynamic_pointer_cast<quic::IQuicSendStream>(qpack_enc_stream),
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
+    // create decoder receiver stream to apply inserts
+    auto decoder_receiver = std::make_shared<quicx::http3::QpackDecoderReceiverStream>(
+        std::dynamic_pointer_cast<quic::IQuicRecvStream>(qpack_dec_stream),
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
+    streams_[encoder_sender->GetStreamID()] = encoder_sender;
+    streams_[decoder_receiver->GetStreamID()] = decoder_receiver;
+
+    auto weak_enc = encoder_sender;
+    qpack_encoder_->SetInstructionSender([weak_enc](const std::vector<std::pair<std::string,std::string>>& inserts){
+        if (!weak_enc) return;
+        // serialize inserts via QPACK helper (demo format; to be replaced by RFC-compliant encoding)
+        uint8_t buf[2048];
+        auto instr_buf = std::make_shared<common::Buffer>(buf, sizeof(buf));
+        QpackEncoder enc;
+        enc.EncodeEncoderInstructions(inserts, instr_buf);
+        std::vector<uint8_t> blob(instr_buf->GetData(), instr_buf->GetData() + instr_buf->GetDataLength());
+        weak_enc->SendInstructions(blob);
+    });
+
+    // Wire decoder feedback sender to QPACK decoder sender stream (0x03)
+    auto decoder_sender = std::make_shared<QpackDecoderSenderStream>(
+        std::dynamic_pointer_cast<quic::IQuicSendStream>(qpack_dec_sender_stream),
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
+    streams_[decoder_sender->GetStreamID()] = decoder_sender;
+    qpack_encoder_->SetDecoderFeedbackSender([decoder_sender](uint8_t type, uint64_t value){
+        if (!decoder_sender) return;
+        switch (type) {
+            case 0x00: decoder_sender->SendSectionAck(value); break;
+            case 0x01: decoder_sender->SendStreamCancel(value); break;
+            case 0x02: decoder_sender->SendInsertCountIncrement(value); break;
+            default: break;
+        }
+    });
 }
 
 ClientConnection::~ClientConnection() {

@@ -52,6 +52,11 @@ void BBRv2CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
 void BBRv2CongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
 
+    // ECN-CE: similar to BBRv3 simple reaction, slightly tighten inflight_hi
+    if (ev.ecn_ce) {
+        inflight_hi_bytes_ = std::max<uint64_t>(inflight_lo_bytes_, (inflight_hi_bytes_ * 95) / 100); // -5%
+    }
+
     // bandwidth sample: acked_bytes / srtt
     if (srtt_us_ > 0) {
         uint64_t sample_bps = MulDiv(ev.bytes_acked, 8ull * 1000000ull, srtt_us_); // bits/sec

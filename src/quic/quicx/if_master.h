@@ -16,10 +16,10 @@ public:
     virtual ~IMaster() {}
 
     // Initialize the msg receiver
-    virtual bool InitAsClient(int32_t thread_num, const QuicTransportParams& params, connection_state_callback connection_state_cb) = 0;
-    virtual bool InitAsServer(int32_t thread_num, const std::string& cert_file, const std::string& key_file, const std::string& alpn, 
+    virtual bool InitAsClient(const QuicConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) = 0;
+    virtual bool InitAsServer(const QuicConfig& config, const std::string& cert_file, const std::string& key_file, const std::string& alpn, 
         const QuicTransportParams& params, connection_state_callback connection_state_cb) = 0;
-    virtual bool InitAsServer(int32_t thread_num, const char* cert_pem, const char* key_pem, const std::string& alpn, 
+    virtual bool InitAsServer(const QuicConfig& config, const char* cert_pem, const char* key_pem, const std::string& alpn, 
         const QuicTransportParams& params, connection_state_callback connection_state_cb) = 0;
     // Destroy the msg receiver
     virtual void Destroy() = 0;

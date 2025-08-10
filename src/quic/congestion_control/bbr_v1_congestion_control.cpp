@@ -54,6 +54,16 @@ void BBRv1CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
 void BBRv1CongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
 
+    // ECN-CE: reduce pacing gain slightly and cap cwnd to BDP to react to congestion
+    if (ev.ecn_ce) {
+        // Reduce pacing a bit for this round
+        pacing_gain_ = std::max<double>(1.0, pacing_gain_ * 0.95);
+        uint64_t target = BdpBytes(static_cast<uint64_t>(cwnd_gain_ * 1000), 1000);
+        cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, target);
+        UpdatePacingRate();
+        return;
+    }
+
     // bandwidth sample: acked_bytes / srtt
     if (srtt_us_ > 0) {
         uint64_t sample_bps = MulDiv(ev.bytes_acked, 8ull * 1000000ull, srtt_us_); // bits/sec

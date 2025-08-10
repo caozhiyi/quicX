@@ -85,7 +85,7 @@ AckEcnFrame::~AckEcnFrame() {
 
 }
 
-bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (!AckFrame::Encode(buffer)) {
         return false;
     }
@@ -107,7 +107,7 @@ bool AckEcnFrame::AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buff
     return true;
 }
 
-bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
     if (!AckFrame::Decode(buffer, with_type)) {
         return false;
     } 
@@ -122,7 +122,7 @@ bool AckEcnFrame::AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffe
     return true;
 }
 
-uint32_t AckEcnFrame::AckEcnFrame::EncodeSize() {
+uint32_t AckEcnFrame::EncodeSize() {
     return sizeof(uint64_t) * 3;
 }
 

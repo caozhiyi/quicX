@@ -56,6 +56,11 @@ void BBRv3CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
 
 void BBRv3CongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
+    if (ev.ecn_ce) {
+        // Simple ECN reaction: tighten inflight_hi bound slightly and update pacing
+        inflight_hi_bytes_ = std::max<uint64_t>(inflight_lo_bytes_, (inflight_hi_bytes_ * 95) / 100); // -5%
+        UpdatePacingRate();
+    }
 
     // per-round accounting
     round_delivered_bytes_ += ev.bytes_acked;

@@ -5,8 +5,8 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+
 #include "quic/udp/if_receiver.h"
-#include "common/network/address.h"
 #include "quic/udp/action/if_udp_action.h"
 
 namespace quicx {
@@ -24,17 +24,20 @@ public:
     UdpReceiver();
     ~UdpReceiver();
 
-    void AddReceiver(uint64_t socket_fd);
-    void AddReceiver(const std::string& ip, uint16_t port);
+    void AddReceiver(uint64_t socket_fd) override;
+    void AddReceiver(const std::string& ip, uint16_t port) override;
 
-    void TryRecv(std::shared_ptr<NetPacket> pkt, uint32_t timeout_ms);
+    void TryRecv(std::shared_ptr<NetPacket> pkt, uint32_t timeout_ms) override;
 
-    virtual void Wakeup();
+    virtual void Wakeup() override;
+
+    virtual void SetEcnEnabled(bool enabled) override { ecn_enabled_ = enabled; }
 
 private:
     bool TryRecv(std::shared_ptr<NetPacket> pkt);
 
 private:
+    bool ecn_enabled_;
     std::queue<uint64_t> socket_queue_;
     std::shared_ptr<IUdpAction> action_;
 };
