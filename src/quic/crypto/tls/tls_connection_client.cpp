@@ -1,6 +1,7 @@
 #include <cstring>
 #include "common/log/log.h"
 #include "quic/crypto/tls/tls_connection_client.h"
+#include "openssl/ssl.h"
 
 namespace quicx {
 namespace quic {
@@ -22,6 +23,10 @@ bool TLSClientConnection::Init() {
     SSL_CTX_set_session_cache_mode(ctx_->GetSSLCtx(), SSL_SESS_CACHE_BOTH);
 
     SSL_set_connect_state(ssl_.get());
+
+    // 0-RTT will be enabled automatically on resumption when session ticket allows it.
+    // If your BoringSSL has SSL_set_quic_early_data_context and you want extra binding,
+    // you can add it here to match server policy.
     return true;
 }
 
@@ -40,6 +45,34 @@ bool TLSClientConnection::AddAlpn(uint8_t* alpn, uint32_t len) {
         return false;
     }
 
+    return true;
+}
+
+bool TLSClientConnection::SetSession(const uint8_t* session_der, size_t session_len) {
+    const unsigned char* p = session_der;
+    SSL_SESSION* sess = d2i_SSL_SESSION(nullptr, &p, (long)session_len);
+    if (!sess) {
+        return false;
+    }
+    bool ok = SSL_set_session(ssl_.get(), sess) == 1;
+    SSL_SESSION_free(sess);
+    return ok;
+}
+
+bool TLSClientConnection::ExportSession(std::string& out_session_der) {
+    SSL_SESSION* sess = SSL_get1_session(ssl_.get());
+    if (!sess) {
+        return false;
+    }
+    int len = i2d_SSL_SESSION(sess, nullptr);
+    if (len <= 0) {
+        SSL_SESSION_free(sess);
+        return false;
+    }
+    out_session_der.resize(static_cast<size_t>(len));
+    unsigned char* p = reinterpret_cast<unsigned char*>(&out_session_der[0]);
+    i2d_SSL_SESSION(sess, &p);
+    SSL_SESSION_free(sess);
     return true;
 }
 

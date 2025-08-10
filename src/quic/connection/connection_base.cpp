@@ -217,7 +217,8 @@ bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
-    return true;
+    // Handle 0-RTT packet like normal packet using early-data keys if available
+    return OnNormalPacket(packet);
 }
 
 bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {

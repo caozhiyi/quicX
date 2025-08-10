@@ -1,5 +1,6 @@
 #include <vector>
 #include <cstring>
+#include "openssl/ssl.h"
 
 #include "common/log/log.h"
 #include "quic/crypto/tls/tls_connection_server.h"
@@ -30,8 +31,13 @@ bool TLSServerConnection::Init() {
     
     SSL_set_accept_state(ssl_.get());
 
-    static std::vector<uint8_t> server_quic_early_data_context_ = {2};
-    SSL_set_quic_early_data_context(ssl_.get(), server_quic_early_data_context_.data(), server_quic_early_data_context_.size());
+    // Advertise and enable server-side 0-RTT (early data) support via session tickets.
+    // The value indicates the max accepted early data size embedded in new tickets.
+    SSL_CTX_set_max_early_data(ctx_->GetSSLCtx(), 65536);
+
+    // Optional: early data context binding. If your BoringSSL exposes SSL_set_quic_early_data_context,
+    // you may set a context here on both client and server to further constrain 0-RTT acceptance.
+    // Not strictly required for enabling 0-RTT, so it's omitted for compatibility.
 
     return true;
 }

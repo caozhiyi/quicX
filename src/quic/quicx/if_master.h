@@ -36,6 +36,14 @@ public:
     // connect to a quic server
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms) = 0;
+    // connect to a quic server with a specific resumption session (DER bytes) for this connection
+    // passing non-empty session enables 0-RTT on resumption if ticket allows
+    virtual bool Connection(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) = 0;
+
+    // Set/Export client resumption session (DER bytes) to enable 0-RTT
+    virtual void SetClientResumptionSession(const uint8_t* session_der, size_t session_len) = 0;
+    virtual void ExportClientResumptionSession(std::function<void(const uint8_t* data, size_t len)> cb) = 0;
 
     // add listener
     virtual void AddListener(uint64_t listener_sock) = 0;

@@ -3,6 +3,7 @@
 #include "common/timer/timer.h"
 #include "quic/common/version.h"
 #include "quic/packet/init_packet.h"
+#include "quic/connection/connection_client.h"
 
 namespace quicx {
 namespace quic {

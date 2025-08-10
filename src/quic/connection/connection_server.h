@@ -32,6 +32,9 @@ protected:
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet);
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err);
 
+    // server side doesn't expose resumption session export to user; return false
+    virtual bool ExportResumptionSession(std::string& out_session_der) override { out_session_der.clear(); return false; }
+
 private:
     void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
         const unsigned char *in, unsigned int inlen, void *arg);

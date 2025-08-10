@@ -108,6 +108,21 @@ bool Master::Connection(const std::string& ip, uint16_t port,
     return false;
 }
 
+bool Master::Connection(const std::string& ip, uint16_t port,
+    const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
+    if (!worker_map_.empty()) {
+        auto iter = worker_map_.begin();
+        std::advance(iter, rand() % worker_map_.size());
+        auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
+        worker->Push([ip, port, alpn, timeout_ms, worker, resumption_session_der]() {
+            worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
+        });
+        worker->Weakup();
+        return true;
+    }
+    return false;
+}
+
 void Master::AddListener(uint64_t listener_sock) {
     receiver_->AddReceiver(listener_sock);
 }

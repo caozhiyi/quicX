@@ -41,6 +41,11 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port,
     return master_->Connection(ip, port, alpn, timeout_ms);
 }
 
+bool QuicClient::Connection(const std::string& ip, uint16_t port,
+    const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
+    return master_->Connection(ip, port, alpn, timeout_ms, resumption_session_der);
+}
+
 void QuicClient::SetConnectionStateCallBack(connection_state_callback cb) {
     Quic::SetConnectionStateCallBack(cb);
 }

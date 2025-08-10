@@ -47,6 +47,10 @@ public:
     // connect to a quic server
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms) override;
+    // connect to a quic server with a specific resumption session (DER bytes) for this connection
+    // passing non-empty session enables 0-RTT on resumption if ticket allows
+    virtual bool Connection(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) override;
     
     // add listener
     virtual void AddListener(uint64_t listener_sock) override;

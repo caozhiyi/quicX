@@ -25,6 +25,10 @@ public:
     ~ClientConnection();
 
     bool Dial(const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config);
+    std::shared_ptr<TLSClientConnection> GetTLSConnection() { return std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_); }
+
+    // export TLS resumption session for this connection
+    virtual bool ExportResumptionSession(std::string& out_session_der) override;
 
 protected:
     virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);

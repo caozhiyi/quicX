@@ -27,8 +27,33 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
         std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
             
     connecting_set_.insert(conn);
+    
     conn->Dial(common::Address(ip, port), alpn, params_);
             
+    common::TimerTask task([conn, this]() {
+        HandleConnectionTimeout(conn);
+    });
+    time_->AddTimer(task, timeout_ms);
+}
+
+void ClientWorker::Connect(const std::string& ip, uint16_t port,
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
+
+    auto conn = std::make_shared<ClientConnection>(ctx_, time_,
+        std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
+        std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
+        std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1),
+        std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    
+    connecting_set_.insert(conn);
+            
+    auto tls_cli = conn->GetTLSConnection();
+    if (tls_cli) {
+        tls_cli->SetSession(reinterpret_cast<const uint8_t*>(resumption_session_der.data()), resumption_session_der.size());
+    }
+    conn->Dial(common::Address(ip, port), alpn, params_);
+                    
     common::TimerTask task([conn, this]() {
         HandleConnectionTimeout(conn);
     });
@@ -62,7 +87,6 @@ void ClientWorker::HandleConnectionTimeout(std::shared_ptr<IConnection> conn) {
         connection_handler_(conn, ConnectionOperation::kConnectionClose, QuicErrorCode::kConnectionTimeout, GetErrorString(QuicErrorCode::kConnectionTimeout));
     }
 }
-
 
 }
 }
