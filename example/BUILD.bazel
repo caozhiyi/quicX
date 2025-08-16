@@ -1,0 +1,44 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "hello_world_client",
+    srcs = ["hello_world/client.cpp"],
+    deps = [
+        "//src/http3:http3",
+    ],
+)
+
+cc_binary(
+    name = "hello_world_server",
+    srcs = ["hello_world/server.cpp"],
+    deps = [
+        "//src/http3:http3",
+    ],
+)
+
+cc_binary(
+    name = "server_push_client",
+    srcs = ["server_push/client.cpp"],
+    deps = [
+        "//src/http3:http3",
+    ],
+)
+
+cc_binary(
+    name = "server_push_server",
+    srcs = ["server_push/server.cpp"],
+    deps = [
+        "//src/http3:http3",
+    ],
+)
+
+
+cc_binary(
+    name = "upgrade_h3_server",
+    srcs = ["upgrade_h3/server.cpp"],
+    deps = [
+        "//src/upgrade:upgrade",
+    ],
+)
+
+

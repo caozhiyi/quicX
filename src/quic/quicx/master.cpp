@@ -42,41 +42,29 @@ bool Master::InitAsClient(const QuicConfig& config, const QuicTransportParams& p
     return true;
 }
 
-bool Master::InitAsServer(const QuicConfig& config, const std::string& cert_file, const std::string& key_file, const std::string& alpn, 
-    const QuicTransportParams& params, connection_state_callback connection_state_cb) {
+bool Master::InitAsServer(const QuicServerConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) {
     auto tls_ctx = std::make_shared<TLSServerCtx>();
-    if (!tls_ctx->Init(cert_file, key_file)) {
-        common::LOG_ERROR("tls ctx init faliled.");
+    if (config.cert_file_ != "" && config.key_file_ != "") {
+        if (!tls_ctx->Init(config.cert_file_, config.key_file_)) {
+            common::LOG_ERROR("tls ctx init faliled.");
+            return false;
+        }
+    } else if (config.cert_pem_ != nullptr && config.key_pem_ != nullptr) {
+        if (!tls_ctx->Init(config.cert_pem_, config.key_pem_)) {
+            common::LOG_ERROR("tls ctx init faliled.");
+            return false;
+        }
+
+    } else {
+        common::LOG_ERROR("cert file or key file is not set.");
         return false;
     }
 
-    ecn_enabled_ = config.enable_ecn_;
+    ecn_enabled_ = config.config_.enable_ecn_;
 
-    worker_map_.reserve(config.thread_num_);
-    for (size_t i = 0; i < config.thread_num_; i++) {
+    worker_map_.reserve(config.config_.thread_num_);
+    for (size_t i = 0; i < config.config_.thread_num_; i++) {
         auto worker = IWorker::MakeWorker(IWorker::kServerWorker, ecn_enabled_, tls_ctx, params, connection_state_cb);
-        worker->Init(shared_from_this());
-        worker_map_.emplace(worker->GetCurrentThreadId(), worker);
-    }
-    receiver_->SetEcnEnabled(ecn_enabled_);
-
-    Start();
-    return true;
-}
-
-bool Master::InitAsServer(const QuicConfig& config, const char* cert_pem, const char* key_pem, const std::string& alpn, 
-    const QuicTransportParams& params, connection_state_callback connection_state_cb) {
-    auto tls_ctx = std::make_shared<TLSServerCtx>();
-    if (!tls_ctx->Init(cert_pem, key_pem)) {
-        common::LOG_ERROR("tls ctx init faliled.");
-        return false;
-    }
-
-    ecn_enabled_ = config.enable_ecn_;
-
-    worker_map_.reserve(config.thread_num_);
-    for (size_t i = 0; i < config.thread_num_; i++) {
-        auto worker = IWorker::MakeWorker(IWorker::kServerWorker, ecn_enabled_,tls_ctx, params, connection_state_cb);
         worker->Init(shared_from_this());
         worker_map_.emplace(worker->GetCurrentThreadId(), worker);
     }
@@ -188,7 +176,7 @@ void Master::DoRecv() {
                 // random find a worker to handle packet
                 auto iter = worker_map_.begin();
                 std::advance(iter, rand() % worker_map_.size());
-                auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
+                auto worker = iter->second;
                 worker->HandlePacket(packet_info);
             }
         }

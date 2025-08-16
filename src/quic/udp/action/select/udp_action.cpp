@@ -1,10 +1,14 @@
 #ifdef _WIN32
 
+// Windows headers must be included in the correct order
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include <cstdio>
 #include <thread>
 #include <cstring>
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
 #include "quic/udp/action/select/udp_action.h"
@@ -17,12 +21,13 @@ UdpAction::UdpAction() {
     memset(pipe_, 0, sizeof(pipe_));
     memset(&pipe_content_, 0, sizeof(pipe_content_));
 
-    if (WSAStartup(MAKEWORD(2, 2), &wsa_data_) != 0) {
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
         common::LOG_FATAL("WSAStartup failed! error : %d", WSAGetLastError());
         abort();
     }
 
-    if (pipe(pipe_) == -1) {
+    if (!common::Pipe(pipe_[0], pipe_[1])) {
         common::LOG_FATAL("pipe init failed! error : %d", WSAGetLastError());
         abort();
     }

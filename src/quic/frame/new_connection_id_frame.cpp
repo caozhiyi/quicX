@@ -1,8 +1,10 @@
 #include <cstring>
 #include "common/log/log.h"
+#include "common/decode/decode.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+
 
 namespace quicx {
 namespace quic {
@@ -10,7 +12,9 @@ namespace quic {
 NewConnectionIDFrame::NewConnectionIDFrame():
     IFrame(FrameType::kNewConnectionId),
     sequence_number_(0),
-    retire_prior_to_(0) {
+    retire_prior_to_(0),
+    length_(0) {
+    memset(connection_id_, 0, kMaxCidLength);
     memset(stateless_reset_token_, 0, kStatelessResetTokenLength);
 }
 
@@ -50,27 +54,44 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, b
     wrapper.DecodeVarint(retire_prior_to_);
     wrapper.DecodeFixedUint8(length_);
 
-    wrapper.Flush();
+    // Validate connection ID length
+    if (length_ > kMaxCidLength) {
+        common::LOG_ERROR("connection ID length too large. length:%d, max:%d", length_, kMaxCidLength);
+        return false;
+    }
+
+    // Check if we have enough data for connection ID
     if (length_ > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
+        common::LOG_ERROR("insufficient data for connection ID. need:%d, available:%d", length_, buffer->GetDataLength());
         return false;
     }
-    auto data = (uint8_t*)connection_id_;
-    wrapper.DecodeBytes(data, length_);
     
-    wrapper.Flush();
+    // Clear connection ID buffer before reading
+    memset(connection_id_, 0, kMaxCidLength);
+    uint8_t* conn_id_ptr = connection_id_;
+    wrapper.DecodeBytes(conn_id_ptr, length_);
+    
+    // Check if we have enough data for stateless reset token
     if (kStatelessResetTokenLength > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), kStatelessResetTokenLength);
+        common::LOG_ERROR("insufficient data for stateless reset token. need:%d, available:%d", kStatelessResetTokenLength, buffer->GetDataLength());
         return false;
     }
-    data = (uint8_t*)stateless_reset_token_;
-    wrapper.DecodeBytes(data, kStatelessResetTokenLength);
+    
+    uint8_t* token_ptr = stateless_reset_token_;
+    wrapper.DecodeBytes(token_ptr, kStatelessResetTokenLength);
     
     return true;
 }
 
 uint32_t NewConnectionIDFrame::EncodeSize() {
-    return sizeof(NewConnectionIDFrame) - kStatelessResetTokenLength + length_;
+    // Calculate the actual size needed for varint encoding
+    uint32_t sequence_size = common::GetEncodeVarintLength(sequence_number_);
+    uint32_t retire_size = common::GetEncodeVarintLength(retire_prior_to_);
+    
+    // Fixed sizes: frame type (2) + length (1) + connection ID (length_) + token (16)
+    uint32_t fixed_size = 2 + 1 + length_ + kStatelessResetTokenLength;
+    
+    return sequence_size + retire_size + fixed_size;
 }
 
 void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {

@@ -3,7 +3,7 @@
 
 #include <string>
 #include <memory>
-#include <cstdint>
+#include "http3/include/type.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
 
@@ -17,7 +17,7 @@ public:
     virtual ~IClient() {};
 
     // thread_num: the number of threads to handle requests
-    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LogLevel::kNull) = 0;
+    virtual bool Init(const Http3Config& config) = 0;
 
     // Send a request to the server
     virtual bool DoRequest(const std::string& url, HttpMethod mothed,

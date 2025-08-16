@@ -3,11 +3,13 @@
 #include <chrono>
 #include <atomic>
 #include <vector>
-#include <algorithm>
 #include <string>
+#include <cstdint>
+#include <algorithm>
 #include <gtest/gtest.h>
-#include <unistd.h>
 
+
+#include "upgrade/network/if_tcp_action.h"
 #include "upgrade/network/tcp_action.h"
 #include "upgrade/network/tcp_socket.h"
 #include "upgrade/network/if_event_driver.h"
@@ -15,16 +17,22 @@
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 // Mock socket handler for integration testing
-class MockSocketHandler : public ISocketHandler {
+class MockSocketHandler:
+    public ISocketHandler {
 public:
-    MockSocketHandler() : connect_count_(0), read_count_(0), write_count_(0), close_count_(0) {}
+    MockSocketHandler(ITcpAction* tcp_action):
+        connect_count_(0), 
+        read_count_(0), 
+        write_count_(0), 
+        close_count_(0),
+        tcp_action_(tcp_action) {}
     
-    virtual void HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) override {
+    virtual void HandleConnect(std::shared_ptr<ITcpSocket> socket) override {
         connect_count_++;
         last_socket_ = socket;
-        last_action_ = action;
     }
     
     virtual void HandleRead(std::shared_ptr<ITcpSocket> socket) override {
@@ -48,7 +56,6 @@ public:
     int GetWriteCount() const { return write_count_; }
     int GetCloseCount() const { return close_count_; }
     std::shared_ptr<ITcpSocket> GetLastSocket() const { return last_socket_; }
-    std::shared_ptr<ITcpAction> GetLastAction() const { return last_action_; }
     
 private:
     std::atomic<int> connect_count_;
@@ -56,10 +63,11 @@ private:
     std::atomic<int> write_count_;
     std::atomic<int> close_count_;
     std::shared_ptr<ITcpSocket> last_socket_;
-    std::shared_ptr<ITcpAction> last_action_;
+    ITcpAction* tcp_action_;
 };
 
-class NetworkIntegrationTest : public ::testing::Test {
+class NetworkIntegrationTest:
+    public ::testing::Test {
 protected:
     void SetUp() override {
         action_ = std::make_unique<TcpAction>();
@@ -81,7 +89,7 @@ TEST_F(NetworkIntegrationTest, CompleteTcpActionLifecycle) {
     EXPECT_TRUE(action_->Init());
     
     // Add listener
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_TRUE(action_->AddListener("127.0.0.1", 8080, handler));
     
     // Add timer
@@ -103,7 +111,7 @@ TEST_F(NetworkIntegrationTest, CompleteTcpActionLifecycle) {
 // Test TCP socket with handler
 TEST_F(NetworkIntegrationTest, TcpSocketWithHandler) {
     auto socket = std::make_unique<TcpSocket>();
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     
     // Set handler
     socket->SetHandler(handler);
@@ -112,11 +120,6 @@ TEST_F(NetworkIntegrationTest, TcpSocketWithHandler) {
     // Test socket validity
     EXPECT_TRUE(socket->IsValid());
     EXPECT_GT(socket->GetFd(), 0);
-    
-    // Test socket options
-    EXPECT_TRUE(socket->SetNonBlocking(true));
-    EXPECT_TRUE(socket->SetReuseAddr(true));
-    EXPECT_TRUE(socket->SetKeepAlive(true));
     
     // Close socket
     socket->Close();
@@ -155,7 +158,7 @@ TEST_F(NetworkIntegrationTest, MultipleTcpSockets) {
     // Create multiple sockets
     for (int i = 0; i < 5; ++i) {
         auto socket = std::make_unique<TcpSocket>();
-        auto handler = std::make_shared<MockSocketHandler>();
+        auto handler = std::make_shared<MockSocketHandler>(action_.get());
         
         socket->SetHandler(handler);
         EXPECT_EQ(socket->GetHandler(), handler);
@@ -180,8 +183,8 @@ TEST_F(NetworkIntegrationTest, MultipleTcpSockets) {
 TEST_F(NetworkIntegrationTest, MultipleListeners) {
     EXPECT_TRUE(action_->Init());
     
-    auto handler1 = std::make_shared<MockSocketHandler>();
-    auto handler2 = std::make_shared<MockSocketHandler>();
+    auto handler1 = std::make_shared<MockSocketHandler>(action_.get());
+    auto handler2 = std::make_shared<MockSocketHandler>(action_.get());
     
     // Add multiple listeners
     EXPECT_TRUE(action_->AddListener("127.0.0.1", 8080, handler1));
@@ -216,19 +219,24 @@ TEST_F(NetworkIntegrationTest, MultipleListeners) {
 // Test error handling
 TEST_F(NetworkIntegrationTest, ErrorHandling) {
     // Test TCP action without initialization
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_FALSE(action_->AddListener("127.0.0.1", 8080, handler));
     
     // Test invalid timer removal
     EXPECT_FALSE(action_->RemoveTimer(999));
     
-    // Test TCP socket with invalid FD
-    auto invalid_socket = std::make_unique<TcpSocket>(-1);
-    EXPECT_FALSE(invalid_socket->IsValid());
+    // Test TCP socket with invalid FD (create a socket and then close it)
+    auto socket = std::make_unique<TcpSocket>();
+    EXPECT_TRUE(socket->IsValid());  // Socket should be valid initially
+    
+    // Close the socket to make it invalid
+    socket->Close();
+    EXPECT_FALSE(socket->IsValid());  // Now it should be invalid
     
     std::vector<uint8_t> data = {0x01, 0x02, 0x03};
-    EXPECT_LT(invalid_socket->Send(data), 0);
+    EXPECT_LT(socket->Send(data), 0);  // Send should fail on closed socket
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

@@ -1,7 +1,9 @@
-#ifndef UPGRADE_NETWORK_TCP_SOCKET_H
-#define UPGRADE_NETWORK_TCP_SOCKET_H
+#ifndef UPGRADE_NETWORK_TCP_SOCKET
+#define UPGRADE_NETWORK_TCP_SOCKET
 
 #include <memory>
+
+#include "common/network/address.h"
 #include "upgrade/network/if_tcp_socket.h"
 
 namespace quicx {
@@ -13,6 +15,7 @@ class TcpSocket:
 public:
     TcpSocket();
     explicit TcpSocket(int fd);
+    explicit TcpSocket(int fd, const common::Address& remote_address);
     virtual ~TcpSocket();
 
     // Get the socket file descriptor
@@ -36,37 +39,19 @@ public:
     virtual std::string GetRemoteAddress() const override;
     virtual uint16_t GetRemotePort() const override;
 
-    // Get local address information
-    virtual std::string GetLocalAddress() const override;
-    virtual uint16_t GetLocalPort() const override;
-
     // Socket handler management
     virtual void SetHandler(std::shared_ptr<ISocketHandler> handler) override;
     virtual std::shared_ptr<ISocketHandler> GetHandler() const override;
 
-    // Set socket to non-blocking mode
-    bool SetNonBlocking(bool non_blocking = true);
-
-    // Set socket options
-    bool SetReuseAddr(bool reuse = true);
-    bool SetKeepAlive(bool keep_alive = true);
-
 private:
-    int fd_ = -1;
-    mutable std::string remote_address_;
-    mutable uint16_t remote_port_ = 0;
-    mutable std::string local_address_;
-    mutable uint16_t local_port_ = 0;
-    mutable bool address_cached_ = false;
+    int64_t fd_ = -1;
+    common::Address remote_address_;
 
     // Socket handler
     std::weak_ptr<ISocketHandler> handler_;
-
-    // Cache address information
-    void CacheAddressInfo() const;
 };
 
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_NETWORK_TCP_SOCKET_H 
+#endif // UPGRADE_NETWORK_TCP_SOCKET 

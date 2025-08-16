@@ -41,6 +41,7 @@ SysCallInt32Result Close(int64_t sockfd);
 
 SysCallInt32Result Bind(int64_t sockfd, Address& addr);
 SysCallInt64Result Accept(int64_t sockfd, Address& addr);
+SysCallInt32Result Listen(int64_t sockfd, int32_t backlog);
 
 SysCallInt32Result Write(int64_t sockfd, const char *data, uint32_t len);
 SysCallInt32Result Writev(int64_t sockfd, Iovec *vec, uint32_t vec_len);
@@ -59,6 +60,8 @@ SysCallInt32Result SetSockOpt(int64_t sockfd, int level, int optname, const void
 SysCallInt32Result SocketNoblocking(uint64_t sock);
 
 bool LookupAddress(const std::string& host, Address& addr);
+
+bool Pipe(uint64_t& pipe1, uint64_t& pipe2);
 
 // UDP ECN helpers
 // Enable receiving ECN/TOS (IPv4) and Traffic Class (IPv6) on the socket for ECN extraction

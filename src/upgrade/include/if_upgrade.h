@@ -1,5 +1,5 @@
-#ifndef UPGRADE_INCLUDE_IF_UPGRADE_H
-#define UPGRADE_INCLUDE_IF_UPGRADE_H
+#ifndef UPGRADE_INCLUDE_IF_UPGRADE
+#define UPGRADE_INCLUDE_IF_UPGRADE
 
 #include <memory>
 #include "upgrade/include/type.h"
@@ -26,10 +26,10 @@ public:
     virtual void Join() = 0;
 
     // Create a server instance
-    static std::unique_ptr<IUpgrade> Create();
+    static std::unique_ptr<IUpgrade> MakeUpgrade();
 };
 
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_INCLUDE_IF_UPGRADE_H 
+#endif // UPGRADE_INCLUDE_IF_UPGRADE 

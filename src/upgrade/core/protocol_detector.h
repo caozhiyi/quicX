@@ -1,8 +1,7 @@
-#ifndef UPGRADE_CORE_PROTOCOL_DETECTOR_H
-#define UPGRADE_CORE_PROTOCOL_DETECTOR_H
+#ifndef UPGRADE_CORE_PROTOCOL_DETECTOR
+#define UPGRADE_CORE_PROTOCOL_DETECTOR
 
 #include <vector>
-#include <string>
 #include "upgrade/handlers/connection_context.h"
 
 namespace quicx {

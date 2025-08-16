@@ -4,10 +4,12 @@
 #include <chrono>
 #include <atomic>
 #include <vector>
+#include "common/network/io_handle.h"
 #include "upgrade/network/if_event_driver.h"
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 class EventDriverTest : public ::testing::Test {
 protected:
@@ -39,14 +41,14 @@ TEST_F(EventDriverTest, AddFd) {
     EXPECT_TRUE(driver_->Init());
     
     // Create a pipe for testing
-    int pipe_fds[2];
-    ASSERT_EQ(pipe(pipe_fds), 0);
+    uint64_t pipe_fds[2];
+    ASSERT_TRUE(common::Pipe(pipe_fds[0], pipe_fds[1]));
     
-    EXPECT_TRUE(driver_->AddFd(pipe_fds[0], EventType::READ));
+    EXPECT_TRUE(driver_->AddFd(pipe_fds[0], EventType::ET_READ));
     
     // Clean up
-    close(pipe_fds[0]);
-    close(pipe_fds[1]);
+    common::Close(pipe_fds[0]);
+    common::Close(pipe_fds[1]);
 }
 
 // Test removing file descriptor
@@ -54,15 +56,15 @@ TEST_F(EventDriverTest, RemoveFd) {
     EXPECT_TRUE(driver_->Init());
     
     // Create a pipe for testing
-    int pipe_fds[2];
-    ASSERT_EQ(pipe(pipe_fds), 0);
+    uint64_t pipe_fds[2];
+    ASSERT_TRUE(common::Pipe(pipe_fds[0], pipe_fds[1]));
     
-    EXPECT_TRUE(driver_->AddFd(pipe_fds[0], EventType::READ));
+    EXPECT_TRUE(driver_->AddFd(pipe_fds[0], EventType::ET_READ));
     EXPECT_TRUE(driver_->RemoveFd(pipe_fds[0]));
     
     // Clean up
-    close(pipe_fds[0]);
-    close(pipe_fds[1]);
+    common::Close(pipe_fds[0]);
+    common::Close(pipe_fds[1]);
 }
 
 // Test waiting for events with timeout
@@ -89,16 +91,25 @@ TEST_F(EventDriverTest, Wakeup) {
     EXPECT_TRUE(driver_->Init());
     
     std::atomic<bool> wakeup_called(false);
+    std::atomic<bool> thread_started(false);
     
     // Start a thread that waits for events
-    std::thread wait_thread([this, &wakeup_called]() {
+    std::thread wait_thread([this, &wakeup_called, &thread_started]() {
+        thread_started = true;
         std::vector<Event> events;
         driver_->Wait(events, 1000); // 1 second timeout
         wakeup_called = true;
     });
     
-    // Wait a bit then wake up
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Wait for thread to start and begin waiting
+    while (!thread_started) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    
+    // Give the thread a moment to actually start waiting
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    
+    // Now wake up
     driver_->Wakeup();
     
     // Wait for thread to finish
@@ -107,5 +118,6 @@ TEST_F(EventDriverTest, Wakeup) {
     EXPECT_TRUE(wakeup_called);
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

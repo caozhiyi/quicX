@@ -1,10 +1,9 @@
-#include <unistd.h>
+#include <cstdint>
 #include <fcntl.h>
-#include <errno.h>
 #include <cstring>
-#include <chrono>
 
 #include "common/log/log.h"
+#include "common/util/time.h"
 #include "common/network/io_handle.h"
 #include "upgrade/network/tcp_action.h"
 #include "upgrade/network/tcp_socket.h"
@@ -59,9 +58,9 @@ bool TcpAction::AddListener(const std::string& addr, uint16_t port, std::shared_
     }
     
     // Add listening socket to event driver
-    if (!event_driver_->AddFd(listen_fd, EventType::READ)) {
+    if (!event_driver_->AddFd(listen_fd, EventType::ET_READ)) {
         common::LOG_ERROR("Failed to add listening socket to event driver");
-        close(listen_fd);
+        common::Close(listen_fd);
         return false;
     }
     
@@ -80,7 +79,7 @@ void TcpAction::Stop() {
     
     // Close all listening sockets
     for (auto& listener : listeners_) {
-        close(listener.first);
+        common::Close(listener.first);
     }
     listeners_.clear();
     
@@ -110,19 +109,26 @@ int TcpAction::CreateListenSocket(const std::string& addr, uint16_t port) {
     auto ret = common::SocketNoblocking(listen_fd);
     if (ret.errno_ != 0) {
         common::LOG_ERROR("Failed to get socket flags: %s", strerror(ret.errno_));
-        close(listen_fd);
+        common::Close(listen_fd);
         return -1;
     }
-    
+
     // Bind socket
     common::Address address(addr, port);
     ret = common::Bind(listen_fd, address);
     if (ret.errno_ != 0) {
         common::LOG_ERROR("Failed to bind socket: %s", strerror(ret.errno_));
-        close(listen_fd);
+        common::Close(listen_fd);
         return -1;
     }
-    
+
+    ret = common::Listen(listen_fd, 1024);
+    if (ret.errno_ != 0) {
+        common::LOG_ERROR("Failed to listen on socket: %s", strerror(ret.errno_));
+        common::Close(listen_fd);
+        return -1;
+    }
+
     common::LOG_INFO("Listening socket created on %s:%d", addr.c_str(), port);
     return listen_fd;
 }
@@ -135,9 +141,7 @@ void TcpAction::EventLoop() {
     
     while (running_) {
         // Get current time for timer
-        uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()
-        ).count();
+        uint64_t now = common::UTCTimeMsec();
         
         // Run timer wheel
         timer_->TimerRun(now);
@@ -148,6 +152,9 @@ void TcpAction::EventLoop() {
         
         if (next_timer_ms >= 0) {
             timeout_ms = static_cast<int>(next_timer_ms);
+            common::LOG_DEBUG("Next timer in %d ms", timeout_ms);
+        } else {
+            common::LOG_DEBUG("No timers, using default timeout %d ms", timeout_ms);
         }
         
         // Wait for events with timeout
@@ -168,6 +175,12 @@ void TcpAction::EventLoop() {
         if (!running_) {
             break;
         }
+        
+        // If we woke up due to timeout (no events), check if any timers should have fired
+        if (nfds == 0) {
+            // Re-run timer wheel in case we missed any timers
+            timer_->TimerRun(now);
+        }
     }
     
     common::LOG_INFO("TCP event loop stopped");
@@ -180,34 +193,41 @@ void TcpAction::HandleEvents(const std::vector<Event>& events) {
         if (listener_it != listeners_.end()) {
             // New connection on this listener
             HandleNewConnection(event.fd, listener_it->second);
-        } else {
-            // Existing connection
-            auto it = connections_.find(event.fd);
-            if (it != connections_.end()) {
-                auto socket = it->second;
-                auto handler = socket->GetHandler();
-                
-                if (handler) {
-                    switch (event.type) {
-                        case EventType::READ:
-                            handler->HandleRead(socket);
-                            break;
-                        case EventType::WRITE:
-                            handler->HandleWrite(socket);
-                            break;
-                        case EventType::ERROR:
-                        case EventType::CLOSE:
-                            handler->HandleClose(socket);
-                            event_driver_->RemoveFd(event.fd);
-                            connections_.erase(it);
-                            break;
-                    }
-                } else {
-                    common::LOG_ERROR("No handler found for socket %d", event.fd);
-                    event_driver_->RemoveFd(event.fd);
-                    connections_.erase(it);
-                }
+            common::LOG_INFO("New connection on %d", event.fd);
+            continue;
+        } 
+
+        // Existing connection
+        auto it = connections_.find(event.fd);
+        if (it == connections_.end()) {
+            common::LOG_ERROR("No handler found for socket %d", event.fd);
+            if (event_driver_) {
+                event_driver_->RemoveFd(event.fd);
             }
+            // Nothing to erase from connections_ since iterator is end()
+            continue;
+        }
+        
+        auto socket = it->second;
+        auto handler = socket->GetHandler();
+        if (!handler) {
+            common::LOG_ERROR("No handler found for socket %d", event.fd);
+            continue;
+        }
+            
+        switch (event.type) {
+            case EventType::ET_READ:
+                handler->HandleRead(socket);
+                break;
+            case EventType::ET_WRITE:
+                handler->HandleWrite(socket);
+                break;
+            case EventType::ET_ERROR:
+            case EventType::ET_CLOSE:
+                handler->HandleClose(socket);
+                event_driver_->RemoveFd(event.fd);
+                connections_.erase(it);
+                break;
         }
     }
 }
@@ -233,15 +253,15 @@ void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandle
     }
     
     // Create TcpSocket
-    auto tcp_socket = std::make_shared<quicx::upgrade::TcpSocket>(client_fd);
+    auto tcp_socket = std::make_shared<quicx::upgrade::TcpSocket>(client_fd, client_addr);
     
     // Set handler for the socket
     tcp_socket->SetHandler(handler);
     
     // Add to event driver
-    if (!event_driver_->AddFd(client_fd, EventType::READ)) {
+    if (!event_driver_->AddFd(client_fd, EventType::ET_READ)) {
         common::LOG_ERROR("Failed to add client socket to event driver");
-        close(client_fd);
+        common::Close(client_fd);
         return;
     }
     
@@ -249,7 +269,7 @@ void TcpAction::HandleNewConnection(int listen_fd, std::shared_ptr<ISocketHandle
     connections_[client_fd] = tcp_socket;
     
     // Notify handler
-    handler->HandleConnect(tcp_socket, shared_from_this());
+    handler->HandleConnect(tcp_socket);
     
     common::LOG_INFO("New connection from %s:%d", client_addr.GetIp().c_str(), client_addr.GetPort());
 }
@@ -264,20 +284,23 @@ uint64_t TcpAction::AddTimer(std::function<void()> callback, uint32_t timeout_ms
     quicx::common::TimerTask task(callback);
     
     // Get current time
-    uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()
-    ).count();
-    
-    // Add timer to timer wheel
+    uint64_t now = common::UTCTimeMsec();
     uint64_t timer_id = timer_->AddTimer(task, timeout_ms, now);
     
     if (timer_id > 0) {
-        // Store timer task
+        // Store timer task after it has been modified by the timer wheel
+        // The task now has the correct time_ and id_ values
         timer_tasks_[timer_id] = task;
         common::LOG_DEBUG("Timer added with ID: %lu, timeout: %u ms", timer_id, timeout_ms);
-        // Wake up event loop to recompute timeout based on the new timer
+        
+        // Debug: Check if timer is actually in the timer wheel
+        int32_t next_timer_ms = timer_->MinTime(now);
+        common::LOG_DEBUG("After adding timer, next timer in %d ms", next_timer_ms);
+        
+        // Wake up event loop immediately to recompute timeout based on the new timer
         if (event_driver_) {
             event_driver_->Wakeup();
+            common::LOG_DEBUG("Event loop woken up after adding timer");
         }
     } else {
         common::LOG_ERROR("Failed to add timer");

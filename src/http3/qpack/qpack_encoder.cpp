@@ -14,7 +14,7 @@ bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& he
     }
 
     // Write header block prefix per RFC 9204 (prefixed integers)
-    uint64_t ric = DynamicTable::Instance().GetEntryCount();
+    uint64_t ric = dynamic_table_.GetEntryCount();
     int64_t base = static_cast<int64_t>(ric);
     WriteHeaderPrefix(buffer, ric, base);
 
@@ -42,7 +42,7 @@ bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& he
 
         // No match in static table. Try dynamic table if enabled
         if (enable_dynamic_table_) {
-            int32_t dindex = DynamicTable::Instance().FindHeaderItemIndex(name, value);
+            int32_t dindex = dynamic_table_.FindHeaderItemIndex(name, value);
             if (dindex >= 0) {
                 // Indexed Header Field — dynamic (1 0 relative_index)
                 // relative_index = base - 1 - absolute_index; base == ric here
@@ -53,9 +53,9 @@ bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& he
 
             // Prefer Insert With Name Reference if name exists in static or dynamic table
             int32_t s_name_idx = StaticTable::Instance().FindHeaderItemIndex(name);
-            int32_t d_name_idx = DynamicTable::Instance().FindHeaderNameIndex(name);
+            int32_t d_name_idx = dynamic_table_.FindHeaderNameIndex(name);
             bool with_name_ref = (s_name_idx >= 0) || (d_name_idx >= 0);
-            DynamicTable::Instance().AddHeaderItem(name, value);
+            dynamic_table_.AddHeaderItem(name, value);
             if (instruction_sender_) {
                 instruction_sender_({{name, value}});
             }
@@ -92,7 +92,7 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
         return false;
     }
     // If required_insert_count > current inserted count, this header block is blocked
-    if (required_insert_count > DynamicTable::Instance().GetEntryCount()) {
+    if (required_insert_count > dynamic_table_.GetEntryCount()) {
         // Signal blocked; in full RFC flow, should queue this header block and return
         return false;
     }
@@ -101,23 +101,41 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
         uint8_t first_byte;
         buffer->Read(&first_byte, 1);
 
+        auto decode_after_first = [&](uint8_t first, uint8_t prefix_bits, uint64_t& value)->bool {
+            if (prefix_bits == 0 || prefix_bits > 8) return false;
+            uint8_t max_in_prefix = static_cast<uint8_t>((1u << prefix_bits) - 1u);
+            value = static_cast<uint64_t>(first & max_in_prefix);
+            if (value < max_in_prefix) return true;
+            uint64_t m = 0;
+            uint8_t b = 0;
+            do {
+                if (buffer->Read(&b, 1) != 1) return false;
+                value += static_cast<uint64_t>(b & 0x7fu) << m;
+                m += 7;
+            } while (b & 0x80u);
+            return true;
+        };
+
         if ((first_byte & 0xC0) == 0xC0) {
             // Indexed — static
-            uint64_t sidx = (first_byte & 0x3f);
+            uint64_t sidx = 0;
+            if (!decode_after_first(first_byte, 6, sidx)) return false;
             auto item = StaticTable::Instance().FindHeaderItem(static_cast<uint32_t>(sidx));
             if (!item) return false;
             headers[item->name_] = item->value_;
         } else if ((first_byte & 0xC0) == 0x80) {
             // Indexed — dynamic; value is relative index (6-bit prefix)
-            uint64_t rel = (first_byte & 0x3f);
+            uint64_t rel = 0;
+            if (!decode_after_first(first_byte, 6, rel)) return false;
             int64_t abs_index = base - 1 - static_cast<int64_t>(rel);
             if (abs_index < 0) return false;
-            auto item = DynamicTable::Instance().FindHeaderItem(static_cast<uint32_t>(abs_index));
+            auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
             if (!item) return false;
             headers[item->name_] = item->value_;
         } else if ((first_byte & 0xE0) == 0x60) {
             // Literal with name reference — static (01 1 index)
-            uint64_t sidx = (first_byte & 0x1f);
+            uint64_t sidx = 0;
+            if (!decode_after_first(first_byte, 5, sidx)) return false;
             auto item = StaticTable::Instance().FindHeaderItem(static_cast<uint32_t>(sidx));
             if (!item) return false;
             std::string value;
@@ -125,10 +143,11 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
             headers[item->name_] = value;
         } else if ((first_byte & 0xE0) == 0x40) {
             // Literal with name reference — dynamic (01 0 rel)
-            uint64_t rel = (first_byte & 0x1f);
+            uint64_t rel = 0;
+            if (!decode_after_first(first_byte, 5, rel)) return false;
             int64_t abs_index = base - 1 - static_cast<int64_t>(rel);
             if (abs_index < 0) return false;
-            auto item = DynamicTable::Instance().FindHeaderItem(static_cast<uint32_t>(abs_index));
+            auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
             if (!item) return false;
             std::string value;
             if (!DecodeString(buffer, value)) return false;
@@ -166,7 +185,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
             // Insert With Name Reference:
             // 1 S NPNNNNN (prefix=6 for index); S=1 static, S=0 dynamic; NPNNNNN carries index with 6-bit prefix
             int32_t s_name_idx = StaticTable::Instance().FindHeaderItemIndex(p.first);
-            int32_t d_name_idx = DynamicTable::Instance().FindHeaderNameIndex(p.first);
+            int32_t d_name_idx = dynamic_table_.FindHeaderNameIndex(p.first);
             bool is_static = s_name_idx >= 0;
             uint8_t mask = 0x80; // MSB=1
             if (is_static) {
@@ -175,7 +194,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                 if (!QpackEncodePrefixedInteger(instr_buf, 6, mask, static_cast<uint64_t>(s_name_idx))) return false;
             } else {
                 // S=0, dynamic name index relative to current Insert Count (absolute index to relative per RFC 9204)
-                uint64_t ric = DynamicTable::Instance().GetEntryCount();
+                uint64_t ric = dynamic_table_.GetEntryCount();
                 // If name not found, fall back to Insert Without Name Reference
                 if (d_name_idx < 0) {
                     // 01NNNNNN (Insert Without Name Reference) with 6-bit name length prefix
@@ -232,14 +251,14 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
                 name = hi->name_;
             } else {
                 // dynamic: idx is relative; convert to absolute = ric - 1 - idx
-                uint64_t ric = DynamicTable::Instance().GetEntryCount();
+                uint64_t ric = dynamic_table_.GetEntryCount();
                 int64_t abs = static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(idx);
                 if (abs < 0) return false;
-                auto hi = DynamicTable::Instance().FindHeaderItem(static_cast<uint32_t>(abs));
+                auto hi = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs));
                 if (!hi) return false;
                 name = hi->name_;
             }
-            DynamicTable::Instance().AddHeaderItem(name, value);
+            dynamic_table_.AddHeaderItem(name, value);
         } else if ((fb & 0xC0) == 0x40) {
             // Insert Without Name Reference: 01NNNNNN, then name literal + value literal
             uint64_t ignore = 0;
@@ -247,21 +266,21 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             std::string name, value;
             if (!QpackDecodeStringLiteral(instr_buf, name)) return false;
             if (!QpackDecodeStringLiteral(instr_buf, value)) return false;
-            DynamicTable::Instance().AddHeaderItem(name, value);
+            dynamic_table_.AddHeaderItem(name, value);
         } else if ((fb & 0xE0) == 0x20) {
             // Set Dynamic Table Capacity: 001xxxxx with 5-bit prefix
             uint64_t cap = 0;
             if (!decode_after_first(fb, 5, cap)) return false;
-            DynamicTable::Instance().UpdateMaxTableSize(static_cast<uint32_t>(cap));
+            dynamic_table_.UpdateMaxTableSize(static_cast<uint32_t>(cap));
         } else if ((fb & 0xF0) == 0x10) {
             // Duplicate: 0001xxxx with 4-bit prefix
             uint64_t rel = 0;
             if (!decode_after_first(fb, 4, rel)) return false;
-            uint64_t ric = DynamicTable::Instance().GetEntryCount();
+            uint64_t ric = dynamic_table_.GetEntryCount();
             int64_t abs = static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(rel);
             if (abs < 0) return false;
-            auto item = DynamicTable::Instance().FindHeaderItem(static_cast<uint32_t>(abs));
-            if (item) DynamicTable::Instance().AddHeaderItem(item->name_, item->value_);
+            auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs));
+            if (item) dynamic_table_.AddHeaderItem(item->name_, item->value_);
         } else {
             break;
         }
@@ -271,7 +290,7 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
 
 void QpackEncoder::WriteHeaderPrefix(std::shared_ptr<common::IBufferWrite> buffer, uint64_t required_insert_count, int64_t base) {
     QpackEncodePrefixedInteger(buffer, 8, 0x00, required_insert_count);
-    uint64_t ric = DynamicTable::Instance().GetEntryCount();
+    uint64_t ric = dynamic_table_.GetEntryCount();
     int64_t delta = base - static_cast<int64_t>(ric);
     bool s_bit = delta < 0;
     uint64_t abs_delta = static_cast<uint64_t>(s_bit ? -delta : delta);

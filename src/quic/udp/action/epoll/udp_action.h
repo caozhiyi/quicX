@@ -4,6 +4,7 @@
 #ifdef __linux__
 
 #include <queue>
+#include <cstdint>
 #include <sys/epoll.h>
 #include <unordered_map>
 #include "quic/udp/action/if_udp_action.h"
@@ -26,7 +27,7 @@ public:
     virtual void Wakeup();
     
 private:
-    uint32_t pipe_[2];
+    uint64_t pipe_[2];
     int32_t epoll_handler_;
     std::unordered_map<uint64_t, epoll_event> epoll_event_map_;
 

@@ -1,23 +1,68 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
-#include "upgrade/handlers/smart_handler_factory.h"
+
+#include "upgrade/include/type.h"
 #include "upgrade/handlers/http_smart_handler.h"
 #include "upgrade/handlers/https_smart_handler.h"
-#include "upgrade/include/type.h"
+#include "upgrade/handlers/smart_handler_factory.h"
 
 namespace quicx {
 namespace upgrade {
+namespace {
+
+class MockTcpAction:
+    public ITcpAction {
+public:
+    MockTcpAction() : init_called_(false), stop_called_(false), join_called_(false) {}
+
+    virtual bool Init() override {
+        init_called_ = true;
+        return true;
+    }
+    
+    virtual bool AddListener(const std::string& addr, uint16_t port, std::shared_ptr<ISocketHandler> handler) override {
+        return true;
+    }
+    
+    virtual void Stop() override {
+        stop_called_ = true;
+    }
+    
+    virtual void Join() override {
+        join_called_ = true;
+    }
+    
+    virtual uint64_t AddTimer(std::function<void()> callback, uint32_t timeout_ms) override {  
+        return 0;
+    }
+    
+    virtual bool RemoveTimer(uint64_t timer_id) override {
+        return true;
+    }
+    
+    bool IsInitCalled() const { return init_called_; }
+    bool IsStopCalled() const { return stop_called_; }
+    bool IsJoinCalled() const { return join_called_; }
+    
+private:
+    std::atomic<bool> init_called_;
+    std::atomic<bool> stop_called_;
+    std::atomic<bool> join_called_;
+};
 
 class SmartHandlerFactoryTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Set up test fixtures
+        tcp_action_ = std::make_shared<MockTcpAction>();
     }
     
     void TearDown() override {
         // Clean up test fixtures
     }
+
+    std::shared_ptr<MockTcpAction> tcp_action_;
 };
 
 // Test factory creation
@@ -35,7 +80,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHttpHandler) {
     settings.http_port = 8080;
     settings.https_port = 0; // Disable HTTPS
     
-    auto handler = factory->CreateHandler(settings);
+    auto handler = factory->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     
     // Should be HTTP handler
@@ -57,7 +102,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHttpsHandler) {
     settings.cert_file = "test.crt";
     settings.key_file = "test.key";
     
-    auto handler = factory->CreateHandler(settings);
+    auto handler = factory->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     
     // Should be HTTPS handler
@@ -79,7 +124,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithBothEnabled) {
     settings.cert_file = "test.crt";
     settings.key_file = "test.key";
     
-    auto handler = factory->CreateHandler(settings);
+    auto handler = factory->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     
     // Should be HTTPS handler (preferred when both are enabled)
@@ -99,7 +144,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithNeitherEnabled) {
     settings.http_port = 0;
     settings.https_port = 0;
     
-    auto handler = factory->CreateHandler(settings);
+    auto handler = factory->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     
     // Should default to HTTP handler
@@ -120,7 +165,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithInvalidHttpsSettings) {
     settings.https_port = 8443;
     // No cert_file or key_file
     
-    auto handler = factory->CreateHandler(settings);
+    auto handler = factory->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     
     // Should fall back to HTTP handler
@@ -142,7 +187,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithPartialHttpsSettings) {
     settings1.cert_file = "test.crt";
     // No key_file
     
-    auto handler1 = factory->CreateHandler(settings1);
+    auto handler1 = factory->CreateHandler(settings1, tcp_action_);
     EXPECT_NE(handler1, nullptr);
     EXPECT_EQ(handler1->GetType(), "HTTP");
     
@@ -153,7 +198,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithPartialHttpsSettings) {
     // No cert_file
     settings2.key_file = "test.key";
     
-    auto handler2 = factory->CreateHandler(settings2);
+    auto handler2 = factory->CreateHandler(settings2, tcp_action_);
     EXPECT_NE(handler2, nullptr);
     EXPECT_EQ(handler2->GetType(), "HTTP");
 }
@@ -167,7 +212,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithDifferentPorts) {
     settings1.http_port = 80;
     settings1.https_port = 0;
     
-    auto handler1 = factory->CreateHandler(settings1);
+    auto handler1 = factory->CreateHandler(settings1, tcp_action_);
     EXPECT_NE(handler1, nullptr);
     EXPECT_EQ(handler1->GetType(), "HTTP");
     
@@ -178,7 +223,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithDifferentPorts) {
     settings2.cert_file = "test.crt";
     settings2.key_file = "test.key";
     
-    auto handler2 = factory->CreateHandler(settings2);
+    auto handler2 = factory->CreateHandler(settings2, tcp_action_);
     EXPECT_NE(handler2, nullptr);
     EXPECT_EQ(handler2->GetType(), "HTTPS");
 }
@@ -194,7 +239,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithEmptyCertFiles) {
     settings.cert_file = "";
     settings.key_file = "";
     
-    auto handler = factory->CreateHandler(settings);
+    auto handler = factory->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     
     // Should fall back to HTTP handler
@@ -210,7 +255,7 @@ TEST_F(SmartHandlerFactoryTest, MultipleHandlerCreation) {
     http_settings.http_port = 8080;
     http_settings.https_port = 0;
     
-    auto http_handler = factory->CreateHandler(http_settings);
+    auto http_handler = factory->CreateHandler(http_settings, tcp_action_);
     EXPECT_NE(http_handler, nullptr);
     EXPECT_EQ(http_handler->GetType(), "HTTP");
     
@@ -221,7 +266,7 @@ TEST_F(SmartHandlerFactoryTest, MultipleHandlerCreation) {
     https_settings.cert_file = "test.crt";
     https_settings.key_file = "test.key";
     
-    auto https_handler = factory->CreateHandler(https_settings);
+    auto https_handler = factory->CreateHandler(https_settings, tcp_action_);
     EXPECT_NE(https_handler, nullptr);
     EXPECT_EQ(https_handler->GetType(), "HTTPS");
     
@@ -237,7 +282,7 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithDefaultSettings) {
     UpgradeSettings settings;
     // All fields are default-initialized
     
-    auto handler = factory->CreateHandler(settings);
+    auto handler = factory->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     
     // Should default to HTTP handler
@@ -253,10 +298,11 @@ TEST_F(SmartHandlerFactoryTest, CreateHandlerWithLargePorts) {
     settings.http_port = 65535;
     settings.https_port = 0;
     
-    auto handler = factory->CreateHandler(settings);
+    auto handler = factory->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     EXPECT_EQ(handler->GetType(), "HTTP");
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

@@ -2,13 +2,16 @@
 #include "quic/frame/ack_frame.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/decode/decode.h"
 
 namespace quicx {
 namespace quic {
 
 AckFrame::AckFrame():
     IFrame(FrameType::kAck),
-    ack_delay_(0) {
+    largest_acknowledged_(0),
+    ack_delay_(0),
+    first_ack_range_(0) {
 
 }
 
@@ -68,7 +71,9 @@ uint32_t AckFrame::EncodeSize() {
 
 AckFrame::AckFrame(FrameType ft):
     IFrame(static_cast<uint16_t>(ft)),
-    ack_delay_(0) {
+    largest_acknowledged_(0),
+    ack_delay_(0),
+    first_ack_range_(0) {
 
 }
 
@@ -90,12 +95,16 @@ bool AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
         return false;
     }
 
-    uint16_t need_size = EncodeSize();
+    // Calculate the actual size needed for ECN fields using varint encoding
+    uint32_t ect0_size = common::GetEncodeVarintLength(ect_0_);
+    uint32_t ect1_size = common::GetEncodeVarintLength(ect_1_);
+    uint32_t ecn_ce_size = common::GetEncodeVarintLength(ecn_ce_);
+    uint32_t total_ecn_size = ect0_size + ect1_size + ecn_ce_size;
     
     auto span = buffer->GetWriteSpan();
     auto remain_size = span.GetLength();
-    if (need_size > remain_size) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, need_size);
+    if (total_ecn_size > remain_size) {
+        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, total_ecn_size);
         return false;
     }
     
@@ -112,8 +121,6 @@ bool AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_
         return false;
     } 
 
-    auto span = buffer->GetReadSpan();
-
     common::BufferDecodeWrapper wrapper(buffer);
     wrapper.DecodeVarint(ect_0_);
     wrapper.DecodeVarint(ect_1_);
@@ -123,7 +130,11 @@ bool AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_
 }
 
 uint32_t AckEcnFrame::EncodeSize() {
-    return sizeof(uint64_t) * 3;
+    // Calculate the actual size needed for ECN fields using varint encoding
+    uint32_t ect0_size = common::GetEncodeVarintLength(ect_0_);
+    uint32_t ect1_size = common::GetEncodeVarintLength(ect_1_);
+    uint32_t ecn_ce_size = common::GetEncodeVarintLength(ecn_ce_);
+    return ect0_size + ect1_size + ecn_ce_size;
 }
 
 }

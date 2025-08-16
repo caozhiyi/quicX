@@ -1,14 +1,14 @@
-#include "quic/congestion_control/bbr_v2_congestion_control.h"
-#include "quic/congestion_control/normal_pacer.h"
 #include <algorithm>
+
+#include "quic/congestion_control/util.h"
+#include "quic/congestion_control/normal_pacer.h"
+#include "quic/congestion_control/bbr_v2_congestion_control.h"
 
 namespace quicx {
 namespace quic {
 
 static inline uint64_t MulDiv(uint64_t a, uint64_t num, uint64_t den) {
-    if (den == 0) return 0;
-    __int128 t = static_cast<__int128>(a) * static_cast<__int128>(num);
-    return static_cast<uint64_t>(t / den);
+    return congestion_control::muldiv_safe(a, num, den);
 }
 
 BBRv2CongestionControl::BBRv2CongestionControl() {
@@ -140,8 +140,7 @@ uint64_t BBRv2CongestionControl::BdpBytes(uint64_t gain_num, uint64_t gain_den) 
     if (min_rtt_us_ == 0) return std::max<uint64_t>(cwnd_bytes_, 4 * cfg_.mss_bytes);
     uint64_t bw = (max_bw_bps_ > 0) ? max_bw_bps_ : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
     uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull); // bytes
-    __int128 t = static_cast<__int128>(bdp) * static_cast<__int128>(gain_num);
-    return static_cast<uint64_t>(t / gain_den);
+    return congestion_control::muldiv_safe(bdp, gain_num, gain_den);
 }
 
 void BBRv2CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {

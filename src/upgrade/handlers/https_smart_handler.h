@@ -26,16 +26,17 @@ struct SSLContext {
 };
 
 // HTTPS Smart Handler for SSL/TLS connections
-class HttpsSmartHandler : public BaseSmartHandler {
+class HttpsSmartHandler:
+    public BaseSmartHandler {
 public:
-    explicit HttpsSmartHandler(const UpgradeSettings& settings);
+    explicit HttpsSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action);
     ~HttpsSmartHandler() override;
 
 protected:
     // BaseSmartHandler interface
     bool InitializeConnection(std::shared_ptr<ITcpSocket> socket) override;
     int ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override;
-    int WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) override;
+    int WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override;
     void CleanupConnection(std::shared_ptr<ITcpSocket> socket) override;
     std::string GetType() const override { return "HTTPS"; }
     

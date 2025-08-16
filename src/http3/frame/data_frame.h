@@ -1,6 +1,8 @@
 #ifndef HTTP3_FRAME_DATA_FRAME
 #define HTTP3_FRAME_DATA_FRAME
 
+#include <memory>
+#include <vector>
 #include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
 

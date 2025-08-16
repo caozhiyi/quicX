@@ -2,7 +2,8 @@
 #include "http3/http/type.h"
 #include "common/util/time.h"
 #include "http3/http/server.h"
-#include "common/network/address.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 #include "quic/include/if_quic_server.h"
 
 namespace quicx {
@@ -24,16 +25,27 @@ Server::~Server() {
     Stop();
 }
 
-bool Server::Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num, LogLevel level) {
-    if (!quic_->Init(cert_file, key_file, kHttp3Alpn, thread_num, quic::LogLevel(level))) {
-        common::LOG_ERROR("init quic server failed.");
+bool Server::Init(const Http3ServerConfig& config) {
+    quic::QuicServerConfig quic_config;
+    if ((config.cert_pem_ == nullptr || config.key_pem_ == nullptr) &&
+        (config.cert_file_.empty() || config.key_file_.empty())) {
+        common::LOG_ERROR("cert file or cert pem and key file or key pem must be set.");
         return false;
     }
-    return true;
-}
 
-bool Server::Init(const char* cert_pem, const char* key_pem, uint16_t thread_num, LogLevel level) {
-    if (!quic_->Init(cert_pem, key_pem, kHttp3Alpn, thread_num, quic::LogLevel(level))) {
+    if (config.cert_pem_ != nullptr && config.key_pem_ != nullptr) {
+        quic_config.cert_pem_ = config.cert_pem_;
+        quic_config.key_pem_ = config.key_pem_;
+    } else {
+        quic_config.cert_file_ = config.cert_file_;
+        quic_config.key_file_ = config.key_file_;
+    }
+    quic_config.alpn_ = kHttp3Alpn;
+    quic_config.config_.thread_num_ = config.config_.thread_num_;
+    quic_config.config_.log_level_ = quic::LogLevel(config.config_.log_level_);
+    quic_config.config_.enable_ecn_ = config.config_.enable_ecn_;
+
+    if (!quic_->Init(quic_config)) {
         common::LOG_ERROR("init quic server failed.");
         return false;
     }

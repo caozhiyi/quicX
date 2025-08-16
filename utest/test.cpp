@@ -1,12 +1,29 @@
 #include <gtest/gtest.h>
 
-#ifndef __linux__
-#pragma comment(lib,"gtest_maind.lib")
-#pragma comment(lib,"gtestd.lib")
-#endif // __linux__
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+class WinsockEnvironment : public ::testing::Environment {
+public:
+    void SetUp() override {
+        WSADATA wsaData;
+        WSAStartup(MAKEWORD(2, 2), &wsaData);
+    }
+    
+    void TearDown() override {
+        WSACleanup();
+    }
+};
+#endif
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
+    
+#ifdef _WIN32
+    testing::AddGlobalTestEnvironment(new WinsockEnvironment());
+#endif
+    
     int ret = RUN_ALL_TESTS();
     return ret;
 }

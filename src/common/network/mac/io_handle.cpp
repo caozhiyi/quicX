@@ -58,6 +58,11 @@ SysCallInt64Result Accept(int64_t sockfd, Address& addr) {
     return {rc, 0};
 }
 
+SysCallInt32Result Listen(int64_t sockfd, int32_t backlog) {
+    const int32_t rc = listen(sockfd, backlog);
+    return {rc, rc != -1 ? 0 : errno};
+}
+
 SysCallInt32Result Write(int64_t sockfd, const char *data, uint32_t len) {
     const int32_t rc = write(sockfd, data, len);
     return {rc, rc != -1 ? 0 : errno};
@@ -178,6 +183,16 @@ bool LookupAddress(const std::string& host, Address& addr) {
 
     freeaddrinfo(result);
     return false;
+}
+
+bool Pipe(uint64_t& pipe1, uint64_t& pipe2) {
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) {
+        return false;
+    }
+    pipe1 = static_cast<uint64_t>(sv[0]);
+    pipe2 = static_cast<uint64_t>(sv[1]);
+    return true;
 }
 
 SysCallInt32Result EnableUdpEcn(int64_t sockfd) {

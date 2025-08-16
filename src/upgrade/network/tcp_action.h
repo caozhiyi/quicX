@@ -1,5 +1,5 @@
-#ifndef UPGRADE_NETWORK_TCP_ACTION_H
-#define UPGRADE_NETWORK_TCP_ACTION_H
+#ifndef UPGRADE_NETWORK_TCP_ACTION
+#define UPGRADE_NETWORK_TCP_ACTION
 
 #include <memory>
 #include <string>
@@ -19,8 +19,7 @@ namespace upgrade {
 
 // TCP action implementation
 class TcpAction:
- public ITcpAction,
- public std::enable_shared_from_this<TcpAction> {
+    public ITcpAction {
 public:
     TcpAction() = default;
     virtual ~TcpAction() = default;
@@ -70,4 +69,4 @@ private:
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_NETWORK_TCP_ACTION_H 
+#endif // UPGRADE_NETWORK_TCP_ACTION 

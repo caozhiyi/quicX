@@ -1,10 +1,11 @@
 #include "common/log/log.h"
+#include "http3/http/type.h"
 #include "http3/http/error.h"
-#include "http3/http/config.h"
 #include "http3/connection/type.h"
 #include "http3/stream/response_stream.h"
 #include "http3/stream/push_sender_stream.h"
 #include "http3/connection/connection_server.h"
+#include "http3/stream/control_client_sender_stream.h"
 #include "http3/stream/control_server_receiver_stream.h"
 
 namespace quicx {
@@ -32,7 +33,7 @@ ServerConnection::ServerConnection(const std::string& unique_id,
 }
 
 ServerConnection::~ServerConnection() {
-    Close(0);
+
 }
 
 bool ServerConnection::SendPush(std::shared_ptr<IResponse> response) {
@@ -104,6 +105,7 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
     if (stream->GetDirection() == quic::StreamDirection::kBidi) {
         // request stream
         std::shared_ptr<ResponseStream> response_stream = std::make_shared<ResponseStream>(qpack_encoder_,
+            blocked_registry_,
             std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
             std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&ServerConnection::HandleHttp, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));

@@ -2,14 +2,16 @@
 #include <memory>
 #include <vector>
 #include <string>
+
+#include "upgrade/core/upgrade_manager.h"
+#include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/core/protocol_detector.h"
 #include "upgrade/core/version_negotiator.h"
-#include "upgrade/core/upgrade_manager.h"
 #include "upgrade/handlers/connection_context.h"
-#include "upgrade/network/if_tcp_socket.h"
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 // Mock TCP socket for integration testing
 class MockTcpSocket:
@@ -27,8 +29,6 @@ public:
     virtual bool IsValid() const override { return true; }
     virtual std::string GetRemoteAddress() const override { return "127.0.0.1"; }
     virtual uint16_t GetRemotePort() const override { return 8080; }
-    virtual std::string GetLocalAddress() const override { return "127.0.0.1"; }
-    virtual uint16_t GetLocalPort() const override { return 80; }
     virtual void SetHandler(std::shared_ptr<ISocketHandler> handler) override {}
     virtual std::shared_ptr<ISocketHandler> GetHandler() const override { return nullptr; }
     
@@ -240,5 +240,6 @@ TEST_F(IntegrationTest, ErrorHandlingFlow) {
     EXPECT_TRUE(socket->IsClosed());
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

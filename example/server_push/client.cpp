@@ -9,7 +9,10 @@ int main() {
     settings.enable_push = 1;
     auto client = quicx::http3::IClient::Create(settings);
 
-    client->Init(1, quicx::http3::LogLevel::kError);
+    quicx::http3::Http3Config config;
+    config.thread_num_ = 1;
+    config.log_level_ = quicx::http3::LogLevel::kError;
+    client->Init(config);
 
     auto request = quicx::http3::IRequest::Create();
     request->SetBody("hello world");

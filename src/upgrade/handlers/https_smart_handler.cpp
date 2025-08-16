@@ -2,13 +2,12 @@
 
 #include "common/log/log.h"
 #include "upgrade/network/if_tcp_socket.h"
-#include "upgrade/core/protocol_detector.h"
 #include "upgrade/handlers/https_smart_handler.h"
 
-#include "third/boringssl/include/openssl/ssl.h"
-#include "third/boringssl/include/openssl/err.h"
-#include "third/boringssl/include/openssl/pem.h"
-#include "third/boringssl/include/openssl/x509.h"
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
 
 namespace quicx {
 namespace upgrade {
@@ -21,15 +20,14 @@ SSLContext::~SSLContext() {
     }
 }
 
-HttpsSmartHandler::HttpsSmartHandler(const UpgradeSettings& settings) 
-    : BaseSmartHandler(settings) {
+HttpsSmartHandler::HttpsSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action):
+    BaseSmartHandler(settings, tcp_action) {
     
     if (!InitializeSSL()) {
         common::LOG_ERROR("Failed to initialize SSL context");
         ssl_ready_ = false;
         // Leave handler constructed but marked not ready
-    }
-    else {
+    } else {
         ssl_ready_ = true;
     }
 }
@@ -83,6 +81,7 @@ bool HttpsSmartHandler::InitializeSSL() {
             return false;
         }
         cert_loaded = true;
+
     } else if (settings_.cert_pem && settings_.key_pem) {
         // Load certificate and key from memory
         BIO* cert_bio = BIO_new_mem_buf(settings_.cert_pem, -1);
@@ -130,6 +129,7 @@ bool HttpsSmartHandler::InitializeSSL() {
         BIO_free(cert_bio);
         BIO_free(key_bio);
         cert_loaded = true;
+
     } else {
         // In tests, we may not have certs. Allow SSL init to continue but handshake will fail later if used.
         common::LOG_WARN("No certificate configuration provided; HTTPS features limited for tests");
@@ -212,7 +212,7 @@ int HttpsSmartHandler::ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<
     return decrypted_len;
 }
 
-int HttpsSmartHandler::WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) {
+int HttpsSmartHandler::WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) {
     auto ssl_it = ssl_context_map_.find(socket);
     if (ssl_it == ssl_context_map_.end()) {
         return -1;
@@ -227,7 +227,7 @@ int HttpsSmartHandler::WriteData(std::shared_ptr<ITcpSocket> socket, const std::
     }
     
     // Encrypt and send data
-    return SSL_write(ssl_ctx.ssl, data.c_str(), data.length());
+    return SSL_write(ssl_ctx.ssl, data.data(), data.size());
 }
 
 void HttpsSmartHandler::CleanupConnection(std::shared_ptr<ITcpSocket> socket) {
@@ -300,9 +300,7 @@ bool HttpsSmartHandler::SetupALPN() {
     // Define supported protocols in order of preference
     // h3 = HTTP/3, h2 = HTTP/2, http/1.1 = HTTP/1.1
     const unsigned char alpn_protocols[] = {
-        0x02, 'h', '3',           // h3 (HTTP/3)
-        0x02, 'h', '2',           // h2 (HTTP/2) 
-        0x08, 'h', 't', 't', 'p', '/', '1', '.', '1'  // http/1.1
+        0x02, 'h', '3'           // h3 (HTTP/3)
     };
     
     // Set ALPN protocols
@@ -335,8 +333,8 @@ int HttpsSmartHandler::ALPNSelectCallback(SSL* ssl, const unsigned char** out,
     }
     common::LOG_INFO("Client ALPN protocols: %s", client_protocols.c_str());
     
-    // Prefer HTTP/3 (h3), then HTTP/2 (h2), then HTTP/1.1
-    const char* preferred_protocols[] = {"h3", "h2", "http/1.1"};
+    // Prefer HTTP/3 (h3)
+    const char* preferred_protocols[] = {"h3"};
     
     for (const char* preferred : preferred_protocols) {
         size_t preferred_len = strlen(preferred);

@@ -18,6 +18,36 @@ enum FrameType: uint16_t {
     kUnknown         = 0xff,
 };
 
+// QPACK encoder stream (instructions from encoder to decoder)
+constexpr uint8_t kQpackSetCapacityPrefixBits = 5;              // 001xxxxx
+constexpr uint8_t kQpackSetCapacityFirstByteMask = 0x20;        // 0010 0000
+
+constexpr uint8_t kQpackInsertWithNameRefPrefixBits = 6;        // 1 S i i i i i i
+constexpr uint8_t kQpackInsertWithNameRefFirstByteBase = 0x80;  // 1000 0000
+constexpr uint8_t kQpackInsertWithNameRefStaticBit = 0x40;      // 0100 0000 (S bit)
+
+constexpr uint8_t kQpackInsertWithoutNameRefPrefixBits = 6;     // 01 n n n n n n
+constexpr uint8_t kQpackInsertWithoutNameRefFirstByteBase = 0x40;// 0100 0000
+
+constexpr uint8_t kQpackDuplicatePrefixBits = 4;                // 0001 xxxx
+constexpr uint8_t kQpackDuplicateFirstByteBase = 0x10;          // 0001 0000
+
+constexpr uint8_t kQpackTop2BitsMask = 0xC0;                    // 1100 0000
+
+// QPACK decoder stream (instructions from decoder to encoder)
+constexpr uint8_t kQpackDecoderVarintPrefixBits = 8;            // full byte prefix for simple varints
+constexpr uint8_t kQpackDecoderVarintFirstByteMask = 0x00;      // no high-bit flags in first byte
+
+// Decoder instruction first-byte patterns (RFC 9204 §4.4)
+constexpr uint8_t kQpackDecSectionAckPrefixBits = 7;            // 1xxxxxxx
+constexpr uint8_t kQpackDecSectionAckFirstByteMask = 0x80;      // 1000 0000
+
+constexpr uint8_t kQpackDecStreamCancelPrefixBits = 6;          // 01xxxxxx
+constexpr uint8_t kQpackDecStreamCancelFirstByteMask = 0x40;    // 0100 0000
+
+constexpr uint8_t kQpackDecInsertCountIncPrefixBits = 6;        // 00xxxxxx
+constexpr uint8_t kQpackDecInsertCountIncFirstByteMask = 0x00;  // 0000 0000
+
 }
 }
 

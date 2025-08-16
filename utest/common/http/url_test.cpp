@@ -84,8 +84,29 @@ TEST(URLTest, SerializeURLMultipleQueryParams) {
     url.path = "/path";
     url.query["query1"] = "value1";
     url.query["query2"] = "value2";
-    std::string expected = "https://example.com/path?query2=value2&query1=value1";
-    EXPECT_EQ(SerializeURL(url), expected);
+    
+    std::string result = SerializeURL(url);
+    
+    // Check that the URL contains all expected components
+    EXPECT_TRUE(result.find("https://example.com/path?") != std::string::npos);
+    EXPECT_TRUE(result.find("query1=value1") != std::string::npos);
+    EXPECT_TRUE(result.find("query2=value2") != std::string::npos);
+    
+    // Verify that both query parameters are present (order doesn't matter)
+    size_t query1_pos = result.find("query1=value1");
+    size_t query2_pos = result.find("query2=value2");
+    EXPECT_NE(query1_pos, std::string::npos);
+    EXPECT_NE(query2_pos, std::string::npos);
+    
+    // Verify the URL structure is correct
+    EXPECT_EQ(result.substr(0, 25), "https://example.com/path?");
+    
+    // Check that the result contains exactly one '&' separator
+    size_t ampersand_count = 0;
+    for (char c : result) {
+        if (c == '&') ampersand_count++;
+    }
+    EXPECT_EQ(ampersand_count, 1);
 }
 
 TEST(URLTest, SerializeURLNoScheme) {

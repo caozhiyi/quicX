@@ -24,6 +24,7 @@ Worker::~Worker() {
 
 void Worker::Init(std::shared_ptr<IConnectionIDNotify> connection_id_notify) {
     connection_id_notify_ = connection_id_notify;
+    Start();
 }
 
 void Worker::Destroy() {

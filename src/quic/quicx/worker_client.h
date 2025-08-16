@@ -1,5 +1,5 @@
-#ifndef QUIC_QUICX_SERVER_WORKER
-#define QUIC_QUICX_SERVER_WORKER
+#ifndef QUIC_QUICX_CLIENT_WORKER
+#define QUIC_QUICX_CLIENT_WORKER
 
 #include "quic/quicx/worker.h"
 

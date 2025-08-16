@@ -12,7 +12,6 @@ struct HeaderItem {
     HeaderItem(const std::string& name, const std::string& value) : name_(name), value_(value) {}
 };
 
-
 }
 }
 

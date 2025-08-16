@@ -1,0 +1,6 @@
+[submodule "third/googletest"]
+	path = third/googletest
+	url = https://github.com/google/googletest.git
+[submodule "third/boringssl"]
+	path = third/boringssl
+	url = https://github.com/google/boringssl.git

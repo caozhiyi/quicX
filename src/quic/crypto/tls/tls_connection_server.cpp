@@ -24,10 +24,6 @@ bool TLSServerConnection::Init() {
     }
     
     SSL_CTX_set_alpn_select_cb(ctx_->GetSSLCtx(), TLSServerConnection::SSLAlpnSelect, nullptr);
-
-    if (!TLSConnection::Init()) {
-        return false;
-    }
     
     SSL_set_accept_state(ssl_.get());
 

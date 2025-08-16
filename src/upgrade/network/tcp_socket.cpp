@@ -1,38 +1,32 @@
 #include <cstring>
-#include <errno.h>
-
-#ifdef _WIN32
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib")
-#else
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <arpa/inet.h>
-    #include <unistd.h>
-    #include <fcntl.h>
-#endif
 
 #include "common/log/log.h"
+#include "common/network/io_handle.h"
 #include "upgrade/network/tcp_socket.h"
 
 namespace quicx {
 namespace upgrade {
 
-TcpSocket::TcpSocket() : fd_(-1) {
-    // Create a new socket
-#ifdef _WIN32
-    fd_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-#else
-    fd_ = socket(AF_INET, SOCK_STREAM, 0);
-#endif
+TcpSocket::TcpSocket():
+    fd_(-1) {
 
-    if (fd_ < 0) {
-        common::LOG_ERROR("Failed to create socket");
+    auto result = common::TcpSocket();
+
+    if (result.errno_ != 0) {
+        common::LOG_ERROR("Failed to create socket: %d", result.errno_);
+        fd_ = -1;  // Ensure fd_ is -1 on failure
+    } else {
+        fd_ = result.return_value_;
     }
 }
 
-TcpSocket::TcpSocket(int fd) : fd_(fd) {
+TcpSocket::TcpSocket(int fd):
+    fd_(fd) {
+}
+
+TcpSocket::TcpSocket(int fd, const common::Address& remote_address) :
+    fd_(fd),
+    remote_address_(remote_address) {
     // Constructor with existing file descriptor
 }
 
@@ -45,18 +39,11 @@ int TcpSocket::Send(const std::vector<uint8_t>& data) {
         return -1;
     }
 
-#ifdef _WIN32
-    int result = send(fd_, reinterpret_cast<const char*>(data.data()), 
-                     static_cast<int>(data.size()), 0);
-#else
-    int result = send(fd_, data.data(), data.size(), 0);
-#endif
-
-    if (result < 0) {
-        common::LOG_ERROR("Send failed: %s", strerror(errno));
+    auto result = common::Write(fd_, reinterpret_cast<const char*>(data.data()), data.size());
+    if (result.errno_ != 0) {
+        common::LOG_ERROR("Send failed: %d", result.errno_);
     }
-
-    return result;
+    return result.return_value_;
 }
 
 int TcpSocket::Send(const std::string& data) {
@@ -64,17 +51,12 @@ int TcpSocket::Send(const std::string& data) {
         return -1;
     }
 
-#ifdef _WIN32
-    int result = send(fd_, data.c_str(), static_cast<int>(data.size()), 0);
-#else
-    int result = send(fd_, data.c_str(), data.size(), 0);
-#endif
+    auto result = common::Write(fd_, data.c_str(), data.size());
 
-    if (result < 0) {
-        common::LOG_ERROR("Send failed: %s", strerror(errno));
+    if (result.errno_ != 0) {
+        common::LOG_ERROR("Send failed: %d", result.errno_);
     }
-
-    return result;
+    return result.return_value_;
 }
 
 int TcpSocket::Recv(std::vector<uint8_t>& data, size_t max_size) {
@@ -84,21 +66,16 @@ int TcpSocket::Recv(std::vector<uint8_t>& data, size_t max_size) {
 
     data.resize(max_size);
     
-#ifdef _WIN32
-    int result = recv(fd_, reinterpret_cast<char*>(data.data()), 
-                     static_cast<int>(max_size), 0);
-#else
-    int result = recv(fd_, data.data(), max_size, 0);
-#endif
+    auto result = common::Recv(fd_, reinterpret_cast<char*>(data.data()), max_size, 0);
 
-    if (result < 0) {
-        common::LOG_ERROR("Recv failed: %s", strerror(errno));
+    if (result.errno_ != 0) {
+        common::LOG_ERROR("Recv failed: %d", result.errno_);
         data.clear();
         return -1;
     }
 
-    data.resize(result);
-    return result;
+    data.resize(result.return_value_);
+    return result.return_value_;
 }
 
 void TcpSocket::SetHandler(std::shared_ptr<ISocketHandler> handler) {
@@ -116,159 +93,34 @@ int TcpSocket::Recv(std::string& data, size_t max_size) {
 
     std::vector<char> buffer(max_size);
     
-#ifdef _WIN32
-    int result = recv(fd_, buffer.data(), static_cast<int>(max_size), 0);
-#else
-    int result = recv(fd_, buffer.data(), max_size, 0);
-#endif
+    auto result = common::Recv(fd_, buffer.data(), max_size, 0);
 
-    if (result < 0) {
-        common::LOG_ERROR("Recv failed: %s", strerror(errno));
+    if (result.errno_ != 0) {
+        common::LOG_ERROR("Recv failed: %d", result.errno_);
         data.clear();
         return -1;
     }
 
-    data.assign(buffer.data(), result);
-    return result;
+    data.assign(buffer.data(), result.return_value_);
+    return result.return_value_;
 }
 
 void TcpSocket::Close() {
     if (IsValid()) {
-#ifdef _WIN32
-        closesocket(fd_);
-#else
-        close(fd_);
-#endif
+        auto result = common::Close(fd_);
+        if (result.errno_ != 0) {
+            common::LOG_ERROR("Close failed: %d", result.errno_);
+        }
         fd_ = -1;
-        address_cached_ = false;
     }
 }
 
 std::string TcpSocket::GetRemoteAddress() const {
-    if (!address_cached_) {
-        CacheAddressInfo();
-    }
-    return remote_address_;
+    return remote_address_.GetIp();
 }
 
 uint16_t TcpSocket::GetRemotePort() const {
-    if (!address_cached_) {
-        CacheAddressInfo();
-    }
-    return remote_port_;
-}
-
-std::string TcpSocket::GetLocalAddress() const {
-    if (!address_cached_) {
-        CacheAddressInfo();
-    }
-    if (!IsValid()) {
-        return std::string();
-    }
-    // If not bound, normalize to empty string instead of 0.0.0.0
-    if (local_address_ == "0.0.0.0" || local_port_ == 0) {
-        return std::string();
-    }
-    return local_address_;
-}
-
-uint16_t TcpSocket::GetLocalPort() const {
-    if (!address_cached_) {
-        CacheAddressInfo();
-    }
-    return IsValid() ? local_port_ : 0;
-}
-
-bool TcpSocket::SetNonBlocking(bool non_blocking) {
-    if (!IsValid()) {
-        return false;
-    }
-
-#ifdef _WIN32
-    u_long mode = non_blocking ? 1 : 0;
-    if (ioctlsocket(fd_, FIONBIO, &mode) != 0) {
-        common::LOG_ERROR("Failed to set non-blocking mode");
-        return false;
-    }
-#else
-    int flags = fcntl(fd_, F_GETFL, 0);
-    if (flags < 0) {
-        common::LOG_ERROR("Failed to get socket flags");
-        return false;
-    }
-
-    if (non_blocking) {
-        flags |= O_NONBLOCK;
-    } else {
-        flags &= ~O_NONBLOCK;
-    }
-
-    if (fcntl(fd_, F_SETFL, flags) < 0) {
-        common::LOG_ERROR("Failed to set non-blocking mode");
-        return false;
-    }
-#endif
-
-    return true;
-}
-
-bool TcpSocket::SetReuseAddr(bool reuse) {
-    if (!IsValid()) {
-        return false;
-    }
-
-    int optval = reuse ? 1 : 0;
-    if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, 
-                   reinterpret_cast<const char*>(&optval), sizeof(optval)) < 0) {
-        common::LOG_ERROR("Failed to set SO_REUSEADDR");
-        return false;
-    }
-
-    return true;
-}
-
-bool TcpSocket::SetKeepAlive(bool keep_alive) {
-    if (!IsValid()) {
-        return false;
-    }
-
-    int optval = keep_alive ? 1 : 0;
-    if (setsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE, 
-                   reinterpret_cast<const char*>(&optval), sizeof(optval)) < 0) {
-        common::LOG_ERROR("Failed to set SO_KEEPALIVE");
-        return false;
-    }
-
-    return true;
-}
-
-void TcpSocket::CacheAddressInfo() const {
-    if (!IsValid()) {
-        return;
-    }
-
-    struct sockaddr_in remote_addr, local_addr;
-    socklen_t addr_len = sizeof(struct sockaddr_in);
-
-    // Get remote address
-    if (getpeername(fd_, reinterpret_cast<struct sockaddr*>(&remote_addr), &addr_len) == 0) {
-        char addr_str[INET_ADDRSTRLEN];
-        if (inet_ntop(AF_INET, &remote_addr.sin_addr, addr_str, INET_ADDRSTRLEN)) {
-            remote_address_ = addr_str;
-            remote_port_ = ntohs(remote_addr.sin_port);
-        }
-    }
-
-    // Get local address
-    if (getsockname(fd_, reinterpret_cast<struct sockaddr*>(&local_addr), &addr_len) == 0) {
-        char addr_str[INET_ADDRSTRLEN];
-        if (inet_ntop(AF_INET, &local_addr.sin_addr, addr_str, INET_ADDRSTRLEN)) {
-            local_address_ = addr_str;
-            local_port_ = ntohs(local_addr.sin_port);
-        }
-    }
-
-    address_cached_ = true;
+    return remote_address_.GetPort();
 }
 
 } // namespace upgrade

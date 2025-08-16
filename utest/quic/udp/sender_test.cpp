@@ -9,6 +9,7 @@ namespace quic {
 namespace {
 
 int g_send_times = 5;
+
 TEST(UdpSenderTest, Send) {
     std::vector<std::thread> threads;
     for (int i = 0; i < 1; ++i) {

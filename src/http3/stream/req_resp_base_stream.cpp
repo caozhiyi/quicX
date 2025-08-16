@@ -3,19 +3,21 @@
 #include "http3/frame/data_frame.h"
 #include "http3/frame/frame_decode.h"
 #include "http3/frame/headers_frame.h"
+#include "http3/qpack/blocked_registry.h"
 #include "common/buffer/buffer_read_view.h"
 #include "http3/stream/req_resp_base_stream.h"
-#include "http3/qpack/blocked_registry.h"
 
 namespace quicx {
 namespace http3 {
 
 ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IStream(error_handler),
     body_length_(0),
     qpack_encoder_(qpack_encoder),
+    blocked_registry_(blocked_registry),
     stream_(stream) {
 
     stream_->SetStreamReadCallBack(std::bind(&ReqRespBaseStream::OnData,
@@ -70,7 +72,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     auto headers_buffer = (std::make_shared<common::BufferReadView>(encoded_fields.data(), encoded_fields.size()));
     if (!qpack_encoder_->Decode(headers_buffer, headers_)) {
         // If blocked (RIC not satisfied), enqueue a retry once insert count increases
-        ::quicx::http3::QpackBlockedRegistry::Instance().Add(header_block_key_, [this, encoded_fields]() {
+        blocked_registry_->Add(header_block_key_, [this, encoded_fields]() {
             auto view = std::make_shared<common::BufferReadView>(const_cast<uint8_t*>(encoded_fields.data()), static_cast<uint32_t>(encoded_fields.size()));
             std::unordered_map<std::string, std::string> tmp;
             if (qpack_encoder_->Decode(view, tmp)) {

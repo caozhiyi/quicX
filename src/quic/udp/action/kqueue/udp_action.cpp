@@ -22,7 +22,7 @@ UdpAction::UdpAction() {
         abort();
     }
 
-    if (pipe(pipe_) == -1) {
+    if (!common::Pipe(pipe_[0], pipe_[1])) {
         common::LOG_FATAL("pipe init failed!");
         abort();
     }

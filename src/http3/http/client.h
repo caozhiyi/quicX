@@ -4,8 +4,9 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+
 #include "common/http/url.h"
-#include "http3/http/request.h"
+#include "http3/include/if_client.h"
 #include "quic/include/if_quic_client.h"
 #include "quic/include/if_quic_connection.h"
 #include "http3/connection/connection_client.h"
@@ -20,7 +21,7 @@ public:
     virtual ~Client();
 
     // Initialize the client with a certificate and a key
-    virtual bool Init(uint16_t thread_num = 1, LogLevel level = LogLevel::kNull);
+    virtual bool Init(const Http3Config& config);
 
     // Send a request to the server
     virtual bool DoRequest(const std::string& url, HttpMethod mothed,

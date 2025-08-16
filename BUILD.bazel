@@ -1,0 +1,34 @@
+package(default_visibility = ["//visibility:public"])
+
+# Aggregate test target for a quick smoke test
+test_suite(
+    name = "unit_tests_common",
+    tests = [
+        "//utest/common:common_tests",
+    ],
+)
+
+cc_library(
+    name = "libquicx",
+    srcs = [],
+    deps = [
+        "//src/common:common",
+        "//src/quic:quic",
+    ],
+    linkstatic = True,
+)
+
+cc_library(
+    name = "libhttp3",
+    srcs = [],
+    deps = [
+        "//src/common:common",
+        "//src/quic:quic",
+        "//src/upgrade:upgrade",
+        "//src/http3:http3",
+    ],
+    linkstatic = True,
+)
+
+
+

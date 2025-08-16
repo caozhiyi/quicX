@@ -1,5 +1,5 @@
-#ifndef UPGRADE_INCLUDE_TYPE_H
-#define UPGRADE_INCLUDE_TYPE_H
+#ifndef UPGRADE_INCLUDE_TYPE
+#define UPGRADE_INCLUDE_TYPE
 
 #include <string>
 #include <vector>

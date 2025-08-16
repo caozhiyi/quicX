@@ -1,5 +1,5 @@
-#ifndef UPGRADE_NETWORK_IF_TCP_ACTION_H
-#define UPGRADE_NETWORK_IF_TCP_ACTION_H
+#ifndef UPGRADE_NETWORK_IF_TCP_ACTION
+#define UPGRADE_NETWORK_IF_TCP_ACTION
 
 #include <memory>
 #include <string>
@@ -40,4 +40,4 @@ public:
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_NETWORK_IF_TCP_ACTION_H 
+#endif // UPGRADE_NETWORK_IF_TCP_ACTION 

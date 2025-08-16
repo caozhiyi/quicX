@@ -80,6 +80,7 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
         }
     } else {
         result.handler = nullptr;
+        result.is_match = false;
     }
 
     // find dynamic param second
@@ -89,6 +90,7 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
 
         } else {
             result.handler = nullptr;
+            result.is_match = false;
         }
     }
 
@@ -99,6 +101,7 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
 
         } else {
             result.handler = nullptr;
+            result.is_match = false;
         }
     }
     return false;

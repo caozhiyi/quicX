@@ -3,11 +3,13 @@
 #include <vector>
 #include <string>
 #include <chrono>
-#include "upgrade/handlers/connection_context.h"
+
 #include "upgrade/network/tcp_socket.h"
+#include "upgrade/handlers/connection_context.h"
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 class ConnectionContextTest : public ::testing::Test {
 protected:
@@ -238,5 +240,6 @@ TEST_F(ConnectionContextTest, ContextCleanup) {
     // This test verifies no memory leaks occur
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

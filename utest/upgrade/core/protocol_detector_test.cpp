@@ -6,6 +6,7 @@
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 class ProtocolDetectorTest : public ::testing::Test {
 protected:
@@ -131,5 +132,6 @@ TEST_F(ProtocolDetectorTest, DetectHTTP1_1WithSpaces) {
     EXPECT_EQ(detected, Protocol::HTTP1_1);
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

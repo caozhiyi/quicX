@@ -40,6 +40,13 @@ enum class LogLevel: uint8_t {
     kDebug  = 0x10 | kInfo,
 };
 
+struct Http3Config {
+    uint16_t thread_num_ = 1;
+    LogLevel log_level_ = LogLevel::kNull;
+
+    bool enable_ecn_ = false;
+};
+
 // http3 settings
 struct Http3Settings {
     uint64_t max_header_list_size = 100;
@@ -47,6 +54,8 @@ struct Http3Settings {
     uint64_t max_concurrent_streams = 100;
     uint64_t max_frame_size = 16384;
     uint64_t max_field_section_size = 16384;
+    uint64_t qpack_max_table_capacity = 0;
+    uint64_t qpack_blocked_streams = 0;
 };
 static const Http3Settings kDefaultHttp3Settings;
 

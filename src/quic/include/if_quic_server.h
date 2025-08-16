@@ -14,8 +14,8 @@ namespace quic {
 struct QuicServerConfig {
     std::string cert_file_ = "";
     std::string key_file_ = "";
-    const char* cert_pem = nullptr;
-    const char* key_pem = nullptr;
+    const char* cert_pem_ = nullptr;
+    const char* key_pem_ = nullptr;
     std::string alpn_ = "";
 
     QuicConfig config_;

@@ -3,17 +3,20 @@
 #include <vector>
 #include <string>
 #include <atomic>
-#include "upgrade/handlers/base_smart_handler.h"
-#include "upgrade/handlers/connection_context.h"
+
+#include "upgrade/include/type.h"
 #include "upgrade/network/tcp_socket.h"
 #include "upgrade/network/if_event_driver.h"
-#include "upgrade/include/type.h"
+#include "upgrade/handlers/base_smart_handler.h"
+#include "upgrade/handlers/connection_context.h"
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 // Mock TCP action for testing
-class MockTcpAction : public ITcpAction {
+class MockTcpAction:
+    public ITcpAction {
 public:
     MockTcpAction() : init_called_(false), stop_called_(false), join_called_(false) {}
     
@@ -58,7 +61,8 @@ private:
 };
 
 // Mock event driver for testing
-class MockEventDriver : public IEventDriver {
+class MockEventDriver:
+    public IEventDriver {
 public:
     MockEventDriver() : init_called_(false), wakeup_called_(false) {}
     
@@ -67,15 +71,15 @@ public:
         return true;
     }
     
-    virtual bool AddFd(int fd, EventType events) override {
+    virtual bool AddFd(uint64_t fd, EventType events) override {
         return true;
     }
     
-    virtual bool RemoveFd(int fd) override {
+    virtual bool RemoveFd(uint64_t fd) override {
         return true;
     }
     
-    virtual bool ModifyFd(int fd, EventType events) override {
+    virtual bool ModifyFd(uint64_t fd, EventType events) override {
         modify_calls_.push_back({fd, events});
         return true;
     }
@@ -104,11 +108,15 @@ private:
 };
 
 // Concrete implementation of BaseSmartHandler for testing
-class TestSmartHandler : public BaseSmartHandler {
+class TestSmartHandler:
+    public BaseSmartHandler {
 public:
-    explicit TestSmartHandler(const UpgradeSettings& settings) 
-        : BaseSmartHandler(settings), init_called_(false), read_called_(false), 
-          write_called_(false), cleanup_called_(false) {}
+    explicit TestSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action):
+        BaseSmartHandler(settings, tcp_action),
+        init_called_(false),
+        read_called_(false),
+        write_called_(false),
+        cleanup_called_(false) {}
     
     virtual bool InitializeConnection(std::shared_ptr<ITcpSocket> socket) override {
         init_called_ = true;
@@ -121,9 +129,9 @@ public:
         return data.size();
     }
     
-    virtual int WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) override {
+    virtual int WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override {
         write_called_ = true;
-        return data.length();
+        return data.size();
     }
     
     virtual void CleanupConnection(std::shared_ptr<ITcpSocket> socket) override {
@@ -155,13 +163,14 @@ private:
     std::atomic<bool> cleanup_called_;
 };
 
-class BaseSmartHandlerTest : public ::testing::Test {
+class BaseSmartHandlerTest:
+    public ::testing::Test {
 protected:
     void SetUp() override {
         settings_.http_port = 8080;
         settings_.https_port = 0;
         
-        handler_ = std::make_unique<TestSmartHandler>(settings_);
+        handler_ = std::make_unique<TestSmartHandler>(settings_, tcp_action_);
         socket_ = std::make_shared<TcpSocket>();
         tcp_action_ = std::make_shared<MockTcpAction>();
         event_driver_ = std::make_shared<MockEventDriver>();
@@ -191,10 +200,10 @@ TEST_F(BaseSmartHandlerTest, HandlerCreation) {
 
 // Test handle connect
 TEST_F(BaseSmartHandlerTest, HandleConnect) {
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
     EXPECT_TRUE(handler_->IsInitCalled());
-    EXPECT_TRUE(tcp_action_->IsInitCalled());
+    EXPECT_FALSE(tcp_action_->IsInitCalled());  // Init should not be called for individual connections
     
     // Check if connection context was created
     // Note: We can't directly access connections_ map, but we can verify
@@ -204,7 +213,7 @@ TEST_F(BaseSmartHandlerTest, HandleConnect) {
 // Test handle read
 TEST_F(BaseSmartHandlerTest, HandleRead) {
     // First connect
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
     // Then read
     handler_->HandleRead(socket_);
@@ -215,18 +224,18 @@ TEST_F(BaseSmartHandlerTest, HandleRead) {
 // Test handle write
 TEST_F(BaseSmartHandlerTest, HandleWrite) {
     // First connect
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
-    // Then write
+    // Then write - this won't call WriteData unless in NEGOTIATING state
     handler_->HandleWrite(socket_);
     
-    EXPECT_TRUE(handler_->IsWriteCalled());
+    EXPECT_FALSE(handler_->IsWriteCalled());  // WriteData is only called during negotiation
 }
 
 // Test handle close
 TEST_F(BaseSmartHandlerTest, HandleClose) {
     // First connect
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
     // Then close
     handler_->HandleClose(socket_);
@@ -236,7 +245,7 @@ TEST_F(BaseSmartHandlerTest, HandleClose) {
 
 // Test protocol detection
 TEST_F(BaseSmartHandlerTest, ProtocolDetection) {
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
     // Simulate reading HTTP data
     std::vector<uint8_t> http_data = {0x48, 0x54, 0x54, 0x50, 0x2F, 0x31, 0x2E, 0x31}; // "HTTP/1.1"
@@ -249,7 +258,7 @@ TEST_F(BaseSmartHandlerTest, ProtocolDetection) {
 
 // Test upgrade completion
 TEST_F(BaseSmartHandlerTest, UpgradeCompletion) {
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
     // Create a connection context
     ConnectionContext context(socket_);
@@ -264,7 +273,7 @@ TEST_F(BaseSmartHandlerTest, UpgradeCompletion) {
 
 // Test upgrade failure
 TEST_F(BaseSmartHandlerTest, UpgradeFailure) {
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
     // Create a connection context
     ConnectionContext context(socket_);
@@ -279,7 +288,7 @@ TEST_F(BaseSmartHandlerTest, UpgradeFailure) {
 
 // Test negotiation timeout
 TEST_F(BaseSmartHandlerTest, NegotiationTimeout) {
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
     // Simulate negotiation timeout
     handler_->HandleNegotiationTimeout(socket_);
@@ -288,9 +297,26 @@ TEST_F(BaseSmartHandlerTest, NegotiationTimeout) {
     // The actual timeout logic depends on the specific implementation
 }
 
+// Test write during negotiation
+TEST_F(BaseSmartHandlerTest, WriteDuringNegotiation) {
+    handler_->HandleConnect(socket_);
+    
+    // Create a connection context in NEGOTIATING state
+    ConnectionContext context(socket_);
+    context.state = ConnectionState::NEGOTIATING;
+    std::string response = "HTTP/1.1 101 Switching Protocols\r\n\r\n";
+    context.pending_response = std::vector<uint8_t>(response.begin(), response.end());
+    context.response_sent = 0;
+    
+    // Test response sending - this should call WriteData
+    handler_->TrySendResponse(context);
+    
+    EXPECT_TRUE(handler_->IsWriteCalled());  // WriteData should be called during negotiation
+}
+
 // Test response sending
 TEST_F(BaseSmartHandlerTest, ResponseSending) {
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
     // Create a connection context with pending response
     ConnectionContext context(socket_);
@@ -301,8 +327,7 @@ TEST_F(BaseSmartHandlerTest, ResponseSending) {
     // Test response sending
     handler_->TrySendResponse(context);
     
-    // Response sending should be attempted
-    // The actual sending depends on socket state and event driver
+    EXPECT_TRUE(handler_->IsWriteCalled());  // WriteData should be called
 }
 
 // Test multiple connections
@@ -311,25 +336,25 @@ TEST_F(BaseSmartHandlerTest, MultipleConnections) {
     auto socket2 = std::make_shared<TcpSocket>();
     
     // Handle multiple connections
-    handler_->HandleConnect(socket1, tcp_action_);
-    handler_->HandleConnect(socket2, tcp_action_);
+    handler_->HandleConnect(socket1);
+    handler_->HandleConnect(socket2);
     
     EXPECT_TRUE(handler_->IsInitCalled());
     
     // Handle operations on different sockets
     handler_->HandleRead(socket1);
-    handler_->HandleWrite(socket2);
+    handler_->HandleWrite(socket2);  // This won't call WriteData unless in NEGOTIATING state
     
     EXPECT_TRUE(handler_->IsReadCalled());
-    EXPECT_TRUE(handler_->IsWriteCalled());
+    EXPECT_FALSE(handler_->IsWriteCalled());  // WriteData is only called during negotiation
 }
 
 // Test event driver integration
 TEST_F(BaseSmartHandlerTest, EventDriverIntegration) {
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     
-    // Verify event driver was set
-    EXPECT_TRUE(event_driver_->IsInitCalled());
+    // Event driver is set but not automatically initialized
+    EXPECT_FALSE(event_driver_->IsInitCalled());  // SetEventDriver doesn't call Init()
     
     // Test response sending with event driver
     ConnectionContext context(socket_);
@@ -349,21 +374,22 @@ TEST_F(BaseSmartHandlerTest, HandlerLifecycle) {
     EXPECT_NE(handler_, nullptr);
     
     // Connect
-    handler_->HandleConnect(socket_, tcp_action_);
+    handler_->HandleConnect(socket_);
     EXPECT_TRUE(handler_->IsInitCalled());
     
     // Read data
     handler_->HandleRead(socket_);
     EXPECT_TRUE(handler_->IsReadCalled());
     
-    // Write data
+    // Write data - this won't call WriteData unless in NEGOTIATING state
     handler_->HandleWrite(socket_);
-    EXPECT_TRUE(handler_->IsWriteCalled());
+    EXPECT_FALSE(handler_->IsWriteCalled());  // WriteData is only called during negotiation
     
     // Close connection
     handler_->HandleClose(socket_);
     EXPECT_TRUE(handler_->IsCleanupCalled());
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

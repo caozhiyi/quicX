@@ -3,52 +3,40 @@
 namespace quicx {
 namespace http3 {
 
-QpackBlockedRegistry& QpackBlockedRegistry::Instance() {
-    static QpackBlockedRegistry inst;
-    return inst;
+QpackBlockedRegistry::QpackBlockedRegistry() {
+
+}
+
+QpackBlockedRegistry::~QpackBlockedRegistry() {
+
 }
 
 void QpackBlockedRegistry::Add(uint64_t key, const std::function<void()>& retry_fn) {
-    std::lock_guard<std::mutex> lock(mu_);
     pending_[key] = retry_fn;
 }
 
 void QpackBlockedRegistry::Ack(uint64_t key) {
-    std::function<void()> fn;
-    {
-        std::lock_guard<std::mutex> lock(mu_);
-        auto it = pending_.find(key);
-        if (it != pending_.end()) {
-            fn = it->second;
-            pending_.erase(it);
+    auto it = pending_.find(key);
+    if (it != pending_.end()) {
+        auto fn = it->second;
+        pending_.erase(it);
+        if (fn) {
+            fn();
         }
     }
-    if (fn) fn();
 }
 
 void QpackBlockedRegistry::Remove(uint64_t key) {
-    std::lock_guard<std::mutex> lock(mu_);
     pending_.erase(key);
 }
 
 void QpackBlockedRegistry::NotifyAll() {
-    std::vector<std::function<void()>> todo;
-    {
-        std::lock_guard<std::mutex> lock(mu_);
-        for (auto& kv : pending_) todo.push_back(kv.second);
-        pending_.clear();
+    for (auto& kv : pending_) {
+        kv.second();
     }
-    for (auto& fn : todo) {
-        if (fn) fn();
-    }
+    pending_.clear();
 }
 
 }
 }
-
-// C linkage trampoline for simple call sites
-extern "C" void QpackNotifyBlockedResume() {
-    ::quicx::http3::QpackBlockedRegistry::Instance().NotifyAll();
-}
-
 

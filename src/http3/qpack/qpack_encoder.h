@@ -3,8 +3,9 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <functional>
+#include <unordered_map>
+
 #include "http3/qpack/dynamic_table.h"
 #include "common/buffer/if_buffer_read.h"
 #include "common/buffer/if_buffer_write.h"
@@ -48,7 +49,8 @@ private:
 
 private:
     DynamicTable dynamic_table_;
-    bool enable_dynamic_table_ {true};
+    // blocked header decoding when encoder instructions are not transported.
+    bool enable_dynamic_table_ {false};
     std::function<void(const std::vector<std::pair<std::string,std::string>>&)> instruction_sender_;
     std::function<void(uint8_t type, uint64_t value)> decoder_feedback_sender_;
 };

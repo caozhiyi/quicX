@@ -7,7 +7,7 @@ namespace quicx {
 namespace common {
 
 void Localtime(const uint64_t* time, void* out_tm) {
-    ::localtime_r((tm*)out_tm, (time_t*)time)
+    ::localtime_s((tm*)out_tm, (time_t*)time);
 }
 
 }

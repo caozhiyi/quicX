@@ -25,7 +25,7 @@ public:
     virtual void Wakeup();
     
 private:
-    uint32_t pipe_[2];
+    uint64_t pipe_[2];
     int32_t select_handler_;
     std::unordered_map<uint64_t, WSAPOLLFD> select_event_map_;
 

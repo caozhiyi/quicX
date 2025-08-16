@@ -32,7 +32,7 @@ when dynamic create subclass instance in parents class.
 */
 
 struct MatchResult {
-    bool is_match;
+    bool is_match = false;
     http_handler handler;                                // http handler
     std::unordered_map<std::string, std::string> params; // request params
 };

@@ -17,18 +17,20 @@ bool RouterNodeDynamicParam::Match(const std::string& path, int path_offset, con
         // match done, current node is the last node
         if (type_ == RouterNodeType::RNT_DYNAMIC_PARAM) {
             result.handler = handler_;
+            result.is_match = true;
             // parse param, /param -> param
             result.params[param_name_] = cur_section.substr(1, cur_section.size() - 1);
             return true;
         }
         
         result.handler = nullptr;
+        result.is_match = false;
         return false;
     }
     
-    // get next section
     std::string section = PathParse(path, path_offset);
     if (section.empty()) {
+        result.is_match = false;
         return false;
     }
 

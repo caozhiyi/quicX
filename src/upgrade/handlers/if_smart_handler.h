@@ -1,16 +1,15 @@
-#ifndef UPGRADE_HANDLERS_IF_SMART_HANDLER_H
-#define UPGRADE_HANDLERS_IF_SMART_HANDLER_H
+#ifndef UPGRADE_HANDLERS_IF_SMART_HANDLER
+#define UPGRADE_HANDLERS_IF_SMART_HANDLER
 
-#include <memory>
 #include <string>
 #include "upgrade/network/if_socket_handler.h"
-#include "upgrade/include/type.h"
 
 namespace quicx {
 namespace upgrade {
 
 // Base interface for smart handlers
-class ISmartHandler : public ISocketHandler {
+class ISmartHandler:
+    public ISocketHandler {
 public:
     virtual ~ISmartHandler() = default;
 

@@ -3,19 +3,22 @@
 #include <vector>
 #include <string>
 #include <atomic>
-#include "upgrade/handlers/smart_handler_factory.h"
-#include "upgrade/handlers/http_smart_handler.h"
-#include "upgrade/handlers/https_smart_handler.h"
-#include "upgrade/handlers/connection_context.h"
+
+#include "upgrade/include/type.h"
 #include "upgrade/network/tcp_socket.h"
 #include "upgrade/network/if_event_driver.h"
-#include "upgrade/include/type.h"
+#include "upgrade/handlers/connection_context.h"
+#include "upgrade/handlers/http_smart_handler.h"
+#include "upgrade/handlers/https_smart_handler.h"
+#include "upgrade/handlers/smart_handler_factory.h"
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 // Mock TCP action for integration testing
-class MockTcpAction : public ITcpAction {
+class MockTcpAction:
+    public ITcpAction {
 public:
     MockTcpAction() : init_called_(false), stop_called_(false), join_called_(false) {}
     
@@ -60,7 +63,8 @@ private:
 };
 
 // Mock event driver for integration testing
-class MockEventDriver : public IEventDriver {
+class MockEventDriver:
+    public IEventDriver {
 public:
     MockEventDriver() : init_called_(false), wakeup_called_(false) {}
     
@@ -69,15 +73,15 @@ public:
         return true;
     }
     
-    virtual bool AddFd(int fd, EventType events) override {
+    virtual bool AddFd(uint64_t fd, EventType events) override {
         return true;
     }
     
-    virtual bool RemoveFd(int fd) override {
+    virtual bool RemoveFd(uint64_t fd) override {
         return true;
     }
     
-    virtual bool ModifyFd(int fd, EventType events) override {
+    virtual bool ModifyFd(uint64_t fd, EventType events) override {
         modify_calls_.push_back({fd, events});
         return true;
     }
@@ -105,7 +109,8 @@ private:
     std::vector<std::pair<int, EventType>> modify_calls_;
 };
 
-class HandlersIntegrationTest : public ::testing::Test {
+class HandlersIntegrationTest:
+    public ::testing::Test {
 protected:
     void SetUp() override {
         factory_ = std::make_unique<SmartHandlerFactory>();
@@ -130,9 +135,9 @@ TEST_F(HandlersIntegrationTest, CompleteHttpHandlerLifecycle) {
     UpgradeSettings settings;
     settings.http_port = 8080;
     settings.https_port = 0;
-    
+
     // Create HTTP handler
-    auto handler = factory_->CreateHandler(settings);
+    auto handler = factory_->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     EXPECT_EQ(handler->GetType(), "HTTP");
     
@@ -144,9 +149,9 @@ TEST_F(HandlersIntegrationTest, CompleteHttpHandlerLifecycle) {
     auto socket = std::make_shared<TcpSocket>();
     EXPECT_TRUE(socket->IsValid());
     
-    // Handle connection
-    handler->HandleConnect(socket, tcp_action_);
-    EXPECT_TRUE(tcp_action_->IsInitCalled());
+    // Handle connection - should not call tcp_action_->Init()
+    handler->HandleConnect(socket);
+    EXPECT_FALSE(tcp_action_->IsInitCalled());  // Init should not be called for individual connections
     
     // Handle read
     handler->HandleRead(socket);
@@ -168,7 +173,7 @@ TEST_F(HandlersIntegrationTest, CompleteHttpsHandlerLifecycle) {
     settings.key_file = "test.key";
     
     // Create HTTPS handler
-    auto handler = factory_->CreateHandler(settings);
+    auto handler = factory_->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     EXPECT_EQ(handler->GetType(), "HTTPS");
     
@@ -180,9 +185,9 @@ TEST_F(HandlersIntegrationTest, CompleteHttpsHandlerLifecycle) {
     auto socket = std::make_shared<TcpSocket>();
     EXPECT_TRUE(socket->IsValid());
     
-    // Handle connection
-    handler->HandleConnect(socket, tcp_action_);
-    EXPECT_TRUE(tcp_action_->IsInitCalled());
+    // Handle connection - should not call tcp_action_->Init()
+    handler->HandleConnect(socket);
+    EXPECT_FALSE(tcp_action_->IsInitCalled());  // Init should not be called for individual connections
     
     // Handle read
     handler->HandleRead(socket);
@@ -201,7 +206,7 @@ TEST_F(HandlersIntegrationTest, ConnectionContextIntegration) {
     settings.http_port = 8080;
     settings.https_port = 0;
     
-    auto handler = factory_->CreateHandler(settings);
+    auto handler = factory_->CreateHandler(settings, tcp_action_);
     auto socket = std::make_shared<TcpSocket>();
     
     // Create connection context
@@ -234,7 +239,7 @@ TEST_F(HandlersIntegrationTest, MultipleHandlersDifferentSettings) {
     http_settings.http_port = 8080;
     http_settings.https_port = 0;
     
-    auto http_handler = factory_->CreateHandler(http_settings);
+    auto http_handler = factory_->CreateHandler(http_settings, tcp_action_);
     EXPECT_NE(http_handler, nullptr);
     EXPECT_EQ(http_handler->GetType(), "HTTP");
     
@@ -245,7 +250,7 @@ TEST_F(HandlersIntegrationTest, MultipleHandlersDifferentSettings) {
     https_settings.cert_file = "test.crt";
     https_settings.key_file = "test.key";
     
-    auto https_handler = factory_->CreateHandler(https_settings);
+    auto https_handler = factory_->CreateHandler(https_settings, tcp_action_);
     EXPECT_NE(https_handler, nullptr);
     EXPECT_EQ(https_handler->GetType(), "HTTPS");
     
@@ -256,10 +261,10 @@ TEST_F(HandlersIntegrationTest, MultipleHandlersDifferentSettings) {
     auto socket1 = std::make_shared<TcpSocket>();
     auto socket2 = std::make_shared<TcpSocket>();
     
-    http_handler->HandleConnect(socket1, tcp_action_);
-    https_handler->HandleConnect(socket2, tcp_action_);
+    http_handler->HandleConnect(socket1);
+    https_handler->HandleConnect(socket2);
     
-    EXPECT_TRUE(tcp_action_->IsInitCalled());
+    EXPECT_FALSE(tcp_action_->IsInitCalled());  // Init should not be called for individual connections
 }
 
 // Test handler with event driver integration
@@ -269,15 +274,15 @@ TEST_F(HandlersIntegrationTest, HandlerWithEventDriver) {
     settings.http_port = 8080;
     settings.https_port = 0;
     
-    auto handler = factory_->CreateHandler(settings);
+    auto handler = factory_->CreateHandler(settings, tcp_action_);
     auto socket = std::make_shared<TcpSocket>();
     
     // Set event driver (if accessible)
     // Note: This depends on the specific implementation of the handler
     
     // Handle connection
-    handler->HandleConnect(socket, tcp_action_);
-    EXPECT_TRUE(tcp_action_->IsInitCalled());
+    handler->HandleConnect(socket);
+    EXPECT_FALSE(tcp_action_->IsInitCalled());  // Init should not be called for individual connections
     
     // Handle operations
     handler->HandleRead(socket);
@@ -292,7 +297,7 @@ TEST_F(HandlersIntegrationTest, HandlerErrorHandling) {
     settings.http_port = 0;
     settings.https_port = 0;
     
-    auto handler = factory_->CreateHandler(settings);
+    auto handler = factory_->CreateHandler(settings, tcp_action_);
     EXPECT_NE(handler, nullptr);
     
     // Should default to HTTP handler
@@ -303,7 +308,7 @@ TEST_F(HandlersIntegrationTest, HandlerErrorHandling) {
     EXPECT_FALSE(invalid_socket->IsValid());
     
     // Handler should handle invalid socket gracefully
-    handler->HandleConnect(invalid_socket, tcp_action_);
+    handler->HandleConnect(invalid_socket);
     handler->HandleRead(invalid_socket);
     handler->HandleWrite(invalid_socket);
     handler->HandleClose(invalid_socket);
@@ -344,7 +349,7 @@ TEST_F(HandlersIntegrationTest, FactorySettingsCombinations) {
     both_settings.cert_file = "test.crt";
     both_settings.key_file = "test.key";
     
-    auto both_handler = factory_->CreateHandler(both_settings);
+    auto both_handler = factory_->CreateHandler(both_settings, tcp_action_);
     EXPECT_NE(both_handler, nullptr);
     EXPECT_EQ(both_handler->GetType(), "HTTPS"); // Should prefer HTTPS
     
@@ -353,7 +358,7 @@ TEST_F(HandlersIntegrationTest, FactorySettingsCombinations) {
     http_only_settings.http_port = 8080;
     http_only_settings.https_port = 0;
     
-    auto http_only_handler = factory_->CreateHandler(http_only_settings);
+    auto http_only_handler = factory_->CreateHandler(http_only_settings, tcp_action_);
     EXPECT_NE(http_only_handler, nullptr);
     EXPECT_EQ(http_only_handler->GetType(), "HTTP");
     
@@ -362,10 +367,11 @@ TEST_F(HandlersIntegrationTest, FactorySettingsCombinations) {
     https_no_cert_settings.http_port = 0;
     https_no_cert_settings.https_port = 8443;
     
-    auto https_no_cert_handler = factory_->CreateHandler(https_no_cert_settings);
+    auto https_no_cert_handler = factory_->CreateHandler(https_no_cert_settings, tcp_action_);
     EXPECT_NE(https_no_cert_handler, nullptr);
     EXPECT_EQ(https_no_cert_handler->GetType(), "HTTP"); // Should fall back to HTTP
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

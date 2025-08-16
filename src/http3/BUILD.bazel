@@ -1,0 +1,25 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "http3",
+    srcs = glob([
+        "**/*.cpp",
+    ]),
+    hdrs = glob([
+        "**/*.h",
+    ]),
+    include_prefix = "http3",
+    copts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-std=c++17", "-pthread"],
+    }),
+    deps = [
+        "//src/common:common",
+        "//src/quic:quic",
+        "//src/upgrade:upgrade",
+        "//third/boringssl:crypto",
+        "//third/boringssl:ssl",
+    ],
+)
+
+

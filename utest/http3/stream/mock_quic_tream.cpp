@@ -33,6 +33,8 @@ int32_t MockQuicStream::Send(uint8_t* data, uint32_t len) {
     auto peer = peer_.lock();
     if (peer && peer->read_cb_) {
         std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(data, len);
+        // Mark the written length so the peer sees correct readable data size
+        buffer->MoveWritePt(len);
         peer->read_cb_(buffer, 0);
     }
     return len;

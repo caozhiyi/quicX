@@ -1,14 +1,12 @@
 #ifndef HTTP3_QPACK_HUFFMAN_TABLE
 #define HTTP3_QPACK_HUFFMAN_TABLE
 
-#include <memory>
 #include <vector>
 #include <string>
 #include <cstdint>
 
 namespace quicx {
 namespace http3 {
-
 
 class HuffmanTable {
 public:
