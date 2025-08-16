@@ -176,7 +176,7 @@ void Master::DoRecv() {
                 // random find a worker to handle packet
                 auto iter = worker_map_.begin();
                 std::advance(iter, rand() % worker_map_.size());
-                auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
+                auto worker = iter->second;
                 worker->HandlePacket(packet_info);
             }
         }
