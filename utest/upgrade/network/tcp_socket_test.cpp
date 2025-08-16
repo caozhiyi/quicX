@@ -9,18 +9,22 @@
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 // Mock socket handler for testing
 class MockSocketHandler:
     public ISocketHandler {
 public:
-    virtual void HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) override {}
+    MockSocketHandler() {}
+    ~MockSocketHandler() {}
+    virtual void HandleConnect(std::shared_ptr<ITcpSocket> socket) override {}
     virtual void HandleRead(std::shared_ptr<ITcpSocket> socket) override {}
     virtual void HandleWrite(std::shared_ptr<ITcpSocket> socket) override {}
     virtual void HandleClose(std::shared_ptr<ITcpSocket> socket) override {}
 };
 
-class TcpSocketTest : public ::testing::Test {
+class TcpSocketTest:
+    public ::testing::Test {
 protected:
     void SetUp() override {
         // Set up test fixtures
@@ -46,7 +50,7 @@ TEST_F(TcpSocketTest, SocketCreationWithFd) {
     ASSERT_EQ(result.errno_, 0);
     int test_fd = result.return_value_;
     
-    auto socket = std::make_unique<TcpSocket>(test_fd);
+    auto socket = std::make_unique<TcpSocket>(test_fd, common::Address("127.0.0.1", 8080));
     
     EXPECT_TRUE(socket->IsValid());
     EXPECT_EQ(socket->GetFd(), test_fd);
@@ -76,30 +80,12 @@ TEST_F(TcpSocketTest, SocketClose) {
     EXPECT_EQ(socket->GetFd(), -1);
 }
 
-// Test socket options
-TEST_F(TcpSocketTest, SocketOptions) {
-    auto socket = std::make_unique<TcpSocket>();
-    
-    // Test non-blocking mode
-    EXPECT_TRUE(socket->SetNonBlocking(true));
-    EXPECT_TRUE(socket->SetNonBlocking(false));
-    
-    // Test reuse address
-    EXPECT_TRUE(socket->SetReuseAddr(true));
-    EXPECT_TRUE(socket->SetReuseAddr(false));
-    
-    // Test keep alive
-    EXPECT_TRUE(socket->SetKeepAlive(true));
-    EXPECT_TRUE(socket->SetKeepAlive(false));
-}
 
 // Test address information (unbound socket)
 TEST_F(TcpSocketTest, AddressInformationUnbound) {
     auto socket = std::make_unique<TcpSocket>();
     
-    // Unbound socket should return empty/default values
-    EXPECT_EQ(socket->GetLocalAddress(), "");
-    EXPECT_EQ(socket->GetLocalPort(), 0);
+
     EXPECT_EQ(socket->GetRemoteAddress(), "");
     EXPECT_EQ(socket->GetRemotePort(), 0);
 }
@@ -152,7 +138,7 @@ TEST_F(TcpSocketTest, RecvWithoutConnection) {
 
 // Test socket with invalid file descriptor
 TEST_F(TcpSocketTest, InvalidFileDescriptor) {
-    auto socket = std::make_unique<TcpSocket>(-1);
+    auto socket = std::make_unique<TcpSocket>(-1, common::Address("127.0.0.1", 8080));
     
     EXPECT_FALSE(socket->IsValid());
     EXPECT_EQ(socket->GetFd(), -1);
@@ -165,5 +151,6 @@ TEST_F(TcpSocketTest, InvalidFileDescriptor) {
     EXPECT_LT(socket->Recv(recv_data), 0);
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

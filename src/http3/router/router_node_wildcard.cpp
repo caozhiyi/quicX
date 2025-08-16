@@ -12,8 +12,7 @@ RouterNodeWildcard::RouterNodeWildcard(const std::string& section,
 
 bool RouterNodeWildcard::Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result) {
     result.handler = handler_;
-
-    // wildcard match only for the last part of the path, so we can return directly 
+    result.is_match = true;
     return true;
 }
 

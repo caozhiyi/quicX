@@ -80,6 +80,8 @@ bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::
     uint8_t type_buf[kTypeBufLength] = {0};
 
     while (buffer->GetDataLength() > 0) {
+        // Defensive: ensure each iteration consumes data to avoid infinite loops
+        uint32_t length_before = buffer->GetDataLength();
         // decode type
         if (buffer->Read(type_buf, kTypeBufLength) != kTypeBufLength) {
             common::LOG_ERROR("wrong buffer size while read frame type. size:%d", buffer->GetDataLength());
@@ -104,6 +106,12 @@ bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::
         }
         common::LOG_DEBUG("decode from from packet. type:%s", FrameType2String(frame->GetType()).c_str());
         frames.push_back(frame);
+
+        // Defensive: validate progress
+        if (buffer->GetDataLength() >= length_before) {
+            common::LOG_ERROR("decode made no progress. frame type:%d, remaining:%u", frame_type, buffer->GetDataLength());
+            return false;
+        }
     }
     return true;
 }

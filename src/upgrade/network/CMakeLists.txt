@@ -1,7 +1,7 @@
 # Event driver sources - platform specific
 if(WIN32)
     set(EVENT_DRIVER_SOURCES
-        windows/iocp_event_driver.cpp
+        windows/select_event_driver.cpp
     )
 elseif(APPLE)
     set(EVENT_DRIVER_SOURCES

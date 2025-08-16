@@ -6,22 +6,12 @@
 namespace quicx {
 namespace upgrade {
 
-BaseSmartHandler::BaseSmartHandler(const UpgradeSettings& settings):
-    settings_(settings) {
+BaseSmartHandler::BaseSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action):
+    settings_(settings), tcp_action_(tcp_action) {
     manager_ = std::make_shared<UpgradeManager>(settings);
 }
 
-void BaseSmartHandler::HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) {
-    // Store TCP action weak pointer
-    tcp_action_ = action;
-    // Ensure dependencies are initialized
-    if (action) {
-        action->Init();
-    }
-    if (auto ev = event_driver_.lock()) {
-        ev->Init();
-    }
-    
+void BaseSmartHandler::HandleConnect(std::shared_ptr<ITcpSocket> socket) {
     // Initialize connection-specific resources
     if (!InitializeConnection(socket)) {
         common::LOG_ERROR("Failed to initialize %s connection", GetType().c_str());
@@ -64,6 +54,8 @@ void BaseSmartHandler::HandleRead(std::shared_ptr<ITcpSocket> socket) {
     std::vector<uint8_t> data;
     int bytes_read = ReadData(socket, data);
     
+    common::LOG_DEBUG("Read %d bytes from %s socket: %d, read data: %s", bytes_read, GetType().c_str(), socket->GetFd(), data.data());
+
     if (bytes_read < 0) {
         common::LOG_ERROR("Failed to read from %s socket: %d", GetType().c_str(), socket->GetFd());
         HandleClose(socket);
@@ -114,33 +106,31 @@ void BaseSmartHandler::HandleWrite(std::shared_ptr<ITcpSocket> socket) {
         TrySendResponse(context);
         return;
     }
-
-    // Let subclass handle writes even if there is no pending response
-    // This also helps tests verify write path is invoked
-    WriteData(socket, std::string());
 }
 
 void BaseSmartHandler::HandleClose(std::shared_ptr<ITcpSocket> socket) {
     auto it = connections_.find(socket);
-    if (it != connections_.end()) {
-        ConnectionContext& context = it->second;
-        
-        // Remove negotiation timeout timer if still active
-        if (context.negotiation_timer_id > 0) {
-            if (auto tcp_action = tcp_action_.lock()) {
-                tcp_action->RemoveTimer(context.negotiation_timer_id);
-                context.negotiation_timer_id = 0;
-                common::LOG_DEBUG("Negotiation timeout timer removed for socket %d", socket->GetFd());
-            }
-        }
-        
-        common::LOG_INFO("%s connection closed, socket: %d", GetType().c_str(), socket->GetFd());
-        
-        // Clean up connection-specific resources
-        CleanupConnection(socket);
-        
-        connections_.erase(it);
+    if (it == connections_.end()) {
+        return;
     }
+        
+    ConnectionContext& context = it->second;
+        
+    // Remove negotiation timeout timer if still active
+    if (context.negotiation_timer_id > 0) {
+        if (auto tcp_action = tcp_action_.lock()) {
+            tcp_action->RemoveTimer(context.negotiation_timer_id);
+            context.negotiation_timer_id = 0;
+            common::LOG_DEBUG("Negotiation timeout timer removed for socket %d", socket->GetFd());
+        }
+    }
+        
+    common::LOG_INFO("%s connection closed, socket: %d", GetType().c_str(), socket->GetFd());
+        
+    // Clean up connection-specific resources
+    CleanupConnection(socket);
+        
+    connections_.erase(it);
 }
 
 void BaseSmartHandler::HandleProtocolDetection(std::shared_ptr<ITcpSocket> socket, const std::vector<uint8_t>& data) {
@@ -184,6 +174,7 @@ void BaseSmartHandler::HandleProtocolDetection(std::shared_ptr<ITcpSocket> socke
     
     if (detected != Protocol::UNKNOWN) {
         OnProtocolDetected(context);
+
     } else {
         // If we have enough data but still can't detect, it might be an unsupported protocol
         if (data.size() >= 1024) { // Wait for at least 1KB of data
@@ -200,7 +191,7 @@ void BaseSmartHandler::OnProtocolDetected(ConnectionContext& context) {
     
     // Execute upgrade negotiation
     manager_->ProcessUpgrade(context);
-    OnUpgradeComplete(context);
+    TrySendResponse(context);
 }
 
 void BaseSmartHandler::OnUpgradeComplete(ConnectionContext& context) {
@@ -237,6 +228,10 @@ void BaseSmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::st
 }
 
 void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
+    if (context.state == ConnectionState::UPGRADED) {
+        return;
+    }
+
     if (context.pending_response.empty() || context.response_sent >= context.pending_response.size()) {
         return; // No pending response or already sent completely
     }
@@ -247,8 +242,20 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
         context.pending_response.end()
     );
     // Route through subclass write path
-    std::string payload(data_to_send.begin(), data_to_send.end());
-    int bytes_sent = WriteData(context.socket, payload);
+    int bytes_sent = WriteData(context.socket, data_to_send);
+
+    if (bytes_sent >= data_to_send.size()) {
+        common::LOG_INFO("Response sent completely (%zu bytes)", context.pending_response.size());
+        
+        context.pending_response.clear();
+        context.response_sent = 0;
+        
+        // Only call OnUpgradeComplete if not in FAILED state
+        if (context.state != ConnectionState::FAILED) {
+            OnUpgradeComplete(context);
+        }
+        return;
+    }
     
     if (bytes_sent > 0) {
         context.response_sent += bytes_sent;
@@ -259,17 +266,23 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
             context.pending_response.clear();
             context.response_sent = 0;
             
+            // Only call OnUpgradeComplete if not in FAILED state
+            if (context.state != ConnectionState::FAILED) {
+                OnUpgradeComplete(context);
+            }
+            
             // Remove WRITE event since we're done
             if (auto event_driver = event_driver_.lock()) {
-                event_driver->ModifyFd(context.socket->GetFd(), EventType::READ);
+                event_driver->ModifyFd(context.socket->GetFd(), EventType::ET_READ);
             }
         } else {
             // Partial send, register WRITE event to continue
             common::LOG_DEBUG("Partial response sent (%d/%zu bytes), registering WRITE event", bytes_sent, context.pending_response.size());
             if (auto event_driver = event_driver_.lock()) {
-                event_driver->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::READ) | static_cast<int>(EventType::WRITE)));
+                event_driver->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::ET_READ) | static_cast<int>(EventType::ET_WRITE)));
             }
         }
+
     } else if (bytes_sent < 0) {
         // Send error
         common::LOG_ERROR("Failed to send response");
@@ -278,13 +291,14 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
         
         // Remove WRITE event on error
         if (auto event_driver = event_driver_.lock()) {
-            event_driver->ModifyFd(context.socket->GetFd(), EventType::READ);
+            event_driver->ModifyFd(context.socket->GetFd(), EventType::ET_READ);
         }
+
     } else {
         // bytes_sent == 0 means would block, register WRITE event to retry
         common::LOG_DEBUG("Send would block, registering WRITE event");
         if (auto event_driver = event_driver_.lock()) {
-            event_driver->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::READ) | static_cast<int>(EventType::WRITE)));
+            event_driver->ModifyFd(context.socket->GetFd(), static_cast<EventType>(static_cast<int>(EventType::ET_READ) | static_cast<int>(EventType::ET_WRITE)));
         }
     }
 }
@@ -311,6 +325,7 @@ void BaseSmartHandler::HandleNegotiationTimeout(std::shared_ptr<ITcpSocket> sock
         // Clean up connection context
         CleanupConnection(socket);
         connections_.erase(it);
+
     } else {
         // Negotiation completed or failed, timer is no longer needed
         common::LOG_DEBUG("Negotiation timeout timer fired but negotiation already completed for socket %d", socket->GetFd());

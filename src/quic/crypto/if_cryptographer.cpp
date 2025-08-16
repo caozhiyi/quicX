@@ -1,5 +1,5 @@
-#include "third/boringssl/include/openssl/ssl.h"
-#include "third/boringssl/include/openssl/tls1.h"
+#include <openssl/ssl.h>
+#include <openssl/tls1.h>
 #include "common/log/log.h"
 #include "quic/crypto/if_cryptographer.h"
 #include "quic/crypto/aes_128_gcm_cryptographer.h"

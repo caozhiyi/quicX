@@ -1,6 +1,8 @@
 #ifndef HTTP3_CONNECTION_TYPE
 #define HTTP3_CONNECTION_TYPE
 
+#include <cstdint>
+
 namespace quicx {
 namespace http3 {
 

@@ -4,6 +4,7 @@
 #ifdef __APPLE__
 
 #include <queue>
+#include <cstdint>
 #include <sys/types.h>
 #include <sys/event.h>
 #include <unordered_map>
@@ -27,7 +28,7 @@ public:
     virtual void Wakeup();
     
 private:
-    int pipe_[2];
+    uint64_t pipe_[2];
     int32_t kqueue_handler_;
     std::unordered_map<uint64_t, struct kevent> kqueue_event_map_;
 

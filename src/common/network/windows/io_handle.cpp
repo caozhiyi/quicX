@@ -1,8 +1,10 @@
 #ifdef _WIN32
-#include <mswsock.h>
+// Windows headers must be included in the correct order
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mswsock.h>
 #include "common/network/io_handle.h"
 
 namespace quicx {
@@ -197,6 +199,63 @@ bool LookupAddress(const std::string& host, Address& addr) {
     addr.SetPort(ntohs(addr_in->sin_port));
 
     freeaddrinfo(res);
+    return true;
+}
+
+bool Pipe(uint64_t& pipe1, uint64_t& pipe2) {
+    // Windows does not have pipe() for sockets, so we use a pair of connected sockets (AF_INET, SOCK_STREAM)
+    SOCKET listen_sock = INVALID_SOCKET, sock1 = INVALID_SOCKET, sock2 = INVALID_SOCKET;
+    struct sockaddr_in addr;
+    int addrlen = sizeof(addr);
+
+    listen_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (listen_sock == INVALID_SOCKET) {
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0; // let system choose port
+
+    if (bind(listen_sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+        closesocket(listen_sock);
+        return false;
+    }
+
+    if (listen(listen_sock, 1) == SOCKET_ERROR) {
+        closesocket(listen_sock);
+        return false;
+    }
+
+    if (getsockname(listen_sock, (struct sockaddr*)&addr, &addrlen) == SOCKET_ERROR) {
+        closesocket(listen_sock);
+        return false;
+    }
+
+    sock1 = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock1 == INVALID_SOCKET) {
+        closesocket(listen_sock);
+        return false;
+    }
+
+    if (connect(sock1, (struct sockaddr*)&addr, addrlen) == SOCKET_ERROR) {
+        closesocket(listen_sock);
+        closesocket(sock1);
+        return false;
+    }
+
+    sock2 = accept(listen_sock, NULL, NULL);
+    if (sock2 == INVALID_SOCKET) {
+        closesocket(listen_sock);
+        closesocket(sock1);
+        return false;
+    }
+
+    closesocket(listen_sock);
+
+    pipe1 = (uint64_t)sock1;
+    pipe2 = (uint64_t)sock2;
     return true;
 }
 

@@ -1,5 +1,5 @@
-#ifndef UPGRADE_HANDLERS_CONNECTION_CONTEXT_H
-#define UPGRADE_HANDLERS_CONNECTION_CONTEXT_H
+#ifndef UPGRADE_HANDLERS_CONNECTION_CONTEXT
+#define UPGRADE_HANDLERS_CONNECTION_CONTEXT
 
 #include <memory>
 #include <vector>
@@ -55,4 +55,4 @@ struct ConnectionContext {
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_HANDLERS_CONNECTION_CONTEXT_H 
+#endif // UPGRADE_HANDLERS_CONNECTION_CONTEXT 

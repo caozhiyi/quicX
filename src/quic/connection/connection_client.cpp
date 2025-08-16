@@ -22,7 +22,7 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx,
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
     std::function<void(ConnectionID&)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
-    BaseConnection(StreamIDGenerator::StreamStarter::kClient, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb) {
+    BaseConnection(StreamIDGenerator::StreamStarter::kClient, false, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb) {
     tls_connection_ = std::make_shared<TLSClientConnection>(ctx, &connection_crypto_);
     if (!tls_connection_->Init()) {
         common::LOG_ERROR("tls connection init failed.");

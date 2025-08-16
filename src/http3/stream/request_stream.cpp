@@ -13,11 +13,12 @@ namespace quicx {
 namespace http3 {
 
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const http_response_handler& response_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
-    ReqRespBaseStream(qpack_encoder, stream, error_handler),
+    ReqRespBaseStream(qpack_encoder, blocked_registry, stream, error_handler),
     response_handler_(response_handler),
     push_promise_handler_(push_promise_handler) {
 

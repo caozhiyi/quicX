@@ -1,12 +1,11 @@
-#include "upgrade/handlers/http_smart_handler.h"
 #include "upgrade/network/if_tcp_socket.h"
-#include "common/log/log.h"
+#include "upgrade/handlers/http_smart_handler.h"
 
 namespace quicx {
 namespace upgrade {
 
-HttpSmartHandler::HttpSmartHandler(const UpgradeSettings& settings) 
-    : BaseSmartHandler(settings) {
+HttpSmartHandler::HttpSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action) 
+    : BaseSmartHandler(settings, tcp_action) {
 }
 
 bool HttpSmartHandler::InitializeConnection(std::shared_ptr<ITcpSocket> socket) {
@@ -18,7 +17,7 @@ int HttpSmartHandler::ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<u
     return socket->Recv(data, 4096); // Read up to 4KB
 }
 
-int HttpSmartHandler::WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) {
+int HttpSmartHandler::WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) {
     return socket->Send(data);
 }
 

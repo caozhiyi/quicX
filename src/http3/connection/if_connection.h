@@ -6,13 +6,10 @@
 #include <unordered_map>
 
 #include "http3/include/type.h"
-#include "http3/connection/type.h"
-#include "common/timer/timer_task.h"
-#include "http3/include/if_client.h"
+#include "http3/stream/if_stream.h"
 #include "http3/qpack/qpack_encoder.h"
+#include "http3/qpack/blocked_registry.h"
 #include "quic/include/if_quic_connection.h"
-#include "http3/stream/control_receiver_stream.h"
-#include "http3/stream/control_client_sender_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -42,7 +39,7 @@ protected:
 protected:
     // indicate the unique id of the connection
     std::string unique_id_;
-
+    std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     std::function<void(const std::string& unique_id, uint32_t error_code)> error_handler_;
     std::unordered_map<uint16_t, uint64_t> settings_;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_;

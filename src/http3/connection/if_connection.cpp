@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "http3/connection/type.h"
 #include "http3/connection/if_connection.h"
 
 namespace quicx {
@@ -15,12 +16,12 @@ IConnection::IConnection(const std::string& unique_id,
         std::placeholders::_1, std::placeholders::_2));
 
     qpack_encoder_ = std::make_shared<QpackEncoder>();
+    blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
 }
 
 IConnection::~IConnection() {
     Close(0);
 }
-
 
 void IConnection::Close(uint32_t error_code) {
     if (quic_connection_) {

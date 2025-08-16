@@ -21,6 +21,12 @@ public:
     // Write QPACK encoder stream type (0x02) and send instruction bytes
     bool SendInstructions(const std::vector<uint8_t>& blob);
 
+    // High-level helpers to send explicit encoder instructions
+    bool SendSetCapacity(uint64_t capacity);
+    bool SendInsertWithNameRef(bool is_static, uint64_t name_index, const std::string& value);
+    bool SendInsertWithoutNameRef(const std::string& name, const std::string& value);
+    bool SendDuplicate(uint64_t index);
+
 private:
     bool EnsureStreamPreamble();
 

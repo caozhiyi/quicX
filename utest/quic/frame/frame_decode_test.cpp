@@ -40,8 +40,8 @@ TEST(frame_decode_utest, codec) {
 
     // ack frame
     ack_frame1.SetAckDelay(104);
-    //ack_frame1.SetFirstAckRange(10012);
-    //ack_frame1.SetLargestAck(19);
+    ack_frame1.SetFirstAckRange(10012);
+    ack_frame1.SetLargestAck(19);
     ack_frame1.AddAckRange(3, 5);
     ack_frame1.AddAckRange(4, 6);
     ack_frame1.AddAckRange(2, 3);

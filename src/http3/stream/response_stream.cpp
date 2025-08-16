@@ -7,17 +7,17 @@
 #include "http3/frame/headers_frame.h"
 #include "http3/stream/pseudo_header.h"
 #include "http3/stream/response_stream.h"
-#include "http3/frame/cancel_push_frame.h"
 #include "http3/frame/push_promise_frame.h"
 
 namespace quicx {
 namespace http3 {
 
 ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::shared_ptr<IRequest>, std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)>& http_handler):
-    ReqRespBaseStream(qpack_encoder, stream, error_handler),
+    ReqRespBaseStream(qpack_encoder, blocked_registry, stream, error_handler),
     http_handler_(http_handler) {
 
 }

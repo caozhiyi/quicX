@@ -4,11 +4,21 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include "http3/include/type.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
 
 namespace quicx {
 namespace http3 {
+
+struct Http3ServerConfig {
+    std::string cert_file_;
+    std::string key_file_;
+    const char* cert_pem_ = nullptr;
+    const char* key_pem_ = nullptr;
+
+    Http3Config config_;
+};
 
 // HTTP3 server interface
 class IServer {
@@ -17,8 +27,7 @@ public:
     virtual ~IServer() {};
 
     // Initialize the server with a certificate and a key
-    virtual bool Init(const std::string& cert_file, const std::string& key_file, uint16_t thread_num = 1, LogLevel level = LogLevel::kNull) = 0;
-    virtual bool Init(const char* cert_pem, const char* key_pem, uint16_t thread_num = 1, LogLevel level = LogLevel::kNull) = 0;
+    virtual bool Init(const Http3ServerConfig& config) = 0;
 
     // Start the server on the given address and port
     // server will block until the server is stopped

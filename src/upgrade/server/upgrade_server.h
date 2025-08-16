@@ -12,7 +12,8 @@ namespace quicx {
 namespace upgrade {
 
 // Main upgrade server implementation
-class UpgradeServer : public IUpgrade {
+class UpgradeServer:
+    public IUpgrade {
 public:
     UpgradeServer();
     virtual ~UpgradeServer() = default;

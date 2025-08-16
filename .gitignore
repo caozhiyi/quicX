@@ -8,8 +8,14 @@ x64
 gtest
 *.log
 quicx_utest
-third
 libquicx.a
 libhttp3.a
 build
+.cache
 .cursorrules
+third
+bazel-*
+MODULE.bazel.lock
+temp
+winbuild
+third.bk

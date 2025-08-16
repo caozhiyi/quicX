@@ -21,11 +21,8 @@ bool QuicServer::Init(const QuicServerConfig& config) {
         InitLogger(config.config_.log_level_);
     }
 
-    if (config.cert_pem != nullptr && config.key_pem != nullptr) {
-        master_->InitAsServer(config.config_, config.cert_pem, config.key_pem, config.alpn_, params_, connection_state_cb_);
-    } else {
-        master_->InitAsServer(config.config_, config.cert_file_, config.key_file_, config.alpn_, params_, connection_state_cb_);
-    }
+    // Use updated IMaster API: pass full QuicServerConfig
+    master_->InitAsServer(config, params_, connection_state_cb_);
     return true;
 }
 

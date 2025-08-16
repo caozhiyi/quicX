@@ -15,24 +15,24 @@ public:
     virtual ~QuicServer();
 
     // thread_num: io thread number
-    virtual bool Init(const QuicServerConfig& config);
+    virtual bool Init(const QuicServerConfig& config) override;
 
     // join io threads
-    virtual void Join();
+    virtual void Join() override;
 
     // distroy quic libary, release all resource
     // all connections will be closed
-    virtual void Destroy();
+    virtual void Destroy() override;
 
     // add a timer
     virtual void AddTimer(uint32_t timeout_ms, std::function<void()> cb) override;
 
     // listen and accept a quic connection
-    virtual bool ListenAndAccept(const std::string& ip, uint16_t port);
+    virtual bool ListenAndAccept(const std::string& ip, uint16_t port) override;
 
     // called when connection state changed, like connected, disconnected, etc
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost
-    virtual void SetConnectionStateCallBack(connection_state_callback cb);
+    virtual void SetConnectionStateCallBack(connection_state_callback cb) override;
 };
 
 }

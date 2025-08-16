@@ -1,9 +1,10 @@
 #ifndef HTTP3_FRAME_HEADERS_FRAME
 #define HTTP3_FRAME_HEADERS_FRAME
 
+#include <vector>
+#include <cstdint>
 #include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
-#include "common/buffer/buffer_span.h"
 
 namespace quicx {
 namespace http3 {

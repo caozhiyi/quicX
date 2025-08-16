@@ -1,5 +1,5 @@
-#ifndef UPGRADE_HANDLERS_BASE_SMART_HANDLER_H
-#define UPGRADE_HANDLERS_BASE_SMART_HANDLER_H
+#ifndef UPGRADE_HANDLERS_BASE_SMART_HANDLER
+#define UPGRADE_HANDLERS_BASE_SMART_HANDLER
 
 #include <memory>
 #include <unordered_map>
@@ -17,11 +17,11 @@ namespace upgrade {
 class BaseSmartHandler:
     public ISmartHandler {
 public:
-    explicit BaseSmartHandler(const UpgradeSettings& settings);
+    explicit BaseSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action);
     virtual ~BaseSmartHandler() = default;
 
     // ISmartHandler interface - common implementations
-    void HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) override;
+    void HandleConnect(std::shared_ptr<ITcpSocket> socket) override;
     void HandleRead(std::shared_ptr<ITcpSocket> socket) override;
     void HandleWrite(std::shared_ptr<ITcpSocket> socket) override;
     void HandleClose(std::shared_ptr<ITcpSocket> socket) override;
@@ -30,9 +30,8 @@ protected:
     // Virtual methods for subclasses to override
     virtual bool InitializeConnection(std::shared_ptr<ITcpSocket> socket) = 0;
     virtual int ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) = 0;
-    virtual int WriteData(std::shared_ptr<ITcpSocket> socket, const std::string& data) = 0;
+    virtual int WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) = 0;
     virtual void CleanupConnection(std::shared_ptr<ITcpSocket> socket) = 0;
-    virtual std::string GetType() const = 0;
 
     // Common helper methods
     void HandleProtocolDetection(std::shared_ptr<ITcpSocket> socket, const std::vector<uint8_t>& data);

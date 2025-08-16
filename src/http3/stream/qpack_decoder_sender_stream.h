@@ -29,7 +29,6 @@ public:
 
 private:
     bool EnsureStreamPreamble();
-    bool SendTypeAndVarint(uint8_t type, uint64_t value);
 
 private:
     bool wrote_type_{false};

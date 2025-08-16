@@ -18,13 +18,13 @@ KqueueEventDriver::KqueueEventDriver() {
 }
 
 KqueueEventDriver::~KqueueEventDriver() {
-    if (wakeup_write_fd_ >= 0) {
-        close(wakeup_write_fd_);
-        wakeup_write_fd_ = -1;
+    if (wakeup_fd_[0] >= 0) {
+        common::Close(wakeup_fd_[0]);
+        wakeup_fd_[0] = 0;
     }
-    if (wakeup_fd_ >= 0) {
-        close(wakeup_fd_);
-        wakeup_fd_ = -1;
+    if (wakeup_fd_[1] > 0) {
+        common::Close(wakeup_fd_[1]);
+        wakeup_fd_[1] = 0;
     }
     if (kqueue_fd_ >= 0) {
         close(kqueue_fd_);
@@ -39,40 +39,44 @@ bool KqueueEventDriver::Init() {
         return false;
     }
     
-    // Create pipe for wakeup
-    int pipe_fds[2];
-    if (pipe2(pipe_fds, O_CLOEXEC | O_NONBLOCK) < 0) {
+    // Create pipe for wakeup (macOS doesn't have pipe2)
+    if (common::Pipe(wakeup_fd_[0], wakeup_fd_[1])) {
         common::LOG_ERROR("Failed to create wakeup pipe: %s", strerror(errno));
         close(kqueue_fd_);
         kqueue_fd_ = -1;
         return false;
     }
-    
-    wakeup_fd_ = pipe_fds[0];  // Read end
-    int write_fd = pipe_fds[1]; // Write end
+    // Set CLOEXEC and NONBLOCK on both ends
+    for (int i = 0; i < 2; ++i) {
+        int flags = fcntl(pipe_fds[i], F_GETFD);
+        if (flags >= 0) {
+            fcntl(pipe_fds[i], F_SETFD, flags | FD_CLOEXEC);
+        }
+        flags = fcntl(pipe_fds[i], F_GETFL);
+        if (flags >= 0) {
+            fcntl(pipe_fds[i], F_SETFL, flags | O_NONBLOCK);
+        }
+    }
     
     // Add read end to kqueue for wakeup events
     struct kevent kev;
-    EV_SET(&kev, wakeup_fd_, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
+    EV_SET(&kev, wakeup_fd_[1], EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
     
     if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
         common::LOG_ERROR("Failed to add wakeup fd to kqueue: %s", strerror(errno));
-        close(write_fd);
-        close(wakeup_fd_);
+        common::Close(wakeup_fd_[1]);
         close(kqueue_fd_);
-        wakeup_fd_ = -1;
+        wakeup_fd_[0] = 0;
+        wakeup_fd_[1] = 0;
         kqueue_fd_ = -1;
         return false;
     }
-    
-    // Store write fd for wakeup calls
-    wakeup_write_fd_ = write_fd;
     
     common::LOG_INFO("Kqueue event driver initialized with wakeup support");
     return true;
 }
 
-bool KqueueEventDriver::AddFd(int fd, EventType events) {
+bool KqueueEventDriver::AddFd(uint64_t fd, EventType events) {
     if (kqueue_fd_ < 0) {
         return false;
     }
@@ -81,26 +85,26 @@ bool KqueueEventDriver::AddFd(int fd, EventType events) {
     uint32_t kqueue_events = ConvertToKqueueEvents(events);
     
     if (kqueue_events & EVFILT_READ) {
-        EV_SET(&kev, fd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
+        EV_SET(&kev, static_cast<int>(fd), EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
-            common::LOG_ERROR("Failed to add read event for fd %d to kqueue: %s", fd, strerror(errno));
+            common::LOG_ERROR("Failed to add read event for fd %lu to kqueue: %s", fd, strerror(errno));
             return false;
         }
     }
     
     if (kqueue_events & EVFILT_WRITE) {
-        EV_SET(&kev, fd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, nullptr);
+        EV_SET(&kev, static_cast<int>(fd), EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
-            common::LOG_ERROR("Failed to add write event for fd %d to kqueue: %s", fd, strerror(errno));
+            common::LOG_ERROR("Failed to add write event for fd %lu to kqueue: %s", fd, strerror(errno));
             return false;
         }
     }
 
-    common::LOG_DEBUG("Added fd %d to kqueue monitoring", fd);
+    common::LOG_DEBUG("Added fd %lu to kqueue monitoring", fd);
     return true;
 }
 
-bool KqueueEventDriver::RemoveFd(int fd) {
+bool KqueueEventDriver::RemoveFd(uint64_t fd) {
     if (kqueue_fd_ < 0) {
         return false;
     }
@@ -108,18 +112,18 @@ bool KqueueEventDriver::RemoveFd(int fd) {
     struct kevent kev;
     
     // Remove read events
-    EV_SET(&kev, fd, EVFILT_READ, EV_DELETE, 0, 0, nullptr);
+    EV_SET(&kev, static_cast<int>(fd), EVFILT_READ, EV_DELETE, 0, 0, nullptr);
     kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr);
     
     // Remove write events
-    EV_SET(&kev, fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
+    EV_SET(&kev, static_cast<int>(fd), EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
     kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr);
 
-    common::LOG_DEBUG("Removed fd %d from kqueue monitoring", fd);
+    common::LOG_DEBUG("Removed fd %lu from kqueue monitoring", fd);
     return true;
 }
 
-bool KqueueEventDriver::ModifyFd(int fd, EventType events) {
+bool KqueueEventDriver::ModifyFd(uint64_t fd, EventType events) {
     // Remove and re-add the fd
     RemoveFd(fd);
     return AddFd(fd, events);
@@ -166,10 +170,8 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
                 continue;  // Skip adding wakeup events to the result
             }
             
-            events.push_back(Event{
-                static_cast<int>(kqueue_events[i].ident),
-                ConvertFromKqueueEvents(kqueue_events[i].filter)
-            });
+            EventType type = ConvertFromKqueueEvent(kqueue_events[i]);
+            events.push_back(Event{ static_cast<int>(kqueue_events[i].ident), type });
         }
     }
 
@@ -179,41 +181,43 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
 uint32_t KqueueEventDriver::ConvertToKqueueEvents(EventType events) const {
     uint32_t kqueue_events = 0;
     
-    if (static_cast<int>(events) & static_cast<int>(EventType::READ)) {
+    if (static_cast<int>(events) & static_cast<int>(EventType::ET_READ)) {
         kqueue_events |= EVFILT_READ;
     }
-    if (static_cast<int>(events) & static_cast<int>(EventType::WRITE)) {
+    if (static_cast<int>(events) & static_cast<int>(EventType::ET_WRITE)) {
         kqueue_events |= EVFILT_WRITE;
     }
 
     return kqueue_events;
 }
 
-EventType KqueueEventDriver::ConvertFromKqueueEvents(uint32_t kqueue_events) const {
-    EventType events = static_cast<EventType>(0);
-    
-    if (kqueue_events & EVFILT_READ) {
-        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::READ));
+EventType KqueueEventDriver::ConvertFromKqueueEvent(const struct kevent& kev) const {
+    // Map kqueue filter and flags to our EventType. Only one type per event.
+    if (kev.filter == EVFILT_READ) {
+        if (kev.flags & EV_EOF) {
+            return EventType::ET_CLOSE;
+        }
+        if (kev.flags & EV_ERROR) {
+            return EventType::ET_ERROR;
+        }
+        return EventType::ET_READ;
     }
-    if (kqueue_events & EVFILT_WRITE) {
-        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::WRITE));
+    if (kev.filter == EVFILT_WRITE) {
+        if (kev.flags & EV_ERROR) {
+            return EventType::ET_ERROR;
+        }
+        return EventType::ET_WRITE;
     }
-    if (kqueue_events & EV_ERROR) {
-        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::ERROR));
-    }
-    if (kqueue_events & EV_EOF) {
-        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::CLOSE));
-    }
-
-    return events;
+    // Fallback
+    return EventType::ET_ERROR;
 }
 
 void KqueueEventDriver::Wakeup() {
-    if (wakeup_write_fd_ >= 0) {
+    if (wakeup_fd_[0] > 0) {
         // Write a byte to wake up the kevent
         char data = 'w';
-        ssize_t written = write(wakeup_write_fd_, &data, 1);
-        if (written < 0) {
+        auto ret = common::Write(wakeup_fd_[0], &data, 1);
+        if (ret.return_value_ < 0) {
             common::LOG_ERROR("Failed to write to wakeup pipe: %s", strerror(errno));
         }
     }

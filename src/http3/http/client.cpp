@@ -1,9 +1,7 @@
 #include "common/log/log.h"
 #include "http3/http/type.h"
 #include "common/http/url.h"
-#include "http3/http/error.h"
 #include "http3/http/client.h"
-#include "http3/http/config.h"
 #include "common/network/address.h"
 #include "common/network/io_handle.h"
 
@@ -26,8 +24,12 @@ Client::~Client() {
     quic_->Join();
 }
 
-bool Client::Init(uint16_t thread_num, LogLevel level) {
-    return quic_->Init(thread_num, quic::LogLevel(level));
+bool Client::Init(const Http3Config& config) {
+    quic::QuicConfig quic_config;
+    quic_config.thread_num_ = config.thread_num_;
+    quic_config.log_level_ = quic::LogLevel(config.log_level_);
+    quic_config.enable_ecn_ = config.enable_ecn_;
+    return quic_->Init(quic_config);
 }
 
 bool Client::DoRequest(const std::string& url, HttpMethod mothed,

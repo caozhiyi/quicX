@@ -1,7 +1,6 @@
 #ifndef QUIC_FRAME_NEW_CONNECTION_ID_FRAME
 #define QUIC_FRAME_NEW_CONNECTION_ID_FRAME
 
-#include <vector>
 #include <cstdint>
 #include "quic/frame/if_frame.h"
 #include "quic/connection/type.h"
@@ -10,7 +9,7 @@
 namespace quicx {
 namespace quic {
 
-static const uint16_t kStatelessResetTokenLength = 128;
+static const uint16_t kStatelessResetTokenLength = 16; // 128-bit = 16 bytes
 
 class NewConnectionIDFrame:
     public IFrame {

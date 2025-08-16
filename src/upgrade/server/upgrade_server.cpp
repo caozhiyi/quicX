@@ -8,6 +8,10 @@
 namespace quicx {
 namespace upgrade {
 
+std::unique_ptr<IUpgrade> IUpgrade::MakeUpgrade() {
+    return std::make_unique<UpgradeServer>();
+}
+
 UpgradeServer::UpgradeServer() {
     // Constructor
 }
@@ -36,7 +40,7 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
     }
     
     // Create appropriate smart handler based on settings
-    auto handler = SmartHandlerFactory::CreateHandler(settings);
+    auto handler = SmartHandlerFactory::CreateHandler(settings, tcp_action_);
     handlers_.push_back(handler);
     
     // Determine which port to use based on HTTPS configuration
@@ -46,11 +50,11 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
     if (tcp_action_->AddListener(settings.listen_addr, port, handler)) {
         common::LOG_INFO("%s listener added on %s:%d", 
                         handler->GetType().c_str(), 
-                        settings.listen_addr, port);
+                        settings.listen_addr.c_str(), port);
     } else {
         common::LOG_ERROR("Failed to add %s listener on %s:%d", 
                          handler->GetType().c_str(), 
-                         settings.listen_addr, port);
+                         settings.listen_addr.c_str(), port);
         return false;
     }
     

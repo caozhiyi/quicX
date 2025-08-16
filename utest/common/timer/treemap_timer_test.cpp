@@ -47,13 +47,13 @@ TEST(treemap_timer_utest, mintime) {
     EXPECT_TRUE(timer->AddTimer(t2, 30 * TimeUnit::kSecond, now));
     EXPECT_TRUE(timer->AddTimer(t3, 40 * TimeUnit::kMinute, now));
 
-    EXPECT_EQ(10 * TimeUnit::kSecond, timer->MinTime());
+    EXPECT_EQ(10 * TimeUnit::kSecond, timer->MinTime(now));
 
     timer->RmTimer(t1);
-    EXPECT_EQ(30 * TimeUnit::kSecond, timer->MinTime());
+    EXPECT_EQ(30 * TimeUnit::kSecond, timer->MinTime(now));
 
     timer->RmTimer(t2);
-    EXPECT_EQ(40 * TimeUnit::kMinute, timer->MinTime());
+    EXPECT_EQ(40 * TimeUnit::kMinute, timer->MinTime(now));
 }
 
 TEST(treemap_timer_utest, timerrun1) {
@@ -65,7 +65,7 @@ TEST(treemap_timer_utest, timerrun1) {
     EXPECT_TRUE(timer->AddTimer(t2, 30 * TimeUnit::kSecond, now));
     EXPECT_TRUE(timer->AddTimer(t3, 40 * TimeUnit::kMinute, now));
 
-    EXPECT_EQ(20, timer->MinTime());
+    EXPECT_EQ(20, timer->MinTime(now));
 
     now += 20;
     timer->TimerRun(now);

@@ -9,16 +9,22 @@
 
 namespace quicx {
 namespace upgrade {
+namespace {
 
 // Mock socket handler for testing
-class MockSocketHandler : public ISocketHandler {
+class MockSocketHandler:
+    public ISocketHandler {
 public:
-    MockSocketHandler() : connect_count_(0), read_count_(0), write_count_(0), close_count_(0) {}
+    MockSocketHandler(ITcpAction* tcp_action):
+        connect_count_(0),
+        read_count_(0),
+        write_count_(0),
+        close_count_(0),
+        tcp_action_(tcp_action) {}
     
-    virtual void HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) override {
+    virtual void HandleConnect(std::shared_ptr<ITcpSocket> socket) override {
         connect_count_++;
         last_socket_ = socket;
-        last_action_ = action;
     }
     
     virtual void HandleRead(std::shared_ptr<ITcpSocket> socket) override {
@@ -42,7 +48,6 @@ public:
     int GetWriteCount() const { return write_count_; }
     int GetCloseCount() const { return close_count_; }
     std::shared_ptr<ITcpSocket> GetLastSocket() const { return last_socket_; }
-    std::shared_ptr<ITcpAction> GetLastAction() const { return last_action_; }
     
 private:
     std::atomic<int> connect_count_;
@@ -50,7 +55,7 @@ private:
     std::atomic<int> write_count_;
     std::atomic<int> close_count_;
     std::shared_ptr<ITcpSocket> last_socket_;
-    std::shared_ptr<ITcpAction> last_action_;
+    ITcpAction* tcp_action_;
 };
 
 class TcpActionTest : public ::testing::Test {
@@ -78,7 +83,7 @@ TEST_F(TcpActionTest, Initialization) {
 TEST_F(TcpActionTest, AddListener) {
     EXPECT_TRUE(action_->Init());
     
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_TRUE(action_->AddListener("127.0.0.1", 8080, handler));
 }
 
@@ -86,8 +91,8 @@ TEST_F(TcpActionTest, AddListener) {
 TEST_F(TcpActionTest, AddMultipleListeners) {
     EXPECT_TRUE(action_->Init());
     
-    auto handler1 = std::make_shared<MockSocketHandler>();
-    auto handler2 = std::make_shared<MockSocketHandler>();
+    auto handler1 = std::make_shared<MockSocketHandler>(action_.get());
+    auto handler2 = std::make_shared<MockSocketHandler>(action_.get());
     
     EXPECT_TRUE(action_->AddListener("127.0.0.1", 8080, handler1));
     EXPECT_TRUE(action_->AddListener("127.0.0.1", 8081, handler2));
@@ -95,7 +100,7 @@ TEST_F(TcpActionTest, AddMultipleListeners) {
 
 // Test adding listener without initialization
 TEST_F(TcpActionTest, AddListenerWithoutInit) {
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_FALSE(action_->AddListener("127.0.0.1", 8080, handler));
 }
 
@@ -103,7 +108,7 @@ TEST_F(TcpActionTest, AddListenerWithoutInit) {
 TEST_F(TcpActionTest, AddListenerInvalidAddress) {
     EXPECT_TRUE(action_->Init());
     
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_FALSE(action_->AddListener("invalid.address", 8080, handler));
 }
 
@@ -111,7 +116,7 @@ TEST_F(TcpActionTest, AddListenerInvalidAddress) {
 TEST_F(TcpActionTest, AddListenerInvalidPort) {
     EXPECT_TRUE(action_->Init());
     
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_FALSE(action_->AddListener("127.0.0.1", 0, handler));
 }
 
@@ -119,7 +124,7 @@ TEST_F(TcpActionTest, AddListenerInvalidPort) {
 TEST_F(TcpActionTest, Stop) {
     EXPECT_TRUE(action_->Init());
     
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_TRUE(action_->AddListener("127.0.0.1", 8080, handler));
     
     action_->Stop();
@@ -130,7 +135,7 @@ TEST_F(TcpActionTest, Stop) {
 TEST_F(TcpActionTest, Join) {
     EXPECT_TRUE(action_->Init());
     
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_TRUE(action_->AddListener("127.0.0.1", 8080, handler));
     
     action_->Stop();
@@ -238,7 +243,7 @@ TEST_F(TcpActionTest, Lifecycle) {
     EXPECT_TRUE(action_->Init());
     
     // Add listener
-    auto handler = std::make_shared<MockSocketHandler>();
+    auto handler = std::make_shared<MockSocketHandler>(action_.get());
     EXPECT_TRUE(action_->AddListener("127.0.0.1", 8080, handler));
     
     // Add timer
@@ -259,5 +264,6 @@ TEST_F(TcpActionTest, Lifecycle) {
     // Should not crash
 }
 
+}
 } // namespace upgrade
 } // namespace quicx 

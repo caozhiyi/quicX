@@ -1,6 +1,8 @@
 #ifndef HTTP3_FRAME_PUSH_PROMISE_FRAME
 #define HTTP3_FRAME_PUSH_PROMISE_FRAME
 
+#include <vector>
+#include <cstdint>
 #include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
 

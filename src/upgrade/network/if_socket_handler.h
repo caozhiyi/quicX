@@ -1,5 +1,5 @@
-#ifndef UPGRADE_NETWORK_IF_SOCKET_HANDLER_H
-#define UPGRADE_NETWORK_IF_SOCKET_HANDLER_H
+#ifndef UPGRADE_NETWORK_IF_SOCKET_HANDLER
+#define UPGRADE_NETWORK_IF_SOCKET_HANDLER
 
 #include <memory>
 #include "upgrade/network/if_tcp_socket.h"
@@ -14,7 +14,7 @@ public:
     virtual ~ISocketHandler() = default;
 
     // Handle new connection
-    virtual void HandleConnect(std::shared_ptr<ITcpSocket> socket, std::shared_ptr<ITcpAction> action) = 0;
+    virtual void HandleConnect(std::shared_ptr<ITcpSocket> socket) = 0;
     
     // Handle data read from socket
     virtual void HandleRead(std::shared_ptr<ITcpSocket> socket) = 0;

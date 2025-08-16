@@ -1,7 +1,7 @@
 #ifndef HTTP3_QPACK_DYNAMIC_TABLE
 #define HTTP3_QPACK_DYNAMIC_TABLE
 
-#include <vector>
+#include <deque>
 #include <utility>
 #include <cstdint>
 #include <unordered_map>
@@ -14,10 +14,7 @@ namespace http3 {
 class DynamicTable {
 public:
     DynamicTable(uint32_t max_size);
-    virtual ~DynamicTable() {}
-
-    // Singleton accessor for shared dynamic table context
-    static DynamicTable& Instance();
+    virtual ~DynamicTable();
 
     // Add a new header item to dynamic table
     // Returns the index of the added item, or -1 if failed
@@ -42,7 +39,7 @@ public:
     // Get maximum allowed size of dynamic table
     uint32_t GetMaxTableSize() const { return max_size_; }
     // Get entry count
-    uint32_t GetEntryCount() const { return static_cast<uint32_t>(headeritem_vec_.size()); }
+    uint32_t GetEntryCount() const { return static_cast<uint32_t>(headeritem_deque_.size()); }
 
     // Update maximum size of dynamic table
     void UpdateMaxTableSize(uint32_t new_size);
@@ -51,7 +48,7 @@ private:
     // Calculate size of a header entry (per RFC 7541 Section 4.1)
     uint32_t CalculateEntrySize(const std::string& name, const std::string& value);
 
-    std::vector<HeaderItem> headeritem_vec_;  // Dynamic table entries
+    std::deque<HeaderItem> headeritem_deque_;  // Dynamic table entries (front=newest, back=oldest)
     // TODO dynamic table support for duplicate entries
     std::unordered_map<std::pair<std::string, std::string>, uint32_t, pair_hash> headeritem_index_map_;
 

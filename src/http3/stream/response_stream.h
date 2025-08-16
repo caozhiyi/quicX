@@ -18,6 +18,7 @@ class ResponseStream:
     public std::enable_shared_from_this<ResponseStream> {
 public:
     ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(std::shared_ptr<IRequest>, std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)>& http_handler);

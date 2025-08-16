@@ -1,7 +1,6 @@
 #ifndef QUIC_QUICX_WORKER
 #define QUIC_QUICX_WORKER
 
-#include <vector>
 #include <memory>
 #include <functional>
 #include <unordered_set>

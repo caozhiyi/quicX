@@ -1,7 +1,6 @@
-#ifndef UPGRADE_CORE_UPGRADE_MANAGER_H
-#define UPGRADE_CORE_UPGRADE_MANAGER_H
+#ifndef UPGRADE_CORE_UPGRADE_MANAGER
+#define UPGRADE_CORE_UPGRADE_MANAGER
 
-#include <memory>
 #include "upgrade/include/type.h"
 #include "upgrade/core/version_negotiator.h"
 #include "upgrade/handlers/connection_context.h"

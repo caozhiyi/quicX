@@ -5,8 +5,8 @@
 namespace quicx {
 namespace upgrade {
 
-UpgradeManager::UpgradeManager(const UpgradeSettings& settings) 
-    : settings_(settings) {
+UpgradeManager::UpgradeManager(const UpgradeSettings& settings):
+    settings_(settings) {
     // Upgrade manager only handles protocol negotiation
 }
 

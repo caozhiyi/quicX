@@ -1,8 +1,9 @@
 #ifdef __linux__
 
-#ifndef UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER_H
-#define UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER_H
+#ifndef UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER
+#define UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER
 
+#include <cstdint>
 #include <unordered_map>
 #include "upgrade/network/if_event_driver.h"
 
@@ -20,13 +21,13 @@ public:
     virtual bool Init() override;
 
     // Add a file descriptor to epoll monitoring
-    virtual bool AddFd(int fd, EventType events) override;
+    virtual bool AddFd(uint64_t fd, EventType events) override;
 
     // Remove a file descriptor from epoll monitoring
-    virtual bool RemoveFd(int fd) override;
+    virtual bool RemoveFd(uint64_t fd) override;
 
     // Modify events for a file descriptor
-    virtual bool ModifyFd(int fd, EventType events) override;
+    virtual bool ModifyFd(uint64_t fd, EventType events) override;
 
     // Wait for events with timeout
     virtual int Wait(std::vector<Event>& events, int timeout_ms = -1) override;
@@ -45,13 +46,12 @@ private:
     EventType ConvertFromEpollEvents(uint32_t epoll_events) const;
 
     int epoll_fd_ = -1;
-    int wakeup_fd_ = -1;  // Pipe read end for wakeup
-    int wakeup_write_fd_ = -1;  // Pipe write end for wakeup
+    uint64_t wakeup_fd_[2] = 0;  // Pipe for wakeup
     int max_events_ = 1024;
 };
 
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER_H 
+#endif // UPGRADE_NETWORK_LINUX_EPOLL_EVENT_DRIVER 
 #endif // __linux__

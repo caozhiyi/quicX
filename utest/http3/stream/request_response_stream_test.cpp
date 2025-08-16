@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 #include "http3/http/request.h"
-#include "http3/http/response.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/request_stream.h"
 #include "http3/stream/response_stream.h"
+#include "http3/qpack/blocked_registry.h"
 #include "utest/http3/stream/mock_quic_stream.h"
+
 
 namespace quicx {
 namespace http3 {
@@ -14,7 +17,8 @@ class MockClientConnection {
 public:
     MockClientConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         std::shared_ptr<quic::IQuicBidirectionStream> stream) {
-        request_stream_ = std::make_shared<RequestStream>(qpack_encoder, stream,
+        blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
+        request_stream_ = std::make_shared<RequestStream>(qpack_encoder, blocked_registry_, stream,
             std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClientConnection::PushPromiseHandler, this, std::placeholders::_1));
@@ -46,13 +50,15 @@ private:
     std::shared_ptr<IResponse> response_;
     std::unordered_map<std::string, std::string> push_promise_;
     std::shared_ptr<RequestStream> request_stream_;
+    std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
 };
 
 class MockServerConnection {
 public:
     MockServerConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         std::shared_ptr<quic::IQuicBidirectionStream> stream) {
-        response_stream_ = std::make_shared<ResponseStream>(qpack_encoder, stream,
+        blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
+        response_stream_ = std::make_shared<ResponseStream>(qpack_encoder, blocked_registry_, stream,
             std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockServerConnection::HttpHandler, this, std::placeholders::_1, std::placeholders::_2));
     }
@@ -76,6 +82,7 @@ public:
 private:
     uint32_t error_code_;
     http_handler http_handler_;
+    std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     std::shared_ptr<ResponseStream> response_stream_;
 };
 
@@ -122,6 +129,9 @@ TEST_F(RequestResponseStreamTest, SendHeaders) {
 
     EXPECT_TRUE(client_connection_->SendRequest(request));
 
+    // Ensure response is produced
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
+
     std::string content_type;
     EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
     EXPECT_EQ(content_type, "text/plain");
@@ -156,7 +166,10 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
 
     EXPECT_TRUE(client_connection_->SendRequest(request));
 
+    // Give the mock a chance to deliver read callbacks synchronously
+    // (no-op here, but placeholder if later made asynchronous)
     std::string content_type;
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
     EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
     EXPECT_EQ(content_type, "text/plain");
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, Client!");

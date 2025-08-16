@@ -1,5 +1,5 @@
-#ifndef UPGRADE_NETWORK_IF_TCP_SOCKET_H
-#define UPGRADE_NETWORK_IF_TCP_SOCKET_H
+#ifndef UPGRADE_NETWORK_IF_TCP_SOCKET
+#define UPGRADE_NETWORK_IF_TCP_SOCKET
 
 #include <string>
 #include <vector>
@@ -38,10 +38,6 @@ public:
     virtual std::string GetRemoteAddress() const = 0;
     virtual uint16_t GetRemotePort() const = 0;
 
-    // Get local address information
-    virtual std::string GetLocalAddress() const = 0;
-    virtual uint16_t GetLocalPort() const = 0;
-
     // Socket handler management
     virtual void SetHandler(std::shared_ptr<ISocketHandler> handler) = 0;
     virtual std::shared_ptr<ISocketHandler> GetHandler() const = 0;
@@ -50,4 +46,4 @@ public:
 } // namespace upgrade
 } // namespace quicx
 
-#endif // UPGRADE_NETWORK_IF_TCP_SOCKET_H 
+#endif // UPGRADE_NETWORK_IF_TCP_SOCKET 

@@ -1,7 +1,6 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_SEND_STREAM
 #define QUIC_INCLUDE_IF_QUIC_SEND_STREAM
 
-#include <string>
 #include "quic/include/if_quic_stream.h"
 
 namespace quicx {

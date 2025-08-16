@@ -17,13 +17,13 @@ EpollEventDriver::EpollEventDriver() {
 }
 
 EpollEventDriver::~EpollEventDriver() {
-    if (wakeup_write_fd_ >= 0) {
-        close(wakeup_write_fd_);
-        wakeup_write_fd_ = -1;
+    if (wakeup_fd_[0] >= 0) {
+        common::Close(wakeup_fd_[0]);
+        wakeup_fd_[0] = 0;
     }
-    if (wakeup_fd_ >= 0) {
-        close(wakeup_fd_);
-        wakeup_fd_ = -1;
+    if (wakeup_fd_[1] > 0) {
+        common::Close(wakeup_fd_[1]);
+        wakeup_fd_[1] = 0;
     }
     if (epoll_fd_ >= 0) {
         close(epoll_fd_);
@@ -39,40 +39,34 @@ bool EpollEventDriver::Init() {
     }
     
     // Create pipe for wakeup
-    int pipe_fds[2];
-    if (pipe2(pipe_fds, O_CLOEXEC | O_NONBLOCK) < 0) {
+    if (!common::Pipe(wakeup_fd_[0], wakeup_fd_[1])) {
         common::LOG_ERROR("Failed to create wakeup pipe: %s", strerror(errno));
         close(epoll_fd_);
         epoll_fd_ = -1;
         return false;
     }
     
-    wakeup_fd_ = pipe_fds[0];  // Read end
-    int write_fd = pipe_fds[1]; // Write end
-    
     // Add read end to epoll for wakeup events
     struct epoll_event ev;
     ev.events = EPOLLIN;
     ev.data.ptr = nullptr;  // Special marker for wakeup
     
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, wakeup_fd_, &ev) < 0) {
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, wakeup_fd_[1], &ev) < 0) {
         common::LOG_ERROR("Failed to add wakeup fd to epoll: %s", strerror(errno));
-        close(write_fd);
-        close(wakeup_fd_);
-        close(epoll_fd_);
-        wakeup_fd_ = -1;
+        common::Close(wakeup_fd_[1]);
+        common::Close(wakeup_fd_[0]);
+        common::Close(epoll_fd_);
+        wakeup_fd_[0] = 0;
+        wakeup_fd_[1] = 0;
         epoll_fd_ = -1;
         return false;
     }
-    
-    // Store write fd for wakeup calls
-    wakeup_write_fd_ = write_fd;
     
     common::LOG_INFO("Epoll event driver initialized with wakeup support");
     return true;
 }
 
-bool EpollEventDriver::AddFd(int fd, EventType events) {
+bool EpollEventDriver::AddFd(uint64_t fd, EventType events) {
     if (epoll_fd_ < 0) {
         return false;
     }
@@ -81,44 +75,44 @@ bool EpollEventDriver::AddFd(int fd, EventType events) {
     ev.events = ConvertToEpollEvents(events);
     ev.data.ptr = nullptr;
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        common::LOG_ERROR("Failed to add fd %d to epoll: %s", fd, strerror(errno));
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, static_cast<int>(fd), &ev) < 0) {
+        common::LOG_ERROR("Failed to add fd %lu to epoll: %s", fd, strerror(errno));
         return false;
     }
 
-    common::LOG_DEBUG("Added fd %d to epoll monitoring", fd);
+    common::LOG_DEBUG("Added fd %lu to epoll monitoring", fd);
     return true;
 }
 
-bool EpollEventDriver::RemoveFd(int fd) {
+bool EpollEventDriver::RemoveFd(uint64_t fd) {
     if (epoll_fd_ < 0) {
         return false;
     }
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr) < 0) {
-        common::LOG_ERROR("Failed to remove fd %d from epoll: %s", fd, strerror(errno));
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, static_cast<int>(fd), nullptr) < 0) {
+        common::LOG_ERROR("Failed to remove fd %lu from epoll: %s", fd, strerror(errno));
         return false;
     }
 
-    common::LOG_DEBUG("Removed fd %d from epoll monitoring", fd);
+    common::LOG_DEBUG("Removed fd %lu from epoll monitoring", fd);
     return true;
 }
 
-bool EpollEventDriver::ModifyFd(int fd, EventType events) {
+bool EpollEventDriver::ModifyFd(uint64_t fd, EventType events) {
     if (epoll_fd_ < 0) {
         return false;
     }
 
     struct epoll_event ev;
     ev.events = ConvertToEpollEvents(events);
-    ev.data.fd = fd;
+    ev.data.fd = static_cast<int>(fd);
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, fd, &ev) < 0) {
-        common::LOG_ERROR("Failed to modify fd %d in epoll: %s", fd, strerror(errno));
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, static_cast<int>(fd), &ev) < 0) {
+        common::LOG_ERROR("Failed to modify fd %lu in epoll: %s", fd, strerror(errno));
         return false;
     }
 
-    common::LOG_DEBUG("Modified fd %d in epoll monitoring", fd);
+    common::LOG_DEBUG("Modified fd %lu in epoll monitoring", fd);
     return true;
 }
 
@@ -147,10 +141,10 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         
         for (int i = 0; i < nfds; ++i) {
             // Check if this is a wakeup event
-            if (epoll_events[i].data.fd == wakeup_fd_) {
+            if (epoll_events[i].data.fd == wakeup_fd_[0]) {
                 // This is a wakeup event, consume the data
                 char buffer[64];
-                while (read(wakeup_fd_, buffer, sizeof(buffer)) > 0) {
+                while (read(wakeup_fd_[0], buffer, sizeof(buffer)) > 0) {
                     // Consume all wakeup data
                 }
                 continue;  // Skip adding wakeup events to the result
@@ -169,16 +163,16 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
 uint32_t EpollEventDriver::ConvertToEpollEvents(EventType events) const {
     uint32_t epoll_events = 0;
     
-    if (static_cast<int>(events) & static_cast<int>(EventType::READ)) {
+    if (static_cast<int>(events) & static_cast<int>(EventType::ET_READ)) {
         epoll_events |= EPOLLIN;
     }
-    if (static_cast<int>(events) & static_cast<int>(EventType::WRITE)) {
+    if (static_cast<int>(events) & static_cast<int>(EventType::ET_WRITE)) {
         epoll_events |= EPOLLOUT;
     }
-    if (static_cast<int>(events) & static_cast<int>(EventType::ERROR)) {
+    if (static_cast<int>(events) & static_cast<int>(EventType::ET_ERROR)) {
         epoll_events |= EPOLLERR;
     }
-    if (static_cast<int>(events) & static_cast<int>(EventType::CLOSE)) {
+    if (static_cast<int>(events) & static_cast<int>(EventType::ET_CLOSE)) {
         epoll_events |= EPOLLHUP;
     }
 
@@ -189,27 +183,27 @@ EventType EpollEventDriver::ConvertFromEpollEvents(uint32_t epoll_events) const 
     EventType events = static_cast<EventType>(0);
     
     if (epoll_events & EPOLLIN) {
-        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::READ));
+        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::ET_READ));
     }
     if (epoll_events & EPOLLOUT) {
-        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::WRITE));
+        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::ET_WRITE));
     }
     if (epoll_events & EPOLLERR) {
-        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::ERROR));
+        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::ET_ERROR));
     }
     if (epoll_events & EPOLLHUP) {
-        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::CLOSE));
+        events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::ET_CLOSE));
     }
 
     return events;
 }
 
 void EpollEventDriver::Wakeup() {
-    if (wakeup_write_fd_ >= 0) {
+    if (wakeup_fd_[0] > 0) {
         // Write a byte to wake up the epoll_wait
         char data = 'w';
-        ssize_t written = write(wakeup_write_fd_, &data, 1);
-        if (written < 0) {
+        auto ret = common::Write(wakeup_fd_[0], &data, 1);
+        if (ret.return_value_ < 0) {
             common::LOG_ERROR("Failed to write to wakeup pipe: %s", strerror(errno));
         }
     }

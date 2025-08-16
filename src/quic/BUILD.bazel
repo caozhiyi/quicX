@@ -1,0 +1,23 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "quic",
+    srcs = glob([
+        "**/*.cpp",
+    ]),
+    hdrs = glob([
+        "**/*.h",
+    ]),
+    include_prefix = "quic",
+    copts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-std=c++17", "-pthread"],
+    }),
+    deps = [
+        "//src/common:common",
+        "//third/boringssl:crypto",
+        "//third/boringssl:ssl",
+    ],
+)
+
+

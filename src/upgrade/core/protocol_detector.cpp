@@ -1,7 +1,8 @@
-#include "upgrade/core/protocol_detector.h"
-#include <algorithm>
-#include <cstring>
+#include <array>
 #include <cctype>
+#include <cstring>
+
+#include "upgrade/core/protocol_detector.h"
 
 namespace quicx {
 namespace upgrade {
@@ -29,10 +30,8 @@ bool ProtocolDetector::IsHTTP1_1(const std::vector<uint8_t>& data) {
         return false;
     }
 
-    // Require end of headers (CRLF [space/tab]* CRLF) to avoid false positives on partial data
-    auto it = data.begin();
-    auto data_end = data.end();
-    auto find_crlf = [&](std::vector<uint8_t>::const_iterator from) {
+    // Find the first CRLF in the data
+    static auto find_crlf = [](std::vector<uint8_t>::const_iterator from, std::vector<uint8_t>::const_iterator data_end) {
         for (auto p = from; p != data_end; ++p) {
             if (*p == '\r' && (p + 1) != data_end && *(p + 1) == '\n') {
                 return p; // points to '\r'
@@ -40,25 +39,43 @@ bool ProtocolDetector::IsHTTP1_1(const std::vector<uint8_t>& data) {
         }
         return data_end;
     };
-    auto first_crlf = find_crlf(it);
-    if (first_crlf == data_end) return false;
+
+    // Require end of headers (CRLF [space/tab]* CRLF) to avoid false positives on partial data
+    auto it = data.begin();
+    auto data_end = data.end();
+    auto first_crlf = find_crlf(it, data_end);
+    // If no CRLF found, return false
+    if (first_crlf == data_end) {
+        return false;
+    }
+
     auto after_first = first_crlf + 2;
     // Skip optional spaces/tabs forming an "empty" header line
     auto p = after_first;
-    while (p != data_end && (*p == ' ' || *p == '\t')) ++p;
-    auto second_crlf = find_crlf(p);
-    if (second_crlf == data_end) return false;
+    while (p != data_end && (*p == ' ' || *p == '\t')) {
+        ++p;
+    }
+
+    // Find the second CRLF in the data
+    auto second_crlf = find_crlf(p, data_end);
+    if (second_crlf == data_end) {
+        return false;
+    }
+
     // Define end iterator as end of headers marker
-    auto it_end = second_crlf; // position of '\r' in the terminating CRLF
+    auto it_end = second_crlf;
 
     // Build a lowercase prefix without leading spaces for robust matching
     size_t scan_len = std::min(static_cast<size_t>(64), static_cast<size_t>(std::distance(data.begin(), it_end)));
     std::string prefix(data.begin(), data.begin() + scan_len);
+
     // Trim leading spaces
     size_t start = 0;
     while (start < prefix.size() && std::isspace(static_cast<unsigned char>(prefix[start]))) {
         start++;
     }
+
+    // Convert to lowercase
     std::string lowered = prefix.substr(start);
     for (size_t i = 0; i < lowered.size(); ++i) {
         lowered[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(lowered[i])));
@@ -72,26 +89,21 @@ bool ProtocolDetector::IsHTTP1_1(const std::vector<uint8_t>& data) {
             // Also require HTTP/1.1 appears on the request line
             size_t crlf = lowered.find("\r\n");
             std::string line = (crlf == std::string::npos) ? lowered : lowered.substr(0, crlf);
-            if (line.find("http/1.1") != std::string::npos) return true;
-            return false;
+            return line.find("http/1.1") != std::string::npos;
         }
     }
 
     // HTTP response line (case-insensitive)
-    if (lowered.rfind("http/", 0) == 0) {
-        return true;
-    }
-    return false;
+    return lowered.rfind("http/", 0) == 0;
 }
 
 bool ProtocolDetector::IsHTTP2(const std::vector<uint8_t>& data) {
-    // Detect HTTP/2 connection preface
+    // Detect HTTP/2 connection preface: "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
     if (data.size() >= 24) {
-        const uint8_t http2_preface[] = {
-            0x50, 0x52, 0x49, 0x20, 0x2a, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2f, 0x32, 0x2e, 0x30, 0x0d, 0x0a,
-            0x0d, 0x0a, 0x53, 0x4d, 0x0d, 0x0a, 0x0d, 0x0a
+        static const std::array<uint8_t, 24> http2_preface = {
+            'P','R','I',' ','*',' ','H','T','T','P','/','2','.','0','\r','\n','\r','\n','S','M','\r','\n','\r','\n'
         };
-        if (std::equal(std::begin(http2_preface), std::end(http2_preface), data.begin())) {
+        if (std::equal(http2_preface.begin(), http2_preface.end(), data.begin())) {
             return true;
         }
     }

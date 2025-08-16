@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "third/boringssl/include/openssl/evp.h"
+#include <openssl/evp.h>
 #include <memory>
 #include <vector>
 #include "quic/crypto/aes_128_gcm_cryptographer.h"

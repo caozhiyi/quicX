@@ -41,7 +41,6 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
 
     auto conn = std::make_shared<ClientConnection>(ctx_,
-        ecn_enabled_,
         time_,
         std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),

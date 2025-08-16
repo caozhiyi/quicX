@@ -14,32 +14,29 @@ public:
     QuicClient(const QuicTransportParams& params);
     virtual ~QuicClient();
     // thread_num: io thread number
-    virtual bool Init(const QuicConfig& config);
+    virtual bool Init(const QuicConfig& config) override;
 
     // join io threads
-    virtual void Join();
+    virtual void Join() override;
 
     // distroy quic libary, release all resource
     // all connections will be closed
-    virtual void Destroy();
+    virtual void Destroy() override;
 
     // add a timer
     virtual void AddTimer(uint32_t timeout_ms, std::function<void()> cb) override;
 
     // connect to a quic server
     virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms);
+        const std::string& alpn, int32_t timeout_ms) override;
 
     // connect to a quic server with a specific resumption session (DER bytes) for this connection
     virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der);
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) override;
 
     // called when connection state changed, like connected, disconnected, etc
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost
-    virtual void SetConnectionStateCallBack(connection_state_callback cb);
-
-private:
-    // remove client-global session cache; session is per-connection, exposed via IQuicConnection now
+    virtual void SetConnectionStateCallBack(connection_state_callback cb) override;
 };
 
 }

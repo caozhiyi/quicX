@@ -1,9 +1,9 @@
-#ifndef UPGRADE_HANDLERS_SMART_HANDLER_FACTORY_H
-#define UPGRADE_HANDLERS_SMART_HANDLER_FACTORY_H
+#ifndef UPGRADE_HANDLERS_SMART_HANDLER_FACTORY
+#define UPGRADE_HANDLERS_SMART_HANDLER_FACTORY
 
 #include <memory>
-#include "upgrade/handlers/if_smart_handler.h"
 #include "upgrade/include/type.h"
+#include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
 namespace upgrade {
@@ -12,13 +12,7 @@ namespace upgrade {
 class SmartHandlerFactory {
 public:
     // Create appropriate smart handler based on settings
-    static std::shared_ptr<ISmartHandler> CreateHandler(const UpgradeSettings& settings);
-private:
-    // Create HTTP handler for plain text connections
-    static std::shared_ptr<ISmartHandler> CreateHttpHandler(const UpgradeSettings& settings);
-    
-    // Create HTTPS handler for SSL/TLS connections
-    static std::shared_ptr<ISmartHandler> CreateHttpsHandler(const UpgradeSettings& settings);
+    static std::shared_ptr<ISmartHandler> CreateHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action);
 };
 
 } // namespace upgrade

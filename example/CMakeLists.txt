@@ -1,2 +1,3 @@
 add_subdirectory(hello_world)
 add_subdirectory(server_push)
+add_subdirectory(upgrade_h3)

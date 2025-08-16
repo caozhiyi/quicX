@@ -27,10 +27,7 @@ public:
     // Initialize as client
     virtual bool InitAsClient(const QuicConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
     // Initialize as server
-    virtual bool InitAsServer(const QuicConfig& config, const std::string& cert_file, const std::string& key_file, const std::string& alpn, 
-        const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
-    virtual bool InitAsServer(const QuicConfig& config, const char* cert_pem, const char* key_pem, const std::string& alpn, 
-        const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
+    virtual bool InitAsServer(const QuicServerConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
     // Destroy
     virtual void Destroy() override;
 

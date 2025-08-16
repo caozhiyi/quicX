@@ -36,9 +36,8 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
 
     // create new connection
     auto new_conn = std::make_shared<ServerConnection>(ctx_,
-        ecn_enabled_,
-        time_,
         server_alpn_,
+        time_,
         std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),

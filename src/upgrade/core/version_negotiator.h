@@ -1,5 +1,5 @@
-#ifndef UPGRADE_CORE_VERSION_NEGOTIATOR_H
-#define UPGRADE_CORE_VERSION_NEGOTIATOR_H
+#ifndef UPGRADE_CORE_VERSION_NEGOTIATOR
+#define UPGRADE_CORE_VERSION_NEGOTIATOR
 
 #include <string>
 #include <vector>
@@ -38,10 +38,10 @@ private:
     static bool SupportsProtocol(const std::vector<std::string>& client_protocols, const std::string& protocol);
     
     // Generate HTTP/1.1 upgrade data
-    static std::vector<uint8_t> GenerateHTTP1UpgradeData();
+    static std::vector<uint8_t> GenerateHTTP1UpgradeData(const UpgradeSettings& settings);
     
     // Generate HTTP/2 upgrade data
-    static std::vector<uint8_t> GenerateHTTP2UpgradeData();
+    static std::vector<uint8_t> GenerateHTTP2UpgradeData(const UpgradeSettings& settings);
 };
 
 } // namespace upgrade

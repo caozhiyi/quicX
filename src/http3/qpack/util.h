@@ -2,9 +2,10 @@
 #define HTTP3_QPACK_UTIL
 
 #include <utility>
-#include <functional>
 #include <string>
 #include <cstdint>
+#include <functional>
+
 #include "common/buffer/if_buffer_read.h"
 #include "common/buffer/if_buffer_write.h"
 

@@ -1,9 +1,11 @@
 #ifndef HTTP3_FRAME_IF_FRAME
 #define HTTP3_FRAME_IF_FRAME
 
+#include <memory>
 #include <cstdint>
 #include "http3/frame/type.h"
-#include "common/buffer/if_buffer.h"
+#include "common/buffer/if_buffer_read.h"
+#include "common/buffer/if_buffer_write.h"
 
 namespace quicx {
 namespace http3 {

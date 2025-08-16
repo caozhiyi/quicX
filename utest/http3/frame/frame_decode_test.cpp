@@ -5,8 +5,6 @@
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/headers_frame.h"
 #include "http3/frame/settings_frame.h"
-#include "http3/frame/max_push_id_frame.h"
-#include "http3/frame/cancel_push_frame.h"
 #include "http3/frame/push_promise_frame.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 

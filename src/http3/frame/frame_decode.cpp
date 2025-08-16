@@ -1,6 +1,5 @@
 #include <functional>
 #include <unordered_map>
-#include "common/util/singleton.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/frame_decode.h"
 #include "http3/frame/goaway_frame.h"

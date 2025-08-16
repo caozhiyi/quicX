@@ -7,9 +7,8 @@ DynamicTable::DynamicTable(uint32_t max_size) : max_size_(max_size), current_siz
 
 }
 
-DynamicTable& DynamicTable::Instance() {
-    static DynamicTable g_table(4096); // default 4KB, adjustable via UpdateMaxTableSize
-    return g_table;
+DynamicTable::~DynamicTable() {
+
 }
 
 bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& value) {
@@ -30,13 +29,14 @@ bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& val
         EvictEntries();
     }
 
-    // Add new entry
-    headeritem_vec_.insert(headeritem_vec_.begin(), HeaderItem(name, value));
+    // Add new entry at front (newest)
+    headeritem_deque_.push_front(HeaderItem(name, value));
     current_size_ += entry_size;
 
     // Update index mapping
-    for (uint32_t i = 0; i < headeritem_vec_.size(); i++) {
-        const HeaderItem& item = headeritem_vec_[i];
+    headeritem_index_map_.clear();
+    for (uint32_t i = 0; i < headeritem_deque_.size(); i++) {
+        const HeaderItem& item = headeritem_deque_[i];
         headeritem_index_map_[{item.name_, item.value_}] = i;
     }
 
@@ -44,8 +44,8 @@ bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& val
 }
 
 HeaderItem* DynamicTable::FindHeaderItem(uint32_t index) {
-    if (index < headeritem_vec_.size()) {
-        return &headeritem_vec_[index];
+    if (index < headeritem_deque_.size()) {
+        return &headeritem_deque_[index];
     }
     return nullptr;
 }
@@ -59,27 +59,27 @@ int32_t DynamicTable::FindHeaderItemIndex(const std::string& name, const std::st
 }
 
 int32_t DynamicTable::FindHeaderNameIndex(const std::string& name) {
-    for (uint32_t i = 0; i < headeritem_vec_.size(); ++i) {
-        if (headeritem_vec_[i].name_ == name) return static_cast<int32_t>(i);
+    for (uint32_t i = 0; i < headeritem_deque_.size(); ++i) {
+        if (headeritem_deque_[i].name_ == name) return static_cast<int32_t>(i);
     }
     return -1;
 }
 
 void DynamicTable::EvictEntries() {
-    if (headeritem_vec_.empty()) {
+    if (headeritem_deque_.empty()) {
         return;
     }
 
     // Remove oldest entry
-    const HeaderItem& item = headeritem_vec_.back();
+    const HeaderItem& item = headeritem_deque_.back();
     current_size_ -= CalculateEntrySize(item.name_, item.value_);
-    headeritem_vec_.pop_back();
+    headeritem_deque_.pop_back();
 
     // Update index mapping
     headeritem_index_map_.clear();
-    for (uint32_t i = 0; i < headeritem_vec_.size(); i++) {
-        const HeaderItem& item = headeritem_vec_[i];
-        headeritem_index_map_[{item.name_, item.value_}] = i;
+    for (uint32_t i = 0; i < headeritem_deque_.size(); i++) {
+        const HeaderItem& item2 = headeritem_deque_[i];
+        headeritem_index_map_[{item2.name_, item2.value_}] = i;
     }
 }
 

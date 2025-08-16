@@ -18,7 +18,6 @@ bool MsgParser::ParsePacket(std::shared_ptr<NetPacket> net_packet, PacketInfo& p
         return false;
     }
     
-
     uint8_t* cid_buf = nullptr;
     uint16_t cid_len = 0;
     auto first_packet_header = packet_info.packets_[0]->GetHeader();

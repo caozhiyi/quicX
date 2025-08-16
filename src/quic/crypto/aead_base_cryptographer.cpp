@@ -1,13 +1,16 @@
 #include <cstring>
 #ifdef _WIN32
+// Windows headers must be included in the correct order
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
 #include <netinet/in.h>
 #endif
-#include "third/boringssl/include/openssl/aead.h"
-#include "third/boringssl/include/openssl/evp.h"
-#include "third/boringssl/include/openssl/crypto.h"
+#include <openssl/aead.h>
+#include <openssl/evp.h>
+#include <openssl/crypto.h>
 #include "common/log/log.h"
 #include "quic/crypto/type.h"
 #include "quic/crypto/hkdf.h"

@@ -6,8 +6,6 @@
 #include <unordered_map>
 
 #include "http3/include/type.h"
-#include "http3/include/if_server.h"
-#include "http3/qpack/qpack_encoder.h"
 #include "quic/include/if_quic_stream.h"
 #include "quic/include/if_quic_server.h"
 #include "http3/stream/response_stream.h"

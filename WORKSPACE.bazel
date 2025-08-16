@@ -1,0 +1,6 @@
+# Empty workspace to allow using in-repo third_party code.
+workspace(name = "quicx")
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+

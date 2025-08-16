@@ -5,7 +5,6 @@
 #include <unordered_map>
 
 #include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/req_resp_base_stream.h"
 #include "quic/include/if_quic_bidirection_stream.h"
@@ -17,6 +16,7 @@ class RequestStream:
     public ReqRespBaseStream {
 public:
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const http_response_handler& response_handler,

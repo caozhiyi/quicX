@@ -1,38 +1,33 @@
-cmake_minimum_required(VERSION 3.10)
-
-collect_sources(${PROJECT_SOURCE_DIR}/utest test_files)
-
+# Top of file
+cmake_minimum_required(VERSION 3.16)
 project(quicx_utest)
 
-# Download and build GTest
-include(FetchContent)
-FetchContent_Declare(
-  googletest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG release-1.11.0
-)
-FetchContent_MakeAvailable(googletest)
+# Enable CTest for this directory
+enable_testing()
 
-# check if googletest is populated
-FetchContent_GetProperties(googletest)
-if(NOT googletest_POPULATED)
-    message(FATAL_ERROR "GoogleTest was not populated correctly")
-endif()
-
-include_directories(
-    ${gtest_SOURCE_DIR}/include
-    ${gmock_SOURCE_DIR}/include
-)
-
-# Add upgrade test subdirectories
-add_subdirectory(upgrade/core)
-add_subdirectory(upgrade/network)
-add_subdirectory(upgrade/handlers)
-
-add_executable(${PROJECT_NAME} ${test_files} test.cpp)
-
-if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE http3 crypto ssl ws2_32 GTest::gtest GTest::gtest_main)
+# Use submodule googletest
+set(GTEST_ROOT ${CMAKE_SOURCE_DIR}/third/googletest)
+if(EXISTS ${GTEST_ROOT}/CMakeLists.txt)
+  add_subdirectory(${GTEST_ROOT} build_gtest EXCLUDE_FROM_ALL)
 else()
-    target_link_libraries(${PROJECT_NAME} PRIVATE http3 crypto ssl pthread GTest::gtest GTest::gtest_main)
+  message(FATAL_ERROR "third/googletest submodule missing. Please init submodules or set GTest_DIR.")
 endif()
+
+# Collect all test sources under utest
+file(GLOB_RECURSE test_files
+    ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
+)
+
+# Single test executable for all unit tests
+add_executable(unit_test ${test_files})
+
+target_include_directories(unit_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}
+)
+
+# Link both gtest and gtest_main libraries
+target_link_libraries(unit_test PRIVATE http3 GTest::gtest GTest::gtest_main)
+
+# Register the test with CTest
+add_test(NAME unit_test COMMAND unit_test)

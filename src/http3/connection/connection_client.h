@@ -5,9 +5,6 @@
 #include <functional>
 #include <unordered_map>
 
-#include "common/timer/timer_task.h"
-#include "http3/include/if_client.h"
-#include "http3/qpack/qpack_encoder.h"
 #include "http3/connection/if_connection.h"
 #include "quic/include/if_quic_connection.h"
 #include "http3/stream/control_receiver_stream.h"
@@ -16,8 +13,8 @@
 namespace quicx {
 namespace http3 {
 
-class ClientConnection
-    :public IConnection {
+class ClientConnection:
+    public IConnection {
 public:
     ClientConnection(const std::string& unique_id,
         const Http3Settings& settings,

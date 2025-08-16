@@ -1,0 +1,52 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "upgrade",
+    srcs = [
+        # core
+        "core/protocol_detector.cpp",
+        "core/version_negotiator.cpp",
+        "core/upgrade_manager.cpp",
+        # handlers
+        "handlers/base_smart_handler.cpp",
+        "handlers/https_smart_handler.cpp",
+        "handlers/smart_handler_factory.cpp",
+        "handlers/http_smart_handler.cpp",
+        # network (platform-specific below)
+        "network/if_event_driver.cpp",
+        "network/tcp_action.cpp",
+        "network/tcp_socket.cpp",
+        # server
+        "server/upgrade_server.cpp",
+        # include api impl
+        "include/if_upgrade.cpp",
+    ] + select({
+        "@platforms//os:macos": [
+            "network/macos/kqueue_event_driver.cpp",
+        ],
+        "@platforms//os:linux": [
+            "network/linux/epoll_event_driver.cpp",
+        ],
+        "@platforms//os:windows": [
+            "network/windows/iocp_event_driver.cpp",
+        ],
+        "//conditions:default": [
+            "network/macos/kqueue_event_driver.cpp",
+        ],
+    }),
+    hdrs = glob([
+        "**/*.h",
+    ]),
+    include_prefix = "upgrade",
+    copts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-std=c++17", "-pthread"],
+    }),
+    deps = [
+        "//src/common:common",
+        "//third/boringssl:crypto",
+        "//third/boringssl:ssl",
+    ],
+)
+
+

@@ -1,5 +1,5 @@
-#ifndef QUICpacket_type_
-#define QUICpacket_type_
+#ifndef QUIC_PACKET_TYPE
+#define QUIC_PACKET_TYPE
 
 #include <cstdint>
 

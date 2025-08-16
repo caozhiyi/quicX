@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "http3/http/error.h"
+#include "common/buffer/buffer.h"
 #include "http3/connection/type.h"
 #include "http3/stream/request_stream.h"
 #include "http3/stream/push_receiver_stream.h"
@@ -8,7 +9,6 @@
 #include "http3/stream/qpack_encoder_sender_stream.h"
 #include "http3/stream/qpack_decoder_receiver_stream.h"
 #include "http3/stream/qpack_decoder_sender_stream.h"
-#include "common/buffer/buffer.h"
 
 namespace quicx {
 namespace http3 {
@@ -36,12 +36,13 @@ ClientConnection::ClientConnection(const std::string& unique_id,
     control_sender_stream_->SendSettings(settings_);
 
     // Wire QPACK instruction sender to QPACK encoder stream
-    auto encoder_sender = std::make_shared<quicx::http3::QpackEncoderSenderStream>(
+    auto encoder_sender = std::make_shared<QpackEncoderSenderStream>(
         std::dynamic_pointer_cast<quic::IQuicSendStream>(qpack_enc_stream),
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
     // create decoder receiver stream to apply inserts
     auto decoder_receiver = std::make_shared<quicx::http3::QpackDecoderReceiverStream>(
         std::dynamic_pointer_cast<quic::IQuicRecvStream>(qpack_dec_stream),
+        blocked_registry_,
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
     streams_[encoder_sender->GetStreamID()] = encoder_sender;
     streams_[decoder_receiver->GetStreamID()] = decoder_receiver;
@@ -75,7 +76,7 @@ ClientConnection::ClientConnection(const std::string& unique_id,
 }
 
 ClientConnection::~ClientConnection() {
-    Close(0);
+
 }
 
 bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler) {
@@ -92,6 +93,7 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_r
     }
 
     std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_,
+        blocked_registry_,
         std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         handler,

@@ -16,15 +16,18 @@ bool RouterNodeStaticPath::Match(const std::string& path, int path_offset, const
         // match done, current node is the last node
         if (type_ == RouterNodeType::RNT_STATIC_PATH) {
             result.handler = handler_;
+            result.is_match = true;
             return true;
         }
         
         result.handler = nullptr;
+        result.is_match = false;
         return false;
     }
     
     std::string section = PathParse(path, path_offset);
     if (section.empty()) {
+        result.is_match = false;
         return false;
     }
 

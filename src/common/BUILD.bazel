@@ -1,0 +1,79 @@
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])  # MIT-style per project LICENSE
+
+cc_library(
+    name = "common",
+    srcs = [
+        # alloter
+        "alloter/normal_alloter.cpp",
+        "alloter/pool_alloter.cpp",
+        "alloter/pool_block.cpp",
+
+        # buffer
+        "buffer/buffer_chains.cpp",
+        "buffer/buffer_decode_wrapper.cpp",
+        "buffer/buffer_encode_wrapper.cpp",
+        "buffer/buffer_read_view.cpp",
+        "buffer/buffer_write_view.cpp",
+        "buffer/buffer.cpp",
+
+        # decode
+        "decode/decode.cpp",
+
+        # http
+        "http/url.cpp",
+
+        # lock
+        "lock/spin_lock.cpp",
+
+        # log
+        "log/base_logger.cpp",
+        "log/file_logger.cpp",
+        "log/log_stream.cpp",
+        "log/log.cpp",
+        "log/stdout_logger.cpp",
+
+        # network (platform-specific impls are selected below)
+        "network/address.cpp",
+
+        # os (platform-specific selected below)
+
+        # timer
+        "timer/timer.cpp",
+        "timer/treemap_timer.cpp",
+
+        # util
+        "util/bitmap.cpp",
+        "util/os_info.cpp",
+        "util/random.cpp",
+        "util/time.cpp",
+    ] + select({
+        "@platforms//os:macos": [
+            "network/mac/io_handle.cpp",
+            "os/posix/convert.cpp",
+        ],
+        "@platforms//os:linux": [
+            "network/linux/io_handle.cpp",
+            "os/posix/convert.cpp",
+        ],
+        "@platforms//os:windows": [
+            "network/windows/io_handle.cpp",
+            "os/win/convert.cpp",
+        ],
+        "//conditions:default": [
+            "network/mac/io_handle.cpp",
+            "os/posix/convert.cpp",
+        ],
+    }),
+    hdrs = glob([
+        "**/*.h",
+    ]),
+    include_prefix = "common",
+    copts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-std=c++17", "-pthread"],
+    }),
+)
+
+
