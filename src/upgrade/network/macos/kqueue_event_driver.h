@@ -44,7 +44,7 @@ private:
     EventType ConvertFromKqueueEvent(const struct kevent& kev) const;
 
     int kqueue_fd_ = -1;
-    uint64_t wakeup_fd_[2] = 0;  // Pipe for wakeup
+    uint64_t wakeup_fd_[2];  // Pipe for wakeup
     int max_events_ = 1024;
 };
 

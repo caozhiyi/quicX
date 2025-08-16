@@ -8,6 +8,7 @@
 #include <sys/types.h>
 
 #include "common/log/log.h"
+#include "common/network/io_handle.h"
 #include "upgrade/network/macos/kqueue_event_driver.h"
 
 namespace quicx {

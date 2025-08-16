@@ -46,7 +46,7 @@ private:
     EventType ConvertFromEpollEvents(uint32_t epoll_events) const;
 
     int epoll_fd_ = -1;
-    uint64_t wakeup_fd_[2] = 0;  // Pipe for wakeup
+    uint64_t wakeup_fd_[2];  // Pipe for wakeup
     int max_events_ = 1024;
 };
 

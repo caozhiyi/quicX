@@ -288,7 +288,8 @@ uint64_t TcpAction::AddTimer(std::function<void()> callback, uint32_t timeout_ms
     uint64_t timer_id = timer_->AddTimer(task, timeout_ms, now);
     
     if (timer_id > 0) {
-        // Store timer task (the timer wheel already has the original task)
+        // Store timer task after it has been modified by the timer wheel
+        // The task now has the correct time_ and id_ values
         timer_tasks_[timer_id] = task;
         common::LOG_DEBUG("Timer added with ID: %lu, timeout: %u ms", timer_id, timeout_ms);
         
