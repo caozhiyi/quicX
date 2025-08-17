@@ -19,15 +19,15 @@ file(GLOB_RECURSE test_files
 )
 
 # Single test executable for all unit tests
-add_executable(unit_test ${test_files})
+add_executable(quicx_utest ${test_files})
 
-target_include_directories(unit_test PRIVATE
+target_include_directories(quicx_utest PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}
 )
 
 # Link both gtest and gtest_main libraries
-target_link_libraries(unit_test PRIVATE http3 GTest::gtest GTest::gtest_main)
+target_link_libraries(quicx_utest PRIVATE http3 GTest::gtest GTest::gtest_main)
 
 # Register the test with CTest
-add_test(NAME unit_test COMMAND unit_test)
+add_test(NAME quicx_utest COMMAND quicx_utest)
