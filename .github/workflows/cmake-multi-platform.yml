@@ -42,9 +42,15 @@ jobs:
 
     - name: Initialize submodules
       run: |
+        echo "Current directory: $(pwd)"
+        echo "Repository contents:"
+        ls -la
+        echo "Initializing submodules..."
         git submodule update --init --recursive
         echo "Submodules status:"
         git submodule status
+        echo "Repository contents after submodule init:"
+        ls -la
 
     - name: Install dependencies (Ubuntu)
       if: runner.os == 'Linux'
@@ -65,13 +71,25 @@ jobs:
 
     - name: Verify submodules
       run: |
-        echo "Checking if third/boringssl exists:"
-        ls -la third/
+        echo "Checking repository structure:"
+        ls -la
+        echo ""
+        echo "Checking if third directory exists:"
+        if [ -d "third" ]; then
+          echo "✓ third directory found"
+          ls -la third/
+        else
+          echo "✗ third directory not found"
+          echo "Submodules may not have been initialized properly"
+          exit 1
+        fi
+        echo ""
         echo "Checking if third/boringssl/CMakeLists.txt exists:"
         if [ -f "third/boringssl/CMakeLists.txt" ]; then
           echo "✓ third/boringssl/CMakeLists.txt found"
         else
           echo "✗ third/boringssl/CMakeLists.txt not found"
+          echo "BoringSSL submodule not properly initialized"
           exit 1
         fi
 
