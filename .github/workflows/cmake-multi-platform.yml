@@ -45,12 +45,16 @@ jobs:
         echo "Current directory: $(pwd)"
         echo "Repository contents:"
         ls -la
+        echo "Git submodule configuration:"
+        cat .gitmodules
         echo "Initializing submodules..."
         git submodule update --init --recursive
         echo "Submodules status:"
         git submodule status
         echo "Repository contents after submodule init:"
         ls -la
+        echo "Third directory contents:"
+        ls -la third/
 
     - name: Install dependencies (Ubuntu)
       if: runner.os == 'Linux'
