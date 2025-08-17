@@ -18,6 +18,11 @@ public:
         queue_.push(element);
     }
 
+    void Emplace(T&& element) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        queue_.emplace(std::move(element));
+    }
+
     bool Pop(T& value) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (queue_.empty()) {

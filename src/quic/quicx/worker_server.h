@@ -1,7 +1,9 @@
 #ifndef QUIC_QUICX_WORKER_SERVER
 #define QUIC_QUICX_WORKER_SERVER
 
+#include <string>
 #include "quic/quicx/worker.h"
+#include "quic/include/if_quic_server.h"
 
 namespace quicx {
 namespace quic {
@@ -10,8 +12,8 @@ namespace quic {
 class ServerWorker:
     public Worker {
 public:
-    ServerWorker(std::shared_ptr<TLSCtx> ctx,
-        bool ecn_enabled,
+    ServerWorker(const QuicServerConfig& config,
+        std::shared_ptr<TLSCtx> ctx,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
     virtual ~ServerWorker();
@@ -19,7 +21,10 @@ public:
     virtual bool InnerHandlePacket(PacketInfo& packet_info) override;
 
 protected:
-    void SendVersionNegotiatePacket(common::Address& addr);
+    void SendVersionNegotiatePacket(const common::Address& addr);
+
+private:
+    std::string server_alpn_;
 };
 
 }

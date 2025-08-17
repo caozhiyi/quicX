@@ -7,6 +7,7 @@
 #include "quic/include/type.h"
 #include "quic/quicx/msg_parser.h"
 #include "quic/crypto/tls/tls_ctx.h"
+#include "quic/include/if_quic_server.h"
 
 namespace quicx {
 namespace quic {
@@ -43,13 +44,12 @@ public:
     // Handle packets
     virtual void HandlePacket(PacketInfo& packet_info) = 0;
 
-    enum WorkerType {
-        kClientWorker,
-        kServerWorker
-    };
     // Make a worker
-    static std::shared_ptr<IWorker> MakeWorker(WorkerType type, 
-        bool ecn_enabled,
+    static std::shared_ptr<IWorker> MakeClientWorker(const QuicConfig& config, 
+        std::shared_ptr<TLSCtx> ctx, 
+        const QuicTransportParams& params,
+        connection_state_callback connection_handler);
+    static std::shared_ptr<IWorker> MakeServerWorker(const QuicServerConfig& config, 
         std::shared_ptr<TLSCtx> ctx, 
         const QuicTransportParams& params,
         connection_state_callback connection_handler);

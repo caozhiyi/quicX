@@ -14,6 +14,7 @@ Master::Master():
     ecn_enabled_(false) {
     timer_ = common::MakeTimer();
     receiver_ = IReceiver::MakeReceiver();
+    packet_allotor_ = IPacketAllotor::MakePacketAllotor(IPacketAllotor::PacketAllotorType::POOL);
 }
 
 Master::~Master() {
@@ -31,7 +32,7 @@ bool Master::InitAsClient(const QuicConfig& config, const QuicTransportParams& p
 
     worker_map_.reserve(config.thread_num_);
     for (size_t i = 0; i < config.thread_num_; i++) {
-        auto worker = IWorker::MakeWorker(IWorker::kClientWorker, ecn_enabled_, tls_ctx, params, connection_state_cb);
+        auto worker = IWorker::MakeClientWorker(config, tls_ctx, params, connection_state_cb);
         worker->Init(shared_from_this());
         worker_map_.emplace(worker->GetCurrentThreadId(), worker);
     }
@@ -64,7 +65,7 @@ bool Master::InitAsServer(const QuicServerConfig& config, const QuicTransportPar
 
     worker_map_.reserve(config.config_.thread_num_);
     for (size_t i = 0; i < config.config_.thread_num_; i++) {
-        auto worker = IWorker::MakeWorker(IWorker::kServerWorker, ecn_enabled_, tls_ctx, params, connection_state_cb);
+        auto worker = IWorker::MakeServerWorker(config, tls_ctx, params, connection_state_cb);
         worker->Init(shared_from_this());
         worker_map_.emplace(worker->GetCurrentThreadId(), worker);
     }
@@ -148,11 +149,7 @@ void Master::Run() {
 }
 
 void Master::DoRecv() {
-    uint8_t recv_buf[kMaxV4PacketSize] = {0};
-    std::shared_ptr<NetPacket> packet = std::make_shared<NetPacket>();
-    auto buffer = std::make_shared<common::Buffer>(recv_buf, sizeof(recv_buf));
-    packet->SetData(buffer);
-
+    std::shared_ptr<NetPacket> packet = packet_allotor_->Malloc();
     receiver_->TryRecv(packet, 10000); // TODO add timeout to config
     
     if (packet->GetData()->GetDataLength() > 0) {
@@ -162,9 +159,6 @@ void Master::DoRecv() {
         }
         PacketInfo packet_info;
         if (MsgParser::ParsePacket(packet, packet_info)) {
-            if (!ecn_enabled_) {
-                packet_info.ecn_ = 0;
-            }
             auto iter = cid_worker_map_.find(packet_info.cid_.Hash());
             if (iter != cid_worker_map_.end()) {
                 auto worker = worker_map_.find(iter->second);

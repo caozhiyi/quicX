@@ -12,19 +12,20 @@ namespace quicx {
 namespace quic {
 
 struct PacketInfo {
-    uint64_t recv_time_;
     ConnectionID cid_;
-    common::Address addr_;
+    std::shared_ptr<NetPacket> net_packet_;
     std::vector<std::shared_ptr<IPacket>> packets_;
-    uint8_t ecn_{0};
-    PacketInfo(): recv_time_(0) {}
+
+    PacketInfo() = default;
+    PacketInfo(const PacketInfo& other);
+    PacketInfo& operator=(const PacketInfo& other);
 };
 
 // Msg parser
 class MsgParser {
 public:
     // Parse packets
-    static bool ParsePacket(std::shared_ptr<NetPacket> net_packet, PacketInfo& packet_info);
+    static bool ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketInfo& packet_info);
 };
 
 }

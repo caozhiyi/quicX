@@ -7,11 +7,11 @@ namespace quicx {
 namespace quic {
 
 // a normal worker
-ClientWorker::ClientWorker(std::shared_ptr<TLSCtx> ctx,
-        bool ecn_enabled,
+ClientWorker::ClientWorker(const QuicConfig& config,
+        std::shared_ptr<TLSCtx> ctx,
         const QuicTransportParams& params,
         connection_state_callback connection_handler):
-    Worker(ctx, ecn_enabled, params, connection_handler) {
+    Worker(config, ctx, params, connection_handler) {
 }
 
 ClientWorker::~ClientWorker() {
@@ -63,15 +63,15 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
 }
 
 bool ClientWorker::InnerHandlePacket(PacketInfo& packet_info) {
-    common::LOG_INFO("get packet. peer addr:%s", packet_info.addr_.AsString().c_str());
+    common::LOG_INFO("get packet. peer addr:%s", packet_info.net_packet_->GetAddress().AsString().c_str());
     
     // dispatch packet
     auto cid_code = packet_info.cid_.Hash();
     common::LOG_DEBUG("get packet. dcid:%llu", cid_code);
     auto conn = conn_map_.find(cid_code);
     if (conn != conn_map_.end()) {
-        conn->second->SetPendingEcn(packet_info.ecn_);
-        conn->second->OnPackets(packet_info.recv_time_, packet_info.packets_);
+        conn->second->SetPendingEcn(packet_info.net_packet_->GetEcn());
+        conn->second->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
         return true;
     }
 

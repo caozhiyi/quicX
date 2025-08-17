@@ -27,14 +27,14 @@ public:
     void AddReceiver(uint64_t socket_fd) override;
     void AddReceiver(const std::string& ip, uint16_t port) override;
 
-    void TryRecv(std::shared_ptr<NetPacket> pkt, uint32_t timeout_ms) override;
+    void TryRecv(std::shared_ptr<NetPacket>& pkt, uint32_t timeout_ms) override;
 
     virtual void Wakeup() override;
 
     virtual void SetEcnEnabled(bool enabled) override { ecn_enabled_ = enabled; }
 
 private:
-    bool TryRecv(std::shared_ptr<NetPacket> pkt);
+    bool TryRecv(std::shared_ptr<NetPacket>& pkt);
 
 private:
     bool ecn_enabled_;

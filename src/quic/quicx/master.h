@@ -5,11 +5,12 @@
 #include <thread>
 #include <unordered_map>
 
-#include "common/timer/if_timer.h"
 #include "quic/udp/if_receiver.h"
 #include "common/thread/thread.h"
 #include "quic/quicx/if_master.h"
 #include "quic/quicx/if_worker.h"
+#include "common/timer/if_timer.h"
+#include "quic/udp/if_packet_allotor.h"
 #include "common/structure/thread_safe_queue.h"
 
 namespace quicx {
@@ -79,6 +80,7 @@ private:
     bool ecn_enabled_;
     std::shared_ptr<common::ITimer> timer_;
     std::shared_ptr<IReceiver> receiver_;
+    std::shared_ptr<IPacketAllotor> packet_allotor_;
     std::unordered_map<uint64_t, std::thread::id> cid_worker_map_;
     std::unordered_map<std::thread::id, std::shared_ptr<IWorker>> worker_map_;
 };

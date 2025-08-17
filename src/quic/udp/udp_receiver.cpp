@@ -74,7 +74,7 @@ void UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
     action_->AddSocket(sock);
 }
 
-void UdpReceiver::TryRecv(std::shared_ptr<NetPacket> pkt, uint32_t timeout_ms) {
+void UdpReceiver::TryRecv(std::shared_ptr<NetPacket>& pkt, uint32_t timeout_ms) {
     // try recv, if there is socket has data
     if (TryRecv(pkt)) {
         return;
@@ -91,7 +91,7 @@ void UdpReceiver::Wakeup() {
     action_->Wakeup();
 }
 
-bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket> pkt) {
+bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket>& pkt) {
     while (!socket_queue_.empty()) {
         uint64_t sock = socket_queue_.front();
         socket_queue_.pop();
