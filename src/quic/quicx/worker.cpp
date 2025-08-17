@@ -7,8 +7,8 @@
 namespace quicx {
 namespace quic {
 
-Worker::Worker(std::shared_ptr<TLSCtx> ctx,
-        bool ecn_enabled,
+Worker::Worker(const QuicConfig& config, 
+        std::shared_ptr<TLSCtx> ctx,
         const QuicTransportParams& params,
         connection_state_callback connection_handler):
     ctx_(ctx),
@@ -16,6 +16,8 @@ Worker::Worker(std::shared_ptr<TLSCtx> ctx,
     connection_handler_(connection_handler) {
     sender_ = ISender::MakeSender();
     time_ = common::MakeTimer();
+
+    ecn_enabled_ = config.enable_ecn_;
 }
 
 Worker::~Worker() {
@@ -47,7 +49,7 @@ std::thread::id Worker::GetCurrentThreadId() {
 }
 
 void Worker::HandlePacket(PacketInfo& packet_info) {
-    packet_queue_.Push(packet_info);
+    packet_queue_.Emplace(std::move(packet_info));
 }
 
 void Worker::Run() {
@@ -111,7 +113,7 @@ void Worker::ProcessRecv() {
 
     PacketInfo packet_info;
     if (packet_queue_.TryPop(packet_info, std::chrono::milliseconds(min_time))) {
-        if (packet_info.recv_time_ > 0 && packet_info.packets_.size() > 0) {  
+        if (packet_info.net_packet_ && packet_info.net_packet_->GetTime() > 0 && !packet_info.packets_.empty()) {
             InnerHandlePacket(packet_info);
         }
     }

@@ -16,7 +16,7 @@ public:
     IReceiver() {}
     virtual ~IReceiver() {}
 
-    virtual void TryRecv(std::shared_ptr<NetPacket> pkt, uint32_t timeout_ms) = 0;
+    virtual void TryRecv(std::shared_ptr<NetPacket>& pkt, uint32_t timeout_ms) = 0;
 
     virtual void Wakeup() = 0;
 

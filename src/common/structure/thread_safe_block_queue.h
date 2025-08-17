@@ -21,6 +21,12 @@ public:
         empty_notify_.notify_all();
     }
 
+    void Emplace(T&& element) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        queue_.emplace(std::move(element));
+        empty_notify_.notify_all();
+    }
+
     T Pop() {
         std::unique_lock<std::mutex> lock(mutex_);
         empty_notify_.wait(lock, [this]() {return !this->queue_.empty(); });

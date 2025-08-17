@@ -7,7 +7,20 @@
 namespace quicx {
 namespace quic {
 
-bool MsgParser::ParsePacket(std::shared_ptr<NetPacket> net_packet, PacketInfo& packet_info) {
+PacketInfo::PacketInfo(const PacketInfo& other) {
+    cid_ = other.cid_;
+    packets_ = other.packets_;
+    net_packet_ = other.net_packet_;
+}
+
+PacketInfo& PacketInfo::operator=(const PacketInfo& other) {
+    cid_ = other.cid_;
+    packets_ = other.packets_;
+    net_packet_ = other.net_packet_;
+    return *this;
+}
+
+bool MsgParser::ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketInfo& packet_info) {
     if(!DecodePackets(net_packet->GetData(), packet_info.packets_)) {
         common::LOG_ERROR("decode packet failed");
         return false;
@@ -33,9 +46,7 @@ bool MsgParser::ParsePacket(std::shared_ptr<NetPacket> net_packet, PacketInfo& p
     }
 
     packet_info.cid_.SetID(cid_buf, cid_len);
-    packet_info.addr_ = net_packet->GetAddress();
-    packet_info.recv_time_ = net_packet->GetTime();
-    packet_info.ecn_ = net_packet->GetEcn();
+    packet_info.net_packet_ = net_packet;
     return true;
 }
 

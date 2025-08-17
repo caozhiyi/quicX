@@ -10,8 +10,8 @@ namespace quic {
 class ClientWorker:
     public Worker {
 public:
-    ClientWorker(std::shared_ptr<TLSCtx> ctx,
-        bool ecn_enabled,
+    ClientWorker(const QuicConfig& config,
+        std::shared_ptr<TLSCtx> ctx,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
     virtual ~ClientWorker();

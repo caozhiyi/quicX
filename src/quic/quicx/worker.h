@@ -20,8 +20,8 @@ class Worker:
     public IWorker,
     public common::ThreadWithQueue<std::function<void()>> {
 public:
-    Worker(std::shared_ptr<TLSCtx> ctx,
-        bool ecn_enabled,
+    Worker(const QuicConfig& config, 
+        std::shared_ptr<TLSCtx> ctx,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
     virtual ~Worker();
@@ -69,7 +69,6 @@ protected:
 
     bool do_send_;
     bool ecn_enabled_;
-    std::string server_alpn_;
     QuicTransportParams params_;
 
     std::shared_ptr<ISender> sender_;

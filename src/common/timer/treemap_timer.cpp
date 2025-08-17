@@ -49,7 +49,6 @@ bool TreeMapTimer::RmTimer(TimerTask& task) {
 
 int32_t TreeMapTimer::MinTime(uint64_t now) {
     if (timer_map_.empty()) {
-        common::LOG_DEBUG("TreeMapTimer: No timers in map");
         return -1;
     }
     
