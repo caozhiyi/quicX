@@ -5,8 +5,8 @@ namespace quicx {
 namespace quic {
 
 
-std::shared_ptr<ISender> ISender::MakeSender() {
-    return std::make_shared<UdpSender>();
+std::shared_ptr<ISender> ISender::MakeSender(int32_t sockfd) {
+    return std::make_shared<UdpSender>(sockfd);
 }
 
 }

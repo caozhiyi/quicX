@@ -15,9 +15,14 @@ IConnection::IConnection(std::shared_ptr<common::ITimer> timer,
         handshake_done_cb_(handshake_done_cb),
         add_conn_id_cb_(add_conn_id_cb),
         retire_conn_id_cb_(retire_conn_id_cb),
-        connection_close_cb_(connection_close_cb) {}
-IConnection::~IConnection() {}
+        connection_close_cb_(connection_close_cb),
+        sockfd_(-1) {
 
+}
+
+IConnection::~IConnection() {
+
+}
 
 void IConnection::GetRemoteAddr(std::string& addr, uint32_t& port) {
     addr = peer_addr_.GetIp();

@@ -9,9 +9,10 @@ namespace quic {
 // a normal worker
 ClientWorker::ClientWorker(const QuicConfig& config,
         std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
         connection_state_callback connection_handler):
-    Worker(config, ctx, params, connection_handler) {
+    Worker(config, ctx, sender, params, connection_handler) {
 }
 
 ClientWorker::~ClientWorker() {
@@ -30,7 +31,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
     connecting_set_.insert(conn);
     
     conn->Dial(common::Address(ip, port), alpn, params_);
-            
+    
     common::TimerTask task([conn, this]() {
         HandleConnectionTimeout(conn);
     });
@@ -80,7 +81,7 @@ bool ClientWorker::InnerHandlePacket(PacketInfo& packet_info) {
         return true;
     }
 
-    common::LOG_ERROR("get a packet with unknown connection id");
+    common::LOG_ERROR("get a packet with unknown connection id. id:%llu", cid_code);
     return false;
 }
 

@@ -7,16 +7,18 @@ namespace quic {
 
 std::shared_ptr<IWorker> IWorker::MakeClientWorker(const QuicConfig& config, 
     std::shared_ptr<TLSCtx> ctx, 
+    std::shared_ptr<ISender> sender,
     const QuicTransportParams& params,
     connection_state_callback connection_handler) {
-    return std::make_shared<ClientWorker>(config, ctx, params, connection_handler);
+    return std::make_shared<ClientWorker>(config, ctx, sender, params, connection_handler);
 }
 
 std::shared_ptr<IWorker> IWorker::MakeServerWorker(const QuicServerConfig& config, 
     std::shared_ptr<TLSCtx> ctx, 
+    std::shared_ptr<ISender> sender,
     const QuicTransportParams& params,
     connection_state_callback connection_handler) {
-    return std::make_shared<ServerWorker>(config, ctx, params, connection_handler);
+    return std::make_shared<ServerWorker>(config, ctx, sender, params, connection_handler);
 }
 
 }

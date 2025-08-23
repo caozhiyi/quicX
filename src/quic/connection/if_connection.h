@@ -65,8 +65,12 @@ public:
     virtual void SetPeerAddress(const common::Address&& addr);
     virtual const common::Address& GetPeerAddress();
 
+    void SetSocket(int32_t sockfd) { sockfd_ = sockfd; }
+    int32_t GetSocket() const { return sockfd_; }
+
 protected:
     void* user_data_;
+    int32_t sockfd_;
     common::Address peer_addr_;
     std::shared_ptr<common::ITimer> timer_;
     // callback

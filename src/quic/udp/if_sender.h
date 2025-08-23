@@ -19,7 +19,7 @@ public:
 
     virtual int32_t GetSocket() const = 0;
 
-    static std::shared_ptr<ISender> MakeSender();
+    static std::shared_ptr<ISender> MakeSender(int32_t sockfd = -1);
 };
 
 }

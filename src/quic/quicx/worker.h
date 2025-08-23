@@ -22,6 +22,7 @@ class Worker:
 public:
     Worker(const QuicConfig& config, 
         std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
     virtual ~Worker();

@@ -5,6 +5,7 @@
 #include <thread>
 
 #include "quic/include/type.h"
+#include "quic/udp/if_sender.h"
 #include "quic/quicx/msg_parser.h"
 #include "quic/crypto/tls/tls_ctx.h"
 #include "quic/include/if_quic_server.h"
@@ -47,10 +48,12 @@ public:
     // Make a worker
     static std::shared_ptr<IWorker> MakeClientWorker(const QuicConfig& config, 
         std::shared_ptr<TLSCtx> ctx, 
+        std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
     static std::shared_ptr<IWorker> MakeServerWorker(const QuicServerConfig& config, 
-        std::shared_ptr<TLSCtx> ctx, 
+        std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
 };
