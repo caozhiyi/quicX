@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "quic/quicx/worker.h"
+#include "quic/udp/if_sender.h"
 #include "common/timer/timer.h"
 #include "quic/common/version.h"
 #include "quic/packet/init_packet.h"
@@ -9,12 +10,13 @@ namespace quic {
 
 Worker::Worker(const QuicConfig& config, 
         std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
         connection_state_callback connection_handler):
     ctx_(ctx),
     params_(params),
+    sender_(sender),
     connection_handler_(connection_handler) {
-    sender_ = ISender::MakeSender();
     time_ = common::MakeTimer();
 
     ecn_enabled_ = config.enable_ecn_;
@@ -86,6 +88,7 @@ void Worker::ProcessSend() {
 
         packet->SetData(buffer);
         packet->SetAddress((*iter)->GetPeerAddress());
+        packet->SetSocket((*iter)->GetSocket()); // client connection will always -1
 
         if (!sender_->Send(packet)) {
             common::LOG_ERROR("udp send failed.");
@@ -151,6 +154,7 @@ bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet) {
 
 void Worker::HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnection> conn) {
     conn_map_[cid.Hash()] = conn;
+    common::LOG_DEBUG("add connection id to client worker. cid:%llu", cid.Hash());
     if (auto notify = connection_id_notify_.lock()) {
         notify->AddConnectionID(cid);
     }

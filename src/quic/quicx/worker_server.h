@@ -3,6 +3,7 @@
 
 #include <string>
 #include "quic/quicx/worker.h"
+#include "quic/udp/if_sender.h"
 #include "quic/include/if_quic_server.h"
 
 namespace quicx {
@@ -14,6 +15,7 @@ class ServerWorker:
 public:
     ServerWorker(const QuicServerConfig& config,
         std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
         connection_state_callback connection_handler);
     virtual ~ServerWorker();

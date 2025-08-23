@@ -5,17 +5,8 @@
 namespace quicx {
 namespace quic {
 
-UdpSender::UdpSender() {
-    auto ret = common::UdpSocket();
-    if (ret.errno_ != 0) {
-        common::LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
-        abort();
-        return;
-    }
-    
-    sock_ = ret.return_value_;
-
-    // marking deferred; controlled by config in master
+UdpSender::UdpSender():
+    sock_(-1) {
 }
 
 UdpSender::UdpSender(int32_t sockfd):
@@ -27,6 +18,10 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
     auto buffer= pkt->GetData();
     auto span = buffer->GetReadSpan();
     auto sock = pkt->GetSocket() > 0 ? pkt->GetSocket() : sock_;
+    if (sock <= 0) {
+        common::LOG_ERROR("send packet to: %s, len: %d, sock: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(), sock);
+        return false;
+    }
     auto ret = common::SendTo(sock, (const char*)span.GetStart(), span.GetLength(), 0, pkt->GetAddress());
     if (ret.errno_ != 0) {
         common::LOG_ERROR("send packet to: %s, len: %d, err: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(), ret.errno_);

@@ -9,13 +9,15 @@ namespace quic {
 
 ServerWorker::ServerWorker(const QuicServerConfig& config,
         std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
         connection_state_callback connection_handler):
-    Worker(config.config_, ctx, params, connection_handler) {
+    Worker(config.config_, ctx, sender, params, connection_handler) {
     server_alpn_ = config.alpn_;
 }
 
 ServerWorker::~ServerWorker() {
+
 }
 
 bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
@@ -23,6 +25,7 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     common::LOG_DEBUG("get packet. dcid:%llu", packet_info.cid_.Hash());
     auto conn = conn_map_.find(packet_info.cid_.Hash());
     if (conn != conn_map_.end()) {
+        conn->second->SetSocket(packet_info.net_packet_->GetSocket());
         conn->second->SetPendingEcn(packet_info.net_packet_->GetEcn());
         conn->second->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
         return true;
@@ -47,6 +50,7 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     new_conn->AddTransportParam(params_);
     connecting_set_.insert(new_conn);
 
+    new_conn->SetSocket(packet_info.net_packet_->GetSocket());
     new_conn->AddRemoteConnectionId(packet_info.cid_);
     new_conn->SetPeerAddress(packet_info.net_packet_->GetAddress());
     new_conn->SetPendingEcn(packet_info.net_packet_->GetEcn());
