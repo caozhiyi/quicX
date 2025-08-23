@@ -40,8 +40,8 @@ public:
         const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) = 0;
 
     // add listener
-    virtual void AddListener(uint64_t listener_sock) = 0;
-    virtual void AddListener(const std::string& ip, uint64_t port) = 0;
+    virtual void AddListener(int32_t listener_sock) = 0;
+    virtual void AddListener(const std::string& ip, uint16_t port) = 0;
 
     // add a new connection id
     virtual void AddConnectionID(ConnectionID& cid) = 0;

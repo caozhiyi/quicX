@@ -10,7 +10,7 @@ namespace quic {
 
 class NetPacket {
 public:
-    NetPacket() {}
+    NetPacket(): sock_(0), time_(0) {}
     virtual ~NetPacket() {}
 
     void SetData(std::shared_ptr<common::IBuffer> buffer) { buffer_ = buffer; }
@@ -19,8 +19,8 @@ public:
     void SetAddress(const common::Address& addr) { addr_ = addr; }
     const common::Address& GetAddress() { return addr_; }
 
-    void SetSocket(uint64_t sock) { sock_ = sock; }
-    const uint64_t GetSocket() { return sock_; }
+    void SetSocket(int32_t sockfd) { sock_ = sockfd; }
+    const int32_t GetSocket() { return sock_; }
 
     void SetTime(uint64_t time) { time_ = time; }
     uint64_t GetTime() { return time_; } 
@@ -29,7 +29,7 @@ public:
     uint8_t GetEcn() const { return ecn_; }
 
 protected:
-    uint64_t sock_; // socket fd
+    int32_t sock_; // socket fd
     uint64_t time_; // packet generate time
     common::Address addr_; // peer address
     std::shared_ptr<common::IBuffer> buffer_;

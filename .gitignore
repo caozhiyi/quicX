@@ -13,18 +13,6 @@ libhttp3.a
 build
 .cache
 .cursorrules
-# Ignore third-party build artifacts but allow submodule directories
-third/lib/
-third/include/
-third/build/
-third/CMakeCache.txt
-third/CMakeFiles/
-third/Makefile
-third/*.cmake
-third/*.a
-third/*.so
-third/*.dll
-third/*.dylib
 bazel-*
 MODULE.bazel.lock
 temp

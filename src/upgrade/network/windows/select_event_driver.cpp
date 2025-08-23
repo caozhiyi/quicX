@@ -49,33 +49,33 @@ bool SelectEventDriver::Init() {
     return true;
 }
 
-bool SelectEventDriver::AddFd(uint64_t fd, EventType events) {
+bool SelectEventDriver::AddFd(int32_t sockfd, EventType events) {
     if (!initialized_) {
         return false;
     }
     
-    monitored_fds_[fd] = events;
-    common::LOG_DEBUG("Added socket %d to select monitoring", fd);
+    monitored_fds_[sockfd] = events;
+    common::LOG_DEBUG("Added socket %d to select monitoring", sockfd);
     return true;
 }
 
-bool SelectEventDriver::RemoveFd(uint64_t fd) {
+bool SelectEventDriver::RemoveFd(int32_t sockfd) {
     if (!initialized_) {
         return false;
     }
     
-    monitored_fds_.erase(fd);
-    common::LOG_DEBUG("Removed socket %d from select monitoring", fd);
+    monitored_fds_.erase(sockfd);
+    common::LOG_DEBUG("Removed socket %d from select monitoring", sockfd);
     return true;
 }
 
-bool SelectEventDriver::ModifyFd(uint64_t fd, EventType events) {
+bool SelectEventDriver::ModifyFd(int32_t sockfd, EventType events) {
     if (!initialized_) {
         return false;
     }
     
-    monitored_fds_[fd] = events;
-    common::LOG_DEBUG("Modified socket %d in select monitoring", fd);
+    monitored_fds_[sockfd] = events;
+    common::LOG_DEBUG("Modified socket %d in select monitoring", sockfd);
     return true;
 }
 
@@ -96,7 +96,7 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     
     // Add all monitored fds to appropriate sets
     for (const auto& pair : monitored_fds_) {
-        uint64_t fd = pair.first;
+        int32_t fd = pair.first;
         EventType events = pair.second;
         
         if (fd > maxfd) {
@@ -137,7 +137,7 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     
     // Process results
     for (const auto& pair : monitored_fds_) {
-        uint64_t fd = pair.first;
+        int32_t fd = pair.first;
         EventType monitored_events = pair.second;
         
         // Skip wakeup pipe events
@@ -168,7 +168,7 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         }
         
         if (has_event) {
-            events.push_back(Event(fd, detected_events));
+            events.push_back(Event{fd, detected_events});
         }
     }
     

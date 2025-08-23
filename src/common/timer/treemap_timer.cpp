@@ -58,6 +58,14 @@ int32_t TreeMapTimer::MinTime(uint64_t now) {
     
     int32_t next_time = (int32_t)(timer_map_.begin()->first - now);
     common::LOG_DEBUG("TreeMapTimer: Next timer in %d ms (map size: %zu)", next_time, timer_map_.size());
+    
+    // If next_time is negative, it means the timer has already expired
+    // Return 0 to indicate immediate execution
+    if (next_time < 0) {
+        common::LOG_DEBUG("Timer has already expired, returning 0");
+        return 0;
+    }
+    
     return next_time;
 }
 
@@ -67,18 +75,29 @@ void TreeMapTimer::TimerRun(uint64_t now) {
     }
     
     int executed_count = 0;
+    std::vector<std::function<void()>> callbacks;
+    
+    // Collect all expired timers
     for (auto iter = timer_map_.begin(); iter != timer_map_.end();) {
         if (iter->first <= now) {
+            // Store the tasks to execute to avoid iterator invalidation
             for (auto task = iter->second.begin(); task != iter->second.end(); task++) {
                 if (task->second.tcb_) {
-                    task->second.tcb_();
-                    executed_count++;
+                    callbacks.push_back(task->second.tcb_);
                 }
             }
+            
+            // Remove the time slot from the map
             iter = timer_map_.erase(iter);
         } else {
             break;
         }
+    }
+
+    // Execute callbacks after removing from map to avoid iterator invalidation
+    for (auto& callback : callbacks) {
+        callback();
+        executed_count++;
     }
     
     if (executed_count > 0) {

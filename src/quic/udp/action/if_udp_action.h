@@ -16,15 +16,15 @@ public:
     virtual ~IUdpAction() {}
 
     // add socket to action
-    virtual bool AddSocket(uint64_t socket) = 0;
+    virtual bool AddSocket(int32_t sockfd) = 0;
 
     // remove socket from action
-    virtual void RemoveSocket(uint64_t socket) = 0;
+    virtual void RemoveSocket(int32_t sockfd) = 0;
 
     // wait for event, return the socket which has event
     // timeout_ms: wait timeout, -1 for infinite
-    // sockets: return the socket which has event
-    virtual void Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) = 0;
+    // sockfds: return the socket which has event
+    virtual void Wait(int32_t timeout_ms, std::queue<int32_t>& sockfds) = 0;
 
     // notify the action to wake up
     virtual void Wakeup() = 0;

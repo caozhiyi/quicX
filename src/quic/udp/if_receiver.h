@@ -20,8 +20,10 @@ public:
 
     virtual void Wakeup() = 0;
 
-    virtual void AddReceiver(uint64_t socket_fd) = 0;
-    virtual void AddReceiver(const std::string& ip, uint16_t port) = 0;
+    virtual void AddReceiver(int32_t socket_fd) = 0;
+
+    // add a receiver, return the socket fd
+    virtual int32_t AddReceiver(const std::string& ip, uint16_t port) = 0;
 
     // Enable or disable ECN features on underlying sockets created/managed by receiver
     virtual void SetEcnEnabled(bool enabled) = 0;

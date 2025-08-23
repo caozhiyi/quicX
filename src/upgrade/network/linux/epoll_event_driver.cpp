@@ -93,53 +93,53 @@ bool EpollEventDriver::Init() {
     return true;
 }
 
-bool EpollEventDriver::AddFd(uint64_t fd, EventType events) {
+bool EpollEventDriver::AddFd(int32_t sockfd, EventType events) {
     if (epoll_fd_ < 0) {
         return false;
     }
 
     struct epoll_event ev;
     ev.events = ConvertToEpollEvents(events);
-    ev.data.fd = static_cast<int>(fd);
+    ev.data.fd = sockfd;
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, static_cast<int>(fd), &ev) < 0) {
-        common::LOG_ERROR("Failed to add fd %lu to epoll: %s", fd, strerror(errno));
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, sockfd, &ev) < 0) {
+        common::LOG_ERROR("Failed to add fd %d to epoll: %s", sockfd, strerror(errno));
         return false;
     }
 
-    common::LOG_DEBUG("Added fd %lu to epoll monitoring", fd);
+    common::LOG_DEBUG("Added fd %d to epoll monitoring", sockfd);
     return true;
 }
 
-bool EpollEventDriver::RemoveFd(uint64_t fd) {
+bool EpollEventDriver::RemoveFd(int32_t sockfd) {
     if (epoll_fd_ < 0) {
         return false;
     }
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, static_cast<int>(fd), nullptr) < 0) {
-        common::LOG_ERROR("Failed to remove fd %lu from epoll: %s", fd, strerror(errno));
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, sockfd, nullptr) < 0) {
+        common::LOG_ERROR("Failed to remove fd %d from epoll: %s", sockfd, strerror(errno));
         return false;
     }
 
-    common::LOG_DEBUG("Removed fd %lu from epoll monitoring", fd);
+    common::LOG_DEBUG("Removed fd %d from epoll monitoring", sockfd);
     return true;
 }
 
-bool EpollEventDriver::ModifyFd(uint64_t fd, EventType events) {
+bool EpollEventDriver::ModifyFd(int32_t sockfd, EventType events) {
     if (epoll_fd_ < 0) {
         return false;
     }
 
     struct epoll_event ev;
     ev.events = ConvertToEpollEvents(events);
-    ev.data.fd = static_cast<int>(fd);
+    ev.data.fd = sockfd;
 
-    if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, static_cast<int>(fd), &ev) < 0) {
-        common::LOG_ERROR("Failed to modify fd %lu in epoll: %s", fd, strerror(errno));
+    if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, sockfd, &ev) < 0) {
+        common::LOG_ERROR("Failed to modify fd %d in epoll: %s", sockfd, strerror(errno));
         return false;
     }
 
-    common::LOG_DEBUG("Modified fd %lu in epoll monitoring", fd);
+    common::LOG_DEBUG("Modified fd %d in epoll monitoring", sockfd);
     return true;
 }
 
@@ -187,7 +187,7 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             }
             
             events.push_back(Event{
-                static_cast<uint64_t>(epoll_events[i].data.fd),
+                epoll_events[i].data.fd,
                 ConvertFromEpollEvents(epoll_events[i].events)
             });
         }

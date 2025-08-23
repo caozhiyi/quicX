@@ -26,7 +26,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
         std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-            
+
     connecting_set_.insert(conn);
     
     conn->Dial(common::Address(ip, port), alpn, params_);

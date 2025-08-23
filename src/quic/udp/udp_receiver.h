@@ -23,13 +23,13 @@ public:
     // create a receiver with socket, may be used as a client
     UdpReceiver();
     ~UdpReceiver();
-
-    void AddReceiver(uint64_t socket_fd) override;
-    void AddReceiver(const std::string& ip, uint16_t port) override;
-
-    void TryRecv(std::shared_ptr<NetPacket>& pkt, uint32_t timeout_ms) override;
+    
+    virtual void TryRecv(std::shared_ptr<NetPacket>& pkt, uint32_t timeout_ms) override;
 
     virtual void Wakeup() override;
+
+    virtual void AddReceiver(int32_t socket_fd) override;
+    virtual int32_t AddReceiver(const std::string& ip, uint16_t port) override;
 
     virtual void SetEcnEnabled(bool enabled) override { ecn_enabled_ = enabled; }
 
@@ -38,7 +38,7 @@ private:
 
 private:
     bool ecn_enabled_;
-    std::queue<uint64_t> socket_queue_;
+    std::queue<int32_t> socket_queue_;
     std::shared_ptr<IUdpAction> action_;
 };
 

@@ -14,10 +14,6 @@
 #include "common/log/log.h"
 #include "quic/crypto/type.h"
 #include "quic/crypto/hkdf.h"
-#include "common/decode/decode.h"
-#include "common/buffer/if_buffer.h"
-#include "quic/packet/packet_number.h"
-#include "common/buffer/buffer_read_view.h"
 #include "quic/crypto/aead_base_cryptographer.h"
 
 namespace quicx {

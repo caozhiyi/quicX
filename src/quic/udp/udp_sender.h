@@ -12,15 +12,15 @@ class UdpSender:
     public ISender {
 public:
     UdpSender();
-    UdpSender(uint64_t sock);
+    UdpSender(int32_t sockfd);
     ~UdpSender() {}
 
     bool Send(std::shared_ptr<NetPacket>& pkt);
 
-    uint64_t GetSocket() const { return sock_; }
+    int32_t GetSocket() const { return sock_; }
 
 private:
-    uint64_t sock_;
+    int32_t sock_;
 };
 
 }

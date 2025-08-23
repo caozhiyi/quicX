@@ -73,16 +73,16 @@ public:
         return true;
     }
     
-    virtual bool AddFd(uint64_t fd, EventType events) override {
+    virtual bool AddFd(int32_t sockfd, EventType events) override {
         return true;
     }
     
-    virtual bool RemoveFd(uint64_t fd) override {
+    virtual bool RemoveFd(int32_t sockfd) override {
         return true;
     }
     
-    virtual bool ModifyFd(uint64_t fd, EventType events) override {
-        modify_calls_.push_back({fd, events});
+    virtual bool ModifyFd(int32_t sockfd, EventType events) override {
+        modify_calls_.push_back({sockfd, events});
         return true;
     }
     

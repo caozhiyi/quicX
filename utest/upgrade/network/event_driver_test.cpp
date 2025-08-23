@@ -1,9 +1,6 @@
 #include <gtest/gtest.h>
-#include <memory>
 #include <thread>
-#include <chrono>
 #include <atomic>
-#include <vector>
 #include "common/network/io_handle.h"
 #include "upgrade/network/if_event_driver.h"
 
@@ -41,7 +38,7 @@ TEST_F(EventDriverTest, AddFd) {
     EXPECT_TRUE(driver_->Init());
     
     // Create a pipe for testing
-    uint64_t pipe_fds[2];
+    int32_t pipe_fds[2];
     ASSERT_TRUE(common::Pipe(pipe_fds[0], pipe_fds[1]));
     
     EXPECT_TRUE(driver_->AddFd(pipe_fds[0], EventType::ET_READ));
@@ -56,7 +53,7 @@ TEST_F(EventDriverTest, RemoveFd) {
     EXPECT_TRUE(driver_->Init());
     
     // Create a pipe for testing
-    uint64_t pipe_fds[2];
+    int32_t pipe_fds[2];
     ASSERT_TRUE(common::Pipe(pipe_fds[0], pipe_fds[1]));
     
     EXPECT_TRUE(driver_->AddFd(pipe_fds[0], EventType::ET_READ));

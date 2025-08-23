@@ -21,13 +21,13 @@ public:
     virtual bool Init() override;
 
     // Add a file descriptor to epoll monitoring
-    virtual bool AddFd(uint64_t fd, EventType events) override;
+    virtual bool AddFd(int32_t sockfd, EventType events) override;
 
     // Remove a file descriptor from epoll monitoring
-    virtual bool RemoveFd(uint64_t fd) override;
+    virtual bool RemoveFd(int32_t sockfd) override;
 
     // Modify events for a file descriptor
-    virtual bool ModifyFd(uint64_t fd, EventType events) override;
+    virtual bool ModifyFd(int32_t sockfd, EventType events) override;
 
     // Wait for events with timeout
     virtual int Wait(std::vector<Event>& events, int timeout_ms = -1) override;
@@ -46,7 +46,7 @@ private:
     EventType ConvertFromEpollEvents(uint32_t epoll_events) const;
 
     int epoll_fd_ = -1;
-    uint64_t wakeup_fd_[2];  // Pipe for wakeup
+    int32_t wakeup_fd_[2];  // Pipe for wakeup
     int max_events_ = 1024;
 };
 
