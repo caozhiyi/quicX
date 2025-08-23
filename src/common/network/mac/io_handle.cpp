@@ -16,22 +16,22 @@
 namespace quicx {
 namespace common {
 
-SysCallInt64Result TcpSocket() {
-    int64_t sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+SysCallInt32Result TcpSocket() {
+    int32_t sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     return {sock, sock != -1 ? 0 : errno};
 }
 
-SysCallInt64Result UdpSocket() {
-    int64_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+SysCallInt32Result UdpSocket() {
+    int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     return {sock, sock != -1 ? 0 : errno};
 }
 
-SysCallInt32Result Close(int64_t sockfd) {
+SysCallInt32Result Close(int32_t sockfd) {
     const int32_t rc = close(sockfd);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result Bind(int64_t sockfd, Address& addr) {
+SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
     struct sockaddr_in addr_in;
     addr_in.sin_family = AF_INET;
     addr_in.sin_port = htons(addr.GetPort());
@@ -41,7 +41,7 @@ SysCallInt32Result Bind(int64_t sockfd, Address& addr) {
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt64Result Accept(int64_t sockfd, Address& addr) {
+SysCallInt32Result Accept(int32_t sockfd, Address& addr) {
     struct sockaddr_in addr_cli;
     socklen_t fromlen = sizeof(sockaddr);
 
@@ -58,21 +58,21 @@ SysCallInt64Result Accept(int64_t sockfd, Address& addr) {
     return {rc, 0};
 }
 
-SysCallInt32Result Listen(int64_t sockfd, int32_t backlog) {
+SysCallInt32Result Listen(int32_t sockfd, int32_t backlog) {
     const int32_t rc = listen(sockfd, backlog);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result Write(int64_t sockfd, const char *data, uint32_t len) {
+SysCallInt32Result Write(int32_t sockfd, const char *data, uint32_t len) {
     const int32_t rc = write(sockfd, data, len);
     return {rc, rc != -1 ? 0 : errno};
 }
-SysCallInt32Result Writev(int64_t sockfd, Iovec *vec, uint32_t vec_len) {
+SysCallInt32Result Writev(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
     const int32_t rc = writev(sockfd, (iovec*)vec, vec_len);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
+SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
     struct sockaddr_in addr_cli;
     addr_cli.sin_family = AF_INET;
     addr_cli.sin_port = htons(addr.GetPort());
@@ -82,26 +82,26 @@ SysCallInt32Result SendTo(int64_t sockfd, const char *msg, uint32_t len, uint16_
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SendMsg(int64_t sockfd, const Msghdr* msg, int16_t flag) {
+SysCallInt32Result SendMsg(int32_t sockfd, const Msghdr* msg, int16_t flag) {
     const int32_t rc = sendmsg(sockfd, (msghdr*)msg, flag);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SendmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag) {
+SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag) {
     return {0, 0};
 }
 
-SysCallInt32Result Recv(int64_t sockfd, char *data, uint32_t len, uint16_t flag) {
+SysCallInt32Result Recv(int32_t sockfd, char *data, uint32_t len, uint16_t flag) {
     const int32_t rc = recv(sockfd, data, len, flag);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result Readv(int64_t sockfd, Iovec *vec, uint32_t vec_len) {
+SysCallInt32Result Readv(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
     const int32_t rc = readv(sockfd, (iovec*)vec, vec_len);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result RecvFrom(int64_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr) {
+SysCallInt32Result RecvFrom(int32_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr) {
     struct sockaddr_in addr_cli;
     socklen_t fromlen = sizeof(sockaddr);
 
@@ -115,12 +115,12 @@ SysCallInt32Result RecvFrom(int64_t sockfd, char *buf, uint32_t len, uint16_t fl
     return {rc, 0};
 }
 
-SysCallInt32Result RecvMsg(int64_t sockfd, Msghdr* msg, int16_t flag) {
+SysCallInt32Result RecvMsg(int32_t sockfd, Msghdr* msg, int16_t flag) {
     const int32_t rc = recvmsg(sockfd, (msghdr*)msg, flag);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out) {
+SysCallInt32Result RecvmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out) {
     int32_t total_rc = 0;
     for (uint32_t i = 0; i < vlen; ++i) {
         int32_t rc = recvmsg(sockfd, (msghdr*)&msgvec[i].msg_hdr_, flag);
@@ -133,15 +133,15 @@ SysCallInt32Result RecvmMsg(int64_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
     return {total_rc, 0};
 }
 
-SysCallInt32Result SetSockOpt(int64_t sockfd, int level, int optname, const void *optval, uint32_t optlen) {
+SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void *optval, uint32_t optlen) {
     const int32_t rc = setsockopt(sockfd, level, optname, optval, optlen);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SocketNoblocking(uint64_t sock) {
-    int32_t old_option = fcntl(sock, F_GETFL);
+SysCallInt32Result SocketNoblocking(int32_t sockfd) {
+    int32_t old_option = fcntl(sockfd, F_GETFL);
     int32_t new_option = old_option | O_NONBLOCK;
-    const int32_t rc = fcntl(sock, F_SETFL, new_option);
+    const int32_t rc = fcntl(sockfd, F_SETFL, new_option);
     return {rc, rc != -1 ? 0 : errno};
 }
 
@@ -185,17 +185,17 @@ bool LookupAddress(const std::string& host, Address& addr) {
     return false;
 }
 
-bool Pipe(uint64_t& pipe1, uint64_t& pipe2) {
+bool Pipe(int32_t& pipe1, int32_t& pipe2) {
     int sv[2];
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1) {
         return false;
     }
-    pipe1 = static_cast<uint64_t>(sv[0]);
-    pipe2 = static_cast<uint64_t>(sv[1]);
+    pipe1 = sv[0];
+    pipe2 = sv[1];
     return true;
 }
 
-SysCallInt32Result EnableUdpEcn(int64_t sockfd) {
+SysCallInt32Result EnableUdpEcn(int32_t sockfd) {
     int on = 1;
     int rc1 = setsockopt(sockfd, IPPROTO_IP, IP_RECVTOS, &on, sizeof(on));
 #ifdef IPV6_RECVTCLASS
@@ -207,7 +207,7 @@ SysCallInt32Result EnableUdpEcn(int64_t sockfd) {
     return {ok, ok != -1 ? 0 : errno};
 }
 
-SysCallInt32Result RecvFromWithEcn(int64_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
+SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
     struct sockaddr_storage addr_ss; memset(&addr_ss, 0, sizeof(addr_ss));
     struct iovec iov; iov.iov_base = (void*)buf; iov.iov_len = len;
     char cbuf[128]; memset(cbuf, 0, sizeof(cbuf));
@@ -252,7 +252,7 @@ SysCallInt32Result RecvFromWithEcn(int64_t sockfd, char *buf, uint32_t len, uint
     return {rc, 0};
 }
 
-SysCallInt32Result EnableUdpEcnMarking(int64_t sockfd, uint8_t ecn_codepoint) {
+SysCallInt32Result EnableUdpEcnMarking(int32_t sockfd, uint8_t ecn_codepoint) {
     int tos = static_cast<int>(ecn_codepoint & 0x03);
     int rc1 = setsockopt(sockfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
 #ifdef IPV6_TCLASS

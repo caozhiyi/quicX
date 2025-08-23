@@ -1,7 +1,6 @@
 #ifdef __APPLE__
 
 #include <cstdio>
-#include <thread>
 #include <cstring>
 #include <unistd.h>
 #include "common/log/log.h"
@@ -43,27 +42,27 @@ UdpAction::~UdpAction() {
     close(pipe_[1]);
 }
 
-bool UdpAction::AddSocket(uint64_t socket) {
+bool UdpAction::AddSocket(int32_t sockfd) {
     struct kevent event;
-    EV_SET(&event, socket, EVFILT_READ, EV_ADD, 0, 0, NULL);
+    EV_SET(&event, sockfd, EVFILT_READ, EV_ADD, 0, 0, NULL);
     if (kevent(kqueue_handler_, &event, 1, NULL, 0, NULL) == -1) {
         return false;
     }
-    kqueue_event_map_[socket] = event;
+    kqueue_event_map_[sockfd] = event;
     return true;
 }
 
-void UdpAction::RemoveSocket(uint64_t socket) {
-    auto it = kqueue_event_map_.find(socket);
+void UdpAction::RemoveSocket(int32_t sockfd) {
+    auto it = kqueue_event_map_.find(sockfd);
     if (it != kqueue_event_map_.end()) {
         struct kevent event;
-        EV_SET(&event, socket, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+        EV_SET(&event, sockfd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
         kevent(kqueue_handler_, &event, 1, NULL, 0, NULL);
         kqueue_event_map_.erase(it);
     }
 }
 
-void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
+void UdpAction::Wait(int32_t timeout_ms, std::queue<int32_t>& sockfds) {
     struct timespec timeout;
     timeout.tv_sec = timeout_ms / 1000;
     timeout.tv_nsec = (timeout_ms % 1000) * 1000000;
@@ -74,12 +73,12 @@ void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
     }
 
     for (int i = 0; i < num_events; i++) {
-        if (active_list_[i].ident == (uintptr_t)pipe_[0]) {
+        if (active_list_[i].ident == (int32_t)pipe_[0]) {
             char buf[1024];
             read(pipe_[0], buf, sizeof(buf));
             continue;
         }
-        sockets.push(active_list_[i].ident);
+        sockfds.push(active_list_[i].ident);
     }
 }
 

@@ -1,8 +1,6 @@
 #include "common/log/log.h"
 #include "quic/quicx/master.h"
 #include "quic/udp/if_receiver.h"
-#include "common/buffer/buffer.h"
-#include "quic/common/constants.h"
 #include "quic/quicx/worker_client.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
@@ -123,11 +121,11 @@ bool Master::Connection(const std::string& ip, uint16_t port,
     return false;
 }
 
-void Master::AddListener(uint64_t listener_sock) {
+void Master::AddListener(int32_t listener_sock) {
     receiver_->AddReceiver(listener_sock);
 }
 
-void Master::AddListener(const std::string& ip, uint64_t port) {
+void Master::AddListener(const std::string& ip, uint16_t port) {
     receiver_->AddReceiver(ip, port);
 }
 

@@ -50,8 +50,8 @@ public:
         const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) override;
     
     // add listener
-    virtual void AddListener(uint64_t listener_sock) override;
-    virtual void AddListener(const std::string& ip, uint64_t port) override;
+    virtual void AddListener(int32_t listener_sock) override;
+    virtual void AddListener(const std::string& ip, uint16_t port) override;
 
     // add a new connection id
     virtual void AddConnectionID(ConnectionID& cid) override;

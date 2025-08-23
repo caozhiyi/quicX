@@ -49,47 +49,37 @@ UdpAction::~UdpAction() {
     }
 }
 
-bool UdpAction::AddSocket(uint64_t socket) {
-    if (socket > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
-        common::LOG_ERROR("socket fd %llu exceeds int range", socket);
-        return false;
-    }
-    
-    if (epoll_event_map_.find(socket) != epoll_event_map_.end()) {
+bool UdpAction::AddSocket(int32_t sockfd) {    
+    if (epoll_event_map_.find(sockfd) != epoll_event_map_.end()) {
         return true;
     }
     
     epoll_event ep_event;
     ep_event.events = EPOLLIN;
-    ep_event.data.fd = static_cast<int>(socket);
-    int ret = epoll_ctl(epoll_handler_, EPOLL_CTL_ADD, static_cast<int>(socket), &ep_event);
+    ep_event.data.fd = static_cast<int>(sockfd);
+    int ret = epoll_ctl(epoll_handler_, EPOLL_CTL_ADD, static_cast<int>(sockfd), &ep_event);
 
     if (ret == 0) {
-        epoll_event_map_[socket] = ep_event;
+        epoll_event_map_[sockfd] = ep_event;
         return true;
     }
-    common::LOG_ERROR("add event to epoll failed! error :%d, sock: %llu", errno, socket);
+    common::LOG_ERROR("add event to epoll failed! error :%d, sock: %d", errno, sockfd);
     return false;
 }
 
-void UdpAction::RemoveSocket(uint64_t socket) {
-    if (socket > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
-        common::LOG_ERROR("socket fd %llu exceeds int range", socket);
-        return;
-    }
-    
-    auto iter = epoll_event_map_.find(socket);
+void UdpAction::RemoveSocket(int32_t sockfd) {
+    auto iter = epoll_event_map_.find(sockfd);
     if (iter == epoll_event_map_.end()) {
         return;
     }
-    int ret = epoll_ctl(epoll_handler_, EPOLL_CTL_DEL, static_cast<int>(socket), &iter->second);
+    int ret = epoll_ctl(epoll_handler_, EPOLL_CTL_DEL, static_cast<int>(sockfd), &iter->second);
     epoll_event_map_.erase(iter);
     if (ret != 0) {
-        common::LOG_ERROR("remove event from epoll failed! error :%d, sock: %llu", errno, socket);
+        common::LOG_ERROR("remove event from epoll failed! error :%d, sock: %d", errno, sockfd);
     }
 }
 
-void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
+void UdpAction::Wait(int32_t timeout_ms, std::queue<int32_t>& sockfds) {
     int ret = epoll_wait(epoll_handler_, &*active_list_.begin(), (int)active_list_.size(), timeout_ms);
     if (ret == -1) {
         if (errno == EINTR) {
@@ -109,7 +99,7 @@ void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
             }
             continue;
         }
-        sockets.push(active_list_[i].data.fd);
+        sockfds.push(active_list_[i].data.fd);
     }
 }
 

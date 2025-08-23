@@ -119,7 +119,7 @@ TEST_F(NetworkIntegrationTest, TcpSocketWithHandler) {
     
     // Test socket validity
     EXPECT_TRUE(socket->IsValid());
-    EXPECT_GT(socket->GetFd(), 0);
+    EXPECT_GE(socket->GetFd(), 0);
     
     // Close socket
     socket->Close();

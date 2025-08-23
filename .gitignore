@@ -13,11 +13,6 @@ libhttp3.a
 build
 .cache
 .cursorrules
-# Ignore third-party build artifacts but allow submodule directories
-third/*
-!third/.gitkeep
-!third/boringssl/
-!third/googletest/
 bazel-*
 MODULE.bazel.lock
 temp

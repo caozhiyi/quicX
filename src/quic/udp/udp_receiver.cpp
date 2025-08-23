@@ -37,16 +37,23 @@ UdpReceiver::~UdpReceiver() {
 
 }
 
-void UdpReceiver::AddReceiver(uint64_t socket_fd) {
+void UdpReceiver::AddReceiver(int32_t socket_fd) {
+    // set noblocking
+    auto opt_ret = common::SocketNoblocking(socket_fd);
+    if (opt_ret.errno_ != 0) {
+        common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.errno_);
+        abort();
+    }
+
     action_->AddSocket(socket_fd);
 }
 
-void UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
+int32_t UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
     auto ret = common::UdpSocket();
     if (ret.errno_ != 0) {
         common::LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
         abort();
-        return;
+        return 0;
     }
     
     auto sock = ret.return_value_;
@@ -56,7 +63,7 @@ void UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.errno_);
         abort();
-        return;
+        return 0;
     }
 
     common::Address addr(ip, port);
@@ -72,6 +79,7 @@ void UdpReceiver::AddReceiver(const std::string& ip, uint16_t port) {
         abort();
     }
     action_->AddSocket(sock);
+    return sock;
 }
 
 void UdpReceiver::TryRecv(std::shared_ptr<NetPacket>& pkt, uint32_t timeout_ms) {
@@ -93,7 +101,7 @@ void UdpReceiver::Wakeup() {
 
 bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket>& pkt) {
     while (!socket_queue_.empty()) {
-        uint64_t sock = socket_queue_.front();
+        int32_t sockfd = socket_queue_.front();
         socket_queue_.pop();
 
         auto buffer = pkt->GetData();
@@ -102,7 +110,7 @@ bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket>& pkt) {
         // Use platform abstraction to capture ECN and peer address
         common::Address peer_addr;
         uint8_t ecn = 0;
-        auto ret = common::RecvFromWithEcn(sock, (char*)span.GetStart(), kMaxV4PacketSize, 0, peer_addr, ecn);
+        auto ret = common::RecvFromWithEcn(sockfd, (char*)span.GetStart(), kMaxV4PacketSize, 0, peer_addr, ecn);
         if (ret.errno_ != 0) {
             if (ret.errno_ == EAGAIN) {
                 continue;
@@ -112,7 +120,7 @@ bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket>& pkt) {
         }
         buffer->MoveWritePt(ret.return_value_);
         pkt->SetAddress(std::move(peer_addr));
-        pkt->SetSocket(sock);
+        pkt->SetSocket(sockfd);
         pkt->SetTime(common::UTCTimeMsec());
         pkt->SetEcn(ecn_enabled_ ? ecn : 0);
         return true;

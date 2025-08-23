@@ -18,9 +18,9 @@ enum class EventType {
 
 // Event structure
 struct Event {
-    uint64_t fd = 0;
+    int32_t fd = 0;
     EventType type = EventType::ET_READ;
-    Event(uint64_t socket, EventType type): fd(socket), type(type) {}
+    Event(int32_t socket, EventType type): fd(socket), type(type) {}
 };
 
 // Event driver interface
@@ -32,13 +32,13 @@ public:
     virtual bool Init() = 0;
 
     // Add a file descriptor to monitor
-    virtual bool AddFd(uint64_t fd, EventType events) = 0;
+    virtual bool AddFd(int32_t fd, EventType events) = 0;
 
     // Remove a file descriptor from monitoring
-    virtual bool RemoveFd(uint64_t fd) = 0;
+    virtual bool RemoveFd(int32_t fd) = 0;
 
     // Modify events for a file descriptor
-    virtual bool ModifyFd(uint64_t fd, EventType events) = 0;
+    virtual bool ModifyFd(int32_t fd, EventType events) = 0;
 
     // Wait for events with timeout (in milliseconds)
     // Returns the number of events that occurred

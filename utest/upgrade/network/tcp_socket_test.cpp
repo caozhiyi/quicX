@@ -40,7 +40,7 @@ TEST_F(TcpSocketTest, SocketCreation) {
     auto socket = std::make_unique<TcpSocket>();
     
     EXPECT_TRUE(socket->IsValid());
-    EXPECT_GT(socket->GetFd(), 0);
+    EXPECT_GE(socket->GetFd(), 0);
 }
 
 // Test socket creation with specific file descriptor
@@ -72,7 +72,7 @@ TEST_F(TcpSocketTest, SocketClose) {
     int fd = socket->GetFd();
     
     EXPECT_TRUE(socket->IsValid());
-    EXPECT_GT(fd, 0);
+    EXPECT_GE(fd, 0);
     
     socket->Close();
     

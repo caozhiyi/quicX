@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <fcntl.h>
 #include <cstring>
 
@@ -169,17 +168,6 @@ void TcpAction::EventLoop() {
         if (nfds > 0) {
             // Handle events
             HandleEvents(events);
-        }
-        
-        // Check if we should stop
-        if (!running_) {
-            break;
-        }
-        
-        // If we woke up due to timeout (no events), check if any timers should have fired
-        if (nfds == 0) {
-            // Re-run timer wheel in case we missed any timers
-            timer_->TimerRun(now);
         }
     }
     

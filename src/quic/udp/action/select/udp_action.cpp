@@ -43,7 +43,7 @@ UdpAction::~UdpAction() {
     WSACleanup();
 }
 
-bool UdpAction::AddSocket(uint64_t socket) {
+bool UdpAction::AddSocket(int32_t socket) {
     WSAPOLLFD event;
     event.fd = socket;
     event.events = POLLIN;
@@ -51,11 +51,11 @@ bool UdpAction::AddSocket(uint64_t socket) {
     return true;
 }
 
-void UdpAction::RemoveSocket(uint64_t socket) {
+void UdpAction::RemoveSocket(int32_t socket) {
     select_event_map_.erase(socket);
 }
 
-void UdpAction::Wait(int32_t timeout_ms, std::queue<uint64_t>& sockets) {
+void UdpAction::Wait(int32_t timeout_ms, std::queue<int32_t>& sockets) {
     active_list_.clear();
     active_list_.push_back(pipe_content_);
 
