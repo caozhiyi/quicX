@@ -16,14 +16,17 @@ Worker::Worker(const QuicConfig& config,
     ctx_(ctx),
     params_(params),
     sender_(sender),
-    connection_handler_(connection_handler) {
+    connection_handler_(connection_handler),
+    active_send_connection_set_1_is_current_(true) {
     time_ = common::MakeTimer();
 
     ecn_enabled_ = config.enable_ecn_;
 }
 
 Worker::~Worker() {
-
+    if (!Thread::IsStop()) {
+        Destroy();
+    }
 }
 
 void Worker::Init(std::shared_ptr<IConnectionIDNotify> connection_id_notify) {
@@ -33,6 +36,8 @@ void Worker::Init(std::shared_ptr<IConnectionIDNotify> connection_id_notify) {
 
 void Worker::Destroy() {
     Thread::Stop();
+    Weakup();
+    Thread::Join();
 }
 
 void Worker::Weakup() {
@@ -73,16 +78,23 @@ void Worker::ProcessSend() {
 
     std::shared_ptr<NetPacket> packet = std::make_shared<NetPacket>();
     SendOperation send_operation;
-    for (auto iter = active_send_connection_set_.begin(); iter != active_send_connection_set_.end();) {
+    
+    SwitchActiveSendConnectionSet(); 
+    auto& cur_active_send_connection_set = GetReadActiveSendConnectionSet();
+    if (cur_active_send_connection_set.empty()) {
+        return;
+    }
+
+    for (auto iter = cur_active_send_connection_set.begin(); iter != cur_active_send_connection_set.end();) {
         if (!(*iter)->GenerateSendData(buffer, send_operation)) {
             common::LOG_ERROR("generate send data failed.");
-            iter = active_send_connection_set_.erase(iter);
+            iter = cur_active_send_connection_set.erase(iter);
             continue;
         }
 
         if (buffer->GetDataLength() == 0) {
             common::LOG_WARN("generate send data length is 0.");
-            iter = active_send_connection_set_.erase(iter);
+            iter = cur_active_send_connection_set.erase(iter);
             continue;
         }
 
@@ -96,7 +108,7 @@ void Worker::ProcessSend() {
         buffer->Clear();
         switch (send_operation) {
             case SendOperation::kAllSendDone:
-                iter = active_send_connection_set_.erase(iter);
+                iter = cur_active_send_connection_set.erase(iter);
                 break;
             case SendOperation::kNextPeriod:
                 iter++;
@@ -176,7 +188,8 @@ void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 }
 
 void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
-    active_send_connection_set_.insert(conn);
+    GetWriteActiveSendConnectionSet().insert(conn);
+    common::LOG_DEBUG("HandleActiveSendConnection");
     do_send_ = true;
     Weakup();
 }
@@ -187,6 +200,27 @@ void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t e
         connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
     } else {
         connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
+    }
+}
+
+std::unordered_set<std::shared_ptr<IConnection>>& Worker::GetReadActiveSendConnectionSet() {
+    return active_send_connection_set_1_is_current_ ? active_send_connection_set_1_ : active_send_connection_set_2_;
+}
+
+std::unordered_set<std::shared_ptr<IConnection>>& Worker::GetWriteActiveSendConnectionSet() {
+    return active_send_connection_set_1_is_current_ ? active_send_connection_set_2_ : active_send_connection_set_1_;
+}
+
+void Worker::SwitchActiveSendConnectionSet() {
+    if (active_send_connection_set_1_is_current_) {
+        active_send_connection_set_2_.insert(active_send_connection_set_1_.begin(), active_send_connection_set_1_.end());
+        active_send_connection_set_1_.clear();
+        active_send_connection_set_1_is_current_ = false;
+
+    } else {
+        active_send_connection_set_1_.insert(active_send_connection_set_2_.begin(), active_send_connection_set_2_.end());
+        active_send_connection_set_2_.clear();
+        active_send_connection_set_1_is_current_ = true;
     }
 }
 
