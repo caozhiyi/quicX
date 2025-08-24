@@ -64,7 +64,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
 }
 
 bool ClientWorker::InnerHandlePacket(PacketInfo& packet_info) {
-    common::LOG_INFO("get packet. peer addr:%s", packet_info.net_packet_->GetAddress().AsString().c_str());
+    common::LOG_DEBUG("get packet. peer addr:%s", packet_info.net_packet_->GetAddress().AsString().c_str());
     
     // dispatch packet
     auto cid_code = packet_info.cid_.Hash();

@@ -71,6 +71,14 @@ void UdpAction::Wait(int32_t timeout_ms, std::queue<int32_t>& sockets) {
 
     for (size_t i = 0; i < active_list_.size(); ++i) {
         if (active_list_[i].revents & POLLIN) {
+            if (active_list_[i].fd == pipe_[0]) {
+                static char buf[8];
+                if (recv(pipe_[0], buf, 1, 0) <= 0) {
+                    common::LOG_ERROR("recv from pipe failed when weak up.");
+                }
+                continue;
+            }
+
             sockets.push(active_list_[i].fd);
         }
     }

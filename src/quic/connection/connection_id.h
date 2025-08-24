@@ -12,7 +12,7 @@ namespace quic {
 class ConnectionID {
 public:
     ConnectionID();
-    ConnectionID(uint8_t* id, uint8_t len, uint64_t sequence_number = 0);
+    ConnectionID(const uint8_t* id, uint8_t len, uint64_t sequence_number = 0);
     ConnectionID(const ConnectionID& other);
     ~ConnectionID();
 

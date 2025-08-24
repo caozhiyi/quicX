@@ -21,6 +21,11 @@ ServerWorker::~ServerWorker() {
 }
 
 bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
+    if (packet_info.packets_.empty()) {
+        common::LOG_ERROR("get a netpacket, but data packets is empty");
+        return false;
+    }
+
     // dispatch packet
     common::LOG_DEBUG("get packet. dcid:%llu", packet_info.cid_.Hash());
     auto conn = conn_map_.find(packet_info.cid_.Hash());
@@ -38,6 +43,14 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
         return false;
     }
 
+    auto init_packet = packet_info.packets_[0];
+    auto long_header = static_cast<LongHeader*>(init_packet->GetHeader());
+    if (long_header == nullptr) {
+        common::LOG_ERROR("long header is nullptr");
+        return false;
+    }
+    ConnectionID src_cid(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
+
     // create new connection
     auto new_conn = std::make_shared<ServerConnection>(ctx_,
         server_alpn_,
@@ -50,8 +63,9 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     new_conn->AddTransportParam(params_);
     connecting_set_.insert(new_conn);
 
+    // add remote connection id
+    new_conn->AddRemoteConnectionId(src_cid);
     new_conn->SetSocket(packet_info.net_packet_->GetSocket());
-    new_conn->AddRemoteConnectionId(packet_info.cid_);
     new_conn->SetPeerAddress(packet_info.net_packet_->GetAddress());
     new_conn->SetPendingEcn(packet_info.net_packet_->GetEcn());
     new_conn->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);

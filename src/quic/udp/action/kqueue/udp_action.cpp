@@ -74,8 +74,10 @@ void UdpAction::Wait(int32_t timeout_ms, std::queue<int32_t>& sockfds) {
 
     for (int i = 0; i < num_events; i++) {
         if (active_list_[i].ident == (int32_t)pipe_[0]) {
-            char buf[1024];
-            read(pipe_[0], buf, sizeof(buf));
+            static char buf[8];
+            if (read(pipe_[0], buf, 1) <= 0) {
+                common::LOG_ERROR("read from pipe failed when weak up.");
+            }
             continue;
         }
         sockfds.push(active_list_[i].ident);
