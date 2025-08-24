@@ -118,6 +118,7 @@ bool UdpReceiver::TryRecv(std::shared_ptr<NetPacket>& pkt) {
             common::LOG_ERROR("recv from failed. err:%d", ret.errno_);
             continue;
         }
+        common::LOG_DEBUG("recv from data from peer. addr: %s, size:%d", peer_addr.AsString().c_str(), ret.return_value_);
         buffer->MoveWritePt(ret.return_value_);
         pkt->SetAddress(std::move(peer_addr));
         pkt->SetSocket(sockfd);

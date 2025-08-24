@@ -87,9 +87,7 @@ void UdpAction::Wait(int32_t timeout_ms, std::queue<int32_t>& sockfds) {
         }
         common::LOG_ERROR("epoll wait failed! error:%d", errno);
         return;
-    } 
-
-    common::LOG_DEBUG("epoll get events! num:%d, thread id: %ld", ret, std::this_thread::get_id());
+    }
 
     for (int i = 0; i < ret; i++) {
         if ((uint32_t)active_list_[i].data.fd == pipe_[0]) {

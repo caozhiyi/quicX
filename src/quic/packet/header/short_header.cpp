@@ -51,7 +51,7 @@ bool ShortHeader::DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool
     }
 
     // check flag fixed bit
-    if (!HeaderFlag::GetLongHeaderFlag().fix_bit_) {
+    if (!HeaderFlag::GetShortHeaderFlag().fix_bit_) {
         common::LOG_ERROR("quic fixed bit is not set");
         return false;
     }
