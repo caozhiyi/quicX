@@ -8,73 +8,57 @@ namespace {
 TEST(stream_id_generator_utest, client) {
     StreamIDGenerator generator(StreamIDGenerator::StreamStarter::kClient);
 
-    // 100
     uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
+    EXPECT_EQ(stream_id, 0);
+
+    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_EQ(stream_id, 4);
 
-    // 1000
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_EQ(stream_id, 8);
 
-    // 1100
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_EQ(stream_id, 12);
 
-    // 10000
-    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
-    EXPECT_EQ(stream_id, 16);
+    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
+    EXPECT_EQ(stream_id, 2);
 
-    // 110
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
     EXPECT_EQ(stream_id, 6);
 
-    // 1010
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
-    EXPECT_EQ(stream_id, 10);
+    EXPECT_EQ(stream_id, 10); 
 
-    // 1110
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
-    EXPECT_EQ(stream_id, 14); 
-
-    // 10010
-    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
-    EXPECT_EQ(stream_id, 18);
+    EXPECT_EQ(stream_id, 14);
 }
 
 TEST(stream_id_generator_utest, server) {
     StreamIDGenerator generator(StreamIDGenerator::StreamStarter::kServer);
 
-    // 101
     uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
+    EXPECT_EQ(stream_id, 1);
+
+    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_EQ(stream_id, 5);
 
-    // 1001
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_EQ(stream_id, 9);
 
-    // 1101
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
     EXPECT_EQ(stream_id, 13);
 
-    // 10001
-    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
-    EXPECT_EQ(stream_id, 17);
+    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
+    EXPECT_EQ(stream_id, 3);
 
-    // 111
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
     EXPECT_EQ(stream_id, 7);
 
-    // 1011
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
     EXPECT_EQ(stream_id, 11);
 
-    // 1111
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
-    EXPECT_EQ(stream_id, 15);
-
-    // 10011
-    stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
-    EXPECT_EQ(stream_id, 19); 
+    EXPECT_EQ(stream_id, 15); 
 }
 
 }

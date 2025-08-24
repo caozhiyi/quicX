@@ -3,6 +3,7 @@
 #include "quic/udp/udp_sender.h"
 #include "common/buffer/buffer.h"
 #include "quic/udp/udp_receiver.h"
+#include "common/network/io_handle.h"
 
 namespace quicx {
 namespace quic {
@@ -29,7 +30,9 @@ TEST(UdpSenderTest, Send) {
         });
     }
     
-    UdpSender sender;
+    auto sockfd_ret = common::UdpSocket();
+    ASSERT_EQ(sockfd_ret.errno_, 0);
+    UdpSender sender(sockfd_ret.return_value_);
     
     char send_buf[20] = {0};
     std::shared_ptr<common::Buffer> send_buffer = std::make_shared<common::Buffer>((uint8_t*)send_buf, sizeof(send_buf));

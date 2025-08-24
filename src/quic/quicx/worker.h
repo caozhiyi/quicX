@@ -61,6 +61,10 @@ protected:
     void HandleActiveSendConnection(std::shared_ptr<IConnection> conn);
     void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason);
 
+    std::unordered_set<std::shared_ptr<IConnection>>& GetReadActiveSendConnectionSet();
+    std::unordered_set<std::shared_ptr<IConnection>>& GetWriteActiveSendConnectionSet();
+    void SwitchActiveSendConnectionSet();
+
 protected:
     common::ThreadSafeBlockQueue<PacketInfo> packet_queue_;
 
@@ -82,7 +86,10 @@ protected:
 
     std::shared_ptr<common::BlockMemoryPool> alloter_;
 
-    std::unordered_set<std::shared_ptr<IConnection>> active_send_connection_set_;
+    bool active_send_connection_set_1_is_current_;
+    std::unordered_set<std::shared_ptr<IConnection>> active_send_connection_set_1_;
+    std::unordered_set<std::shared_ptr<IConnection>> active_send_connection_set_2_;
+
     std::unordered_set<std::shared_ptr<IConnection>> connecting_set_;
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_; // all connections
 

@@ -89,7 +89,7 @@ TEST(connection_control_flow, local_bidirection_streams) {
 
     uint64_t stream_id = 0;
     std::shared_ptr<IFrame> frame;
-    for (size_t i = 1; i <= 4; i++) {
+    for (size_t i = 0; i <= 4; i++) {
         EXPECT_TRUE(flow_control.CheckLocalBidirectionStreamLimit(stream_id, frame));
         EXPECT_EQ(stream_id, i << 2 | StreamIDGenerator::StreamStarter::kClient | StreamIDGenerator::StreamDirection::kBidirectional);
         EXPECT_TRUE(frame == nullptr);
@@ -113,7 +113,7 @@ TEST(connection_control_flow, local_unidirection_streams) {
 
     uint64_t stream_id = 0;
     std::shared_ptr<IFrame> frame;
-    for (size_t i = 1; i <= 4; i++) {
+    for (size_t i = 0; i <= 4; i++) {
         EXPECT_TRUE(flow_control.CheckLocalUnidirectionStreamLimit(stream_id, frame));
         EXPECT_EQ(stream_id, i << 2 | StreamIDGenerator::StreamStarter::kClient | StreamIDGenerator::StreamDirection::kUnidirectional);
         EXPECT_TRUE(frame == nullptr);
@@ -138,7 +138,7 @@ TEST(connection_control_flow, remote_bidirection_streams) {
     StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::kServer);
 
     std::shared_ptr<IFrame> frame;
-    for (size_t i = 0; i < 4; i++) {
+    for (size_t i = 0; i < 5; i++) {
         uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
         EXPECT_TRUE(flow_control.CheckRemoteStreamLimit(stream_id, frame));
         EXPECT_TRUE(frame == nullptr);
@@ -162,7 +162,7 @@ TEST(connection_control_flow, remote_unidirection_streams) {
     StreamIDGenerator generator = StreamIDGenerator(StreamIDGenerator::StreamStarter::kServer);
 
     std::shared_ptr<IFrame> frame;
-    for (size_t i = 0; i < 4; i++) {
+    for (size_t i = 0; i < 5; i++) {
         uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
         EXPECT_TRUE(flow_control.CheckRemoteStreamLimit(stream_id, frame));
         EXPECT_TRUE(frame == nullptr);
