@@ -1,4 +1,3 @@
-#include "common/log/log.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 
 namespace quicx {
@@ -12,15 +11,13 @@ TLSClientCtx::~TLSClientCtx() {
     
 }
 
-bool TLSClientCtx::Init() {
-    if (!TLSCtx::Init()) {
+bool TLSClientCtx::Init(bool enable_early_data) {
+    if (!TLSCtx::Init(enable_early_data)) {
         return false;
     }
 
-    // set client config 
-    SSL_CTX_set_session_cache_mode(ssl_ctx_.get(), 
-        SSL_SESS_CACHE_CLIENT | SSL_SESS_CACHE_NO_INTERNAL_STORE);
-
+    // set session cache mode, enables session caching for both client and server.
+    SSL_CTX_set_session_cache_mode(ssl_ctx_.get(), SSL_SESS_CACHE_BOTH);
     return true;
 }
 

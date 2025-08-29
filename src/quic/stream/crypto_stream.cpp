@@ -146,7 +146,7 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
             out_order_frame_.erase(iter);
         }
         
-         if (recv_cb_) {
+        if (recv_cb_) {
             recv_cb_(buffer_, 0);
         }
     } else {

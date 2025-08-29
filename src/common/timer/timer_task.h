@@ -6,7 +6,6 @@
 #ifndef COMMON_TIMER_TIMER_TASK
 #define COMMON_TIMER_TIMER_TASK
 
-#include <memory>
 #include <cstdint>
 #include <functional>
 

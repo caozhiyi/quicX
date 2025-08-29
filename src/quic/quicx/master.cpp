@@ -1,10 +1,13 @@
 #include "common/log/log.h"
 #include "quic/quicx/master.h"
+#include "common/timer/timer.h"
 #include "quic/udp/if_receiver.h"
 #include "common/network/io_handle.h"
 #include "quic/quicx/worker_client.h"
+#include "quic/connection/session_cache.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
+
 
 namespace quicx {
 namespace quic {
@@ -20,13 +23,17 @@ Master::~Master() {
 
 }
 
-bool Master::InitAsClient(const QuicConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) {
+bool Master::InitAsClient(const QuicClientConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) {
     auto tls_ctx = std::make_shared<TLSClientCtx>();
-    if (!tls_ctx->Init()) {
+    if (!tls_ctx->Init(config.config_.enable_0rtt_)) {
         common::LOG_ERROR("tls ctx init faliled.");
         return false;
     }
-    ecn_enabled_ = config.enable_ecn_;
+    ecn_enabled_ = config.config_.enable_ecn_;
+
+    if (config.enable_session_cache_) {
+        SessionCache::Instance().Init(config.session_cache_path_);
+    }
 
     // client need a socket to send packet
     auto sock_ret = common::UdpSocket();
@@ -44,9 +51,9 @@ bool Master::InitAsClient(const QuicConfig& config, const QuicTransportParams& p
 
     auto sender = ISender::MakeSender(sockfd);
 
-    worker_map_.reserve(config.thread_num_);
-    for (size_t i = 0; i < config.thread_num_; i++) {
-        auto worker = IWorker::MakeClientWorker(config, tls_ctx, sender, params, connection_state_cb);
+    worker_map_.reserve(config.config_.thread_num_);
+    for (size_t i = 0; i < config.config_.thread_num_; i++) {
+        auto worker = IWorker::MakeClientWorker(config.config_, tls_ctx, sender, params, connection_state_cb);
         worker->Init(shared_from_this());
         worker_map_.emplace(worker->GetCurrentThreadId(), worker);
     }
@@ -64,12 +71,12 @@ bool Master::InitAsClient(const QuicConfig& config, const QuicTransportParams& p
 bool Master::InitAsServer(const QuicServerConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) {
     auto tls_ctx = std::make_shared<TLSServerCtx>();
     if (config.cert_file_ != "" && config.key_file_ != "") {
-        if (!tls_ctx->Init(config.cert_file_, config.key_file_)) {
+        if (!tls_ctx->Init(config.cert_file_, config.key_file_, config.config_.enable_0rtt_, config.session_ticket_timeout_)) {
             common::LOG_ERROR("tls ctx init faliled.");
             return false;
         }
     } else if (config.cert_pem_ != nullptr && config.key_pem_ != nullptr) {
-        if (!tls_ctx->Init(config.cert_pem_, config.key_pem_)) {
+        if (!tls_ctx->Init(config.cert_pem_, config.key_pem_, config.config_.enable_0rtt_, config.session_ticket_timeout_)) {
             common::LOG_ERROR("tls ctx init faliled.");
             return false;
         }

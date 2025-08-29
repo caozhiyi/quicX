@@ -6,7 +6,7 @@ namespace quic {
 
 TEST(crypto_ssl_ctx_utest, test1) {
     TLSCtx ctx;
-    EXPECT_TRUE(ctx.Init());
+    EXPECT_TRUE(ctx.Init(false));
 }
 
 }

@@ -7,9 +7,22 @@ namespace quicx {
 namespace common {
 namespace {
 
-TEST(stdlogger_stream_utest, print1) {
-    std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
-    LOG_SET(log);
+class LoggerStreamTest:
+    public ::testing::Test {
+protected:
+    void SetUp() override {
+        std::shared_ptr<Logger> file_log = std::make_shared<FileLogger>("test.log");
+        std::shared_ptr<Logger> std_log = std::make_shared<StdoutLogger>();
+        file_log->SetLogger(std_log);
+        LOG_SET(file_log);
+    }
+    
+    void TearDown() override {
+        LOG_SET_LEVEL(LogLevel::kNull);
+    }
+};
+
+TEST_F(LoggerStreamTest, print1) {
     LOG_SET_LEVEL(LogLevel::kError);
     
     LOG_DEBUG_S << "it is a debug test log.";
@@ -19,11 +32,7 @@ TEST(stdlogger_stream_utest, print1) {
     LOG_FATAL_S <<  "it is a fatal test num";
 }
 
-TEST(filelogger_stream_utest, debug) {
-    std::shared_ptr<Logger> file_log = std::make_shared<FileLogger>("test.log");
-    std::shared_ptr<Logger> std_log = std::make_shared<StdoutLogger>();
-    file_log->SetLogger(std_log);
-    LOG_SET(file_log);
+TEST_F(LoggerStreamTest, debug) {
     LOG_SET_LEVEL(LogLevel::kDebug);
     
     LOG_DEBUG_S << "it is a debug test log.";
@@ -33,11 +42,7 @@ TEST(filelogger_stream_utest, debug) {
     LOG_FATAL_S <<  "it is a fatal test num";
 }
 
-TEST(filelogger_stream_utest, value) {
-    std::shared_ptr<Logger> file_log = std::make_shared<FileLogger>("test.log");
-    std::shared_ptr<Logger> std_log = std::make_shared<StdoutLogger>();
-    file_log->SetLogger(std_log);
-    LOG_SET(file_log);
+TEST_F(LoggerStreamTest, value) {
     LOG_SET_LEVEL(LogLevel::kDebug);
     
     LOG_FATAL_S <<  "bool value:" << true;

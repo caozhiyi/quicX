@@ -51,11 +51,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
                     
     connecting_set_.insert(conn);
             
-    auto tls_cli = conn->GetTLSConnection();
-    if (tls_cli) {
-        tls_cli->SetSession(reinterpret_cast<const uint8_t*>(resumption_session_der.data()), resumption_session_der.size());
-    }
-    conn->Dial(common::Address(ip, port), alpn, params_);
+    conn->Dial(common::Address(ip, port), alpn, resumption_session_der, params_);
                     
     common::TimerTask task([conn, this]() {
         HandleConnectionTimeout(conn);

@@ -61,5 +61,3 @@ cc_test(
         "//src/upgrade:upgrade",
     ],
 )
-
-

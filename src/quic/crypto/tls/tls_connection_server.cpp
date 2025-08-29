@@ -1,6 +1,4 @@
-#include <vector>
-#include <cstring>
-#include "openssl/ssl.h"
+#include <openssl/ssl.h>
 
 #include "common/log/log.h"
 #include "quic/crypto/tls/tls_connection_server.h"
@@ -23,29 +21,61 @@ bool TLSServerConnection::Init() {
         return false;
     }
     
+    // set alpn select callback, this callback will be called when the client send alpn list.
     SSL_CTX_set_alpn_select_cb(ctx_->GetSSLCtx(), TLSServerConnection::SSLAlpnSelect, nullptr);
     
+    // set accept state, this will start the handshake process.
     SSL_set_accept_state(ssl_.get());
 
-    // Advertise and enable server-side 0-RTT (early data) support via session tickets (OpenSSL >= 1.1.1).
-    // BoringSSL does not use SSL_CTX_set_max_early_data; skip for BoringSSL to keep compatibility.
-#if !defined(OPENSSL_IS_BORINGSSL)
-#  if defined(OPENSSL_VERSION_NUMBER) && (OPENSSL_VERSION_NUMBER >= 0x10101000L)
-    SSL_CTX_set_max_early_data(ctx_->GetSSLCtx(), 65536);
-#  endif
-#endif
+    return true;
+}
 
-    // For BoringSSL QUIC, the server must configure an early data context to allow 0-RTT on future resumptions.
-    // Use a fixed context string. It must remain consistent across resumptions to accept early data.
-#if defined(OPENSSL_IS_BORINGSSL)
-    static const char kEarlyDataCtx[] = "quic-early-data";
-    SSL_set_quic_early_data_context(ssl_.get(), reinterpret_cast<const uint8_t*>(kEarlyDataCtx), sizeof(kEarlyDataCtx) - 1);
-#endif
+bool TLSServerConnection::DoHandleShake() {
+    int32_t ret = SSL_do_handshake(ssl_.get());
 
-    // Optional: early data context binding. If your BoringSSL exposes SSL_set_quic_early_data_context,
-    // you may set a context here on both client and server to further constrain 0-RTT acceptance.
-    // Not strictly required for enabling 0-RTT, so it's omitted for compatibility.
+    if (ret <= 0) {
+        int32_t ssl_err = SSL_get_error(ssl_.get(), ret);
+        
+        // Handle 0-RTT rejection according to RFC 9001
+        if (ssl_err == SSL_ERROR_EARLY_DATA_REJECTED) {
+            common::LOG_INFO("0-RTT data was rejected by server, resetting and continuing with full handshake");
+            
+            // Reset early data state and continue with full handshake
+            SSL_reset_early_data_reject(ssl_.get());
+            
+            // Retry the handshake
+            ret = SSL_do_handshake(ssl_.get());
+            if (ret <= 0) {
+                ssl_err = SSL_get_error(ssl_.get(), ret);
+                if (ssl_err != SSL_ERROR_WANT_READ) {
+                    const char* err = SSL_error_description(ssl_err);
+                    common::LOG_ERROR("SSL_do_handshake failed after 0-RTT reset. err:%s", err);
+                }
+                return false;
+            }
+            return true;
+        }
 
+        if (ssl_err != SSL_ERROR_WANT_READ) {
+            const char* err = SSL_error_description(ssl_err);
+            common::LOG_ERROR("SSL_do_handshake failed. err:%s", err);
+        }
+        return false;
+    }
+
+    return true;
+}
+
+bool TLSServerConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
+    if (!TLSConnection::AddTransportParam(tp, len)) {
+        return false;
+    }
+    
+    if (ctx_->GetEnableEarlyData()) {
+        // For BoringSSL QUIC, the server must configure an early data context to allow 0-RTT on future resumptions.
+        // Use a fixed context string. It must remain consistent across resumptions to accept early data.
+        SSL_set_quic_early_data_context(ssl_.get(), tp, len);
+    }
     return true;
 }
 

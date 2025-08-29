@@ -13,7 +13,7 @@ public:
     virtual ~TlsServerHandlerInterface() {}
 
     virtual void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
-    const unsigned char *in, unsigned int inlen, void *arg) = 0;
+        const unsigned char *in, unsigned int inlen, void *arg) = 0;
 };
 
 class TLSServerConnection:
@@ -24,6 +24,11 @@ public:
     // init ssl connection
     virtual bool Init();
 
+    // do handshake
+    virtual bool DoHandleShake();
+
+    // add transport param
+    virtual bool AddTransportParam(uint8_t* tp, uint32_t len);
 private:
     static int SSLAlpnSelect(SSL* ssl, const unsigned char **out, unsigned char *outlen,
     const unsigned char *in, unsigned int inlen, void *arg);

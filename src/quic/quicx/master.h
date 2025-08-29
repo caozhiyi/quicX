@@ -26,7 +26,7 @@ public:
     virtual ~Master();
 
     // Initialize as client
-    virtual bool InitAsClient(const QuicConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
+    virtual bool InitAsClient(const QuicClientConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
     // Initialize as server
     virtual bool InitAsServer(const QuicServerConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
     // Destroy

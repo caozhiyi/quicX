@@ -2,10 +2,11 @@
 #define QUIC_CRYPTO_TLS_TLS_CONNECTION
 
 #include <memory>
-#include <string>
 #include <cstdint>
 #include "quic/crypto/tls/type.h"
 #include "quic/crypto/tls/tls_ctx.h"
+// Forward declare OpenSSL types
+typedef struct ssl_session_st SSL_SESSION;
 
 namespace quicx {
 namespace quic {
@@ -37,7 +38,7 @@ public:
     virtual bool Init();
 
     // do handshake
-    virtual bool DoHandleShake();
+    virtual bool DoHandleShake() = 0;
 
     // add crypto data
     virtual bool ProcessCryptoData(uint8_t* data, uint32_t len);
@@ -46,6 +47,12 @@ public:
     virtual bool AddTransportParam(uint8_t* tp, uint32_t len);
 
     EncryptionLevel GetLevel();
+
+    // 0-RTT status methods
+    bool IsInEarlyData() const;
+    bool IsEarlyDataAccepted() const;
+    int GetEarlyDataReason() const;
+    const char* GetEarlyDataReasonString() const;
 
 public:
     static int32_t SetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER *cipher,
@@ -63,9 +70,6 @@ protected:
     SSLPtr ssl_;
     std::shared_ptr<TLSCtx> ctx_;
     TlsHandlerInterface* handler_;
-public:
-    // expose SSL pointer for session get/save by upper layer
-    SSL* GetSSL() { return ssl_.get(); }
 };
 
 }

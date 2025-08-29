@@ -75,17 +75,27 @@ target_include_directories(http3
         ${boringssl_SOURCE_DIR}/include
 )
 
+# Check if we need to link filesystem library (required on some Linux distributions)
+if(UNIX AND NOT APPLE)
+    find_library(STDCXXFS_LIBRARY stdc++fs)
+    if(STDCXXFS_LIBRARY)
+        set(FILESYSTEM_LIBRARY ${STDCXXFS_LIBRARY})
+    endif()
+endif()
+
 target_link_libraries(quicx
     PUBLIC
         crypto
         ssl
         Threads::Threads
+        ${FILESYSTEM_LIBRARY}
 )
 target_link_libraries(http3
     PUBLIC
         crypto
         ssl
         Threads::Threads
+        ${FILESYSTEM_LIBRARY}
 )
 
 # Install headers
@@ -115,4 +125,10 @@ option(ENABLE_TESTING "Enable building of unit tests" ON)
 # Enable testing if the option is set
 if(ENABLE_TESTING)
     add_subdirectory(utest)
+endif()
+
+# Fuzzing targets (libFuzzer)
+option(ENABLE_FUZZING "Enable building fuzz targets" OFF)
+if(ENABLE_FUZZING)
+    add_subdirectory(fuzz)
 endif()

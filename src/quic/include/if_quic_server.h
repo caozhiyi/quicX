@@ -6,21 +6,22 @@
 namespace quicx {
 namespace quic {
 
-/*
- a quic server libary interface.
- user can use this interface to create a quic server.
- a quic server instance manage io threads, every one connection lives in a single thread whole life time.
-*/
 struct QuicServerConfig {
     std::string cert_file_ = "";
     std::string key_file_ = "";
     const char* cert_pem_ = nullptr;
     const char* key_pem_ = nullptr;
     std::string alpn_ = "";
-
+    uint32_t session_ticket_timeout_ = 172800; // 2 days
+    
     QuicConfig config_;
 };
 
+/*
+ a quic server libary interface.
+ user can use this interface to create a quic server.
+ a quic server instance manage io threads, every one connection lives in a single thread whole life time.
+*/
 class IQuicServer {
 public:
     IQuicServer() {}

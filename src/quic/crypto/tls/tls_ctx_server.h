@@ -13,11 +13,11 @@ public:
     TLSServerCtx();
     ~TLSServerCtx();
     // init ssl library and create global ssl ctx
-    virtual bool Init(const std::string& cert_file, const std::string& key_file);
-    virtual bool Init(const char* cert_pem, const char* key_pem);
+    virtual bool Init(const std::string& cert_file, const std::string& key_file, bool enable_early_data, uint32_t session_ticket_timeout);
+    virtual bool Init(const char* cert_pem, const char* key_pem, bool enable_early_data, uint32_t session_ticket_timeout);
 
 private:
-    bool Init();
+    bool Init(bool enable_early_data, uint32_t session_ticket_timeout);
 };
 
 }

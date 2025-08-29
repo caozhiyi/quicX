@@ -5,6 +5,7 @@
 
 #include "quic/include/type.h"
 #include "quic/include/if_quic_server.h"
+#include "quic/include/if_quic_client.h"
 #include "quic/connection/connection_id.h"
 
 namespace quicx {
@@ -17,7 +18,7 @@ public:
     virtual ~IMaster() {}
 
     // Initialize the msg receiver
-    virtual bool InitAsClient(const QuicConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) = 0;
+    virtual bool InitAsClient(const QuicClientConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) = 0;
     virtual bool InitAsServer(const QuicServerConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) = 0;
     // Destroy the msg receiver
     virtual void Destroy() = 0;

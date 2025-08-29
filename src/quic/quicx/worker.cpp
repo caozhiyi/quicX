@@ -3,6 +3,7 @@
 #include "quic/udp/if_sender.h"
 #include "common/timer/timer.h"
 #include "quic/common/version.h"
+#include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
 
 namespace quicx {
