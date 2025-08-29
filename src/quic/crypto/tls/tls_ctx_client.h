@@ -12,7 +12,7 @@ public:
     TLSClientCtx();
     ~TLSClientCtx();
     // init ssl library and create global ssl ctx
-    virtual bool Init();
+    virtual bool Init(bool enable_early_data);
 };
 
 }

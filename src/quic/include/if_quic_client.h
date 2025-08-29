@@ -6,6 +6,13 @@
 namespace quicx {
 namespace quic {
 
+struct QuicClientConfig {
+    bool enable_session_cache_ = false;
+    std::string session_cache_path_ = "./session_cache";
+
+    QuicConfig config_;
+};
+
 /*
  a quic client libary interface.
  user can use this interface to create a quic client.
@@ -18,7 +25,7 @@ public:
 
     // init quic libary
     // thread_num: io thread number
-    virtual bool Init(const QuicConfig& config) = 0;
+    virtual bool Init(const QuicClientConfig& config) = 0;
 
     // join io threads
     virtual void Join() = 0;

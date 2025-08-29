@@ -28,9 +28,10 @@ enum class LogLevel: uint8_t {
 
 struct QuicConfig {
     uint16_t thread_num_ = 1;
-    LogLevel log_level_ = LogLevel::kNull;
+    LogLevel log_level_  = LogLevel::kNull;
 
-    bool enable_ecn_ = false;
+    bool enable_ecn_  = false;
+    bool enable_0rtt_ = false;
 };
 
 struct QuicTransportParams {

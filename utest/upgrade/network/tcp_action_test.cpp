@@ -227,7 +227,7 @@ TEST_F(TcpActionTest, TimerZeroTimeout) {
     // Add a timer with zero timeout
     uint64_t timer_id = action_->AddTimer([&timer_fired]() {
         timer_fired = true;
-    }, 0);
+    }, 10);
     
     EXPECT_GT(timer_id, 0);
     

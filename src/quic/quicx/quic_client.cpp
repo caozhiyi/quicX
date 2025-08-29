@@ -16,9 +16,9 @@ QuicClient::~QuicClient() {
 
 }
 
-bool QuicClient::Init(const QuicConfig& config) {
-    if (config.log_level_ != LogLevel::kNull) {
-        InitLogger(config.log_level_);
+bool QuicClient::Init(const QuicClientConfig& config) {
+    if (config.config_.log_level_ != LogLevel::kNull) {
+        InitLogger(config.config_.log_level_);
     }
     
     master_->InitAsClient(config, params_, connection_state_cb_);

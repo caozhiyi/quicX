@@ -283,10 +283,10 @@ static const char kKeyPem[] =
 
 TEST(crypto_ssl_connection_utest, test1) {
     std::shared_ptr<TLSCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init();
+    client_ctx->Init(true);
 
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem);
+    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
     std::shared_ptr<MockTransport> cli_handler = std::make_shared<MockTransport>(MockTransport::Role::R_CLITNE);
     std::shared_ptr<MockTransport> ser_handler = std::make_shared<MockTransport>(MockTransport::Role::R_SERVER);

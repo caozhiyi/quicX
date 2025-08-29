@@ -13,8 +13,8 @@ TLSServerCtx::~TLSServerCtx() {
     
 }
 
-bool TLSServerCtx::Init(const std::string& cert_file, const std::string& key_file) {
-    if (!Init()) {
+bool TLSServerCtx::Init(const std::string& cert_file, const std::string& key_file, bool enable_early_data, uint32_t session_ticket_timeout) {
+    if (!Init(enable_early_data, session_ticket_timeout)) {
         return false;
     }
 
@@ -39,8 +39,8 @@ bool TLSServerCtx::Init(const std::string& cert_file, const std::string& key_fil
     return true;
 }
 
-bool TLSServerCtx::Init(const char* cert_pem, const char* key_pem) {
-    if (!Init()) {
+bool TLSServerCtx::Init(const char* cert_pem, const char* key_pem, bool enable_early_data, uint32_t session_ticket_timeout) {
+    if (!Init(enable_early_data, session_ticket_timeout)) {
         return false;
     }
 
@@ -81,20 +81,21 @@ bool TLSServerCtx::Init(const char* cert_pem, const char* key_pem) {
     return true;
 }
 
-bool TLSServerCtx::Init() {
-    if (!TLSCtx::Init()) {
+bool TLSServerCtx::Init(bool enable_early_data, uint32_t session_ticket_timeout) {
+    if (!TLSCtx::Init(enable_early_data)) {
         return false;
     }
 
-    // set server config 
+    // set server config, disable empty fragments and single ECDH use.
     long ssl_opts = (SSL_OP_ALL & ~SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS)
         | SSL_OP_SINGLE_ECDH_USE;
-        
     SSL_CTX_set_options(ssl_ctx_.get(), ssl_opts);
 
-    /* Save RAM by releasing read and write buffers when they're empty */
+    // save RAM by releasing read and write buffers when they're empty
     SSL_CTX_set_mode(ssl_ctx_.get(), SSL_MODE_RELEASE_BUFFERS);
-
+    
+    // set session ticket timeout for 0-RTT support
+    SSL_CTX_set_session_psk_dhe_timeout(ssl_ctx_.get(), session_ticket_timeout);
     return true;
 }
 

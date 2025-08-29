@@ -138,6 +138,8 @@ protected:
 
     // hint for early-data scheduling: whether any application stream (id != 0) has pending send
     bool has_app_send_pending_ = false;
+    // Track whether Initial packet has been sent in 0-RTT scenarios
+    bool initial_packet_sent_ = false;
 };
 
 }

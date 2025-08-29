@@ -71,6 +71,7 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecret(const uint8_t* secre
     }
     return Result::kOk;
 }
+
 ICryptographer::Result AeadBaseCryptographer::KeyUpdate(const uint8_t* new_base_secret, size_t secret_len, bool update_write) {
     // RFC 9001 §6: next_secret = HKDF-Expand-Label(current_secret, "tls13 quic ku", "", hash_len)
     // Here we allow caller to pass a base secret; if null, derive from current read/write secret.

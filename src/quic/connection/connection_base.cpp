@@ -159,6 +159,12 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
     if (!ret) {
         common::LOG_ERROR("get send data failed.");
     }
+    
+    // Mark Initial packet as sent if we just sent one
+    if (encrypto_level == kInitial && buffer->GetDataLength() > 0) {
+        initial_packet_sent_ = true;
+    }
+    
     send_operation = send_manager_.GetSendOperation();
     if (send_operation == SendOperation::kAllSendDone && state_ == ConnectionStateType::kStateDraining) {
         state_ = ConnectionStateType::kStateClosed;
@@ -230,6 +236,8 @@ bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
 
 bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
     // Handle 0-RTT packet like normal packet using early-data keys if available
+    // If early data is disabled on server, the keys won't be available and decryption will fail
+    // This is expected behavior - the packet will be dropped and early data will be rejected during TLS handshake
     return OnNormalPacket(packet);
 }
 
@@ -617,9 +625,21 @@ void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
 
 EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
     auto level = connection_crypto_.GetCurEncryptionLevel();
+    
+    // In 0-RTT scenario, we need to ensure proper packet sending order:
+    // 1. First send Initial packet (with ClientHello)
+    // 2. Then send 0-RTT packet (with early data)
     if (has_app_send_pending_ && level == kInitial) {
+        // Check if we have 0-RTT keys available
         if (connection_crypto_.GetCryptographer(kEarlyData)) {
-            return kEarlyData;
+            // Check if we have already sent the Initial packet with ClientHello
+            // This ensures we don't skip the Initial packet in 0-RTT scenarios
+            if (initial_packet_sent_) {
+                return kEarlyData;
+            } else {
+                // Still need to send Initial packet first
+                return kInitial;
+            }
         }
     }
     return level;

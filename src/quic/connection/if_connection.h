@@ -3,16 +3,12 @@
 
 #include <memory>
 #include <functional>
-#include "common/timer/timer.h" // NOLINT
 #include "quic/crypto/tls/type.h"
 #include "quic/connection/type.h"
+#include "common/timer/if_timer.h"
 #include "quic/packet/if_packet.h"
 #include "common/network/address.h"
-#include "quic/stream/send_stream.h" // NOLINT
-#include "quic/frame/if_stream_frame.h" // NOLINT
 #include "quic/connection/connection_id.h"
-#include "quic/crypto/tls/tls_connection.h" // NOLINT
-#include "quic/stream/bidirection_stream.h" // NOLINT
 #include "quic/include/if_quic_connection.h"
 
 namespace quicx {
