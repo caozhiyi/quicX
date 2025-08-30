@@ -128,7 +128,7 @@ if(ENABLE_TESTING)
 endif()
 
 # Fuzzing targets (libFuzzer)
-option(ENABLE_FUZZING "Enable building fuzz targets" OFF)
+option(ENABLE_FUZZING "Enable building fuzz targets" ON)
 if(ENABLE_FUZZING)
     add_subdirectory(fuzz)
 endif()
