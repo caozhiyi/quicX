@@ -21,7 +21,7 @@ public:
 
     virtual uint16_t GetCryptoLevel() const = 0;
     virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer) = 0;
-    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer) = 0;
+    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false) = 0;
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) = 0;
 
     virtual IHeader* GetHeader() = 0;

@@ -45,6 +45,11 @@ uint8_t* EncodeVarint(uint8_t* start, uint8_t* end, uint64_t value) {
         return nullptr;
     }
 
+    uint16_t need_len = GetEncodeVarintLength(value);
+    if (start + need_len > end) {
+        return nullptr;
+    }
+
     if (value > kMaxDecode) {
         LOG_ERROR("too large decode number:0x%lx", value);
         return nullptr;
@@ -102,11 +107,12 @@ uint16_t GetEncodeVarintLength(uint64_t value) {
 }
 
 uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint64_t& value) {
-    if (start >= end) {
+    if (start == nullptr || end == nullptr || start >= end) {
         return nullptr;
     }
 
-    uint8_t* uend = start;
+    // Correct upper bound pointer for range checks
+    uint8_t* uend = end;
     uint8_t* p = start;
     uint8_t len = 1 << (*p >> 6);
 
@@ -118,12 +124,19 @@ uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint64_t& value) {
 
     while (--len) {
         value = (value << 8) + *p++;
+        if (p >= end) {
+            return nullptr;
+        }
     }
 
     return (uint8_t*)p;
 }
 
 uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint32_t& value) {
+    if (start == nullptr || end == nullptr || start >= end) {
+        return nullptr;
+    }
+
     uint64_t ret = 0;
     uint8_t* ret_pos = DecodeVarint(start, end, ret);
     value = uint32_t(ret);
@@ -131,7 +144,7 @@ uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint32_t& value) {
 }
 
 uint8_t* FixedEncodeUint8(uint8_t *start, uint8_t *end, uint8_t value) {
-    if (start >= end) {
+    if (start == nullptr || end == nullptr || start >= end) {
         return nullptr;
     }
     *start++ = value;
@@ -139,7 +152,7 @@ uint8_t* FixedEncodeUint8(uint8_t *start, uint8_t *end, uint8_t value) {
 }
 
 uint8_t* FixedDecodeUint8(uint8_t *start, uint8_t *end, uint8_t& out) {
-    if (start >= end) {
+    if (start == nullptr || end == nullptr || start >= end) {
         return nullptr;
     }
     out = *start++;
@@ -147,7 +160,7 @@ uint8_t* FixedDecodeUint8(uint8_t *start, uint8_t *end, uint8_t& out) {
 }
 
 uint8_t* FixedEncodeUint16(uint8_t *start, uint8_t *end, uint16_t value) {
-    if (start + sizeof(uint16_t) > end) {
+    if (start == nullptr || end == nullptr || start >= end) {
         return nullptr;
     }
     *(uint16_t*)start = htons(value);
@@ -155,7 +168,7 @@ uint8_t* FixedEncodeUint16(uint8_t *start, uint8_t *end, uint16_t value) {
 }
 
 uint8_t* FixedDecodeUint16(uint8_t *start, uint8_t *end, uint16_t& out) {
-    if (start + sizeof(uint16_t) > end) {
+    if (start == nullptr || end == nullptr || start + sizeof(uint16_t) > end) {
         return nullptr;
     }
     out = ntohs(*(const uint16_t*)start);
@@ -163,7 +176,7 @@ uint8_t* FixedDecodeUint16(uint8_t *start, uint8_t *end, uint16_t& out) {
 }
 
 uint8_t* FixedEncodeUint32(uint8_t *start, uint8_t *end, uint32_t value) {
-    if (start + sizeof(uint32_t) > end) {
+    if (start == nullptr || end == nullptr || start + sizeof(uint32_t) > end) {
         return nullptr;
     }
     *(uint32_t*)start = htonl(value);
@@ -171,7 +184,7 @@ uint8_t* FixedEncodeUint32(uint8_t *start, uint8_t *end, uint32_t value) {
 }
 
 uint8_t* FixedDecodeUint32(uint8_t *start, uint8_t *end, uint32_t& out) {
-    if (start + sizeof(uint32_t) > end) {
+    if (start == nullptr || end == nullptr || start + sizeof(uint32_t) > end) {
         return nullptr;
     }
     out = ntohl(*(uint32_t*)start);
@@ -179,7 +192,7 @@ uint8_t* FixedDecodeUint32(uint8_t *start, uint8_t *end, uint32_t& out) {
 }
 
 uint8_t* FixedEncodeUint64(uint8_t *start, uint8_t *end, uint64_t value) {
-    if (start + sizeof(uint64_t) > end) {
+    if (start == nullptr || end == nullptr || start + sizeof(uint64_t) > end) {
         return nullptr;
     }
     *(uint64_t*)start = htobe64(value);
@@ -187,7 +200,7 @@ uint8_t* FixedEncodeUint64(uint8_t *start, uint8_t *end, uint64_t value) {
 }
 
 uint8_t* FixedDecodeUint64(uint8_t *start, uint8_t *end, uint64_t& out) {
-    if (start + sizeof(uint64_t) > end) {
+    if (start == nullptr || end == nullptr || start + sizeof(uint64_t) > end) {
         return nullptr;
     }
     out = be64toh(*(uint64_t*)start);
@@ -195,7 +208,7 @@ uint8_t* FixedDecodeUint64(uint8_t *start, uint8_t *end, uint64_t& out) {
 }
 
 uint8_t* EncodeBytes(uint8_t *start, uint8_t *end, uint8_t* in, uint32_t in_len) {
-    if (end - start < in_len) {
+    if (start == nullptr || end == nullptr || end - start < in_len) {
         LOG_ERROR("too small to encode bytes");
         return start;
     }
@@ -205,7 +218,7 @@ uint8_t* EncodeBytes(uint8_t *start, uint8_t *end, uint8_t* in, uint32_t in_len)
 }
 
 uint8_t* DecodeBytesCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t out_len) {
-    if (end - start < out_len) {
+    if (start == nullptr || end == nullptr || end - start < out_len) {
         LOG_ERROR("too small to decode bytes");
         return start;
     }
@@ -215,7 +228,7 @@ uint8_t* DecodeBytesCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t o
 }
 
 uint8_t* DecodeBytesNoCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t out_len) {
-    if (end - start < out_len) {
+    if (start == nullptr || end == nullptr || end - start < out_len) {
         LOG_ERROR("too small to decode bytes");
         return start;
     }
