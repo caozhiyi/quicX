@@ -74,8 +74,8 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer) {
-    if (!header_.DecodeHeader(buffer)) {
+bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer, bool with_flag) {
+    if (!header_.DecodeHeader(buffer, with_flag)) {
         common::LOG_ERROR("decode header failed");
         return false;
     }
