@@ -69,7 +69,7 @@ TEST_F(FrameDecodeTest, DecodeSettingsFrame) {
 
     std::vector<std::shared_ptr<IFrame>> frames;
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
-    EXPECT_EQ(frames.size(), 1);
+    ASSERT_EQ(frames.size(), 1);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kSettings);
 
@@ -85,7 +85,7 @@ TEST_F(FrameDecodeTest, DecodeGoAwayFrame) {
 
     std::vector<std::shared_ptr<IFrame>> frames;
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
-    EXPECT_EQ(frames.size(), 1);
+    ASSERT_EQ(frames.size(), 1);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kGoAway);
 
@@ -104,7 +104,7 @@ TEST_F(FrameDecodeTest, DecodePushPromiseFrame) {
 
     std::vector<std::shared_ptr<IFrame>> frames;
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
-    EXPECT_EQ(frames.size(), 1);
+    ASSERT_EQ(frames.size(), 1);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kPushPromise);
 
@@ -161,7 +161,7 @@ TEST_F(FrameDecodeTest, DecodeMultipleFrames) {
     // Decode first frame
     std::vector<std::shared_ptr<IFrame>> frames;
     EXPECT_TRUE(DecodeFrames(read_buffer, frames));
-    EXPECT_EQ(frames.size(), 2);
+    ASSERT_EQ(frames.size(), 2);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kData);
 
