@@ -6,7 +6,7 @@
 #include <atomic>
 #include "upgrade/include/if_upgrade.h"
 #include "upgrade/network/if_tcp_action.h"
-#include "upgrade/handlers/smart_handler_factory.h"
+#include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
 namespace upgrade {

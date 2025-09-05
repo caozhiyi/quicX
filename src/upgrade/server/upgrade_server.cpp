@@ -4,6 +4,7 @@
 #include "common/log/stdout_logger.h"
 #include "upgrade/network/tcp_action.h"
 #include "upgrade/server/upgrade_server.h"
+#include "upgrade/handlers/smart_handler_factory.h"
 
 namespace quicx {
 namespace upgrade {
