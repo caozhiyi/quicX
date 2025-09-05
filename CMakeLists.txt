@@ -127,6 +127,12 @@ if(ENABLE_TESTING)
     add_subdirectory(utest)
 endif()
 
+# Benchmarks
+option(ENABLE_BENCHMARKS "Enable building benchmarks" ON)
+if(ENABLE_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
+
 # Fuzzing targets (libFuzzer)
 option(ENABLE_FUZZING "Enable building fuzz targets" OFF)
 if(ENABLE_FUZZING)

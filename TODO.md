@@ -5,7 +5,7 @@
 - [x] http3 push implement
 - [x] connection graceful close
 - [ ] ack packet enc
-- [ ] http3 qpack dynamic table update implement
+- [x] http3 qpack dynamic table update implement
 - [ ] zero memory copy
 - [x] 0 rtt handshake
 - [x] http3 settings control
@@ -14,4 +14,3 @@
 - [ ] fuzz test
 - [ ] benchmark test
 - [ ] http3 test
-- [ ] congestion control test

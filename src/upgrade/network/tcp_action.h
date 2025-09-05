@@ -7,7 +7,7 @@
 #include <atomic>
 #include <unordered_map>
 
-#include "common/timer/timer.h"
+#include "common/timer/if_timer.h"
 #include "upgrade/network/if_tcp_action.h"
 #include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/network/if_event_driver.h"
