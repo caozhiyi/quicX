@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include <vector>
+#include <algorithm>
+
 #include "cc_test_framework.h"
 
 using namespace quicx::quic;

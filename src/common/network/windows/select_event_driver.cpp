@@ -47,7 +47,7 @@ bool SelectEventDriver::Init() {
     return true;
 }
 
-bool SelectEventDriver::AddFd(int32_t sockfd, EventType events) {
+bool SelectEventDriver::AddFd(int32_t sockfd, int32_t events) {
     if (!initialized_) {
         return false;
     }
@@ -67,7 +67,7 @@ bool SelectEventDriver::RemoveFd(int32_t sockfd) {
     return true;
 }
 
-bool SelectEventDriver::ModifyFd(int32_t sockfd, EventType events) {
+bool SelectEventDriver::ModifyFd(int32_t sockfd, int32_t events) {
     if (!initialized_) {
         return false;
     }
@@ -95,19 +95,19 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     // Add all monitored fds to appropriate sets
     for (const auto& pair : monitored_fds_) {
         int32_t fd = pair.first;
-        EventType events = pair.second;
+        int32_t events = pair.second;
         
         if (fd > maxfd) {
             maxfd = static_cast<int>(fd);
         }
         
-        if (static_cast<int>(events) & static_cast<int>(EventType::ET_READ)) {
+        if (events & EventType::ET_READ) {
             FD_SET(static_cast<int>(fd), &readfds);
         }
-        if (static_cast<int>(events) & static_cast<int>(EventType::ET_WRITE)) {
+        if (events & EventType::ET_WRITE) {
             FD_SET(static_cast<int>(fd), &writefds);
         }
-        if (static_cast<int>(events) & static_cast<int>(EventType::ET_ERROR)) {
+        if (events & EventType::ET_ERROR) {
             FD_SET(static_cast<int>(fd), &exceptfds);
         }
     }
@@ -136,7 +136,7 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     // Process results
     for (const auto& pair : monitored_fds_) {
         int32_t fd = pair.first;
-        EventType monitored_events = pair.second;
+        int32_t monitored_events = pair.second;
         
         // Skip wakeup pipe events
         if (fd == wakeup_fd_[0]) {
@@ -180,36 +180,36 @@ void SelectEventDriver::Wakeup() {
     }
 }
 
-int SelectEventDriver::ConvertToSelectEvents(EventType events) const {
+int SelectEventDriver::ConvertToSelectEvents(int32_t events) const {
     int select_events = 0;
     
-    if (static_cast<int>(events) & static_cast<int>(EventType::ET_READ)) {
+    if (events & EventType::ET_READ) {
         select_events |= FD_READ;
     }
-    if (static_cast<int>(events) & static_cast<int>(EventType::ET_WRITE)) {
+    if (events & EventType::ET_WRITE) {
         select_events |= FD_WRITE;
     }
-    if (static_cast<int>(events) & static_cast<int>(EventType::ET_ERROR)) {
+    if (events & EventType::ET_ERROR) {
         select_events |= FD_OOB;
     }
     
     return select_events;
 }
 
-EventType SelectEventDriver::ConvertFromSelectEvents(int select_events) const {
+int32_t SelectEventDriver::ConvertFromSelectEvents(int select_events) const {
     int events_int = 0;
     
     if (select_events & FD_READ) {
-        events_int |= static_cast<int>(EventType::ET_READ);
+        events_int |= EventType::ET_READ;
     }
     if (select_events & FD_WRITE) {
-        events_int |= static_cast<int>(EventType::ET_WRITE);
+        events_int |= EventType::ET_WRITE;
     }
     if (select_events & FD_OOB) {
-        events_int |= static_cast<int>(EventType::ET_ERROR);
+        events_int |= EventType::ET_ERROR;
     }
     
-    return static_cast<EventType>(events_int);
+    return events_int;
 }
 
 } // namespace common
