@@ -26,7 +26,7 @@ Client::~Client() {
 
 bool Client::Init(const Http3Config& config) {
     quic::QuicClientConfig quic_config;
-    quic_config.config_.thread_num_ = config.thread_num_;
+    quic_config.config_.worker_thread_num_ = config.thread_num_;
     quic_config.config_.log_level_ = quic::LogLevel(config.log_level_);
     quic_config.config_.enable_ecn_ = config.enable_ecn_;
     quic_config.enable_session_cache_ = false;

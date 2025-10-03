@@ -2,9 +2,7 @@
 #include <cstddef>
 
 #include "common/buffer/buffer.h"
-#include "quic/packet/type.h"
 #include "quic/packet/version_negotiation_packet.h"
-#include "quic/packet/header/header_flag.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (data == nullptr || size == 0) {

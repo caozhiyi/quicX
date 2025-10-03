@@ -124,17 +124,23 @@ option(ENABLE_TESTING "Enable building of unit tests" ON)
 
 # Enable testing if the option is set
 if(ENABLE_TESTING)
-    add_subdirectory(utest)
+    add_subdirectory(unit_test)
 endif()
 
 # Benchmarks
 option(ENABLE_BENCHMARKS "Enable building benchmarks" ON)
 if(ENABLE_BENCHMARKS)
-    add_subdirectory(benchmarks)
+    add_subdirectory(test/benchmarks)
 endif()
 
 # Fuzzing targets (libFuzzer)
 option(ENABLE_FUZZING "Enable building fuzz targets" OFF)
 if(ENABLE_FUZZING)
-    add_subdirectory(fuzz)
+    add_subdirectory(test/fuzz)
+endif()
+
+# Congestion control simulator tests
+option(ENABLE_CC_SIMULATOR "Enable building congestion control simulator tests" ON)
+if(ENABLE_CC_SIMULATOR)
+    add_subdirectory(test/congestion_control)
 endif()

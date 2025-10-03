@@ -4,7 +4,7 @@ package(default_visibility = ["//visibility:public"])
 test_suite(
     name = "unit_tests_common",
     tests = [
-        "//utest/common:common_tests",
+        "//unit_test/common:common_tests",
     ],
 )
 

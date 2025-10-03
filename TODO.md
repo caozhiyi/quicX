@@ -9,7 +9,7 @@
 - [ ] zero memory copy
 - [x] 0 rtt handshake
 - [x] http3 settings control
-- [ ] congestion control test
+- [x] congestion control test
 - [ ] test server reject 0rrt 
 - [ ] fuzz test
 - [ ] benchmark test

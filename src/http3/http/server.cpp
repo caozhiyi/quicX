@@ -41,7 +41,7 @@ bool Server::Init(const Http3ServerConfig& config) {
         quic_config.key_file_ = config.key_file_;
     }
     quic_config.alpn_ = kHttp3Alpn;
-    quic_config.config_.thread_num_ = config.config_.thread_num_;
+    quic_config.config_.worker_thread_num_ = config.config_.thread_num_;
     quic_config.config_.log_level_ = quic::LogLevel(config.config_.log_level_);
     quic_config.config_.enable_ecn_ = config.config_.enable_ecn_;
 
