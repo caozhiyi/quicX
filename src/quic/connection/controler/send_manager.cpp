@@ -87,7 +87,7 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
         frame_visitor.SetStreamDataSizeLimit(can_send_size);
         auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
         if (!packet) {
-            common::LOG_ERROR("make packet failed.");
+            common::LOG_WARN("make packet failed.");
             return false;
         }
         return PacketInit(packet, buffer);

@@ -2,6 +2,9 @@
 #define UPGRADE_NETWORK_TCP_SOCKET
 
 #include <memory>
+#include <vector>
+#include <string>
+#include <cstdint>
 
 #include "common/network/address.h"
 #include "upgrade/network/if_tcp_socket.h"
@@ -39,16 +42,10 @@ public:
     virtual std::string GetRemoteAddress() const override;
     virtual uint16_t GetRemotePort() const override;
 
-    // Socket handler management
-    virtual void SetHandler(std::shared_ptr<ISocketHandler> handler) override;
-    virtual std::shared_ptr<ISocketHandler> GetHandler() const override;
 
 private:
     int64_t fd_ = -1;
     common::Address remote_address_;
-
-    // Socket handler
-    std::weak_ptr<ISocketHandler> handler_;
 };
 
 } // namespace upgrade

@@ -1,10 +1,12 @@
 #ifndef COMMON_NETWORK_IF_EVENT_LOOP
 #define COMMON_NETWORK_IF_EVENT_LOOP
 
+#include <memory>
 #include <cstdint>
 #include <functional>
 
-#include "common/network/if_event_driver.h"
+#include "common/timer/if_timer.h"
+
 
 namespace quicx {
 namespace common {
@@ -12,10 +14,10 @@ namespace common {
 class IFdHandler {
 public:
     virtual ~IFdHandler() = default;
-    virtual void OnRead(int fd) = 0;
-    virtual void OnWrite(int fd) = 0;
-    virtual void OnError(int fd) = 0;
-    virtual void OnClose(int fd) = 0;
+    virtual void OnRead(uint32_t fd) = 0;
+    virtual void OnWrite(uint32_t fd) = 0;
+    virtual void OnError(uint32_t fd) = 0;
+    virtual void OnClose(uint32_t fd) = 0;
 };  
 
 class IEventLoop {
@@ -25,19 +27,23 @@ public:
     virtual bool Init() = 0;
     virtual int Wait() = 0;
 
-    virtual bool RegisterFd(int fd, EventType events, IFdHandler* handler) = 0;
-    virtual bool ModifyFd(int fd, EventType events) = 0;
-    virtual bool RemoveFd(int fd) = 0;
+    virtual bool RegisterFd(uint32_t fd, int32_t events, std::shared_ptr<IFdHandler> handler) = 0;
+    virtual bool ModifyFd(uint32_t fd, int32_t events) = 0;
+    virtual bool RemoveFd(uint32_t fd) = 0;
+
+    virtual void AddFixedProcess(std::function<void()> cb) = 0;
 
     virtual uint64_t AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat = false) = 0;
     virtual bool RemoveTimer(uint64_t timer_id) = 0;
 
     virtual void PostTask(std::function<void()> fn) = 0;
     virtual void Wakeup() = 0;
+
+    virtual std::shared_ptr<ITimer> GetTimer() = 0;
 };
 
 // Factory for default implementation
-std::unique_ptr<IEventLoop> MakeEventLoop();
+std::shared_ptr<IEventLoop> MakeEventLoop();
 
 }
 }

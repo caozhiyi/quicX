@@ -10,7 +10,7 @@ namespace upgrade {
 class HttpSmartHandler:
     public BaseSmartHandler {
 public:
-    explicit HttpSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action);
+    explicit HttpSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop);
 
 protected:
     // BaseSmartHandler interface

@@ -59,6 +59,8 @@ SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void
 
 SysCallInt32Result SocketNoblocking(int32_t sockfd);
 
+bool ParseRemoteAddress(uint16_t fd, Address& addr);
+
 bool LookupAddress(const std::string& host, Address& addr);
 
 bool Pipe(int32_t& pipe1, int32_t& pipe2);
@@ -73,6 +75,7 @@ SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint
 // Set default ECN marking on outgoing UDP packets (via IP_TOS/IPV6_TCLASS)
 // ecn_codepoint: 0x00 Not-ECT, 0x01 ECT(1), 0x02 ECT(0), 0x03 CE (not recommended)
 SysCallInt32Result EnableUdpEcnMarking(int32_t sockfd, uint8_t ecn_codepoint);
+
 
 }
 }

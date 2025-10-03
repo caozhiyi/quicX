@@ -3,10 +3,20 @@
 
 #include <string>
 #include <cstdint>
+
 #include "quic/udp/net_packet.h"
+#include "common/network/if_event_loop.h"
 
 namespace quicx {
 namespace quic {
+
+class IPacketReceiver {
+public:
+    IPacketReceiver() {}
+    virtual ~IPacketReceiver() {}
+
+    virtual void OnPacket(std::shared_ptr<NetPacket>& pkt) = 0;
+};
 
 /*
  interface for receiving packets, try to receive a packet
@@ -16,19 +26,15 @@ public:
     IReceiver() {}
     virtual ~IReceiver() {}
 
-    virtual void TryRecv(std::shared_ptr<NetPacket>& pkt, uint32_t timeout_ms) = 0;
-
-    virtual void Wakeup() = 0;
-
-    virtual void AddReceiver(int32_t socket_fd) = 0;
+    virtual void AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) = 0;
 
     // add a receiver, return the socket fd
-    virtual int32_t AddReceiver(const std::string& ip, uint16_t port) = 0;
+    virtual int32_t AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) = 0;
 
     // Enable or disable ECN features on underlying sockets created/managed by receiver
     virtual void SetEcnEnabled(bool enabled) = 0;
 
-    static std::shared_ptr<IReceiver> MakeReceiver();
+    static std::shared_ptr<IReceiver> MakeReceiver(std::shared_ptr<common::IEventLoop> event_loop);
 };
 
 }

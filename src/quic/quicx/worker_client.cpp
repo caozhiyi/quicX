@@ -11,8 +11,9 @@ ClientWorker::ClientWorker(const QuicConfig& config,
         std::shared_ptr<TLSCtx> ctx,
         std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
+        std::shared_ptr<common::IEventLoop> event_loop,
         connection_state_callback connection_handler):
-    Worker(config, ctx, sender, params, connection_handler) {
+    Worker(config, ctx, sender, params, event_loop, connection_handler) {
 }
 
 ClientWorker::~ClientWorker() {
@@ -21,7 +22,7 @@ ClientWorker::~ClientWorker() {
 
 void ClientWorker::Connect(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms) {
-    auto conn = std::make_shared<ClientConnection>(ctx_, time_,
+    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_->GetTimer(),
         std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
@@ -32,17 +33,16 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
     
     conn->Dial(common::Address(ip, port), alpn, params_);
     
-    common::TimerTask task([conn, this]() {
+    event_loop_->AddTimer([conn, this]() {
         HandleConnectionTimeout(conn);
-    });
-    time_->AddTimer(task, timeout_ms);
+    }, timeout_ms);
 }
 
 void ClientWorker::Connect(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
 
     auto conn = std::make_shared<ClientConnection>(ctx_,
-        time_,
+        event_loop_->GetTimer(),
         std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
@@ -53,10 +53,9 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port,
             
     conn->Dial(common::Address(ip, port), alpn, resumption_session_der, params_);
                     
-    common::TimerTask task([conn, this]() {
+    event_loop_->AddTimer([conn, this]() {
         HandleConnectionTimeout(conn);
-    });
-    time_->AddTimer(task, timeout_ms);
+    }, timeout_ms);
 }
 
 bool ClientWorker::InnerHandlePacket(PacketInfo& packet_info) {

@@ -26,8 +26,14 @@ enum class LogLevel: uint8_t {
     kDebug  = 0x10 | kInfo,
 };
 
+enum class ThreadMode: uint8_t {
+    kSingleThread = 0x00, // start a single thread to process worker and master
+    kMultiThread  = 0x01, // start one thread to process master and multiple threads to process workers
+};
+
 struct QuicConfig {
-    uint16_t thread_num_ = 1;
+    ThreadMode thread_mode_ = ThreadMode::kSingleThread;
+    uint16_t worker_thread_num_ = 2;
     LogLevel log_level_  = LogLevel::kNull;
 
     bool enable_ecn_  = false;

@@ -3,6 +3,7 @@
 
 #include <memory>
 #include "upgrade/include/type.h"
+#include "common/network/if_event_loop.h"
 
 namespace quicx {
 namespace upgrade {
@@ -13,20 +14,11 @@ public:
     IUpgrade() = default;
     virtual ~IUpgrade() = default;
 
-    // Initialize the upgrade server
-    virtual bool Init(LogLevel level = LogLevel::kNull) = 0;
-
     // Add a listener with specified settings
     virtual bool AddListener(UpgradeSettings& settings) = 0;
 
-    // Stop the upgrade server
-    virtual void Stop() = 0;
-
-    // Wait for the server to finish
-    virtual void Join() = 0;
-
     // Create a server instance
-    static std::unique_ptr<IUpgrade> MakeUpgrade();
+    static std::unique_ptr<IUpgrade> MakeUpgrade(std::shared_ptr<common::IEventLoop> event_loop);
 };
 
 } // namespace upgrade

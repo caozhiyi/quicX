@@ -2,10 +2,12 @@
 #define QUIC_CONGESTION_CONTROL_BBR_V3_CONGESTION_CONTROL
 
 #include <cstdint>
-#include <vector>
+#include <deque>
 #include <memory>
-#include "quic/congestion_control/if_congestion_control.h"
+
 #include "quic/congestion_control/if_pacer.h"
+#include "quic/congestion_control/if_congestion_control.h"
+
 
 namespace quicx {
 namespace quic {
@@ -35,6 +37,14 @@ public:
 
 private:
     enum class Mode { kStartup, kDrain, kProbeBw, kProbeRtt };
+    
+    // ProbeBW sub-states for BBRv3
+    enum class ProbeBwState {
+        kDown,    // Probe for queue, reduce inflight
+        kCruise,  // Cruise at estimated BDP
+        kRefill,  // Refill pipe before probing up
+        kUp       // Probe for bandwidth increase
+    };
 
     struct BwSample { uint64_t time_us; uint64_t bytes_per_sec; };
 
@@ -47,6 +57,9 @@ private:
     void StartNewRound(uint64_t pn);
     void AdaptInflightBoundsOnLoss(uint64_t now_us);
     void AdaptOnEcn();
+    void UpdateInflightBounds();
+    void EnterProbeBwState(ProbeBwState state, uint64_t now_us);
+    bool ShouldAdvanceProbeBwState(uint64_t now_us) const;
 
     uint64_t BdpBytes(uint64_t gain_num, uint64_t gain_den) const; // BDP * gain
 
@@ -66,8 +79,12 @@ private:
 
     // Bandwidth filter
     static constexpr size_t kBwWindow = 10;
-    std::vector<BwSample> bw_window_;
+    std::deque<BwSample> bw_window_;
     uint64_t max_bw_bps_ = 0;
+
+    // Aggregated bandwidth sampling (bytes over interval)
+    uint64_t bw_sample_start_us_ = 0;
+    uint64_t bw_sample_bytes_acc_ = 0;
 
     // Gains
     double pacing_gain_ = 2.885; // STARTUP
@@ -76,6 +93,9 @@ private:
     // ProbeBW cycle
     int cycle_index_ = 0;
     uint64_t cycle_start_us_ = 0;
+    ProbeBwState probe_bw_state_ = ProbeBwState::kDown;
+    uint64_t probe_bw_state_start_us_ = 0;
+    uint64_t rounds_since_probe_ = 0;
 
     // ProbeRTT
     static constexpr uint64_t kProbeRttIntervalUs = 10ull * 1000ull * 1000ull; // 10s
@@ -92,9 +112,19 @@ private:
 
     // Loss threshold (approx v3 behavior). 2% default
     double loss_thresh_ = 0.02;
+    double beta_loss_ = 0.9;   // Multiplicative decrease factor on loss
+    double beta_ecn_ = 0.85;   // More aggressive factor on ECN
 
     // ECN handling
     bool ecn_seen_in_round_ = false;
+
+    // Full bandwidth detection (instance-local)
+    uint64_t full_bw_bps_ = 0;
+    int full_bw_cnt_ = 0;
+    
+    // Round tracking
+    uint64_t round_count_ = 0;
+    uint64_t round_start_pn_ = 0;
 
     // Pacer
     std::unique_ptr<IPacer> pacer_;

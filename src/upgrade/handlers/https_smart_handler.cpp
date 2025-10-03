@@ -20,8 +20,8 @@ SSLContext::~SSLContext() {
     }
 }
 
-HttpsSmartHandler::HttpsSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action):
-    BaseSmartHandler(settings, tcp_action) {
+HttpsSmartHandler::HttpsSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop):
+    BaseSmartHandler(settings, event_loop) {
     
     if (!InitializeSSL()) {
         common::LOG_ERROR("Failed to initialize SSL context");

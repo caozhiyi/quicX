@@ -90,7 +90,7 @@ bool EpollEventDriver::Init() {
     return true;
 }
 
-bool EpollEventDriver::AddFd(int32_t sockfd, EventType events) {
+bool EpollEventDriver::AddFd(int32_t sockfd, int32_t events) {
     if (epoll_fd_ < 0) {
         return false;
     }
@@ -122,7 +122,7 @@ bool EpollEventDriver::RemoveFd(int32_t sockfd) {
     return true;
 }
 
-bool EpollEventDriver::ModifyFd(int32_t sockfd, EventType events) {
+bool EpollEventDriver::ModifyFd(int32_t sockfd, int32_t events) {
     if (epoll_fd_ < 0) {
         return false;
     }
@@ -194,7 +194,7 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     return events.size();
 }
 
-uint32_t EpollEventDriver::ConvertToEpollEvents(EventType events) const {
+uint32_t EpollEventDriver::ConvertToEpollEvents(int32_t events) const {
     uint32_t epoll_events = 0;
     
     if (static_cast<int>(events) & static_cast<int>(EventType::ET_READ)) {

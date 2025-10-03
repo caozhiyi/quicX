@@ -1,7 +1,9 @@
+#include <thread>
+#include <sstream>
+
 #include "common/log/log.h"
 #include "quic/quicx/worker.h"
 #include "quic/udp/if_sender.h"
-#include "common/timer/timer.h"
 #include "quic/common/version.h"
 #include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
@@ -13,64 +15,44 @@ Worker::Worker(const QuicConfig& config,
         std::shared_ptr<TLSCtx> ctx,
         std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
+        std::shared_ptr<common::IEventLoop> event_loop,
         connection_state_callback connection_handler):
+    IWorker(),
     ctx_(ctx),
     params_(params),
     sender_(sender),
     connection_handler_(connection_handler),
+    event_loop_(event_loop),
     active_send_connection_set_1_is_current_(true) {
-    time_ = common::MakeTimer();
 
     ecn_enabled_ = config.enable_ecn_;
 }
 
 Worker::~Worker() {
-    if (!Thread::IsStop()) {
-        Destroy();
-    }
-}
 
-void Worker::Init(std::shared_ptr<IConnectionIDNotify> connection_id_notify) {
-    connection_id_notify_ = connection_id_notify;
-    Start();
-}
-
-void Worker::Destroy() {
-    Thread::Stop();
-    Weakup();
-    Thread::Join();
-}
-
-void Worker::Weakup() {
-    packet_queue_.Push(PacketInfo());
-}
-
-void Worker::Join() {
-    Thread::Join();
-}
-
-std::thread::id Worker::GetCurrentThreadId() {
-    if (pthread_) {
-        return pthread_->get_id();
-    }
-    throw ("thread not started");
 }
 
 void Worker::HandlePacket(PacketInfo& packet_info) {
-    packet_queue_.Emplace(std::move(packet_info));
-}
-
-void Worker::Run() {
-    while (!Thread::IsStop()) {
-        ProcessRecv();
-        ProcessSend();
-        ProcessTimer();
-        ProcessTask();
+    if (packet_info.net_packet_ && packet_info.net_packet_->GetTime() > 0 && !packet_info.packets_.empty()) {
+        InnerHandlePacket(packet_info);
     }
 }
 
-void Worker::ProcessTimer() {
-    time_->TimerRun();
+std::shared_ptr<common::IEventLoop> Worker::GetEventLoop() {
+    return event_loop_;
+}
+
+std::string Worker::GetWorkerId() {
+    if (worker_id_.empty()) {
+        std::ostringstream oss;
+        oss << std::this_thread::get_id();
+        worker_id_ = oss.str();
+    }
+    return worker_id_;
+}
+
+void Worker::Process() {
+    ProcessSend();
 }
 
 void Worker::ProcessSend() {
@@ -121,27 +103,6 @@ void Worker::ProcessSend() {
     }
 }
 
-void Worker::ProcessRecv() {
-    int32_t min_time = time_->MinTime();
-    if (min_time < 0) {
-        min_time = 200; // 200ms
-    }
-
-    PacketInfo packet_info;
-    if (packet_queue_.TryPop(packet_info, std::chrono::milliseconds(min_time))) {
-        if (packet_info.net_packet_ && packet_info.net_packet_->GetTime() > 0 && !packet_info.packets_.empty()) {
-            InnerHandlePacket(packet_info);
-        }
-    }
-}
-
-void Worker::ProcessTask() {
-    std::function<void()> task;
-    while (queue_.TryPop(task)) {
-        task();
-    }
-}
-
 bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet) {
     if (packet->GetHeader()->GetPacketType() != PacketType::kInitialPacketType) {
         common::LOG_ERROR("recv packet whitout connection.");
@@ -169,14 +130,14 @@ void Worker::HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnectio
     conn_map_[cid.Hash()] = conn;
     common::LOG_DEBUG("add connection id to client worker. cid:%llu", cid.Hash());
     if (auto notify = connection_id_notify_.lock()) {
-        notify->AddConnectionID(cid);
+        notify->AddConnectionID(cid, GetWorkerId());
     }
 }
 
 void Worker::HandleRetireConnectionId(ConnectionID& cid) {
     conn_map_.erase(cid.Hash());
     if (auto notify = connection_id_notify_.lock()) {
-        notify->RetireConnectionID(cid);
+        notify->RetireConnectionID(cid, GetWorkerId());
     }
 }
 
@@ -192,7 +153,7 @@ void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
     GetWriteActiveSendConnectionSet().insert(conn);
     common::LOG_DEBUG("HandleActiveSendConnection");
     do_send_ = true;
-    Weakup();
+    event_loop_->Wakeup();
 }
 
 void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {

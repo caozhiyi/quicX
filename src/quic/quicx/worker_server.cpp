@@ -11,8 +11,9 @@ ServerWorker::ServerWorker(const QuicServerConfig& config,
         std::shared_ptr<TLSCtx> ctx,
         std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
+        std::shared_ptr<common::IEventLoop> event_loop,
         connection_state_callback connection_handler):
-    Worker(config.config_, ctx, sender, params, connection_handler) {
+    Worker(config.config_, ctx, sender, params, event_loop, connection_handler) {
     server_alpn_ = config.alpn_;
 }
 
@@ -54,7 +55,7 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     // create new connection
     auto new_conn = std::make_shared<ServerConnection>(ctx_,
         server_alpn_,
-        time_,
+        event_loop_->GetTimer(),
         std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
@@ -70,13 +71,12 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     new_conn->SetPendingEcn(packet_info.net_packet_->GetEcn());
     new_conn->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
 
-    common::TimerTask task([new_conn, this]() {
+    event_loop_->AddTimer([new_conn, this]() {
         if (connecting_set_.find(new_conn) != connecting_set_.end()) {
             connecting_set_.erase(new_conn);
             common::LOG_DEBUG("connection timeout. cid:%llu", new_conn->GetConnectionIDHash());
         }
-    });
-    time_->AddTimer(task, 5000); // TODO add timeout to config
+    }, 5000); // TODO add timeout to config
     return true;
 }
 

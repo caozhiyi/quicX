@@ -9,7 +9,7 @@ namespace quicx {
 namespace common {
 
 // Event types
-enum class EventType {
+enum EventType: int32_t {
     ET_READ  = 0x01,
     ET_WRITE = 0x02,
     ET_ERROR = 0x04,
@@ -32,13 +32,13 @@ public:
     virtual bool Init() = 0;
 
     // Add a file descriptor to monitor
-    virtual bool AddFd(int32_t fd, EventType events) = 0;
+    virtual bool AddFd(int32_t fd, int32_t events) = 0;
 
     // Remove a file descriptor from monitoring
     virtual bool RemoveFd(int32_t fd) = 0;
 
     // Modify events for a file descriptor
-    virtual bool ModifyFd(int32_t fd, EventType events) = 0;
+    virtual bool ModifyFd(int32_t fd, int32_t events) = 0;
 
     // Wait for events with timeout (in milliseconds)
     // Returns the number of events that occurred
