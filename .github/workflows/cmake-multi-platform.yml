@@ -41,6 +41,7 @@ jobs:
         fetch-depth: 0
 
     - name: Initialize submodules
+      shell: bash
       run: |
         echo "Current directory: $(pwd)"
         echo "Repository contents:"
@@ -70,6 +71,7 @@ jobs:
         echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
 
     - name: Verify submodules
+      shell: bash
       run: |
         echo "Checking repository structure:"
         ls -la
@@ -107,6 +109,7 @@ jobs:
       run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --parallel
 
     - name: Test
+      shell: bash
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       run: |
         if [ -f "quicx_utest" ]; then
@@ -122,6 +125,7 @@ jobs:
         fi
 
     - name: Build examples
+      shell: bash
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       run: |
         if [ -f "bin/hello_world_server" ]; then
