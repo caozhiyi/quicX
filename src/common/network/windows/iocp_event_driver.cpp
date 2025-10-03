@@ -34,7 +34,7 @@ bool IOCPEventDriver::Init() {
     return true;
 }
 
-bool IOCPEventDriver::AddFd(int32_t sockfd, EventType events) {
+bool IOCPEventDriver::AddFd(int32_t sockfd, int32_t events) {
     HANDLE h = CreateIoCompletionPort(reinterpret_cast<HANDLE>(static_cast<intptr_t>(sockfd)), iocp_, static_cast<ULONG_PTR>(sockfd), 0);
     if (!h) {
         LOG_ERROR("Associate socket %d with IOCP failed: %lu", sockfd, GetLastError());
@@ -56,13 +56,13 @@ bool IOCPEventDriver::RemoveFd(int32_t sockfd) {
     return true;
 }
 
-bool IOCPEventDriver::ModifyFd(int32_t sockfd, EventType events) {
+bool IOCPEventDriver::ModifyFd(int32_t sockfd, int32_t events) {
     subscriptions_[sockfd] = events;
-    if (static_cast<int>(events) & static_cast<int>(EventType::ET_READ)) {
+    if (events & EventType::ET_READ) {
         ArmRead(sockfd);
     }
     // For ET_WRITE, we rely on ideal send backlog change notification
-    if (static_cast<int>(events) & static_cast<int>(EventType::ET_WRITE)) {
+    if (events & EventType::ET_WRITE) {
         ArmWriteNotif(sockfd);
     }
     return true;
@@ -105,7 +105,7 @@ int IOCPEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         // re-arm if still subscribed
         auto it = subscriptions_.find(fd);
         if (it != subscriptions_.end()) {
-            EventType want = it->second;
+            int32_t want = it->second;
             if (static_cast<int>(want) & static_cast<int>(EventType::ET_READ)) {
                 ArmRead(fd);
             }

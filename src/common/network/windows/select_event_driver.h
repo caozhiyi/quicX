@@ -21,13 +21,13 @@ public:
     virtual bool Init() override;
 
     // Add a socket to select monitoring
-    virtual bool AddFd(int32_t sockfd, EventType events) override;
+    virtual bool AddFd(int32_t sockfd, int32_t events) override;
 
     // Remove a socket from select monitoring
     virtual bool RemoveFd(int32_t sockfd) override;
 
     // Modify events for a socket
-    virtual bool ModifyFd(int32_t sockfd, EventType events) override;
+    virtual bool ModifyFd(int32_t sockfd, int32_t events) override;
 
     // Wait for events with timeout
     virtual int Wait(std::vector<Event>& events, int timeout_ms = -1) override;
@@ -40,12 +40,12 @@ public:
 
 private:
     // Convert EventType to select events
-    int ConvertToSelectEvents(EventType events) const;
+    int ConvertToSelectEvents(int32_t events) const;
     
     // Convert select events to EventType
-    EventType ConvertFromSelectEvents(int select_events) const;
+    int32_t ConvertFromSelectEvents(int select_events) const;
 
-    std::unordered_map<int32_t, EventType> monitored_fds_;  // fd -> events
+    std::unordered_map<int32_t, int32_t> monitored_fds_;  // fd -> events
     int32_t wakeup_fd_[2];  // Pipe for wakeup
     int max_events_ = 1024;
     bool initialized_ = false;

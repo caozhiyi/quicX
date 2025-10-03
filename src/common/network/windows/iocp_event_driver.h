@@ -18,9 +18,9 @@ public:
     virtual ~IOCPEventDriver();
 
     virtual bool Init() override;
-    virtual bool AddFd(int32_t sockfd, EventType events) override;
+    virtual bool AddFd(int32_t sockfd, int32_t events) override;
     virtual bool RemoveFd(int32_t sockfd) override;
-    virtual bool ModifyFd(int32_t sockfd, EventType events) override;
+    virtual bool ModifyFd(int32_t sockfd, int32_t events) override;
     virtual int Wait(std::vector<Event>& events, int timeout_ms = -1) override;
     virtual int GetMaxEvents() const override { return max_events_; }
     virtual void Wakeup() override;
@@ -48,7 +48,7 @@ private:
     ULONG_PTR wake_key_ = static_cast<ULONG_PTR>(-1);
 
     // track subscriptions
-    std::unordered_map<int32_t, EventType> subscriptions_;
+    std::unordered_map<int32_t, int32_t> subscriptions_;
 };
 
 }
