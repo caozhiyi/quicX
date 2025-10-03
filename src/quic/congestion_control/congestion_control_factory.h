@@ -11,6 +11,7 @@ enum class CongestionControlType {
     kCubic,
     kBbrV1,
     kBbrV2,
+    kBbrV3,
     kReno
 };
 

@@ -2,87 +2,47 @@
 #define QUIC_QUICX_MSG_RECEIVER
 
 #include <memory>
-#include <thread>
 #include <unordered_map>
 
 #include "quic/udp/if_receiver.h"
-#include "common/thread/thread.h"
 #include "quic/quicx/if_master.h"
 #include "quic/quicx/if_worker.h"
-#include "common/timer/if_timer.h"
-#include "quic/udp/if_packet_allotor.h"
-#include "common/structure/thread_safe_queue.h"
+#include "common/network/if_event_loop.h"
 
 namespace quicx {
 namespace quic {
 
 class Master:
     public IMaster,
-    public common::Thread,
+    public IPacketReceiver,
     public IConnectionIDNotify,
     public std::enable_shared_from_this<Master> {
+
 public:
-    Master();
+    Master(std::shared_ptr<common::IEventLoop> event_loop, bool ecn_enabled);
     virtual ~Master();
-
-    // Initialize as client
-    virtual bool InitAsClient(const QuicClientConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
-    // Initialize as server
-    virtual bool InitAsServer(const QuicServerConfig& config, const QuicTransportParams& params, connection_state_callback connection_state_cb) override;
-    // Destroy
-    virtual void Destroy() override;
-
-    // Weakup
-    virtual void Weakup() override;
-
-    // Join
-    virtual void Join() override;
-
-    // add a timer
-    virtual void AddTimer(uint32_t timeout_ms, std::function<void()> cb) override;
-
-    // connect to a quic server
-    virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms) override;
-    // connect to a quic server with a specific resumption session (DER bytes) for this connection
-    // passing non-empty session enables 0-RTT on resumption if ticket allows
-    virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) override;
-    
+    // add a worker
+    virtual void AddWorker(std::shared_ptr<IWorker> worker) override;
     // add listener
     virtual void AddListener(int32_t listener_sock) override;
     virtual void AddListener(const std::string& ip, uint16_t port) override;
 
     // add a new connection id
-    virtual void AddConnectionID(ConnectionID& cid) override;
+    virtual void AddConnectionID(ConnectionID& cid, const std::string& worker_id) override;
     // retire a connection id
-    virtual void RetireConnectionID(ConnectionID& cid) override;
+    virtual void RetireConnectionID(ConnectionID& cid, const std::string& worker_id) override;
+    // process the master
+    virtual void Process() override {};
 
 private:
-    void Run() override;
+    void OnPacket(std::shared_ptr<NetPacket>& pkt) override;
 
-    void DoRecv();
-    void DoUpdateConnectionID();
-
-private:
-    enum ConnectionOperation {
-        ADD_CONNECTION_ID = 0,
-        RETIRE_CONNECTION_ID = 1
-    };
-    struct ConnectionOpInfo {
-        ConnectionOperation operation_;
-        ConnectionID cid_;
-        std::thread::id worker_id_;
-    };
-    common::ThreadSafeQueue<ConnectionOpInfo> connection_op_queue_;
-
-private:
+protected:
     bool ecn_enabled_;
-    std::shared_ptr<common::ITimer> timer_;
     std::shared_ptr<IReceiver> receiver_;
-    std::shared_ptr<IPacketAllotor> packet_allotor_;
-    std::unordered_map<uint64_t, std::thread::id> cid_worker_map_;
-    std::unordered_map<std::thread::id, std::shared_ptr<IWorker>> worker_map_;
+    std::shared_ptr<common::IEventLoop> event_loop_;
+    std::unordered_map<uint64_t, std::string> cid_worker_map_;
+    std::unordered_map<std::string, std::shared_ptr<IWorker>> worker_map_;
 };
 
 }

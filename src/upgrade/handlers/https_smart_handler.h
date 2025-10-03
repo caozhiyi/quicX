@@ -29,7 +29,7 @@ struct SSLContext {
 class HttpsSmartHandler:
     public BaseSmartHandler {
 public:
-    explicit HttpsSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action);
+    explicit HttpsSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop);
     ~HttpsSmartHandler() override;
 
 protected:

@@ -1,4 +1,6 @@
 #include <vector>
+#include <algorithm>
+
 #include "common/log/log.h"
 #include "common/util/time.h"
 #include "common/timer/timer.h"
@@ -22,44 +24,49 @@ bool EventLoop::Init() {
         LOG_ERROR("Failed to create timer");
         return false;
     }
+    events_.reserve(driver_->GetMaxEvents());
     return true;
 }
 
 int EventLoop::Wait() {
-    std::vector<Event> events;
-    events.reserve(driver_->GetMaxEvents());
-
     uint64_t now = UTCTimeMsec();
     timer_->TimerRun(now);
 
     int32_t next_ms = timer_->MinTime(now);
     int timeout_ms = next_ms >= 0 ? static_cast<int>(next_ms) : 1000;
 
-    int n = driver_->Wait(events, timeout_ms);
+    int n = driver_->Wait(events_, timeout_ms);
     if (n < 0) {
         LOG_ERROR("Event driver wait failed");
         return -1;
     }
 
     // handle events
-    for (auto& ev : events) {
+    for (int i = 0; i < n; i++) {
+        auto& ev = events_[i];
         auto it = fd_to_handler_.find(ev.fd);
         if (it == fd_to_handler_.end()) {
+            LOG_ERROR("No handler found for fd %d", ev.fd);
             continue;
         }
-        IFdHandler* handler = it->second;
+       auto handler = it->second.lock();
+       if (!handler) {
+            LOG_ERROR("Handler expired for fd %d", ev.fd);
+            fd_to_handler_.erase(it);
+            continue;
+       }
         switch (ev.type) {
         case EventType::ET_READ:
-            if (handler) handler->OnRead(ev.fd);
+            handler->OnRead(ev.fd);
             break;
         case EventType::ET_WRITE:
-            if (handler) handler->OnWrite(ev.fd);
+            handler->OnWrite(ev.fd);
             break;
         case EventType::ET_ERROR:
-            if (handler) handler->OnError(ev.fd);
+            handler->OnError(ev.fd);
             break;
         case EventType::ET_CLOSE:
-            if (handler) handler->OnClose(ev.fd);
+            handler->OnClose(ev.fd);
             break;
         }
     }
@@ -68,18 +75,26 @@ int EventLoop::Wait() {
     return n;
 }
 
-bool EventLoop::RegisterFd(int fd, EventType events, IFdHandler* handler) {
+bool EventLoop::RegisterFd(uint32_t fd, int32_t events, std::shared_ptr<IFdHandler> handler) {
     fd_to_handler_[fd] = handler;
+    if (!handler) {
+        LOG_ERROR("Handler is null for fd %d", fd);
+        return false;
+    }
     return driver_->AddFd(fd, events);
 }
 
-bool EventLoop::ModifyFd(int fd, EventType events) {
+bool EventLoop::ModifyFd(uint32_t fd, int32_t events) {
     return driver_->ModifyFd(fd, events);
 }
 
-bool EventLoop::RemoveFd(int fd) {
+bool EventLoop::RemoveFd(uint32_t fd) {
     fd_to_handler_.erase(fd);
     return driver_->RemoveFd(fd);
+}
+
+void EventLoop::AddFixedProcess(std::function<void()> cb) {
+    fixed_processes_.push_back(cb);
 }
 
 uint64_t EventLoop::AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat) {
@@ -115,6 +130,10 @@ void EventLoop::Wakeup() {
     if (driver_) {
         driver_->Wakeup();
     }
+}
+
+std::shared_ptr<ITimer> EventLoop::GetTimer() {
+    return timer_;
 }
 
 void EventLoop::DrainPostedTasks() {

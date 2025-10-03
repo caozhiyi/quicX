@@ -1,13 +1,13 @@
+#include <thread>
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
-#include <thread>
-#include <chrono>
+
 #include "upgrade/include/if_upgrade.h"
+#include "common/network/if_event_loop.h"
 
 using quicx::upgrade::IUpgrade;
 using quicx::upgrade::UpgradeSettings;
-using quicx::upgrade::LogLevel;
 
 static volatile std::sig_atomic_t g_stop = 0;
 
@@ -30,11 +30,12 @@ int main(int argc, char** argv) {
     // settings.key_file  = "server.key";
     // 或者：settings.cert_pem = <PEM内存指针>; settings.key_pem = <PEM内存指针>;
 
-    auto server = IUpgrade::MakeUpgrade();
-    if (!server->Init(LogLevel::kDebug)) {
-        std::cerr << "Failed to init upgrade server" << std::endl;
+    auto event_loop = quicx::common::MakeEventLoop();
+    if (!event_loop->Init()) {
+        std::cerr << "Failed to init event loop" << std::endl;
         return EXIT_FAILURE;
     }
+    auto server = IUpgrade::MakeUpgrade(event_loop);
 
     if (!server->AddListener(settings)) {
         std::cerr << "Failed to add listener" << std::endl;
@@ -49,12 +50,12 @@ int main(int argc, char** argv) {
               << (settings.cert_file.empty() && settings.key_file.empty() ? settings.http_port : settings.https_port)
               << ", advertising h3 on :" << settings.h3_port << std::endl;
 
-    while (!g_stop) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
+    std::thread([&]() {
+        while (!g_stop) {
+            event_loop->Wait();
+        }
+    }).join();
 
-    server->Stop();
-    server->Join();
     return EXIT_SUCCESS;
 }
 

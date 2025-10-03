@@ -4,8 +4,8 @@
 namespace quicx {
 namespace quic {
 
-std::shared_ptr<IReceiver> IReceiver::MakeReceiver() {
-    return std::make_shared<UdpReceiver>();
+std::shared_ptr<IReceiver> IReceiver::MakeReceiver(std::shared_ptr<common::IEventLoop> event_loop) {
+    return std::make_shared<UdpReceiver>(event_loop);
 }
 
 }

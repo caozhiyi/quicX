@@ -4,13 +4,9 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include <memory>
 
 namespace quicx {
 namespace upgrade {
-
-// Forward declaration
-class ISocketHandler;
 
 // TCP socket interface
 class ITcpSocket {
@@ -37,10 +33,6 @@ public:
     // Get remote address information
     virtual std::string GetRemoteAddress() const = 0;
     virtual uint16_t GetRemotePort() const = 0;
-
-    // Socket handler management
-    virtual void SetHandler(std::shared_ptr<ISocketHandler> handler) = 0;
-    virtual std::shared_ptr<ISocketHandler> GetHandler() const = 0;
 };
 
 } // namespace upgrade

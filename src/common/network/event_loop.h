@@ -1,12 +1,12 @@
 #ifndef COMMON_NETWORK_EVENT_LOOP
 #define COMMON_NETWORK_EVENT_LOOP
 
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <unordered_map>
 #include <deque>
 #include <mutex>
+#include <memory>
+#include <cstdint>
+#include <functional>
+#include <unordered_map>
 
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
@@ -27,9 +27,11 @@ public:
     // Returns number of I/O events dispatched
     virtual int Wait() override;
 
-    virtual bool RegisterFd(int fd, EventType events, IFdHandler* handler) override;
-    virtual bool ModifyFd(int fd, EventType events) override;
-    virtual bool RemoveFd(int fd) override;
+    virtual bool RegisterFd(uint32_t fd, int32_t events, std::shared_ptr<IFdHandler> handler) override;
+    virtual bool ModifyFd(uint32_t fd, int32_t events) override;
+    virtual bool RemoveFd(uint32_t fd) override;
+
+    virtual void AddFixedProcess(std::function<void()> cb) override;
 
     virtual uint64_t AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat = false) override;
     virtual bool RemoveTimer(uint64_t timer_id) override;
@@ -37,18 +39,23 @@ public:
     virtual void PostTask(std::function<void()> fn) override;
     virtual void Wakeup() override;
 
+    virtual std::shared_ptr<ITimer> GetTimer() override;
+
 private:
     void DrainPostedTasks();
 
     std::unique_ptr<IEventDriver> driver_;
     std::shared_ptr<ITimer> timer_;
+    std::vector<Event> events_;
 
-    std::unordered_map<int, IFdHandler*> fd_to_handler_;
     std::unordered_map<uint64_t, TimerTask> timers_;
     std::unordered_map<uint64_t, bool> timer_repeat_; // timer id -> repeat
+    std::unordered_map<uint32_t, std::weak_ptr<IFdHandler>> fd_to_handler_;
 
     std::mutex tasks_mu_;
     std::deque<std::function<void()>> tasks_;
+
+    std::vector<std::function<void()>> fixed_processes_;
 };
 
 }

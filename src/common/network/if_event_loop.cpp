@@ -4,8 +4,8 @@
 namespace quicx {
 namespace common {
 
-std::unique_ptr<IEventLoop> MakeEventLoop() {
-    return std::unique_ptr<IEventLoop>(new EventLoop());
+std::shared_ptr<IEventLoop> MakeEventLoop() {
+    return std::shared_ptr<IEventLoop>(new EventLoop());
 }
 
 }

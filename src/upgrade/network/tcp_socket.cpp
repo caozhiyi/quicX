@@ -22,12 +22,13 @@ TcpSocket::TcpSocket():
 
 TcpSocket::TcpSocket(int fd):
     fd_(fd) {
+    common::ParseRemoteAddress(fd, remote_address_);
 }
 
 TcpSocket::TcpSocket(int fd, const common::Address& remote_address) :
     fd_(fd),
     remote_address_(remote_address) {
-    // Constructor with existing file descriptor
+
 }
 
 TcpSocket::~TcpSocket() {
@@ -76,14 +77,6 @@ int TcpSocket::Recv(std::vector<uint8_t>& data, size_t max_size) {
 
     data.resize(result.return_value_);
     return result.return_value_;
-}
-
-void TcpSocket::SetHandler(std::shared_ptr<ISocketHandler> handler) {
-    handler_ = handler;
-}
-
-std::shared_ptr<ISocketHandler> TcpSocket::GetHandler() const {
-    return handler_.lock();
 }
 
 int TcpSocket::Recv(std::string& data, size_t max_size) {

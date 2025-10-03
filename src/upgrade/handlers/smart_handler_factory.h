@@ -12,7 +12,7 @@ namespace upgrade {
 class SmartHandlerFactory {
 public:
     // Create appropriate smart handler based on settings
-    static std::shared_ptr<ISmartHandler> CreateHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action);
+    static std::shared_ptr<ISmartHandler> CreateHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop);
 };
 
 } // namespace upgrade

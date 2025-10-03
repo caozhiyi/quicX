@@ -180,6 +180,19 @@ SysCallInt32Result SocketNoblocking(int32_t sockfd) {
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
+bool ParseRemoteAddress(uint16_t fd, Address& addr) {
+    struct sockaddr_in addr_in;
+    socklen_t addr_len = sizeof(addr_in);
+
+    if (getpeername(fd, (struct sockaddr*)&addr_in, &addr_len) == -1) {
+        return false;
+    }
+
+    addr.SetIp(inet_ntoa(addr_in.sin_addr));
+    addr.SetPort(ntohs(addr_in.sin_port));
+    return true;
+}
+
 bool LookupAddress(const std::string& host, Address& addr) {
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));

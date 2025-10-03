@@ -1,3 +1,4 @@
+#include <cstdint>
 #ifdef __APPLE__
 
 #include <fcntl.h>
@@ -9,6 +10,7 @@
 
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
+#include "common/network/if_event_driver.h"
 #include "common/network/macos/kqueue_event_driver.h"
 
 namespace quicx {
@@ -90,15 +92,13 @@ bool KqueueEventDriver::Init() {
     return true;
 }
 
-bool KqueueEventDriver::AddFd(int32_t sockfd, EventType events) {
+bool KqueueEventDriver::AddFd(int32_t sockfd, int32_t events) {
     if (kqueue_fd_ < 0) {
         return false;
     }
 
     struct kevent kev;
-    uint32_t kqueue_events = ConvertToKqueueEvents(events);
-    
-    if (kqueue_events & EVFILT_READ) {
+    if (events & EventType::ET_READ) {
         EV_SET(&kev, sockfd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
             common::LOG_ERROR("Failed to add read event for fd %d to kqueue: %s", sockfd, strerror(errno));
@@ -106,7 +106,7 @@ bool KqueueEventDriver::AddFd(int32_t sockfd, EventType events) {
         }
     }
     
-    if (kqueue_events & EVFILT_WRITE) {
+    if (events & EventType::ET_WRITE) {
         EV_SET(&kev, sockfd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
             common::LOG_ERROR("Failed to add write event for fd %d to kqueue: %s", sockfd, strerror(errno));
@@ -137,7 +137,7 @@ bool KqueueEventDriver::RemoveFd(int32_t sockfd) {
     return true;
 }
 
-bool KqueueEventDriver::ModifyFd(int32_t sockfd, EventType events) {
+bool KqueueEventDriver::ModifyFd(int32_t sockfd, int32_t events) {
     // Remove and re-add the fd
     RemoveFd(sockfd);
     return AddFd(sockfd, events);
@@ -192,19 +192,6 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     }
 
     return events.size();
-}
-
-uint32_t KqueueEventDriver::ConvertToKqueueEvents(EventType events) const {
-    uint32_t kqueue_events = 0;
-    
-    if (static_cast<int>(events) & static_cast<int>(EventType::ET_READ)) {
-        kqueue_events |= EVFILT_READ;
-    }
-    if (static_cast<int>(events) & static_cast<int>(EventType::ET_WRITE)) {
-        kqueue_events |= EVFILT_WRITE;
-    }
-
-    return kqueue_events;
 }
 
 EventType KqueueEventDriver::ConvertFromKqueueEvent(const struct kevent& kev) const {

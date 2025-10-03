@@ -19,13 +19,13 @@ public:
     virtual bool Init() override;
 
     // Add a file descriptor to kqueue monitoring
-    virtual bool AddFd(int32_t sockfd, EventType events) override;
+    virtual bool AddFd(int32_t sockfd, int32_t events) override;
 
     // Remove a file descriptor from kqueue monitoring
     virtual bool RemoveFd(int32_t sockfd) override;
 
     // Modify events for a file descriptor
-    virtual bool ModifyFd(int32_t sockfd, EventType events) override;
+    virtual bool ModifyFd(int32_t sockfd, int32_t events) override;
 
     // Wait for events with timeout
     virtual int Wait(std::vector<Event>& events, int timeout_ms = -1) override;
@@ -37,9 +37,6 @@ public:
     virtual void Wakeup() override;
 
 private:
-    // Convert EventType to kqueue events
-    uint32_t ConvertToKqueueEvents(EventType events) const;
-    
     // Convert a single kevent to EventType
     EventType ConvertFromKqueueEvent(const struct kevent& kev) const;
 

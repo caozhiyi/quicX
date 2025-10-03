@@ -6,7 +6,7 @@
 namespace quicx {
 namespace upgrade {
 
-std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action) {
+std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop) {
     // Treat partial HTTPS settings as HTTP
     const bool has_file_pair = !settings.cert_file.empty() && !settings.key_file.empty();
     const bool has_pem_pair = (settings.cert_pem != nullptr) && (settings.key_pem != nullptr);
@@ -14,16 +14,16 @@ std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(const UpgradeS
 
     if (has_https_credentials) {
         common::LOG_INFO("Creating HTTPS smart handler");
-        auto https = std::make_shared<HttpsSmartHandler>(settings, tcp_action);
+        auto https = std::make_shared<HttpsSmartHandler>(settings, event_loop);
         // If HTTPS handler failed to initialize (e.g., bad certs), fall back to HTTP
         if (!https) {
             common::LOG_WARN("HTTPS handler creation failed, falling back to HTTP");
-            return std::make_shared<HttpSmartHandler>(settings, tcp_action);
+            return std::make_shared<HttpSmartHandler>(settings, event_loop);
         }
         return https;
     } else {
         common::LOG_INFO("Creating HTTP smart handler");
-        return std::make_shared<HttpSmartHandler>(settings, tcp_action);
+        return std::make_shared<HttpSmartHandler>(settings, event_loop);
     }
 }
 

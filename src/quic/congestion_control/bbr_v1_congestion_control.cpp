@@ -43,6 +43,9 @@ void BBRv1CongestionControl::Configure(const CcConfigV2& cfg) {
     probe_rtt_done_stamp_valid_ = false;
     probe_rtt_done_stamp_us_ = 0;
 
+    bw_sample_start_us_ = 0;
+    bw_sample_bytes_acc_ = 0;
+
     pacer_.reset(new NormalPacer());
 }
 
@@ -64,21 +67,39 @@ void BBRv1CongestionControl::OnPacketAcked(const AckEvent& ev) {
         return;
     }
 
-    // bandwidth sample: acked_bytes / srtt
+    // Update min_rtt timestamp when min_rtt is updated (from OnRoundTripSample)
+    // This must be done after RTT sample is taken
+    if (min_rtt_stamp_us_ == 0 || srtt_us_ <= min_rtt_us_) {
+        min_rtt_stamp_us_ = ev.ack_time;
+    }
+
+    // Aggregate bandwidth samples over at least one SRTT to avoid underestimation
     if (srtt_us_ > 0) {
-        uint64_t sample_bps = MulDiv(ev.bytes_acked, 8ull * 1000000ull, srtt_us_); // bits/sec
-        sample_bps /= 8; // convert to bytes/sec
-        UpdateMaxBandwidth(sample_bps, ev.ack_time);
+        if (bw_sample_start_us_ == 0) {
+            bw_sample_start_us_ = ev.ack_time;
+            bw_sample_bytes_acc_ = ev.bytes_acked;
+        } else {
+            bw_sample_bytes_acc_ += ev.bytes_acked;
+            uint64_t elapsed = ev.ack_time - bw_sample_start_us_;
+            if (elapsed >= srtt_us_) {
+                uint64_t bytes_per_sec = MulDiv(bw_sample_bytes_acc_, 1000000ull, elapsed);
+                UpdateMaxBandwidth(bytes_per_sec, ev.ack_time);
+                bw_sample_start_us_ = ev.ack_time;
+                bw_sample_bytes_acc_ = 0;
+            }
+        }
     }
 
     CheckFullBandwidthReached(ev.ack_time);
     MaybeEnterOrExitProbeRtt(ev.ack_time);
 
-    // Update cwnd based on BDP * cwnd_gain_
+    // Update cwnd toward target but do not reduce cwnd on ACK
     uint64_t target = BdpBytes(static_cast<uint64_t>(cwnd_gain_ * 1000), 1000);
-    if (cwnd_bytes_ < target) cwnd_bytes_ += ev.bytes_acked; // grow by acked bytes
-    cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, target);
-    cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, cfg_.max_cwnd_bytes);
+    if (cwnd_bytes_ < target) {
+        cwnd_bytes_ += ev.bytes_acked;
+        cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, target);
+        cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, cfg_.max_cwnd_bytes);
+    }
 
     // Advance ProbeBW cycle if needed
     if (mode_ == Mode::kProbeBw) {
@@ -102,9 +123,9 @@ void BBRv1CongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack
     (void)ack_delay;
     if (srtt_us_ == 0) srtt_us_ = latest_rtt;
     srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
+    // Note: min_rtt timestamp is updated in OnPacketAcked where ack_time is available
     if (min_rtt_us_ == 0 || latest_rtt < min_rtt_us_) {
         min_rtt_us_ = latest_rtt;
-        min_rtt_stamp_us_ = 0; // force ProbeRTT timer refresh at caller time base
     }
 }
 
@@ -119,9 +140,9 @@ ICongestionControl::SendState BBRv1CongestionControl::CanSend(uint64_t now, uint
 
 uint64_t BBRv1CongestionControl::GetPacingRateBps() const {
     if (max_bw_bps_ == 0) {
-        if (srtt_us_ == 0) return cfg_.min_cwnd_bytes * 8;
-        // fallback: cwnd/srtt
-        uint64_t bw_bytes_per_sec = MulDiv(cwnd_bytes_, 1000000ull, srtt_us_);
+        // Use QUIC default initial RTT (333ms) if no RTT sample yet
+        uint64_t rtt_us = (srtt_us_ > 0) ? srtt_us_ : 333000;
+        uint64_t bw_bytes_per_sec = MulDiv(cwnd_bytes_, 1000000ull, rtt_us);
         return static_cast<uint64_t>(bw_bytes_per_sec * pacing_gain_);
     }
     return static_cast<uint64_t>(max_bw_bps_ * pacing_gain_);
@@ -135,8 +156,10 @@ uint64_t BBRv1CongestionControl::NextSendTime(uint64_t now) const {
 
 uint64_t BBRv1CongestionControl::BdpBytes(uint64_t gain_num, uint64_t gain_den) const {
     if (min_rtt_us_ == 0) {
-        // Fallback to SRTT or MSS-based cwnd
-        return std::max<uint64_t>(cwnd_bytes_, 4 * cfg_.mss_bytes);
+        // When min_rtt is not available, use a reasonable default based on initial cwnd
+        // This prevents returning excessively large cwnd_bytes_ which can cause test slowdowns
+        uint64_t default_bdp = std::max<uint64_t>(cfg_.initial_cwnd_bytes, 4 * cfg_.mss_bytes);
+        return congestion_control::muldiv_safe(default_bdp, gain_num, gain_den);
     }
     uint64_t bw = (max_bw_bps_ > 0) ? max_bw_bps_ : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
     uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull); // bytes
@@ -151,15 +174,23 @@ void BBRv1CongestionControl::UpdatePacingRate() {
 }
 
 void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
-    // Every 10s, enter ProbeRTT for 200ms
-    if (!probe_rtt_done_stamp_valid_ || now_us - probe_rtt_done_stamp_us_ > kProbeRttIntervalUs) {
+    // Enter ProbeRTT if min_rtt hasn't been updated in 10 seconds
+    // BBR standard: probe RTT when min_rtt is stale (> 10s old)
+    if (mode_ != Mode::kProbeRtt && 
+        min_rtt_stamp_us_ > 0 && 
+        now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
         mode_ = Mode::kProbeRtt;
         SetPacingGain(1.0);
-        SetCwndGain(1.0);
+        // BBR standard: reduce cwnd to 4*MSS to drain queue and get accurate RTT
+        cwnd_bytes_ = std::max<uint64_t>(4 * cfg_.mss_bytes, cfg_.min_cwnd_bytes);
         probe_rtt_done_stamp_valid_ = true;
         probe_rtt_done_stamp_us_ = now_us + kProbeRttTimeUs;
     }
+    
+    // Exit ProbeRTT after 200ms
     if (mode_ == Mode::kProbeRtt && now_us >= probe_rtt_done_stamp_us_) {
+        // min_rtt should have been updated during ProbeRTT
+        min_rtt_stamp_us_ = now_us;  // Reset timestamp
         // Return to PROBE_BW after ProbeRTT completes
         mode_ = Mode::kProbeBw;
         SetPacingGain(1.0);
@@ -181,11 +212,15 @@ void BBRv1CongestionControl::AdvanceProbeBwCycle(uint64_t now_us) {
 }
 
 void BBRv1CongestionControl::UpdateMaxBandwidth(uint64_t sample_bps, uint64_t now_us) {
-    // sliding window max filter
+    // Sliding window max filter (optimized with deque for O(1) pop_front)
     bw_window_.push_back({now_us, sample_bps});
-    while (bw_window_.size() > kBwWindow) bw_window_.erase(bw_window_.begin());
+    while (bw_window_.size() > kBwWindow) {
+        bw_window_.pop_front();  // O(1) operation with deque
+    }
     uint64_t m = 0;
-    for (const auto& s : bw_window_) m = std::max<uint64_t>(m, s.bytes_per_sec);
+    for (const auto& s : bw_window_) {
+        m = std::max<uint64_t>(m, s.bytes_per_sec);
+    }
     max_bw_bps_ = m;
 }
 
@@ -208,6 +243,15 @@ void BBRv1CongestionControl::CheckFullBandwidthReached(uint64_t now_us) {
         // Drain until in-flight <= BDP
         uint64_t bdp = BdpBytes(1000, 1000);
         if (bytes_in_flight_ <= bdp) {
+            mode_ = Mode::kProbeBw;
+            SetPacingGain(1.0);
+            SetCwndGain(2.0);
+            cycle_index_ = 0;
+            cycle_start_us_ = now_us;
+
+        } else if (min_rtt_us_ == 0) {
+            // If min_rtt is not yet sampled, exit drain immediately to avoid blocking
+            // This can happen in test scenarios with very quick startup
             mode_ = Mode::kProbeBw;
             SetPacingGain(1.0);
             SetCwndGain(2.0);

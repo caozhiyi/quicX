@@ -12,10 +12,8 @@ DynamicTable::~DynamicTable() {
 }
 
 bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& value) {
+    // Allow duplicate entries per QPACK (Duplicate instruction). Do not de-duplicate by name/value.
     auto item_key = std::make_pair(name, value);
-    if (headeritem_index_map_.count(item_key) > 0) {
-        return true; // Entry already exists in table
-    }
     
     uint32_t entry_size = CalculateEntrySize(name, value);
     
@@ -33,7 +31,8 @@ bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& val
     headeritem_deque_.push_front(HeaderItem(name, value));
     current_size_ += entry_size;
 
-    // Update index mapping
+    // Update index mapping (maps unique name/value to a representative index).
+    // Note: With duplicates present, the map will point to the most recent index encountered in the loop.
     headeritem_index_map_.clear();
     for (uint32_t i = 0; i < headeritem_deque_.size(); i++) {
         const HeaderItem& item = headeritem_deque_[i];

@@ -157,9 +157,9 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
     
     bool ret = send_manager_.GetSendData(buffer, encrypto_level, crypto_grapher);
     if (!ret) {
-        common::LOG_ERROR("get send data failed.");
+        common::LOG_WARN("there is no data to send.");
     }
-    
+
     // Mark Initial packet as sent if we just sent one
     if (encrypto_level == kInitial && buffer->GetDataLength() > 0) {
         initial_packet_sent_ = true;

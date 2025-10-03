@@ -4,8 +4,8 @@
 namespace quicx {
 namespace upgrade {
 
-HttpSmartHandler::HttpSmartHandler(const UpgradeSettings& settings, std::shared_ptr<ITcpAction> tcp_action) 
-    : BaseSmartHandler(settings, tcp_action) {
+HttpSmartHandler::HttpSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop) 
+    : BaseSmartHandler(settings, event_loop) {
 }
 
 bool HttpSmartHandler::InitializeConnection(std::shared_ptr<ITcpSocket> socket) {

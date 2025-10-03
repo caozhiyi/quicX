@@ -17,6 +17,7 @@ public:
         std::shared_ptr<TLSCtx> ctx,
         std::shared_ptr<ISender> sender,
         const QuicTransportParams& params,
+        std::shared_ptr<common::IEventLoop> event_loop,
         connection_state_callback connection_handler);
     virtual ~ServerWorker();
 

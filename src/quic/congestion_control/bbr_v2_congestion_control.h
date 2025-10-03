@@ -1,11 +1,13 @@
 #ifndef QUIC_CONGESTION_CONTROL_BBR_V2_CONGESTION_CONTROL
 #define QUIC_CONGESTION_CONTROL_BBR_V2_CONGESTION_CONTROL
 
-#include <cstdint>
-#include <vector>
+#include <deque>
 #include <memory>
-#include "quic/congestion_control/if_congestion_control.h"
+#include <cstdint>
+
 #include "quic/congestion_control/if_pacer.h"
+#include "quic/congestion_control/if_congestion_control.h"
+
 
 namespace quicx {
 namespace quic {
@@ -63,7 +65,7 @@ private:
 
     // Bandwidth filter
     static constexpr size_t kBwWindow = 10;
-    std::vector<BwSample> bw_window_;
+    std::deque<BwSample> bw_window_;
     uint64_t max_bw_bps_ = 0;
 
     // Gains
@@ -86,6 +88,14 @@ private:
 
     // Loss tracking (very lightweight)
     uint64_t loss_event_count_in_round_ = 0;
+    
+    // Full bandwidth detection (instance variables, not static!)
+    uint64_t full_bw_bps_ = 0;
+    int full_bw_cnt_ = 0;
+
+    // Aggregated bandwidth sampling (bytes over interval)
+    uint64_t bw_sample_start_us_ = 0;
+    uint64_t bw_sample_bytes_acc_ = 0;
 
     // Pacer
     std::unique_ptr<IPacer> pacer_;
