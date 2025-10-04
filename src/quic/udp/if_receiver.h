@@ -26,10 +26,10 @@ public:
     IReceiver() {}
     virtual ~IReceiver() {}
 
-    virtual void AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) = 0;
+    virtual bool AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) = 0;
 
     // add a receiver, return the socket fd
-    virtual int32_t AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) = 0;
+    virtual bool AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) = 0;
 
     // Enable or disable ECN features on underlying sockets created/managed by receiver
     virtual void SetEcnEnabled(bool enabled) = 0;

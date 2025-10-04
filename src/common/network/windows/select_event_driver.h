@@ -49,6 +49,7 @@ private:
     int32_t wakeup_fd_[2];  // Pipe for wakeup
     int max_events_ = 1024;
     bool initialized_ = false;
+    static bool ws_initialized_;
 };
 
 } // namespace common

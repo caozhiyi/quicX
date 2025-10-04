@@ -18,8 +18,8 @@ public:
     virtual void AddWorker(std::shared_ptr<IWorker> worker) = 0;
 
     // add listener
-    virtual void AddListener(int32_t listener_sock) = 0;
-    virtual void AddListener(const std::string& ip, uint16_t port) = 0;
+    virtual bool AddListener(int32_t listener_sock) = 0;
+    virtual bool AddListener(const std::string& ip, uint16_t port) = 0;
 
     // add a new connection id
     virtual void AddConnectionID(ConnectionID& cid, const std::string& worker_id) = 0;

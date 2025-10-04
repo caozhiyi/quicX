@@ -10,6 +10,10 @@ namespace quicx {
 namespace common {
 
 bool EventLoop::Init() {
+    if (initialized_) {
+        return true;
+    }
+    
     driver_ = IEventDriver::Create();
     if (!driver_) {
         LOG_ERROR("Failed to create event driver");
@@ -25,6 +29,7 @@ bool EventLoop::Init() {
         return false;
     }
     events_.reserve(driver_->GetMaxEvents());
+    initialized_ = true;
     return true;
 }
 

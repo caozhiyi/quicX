@@ -14,9 +14,19 @@
 namespace quicx {
 namespace common {
 
+bool SelectEventDriver::ws_initialized_ = false;
+
 SelectEventDriver::SelectEventDriver() {
     wakeup_fd_[0] = -1;
     wakeup_fd_[1] = -1;
+
+    if (!ws_initialized_) {
+        WSADATA wsa_data;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+            common::LOG_ERROR("WSAStartup failed! error : %d", WSAGetLastError());
+        }
+        ws_initialized_ = true;
+    }
 }
 
 SelectEventDriver::~SelectEventDriver() {
@@ -25,6 +35,11 @@ SelectEventDriver::~SelectEventDriver() {
     }
     if (wakeup_fd_[1] != 0) {
         closesocket(static_cast<int>(wakeup_fd_[1]));
+    }
+
+    if (ws_initialized_) {
+        WSACleanup();
+        ws_initialized_ = false;
     }
 }
 

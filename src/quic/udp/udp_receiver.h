@@ -26,8 +26,8 @@ public:
     UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop);
     ~UdpReceiver();
 
-    virtual void AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) override;
-    virtual int32_t AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) override;
+    virtual bool AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) override;
+    virtual bool AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) override;
 
     virtual void SetEcnEnabled(bool enabled) override { ecn_enabled_ = enabled; }
 

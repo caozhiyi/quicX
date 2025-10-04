@@ -5,7 +5,7 @@ namespace quic {
 
 MasterWithThread::MasterWithThread(bool ecn_enabled):
     Master(common::MakeEventLoop(), ecn_enabled) {
-
+    
 }
 
 MasterWithThread::~MasterWithThread() {
