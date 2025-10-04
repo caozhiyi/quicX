@@ -125,7 +125,7 @@ uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint64_t& value) {
     while (--len) {
         value = (value << 8) + *p++;
         if (p >= end) {
-            (uint8_t*)p;
+            return (uint8_t*)p;
         }
     }
 

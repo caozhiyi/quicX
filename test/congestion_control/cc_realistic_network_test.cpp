@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "cc_test_framework.h"
 
 using namespace quicx::quic;
@@ -117,7 +118,7 @@ TEST(RealisticNetworkTest, LTE_Reno) {
     printf("\n--- LTE Performance ---\n");
     printf("Throughput: %.2f Mbps\n", metrics.throughput_mbps);
     printf("Max Cwnd: %.2f KB\n", metrics.max_cwnd_bytes / 1024.0);
-    printf("Recovery Count: %llu\n", metrics.recovery_count);
+    printf("Recovery Count: %lu\n", metrics.recovery_count);
     
     // With Reno at 1% loss and 50ms RTT, theoretical throughput is often < 5 Mbps.
     // Use a slightly lower threshold that still indicates reasonable performance.

@@ -174,9 +174,9 @@ TEST(CCAlgorithmTest, RenoVsCubicInLossyNetwork) {
     auto cubic_metrics = RunTest("CUBIC", CCAlgorithmFactory::CUBIC(), scenario, true);
     
     printf("\nComparison:\n");
-    printf("Reno  - Throughput: %.2f Mbps, Recovery: %llu\n", 
+    printf("Reno  - Throughput: %.2f Mbps, Recovery: %lu\n", 
            reno_metrics.throughput_mbps, reno_metrics.recovery_count);
-    printf("CUBIC - Throughput: %.2f Mbps, Recovery: %llu\n",
+    printf("CUBIC - Throughput: %.2f Mbps, Recovery: %lu\n",
            cubic_metrics.throughput_mbps, cubic_metrics.recovery_count);
     
     // Both should handle losses
