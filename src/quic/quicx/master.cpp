@@ -1,3 +1,4 @@
+#include "common/log/log.h"
 #include "quic/quicx/master.h"
 
 namespace quicx {
@@ -7,6 +8,10 @@ Master::Master(std::shared_ptr<common::IEventLoop> event_loop, bool ecn_enabled)
     ecn_enabled_(ecn_enabled),
     event_loop_(event_loop) {
     
+    if (!event_loop->Init()) {
+        common::LOG_ERROR("event loop init failed");
+        return;
+    }
     receiver_ = IReceiver::MakeReceiver(event_loop);
     receiver_->SetEcnEnabled(ecn_enabled);
 }
@@ -20,12 +25,12 @@ void Master::AddWorker(std::shared_ptr<IWorker> worker) {
     worker_map_.emplace(worker->GetWorkerId(), worker);
 }
 
-void Master::AddListener(int32_t listener_sock) {
-    receiver_->AddReceiver(listener_sock, shared_from_this());
+bool Master::AddListener(int32_t listener_sock) {
+    return receiver_->AddReceiver(listener_sock, shared_from_this());
 }
 
-void Master::AddListener(const std::string& ip, uint16_t port) {
-    receiver_->AddReceiver(ip, port, shared_from_this());
+bool Master::AddListener(const std::string& ip, uint16_t port) {
+    return receiver_->AddReceiver(ip, port, shared_from_this());
 }
 
 void Master::AddConnectionID(ConnectionID& cid, const std::string& worker_id) {

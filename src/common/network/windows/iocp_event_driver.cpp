@@ -15,13 +15,27 @@
 namespace quicx {
 namespace common {
 
+bool IOCPEventDriver::ws_initialized_ = false;
+
 IOCPEventDriver::IOCPEventDriver() {
+    if (!ws_initialized_) {
+        WSADATA wsa_data;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+            common::LOG_ERROR("WSAStartup failed! error : %d", WSAGetLastError());
+        }
+        ws_initialized_ = true;
+    }
 }
 
 IOCPEventDriver::~IOCPEventDriver() {
     if (iocp_ != nullptr) {
         CloseHandle(iocp_);
         iocp_ = nullptr;
+    }
+
+    if (ws_initialized_) {
+        WSACleanup();
+        ws_initialized_ = false;
     }
 }
 

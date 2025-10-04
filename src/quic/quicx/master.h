@@ -24,8 +24,8 @@ public:
     // add a worker
     virtual void AddWorker(std::shared_ptr<IWorker> worker) override;
     // add listener
-    virtual void AddListener(int32_t listener_sock) override;
-    virtual void AddListener(const std::string& ip, uint16_t port) override;
+    virtual bool AddListener(int32_t listener_sock) override;
+    virtual bool AddListener(const std::string& ip, uint16_t port) override;
 
     // add a new connection id
     virtual void AddConnectionID(ConnectionID& cid, const std::string& worker_id) override;

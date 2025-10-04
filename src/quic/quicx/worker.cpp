@@ -26,6 +26,10 @@ Worker::Worker(const QuicConfig& config,
     active_send_connection_set_1_is_current_(true) {
 
     ecn_enabled_ = config.enable_ecn_;
+    if (!event_loop->Init()) {
+        common::LOG_ERROR("event loop init failed");
+        return;
+    }
 }
 
 Worker::~Worker() {

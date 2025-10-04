@@ -41,6 +41,9 @@ bool QuicClient::Init(const QuicClientConfig& config) {
         SessionCache::Instance().Init(config.session_cache_path_);
     }
 
+    master_ = std::make_shared<MasterWithThread>(config.config_.enable_ecn_);
+    master_->Start();
+
     // client need a socket to send packet
     auto sock_ret = common::UdpSocket();
     if (sock_ret.errno_ != 0) {
@@ -80,7 +83,10 @@ bool QuicClient::Init(const QuicClientConfig& config) {
     }
 
     // add socket to receiver
-    master_->AddListener(sender->GetSocket());
+    if (!master_->AddListener(sender->GetSocket())) {
+        common::LOG_ERROR("add listener failed. err:%d", sender->GetSocket());
+        return false;
+    }
     return true;
 }
 

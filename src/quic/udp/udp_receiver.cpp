@@ -30,56 +30,57 @@ UdpReceiver::~UdpReceiver() {
 
 }
 
-void UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
+bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
     // set noblocking
     auto opt_ret = common::SocketNoblocking(socket_fd);
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.errno_);
-        abort();
+        return false;
     }
 
     if (auto event_loop = event_loop_.lock()) {
         event_loop->RegisterFd(socket_fd, common::EventType::ET_READ, shared_from_this());
     }
     receiver_map_[socket_fd] = receiver;
+    return true;
 }
 
-int32_t UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) {
+bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) {
     auto ret = common::UdpSocket();
     if (ret.errno_ != 0) {
         common::LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
-        abort();
-        return 0;
+        return false;
     }
     
-    auto sock = ret.return_value_;
+    int32_t socket_fd = ret.return_value_;
 
     // set noblocking
-    auto opt_ret = common::SocketNoblocking(sock);
+    auto opt_ret = common::SocketNoblocking(socket_fd);
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.errno_);
-        abort();
-        return 0;
+        common::Close(socket_fd);
+        return false;
     }
 
     common::Address addr(ip, port);
 
     if (ecn_enabled_) {
         // enable receiving TOS/TCLASS for ECN via io_handle abstraction
-        common::EnableUdpEcn(sock);
+        common::EnableUdpEcn(socket_fd);
     }
 
-    opt_ret = Bind(sock, addr);
+    opt_ret = Bind(socket_fd, addr);
     if (opt_ret.errno_ != 0) {
         common::LOG_ERROR("bind address failed. err:%d", opt_ret.errno_);
-        abort();
+        common::Close(socket_fd);
+        return false;
     }
     if (auto event_loop = event_loop_.lock()) {
-        event_loop->RegisterFd(sock, common::EventType::ET_READ, shared_from_this());
+        event_loop->RegisterFd(socket_fd, common::EventType::ET_READ, shared_from_this());
     }
 
-    receiver_map_[sock] = receiver;
-    return sock;
+    receiver_map_[socket_fd] = receiver;
+    return true;
 }
 
 void UdpReceiver::OnRead(uint32_t fd) {

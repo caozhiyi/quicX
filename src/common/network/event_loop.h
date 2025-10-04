@@ -56,6 +56,8 @@ private:
     std::deque<std::function<void()>> tasks_;
 
     std::vector<std::function<void()>> fixed_processes_;
+
+    bool initialized_ = false;
 };
 
 }

@@ -49,6 +49,7 @@ private:
 
     // track subscriptions
     std::unordered_map<int32_t, int32_t> subscriptions_;
+    static bool ws_initialized_;
 };
 
 }

@@ -54,6 +54,8 @@ static const char key_pem[] =
     config.config_.thread_num_ = 1;
     config.config_.log_level_ = quicx::http3::LogLevel::kError;
     server->Init(config);
-    server->Start("0.0.0.0", 8882);
+    if (!server->Start("0.0.0.0", 8882)) {
+        std::cout << "start server failed" << std::endl;
+    }
     server->Join();
 }

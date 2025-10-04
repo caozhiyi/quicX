@@ -45,6 +45,9 @@ bool QuicServer::Init(const QuicServerConfig& config) {
         return false;
     }
 
+    master_ = std::make_shared<MasterWithThread>(config.config_.enable_ecn_);
+    master_->Start();
+
     auto sender = ISender::MakeSender();
     worker_map_.reserve(config.config_.worker_thread_num_);
     if (config.config_.thread_mode_ == ThreadMode::kSingleThread) {
@@ -85,8 +88,7 @@ void QuicServer::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
 }
 
 bool QuicServer::ListenAndAccept(const std::string& ip, uint16_t port) {
-    master_->AddListener(ip, port);
-    return true;
+    return master_->AddListener(ip, port);
 }
 
 void QuicServer::SetConnectionStateCallBack(connection_state_callback cb) {

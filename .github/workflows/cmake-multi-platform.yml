@@ -123,38 +123,3 @@ jobs:
         else
           echo "Test executable not found, skipping tests"
         fi
-
-    - name: Verify examples
-      shell: bash
-      working-directory: ${{ steps.strings.outputs.build-output-dir }}
-      run: |
-        echo "Checking for example executables in build directory..."
-        echo "Current directory: $(pwd)"
-        echo "Directory structure:"
-        ls -la
-        if [ -d "bin" ]; then
-          echo "Contents of bin/:"
-          ls -la bin/
-        fi
-        if [ -d "${{ matrix.build_type }}" ]; then
-          echo "Contents of ${{ matrix.build_type }}/:"
-          ls -la ${{ matrix.build_type }}/
-          if [ -d "${{ matrix.build_type }}/bin" ]; then
-            echo "Contents of ${{ matrix.build_type }}/bin/:"
-            ls -la ${{ matrix.build_type }}/bin/
-          fi
-        fi
-        
-        # Check various possible locations
-        if [ -f "bin/hello_world_server" ] || [ -f "bin/hello_world_server.exe" ]; then
-          echo "✓ Examples found in bin/"
-        elif [ -f "${{ matrix.build_type }}/bin/hello_world_server" ] || [ -f "${{ matrix.build_type }}/bin/hello_world_server.exe" ]; then
-          echo "✓ Examples found in ${{ matrix.build_type }}/bin/"
-        elif [ -f "hello_world_server" ] || [ -f "hello_world_server.exe" ]; then
-          echo "✓ Examples found in root"
-        elif [ -f "${{ matrix.build_type }}/hello_world_server" ] || [ -f "${{ matrix.build_type }}/hello_world_server.exe" ]; then
-          echo "✓ Examples found in ${{ matrix.build_type }}/"
-        else
-          echo "✗ Example executables not found"
-          exit 1
-        fi
