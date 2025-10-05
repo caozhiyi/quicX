@@ -76,6 +76,11 @@ int EventLoop::Wait() {
         }
     }
 
+    // handle fixed processes
+    for (auto& cb : fixed_processes_) {
+        cb();
+    }
+
     DrainPostedTasks();
     return n;
 }
