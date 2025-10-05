@@ -68,6 +68,7 @@ bool QuicClient::Init(const QuicClientConfig& config) {
 
         worker->SetConnectionIDNotify(master_);
         worker_map_[worker->GetWorkerId()] = worker;
+        master_->AddWorker(worker);
 
     } else {
         for (size_t i = 0; i < config.config_.worker_thread_num_; i++) {
@@ -79,6 +80,7 @@ bool QuicClient::Init(const QuicClientConfig& config) {
             worker->Start();
 
             worker_map_[worker->GetWorkerId()] = worker;
+            master_->AddWorker(worker);
         }
     }
 
