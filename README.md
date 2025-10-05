@@ -1,7 +1,7 @@
 <p align="left"><img width="500" src="./doc/image/logo.png" alt="cppnet logo"></p>
 
 <p align="left">
-    <a href="https://travis-ci.org/caozhiyi/quicX"><img src="https://travis-ci.org/caozhiyi/quicX.svg?branch=master" alt="Build Status"></a>
+    <a href="https://github.com/caozhiyi/quicX/actions"><img src="https://github.com/caozhiyi/quicX/workflows/CI/badge.svg" alt="Build Status"></a>
     <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-bsd-orange.svg" alt="Licenses"></a>
 </p> 
 
