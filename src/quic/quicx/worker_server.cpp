@@ -32,6 +32,13 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     auto conn = conn_map_.find(packet_info.cid_.Hash());
     if (conn != conn_map_.end()) {
         conn->second->SetSocket(packet_info.net_packet_->GetSocket());
+        // report observed address for path change detection
+        auto& observed_addr = packet_info.net_packet_->GetAddress();
+        conn->second->OnObservedPeerAddress(observed_addr);
+        // record received bytes on candidate path to unlock anti-amplification budget
+        if (packet_info.net_packet_->GetData()) {
+            conn->second->OnCandidatePathDatagramReceived(observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
+        }
         conn->second->SetPendingEcn(packet_info.net_packet_->GetEcn());
         conn->second->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
         return true;

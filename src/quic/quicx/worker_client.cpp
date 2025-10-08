@@ -66,6 +66,13 @@ bool ClientWorker::InnerHandlePacket(PacketInfo& packet_info) {
     common::LOG_DEBUG("get packet. dcid:%llu", cid_code);
     auto conn = conn_map_.find(cid_code);
     if (conn != conn_map_.end()) {
+        // report observed address for path change detection
+        auto& observed_addr = packet_info.net_packet_->GetAddress();
+        conn->second->OnObservedPeerAddress(observed_addr);
+        // record received bytes on candidate path to unlock anti-amplification budget
+        if (packet_info.net_packet_->GetData()) {
+            conn->second->OnCandidatePathDatagramReceived(observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
+        }
         conn->second->SetPendingEcn(packet_info.net_packet_->GetEcn());
         conn->second->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
         return true;

@@ -1,7 +1,10 @@
 #include "common/log/log.h"
+#include "quic/frame/type.h"
 #include "common/util/time.h"
 #include "quic/common/version.h"
+#include "quic/frame/ack_frame.h"
 #include "quic/connection/util.h"
+#include "quic/frame/ping_frame.h"
 #include "quic/packet/init_packet.h"
 #include "quic/frame/padding_frame.h"
 #include "quic/packet/retry_packet.h"
@@ -56,7 +59,7 @@ void SendManager::ActiveStream(std::shared_ptr<IStream> stream) {
 }
 
 bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
-    uint64_t can_send_size = 1500; // TODO: set to mtu size
+    uint64_t can_send_size = mtu_limit_bytes_; // respect current MTU limit
     send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
     if (can_send_size == 0) {
         common::LOG_WARN("congestion control send data limited.");
@@ -68,11 +71,58 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
         auto lost_list = send_control_.GetLostPacket();
         auto packet = lost_list.front();
         lost_list.pop_front();
-
-        return PacketInit(packet, buffer);
+        // If the lost packet was our PMTU probe, treat as probe failure and do not retransmit as probe
+        if (mtu_probe_inflight_ && packet->GetPacketNumber() && packet->GetPacketNumber() == static_cast<uint64_t>(mtu_probe_packet_number_)) {
+            OnMtuProbeResult(false);
+            // fall through to normal send path below instead of retransmitting probe
+        } else {
+            return PacketInit(packet, buffer);
+        }
 
     } else {
         // secondly, send new packet
+        // If PMTU probe is in-flight and not yet sent, craft a probe packet with PING+PADDING only
+        if (mtu_probe_inflight_ && mtu_probe_packet_number_ == 0) {
+            uint64_t probe_size = mtu_probe_target_bytes_;
+            can_send_size = probe_size;
+            FixBufferFrameVisitor frame_visitor(static_cast<uint32_t>(probe_size));
+            // Add a PING to ensure ack-eliciting
+            auto ping = std::make_shared<PingFrame>();
+            frame_visitor.HandleFrame(ping);
+            // Pad up to target size
+            if (frame_visitor.GetBuffer()->GetDataLength() < probe_size) {
+                auto padding_frame = std::make_shared<PaddingFrame>();
+                padding_frame->SetPaddingLength(static_cast<uint32_t>(probe_size - frame_visitor.GetBuffer()->GetDataLength()));
+                frame_visitor.HandleFrame(padding_frame);
+            }
+            auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
+            if (!packet) {
+                common::LOG_WARN("make PMTU probe packet failed.");
+                return false;
+            }
+            if (!PacketInit(packet, buffer)) {
+                return false;
+            }
+            // record probe packet number for ack/loss correlation
+            mtu_probe_packet_number_ = packet->GetPacketNumber();
+            return true;
+        }
+
+        if (!streams_allowed_) {
+            // Only allow connection-level control/probing frames
+            FixBufferFrameVisitor frame_visitor(mtu_limit_bytes_ - 50);
+            auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
+            if (!packet) {
+                common::LOG_WARN("make packet failed.");
+                return false;
+            }
+            // anti-amplification: bytes budget (3x)
+            if (!CheckAndChargeAmpBudget(frame_visitor.GetBuffer()->GetDataLength())) {
+                return false;
+            }
+            return PacketInit(packet, buffer);
+        }
+
         // check flow control
         std::shared_ptr<IFrame> frame;
         if (!flow_control_->CheckLocalSendDataLimit(can_send_size, frame)) {
@@ -83,28 +133,146 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
             ToSendFrame(frame);
         }
     
-        FixBufferFrameVisitor frame_visitor(1450); // TODO put 1450 to config
+        FixBufferFrameVisitor frame_visitor(mtu_limit_bytes_ - 50); // leave headroom
         frame_visitor.SetStreamDataSizeLimit(can_send_size);
         auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
         if (!packet) {
             common::LOG_WARN("make packet failed.");
             return false;
         }
+        if (!streams_allowed_) {
+            if (!CheckAndChargeAmpBudget(frame_visitor.GetBuffer()->GetDataLength())) {
+                return false;
+            }
+        }
         return PacketInit(packet, buffer);
     }
+
+    return true;
 }
 
 void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
+    // Pass to send control for RTT/loss/cc updates
     send_control_.OnPacketAck(common::UTCTimeMsec(), ns, frame);
+
+    // PMTU probe success detection: check if ack covers the probe packet number
+    if (mtu_probe_inflight_ && mtu_probe_packet_number_ != 0 &&
+        (frame->GetType() == FrameType::kAck || frame->GetType() == FrameType::kAckEcn)) {
+        auto ack = std::dynamic_pointer_cast<AckFrame>(frame);
+        if (ack) {
+            uint64_t largest = ack->GetLargestAck();
+            uint64_t probe = mtu_probe_packet_number_;
+            if (probe <= largest) {
+                // Walk ack ranges to see if probe is acked
+                uint64_t cursor = largest;
+                uint32_t first_range = ack->GetFirstAckRange();
+                // First contiguous range [largest-first_range, largest]
+                if (probe >= largest - first_range && probe <= largest) {
+                    OnMtuProbeResult(true);
+                    return;
+                }
+                // Iterate additional ranges
+                auto ranges = ack->GetAckRange();
+                for (auto it = ranges.begin(); it != ranges.end(); ++it) {
+                    // move cursor backward across gap and range
+                    cursor = cursor - it->GetGap() - 1; // skip the gap including one unacked
+                    uint64_t range_high = cursor;
+                    uint64_t range_low = (range_high >= it->GetAckRangeLength()) ? (range_high - it->GetAckRangeLength()) : 0;
+                    if (probe >= range_low && probe <= range_high) {
+                        OnMtuProbeResult(true);
+                        return;
+                    }
+                    cursor = range_low - 1;
+                }
+            }
+        }
+    }
+}
+
+void SendManager::ResetPathSignals() {
+    // Recreate congestion controller with default config and reset RTT estimator via UpdateConfig
+    CcConfigV2 cfg; // defaults
+    // Reconfigure congestion control
+    // The current implementation doesn't expose Configure directly; rebuild via factory path in SendControl
+    // So we simulate by resetting RTT to initial via UpdateConfig and relying on controller startup behavior
+    TransportParam dummy;
+    send_control_.UpdateConfig(dummy);
+}
+
+void SendManager::ResetMtuForNewPath() {
+    // Conservative default until DPLPMTUD re-probes
+    mtu_limit_bytes_ = 1200; // RFC9000 minimum
+}
+
+bool SendManager::CheckAndChargeAmpBudget(uint32_t bytes) {
+    // allow up to 3x of received bytes on unvalidated path
+    if (!streams_allowed_) {
+        if (amp_sent_bytes_ + bytes > 3 * amp_recv_bytes_) {
+            common::LOG_DEBUG("anti-amplification: budget exceeded. sent:%llu recv:%llu req:%u", amp_sent_bytes_, amp_recv_bytes_, bytes);
+            return false;
+        }
+        amp_sent_bytes_ += bytes;
+        return true;
+    }
+    // When streams are allowed, path is validated; disable amp limit
+    return true;
+}
+
+void SendManager::ResetAmpBudget() {
+    // Provide small initial credit so a single PATH_CHALLENGE can be sent
+    amp_recv_bytes_ = 400; // ~ allows up to 1200 bytes under 3x rule
+    amp_sent_bytes_ = 0;
+}
+
+void SendManager::OnCandidatePathBytesReceived(uint32_t bytes) {
+    if (!streams_allowed_) {
+        amp_recv_bytes_ += bytes;
+    }
+}
+
+void SendManager::StartMtuProbe() {
+    // Minimal skeleton: attempt to raise MTU target slightly
+    if (mtu_limit_bytes_ < 1450) {
+        mtu_probe_target_bytes_ = 1450;
+    } else {
+        mtu_probe_target_bytes_ = static_cast<uint16_t>(std::min<int>(mtu_limit_bytes_ + 50, 1500));
+    }
+    mtu_probe_inflight_ = true;
+}
+
+void SendManager::OnMtuProbeResult(bool success) {
+    if (!mtu_probe_inflight_) return;
+    if (success) {
+        mtu_limit_bytes_ = mtu_probe_target_bytes_;
+    }
+    mtu_probe_inflight_ = false;
 }
 
 std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
     std::shared_ptr<IPacket> packet;
     // priority sending frames of connection
+    auto is_allowed_on_unvalidated = [this](uint16_t type) -> bool {
+        if (streams_allowed_) return true;
+        switch (type) {
+            case FrameType::kPathChallenge:
+            case FrameType::kPathResponse:
+            case FrameType::kAck:
+            case FrameType::kAckEcn:
+            case FrameType::kPing:
+            case FrameType::kPadding:
+                return true;
+            default:
+                return false;
+        }
+    };
+
     for (auto iter = wait_frame_list_.begin(); iter != wait_frame_list_.end();) {
+        if (!is_allowed_on_unvalidated((*iter)->GetType())) {
+            ++iter; // defer disallowed frames until validation succeeds
+            continue;
+        }
         if (visitor->HandleFrame(*iter)) {
             iter = wait_frame_list_.erase(iter);
-
         } else {
             common::LOG_ERROR("handle frame failed.");
             return nullptr;

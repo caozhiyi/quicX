@@ -86,7 +86,8 @@ void Worker::ProcessSend() {
         }
 
         packet->SetData(buffer);
-        packet->SetAddress((*iter)->GetPeerAddress());
+        // select destination address from connection (future: candidate path probing)
+        packet->SetAddress((*iter)->AcquireSendAddress());
         packet->SetSocket((*iter)->GetSocket()); // client connection will always -1
 
         if (!sender_->Send(packet)) {
