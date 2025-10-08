@@ -46,7 +46,15 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4); // TODO: make it configurable
     connection_crypto_.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
-    remote_conn_id_manager_ = std::make_shared<ConnectionIDManager>();
+    // remote CID manager: on retire, send RETIRE_CONNECTION_ID frame to peer
+    remote_conn_id_manager_ = std::make_shared<ConnectionIDManager>(
+        [](ConnectionID&){ /* no-op on add for remote CIDs */ },
+        [this](ConnectionID& id){
+            auto retire = std::make_shared<RetireConnectionIDFrame>();
+            retire->SetSequenceNumber(id.GetSequenceNumber());
+            ToSendFrame(retire);
+        }
+    );
     local_conn_id_manager_ = std::make_shared<ConnectionIDManager>(
         std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
         std::bind(&BaseConnection::RetireConnectionId, this, std::placeholders::_1));
@@ -275,7 +283,7 @@ bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
 bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level) {
     for (size_t i = 0; i < frames.size(); i++) {
         uint16_t type = frames[i]->GetType();
-        common::LOG_DEBUG("get frame type: %s", FrameType2String(type).c_str());
+        common::LOG_DEBUG("recv frame: %s", FrameType2String(type).c_str());
         switch (type) {
         case FrameType::kPadding:
             // do nothing
@@ -565,8 +573,23 @@ bool BaseConnection::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     auto data = response_frame->GetData();
-    if (data) {
-        // TODO: check data
+    if (path_probe_inflight_ && memcmp(data, pending_path_challenge_data_, 8) == 0) {
+        // token matched: path validated -> promote candidate to active
+        path_probe_inflight_ = false;
+        memset(pending_path_challenge_data_, 0, sizeof(pending_path_challenge_data_));
+        if (!(candidate_peer_addr_ == peer_addr_)) {
+            SetPeerAddress(candidate_peer_addr_);
+            // rotate to next remote CID if available
+            remote_conn_id_manager_->UseNextID();
+            // reset cwnd/RTT and PMTU for new path
+            send_manager_.ResetPathSignals();
+            send_manager_.ResetMtuForNewPath();
+            // kick off a minimal PMTU probe sequence on the new path
+            send_manager_.StartMtuProbe();
+            ExitAntiAmplification();
+        }
+        // candidate consumed
+        candidate_peer_addr_ = common::Address();
     }
     return true;
 }
@@ -576,6 +599,22 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     idle_timeout_task_.SetTimeoutCallback(std::bind(&BaseConnection::OnIdleTimeout, this));
     // TODO: modify idle timer set point
     timer_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
+
+    // Preferred address migration (client side) if allowed
+    if (!transport_param_.GetDisableActiveMigration()) {
+        const auto& pref = transport_param_.GetPreferredAddress();
+        if (!pref.empty()) {
+            // parse "ip:port"
+            auto pos = pref.find(':');
+            if (pos != std::string::npos) {
+                common::Address addr(pref.substr(0, pos), static_cast<uint16_t>(std::stoi(pref.substr(pos + 1))));
+                if (!(addr == GetPeerAddress())) {
+                    candidate_peer_addr_ = addr;
+                    StartPathValidationProbe();
+                }
+            }
+        }
+    }
 }
 
 void BaseConnection::ThreadTransferBefore() {
@@ -612,6 +651,53 @@ void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {
     ActiveSend();
 }
 
+void BaseConnection::StartPathValidationProbe() {
+    if (path_probe_inflight_) {
+        return;
+    }
+    // generate PATH_CHALLENGE
+    auto challenge = std::make_shared<PathChallengeFrame>();
+    challenge->MakeData();
+    memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
+    path_probe_inflight_ = true;
+    EnterAntiAmplification();
+    // reset anti-amplification budget on send manager
+    send_manager_.ResetAmpBudget();
+    ToSendFrame(challenge);
+    probe_retry_count_ = 0;
+    probe_retry_delay_ms_ = 1 * 100; // start with 100ms
+    ScheduleProbeRetry();
+}
+
+void BaseConnection::EnterAntiAmplification() {
+    // Disable streams while path is unvalidated to limit to probing/ACK frames
+    send_manager_.SetStreamsAllowed(false);
+}
+
+void BaseConnection::ExitAntiAmplification() {
+    send_manager_.SetStreamsAllowed(true);
+}
+
+void BaseConnection::ScheduleProbeRetry() {
+    timer_->RmTimer(path_probe_task_);
+    if (!path_probe_inflight_) return;
+    if (probe_retry_count_ >= 5) {
+        // give up probing; keep old path if still working (no explicit close here)
+        return;
+    }
+    probe_retry_count_++;
+    probe_retry_delay_ms_ = std::min<uint32_t>(probe_retry_delay_ms_ * 2, 2000);
+    path_probe_task_.SetTimeoutCallback([this]() {
+        if (!path_probe_inflight_) return;
+        auto challenge = std::make_shared<PathChallengeFrame>();
+        challenge->MakeData();
+        memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
+        ToSendFrame(challenge);
+        ScheduleProbeRetry();
+    });
+    timer_->AddTimer(path_probe_task_, probe_retry_delay_ms_, 0);
+}
+
 void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
     if (state_ == ConnectionStateType::kStateClosed || state_ == ConnectionStateType::kStateDraining) {
         return;
@@ -643,6 +729,24 @@ EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
         }
     }
     return level;
+}
+
+void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
+    if (addr == peer_addr_) return;
+    // Respect disable_active_migration: ignore proactive migration but allow NAT rebinding
+    // Heuristic: if we have received any packet from the new address (workers call
+    // OnCandidatePathDatagramReceived before this frame processing), it's likely NAT rebinding.
+    if (transport_param_.GetDisableActiveMigration()) {
+        // Only consider as NAT rebinding if we see repeated observations; otherwise ignore
+        if (!(addr == candidate_peer_addr_)) {
+            // First observation: store candidate but do not start probe yet
+            candidate_peer_addr_ = addr;
+            return;
+        }
+        // Second consecutive observation of same new address: treat as rebinding and probe
+    }
+    candidate_peer_addr_ = addr;
+    StartPathValidationProbe();
 }
 
 void BaseConnection::ActiveSend() {

@@ -60,6 +60,12 @@ public:
     virtual void SetPeerAddress(const common::Address& addr);
     virtual void SetPeerAddress(const common::Address&& addr);
     virtual const common::Address& GetPeerAddress();
+    // observe peer address from incoming datagrams; default no-op
+    virtual void OnObservedPeerAddress(const common::Address& addr) { (void)addr; }
+    // notify candidate-path datagram was received with its address and size; default no-op
+    virtual void OnCandidatePathDatagramReceived(const common::Address& addr, uint32_t bytes) { (void)addr; (void)bytes; }
+    // get destination address for next datagram; default current peer address
+    virtual common::Address AcquireSendAddress() { return peer_addr_; }
 
     void SetSocket(int32_t sockfd) { sockfd_ = sockfd; }
     int32_t GetSocket() const { return sockfd_; }

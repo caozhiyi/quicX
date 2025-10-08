@@ -49,6 +49,9 @@ public:
     virtual void SetPendingEcn(uint8_t ecn) override { pending_ecn_ = ecn; }
     virtual EncryptionLevel GetCurEncryptionLevel() override;
 
+    // observed peer address from network; store as candidate if different
+    virtual void OnObservedPeerAddress(const common::Address& addr) override;
+
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     bool On0rttPacket(std::shared_ptr<IPacket> packet);
@@ -100,6 +103,20 @@ protected:
 
     virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) = 0;
 
+    // record bytes received on candidate path to increase amp budget while probing
+    virtual void OnCandidatePathDatagramReceived(const common::Address& addr, uint32_t bytes) override {
+        if (path_probe_inflight_ && (addr == candidate_peer_addr_)) {
+            send_manager_.OnCandidatePathBytesReceived(bytes);
+        }
+    }
+    virtual common::Address AcquireSendAddress() override {
+        // For now, always send to active peer address. Candidate is used for validation step later.
+        if (path_probe_inflight_) {
+            return candidate_peer_addr_;
+        }
+        return peer_addr_;
+    }
+
 protected:
     // timer task
     common::TimerTask idle_timeout_task_;
@@ -140,6 +157,20 @@ protected:
     bool has_app_send_pending_ = false;
     // Track whether Initial packet has been sent in 0-RTT scenarios
     bool initial_packet_sent_ = false;
+
+    // candidate path state (address only for now)
+    common::Address candidate_peer_addr_;
+    bool path_probe_inflight_ {false};
+    uint8_t pending_path_challenge_data_[8] {0};
+    common::TimerTask path_probe_task_;
+    uint32_t probe_retry_count_ {0};
+    uint32_t probe_retry_delay_ms_ {0};
+
+    void StartPathValidationProbe();
+    // Anti-amplification: while path is unvalidated, restrict sending
+    void EnterAntiAmplification();
+    void ExitAntiAmplification();
+    void ScheduleProbeRetry();
 };
 
 }
