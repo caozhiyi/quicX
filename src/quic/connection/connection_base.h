@@ -165,12 +165,21 @@ protected:
     common::TimerTask path_probe_task_;
     uint32_t probe_retry_count_ {0};
     uint32_t probe_retry_delay_ms_ {0};
+    
+    // Queue of pending candidate addresses for path validation
+    std::vector<common::Address> pending_candidate_addrs_;
 
     void StartPathValidationProbe();
+    void StartNextPathProbe(); // Start probing next address in queue
     // Anti-amplification: while path is unvalidated, restrict sending
     void EnterAntiAmplification();
     void ExitAntiAmplification();
     void ScheduleProbeRetry();
+    
+    // Connection ID pool management
+    void CheckAndReplenishLocalCIDPool();
+    static constexpr size_t kMinLocalCIDPoolSize = 3;  // Keep at least 3 CIDs in pool
+    static constexpr size_t kMaxLocalCIDPoolSize = 8;  // Generate up to 8 CIDs
 };
 
 }

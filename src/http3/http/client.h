@@ -42,7 +42,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<ClientConnection>> conn_map_;
 
     struct WaitRequestContext {
-        common::URL url;
+        std::string host;
         std::shared_ptr<IRequest> request;
 
         http_response_handler handler;

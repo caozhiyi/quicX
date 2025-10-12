@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <cstring>
 
-#include "common/util/time.h"
 #include "common/log/file_logger.h"
 
 namespace quicx {

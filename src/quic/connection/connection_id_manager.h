@@ -33,6 +33,9 @@ public:
     bool AddID(ConnectionID& id);
     bool AddID(const uint8_t* id, uint16_t len);
     bool UseNextID();
+    
+    // Get the number of available CIDs in the pool
+    size_t GetAvailableIDCount() const { return sequence_cid_map_.size(); }
 
 private:
     ConnectionID cur_id_;

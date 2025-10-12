@@ -36,37 +36,41 @@ bool Client::Init(const Http3Config& config) {
 
 bool Client::DoRequest(const std::string& url, HttpMethod mothed,
         std::shared_ptr<IRequest> request, const http_response_handler& handler) {
-    // parse url
-    common::URL url_info;
-    if (!common::ParseURL(url, url_info)) {
+    // Parse URL once for both pseudo-headers and connection management
+    std::string scheme, host, path_with_query;
+    uint16_t port;
+    if (!common::ParseURLForPseudoHeaders(url, scheme, host, port, path_with_query)) {
         common::LOG_ERROR("parse url failed. url: %s", url.c_str());
         return false;
     }
 
-    request->SetPath(url_info.path);
+    // Set pseudo-headers
     request->SetMethod(mothed);
-    request->SetScheme(url_info.scheme);
-    request->SetAuthority(url_info.host);
+    request->SetScheme(scheme);
+    request->SetAuthority(common::BuildAuthority(host, port, scheme));
+    request->SetPath(path_with_query);
 
-    // check if the connection is already established   
-    auto it = conn_map_.find(url_info.host);
+    // Check if the connection is already established   
+    auto it = conn_map_.find(host);
     if (it != conn_map_.end()) {
-        // use the existing connection
+        // Use the existing connection
         auto conn = it->second;
         conn->DoRequest(request, handler);
         return true;
     }
 
-    // lookup address
+    // Lookup address
     common::Address addr;
-    if (!common::LookupAddress(url_info.host, addr)) {
-        common::LOG_ERROR("lookup address failed. host: %s", url_info.host.c_str());
+    if (!common::LookupAddress(host, addr)) {
+        common::LOG_ERROR("lookup address failed. host: %s", host.c_str());
         return false;
     }
-    addr.SetPort(url_info.port);
-    // create connection
+    addr.SetPort(port);
+    
+    // Create connection
     quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, kClientConnectionTimeoutMs);
-    wait_request_map_[addr.AsString()] = WaitRequestContext{url_info, request, handler};
+    
+    wait_request_map_[addr.AsString()] = WaitRequestContext{host, request, handler};
     return true;
 }
 
@@ -97,13 +101,13 @@ void Client::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::Con
     }
 
     auto context = it->second;
-    auto client_conn = std::make_shared<ClientConnection>(context.url.host, settings_, conn,
+    auto client_conn = std::make_shared<ClientConnection>(context.host, settings_, conn,
         std::bind(&Client::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Client::HandlePushPromise, this, std::placeholders::_1),
         std::bind(&Client::HandlePush, this, std::placeholders::_1, std::placeholders::_2));
 
     wait_request_map_.erase(it);
-    conn_map_[context.url.host] = client_conn;
+    conn_map_[context.host] = client_conn;
     client_conn->DoRequest(context.request, context.handler);
 }
 
