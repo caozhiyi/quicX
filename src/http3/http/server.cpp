@@ -1,7 +1,9 @@
 #include "common/log/log.h"
 #include "http3/http/type.h"
+#include "common/http/url.h"
 #include "common/util/time.h"
 #include "http3/http/server.h"
+#include "http3/http/request.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
 #include "quic/include/if_quic_server.h"
@@ -105,12 +107,29 @@ void Server::HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IR
     std::string path = request->GetPath();
     HttpMethod mothed = request->GetMethod();
 
+    // Match path and set path parameters
     auto match_result = router_->Match(mothed, path);
     if (!match_result.is_match) {
         response->SetStatusCode(404);
         response->SetBody("Not Found");
         return;
     }
+    (std::dynamic_pointer_cast<Request>(request))->SetPathParams(match_result.params);
+
+    // Parse query parameters
+    const std::string& path_with_query = request->GetPath();
+    // Parse :path pseudo-header into path and query parameters and set query parameters
+    std::string clean_path;
+    std::unordered_map<std::string, std::string> query_params;
+    if (!common::ParsePathWithQuery(path_with_query, clean_path, query_params)) {
+        common::LOG_ERROR("URLHelper::ParseQueryParams: failed to parse path: %s", 
+                         path_with_query.c_str());
+        return;
+    }
+    // Update request with clean path (without query string)
+    request->SetPath(clean_path);
+    // Store query parameters for application use
+    (std::dynamic_pointer_cast<Request>(request))->SetQueryParams(query_params);
 
     uint64_t start_time = common::UTCTimeMsec();
     common::LOG_INFO("start handle request. path: %s, method: %d", path.c_str(), mothed);

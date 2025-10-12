@@ -19,7 +19,8 @@ public:
     virtual void SetMethod(HttpMethod method) = 0;
     virtual HttpMethod GetMethod() const = 0;
     virtual std::string GetMethodString() const = 0;
-    // Request path
+    
+    // Request path (without query string)
     virtual void SetPath(const std::string& path) = 0;
     virtual const std::string& GetPath() const = 0;
 
@@ -40,6 +41,16 @@ public:
     // Request body
     virtual void SetBody(const std::string& body) = 0;
     virtual const std::string& GetBody() const = 0;
+
+    // Query parameters (parsed from :path pseudo-header)
+    // Example: :path="/api/users?page=1&limit=10" -> path="/api/users", query={{"page", "1"}, {"limit", "10"}}
+    // Use URLHelper::ParseQueryParams() to populate this on server side
+    virtual const std::unordered_map<std::string, std::string>& GetQueryParams() const = 0;
+
+    // Path parameters (extracted by router during pattern matching)
+    // Example: route="/users/:id", request="/users/123" -> {{"id", "123"}}
+    // Populated by router, not by URLHelper
+    virtual const std::unordered_map<std::string, std::string>& GetPathParams() const = 0;
 
     // Create a request instance
     static std::shared_ptr<IRequest> Create();

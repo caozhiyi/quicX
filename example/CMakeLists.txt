@@ -1,3 +1,7 @@
 add_subdirectory(hello_world)
 add_subdirectory(server_push)
 add_subdirectory(upgrade_h3)
+add_subdirectory(restful_api)
+add_subdirectory(file_transfer)
+add_subdirectory(concurrent_requests)
+add_subdirectory(quicx_curl)

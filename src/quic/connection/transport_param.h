@@ -51,6 +51,11 @@ public:
     bool GetDisableActiveMigration() const { return disable_active_migration_; }
     const std::string& GetPreferredAddress() const { return preferred_address_; }
     uint32_t GetActiveConnectionIdLimit() const { return active_connection_id_limit_; }
+    
+    // Server-only: Set preferred address for client migration suggestion
+    // Format: "ip:port" (e.g., "192.168.1.100:8443")
+    // The server advertises this address to suggest the client migrate to it
+    void SetPreferredAddress(const std::string& addr) { preferred_address_ = addr; }
     const std::string& GetInitialSourceConnectionId() const { return initial_source_connection_id_; }
     const std::string& GetRetrySourceConnectionId() const { return retry_source_connection_id_; }
 

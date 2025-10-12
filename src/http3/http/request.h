@@ -19,7 +19,7 @@ public:
     virtual HttpMethod GetMethod() const { return method_; }
     virtual std::string GetMethodString() const;
 
-    // Request path
+    // Request path (without query string)
     virtual void SetPath(const std::string& path) { path_ = path; }
     virtual const std::string& GetPath() const { return path_; }
 
@@ -41,6 +41,14 @@ public:
     virtual void SetBody(const std::string& body) { body_ = body; }
     virtual const std::string& GetBody() const { return body_; }
 
+    // Query parameters (parsed from :path by URLHelper::ParseQueryParams)
+    virtual void SetQueryParams(const std::unordered_map<std::string, std::string>& params) { query_params_ = params; }
+    virtual const std::unordered_map<std::string, std::string>& GetQueryParams() const { return query_params_; }
+
+    // Path parameters (set by router during pattern matching)
+    virtual void SetPathParams(const std::unordered_map<std::string, std::string>& params) { path_params_ = params; }
+    virtual const std::unordered_map<std::string, std::string>& GetPathParams() const { return path_params_; }
+
 private:
     HttpMethod method_;
     std::string path_;
@@ -49,6 +57,9 @@ private:
 
     std::unordered_map<std::string, std::string> headers_;
     std::string body_;
+    
+    std::unordered_map<std::string, std::string> query_params_;  // Parsed from ?key=value
+    std::unordered_map<std::string, std::string> path_params_;   // Extracted from /users/:id pattern
 };
 
 }

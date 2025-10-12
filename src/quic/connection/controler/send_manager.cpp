@@ -7,7 +7,6 @@
 #include "quic/frame/ping_frame.h"
 #include "quic/packet/init_packet.h"
 #include "quic/frame/padding_frame.h"
-#include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/handshake_packet.h"
@@ -113,12 +112,37 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
             FixBufferFrameVisitor frame_visitor(mtu_limit_bytes_ - 50);
             auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
             if (!packet) {
-                common::LOG_WARN("make packet failed.");
-                return false;
+                // No frames to send, return true (success with no data)
+                return true;
             }
+            
+            // Get packet size before checking budget
+            uint32_t packet_size = frame_visitor.GetBuffer()->GetDataLength();
+            
+            if (packet_size == 0) {
+                // Empty packet, return true (success with no data)
+                return true;
+            }
+            
             // anti-amplification: bytes budget (3x)
-            if (!CheckAndChargeAmpBudget(frame_visitor.GetBuffer()->GetDataLength())) {
-                return false;
+            // Note: PATH_CHALLENGE/PATH_RESPONSE frames should always be allowed
+            // even if budget is exhausted, to ensure path validation can proceed
+            if (!CheckAndChargeAmpBudget(packet_size)) {
+                // If we have PATH_CHALLENGE or PATH_RESPONSE, allow it anyway
+                bool has_path_frame = false;
+                for (auto& frame : packet->GetFrames()) {
+                    if (frame->GetType() == FrameType::kPathChallenge || 
+                        frame->GetType() == FrameType::kPathResponse) {
+                        has_path_frame = true;
+                        break;
+                    }
+                }
+                if (!has_path_frame) {
+                    common::LOG_DEBUG("Anti-amplification budget exhausted, dropping non-path-validation packet");
+                    return true; // Return true to indicate no error, just no data to send
+                }
+                // Allow PATH_CHALLENGE/PATH_RESPONSE to bypass budget check
+                common::LOG_DEBUG("Allowing path validation frame despite budget limit");
             }
             return PacketInit(packet, buffer);
         }
@@ -141,8 +165,23 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
             return false;
         }
         if (!streams_allowed_) {
-            if (!CheckAndChargeAmpBudget(frame_visitor.GetBuffer()->GetDataLength())) {
-                return false;
+            uint32_t packet_size = frame_visitor.GetBuffer()->GetDataLength();
+            if (!CheckAndChargeAmpBudget(packet_size)) {
+                // If we have PATH_CHALLENGE or PATH_RESPONSE, allow it anyway
+                bool has_path_frame = false;
+                for (auto& frame : packet->GetFrames()) {
+                    if (frame->GetType() == FrameType::kPathChallenge || 
+                        frame->GetType() == FrameType::kPathResponse) {
+                        has_path_frame = true;
+                        break;
+                    }
+                }
+                if (!has_path_frame) {
+                    common::LOG_DEBUG("Anti-amplification budget exhausted, dropping non-path-validation packet");
+                    return true; // Return true to indicate no error, just no data to send
+                }
+                // Allow PATH_CHALLENGE/PATH_RESPONSE to bypass budget check
+                common::LOG_DEBUG("Allowing path validation frame despite budget limit");
             }
         }
         return PacketInit(packet, buffer);
