@@ -11,6 +11,7 @@
 - [x] http3 settings control
 - [x] congestion control test
 - [x] test server reject 0rrt 
-- [ ] fuzz test
-- [ ] benchmark test
+- [x] fuzz test
+- [x] benchmark test
 - [ ] http3 test
+- [x] http query param & path param
