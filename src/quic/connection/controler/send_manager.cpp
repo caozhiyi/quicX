@@ -19,7 +19,7 @@ namespace quic {
 
 SendManager::SendManager(std::shared_ptr<common::ITimer> timer): 
     send_control_(timer) {
-    
+
 }
 
 SendManager::~SendManager() {
@@ -257,6 +257,24 @@ bool SendManager::CheckAndChargeAmpBudget(uint32_t bytes) {
     return true;
 }
 
+bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {
+    if (streams_allowed_) {
+        return true;
+    }
+    switch (type) {
+        case FrameType::kPathChallenge:
+        case FrameType::kPathResponse:
+        case FrameType::kAck:
+        case FrameType::kAckEcn:
+        case FrameType::kPing:
+        case FrameType::kPadding:
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+
 void SendManager::ResetAmpBudget() {
     // Provide small initial credit so a single PATH_CHALLENGE can be sent
     amp_recv_bytes_ = 400; // ~ allows up to 1200 bytes under 3x rule
@@ -289,24 +307,9 @@ void SendManager::OnMtuProbeResult(bool success) {
 
 std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
     std::shared_ptr<IPacket> packet;
-    // priority sending frames of connection
-    auto is_allowed_on_unvalidated = [this](uint16_t type) -> bool {
-        if (streams_allowed_) return true;
-        switch (type) {
-            case FrameType::kPathChallenge:
-            case FrameType::kPathResponse:
-            case FrameType::kAck:
-            case FrameType::kAckEcn:
-            case FrameType::kPing:
-            case FrameType::kPadding:
-                return true;
-            default:
-                return false;
-        }
-    };
 
     for (auto iter = wait_frame_list_.begin(); iter != wait_frame_list_.end();) {
-        if (!is_allowed_on_unvalidated((*iter)->GetType())) {
+        if (!IsAllowedOnUnvalidated((*iter)->GetType())) {
             ++iter; // defer disallowed frames until validation succeeds
             continue;
         }

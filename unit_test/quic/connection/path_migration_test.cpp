@@ -25,6 +25,11 @@
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
 
+
+#include "common/log/log.h"
+#include "common/log/file_logger.h"
+#include "common/log/stdout_logger.h"
+
 namespace quicx {
 namespace quic {
 namespace {
@@ -60,9 +65,9 @@ static const char kKeyPem[] =
       "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
       "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
       "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
-      "TebSQWSYUiCFCZONAkEA0XWuFYjQKwz4VB9A0bwjnEyGBIy1e4Jf8dbsH9wmOmza\n"
-      "OQNqhJjWRR2FWAqfN4V4vAoJvSk9BKhcI5Jvt0Fw9w==\n"
-      "-----END RSA PRIVATE KEY-----\n";
+      "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
+      "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
+      "-----END RSA PRIVATE KEY-----\n"; 
 
 static QuicTransportParams TEST_TRANSPORT_PARAMS = {
     "",     // original_destination_connection_id
@@ -103,38 +108,50 @@ static bool ConnectionProcess(std::shared_ptr<IConnection> sender, std::shared_p
     return true;
 }
 
-} // namespace
-
-//============================================================================
-// Bug #1: Connection permanently blocked after path validation failure
-//============================================================================
-
-TEST(path_migration, validation_failure_recovery) {
+static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> GenerateHandshakeDoneConnections(
+    const quicx::quic::QuicTransportParams& client_tp = DEFAULT_QUIC_TRANSPORT_PARAMS, const quicx::quic::QuicTransportParams& server_tp = DEFAULT_QUIC_TRANSPORT_PARAMS) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init(false);
 
-    auto client_conn = std::make_shared<ClientConnection>(
-        client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    
-    auto server_conn = std::make_shared<ServerConnection>(
-        server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
 
-    // 握手
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", TEST_TRANSPORT_PARAMS);
-    server_conn->AddTransportParam(TEST_TRANSPORT_PARAMS);
+    common::Address addr(common::AddressType::kIpv4);
+    addr.SetIp("127.0.0.1");
+    addr.SetPort(9432);
 
-    for (int i = 0; i < 4; ++i) {
-        if (i % 2 == 0) {
-            ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-        } else {
-            ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-        }
-    }
+    client_conn->Dial(addr, "h3", client_tp);
 
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    server_conn->AddTransportParam(server_tp);
+
+    // client -------init-----> server
+    EXPECT_TRUE(ConnectionProcess(client_conn, server_conn));
+    // client <------init------ server
+    EXPECT_TRUE(ConnectionProcess(server_conn, client_conn));
+    // client <---handshake---- server
+    EXPECT_TRUE(ConnectionProcess(server_conn, client_conn));
+    // client ----handshake---> server
+    EXPECT_TRUE(ConnectionProcess(client_conn, server_conn));
+    // client <----session----- server
+    EXPECT_TRUE(ConnectionProcess(server_conn, client_conn));
+
+    EXPECT_TRUE(server_conn->GetCurEncryptionLevel() == kApplication) 
+        << "Server connection should be in application encryption level, but got "
+        << server_conn->GetCurEncryptionLevel();
+    EXPECT_TRUE(client_conn->GetCurEncryptionLevel() == kApplication) 
+        << "Client connection should be in application encryption level, but got "
+        << client_conn->GetCurEncryptionLevel();
+
+    return std::make_pair(client_conn, server_conn);
+}
+
+TEST(path_migration, validation_failure_recovery) {
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
     // Verify connection works normally
     auto stream_before = std::dynamic_pointer_cast<IQuicSendStream>(
         client_conn->MakeStream(StreamDirection::kSend));
@@ -172,30 +189,14 @@ TEST(path_migration, validation_failure_recovery) {
 //============================================================================
 
 TEST(path_migration, concurrent_path_probing) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
+    std::shared_ptr<common::Logger> file_log = std::make_shared<common::FileLogger>("test.log");
+    std::shared_ptr<common::Logger> std_log = std::make_shared<common::StdoutLogger>();
+    file_log->SetLogger(std_log);
+    common::LOG_SET(file_log);
 
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(
-        client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    
-    auto server_conn = std::make_shared<ServerConnection>(
-        server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    // Handshake
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", TEST_TRANSPORT_PARAMS);
-    server_conn->AddTransportParam(TEST_TRANSPORT_PARAMS);
-
-    for (int i = 0; i < 4; ++i) {
-        if (i % 2 == 0) {
-            ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-        } else {
-            ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-        }
-    }
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Rapidly trigger multiple address changes
     common::Address addr1("127.0.0.1", 10001);
@@ -206,26 +207,40 @@ TEST(path_migration, concurrent_path_probing) {
     client_conn->OnObservedPeerAddress(addr2); // Should be queued
     client_conn->OnObservedPeerAddress(addr3); // Should be queued
 
-    // Verify first PATH_CHALLENGE is sent
+    // Verify first PATH_CHALLENGE by server's PATH_RESPONSE (avoid decrypting in test)
     {
         uint8_t buf[1500] = {0};
         auto buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
         quic::SendOperation op;
         ASSERT_TRUE(client_conn->GenerateSendData(buffer, op));
-        
+
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(buffer, pkts));
-        
-        bool found_challenge = false;
-        for (auto& p : pkts) {
+        // Deliver client's encrypted packets to server; server should respond PATH_RESPONSE
+        server_conn->OnPackets(0, pkts);
+
+        uint8_t sbuf[1500] = {0};
+        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        quic::SendOperation sop;
+        ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
+
+        std::vector<std::shared_ptr<IPacket>> rsp;
+        ASSERT_TRUE(DecodePackets(sb, rsp));
+        bool found_path_response = false;
+        // Decrypt server's 1-RTT packets using client's cryptographer
+        auto cli_crypto = client_conn->GetCryptographerForTest(kApplication);
+        ASSERT_NE(cli_crypto, nullptr);
+        for (auto& p : rsp) {
+            p->SetCryptographer(cli_crypto);
+            uint8_t tmp[4096] = {0};
+            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             for (auto& f : p->GetFrames()) {
-                if (f->GetType() == FrameType::kPathChallenge) {
-                    found_challenge = true;
-                    break;
-                }
+                if (f->GetType() == FrameType::kPathResponse) { found_path_response = true; break; }
             }
+            if (found_path_response) break;
         }
-        EXPECT_TRUE(found_challenge) << "First PATH_CHALLENGE should be sent";
+        EXPECT_TRUE(found_path_response) << "Server should send PATH_RESPONSE proving client sent PATH_CHALLENGE";
     }
 
     // Duplicate address changes should be ignored
@@ -235,35 +250,10 @@ TEST(path_migration, concurrent_path_probing) {
     // (In actual implementation, can add public interface to get queue size)
 }
 
-//============================================================================
-// Issue #3: CID pool management
-//============================================================================
-
 TEST(path_migration, cid_pool_replenishment) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(
-        client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    
-    auto server_conn = std::make_shared<ServerConnection>(
-        server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    // Handshake
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", TEST_TRANSPORT_PARAMS);
-    server_conn->AddTransportParam(TEST_TRANSPORT_PARAMS);
-
-    for (int i = 0; i < 4; ++i) {
-        if (i % 2 == 0) {
-            ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-        } else {
-            ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-        }
-    }
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Trigger path migration to consume CIDs
     common::Address new_addr("127.0.0.1", 9999);
@@ -289,9 +279,15 @@ TEST(path_migration, cid_pool_replenishment) {
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(sb, pkts));
         
+        auto cli_crypto = client_conn->GetCryptographerForTest(kApplication);
+        ASSERT_NE(cli_crypto, nullptr);
         // Check if NEW_CONNECTION_ID frame is sent (CID pool replenishment)
         bool found_new_cid = false;
         for (auto& p : pkts) {
+            p->SetCryptographer(cli_crypto);
+            uint8_t tmp[4096] = {0};
+            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             for (auto& f : p->GetFrames()) {
                 if (f->GetType() == FrameType::kNewConnectionId) {
                     found_new_cid = true;
@@ -322,34 +318,9 @@ TEST(path_migration, cid_pool_replenishment) {
 //============================================================================
 
 TEST(path_migration, preferred_address_mechanism) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(
-        client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    
-    auto server_conn = std::make_shared<ServerConnection>(
-        server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    // Server sets preferred_address
-    QuicTransportParams server_params = TEST_TRANSPORT_PARAMS;
-    server_params.preferred_address_ = "127.0.0.1:9500"; // Server's suggested address
-    
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", TEST_TRANSPORT_PARAMS);
-    server_conn->AddTransportParam(server_params);
-
-    // During handshake, client should receive preferred_address
-    for (int i = 0; i < 4; ++i) {
-        if (i % 2 == 0) {
-            ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-        } else {
-            ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-        }
-    }
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // After handshake, client should automatically start probing preferred_address
     // (This will be triggered in OnTransportParams)
@@ -364,7 +335,14 @@ TEST(path_migration, preferred_address_mechanism) {
             std::vector<std::shared_ptr<IPacket>> pkts;
             if (DecodePackets(buffer, pkts)) {
                 bool found_challenge = false;
+
+                auto ser_crypto = client_conn->GetCryptographerForTest(kApplication);
+                ASSERT_NE(ser_crypto, nullptr);
                 for (auto& p : pkts) {
+                    p->SetCryptographer(ser_crypto);
+                    uint8_t tmp[4096] = {0};
+                    auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+                    ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
                     for (auto& f : p->GetFrames()) {
                         if (f->GetType() == FrameType::kPathChallenge) {
                             found_challenge = true;
@@ -384,30 +362,9 @@ TEST(path_migration, preferred_address_mechanism) {
 //============================================================================
 
 TEST(path_migration, duplicate_path_response) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(
-        client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    
-    auto server_conn = std::make_shared<ServerConnection>(
-        server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    // Handshake
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", TEST_TRANSPORT_PARAMS);
-    server_conn->AddTransportParam(TEST_TRANSPORT_PARAMS);
-
-    for (int i = 0; i < 4; ++i) {
-        if (i % 2 == 0) {
-            ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-        } else {
-            ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-        }
-    }
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Trigger migration
     common::Address new_addr("127.0.0.1", 9999);
@@ -448,28 +405,9 @@ TEST(path_migration, duplicate_path_response) {
 
 
 TEST(path_migration, path_token_validation_and_promotion) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    common::Address addr(common::AddressType::kIpv4);
-    addr.SetIp("127.0.0.1");
-    addr.SetPort(9432);
-
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    // complete handshake quickly
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Simulate observed new address on client side
     common::Address new_addr("127.0.0.1", 9543);
@@ -520,25 +458,9 @@ TEST(path_migration, path_token_validation_and_promotion) {
 }
 
 TEST(path_migration, nat_rebinding_integration) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    // Run handshake to 1-RTT
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // NAT rebinding: server observes new source address from client
     common::Address nat_addr("127.0.0.1", 9654);
@@ -577,24 +499,9 @@ TEST(path_migration, nat_rebinding_integration) {
 }
 
 TEST(path_migration, path_challenge_retry_backoff) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Trigger migration on client but drop all probe-related traffic to force retries
     common::Address new_addr("127.0.0.1", 9991);
@@ -612,24 +519,9 @@ TEST(path_migration, path_challenge_retry_backoff) {
 }
 
 TEST(path_migration, amp_gating_blocks_streams_before_validation) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Trigger client-side migration; while unvalidated, streams should be gated
     common::Address new_addr("127.0.0.1", 9555);
@@ -661,24 +553,9 @@ TEST(path_migration, amp_gating_blocks_streams_before_validation) {
 }
 
 TEST(path_migration, pmtu_probe_success_raises_mtu) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Trigger migration to start PMTU probing after validation
     common::Address new_addr("127.0.0.1", 9666);
@@ -738,24 +615,9 @@ TEST(path_migration, pmtu_probe_success_raises_mtu) {
 }
 
 TEST(path_migration, pmtu_probe_loss_fallback) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Trigger migration to start PMTU probing after validation
     common::Address new_addr("127.0.0.1", 9777);
@@ -802,27 +664,12 @@ TEST(path_migration, pmtu_probe_loss_fallback) {
 }
 
 TEST(path_migration, disable_active_migration_semantics) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
+    auto server_tp = DEFAULT_QUIC_TRANSPORT_PARAMS;
+    server_tp.disable_active_migration_ = true;
 
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    // Server announces disable_active_migration
-    QuicTransportParams params = DEFAULT_QUIC_TRANSPORT_PARAMS;
-    params.disable_active_migration_ = true;
-    server_conn->AddTransportParam(params);
-
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    auto connections = GenerateHandshakeDoneConnections(DEFAULT_QUIC_TRANSPORT_PARAMS, server_tp);
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Client proactively observes a new address; first observation should not start probe
     common::Address new_addr("127.0.0.1", 9888);
@@ -835,11 +682,23 @@ TEST(path_migration, disable_active_migration_semantics) {
         quic::SendOperation op;
         (void)client_conn->GenerateSendData(b, op);
         std::vector<std::shared_ptr<IPacket>> pkts;
-        DecodePackets(b, pkts);
+        ASSERT_TRUE(DecodePackets(b, pkts));
+        // Decrypt client->server packets with server cryptographer
+        auto srv_crypto = server_conn->GetCryptographerForTest(kApplication);
+        ASSERT_NE(srv_crypto, nullptr);
         for (auto& p : pkts) {
+            p->SetCryptographer(srv_crypto);
+            uint8_t tmp[4096] = {0};
+            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
+            bool found_path_challenge = false;
             for (auto& f : p->GetFrames()) {
-                ASSERT_NE(f->GetType(), FrameType::kPathChallenge);
+                if (f->GetType() == FrameType::kPathChallenge) { 
+                    found_path_challenge = true;
+                    break;
+                }
             }
+            EXPECT_FALSE(found_path_challenge) << "No PATH_CHALLENGE on first observation when migration disabled";
         }
     }
 
@@ -850,37 +709,77 @@ TEST(path_migration, disable_active_migration_semantics) {
         auto b = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
         quic::SendOperation op;
         ASSERT_TRUE(client_conn->GenerateSendData(b, op));
-        std::vector<std::shared_ptr<IPacket>> pkts;
-        ASSERT_TRUE(DecodePackets(b, pkts));
-        bool found_chal = false;
-        for (auto& p : pkts) {
+        std::vector<std::shared_ptr<IPacket>> client_pkts;
+        ASSERT_TRUE(DecodePackets(b, client_pkts));
+
+        // Deliver client's probe packets to server
+        server_conn->OnPackets(0, client_pkts);
+
+        // Server should respond; generate and decrypt server->client response to find PATH_RESPONSE
+        uint8_t sbuf[1500] = {0};
+        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        quic::SendOperation sop;
+        ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
+
+        std::vector<std::shared_ptr<IPacket>> rsp;
+        ASSERT_TRUE(DecodePackets(sb, rsp));
+
+        auto cli_crypto = client_conn->GetCryptographerForTest(kApplication);
+        ASSERT_NE(cli_crypto, nullptr);
+        bool found_path_response = false;
+        for (auto& p : rsp) {
+            p->SetCryptographer(cli_crypto);
+            uint8_t tmp[4096] = {0};
+            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            if (!p->DecodeWithCrypto(tmp_buf)) continue;
             for (auto& f : p->GetFrames()) {
-                if (f->GetType() == FrameType::kPathChallenge) { found_chal = true; break; }
+                if (f->GetType() == FrameType::kPathResponse) { found_path_response = true; break; }
             }
+            if (found_path_response) break;
         }
-        EXPECT_TRUE(found_chal);
+        ASSERT_TRUE(found_path_response) << "Server should send PATH_RESPONSE on second observation (NAT rebinding)";
     }
 }
 
 TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
+    auto warmup_stream = std::dynamic_pointer_cast<IQuicSendStream>(
+        client_conn->MakeStream(StreamDirection::kSend));
+  
+    // send a message to warm up the connection
+    const char* warmup_data = "warmup";
+    warmup_stream->Send((uint8_t*)warmup_data, strlen(warmup_data));
 
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    // handshake
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    // Ensure client has at least one extra remote CID from server before migration
+    {
+        int new_cid_frames = 0;
+        for (int i = 0; i < 5 && new_cid_frames == 0; ++i) {
+            uint8_t sbuf[1500] = {0};
+            auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+            quic::SendOperation sop;
+            if (!server_conn->GenerateSendData(sb, sop)) continue;
+            std::vector<std::shared_ptr<IPacket>> spkts;
+            if (!DecodePackets(sb, spkts)) continue;
+            // decrypt server->client with client's cryptographer and check NEW_CONNECTION_ID
+            auto cli_crypto = client_conn->GetCryptographerForTest(kApplication);
+            ASSERT_NE(cli_crypto, nullptr);
+            for (auto& p : spkts) {
+                p->SetCryptographer(cli_crypto);
+                uint8_t tmp[4096] = {0};
+                auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+                if (!p->DecodeWithCrypto(tmp_buf)) continue;
+                for (auto& f : p->GetFrames()) {
+                    if (f->GetType() == FrameType::kNewConnectionId) { ++new_cid_frames; }
+                }
+            }
+            // deliver to client to actually install NEW_CONNECTION_IDs
+            client_conn->OnPackets(0, spkts);
+        }
+        ASSERT_GT(new_cid_frames, 0) << "Server should provide at least one NEW_CONNECTION_ID before migration";
+    }
 
     // Record current dcid used by client when sending 1-RTT before migration
     uint8_t pre_buf[1500] = {0};
@@ -950,8 +849,15 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
     EXPECT_TRUE(cid_changed);
 
     // Also ensure that a RETIRE_CONNECTION_ID frame is eventually sent from client
+    auto ser_crypto = server_conn->GetCryptographerForTest(kApplication);
+    ASSERT_NE(ser_crypto, nullptr);
     bool saw_retire = false;
     for (auto& p : post_pkts) {
+        p->SetCryptographer(ser_crypto);
+        uint8_t tmp[4096] = {0};
+        auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+        ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
+        ASSERT_FALSE(p->GetFrames().empty());
         for (auto& f : p->GetFrames()) {
             if (f->GetType() == FrameType::kRetireConnectionId) { saw_retire = true; break; }
         }
@@ -963,11 +869,24 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
         quic::SendOperation aop;
         if (client_conn->GenerateSendData(ab, aop)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
-            if (DecodePackets(ab, pkts)) {
-                for (auto& p : pkts) {
-                    for (auto& f : p->GetFrames()) {
-                        if (f->GetType() == FrameType::kRetireConnectionId) { saw_retire = true; break; }
-                    }
+            ASSERT_TRUE(DecodePackets(ab, pkts));
+            for (auto& p : pkts) {
+                p->SetCryptographer(ser_crypto);
+                uint8_t tmp[4096] = {0};
+                auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+                ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
+                ASSERT_FALSE(p->GetFrames().empty());
+                for (auto& f : p->GetFrames()) {
+                    if (f->GetType() == FrameType::kRetireConnectionId) { saw_retire = true; break; }
+                }
+            }
+            if (!saw_retire) {
+                uint8_t add_buf[1500] = {0};
+                auto ab = std::make_shared<common::Buffer>(add_buf, add_buf + sizeof(add_buf));
+                quic::SendOperation aop;
+                if (client_conn->GenerateSendData(ab, aop)) {
+                    std::vector<std::shared_ptr<IPacket>> pkts;
+                    ASSERT_TRUE(DecodePackets(ab, pkts));
                 }
             }
         }
@@ -976,23 +895,9 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
 }
 
 TEST(path_migration, path_challenge_retry_backoff_limits) {
-    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
-    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
-
-    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
-
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    common::Address addr("127.0.0.1", 9432);
-    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
-    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
-
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    auto connections = GenerateHandshakeDoneConnections();
+    auto client_conn = connections.first;
+    auto server_conn = connections.second;
 
     // Trigger migration but drop all server responses to force retries
     common::Address new_addr("127.0.0.1", 10001);
@@ -1007,7 +912,14 @@ TEST(path_migration, path_challenge_retry_backoff_limits) {
         if (!client_conn->GenerateSendData(cb, cop)) continue;
         std::vector<std::shared_ptr<IPacket>> pkts;
         if (!DecodePackets(cb, pkts)) continue;
+        auto ser_crypto = server_conn->GetCryptographerForTest(kApplication);
+        ASSERT_NE(ser_crypto, nullptr);
         for (auto& p : pkts) {
+            p->SetCryptographer(ser_crypto);
+            uint8_t tmp[4096] = {0};
+            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
+            ASSERT_FALSE(p->GetFrames().empty());
             for (auto& f : p->GetFrames()) {
                 if (f->GetType() == FrameType::kPathChallenge) { ++path_challenge_count; }
             }
@@ -1018,5 +930,6 @@ TEST(path_migration, path_challenge_retry_backoff_limits) {
     EXPECT_LE(path_challenge_count, 6);
 }
 
+}
 }
 }

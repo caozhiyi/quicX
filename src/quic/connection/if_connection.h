@@ -8,6 +8,7 @@
 #include "common/timer/if_timer.h"
 #include "quic/packet/if_packet.h"
 #include "common/network/address.h"
+#include "quic/crypto/if_cryptographer.h"
 #include "quic/connection/connection_id.h"
 #include "quic/include/if_quic_connection.h"
 
@@ -51,6 +52,8 @@ public:
     // provide ECN value for the next OnPackets call (per received datagram)
     virtual void SetPendingEcn(uint8_t ecn) = 0;
     virtual EncryptionLevel GetCurEncryptionLevel() = 0;
+    // test-only hook: provide cryptographer for decoding packets in unit tests
+    virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t /*level*/) { return nullptr; }
 
     // connection transfer between threads
     virtual void ThreadTransferBefore() = 0; 

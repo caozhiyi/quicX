@@ -64,6 +64,7 @@ private:
     std::shared_ptr<IPacket> MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
     bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer);
     bool CheckAndChargeAmpBudget(uint32_t bytes);
+    bool IsAllowedOnUnvalidated(uint16_t type) const;
 
 private:
     SendControl send_control_;

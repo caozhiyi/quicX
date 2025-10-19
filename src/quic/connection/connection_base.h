@@ -52,6 +52,11 @@ public:
     // observed peer address from network; store as candidate if different
     virtual void OnObservedPeerAddress(const common::Address& addr) override;
 
+    // Test-only helper to expose cryptographer for decoding in unit tests
+    virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t level) override {
+        return connection_crypto_.GetCryptographer(level);
+    }
+
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     bool On0rttPacket(std::shared_ptr<IPacket> packet);
