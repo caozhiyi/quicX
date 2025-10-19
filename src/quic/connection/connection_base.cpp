@@ -271,7 +271,7 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
     }
     
     packet->SetCryptographer(cryptographer);
-    
+
     uint8_t buf[1450] = {0};
     std::shared_ptr<common::IBuffer> out_plaintext = std::make_shared<common::Buffer>(buf, 1450);
     if (!packet->DecodeWithCrypto(out_plaintext)) {
@@ -724,7 +724,7 @@ void BaseConnection::StartPathValidationProbe() {
         // Don't add to pending queue here - caller (OnObservedPeerAddress) already did that
         return;
     }
-    
+
     // generate PATH_CHALLENGE
     auto challenge = std::make_shared<PathChallengeFrame>();
     challenge->MakeData();
@@ -836,7 +836,9 @@ EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
 }
 
 void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
-    if (addr == peer_addr_) return;
+    if (addr == peer_addr_) {
+        return;
+    }
     
     common::LOG_INFO("Observed new peer address: %s:%d (current: %s:%d)", 
                      addr.GetIp().c_str(), addr.GetPort(), 

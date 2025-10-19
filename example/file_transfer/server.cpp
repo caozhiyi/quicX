@@ -6,7 +6,8 @@
 #include <mutex>
 #include <vector>
 #include <ctime>
-#include <sys/stat.h>
+#include <cstdio>
+#include <filesystem>
 #include "http3/include/if_server.h"
 
 // Storage directory for uploaded files
@@ -35,7 +36,8 @@ private:
 public:
     FileStorage() {
         // Create storage directory if not exists
-        mkdir(STORAGE_DIR.c_str(), 0755);
+        std::error_code ec;
+        std::filesystem::create_directories(STORAGE_DIR, ec);
     }
 
     bool SaveFile(const std::string& filename, const std::string& content, const std::string& content_type) {
@@ -253,7 +255,7 @@ std::string FormatFileSize(size_t bytes) {
     }
     
     char buf[64];
-    snprintf(buf, sizeof(buf), "%.2f %s", size, units[unit_index]);
+    std::snprintf(buf, sizeof(buf), "%.2f %s", size, units[unit_index]);
     return std::string(buf);
 }
 
