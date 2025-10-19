@@ -197,17 +197,6 @@ TEST(path_migration, concurrent_path_probing) {
         }
     }
 
-    // Ensure handshake is fully complete by sending some stream data
-    auto warmup_stream = std::dynamic_pointer_cast<IQuicSendStream>(
-        client_conn->MakeStream(StreamDirection::kSend));
-    if (warmup_stream) {
-        const char* warmup_data = "warmup";
-        warmup_stream->Send((uint8_t*)warmup_data, strlen(warmup_data));
-        // Exchange packets to complete any pending handshake
-        (void)ConnectionProcess(client_conn, server_conn);
-        (void)ConnectionProcess(server_conn, client_conn);
-    }
-
     // Rapidly trigger multiple address changes
     common::Address addr1("127.0.0.1", 10001);
     common::Address addr2("127.0.0.1", 10002);

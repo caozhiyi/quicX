@@ -836,7 +836,9 @@ EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
 }
 
 void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
-    if (addr == peer_addr_) return;
+    if (addr == peer_addr_) {
+        return;
+    }
     
     common::LOG_INFO("Observed new peer address: %s:%d (current: %s:%d)", 
                      addr.GetIp().c_str(), addr.GetPort(), 
