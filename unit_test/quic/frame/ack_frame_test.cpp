@@ -17,6 +17,8 @@ TEST(ack_frame_utest, codec) {
     std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetAckDelay(104);
+    frame1.SetLargestAck(1234);
+    frame1.SetFirstAckRange(5);
     frame1.AddAckRange(3, 5);
     frame1.AddAckRange(4, 6);
     frame1.AddAckRange(2, 3);
@@ -31,8 +33,8 @@ TEST(ack_frame_utest, codec) {
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetAckDelay(), frame2.GetAckDelay());
-    //EXPECT_EQ(frame1.GetFirstAckRange(), frame2.GetFirstAckRange());
-    //EXPECT_EQ(frame1.GetLargestAck(), frame2.GetLargestAck());
+    EXPECT_EQ(frame1.GetFirstAckRange(), frame2.GetFirstAckRange());
+    EXPECT_EQ(frame1.GetLargestAck(), frame2.GetLargestAck());
 
     auto range = frame2.GetAckRange();
     EXPECT_EQ(range.size(), 3);
@@ -53,6 +55,8 @@ TEST(ack_ecn_frame_utest, decod1) {
     std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
 
     frame1.SetAckDelay(104);
+    frame1.SetLargestAck(4321);
+    frame1.SetFirstAckRange(7);
     //frame1.SetFirstAckRange(10012);
     //frame1.SetLargestAck(19);
     frame1.AddAckRange(3, 5);
@@ -72,8 +76,8 @@ TEST(ack_ecn_frame_utest, decod1) {
 
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
     EXPECT_EQ(frame1.GetAckDelay(), frame2.GetAckDelay());
-    //EXPECT_EQ(frame1.GetFirstAckRange(), frame2.GetFirstAckRange());
-    //EXPECT_EQ(frame1.GetLargestAck(), frame2.GetLargestAck());
+    EXPECT_EQ(frame1.GetFirstAckRange(), frame2.GetFirstAckRange());
+    EXPECT_EQ(frame1.GetLargestAck(), frame2.GetLargestAck());
 
     auto range = frame2.GetAckRange();
     EXPECT_EQ(range.size(), 3);

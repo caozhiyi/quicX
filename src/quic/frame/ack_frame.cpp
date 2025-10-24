@@ -20,7 +20,8 @@ AckFrame::~AckFrame() {
 }
 
 bool AckFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
-    uint16_t need_size = EncodeSize();
+    // Compute base ACK frame size locally to avoid virtual dispatch issues
+    uint32_t need_size = EncodeSize();
     
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -29,9 +30,12 @@ bool AckFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     
     common::BufferEncodeWrapper wrapper(buffer);
     wrapper.EncodeFixedUint16(frame_type_);
+    // Per RFC 9000 ACK frame format:
+    // Largest Acknowledged, ACK Delay, ACK Range Count, First ACK Range
+    wrapper.EncodeVarint(largest_acknowledged_);
     wrapper.EncodeVarint(ack_delay_);
+    wrapper.EncodeVarint(static_cast<uint64_t>(ack_ranges_.size()));
     wrapper.EncodeVarint(first_ack_range_);
-    wrapper.EncodeVarint(ack_ranges_.size());
 
     for (size_t i = 0; i < ack_ranges_.size(); i++) {
         wrapper.EncodeVarint(ack_ranges_[i].GetGap());
@@ -50,14 +54,17 @@ bool AckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_typ
         }
     }
     
+    // Per RFC 9000 ACK frame format:
+    // Largest Acknowledged, ACK Delay, ACK Range Count, First ACK Range
+    wrapper.DecodeVarint(largest_acknowledged_);
     wrapper.DecodeVarint(ack_delay_);
-    wrapper.DecodeVarint(first_ack_range_);
-    uint32_t ack_range_count = 0;
+    uint64_t ack_range_count = 0;
     wrapper.DecodeVarint(ack_range_count);
+    wrapper.DecodeVarint(first_ack_range_);
 
     uint64_t gap;
     uint64_t range;
-    for (uint32_t i = 0; i < ack_range_count; i++) {
+    for (uint64_t i = 0; i < ack_range_count; i++) {
         wrapper.DecodeVarint(gap);
         wrapper.DecodeVarint(range);
         ack_ranges_.emplace_back(AckRange(gap, range));
@@ -66,7 +73,22 @@ bool AckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_typ
 }
 
 uint32_t AckFrame::EncodeSize() {
-    return sizeof(AckFrame) + ack_ranges_.size() * sizeof(AckRange);
+    // frame type encoded as fixed uint16
+    uint32_t size = sizeof(uint16_t);
+    // Largest Acknowledged
+    size += common::GetEncodeVarintLength(largest_acknowledged_);
+    // ACK Delay
+    size += common::GetEncodeVarintLength(ack_delay_);
+    // ACK Range Count
+    size += common::GetEncodeVarintLength(static_cast<uint64_t>(ack_ranges_.size()));
+    // First ACK Range
+    size += common::GetEncodeVarintLength(first_ack_range_);
+    // Ranges: each has Gap and ACK Range Length
+    for (auto& r : ack_ranges_) {
+        size += common::GetEncodeVarintLength(r.GetGap());
+        size += common::GetEncodeVarintLength(r.GetAckRangeLength());
+    }
+    return size;
 }
 
 AckFrame::AckFrame(FrameType ft):

@@ -49,6 +49,7 @@ private:
     std::function<void()> active_send_cb_;
 
     uint32_t max_ack_delay_;
+    uint32_t ack_delay_exponent_ {3};
 };
 
 }
