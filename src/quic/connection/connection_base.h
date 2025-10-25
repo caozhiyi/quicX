@@ -21,6 +21,15 @@
 namespace quicx {
 namespace quic {
 
+// connection state
+enum class ConnectionStateType {
+    kStateConnecting,
+    kStateConnected,
+    kStateClosing,   // Initiated connection close, sent CONNECTION_CLOSE, waiting 1×PTO
+    kStateDraining,  // Received CONNECTION_CLOSE from peer, no packets sent, waiting 3×PTO
+    kStateClosed,
+};
+
 class BaseConnection:
     public IConnection,
     public std::enable_shared_from_this<BaseConnection> {
@@ -67,6 +76,9 @@ public:
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() override {
         return local_conn_id_manager_->GetAllIDHashes();
     }
+
+    // Test-only interface to observe connection state
+    ConnectionStateType GetConnectionStateForTest() const { return state_; }
 
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
@@ -161,14 +173,6 @@ protected:
     std::string token_;
     std::shared_ptr<TLSConnection> tls_connection_;
 
-    // connection state
-    enum class ConnectionStateType {
-        kStateConnecting,
-        kStateConnected,
-        kStateClosing,   // Initiated connection close, sent CONNECTION_CLOSE, waiting 1×PTO
-        kStateDraining,  // Received CONNECTION_CLOSE from peer, no packets sent, waiting 3×PTO
-        kStateClosed,
-    };
     ConnectionStateType state_;
     
     // Store error info for CONNECTION_CLOSE retransmission in Closing state
