@@ -17,7 +17,7 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackDecoderSenderStream();
 
-    virtual StreamType GetType() override { return StreamType::kControl; }
+    virtual StreamType GetType() override { return StreamType::kQpackDecoder; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
     // Send Section Acknowledgement: type=0x00, payload=varint header_block_id

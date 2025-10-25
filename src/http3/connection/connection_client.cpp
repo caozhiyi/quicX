@@ -3,6 +3,7 @@
 #include "common/buffer/buffer.h"
 #include "http3/connection/type.h"
 #include "http3/stream/request_stream.h"
+#include "http3/frame/qpack_decoder_frames.h"
 #include "http3/stream/push_receiver_stream.h"
 #include "http3/connection/connection_client.h"
 #include "http3/stream/control_receiver_stream.h"
@@ -65,12 +66,21 @@ ClientConnection::ClientConnection(const std::string& unique_id,
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
     streams_[decoder_sender->GetStreamID()] = decoder_sender;
     qpack_encoder_->SetDecoderFeedbackSender([decoder_sender](uint8_t type, uint64_t value){
-        if (!decoder_sender) return;
+        if (!decoder_sender) {
+            return;
+        }
         switch (type) {
-            case 0x00: decoder_sender->SendSectionAck(value); break;
-            case 0x01: decoder_sender->SendStreamCancel(value); break;
-            case 0x02: decoder_sender->SendInsertCountIncrement(value); break;
-            default: break;
+            case static_cast<uint8_t>(QpackDecoderInstrType::kSectionAck):
+                decoder_sender->SendSectionAck(value);
+                break;
+            case static_cast<uint8_t>(QpackDecoderInstrType::kStreamCancellation):
+                decoder_sender->SendStreamCancel(value);
+                break;
+            case static_cast<uint8_t>(QpackDecoderInstrType::kInsertCountInc):
+                decoder_sender->SendInsertCountIncrement(value);
+                break;
+            default:
+                break;
         }
     });
 }

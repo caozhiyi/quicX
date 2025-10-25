@@ -178,7 +178,7 @@ TEST_F(ConnectionCloseTest, ImmediateCloseWithError) {
     
     const char* test_data = "This data will be discarded";
     stream->Send((uint8_t*)test_data, strlen(test_data));
-    
+
     // Immediately close with error using Reset
     const uint64_t error_code = 0x100;
     client->Reset(error_code);

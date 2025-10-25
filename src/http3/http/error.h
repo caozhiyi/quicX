@@ -24,6 +24,11 @@ enum Http3ErrorCode: uint32_t {
     kConnectError               = 0x010f, // The TCP connection established in response to a CONNECT request was reset or abnormally closed.
     kMessageError               = 0x010e, // An HTTP message was malformed and cannot be processed.
     kVersionFallback            = 0x0110, // The requested operation cannot be served over HTTP/3. The peer should retry over HTTP/1.1.
+    
+    // QPACK Error Codes (RFC 9204 Section 3.2)
+    kQpackDecompressionFailed   = 0x0200, // Decompression of a header block failed.
+    kQpackEncoderStreamError    = 0x0201, // Error on the encoder stream (e.g., malformed encoder instruction).
+    kQpackDecoderStreamError    = 0x0202, // Error on the decoder stream (e.g., malformed decoder instruction).
 };
 
 }

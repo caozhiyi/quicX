@@ -5,6 +5,7 @@
 #include "http3/frame/headers_frame.h"
 #include "http3/stream/pseudo_header.h"
 #include "http3/stream/push_sender_stream.h"
+#include "common/buffer/buffer_encode_wrapper.h"
 
 namespace quicx {
 namespace http3 {
@@ -24,7 +25,45 @@ PushSenderStream::~PushSenderStream() {
     }
 }
 
-bool PushSenderStream::SendPushResponse(std::shared_ptr<IResponse> response) {
+bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IResponse> response) {
+    // RFC 9114 Section 4.6: Push stream format
+    // Push Stream {
+    //   Stream Type (i) = 0x01,
+    //   Push ID (i),
+    //   HTTP Message (..),
+    // }
+    
+    // 1. Send Stream Type (varint 0x01)
+    uint8_t stream_type_buf[8];
+    auto type_buffer = std::make_shared<common::Buffer>(stream_type_buf, stream_type_buf + sizeof(stream_type_buf));
+    common::BufferEncodeWrapper type_wrapper(type_buffer);
+    type_wrapper.EncodeVarint(0x01); // Push stream type per RFC 9114
+    
+    if (type_buffer->GetDataLength() > 0) {
+        int32_t sent = stream_->Send(type_buffer);
+        if (sent < 0) {
+            common::LOG_ERROR("PushSenderStream::SendPushResponse send stream type failed");
+            error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
+            return false;
+        }
+    }
+    
+    // 2. Send Push ID (varint)
+    uint8_t push_id_buf[16];
+    auto id_buffer = std::make_shared<common::Buffer>(push_id_buf, push_id_buf + sizeof(push_id_buf));
+    common::BufferEncodeWrapper id_wrapper(id_buffer);
+    id_wrapper.EncodeVarint(push_id);
+    
+    if (id_buffer->GetDataLength() > 0) {
+        int32_t sent = stream_->Send(id_buffer);
+        if (sent < 0) {
+            common::LOG_ERROR("PushSenderStream::SendPushResponse send push ID failed");
+            error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
+            return false;
+        }
+    }
+    
+    // 3. Send HTTP Message (HEADERS + DATA)
     PseudoHeader::Instance().EncodeResponse(response);
 
     if (!response->GetBody().empty()) {

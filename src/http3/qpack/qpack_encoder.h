@@ -15,8 +15,16 @@ namespace http3 {
 
 class QpackEncoder {
 public:
-    QpackEncoder(): dynamic_table_(1024) {}
+    QpackEncoder(): dynamic_table_(1024), max_table_capacity_(1024) {}
     ~QpackEncoder() {}
+    
+    // Set the maximum table capacity from SETTINGS_QPACK_MAX_TABLE_CAPACITY
+    void SetMaxTableCapacity(uint32_t max_capacity) { max_table_capacity_ = max_capacity; }
+    uint32_t GetMaxTableCapacity() const { return max_table_capacity_; }
+    
+    // Enable or disable dynamic table usage (default: enabled for better compression)
+    void SetDynamicTableEnabled(bool enabled) { enable_dynamic_table_ = enabled; }
+    bool IsDynamicTableEnabled() const { return enable_dynamic_table_; }
 
     bool Encode(const std::unordered_map<std::string, std::string>& headers, std::shared_ptr<common::IBufferWrite> buffer);
     bool Decode(const std::shared_ptr<common::IBufferRead> buffer, std::unordered_map<std::string, std::string>& headers);
@@ -49,8 +57,10 @@ private:
 
 private:
     DynamicTable dynamic_table_;
-    // blocked header decoding when encoder instructions are not transported.
-    bool enable_dynamic_table_ {false};
+    uint32_t max_table_capacity_;  // Maximum table capacity from SETTINGS_QPACK_MAX_TABLE_CAPACITY
+    // Dynamic table enabled by default for better compression (RFC 9204)
+    // Can be disabled via SetDynamicTableEnabled() if needed
+    bool enable_dynamic_table_ {true};
     std::function<void(const std::vector<std::pair<std::string,std::string>>&)> instruction_sender_;
     std::function<void(uint8_t type, uint64_t value)> decoder_feedback_sender_;
 };

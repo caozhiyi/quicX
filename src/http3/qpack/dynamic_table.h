@@ -43,13 +43,17 @@ public:
 
     // Update maximum size of dynamic table
     void UpdateMaxTableSize(uint32_t new_size);
+    
+    // RFC 9204 Section 4.3.4: Duplicate an existing entry
+    // Duplicates the entry at the given absolute index
+    // Returns true if successful, false if index is invalid
+    bool DuplicateEntry(uint32_t absolute_index);
 
 private:
     // Calculate size of a header entry (per RFC 7541 Section 4.1)
     uint32_t CalculateEntrySize(const std::string& name, const std::string& value);
 
     std::deque<HeaderItem> headeritem_deque_;  // Dynamic table entries (front=newest, back=oldest)
-    // TODO dynamic table support for duplicate entries
     std::unordered_map<std::pair<std::string, std::string>, uint32_t, pair_hash> headeritem_index_map_;
 
     uint32_t max_size_;      // Maximum allowed size of dynamic table

@@ -15,7 +15,7 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackEncoderSenderStream();
 
-    virtual StreamType GetType() override { return StreamType::kControl; }
+    virtual StreamType GetType() override { return StreamType::kQpackEncoder; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
     // Write QPACK encoder stream type (0x02) and send instruction bytes
