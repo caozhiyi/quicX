@@ -162,12 +162,22 @@ void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
 }
 
 void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
-    conn_map_.erase(conn->GetConnectionIDHash());
-    if (error > 0) {
-        connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
-    } else {
-        connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
+    common::LOG_DEBUG("HandleConnectionClose. cid:%llu", conn->GetConnectionIDHash());
+    // Remove all CIDs associated with this connection
+    // A connection may have multiple CIDs: Initial DCID + NEW_CONNECTION_IDs
+    auto cid_hashes = conn->GetAllLocalCIDHashes();
+    for (uint64_t hash : cid_hashes) {
+        auto it = conn_map_.find(hash);
+        if (it != conn_map_.end()) {
+            common::LOG_DEBUG("Removing CID %llu from conn_map during connection close", hash);
+            conn_map_.erase(it);
+        }
     }
+
+    // Also remove from connecting_set if still there
+    connecting_set_.erase(conn);
+
+    connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
 }
 
 std::unordered_set<std::shared_ptr<IConnection>>& Worker::GetReadActiveSendConnectionSet() {

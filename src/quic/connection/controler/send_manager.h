@@ -30,6 +30,7 @@ public:
     SendOperation GetSendOperation();
 
     uint32_t GetRtt() { return send_control_.GetRtt(); }
+    uint32_t GetPTO(uint32_t max_ack_delay) { return send_control_.GetPTO(max_ack_delay); }
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveStream(std::shared_ptr<IStream> stream);
 

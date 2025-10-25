@@ -46,6 +46,8 @@ public:
     //*************** inner interface ***************//
     virtual void AddTransportParam(const QuicTransportParams& tp_config) = 0;
     virtual uint64_t GetConnectionIDHash() = 0;
+    // Get all local CID hashes for this connection (for cleanup on close)
+    virtual std::vector<uint64_t> GetAllLocalCIDHashes() = 0;
     // try to build a quic message
     virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_done) = 0;
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;

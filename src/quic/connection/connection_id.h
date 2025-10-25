@@ -17,7 +17,7 @@ public:
     ~ConnectionID();
 
     uint64_t Hash();
-    
+
     const uint8_t* GetID() const;
     uint8_t GetLength() const;
     void SetID(uint8_t* id, uint8_t len);
@@ -35,7 +35,7 @@ private:
     uint8_t id_[kMaxCidLength];
     uint8_t length_;
     uint64_t sequence_number_;
-    uint64_t hash_;
+    mutable uint64_t hash_; // mutable for lazy initialization in Hash()
 };
 
 

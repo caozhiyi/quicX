@@ -63,6 +63,11 @@ public:
         return remote_conn_id_manager_;
     }
 
+    // Get all local CID hashes for this connection (for cleanup on close)
+    virtual std::vector<uint64_t> GetAllLocalCIDHashes() override {
+        return local_conn_id_manager_->GetAllIDHashes();
+    }
+
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     bool On0rttPacket(std::shared_ptr<IPacket> packet);
@@ -97,6 +102,7 @@ protected:
     // idle timeout
     void OnIdleTimeout();
     void OnClosingTimeout();
+    void OnGracefulCloseTimeout(); // Timeout handler for graceful close
     uint32_t GetCloseWaitTime();
 
     void ToSendFrame(std::shared_ptr<IFrame> frame);
@@ -159,10 +165,20 @@ protected:
     enum class ConnectionStateType {
         kStateConnecting,
         kStateConnected,
-        kStateDraining,
+        kStateClosing,   // Initiated connection close, sent CONNECTION_CLOSE, waiting 1×PTO
+        kStateDraining,  // Received CONNECTION_CLOSE from peer, no packets sent, waiting 3×PTO
         kStateClosed,
     };
     ConnectionStateType state_;
+    
+    // Store error info for CONNECTION_CLOSE retransmission in Closing state
+    uint64_t closing_error_code_;
+    uint16_t closing_trigger_frame_;
+    std::string closing_reason_;
+    
+    // Graceful close: wait for all data to be sent before entering Closing state
+    bool graceful_closing_pending_ = false;
+    common::TimerTask graceful_close_timer_; // Timeout for graceful close
 
     // hint for early-data scheduling: whether any application stream (id != 0) has pending send
     bool has_app_send_pending_ = false;

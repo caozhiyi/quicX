@@ -41,7 +41,10 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     flow_control_(start),
     recv_control_(timer),
     send_manager_(timer),
-    state_(ConnectionStateType::kStateConnecting) {
+    state_(ConnectionStateType::kStateConnecting),
+    closing_error_code_(0),
+    closing_trigger_frame_(0),
+    closing_reason_("") {
 
     alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4); // TODO: make it configurable
     connection_crypto_.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
@@ -72,21 +75,37 @@ void BaseConnection::Close() {
     if (state_ != ConnectionStateType::kStateConnected) {
         return;
     }
-    // there is no data to send, send connection close frame
-    if (send_manager_.GetSendOperation() == SendOperation::kAllSendDone) {
-        state_ = ConnectionStateType::kStateClosed;
-        auto frame = std::make_shared<ConnectionCloseFrame>();
-        frame->SetErrorCode(0);
-        ToSendFrame(frame);
-
-        // wait closing period
-        common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        timer_->AddTimer(task, GetCloseWaitTime() * 3, 0); // wait 3 rtt time to close
+    
+    // Graceful close: Check if there's pending data to send
+    if (send_manager_.GetSendOperation() != SendOperation::kAllSendDone) {
+        // Mark for graceful closing, will enter Closing state when data send completes
+        common::LOG_DEBUG("Graceful close pending, waiting for data to be sent");
+        graceful_closing_pending_ = true;
+        
+        // Set a timeout to force close if data doesn't complete in time
+        // Use 3×PTO as a reasonable timeout (similar to draining period)
+        graceful_close_timer_ = common::TimerTask(std::bind(&BaseConnection::OnGracefulCloseTimeout, this));
+        timer_->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);
+        common::LOG_DEBUG("Graceful close timeout set to %u ms", GetCloseWaitTime() * 3);
         return;
     }
+    
+    // No pending data, immediately enter Closing state
+    state_ = ConnectionStateType::kStateClosing;
+    
+    // Store error info for retransmission
+    closing_error_code_ = QuicErrorCode::kNoError;
+    closing_trigger_frame_ = 0;
+    closing_reason_ = "";
+    
+    // Send CONNECTION_CLOSE frame
+    auto frame = std::make_shared<ConnectionCloseFrame>();
+    frame->SetErrorCode(closing_error_code_);
+    ToSendFrame(frame);
 
-    // there is data to send, send connection close frame later
-    state_ = ConnectionStateType::kStateDraining;
+    // Wait 1×PTO before closing (for retransmitting CONNECTION_CLOSE if needed)
+    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
+    timer_->AddTimer(task, GetCloseWaitTime(), 0);
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
@@ -136,6 +155,13 @@ uint64_t BaseConnection::GetConnectionIDHash() {
 }
 
 bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation) {
+    // RFC 9000: Draining and Closed states MUST NOT send any packets
+    if (state_ == ConnectionStateType::kStateDraining || 
+        state_ == ConnectionStateType::kStateClosed) {
+        send_operation = SendOperation::kAllSendDone;
+        return false;
+    }
+
     // make quic packet
     uint8_t encrypto_level = GetCurEncryptionLevel();
     auto crypto_grapher = connection_crypto_.GetCryptographer(encrypto_level);
@@ -177,21 +203,58 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
         initial_packet_sent_ = true;
     }
     
+    // Check for graceful close: if all data is sent and graceful close is pending
     send_operation = send_manager_.GetSendOperation();
-    if (send_operation == SendOperation::kAllSendDone && state_ == ConnectionStateType::kStateDraining) {
-        state_ = ConnectionStateType::kStateClosed;
+    if (send_operation == SendOperation::kAllSendDone && 
+        graceful_closing_pending_ && 
+        state_ == ConnectionStateType::kStateConnected) {
+        
+        common::LOG_DEBUG("All data sent, proceeding with graceful close");
+        graceful_closing_pending_ = false;
+        
+        // Cancel the graceful close timeout timer since we're completing normally
+        timer_->RmTimer(graceful_close_timer_);
+        
+        // Enter Closing state and send CONNECTION_CLOSE
+        state_ = ConnectionStateType::kStateClosing;
+        closing_error_code_ = QuicErrorCode::kNoError;
+        closing_trigger_frame_ = 0;
+        closing_reason_ = "";
+        
         auto frame = std::make_shared<ConnectionCloseFrame>();
-        frame->SetErrorCode(0);
+        frame->SetErrorCode(closing_error_code_);
         ToSendFrame(frame);
 
-        // wait closing period
+        // Wait 1×PTO before closing
         common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        timer_->AddTimer(task, GetCloseWaitTime() * 3, 0); // wait 3 rtt time to close
+        timer_->AddTimer(task, GetCloseWaitTime(), 0);
     }
+    
     return ret;
 }
 
 void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
+    // RFC 9000 Section 10.2: Handle packets based on connection state
+    
+    // Closing state: Retransmit CONNECTION_CLOSE in response to any incoming packet
+    if (state_ == ConnectionStateType::kStateClosing) {
+        common::LOG_DEBUG("Connection in closing state, retransmit CONNECTION_CLOSE");
+        auto frame = std::make_shared<ConnectionCloseFrame>();
+        frame->SetErrorCode(closing_error_code_);
+        frame->SetErrFrameType(closing_trigger_frame_);
+        frame->SetReason(closing_reason_);
+        ToSendFrame(frame);
+        return; // Do not process packet contents
+    }
+    
+    // Draining or Closed state: Discard all packets
+    if (state_ == ConnectionStateType::kStateDraining || 
+        state_ == ConnectionStateType::kStateClosed) {
+        common::LOG_DEBUG("Connection in draining/closed state, discard packets");
+        return;
+    }
+    
+    // Normal processing for Connecting/Connected states
     // Accumulate ECN to ACK_ECN counters based on first packet number space
     if (!packets.empty() && ecn_enabled_) {
         auto ns = CryptoLevel2PacketNumberSpace(packets[0]->GetCryptoLevel());
@@ -554,21 +617,28 @@ bool BaseConnection::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
-    if (state_ != ConnectionStateType::kStateConnected) {
+    if (state_ != ConnectionStateType::kStateConnected && 
+        state_ != ConnectionStateType::kStateClosing) {
         return false;
     }
-    state_ = ConnectionStateType::kStateClosed;
     
-    if (close_frame->GetErrorCode() != QuicErrorCode::kNoError) {
-        // wait closing period
-        common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        timer_->AddTimer(task, GetCloseWaitTime(), 0); // wait 1 rtt time to close
-        return true;
+    // Cancel graceful close if it's pending (peer initiated close)
+    if (graceful_closing_pending_) {
+        common::LOG_DEBUG("Canceling graceful close due to peer CONNECTION_CLOSE");
+        graceful_closing_pending_ = false;
+        timer_->RmTimer(graceful_close_timer_);
     }
-
-    // wait closing period
+    
+    // Received CONNECTION_CLOSE from peer: enter Draining state
+    // RFC 9000: In draining state, endpoint MUST NOT send any packets
+    state_ = ConnectionStateType::kStateDraining;
+    
+    common::LOG_INFO("Connection entering draining state. error_code:%u, reason:%s", 
+                     close_frame->GetErrorCode(), close_frame->GetReason().c_str());
+    
+    // Wait 3×PTO before closing (RFC 9000 Section 10.2.2)
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    timer_->AddTimer(task, GetCloseWaitTime() * 3, 0); // wait 3 rtt time to close
+    timer_->AddTimer(task, GetCloseWaitTime() * 3, 0);
     return true;
 }
 
@@ -718,12 +788,41 @@ void BaseConnection::OnClosingTimeout() {
     connection_close_cb_(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
 }
 
-uint32_t BaseConnection::GetCloseWaitTime() {
-    uint32_t rtt = send_manager_.GetRtt();
-    if (rtt == 0 || rtt > 10000) {
-        rtt = 500; // default rtt set 500ms
+void BaseConnection::OnGracefulCloseTimeout() {
+    // Graceful close timeout: force entering Closing state even if data hasn't finished sending
+    if (graceful_closing_pending_ && state_ == ConnectionStateType::kStateConnected) {
+        common::LOG_WARN("Graceful close timeout, forcing connection close");
+        graceful_closing_pending_ = false;
+        
+        // Force enter Closing state
+        state_ = ConnectionStateType::kStateClosing;
+        closing_error_code_ = QuicErrorCode::kNoError;
+        closing_trigger_frame_ = 0;
+        closing_reason_ = "graceful close timeout";
+        
+        // Send CONNECTION_CLOSE frame
+        auto frame = std::make_shared<ConnectionCloseFrame>();
+        frame->SetErrorCode(closing_error_code_);
+        ToSendFrame(frame);
+
+        // Wait 1×PTO before final close
+        common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
+        timer_->AddTimer(task, GetCloseWaitTime(), 0);
     }
-    return rtt;
+}
+
+uint32_t BaseConnection::GetCloseWaitTime() {
+    // RFC 9000: Use PTO (Probe Timeout) for connection close timing
+    // PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay
+    uint32_t max_ack_delay = transport_param_.GetMaxAckDelay();
+    uint32_t pto = send_manager_.GetPTO(max_ack_delay);
+    
+    // Ensure minimum timeout of 500ms for close timing
+    if (pto < 500000) {  // PTO is in microseconds
+        pto = 500000;
+    }
+    
+    return pto / 1000;  // Convert to milliseconds for timer
 }
 
 void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {
@@ -822,7 +921,9 @@ void BaseConnection::ScheduleProbeRetry() {
 }
 
 void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
-    if (state_ == ConnectionStateType::kStateClosed || state_ == ConnectionStateType::kStateDraining) {
+    if (state_ == ConnectionStateType::kStateClosed || 
+        state_ == ConnectionStateType::kStateDraining ||
+        state_ == ConnectionStateType::kStateClosing) {
         return;
     }
     if (stream->GetStreamID() != 0) {
@@ -932,23 +1033,37 @@ void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::
     if (state_ != ConnectionStateType::kStateConnected) {
         return;
     }
-    state_ = ConnectionStateType::kStateClosed;
+    
+    // Cancel graceful close if it's pending
+    if (graceful_closing_pending_) {
+        common::LOG_DEBUG("Canceling graceful close due to immediate close");
+        graceful_closing_pending_ = false;
+        timer_->RmTimer(graceful_close_timer_);
+    }
+    
+    // Error close: enter Closing state
+    state_ = ConnectionStateType::kStateClosing;
+    
+    // Store error info for retransmission
+    closing_error_code_ = error;
+    closing_trigger_frame_ = tigger_frame;
+    closing_reason_ = reason;
 
-    // cancel all streams
+    // Cancel all streams
     for (auto& stream : streams_map_) {
         stream.second->Reset(error);
     }
 
-    // send connection close frame
+    // Send CONNECTION_CLOSE frame
     auto frame = std::make_shared<ConnectionCloseFrame>();
     frame->SetErrorCode(error);
     frame->SetErrFrameType(tigger_frame);
     frame->SetReason(reason);
     ToSendFrame(frame);
 
-    // wait closing period
+    // Wait 1×PTO before closing (for retransmitting CONNECTION_CLOSE if needed)
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    timer_->AddTimer(task, GetCloseWaitTime(), 0); // wait 1 rtt time to close
+    timer_->AddTimer(task, GetCloseWaitTime(), 0);
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {

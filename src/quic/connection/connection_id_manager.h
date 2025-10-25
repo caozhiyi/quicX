@@ -34,6 +34,9 @@ public:
     
     // Get the number of available CIDs in the pool
     size_t GetAvailableIDCount() const { return sequence_cid_map_.size(); }
+    
+    // Get all CIDs managed by this manager (for cleanup on connection close)
+    std::vector<uint64_t> GetAllIDHashes();
 
 private:
     ConnectionID cur_id_;
