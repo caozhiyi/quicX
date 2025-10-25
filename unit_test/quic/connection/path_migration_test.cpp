@@ -748,10 +748,6 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
 
     auto warmup_stream = std::dynamic_pointer_cast<IQuicSendStream>(
         client_conn->MakeStream(StreamDirection::kSend));
-  
-    // send a message to warm up the connection
-    const char* warmup_data = "warmup";
-    warmup_stream->Send((uint8_t*)warmup_data, strlen(warmup_data));
 
     // Ensure client has at least one extra remote CID from server before migration
     {

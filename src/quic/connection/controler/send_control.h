@@ -56,6 +56,7 @@ private:
     std::unique_ptr<ICongestionControl> congestion_control_;
 
     uint32_t max_ack_delay_;
+    uint32_t ack_delay_exponent_;
 };
 
 }

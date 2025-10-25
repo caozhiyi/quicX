@@ -54,7 +54,9 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
 
         auto iter = unacked_packets_[ns].find(pkt_num);
         if (iter != unacked_packets_[ns].end()) {
-            rtt_calculator_.UpdateRtt(iter->second.send_time_, now, ack_frame->GetAckDelay());
+            // Scale peer-reported ACK delay by exponent to milliseconds
+            uint64_t scaled_ack_delay = ack_frame->GetAckDelay() << ack_delay_exponent_;
+            rtt_calculator_.UpdateRtt(iter->second.send_time_, now, scaled_ack_delay);
             bool ecn_ce = false;
             if (frame->GetType() == FrameType::kAckEcn) {
                 auto ack_ecn = std::dynamic_pointer_cast<AckEcnFrame>(frame);
@@ -94,7 +96,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
 
     auto ranges = ack_frame->GetAckRange();
     for (auto iter = ranges.begin(); iter != ranges.end(); iter++) {
-        pkt_num = pkt_num - iter->GetGap();
+        // Move across the gap (unacked) and the single separator to the high PN of the next range
+        pkt_num = pkt_num - iter->GetGap() - 1;
         for (uint32_t i = 0; i <= iter->GetAckRangeLength(); i++) {
             auto task = unacked_packets_[ns].find(pkt_num--);
             if (task != unacked_packets_[ns].end()) {
@@ -111,6 +114,7 @@ void SendControl::CanSend(uint64_t now, uint64_t& can_send_bytes) {
 
 void SendControl::UpdateConfig(const TransportParam& tp) {
     max_ack_delay_ = tp.GetMaxAckDelay();
+    ack_delay_exponent_ = tp.GetackDelayExponent();
 }
 
 }
