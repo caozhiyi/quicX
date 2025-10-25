@@ -1,13 +1,3 @@
-/**
- * Path Migration Enhanced Functionality Tests
- * 
- * Tests covering fixed issues:
- * 1. Bug #1: Connection permanently blocked after path validation failure
- * 2. Issue #2: Concurrent multi-path probing
- * 3. Issue #3: CID pool management
- * 4. Issue #4: Preferred Address mechanism
- */
-
 #include <gtest/gtest.h>
 #include <thread>
 #include <chrono>
@@ -24,11 +14,6 @@
 #include "quic/include/if_quic_send_stream.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
-
-
-#include "common/log/log.h"
-#include "common/log/file_logger.h"
-#include "common/log/stdout_logger.h"
 
 namespace quicx {
 namespace quic {
@@ -739,12 +724,6 @@ TEST(path_migration, disable_active_migration_semantics) {
 }
 
 TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
-    std::shared_ptr<common::Logger> file_log = std::make_shared<common::FileLogger>("test.log");
-    std::shared_ptr<common::Logger> std_log = std::make_shared<common::StdoutLogger>();
-    file_log->SetLogger(std_log);
-    common::LOG_SET_LEVEL(common::LogLevel::kDebug);
-    common::LOG_SET(file_log);
-
     auto connections = GenerateHandshakeDoneConnections();
     auto client_conn = connections.first;
     auto server_conn = connections.second;

@@ -14,8 +14,6 @@ namespace quic {
 
 class ConnectionIDManager {
 public:
-     ConnectionIDManager(): cur_sequence_number_(0) {}
-
     // create a new connection id manager
     // add_connection_id_cb: callback when a new connection id is generated
     // retire_connection_id_cb: callback when a connection id is retired

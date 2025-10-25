@@ -515,7 +515,21 @@ bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     
-    remote_conn_id_manager_->RetireIDBySequence(new_cid_frame->GetRetirePriorTo());
+    // If Retire Prior To > 0, we need to retire old CIDs and send RETIRE_CONNECTION_ID
+    uint64_t retire_prior_to = new_cid_frame->GetRetirePriorTo();
+    if (retire_prior_to > 0) {
+        // Send RETIRE_CONNECTION_ID for all CIDs with sequence < retire_prior_to
+        // We need to iterate from 0 to retire_prior_to-1
+        for (uint64_t seq = 0; seq < retire_prior_to; ++seq) {
+            auto retire = std::make_shared<RetireConnectionIDFrame>();
+            retire->SetSequenceNumber(seq);
+            ToSendFrame(retire);
+        }
+        // Remove these CIDs from our remote pool
+        remote_conn_id_manager_->RetireIDBySequence(retire_prior_to - 1);
+    }
+    
+    // Add new CID to pool
     ConnectionID id;
     new_cid_frame->GetConnectionID(id);
     remote_conn_id_manager_->AddID(id);
@@ -524,7 +538,12 @@ bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
 
 bool BaseConnection::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     auto retire_cid_frame = std::dynamic_pointer_cast<RetireConnectionIDFrame>(frame);
-    remote_conn_id_manager_->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
+    if (!retire_cid_frame) {
+        common::LOG_ERROR("invalid retire connection id frame.");
+        return false;
+    }
+    // Peer is retiring a CID we provided to them, remove from local pool
+    local_conn_id_manager_->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
     return true;
 }
 
