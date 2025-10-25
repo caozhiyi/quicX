@@ -13,6 +13,7 @@
 #include "quic/connection/if_connection.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/connection_crypto.h"
+#include "quic/connection/connection_id_manager.h"
 #include "quic/connection/controler/flow_control.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/controler/recv_control.h"
@@ -55,6 +56,11 @@ public:
     // Test-only helper to expose cryptographer for decoding in unit tests
     virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t level) override {
         return connection_crypto_.GetCryptographer(level);
+    }
+    
+    // Test-only helper to check remote CID manager state
+    std::shared_ptr<ConnectionIDManager> GetRemoteConnectionIDManagerForTest() {
+        return remote_conn_id_manager_;
     }
 
 protected:

@@ -46,15 +46,9 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4); // TODO: make it configurable
     connection_crypto_.SetRemoteTransportParamCB(std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
-    // remote CID manager: on retire, send RETIRE_CONNECTION_ID frame to peer
-    remote_conn_id_manager_ = std::make_shared<ConnectionIDManager>(
-        [](ConnectionID&){ /* no-op on add for remote CIDs */ },
-        [this](ConnectionID& id){
-            auto retire = std::make_shared<RetireConnectionIDFrame>();
-            retire->SetSequenceNumber(id.GetSequenceNumber());
-            ToSendFrame(retire);
-        }
-    );
+    // remote CID manager: manages CIDs provided by peer for us to use
+    // We manually send RETIRE_CONNECTION_ID when switching CIDs, not automatically on retire
+    remote_conn_id_manager_ = std::make_shared<ConnectionIDManager>();
     local_conn_id_manager_ = std::make_shared<ConnectionIDManager>(
         std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
         std::bind(&BaseConnection::RetireConnectionId, this, std::placeholders::_1));
@@ -595,8 +589,14 @@ bool BaseConnection::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
                            candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
             
             SetPeerAddress(candidate_peer_addr_);
-            // rotate to next remote CID if available
-            remote_conn_id_manager_->UseNextID();
+            // Rotate to next remote CID and retire the old one
+            auto old_cid = remote_conn_id_manager_->GetCurrentID();
+            if (remote_conn_id_manager_->UseNextID()) {
+                // Send RETIRE_CONNECTION_ID for the old CID
+                auto retire = std::make_shared<RetireConnectionIDFrame>();
+                retire->SetSequenceNumber(old_cid.GetSequenceNumber());
+                ToSendFrame(retire);
+            }
             // reset cwnd/RTT and PMTU for new path
             send_manager_.ResetPathSignals();
             send_manager_.ResetMtuForNewPath();
@@ -982,8 +982,11 @@ void BaseConnection::CheckAndReplenishLocalCIDPool() {
     
     size_t current_count = local_conn_id_manager_->GetAvailableIDCount();
     
-    // If we have enough CIDs, no need to replenish
-    if (current_count >= kMinLocalCIDPoolSize) {
+    // Ensure we have enough *spare* CIDs beyond the one currently in use
+    // For connection migration, the peer needs additional CIDs to switch to
+    // current_count includes the CID currently in use, so we need total >= kMinLocalCIDPoolSize + 1
+    // to ensure kMinLocalCIDPoolSize spare CIDs
+    if (current_count >= kMinLocalCIDPoolSize + 1) {
         return;
     }
     

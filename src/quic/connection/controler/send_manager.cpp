@@ -88,16 +88,20 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
             // Add a PING to ensure ack-eliciting
             auto ping = std::make_shared<PingFrame>();
             frame_visitor.HandleFrame(ping);
-            // Pad up to target size
-            if (frame_visitor.GetBuffer()->GetDataLength() < probe_size) {
-                auto padding_frame = std::make_shared<PaddingFrame>();
-                padding_frame->SetPaddingLength(static_cast<uint32_t>(probe_size - frame_visitor.GetBuffer()->GetDataLength()));
-                frame_visitor.HandleFrame(padding_frame);
-            }
+            // Call MakePacket to include any pending frames (like RETIRE_CONNECTION_ID)
             auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
             if (!packet) {
                 common::LOG_WARN("make PMTU probe packet failed.");
                 return false;
+            }
+            // Pad up to target size AFTER MakePacket has added all pending frames
+            uint32_t current_size = frame_visitor.GetBuffer()->GetDataLength();
+            if (current_size < probe_size) {
+                auto padding_frame = std::make_shared<PaddingFrame>();
+                padding_frame->SetPaddingLength(static_cast<uint32_t>(probe_size - current_size));
+                if (!frame_visitor.HandleFrame(padding_frame)) {
+                    common::LOG_WARN("Failed to add padding to PMTU probe, proceeding with size %u", current_size);
+                }
             }
             if (!PacketInit(packet, buffer)) {
                 return false;
@@ -268,6 +272,8 @@ bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {
         case FrameType::kAckEcn:
         case FrameType::kPing:
         case FrameType::kPadding:
+        case FrameType::kNewConnectionId:
+        case FrameType::kRetireConnectionId:
             return true;
         default:
             break;
