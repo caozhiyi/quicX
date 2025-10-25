@@ -46,8 +46,8 @@ public:
     }
     ~MockServerConnection() {}
 
-    bool SendPushResponse(std::shared_ptr<IResponse> response) {
-        return sender_stream_->SendPushResponse(response);
+    bool SendPushResponse(uint64_t push_id, std::shared_ptr<IResponse> response) {
+        return sender_stream_->SendPushResponse(push_id, response);
     }
 
     void ErrorHandle(uint64_t stream_id, uint32_t error_code) {
@@ -88,7 +88,8 @@ TEST_F(PushStreamTest, SendHeaders) {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
     response->AddHeader("Content-Type", "text/plain");
 
-    EXPECT_TRUE(server_connection_->SendPushResponse(response));
+    uint64_t push_id = 1;
+    EXPECT_TRUE(server_connection_->SendPushResponse(push_id, response));
 
     std::string content_type;
     EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
@@ -101,14 +102,18 @@ TEST_F(PushStreamTest, SendHeadersAndBody) {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
     response->AddHeader("Content-Type", "text/plain");
     response->SetBody("Hello, World!");
-    EXPECT_TRUE(server_connection_->SendPushResponse(response));
+    
+    uint64_t push_id = 2;
+    EXPECT_TRUE(server_connection_->SendPushResponse(push_id, response));
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
 }
 
 TEST_F(PushStreamTest, SendBody) {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
     response->SetBody("Hello, World!");
-    EXPECT_TRUE(server_connection_->SendPushResponse(response));
+    
+    uint64_t push_id = 3;
+    EXPECT_TRUE(server_connection_->SendPushResponse(push_id, response));
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
 }
 

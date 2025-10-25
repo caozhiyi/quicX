@@ -11,8 +11,13 @@ QpackBlockedRegistry::~QpackBlockedRegistry() {
 
 }
 
-void QpackBlockedRegistry::Add(uint64_t key, const std::function<void()>& retry_fn) {
+bool QpackBlockedRegistry::Add(uint64_t key, const std::function<void()>& retry_fn) {
+    // RFC 9204 Section 2.1.2: Check if we've reached the max blocked streams limit
+    if (!CanAddBlocked()) {
+        return false;
+    }
     pending_[key] = retry_fn;
+    return true;
 }
 
 void QpackBlockedRegistry::Ack(uint64_t key) {

@@ -25,8 +25,9 @@ public:
     virtual StreamType GetType() override { return StreamType::kPush; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
-    // Send push response headers and data
-    bool SendPushResponse(std::shared_ptr<IResponse> response);
+    // Send push response headers and data (RFC 9114 Section 4.6)
+    // Push stream format: Stream Type (0x01) + Push ID (varint) + HTTP Message
+    bool SendPushResponse(uint64_t push_id, std::shared_ptr<IResponse> response);
 
 private:
     std::shared_ptr<QpackEncoder> qpack_encoder_;

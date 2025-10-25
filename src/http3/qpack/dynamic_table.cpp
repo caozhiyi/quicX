@@ -83,10 +83,35 @@ void DynamicTable::EvictEntries() {
 }
 
 void DynamicTable::UpdateMaxTableSize(uint32_t new_size) {
+    // RFC 9204 Section 3.2.3: Dynamic Table Capacity
+    // The decoder MUST treat a new maximum size value that exceeds the limit 
+    // set by SETTINGS_QPACK_MAX_TABLE_CAPACITY as a connection error
+    
+    // Note: This check should be done at a higher level (connection) where
+    // SETTINGS_QPACK_MAX_TABLE_CAPACITY is known. Here we just update the size.
+    // The caller is responsible for validating against the setting.
+    
     max_size_ = new_size;
+    
+    // Evict entries if current size exceeds new max size
     while (current_size_ > max_size_) {
         EvictEntries();
     }
+}
+
+bool DynamicTable::DuplicateEntry(uint32_t absolute_index) {
+    // RFC 9204 Section 4.3.4: Duplicate instruction
+    // Duplicates an existing dynamic table entry by its absolute index
+    
+    if (absolute_index >= headeritem_deque_.size()) {
+        return false; // Invalid index
+    }
+    
+    // Get the entry to duplicate
+    const HeaderItem& original = headeritem_deque_[absolute_index];
+    
+    // Add a copy of the entry (uses AddHeaderItem internally)
+    return AddHeaderItem(original.name_, original.value_);
 }
 
 uint32_t DynamicTable::CalculateEntrySize(const std::string& name, const std::string& value) {

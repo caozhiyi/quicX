@@ -29,8 +29,8 @@ public:
     virtual ~ServerConnection();
 
 private:
-    // send push
-    bool SendPush(std::shared_ptr<IResponse> response);
+    // send push (RFC 9114 Section 4.6)
+    bool SendPush(uint64_t push_id, std::shared_ptr<IResponse> response);
     // handle http request
     void HandleHttp(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response, std::shared_ptr<ResponseStream> response_stream);
     // handle stream status
