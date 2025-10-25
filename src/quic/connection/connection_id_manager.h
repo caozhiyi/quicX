@@ -14,13 +14,11 @@ namespace quic {
 
 class ConnectionIDManager {
 public:
-     ConnectionIDManager(): cur_sequence_number_(0) {}
-
     // create a new connection id manager
     // add_connection_id_cb: callback when a new connection id is generated
     // retire_connection_id_cb: callback when a connection id is retired
-    ConnectionIDManager(std::function<void(ConnectionID&)> add_connection_id_cb,
-                        std::function<void(ConnectionID&)> retire_connection_id_cb):
+    ConnectionIDManager(std::function<void(ConnectionID&)> add_connection_id_cb = nullptr,
+                        std::function<void(ConnectionID&)> retire_connection_id_cb = nullptr):
                         cur_sequence_number_(0),
                         add_connection_id_cb_(add_connection_id_cb),
                         retire_connection_id_cb_(retire_connection_id_cb) {}
@@ -36,6 +34,9 @@ public:
     
     // Get the number of available CIDs in the pool
     size_t GetAvailableIDCount() const { return sequence_cid_map_.size(); }
+    
+    // Get all CIDs managed by this manager (for cleanup on connection close)
+    std::vector<uint64_t> GetAllIDHashes();
 
 private:
     ConnectionID cur_id_;

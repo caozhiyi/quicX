@@ -7,9 +7,11 @@ namespace quic {
 
 ConnectionIDGenerator::ConnectionIDGenerator() {
     // make key
-    //RAND_bytes((unsigned char*)sip_hash_key_, sizeof(sip_hash_key_));
-    sip_hash_key_[0] = 1;
-    sip_hash_key_[1] = 2;
+    RAND_bytes((unsigned char*)sip_hash_key_, sizeof(sip_hash_key_));
+
+    // for test
+    // sip_hash_key_[0] = 1;
+    // sip_hash_key_[1] = 2;
 }
 
 ConnectionIDGenerator::~ConnectionIDGenerator() {

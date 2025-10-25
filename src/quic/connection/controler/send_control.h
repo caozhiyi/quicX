@@ -21,6 +21,7 @@ public:
     ~SendControl() {}
 
     uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
+    uint32_t GetPTO(uint32_t max_ack_delay) { return rtt_calculator_.GetPT0Interval(max_ack_delay); }
     void OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len);
     void OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> ack_frame);
     void CanSend(uint64_t now, uint64_t& can_send_bytes);
@@ -56,6 +57,7 @@ private:
     std::unique_ptr<ICongestionControl> congestion_control_;
 
     uint32_t max_ack_delay_;
+    uint32_t ack_delay_exponent_;
 };
 
 }

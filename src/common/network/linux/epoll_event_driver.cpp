@@ -146,21 +146,17 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     }
 
     struct epoll_event epoll_events[max_events_];
-    
-    common::LOG_DEBUG("EpollEventDriver::Wait: waiting for events with timeout %d ms", timeout_ms);
+
     int nfds = epoll_wait(epoll_fd_, epoll_events, max_events_, timeout_ms);
     
     if (nfds < 0) {
         if (errno == EINTR) {
             // Interrupted by signal, return 0 events
-            common::LOG_DEBUG("EpollEventDriver::Wait: interrupted by signal");
             return 0;
         }
         common::LOG_ERROR("epoll_wait failed: %s", strerror(errno));
         return -1;
     }
-
-    common::LOG_DEBUG("EpollEventDriver::Wait: got %d events", nfds);
 
     // Clear and resize vector to avoid unnecessary allocations
     events.clear();
@@ -171,15 +167,11 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             // Check if this is a wakeup event
             if (epoll_events[i].data.fd == static_cast<int>(wakeup_fd_[0])) {
                 // This is a wakeup event, consume the data
-                common::LOG_DEBUG("EpollEventDriver::Wait: detected wakeup event");
                 char buffer[64];
                 ssize_t bytes_read = read(wakeup_fd_[0], buffer, sizeof(buffer));
-                common::LOG_DEBUG("EpollEventDriver::Wait: read %zd bytes from wakeup pipe", bytes_read);
                 if (bytes_read < 0) {
                     common::LOG_ERROR("Failed to read from wakeup pipe: %s", strerror(errno));
                 }
-                // Return immediately when wakeup event is detected
-                common::LOG_DEBUG("EpollEventDriver::Wait: returning after wakeup");
                 continue;
             }
             
@@ -190,7 +182,6 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         }
     }
 
-    common::LOG_DEBUG("EpollEventDriver::Wait: returning %zu events", events.size());
     return events.size();
 }
 

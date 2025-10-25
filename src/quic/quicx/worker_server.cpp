@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "quic/common/version.h"
+#include "quic/connection/error.h"
 #include "quic/quicx/worker_server.h"
 #include "quic/connection/connection_server.h"
 #include "quic/packet/version_negotiation_packet.h"
@@ -58,6 +59,7 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
         return false;
     }
     ConnectionID src_cid(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
+    ConnectionID dst_cid(long_header->GetDestinationConnectionId(), long_header->GetDestinationConnectionIdLength());
 
     // create new connection
     auto new_conn = std::make_shared<ServerConnection>(ctx_,
@@ -71,6 +73,9 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
     new_conn->AddTransportParam(params_);
     connecting_set_.insert(new_conn);
 
+    // Register Initial DCID to connection map so subsequent packets can be routed
+    conn_map_[dst_cid.Hash()] = new_conn;
+
     // add remote connection id
     new_conn->AddRemoteConnectionId(src_cid);
     new_conn->SetSocket(packet_info.net_packet_->GetSocket());
@@ -80,8 +85,9 @@ bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
 
     event_loop_->AddTimer([new_conn, this]() {
         if (connecting_set_.find(new_conn) != connecting_set_.end()) {
-            connecting_set_.erase(new_conn);
-            common::LOG_DEBUG("connection timeout. cid:%llu", new_conn->GetConnectionIDHash());
+            common::LOG_DEBUG("connection timeout during handshake. cid:%llu", new_conn->GetConnectionIDHash());
+            // Properly close the connection to clean up all CIDs
+            HandleConnectionClose(new_conn, QuicErrorCode::kNoError, "handshake timeout");
         }
     }, 5000); // TODO add timeout to config
     return true;

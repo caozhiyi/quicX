@@ -68,5 +68,13 @@ bool ConnectionIDManager::UseNextID() {
     return true;
 }
 
+std::vector<uint64_t> ConnectionIDManager::GetAllIDHashes() {
+    std::vector<uint64_t> hashes;
+    for (auto& pair : sequence_cid_map_) {
+        hashes.push_back(pair.second.Hash());
+    }
+    return hashes;
+}
+
 }
 }

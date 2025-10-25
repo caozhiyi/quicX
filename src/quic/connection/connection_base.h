@@ -13,12 +13,22 @@
 #include "quic/connection/if_connection.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/connection_crypto.h"
+#include "quic/connection/connection_id_manager.h"
 #include "quic/connection/controler/flow_control.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/controler/recv_control.h"
 
 namespace quicx {
 namespace quic {
+
+// connection state
+enum class ConnectionStateType {
+    kStateConnecting,
+    kStateConnected,
+    kStateClosing,   // Initiated connection close, sent CONNECTION_CLOSE, waiting 1×PTO
+    kStateDraining,  // Received CONNECTION_CLOSE from peer, no packets sent, waiting 3×PTO
+    kStateClosed,
+};
 
 class BaseConnection:
     public IConnection,
@@ -56,6 +66,19 @@ public:
     virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t level) override {
         return connection_crypto_.GetCryptographer(level);
     }
+    
+    // Test-only helper to check remote CID manager state
+    std::shared_ptr<ConnectionIDManager> GetRemoteConnectionIDManagerForTest() {
+        return remote_conn_id_manager_;
+    }
+
+    // Get all local CID hashes for this connection (for cleanup on close)
+    virtual std::vector<uint64_t> GetAllLocalCIDHashes() override {
+        return local_conn_id_manager_->GetAllIDHashes();
+    }
+
+    // Test-only interface to observe connection state
+    ConnectionStateType GetConnectionStateForTest() const { return state_; }
 
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
@@ -91,6 +114,7 @@ protected:
     // idle timeout
     void OnIdleTimeout();
     void OnClosingTimeout();
+    void OnGracefulCloseTimeout(); // Timeout handler for graceful close
     uint32_t GetCloseWaitTime();
 
     void ToSendFrame(std::shared_ptr<IFrame> frame);
@@ -149,14 +173,16 @@ protected:
     std::string token_;
     std::shared_ptr<TLSConnection> tls_connection_;
 
-    // connection state
-    enum class ConnectionStateType {
-        kStateConnecting,
-        kStateConnected,
-        kStateDraining,
-        kStateClosed,
-    };
     ConnectionStateType state_;
+    
+    // Store error info for CONNECTION_CLOSE retransmission in Closing state
+    uint64_t closing_error_code_;
+    uint16_t closing_trigger_frame_;
+    std::string closing_reason_;
+    
+    // Graceful close: wait for all data to be sent before entering Closing state
+    bool graceful_closing_pending_ = false;
+    common::TimerTask graceful_close_timer_; // Timeout for graceful close
 
     // hint for early-data scheduling: whether any application stream (id != 0) has pending send
     bool has_app_send_pending_ = false;
