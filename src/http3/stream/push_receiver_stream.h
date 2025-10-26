@@ -35,10 +35,20 @@ private:
     virtual void HandleBody();
 
 private:
+    enum class ParseState {
+        kReadingStreamType,  // Reading stream type (0x01)
+        kReadingPushId,      // Reading push ID
+        kReadingFrames       // Reading HTTP3 frames (HEADERS + DATA)
+    };
+
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::shared_ptr<quic::IQuicRecvStream> stream_;
 
     http_response_handler response_handler_;
+    
+    ParseState parse_state_;
+    uint64_t push_id_;
+    std::vector<uint8_t> buffer_;  // Buffer for incomplete data
     
     uint32_t body_length_;
     std::vector<uint8_t> body_;

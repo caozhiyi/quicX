@@ -30,8 +30,13 @@ public:
     // Send QPACK encoder instructions blob on control stream (demo integration)
     virtual bool SendQpackInstructions(const std::vector<uint8_t>& blob);
 
+private:
+    // Ensure stream type (0x00) is sent before any frames
+    bool EnsureStreamPreamble();
+
 protected:
     std::shared_ptr<quic::IQuicSendStream> stream_;
+    bool wrote_type_ = false;  // Track whether stream type has been sent
 };
 
 }

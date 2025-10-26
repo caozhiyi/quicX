@@ -92,6 +92,7 @@ TEST_F(PushStreamTest, SendHeaders) {
     EXPECT_TRUE(server_connection_->SendPushResponse(push_id, response));
 
     std::string content_type;
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
     EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
     EXPECT_EQ(content_type, "text/plain");
 
@@ -105,6 +106,7 @@ TEST_F(PushStreamTest, SendHeadersAndBody) {
     
     uint64_t push_id = 2;
     EXPECT_TRUE(server_connection_->SendPushResponse(push_id, response));
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
 }
 
@@ -114,6 +116,7 @@ TEST_F(PushStreamTest, SendBody) {
     
     uint64_t push_id = 3;
     EXPECT_TRUE(server_connection_->SendPushResponse(push_id, response));
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
 }
 

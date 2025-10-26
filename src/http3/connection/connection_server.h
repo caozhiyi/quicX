@@ -35,6 +35,8 @@ private:
     void HandleHttp(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response, std::shared_ptr<ResponseStream> response_stream);
     // handle stream status
     void HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error_code);
+    // Callback when stream type is identified (RFC 9114 Section 6.2)
+    void OnStreamTypeIdentified(uint64_t stream_type, std::shared_ptr<quic::IQuicRecvStream> stream, const std::vector<uint8_t>& remaining_data);
     // handle goaway frame
     void HandleGoaway(uint64_t id);
     // handle max push id frame

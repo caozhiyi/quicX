@@ -133,6 +133,7 @@ TEST_F(RequestResponseStreamTest, SendHeaders) {
     ASSERT_NE(client_connection_->GetResponse(), nullptr);
 
     std::string content_type;
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
     EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
     EXPECT_EQ(content_type, "text/plain");
 
@@ -188,6 +189,7 @@ TEST_F(RequestResponseStreamTest, SendBody) {
     server_connection_->SetHttpHandler(http_handler);
 
     EXPECT_TRUE(client_connection_->SendRequest(request));
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
     EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, Client!");
     EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
 }
