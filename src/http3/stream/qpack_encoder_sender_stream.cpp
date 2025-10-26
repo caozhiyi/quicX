@@ -1,3 +1,4 @@
+#include "http3/stream/type.h"
 #include "common/buffer/buffer.h"
 #include "http3/frame/qpack_encoder_frames.h"
 #include "http3/stream/qpack_encoder_sender_stream.h"
@@ -6,11 +7,11 @@ namespace quicx {
 namespace http3 {
 
 // Lightweight helper objects to emit unidirectional stream type bytes
-// for QPACK encoder (0x02) streams.
+// for QPACK encoder streams.
 class QpackEncoderStreamPreamble {
 public:
     static bool Encode(const std::shared_ptr<common::IBufferWrite>& buffer) {
-        uint8_t t = 0x02; // QPACK Encoder Stream type (varint value <= 63)
+        uint8_t t = static_cast<uint8_t>(StreamType::kQpackEncoder);
         return buffer && buffer->Write(&t, 1) == 1;
     }
 };

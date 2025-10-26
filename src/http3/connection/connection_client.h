@@ -31,6 +31,8 @@ public:
 
 private:
     void HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error);
+    // Callback when stream type is identified (RFC 9114 Section 6.2)
+    void OnStreamTypeIdentified(uint64_t stream_type, std::shared_ptr<quic::IQuicRecvStream> stream, const std::vector<uint8_t>& remaining_data);
     // handle goaway frame
     void HandleGoaway(uint64_t id);
     // handle error
