@@ -29,7 +29,15 @@ public:
     // Push stream format: Stream Type (0x01) + Push ID (varint) + HTTP Message
     bool SendPushResponse(uint64_t push_id, std::shared_ptr<IResponse> response);
 
+    // Reset the push stream (used when client cancels push)
+    // RFC 9114 Section 7.2.3: Server MUST stop sending push stream when CANCEL_PUSH is received
+    void Reset(uint32_t error_code);
+
+    void SetPushId(uint64_t push_id) { push_id_ = push_id; }
+    uint64_t GetPushId() const { return push_id_; }
+
 private:
+    uint64_t push_id_ = 0;
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::shared_ptr<quic::IQuicSendStream> stream_;
 };

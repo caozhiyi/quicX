@@ -9,7 +9,7 @@ namespace http3 {
 QpackDecoderReceiverStream::QpackDecoderReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-    IStream(error_handler), stream_(stream), blocked_registry_(blocked_registry) {
+    IRecvStream(error_handler), stream_(stream), blocked_registry_(blocked_registry) {
     stream_->SetStreamReadCallBack(std::bind(&QpackDecoderReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2));
 }
 

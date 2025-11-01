@@ -15,6 +15,7 @@ PushSenderStream::PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_en
     const std::shared_ptr<quic::IQuicSendStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IStream(error_handler),
+    push_id_(0),
     qpack_encoder_(qpack_encoder),  
     stream_(stream) {
 
@@ -127,6 +128,14 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
     }
 
     return true;
+}
+
+void PushSenderStream::Reset(uint32_t error_code) {
+    if (stream_) {
+        common::LOG_DEBUG("PushSenderStream::Reset: resetting stream %llu with error code %u", 
+                         GetStreamID(), error_code);
+        stream_->Reset(error_code);
+    }
 }
 
 }

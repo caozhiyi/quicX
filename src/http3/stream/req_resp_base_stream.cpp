@@ -14,7 +14,7 @@ ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-    IStream(error_handler),
+    IRecvStream(error_handler),
     body_length_(0),
     qpack_encoder_(qpack_encoder),
     blocked_registry_(blocked_registry),
@@ -32,14 +32,14 @@ ReqRespBaseStream::~ReqRespBaseStream() {
 
 void ReqRespBaseStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("IStream::OnData error: %d", error);
+        common::LOG_ERROR("ReqRespBaseStream::OnData error: %d", error);
         error_handler_(GetStreamID(), error);
         return;
     }
 
     std::vector<std::shared_ptr<IFrame>> frames;
     if (!DecodeFrames(data, frames)) {
-        common::LOG_ERROR("IStream::OnData decode frames error");
+        common::LOG_ERROR("ReqRespBaseStream::OnData decode frames error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
@@ -53,7 +53,7 @@ void ReqRespBaseStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32
 void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     auto headers_frame = std::dynamic_pointer_cast<HeadersFrame>(frame);
     if (!headers_frame) {   
-        common::LOG_ERROR("IStream::HandleHeaders error");
+        common::LOG_ERROR("ReqRespBaseStream::HandleHeaders error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
@@ -110,7 +110,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
     auto data_frame = std::dynamic_pointer_cast<DataFrame>(frame);
     if (!data_frame) {
-        common::LOG_ERROR("IStream::HandleData error");
+        common::LOG_ERROR("ReqRespBaseStream::HandleData error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
@@ -136,7 +136,7 @@ void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
         break;
 
     default:
-        common::LOG_ERROR("IStream::HandleFrame error");
+        common::LOG_ERROR("ReqRespBaseStream::HandleFrame error");
         error_handler_(GetStreamID(), Http3ErrorCode::kFrameUnexpected);
         break;
     }

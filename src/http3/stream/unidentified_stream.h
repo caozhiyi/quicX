@@ -5,7 +5,7 @@
 #include <functional>
 #include <vector>
 
-#include "http3/stream/if_stream.h"
+#include "http3/stream/if_recv_stream.h"
 #include "quic/include/if_quic_recv_stream.h"
 
 namespace quicx {
@@ -26,13 +26,13 @@ namespace http3 {
  * 
  * This class is temporary and will be replaced once the stream type is identified.
  */
-class UnidentifiedStream : public IStream {
+class UnidentifiedStream:
+    public IRecvStream {
 public:
     using StreamTypeCallback = std::function<void(
         uint64_t stream_type, 
         std::shared_ptr<quic::IQuicRecvStream> stream,
-        const std::vector<uint8_t>& remaining_data)>;
-    
+        std::shared_ptr<common::IBufferRead> data)>;
     /**
      * @brief Construct an UnidentifiedStream
      * @param stream The QUIC recv stream
@@ -51,8 +51,7 @@ public:
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
 private:
-    void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
-    bool TryReadStreamType();
+    void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
 
 private:
     std::shared_ptr<quic::IQuicRecvStream> stream_;

@@ -7,15 +7,15 @@
 
 #include "http3/include/type.h"
 #include "http3/frame/if_frame.h"
-#include "http3/stream/if_stream.h"
 #include "http3/qpack/qpack_encoder.h"
+#include "http3/stream/if_recv_stream.h"
 #include "quic/include/if_quic_recv_stream.h"
 
 namespace quicx {
 namespace http3 {
 
 class PushReceiverStream:
-    public IStream {
+    public IRecvStream {
 public:
     PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<quic::IQuicRecvStream>& stream,
@@ -27,9 +27,9 @@ public:
     virtual StreamType GetType() override { return StreamType::kPush; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
+    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
 
 private:
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
     virtual void HandleHeaders(std::shared_ptr<IFrame> frame);
     virtual void HandleData(std::shared_ptr<IFrame> frame);
     virtual void HandleBody();

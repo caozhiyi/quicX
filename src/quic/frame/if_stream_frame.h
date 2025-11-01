@@ -1,7 +1,6 @@
 #ifndef QUIC_FRAME_STREAM_FRAME_INTERFACE
 #define QUIC_FRAME_STREAM_FRAME_INTERFACE
 
-#include <memory>
 #include "quic/frame/type.h"
 #include "quic/frame/if_frame.h"
 
