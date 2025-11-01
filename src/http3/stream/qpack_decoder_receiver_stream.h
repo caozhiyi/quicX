@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <functional>
-#include "http3/stream/if_stream.h"
+#include "http3/stream/if_recv_stream.h"
 #include "http3/qpack/blocked_registry.h"
 #include "quic/include/if_quic_recv_stream.h"
 
@@ -11,7 +11,7 @@ namespace quicx {
 namespace http3 {
 
 class QpackDecoderReceiverStream:
-    public IStream {
+    public IRecvStream {
 public:
     QpackDecoderReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
@@ -21,8 +21,7 @@ public:
     virtual StreamType GetType() override { return StreamType::kControl; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
-protected:
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
+    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
 
 private:
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;

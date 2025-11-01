@@ -13,7 +13,7 @@ ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<quic::IQuicRe
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
     const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler):
-    IStream(error_handler),
+    IRecvStream(error_handler),
     stream_(stream),
     goaway_handler_(goaway_handler),
     settings_handler_(settings_handler) {
@@ -30,7 +30,7 @@ ControlReceiverStream::~ControlReceiverStream() {
 
 void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("IStream::OnData error: %d", error);
+        common::LOG_ERROR("IRecvStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);
         return;
     }

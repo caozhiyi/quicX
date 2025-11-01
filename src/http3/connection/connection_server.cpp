@@ -199,7 +199,7 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
         auto unidentified = std::make_shared<UnidentifiedStream>(
             recv_stream,
             std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
-            [this](uint64_t stream_type, std::shared_ptr<quic::IQuicRecvStream> s, const std::vector<uint8_t>& remaining_data) {
+            [this](uint64_t stream_type, std::shared_ptr<quic::IQuicRecvStream> s, std::shared_ptr<common::IBufferRead> remaining_data) {
                 this->OnStreamTypeIdentified(stream_type, s, remaining_data);
             });
         
@@ -211,7 +211,7 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
 void ServerConnection::OnStreamTypeIdentified(
     uint64_t stream_type, 
     std::shared_ptr<quic::IQuicRecvStream> stream,
-    const std::vector<uint8_t>& remaining_data) {
+    std::shared_ptr<common::IBufferRead> remaining_data) {
     
     common::LOG_DEBUG("ServerConnection: stream type %llu identified for stream %llu", 
                      stream_type, stream->GetStreamID());
@@ -219,7 +219,7 @@ void ServerConnection::OnStreamTypeIdentified(
     // Remove the temporary UnidentifiedStream
     streams_.erase(stream->GetStreamID());
     
-    std::shared_ptr<IStream> typed_stream;
+    std::shared_ptr<IRecvStream> typed_stream;
     
     switch (stream_type) {
         case static_cast<uint64_t>(StreamType::kControl): // Control Stream (RFC 9114 Section 6.2.1)
@@ -265,14 +265,9 @@ void ServerConnection::OnStreamTypeIdentified(
     
     if (typed_stream) {
         streams_[stream->GetStreamID()] = typed_stream;
-        
+
         // Feed remaining data to the new stream if any
-        if (!remaining_data.empty()) {
-            common::LOG_DEBUG("ServerConnection: feeding %zu bytes of remaining data to stream %llu", 
-                            remaining_data.size(), stream->GetStreamID());
-            // TODO: Need to trigger OnData on the new stream with remaining_data
-            // This requires adding a method to inject initial data
-        }
+        typed_stream->OnData(remaining_data, 0);
     }
 }
 

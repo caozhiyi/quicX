@@ -7,14 +7,14 @@
 
 #include "http3/stream/type.h"
 #include "http3/frame/if_frame.h"
-#include "http3/stream/if_stream.h"
+#include "http3/stream/if_recv_stream.h"
 #include "quic/include/if_quic_recv_stream.h"
 
 namespace quicx {
 namespace http3 {
 
 class ControlReceiverStream:
-    public IStream {
+    public IRecvStream {
 public:
     ControlReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
@@ -25,8 +25,9 @@ public:
     virtual StreamType GetType() override { return StreamType::kControl; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
 
+    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
+
 protected:
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
     virtual void HandleFrame(std::shared_ptr<IFrame> frame);
     // Handle raw QPACK instruction data on control stream (demo)
     void HandleRawData(std::shared_ptr<common::IBufferRead> data);

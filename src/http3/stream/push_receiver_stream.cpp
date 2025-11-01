@@ -17,7 +17,7 @@ PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpac
     const std::shared_ptr<quic::IQuicRecvStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const http_response_handler& response_handler):
-    IStream(error_handler),
+    IRecvStream(error_handler),
     qpack_encoder_(qpack_encoder),
     stream_(stream),
     response_handler_(response_handler),

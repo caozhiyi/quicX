@@ -4,7 +4,7 @@
 #include <memory>
 #include <unordered_map>
 #include "http3/frame/if_frame.h"
-#include "http3/stream/if_stream.h"
+#include "http3/stream/if_recv_stream.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/blocked_registry.h"
 #include "quic/include/if_quic_bidirection_stream.h"
@@ -13,7 +13,7 @@ namespace quicx {
 namespace http3 {
 
 class ReqRespBaseStream:
-    public IStream {
+    public IRecvStream {
 public:
     ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
@@ -22,9 +22,9 @@ public:
     virtual ~ReqRespBaseStream();
     virtual StreamType GetType() override { return StreamType::kReqResp; }
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
+    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
 
 protected:
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
     virtual void HandleHeaders(std::shared_ptr<IFrame> frame);
     virtual void HandleData(std::shared_ptr<IFrame> frame);
 

@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <functional>
 
-#include "quic/stream/type.h"
 #include "quic/frame/if_frame.h"
 #include "quic/stream/if_frame_visitor.h"
 #include "quic/include/if_quic_stream.h"
