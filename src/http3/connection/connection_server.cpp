@@ -30,7 +30,8 @@ ServerConnection::ServerConnection(const std::string& unique_id,
     http_handler_(http_handler),
     max_push_id_(0),  // RFC 9114: Initially 0, wait for client's MAX_PUSH_ID frame
     next_push_id_(0),
-    send_limit_push_id_(0) {
+    send_limit_push_id_(0),
+    push_timer_active_(false) {  // No active timer initially
 
     // create control stream
     auto control_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
@@ -128,7 +129,14 @@ bool ServerConnection::SendPush(uint64_t push_id, std::shared_ptr<IResponse> res
     std::shared_ptr<PushSenderStream> push_stream = std::make_shared<PushSenderStream>(qpack_encoder_,
         std::dynamic_pointer_cast<quic::IQuicSendStream>(stream),
         std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-    
+
+    // Save push_id to stream mapping for cancellation support
+    push_stream->SetPushId(push_id);
+    push_streams_[push_id] = push_stream;
+
+    // Store stream in streams_ map (keyed by stream_id for general stream management)
+    streams_[push_stream->GetStreamID()] = push_stream;
+
     push_stream->SendPushResponse(push_id, response);
     return true;
 }
@@ -158,11 +166,24 @@ void ServerConnection::HandleHttp(std::shared_ptr<IRequest> request, std::shared
         
         common::LOG_DEBUG("PUSH_PROMISE sent with push_id=%llu", current_push_id);
     }
+    
+    // If there are new push responses, update send_limit_push_id_ and start timer
+    // Only start timer if not already active to avoid multiple concurrent timers
     if (send_limit_push_id_ < next_push_id_) {
         send_limit_push_id_ = next_push_id_;
-
-        // wait if client cancel push
-        quic_server_->AddTimer(kServerPushWaitTimeMs, std::bind(&ServerConnection::HandleTimer, this));
+        
+        // Start timer if not already active
+        // The timer waits kServerPushWaitTimeMs to allow client to send CANCEL_PUSH
+        if (!push_timer_active_) {
+            push_timer_active_ = true;
+            quic_server_->AddTimer(kServerPushWaitTimeMs, 
+                                  std::bind(&ServerConnection::HandleTimer, this));
+            common::LOG_DEBUG("ServerConnection::HandleHttp: started push timer for push_id < %llu", 
+                             send_limit_push_id_);
+        } else {
+            common::LOG_DEBUG("ServerConnection::HandleHttp: push timer already active, updated send_limit_push_id_ to %llu", 
+                             send_limit_push_id_);
+        }
     }
 }
 
@@ -289,32 +310,126 @@ void ServerConnection::HandleMaxPushId(uint64_t max_push_id) {
 }
 
 void ServerConnection::HandleCancelPush(uint64_t push_id) {
+    common::LOG_DEBUG("ServerConnection::HandleCancelPush: cancelling push_id=%llu", push_id);
+    
+    // Validate push_id (must be less than next_push_id_)
+    if (push_id >= next_push_id_) {
+        common::LOG_WARN("ServerConnection::HandleCancelPush: invalid push_id=%llu (next_push_id=%llu)", 
+                        push_id, next_push_id_);
+        return;
+    }
+    
+    // 1. Remove pending push response (if not yet sent)
     push_responses_.erase(push_id);
+    
+    // 2. If push stream has been created, stop and reset it
+    // RFC 9114 Section 7.2.3: Server MUST stop sending push stream when CANCEL_PUSH is received
+    auto iter = push_streams_.find(push_id);
+    if (iter != push_streams_.end()) {
+        auto push_stream = iter->second;
+        uint64_t stream_id = push_stream->GetStreamID();
+        
+        common::LOG_DEBUG("ServerConnection::HandleCancelPush: resetting push stream %llu for push_id=%llu", 
+                         stream_id, push_id);
+        
+        // Reset the push stream (stops transmission)
+        push_stream->Reset(Http3ErrorCode::kRequestCancelled);
+        
+        // Remove from streams_ map
+        streams_.erase(stream_id);
+        
+        // Remove from push_streams_ map
+        push_streams_.erase(iter);
+    }
 }
 
 void ServerConnection::HandleError(uint64_t stream_id, uint32_t error) {
-    if (error == 0) {
-        // stream is closed by peer
-        streams_.erase(stream_id);
-        return;
+    common::LOG_DEBUG("ServerConnection::HandleError: stream_id=%llu, error=%d", stream_id, error);
+    
+    auto iter = streams_.find(stream_id);
+    if (iter != streams_.end()) {
+        // Check if this is a push stream before erasing
+        // Clean up push_streams_ mapping if this is a push stream
+        if (iter->second->GetType() == StreamType::kPush) {
+            auto push_stream = std::dynamic_pointer_cast<PushSenderStream>(iter->second);
+            if (push_stream) {
+                uint64_t push_id = push_stream->GetPushId();
+                common::LOG_DEBUG("ServerConnection::HandleError: cleaning up push_stream mapping for push_id=%llu, stream_id=%llu", 
+                                push_id, stream_id);
+                push_streams_.erase(push_id);
+            }
+        }
+        
+        // Remove from streams_ map after cleanup
+        streams_.erase(iter);
     }
 
     // something wrong, notify error handler
-    if (error_handler_) {
+    if (error != 0 && error_handler_) {
         error_handler_(unique_id_, error);
     }
 }
 
 void ServerConnection::HandleTimer() {
-    for (auto iter = push_responses_.begin(); iter != push_responses_.end();) {
-        if (iter->first < send_limit_push_id_) {
-            uint64_t push_id = iter->first;
-            common::LOG_DEBUG("Sending delayed push with push_id=%llu", push_id);
-            SendPush(push_id, iter->second);
-            iter = push_responses_.erase(iter);
-            continue;
+    common::LOG_DEBUG("ServerConnection::HandleTimer: processing push responses, send_limit_push_id_=%llu", 
+                     send_limit_push_id_);
+    
+    // Reset timer flag
+    push_timer_active_ = false;
+
+    // Send all push responses that were promised but not yet sent
+    // (push_id < send_limit_push_id_ means they were included in the last batch)
+    // Note: We iterate through the map and check each push_id individually
+    // since unordered_map doesn't maintain order
+    std::vector<uint64_t> push_ids_to_send;
+    for (const auto& pair : push_responses_) {
+        if (pair.first < send_limit_push_id_) {
+            push_ids_to_send.push_back(pair.first);
         }
-        break;
+    }
+    
+    // Send all collected push responses
+    for (uint64_t push_id : push_ids_to_send) {
+        auto iter = push_responses_.find(push_id);
+        if (iter != push_responses_.end()) {
+            common::LOG_DEBUG("ServerConnection::HandleTimer: sending push with push_id=%llu", push_id);
+            SendPush(push_id, iter->second);
+            push_responses_.erase(iter);
+        }
+    }
+    
+    // Check if there are still pending push responses that need a new timer
+    // This happens if: 
+    // 1. There are still push responses in the map (not all were sent)
+    // 2. OR new push_id were allocated during the timer wait period (next_push_id_ > send_limit_push_id_)
+    // 
+    // Note: If push_responses_ is empty but next_push_id_ > send_limit_push_id_, it means
+    // all pushes were cancelled or already sent, so we don't need a new timer.
+    
+    // Calculate the current limit for potential new push_id allocated during timer wait
+    uint64_t current_next_push_id = next_push_id_;
+    
+    // Case 1: There are still pending push responses (not sent in this timer)
+    // These are push_id >= send_limit_push_id_ (they were added after timer was started)
+    if (!push_responses_.empty()) {
+        // There are pushes waiting, need to start a new timer
+        // Update send_limit_push_id_ to current_next_push_id to include all pending pushes
+        send_limit_push_id_ = current_next_push_id;
+        push_timer_active_ = true;
+        quic_server_->AddTimer(kServerPushWaitTimeMs, 
+                              std::bind(&ServerConnection::HandleTimer, this));
+        common::LOG_DEBUG("ServerConnection::HandleTimer: started new timer for pending push_id (limit=%llu)", 
+                         send_limit_push_id_);
+    
+    // Case 2: No pending push responses, but check if new push_id were allocated during timer wait
+    // This should not normally happen, but we handle it just in case
+    } else if (current_next_push_id > send_limit_push_id_) {
+        // All pushes were cancelled or already sent, but new push_id were allocated
+        // This means new PUSH_PROMISE was sent but then cancelled, so no timer needed
+        common::LOG_DEBUG("ServerConnection::HandleTimer: next_push_id_=%llu > send_limit_push_id_=%llu, but no pending pushes", 
+                         current_next_push_id, send_limit_push_id_);
+        // Update send_limit_push_id_ to match current_next_push_id for consistency
+        send_limit_push_id_ = current_next_push_id;
     }
 }
 

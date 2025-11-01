@@ -13,6 +13,7 @@
 #include "quic/include/if_quic_connection.h"
 #include "http3/stream/control_sender_stream.h"
 #include "http3/stream/control_server_receiver_stream.h"
+#include "http3/stream/push_sender_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -56,10 +57,13 @@ private:
     uint64_t max_push_id_;
     uint64_t next_push_id_;
     uint64_t send_limit_push_id_;
+    bool push_timer_active_;  // Flag indicating if push timer is active
     http_handler http_handler_;
     std::shared_ptr<quic::IQuicServer> quic_server_;
     // push responses, push id -> response
     std::unordered_map<uint64_t, std::shared_ptr<IResponse>> push_responses_;
+    // push streams, push id -> PushSenderStream (for tracking active push streams)
+    std::unordered_map<uint64_t, std::shared_ptr<PushSenderStream>> push_streams_;
 
     std::shared_ptr<ControlSenderStream> control_sender_stream_;
     std::shared_ptr<ControlServerReceiverStream> control_recv_stream_;
