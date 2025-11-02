@@ -14,7 +14,7 @@ ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-    IRecvStream(error_handler),
+    IStream(StreamType::kReqResp, error_handler),
     body_length_(0),
     qpack_encoder_(qpack_encoder),
     blocked_registry_(blocked_registry),

@@ -12,9 +12,7 @@ namespace http3 {
 
 ControlSenderStream::ControlSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-    IStream(error_handler),
-    stream_(stream),
-    wrote_type_(false) {
+    ISendStream(StreamType::kControl, stream, error_handler) {
 }
 
 ControlSenderStream::~ControlSenderStream() {
@@ -23,38 +21,11 @@ ControlSenderStream::~ControlSenderStream() {
     }
 }
 
-bool ControlSenderStream::EnsureStreamPreamble() {
-    if (wrote_type_) {
-        return true;
-    }
-    
-    // Send stream type for Control Stream (RFC 9114 Section 6.2.1)
-    uint8_t tmp[8] = {0};
-    auto buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
-    
-    {
-        common::BufferEncodeWrapper wrapper(buf);
-        wrapper.EncodeVarint(static_cast<uint64_t>(StreamType::kControl));
-        // Wrapper will flush on destruction
-    }
-    
-    if (stream_->Send(buf) <= 0) {
-        common::LOG_ERROR("ControlSenderStream: failed to send stream type on stream %llu", 
-                         stream_->GetStreamID());
-        return false;
-    }
-    
-    common::LOG_DEBUG("ControlSenderStream: sent stream type kControl (0x00) on stream %llu", 
-                     stream_->GetStreamID());
-    wrote_type_ = true;
-    return true;
-}
-
 bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
     if (!EnsureStreamPreamble()) {
         return false;
     }
-    
+
     SettingsFrame frame;
     for (const auto& setting : settings) {
         frame.SetSetting(static_cast<uint16_t>(setting.first), setting.second);

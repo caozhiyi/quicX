@@ -31,15 +31,10 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackEncoderReceiverStream();
 
-    virtual StreamType GetType() override { return StreamType::kQpackEncoder; }
-    virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
-
     virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
 
 private:
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
-    std::shared_ptr<quic::IQuicRecvStream> stream_;
-    
     // Parse encoder stream instructions
     void ParseEncoderInstructions(std::shared_ptr<common::IBufferRead> data);
 };

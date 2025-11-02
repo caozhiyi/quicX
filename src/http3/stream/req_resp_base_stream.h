@@ -13,16 +13,16 @@ namespace quicx {
 namespace http3 {
 
 class ReqRespBaseStream:
-    public IRecvStream {
+    public IStream {
 public:
     ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~ReqRespBaseStream();
-    virtual StreamType GetType() override { return StreamType::kReqResp; }
+
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
+    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error);
 
 protected:
     virtual void HandleHeaders(std::shared_ptr<IFrame> frame);

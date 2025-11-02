@@ -5,25 +5,21 @@
 #include <string>
 #include <unordered_map>
 
-#include "http3/stream/if_stream.h"
 #include "http3/include/if_response.h"
 #include "http3/qpack/qpack_encoder.h"
+#include "http3/stream/if_send_stream.h"
 #include "quic/include/if_quic_send_stream.h"
 
 namespace quicx {
 namespace http3 {
 
 class PushSenderStream:
-    public IStream {
+    public ISendStream {
 public:
     PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<quic::IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
-    virtual ~PushSenderStream();
-
-    // Implement IStream interface
-    virtual StreamType GetType() override { return StreamType::kPush; }
-    virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
+    virtual ~PushSenderStream() {}
 
     // Send push response headers and data (RFC 9114 Section 4.6)
     // Push stream format: Stream Type (0x01) + Push ID (varint) + HTTP Message
@@ -39,7 +35,6 @@ public:
 private:
     uint64_t push_id_ = 0;
     std::shared_ptr<QpackEncoder> qpack_encoder_;
-    std::shared_ptr<quic::IQuicSendStream> stream_;
 };
 
 }

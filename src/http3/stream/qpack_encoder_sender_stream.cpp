@@ -18,26 +18,19 @@ public:
 
 QpackEncoderSenderStream::QpackEncoderSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-    IStream(error_handler), stream_(stream) {}
+    ISendStream(StreamType::kQpackEncoder, stream, error_handler) {}
 
 QpackEncoderSenderStream::~QpackEncoderSenderStream() {
     if (stream_) stream_->Close();
 }
 
-bool QpackEncoderSenderStream::EnsureStreamPreamble() {
-    if (wrote_type_) return true;
-    // Emit preamble using lightweight encoder
-    uint8_t tmp[8] = {0};
-    auto buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
-    if (!QpackEncoderStreamPreamble::Encode(buf)) return false;
-    if (stream_->Send(buf) <= 0) return false;
-    wrote_type_ = true;
-    return true;
-}
-
 bool QpackEncoderSenderStream::SendInstructions(const std::vector<uint8_t>& blob) {
-    if (!EnsureStreamPreamble()) return false;
-    if (blob.empty()) return true;
+    if (!EnsureStreamPreamble()) {
+        return false;
+    }
+    if (blob.empty()) {
+        return true;
+    }
     auto buf = std::make_shared<common::Buffer>((uint8_t*)blob.data(), blob.size());
     buf->MoveWritePt(blob.size());
     return stream_->Send(buf) > 0;

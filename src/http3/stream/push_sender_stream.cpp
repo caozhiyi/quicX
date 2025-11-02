@@ -14,20 +14,15 @@ namespace http3 {
 PushSenderStream::PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<quic::IQuicSendStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-    IStream(error_handler),
+    ISendStream(StreamType::kPush, stream, error_handler),
     push_id_(0),
-    qpack_encoder_(qpack_encoder),  
-    stream_(stream) {
-
-}
-
-PushSenderStream::~PushSenderStream() {
-    if (stream_) {
-        stream_->Close();
-    }
+    qpack_encoder_(qpack_encoder) {
 }
 
 bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IResponse> response) {
+    if (!EnsureStreamPreamble()) {
+        return false;
+    }
     // RFC 9114 Section 4.6: Push stream format
     // Push Stream {
     //   Stream Type (i) = 0x01,

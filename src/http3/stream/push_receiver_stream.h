@@ -23,10 +23,6 @@ public:
         const http_response_handler& response_handler);
     virtual ~PushReceiverStream();
 
-    // Implement IStream interface
-    virtual StreamType GetType() override { return StreamType::kPush; }
-    virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
-
     virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
 
 private:
@@ -42,7 +38,6 @@ private:
     };
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
-    std::shared_ptr<quic::IQuicRecvStream> stream_;
 
     http_response_handler response_handler_;
     

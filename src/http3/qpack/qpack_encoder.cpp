@@ -1,4 +1,5 @@
 #include <cstdint>
+#include "common/log/log.h"
 #include "http3/qpack/util.h"
 #include "http3/qpack/static_table.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -12,6 +13,7 @@ bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& he
     std::shared_ptr<common::IBufferWrite> buffer) {
     
     if (!buffer) {
+        common::LOG_ERROR("QpackEncoder::Encode: buffer is null");
         return false;
     }
 
@@ -107,6 +109,7 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
     std::unordered_map<std::string, std::string>& headers) {
     
     if (!buffer || buffer->GetDataLength() < 2) {
+        common::LOG_ERROR("QpackEncoder::Decode: buffer is null or data length is less than 2");
         return false;
     }
 
@@ -114,11 +117,14 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
     uint64_t required_insert_count = 0;
     int64_t base = 0;
     if (!ReadHeaderPrefix(buffer, required_insert_count, base)) {
+        common::LOG_ERROR("QpackEncoder::Decode: read header prefix failed");
         return false;
     }
     // If required_insert_count > current inserted count, this header block is blocked
     if (required_insert_count > dynamic_table_.GetEntryCount()) {
         // Signal blocked; in full RFC flow, should queue this header block and return
+        common::LOG_ERROR("QpackEncoder::Decode: required insert count is greater than current inserted count.required_insert_count:%llu, current_inserted_count:%llu",
+            required_insert_count, dynamic_table_.GetEntryCount());
         return false;
     }
 
@@ -128,6 +134,7 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
 
         auto decode_after_first = [&](uint8_t first, uint8_t prefix_bits, uint64_t& value)->bool {
             if (prefix_bits == 0 || prefix_bits > 8) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode after first failed. prefix_bits:%d", prefix_bits);
                 return false;
             }
             
@@ -140,6 +147,7 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
             uint8_t b = 0;
             do {
                 if (buffer->Read(&b, 1) != 1) {
+                    common::LOG_ERROR("QpackEncoder::Decode: read byte failed. b:%d", b);
                     return false;
                 }
                 value += static_cast<uint64_t>(b & QpackConst::kVarintValueMask) << m;
@@ -153,10 +161,12 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
             // Indexed — static (11xxxxxx)
             uint64_t sidx = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kIndexedStaticPrefix, sidx)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode indexed static failed. sidx:%llu", sidx);
                 return false;
             }
             auto item = StaticTable::Instance().FindHeaderItem(static_cast<uint32_t>(sidx));
             if (!item) {
+                common::LOG_ERROR("QpackEncoder::Decode: find header item failed. sidx:%llu", sidx);
                 return false;
             }
             headers[item->name_] = item->value_;
@@ -165,14 +175,17 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
             // Indexed — dynamic (10xxxxxx)
             uint64_t rel = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kIndexedDynamicPrefix, rel)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode indexed dynamic failed. rel:%llu", rel);
                 return false;
             }
             int64_t abs_index = base - 1 - static_cast<int64_t>(rel);
             if (abs_index < 0) {
+                common::LOG_ERROR("QpackEncoder::Decode: absolute index is less than 0. abs_index:%lld", abs_index);
                 return false;
             }
             auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
             if (!item) {
+                common::LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
                 return false;
             }
             headers[item->name_] = item->value_;
@@ -181,38 +194,50 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
             // Literal with name reference — static (011xxxxx)
             uint64_t sidx = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kLiteralNameRefStaticPrefix, sidx)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode literal name ref static failed. sidx:%llu", sidx);
                 return false;
             }
             auto item = StaticTable::Instance().FindHeaderItem(static_cast<uint32_t>(sidx));
             if (!item) {
+                common::LOG_ERROR("QpackEncoder::Decode: find header item failed. sidx:%llu", sidx);
                 return false;
             }
             std::string value;
-            if (!DecodeString(buffer, value)) return false;
+            if (!DecodeString(buffer, value)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode string failed. value:%s", value.c_str());
+                return false;
+            }
             headers[item->name_] = value;
             
         } else if ((first_byte & QpackHeaderPattern::kLiteralNameRefDynamicMask) == QpackHeaderPattern::kLiteralNameRefDynamic) {
             // Literal with name reference — dynamic (010xxxxx)
             uint64_t rel = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kLiteralNameRefDynamicPrefix, rel)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode literal name ref dynamic failed. rel:%llu", rel);
                 return false;
             }
             int64_t abs_index = base - 1 - static_cast<int64_t>(rel);
             if (abs_index < 0) {
+                common::LOG_ERROR("QpackEncoder::Decode: absolute index is less than 0. abs_index:%lld", abs_index);
                 return false;
             }
             auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
             if (!item) {
+                common::LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
                 return false;
             }
             std::string value;
-            if (!DecodeString(buffer, value)) return false;
+            if (!DecodeString(buffer, value)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode string failed. value:%s", value.c_str());
+                return false;
+            }
             headers[item->name_] = value;
 
         } else if ((first_byte & QpackHeaderPattern::kLiteralNoNameRefMask) == QpackHeaderPattern::kLiteralNoNameRef) {
             // Literal without indexing — literal name and value (001xxxxx)
             std::string name, value;
             if (!DecodeString(buffer, name) || !DecodeString(buffer, value)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode string failed. name:%s, value:%s", name.c_str(), value.c_str());
                 return false;
             }
             headers[name] = value;
@@ -222,15 +247,18 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
             // Index is relative to Base, references entries inserted AFTER Base
             uint64_t post_base_index = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kPostBaseIndexedPrefix, post_base_index)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode post base indexed failed. post_base_index:%llu", post_base_index);
                 return false;
             }
             // Convert to absolute index: abs_index = Base + post_base_index
             int64_t abs_index = base + static_cast<int64_t>(post_base_index);
             if (abs_index < 0 || abs_index >= static_cast<int64_t>(dynamic_table_.GetEntryCount())) {
+                common::LOG_ERROR("QpackEncoder::Decode: absolute index is out of range. abs_index:%lld", abs_index);
                 return false;
             }
             auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
             if (!item) {
+                common::LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
                 return false;
             }
             headers[item->name_] = item->value_;
@@ -240,24 +268,29 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
             // Name reference is relative to Base, value is literal
             uint64_t post_base_index = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kPostBaseLiteralNameRefPrefix, post_base_index)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode post base literal name ref failed. post_base_index:%llu", post_base_index);
                 return false;
             }
             // Convert to absolute index: abs_index = Base + post_base_index
             int64_t abs_index = base + static_cast<int64_t>(post_base_index);
             if (abs_index < 0 || abs_index >= static_cast<int64_t>(dynamic_table_.GetEntryCount())) {
+                common::LOG_ERROR("QpackEncoder::Decode: absolute index is out of range. abs_index:%lld", abs_index);
                 return false;
             }
             auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
             if (!item) {
+                common::LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
                 return false;
             }
             std::string value;
             if (!DecodeString(buffer, value)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode string failed. value:%s", value.c_str());
                 return false;
             }
             headers[item->name_] = value;
 
         } else {
+            common::LOG_ERROR("QpackEncoder::Decode: unknown header pattern. first_byte:%d", first_byte);
             return false;
         }
     }
@@ -272,6 +305,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                                    uint32_t new_capacity,
                                    int32_t duplicate_index) {
     if (!instr_buf) {
+        common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: instr_buf is null");
         return false;
     }
 
@@ -281,6 +315,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
             QpackEncoderInstr::kSetDynamicTableCapacityPrefix, 
             QpackEncoderInstr::kSetDynamicTableCapacity, 
             new_capacity)) {
+            common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode set dynamic table capacity failed. new_capacity:%u", new_capacity);
             return false;
         }
     }
@@ -291,6 +326,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
             QpackEncoderInstr::kDuplicatePrefix, 
             QpackEncoderInstr::kDuplicate, 
             static_cast<uint64_t>(duplicate_index))) {
+            common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode duplicate failed. duplicate_index:%d", duplicate_index);
             return false;
         }
     }
@@ -310,6 +346,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                     QpackEncoderInstr::kInsertWithNameRefPrefix, 
                     mask, 
                     static_cast<uint64_t>(s_name_idx))) {
+                    common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert with name ref failed. s_name_idx:%d", s_name_idx);
                     return false;
                 }
 
@@ -323,12 +360,15 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                         QpackEncoderInstr::kInsertWithoutNameRefPrefix, 
                         QpackEncoderInstr::kInsertWithoutNameRef, 
                         0)) {
+                        common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert without name ref failed.");
                         return false;
                     }
                     if (!QpackEncodeStringLiteral(p.first, instr_buf, false)) {
+                        common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. name:%s", p.first.c_str());
                         return false;
                     }
                     if (!QpackEncodeStringLiteral(p.second, instr_buf, false)) {
+                        common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s", p.second.c_str());
                         return false;
                     }
                     continue;
@@ -339,11 +379,13 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                     QpackEncoderInstr::kInsertWithNameRefPrefix, 
                     mask, 
                     relative)) {
+                    common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert with name ref failed. relative:%llu", relative);
                     return false;
                 }
             }
 
             if (!QpackEncodeStringLiteral(p.second, instr_buf, false)) {
+                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s", p.second.c_str());
                 return false;
             }
 
@@ -353,12 +395,15 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                 QpackEncoderInstr::kInsertWithoutNameRefPrefix, 
                 QpackEncoderInstr::kInsertWithoutNameRef, 
                 0)) {
+                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert without name ref failed.");
                 return false;
             }
             if (!QpackEncodeStringLiteral(p.first, instr_buf, false)) {
+                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. name:%s", p.first.c_str());
                 return false;
             }
             if (!QpackEncodeStringLiteral(p.second, instr_buf, false)) {
+                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s", p.second.c_str());
                 return false;
             }
         }
@@ -368,6 +413,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
 
 bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBufferRead> instr_buf) {
     if (!instr_buf) {
+        common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: instr_buf is null");
         return false;
     }
 
@@ -375,6 +421,7 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
         uint8_t fb = 0;
         auto decode_after_first = [&](uint8_t first, uint8_t prefix_bits, uint64_t& value)->bool {
             if (prefix_bits == 0 || prefix_bits > 8) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode after first failed. prefix_bits:%d", prefix_bits);
                 return false;
             }
             uint8_t max_in_prefix = static_cast<uint8_t>((1u << prefix_bits) - 1u);
@@ -386,6 +433,7 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             uint8_t b = 0;
             do {
                 if (instr_buf->Read(&b, 1) != 1) {
+                    common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: read byte failed. b:%d", b);
                     return false;
                 }
                 value += static_cast<uint64_t>(b & QpackConst::kVarintValueMask) << m;
@@ -396,6 +444,7 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
         };
         
         if (instr_buf->Read(&fb, 1) != 1) {
+            common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: read byte failed. fb:%d", fb);
             return false;
         }
 
@@ -403,17 +452,20 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             // Insert With Name Reference (1Sxxxxxx)
             uint64_t idx = 0;
             if (!decode_after_first(fb, QpackEncoderInstr::kInsertWithNameRefPrefix, idx)) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode insert with name ref failed. idx:%llu", idx);
                 return false;
             }
             bool is_static = (fb & QpackEncoderInstr::kInsertWithNameRefStaticBit) != 0; // S bit
             std::string value;
             if (!QpackDecodeStringLiteral(instr_buf, value)) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode string literal failed. value:%s", value.c_str());
                 return false;
             }
             std::string name;
             if (is_static) {
                 auto hi = StaticTable::Instance().FindHeaderItem(static_cast<uint32_t>(idx));
                 if (!hi) {
+                    common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: find header item failed. idx:%llu", idx);
                     return false;
                 }
                 name = hi->name_;
@@ -422,10 +474,12 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
                 uint64_t ric = dynamic_table_.GetEntryCount();
                 int64_t abs = static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(idx);
                 if (abs < 0) {
+                    common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: absolute index is less than 0. abs:%lld", abs);
                     return false;
                 }
                 auto hi = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs));
                 if (!hi) {
+                    common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: find header item failed. abs:%lld", abs);
                     return false;
                 }
                 name = hi->name_;
@@ -436,13 +490,16 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             // Insert Without Name Reference (01xxxxxx)
             uint64_t ignore = 0;
             if (!decode_after_first(fb, QpackEncoderInstr::kInsertWithoutNameRefPrefix, ignore)) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode insert without name ref failed. ignore:%llu", ignore);
                 return false;
             }
             std::string name, value;
             if (!QpackDecodeStringLiteral(instr_buf, name)) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode string literal failed. name:%s", name.c_str());
                 return false;
             }
             if (!QpackDecodeStringLiteral(instr_buf, value)) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode string literal failed. value:%s", value.c_str());
                 return false;
             }
             dynamic_table_.AddHeaderItem(name, value);
@@ -451,12 +508,14 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             // RFC 9204 Section 4.3.1: Set Dynamic Table Capacity (001xxxxx)
             uint64_t cap = 0;
             if (!decode_after_first(fb, QpackEncoderInstr::kSetDynamicTableCapacityPrefix, cap)) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode set dynamic table capacity failed. cap:%llu", cap);
                 return false;
             }
             
             // RFC 9204 Section 3.2.3: Validate capacity against SETTINGS_QPACK_MAX_TABLE_CAPACITY
             if (cap > max_table_capacity_) {
                 // Decoder MUST treat this as a connection error (QPACK_ENCODER_STREAM_ERROR)
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: capacity is greater than max table capacity. cap:%llu, max_table_capacity:%u", cap, max_table_capacity_);
                 return false;
             }
             
@@ -466,19 +525,23 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             // RFC 9204 Section 4.3.4: Duplicate instruction (0001xxxx)
             uint64_t rel = 0;
             if (!decode_after_first(fb, QpackEncoderInstr::kDuplicatePrefix, rel)) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode duplicate failed. rel:%llu", rel);
                 return false;
             }
             uint64_t ric = dynamic_table_.GetEntryCount();
             int64_t abs = static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(rel);
             if (abs < 0) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: absolute index is less than 0. abs:%lld", abs);
                 return false;
             }
             // Use DuplicateEntry method which handles the duplication properly
             if (!dynamic_table_.DuplicateEntry(static_cast<uint32_t>(abs))) {
+                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: duplicate entry failed. abs:%lld", abs);
                 return false;
             }
 
         } else {
+            common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: unknown instruction. fb:%d", fb);
             break;
         }
     }
@@ -525,6 +588,7 @@ bool QpackEncoder::ReadHeaderPrefix(const std::shared_ptr<common::IBufferRead> b
         QpackHeaderPrefix::kRequiredInsertCountPrefix, 
         first, 
         encoded_ric)) {
+        common::LOG_ERROR("QpackEncoder::ReadHeaderPrefix: decode required insert count failed. encoded_ric:%llu", encoded_ric);
         return false;
     }
     
@@ -538,6 +602,7 @@ bool QpackEncoder::ReadHeaderPrefix(const std::shared_ptr<common::IBufferRead> b
         QpackHeaderPrefix::kDeltaBasePrefix, 
         first, 
         abs_delta_base)) {
+        common::LOG_ERROR("QpackEncoder::ReadHeaderPrefix: decode delta base failed. abs_delta_base:%llu", abs_delta_base);
         return false;
     }
     bool s_bit = (first & QpackHeaderPrefix::kDeltaBaseSignBit) != 0;
@@ -561,6 +626,7 @@ void QpackEncoder::WritePrefix(std::shared_ptr<common::IBufferWrite> buffer, uin
 
 bool QpackEncoder::ReadPrefix(const std::shared_ptr<common::IBufferRead> buffer, uint64_t& required_insert_count, uint64_t& base) {
     if (buffer->GetDataLength() < 2) {
+        common::LOG_ERROR("QpackEncoder::ReadPrefix: buffer data length is less than 2");
         return false;
     }
     uint8_t ric8 = 0, base8 = 0;
@@ -610,6 +676,7 @@ bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBufferRead> buffe
         QpackString::kLengthPrefix, 
         first_byte, 
         length)) {
+        common::LOG_ERROR("QpackEncoder::DecodeString: decode prefixed integer failed. length:%llu", length);
         return false;
     }
     
@@ -625,12 +692,14 @@ bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBufferRead> buffe
         std::vector<uint8_t> encoded;
         encoded.resize(static_cast<size_t>(length));
         if (buffer->Read(encoded.data(), static_cast<uint32_t>(length)) != static_cast<int32_t>(length)) {
+            common::LOG_ERROR("QpackEncoder::DecodeString: read encoded string failed. length:%llu", length);
             return false;
         }
         output = HuffmanEncoder::Instance().Decode(encoded);
     } else {
         output.resize(static_cast<size_t>(length));
         if (buffer->Read((uint8_t*)output.data(), static_cast<uint32_t>(length)) != static_cast<int32_t>(length)) {
+            common::LOG_ERROR("QpackEncoder::DecodeString: read encoded string failed. length:%llu", length);
             return false;
         }
     }
