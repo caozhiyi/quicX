@@ -34,6 +34,7 @@ protected:
     std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)> settings_handler_;
     std::function<void(std::shared_ptr<common::IBufferRead>)> qpack_instr_handler_;
     
+    size_t parsed_offset_;  // Offset in stream where parsing has progressed
 };
 
 }

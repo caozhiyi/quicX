@@ -20,7 +20,7 @@ PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpac
     IRecvStream(StreamType::kPush, stream, error_handler),
     qpack_encoder_(qpack_encoder),
     response_handler_(response_handler),
-    parse_state_(ParseState::kReadingStreamType),
+    parse_state_(ParseState::kReadingPushId),
     push_id_(0),
     body_length_(0) {
 
@@ -51,36 +51,10 @@ PushReceiverStream::~PushReceiverStream() {
     common::LOG_DEBUG("PushReceiverStream: buffer size now = %zu", buffer_.size());
 
     // State machine to parse push stream (RFC 9114 Section 4.6)
+    // Note: Stream type byte (0x01) has already been read by UnidentifiedStream
+    // So we start directly with Push ID
     while (!buffer_.empty()) {
-        if (parse_state_ == ParseState::kReadingStreamType) {
-            // Read stream type varint (should be 0x01)
-            auto buffer_view = std::make_shared<common::BufferReadView>(buffer_.data(), buffer_.size());
-            uint64_t stream_type = 0;
-            
-            {
-                common::BufferDecodeWrapper wrapper(buffer_view);
-                if (!wrapper.DecodeVarint(stream_type)) {
-                    // Not enough data yet, wait for more
-                    return;
-                }
-                // Wrapper will flush on destruction, moving read pointer
-            }
-
-            if (stream_type != static_cast<uint64_t>(StreamType::kPush)) {
-                common::LOG_ERROR("PushReceiverStream: invalid stream type %llu (expected kPush)", stream_type);
-                error_handler_(GetStreamID(), Http3ErrorCode::kStreamCreationError);
-                return;
-            }
-
-            common::LOG_DEBUG("PushReceiverStream: stream type kPush validated");
-            
-            // Remove consumed bytes
-            size_t consumed = buffer_.size() - buffer_view->GetDataLength();
-            buffer_.erase(buffer_.begin(), buffer_.begin() + consumed);
-            common::LOG_DEBUG("PushReceiverStream: consumed %zu bytes, buffer size=%zu, moving to kReadingPushId", consumed, buffer_.size());
-            parse_state_ = ParseState::kReadingPushId;
-
-        } else if (parse_state_ == ParseState::kReadingPushId) {
+        if (parse_state_ == ParseState::kReadingPushId) {
             // Read Push ID varint
             auto buffer_view = std::make_shared<common::BufferReadView>(buffer_.data(), buffer_.size());
             

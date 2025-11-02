@@ -32,8 +32,7 @@ private:
 
 private:
     enum class ParseState {
-        kReadingStreamType,  // Reading stream type (0x01)
-        kReadingPushId,      // Reading push ID
+        kReadingPushId,      // Reading push ID (stream type already read by UnidentifiedStream)
         kReadingFrames       // Reading HTTP3 frames (HEADERS + DATA)
     };
 

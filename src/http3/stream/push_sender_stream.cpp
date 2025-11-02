@@ -20,9 +20,6 @@ PushSenderStream::PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_en
 }
 
 bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IResponse> response) {
-    if (!EnsureStreamPreamble()) {
-        return false;
-    }
     // RFC 9114 Section 4.6: Push stream format
     // Push Stream {
     //   Stream Type (i) = 0x01,
