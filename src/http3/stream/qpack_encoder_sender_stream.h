@@ -3,20 +3,18 @@
 
 #include <vector>
 #include <memory>
-#include "http3/stream/if_stream.h"
+#include "http3/stream/if_send_stream.h"
 #include "quic/include/if_quic_send_stream.h"
 
 namespace quicx {
 namespace http3 {
 
-class QpackEncoderSenderStream: public IStream {
+class QpackEncoderSenderStream:
+    public ISendStream {
 public:
     explicit QpackEncoderSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
-    ~QpackEncoderSenderStream();
-
-    virtual StreamType GetType() override { return StreamType::kQpackEncoder; }
-    virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
+    virtual ~QpackEncoderSenderStream();
 
     // Write QPACK encoder stream type (0x02) and send instruction bytes
     bool SendInstructions(const std::vector<uint8_t>& blob);
@@ -26,13 +24,6 @@ public:
     bool SendInsertWithNameRef(bool is_static, uint64_t name_index, const std::string& value);
     bool SendInsertWithoutNameRef(const std::string& name, const std::string& value);
     bool SendDuplicate(uint64_t index);
-
-private:
-    bool EnsureStreamPreamble();
-
-private:
-    bool wrote_type_ {false};
-    std::shared_ptr<quic::IQuicSendStream> stream_;
 };
 
 }

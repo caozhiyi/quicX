@@ -18,7 +18,6 @@ public:
         const std::function<void(uint64_t id)>& cancel_handler);
     virtual ~ControlServerReceiverStream();
 
-    virtual StreamType GetType() { return StreamType::kControl; }
 private:
     virtual void HandleFrame(std::shared_ptr<IFrame> frame);
 

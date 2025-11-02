@@ -49,7 +49,10 @@ ServerConnection::ServerConnection(const std::string& unique_id,
     if (qpack_enabled) {
         common::LOG_DEBUG("ServerConnection: QPACK enabled (max_table_capacity=%llu, blocked_streams=%llu)", 
                          settings.qpack_max_table_capacity, settings.qpack_blocked_streams);
-        
+
+        qpack_encoder_->SetDynamicTableEnabled(true);
+        qpack_encoder_->SetMaxTableCapacity(settings.qpack_max_table_capacity);
+
         // Create QPACK Encoder Stream (server -> client, type 0x02)
         auto qpack_enc_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
         auto encoder_sender = std::make_shared<QpackEncoderSenderStream>(
@@ -160,9 +163,10 @@ void ServerConnection::HandleHttp(std::shared_ptr<IRequest> request, std::shared
         }
 
         // RFC 9114: Allocate push ID and send PUSH_PROMISE
-        uint64_t current_push_id = next_push_id_++;
+        uint64_t current_push_id = next_push_id_;
         response_stream->SendPushPromise(push_response->GetHeaders(), current_push_id);
         push_responses_[current_push_id] = push_response;
+        next_push_id_++;  // Increment for next push
         
         common::LOG_DEBUG("PUSH_PROMISE sent with push_id=%llu", current_push_id);
     }
@@ -304,7 +308,7 @@ void ServerConnection::HandleMaxPushId(uint64_t max_push_id) {
         Close(Http3ErrorCode::kIdError);
         return;
     }
-    
+
     common::LOG_DEBUG("MAX_PUSH_ID updated: %llu -> %llu", max_push_id_, max_push_id);
     max_push_id_ = max_push_id;
 }
@@ -442,10 +446,11 @@ bool ServerConnection::CanPush() const {
     // RFC 9114 Section 7.2.7: MAX_PUSH_ID specifies the maximum push ID 
     // that the server can use. A value of 0 allows push ID 0.
     // The server can use push IDs from 0 to max_push_id_ (inclusive).
-    if (next_push_id_ > max_push_id_) {
+    if (next_push_id_ >= max_push_id_) {
+        common::LOG_DEBUG("ServerConnection::CanPush: next_push_id=%llu > max_push_id=%llu", next_push_id_, max_push_id_);
         return false;
     }
-    
+
     // Check for Push ID overflow (unlikely but theoretically possible)
     if (next_push_id_ == UINT64_MAX) {
         common::LOG_ERROR("Push ID reached maximum value (UINT64_MAX)");

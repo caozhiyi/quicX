@@ -13,8 +13,7 @@ ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<quic::IQuicRe
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
     const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler):
-    IRecvStream(error_handler),
-    stream_(stream),
+    IRecvStream(StreamType::kControl, stream, error_handler),
     goaway_handler_(goaway_handler),
     settings_handler_(settings_handler) {
 
@@ -34,15 +33,19 @@ void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, ui
         error_handler_(stream_->GetStreamID(), error);
         return;
     }
+    common::LOG_DEBUG("ControlReceiverStream::OnData: data length=%llu", data->GetDataLength());
 
     // Try parse HTTP/3 frames; if fails, treat as raw QPACK instruction blob (demo)
     std::vector<std::shared_ptr<IFrame>> frames;
     auto snapshot = data; // shallow copy
     if (DecodeFrames(snapshot, frames)) {
+        common::LOG_DEBUG("ControlReceiverStream::OnData: DecodeFrames succeeded, decoded %zu frames", frames.size());
         for (const auto& frame : frames) {
+            common::LOG_DEBUG("ControlReceiverStream::OnData: handling frame type=%d", frame->GetType());
             HandleFrame(frame);
         }
     } else {
+        common::LOG_DEBUG("ControlReceiverStream::OnData: DecodeFrames failed, treating as raw QPACK instructions");
         HandleRawData(data);
     }
 }

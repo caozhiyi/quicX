@@ -44,20 +44,15 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const StreamTypeCallback& type_callback);
     
-    virtual ~UnidentifiedStream();
-
-    // IStream interface
-    virtual StreamType GetType() override { return StreamType::kReqResp; } // Temporary, not applicable
-    virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
+    virtual ~UnidentifiedStream() {}
 
 private:
     void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
 
 private:
-    std::shared_ptr<quic::IQuicRecvStream> stream_;
-    StreamTypeCallback type_callback_;
-    std::vector<uint8_t> buffer_;  // Buffer for incomplete varint
     bool type_identified_;
+    StreamTypeCallback type_callback_;
+    
 };
 
 }

@@ -20,6 +20,10 @@ ControlClientSenderStream::~ControlClientSenderStream() {
 }
 
 bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {
+    if (!EnsureStreamPreamble()) {
+        return false;
+    }
+    
     MaxPushIdFrame frame;
     frame.SetPushId(push_id);
 
@@ -30,10 +34,15 @@ bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {
         error_handler_(0, Http3ErrorCode::kMessageError);
         return false;
     }
+    common::LOG_DEBUG("ControlClientSenderStream::SendMaxPushId: max_push_id=%llu, buffer length=%llu", push_id, buffer->GetDataLength());
     return stream_->Send(buffer) > 0;
 }
 
 bool ControlClientSenderStream::SendCancelPush(uint64_t push_id) {
+    if (!EnsureStreamPreamble()) {
+        return false;
+    }
+    
     CancelPushFrame frame;
     frame.SetPushId(push_id);
 

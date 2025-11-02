@@ -15,7 +15,7 @@ namespace http3 {
 
 class QpackEncoder {
 public:
-    QpackEncoder(): dynamic_table_(1024), max_table_capacity_(1024) {}
+    QpackEncoder(): dynamic_table_(1024), max_table_capacity_(1024), enable_dynamic_table_(false) {}
     ~QpackEncoder() {}
     
     // Set the maximum table capacity from SETTINGS_QPACK_MAX_TABLE_CAPACITY

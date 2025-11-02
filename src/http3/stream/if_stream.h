@@ -9,12 +9,20 @@ namespace http3 {
 
 class IStream {
 public:
-    IStream(const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler): error_handler_(error_handler) {}
+    IStream(StreamType stream_type,
+            const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
+            stream_type_(stream_type),
+            error_handler_(error_handler) {}
     virtual ~IStream() {}
-    virtual StreamType GetType() = 0;
+    // get stream type
+    virtual StreamType GetType() { return stream_type_; }
+    // get stream id
     virtual uint64_t GetStreamID() = 0;
+    // close stream
     virtual void Close(uint32_t error_code) {} // TODO: implement
+
 protected:
+    StreamType stream_type_;
     std::function<void(uint64_t stream_id, uint32_t error_code)> error_handler_;
 };
 

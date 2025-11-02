@@ -17,8 +17,8 @@ public:
 };
     
 QpackDecoderSenderStream::QpackDecoderSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
-    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler)
-    : IStream(error_handler), stream_(stream) {
+    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
+    ISendStream(StreamType::kQpackDecoder, stream, error_handler) {
     
 }
 
@@ -26,22 +26,6 @@ QpackDecoderSenderStream::~QpackDecoderSenderStream() {
     if (stream_) {
         stream_->Close();
     }
-}
-
-bool QpackDecoderSenderStream::EnsureStreamPreamble() {
-    if (wrote_type_) {
-        return true;
-    }
-    uint8_t tmp[8] = {0};
-    auto buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
-    if (!QpackDecoderStreamPreamble::Encode(buf)) {
-        return false;
-    }
-    if (stream_->Send(buf) <= 0) {
-        return false;
-    }
-    wrote_type_ = true;
-    return true;
 }
 
 bool QpackDecoderSenderStream::SendSectionAck(uint64_t header_block_id) {
