@@ -5,6 +5,7 @@
 #include <memory>
 #include <cstdint>
 #include <functional>
+#include <string>
 
 #include "quic/frame/if_frame.h"
 #include "quic/stream/if_frame_visitor.h"

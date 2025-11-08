@@ -1,14 +1,13 @@
 #include "common/log/log.h"
-#include "quic/connection/util.h"
 #include "quic/connection/error.h"
 #include "quic/stream/recv_stream.h"
 #include "quic/frame/stream_frame.h"
-#include "common/buffer/buffer_chains.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/stream/state_machine_recv.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/stream_data_blocked_frame.h"
+#include "quic/connection/controler/send_control.h"
 
 namespace quicx {
 namespace quic {
@@ -32,14 +31,23 @@ RecvStream::~RecvStream() {
 }
 
 void RecvStream::Reset(uint32_t error) {
-    if (recv_machine_->CanSendStopSendingFrame()) {
+    // RFC 9000: Only send STOP_SENDING when there's an actual error (error != 0)
+    // When error == 0, it means normal completion (received FIN from peer)
+    // In that case, do nothing - no need to send STOP_SENDING
+    if (error != 0) {
+        if (!recv_machine_->OnFrame(FrameType::kResetStream)) {
+            return;
+        }
+
         auto stop_frame = std::make_shared<StopSendingFrame>();
         stop_frame->SetStreamID(stream_id_);
         stop_frame->SetAppErrorCode(error);
 
         frames_list_.emplace_back(stop_frame);
         ToSend();
-        common::LOG_DEBUG("stream recv reset stream. stream id:%d, error:%d", stream_id_, error);
+        common::LOG_DEBUG("stream recv reset due to error. stream id:%d, error:%d", stream_id_, error);
+    } else {
+        common::LOG_DEBUG("stream recv complete normally (received FIN). stream id:%d", stream_id_);
     }
 }
 
@@ -127,12 +135,14 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             out_order_frame_.erase(iter);
         }
         
+        bool is_last = false;
         if (final_offset_ != 0 && final_offset_ == except_offset_ && out_order_frame_.empty()) {
+            is_last = true;
             recv_machine_->RecvAllData();
         }
 
         if (recv_cb_) {
-            recv_cb_(buffer_, 0);
+            recv_cb_(buffer_, is_last, 0);
         }
 
         if (recv_machine_->CanAppReadAllData()) {
@@ -202,7 +212,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     // TODO delay call it
     if (recv_cb_) {
-        recv_cb_(buffer_, reset_frame->GetAppErrorCode());
+        recv_cb_(buffer_, false, reset_frame->GetAppErrorCode());
     }
 }
 

@@ -3,8 +3,8 @@
 
 #include <vector>
 #include "quic/frame/if_frame.h"
-#include "quic/crypto/tls/type.h"
 #include "common/buffer/if_buffer.h"
+#include "quic/connection/controler/send_control.h"
 
 namespace quicx {
 namespace quic {
@@ -30,6 +30,9 @@ public:
     virtual uint32_t GetLeftStreamDataSize() = 0;
     virtual void AddStreamDataSize(uint32_t size) {}
     virtual uint64_t GetStreamDataSize()  = 0;
+    
+    // Get stream data info for ACK tracking
+    virtual std::vector<StreamDataInfo> GetStreamDataInfo() const { return {}; }
 };
 
 
