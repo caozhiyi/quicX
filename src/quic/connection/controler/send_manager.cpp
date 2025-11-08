@@ -4,6 +4,7 @@
 #include "quic/common/version.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/connection/util.h"
+#include "quic/crypto/tls/type.h"
 #include "quic/frame/ping_frame.h"
 #include "quic/packet/init_packet.h"
 #include "quic/frame/padding_frame.h"
@@ -103,7 +104,7 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
                     common::LOG_WARN("Failed to add padding to PMTU probe, proceeding with size %u", current_size);
                 }
             }
-            if (!PacketInit(packet, buffer)) {
+            if (!PacketInit(packet, buffer, &frame_visitor)) {
                 return false;
             }
             // record probe packet number for ack/loss correlation
@@ -148,7 +149,7 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
                 // Allow PATH_CHALLENGE/PATH_RESPONSE to bypass budget check
                 common::LOG_DEBUG("Allowing path validation frame despite budget limit");
             }
-            return PacketInit(packet, buffer);
+            return PacketInit(packet, buffer, &frame_visitor);
         }
 
         // check flow control
@@ -188,7 +189,7 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
                 common::LOG_DEBUG("Allowing path validation frame despite budget limit");
             }
         }
-        return PacketInit(packet, buffer);
+        return PacketInit(packet, buffer, &frame_visitor);
     }
 
     return true;
@@ -422,6 +423,10 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
 }
 
 bool SendManager::PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer) {
+    return PacketInit(packet, buffer, nullptr);
+}
+
+bool SendManager::PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer, IFrameVisitor* visitor) {
     // make packet numer
     uint64_t pkt_number = pakcet_number_.NextPakcetNumber(CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel()));
     packet->SetPacketNumber(pkt_number);
@@ -432,7 +437,23 @@ bool SendManager::PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<c
         return false;
     }
 
-    send_control_.OnPacketSend(common::UTCTimeMsec(), packet, buffer->GetDataLength());
+    // Get stream data info and frame type bit from visitor for ACK tracking
+    std::vector<StreamDataInfo> stream_data;
+    if (visitor) {
+        stream_data = visitor->GetStreamDataInfo();
+        
+        // Set packet's frame_type_bit from visitor (for ACK-eliciting detection)
+        auto fix_visitor = dynamic_cast<FixBufferFrameVisitor*>(visitor);
+        if (fix_visitor) {
+            uint32_t visitor_frame_bit = fix_visitor->GetFrameTypeBit();
+            // Use AddFrameTypeBit to OR the bits (don't overwrite existing bits)
+            packet->AddFrameTypeBit(static_cast<FrameTypeBit>(visitor_frame_bit));
+            common::LOG_DEBUG("PacketInit: packet_number=%llu, stream_data count=%zu, frame_type_bit=%u", 
+                             pkt_number, stream_data.size(), packet->GetFrameTypeBit());
+        }
+    }
+    
+    send_control_.OnPacketSend(common::UTCTimeMsec(), packet, buffer->GetDataLength(), stream_data);
     return true;
 }
 

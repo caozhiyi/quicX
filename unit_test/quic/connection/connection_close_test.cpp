@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <memory>
 
-#include "quic/frame/type.h"
 #include "common/timer/timer.h"
 #include "common/buffer/buffer.h"
 #include "quic/packet/packet_decode.h"
@@ -11,7 +10,6 @@
 #include "quic/include/if_quic_send_stream.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
-#include "quic/frame/connection_close_frame.h"
 
 namespace quicx {
 namespace quic {

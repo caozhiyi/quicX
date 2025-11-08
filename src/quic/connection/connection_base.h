@@ -124,6 +124,9 @@ protected:
     void InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason);
     void ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason);
     void InnerStreamClose(uint64_t stream_id);
+    
+    // Stream data ACK notification callback
+    void OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin);
 
     void AddConnectionId(ConnectionID& id);
     void RetireConnectionId(ConnectionID& id);

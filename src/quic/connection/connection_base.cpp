@@ -65,6 +65,11 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start,
     transport_param_.AddTransportParamListener(std::bind(&RecvControl::UpdateConfig, &recv_control_, std::placeholders::_1));
     transport_param_.AddTransportParamListener(std::bind(&SendManager::UpdateConfig, &send_manager_, std::placeholders::_1));
     transport_param_.AddTransportParamListener(std::bind(&FlowControl::UpdateConfig, &flow_control_, std::placeholders::_1));
+    
+    // Set stream data ACK callback for tracking stream completion
+    send_manager_.send_control_.SetStreamDataAckCallback(
+        std::bind(&BaseConnection::OnStreamDataAcked, this, 
+                 std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 BaseConnection::~BaseConnection() {
@@ -103,9 +108,9 @@ void BaseConnection::Close() {
     frame->SetErrorCode(closing_error_code_);
     ToSendFrame(frame);
 
-    // Wait 1×PTO before closing (for retransmitting CONNECTION_CLOSE if needed)
+    // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    timer_->AddTimer(task, GetCloseWaitTime(), 0);
+    timer_->AddTimer(task, GetCloseWaitTime() * 3, 0);
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
@@ -225,9 +230,9 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
         frame->SetErrorCode(closing_error_code_);
         ToSendFrame(frame);
 
-        // Wait 1×PTO before closing
+        // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
         common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        timer_->AddTimer(task, GetCloseWaitTime(), 0);
+        timer_->AddTimer(task, GetCloseWaitTime() * 3, 0);
     }
     
     return ret;
@@ -236,15 +241,43 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
 void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
     // RFC 9000 Section 10.2: Handle packets based on connection state
     
-    // Closing state: Retransmit CONNECTION_CLOSE in response to any incoming packet
+    // Closing state: Check if packet contains CONNECTION_CLOSE, otherwise retransmit
     if (state_ == ConnectionStateType::kStateClosing) {
-        common::LOG_DEBUG("Connection in closing state, retransmit CONNECTION_CLOSE");
-        auto frame = std::make_shared<ConnectionCloseFrame>();
-        frame->SetErrorCode(closing_error_code_);
-        frame->SetErrFrameType(closing_trigger_frame_);
-        frame->SetReason(closing_reason_);
-        ToSendFrame(frame);
-        return; // Do not process packet contents
+        // Try to parse packet to check for CONNECTION_CLOSE frame
+        bool has_connection_close = false;
+        for (auto& packet : packets) {
+            std::shared_ptr<ICryptographer> cryptographer = connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
+            if (cryptographer) {
+                packet->SetCryptographer(cryptographer);
+                uint8_t buf[1450] = {0};
+                std::shared_ptr<common::IBuffer> out_plaintext = std::make_shared<common::Buffer>(buf, 1450);
+                if (packet->DecodeWithCrypto(out_plaintext)) {
+                    // Check if any frame is CONNECTION_CLOSE
+                    for (auto& frame : packet->GetFrames()) {
+                        if (frame->GetType() == FrameType::kConnectionClose ||
+                            frame->GetType() == FrameType::kConnectionCloseApp) {
+                            has_connection_close = true;
+                            // Enter draining state: peer is also closing
+                            state_ = ConnectionStateType::kStateDraining;
+                            common::LOG_DEBUG("Received CONNECTION_CLOSE while in closing state, entering draining state");
+                            break;
+                        }
+                    }
+                }
+            }
+            if (has_connection_close) break;
+        }
+        
+        if (!has_connection_close) {
+            // No CONNECTION_CLOSE found, retransmit our CONNECTION_CLOSE
+            common::LOG_DEBUG("Connection in closing state, retransmit CONNECTION_CLOSE");
+            auto frame = std::make_shared<ConnectionCloseFrame>();
+            frame->SetErrorCode(closing_error_code_);
+            frame->SetErrFrameType(closing_trigger_frame_);
+            frame->SetReason(closing_reason_);
+            ToSendFrame(frame);
+        }
+        return; // Do not process other frames
     }
     
     // Draining or Closed state: Discard all packets
@@ -261,38 +294,51 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         recv_control_.OnEcnCounters(pending_ecn_, ns);
     }
     for (size_t i = 0; i < packets.size(); i++) {
-        recv_control_.OnPacketRecv(now, packets[i]);
         common::LOG_DEBUG("get packet. type:%d", packets[i]->GetHeader()->GetPacketType());
+        
+        // Process packet (decrypt and decode frames)
+        bool packet_processed = false;
         switch (packets[i]->GetHeader()->GetPacketType())
         {
         case PacketType::kInitialPacketType:
-            if (!OnInitialPacket(std::dynamic_pointer_cast<InitPacket>(packets[i]))) {
+            packet_processed = OnInitialPacket(std::dynamic_pointer_cast<InitPacket>(packets[i]));
+            if (!packet_processed) {
                 common::LOG_ERROR("init packet handle failed.");
             }
             break;
         case PacketType::k0RttPacketType:
-            if (!On0rttPacket(std::dynamic_pointer_cast<Rtt0Packet>(packets[i]))) {
+            packet_processed = On0rttPacket(std::dynamic_pointer_cast<Rtt0Packet>(packets[i]));
+            if (!packet_processed) {
                 common::LOG_ERROR("0 rtt packet handle failed.");
             }
             break;
         case PacketType::kHandshakePacketType:
-            if (!OnHandshakePacket(std::dynamic_pointer_cast<HandshakePacket>(packets[i]))) {
+            packet_processed = OnHandshakePacket(std::dynamic_pointer_cast<HandshakePacket>(packets[i]));
+            if (!packet_processed) {
                 common::LOG_ERROR("handshakee packet handle failed.");
             }
             break;
         case PacketType::kRetryPacketType:
-            if (!OnRetryPacket(std::dynamic_pointer_cast<RetryPacket>(packets[i]))) {
+            packet_processed = OnRetryPacket(std::dynamic_pointer_cast<RetryPacket>(packets[i]));
+            if (!packet_processed) {
                 common::LOG_ERROR("retry packet handle failed.");
             }
             break;
         case PacketType::k1RttPacketType:
-            if (!On1rttPacket(std::dynamic_pointer_cast<Rtt1Packet>(packets[i]))) {
+            packet_processed = On1rttPacket(std::dynamic_pointer_cast<Rtt1Packet>(packets[i]));
+            if (!packet_processed) {
                 common::LOG_ERROR("1 rtt packet handle failed.");
             }
             break;
         default:
             common::LOG_ERROR("unknow packet type. type:%d", packets[i]->GetHeader()->GetPacketType());
             break;
+        }
+        
+        // After processing (decrypting and decoding frames), record packet for ACK tracking
+        // At this point, packet->GetFrameTypeBit() should be populated
+        if (packet_processed) {
+            recv_control_.OnPacketRecv(now, packets[i]);
         }
     }
 
@@ -805,9 +851,9 @@ void BaseConnection::OnGracefulCloseTimeout() {
         frame->SetErrorCode(closing_error_code_);
         ToSendFrame(frame);
 
-        // Wait 1×PTO before final close
+        // Wait 3×PTO before final close (RFC 9000 Section 10.2: minimum closing period)
         common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        timer_->AddTimer(task, GetCloseWaitTime(), 0);
+        timer_->AddTimer(task, GetCloseWaitTime() * 3, 0);
     }
 }
 
@@ -1061,9 +1107,9 @@ void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::
     frame->SetReason(reason);
     ToSendFrame(frame);
 
-    // Wait 1×PTO before closing (for retransmitting CONNECTION_CLOSE if needed)
+    // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    timer_->AddTimer(task, GetCloseWaitTime(), 0);
+    timer_->AddTimer(task, GetCloseWaitTime() * 3, 0);
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {
@@ -1071,6 +1117,24 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
     auto stream = streams_map_.find(stream_id);
     if (stream != streams_map_.end()) {
         streams_map_.erase(stream);
+    }
+}
+
+void BaseConnection::OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin) {
+    common::LOG_DEBUG("OnStreamDataAcked: stream_id=%llu, max_offset=%llu, has_fin=%d", 
+                     stream_id, max_offset, has_fin);
+    
+    auto it = streams_map_.find(stream_id);
+    if (it == streams_map_.end()) {
+        common::LOG_DEBUG("OnStreamDataAcked: stream %llu not found (already closed)", stream_id);
+        return;
+    }
+    
+    // Notify stream about data ACK
+    // Cast to SendStream to call OnDataAcked (will be implemented next)
+    auto send_stream = std::dynamic_pointer_cast<SendStream>(it->second);
+    if (send_stream) {
+        send_stream->OnDataAcked(max_offset, has_fin);
     }
 }
 

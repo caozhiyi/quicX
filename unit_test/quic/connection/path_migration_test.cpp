@@ -3,14 +3,13 @@
 #include <chrono>
 
 #include "quic/frame/type.h"
+#include "quic/packet/type.h"
 #include "common/timer/timer.h"
 #include "common/buffer/buffer.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/packet/packet_decode.h"
-#include "quic/packet/header/long_header.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
-#include "quic/packet/header/short_header.h"
 #include "quic/include/if_quic_send_stream.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
@@ -319,10 +318,13 @@ TEST(path_migration, preferred_address_mechanism) {
             if (DecodePackets(buffer, pkts)) {
                 bool found_challenge = false;
 
-                auto ser_crypto = client_conn->GetCryptographerForTest(kApplication);
-                ASSERT_NE(ser_crypto, nullptr);
                 for (auto& p : pkts) {
-                    p->SetCryptographer(ser_crypto);
+                    if (p->GetCryptoLevel() != PakcetCryptoLevel::kApplicationCryptoLevel) {
+                        continue;
+                    }
+                    auto recv_crypto = server_conn->GetCryptographerForTest(p->GetCryptoLevel());
+                    ASSERT_NE(recv_crypto, nullptr);
+                    p->SetCryptographer(recv_crypto);
                     uint8_t tmp[4096] = {0};
                     auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
                     ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
