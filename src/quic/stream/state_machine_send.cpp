@@ -71,11 +71,6 @@ bool StreamStateMachineSend::AllAckDone() {
         common::LOG_ERROR("current status not allow ack done. status:%d", state_);
         return false;
     }
-    if (state_ == StreamState::kDataRecvd || state_ == StreamState::kResetRecvd) {
-        if (stream_close_cb_) {
-            stream_close_cb_();
-        }
-    }
     return true;
 }
 

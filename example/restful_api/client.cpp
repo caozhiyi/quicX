@@ -3,6 +3,7 @@
 #include <iostream>
 #include <atomic>
 #include "http3/include/if_client.h"
+#include "http3/include/if_response.h"
 
 std::atomic<int> pending_requests(0);
 

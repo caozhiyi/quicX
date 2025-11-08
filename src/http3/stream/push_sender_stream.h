@@ -2,8 +2,6 @@
 #define HTTP3_STREAM_PUSH_SENDER_STREAM
 
 #include <memory>
-#include <string>
-#include <unordered_map>
 
 #include "http3/include/if_response.h"
 #include "http3/qpack/qpack_encoder.h"
@@ -13,6 +11,11 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief Push sender stream
+ * 
+ * The push sender stream is used to send push frames to the client.
+ */
 class PushSenderStream:
     public ISendStream {
 public:
@@ -33,7 +36,7 @@ public:
     uint64_t GetPushId() const { return push_id_; }
 
 private:
-    uint64_t push_id_ = 0;
+    uint64_t push_id_;
     std::shared_ptr<QpackEncoder> qpack_encoder_;
 };
 

@@ -1,4 +1,5 @@
 #include <cstring>
+#include "common/log/log.h"
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/connection/controler/recv_control.h"
@@ -25,7 +26,13 @@ RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
 }
 
 void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
+    common::LOG_DEBUG("RecvControl::OnPacketRecv: packet_number=%llu, frame_type_bit=%u, is_ack_eliciting=%d",
+                     packet->GetPacketNumber(), packet->GetFrameTypeBit(), 
+                     IsAckElictingPacket(packet->GetFrameTypeBit()) ? 1 : 0);
+    
     if (!IsAckElictingPacket(packet->GetFrameTypeBit())) {
+        common::LOG_DEBUG("RecvControl::OnPacketRecv: packet %llu is not ack-eliciting, skipping",
+                         packet->GetPacketNumber());
         return;
     }
 
@@ -36,6 +43,9 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     }
 
     wait_ack_packet_numbers_[ns].insert(packet->GetPacketNumber());
+    common::LOG_DEBUG("RecvControl::OnPacketRecv: added packet %llu to ACK queue, ns=%d, queue size=%zu",
+                     packet->GetPacketNumber(), ns, wait_ack_packet_numbers_[ns].size());
+    
     if (!set_timer_) {
         set_timer_ = true;
         timer_->AddTimer(timer_task_, max_ack_delay_);
@@ -66,8 +76,12 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     }
     
     if (wait_ack_packet_numbers_[ns].empty()) {
+        common::LOG_DEBUG("RecvControl::MayGenerateAckFrame: ns=%d, no packets to ACK", ns);
         return nullptr;
     }
+    
+    common::LOG_DEBUG("RecvControl::MayGenerateAckFrame: ns=%d, generating ACK for %zu packets, largest=%llu",
+                     ns, wait_ack_packet_numbers_[ns].size(), pkt_num_largest_recvd_[ns]);
 
     // Generate ACK or ACK_ECN frame based on ECN enable
     std::shared_ptr<AckFrame> frame;

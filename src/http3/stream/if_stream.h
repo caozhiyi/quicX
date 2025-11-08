@@ -7,6 +7,11 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief IStream is the base class for all HTTP/3 streams
+ * 
+ * All HTTP/3 streams inherit from this class.
+ */
 class IStream {
 public:
     IStream(StreamType stream_type,

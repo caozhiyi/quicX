@@ -1,5 +1,4 @@
 #include "common/log/log.h"
-#include "common/buffer/buffer_read_view.h"
 #include "http3/stream/unidentified_stream.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 
@@ -44,25 +43,16 @@ void UnidentifiedStream::OnData(std::shared_ptr<common::IBufferRead> data, uint3
     }
 
     // Try to decode varint for stream type
-    auto buffer_view = std::make_shared<common::BufferReadView>(data->GetData(), data->GetDataLength());
     uint64_t stream_type = 0;
-        
     {
-        common::BufferDecodeWrapper wrapper(buffer_view);
+        common::BufferDecodeWrapper wrapper(data);
         if (!wrapper.DecodeVarint(stream_type)) {
             // Not enough data yet, wait for more
             common::LOG_DEBUG("UnidentifiedStream: not enough data to read stream type on stream %llu (buffer size=%zu)", 
                                 stream_->GetStreamID(), data->GetDataLength());
             return;
         }
-        // Wrapper will flush on destruction, moving read pointer
     }
-    
-    // Calculate how many bytes were consumed
-    size_t consumed = data->GetDataLength() - buffer_view->GetDataLength();
-    common::LOG_DEBUG("UnidentifiedStream: stream type %llu identified on stream %llu, consumed %zu bytes", 
-                         stream_type, stream_->GetStreamID(), consumed);
-    
     
     type_identified_ = true;
     
@@ -72,7 +62,7 @@ void UnidentifiedStream::OnData(std::shared_ptr<common::IBufferRead> data, uint3
     // Notify callback with stream type and remaining data (excluding stream type byte)
     if (type_callback_) {
         // Pass the buffer_view which has the read pointer moved past the stream type
-        type_callback_(stream_type, stream_, buffer_view);
+        type_callback_(stream_type, stream_, data);
     }
 }
 

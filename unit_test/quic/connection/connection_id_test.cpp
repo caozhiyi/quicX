@@ -2,9 +2,9 @@
 #include <cstdint>
 #include <cstring>
 
+#include "quic/connection/type.h"
 #include "quic/connection/connection_id.h"
 #include "quic/connection/connection_id_generator.h"
-#include "quic/connection/type.h"
 
 namespace quicx {
 namespace quic {

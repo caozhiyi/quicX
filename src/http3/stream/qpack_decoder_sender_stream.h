@@ -9,6 +9,12 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief Qpack decoder sender stream
+ * 
+ * The qpack decoder sender stream is used to send qpack decoder frames.
+ * It is responsible for sending the SECTION_ACKNOWLEDGEMENT, STREAM_CANCELLATION, and INSERT_COUNT_INCREMENT frames.
+ */ 
 class QpackDecoderSenderStream:
     public ISendStream {
 public:

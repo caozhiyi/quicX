@@ -21,7 +21,9 @@ QpackEncoderSenderStream::QpackEncoderSenderStream(const std::shared_ptr<quic::I
     ISendStream(StreamType::kQpackEncoder, stream, error_handler) {}
 
 QpackEncoderSenderStream::~QpackEncoderSenderStream() {
-    if (stream_) stream_->Close();
+    if (stream_) {
+        stream_->Close();
+    }
 }
 
 bool QpackEncoderSenderStream::SendInstructions(const std::vector<uint8_t>& blob) {

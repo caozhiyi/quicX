@@ -18,7 +18,7 @@ protected:
     }
     
     void TearDown() override {
-        LOG_SET_LEVEL(LogLevel::kNull);
+        //LOG_SET_LEVEL(LogLevel::kNull);
     }
 };
 

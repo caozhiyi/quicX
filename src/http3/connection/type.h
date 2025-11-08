@@ -6,8 +6,12 @@
 namespace quicx {
 namespace http3 {
 
-// These definitions are based on the HTTP/3 RFC 9114, Section 7.2.4 "Settings Parameters"
-// Reference: https://datatracker.ietf.org/doc/html/rfc9114#section-7.2.4
+/**
+ * @brief Settings type
+ *
+ * @note These definitions are based on the HTTP/3 RFC 9114, Section 7.2.4 "Settings Parameters"
+ * @see https://datatracker.ietf.org/doc/html/rfc9114#section-7.2.4
+ */
 enum SettingsType : uint16_t {
     kQpackMaxTableCapacity  = 0x01,
     kEnablePush             = 0x02,

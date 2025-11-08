@@ -4,6 +4,8 @@
 #include <mutex>
 #include <sstream>
 #include "http3/include/if_server.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 
 // Simple in-memory database for users
 struct User {

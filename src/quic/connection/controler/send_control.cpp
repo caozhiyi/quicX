@@ -19,7 +19,15 @@ SendControl::SendControl(std::shared_ptr<common::ITimer> timer):
 }
 
 void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len) {
+    OnPacketSend(now, packet, pkt_len, std::vector<StreamDataInfo>());
+}
+
+void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len, 
+                                const std::vector<StreamDataInfo>& stream_data) {
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
+    common::LOG_DEBUG("SendControl::OnPacketSend: packet_number=%llu, ns=%d, frame_type_bit=%u, stream_data count=%zu",
+                     packet->GetPacketNumber(), ns, packet->GetFrameTypeBit(), stream_data.size());
+    
     if (pkt_num_largest_sent_[ns] > packet->GetPacketNumber()) {
         common::LOG_ERROR("invalid packet number. number:%d", packet->GetPacketNumber());
         return;
@@ -30,6 +38,8 @@ void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, ui
     congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, now, false});
 
     if (!IsAckElictingPacket(packet->GetFrameTypeBit())) {
+        common::LOG_DEBUG("SendControl::OnPacketSend: packet %llu is not ack-eliciting, not saving to unacked_packets",
+                         packet->GetPacketNumber());
         return;
     }
     auto timer_task = common::TimerTask([this, pkt_len, packet]{
@@ -37,7 +47,9 @@ void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, ui
         congestion_control_->OnPacketLost(LossEvent{packet->GetPacketNumber(), pkt_len, common::UTCTimeMsec()});
     });
     timer_->AddTimer(timer_task, rtt_calculator_.GetPT0Interval(max_ack_delay_));
-    unacked_packets_[ns][packet->GetPacketNumber()] = PacketTimerInfo(largest_sent_time_[ns], pkt_len, timer_task);
+    unacked_packets_[ns][packet->GetPacketNumber()] = PacketTimerInfo(largest_sent_time_[ns], pkt_len, timer_task, stream_data);
+    common::LOG_DEBUG("SendControl::OnPacketSend: saved packet %llu to unacked_packets[%d], stream_data count=%zu",
+                     packet->GetPacketNumber(), ns, stream_data.size());
 }
 
 void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
@@ -47,6 +59,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
     }
 
     auto ack_frame = std::dynamic_pointer_cast<AckFrame>(frame);
+    common::LOG_DEBUG("SendControl::OnPacketAck: largest_ack=%llu, first_ack_range=%u, ns=%d",
+                     ack_frame->GetLargestAck(), ack_frame->GetFirstAckRange(), ns);
     
     uint64_t pkt_num = ack_frame->GetLargestAck();
     if (pkt_num_largest_acked_[ns] < pkt_num) {
@@ -87,22 +101,57 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
         }
     }
 
+    // Process first ACK range and notify streams
     for (uint32_t i = 0; i <= ack_frame->GetFirstAckRange(); i++) {
-        auto task = unacked_packets_[ns].find(pkt_num--);
+        auto task = unacked_packets_[ns].find(pkt_num);
         if (task != unacked_packets_[ns].end()) {
+            common::LOG_DEBUG("SendControl::OnPacketAck: found packet %llu, stream_data count=%zu",
+                             pkt_num, task->second.stream_data.size());
             timer_->RmTimer(task->second.timer_task_);
+            
+            // Notify stream data ACK if callback is set
+            if (stream_data_ack_cb_ && !task->second.stream_data.empty()) {
+                common::LOG_DEBUG("SendControl::OnPacketAck: notifying %zu streams for packet %llu",
+                                 task->second.stream_data.size(), pkt_num);
+                for (const auto& stream_info : task->second.stream_data) {
+                    common::LOG_DEBUG("SendControl::OnPacketAck: calling callback for stream_id=%llu, max_offset=%llu, has_fin=%d",
+                                     stream_info.stream_id, stream_info.max_offset, stream_info.has_fin);
+                    stream_data_ack_cb_(stream_info.stream_id, stream_info.max_offset, stream_info.has_fin);
+                }
+            } else {
+                common::LOG_DEBUG("SendControl::OnPacketAck: callback=%d, stream_data.empty()=%d",
+                                 stream_data_ack_cb_ ? 1 : 0, task->second.stream_data.empty());
+            }
+            
+            // Remove from unacked_packets
+            unacked_packets_[ns].erase(task);
+        } else {
+            common::LOG_DEBUG("SendControl::OnPacketAck: packet %llu not found in unacked_packets", pkt_num);
         }
+        pkt_num--;
     }
 
+    // Process additional ACK ranges
     auto ranges = ack_frame->GetAckRange();
     for (auto iter = ranges.begin(); iter != ranges.end(); iter++) {
         // Move across the gap (unacked) and the single separator to the high PN of the next range
         pkt_num = pkt_num - iter->GetGap() - 1;
         for (uint32_t i = 0; i <= iter->GetAckRangeLength(); i++) {
-            auto task = unacked_packets_[ns].find(pkt_num--);
+            auto task = unacked_packets_[ns].find(pkt_num);
             if (task != unacked_packets_[ns].end()) {
                 timer_->RmTimer(task->second.timer_task_);
+                
+                // Notify stream data ACK if callback is set
+                if (stream_data_ack_cb_ && !task->second.stream_data.empty()) {
+                    for (const auto& stream_info : task->second.stream_data) {
+                        stream_data_ack_cb_(stream_info.stream_id, stream_info.max_offset, stream_info.has_fin);
+                    }
+                }
+                
+                // Remove from unacked_packets
+                unacked_packets_[ns].erase(task);
             }
+            pkt_num--;
         }
     }
 }

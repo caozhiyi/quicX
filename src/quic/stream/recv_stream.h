@@ -1,7 +1,6 @@
 #ifndef QUIC_STREAM_RECV_STREAM
 #define QUIC_STREAM_RECV_STREAM
 
-#include <list>
 #include <string>
 #include <functional>
 #include <unordered_map>
@@ -38,11 +37,14 @@ public:
 
     // try generate data to send
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
+    
+    // Getter for testing
+    std::shared_ptr<StreamStateMachineRecv> GetRecvStateMachine() const { return recv_machine_; }
 
 protected:
-    uint32_t OnStreamFrame(std::shared_ptr<IFrame> frame);
-    void OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame);
-    void OnResetStreamFrame(std::shared_ptr<IFrame> frame);
+    virtual uint32_t OnStreamFrame(std::shared_ptr<IFrame> frame);
+    virtual void OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame);
+    virtual void OnResetStreamFrame(std::shared_ptr<IFrame> frame);
 
 protected:
     uint64_t final_offset_;

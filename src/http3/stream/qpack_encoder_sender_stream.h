@@ -9,6 +9,12 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief Qpack encoder sender stream
+ * 
+ * The qpack encoder sender stream is used to send qpack encoder frames.
+ * It is responsible for sending the SET_DYNAMIC_TABLE_CAPACITY, INSERT_WITH_NAME_REFERENCE, INSERT_WITHOUT_NAME_REFERENCE, and DUPLICATE frames.
+ */
 class QpackEncoderSenderStream:
     public ISendStream {
 public:

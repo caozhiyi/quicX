@@ -4,8 +4,8 @@
 #include <vector>
 #include <chrono>
 
-#include "common/network/if_event_driver.h"
 #include "common/network/io_handle.h"
+#include "common/network/if_event_driver.h"
 
 namespace quicx {
 namespace common {

@@ -2,9 +2,11 @@
 #include <memory>
 #include <vector>
 
+#include "http3/stream/type.h"
 #include "http3/http/response.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/push_sender_stream.h"
+#include "http3/stream/unidentified_stream.h"
 #include "http3/stream/push_receiver_stream.h"
 #include "unit_test/http3/stream/mock_quic_stream.h"
 
@@ -41,9 +43,30 @@ protected:
             }
         );
         
+        // Start with UnidentifiedStream to read stream type
+        unidentified_stream_ = std::make_shared<UnidentifiedStream>(
+            mock_recv_stream_,
+            [this](uint64_t stream_id, uint32_t error) {
+                error_code_ = error;
+            },
+            [this](uint64_t stream_type, 
+                   std::shared_ptr<quic::IQuicRecvStream> stream,
+                   std::shared_ptr<common::IBufferRead> remaining_data) {
+                this->OnStreamTypeIdentified(stream_type, stream, remaining_data);
+            }
+        );
+    }
+
+    void OnStreamTypeIdentified(uint64_t stream_type, 
+                                std::shared_ptr<quic::IQuicRecvStream> stream,
+                                std::shared_ptr<common::IBufferRead> remaining_data) {
+        // Verify it's a push stream
+        EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kPush));
+        
+        // Create the actual push receiver stream
         receiver_stream_ = std::make_shared<PushReceiverStream>(
             qpack_encoder_,
-            mock_recv_stream_,
+            stream,
             [this](uint64_t stream_id, uint32_t error) {
                 error_code_ = error;
             },
@@ -52,11 +75,17 @@ protected:
                 error_code_ = error;
             }
         );
+        
+        // Feed remaining data to the push stream
+        if (remaining_data && remaining_data->GetDataLength() > 0) {
+            receiver_stream_->OnData(remaining_data, 0);
+        }
     }
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::shared_ptr<quic::MockQuicStream> mock_send_stream_;
     std::shared_ptr<quic::MockQuicStream> mock_recv_stream_;
+    std::shared_ptr<UnidentifiedStream> unidentified_stream_;
     std::shared_ptr<PushSenderStream> sender_stream_;
     std::shared_ptr<PushReceiverStream> receiver_stream_;
     std::shared_ptr<IResponse> push_response_received_;

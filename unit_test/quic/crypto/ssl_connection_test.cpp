@@ -2,18 +2,19 @@
 #include <openssl/bio.h>
 #include <openssl/mem.h>
 #include <openssl/pem.h>
-#include "quic/crypto/type.h"
+
 #include "quic/crypto/tls/type.h"
-#include "common/util/c_smart_ptr.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/crypto/tls/tls_connection_client.h"
 #include "quic/crypto/tls/tls_connection_server.h"
 
-static uint8_t kALPNProtos[] = {0x03, 'f', 'o', 'o'};
+
 namespace quicx {
 namespace quic {
 namespace {
+
+static uint8_t kALPNProtos[] = {0x03, 'f', 'o', 'o'};
 
 class MockTransport:
     public TlsHandlerInterface {

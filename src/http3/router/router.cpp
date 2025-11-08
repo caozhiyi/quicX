@@ -4,10 +4,10 @@
 namespace quicx {
 namespace http3 {
 
-bool Router::AddRoute(HttpMethod mothed, const std::string& path, const http_handler& handler) {
+bool Router::AddRoute(HttpMethod method, const std::string& path, const RouteConfig& config) {
     std::shared_ptr<IRouterNode> cur_node;
     
-    auto iter = router_map_.find(mothed);
+    auto iter = router_map_.find(method);
     if (iter != router_map_.end()) {
         cur_node = iter->second;
 
@@ -16,16 +16,16 @@ bool Router::AddRoute(HttpMethod mothed, const std::string& path, const http_han
         if (!cur_node) {
             return false;
         }
-        router_map_[mothed] = cur_node;
+        router_map_[method] = cur_node;
     }
 
-    return cur_node->AddRoute(path, 0, handler);
+    return cur_node->AddRoute(path, 0, config);
 }
 
-MatchResult Router::Match(HttpMethod mothed, const std::string& path) {
+MatchResult Router::Match(HttpMethod method, const std::string& path) {
     MatchResult result;
     
-    auto iter = router_map_.find(mothed);
+    auto iter = router_map_.find(method);
     if (iter == router_map_.end()) {
         return std::move(result);
     }

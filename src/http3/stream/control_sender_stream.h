@@ -11,6 +11,12 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief ControlSenderStream is the base class for all HTTP/3 control sender streams
+ * 
+ * The control sender stream is used to send control frames to the peer.
+ * It is responsible for sending the SETTINGS, GOAWAY and QPACK encoder instructions frames to the peer.
+ */
 class ControlSenderStream:
     public ISendStream {
 public:

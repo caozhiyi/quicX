@@ -4,14 +4,16 @@
 #include <memory>
 #include <cstdint>
 #include "common/decode/decode.h"
-#include "common/buffer/if_buffer.h"
+#include "common/buffer/if_buffer_read.h"
 
 namespace quicx {
 namespace common {
 
-/*
- * buffer decode wrapper,
- * it will flush the buffer when destruct
+/**
+ * @brief Buffer decode wrapper
+ * 
+ * The buffer decode wrapper is used to decode the data from the buffer.
+ * It is responsible for decoding the varint, fixed uint8, fixed uint16, fixed uint32, fixed uint64, and bytes.
  */
 class BufferDecodeWrapper {
 public:

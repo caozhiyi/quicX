@@ -14,6 +14,11 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief Push receiver stream
+ * 
+ * The push receiver stream is used to receive push frames from the server.
+ */
 class PushReceiverStream:
     public IRecvStream {
 public:
@@ -32,8 +37,7 @@ private:
 
 private:
     enum class ParseState {
-        kReadingStreamType,  // Reading stream type (0x01)
-        kReadingPushId,      // Reading push ID
+        kReadingPushId,      // Reading push ID (stream type already read by UnidentifiedStream)
         kReadingFrames       // Reading HTTP3 frames (HEADERS + DATA)
     };
 
@@ -43,7 +47,6 @@ private:
     
     ParseState parse_state_;
     uint64_t push_id_;
-    std::vector<uint8_t> buffer_;  // Buffer for incomplete data
     
     uint32_t body_length_;
     std::vector<uint8_t> body_;

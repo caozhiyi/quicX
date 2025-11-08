@@ -6,6 +6,8 @@
 #include <atomic>
 #include <ctime>
 #include "http3/include/if_client.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 
 std::atomic<int> pending_requests(0);
 
@@ -262,7 +264,7 @@ int main(int argc, char* argv[]) {
 
     quicx::http3::Http3Config config;
     config.thread_num_ = 2;
-    config.log_level_ = quicx::http3::LogLevel::kError;
+    config.log_level_ = quicx::http3::LogLevel::kDebug;
     client->Init(config);
 
     std::cout << "==================================" << std::endl;

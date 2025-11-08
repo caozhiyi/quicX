@@ -1,5 +1,7 @@
 #include <iostream>
 #include "http3/include/if_server.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 
 int main() {
     static const char cert_pem[] =
@@ -52,7 +54,7 @@ static const char key_pem[] =
     config.cert_pem_ = cert_pem;
     config.key_pem_ = key_pem;
     config.config_.thread_num_ = 1;
-    config.config_.log_level_ = quicx::http3::LogLevel::kError;
+    config.config_.log_level_ = quicx::http3::LogLevel::kDebug;
     server->Init(config);
     if (!server->Start("0.0.0.0", 8882)) {
         std::cout << "start server failed" << std::endl;

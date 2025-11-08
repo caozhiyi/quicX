@@ -80,7 +80,7 @@ typedef std::function<void(std::shared_ptr<IQuicStream> stream, uint32_t error)>
 
 // stream read callback, call this callback when stream get data from peer
 // data: data buffer
-typedef std::function<void(std::shared_ptr<common::IBufferRead> data, uint32_t error)> stream_read_callback;
+typedef std::function<void(std::shared_ptr<common::IBufferRead> data, bool is_last, uint32_t error)> stream_read_callback;
 
 // stream write callback, call this callback when stream write data ready to send
 // length: data length

@@ -51,6 +51,16 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
             return true;
         }
         break;
+    
+    case StreamState::kDataRecvd:
+    case StreamState::kDataRead:
+        // RFC 9000 Section 4.5: Even in terminal states, we must accept
+        // RESET_STREAM and STREAM frames to validate final_size consistency
+        if (StreamFrame::IsStreamFrame(frame_type) || frame_type == FrameType::kResetStream) {
+            return true;
+        }
+        break;
+        
     default:
         common::LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", state_, frame_type);
         break;
@@ -97,11 +107,6 @@ bool StreamStateMachineRecv::AppReadAllData() {
     default:
         common::LOG_ERROR("current status not allow read all data. status:%d", state_);
         return false;
-    }
-    if (state_ == StreamState::kDataRead || state_ == StreamState::kResetRead) {
-        if (stream_close_cb_) {
-            stream_close_cb_();
-        }
     }
     return true;
 }

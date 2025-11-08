@@ -64,7 +64,15 @@ SysCallInt32Result Listen(int32_t sockfd, int32_t backlog) {
 }
 
 SysCallInt32Result Write(int32_t sockfd, const char *data, uint32_t len) {
-    const int32_t rc = write(sockfd, data, len);
+    int flags = 0;
+#ifdef MSG_NOSIGNAL
+    flags = MSG_NOSIGNAL;
+#endif
+    // when send return -1, errno is ENOTSOCK, it means the socket is not connected, we should use write instead.
+    int32_t rc = send(sockfd, data, len, flags);
+    if (rc == -1 && errno == ENOTSOCK) {
+        rc = write(sockfd, data, len);
+    }
     return {rc, rc != -1 ? 0 : errno};
 }
 SysCallInt32Result Writev(int32_t sockfd, Iovec *vec, uint32_t vec_len) {

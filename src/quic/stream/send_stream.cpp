@@ -1,8 +1,6 @@
 #include "common/log/log.h"
-#include "quic/connection/error.h"
 #include "quic/stream/send_stream.h"
 #include "quic/frame/stream_frame.h"
-#include "common/alloter/if_alloter.h"
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_chains.h"
 #include "quic/frame/stop_sending_frame.h"
@@ -10,6 +8,7 @@
 #include "quic/stream/state_machine_send.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/stream_data_blocked_frame.h"
+#include "quic/connection/controler/send_control.h"
 
 namespace quicx {
 namespace quic {
@@ -23,6 +22,8 @@ SendStream::SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
     IStream(id, active_send_cb, stream_close_cb, connection_close_cb),
     to_fin_(false),
     send_data_offset_(0),
+    acked_offset_(0),
+    fin_sent_(false),
     peer_data_limit_(init_data_limit),
     send_buffer_(std::make_shared<common::BufferChains>(alloter)) {
     send_machine_ = std::make_shared<StreamStateMachineSend>(std::bind(&SendStream::Close, this));
@@ -134,6 +135,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     frame->SetOffset(send_data_offset_);
     if (to_fin_) {
         frame->SetFin();
+        fin_sent_ = true;  // Mark that FIN has been sent
     }
     
     uint32_t stream_send_size = peer_data_limit_ - send_data_offset_;
@@ -145,6 +147,10 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     uint8_t buf[1000] = {0};
     uint32_t size = send_buffer_->ReadNotMovePt(buf, send_size);
     frame->SetData(buf, size);
+
+    if (!send_machine_->OnFrame(frame->GetType())) {
+        common::LOG_WARN("stream state transition rejected. stream id:%d, frame type:%d, state=%d", stream_id_, frame->GetType(), static_cast<int>(send_machine_->GetStatus()));
+    }
 
     if (!visitor->HandleFrame(frame)) {
         return TrySendResult::kFailed;
@@ -191,6 +197,40 @@ void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
         sended_cb_(0, err);
     }
     common::LOG_DEBUG("stream recv stop sending. stream id:%d, error:%d", stream_id_, err);
+}
+
+void SendStream::OnDataAcked(uint64_t max_offset, bool has_fin) {
+    common::LOG_DEBUG("SendStream::OnDataAcked: stream_id=%d, max_offset=%llu, has_fin=%d, current acked_offset=%llu",
+                     stream_id_, max_offset, has_fin, acked_offset_);
+    
+    // Update to maximum acked offset
+    if (max_offset > acked_offset_) {
+        acked_offset_ = max_offset;
+    }
+    
+    // If FIN was acked, mark it
+    if (has_fin) {
+        fin_sent_ = true;  // Ensure fin_sent_ is set
+    }
+    
+    // Check if all data has been ACKed
+    CheckAllDataAcked();
+}
+
+void SendStream::CheckAllDataAcked() {
+    // Check if all data (including FIN) has been ACKed
+    // Condition: fin_sent_ && acked_offset_ >= send_data_offset_
+    if (fin_sent_ && acked_offset_ >= send_data_offset_) {
+        common::LOG_DEBUG("SendStream::CheckAllDataAcked: all data acked for stream %d, transitioning to Data Recvd state",
+                         stream_id_);
+        
+        // Transition to terminal state (Data Recvd)
+        if (send_machine_->AllAckDone()) {
+            // For bidirectional streams, this will be handled by CheckStreamClose
+            // For unidirectional send streams, the stream can be closed now
+            common::LOG_DEBUG("SendStream: stream %d reached Data Recvd state", stream_id_);
+        }
+    }
 }
 
 }

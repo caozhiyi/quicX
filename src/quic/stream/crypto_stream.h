@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include "quic/crypto/tls/type.h"
 #include "quic/stream/if_stream.h"
-#include "common/buffer/buffer_chains.h"
+#include "common/buffer/if_buffer_chains.h"
 
 namespace quicx {
 namespace quic {

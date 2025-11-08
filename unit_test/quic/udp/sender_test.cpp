@@ -26,7 +26,7 @@ TEST(UdpSenderTest, Send) {
     ASSERT_TRUE(event_loop->Init());
 
     auto receiver = std::make_shared<UdpReceiver>(event_loop);
-    receiver->AddReceiver("127.0.0.1", 12345, recv_handler);
+    ASSERT_TRUE(receiver->AddReceiver("127.0.0.1", 1121, recv_handler));
 
     threads.emplace_back([event_loop]() {
         char recv_buf[200] = {0};
@@ -51,7 +51,7 @@ TEST(UdpSenderTest, Send) {
     std::shared_ptr<NetPacket> send_pkt = std::make_shared<NetPacket>();
     send_pkt->SetData(send_buffer);
 
-    common::Address addr("127.0.0.1", 12345);
+    common::Address addr("127.0.0.1", 1121);
     send_pkt->SetAddress(addr);
 
     

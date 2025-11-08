@@ -5,6 +5,8 @@
 #include <functional>
 #include <unordered_map>
 
+#include "http3/include/type.h"
+#include "http3/include/if_async_handler.h"
 #include "http3/connection/if_connection.h"
 #include "quic/include/if_quic_connection.h"
 #include "http3/stream/control_receiver_stream.h"
@@ -24,8 +26,24 @@ public:
         const http_response_handler& push_handler);
     virtual ~ClientConnection();
 
-    // send request
-    virtual bool DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler);
+    /**
+     * @brief Send HTTP request in complete mode (entire response body buffered)
+     * @param request Request object
+     * @param handler Response handler callback (called when response is complete)
+     * @return true if request was sent successfully
+     */
+    virtual bool DoRequest(std::shared_ptr<IRequest> request, 
+                          const http_response_handler& handler);
+    
+    /**
+     * @brief Send HTTP request with async handler for streaming response
+     * @param request Request object
+     * @param handler Async handler for streaming response processing
+     * @return true if request was sent successfully
+     */
+    virtual bool DoRequest(std::shared_ptr<IRequest> request, 
+                          std::shared_ptr<IAsyncClientHandler> handler);
+    
     virtual void SetMaxPushID(uint64_t max_push_id);
     virtual void CancelPush(uint64_t push_id);
 

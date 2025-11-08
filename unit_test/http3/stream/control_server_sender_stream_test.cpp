@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 #include <unordered_map>
+
+#include "http3/stream/type.h"
 #include "http3/connection/type.h"
+#include "http3/stream/unidentified_stream.h"
 #include "http3/stream/control_sender_stream.h"
 #include "http3/stream/control_receiver_stream.h"
 #include "unit_test/http3/stream/mock_quic_stream.h"
@@ -11,13 +14,34 @@ namespace {
 
 class MockClientConnection {
 public:
-    MockClientConnection(std::shared_ptr<quic::IQuicRecvStream> stream) {
+    MockClientConnection(std::shared_ptr<quic::IQuicRecvStream> stream) 
+        : error_code_(0), goaway_id_(0) {
+        // Start with UnidentifiedStream to read stream type
+        unidentified_stream_ = std::make_shared<UnidentifiedStream>(stream,
+            std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
+            std::bind(&MockClientConnection::OnStreamTypeIdentified, this, 
+                     std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    }
+    ~MockClientConnection() {}
+
+    void OnStreamTypeIdentified(uint64_t stream_type, 
+                                std::shared_ptr<quic::IQuicRecvStream> stream,
+                                std::shared_ptr<common::IBufferRead> remaining_data) {
+        // Verify it's a control stream
+        EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kControl));
+        
+        // Create the actual control receiver stream
         receiver_stream_ = std::make_shared<ControlReceiverStream>(stream,
+            std::make_shared<QpackEncoder>(),
             std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClientConnection::GoAwayHandler, this, std::placeholders::_1),
             std::bind(&MockClientConnection::SettingHandler, this, std::placeholders::_1));
+        
+        // Feed remaining data to the control stream
+        if (remaining_data && remaining_data->GetDataLength() > 0) {
+            receiver_stream_->OnData(remaining_data, 0);
+        }
     }
-    ~MockClientConnection() {}
 
     void GoAwayHandler(uint64_t id) {
         goaway_id_ = id;
@@ -39,12 +63,14 @@ private:
     uint64_t goaway_id_;
     std::unordered_map<uint16_t, uint64_t> settings_;
 
+    std::shared_ptr<UnidentifiedStream> unidentified_stream_;
     std::shared_ptr<ControlReceiverStream> receiver_stream_;
 };
 
 class MockServerConnection {
 public:
-    MockServerConnection(std::shared_ptr<quic::IQuicSendStream> stream) {
+    MockServerConnection(std::shared_ptr<quic::IQuicSendStream> stream) 
+        : error_code_(0) {
         sender_stream_ = std::make_shared<ControlSenderStream>(stream,
             std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
     }

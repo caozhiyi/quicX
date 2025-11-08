@@ -4,12 +4,12 @@
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/settings_frame.h"
 #include "http3/stream/control_receiver_stream.h"
-#include "http3/qpack/qpack_encoder.h"
 
 namespace quicx {
 namespace http3 {
 
 ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
+    const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
     const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler):
@@ -33,17 +33,32 @@ void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, ui
         error_handler_(stream_->GetStreamID(), error);
         return;
     }
-    common::LOG_DEBUG("ControlReceiverStream::OnData: data length=%llu", data->GetDataLength());
+    size_t total_length = data->GetDataLength();
+    common::LOG_DEBUG("ControlReceiverStream::OnData: data length=%zu", total_length);
 
-    // Try parse HTTP/3 frames; if fails, treat as raw QPACK instruction blob (demo)
+    // If buffer is empty (e.g., stream closed with FIN), nothing to do
+    if (total_length == 0) {
+        common::LOG_DEBUG("ControlReceiverStream::OnData: empty buffer, stream likely closed");
+        return;
+    }
+
+    // Try parse HTTP/3 frames from unparsed data
     std::vector<std::shared_ptr<IFrame>> frames;
-    auto snapshot = data; // shallow copy
-    if (DecodeFrames(snapshot, frames)) {
-        common::LOG_DEBUG("ControlReceiverStream::OnData: DecodeFrames succeeded, decoded %zu frames", frames.size());
+    size_t length_before = data->GetDataLength();
+    common::LOG_DEBUG("ControlReceiverStream::OnData: before DecodeFrames, length_before=%zu", length_before);
+    if (DecodeFrames(data, frames)) {
+        size_t length_after = data->GetDataLength();
+        // DecodeFrames consumes frame data including the 2-byte frame type for each frame.
+        // The consumed length is calculated from buffer length difference.
+        size_t consumed = length_before - length_after;
+        
+        common::LOG_DEBUG("ControlReceiverStream::OnData: DecodeFrames succeeded, decoded %zu frames, length_before=%zu, length_after=%zu, consumed=%zu bytes", 
+                         frames.size(), length_before, length_after, consumed);
         for (const auto& frame : frames) {
             common::LOG_DEBUG("ControlReceiverStream::OnData: handling frame type=%d", frame->GetType());
             HandleFrame(frame);
         }
+
     } else {
         common::LOG_DEBUG("ControlReceiverStream::OnData: DecodeFrames failed, treating as raw QPACK instructions");
         HandleRawData(data);
@@ -71,8 +86,7 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
 
 void ControlReceiverStream::HandleRawData(std::shared_ptr<common::IBufferRead> data) {
     // Interpret as QPACK encoder instructions and update dynamic table
-    QpackEncoder enc;
-    enc.DecodeEncoderInstructions(data);
+    qpack_encoder_->DecodeEncoderInstructions(data);
 }
 
 }

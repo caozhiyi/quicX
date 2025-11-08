@@ -12,6 +12,9 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief PseudoHeader is a singleton class that is used to encode and decode the pseudo-headers of the request and response.
+ */
 class PseudoHeader:
     public common::Singleton<PseudoHeader> {
 public:

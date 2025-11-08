@@ -152,6 +152,11 @@ bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
         common::LOG_ERROR("decode frame failed.");
         return false;
     }
+    
+    // Set frame_type_bit based on decoded frames for ACK tracking
+    for (const auto& frame : frames_list_) {
+        frame_type_bit_ |= (1 << frame->GetType());
+    }
 
     return true;
 }
