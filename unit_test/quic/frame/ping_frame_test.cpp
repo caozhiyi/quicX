@@ -2,7 +2,6 @@
 #include "common/buffer/buffer.h"
 #include "quic/frame/ping_frame.h"
 #include "common/alloter/pool_block.h"
-#include "common/alloter/pool_alloter.h"
 
 namespace quicx {
 namespace quic {

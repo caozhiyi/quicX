@@ -46,19 +46,38 @@ private:
 class MockServer {
 public:
     MockServer(std::shared_ptr<quic::IQuicConnection> conn) {
-        conn_ = std::make_shared<ServerConnection>("", kDefaultHttp3Settings, nullptr, conn,
-            std::bind(&MockServer::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&MockServer::HttpHandler, this, std::placeholders::_1, std::placeholders::_2));
+        // Create a mock http processor
+        class MockHttpProcessor : public IHttpProcessor {
+        public:
+            MockHttpProcessor(MockServer* server) : server_(server) {}
+            RouteConfig MatchRoute(HttpMethod method, const std::string& path) override {
+                return server_->MatchHandler(method, path);
+            }
+            void BeforeHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
+            void AfterHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
+        private:
+            MockServer* server_;
+        };
+        
+        auto processor = std::make_shared<MockHttpProcessor>(this);
+        conn_ = std::make_shared<ServerConnection>("", kDefaultHttp3Settings, processor, nullptr, conn,
+            std::bind(&MockServer::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2));
     }
 
     void ErrorHandler(const std::string& unique_id, uint32_t error_code) {
         // TODO: implement this
     }
 
-    void HttpHandler(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
-        if (http_handler_) {
-            http_handler_(request, response);
-        }
+    RouteConfig MatchHandler(HttpMethod method, const std::string& path) {
+        // Create wrapper that accesses http_handler_ at call time (not bind time)
+        auto wrapper = [this](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
+            if (this->http_handler_) {
+                this->http_handler_(req, resp);
+            } else {
+                resp->SetStatusCode(200);
+            }
+        };
+        return RouteConfig(wrapper);
     }
 
     void SetHttpHandler(const http_handler& handler) {

@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <filesystem>
 #include "http3/include/if_server.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 
 // Storage directory for uploaded files
 const std::string STORAGE_DIR = "./file_storage/";
@@ -558,7 +560,7 @@ int main() {
     config.cert_pem_ = cert_pem;
     config.key_pem_ = key_pem;
     config.config_.thread_num_ = 2;
-    config.config_.log_level_ = quicx::http3::LogLevel::kError;
+    config.config_.log_level_ = quicx::http3::LogLevel::kDebug;
     
     server->Init(config);
     

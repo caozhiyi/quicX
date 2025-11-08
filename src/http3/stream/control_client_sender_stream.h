@@ -6,6 +6,12 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief ControlClientSenderStream is the client control sender stream
+ * 
+ * The client control sender stream is used to send control frames to the server.
+ * It is responsible for sending the MAX_PUSH_ID and CANCEL_PUSH frames to the server.
+ */
 class ControlClientSenderStream:
     public ControlSenderStream {
 public:

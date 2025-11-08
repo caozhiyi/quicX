@@ -8,6 +8,14 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief IRecvStream is the base class for all HTTP/3 recv streams
+ * 
+ * All HTTP/3 recv streams inherit from this class.
+ * 
+ * The recv stream is used to receive data from the peer.
+ * It is responsible for receiving the data from the peer and calling the callback function.
+ */
 class IRecvStream:
     public IStream {
 public:

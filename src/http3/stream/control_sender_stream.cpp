@@ -5,7 +5,6 @@
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/settings_frame.h"
 #include "http3/stream/control_sender_stream.h"
-#include "common/buffer/buffer_encode_wrapper.h"
 
 namespace quicx {
 namespace http3 {
@@ -65,7 +64,9 @@ bool ControlSenderStream::SendQpackInstructions(const std::vector<uint8_t>& blob
         return false;
     }
     
-    if (blob.empty()) return true;
+    if (blob.empty()) {
+        return true;
+    }
     auto buffer = std::make_shared<common::Buffer>((uint8_t*)blob.data(), blob.size());
     buffer->MoveWritePt(blob.size());
     return stream_->Send(buffer) > 0;

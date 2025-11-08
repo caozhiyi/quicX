@@ -14,7 +14,8 @@ class RouterNodeWildcard:
     public RouterNode {
 public:
     RouterNodeWildcard(const std::string& section,
-        const std::string& full_path, const http_handler& handler);
+        const std::string& full_path, const RouteConfig& config);
+    
     virtual ~RouterNodeWildcard() {}
 
     // router match

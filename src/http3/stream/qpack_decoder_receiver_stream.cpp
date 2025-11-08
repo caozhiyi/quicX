@@ -26,14 +26,15 @@ void QpackDecoderReceiverStream::OnData(std::shared_ptr<common::IBufferRead> dat
         error_handler_(stream_->GetStreamID(), error);
         return;
     }
-    // QPACK encoder stream starts with varint type=0x02; consume first byte if equals
-    if (data->GetDataLength() > 0) {
-        uint8_t maybe_type = 0; data->Read(&maybe_type, 1);
-        if (maybe_type != 0x02) {
-            // not a qpack encoder stream start; ignore
-        }
+    
+    // If buffer is empty (e.g., stream closed with FIN), nothing to do
+    if (data->GetDataLength() == 0) {
+        common::LOG_DEBUG("QpackDecoderReceiverStream::OnData: empty buffer, stream likely closed");
+        return;
     }
-    // Decoder stream type is 0x03; read and parse decoder frames
+    
+    // Note: UnidentifiedStream has already consumed the stream type byte (0x03 for decoder stream)
+    // so we can directly parse the decoder frames
     ParseDecoderFrames(data);
 }
 

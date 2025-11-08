@@ -1,11 +1,12 @@
+#include "http3/router/util.h"
 #include "http3/router/router_node_dynamic_param.h"
 
 namespace quicx {
 namespace http3 {
 
 RouterNodeDynamicParam::RouterNodeDynamicParam(RouterNodeType type, const std::string& section,
-    const std::string& full_path, const http_handler& handler):
-    RouterNode(type, section, full_path, handler) {
+    const std::string& full_path, const RouteConfig& config):
+    RouterNode(type, section, full_path, config) {
 
     // /:param_name -> param_name
     param_name_ = section.substr(2, section.size() - 2);
@@ -16,14 +17,14 @@ bool RouterNodeDynamicParam::Match(const std::string& path, int path_offset, con
     if (path_offset >= path.length()) {
         // match done, current node is the last node
         if (type_ == RouterNodeType::RNT_DYNAMIC_PARAM) {
-            result.handler = handler_;
+            result.config = config_;
             result.is_match = true;
             // parse param, /param -> param
             result.params[param_name_] = cur_section.substr(1, cur_section.size() - 1);
             return true;
         }
         
-        result.handler = nullptr;
+        result.config = RouteConfig();
         result.is_match = false;
         return false;
     }

@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <variant>
 #include <unordered_map>
 
 #include "common/http/url.h"
@@ -21,14 +22,19 @@ public:
     virtual ~Client();
 
     // Initialize the client with a certificate and a key
-    virtual bool Init(const Http3Config& config);
+    virtual bool Init(const Http3Config& config) override;
 
-    // Send a request to the server
-    virtual bool DoRequest(const std::string& url, HttpMethod mothed,
-        std::shared_ptr<IRequest> request, const http_response_handler& handler);
+    // Send a request in complete mode (entire response body buffered)
+    virtual bool DoRequest(const std::string& url, HttpMethod method,
+        std::shared_ptr<IRequest> request, const http_response_handler& handler) override;
+    
+    // Send a request with async handler for streaming response
+    virtual bool DoRequest(const std::string& url, HttpMethod method,
+        std::shared_ptr<IRequest> request, std::shared_ptr<IAsyncClientHandler> handler) override;
 
-    virtual void SetPushPromiseHandler(const http_push_promise_handler& push_promise_handler);
-    virtual void SetPushHandler(const http_response_handler& push_handler);
+    virtual void SetPushPromiseHandler(const http_push_promise_handler& push_promise_handler) override;
+    virtual void SetPushHandler(const http_response_handler& push_handler) override;
+    virtual void SetErrorHandler(const error_handler& error_handler) override;
 
 private:
     void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::ConnectionOperation operation, uint32_t error, const std::string& reason);
@@ -41,18 +47,38 @@ private:
     std::shared_ptr<quic::IQuicClient> quic_;
     std::unordered_map<std::string, std::shared_ptr<ClientConnection>> conn_map_;
 
+    http_response_handler push_handler_;
+    http_push_promise_handler push_promise_handler_;
+    error_handler error_handler_;
+    Http3Settings settings_;
+
     struct WaitRequestContext {
         std::string host;
         std::shared_ptr<IRequest> request;
-
-        http_response_handler handler;
+        std::variant<http_response_handler, std::shared_ptr<IAsyncClientHandler>> handler;
+        
+        // Helper to check if async handler
+        bool IsAsync() const {
+            return std::holds_alternative<std::shared_ptr<IAsyncClientHandler>>(handler);
+        }
+        
+        // Get complete mode handler
+        http_response_handler GetCompleteHandler() const {
+            if (std::holds_alternative<http_response_handler>(handler)) {
+                return std::get<http_response_handler>(handler);
+            }
+            return nullptr;
+        }
+        
+        // Get async mode handler
+        std::shared_ptr<IAsyncClientHandler> GetAsyncHandler() const {
+            if (std::holds_alternative<std::shared_ptr<IAsyncClientHandler>>(handler)) {
+                return std::get<std::shared_ptr<IAsyncClientHandler>>(handler);
+            }
+            return nullptr;
+        }
     };
     std::unordered_map<std::string, WaitRequestContext> wait_request_map_;
-
-    http_response_handler push_handler_;
-    http_push_promise_handler push_promise_handler_;
-
-    Http3Settings settings_;
 };
 
 }

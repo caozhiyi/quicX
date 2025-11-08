@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <algorithm>
 #include "http3/include/if_client.h"
+#include "http3/include/if_response.h"
 
 struct RequestResult {
     int id;

@@ -17,17 +17,16 @@ bool ISendStream::EnsureStreamPreamble() {
     
     {
         common::BufferEncodeWrapper wrapper(buf);
-        wrapper.EncodeVarint(static_cast<uint64_t>(StreamType::kControl));
-        // Wrapper will flush on destruction
+        wrapper.EncodeVarint(static_cast<uint64_t>(stream_type_));
     }
-    
+
     if (stream_->Send(buf) <= 0) {
-        common::LOG_ERROR("ControlSenderStream: failed to send stream type on stream %llu", 
+        common::LOG_ERROR("send stream type failed on stream %llu", 
                          stream_->GetStreamID());
         return false;
     }
     
-    common::LOG_DEBUG("ControlSenderStream: sent stream type kControl (0x00) on stream %llu", 
+    common::LOG_DEBUG("sent stream type on stream %llu", 
                      stream_->GetStreamID());
     wrote_type_ = true;
     return true;

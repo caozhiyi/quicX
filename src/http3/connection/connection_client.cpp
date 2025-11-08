@@ -113,7 +113,8 @@ ClientConnection::~ClientConnection() {
 
 }
 
-bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler) {
+bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, 
+                                const http_response_handler& handler) {
     if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
         common::LOG_ERROR("ClientConnection::DoRequest max concurrent streams reached");
         return false;
@@ -126,17 +127,42 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_r
         return false;
     }
 
+    // Create request stream for complete mode
     std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_,
         blocked_registry_,
         std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
-        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         handler,
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ClientConnection::HandlePushPromise, this, std::placeholders::_1, std::placeholders::_2));
 
-    streams_[request_stream->GetStreamID()] = request_stream;
+    streams_[stream->GetStreamID()] = request_stream;
+    return request_stream->SendRequest(request);
+}
 
-    request_stream->SendRequest(request);
-    return true;
+bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, 
+                                std::shared_ptr<IAsyncClientHandler> handler) {
+    if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
+        common::LOG_ERROR("ClientConnection::DoRequest max concurrent streams reached");
+        return false;
+    }
+
+    // create request stream
+    auto stream = quic_connection_->MakeStream(quic::StreamDirection::kBidi);
+    if (!stream) {
+        common::LOG_ERROR("ClientConnection::DoRequest make stream error");
+        return false;
+    }
+
+    // Create request stream for async mode
+    std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_,
+        blocked_registry_,
+        std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
+        handler,
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&ClientConnection::HandlePushPromise, this, std::placeholders::_1, std::placeholders::_2));
+
+    streams_[stream->GetStreamID()] = request_stream;
+    return request_stream->SendRequest(request);
 }
 
 void ClientConnection::SetMaxPushID(uint64_t max_push_id) {
@@ -205,6 +231,7 @@ void ClientConnection::OnStreamTypeIdentified(
             common::LOG_DEBUG("ClientConnection: creating Control Stream for stream %llu", stream->GetStreamID());
             typed_stream = std::make_shared<ControlReceiverStream>(
                 stream,
+                qpack_encoder_,
                 std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
                 std::bind(&ClientConnection::HandleGoaway, this, std::placeholders::_1),
                 std::bind(&ClientConnection::HandleSettings, this, std::placeholders::_1));

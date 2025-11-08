@@ -7,20 +7,24 @@ namespace {
 
 TEST(router_node, add_router) {
     RouterNodeRoot root;
-    EXPECT_TRUE(root.AddRoute("/test/:paramA/:paramB", 0, nullptr));
-    EXPECT_TRUE(root.AddRoute("/test/:paramA/user/:paramB", 0, nullptr));
-    EXPECT_TRUE(root.AddRoute("/test/home/*", 0, nullptr));
-    EXPECT_TRUE(root.AddRoute("/", 0, nullptr));
-    EXPECT_FALSE(root.AddRoute("", 0, nullptr));
-    EXPECT_FALSE(root.AddRoute("/test/home/*/other", 0, nullptr));
+    http_handler null_handler = nullptr;
+    RouteConfig config(null_handler);
+    EXPECT_TRUE(root.AddRoute("/test/:paramA/:paramB", 0, config));
+    EXPECT_TRUE(root.AddRoute("/test/:paramA/user/:paramB", 0, config));
+    EXPECT_TRUE(root.AddRoute("/test/home/*", 0, config));
+    EXPECT_TRUE(root.AddRoute("/", 0, config));
+    EXPECT_FALSE(root.AddRoute("", 0, config));
+    EXPECT_FALSE(root.AddRoute("/test/home/*/other", 0, config));
 }
 
 TEST(router_node, match) {
     RouterNodeRoot root;
-    EXPECT_TRUE(root.AddRoute("/test/:paramA/:paramB", 0, nullptr));
-    EXPECT_TRUE(root.AddRoute("/test/:paramC/user/:paramD", 0, nullptr));
-    EXPECT_TRUE(root.AddRoute("/test/home/*", 0, nullptr));
-    EXPECT_TRUE(root.AddRoute("/", 0, nullptr));
+    http_handler null_handler = nullptr;
+    RouteConfig config(null_handler);
+    EXPECT_TRUE(root.AddRoute("/test/:paramA/:paramB", 0, config));
+    EXPECT_TRUE(root.AddRoute("/test/:paramC/user/:paramD", 0, config));
+    EXPECT_TRUE(root.AddRoute("/test/home/*", 0, config));
+    EXPECT_TRUE(root.AddRoute("/", 0, config));
 
     MatchResult result;
     EXPECT_TRUE(root.Match("/test/123/456", 0, "", result));

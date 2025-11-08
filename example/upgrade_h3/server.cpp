@@ -18,17 +18,12 @@ static void handle_signal(int) {
 int main(int argc, char** argv) {
     UpgradeSettings settings;
     settings.listen_addr = "0.0.0.0";
-    settings.http_port = 8080;   // HTTP 端口（无证书时使用）
-    settings.https_port = 8443;  // HTTPS 端口（提供证书时使用）
-    settings.h3_port = 8443;     // h3 端口（通常与 https 相同）
+    settings.http_port = 8080;   // HTTP port（without certificate）
+    settings.https_port = 8443;  // HTTPS port（with certificate）
+    settings.h3_port = 8443;     // h3 port（usually the same as https）
     settings.enable_http1 = true;
     settings.enable_http2 = true;
-    settings.enable_http3 = true; // 允许协商/广告 h3
-
-    // 如果想启用 HTTPS，可设置证书（两种方式二选一）
-    // settings.cert_file = "server.crt";
-    // settings.key_file  = "server.key";
-    // 或者：settings.cert_pem = <PEM内存指针>; settings.key_pem = <PEM内存指针>;
+    settings.enable_http3 = true; // allow negotiation/advertise h3
 
     auto event_loop = quicx::common::MakeEventLoop();
     if (!event_loop->Init()) {

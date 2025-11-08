@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
+
+#include "http3/stream/type.h"
 #include "http3/http/response.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/push_sender_stream.h"
+#include "http3/stream/unidentified_stream.h"
 #include "http3/stream/push_receiver_stream.h"
 #include "unit_test/http3/stream/mock_quic_stream.h"
 
@@ -12,12 +15,32 @@ namespace {
 class MockClientConnection {
 public:
     MockClientConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        std::shared_ptr<quic::IQuicRecvStream> stream) {
-        receiver_stream_ = std::make_shared<PushReceiverStream>(qpack_encoder, stream,
+        std::shared_ptr<quic::IQuicRecvStream> stream) 
+        : qpack_encoder_(qpack_encoder), error_code_(0) {
+        // Start with UnidentifiedStream to read stream type
+        unidentified_stream_ = std::make_shared<UnidentifiedStream>(stream,
             std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2));
+            std::bind(&MockClientConnection::OnStreamTypeIdentified, this, 
+                     std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     }
     ~MockClientConnection() {}
+
+    void OnStreamTypeIdentified(uint64_t stream_type, 
+                                std::shared_ptr<quic::IQuicRecvStream> stream,
+                                std::shared_ptr<common::IBufferRead> remaining_data) {
+        // Verify it's a push stream
+        EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kPush));
+        
+        // Create the actual push receiver stream
+        receiver_stream_ = std::make_shared<PushReceiverStream>(qpack_encoder_, stream,
+            std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
+            std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2));
+        
+        // Feed remaining data to the push stream
+        if (remaining_data && remaining_data->GetDataLength() > 0) {
+            receiver_stream_->OnData(remaining_data, 0);
+        }
+    }
 
     void ResponseHandler(std::shared_ptr<IResponse> response, uint32_t error) {
         response_ = response;
@@ -31,16 +54,19 @@ public:
     const std::shared_ptr<IResponse>& GetResponse() { return response_; }
     uint32_t GetErrorCode() { return error_code_; }
 private:
+    std::shared_ptr<QpackEncoder> qpack_encoder_;
     uint32_t error_code_;
     std::shared_ptr<IResponse> response_;
 
+    std::shared_ptr<UnidentifiedStream> unidentified_stream_;
     std::shared_ptr<PushReceiverStream> receiver_stream_;
 };
 
 class MockServerConnection {
 public:
     MockServerConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        std::shared_ptr<quic::IQuicSendStream> stream) {
+        std::shared_ptr<quic::IQuicSendStream> stream) 
+        : error_code_(0) {
         sender_stream_ = std::make_shared<PushSenderStream>(qpack_encoder, stream,
             std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
     }

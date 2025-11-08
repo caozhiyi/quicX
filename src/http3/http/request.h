@@ -3,6 +3,7 @@
 
 #include <string>
 #include <unordered_map>
+#include "http3/include/type.h"
 #include "http3/include/if_request.h"
 
 namespace quicx {
@@ -11,7 +12,7 @@ namespace http3 {
 class Request:
     public IRequest {
 public:
-    Request() {}
+    Request(): request_body_provider_(nullptr), response_body_consumer_(nullptr) {}
     virtual ~Request() {}
 
     // Set request method (GET, POST, etc)
@@ -37,9 +38,15 @@ public:
     virtual void SetHeaders(const std::unordered_map<std::string, std::string>& headers) { headers_ = headers; }
     virtual std::unordered_map<std::string, std::string>& GetHeaders() { return headers_; }
     
-    // Request body
+    // Request body sending (client)
     virtual void SetBody(const std::string& body) { body_ = body; }
     virtual const std::string& GetBody() const { return body_; }
+    virtual void SetRequestBodyProvider(const body_provider& provider) { request_body_provider_ = provider; }
+    virtual body_provider GetRequestBodyProvider() const { return request_body_provider_; }
+    
+    // Response body receiving (client)
+    virtual void SetResponseBodyConsumer(const body_consumer& consumer) { response_body_consumer_ = consumer; }
+    virtual body_consumer GetResponseBodyConsumer() const { return response_body_consumer_; }
 
     // Query parameters (parsed from :path by URLHelper::ParseQueryParams)
     virtual void SetQueryParams(const std::unordered_map<std::string, std::string>& params) { query_params_ = params; }
@@ -57,6 +64,8 @@ private:
 
     std::unordered_map<std::string, std::string> headers_;
     std::string body_;
+    body_provider request_body_provider_;    // For streaming request body sending (client)
+    body_consumer response_body_consumer_;   // For streaming response body receiving (client)
     
     std::unordered_map<std::string, std::string> query_params_;  // Parsed from ?key=value
     std::unordered_map<std::string, std::string> path_params_;   // Extracted from /users/:id pattern

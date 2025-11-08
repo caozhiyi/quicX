@@ -61,11 +61,11 @@ uint32_t DataFrame::EvaluateEncodeSize() {
     // Frame type size
     size += sizeof(type_);;
     
-    // Length field size
-    size += common::GetEncodeVarintLength(length_);
-    
-    // Data size
+    // Data size (this also updates length_ if it's 0)
     size += EvaluatePayloadSize();
+    
+    // Length field size (must be after EvaluatePayloadSize)
+    size += common::GetEncodeVarintLength(length_);
     
     return size;
 }

@@ -14,16 +14,34 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief IConnection is the base class for all HTTP/3 connections
+ * 
+ * This class is used to manage the HTTP/3 connection.
+ */
 class IConnection {
 public:
+    /**
+     * @brief Constructor
+     * @param unique_id The unique id of the connection
+     * @param quic_connection The QUIC connection
+     * @param error_handler The error handler
+     */
     IConnection(const std::string& unique_id,
         const std::shared_ptr<quic::IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler);
     virtual ~IConnection();
 
+    /**
+     * @brief Get the unique id of the connection
+     * @return The unique id of the connection
+     */
     const std::string& GetUniqueId() const { return unique_id_; }
 
-    // close connection
+    /**
+     * @brief Close the connection
+     * @param error_code The error code
+     */
     virtual void Close(uint32_t error_code);
 
 protected:

@@ -14,7 +14,8 @@ class RouterNodeDynamicParam:
     public RouterNode {
 public:
     RouterNodeDynamicParam(RouterNodeType type, const std::string& section,
-        const std::string& full_path, const http_handler& handler);
+        const std::string& full_path, const RouteConfig& config);
+    
     virtual ~RouterNodeDynamicParam() {}
 
     // router match

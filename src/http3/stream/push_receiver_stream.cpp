@@ -43,51 +43,31 @@ PushReceiverStream::~PushReceiverStream() {
 
     common::LOG_DEBUG("=== PushReceiverStream::OnData: received %u bytes, current state=%d ===", data->GetDataLength(), static_cast<int>(parse_state_));
 
-    // Append new data to buffer
-    const uint8_t* data_ptr = data->GetData();
-    size_t data_len = data->GetDataLength();
-    buffer_.insert(buffer_.end(), data_ptr, data_ptr + data_len);
-    
-    common::LOG_DEBUG("PushReceiverStream: buffer size now = %zu", buffer_.size());
-
     // State machine to parse push stream (RFC 9114 Section 4.6)
     // Note: Stream type byte (0x01) has already been read by UnidentifiedStream
     // So we start directly with Push ID
-    while (!buffer_.empty()) {
+    while (data->GetDataLength() > 0) {
         if (parse_state_ == ParseState::kReadingPushId) {
             // Read Push ID varint
-            auto buffer_view = std::make_shared<common::BufferReadView>(buffer_.data(), buffer_.size());
-            
             {
-                common::BufferDecodeWrapper wrapper(buffer_view);
+                common::BufferDecodeWrapper wrapper(data);
                 if (!wrapper.DecodeVarint(push_id_)) {
                     // Not enough data yet, wait for more
+                    common::LOG_DEBUG("PushReceiverStream: not enough data to read push id, waiting for more data");
                     return;
                 }
-                // Wrapper will flush on destruction, moving read pointer
             }
 
             common::LOG_DEBUG("PushReceiverStream: push_id=%llu", push_id_);
-            
-            // Remove consumed bytes
-            size_t consumed = buffer_.size() - buffer_view->GetDataLength();
-            buffer_.erase(buffer_.begin(), buffer_.begin() + consumed);
-            common::LOG_DEBUG("PushReceiverStream: consumed %zu bytes, buffer size=%zu, moving to kReadingFrames", consumed, buffer_.size());
             parse_state_ = ParseState::kReadingFrames;
 
         } else if (parse_state_ == ParseState::kReadingFrames) {
-            // If buffer is empty, wait for more data
-            if (buffer_.empty()) {
-                return;
-            }
-            
             // Decode HTTP3 frames (HEADERS + DATA)
-            common::LOG_DEBUG("PushReceiverStream: attempting to decode frames from %zu bytes", buffer_.size());
-            auto buffer_view = std::make_shared<common::BufferReadView>(buffer_.data(), buffer_.size());
+            common::LOG_DEBUG("PushReceiverStream: attempting to decode frames from %zu bytes", data->GetDataLength());
             
             std::vector<std::shared_ptr<IFrame>> frames;
-            bool decode_ok = DecodeFrames(buffer_view, frames);
-            
+            bool decode_ok = DecodeFrames(data, frames);
+
             common::LOG_DEBUG("PushReceiverStream: DecodeFrames returned %d, decoded %zu frames", decode_ok, frames.size());
             
             // If no frames were decoded and buffer still has data, wait for more
@@ -119,13 +99,6 @@ PushReceiverStream::~PushReceiverStream() {
                     return;
                 }
             }
-
-            // Remove consumed bytes (DecodeFrames consumes from buffer_view)
-            size_t consumed = buffer_.size() - buffer_view->GetDataLength();
-            buffer_.erase(buffer_.begin(), buffer_.begin() + consumed);
-            
-            // Continue processing if there's still data in buffer
-            // (multiple frames might have arrived)
         }
     }
  }
@@ -185,7 +158,6 @@ PushReceiverStream::~PushReceiverStream() {
  }
 
  void PushReceiverStream::HandleBody() {
-    common::LOG_DEBUG("=== PushReceiverStream::HandleBody called ===");
     common::LOG_DEBUG("PushReceiverStream: headers count=%zu, body size=%zu", headers_.size(), body_.size());
     
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
@@ -193,10 +165,8 @@ PushReceiverStream::~PushReceiverStream() {
     response->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
 
     PseudoHeader::Instance().DecodeResponse(response);
-    
-    common::LOG_DEBUG("PushReceiverStream: calling response_handler_");
+
     response_handler_(response, 0);
-    common::LOG_DEBUG("PushReceiverStream: response_handler_ returned");
  }
 
 }

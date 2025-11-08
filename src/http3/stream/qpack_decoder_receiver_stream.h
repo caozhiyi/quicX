@@ -10,6 +10,12 @@
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief Qpack decoder receiver stream
+ * 
+ * The qpack decoder receiver stream is used to receive qpack decoder frames.
+ * It is responsible for handling the SECTION_ACKNOWLEDGEMENT, STREAM_CANCELLATION, and INSERT_COUNT_INCREMENT frames.
+ */
 class QpackDecoderReceiverStream:
     public IRecvStream {
 public:

@@ -8,15 +8,15 @@ namespace quicx {
 namespace http3 {
 
 RouterNode::RouterNode(RouterNodeType type, const std::string& section,
-        const std::string& full_path, const http_handler& handler):
+        const std::string& full_path, const RouteConfig& config):
     type_(type),
     section_(section),
     full_path_(full_path),
-    handler_(handler) {
+    config_(config) {
 
 }
 
-bool RouterNode::AddRoute(const std::string& path, int path_offset, const http_handler& handler) {
+bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteConfig& config) {
     std::string section = PathParse(path, path_offset);
     if (section.empty()) {
         return false;
@@ -40,7 +40,7 @@ bool RouterNode::AddRoute(const std::string& path, int path_offset, const http_h
 
     // create new node
     if (!cur_node) {
-        cur_node = MakeNode(path, path_offset, section, handler);
+        cur_node = MakeNode(path, path_offset, section, config);
         if (!cur_node) {
             return false;
         }
@@ -68,7 +68,7 @@ bool RouterNode::AddRoute(const std::string& path, int path_offset, const http_h
     if (path_offset >= path.size()) {
         return true;
     }
-    return cur_node->AddRoute(path, path_offset, handler);
+    return cur_node->AddRoute(path, path_offset, config);
 }
 
 bool RouterNode::Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result) {
@@ -79,7 +79,7 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
             return true;
         }
     } else {
-        result.handler = nullptr;
+        result.config = RouteConfig();
         result.is_match = false;
     }
 
@@ -89,7 +89,7 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
             return true;
 
         } else {
-            result.handler = nullptr;
+            result.config = RouteConfig();
             result.is_match = false;
         }
     }
@@ -100,7 +100,7 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
             return true;
 
         } else {
-            result.handler = nullptr;
+            result.config = RouteConfig();
             result.is_match = false;
         }
     }
@@ -108,7 +108,7 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
 }
 
 std::shared_ptr<IRouterNode> RouterNode::MakeNode(const std::string& path, int path_offset,
-    const std::string& section, const http_handler& handler) {
+    const std::string& section, const RouteConfig& config) {
     if (section[0] != '/') {
         return nullptr;
     }
@@ -123,23 +123,23 @@ std::shared_ptr<IRouterNode> RouterNode::MakeNode(const std::string& path, int p
             // there is nothing between //
             return nullptr;
         }
-        return std::make_shared<RouterNodeStaticPath>(RouterNodeType::RNT_STATIC_PATH, section, full_path, handler);
+        return std::make_shared<RouterNodeStaticPath>(RouterNodeType::RNT_STATIC_PATH, section, full_path, config);
 
     } else {
         switch (section[1]) {
         case ':':
             node_type = is_last ? RouterNodeType::RNT_DYNAMIC_PARAM : RouterNodeType::RNT_DYNAMIC_MIDDLE_PARAM;
-            return std::make_shared<RouterNodeDynamicParam>(node_type, section, full_path, handler);
+            return std::make_shared<RouterNodeDynamicParam>(node_type, section, full_path, config);
 
         case '*':
             if (!is_last) {
                 return nullptr; // only support last wildcard
             }
-            return std::make_shared<RouterNodeWildcard>(section, full_path, handler);
+            return std::make_shared<RouterNodeWildcard>(section, full_path, config);
 
         default:
             node_type = is_last ? RouterNodeType::RNT_STATIC_PATH : RouterNodeType::RNT_STATIC_MIDDLE_PATH;
-            return std::make_shared<RouterNodeStaticPath>(node_type, section, full_path, handler);
+            return std::make_shared<RouterNodeStaticPath>(node_type, section, full_path, config);
         }
     }
     return nullptr;

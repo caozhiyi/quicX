@@ -7,20 +7,24 @@ namespace {
 
 TEST(router, add_router) {
     Router router;
-    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/:paramB", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/user/:paramB", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/home/*", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::kPost, "/", nullptr));
-    EXPECT_FALSE(router.AddRoute(HttpMethod::kPost, "", nullptr));
-    EXPECT_FALSE(router.AddRoute(HttpMethod::kPost, "/test/home/*/other", nullptr));
+    http_handler null_handler = nullptr;
+    RouteConfig config(null_handler);
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/:paramB", config));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/user/:paramB", config));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/home/*", config));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kPost, "/", config));
+    EXPECT_FALSE(router.AddRoute(HttpMethod::kPost, "", config));
+    EXPECT_FALSE(router.AddRoute(HttpMethod::kPost, "/test/home/*/other", config));
 }
 
 TEST(router, match) {
     Router router;
-    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/:paramB", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramC/user/:paramD", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/home/*", nullptr));
-    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/", nullptr));
+    http_handler null_handler = nullptr;
+    RouteConfig config(null_handler);
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramA/:paramB", config));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/:paramC/user/:paramD", config));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/test/home/*", config));
+    EXPECT_TRUE(router.AddRoute(HttpMethod::kGet, "/", config));
 
     EXPECT_TRUE(router.Match(HttpMethod::kGet, "/test/123/456").is_match);
     EXPECT_TRUE(router.Match(HttpMethod::kGet, "/test/123/user/456").is_match);

@@ -5,13 +5,13 @@ namespace quicx {
 namespace http3 {
 
 RouterNodeWildcard::RouterNodeWildcard(const std::string& section,
-    const std::string& full_path, const http_handler& handler):
-    RouterNode(RouterNodeType::RNT_WILDCARD, section, full_path, handler) {
+    const std::string& full_path, const RouteConfig& config):
+    RouterNode(RouterNodeType::RNT_WILDCARD, section, full_path, config) {
 
 }
 
 bool RouterNodeWildcard::Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result) {
-    result.handler = handler_;
+    result.config = config_;
     result.is_match = true;
     return true;
 }

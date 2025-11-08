@@ -1,5 +1,3 @@
-#include <mutex>
-#include <thread>
 #include <gtest/gtest.h>
 #include "common/alloter/pool_alloter.h"
 

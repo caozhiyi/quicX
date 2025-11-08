@@ -3,13 +3,20 @@
 
 #include <memory>
 #include <functional>
-#include <unordered_map>
 #include "http3/stream/if_stream.h"
 #include "quic/include/if_quic_send_stream.h"
 
 namespace quicx {
 namespace http3 {
 
+/**
+ * @brief ISendStream is the base class for all HTTP/3 send streams
+ * 
+ * All HTTP/3 send streams inherit from this class.
+ * 
+ * The send stream is used to send data to the peer.
+ * It is responsible for sending the stream type and ensuring that the stream type is sent before any frames.
+ */
 class ISendStream:
     public IStream {
 public:

@@ -1,18 +1,16 @@
 #include "common/log/log.h"
 #include "http3/http/type.h"
-#include "common/http/url.h"
-#include "common/util/time.h"
 #include "http3/http/server.h"
-#include "http3/http/request.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
 #include "quic/include/if_quic_server.h"
+#include "http3/include/if_async_handler.h"
 
 namespace quicx {
 namespace http3 {
 
-std::unique_ptr<IServer> IServer::Create(const Http3Settings& settings) {
-    return std::make_unique<Server>(settings);
+std::shared_ptr<IServer> IServer::Create(const Http3Settings& settings) {
+    return std::make_shared<Server>(settings);
 }
 
 Server::Server(const Http3Settings& settings):
@@ -66,8 +64,18 @@ void Server::Join() {
     quic_->Join();
 }
 
-void Server::AddHandler(HttpMethod mothed, const std::string& path, const http_handler& handler) {
-    router_->AddRoute(mothed, path, handler);
+void Server::AddHandler(HttpMethod method, const std::string& path, 
+                       const http_handler& handler) {
+    // Create route configuration for complete mode and add to router
+    RouteConfig config(handler);
+    router_->AddRoute(method, path, config);
+}
+
+void Server::AddHandler(HttpMethod method, const std::string& path, 
+                       std::shared_ptr<IAsyncServerHandler> handler) {
+    // Create route configuration for async mode and add to router
+    RouteConfig config(handler);
+    router_->AddRoute(method, path, config);
 }
 
 void Server::AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_handler& handler) {
@@ -91,9 +99,9 @@ void Server::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::Con
     }
 
     // create a new server connection
-    auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, quic_, conn,
-        std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&Server::HandleRequest, this, std::placeholders::_1, std::placeholders::_2));
+    auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, 
+        shared_from_this(), quic_, conn,
+        std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2));
 
     conn_map_[unique_id] = server_conn;
 }
@@ -101,49 +109,34 @@ void Server::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::Con
 void Server::HandleError(const std::string& unique_id, uint32_t error_code) {
     common::LOG_ERROR("handle error. unique_id: %s, error_code: %d", unique_id.c_str(), error_code);
     conn_map_.erase(unique_id);
+    if (error_handler_) {
+        error_handler_(unique_id, error_code);
+    }
 }
 
-void Server::HandleRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
-    std::string path = request->GetPath();
-    HttpMethod mothed = request->GetMethod();
-
-    // Match path and set path parameters
-    auto match_result = router_->Match(mothed, path);
-    if (!match_result.is_match) {
-        response->SetStatusCode(404);
-        response->SetBody("Not Found");
-        return;
+RouteConfig Server::MatchRoute(HttpMethod method, const std::string& path) {
+    auto result = router_->Match(method, path);
+    if (!result.is_match) {
+        return RouteConfig(OnNotFound);
     }
-    (std::dynamic_pointer_cast<Request>(request))->SetPathParams(match_result.params);
+    return result.config;
+}
 
-    // Parse query parameters
-    const std::string& path_with_query = request->GetPath();
-    // Parse :path pseudo-header into path and query parameters and set query parameters
-    std::string clean_path;
-    std::unordered_map<std::string, std::string> query_params;
-    if (!common::ParsePathWithQuery(path_with_query, clean_path, query_params)) {
-        common::LOG_ERROR("URLHelper::ParseQueryParams: failed to parse path: %s", 
-                         path_with_query.c_str());
-        return;
+void Server::BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+    for (auto& middleware : before_middlewares_) {
+        middleware(request, response);
     }
-    // Update request with clean path (without query string)
-    request->SetPath(clean_path);
-    // Store query parameters for application use
-    (std::dynamic_pointer_cast<Request>(request))->SetQueryParams(query_params);
+}
 
-    uint64_t start_time = common::UTCTimeMsec();
-    common::LOG_INFO("start handle request. path: %s, method: %d", path.c_str(), mothed);
-    for (auto& handler : before_middlewares_) {
-        handler(request, response);
+void Server::AfterHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+    for (auto& middleware : after_middlewares_) {
+        middleware(request, response);
     }
+}
 
-    match_result.handler(request, response);
-
-    for (auto& handler : after_middlewares_) {
-        handler(request, response);
-    }
-    common::LOG_INFO("end handle request. path: %s, method: %d, status: %d, time: %llums",
-        path.c_str(), mothed, response->GetStatusCode(), common::UTCTimeMsec() - start_time);
+void Server::OnNotFound(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+    response->SetStatusCode(404);
+    response->SetBody("Not Found");
 }
 
 }

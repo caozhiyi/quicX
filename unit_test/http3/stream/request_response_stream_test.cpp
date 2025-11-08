@@ -8,7 +8,6 @@
 #include "http3/qpack/blocked_registry.h"
 #include "unit_test/http3/stream/mock_quic_stream.h"
 
-
 namespace quicx {
 namespace http3 {
 namespace {
@@ -18,10 +17,12 @@ public:
     MockClientConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         std::shared_ptr<quic::IQuicBidirectionStream> stream) {
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
+        auto response_handler = std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2);
+        auto error_handler = std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2);
+        auto push_promise_handler = std::bind(&MockClientConnection::PushPromiseHandler, this, std::placeholders::_1);
+        
         request_stream_ = std::make_shared<RequestStream>(qpack_encoder, blocked_registry_, stream,
-            std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&MockClientConnection::PushPromiseHandler, this, std::placeholders::_1));
+            response_handler, error_handler, push_promise_handler);
     }
     ~MockClientConnection() {}
 
@@ -56,11 +57,27 @@ private:
 class MockServerConnection {
 public:
     MockServerConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        std::shared_ptr<quic::IQuicBidirectionStream> stream) {
+        std::shared_ptr<quic::IQuicBidirectionStream> stream) : http_handler_(nullptr) {
+        // Create a mock http processor
+        class MockHttpProcessor : public IHttpProcessor {
+        public:
+            MockHttpProcessor(MockServerConnection* server) : server_(server) {}
+            RouteConfig MatchRoute(HttpMethod method, const std::string& path) override {
+                return server_->MatchHandler(method, path);
+            }
+            void BeforeHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
+            void AfterHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
+        private:
+            MockServerConnection* server_;
+        };
+        
+        auto processor = std::make_shared<MockHttpProcessor>(this);
+        auto push_handler = [](std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>) {};
+        
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
         response_stream_ = std::make_shared<ResponseStream>(qpack_encoder, blocked_registry_, stream,
-            std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&MockServerConnection::HttpHandler, this, std::placeholders::_1, std::placeholders::_2));
+            processor, push_handler,
+            std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
     }
     ~MockServerConnection() {}
 
@@ -68,10 +85,16 @@ public:
         error_code_ = error_code;
     }
 
-    void HttpHandler(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
-        if (http_handler_) {
-            http_handler_(request, response);
-        }
+    RouteConfig MatchHandler(HttpMethod method, const std::string& path) {
+        // Create wrapper that accesses http_handler_ at call time (not bind time)
+        auto wrapper = [this](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
+            if (this->http_handler_) {
+                this->http_handler_(req, resp);
+            } else {
+                resp->SetStatusCode(200);
+            }
+        };
+        return RouteConfig(wrapper);
     }
 
     void SetHttpHandler(http_handler http_handler) {

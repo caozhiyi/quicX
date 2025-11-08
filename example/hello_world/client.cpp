@@ -2,6 +2,7 @@
 #include <chrono>
 #include <iostream>
 #include "http3/include/if_client.h"
+#include "http3/include/if_response.h"
 
 
 int main() {
@@ -9,7 +10,7 @@ int main() {
 
     quicx::http3::Http3Config config;
     config.thread_num_ = 1;
-    config.log_level_ = quicx::http3::LogLevel::kError;
+    config.log_level_ = quicx::http3::LogLevel::kInfo;
     client->Init(config);
 
     auto request = quicx::http3::IRequest::Create();

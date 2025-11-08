@@ -21,13 +21,13 @@ namespace http3 {
 
 ServerConnection::ServerConnection(const std::string& unique_id,
     const Http3Settings& settings,
+    const std::shared_ptr<IHttpProcessor>& http_processor,
     std::shared_ptr<quic::IQuicServer> quic_server,
     const std::shared_ptr<quic::IQuicConnection>& quic_connection,
-    const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
-    const http_handler& http_handler):
+    const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler):
     IConnection(unique_id, quic_connection, error_handler),
+    http_processor_(http_processor),
     quic_server_(quic_server),
-    http_handler_(http_handler),
     max_push_id_(0),  // RFC 9114: Initially 0, wait for client's MAX_PUSH_ID frame
     next_push_id_(0),
     send_limit_push_id_(0),
@@ -144,11 +144,7 @@ bool ServerConnection::SendPush(uint64_t push_id, std::shared_ptr<IResponse> res
     return true;
 }
 
-void ServerConnection::HandleHttp(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response, std::shared_ptr<ResponseStream> response_stream) {
-    if (http_handler_) {
-        http_handler_(request, response);
-    }
-
+void ServerConnection::HandlePush(std::shared_ptr<IResponse> response, std::shared_ptr<ResponseStream> response_stream) {
     if (!IsEnabledPush()) {
         common::LOG_DEBUG("ServerConnection::HandleHttp push is disabled");
         return;
@@ -210,11 +206,14 @@ void ServerConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
 
     if (stream->GetDirection() == quic::StreamDirection::kBidi) {
         // RFC 9114: Bidirectional streams are used for HTTP requests/responses
+        // Create ResponseStream with match_handler
+        // The handler will match route and return mode + wrapped handler
         std::shared_ptr<ResponseStream> response_stream = std::make_shared<ResponseStream>(qpack_encoder_,
             blocked_registry_,
             std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
-            std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&ServerConnection::HandleHttp, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+            http_processor_,
+            std::bind(&ServerConnection::HandlePush, this, std::placeholders::_1, std::placeholders::_2),
+            std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
         streams_[response_stream->GetStreamID()] = response_stream;
 
     } else if (stream->GetDirection() == quic::StreamDirection::kRecv) {
@@ -251,13 +250,14 @@ void ServerConnection::OnStreamTypeIdentified(
             common::LOG_DEBUG("ServerConnection: creating Control Stream for stream %llu", stream->GetStreamID());
             typed_stream = std::make_shared<ControlServerReceiverStream>(
                 stream,
+                qpack_encoder_,
                 std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
                 std::bind(&ServerConnection::HandleGoaway, this, std::placeholders::_1),
                 std::bind(&ServerConnection::HandleSettings, this, std::placeholders::_1),
                 std::bind(&ServerConnection::HandleMaxPushId, this, std::placeholders::_1),
                 std::bind(&ServerConnection::HandleCancelPush, this, std::placeholders::_1));
             break;
-            
+
         case static_cast<uint64_t>(StreamType::kPush): // Push Stream (RFC 9114 Section 4.6)
             // RFC 9114: Clients MUST NOT send push streams to servers
             common::LOG_ERROR("ServerConnection: received push stream from client (protocol violation) on stream %llu", 

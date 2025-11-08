@@ -2,7 +2,6 @@
 #define UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
 
 #include <cstdint>
-#include "quic/include/if_quic_stream.h"
 #include "quic/include/if_quic_send_stream.h"
 #include "quic/include/if_quic_recv_stream.h"
 #include "quic/include/if_quic_bidirection_stream.h"
