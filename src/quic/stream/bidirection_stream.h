@@ -34,7 +34,9 @@ public:
 
     // send data to peer, return the number of bytes sended.
     virtual int32_t Send(uint8_t* data, uint32_t len) override;
-    virtual int32_t Send(std::shared_ptr<common::IBufferRead> buffer) override;
+    virtual int32_t Send(std::shared_ptr<IBufferRead> buffer) override;
+    virtual std::shared_ptr<IBufferWrite> GetSendBuffer() override;
+    virtual bool Flush() override;
 
     // called when data is ready to send, that means the data is in the send buffer.
     // called in the send thread, so do not do any blocking operation.

@@ -9,6 +9,7 @@
 #include "quic/udp/if_sender.h"
 #include "quic/quicx/if_worker.h"
 #include "quic/crypto/tls/tls_ctx.h"
+#include "quic/udp/if_packet_allotor.h"
 #include "common/network/if_event_loop.h"
 #include "quic/connection/if_connection.h"
 
@@ -29,7 +30,7 @@ public:
     // Get the worker id
     virtual std::string GetWorkerId() override;
     // Handle packets
-    virtual void HandlePacket(PacketInfo& packet_info) override;
+    virtual void HandlePacket(PacketParseResult& packet_info) override;
     // Get the event loop
     virtual std::shared_ptr<common::IEventLoop> GetEventLoop() override;
 
@@ -39,7 +40,7 @@ public:
 protected:
     void ProcessSend();
 
-    virtual bool InnerHandlePacket(PacketInfo& packet_info) = 0;
+    virtual bool InnerHandlePacket(PacketParseResult& packet_info) = 0;
     bool InitPacketCheck(std::shared_ptr<IPacket> packet);
 
     void HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnection> conn);
@@ -65,8 +66,6 @@ protected:
     std::function<void(uint64_t)> add_connection_id_cb_;
     std::function<void(uint64_t)> retire_connection_id_cb_;
 
-    std::shared_ptr<common::BlockMemoryPool> alloter_;
-
     bool active_send_connection_set_1_is_current_;
     std::unordered_set<std::shared_ptr<IConnection>> active_send_connection_set_1_;
     std::unordered_set<std::shared_ptr<IConnection>> active_send_connection_set_2_;
@@ -76,6 +75,7 @@ protected:
 
     connection_state_callback connection_handler_;
     std::shared_ptr<common::IEventLoop> event_loop_;
+    std::shared_ptr<IPacketAllotor> packet_allotor_;
 };
 
 }

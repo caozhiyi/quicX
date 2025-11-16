@@ -6,22 +6,22 @@
 
 
 int main() {
-    quicx::http3::Http3Settings settings = quicx::http3::kDefaultHttp3Settings;
+    quicx::Http3Settings settings = quicx::kDefaultHttp3Settings;
     settings.enable_push = 1;
-    auto client = quicx::http3::IClient::Create(settings);
+    auto client = quicx::IClient::Create(settings);
 
-    quicx::http3::Http3Config config;
+    quicx::Http3Config config;
     config.thread_num_ = 1;
-    config.log_level_ = quicx::http3::LogLevel::kError;
+    config.log_level_ = quicx::LogLevel::kError;
     client->Init(config);
 
-    auto request = quicx::http3::IRequest::Create();
-    request->SetBody("hello world");
+    auto request = quicx::IRequest::Create();
+    request->AppendBody("hello world");
     client->DoRequest(
         "https://127.0.0.1:8882/hello",
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         request, 
-        [](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             std::cout << "status: " << response->GetStatusCode() << std::endl;
             std::cout << "response: " << response->GetBody() << std::endl;
         }
@@ -37,7 +37,7 @@ int main() {
     );
 
     client->SetPushHandler(
-        [](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             std::cout << "push status: " << response->GetStatusCode() << std::endl;
             std::cout << "push response: " << response->GetBody() << std::endl;
         }
@@ -60,9 +60,9 @@ int main() {
     // do request again, push promise will be canceled
     client->DoRequest(
         "https://127.0.0.1:8882/hello",
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         request, 
-        [](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             std::cout << "status: " << response->GetStatusCode() << std::endl;
             std::cout << "response: " << response->GetBody() << std::endl;
         }

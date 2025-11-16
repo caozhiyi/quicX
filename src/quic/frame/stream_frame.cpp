@@ -24,7 +24,7 @@ StreamFrame::~StreamFrame() {
 
 }
 
-bool StreamFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -40,11 +40,11 @@ bool StreamFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (HasLength()) {
         wrapper.EncodeVarint(length_);
     }
-    wrapper.EncodeBytes(data_, length_);
+    wrapper.EncodeBytes(data_.GetStart(), length_);
     return true;
 }
 
-bool StreamFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
@@ -62,7 +62,7 @@ bool StreamFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_
         common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
         return false;
     }
-    wrapper.DecodeBytes(data_, length_, false);
+    data_ = buffer->GetSharedReadableSpan(length_);
     return true;
 }
 
@@ -73,14 +73,6 @@ uint32_t StreamFrame::EncodeSize() {
 void StreamFrame::SetOffset(uint64_t offset) {
     offset_ = offset;
     frame_type_ |= kOffFlag;
-}
-
-void StreamFrame::SetData(uint8_t* data, uint32_t send_len) {
-    if (send_len > 0) {
-        frame_type_ |= kLenFlag;
-        data_ = data;
-        length_ = send_len;
-    }
 }
 
 bool StreamFrame::IsStreamFrame(uint16_t frame_type) {

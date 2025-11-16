@@ -28,7 +28,7 @@ public:
      * @param error_handler The error handler
      */
     IConnection(const std::string& unique_id,
-        const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+        const std::shared_ptr<IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler);
     virtual ~IConnection();
 
@@ -46,7 +46,7 @@ public:
 
 protected:
     // handle stream
-    virtual void HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error_code) = 0;
+    virtual void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code) = 0;
     // handle error
     virtual void HandleError(uint64_t stream_id, uint32_t error_code) = 0;
     // handle settings
@@ -64,7 +64,7 @@ protected:
 
     std::shared_ptr<QpackEncoder> qpack_encoder_;
 
-    std::shared_ptr<quic::IQuicConnection> quic_connection_;
+    std::shared_ptr<IQuicConnection> quic_connection_;
 };
 
 }

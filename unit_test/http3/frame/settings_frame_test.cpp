@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
-#include "common/buffer/buffer.h"
 #include "common/decode/decode.h"
 #include "http3/frame/settings_frame.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace http3 {
@@ -10,12 +11,12 @@ namespace {
 class SettingsFrameTest : public testing::Test {
 protected:
     void SetUp() override {
-        buffer_ = std::make_shared<common::Buffer>(buf_, sizeof(buf_));
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
+        buffer_ = std::make_shared<common::SingleBlockBuffer>(chunk);
         frame_ = std::make_shared<SettingsFrame>();
     }
 
-    uint8_t buf_[1024];
-    std::shared_ptr<common::Buffer> buffer_;
+    std::shared_ptr<common::SingleBlockBuffer> buffer_;
     std::shared_ptr<SettingsFrame> frame_;
 };
 

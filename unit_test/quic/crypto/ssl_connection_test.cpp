@@ -9,7 +9,6 @@
 #include "quic/crypto/tls/tls_connection_client.h"
 #include "quic/crypto/tls/tls_connection_server.h"
 
-
 namespace quicx {
 namespace quic {
 namespace {

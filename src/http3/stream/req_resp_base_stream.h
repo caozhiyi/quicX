@@ -24,12 +24,12 @@ class ReqRespBaseStream:
 public:
     ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-        const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+        const std::shared_ptr<IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~ReqRespBaseStream();
 
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, bool is_last, uint32_t error);
+    virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error);
 
 protected:
     virtual void HandleHeaders(std::shared_ptr<IFrame> frame);
@@ -38,23 +38,23 @@ protected:
     virtual void HandleFrame(std::shared_ptr<IFrame> frame);
 
     virtual void HandleHeaders() = 0;
-    virtual void HandleData(const std::vector<uint8_t>& data, bool is_last) = 0;
+    virtual void HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) = 0;
 
     // Send request body using provider (streaming mode)
     bool SendBodyWithProvider(const body_provider& provider);
-    bool SendBodyDirectly(const std::string& body);
+    bool SendBodyDirectly(const std::shared_ptr<common::IBuffer>& body);
     bool SendHeaders(const std::unordered_map<std::string, std::string>& headers);
 
 protected:
     uint64_t header_block_key_{0};
     uint32_t next_section_number_{0};
     std::shared_ptr<QpackEncoder> qpack_encoder_;
-    std::shared_ptr<quic::IQuicBidirectionStream> stream_;
+    std::shared_ptr<IQuicBidirectionStream> stream_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
 
     // request or response
     std::unordered_map<std::string, std::string> headers_;
-    std::vector<uint8_t> body_;
+    std::shared_ptr<common::IBuffer> body_;
     bool is_last_data_;
 };
 

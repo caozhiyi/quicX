@@ -21,7 +21,7 @@ public:
     // Get the worker id
     virtual std::string GetWorkerId() override;
     // Handle packets
-    virtual void HandlePacket(PacketInfo& packet_info) override;
+    virtual void HandlePacket(PacketParseResult& packet_info) override;
     // Get the event loop
     virtual std::shared_ptr<common::IEventLoop> GetEventLoop() override;
 
@@ -31,7 +31,7 @@ private:
 protected:
     std::string worker_id_;
     std::unique_ptr<IWorker> worker_ptr_;
-    common::ThreadSafeBlockQueue<PacketInfo> packet_queue_;
+    common::ThreadSafeBlockQueue<PacketParseResult> packet_queue_;
 };
 
 }

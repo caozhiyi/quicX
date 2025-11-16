@@ -1,10 +1,8 @@
 #include <memory>
 #include <gtest/gtest.h>
 
-
-#include "common/buffer/buffer.h"
-#include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_view.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "quic/crypto/aes_128_gcm_cryptographer.h"
 #include "quic/crypto/chacha20_poly1305_cryptographer.h"
 
@@ -32,40 +30,41 @@ static const uint8_t kHPsample[16] = { 0 };
 
 static bool RoundTripPacket(std::shared_ptr<ICryptographer> enc,
                             std::shared_ptr<ICryptographer> dec) {
-    auto pool = std::make_shared<common::BlockMemoryPool>(2048, 5);
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(2048);
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
     // Build plaintext
     const size_t kLen = 512;
-    auto pt = std::make_shared<common::Buffer>(pool);
-    auto ptw = pt->GetWriteSpan();
+    auto pt = std::make_shared<common::SingleBlockBuffer>(chunk);
+    auto ptw = buffer->GetWritableSpan();
     for (size_t i = 0; i < kLen; ++i) ptw.GetStart()[i] = static_cast<uint8_t>(i);
     pt->MoveWritePt(kLen);
 
     // Encrypt
-    auto ct = std::make_shared<common::Buffer>(pool);
+    auto ct = std::make_shared<common::SingleBlockBuffer>(chunk);
     common::BufferSpan aad((uint8_t*)kAAD, (uint8_t*)kAAD + sizeof(kAAD));
-    auto ptr = pt->GetReadSpan();
+    auto ptr = buffer->GetReadableSpan();
     if (enc->EncryptPacket(1, aad, ptr, ct) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << "EncryptPacket failed";
         return false;
     }
 
     // Decrypt
-    auto out = std::make_shared<common::Buffer>(pool);
-    auto cts = ct->GetReadSpan();
+    auto out = std::make_shared<common::SingleBlockBuffer>(chunk);
+    auto cts = ct->GetReadableSpan();
     if (dec->DecryptPacket(1, aad, cts, out) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << "DecryptPacket failed";
         return false;
     }
 
     // Compare
-    if (out->GetDataLength() != kLen) {
+    if (out->GetDataLength() != static_cast<uint32_t>(kLen)) {
         ADD_FAILURE() << "Plaintext length mismatch";
         return false;
     }
-    auto outv = out->GetReadSpan();
+    auto outv = out->GetReadableSpan();
     for (size_t i = 0; i < kLen; ++i) {
-        if (outv.GetStart()[i] != ptw.GetStart()[i]) {
+        if (outv.GetStart()[i] != static_cast<uint8_t>(i + 1)) {
             ADD_FAILURE() << "Plaintext mismatch at index " << i;
             return false;
         }

@@ -2,7 +2,6 @@
 #include <memory>
 
 #include "common/timer/timer.h"
-#include "common/buffer/buffer.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
@@ -10,6 +9,8 @@
 #include "quic/include/if_quic_send_stream.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace quic {
@@ -52,8 +53,8 @@ static const char kKeyPem[] =
 
 // Helper function to exchange packets between two connections
 static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver) {
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(2000);
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     quic::SendOperation send_operation;
     
     if (!sender->GenerateSendData(buffer, send_operation)) {
@@ -137,8 +138,8 @@ TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
     // Client should send some data (CONNECTION_CLOSE)
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(2000);
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     quic::SendOperation send_operation;
     EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
     EXPECT_GT(buffer->GetDataLength(), 0);
@@ -153,7 +154,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
     
     // Server should not send any packets in Draining state
-    buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     server->GenerateSendData(buffer, send_operation);
     EXPECT_EQ(buffer->GetDataLength(), 0);
 }
@@ -185,8 +186,8 @@ TEST_F(ConnectionCloseTest, ImmediateCloseWithError) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
     // Verify CONNECTION_CLOSE is sent
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(2000);
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     quic::SendOperation send_operation;
     EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
     EXPECT_GT(buffer->GetDataLength(), 0);
@@ -212,8 +213,7 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
     // Verify client enters Closing state
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation send_operation;
     EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
     
@@ -229,7 +229,7 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
     
     // Server should NOT send any packets in Draining state
-    buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     server->GenerateSendData(buffer, send_operation);
     EXPECT_EQ(buffer->GetDataLength(), 0);
     
@@ -240,7 +240,7 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
         const char* data = "Should not be sent";
         send_stream->Send((uint8_t*)data, strlen(data));
         
-        buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+        buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
         server->GenerateSendData(buffer, send_operation);
         EXPECT_EQ(buffer->GetDataLength(), 0);
         
@@ -264,8 +264,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
     // Verify client enters Closing state
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation send_operation;
     EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -276,7 +275,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
         const char* data = "Late data";
         stream->Send((uint8_t*)data, strlen(data));
         
-        buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+        buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
         server->GenerateSendData(buffer, send_operation);
         
         if (buffer->GetDataLength() > 0) {
@@ -289,7 +288,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
                 EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
                 
                 // Client should send a response (CONNECTION_CLOSE retransmission)
-                buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+                buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
                 client->GenerateSendData(buffer, send_operation);
                 EXPECT_GT(buffer->GetDataLength(), 0);
             }
@@ -306,8 +305,7 @@ TEST_F(ConnectionCloseTest, DrainingStateDoesNotSendPackets) {
     // Client sends CONNECTION_CLOSE
     client->Close();
     
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation send_operation;
     EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
     
@@ -321,7 +319,7 @@ TEST_F(ConnectionCloseTest, DrainingStateDoesNotSendPackets) {
     
     // Try multiple times to send data, server should remain silent
     for (int i = 0; i < 3; i++) {
-        buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+        buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
         server->GenerateSendData(buffer, send_operation);
         EXPECT_EQ(buffer->GetDataLength(), 0);
     }
@@ -357,8 +355,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByImmediateClose) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
     // Verify CONNECTION_CLOSE is sent
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation send_operation;
     EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
     EXPECT_GT(buffer->GetDataLength(), 0);
@@ -390,8 +387,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
     server->Close();
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation send_operation;
     EXPECT_TRUE(server->GenerateSendData(buffer, send_operation));
     
@@ -407,7 +403,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
     
     // Client should not send packets in Draining state
-    buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     client->GenerateSendData(buffer, send_operation);
     EXPECT_EQ(buffer->GetDataLength(), 0);
 }
@@ -429,8 +425,7 @@ TEST_F(ConnectionCloseTest, CloseDuringHandshake) {
     client->Close();
     
     // Should not crash
-    uint8_t buf[2000] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation send_operation;
     client->GenerateSendData(buffer, send_operation);
     

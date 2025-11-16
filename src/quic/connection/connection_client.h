@@ -4,7 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include <functional>
-#include "quic/connection/type.h"
+
 #include "common/network/address.h"
 #include "quic/connection/connection_base.h"
 #include "quic/crypto/tls/tls_connection_client.h"
@@ -34,7 +34,7 @@ protected:
     virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet) override;
     virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) override;
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) override;
-    virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) override;
+    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) override;
 };
 
 }

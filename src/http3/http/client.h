@@ -37,14 +37,14 @@ public:
     virtual void SetErrorHandler(const error_handler& error_handler) override;
 
 private:
-    void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::ConnectionOperation operation, uint32_t error, const std::string& reason);
+    void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason);
 
     void HandleError(const std::string& unique_id, uint32_t error_code);
     bool HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
     void HandlePush(std::shared_ptr<IResponse> response, uint32_t error);
 
 private:
-    std::shared_ptr<quic::IQuicClient> quic_;
+    std::shared_ptr<IQuicClient> quic_;
     std::unordered_map<std::string, std::shared_ptr<ClientConnection>> conn_map_;
 
     http_response_handler push_handler_;

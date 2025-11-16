@@ -3,9 +3,11 @@
 
 #include <string>
 #include "quic/stream/if_stream.h"
-#include "common/buffer/if_buffer_chains.h"
+#include "common/include/if_buffer_read.h"
+#include "common/include/if_buffer_write.h"
 #include "quic/stream/state_machine_send.h"
 #include "quic/include/if_quic_send_stream.h"
+#include "common/buffer/multi_block_buffer.h"
 
 namespace quicx {
 namespace quic {
@@ -32,7 +34,9 @@ public:
 
     // send data to peer, return the number of bytes sended.
     virtual int32_t Send(uint8_t* data, uint32_t len) override;
-    virtual int32_t Send(std::shared_ptr<common::IBufferRead> buffer) override;
+    virtual int32_t Send(std::shared_ptr<IBufferRead> buffer) override;
+    virtual std::shared_ptr<IBufferWrite> GetSendBuffer() override;
+    virtual bool Flush() override;
 
     virtual void SetStreamWriteCallBack(stream_write_callback cb) override { sended_cb_ = cb; }
 
@@ -60,7 +64,7 @@ protected:
     uint64_t acked_offset_;     // the maximum offset that has been ACKed
     bool fin_sent_;             // whether FIN has been sent
     uint64_t peer_data_limit_;  // the data limit that peer limit
-    std::shared_ptr<common::IBufferChains> send_buffer_;
+    std::shared_ptr<common::MultiBlockBuffer> send_buffer_;
 
     std::shared_ptr<StreamStateMachineSend> send_machine_;
     stream_write_callback sended_cb_;

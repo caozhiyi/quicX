@@ -50,16 +50,16 @@ protected:
                 error_code_ = error;
             },
             [this](uint64_t stream_type, 
-                   std::shared_ptr<quic::IQuicRecvStream> stream,
-                   std::shared_ptr<common::IBufferRead> remaining_data) {
+                   std::shared_ptr<IQuicRecvStream> stream,
+                   std::shared_ptr<IBufferRead> remaining_data) {
                 this->OnStreamTypeIdentified(stream_type, stream, remaining_data);
             }
         );
     }
 
     void OnStreamTypeIdentified(uint64_t stream_type, 
-                                std::shared_ptr<quic::IQuicRecvStream> stream,
-                                std::shared_ptr<common::IBufferRead> remaining_data) {
+                                std::shared_ptr<IQuicRecvStream> stream,
+                                std::shared_ptr<IBufferRead> remaining_data) {
         // Verify it's a push stream
         EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kPush));
         
@@ -96,7 +96,7 @@ protected:
 TEST_F(ServerPushRFCTest, BasicPushStreamFlow) {
     auto response = std::make_shared<Response>();
     response->SetStatusCode(200);
-    response->SetBody("<html>Pushed content</html>");
+    response->AppendBody("<html>Pushed content</html>");
     
     uint64_t push_id = 1;
     
@@ -106,34 +106,34 @@ TEST_F(ServerPushRFCTest, BasicPushStreamFlow) {
     // Verify receiver got the response
     ASSERT_NE(push_response_received_, nullptr);
     EXPECT_EQ(push_response_received_->GetStatusCode(), 200);
-    EXPECT_EQ(push_response_received_->GetBody(), "<html>Pushed content</html>");
+    EXPECT_EQ(push_response_received_->GetBodyAsString(), "<html>Pushed content</html>");
 }
 
 // Test 2: Push with Zero ID (RFC 9114 allows Push ID starting from 0)
 TEST_F(ServerPushRFCTest, PushIDZeroIsValid) {
     auto response = std::make_shared<Response>();
     response->SetStatusCode(200);
-    response->SetBody("Content for push ID 0");
+    response->AppendBody("Content for push ID 0");
     
     uint64_t push_id = 0;
     
     ASSERT_TRUE(sender_stream_->SendPushResponse(push_id, response));
     ASSERT_NE(push_response_received_, nullptr);
-    EXPECT_EQ(push_response_received_->GetBody(), "Content for push ID 0");
+    EXPECT_EQ(push_response_received_->GetBodyAsString(), "Content for push ID 0");
 }
 
 // Test 3: Push with Large ID
 TEST_F(ServerPushRFCTest, LargePushID) {
     auto response = std::make_shared<Response>();
     response->SetStatusCode(200);
-    response->SetBody("Large push ID content");
+    response->AppendBody("Large push ID content");
     
     // Test a large push ID that requires multi-byte varint encoding
     uint64_t push_id = 1000000;
     
     ASSERT_TRUE(sender_stream_->SendPushResponse(push_id, response));
     ASSERT_NE(push_response_received_, nullptr);
-    EXPECT_EQ(push_response_received_->GetBody(), "Large push ID content");
+    EXPECT_EQ(push_response_received_->GetBodyAsString(), "Large push ID content");
 }
 
 // Test 4: Push Stream with Headers Only (No Body)
@@ -163,14 +163,14 @@ TEST_F(ServerPushRFCTest, MultiplePushIDs) {
         
         auto response = std::make_shared<Response>();
         response->SetStatusCode(200);
-        response->SetBody(body);
+        response->AppendBody(body);
         
         ASSERT_TRUE(sender_stream_->SendPushResponse(push_id, response))
             << "Failed to send push with ID: " << push_id;
         
         ASSERT_NE(push_response_received_, nullptr)
             << "No response received for push ID: " << push_id;
-        EXPECT_EQ(push_response_received_->GetBody(), body)
+        EXPECT_EQ(push_response_received_->GetBodyAsString(), body)
             << "Body mismatch for push ID: " << push_id;
     }
 }
@@ -185,7 +185,7 @@ TEST_F(ServerPushRFCTest, VariousStatusCodes) {
         auto response = std::make_shared<Response>();
         response->SetStatusCode(status);
         if (status != 204) {
-            response->SetBody("Body for status " + std::to_string(status));
+            response->AppendBody("Body for status " + std::to_string(status));
         }
         
         uint64_t push_id = status;
@@ -200,14 +200,14 @@ TEST_F(ServerPushRFCTest, EmptyBody) {
     auto response = std::make_shared<Response>();
     response->SetStatusCode(200);
     response->AddHeader("content-length", "0");
-    response->SetBody(""); // Empty body
+    response->AppendBody(""); // Empty body
     
     uint64_t push_id = 15;
     
     ASSERT_TRUE(sender_stream_->SendPushResponse(push_id, response));
     ASSERT_NE(push_response_received_, nullptr);
     EXPECT_EQ(push_response_received_->GetStatusCode(), 200);
-    EXPECT_EQ(push_response_received_->GetBody(), "");
+    EXPECT_EQ(push_response_received_->GetBodyAsString(), "");
 }
 
 // Test 8: Push with Multiple Headers
@@ -218,7 +218,7 @@ TEST_F(ServerPushRFCTest, MultipleHeaders) {
     response->AddHeader("cache-control", "no-cache");
     response->AddHeader("x-custom-header", "custom-value");
     response->AddHeader("etag", "\"xyz789\"");
-    response->SetBody("{\"data\":\"test\"}");
+    response->AppendBody("{\"data\":\"test\"}");
     
     uint64_t push_id = 20;
     
@@ -244,12 +244,12 @@ TEST_F(ServerPushRFCTest, SequentialPushIDs) {
         
         auto response = std::make_shared<Response>();
         response->SetStatusCode(200);
-        response->SetBody("Push " + std::to_string(push_id));
+        response->AppendBody("Push " + std::to_string(push_id));
         
         ASSERT_TRUE(sender_stream_->SendPushResponse(push_id, response))
             << "Failed at push_id: " << push_id;
         ASSERT_NE(push_response_received_, nullptr);
-        EXPECT_EQ(push_response_received_->GetBody(), "Push " + std::to_string(push_id));
+        EXPECT_EQ(push_response_received_->GetBodyAsString(), "Push " + std::to_string(push_id));
     }
 }
 
@@ -260,14 +260,14 @@ TEST_F(ServerPushRFCTest, LargeBody) {
     auto response = std::make_shared<Response>();
     response->SetStatusCode(200);
     response->AddHeader("content-type", "text/plain");
-    response->SetBody(large_body);
+    response->AppendBody(large_body);
     
     uint64_t push_id = 99;
     
     ASSERT_TRUE(sender_stream_->SendPushResponse(push_id, response));
     ASSERT_NE(push_response_received_, nullptr);
-    EXPECT_EQ(push_response_received_->GetBody().size(), 1000);
-    EXPECT_EQ(push_response_received_->GetBody(), large_body);
+    EXPECT_EQ(push_response_received_->GetBodyAsString().size(), 1000);
+    EXPECT_EQ(push_response_received_->GetBodyAsString(), large_body);
 }
 
 }  // namespace

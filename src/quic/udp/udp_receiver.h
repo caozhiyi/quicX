@@ -43,7 +43,6 @@ private:
 private:
     bool ecn_enabled_;
     std::weak_ptr<common::IEventLoop> event_loop_;
-    std::shared_ptr<IPacketAllotor> packet_allotor_;
     std::unordered_map<int32_t, std::weak_ptr<IPacketReceiver>> receiver_map_;
 };
 

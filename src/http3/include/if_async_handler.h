@@ -6,7 +6,6 @@
 #include <cstddef>
 
 namespace quicx {
-namespace http3 {
 
 // Forward declarations
 class IRequest;
@@ -246,7 +245,6 @@ public:
     virtual void OnBodyChunk(const uint8_t* data, size_t length, bool is_last) = 0;
 };
 
-}  // namespace http3
-}  // namespace quicx
+}
 
-#endif  // HTTP3_INCLUDE_ASYNC_HANDLER
+#endif

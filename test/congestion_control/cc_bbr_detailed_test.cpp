@@ -4,8 +4,9 @@
 
 #include "cc_test_framework.h"
 
-using namespace quicx::quic;
-using namespace quicx::quic::test;
+namespace quicx {
+namespace quic {
+namespace {
 
 // ========== Long-running ProbeRTT Tests ==========
 
@@ -530,3 +531,7 @@ TEST(BBRv2DetailedTest, RecoverySpeedAfterLoss) {
         EXPECT_LT(recovery_time, 5000000UL);  // Less than 5 seconds
     }
 }
+
+}
+} // namespace quic
+} // namespace quicx

@@ -8,7 +8,7 @@
 namespace quicx {
 namespace http3 {
 
-ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
+ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
     const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(uint64_t id)>& goaway_handler,
@@ -27,7 +27,7 @@ ControlReceiverStream::~ControlReceiverStream() {
     }
 }
 
-void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
+void ControlReceiverStream::OnData(std::shared_ptr<IBufferRead> data, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("IRecvStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);
@@ -46,7 +46,7 @@ void ControlReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, ui
     std::vector<std::shared_ptr<IFrame>> frames;
     size_t length_before = data->GetDataLength();
     common::LOG_DEBUG("ControlReceiverStream::OnData: before DecodeFrames, length_before=%zu", length_before);
-    if (DecodeFrames(data, frames)) {
+    if (DecodeFrames(std::dynamic_pointer_cast<common::IBuffer>(data), frames)) {
         size_t length_after = data->GetDataLength();
         // DecodeFrames consumes frame data including the 2-byte frame type for each frame.
         // The consumed length is calculated from buffer length difference.
@@ -84,9 +84,9 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
-void ControlReceiverStream::HandleRawData(std::shared_ptr<common::IBufferRead> data) {
+void ControlReceiverStream::HandleRawData(std::shared_ptr<IBufferRead> data) {
     // Interpret as QPACK encoder instructions and update dynamic table
-    qpack_encoder_->DecodeEncoderInstructions(data);
+    qpack_encoder_->DecodeEncoderInstructions(std::dynamic_pointer_cast<common::IBuffer>(data));
 }
 
 }

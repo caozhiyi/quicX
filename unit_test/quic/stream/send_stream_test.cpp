@@ -1,15 +1,17 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <cstdint>
+#include <cstring>
 
 #include "quic/frame/type.h"
-#include "common/buffer/buffer.h"
 #include "quic/stream/send_stream.h"
 #include "quic/frame/stream_frame.h"
 #include "common/alloter/pool_block.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/max_stream_data_frame.h"
+#include "common/buffer/single_block_buffer.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace quic {
@@ -196,7 +198,10 @@ TEST_F(SendStreamTest, ResetBasic) {
     
     // Verify RESET_STREAM frame was created
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk->Valid());
+    std::memcpy(chunk->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1500);
     
@@ -258,7 +263,10 @@ TEST_F(SendStreamTest, TrySendDataGeneratesFrame) {
     
     // Try to send
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk2 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk2->Valid());
+    std::memcpy(chunk2->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk2);
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1500);
     
@@ -281,7 +289,10 @@ TEST_F(SendStreamTest, TrySendDataWithFIN) {
     
     // Try to send
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk3 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk3->Valid());
+    std::memcpy(chunk3->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk3);
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1500);
     
@@ -304,7 +315,10 @@ TEST_F(SendStreamTest, TrySendDataFlowControl) {
     
     // Try to send
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk4 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk4->Valid());
+    std::memcpy(chunk4->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk4);
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1500);
     
@@ -321,7 +335,10 @@ TEST_F(SendStreamTest, TrySendDataEmpty) {
     
     // Don't send any data
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk5 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk5->Valid());
+    std::memcpy(chunk5->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk5);
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1500);
     
@@ -409,7 +426,10 @@ TEST_F(SendStreamTest, OnDataAckedBasic) {
     
     // Simulate sending data through TrySendData
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk6 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk6->Valid());
+    std::memcpy(chunk6->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk6);
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1500);
     stream->TrySendData(&visitor);
@@ -437,7 +457,10 @@ TEST_F(SendStreamTest, OnDataAckedWithFIN) {
     
     // Simulate sending
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk7 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk7->Valid());
+    std::memcpy(chunk7->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk7);
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1500);
     

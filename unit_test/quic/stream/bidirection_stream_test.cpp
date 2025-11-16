@@ -3,10 +3,11 @@
 #include <cstring>
 
 #include "quic/frame/type.h"
-#include "common/buffer/buffer.h"
 #include "quic/frame/stream_frame.h"
 #include "common/alloter/pool_block.h"
 #include "quic/stream/bidirection_stream.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace quic {
@@ -39,7 +40,7 @@ protected:
             last_sent_size_ = size;
             last_error_code_ = error;
         };
-        recv_cb_ = [this](std::shared_ptr<common::IBufferRead> buffer, bool is_last, uint32_t err) {
+        recv_cb_ = [this](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
             recv_callback_called_ = true;
             is_last_packet_ = is_last;
             last_error_code_ = err;
@@ -84,7 +85,9 @@ TEST_F(BidirectionStreamTest, SendAndRecvSimultaneously) {
     recv_frame->SetStreamID(7);
     recv_frame->SetOffset(0);
     uint8_t recv_data[] = "Response";
-    recv_frame->SetData(recv_data, 8);
+    std::shared_ptr<common::SingleBlockBuffer> recv_data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(8));
+    recv_data_buffer->Write(recv_data, 8);
+    recv_frame->SetData(recv_data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(recv_frame);
     
@@ -108,7 +111,9 @@ TEST_F(BidirectionStreamTest, SendThenRecv) {
     frame->SetStreamID(7);
     frame->SetOffset(0);
     uint8_t recv_data[] = "Answer!";
-    frame->SetData(recv_data, 7);
+    std::shared_ptr<common::SingleBlockBuffer> recv_data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(7));
+    recv_data_buffer->Write(recv_data, 7);
+    frame->SetData(recv_data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     
@@ -127,7 +132,9 @@ TEST_F(BidirectionStreamTest, RecvThenSend) {
     frame->SetStreamID(7);
     frame->SetOffset(0);
     uint8_t recv_data[] = "Query";
-    frame->SetData(recv_data, 5);
+    std::shared_ptr<common::SingleBlockBuffer> recv_data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    recv_data_buffer->Write(recv_data, 5);
+    frame->SetData(recv_data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     EXPECT_TRUE(recv_callback_called_);
@@ -153,7 +160,9 @@ TEST_F(BidirectionStreamTest, SendRecvMultipleRounds) {
     recv1->SetStreamID(7);
     recv1->SetOffset(0);
     uint8_t data1[] = "Pong";
-    recv1->SetData(data1, 4);
+    std::shared_ptr<common::SingleBlockBuffer> recv1_data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    recv1_data_buffer->Write(data1, 4);
+    recv1->SetData(recv1_data_buffer->GetSharedReadableSpan());
     stream->OnFrame(recv1);
     
     // Round 2
@@ -164,7 +173,9 @@ TEST_F(BidirectionStreamTest, SendRecvMultipleRounds) {
     recv2->SetStreamID(7);
     recv2->SetOffset(4);
     uint8_t data2[] = "World";
-    recv2->SetData(data2, 5);
+    std::shared_ptr<common::SingleBlockBuffer> recv2_data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    recv2_data_buffer->Write(data2, 5);
+    recv2->SetData(recv2_data_buffer->GetSharedReadableSpan());
     stream->OnFrame(recv2);
     
     EXPECT_FALSE(stream_closed_);
@@ -194,7 +205,9 @@ TEST_F(BidirectionStreamTest, CheckStreamCloseLogic) {
     frame->SetStreamID(7);
     frame->SetOffset(0);
     uint8_t recv_data[] = "OK";
-    frame->SetData(recv_data, 2);
+    std::shared_ptr<common::SingleBlockBuffer> recv_data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2));
+    recv_data_buffer->Write(recv_data, 2);
+    frame->SetData(recv_data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     stream->OnFrame(frame);
     
@@ -226,7 +239,9 @@ TEST_F(BidirectionStreamTest, CloseRecvDirectionOnly) {
     frame->SetStreamID(7);
     frame->SetOffset(0);
     uint8_t data[] = "Data";
-    frame->SetData(data, 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write(data, 4);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     
     stream->OnFrame(frame);
@@ -258,7 +273,9 @@ TEST_F(BidirectionStreamTest, CloseInCorrectOrder) {
     frame->SetStreamID(7);
     frame->SetOffset(0);
     uint8_t recv_data[] = "Resp";
-    frame->SetData(recv_data, 4);
+    std::shared_ptr<common::SingleBlockBuffer> recv_data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    recv_data_buffer->Write(recv_data, 4);
+    frame->SetData(recv_data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     stream->OnFrame(frame);
     
@@ -283,7 +300,9 @@ TEST_F(BidirectionStreamTest, BothDirectionsTerminalThenClose) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(7);
     frame->SetOffset(0);
-    frame->SetData((uint8_t*)"Data", 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write((uint8_t*)"Data", 4);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     stream->OnFrame(frame);
     
@@ -310,7 +329,9 @@ TEST_F(BidirectionStreamTest, CloseCallbackTiming) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(7);
     frame->SetOffset(0);
-    frame->SetData((uint8_t*)"X", 1);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1));
+    data_buffer->Write((uint8_t*)"X", 1);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     stream->OnFrame(frame);
     
@@ -330,7 +351,9 @@ TEST_F(BidirectionStreamTest, ResetBothDirections) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(7);
     frame->SetOffset(0);
-    frame->SetData((uint8_t*)"Data", 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write((uint8_t*)"Data", 4);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     stream->OnFrame(frame);
     
     // Reset with error
@@ -376,7 +399,9 @@ TEST_F(BidirectionStreamTest, ResetOneSideOnly) {
     auto recv_frame = std::make_shared<StreamFrame>();
     recv_frame->SetStreamID(7);
     recv_frame->SetOffset(0);
-    recv_frame->SetData((uint8_t*)"Response", 8);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(8));
+    data_buffer->Write((uint8_t*)"Response", 8);
+    recv_frame->SetData(data_buffer->GetSharedReadableSpan());
     recv_frame->SetFin();
     
     stream->GetRecvStateMachine()->OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag);
@@ -424,7 +449,9 @@ TEST_F(BidirectionStreamTest, SendAndRecvCallbacks) {
     frame->SetStreamID(7);
     frame->SetOffset(0);
     uint8_t recv_data[] = "Recv";
-    frame->SetData(recv_data, 4);
+    std::shared_ptr<common::SingleBlockBuffer> recv_data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    recv_data_buffer->Write(recv_data, 4);
+    frame->SetData(recv_data_buffer->GetSharedReadableSpan());
     stream->OnFrame(frame);
     
     EXPECT_TRUE(recv_callback_called_);
@@ -453,7 +480,9 @@ TEST_F(BidirectionStreamTest, CloseCallback) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(7);
     frame->SetOffset(0);
-    frame->SetData((uint8_t*)"R", 1);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1));
+    data_buffer->Write((uint8_t*)"R", 1);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     stream->OnFrame(frame);
     

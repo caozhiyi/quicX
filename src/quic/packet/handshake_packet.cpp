@@ -1,12 +1,13 @@
 
+#include <cstring>
 #include "common/log/log.h"
 #include "quic/packet/type.h"
 #include "common/decode/decode.h"
-#include "common/buffer/buffer.h"
 #include "quic/frame/frame_decode.h"
 #include "quic/packet/packet_number.h"
 #include "quic/packet/handshake_packet.h"
 #include "common/buffer/buffer_read_view.h"
+#include "common/buffer/single_block_buffer.h"
 
 namespace quicx {
 namespace quic {
@@ -24,13 +25,13 @@ HandshakePacket::~HandshakePacket() {
 
 }
 
-bool HandshakePacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool HandshakePacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (!header_.EncodeHeader(buffer)) {
         common::LOG_ERROR("encode header failed");
         return false;
     }
 
-    auto span = buffer->GetWriteSpan();
+    auto span = buffer->GetWritableSpan();
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
     uint8_t* end = span.GetEnd();
@@ -46,7 +47,7 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     // encode payload 
     if (!crypto_grapher_) {
         payload_offset_ = cur_pos - start_pos;
-        memcpy(cur_pos, payload_.GetStart(), payload_.GetLength());
+        std::memcpy(cur_pos, payload_.GetStart(), payload_.GetLength());
         cur_pos += payload_.GetLength();
         buffer->MoveWritePt(cur_pos - span.GetStart());
         return true;
@@ -54,8 +55,9 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
 
      // encode payload whit encrypt
     buffer->MoveWritePt(cur_pos - start_pos);
-    auto header_span = header_.GetHeaderSrcData();
-    auto result = crypto_grapher_->EncryptPacket(packet_number_, header_span, payload_, buffer);
+    auto header_span = header_.GetHeaderSrcData().GetSpan();
+    auto payload_span = payload_.GetSpan();
+    auto result = crypto_grapher_->EncryptPacket(packet_number_, header_span, payload_span, buffer);
     if(result != ICryptographer::Result::kOk) {
         common::LOG_ERROR("encrypt payload failed. result:%d", result);
         return false;
@@ -74,13 +76,19 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer, bool with_flag) {
+bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
     if (!header_.DecodeHeader(buffer, with_flag)) {
         common::LOG_ERROR("decode header failed");
         return false;
     }
 
-    auto span = buffer->GetReadSpan();
+    auto span = buffer->GetReadableSpan();
+    auto shared_span = buffer->GetSharedReadableSpan();
+    if (!shared_span.Valid()) {
+        common::LOG_ERROR("readable span is invalid");
+        return false;
+    }
+    auto chunk = shared_span.GetChunk();
     uint8_t* cur_pos = span.GetStart();
     uint8_t* end = span.GetEnd();
 
@@ -92,7 +100,7 @@ bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> b
     cur_pos += length_;
 
     // set src data
-    packet_src_data_ = std::move(common::BufferSpan(span.GetStart(), cur_pos));
+    packet_src_data_ = common::SharedBufferSpan(chunk, span.GetStart(), cur_pos);
 
     // move buffer read point
     buffer->MoveReadPt(cur_pos - span.GetStart());
@@ -111,9 +119,9 @@ bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) 
         cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), packet_number_);
 
         // decode payload frames
-        payload_ = common::BufferSpan(cur_pos, cur_pos + length_ - header_.GetPacketNumberLength());
-        std::shared_ptr<common::BufferReadView> view = std::make_shared<common::BufferReadView>(payload_.GetStart(), payload_.GetEnd());
-        if(!DecodeFrames(view, frames_list_)) {
+        payload_ = common::SharedBufferSpan(packet_src_data_.GetChunk(), cur_pos, cur_pos + length_ - header_.GetPacketNumberLength());
+        std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(payload_.GetChunk());
+        if(!DecodeFrames(buffer, frames_list_)) {
             common::LOG_ERROR("decode frame failed.");
             return false;
         }
@@ -122,7 +130,7 @@ bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) 
     
     // decrypt header
     uint8_t packet_num_len = 0;
-    common::BufferSpan header_span = header_.GetHeaderSrcData();
+    auto header_span = header_.GetHeaderSrcData().GetSpan();
     // get decrypt sample, which is defined in RFC9001
     common::BufferSpan sample = common::BufferSpan(span.GetStart() + packet_num_offset_ + 4,
         span.GetStart() + packet_num_offset_ + 4 + kHeaderProtectSampleLength);
@@ -157,7 +165,7 @@ bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) 
     return true;
 }
 
-void HandshakePacket::SetPayload(common::BufferSpan payload) {
+void HandshakePacket::SetPayload(const common::SharedBufferSpan& payload) {
     payload_ = payload;
 }
 

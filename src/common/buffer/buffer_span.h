@@ -1,33 +1,44 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-// Author: caozhiyi (caozhiyi5@gmail.com)
-
-#ifndef COMMON_BUFFER_BUFFER_SPAN
-#define COMMON_BUFFER_BUFFER_SPAN
+#ifndef COMMON_BUFFERNEW_BUFFER_SPAN
+#define COMMON_BUFFERNEW_BUFFER_SPAN
 
 #include <cstdint>
 
 namespace quicx {
 namespace common {
 
+class BufferChunk;
+
+// BufferSpan is a minimal, non-owning view over a contiguous memory region.
+// Unlike SharedBufferSpan it does not retain the BufferChunk (or any other
+// owner) that backs the memory – callers must therefore ensure the underlying
+// storage outlives the span. The class performs basic sanity checks on the
+// pointer range but assumes the caller maintains lifetime guarantees.
 class BufferSpan {
 public:
-    BufferSpan(): start_(nullptr), end_(nullptr) {}
-    BufferSpan(uint8_t* start, uint32_t len): start_(start), end_(start + len) {}
-    BufferSpan(uint8_t* start, uint8_t* end): start_(start), end_(end) {}
-    virtual ~BufferSpan() {}
+    BufferSpan() = default;
+    // Construct a span from raw start/end pointers. The constructor validates
+    // the range (start <= end and both non-null) and will reset the span to an
+    // empty state if the check fails.
+    BufferSpan(uint8_t* start, uint8_t* end);
+    // Convenience overload that accepts a start pointer and a length.
+    BufferSpan(uint8_t* start, uint32_t len);
 
-    uint8_t* GetStart() { return start_; }
-    uint8_t* GetEnd() { return end_; }
-    uint32_t GetLength() { return uint32_t(end_ - start_); }
+    // Returns true when the span currently refers to a valid range. Failed
+    // ranges are reported via the logging subsystem for easier debugging.
+    bool Valid() const;
+
+    // Raw accessors. Callers should only use them when Valid() returns true.
+    uint8_t* GetStart() const;
+    uint8_t* GetEnd() const;
+    uint32_t GetLength() const;
 
 private:
-    uint8_t* start_;
-    uint8_t* end_;
+    uint8_t* start_ = nullptr;
+    uint8_t* end_ = nullptr;
 };
 
 }
 }
 
 #endif
+

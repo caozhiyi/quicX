@@ -2,8 +2,9 @@
 #include <cstddef>
 
 #include "test_cryptographer.h"
-#include "common/buffer/buffer.h"
 #include "quic/packet/rtt_1_packet.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (data == nullptr || size == 0) {
@@ -12,8 +13,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
     {
         // Wrap input as a read buffer
-        auto in = std::make_shared<quicx::common::Buffer>(
-        const_cast<uint8_t*>(data), const_cast<uint8_t*>(data) + size);
+        auto in = std::make_shared<quicx::common::SingleBlockBuffer>(
+            std::make_shared<quicx::common::StandaloneBufferChunk>(size));
+        in->Write(data, size);
 
         quicx::quic::Rtt1Packet packet;
         if (!packet.DecodeWithoutCrypto(in, true)) {
@@ -21,22 +23,22 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         }
 
         // Encode packet
-        uint8_t out_buf[2048];
-        auto out = std::make_shared<quicx::common::Buffer>(out_buf, out_buf + sizeof(out_buf));
+        auto out = std::make_shared<quicx::common::SingleBlockBuffer>(
+            std::make_shared<quicx::common::StandaloneBufferChunk>(2048));
         if (!packet.Encode(out)) {
             return 0;
         }
 
         // Decode the re-encoded packet again to exercise the decode path
-        auto out_read = out->GetReadViewPtr(0);
         quicx::quic::Rtt1Packet packet2;
-        (void)packet2.DecodeWithoutCrypto(out_read, true);
+        (void)packet2.DecodeWithoutCrypto(out, true);
     }
 
     {
         // Wrap input as a read buffer
-        auto in = std::make_shared<quicx::common::Buffer>(
-        const_cast<uint8_t*>(data), const_cast<uint8_t*>(data) + size);
+        auto in = std::make_shared<quicx::common::SingleBlockBuffer>(
+            std::make_shared<quicx::common::StandaloneBufferChunk>(size));
+        in->Write(data, size);
 
         quicx::quic::Rtt1Packet packet;
         packet.SetCryptographer(PacketTest::Instance().GetTestClientCryptographer());
@@ -45,8 +47,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         }
 
         // Encode packet
-        uint8_t out_buf[2048];
-        auto out = std::make_shared<quicx::common::Buffer>(out_buf, out_buf + sizeof(out_buf));
+        auto out = std::make_shared<quicx::common::SingleBlockBuffer>(
+            std::make_shared<quicx::common::StandaloneBufferChunk>(2048));
         if (!packet.Encode(out)) {
             return 0;
         }

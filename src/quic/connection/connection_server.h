@@ -30,7 +30,7 @@ public:
 protected:
     virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) override;
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) override;
-    virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) override;
+    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) override;
 
 private:
     virtual void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,

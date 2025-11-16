@@ -16,6 +16,7 @@ cc_library(
         "buffer/buffer_encode_wrapper.cpp",
         "buffer/buffer_read_view.cpp",
         "buffer/buffer_write_view.cpp",
+        "buffer/buffer_view.cpp",
         "buffer/buffer.cpp",
 
         # decode

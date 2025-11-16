@@ -1,17 +1,20 @@
+#include "common/buffer/if_buffer.h"
 #if defined(QUICX_ENABLE_BENCHMARKS)
 #include <benchmark/benchmark.h>
 #include <memory>
 #include <vector>
 #include <cstring>
 
-#include "common/buffer/buffer.h"
+#include "common/alloter/pool_block.h"
+#include "common/buffer/multi_block_buffer.h"
+
 
 namespace quicx {
 namespace common {
 
-static std::shared_ptr<Buffer> MakeBuffer(size_t cap = 64 * 1024) {
-    auto mem = std::make_shared<std::vector<uint8_t>>(cap);
-    return std::make_shared<Buffer>(mem->data(), (uint32_t)mem->size());
+static std::shared_ptr<common::IBuffer> MakeBuffer(size_t cap = 64 * 1024) {
+    auto pool = std::make_shared<common::BlockMemoryPool>(cap, /*add_num*/128);
+    return std::make_shared<common::MultiBlockBuffer>(pool);
 }
 
 static void BM_Buffer_WriteRead_Move(benchmark::State& state) {

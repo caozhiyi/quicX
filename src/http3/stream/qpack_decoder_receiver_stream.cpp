@@ -6,7 +6,7 @@
 namespace quicx {
 namespace http3 {
 
-QpackDecoderReceiverStream::QpackDecoderReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
+QpackDecoderReceiverStream::QpackDecoderReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IRecvStream(StreamType::kQpackDecoder, stream, error_handler),
@@ -20,7 +20,7 @@ QpackDecoderReceiverStream::~QpackDecoderReceiverStream() {
     }
 }
 
-void QpackDecoderReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
+void QpackDecoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("QpackDecoderReceiverStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);
@@ -38,9 +38,10 @@ void QpackDecoderReceiverStream::OnData(std::shared_ptr<common::IBufferRead> dat
     ParseDecoderFrames(data);
 }
 
-void QpackDecoderReceiverStream::ParseDecoderFrames(std::shared_ptr<common::IBufferRead> data) {
+void QpackDecoderReceiverStream::ParseDecoderFrames(std::shared_ptr<IBufferRead> data) {
+    auto buffer = std::dynamic_pointer_cast<common::IBuffer>(data);
     std::vector<std::shared_ptr<IQpackDecoderFrame>> frames;
-    if (!DecodeQpackDecoderFrames(data, frames)) {
+    if (!DecodeQpackDecoderFrames(buffer, frames)) {
         common::LOG_ERROR("QpackDecoderReceiverStream::ParseDecoderFrames error: %d", data->GetDataLength());
         return;
     }

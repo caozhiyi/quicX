@@ -24,8 +24,8 @@ public:
     ServerConnection(const std::string& unique_id,
         const Http3Settings& settings,
         const std::shared_ptr<IHttpProcessor>& http_processor,
-        std::shared_ptr<quic::IQuicServer> quic_server,
-        const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+        std::shared_ptr<IQuicServer> quic_server,
+        const std::shared_ptr<IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler);
     virtual ~ServerConnection();
 
@@ -34,9 +34,9 @@ private:
     bool SendPush(uint64_t push_id, std::shared_ptr<IResponse> response);
     void HandlePush(std::shared_ptr<IResponse> response, std::shared_ptr<ResponseStream> response_stream);
     // handle stream status
-    void HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error_code);
+    void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code);
     // Callback when stream type is identified (RFC 9114 Section 6.2)
-    void OnStreamTypeIdentified(uint64_t stream_type, std::shared_ptr<quic::IQuicRecvStream> stream, std::shared_ptr<common::IBufferRead> remaining_data);
+    void OnStreamTypeIdentified(uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data);
     // handle goaway frame
     void HandleGoaway(uint64_t id);
     // handle max push id frame
@@ -57,7 +57,7 @@ private:
     uint64_t next_push_id_;
     uint64_t send_limit_push_id_;
     bool push_timer_active_;  // Flag indicating if push timer is active
-    std::shared_ptr<quic::IQuicServer> quic_server_;
+    std::shared_ptr<IQuicServer> quic_server_;
     // push responses, push id -> response
     std::unordered_map<uint64_t, std::shared_ptr<IResponse>> push_responses_;
     // push streams, push id -> PushSenderStream (for tracking active push streams)

@@ -35,21 +35,21 @@ public:
     virtual ~RetryPacket();
 
     virtual uint16_t GetCryptoLevel() const { return PakcetCryptoLevel::kUnknownCryptoLevel; }
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false);
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag = false);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) { return true; }
 
     virtual IHeader* GetHeader() { return &header_; }
 
-    void SetRetryToken(common::BufferSpan toekn) { retry_token_ = toekn; }
-    common::BufferSpan& GetRetryToken() { return retry_token_; }
+    void SetRetryToken(common::SharedBufferSpan toekn) { retry_token_ = toekn; }
+    common::SharedBufferSpan& GetRetryToken() { return retry_token_; }
 
     void SetRetryIntegrityTag(uint8_t* tag);
     uint8_t* GetRetryIntegrityTag();
 
 private:
     LongHeader header_;
-    common::BufferSpan retry_token_;
+    common::SharedBufferSpan retry_token_;
     uint8_t retry_integrity_tag_[kRetryIntegrityTagLength];
 };
 

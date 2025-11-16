@@ -16,7 +16,7 @@ CryptoFrame::~CryptoFrame() {
 
 }
 
-bool CryptoFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool CryptoFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -27,11 +27,11 @@ bool CryptoFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     wrapper.EncodeFixedUint16(frame_type_);
     wrapper.EncodeVarint(offset_);
     wrapper.EncodeVarint(length_);
-    wrapper.EncodeBytes(data_, length_);
+    wrapper.EncodeBytes(data_.GetStart(), length_);
     return true;
 }
 
-bool CryptoFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool CryptoFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
@@ -47,7 +47,9 @@ bool CryptoFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_
         common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
         return false;
     }
-    wrapper.DecodeBytes(data_, length_, false);
+    wrapper.Flush();
+
+    data_ = buffer->GetSharedReadableSpan(length_);
     return true;
 }
 

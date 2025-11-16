@@ -314,22 +314,22 @@ int main() {
       "-----END RSA PRIVATE KEY-----\n";
 
     auto storage = std::make_shared<FileStorage>();
-    auto server = quicx::http3::IServer::Create();
+    auto server = quicx::IServer::Create();
 
     // Logging middleware
     server->AddMiddleware(
-        quicx::http3::HttpMethod::kAny,
-        quicx::http3::MiddlewarePosition::kBefore,
-        [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        quicx::HttpMethod::kAny,
+        quicx::MiddlewarePosition::kBefore,
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::cout << "[" << req->GetMethodString() << "] " << req->GetPath() << std::endl;
         }
     );
 
     // GET / - Welcome page
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/",
-        [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::string html = 
                 "<!DOCTYPE html><html><head><title>File Transfer Server</title></head>"
                 "<body><h1>QuicX HTTP/3 File Transfer Server</h1>"
@@ -342,21 +342,21 @@ int main() {
                 "</ul></body></html>";
             
             resp->AddHeader("Content-Type", "text/html");
-            resp->SetBody(html);
+            resp->AppendBody(html);
             resp->SetStatusCode(200);
         }
     );
 
     // GET /files - List all files
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/files",
-        [storage](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [storage](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             auto files = storage->GetFileList();
             std::string json = FileListToJson(files);
             
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(json);
+            resp->AppendBody(json);
             resp->SetStatusCode(200);
             
             std::cout << "  -> Returned " << files.size() << " files" << std::endl;
@@ -365,14 +365,14 @@ int main() {
 
     // GET /files/:filename - Download file
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/files/:filename",
-        [storage](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [storage](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::string path = req->GetPath();
             size_t last_slash = path.find_last_of('/');
             if (last_slash == std::string::npos) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid path\"}");
+                resp->AppendBody("{\"error\":\"Invalid path\"}");
                 return;
             }
             
@@ -383,14 +383,14 @@ int main() {
             if (storage->LoadFile(filename, content, info)) {
                 resp->AddHeader("Content-Type", info.content_type);
                 resp->AddHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
-                resp->SetBody(content);
+                resp->AppendBody(content);
                 resp->SetStatusCode(200);
                 
                 std::cout << "  -> Downloaded: " << filename 
                           << " (" << FormatFileSize(content.size()) << ")" << std::endl;
             } else {
                 resp->SetStatusCode(404);
-                resp->SetBody("{\"error\":\"File not found\"}");
+                resp->AppendBody("{\"error\":\"File not found\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> File not found: " << filename << std::endl;
             }
@@ -399,13 +399,13 @@ int main() {
 
     // POST /upload - Upload file
     server->AddHandler(
-        quicx::http3::HttpMethod::kPost,
+        quicx::HttpMethod::kPost,
         "/upload",
-        [storage](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [storage](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::string content_type;
             if (!req->GetHeader("Content-Type", content_type)) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Content-Type header required\"}");
+                resp->AppendBody("{\"error\":\"Content-Type header required\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 return;
             }
@@ -415,15 +415,15 @@ int main() {
                 std::string boundary = ExtractBoundary(content_type);
                 if (boundary.empty()) {
                     resp->SetStatusCode(400);
-                    resp->SetBody("{\"error\":\"Invalid multipart boundary\"}");
+                    resp->AppendBody("{\"error\":\"Invalid multipart boundary\"}");
                     resp->AddHeader("Content-Type", "application/json");
                     return;
                 }
 
                 std::vector<MultipartPart> parts;
-                if (!ParseMultipartFormData(req->GetBody(), boundary, parts)) {
+                if (!ParseMultipartFormData(req->GetBodyAsString(), boundary, parts)) {
                     resp->SetStatusCode(400);
-                    resp->SetBody("{\"error\":\"Failed to parse multipart data\"}");
+                    resp->AppendBody("{\"error\":\"Failed to parse multipart data\"}");
                     resp->AddHeader("Content-Type", "application/json");
                     return;
                 }
@@ -442,7 +442,7 @@ int main() {
                                 << ",\"size_formatted\":\"" << FormatFileSize(part.content.size()) << "\"}";
                             
                             resp->AddHeader("Content-Type", "application/json");
-                            resp->SetBody(oss.str());
+                            resp->AppendBody(oss.str());
                             resp->SetStatusCode(201);
                             
                             std::cout << "  -> Uploaded: " << part.filename 
@@ -453,7 +453,7 @@ int main() {
                 }
 
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"No file found in request\"}");
+                resp->AppendBody("{\"error\":\"No file found in request\"}");
                 resp->AddHeader("Content-Type", "application/json");
             } else {
                 // Direct binary upload with filename in query or header
@@ -479,22 +479,22 @@ int main() {
                     filename = "uploaded_file_" + std::to_string(time(nullptr));
                 }
 
-                if (storage->SaveFile(filename, req->GetBody(), content_type)) {
+                if (storage->SaveFile(filename, req->GetBodyAsString(), content_type)) {
                     std::ostringstream oss;
                     oss << "{\"message\":\"File uploaded successfully\""
                         << ",\"filename\":\"" << filename << "\""
-                        << ",\"size\":" << req->GetBody().size()
-                        << ",\"size_formatted\":\"" << FormatFileSize(req->GetBody().size()) << "\"}";
+                        << ",\"size\":" << req->GetBodyAsString().size()
+                        << ",\"size_formatted\":\"" << FormatFileSize(req->GetBodyAsString().size()) << "\"}";
                     
                     resp->AddHeader("Content-Type", "application/json");
-                    resp->SetBody(oss.str());
+                    resp->AppendBody(oss.str());
                     resp->SetStatusCode(201);
                     
                     std::cout << "  -> Uploaded: " << filename 
-                              << " (" << FormatFileSize(req->GetBody().size()) << ")" << std::endl;
+                              << " (" << FormatFileSize(req->GetBodyAsString().size()) << ")" << std::endl;
                 } else {
                     resp->SetStatusCode(500);
-                    resp->SetBody("{\"error\":\"Failed to save file\"}");
+                    resp->AppendBody("{\"error\":\"Failed to save file\"}");
                     resp->AddHeader("Content-Type", "application/json");
                 }
             }
@@ -503,14 +503,14 @@ int main() {
 
     // DELETE /files/:filename - Delete file
     server->AddHandler(
-        quicx::http3::HttpMethod::kDelete,
+        quicx::HttpMethod::kDelete,
         "/files/:filename",
-        [storage](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [storage](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::string path = req->GetPath();
             size_t last_slash = path.find_last_of('/');
             if (last_slash == std::string::npos) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid path\"}");
+                resp->AppendBody("{\"error\":\"Invalid path\"}");
                 return;
             }
             
@@ -518,11 +518,11 @@ int main() {
             
             if (storage->DeleteFile(filename)) {
                 resp->SetStatusCode(204);
-                resp->SetBody("");
+                resp->AppendBody("");
                 std::cout << "  -> Deleted: " << filename << std::endl;
             } else {
                 resp->SetStatusCode(404);
-                resp->SetBody("{\"error\":\"File not found\"}");
+                resp->AppendBody("{\"error\":\"File not found\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> Delete failed: " << filename << std::endl;
             }
@@ -531,36 +531,36 @@ int main() {
 
     // GET /stats - Server statistics
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/stats",
-        [storage](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [storage](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::ostringstream oss;
             oss << "{\"total_files\":" << storage->GetFileCount()
                 << ",\"total_size\":" << storage->GetTotalSize()
                 << ",\"total_size_formatted\":\"" << FormatFileSize(storage->GetTotalSize()) << "\"}";
             
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(oss.str());
+            resp->AppendBody(oss.str());
             resp->SetStatusCode(200);
         }
     );
 
     // CORS middleware
     server->AddMiddleware(
-        quicx::http3::HttpMethod::kAny,
-        quicx::http3::MiddlewarePosition::kAfter,
-        [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        quicx::HttpMethod::kAny,
+        quicx::MiddlewarePosition::kAfter,
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             resp->AddHeader("X-Powered-By", "QuicX-HTTP3");
             resp->AddHeader("Access-Control-Allow-Origin", "*");
         }
     );
 
     // Configure and start server
-    quicx::http3::Http3ServerConfig config;
+    quicx::Http3ServerConfig config;
     config.cert_pem_ = cert_pem;
     config.key_pem_ = key_pem;
     config.config_.thread_num_ = 2;
-    config.config_.log_level_ = quicx::http3::LogLevel::kDebug;
+    config.config_.log_level_ = quicx::LogLevel::kDebug;
     
     server->Init(config);
     

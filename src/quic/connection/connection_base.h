@@ -10,6 +10,7 @@
 
 #include "quic/include/type.h"
 #include "quic/connection/type.h"
+#include "common/alloter/pool_block.h"
 #include "quic/connection/if_connection.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/connection_crypto.h"
@@ -133,7 +134,7 @@ protected:
     
     std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd);
 
-    virtual void WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) = 0;
+    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) = 0;
 
     // record bytes received on candidate path to increase amp budget while probing
     virtual void OnCandidatePathDatagramReceived(const common::Address& addr, uint32_t bytes) override {

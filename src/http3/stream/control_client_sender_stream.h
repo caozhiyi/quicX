@@ -15,7 +15,7 @@ namespace http3 {
 class ControlClientSenderStream:
     public ControlSenderStream {
 public:
-    ControlClientSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
+    ControlClientSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~ControlClientSenderStream();
 

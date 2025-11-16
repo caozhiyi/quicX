@@ -4,12 +4,14 @@
 #include "quic/include/if_quic_stream.h"
 
 namespace quicx {
-namespace quic {
 
-/*
- recv stream interface, when client make a directional stream, server will get a recv stream object which only can receive data. 
- the first thing you should do is set read callback function when you get the stream.
-*/
+/**
+ * @brief Receive-only stream interface.
+ *
+ * Receive streams are created implicitly by the remote peer. Applications must
+ * install the read callback immediately after obtaining the stream; otherwise
+ * inbound data may be dropped.
+ */
 class IQuicRecvStream:
     public virtual IQuicStream {
 public:
@@ -19,17 +21,22 @@ public:
     virtual StreamDirection GetDirection() = 0;
     virtual uint64_t GetStreamID() = 0;
 
-    // close the stream immediately, the stream will be closed immediately even if there are some data inflight.
-    // error code will be sent to the peer.
+    /**
+     * @brief Abort the stream and inform the peer with an error code.
+     *
+     * Pending data may be discarded locally.
+     */
     virtual void Reset(uint32_t error) = 0;
 
-    // when there are some data received, the callback function will be called.
-    // the callback function will be called in the recv thread. so you should not do any blocking operation in the callback function.
-    // you should set the callback function firstly, otherwise the data received will be discarded.
+    /**
+     * @brief Provide the handler invoked when data arrives.
+     *
+     * The callback executes on the connection's receive thread; keep work
+     * lightweight to avoid blocking packet processing.
+     */
     virtual void SetStreamReadCallBack(stream_read_callback cb) = 0;
 };
 
-}
 }
 
 #endif

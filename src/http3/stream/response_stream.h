@@ -6,6 +6,8 @@
 #include <unordered_map>
 
 #include "http3/include/type.h"
+#include "http3/http/request.h"
+#include "http3/http/response.h"
 #include "http3/router/if_router.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/req_resp_base_stream.h"
@@ -39,7 +41,7 @@ class ResponseStream:
 public:
     ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-        const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+        const std::shared_ptr<IQuicBidirectionStream>& stream,
         std::shared_ptr<IHttpProcessor> http_processor,
         const std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
@@ -50,7 +52,7 @@ public:
         
 private:
     virtual void HandleHeaders() override;
-    virtual void HandleData(const std::vector<uint8_t>& data, bool is_last) override;
+    virtual void HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) override;
     // call upper layer handler
     void HandleHttp(std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> handler);
     // send response and handle push
@@ -60,8 +62,8 @@ private:
     uint32_t body_length_;
     uint32_t received_body_length_;
     RouteConfig route_config_;
-    std::shared_ptr<IRequest> request_;           // Request object (created in HandleHeaders)
-    std::shared_ptr<IResponse> response_;         // Response object (created in HandleHeaders, used in HandleData)
+    std::shared_ptr<Request> request_;           // Request object (created in HandleHeaders)
+    std::shared_ptr<Response> response_;         // Response object (created in HandleHeaders, used in HandleData)
     std::shared_ptr<IHttpProcessor> http_processor_;
     std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler_;
 };

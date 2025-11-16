@@ -38,33 +38,33 @@ static const char key_pem[] =
       "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
       "-----END RSA PRIVATE KEY-----\n"; 
 
-    quicx::http3::Http3Settings settings = quicx::http3::kDefaultHttp3Settings;
+    quicx::Http3Settings settings = quicx::kDefaultHttp3Settings;
     settings.enable_push = 1;
-    auto server = quicx::http3::IServer::Create(settings);
-    server->AddHandler(quicx::http3::HttpMethod::kGet,
+    auto server = quicx::IServer::Create(settings);
+    server->AddHandler(quicx::HttpMethod::kGet,
         "/hello",
-        [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::cout << "get request method: " << req->GetMethodString() << std::endl;
             std::cout << "get request path: " << req->GetPath() << std::endl;
             std::cout << "get request body: " << req->GetBody() << std::endl;
 
-            resp->SetBody("hello world");
+            resp->AppendBody("hello world");
             resp->SetStatusCode(200);
 
-            auto push_resp = quicx::http3::IResponse::Create();
+            auto push_resp = quicx::IResponse::Create();
             push_resp->AddHeader("push-key1", "test1");
             push_resp->AddHeader("push-key2", "test2");
-            push_resp->SetBody("hello push");
+            push_resp->AppendBody("hello push");
             push_resp->SetStatusCode(200);
             resp->AppendPush(push_resp);
         }
     );
 
-    quicx::http3::Http3ServerConfig config;
+    quicx::Http3ServerConfig config;
     config.cert_pem_ = cert_pem;
     config.key_pem_ = key_pem;
     config.config_.thread_num_ = 1;
-    config.config_.log_level_ = quicx::http3::LogLevel::kError;
+    config.config_.log_level_ = quicx::LogLevel::kError;
     server->Init(config);
     server->Start("0.0.0.0", 8882);
     server->Join();

@@ -22,7 +22,7 @@ struct RequestResult {
 
 class ConcurrentTester {
 private:
-    quicx::http3::IClient* client_;
+    quicx::IClient* client_;
     std::vector<RequestResult> results_;
     std::mutex results_mutex_;
     std::atomic<int> pending_requests_{0};
@@ -30,7 +30,7 @@ private:
     std::chrono::steady_clock::time_point test_start_time_;
 
 public:
-    ConcurrentTester(quicx::http3::IClient* client) : client_(client) {
+    ConcurrentTester(quicx::IClient* client) : client_(client) {
         test_start_time_ = std::chrono::steady_clock::now();
     }
 
@@ -38,13 +38,13 @@ public:
         pending_requests_++;
         
         auto start = std::chrono::steady_clock::now();
-        auto request = quicx::http3::IRequest::Create();
+        auto request = quicx::IRequest::Create();
         
         client_->DoRequest(
             url,
-            quicx::http3::HttpMethod::kGet,
+            quicx::HttpMethod::kGet,
             request,
-            [this, id, endpoint, start](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+            [this, id, endpoint, start](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
                 auto end = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
                 
@@ -56,7 +56,7 @@ public:
                 result.duration_ms = duration.count();
                 result.success = (error == 0);
                 result.status_code = error == 0 ? response->GetStatusCode() : 0;
-                result.response = error == 0 ? response->GetBody() : "";
+                result.response = error == 0 ? response->GetBodyAsString() : "";
                 
                 {
                     std::lock_guard<std::mutex> lock(results_mutex_);
@@ -326,11 +326,11 @@ void RunScalabilityTest(ConcurrentTester& tester, const std::string& base_url) {
 }
 
 int main(int argc, char* argv[]) {
-    auto client = quicx::http3::IClient::Create();
+    auto client = quicx::IClient::Create();
 
-    quicx::http3::Http3Config config;
+    quicx::Http3Config config;
     config.thread_num_ = 4;
-    config.log_level_ = quicx::http3::LogLevel::kError;
+    config.log_level_ = quicx::LogLevel::kError;
     client->Init(config);
 
     std::string base_url = "https://127.0.0.1:8885";

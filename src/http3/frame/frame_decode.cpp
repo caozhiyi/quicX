@@ -25,7 +25,7 @@ static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>(
     {FrameType::kMaxPushId,    []() -> std::shared_ptr<IFrame> { return std::make_shared<MaxPushIdFrame>(); }},
 };
 
-bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     if(buffer->GetDataLength() == 0) {
         common::LOG_DEBUG("DecodeFrames: buffer is empty");
         return false;

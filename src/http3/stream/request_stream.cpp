@@ -1,8 +1,6 @@
 #include "common/log/log.h"
 #include "http3/http/error.h"
 #include "http3/http/response.h"
-#include "common/buffer/buffer.h"
-#include "http3/frame/data_frame.h"
 #include "http3/stream/pseudo_header.h"
 #include "http3/stream/request_stream.h"
 #include "http3/frame/push_promise_frame.h"
@@ -13,7 +11,7 @@ namespace http3 {
 // Constructor for complete mode
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-    const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+    const std::shared_ptr<IQuicBidirectionStream>& stream,
     std::shared_ptr<IAsyncClientHandler> async_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
@@ -27,7 +25,7 @@ RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
 
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-    const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+    const std::shared_ptr<IQuicBidirectionStream>& stream,
     http_response_handler response_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
@@ -49,8 +47,9 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     // Check if using streaming mode for request body sending
     auto body_provider = request->GetRequestBodyProvider();
     
-    if (!body_provider && !request->GetBody().empty()) {
-        request->AddHeader("content-length", std::to_string(request->GetBody().size()));
+    auto body_buffer = request->GetBody();
+    if (!body_provider && body_buffer && body_buffer->GetDataLength() > 0) {
+        request->AddHeader("content-length", std::to_string(body_buffer->GetDataLength()));
     }
 
     // send headers
@@ -63,8 +62,8 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
         return SendBodyWithProvider(body_provider);
     
     // if body is set, send body directly
-    } else if (!request->GetBody().empty()) {
-        return SendBodyDirectly(request->GetBody());
+    } else if (body_buffer && body_buffer->GetDataLength() > 0) {
+        return SendBodyDirectly(std::dynamic_pointer_cast<common::IBuffer>(body_buffer));
     }
     return true;
 }
@@ -94,29 +93,31 @@ void RequestStream::HandleHeaders() {
     }
 }
 
-void RequestStream::HandleData(const std::vector<uint8_t>& data, bool is_last) {
+void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) {
     // Validate data size
-    if (body_length_ > 0 && received_body_length_ + data.size() > body_length_) {
+    if (body_length_ > 0 && received_body_length_ + data->GetDataLength() > body_length_) {
         common::LOG_ERROR("ReqRespBaseStream::HandleData: received more data than content-length, expected %u, got %zu",
-                         body_length_, received_body_length_ + data.size());
+                         body_length_, received_body_length_ + data->GetDataLength());
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
 
-    received_body_length_ += data.size();
+    received_body_length_ += data->GetDataLength();
 
     // Streaming mode: call handler immediately
     if (async_handler_) {
+        data->VisitData([&](uint8_t* data, uint32_t length) {
+            async_handler_->OnBodyChunk(data, length, is_last);
+        });
         // Streaming mode: call handler immediately chunk as potentially last
-        async_handler_->OnBodyChunk(data.data(), data.size(), is_last);
         return;
     }
     
-    // Complete mode: accumulate to body_
-    body_.insert(body_.end(), data.begin(), data.end());
-        
-    if (body_length_ == body_.size() || is_last) {
-        response_->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+    // Complete mode: accumulate to body_    
+    if (body_length_ == received_body_length_ || is_last) {
+        data->VisitData([&](uint8_t* ptr, uint32_t len) {
+            response_->AppendBody(ptr, len);
+        });
         response_handler_(response_, 0);
     }
 }
@@ -136,10 +137,8 @@ void RequestStream::HandlePushPromise(std::shared_ptr<IFrame> frame) {
     auto push_promise_frame = std::static_pointer_cast<PushPromiseFrame>(frame);
     // Decode headers using QPACK
     std::unordered_map<std::string, std::string> headers;
-    std::vector<uint8_t> encoded_fields = push_promise_frame->GetEncodedFields();
-    std::shared_ptr<common::Buffer> headers_buffer = std::make_shared<common::Buffer>(encoded_fields.data(), encoded_fields.size());
-    headers_buffer->MoveWritePt(encoded_fields.size());
-    if (!qpack_encoder_->Decode(headers_buffer, headers)) {
+    auto encoded_fields = push_promise_frame->GetEncodedFields();
+    if (!qpack_encoder_->Decode(encoded_fields, headers)) {
         common::LOG_ERROR("RequestStream::HandlePushPromise error");
         error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         return;

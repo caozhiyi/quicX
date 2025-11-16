@@ -2,9 +2,9 @@
 #include <iostream>
 
 #include "http_client.h"
-#include "http3/include/if_response.h"
 #include "common/util/time.h"
-
+#include "http3/include/if_client.h"
+#include "http3/include/if_response.h"
 
 HttpClient::HttpClient() : verbose_(false) {
 }
@@ -15,15 +15,15 @@ HttpClient::~HttpClient() {
 bool HttpClient::Init(bool verbose) {
     verbose_ = verbose;
     
-    client_ = quicx::http3::IClient::Create();
+    client_ = quicx::IClient::Create();
     if (!client_) {
         std::cerr << "Failed to create HTTP/3 client" << std::endl;
         return false;
     }
     
-    quicx::http3::Http3Config config;
+    quicx::Http3Config config;
     config.thread_num_ = 2;
-    config.log_level_ = verbose ? quicx::http3::LogLevel::kInfo : quicx::http3::LogLevel::kError;
+    config.log_level_ = verbose ? quicx::LogLevel::kInfo : quicx::LogLevel::kError;
     
     if (!client_->Init(config)) {
         std::cerr << "Failed to initialize HTTP/3 client" << std::endl;
@@ -56,11 +56,11 @@ bool HttpClient::DoRequest(const std::string& url,
     }
     
     // Create request
-    auto request = quicx::http3::IRequest::Create();
+    auto request = quicx::IRequest::Create();
     
     // Set body if provided
     if (!data.empty()) {
-        request->SetBody(data);
+        request->AppendBody(data);
         if (verbose_) {
             std::cerr << "* Request body: " << data.length() << " bytes" << std::endl;
         }
@@ -106,7 +106,7 @@ bool HttpClient::DoRequest(const std::string& url,
             StringToMethod(method),
             request,
             [this, &response, &request_completed](
-                std::shared_ptr<quicx::http3::IResponse> resp, uint32_t error) {
+                std::shared_ptr<quicx::IResponse> resp, uint32_t error) {
                 std::unique_lock<std::mutex> lock(mutex_);
                 
                 response.end_time_ms = quicx::common::UTCTimeMsec();
@@ -115,7 +115,7 @@ bool HttpClient::DoRequest(const std::string& url,
                 if (error == 0 && resp) {
                     response.status_code = resp->GetStatusCode();
                     response.headers = resp->GetHeaders();
-                    response.body = resp->GetBody();
+                    //response.body = resp->GetBodyAsString(); TODO
                 }
                 
                 response.completed = true;
@@ -140,16 +140,16 @@ bool HttpClient::DoRequest(const std::string& url,
     return response.error == 0;
 }
 
-quicx::http3::HttpMethod HttpClient::StringToMethod(const std::string& method) {
-    if (method == "GET") return quicx::http3::HttpMethod::kGet;
-    if (method == "POST") return quicx::http3::HttpMethod::kPost;
-    if (method == "PUT") return quicx::http3::HttpMethod::kPut;
-    if (method == "DELETE") return quicx::http3::HttpMethod::kDelete;
-    if (method == "HEAD") return quicx::http3::HttpMethod::kHead;
-    if (method == "OPTIONS") return quicx::http3::HttpMethod::kOptions;
-    if (method == "PATCH") return quicx::http3::HttpMethod::kPatch;
-    if (method == "TRACE") return quicx::http3::HttpMethod::kTrace;
-    if (method == "CONNECT") return quicx::http3::HttpMethod::kConnect;
+quicx::HttpMethod HttpClient::StringToMethod(const std::string& method) {
+    if (method == "GET") return quicx::HttpMethod::kGet;
+    if (method == "POST") return quicx::HttpMethod::kPost;
+    if (method == "PUT") return quicx::HttpMethod::kPut;
+    if (method == "DELETE") return quicx::HttpMethod::kDelete;
+    if (method == "HEAD") return quicx::HttpMethod::kHead;
+    if (method == "OPTIONS") return quicx::HttpMethod::kOptions;
+    if (method == "PATCH") return quicx::HttpMethod::kPatch;
+    if (method == "TRACE") return quicx::HttpMethod::kTrace;
+    if (method == "CONNECT") return quicx::HttpMethod::kConnect;
     
-    return quicx::http3::HttpMethod::kGet;  // Default
+    return quicx::HttpMethod::kGet;  // Default
 }

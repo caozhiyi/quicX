@@ -1,17 +1,19 @@
-#include "common/buffer/buffer.h"
+#include "common/buffer/buffer_chunk.h"
+#include "common/buffer/single_block_buffer.h"
 #include "quic/udp/pool_pakcet_allotor.h"
 
 namespace quicx {
 namespace quic {
 
 PoolPacketAllotor::PoolPacketAllotor():
-    packet_size_(200) {
+    packet_size_(200), // TODO: put into config
+    pool_(common::MakeBlockMemoryPoolPtr(1500, 64)) {
     for (uint32_t i = 0; i < packet_size_; ++i) {
-        uint8_t* mem = new uint8_t[1500];
-        auto buffer = std::shared_ptr<common::IBuffer>(
-            new common::Buffer(mem, 1500),
-            [mem](common::IBuffer* p){ delete[] mem; delete p; }
-        );
+        auto chunk = std::make_shared<common::BufferChunk>(pool_);
+        if (!chunk || !chunk->Valid()) {
+            continue;
+        }
+        auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
         auto pkt = new NetPacket();
         pkt->SetData(buffer);
         packet_queue_.Push(pkt);
@@ -38,8 +40,13 @@ std::shared_ptr<NetPacket> PoolPacketAllotor::Malloc() {
 
 void PoolPacketAllotor::Free(NetPacket* pkt) {
     if (packet_queue_.Size() < packet_size_) {
+        if (auto buffer = pkt->GetData()) {
+            buffer->Clear();
+        }
         packet_queue_.Push(pkt);
+        return;
     }
+    delete pkt;
 }
 
 }

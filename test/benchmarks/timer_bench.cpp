@@ -2,8 +2,9 @@
 #include <benchmark/benchmark.h>
 #include <cstdint>
 
-#include "common/timer/treemap_timer.h"
 #include "common/timer/timer_task.h"
+#include "common/timer/treemap_timer.h"
+
 
 namespace quicx {
 namespace common {

@@ -1,25 +1,32 @@
 #include "common/log/log.h"
-#include "common/buffer/buffer.h"
 #include "quic/connection/util.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/crypto_frame.h"
 #include "quic/frame/stream_frame.h"
+#include "quic/quicx/global_resource.h"
+#include "common/buffer/buffer_chunk.h"
+#include "common/buffer/single_block_buffer.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 
 namespace quicx {
 namespace quic {
 
-FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t size):
+FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t limit_size):
     encryption_level_(kApplication),
     cur_data_offset_(0),
     limit_data_offset_(0),
     frame_type_bit_(0) {
-    cache_ = new uint8_t[size];
-    buffer_ = std::make_shared<common::Buffer>(cache_, cache_ + size);
+    auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        common::LOG_ERROR("failed to allocate buffer chunk");
+        return;
+    }
+    chunk->SetLimitSize(limit_size);
+    buffer_ = std::make_shared<common::SingleBlockBuffer>(chunk);
 }
 
 FixBufferFrameVisitor::~FixBufferFrameVisitor() {
-    delete[] cache_;
+
 }
 
 bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {

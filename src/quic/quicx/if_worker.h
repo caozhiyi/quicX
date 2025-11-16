@@ -25,7 +25,7 @@ public:
     // Get the worker id
     virtual std::string GetWorkerId() = 0;
     // Handle packets
-    virtual void HandlePacket(PacketInfo& packet_info) = 0;
+    virtual void HandlePacket(PacketParseResult& packet_info) = 0;
     // Get the event loop
     virtual std::shared_ptr<common::IEventLoop> GetEventLoop() = 0;
     // add a connection id notify

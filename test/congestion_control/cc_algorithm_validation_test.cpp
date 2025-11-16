@@ -3,7 +3,9 @@
 #include <cmath>
 #include "cc_test_framework.h"
 
-using namespace quicx::quic::test;
+namespace quicx {
+namespace quic {
+namespace {
 
 // ========== Congestion Window Growth Validation ==========
 
@@ -533,3 +535,7 @@ TEST(CubicOptimizationTest, HyStartVsTraditionalSlowStart) {
     EXPECT_LT(cubic_metrics.slow_start_duration_us, 3000000UL);
     EXPECT_GT(cubic_metrics.throughput_mbps, 0.5);
 }
+
+}
+} // namespace quic
+} // namespace quicx

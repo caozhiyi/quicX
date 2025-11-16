@@ -4,8 +4,7 @@
 #include <memory>
 #include <cstdint>
 #include "http3/frame/type.h"
-#include "common/buffer/if_buffer_read.h"
-#include "common/buffer/if_buffer_write.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {
@@ -17,8 +16,8 @@ public:
 
     uint16_t GetType() { return type_; }
 
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer) = 0;
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false) = 0;
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer) = 0;
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false) = 0;
     virtual uint32_t EvaluateEncodeSize() = 0;
     virtual uint32_t EvaluatePayloadSize() = 0;
 

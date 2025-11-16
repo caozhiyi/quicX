@@ -14,7 +14,7 @@ namespace {
 
 class MockClientConnection {
 public:
-    MockClientConnection(std::shared_ptr<quic::IQuicRecvStream> stream) 
+    MockClientConnection(std::shared_ptr<IQuicRecvStream> stream) 
         : error_code_(0), goaway_id_(0) {
         // Start with UnidentifiedStream to read stream type
         unidentified_stream_ = std::make_shared<UnidentifiedStream>(stream,
@@ -25,8 +25,8 @@ public:
     ~MockClientConnection() {}
 
     void OnStreamTypeIdentified(uint64_t stream_type, 
-                                std::shared_ptr<quic::IQuicRecvStream> stream,
-                                std::shared_ptr<common::IBufferRead> remaining_data) {
+                                std::shared_ptr<IQuicRecvStream> stream,
+                                std::shared_ptr<IBufferRead> remaining_data) {
         // Verify it's a control stream
         EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kControl));
         
@@ -69,7 +69,7 @@ private:
 
 class MockServerConnection {
 public:
-    MockServerConnection(std::shared_ptr<quic::IQuicSendStream> stream) 
+    MockServerConnection(std::shared_ptr<IQuicSendStream> stream) 
         : error_code_(0) {
         sender_stream_ = std::make_shared<ControlSenderStream>(stream,
             std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));

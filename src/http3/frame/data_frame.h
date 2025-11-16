@@ -2,9 +2,9 @@
 #define HTTP3_FRAME_DATA_FRAME
 
 #include <memory>
-#include <vector>
 #include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {
@@ -17,17 +17,17 @@ public:
     uint32_t GetLength() const { return length_; }
     void SetLength(uint32_t length) { length_ = length; }
 
-    const std::vector<uint8_t>& GetData() const { return data_; }
-    void SetData(const std::vector<uint8_t>& data) { data_ = data; }
+    std::shared_ptr<common::IBuffer> GetData() const { return data_; }
+    void SetData(std::shared_ptr<common::IBuffer> data) { data_ = data; }
 
-    bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     uint32_t EvaluateEncodeSize();
     uint32_t EvaluatePayloadSize();
 
 private:
     uint64_t length_;
-    std::vector<uint8_t> data_;
+    std::shared_ptr<common::IBuffer> data_;
 };
 
 }

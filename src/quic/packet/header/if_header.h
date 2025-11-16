@@ -3,10 +3,9 @@
 
 
 #include <cstdint>
-#include "common/buffer/buffer_span.h"
+#include "common/buffer/if_buffer.h"
 #include "quic/packet/header/header_flag.h"
-#include "common/buffer/if_buffer_read.h"
-#include "common/buffer/if_buffer_write.h"
+#include "common/buffer/shared_buffer_span.h"
 
 namespace quicx {
 namespace quic {
@@ -19,16 +18,16 @@ public:
     IHeader(uint8_t flag): HeaderFlag(flag) {}
     virtual ~IHeader() {}
 
-    virtual bool EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) = 0;
-    virtual bool DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false) = 0;
+    virtual bool EncodeHeader(std::shared_ptr<common::IBuffer> buffer) = 0;
+    virtual bool DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with_flag = false) = 0;
     virtual uint32_t EncodeHeaderSize() = 0;
 
     virtual void SetDestinationConnectionId(const uint8_t* id, uint8_t len) = 0;
     virtual uint8_t GetDestinationConnectionIdLength() = 0;
     
-    virtual common::BufferSpan& GetHeaderSrcData() { return header_src_data_; }
+    virtual common::SharedBufferSpan& GetHeaderSrcData() { return header_src_data_; }
 protected:
-    common::BufferSpan header_src_data_;
+    common::SharedBufferSpan header_src_data_;
 };
 
 }

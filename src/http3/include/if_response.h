@@ -6,9 +6,9 @@
 #include <vector>
 #include <unordered_map>
 #include "http3/include/type.h" 
+#include "common/include/if_buffer_read.h"
 
 namespace quicx {
-namespace http3 {
 
 /**
  * @brief Interface for HTTP3 responses
@@ -33,6 +33,13 @@ public:
      * @return The status code
      */
     virtual uint32_t GetStatusCode() const = 0;
+
+    /**
+     * @brief Get the response body as a string
+     * 
+     * @return The response body as a string
+     */
+    virtual std::string GetBodyAsString() const = 0;
 
     /**
      * @brief Add a header
@@ -70,18 +77,19 @@ public:
      * 
      * Use this for small to medium-sized bodies that can be buffered in memory.
      * 
-     * @param body The complete response body as a string
+     * @param body The complete response body as a string or buffer
      * 
      * @note If SetResponseBodyProvider() is called, this body will be ignored.
      */
-    virtual void SetBody(const std::string& body) = 0;
+    virtual void AppendBody(const std::string& body) = 0;
+    virtual void AppendBody(const uint8_t* data, uint32_t length) = 0;
 
     /**
      * @brief Get the complete response body
      * 
      * @return Reference to the response body string
      */
-     virtual const std::string& GetBody() const = 0;
+     virtual std::shared_ptr<IBufferRead> GetBody() const = 0;
 
     /**
      * @brief Set response body provider for streaming mode
@@ -136,7 +144,6 @@ public:
     static std::shared_ptr<IResponse> Create();
 };
 
-}
 }
 
 #endif

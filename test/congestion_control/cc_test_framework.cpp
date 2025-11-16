@@ -11,7 +11,6 @@
 
 namespace quicx {
 namespace quic {
-namespace test {
 
 // ========== TestScenario Factory Methods ==========
 
@@ -389,6 +388,5 @@ std::vector<std::pair<std::string, CCTestFramework::CCFactory>> CCAlgorithmFacto
     };
 }
 
-} // namespace test
 } // namespace quic
 } // namespace quicx

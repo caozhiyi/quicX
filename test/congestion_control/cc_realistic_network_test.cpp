@@ -2,8 +2,9 @@
 
 #include "cc_test_framework.h"
 
-using namespace quicx::quic;
-using namespace quicx::quic::test;
+namespace quicx {
+namespace quic {
+namespace {
 
 // ========== Realistic Network Scenario Tests ==========
 
@@ -222,3 +223,7 @@ TEST(RealisticNetworkTest, DynamicCondition_WiFi_to_LTE) {
     EXPECT_GT(metrics.throughput_mbps, 5.0);
     EXPECT_GT(metrics.total_bytes_acked, 0UL);
 }
+
+}
+} // namespace quic
+} // namespace quicx

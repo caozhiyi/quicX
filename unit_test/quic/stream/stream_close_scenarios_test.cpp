@@ -3,9 +3,9 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <cstring>
 
 #include "quic/frame/type.h"
-#include "common/buffer/buffer.h"
 #include "quic/stream/send_stream.h"
 #include "quic/stream/recv_stream.h"
 #include "quic/frame/stream_frame.h"
@@ -13,6 +13,8 @@
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/stream/bidirection_stream.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 using namespace quicx;
 using namespace quic;
@@ -56,7 +58,9 @@ TEST_F(StreamCloseScenarios, RecvStreamNormalCompletionNoStopSending) {
     frame->SetStreamID(4);
     frame->SetOffset(0);
     uint8_t data[] = "Test";
-    frame->SetData(data, 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write(data, 4);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     
     stream->OnFrame(frame);  // use public OnFrame
@@ -144,7 +148,9 @@ TEST_F(StreamCloseScenarios, BidirectionStreamBothDirectionsRequired) {
     recv_frame->SetStreamID(4);
     recv_frame->SetOffset(0);
     uint8_t resp[] = "Response";
-    recv_frame->SetData(resp, 8);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(8));
+    data_buffer->Write(resp, 8);
+    recv_frame->SetData(data_buffer->GetSharedReadableSpan());
     recv_frame->SetFin();
     
     stream->GetRecvStateMachine()->OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag);
@@ -245,7 +251,10 @@ TEST_F(StreamCloseScenarios, SendStreamRespondsToStopSending) {
     
     // first actually send data, so send_data_offset_ will be updated
     uint8_t buf[1000] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, 1000);
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(1000);
+    ASSERT_TRUE(chunk->Valid());
+    std::memcpy(chunk->GetData(), buf, 1000);
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     
     class MockVisitor1 : public IFrameVisitor {
     public:
@@ -272,7 +281,10 @@ TEST_F(StreamCloseScenarios, SendStreamRespondsToStopSending) {
     
     // check if RESET_STREAM is generated
     uint8_t buf2[1000] = {0};
-    auto buffer2 = std::make_shared<common::Buffer>(buf2, 1000);
+    auto chunk2 = std::make_shared<common::StandaloneBufferChunk>(1000);
+    ASSERT_TRUE(chunk2->Valid());
+    std::memcpy(chunk2->GetData(), buf2, 1000);
+    auto buffer2 = std::make_shared<common::SingleBlockBuffer>(chunk2);
     
     class MockVisitor2 : public IFrameVisitor {
     public:

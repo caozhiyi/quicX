@@ -3,13 +3,16 @@
 
 #include "quic/include/type.h"
 #include "quic/include/if_quic_stream.h"
+#include "common/include/if_buffer_write.h"
 
 namespace quicx {
-namespace quic {
 
-/*
- bidirection stream interface
-*/
+/**
+ * @brief Bidirectional stream interface.
+ *
+ * Combines the send and receive halves into a single object, mirroring HTTP/3's
+ * request/response patterns.
+ */
 class IQuicBidirectionStream:
     public virtual IQuicStream {
 public:
@@ -19,29 +22,34 @@ public:
     virtual StreamDirection GetDirection() = 0;
     virtual uint64_t GetStreamID() = 0;
 
-    // close the stream gracefully, the stream will be closed after all data transported.
+    /** Complete the stream after in-flight data has been delivered. */
     virtual void Close() = 0;
 
-    // close the stream immediately, the stream will be closed immediately even if there are some data inflight.
-    // error code will be sent to the peer.
+    /** Abort the stream immediately and inform the peer. */
     virtual void Reset(uint32_t error) = 0;
 
-    // send data to peer, return the number of bytes sended.
+    /** Send raw bytes or buffered data to the peer. */
     virtual int32_t Send(uint8_t* data, uint32_t len) = 0;
-    virtual int32_t Send(std::shared_ptr<common::IBufferRead> buffer) = 0;
+    virtual int32_t Send(std::shared_ptr<IBufferRead> buffer) = 0;
+    virtual std::shared_ptr<IBufferWrite> GetSendBuffer() = 0;
+    virtual bool Flush() = 0;
 
-    // called when data is ready to send, that means the data is in the send buffer.
-    // called in the send thread, so do not do any blocking operation.
-    // if you don't care about send data detail, you may not set the callback.
+    /**
+     * @brief Callback invoked when queued data transitions to a sendable state.
+     *
+     * Useful for advanced flow-control or telemetry scenarios.
+     */
     virtual void SetStreamWriteCallBack(stream_write_callback cb) = 0;
 
-    // when there are some data received, the callback function will be called.
-    // the callback function will be called in the recv thread. so you should not do any blocking operation in the callback function.
-    // you should set the callback function firstly, otherwise the data received will be discarded.
+    /**
+     * @brief Provide the handler that consumes inbound data.
+     *
+     * The handler executes on the receive thread; keep work minimal and offload
+     * heavy lifting to other threads if necessary.
+     */
     virtual void SetStreamReadCallBack(stream_read_callback cb) = 0;
 };
 
-}
 }
 
 #endif

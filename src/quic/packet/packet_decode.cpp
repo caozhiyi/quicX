@@ -11,7 +11,7 @@
 namespace quicx {
 namespace quic {
 
-bool DecodePackets(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IPacket>>& packets) {
+bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IPacket>>& packets) {
     if(!buffer) {
         return false;
     }

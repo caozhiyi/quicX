@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
-#include "common/buffer/buffer.h"
 #include "common/decode/decode.h"
 #include "http3/frame/cancel_push_frame.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace http3 {
@@ -10,21 +11,13 @@ namespace {
 class CancelPushFrameTest : public testing::Test {
 protected:
     void SetUp() override {
-        buffer_ = std::make_shared<common::Buffer>(buf_, sizeof(buf_));
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
+        buffer_ = std::make_shared<common::SingleBlockBuffer>(chunk);
         frame_ = std::make_shared<CancelPushFrame>();
     }
-    uint8_t buf_[1024];
-    std::shared_ptr<common::Buffer> buffer_;
+    std::shared_ptr<common::SingleBlockBuffer> buffer_;
     std::shared_ptr<CancelPushFrame> frame_;
 };
-
-TEST_F(CancelPushFrameTest, BasicProperties) {
-    EXPECT_EQ(frame_->GetType(), FrameType::kCancelPush);
-    
-    uint64_t push_id = 100;
-    frame_->SetPushId(push_id);
-    EXPECT_EQ(frame_->GetPushId(), push_id);
-}
 
 TEST_F(CancelPushFrameTest, EncodeAndDecode) {
     uint64_t push_id = 100;

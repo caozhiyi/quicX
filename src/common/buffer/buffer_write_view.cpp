@@ -1,89 +1,137 @@
 #include <cstring>
-#include <cstdlib> // for abort
-#include "common/buffer/buffer_read_view.h"
+
+#include "common/log/log.h"
 #include "common/buffer/buffer_write_view.h"
 
 namespace quicx {
 namespace common {
 
-BufferWriteView::BufferWriteView(uint8_t* start, uint8_t* end):
-    write_pos_(start),
-    buffer_start_(start),
-    buffer_end_(end) {
+BufferWriteView::BufferWriteView() = default;
 
+BufferWriteView::BufferWriteView(uint8_t* start, uint32_t len)
+    : BufferWriteView(start, start ? start + len : nullptr) {}
+
+BufferWriteView::BufferWriteView(uint8_t* start, uint8_t* end)
+    : BufferWriteView() {
+    Reset(start, end);
 }
 
-BufferWriteView::~BufferWriteView() {
-    // view do nothing
+void BufferWriteView::Reset(uint8_t* start, uint32_t len) {
+    Reset(start, start ? start + len : nullptr);
 }
 
-uint32_t BufferWriteView::Write(uint8_t* data, uint32_t len) {
-    /*s-----------w-------------------e*/
-    if (write_pos_ < buffer_end_) {
-        size_t size = buffer_end_ - write_pos_;
-        // can save all data
-        if (len <= size) {
-            memcpy(write_pos_, data, len);
-            write_pos_ += len;
-            return len;
+void BufferWriteView::Reset(uint8_t* start, uint8_t* end) {
+    buffer_start_ = start;
+    buffer_end_ = end;
+    write_pos_ = start;
 
-        // can save a part of data
-        } else {
-            memcpy(write_pos_, data, size);
-            write_pos_ += size;
-
-            return (uint32_t)size;
-        }
-
-    /*s------------------------------we*/
-    } else if (write_pos_ == buffer_end_) {
-        return 0;
-
-    } else {
-        // shouldn't be here
-        abort();
-        return 0;
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        buffer_start_ = nullptr;
+        buffer_end_ = nullptr;
+        write_pos_ = nullptr;
     }
 }
 
-uint32_t BufferWriteView::GetFreeLength() {
-    /*s-----------w-------------------e*/
-    if (write_pos_ <= buffer_end_) {
-        return uint32_t(buffer_end_ - write_pos_);
-
-    } else {
-        // shouldn't be here
-        abort();
+uint32_t BufferWriteView::Write(const uint8_t* data, uint32_t len) {
+    if (data == nullptr) {
+        LOG_ERROR("data buffer is nullptr");
         return 0;
     }
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return 0;
+    }
+
+    const size_t remaining = buffer_end_ - write_pos_;
+    const uint32_t copy_len = remaining < len ? static_cast<uint32_t>(remaining) : len;
+    if (copy_len == 0) {
+        return 0;
+    }
+
+    std::memcpy(write_pos_, data, copy_len);
+    write_pos_ += copy_len;
+    return copy_len;
 }
 
 uint32_t BufferWriteView::MoveWritePt(int32_t len) {
-    if (buffer_end_ < write_pos_) {
-        // shouldn't be here
-        abort();
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return 0;
     }
-    
-    size_t size = buffer_end_ - write_pos_;
-    if (size >= len) {
+
+    if (len > 0) {
+        const size_t remaining = buffer_end_ - write_pos_;
+        if (static_cast<int32_t>(remaining) <= len) {
+            write_pos_ = buffer_end_;
+            return static_cast<uint32_t>(remaining);
+        }
         write_pos_ += len;
-    } else {
-        write_pos_ += size;
+        return static_cast<uint32_t>(len);
     }
-    return (uint32_t)(buffer_end_ - write_pos_);
+
+    len = -len;
+    const size_t produced = write_pos_ - buffer_start_;
+    if (static_cast<int32_t>(produced) <= len) {
+        write_pos_ = buffer_start_;
+        return static_cast<uint32_t>(produced);
+    }
+    write_pos_ -= len;
+    return static_cast<uint32_t>(len);
 }
 
-BufferSpan BufferWriteView::GetWriteSpan() {
-    return std::move(BufferSpan(write_pos_, buffer_end_));
+uint32_t BufferWriteView::GetFreeLength() const {
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return 0;
+    }
+    return static_cast<uint32_t>(buffer_end_ - write_pos_);
 }
 
-BufferWriteView BufferWriteView::GetWriteView(uint32_t offset) {
-    return std::move(BufferWriteView(buffer_start_ + offset, buffer_end_));
+uint32_t BufferWriteView::GetDataLength() const {
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return 0;
+    }
+    return static_cast<uint32_t>(write_pos_ - buffer_start_);
 }
 
-std::shared_ptr<common::IBufferWrite> BufferWriteView::GetWriteViewPtr(uint32_t offset) {
-    return std::make_shared<BufferWriteView>(buffer_start_ + offset, buffer_end_);
+uint8_t* BufferWriteView::GetData() const {
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return nullptr;
+    }
+    return write_pos_;
+}
+
+BufferSpan BufferWriteView::GetWritableSpan() const {
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return BufferSpan();
+    }
+    return BufferSpan(write_pos_, buffer_end_);
+}
+
+BufferSpan BufferWriteView::GetWrittenSpan() const {
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return BufferSpan();
+    }
+    return BufferSpan(buffer_start_, write_pos_);
+}
+
+bool BufferWriteView::Valid() const {
+    if (buffer_start_ == nullptr || buffer_end_ == nullptr) {
+        return false;
+    }
+    if (buffer_start_ > buffer_end_) {
+        return false;
+    }
+    return write_pos_ != nullptr &&
+           write_pos_ >= buffer_start_ &&
+           write_pos_ <= buffer_end_;
 }
 
 }
 }
+

@@ -22,7 +22,7 @@ ServerWorker::~ServerWorker() {
 
 }
 
-bool ServerWorker::InnerHandlePacket(PacketInfo& packet_info) {
+bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     if (packet_info.packets_.empty()) {
         common::LOG_ERROR("get a netpacket, but data packets is empty");
         return false;
@@ -99,12 +99,10 @@ void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr) {
         version_negotiation_packet.AddSupportVersion(version);
     }
 
-    uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    std::shared_ptr<NetPacket> net_packet = packet_allotor_->Malloc();
+    auto buffer = net_packet->GetData();
     version_negotiation_packet.Encode(buffer);
 
-    auto net_packet = std::make_shared<NetPacket>();
-    net_packet->SetData(buffer);
     net_packet->SetAddress(addr);
     sender_->Send(net_packet);
     common::LOG_DEBUG("send version negotiate packet. packet size:%d", buffer->GetDataLength());

@@ -24,7 +24,7 @@ public:
         const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der);
 
 private:
-    virtual bool InnerHandlePacket(PacketInfo& packet_info) override;
+    virtual bool InnerHandlePacket(PacketParseResult& packet_info) override;
     void HandleConnectionTimeout(std::shared_ptr<IConnection> conn);
 };
 

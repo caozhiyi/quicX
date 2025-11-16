@@ -6,15 +6,16 @@
 #include "common/network/io_handle.h"
 
 namespace quicx {
-namespace http3 {
 
 std::unique_ptr<IClient> IClient::Create(const Http3Settings& settings) {
-    return std::unique_ptr<IClient>(new Client(settings));
+    return std::unique_ptr<IClient>(new http3::Client(settings));
 }
+
+namespace http3 {
 
 Client::Client(const Http3Settings& settings):
     settings_(settings) {
-    quic_ = quic::IQuicClient::Create();
+    quic_ = IQuicClient::Create();
     quic_->SetConnectionStateCallBack(std::bind(&Client::OnConnection, this, 
         std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
 }
@@ -25,9 +26,9 @@ Client::~Client() {
 }
 
 bool Client::Init(const Http3Config& config) {
-    quic::QuicClientConfig quic_config;
+    QuicClientConfig quic_config;
     quic_config.config_.worker_thread_num_ = config.thread_num_;
-    quic_config.config_.log_level_ = quic::LogLevel(config.log_level_);
+    quic_config.config_.log_level_ = LogLevel(config.log_level_);
     quic_config.config_.enable_ecn_ = config.enable_ecn_;
     quic_config.enable_session_cache_ = false;
     quic_config.session_cache_path_ = "";
@@ -114,13 +115,13 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
     return true;
 }
 
-void Client::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::ConnectionOperation operation, uint32_t error, const std::string& reason) {
+void Client::OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason) {
     std::string addr;
     uint32_t port;
     conn->GetRemoteAddr(addr, port);
 
     std::string host = addr + ":" + std::to_string(port);
-    if (operation == quic::ConnectionOperation::kConnectionClose) {
+    if (operation == ConnectionOperation::kConnectionClose) {
         common::LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
         conn_map_.erase(host);
         return;

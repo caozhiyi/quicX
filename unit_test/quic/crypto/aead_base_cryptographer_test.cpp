@@ -1,9 +1,10 @@
 #include <cstring>
 #include <gtest/gtest.h>
-#include "common/buffer/buffer.h"
+
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_read_view.h"
 #include "quic/packet/header/short_header.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "unit_test/quic/crypto/aead_base_cryptographer_test.h"
 
 namespace quicx {
@@ -15,8 +16,8 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     static const uint32_t s_plaintext_length = 1024;
     
     // make test plaintext
-    std::shared_ptr<common::Buffer> plaintext = std::make_shared<common::Buffer>(pool);
-    auto plaintext_span = plaintext->GetWriteSpan();
+    std::shared_ptr<common::SingleBlockBuffer> plaintext = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2048));
+    auto plaintext_span = plaintext->GetWritableSpan();
     uint8_t* plaintext_pos = plaintext_span.GetStart();
     for (uint16_t i = 0; i < s_plaintext_length; i++) {
         *(plaintext_pos + i) = i;
@@ -24,17 +25,17 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     plaintext->MoveWritePt(s_plaintext_length);
 
     uint64_t pkt_num = 102154;
-    std::shared_ptr<common::Buffer> out_ciphertext = std::make_shared<common::Buffer>(pool);
+    std::shared_ptr<common::SingleBlockBuffer> out_ciphertext = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2048));
     common::BufferSpan associated_data_span = common::BufferSpan((uint8_t*)kAssociatedData, (uint8_t*)kAssociatedData + sizeof(kAssociatedData));
-    common::BufferSpan plaintext_span2 = plaintext->GetReadSpan();
+    common::BufferSpan plaintext_span2 = plaintext->GetReadableSpan();
     if (encrypter->EncryptPacket(pkt_num, associated_data_span, plaintext_span2, out_ciphertext) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << encrypter->GetName() << " EncryptPacket failed";
         return false;
     }
     
-    std::shared_ptr<common::Buffer> out_plaintext = std::make_shared<common::Buffer>(pool);
+    std::shared_ptr<common::SingleBlockBuffer> out_plaintext = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2048));
     common::BufferSpan associated_data_span1 = common::BufferSpan((uint8_t*)kAssociatedData,  (uint8_t*)kAssociatedData + sizeof(kAssociatedData));
-    common::BufferSpan plaintext_span1 = out_ciphertext->GetReadSpan();
+    common::BufferSpan plaintext_span1 = out_ciphertext->GetReadableSpan();
     if (decrypter->DecryptPacket(pkt_num, associated_data_span1, plaintext_span1, out_plaintext) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << decrypter->GetName() << " DecryptPacket failed";
         return false;
@@ -45,7 +46,7 @@ bool DecryptPacketTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
         return false;
     }
 
-    auto out_plaintext_span = out_plaintext->GetReadSpan();
+    auto out_plaintext_span = out_plaintext->GetReadableSpan();
     uint8_t* out_plaintext_pos = out_plaintext_span.GetStart();
     for (uint16_t i = 0; i < s_plaintext_length; i++) {
         if (*(plaintext_pos + i) != *(out_plaintext_pos + i)) {
@@ -66,7 +67,7 @@ bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
     header.SetDestinationConnectionId((uint8_t*)kDestConnnectionId, sizeof(kDestConnnectionId));
     header.SetPacketNumberLength(2);
 
-    std::shared_ptr<common::Buffer> plaintext = std::make_shared<common::Buffer>(plaintext_span);
+    std::shared_ptr<common::SingleBlockBuffer> plaintext = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2048));
     header.EncodeHeader(plaintext);
 
     uint8_t src_ciphertext[s_plaintext_length] = {0};

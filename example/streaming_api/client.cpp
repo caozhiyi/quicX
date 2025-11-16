@@ -19,7 +19,7 @@
 #include "http3/include/if_response.h"
 #include "http3/include/if_async_handler.h"
 
-using namespace quicx::http3;
+using namespace quicx;
 
 /**
  * @brief Async handler for file download (streaming response body)

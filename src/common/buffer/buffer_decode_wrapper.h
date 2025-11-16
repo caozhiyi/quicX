@@ -4,20 +4,21 @@
 #include <memory>
 #include <cstdint>
 #include "common/decode/decode.h"
-#include "common/buffer/if_buffer_read.h"
+#include "common/buffer/if_buffer.h"
+#include "common/buffer/buffer_span.h"
 
 namespace quicx {
 namespace common {
 
-/**
- * @brief Buffer decode wrapper
- * 
- * The buffer decode wrapper is used to decode the data from the buffer.
- * It is responsible for decoding the varint, fixed uint8, fixed uint16, fixed uint32, fixed uint64, and bytes.
- */
+// BufferDecodeWrapper iterates over readable data from an IBuffer and decodes
+// primitive types using helpers from common/decode. It stages progress in
+// place and advances the underlying buffer only when Flush() (or the
+// destructor) is invoked, allowing callers to roll back on failure without
+// mutating buffer state.
 class BufferDecodeWrapper {
 public:
-    BufferDecodeWrapper(std::shared_ptr<IBufferRead> buffer);
+    // |buffer| must outlive the wrapper.
+    BufferDecodeWrapper(std::shared_ptr<IBuffer> buffer);
     ~BufferDecodeWrapper();
 
     // flush the buffer
@@ -40,7 +41,7 @@ public:
     uint32_t GetDataLength() const;
 
 private:
-    std::shared_ptr<IBufferRead> buffer_;
+    std::shared_ptr<IBuffer> buffer_;
     uint8_t* pos_;
     uint8_t* end_;
     bool flushed_;

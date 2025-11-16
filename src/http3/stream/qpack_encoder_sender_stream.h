@@ -18,12 +18,12 @@ namespace http3 {
 class QpackEncoderSenderStream:
     public ISendStream {
 public:
-    explicit QpackEncoderSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
+    explicit QpackEncoderSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~QpackEncoderSenderStream();
 
     // Write QPACK encoder stream type (0x02) and send instruction bytes
-    bool SendInstructions(const std::vector<uint8_t>& blob);
+    bool SendInstructions(const std::vector<std::pair<std::string,std::string>>& inserts);
 
     // High-level helpers to send explicit encoder instructions
     bool SendSetCapacity(uint64_t capacity);

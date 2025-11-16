@@ -5,17 +5,22 @@
 #include <cstdint>
 #include "common/decode/decode.h"
 #include "common/buffer/if_buffer.h"
+#include "common/buffer/buffer_span.h"
 
 namespace quicx {
 namespace common {
 
-/*
- * buffer encode wrapper,
- * it will flush the buffer when destruct
- */
+// BufferEncodeWrapper is a small helper that writes primitive types into an
+// IBuffer using the encoding routines from common/decode. It manages the write
+// pointer lazily: data is staged in-place and committed (by moving the write
+// pointer) when Flush() is invoked or when the wrapper is destroyed. This
+// allows batching several writes without repeatedly touching the underlying
+// buffer object.
 class BufferEncodeWrapper {
 public:
-    BufferEncodeWrapper(std::shared_ptr<IBufferWrite> buffer);
+    // |buffer| must outlive the wrapper. The constructor acquires the current
+    // writable span once; subsequent writes operate inside that window.
+    BufferEncodeWrapper(std::shared_ptr<IBuffer> buffer);
     ~BufferEncodeWrapper();
 
     // flush the buffer
@@ -31,11 +36,13 @@ public:
     bool EncodeFixedUint64(uint64_t value);
     bool EncodeBytes(uint8_t* in, uint32_t len);
 
+    // Return a span describing the portion written since construction/last
+    // flush. Useful for logging and debug assertions.
     common::BufferSpan GetDataSpan() const;
     uint32_t GetDataLength() const;
 
 private:
-    std::shared_ptr<IBufferWrite> buffer_;
+    std::shared_ptr<IBuffer> buffer_;
     uint8_t* pos_;
     uint8_t* end_;
     bool flushed_;

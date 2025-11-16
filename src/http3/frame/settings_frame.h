@@ -17,8 +17,8 @@ public:
     void SetSetting(uint16_t id, uint64_t value) { settings_[id] = value; }
     bool GetSetting(uint16_t id, uint64_t& value);
 
-    bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     uint32_t EvaluateEncodeSize();
     uint32_t EvaluatePayloadSize();
 

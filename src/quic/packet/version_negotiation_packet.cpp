@@ -21,13 +21,13 @@ VersionNegotiationPacket::~VersionNegotiationPacket() {
     
 }
 
-bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (!header_.EncodeHeader(buffer)) {
         common::LOG_ERROR("encode header failed");
         return false;
     }
 
-    auto span = buffer->GetWriteSpan();
+    auto span = buffer->GetWritableSpan();
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
     uint8_t* end = span.GetEnd();
@@ -36,18 +36,23 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBufferWrite> buff
         cur_pos = common::FixedEncodeUint32(cur_pos, end, support_version_[i]);
     }
     
-    packet_src_data_ = std::move(common::BufferSpan(start_pos, cur_pos));
     buffer->MoveWritePt(cur_pos - span.GetStart());
     return true;
 }
 
-bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer, bool with_flag) {
+bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
     if (!header_.DecodeHeader(buffer, with_flag)) {
         common::LOG_ERROR("decode header failed");
         return false;
     }
 
-    auto span = buffer->GetReadSpan();
+    auto span = buffer->GetReadableSpan();
+    auto shared_span = buffer->GetSharedReadableSpan();
+    if (!shared_span.Valid()) {
+        common::LOG_ERROR("readable span is invalid");
+        return false;
+    }
+    auto chunk = shared_span.GetChunk();
     uint8_t* cur_pos = span.GetStart();
 
     uint32_t version_count = (span.GetEnd() - span.GetStart()) / sizeof(uint32_t);
@@ -56,7 +61,7 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
         cur_pos = common::FixedDecodeUint32(cur_pos, span.GetEnd(), support_version_[i]);
     }
 
-    packet_src_data_ = std::move(common::BufferSpan(span.GetStart(), cur_pos));
+    packet_src_data_ = common::SharedBufferSpan(chunk, span.GetStart(), cur_pos);
     buffer->MoveReadPt(cur_pos - span.GetStart());
     return true;
 }

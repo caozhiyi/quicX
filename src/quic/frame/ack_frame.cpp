@@ -1,8 +1,8 @@
 #include "common/log/log.h"
 #include "quic/frame/ack_frame.h"
+#include "common/decode/decode.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
-#include "common/decode/decode.h"
 
 namespace quicx {
 namespace quic {
@@ -19,7 +19,7 @@ AckFrame::~AckFrame() {
 
 }
 
-bool AckFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool AckFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // Compute base ACK frame size locally to avoid virtual dispatch issues
     uint32_t need_size = EncodeSize();
     
@@ -44,7 +44,7 @@ bool AckFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool AckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
@@ -112,7 +112,7 @@ AckEcnFrame::~AckEcnFrame() {
 
 }
 
-bool AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool AckEcnFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (!AckFrame::Encode(buffer)) {
         return false;
     }
@@ -123,7 +123,7 @@ bool AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     uint32_t ecn_ce_size = common::GetEncodeVarintLength(ecn_ce_);
     uint32_t total_ecn_size = ect0_size + ect1_size + ecn_ce_size;
     
-    auto span = buffer->GetWriteSpan();
+    auto span = buffer->GetWritableSpan();
     auto remain_size = span.GetLength();
     if (total_ecn_size > remain_size) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, total_ecn_size);
@@ -138,7 +138,7 @@ bool AckEcnFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool AckEcnFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool AckEcnFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     if (!AckFrame::Decode(buffer, with_type)) {
         return false;
     } 

@@ -23,7 +23,7 @@ std::string WorkerWithThread::GetWorkerId() {
 }
 
 // Handle packets
-void WorkerWithThread::HandlePacket(PacketInfo& packet_info) {
+void WorkerWithThread::HandlePacket(PacketParseResult& packet_info) {
     packet_queue_.Emplace(std::move(packet_info));
     worker_ptr_->GetEventLoop()->Wakeup();
 }
@@ -45,7 +45,7 @@ void WorkerWithThread::Stop() {
 }
 
 void WorkerWithThread::ProcessRecv() {
-    PacketInfo packet_info;
+    PacketParseResult packet_info;
     if (packet_queue_.TryPop(packet_info)) {
         worker_ptr_->HandlePacket(packet_info);
     }

@@ -5,9 +5,9 @@
 #include <memory>
 #include <unordered_map>
 #include "http3/include/type.h"
+#include "common/include/if_buffer_read.h"
 
 namespace quicx {
-namespace http3 {
 
 /**
  * @brief Interface for HTTP3 requests
@@ -113,26 +113,27 @@ public:
      * @return The headers
      */
     virtual std::unordered_map<std::string, std::string>& GetHeaders() = 0;
+    /**
+     * @brief Get the request body as a string
+     * 
+     * @return The request body as a string
+     */
+    virtual std::string GetBodyAsString() const = 0;
 
 
     /**
      * @brief Set complete request body (complete mode)
-     * 
-     * Use this for small to medium-sized bodies that can be buffered in memory.
-     * 
-     * @param body The complete request body as a string
-     * 
-     * @note If SetRequestBodyProvider() is called, this body will be ignored.
      */
-    virtual void SetBody(const std::string& body) = 0;
+    virtual void AppendBody(const std::string& body) = 0;
+    virtual void AppendBody(const uint8_t* data, uint32_t length) = 0;
 
     /**
      * @brief Get the complete request body
      * 
-     * @return Reference to the request body string
+     * @return The request body
      * @note if SetRequestBodyProvider() is called, this body will be empty.
      */
-     virtual const std::string& GetBody() const = 0;
+     virtual std::shared_ptr<IBufferRead> GetBody() const = 0;
 
     /**
      * @brief Set request body provider for streaming mode
@@ -187,7 +188,6 @@ public:
     static std::shared_ptr<IRequest> Create();
 };
 
-}
 }
 
 #endif

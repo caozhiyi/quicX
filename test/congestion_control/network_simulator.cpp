@@ -3,7 +3,6 @@
 
 namespace quicx {
 namespace quic {
-namespace test {
 
 NetworkSimulator::NetworkSimulator(const NetworkCondition& condition)
     : condition_(condition),
@@ -164,6 +163,5 @@ uint64_t NetworkSimulator::GenerateRtt() {
     return rtt;
 }
 
-} // namespace test
 } // namespace quic
 } // namespace quicx

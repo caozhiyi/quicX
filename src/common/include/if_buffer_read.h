@@ -6,15 +6,11 @@
 #ifndef COMMON_BUFFER_IF_BUFFER_READ
 #define COMMON_BUFFER_IF_BUFFER_READ
 
-#include <memory>
-#include "common/buffer/buffer_span.h"
-// 1. ack frequent 协议  
-// 2. iquic lquic
-namespace quicx {
-namespace common {
+#include <cstdint>
+#include <functional>
 
-// read only buffer interface
-class BufferReadView;
+namespace quicx {
+
 class IBufferRead {
 public:
     IBufferRead() {}
@@ -27,21 +23,14 @@ public:
     virtual uint32_t MoveReadPt(int32_t len) = 0;
     // return the length of the data actually read
     virtual uint32_t Read(uint8_t* data, uint32_t len) = 0;
+    // visit readable segments without modifying state
+    virtual void VisitData(const std::function<void(uint8_t*, uint32_t)>& visitor) = 0;
     // return remaining length of readable data
     virtual uint32_t GetDataLength() = 0;
-    // return the start and end positions of readable data
-    virtual BufferSpan GetReadSpan() = 0;
-    // get a write buffer view
-    virtual BufferReadView GetReadView(uint32_t offset = 0) = 0;
-    // get a write buffer view shared ptr
-    virtual std::shared_ptr<common::IBufferRead> GetReadViewPtr(uint32_t offset = 0) = 0;
-    // get src data pos
-    virtual uint8_t* GetData() = 0;
     // clear all data
     virtual void Clear() = 0;
 };
 
-}
 }
 
 #endif

@@ -51,7 +51,7 @@ public:
     }
 
 private:
-    void OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::ConnectionOperation operation, uint32_t error, const std::string& reason);
+    void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason);
     void HandleError(const std::string& unique_id, uint32_t error_code);
     // Match route and return route configuration
     virtual RouteConfig MatchRoute(HttpMethod method, const std::string& path) override;
@@ -64,7 +64,7 @@ private:
     static void OnNotFound(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response);
 
 private:
-    std::shared_ptr<quic::IQuicServer> quic_;
+    std::shared_ptr<IQuicServer> quic_;
 
     std::shared_ptr<Router> router_;
     std::unordered_map<std::string, std::shared_ptr<ServerConnection>> conn_map_;

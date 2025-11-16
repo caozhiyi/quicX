@@ -5,8 +5,8 @@
 #include "quic/quicx/worker.h"
 #include "quic/udp/if_sender.h"
 #include "quic/common/version.h"
-#include "common/buffer/buffer.h"
 #include "quic/packet/init_packet.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
@@ -36,7 +36,7 @@ Worker::~Worker() {
 
 }
 
-void Worker::HandlePacket(PacketInfo& packet_info) {
+void Worker::HandlePacket(PacketParseResult& packet_info) {
     if (packet_info.net_packet_ && packet_info.net_packet_->GetTime() > 0 && !packet_info.packets_.empty()) {
         InnerHandlePacket(packet_info);
     }
@@ -60,18 +60,16 @@ void Worker::Process() {
 }
 
 void Worker::ProcessSend() {
-    static thread_local uint8_t buf[1500] = {0};
-    std::shared_ptr<common::IBuffer> buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
-
-    std::shared_ptr<NetPacket> packet = std::make_shared<NetPacket>();
-    SendOperation send_operation;
-    
     SwitchActiveSendConnectionSet(); 
     auto& cur_active_send_connection_set = GetReadActiveSendConnectionSet();
     if (cur_active_send_connection_set.empty()) {
         return;
     }
 
+    std::shared_ptr<NetPacket> packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    auto buffer = packet->GetData();
+   
+    SendOperation send_operation;
     for (auto iter = cur_active_send_connection_set.begin(); iter != cur_active_send_connection_set.end();) {
         if (!(*iter)->GenerateSendData(buffer, send_operation)) {
             common::LOG_ERROR("generate send data failed.");

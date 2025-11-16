@@ -5,8 +5,9 @@
 
 #include "cc_test_framework.h"
 
-using namespace quicx::quic;
-using namespace quicx::quic::test;
+namespace quicx {
+namespace quic {
+namespace {
 
 // ========== Helper Functions ==========
 
@@ -336,3 +337,7 @@ TEST(CCComprehensiveTest, AllScenariosAlgorithmComparisonParallel) {
         PrintComparisonTable(results);
     }
 }
+
+}
+} // namespace quic
+} // namespace quicx

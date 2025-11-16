@@ -52,11 +52,11 @@ static void BM_H3_E2E_Request_Response(benchmark::State& state) {
     auto server = IServer::Create(settings);
     server->AddHandler(HttpMethod::kGet, "/hello",
         [](std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> resp) {
-            resp->SetBody("hello world");
+            resp->AppendBody("hello world");
             resp->SetStatusCode(200);
             auto push_resp = IResponse::Create();
             push_resp->AddHeader("push-key1", "test1");
-            push_resp->SetBody("hello push");
+            push_resp->AppendBody("hello push");
             push_resp->SetStatusCode(200);
             resp->AppendPush(push_resp);
         });

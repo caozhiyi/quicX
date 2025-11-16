@@ -8,7 +8,7 @@
 namespace quicx {
 namespace http3 {
 
-bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
+bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 
 }
 }

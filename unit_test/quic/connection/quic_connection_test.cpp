@@ -2,13 +2,15 @@
 
 #include "common/log/log.h"
 #include "common/timer/timer.h"
-#include "common/buffer/buffer.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/include/if_quic_send_stream.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
+
 
 namespace quicx {
 namespace quic {
@@ -49,8 +51,7 @@ static const char kKeyPem[] =
       "-----END RSA PRIVATE KEY-----\n"; 
 
 bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn) {
-    uint8_t buf[1500] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + 1500);
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation send_operation;
     send_conn->GenerateSendData(buffer, send_operation);
 
@@ -99,8 +100,7 @@ TEST(quic_connection_utest, handshake) {
     // This ensures the session ticket with 0-RTT capability is properly captured
     for (int i = 0; i < 10; ++i) {
         // Try to process any remaining handshake data
-        uint8_t buf[1500] = {0};
-        std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + 1500);
+        std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
         if (server_conn->GenerateSendData(buffer, op)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -184,8 +184,7 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     ASSERT_GT(s->Send((uint8_t*)early, (uint32_t)strlen(early)), 0);
 
     // First flight from client should be Initial or 0-RTT (if session supports it)
-    uint8_t buf1[1500] = {0};
-    std::shared_ptr<common::Buffer> buffer1 = std::make_shared<common::Buffer>(buf1, buf1 + 1500);
+    std::shared_ptr<common::SingleBlockBuffer> buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation op1;
     ASSERT_TRUE(client_conn2->GenerateSendData(buffer1, op1));
     std::vector<std::shared_ptr<IPacket>> pkts1;
@@ -203,8 +202,7 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     // Next flight from client should contain 0-RTT (if keys available and stream data queued)
     bool found_0rtt = false;
     for (int i = 0; i < 4 && !found_0rtt; ++i) {
-        uint8_t bufn[1500] = {0};
-        auto buffern = std::make_shared<common::Buffer>(bufn, bufn + 1500);
+        auto buffern = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation opn;
         if (!client_conn2->GenerateSendData(buffern, opn)) {
             // If no more data to send, break
@@ -226,8 +224,7 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     for (int i = 0; i < 10 && server_conn2->GetCurEncryptionLevel() != kApplication; ++i) {
         // server -> client
         {
-            uint8_t buf[1500] = {0};
-            auto buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+            auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
             quic::SendOperation op;
             if (server_conn2->GenerateSendData(buffer, op)) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -238,8 +235,7 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
         }
         // client -> server
         {
-            uint8_t buf[1500] = {0};
-            auto buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+            auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
             quic::SendOperation op;
             if (client_conn2->GenerateSendData(buffer, op)) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -310,8 +306,7 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     ASSERT_GT(s->Send((uint8_t*)early, (uint32_t)strlen(early)), 0);
 
     // First flight from client should be Initial or 0-RTT (if session supports it)
-    uint8_t buf1[1500] = {0};
-    std::shared_ptr<common::Buffer> buffer1 = std::make_shared<common::Buffer>(buf1, buf1 + 1500);
+    std::shared_ptr<common::SingleBlockBuffer> buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation op1;
     ASSERT_TRUE(client_conn2->GenerateSendData(buffer1, op1));
     std::vector<std::shared_ptr<IPacket>> pkts1;
@@ -329,8 +324,7 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     // Next flight from client should contain 0-RTT (if keys available and stream data queued)
     bool found_0rtt = false;
     for (int i = 0; i < 5 && !found_0rtt; ++i) {
-        uint8_t bufn[1500] = {0};
-        auto buffern = std::make_shared<common::Buffer>(bufn, bufn + 1500);
+        auto buffern = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation opn;
         if (!client_conn2->GenerateSendData(buffern, opn)) {
             // If no more data to send, break

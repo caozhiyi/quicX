@@ -21,25 +21,25 @@ namespace http3 {
 class ControlReceiverStream:
     public IRecvStream {
 public:
-    ControlReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
+    ControlReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
         const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(uint64_t id)>& goaway_handler,
         const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler);
     virtual ~ControlReceiverStream();
 
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
+    virtual void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) override;
 
 protected:
     virtual void HandleFrame(std::shared_ptr<IFrame> frame);
     // Handle raw QPACK instruction data on control stream (demo)
-    void HandleRawData(std::shared_ptr<common::IBufferRead> data);
+    void HandleRawData(std::shared_ptr<IBufferRead> data);
 
 protected:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::function<void(uint64_t id)> goaway_handler_;
     std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)> settings_handler_;
-    std::function<void(std::shared_ptr<common::IBufferRead>)> qpack_instr_handler_;
+    std::function<void(std::shared_ptr<IBufferRead>)> qpack_instr_handler_;
 };
 
 }

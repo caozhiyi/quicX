@@ -8,7 +8,6 @@
 #include "http3/include/if_async_handler.h"
 
 namespace quicx {
-namespace http3 {
 
 /**
  * @brief HTTP3 client interface
@@ -162,7 +161,6 @@ public:
     static std::unique_ptr<IClient> Create(const Http3Settings& settings = kDefaultHttp3Settings);
 };
 
-}
 }
 
 #endif

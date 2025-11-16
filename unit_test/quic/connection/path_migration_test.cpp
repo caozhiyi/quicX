@@ -5,7 +5,6 @@
 #include "quic/frame/type.h"
 #include "quic/packet/type.h"
 #include "common/timer/timer.h"
-#include "common/buffer/buffer.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
@@ -13,6 +12,8 @@
 #include "quic/include/if_quic_send_stream.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace quic {
@@ -75,8 +76,7 @@ static QuicTransportParams TEST_TRANSPORT_PARAMS = {
 
 // Helper function: handle connection handshake and data transmission
 static bool ConnectionProcess(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver) {
-    uint8_t buf[2000] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation op;
     
     if (!sender->GenerateSendData(buffer, op)) {
@@ -93,7 +93,7 @@ static bool ConnectionProcess(std::shared_ptr<IConnection> sender, std::shared_p
 }
 
 static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> GenerateHandshakeDoneConnections(
-    const quicx::quic::QuicTransportParams& client_tp = DEFAULT_QUIC_TRANSPORT_PARAMS, const quicx::quic::QuicTransportParams& server_tp = DEFAULT_QUIC_TRANSPORT_PARAMS) {
+    const QuicTransportParams& client_tp = TEST_TRANSPORT_PARAMS, const QuicTransportParams& server_tp = TEST_TRANSPORT_PARAMS) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -149,8 +149,7 @@ TEST(path_migration, validation_failure_recovery) {
 
     // Simulate network black hole: drop all PATH_CHALLENGEs
     for (int attempt = 0; attempt < 10; ++attempt) {
-        uint8_t drop_buf[1500] = {0};
-        auto drop_buffer = std::make_shared<common::Buffer>(drop_buf, drop_buf + sizeof(drop_buf));
+        auto drop_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation drop_op;
         ASSERT_TRUE(client_conn->GenerateSendData(drop_buffer, drop_op));
         
@@ -187,8 +186,7 @@ TEST(path_migration, concurrent_path_probing) {
 
     // Verify first PATH_CHALLENGE by server's PATH_RESPONSE (avoid decrypting in test)
     {
-        uint8_t buf[1500] = {0};
-        auto buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+        auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
         ASSERT_TRUE(client_conn->GenerateSendData(buffer, op));
 
@@ -197,8 +195,7 @@ TEST(path_migration, concurrent_path_probing) {
         // Deliver client's encrypted packets to server; server should respond PATH_RESPONSE
         server_conn->OnPackets(0, pkts);
 
-        uint8_t sbuf[1500] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation sop;
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
 
@@ -210,8 +207,7 @@ TEST(path_migration, concurrent_path_probing) {
         ASSERT_NE(cli_crypto, nullptr);
         for (auto& p : rsp) {
             p->SetCryptographer(cli_crypto);
-            uint8_t tmp[4096] = {0};
-            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             for (auto& f : p->GetFrames()) {
                 if (f->GetType() == FrameType::kPathResponse) { 
@@ -244,8 +240,7 @@ TEST(path_migration, cid_pool_replenishment) {
 
     // Send PATH_CHALLENGE
     {
-        uint8_t cbuf[1500] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation cop;
         ASSERT_TRUE(client_conn->GenerateSendData(cb, cop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -255,8 +250,7 @@ TEST(path_migration, cid_pool_replenishment) {
 
     // Receive PATH_RESPONSE and complete migration
     {
-        uint8_t sbuf[1500] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation sop;
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -268,8 +262,7 @@ TEST(path_migration, cid_pool_replenishment) {
         bool found_new_cid = false;
         for (auto& p : pkts) {
             p->SetCryptographer(cli_crypto);
-            uint8_t tmp[4096] = {0};
-            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             for (auto& f : p->GetFrames()) {
                 if (f->GetType() == FrameType::kNewConnectionId) {
@@ -289,8 +282,7 @@ TEST(path_migration, cid_pool_replenishment) {
     common::Address addr2("127.0.0.1", 10000);
     client_conn->OnObservedPeerAddress(addr2);
     
-    uint8_t buf2[1500] = {0};
-    auto buffer2 = std::make_shared<common::Buffer>(buf2, buf2 + sizeof(buf2));
+    auto buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation op2;
     EXPECT_TRUE(client_conn->GenerateSendData(buffer2, op2)) 
         << "Should be able to migrate again after CID pool replenishment";
@@ -309,8 +301,7 @@ TEST(path_migration, preferred_address_mechanism) {
     
     // Verify client sends PATH_CHALLENGE to preferred_address
     {
-        uint8_t buf[1500] = {0};
-        auto buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+        auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
         
         if (client_conn->GenerateSendData(buffer, op)) {
@@ -325,8 +316,7 @@ TEST(path_migration, preferred_address_mechanism) {
                     auto recv_crypto = server_conn->GetCryptographerForTest(p->GetCryptoLevel());
                     ASSERT_NE(recv_crypto, nullptr);
                     p->SetCryptographer(recv_crypto);
-                    uint8_t tmp[4096] = {0};
-                    auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+                    auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
                     ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
                     for (auto& f : p->GetFrames()) {
                         if (f->GetType() == FrameType::kPathChallenge) {
@@ -357,16 +347,14 @@ TEST(path_migration, duplicate_path_response) {
     // Send PATH_CHALLENGE and get PATH_RESPONSE
     std::vector<std::shared_ptr<IPacket>> response_pkts;
     {
-        uint8_t cbuf[1500] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation cop;
         ASSERT_TRUE(client_conn->GenerateSendData(cb, cop));
         std::vector<std::shared_ptr<IPacket>> challenge_pkts;
         ASSERT_TRUE(DecodePackets(cb, challenge_pkts));
         server_conn->OnPackets(0, challenge_pkts);
         
-        uint8_t sbuf[1500] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation sop;
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
         ASSERT_TRUE(DecodePackets(sb, response_pkts));
@@ -398,8 +386,7 @@ TEST(path_migration, path_token_validation_and_promotion) {
     client_conn->OnObservedPeerAddress(new_addr);
 
     // Generate probe packet(s)
-    uint8_t buf[1500] = {0};
-    std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(buf, buf + 1500);
+    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation send_operation;
     ASSERT_TRUE(client_conn->GenerateSendData(buffer, send_operation));
 
@@ -410,8 +397,7 @@ TEST(path_migration, path_token_validation_and_promotion) {
     server_conn->OnPackets(0, pkts);
 
     // Now server sends PATH_RESPONSE
-    uint8_t sbuf[1500] = {0};
-    auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + 1500);
+    auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation sop;
     if (server_conn->GenerateSendData(sb, sop)) {
         std::vector<std::shared_ptr<IPacket>> rsp;
@@ -433,8 +419,7 @@ TEST(path_migration, path_token_validation_and_promotion) {
         // simulate NEW_CONNECTION_ID frames were received earlier (we call manager via public API if exposed;
         // here we force client to send more flights to trigger UseNextID path; the correctness is covered by not crashing
         for (int i = 0; i < 3; ++i) {
-            uint8_t buf2[1500] = {0};
-            auto b2 = std::make_shared<common::Buffer>(buf2, buf2 + sizeof(buf2));
+            auto b2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
             quic::SendOperation op2;
             (void)client_conn->GenerateSendData(b2, op2);
         }
@@ -452,8 +437,7 @@ TEST(path_migration, nat_rebinding_integration) {
 
     // server will probe; deliver its probe to client
     {
-        uint8_t sbuf[1500] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation sop;
         if (server_conn->GenerateSendData(sb, sop)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -464,8 +448,7 @@ TEST(path_migration, nat_rebinding_integration) {
 
     // client responds; deliver back to server
     {
-        uint8_t cbuf[1500] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation cop;
         if (client_conn->GenerateSendData(cb, cop)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -493,8 +476,7 @@ TEST(path_migration, path_challenge_retry_backoff) {
 
     // Drive several send cycles without delivering to server to simulate black hole for PATH_CHALLENGE
     for (int i = 0; i < 7; ++i) {
-        uint8_t buf[1500] = {0};
-        auto b = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+        auto b = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
         (void)client_conn->GenerateSendData(b, op);
         // drop
@@ -516,8 +498,7 @@ TEST(path_migration, amp_gating_blocks_streams_before_validation) {
     ASSERT_NE(s, nullptr);
     const char* payload = "must gate before validation";
 
-    uint8_t buf[2000] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation sop;
     ASSERT_TRUE(client_conn->GenerateSendData(buffer, sop));
     // Decode frames to ensure only allowed types appear when streams are disallowed
@@ -547,8 +528,7 @@ TEST(path_migration, pmtu_probe_success_raises_mtu) {
 
     // Client sends PATH_CHALLENGE
     {
-        uint8_t cbuf[2000] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
         quic::SendOperation cop;
         ASSERT_TRUE(client_conn->GenerateSendData(cb, cop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -559,8 +539,7 @@ TEST(path_migration, pmtu_probe_success_raises_mtu) {
 
     // Server replies PATH_RESPONSE; deliver to client to validate path
     {
-        uint8_t sbuf[2000] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
         quic::SendOperation sop;
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -571,8 +550,7 @@ TEST(path_migration, pmtu_probe_success_raises_mtu) {
 
     // After validation, client should attempt a PMTU probe packet (PING+PADDING large)
     {
-        uint8_t cbuf[4000] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4000));
         quic::SendOperation cop;
         ASSERT_TRUE(client_conn->GenerateSendData(cb, cop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -585,8 +563,7 @@ TEST(path_migration, pmtu_probe_success_raises_mtu) {
 
     // Server generates ACK; deliver back to client to confirm probe success
     {
-        uint8_t sbuf[4000] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4000));
         quic::SendOperation sop;
         if (server_conn->GenerateSendData(sb, sop)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -609,8 +586,7 @@ TEST(path_migration, pmtu_probe_loss_fallback) {
 
     // Client sends PATH_CHALLENGE; deliver and drop server response to simulate loss of PMTU probe later
     {
-        uint8_t cbuf[2000] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
         quic::SendOperation cop;
         ASSERT_TRUE(client_conn->GenerateSendData(cb, cop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -621,8 +597,7 @@ TEST(path_migration, pmtu_probe_loss_fallback) {
 
     // Server replies PATH_RESPONSE; deliver to client to validate path
     {
-        uint8_t sbuf[2000] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
         quic::SendOperation sop;
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -633,8 +608,7 @@ TEST(path_migration, pmtu_probe_loss_fallback) {
 
     // After validation, trigger client send (PMTU probe created). Do not deliver to server to simulate black hole.
     {
-        uint8_t cbuf[4000] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4000));
         quic::SendOperation cop;
         (void)client_conn->GenerateSendData(cb, cop);
         // Intentionally drop
@@ -661,8 +635,7 @@ TEST(path_migration, disable_active_migration_semantics) {
 
     // Generate a flight and check no PATH_CHALLENGE appears yet
     {
-        uint8_t buf[1500] = {0};
-        auto b = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+        auto b = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
         (void)client_conn->GenerateSendData(b, op);
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -672,8 +645,7 @@ TEST(path_migration, disable_active_migration_semantics) {
         ASSERT_NE(srv_crypto, nullptr);
         for (auto& p : pkts) {
             p->SetCryptographer(srv_crypto);
-            uint8_t tmp[4096] = {0};
-            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             bool found_path_challenge = false;
             for (auto& f : p->GetFrames()) {
@@ -689,8 +661,7 @@ TEST(path_migration, disable_active_migration_semantics) {
     // Second observation of the same new address -> treat as NAT rebinding and probe
     client_conn->OnObservedPeerAddress(new_addr);
     {
-        uint8_t buf[1500] = {0};
-        auto b = std::make_shared<common::Buffer>(buf, buf + sizeof(buf));
+        auto b = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
         ASSERT_TRUE(client_conn->GenerateSendData(b, op));
         std::vector<std::shared_ptr<IPacket>> client_pkts;
@@ -700,8 +671,7 @@ TEST(path_migration, disable_active_migration_semantics) {
         server_conn->OnPackets(0, client_pkts);
 
         // Server should respond; generate and decrypt server->client response to find PATH_RESPONSE
-        uint8_t sbuf[1500] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation sop;
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
 
@@ -713,8 +683,7 @@ TEST(path_migration, disable_active_migration_semantics) {
         bool found_path_response = false;
         for (auto& p : rsp) {
             p->SetCryptographer(cli_crypto);
-            uint8_t tmp[4096] = {0};
-            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             if (!p->DecodeWithCrypto(tmp_buf)) continue;
             for (auto& f : p->GetFrames()) {
                 if (f->GetType() == FrameType::kPathResponse) { found_path_response = true; break; }
@@ -746,8 +715,7 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
 
     // Client sends PATH_CHALLENGE -> deliver to server
     {
-        uint8_t cbuf[1500] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation cop;
         ASSERT_TRUE(client_conn->GenerateSendData(cb, cop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -758,8 +726,7 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
 
     // Server PATH_RESPONSE -> client validates and should rotate DCID
     {
-        uint8_t sbuf[1500] = {0};
-        auto sb = std::make_shared<common::Buffer>(sbuf, sbuf + sizeof(sbuf));
+        auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation sop;
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
         std::vector<std::shared_ptr<IPacket>> pkts;
@@ -770,8 +737,7 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
 
     // After path validation, client should emit RETIRE_CONNECTION_ID for the old DCID
     // and start using a new DCID from the pool provided by server during handshake
-    uint8_t post_buf[2000] = {0};
-    auto post_b = std::make_shared<common::Buffer>(post_buf, post_buf + sizeof(post_buf));
+    auto post_b = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation post_op;
     ASSERT_TRUE(client_conn->GenerateSendData(post_b, post_op));
     std::vector<std::shared_ptr<IPacket>> post_pkts;
@@ -784,8 +750,7 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
     bool saw_retire = false;
     for (auto& p : post_pkts) {
         p->SetCryptographer(ser_crypto);
-        uint8_t tmp[4096] = {0};
-        auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+        auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
         ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
         ASSERT_FALSE(p->GetFrames().empty());
         for (auto& f : p->GetFrames()) {
@@ -797,16 +762,14 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
     }
     // If not in this flight, drive another send
     if (!saw_retire) {
-        uint8_t add_buf[1500] = {0};
-        auto ab = std::make_shared<common::Buffer>(add_buf, add_buf + sizeof(add_buf));
+        auto ab = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation aop;
         if (client_conn->GenerateSendData(ab, aop)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
             ASSERT_TRUE(DecodePackets(ab, pkts));
             for (auto& p : pkts) {
                 p->SetCryptographer(ser_crypto);
-                uint8_t tmp[4096] = {0};
-                auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+                auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
                 ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
                 ASSERT_FALSE(p->GetFrames().empty());
                 for (auto& f : p->GetFrames()) {
@@ -817,8 +780,7 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
                 }
             }
             if (!saw_retire) {
-                uint8_t add_buf[1500] = {0};
-                auto ab = std::make_shared<common::Buffer>(add_buf, add_buf + sizeof(add_buf));
+                auto ab = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
                 quic::SendOperation aop;
                 if (client_conn->GenerateSendData(ab, aop)) {
                     std::vector<std::shared_ptr<IPacket>> pkts;
@@ -842,8 +804,7 @@ TEST(path_migration, path_challenge_retry_backoff_limits) {
     // Drive multiple client send cycles to schedule retries; we expect at most 5 retries (per implementation)
     int path_challenge_count = 0;
     for (int i = 0; i < 10; ++i) {
-        uint8_t cbuf[1500] = {0};
-        auto cb = std::make_shared<common::Buffer>(cbuf, cbuf + sizeof(cbuf));
+        auto cb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation cop;
         if (!client_conn->GenerateSendData(cb, cop)) {
             continue;
@@ -856,8 +817,7 @@ TEST(path_migration, path_challenge_retry_backoff_limits) {
         ASSERT_NE(ser_crypto, nullptr);
         for (auto& p : pkts) {
             p->SetCryptographer(ser_crypto);
-            uint8_t tmp[4096] = {0};
-            auto tmp_buf = std::make_shared<common::Buffer>(tmp, sizeof(tmp));
+            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             ASSERT_FALSE(p->GetFrames().empty());
             for (auto& f : p->GetFrames()) {

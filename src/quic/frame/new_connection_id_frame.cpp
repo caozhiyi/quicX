@@ -22,7 +22,7 @@ NewConnectionIDFrame::~NewConnectionIDFrame() {
 
 }
 
-bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -40,7 +40,7 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) 
     return true;
 }
 
-bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {

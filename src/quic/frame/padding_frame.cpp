@@ -16,7 +16,7 @@ PaddingFrame::~PaddingFrame() {
 
 }
 
-bool PaddingFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool PaddingFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -31,7 +31,7 @@ bool PaddingFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool PaddingFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool PaddingFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
@@ -44,7 +44,7 @@ bool PaddingFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with
     wrapper.Flush();
 
     uint8_t byte;
-    auto span = buffer->GetReadSpan();
+    auto span = buffer->GetReadableSpan();
     uint8_t* pos = span.GetStart();
     uint8_t* end = span.GetEnd();
     while (pos < end) {

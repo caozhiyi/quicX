@@ -15,7 +15,7 @@ namespace {
 class MockClientConnection {
 public:
     MockClientConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        std::shared_ptr<quic::IQuicRecvStream> stream) 
+        std::shared_ptr<IQuicRecvStream> stream) 
         : qpack_encoder_(qpack_encoder), error_code_(0) {
         // Start with UnidentifiedStream to read stream type
         unidentified_stream_ = std::make_shared<UnidentifiedStream>(stream,
@@ -26,8 +26,8 @@ public:
     ~MockClientConnection() {}
 
     void OnStreamTypeIdentified(uint64_t stream_type, 
-                                std::shared_ptr<quic::IQuicRecvStream> stream,
-                                std::shared_ptr<common::IBufferRead> remaining_data) {
+                                std::shared_ptr<IQuicRecvStream> stream,
+                                std::shared_ptr<IBufferRead> remaining_data) {
         // Verify it's a push stream
         EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kPush));
         
@@ -65,7 +65,7 @@ private:
 class MockServerConnection {
 public:
     MockServerConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        std::shared_ptr<quic::IQuicSendStream> stream) 
+        std::shared_ptr<IQuicSendStream> stream) 
         : error_code_(0) {
         sender_stream_ = std::make_shared<PushSenderStream>(qpack_encoder, stream,
             std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
@@ -128,22 +128,22 @@ TEST_F(PushStreamTest, SendHeaders) {
 TEST_F(PushStreamTest, SendHeadersAndBody) {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
     response->AddHeader("Content-Type", "text/plain");
-    response->SetBody("Hello, World!");
+    response->AppendBody("Hello, World!");
     
     uint64_t push_id = 2;
     EXPECT_TRUE(server_connection_->SendPushResponse(push_id, response));
     ASSERT_NE(client_connection_->GetResponse(), nullptr);
-    EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
+    EXPECT_EQ(client_connection_->GetResponse()->GetBodyAsString(), "Hello, World!");
 }
 
 TEST_F(PushStreamTest, SendBody) {
     std::shared_ptr<IResponse> response = std::make_shared<Response>();
-    response->SetBody("Hello, World!");
+    response->AppendBody("Hello, World!");
     
     uint64_t push_id = 3;
     EXPECT_TRUE(server_connection_->SendPushResponse(push_id, response));
     ASSERT_NE(client_connection_->GetResponse(), nullptr);
-    EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, World!");
+    EXPECT_EQ(client_connection_->GetResponse()->GetBodyAsString(), "Hello, World!");
 }
 
 }  // namespace

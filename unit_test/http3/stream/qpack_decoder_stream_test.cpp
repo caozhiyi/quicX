@@ -14,7 +14,7 @@ namespace {
 
 class MockSenderConnection {
 public:
-    MockSenderConnection(std::shared_ptr<quic::IQuicSendStream> stream) 
+    MockSenderConnection(std::shared_ptr<IQuicSendStream> stream) 
         : error_code_(0) {
         sender_stream_ = std::make_shared<QpackDecoderSenderStream>(stream,
             std::bind(&MockSenderConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
@@ -46,7 +46,7 @@ private:
 
 class MockReceiverConnection {
 public:
-    MockReceiverConnection(std::shared_ptr<quic::IQuicRecvStream> stream) 
+    MockReceiverConnection(std::shared_ptr<IQuicRecvStream> stream) 
         : error_code_(0), retry_count_(0) {
         
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
@@ -60,8 +60,8 @@ public:
     ~MockReceiverConnection() {}
 
     void OnStreamTypeIdentified(uint64_t stream_type, 
-                                std::shared_ptr<quic::IQuicRecvStream> stream,
-                                std::shared_ptr<common::IBufferRead> remaining_data) {
+                                std::shared_ptr<IQuicRecvStream> stream,
+                                std::shared_ptr<IBufferRead> remaining_data) {
         // Verify it's a QPACK decoder stream
         EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kQpackDecoder));
         

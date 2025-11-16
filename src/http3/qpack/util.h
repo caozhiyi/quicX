@@ -6,8 +6,7 @@
 #include <cstdint>
 #include <functional>
 
-#include "common/buffer/if_buffer_read.h"
-#include "common/buffer/if_buffer_write.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {
@@ -24,12 +23,12 @@ struct pair_hash {
 
 // QPACK/HPACK-style prefixed integer encoding (RFC 9204 §4.1)
 // prefix_bits in [1,8]; prefix_field is the low prefix_bits of first byte.
-bool QpackEncodePrefixedInteger(std::shared_ptr<common::IBufferWrite> buf, uint8_t prefix_bits, uint8_t first_byte_prefix_mask, uint64_t value);
-bool QpackDecodePrefixedInteger(const std::shared_ptr<common::IBufferRead> buf, uint8_t prefix_bits, uint8_t& first_byte, uint64_t& value);
+bool QpackEncodePrefixedInteger(std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t first_byte_prefix_mask, uint64_t value);
+bool QpackDecodePrefixedInteger(const std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t& first_byte, uint64_t& value);
 
 // QPACK string literal with Huffman flag in MSB of length prefix (prefix 7 bits)
-bool QpackEncodeStringLiteral(const std::string& s, std::shared_ptr<common::IBufferWrite> buf, bool huffman = false);
-bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBufferRead> buf, std::string& out);
+bool QpackEncodeStringLiteral(const std::string& s, std::shared_ptr<common::IBuffer> buf, bool huffman = false);
+bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::string& out);
 
 }
 }

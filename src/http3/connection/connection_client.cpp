@@ -1,7 +1,6 @@
 #include "common/log/log.h"
 #include "http3/http/error.h"
 #include "http3/stream/type.h"
-#include "common/buffer/buffer.h"
 #include "http3/connection/type.h"
 #include "http3/stream/if_recv_stream.h"
 #include "http3/stream/request_stream.h"
@@ -20,7 +19,7 @@ namespace http3 {
 
 ClientConnection::ClientConnection(const std::string& unique_id,
     const Http3Settings& settings,
-    const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+    const std::shared_ptr<IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
     const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
     const http_response_handler& push_handler):
@@ -29,9 +28,9 @@ ClientConnection::ClientConnection(const std::string& unique_id,
     push_handler_(push_handler) {
 
     // create control stream
-    auto control_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
+    auto control_stream = quic_connection_->MakeStream(StreamDirection::kSend);
     control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
-        std::dynamic_pointer_cast<quic::IQuicSendStream>(control_stream),
+        std::dynamic_pointer_cast<IQuicSendStream>(control_stream),
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
     
     settings_ = IConnection::AdaptSettings(settings);
@@ -52,17 +51,17 @@ ClientConnection::ClientConnection(const std::string& unique_id,
                          settings.qpack_max_table_capacity, settings.qpack_blocked_streams);
         
         // Create QPACK streams
-        auto qpack_enc_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
-        auto qpack_dec_stream = quic_connection_->MakeStream(quic::StreamDirection::kRecv);
-        auto qpack_dec_sender_stream = quic_connection_->MakeStream(quic::StreamDirection::kSend);
+        auto qpack_enc_stream = quic_connection_->MakeStream(StreamDirection::kSend);
+        auto qpack_dec_stream = quic_connection_->MakeStream(StreamDirection::kRecv);
+        auto qpack_dec_sender_stream = quic_connection_->MakeStream(StreamDirection::kSend);
         
         // Wire QPACK instruction sender to QPACK encoder stream
         auto encoder_sender = std::make_shared<QpackEncoderSenderStream>(
-            std::dynamic_pointer_cast<quic::IQuicSendStream>(qpack_enc_stream),
+            std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream),
             std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
         // create decoder receiver stream to apply inserts
         auto decoder_receiver = std::make_shared<quicx::http3::QpackDecoderReceiverStream>(
-            std::dynamic_pointer_cast<quic::IQuicRecvStream>(qpack_dec_stream),
+            std::dynamic_pointer_cast<IQuicRecvStream>(qpack_dec_stream),
             blocked_registry_,
             std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
         streams_[encoder_sender->GetStreamID()] = encoder_sender;
@@ -70,19 +69,15 @@ ClientConnection::ClientConnection(const std::string& unique_id,
 
         auto weak_enc = encoder_sender;
         qpack_encoder_->SetInstructionSender([weak_enc](const std::vector<std::pair<std::string,std::string>>& inserts){
-            if (!weak_enc) return;
-            // serialize inserts via QPACK helper (demo format; to be replaced by RFC-compliant encoding)
-            uint8_t buf[2048];
-            auto instr_buf = std::make_shared<common::Buffer>(buf, sizeof(buf));
-            QpackEncoder enc;
-            enc.EncodeEncoderInstructions(inserts, instr_buf);
-            std::vector<uint8_t> blob(instr_buf->GetData(), instr_buf->GetData() + instr_buf->GetDataLength());
-            weak_enc->SendInstructions(blob);
+            if (!weak_enc) {
+                return;
+            }
+            weak_enc->SendInstructions(inserts);
         });
 
         // Wire decoder feedback sender to QPACK decoder sender stream
         auto decoder_sender = std::make_shared<QpackDecoderSenderStream>(
-            std::dynamic_pointer_cast<quic::IQuicSendStream>(qpack_dec_sender_stream),
+            std::dynamic_pointer_cast<IQuicSendStream>(qpack_dec_sender_stream),
             std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
         streams_[decoder_sender->GetStreamID()] = decoder_sender;
         qpack_encoder_->SetDecoderFeedbackSender([decoder_sender](uint8_t type, uint64_t value){
@@ -121,7 +116,7 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request,
     }
 
     // create request stream
-    auto stream = quic_connection_->MakeStream(quic::StreamDirection::kBidi);
+    auto stream = quic_connection_->MakeStream(StreamDirection::kBidi);
     if (!stream) {
         common::LOG_ERROR("ClientConnection::DoRequest make stream error");
         return false;
@@ -130,7 +125,7 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request,
     // Create request stream for complete mode
     std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_,
         blocked_registry_,
-        std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
+        std::dynamic_pointer_cast<IQuicBidirectionStream>(stream),
         handler,
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ClientConnection::HandlePushPromise, this, std::placeholders::_1, std::placeholders::_2));
@@ -147,7 +142,7 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request,
     }
 
     // create request stream
-    auto stream = quic_connection_->MakeStream(quic::StreamDirection::kBidi);
+    auto stream = quic_connection_->MakeStream(StreamDirection::kBidi);
     if (!stream) {
         common::LOG_ERROR("ClientConnection::DoRequest make stream error");
         return false;
@@ -156,7 +151,7 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request,
     // Create request stream for async mode
     std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_,
         blocked_registry_,
-        std::dynamic_pointer_cast<quic::IQuicBidirectionStream>(stream),
+        std::dynamic_pointer_cast<IQuicBidirectionStream>(stream),
         handler,
         std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ClientConnection::HandlePushPromise, this, std::placeholders::_1, std::placeholders::_2));
@@ -173,7 +168,7 @@ void ClientConnection::CancelPush(uint64_t push_id) {
     control_sender_stream_->SendCancelPush(push_id);
 }
 
-void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error_code) {
+void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code) {
     common::LOG_DEBUG("ClientConnection::HandleStream stream. stream id: %llu, error: %d", stream->GetStreamID(), error_code);
     if (error_code != 0) {
         common::LOG_ERROR("ClientConnection::HandleStream error: %d", error_code);
@@ -184,7 +179,7 @@ void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
     }
 
     // RFC 9114: Client MUST NOT initiate bidirectional streams
-    if (stream->GetDirection() == quic::StreamDirection::kBidi) {
+    if (stream->GetDirection() == StreamDirection::kBidi) {
         common::LOG_ERROR("ClientConnection: received bidirectional stream from server (protocol violation)");
         quic_connection_->Reset(Http3ErrorCode::kStreamCreationError);
         return;
@@ -197,14 +192,14 @@ void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
         return;
     }
     
-    if (stream->GetDirection() == quic::StreamDirection::kRecv) {
+    if (stream->GetDirection() == StreamDirection::kRecv) {
         // RFC 9114 Section 6.2: All unidirectional streams begin with a stream type
         // Create an UnidentifiedStream to read the stream type first
-        auto recv_stream = std::dynamic_pointer_cast<quic::IQuicRecvStream>(stream);
+        auto recv_stream = std::dynamic_pointer_cast<IQuicRecvStream>(stream);
         auto unidentified = std::make_shared<UnidentifiedStream>(
             recv_stream,
             std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
-            [this](uint64_t stream_type, std::shared_ptr<quic::IQuicRecvStream> s, std::shared_ptr<common::IBufferRead> remaining_data) {
+            [this](uint64_t stream_type, std::shared_ptr<IQuicRecvStream> s, std::shared_ptr<IBufferRead> remaining_data) {
                 this->OnStreamTypeIdentified(stream_type, s, remaining_data);
             });
         
@@ -215,8 +210,8 @@ void ClientConnection::HandleStream(std::shared_ptr<quic::IQuicStream> stream, u
 
 void ClientConnection::OnStreamTypeIdentified(
     uint64_t stream_type, 
-    std::shared_ptr<quic::IQuicRecvStream> stream,
-    std::shared_ptr<common::IBufferRead> remaining_data) {
+    std::shared_ptr<IQuicRecvStream> stream,
+    std::shared_ptr<IBufferRead> remaining_data) {
     
     common::LOG_DEBUG("ClientConnection: stream type %llu identified for stream %llu", 
                      stream_type, stream->GetStreamID());

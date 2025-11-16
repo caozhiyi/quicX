@@ -50,7 +50,7 @@ void Master::OnPacket(std::shared_ptr<NetPacket>& pkt) {
         // If ECN is disabled, zero the ECN field to avoid propagating
         pkt->SetEcn(0);
     }
-    PacketInfo packet_info;
+    PacketParseResult packet_info;
     if (MsgParser::ParsePacket(pkt, packet_info)) {
         auto iter = cid_worker_map_.find(packet_info.cid_.Hash());
         if (iter != cid_worker_map_.end()) {

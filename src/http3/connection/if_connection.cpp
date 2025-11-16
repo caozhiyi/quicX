@@ -6,7 +6,7 @@ namespace quicx {
 namespace http3 {
 
 IConnection::IConnection(const std::string& unique_id,
-    const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+    const std::shared_ptr<IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler):
     unique_id_(unique_id),
     error_handler_(error_handler),

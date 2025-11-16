@@ -9,7 +9,6 @@ using quicx::quic::ICongestionControl;
 using quicx::quic::BBRv1CongestionControl;
 using quicx::quic::SentPacketEvent;
 using quicx::quic::AckEvent;
-using quicx::quic::LossEvent;
 
 TEST(BBRv1CongestionControlTest, InitialState) {
     BBRv1CongestionControl cc;
