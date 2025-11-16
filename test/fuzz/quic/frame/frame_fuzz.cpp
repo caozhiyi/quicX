@@ -4,12 +4,10 @@
 #include <unordered_map>
 
 #include "quic/frame/if_frame.h"
-#include "common/buffer/buffer.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/ping_frame.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/frame/crypto_frame.h"
-#include "quic/frame/frame_decode.h"
 #include "quic/frame/padding_frame.h"
 #include "quic/frame/max_data_frame.h"
 #include "quic/frame/new_token_frame.h"
@@ -23,9 +21,11 @@
 #include "quic/frame/streams_blocked_frame.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/connection_close_frame.h"
+#include "common/buffer/single_block_buffer.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/stream_data_blocked_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 static const std::unordered_map<uint16_t, std::function<std::shared_ptr<quicx::quic::IFrame>(uint16_t)>> kFrameCreatorMap = {
     {quicx::quic::FrameType::kPadding,                     [](uint16_t type) -> std::shared_ptr<quicx::quic::IFrame> { return std::make_shared<quicx::quic::PaddingFrame>(); }},
@@ -63,8 +63,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     // 1) Fuzz AckFrame decode -> encode -> decode
     {
         // Wrap input as a read buffer
-        auto in = std::make_shared<quicx::common::Buffer>(
-            const_cast<uint8_t*>(data), const_cast<uint8_t*>(data) + size);
+        auto in = std::make_shared<quicx::common::SingleBlockBuffer>(
+            std::make_shared<quicx::common::StandaloneBufferChunk>(size));
+        in->Write(data, size);
 
         for (auto iter = kFrameCreatorMap.begin(); iter != kFrameCreatorMap.end(); ++iter) {
             auto frame = iter->second(iter->first);
@@ -73,11 +74,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
             }
 
             uint8_t out_buf[2048];
-            auto out = std::make_shared<quicx::common::Buffer>(out_buf, out_buf + sizeof(out_buf));
+            auto out = std::make_shared<quicx::common::SingleBlockBuffer>(
+                std::make_shared<quicx::common::StandaloneBufferChunk>(sizeof(out_buf)));
+            out->Write(out_buf, sizeof(out_buf));
             (void)frame->Encode(out);
 
-            auto out_read = out->GetReadViewPtr(0);
-            (void)frame->Decode(out_read, true);
+            (void)frame->Decode(out, true);
         }
     }
 

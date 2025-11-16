@@ -1,9 +1,11 @@
 #include <thread>
 #include <gtest/gtest.h>
+#include <cstring>
 #include "quic/udp/udp_sender.h"
-#include "common/buffer/buffer.h"
 #include "quic/udp/udp_receiver.h"
 #include "common/network/io_handle.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace quic {
@@ -30,7 +32,9 @@ TEST(UdpSenderTest, Send) {
 
     threads.emplace_back([event_loop]() {
         char recv_buf[200] = {0};
-        std::shared_ptr<common::Buffer> recv_buffer = std::make_shared<common::Buffer>((uint8_t*)recv_buf, sizeof(recv_buf));
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(200);
+        std::shared_ptr<common::SingleBlockBuffer> recv_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+        recv_buffer->Write((uint8_t*)recv_buf, 200);
 
         std::shared_ptr<NetPacket> recv_pkt = std::make_shared<NetPacket>();
         recv_pkt->SetData(recv_buffer);
@@ -45,7 +49,10 @@ TEST(UdpSenderTest, Send) {
     UdpSender sender(sockfd_ret.return_value_);
     
     char send_buf[20] = {0};
-    std::shared_ptr<common::Buffer> send_buffer = std::make_shared<common::Buffer>((uint8_t*)send_buf, sizeof(send_buf));
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(sizeof(send_buf));
+    ASSERT_TRUE(chunk->Valid());
+    std::memcpy(chunk->GetData(), send_buf, sizeof(send_buf));
+    std::shared_ptr<common::SingleBlockBuffer> send_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     send_buffer->Write((uint8_t*)("hello world"), sizeof("hello world"));
 
     std::shared_ptr<NetPacket> send_pkt = std::make_shared<NetPacket>();

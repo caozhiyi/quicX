@@ -48,8 +48,8 @@ public:
     HeaderFlag(uint8_t flag);
     virtual ~HeaderFlag() {}
 
-    virtual bool EncodeFlag(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool DecodeFlag(std::shared_ptr<common::IBufferRead> buffer);
+    virtual bool EncodeFlag(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool DecodeFlag(std::shared_ptr<common::IBuffer> buffer);
     virtual uint32_t EncodeFlagSize();
 
     virtual PacketHeaderType GetHeaderType() const;

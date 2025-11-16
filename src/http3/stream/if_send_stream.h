@@ -21,7 +21,7 @@ class ISendStream:
     public IStream {
 public:
     ISendStream(StreamType stream_type,
-                const std::shared_ptr<quic::IQuicSendStream>& stream,
+                const std::shared_ptr<IQuicSendStream>& stream,
                 const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
                 IStream(stream_type, error_handler),
                 wrote_type_(false),
@@ -35,7 +35,7 @@ protected:
 
 protected:
     bool wrote_type_;  // Track whether stream type has been sent
-    std::shared_ptr<quic::IQuicSendStream> stream_;
+    std::shared_ptr<IQuicSendStream> stream_;
 };
 
 }

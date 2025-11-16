@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include "quic/frame/if_frame.h"
+#include "common/buffer/shared_buffer_span.h"
 
 namespace quicx {
 namespace quic {
@@ -14,18 +15,18 @@ public:
     CryptoFrame();
     ~CryptoFrame();
 
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetOffset(uint64_t offset) { offset_ = offset; }
     uint64_t GetOffset() { return offset_; }
 
-    void SetData(uint8_t* data, uint32_t length) { 
+    void SetData(common::SharedBufferSpan data) { 
         data_ = data;
-        length_ = length;
+        length_ = data.GetLength();
     }
-    uint8_t* GetData() { return data_; }
+    common::SharedBufferSpan GetData() { return data_; }
     uint32_t GetLength() { return length_; }
 
     void SetEncryptionLevel(uint8_t level) { encryption_level_ = level; }
@@ -34,7 +35,7 @@ public:
 private:
     uint64_t offset_;  // the byte offset in the stream for the data in this CRYPTO frame.
     uint32_t length_;  // the length of the Crypto Data field in this CRYPTO frame.
-    uint8_t* data_;    // the cryptographic message data.
+    common::SharedBufferSpan data_;    // the cryptographic message data.
 
     uint8_t encryption_level_;
 };

@@ -5,8 +5,8 @@
 #include <memory>
 #include <cstdint>
 #include "quic/include/type.h"
-#include "common/buffer/if_buffer_read.h"
-#include "common/buffer/if_buffer_write.h"
+#include "common/buffer/buffer_read_view.h"
+#include "common/buffer/buffer_write_view.h"
 
 namespace quicx {
 namespace quic {
@@ -29,8 +29,8 @@ public:
     /*
      * serialization and deserialization operations
      */
-    bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    bool Decode(std::shared_ptr<common::IBufferRead> buffer);
+    bool Encode(common::BufferWriteView& buffer);
+    bool Decode(common::BufferReadView& buffer);
     uint32_t EncodeSize();
 
     /**

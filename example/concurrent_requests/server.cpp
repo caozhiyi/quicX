@@ -119,13 +119,13 @@ int main() {
       "-----END RSA PRIVATE KEY-----\n";
 
     auto stats = std::make_shared<RequestStats>();
-    auto server = quicx::http3::IServer::Create();
+    auto server = quicx::IServer::Create();
 
     // Request logging middleware
     server->AddMiddleware(
-        quicx::http3::HttpMethod::kAny,
-        quicx::http3::MiddlewarePosition::kBefore,
-        [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        quicx::HttpMethod::kAny,
+        quicx::MiddlewarePosition::kBefore,
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::cout << "[" << GetCurrentTime() << "] [" 
                       << req->GetMethodString() << "] " << req->GetPath() << std::endl;
         }
@@ -133,9 +133,9 @@ int main() {
 
     // GET / - Welcome page
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/",
-        [stats](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [stats](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::string html = 
                 "<!DOCTYPE html><html><head><title>Concurrent Requests Server</title></head>"
                 "<body><h1>QuicX HTTP/3 Concurrent Requests Demo</h1>"
@@ -153,16 +153,16 @@ int main() {
                 "</body></html>";
             
             resp->AddHeader("Content-Type", "text/html");
-            resp->SetBody(html);
+            resp->AppendBody(html);
             resp->SetStatusCode(200);
         }
     );
 
     // GET /fast - Fast response (10ms)
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/fast",
-        [stats](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [stats](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             RAII_ConcurrentCounter counter(*stats);
             stats->total_requests++;
             stats->fast_requests++;
@@ -174,16 +174,16 @@ int main() {
                 << GetCurrentTime() << "\"}";
             
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(oss.str());
+            resp->AppendBody(oss.str());
             resp->SetStatusCode(200);
         }
     );
 
     // GET /medium - Medium response (100ms)
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/medium",
-        [stats](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [stats](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             RAII_ConcurrentCounter counter(*stats);
             stats->total_requests++;
             stats->medium_requests++;
@@ -195,16 +195,16 @@ int main() {
                 << GetCurrentTime() << "\"}";
             
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(oss.str());
+            resp->AppendBody(oss.str());
             resp->SetStatusCode(200);
         }
     );
 
     // GET /slow - Slow response (500ms)
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/slow",
-        [stats](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [stats](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             RAII_ConcurrentCounter counter(*stats);
             stats->total_requests++;
             stats->slow_requests++;
@@ -216,16 +216,16 @@ int main() {
                 << GetCurrentTime() << "\"}";
             
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(oss.str());
+            resp->AppendBody(oss.str());
             resp->SetStatusCode(200);
         }
     );
 
     // GET /random - Random delay (10-500ms)
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/random",
-        [stats](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [stats](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             RAII_ConcurrentCounter counter(*stats);
             stats->total_requests++;
             
@@ -242,16 +242,16 @@ int main() {
                 << GetCurrentTime() << "\"}";
             
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(oss.str());
+            resp->AppendBody(oss.str());
             resp->SetStatusCode(200);
         }
     );
 
     // GET /data/:size - Generate data of specific size (in KB)
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/data/:size",
-        [stats](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [stats](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             RAII_ConcurrentCounter counter(*stats);
             stats->total_requests++;
             
@@ -259,7 +259,7 @@ int main() {
             size_t last_slash = path.find_last_of('/');
             if (last_slash == std::string::npos) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid path\"}");
+                resp->AppendBody("{\"error\":\"Invalid path\"}");
                 return;
             }
             
@@ -271,7 +271,7 @@ int main() {
                 if (size_kb > 1024) size_kb = 1024; // Max 1MB
             } catch (...) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid size\"}");
+                resp->AppendBody("{\"error\":\"Invalid size\"}");
                 return;
             }
             
@@ -293,38 +293,38 @@ int main() {
                    << ",\"timestamp\":\"" << GetCurrentTime() << "\"}\n\n";
             
             resp->AddHeader("Content-Type", "text/plain");
-            resp->SetBody(header.str() + data);
+            resp->AppendBody(header.str() + data);
             resp->SetStatusCode(200);
         }
     );
 
     // GET /stats - Server statistics
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/stats",
-        [stats](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [stats](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(stats->GetStatsJson());
+            resp->AppendBody(stats->GetStatsJson());
             resp->SetStatusCode(200);
         }
     );
 
     // Response middleware
     server->AddMiddleware(
-        quicx::http3::HttpMethod::kAny,
-        quicx::http3::MiddlewarePosition::kAfter,
-        [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        quicx::HttpMethod::kAny,
+        quicx::MiddlewarePosition::kAfter,
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             resp->AddHeader("X-Powered-By", "QuicX-HTTP3");
             resp->AddHeader("Access-Control-Allow-Origin", "*");
         }
     );
 
     // Configure and start server
-    quicx::http3::Http3ServerConfig config;
+    quicx::Http3ServerConfig config;
     config.cert_pem_ = cert_pem;
     config.key_pem_ = key_pem;
     config.config_.thread_num_ = 4; // More threads for concurrent handling
-    config.config_.log_level_ = quicx::http3::LogLevel::kError;
+    config.config_.log_level_ = quicx::LogLevel::kError;
     
     server->Init(config);
     

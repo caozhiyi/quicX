@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include "quic/crypto/tls/type.h"
 #include "quic/stream/if_stream.h"
-#include "common/buffer/if_buffer_chains.h"
+#include "common/buffer/multi_block_buffer.h"
 
 namespace quicx {
 namespace quic {
@@ -32,7 +32,7 @@ public:
 
     virtual int32_t Send(uint8_t* data, uint32_t len, uint8_t encryption_level);
     virtual int32_t Send(uint8_t* data, uint32_t len);
-    virtual int32_t Send(std::shared_ptr<common::IBufferRead> buffer);
+    virtual int32_t Send(std::shared_ptr<IBufferRead> data);
 
     virtual uint8_t GetWaitSendEncryptionLevel();
 
@@ -42,9 +42,8 @@ protected:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
 private:
-    uint8_t buf_[10240] = {0}; // TODO
-    std::shared_ptr<common::Buffer> buffer_;
     std::shared_ptr<common::BlockMemoryPool> alloter_;
+    std::shared_ptr<common::MultiBlockBuffer> buffer_;
 
     // in order next data offset
     uint64_t except_offset_;
@@ -52,7 +51,7 @@ private:
 
     // local data send offset
     uint64_t send_offset_;
-    std::shared_ptr<common::IBufferChains> send_buffers_[kNumEncryptionLevels];
+    std::shared_ptr<common::MultiBlockBuffer> send_buffers_[kNumEncryptionLevels];
     stream_read_callback recv_cb_;
 };
 

@@ -1,8 +1,11 @@
 #ifndef QUIC_UDP_POOL_PACKET_ALLOTOR
 #define QUIC_UDP_POOL_PACKET_ALLOTOR
 
-#include "quic/udp/normal_pakcet_allotor.h"
+#include <memory>
+
+#include "common/alloter/pool_block.h"
 #include "common/structure/thread_safe_queue.h"
+#include "quic/udp/normal_pakcet_allotor.h"
 
 namespace quicx {
 namespace quic {
@@ -21,8 +24,8 @@ public:
 private:
     void Free(NetPacket* pkt);
 
-    private:
     uint32_t packet_size_;
+    std::shared_ptr<common::BlockMemoryPool> pool_;
     common::ThreadSafeQueue<NetPacket*> packet_queue_;
 };
 

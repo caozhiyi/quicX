@@ -5,7 +5,7 @@
 namespace quicx {
 namespace http3 {
 
-bool GoAwayFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool GoAwayFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (buffer->GetFreeLength() < EvaluateEncodeSize()) {
         return false;
     }
@@ -29,7 +29,7 @@ bool GoAwayFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool GoAwayFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool GoAwayFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
     
     if (with_type) {

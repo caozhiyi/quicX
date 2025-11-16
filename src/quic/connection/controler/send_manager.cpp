@@ -85,7 +85,7 @@ bool SendManager::GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t e
         if (mtu_probe_inflight_ && mtu_probe_packet_number_ == 0) {
             uint64_t probe_size = mtu_probe_target_bytes_;
             can_send_size = probe_size;
-            FixBufferFrameVisitor frame_visitor(static_cast<uint32_t>(probe_size));
+            FixBufferFrameVisitor frame_visitor(probe_size);
             // Add a PING to ensure ack-eliciting
             auto ping = std::make_shared<PingFrame>();
             frame_visitor.HandleFrame(ping);
@@ -413,7 +413,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(IFrameVisitor* visitor, uint8_t
 
     auto cid = remote_conn_id_manager_->GetCurrentID();
     packet->GetHeader()->SetDestinationConnectionId(cid.GetID(), cid.GetLength());
-    packet->SetPayload(visitor->GetBuffer()->GetReadSpan());
+    packet->SetPayload(visitor->GetBuffer()->GetSharedReadableSpan());
     packet->SetCryptographer(cryptographer);
 
     common::LOG_DEBUG("send packet. packet type:%d, packet size:%d, dcid:%llu",

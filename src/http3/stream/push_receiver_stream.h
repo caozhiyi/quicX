@@ -23,12 +23,12 @@ class PushReceiverStream:
     public IRecvStream {
 public:
     PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        const std::shared_ptr<quic::IQuicRecvStream>& stream,
+        const std::shared_ptr<IQuicRecvStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const http_response_handler& response_handler);
     virtual ~PushReceiverStream();
 
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
+    virtual void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) override;
 
 private:
     virtual void HandleHeaders(std::shared_ptr<IFrame> frame);
@@ -49,7 +49,7 @@ private:
     uint64_t push_id_;
     
     uint32_t body_length_;
-    std::vector<uint8_t> body_;
+    std::shared_ptr<common::IBuffer> body_;
     std::unordered_map<std::string, std::string> headers_;
 };
 

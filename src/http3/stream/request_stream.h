@@ -26,14 +26,14 @@ class RequestStream:
 public:
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-        const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+        const std::shared_ptr<IQuicBidirectionStream>& stream,
         std::shared_ptr<IAsyncClientHandler> async_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler);
 
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-        const std::shared_ptr<quic::IQuicBidirectionStream>& stream,
+        const std::shared_ptr<IQuicBidirectionStream>& stream,
         http_response_handler response_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler);
@@ -45,7 +45,7 @@ public:
 
 private:
     virtual void HandleHeaders() override;
-    virtual void HandleData(const std::vector<uint8_t>& data, bool is_last) override;
+    virtual void HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) override;
     virtual void HandleFrame(std::shared_ptr<IFrame> frame) override;
     void HandlePushPromise(std::shared_ptr<IFrame> frame);
 

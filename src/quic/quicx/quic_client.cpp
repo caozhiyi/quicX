@@ -9,11 +9,12 @@
 #include "quic/crypto/tls/tls_ctx_client.h"
 
 namespace quicx {
-namespace quic {
 
 std::shared_ptr<IQuicClient> IQuicClient::Create(const QuicTransportParams& params) {
-    return std::make_shared<QuicClient>(params);
+    return std::make_shared<quic::QuicClient>(params);
 }
+
+namespace quic {
 
 QuicClient::QuicClient(const QuicTransportParams& params):
     params_(params) {

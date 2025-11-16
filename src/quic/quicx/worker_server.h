@@ -21,7 +21,7 @@ public:
         connection_state_callback connection_handler);
     virtual ~ServerWorker();
 
-    virtual bool InnerHandlePacket(PacketInfo& packet_info) override;
+    virtual bool InnerHandlePacket(PacketParseResult& packet_info) override;
 
 protected:
     void SendVersionNegotiatePacket(const common::Address& addr);

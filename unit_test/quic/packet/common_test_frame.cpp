@@ -1,6 +1,8 @@
 #include <cstdlib>
 #include "quic/connection/type.h"
 #include "quic/frame/crypto_frame.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"  
 #include "unit_test/quic/packet/common_test_frame.h"
 #include "quic/connection/connection_id_generator.h"
 
@@ -28,7 +30,9 @@ PacketTest::PacketTest() {
 
 std::shared_ptr<IFrame> PacketTest::GetTestFrame() {
     std::shared_ptr<CryptoFrame> frame = std::make_shared<CryptoFrame>();
-    frame->SetData(kData, sizeof(kData));
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    data_buffer->Write(kData, sizeof(kData));
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetOffset(kOffset);
     frame->SetEncryptionLevel(kLevel);
 
@@ -36,7 +40,13 @@ std::shared_ptr<IFrame> PacketTest::GetTestFrame() {
 }
 
 bool PacketTest::CheckTestFrame(std::shared_ptr<IFrame> f) {
+    if (!f) {
+        return false;
+    }
     std::shared_ptr<CryptoFrame> frame = std::dynamic_pointer_cast<CryptoFrame>(f);
+    if (!frame) {
+        return false;
+    }
     if (frame->GetOffset() != kOffset) {
         return false;
     }
@@ -45,9 +55,10 @@ bool PacketTest::CheckTestFrame(std::shared_ptr<IFrame> f) {
         return false;
     }
     
-    uint8_t* data = frame->GetData();
+    auto data = frame->GetData();
+    uint8_t* data_ptr = data.GetStart();
     for (size_t i = 0; i < frame->GetLength(); i++) {
-        if (*(data + i) != kData[i]) {
+        if (*(data_ptr + i) != kData[i]) {
             return false;
         }
     }

@@ -3,9 +3,10 @@
 #include <vector>
 #include <cstring>
 
-#include "quic/crypto/aes_128_gcm_cryptographer.h"
-#include "common/buffer/buffer.h"
 #include "common/buffer/buffer_span.h"
+#include "common/alloter/pool_block.h"
+#include "common/buffer/multi_block_buffer.h"
+#include "quic/crypto/aes_128_gcm_cryptographer.h"
 
 namespace quicx {
 namespace quic {
@@ -24,17 +25,18 @@ static void BM_AEAD_EncryptDecryptPacket(benchmark::State& state) {
     aead.InstallSecret(secret.data(), secret.size(), /*is_write*/true);
     aead.InstallSecret(secret.data(), secret.size(), /*is_write*/false);
 
+    auto pool = std::make_shared<common::BlockMemoryPool>(512, /*add_num*/128);
     for (auto _ : state) {
         // Encrypt
         common::BufferSpan ad_span(ad.data(), (uint32_t)ad.size());
         common::BufferSpan pt_span(plain.data(), (uint32_t)plain.size());
-        auto out_cipher_buf = std::make_shared<common::Buffer>(cipher.data(), (uint32_t)cipher.size());
+        auto out_cipher_buf = std::make_shared<common::MultiBlockBuffer>(pool);
         auto res = aead.EncryptPacket(/*pn*/1, ad_span, pt_span, out_cipher_buf);
         benchmark::DoNotOptimize(res);
 
         // Decrypt
-        common::BufferSpan ct_span(out_cipher_buf->GetData(), out_cipher_buf->GetDataLength());
-        auto out_plain_buf = std::make_shared<common::Buffer>(plain.data(), (uint32_t)plain.size());
+        common::BufferSpan ct_span(out_cipher_buf->GetReadableSpan());
+        auto out_plain_buf = std::make_shared<common::MultiBlockBuffer>(pool);
         res = aead.DecryptPacket(/*pn*/1, ad_span, ct_span, out_plain_buf);
         benchmark::DoNotOptimize(res);
     }

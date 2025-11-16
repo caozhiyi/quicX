@@ -16,7 +16,7 @@ UdpSender::UdpSender(int32_t sockfd):
 
 bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
     auto buffer= pkt->GetData();
-    auto span = buffer->GetReadSpan();
+    auto span = buffer->GetReadableSpan();
     auto sock = pkt->GetSocket() > 0 ? pkt->GetSocket() : sock_;
     if (sock <= 0) {
         common::LOG_ERROR("send packet to: %s, len: %d, sock: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(), sock);

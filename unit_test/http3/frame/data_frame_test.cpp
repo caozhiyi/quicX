@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
-#include "common/buffer/buffer.h"
 #include "common/decode/decode.h"
 #include "http3/frame/data_frame.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace http3 {
@@ -10,11 +11,11 @@ namespace {
 class DataFrameTest : public testing::Test {
 protected:
     void SetUp() override {
-        buffer_ = std::make_shared<common::Buffer>(buf_, sizeof(buf_));
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
+        buffer_ = std::make_shared<common::SingleBlockBuffer>(chunk);
         frame_ = std::make_shared<DataFrame>();
     }
-    uint8_t buf_[1024];
-    std::shared_ptr<common::Buffer> buffer_;
+    std::shared_ptr<common::SingleBlockBuffer> buffer_;
     std::shared_ptr<DataFrame> frame_;
 };
 
@@ -26,8 +27,12 @@ TEST_F(DataFrameTest, BasicProperties) {
     EXPECT_EQ(frame_->GetLength(), length);
 
     std::vector<uint8_t> data = {1, 2, 3, 4, 5};
-    frame_->SetData(data);
-    EXPECT_EQ(frame_->GetData(), data);
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(data.size());
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+    buffer->Write(data.data(), data.size());
+    frame_->SetData(buffer);
+    EXPECT_EQ(frame_->GetData()->GetDataLength(), data.size());
+    EXPECT_EQ(frame_->GetData()->GetDataAsString(), std::string(data.begin(), data.end()));
 }
 
 TEST_F(DataFrameTest, EncodeAndDecode) {
@@ -35,7 +40,10 @@ TEST_F(DataFrameTest, EncodeAndDecode) {
     uint32_t length = 5;
     std::vector<uint8_t> data = {1, 2, 3, 4, 5};
     frame_->SetLength(length);
-    frame_->SetData(data);
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(data.size());
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+    buffer->Write(data.data(), data.size());
+    frame_->SetData(buffer);
 
     // Encode
     EXPECT_TRUE(frame_->Encode(buffer_));
@@ -46,14 +54,18 @@ TEST_F(DataFrameTest, EncodeAndDecode) {
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetLength(), length);
-    EXPECT_EQ(decode_frame->GetData(), data);
+    EXPECT_EQ(decode_frame->GetData()->GetDataLength(), data.size());
+    EXPECT_EQ(decode_frame->GetData()->GetDataAsString(), std::string(data.begin(), data.end()));
 }
 
 TEST_F(DataFrameTest, EvaluateSize) {
     uint32_t length = 5;
     std::vector<uint8_t> data = {1, 2, 3, 4, 5};
     frame_->SetLength(length);
-    frame_->SetData(data);
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(data.size());
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+    buffer->Write(data.data(), data.size());
+    frame_->SetData(buffer);
 
     // Size should include:
     // 1. frame type (2 bytes)

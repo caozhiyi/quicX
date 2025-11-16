@@ -7,8 +7,9 @@
 #include <functional>
 #include <unordered_map>
 
+#include "common/include/type.h"
+
 namespace quicx {
-namespace http3 {
 
 /**
  * @brief HTTP method
@@ -36,20 +37,6 @@ enum class HttpMethod: uint16_t {
 enum class MiddlewarePosition: uint8_t {
     kBefore = 0x01,
     kAfter  = 0x02,
-};
-
-/**
- * @brief Log level
- * 
- * This level is used to set the log level.
- */
-enum class LogLevel: uint8_t {
-    kNull   = 0x00, // not print log
-    kFatal  = 0x01,
-    kError  = 0x02 | kFatal,
-    kWarn   = 0x04 | kError,
-    kInfo   = 0x08 | kWarn,
-    kDebug  = 0x10 | kInfo,
 };
 
 /**
@@ -201,7 +188,6 @@ typedef std::function<bool(std::unordered_map<std::string, std::string>& headers
  */
 typedef std::function<void(const std::string& unique_id, uint32_t error_code)> error_handler;
 
-}
 }
 
 #endif

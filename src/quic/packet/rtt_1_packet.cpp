@@ -1,11 +1,9 @@
 #include <cstring>
 #include "common/log/log.h"
-#include "quic/packet/type.h"
-#include "common/buffer/buffer.h"
 #include "quic/frame/frame_decode.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/packet_number.h"
-#include "common/buffer/buffer_read_view.h"
+#include "common/buffer/single_block_buffer.h"
 
 namespace quicx {
 namespace quic {
@@ -23,13 +21,13 @@ Rtt1Packet::~Rtt1Packet() {
 
 }
 
-bool Rtt1Packet::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool Rtt1Packet::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (!header_.EncodeHeader(buffer)) {
         common::LOG_ERROR("encode header failed");
         return false;
     }
 
-    auto span = buffer->GetWriteSpan();
+    auto span = buffer->GetWritableSpan();
     uint8_t* start_pos = span.GetStart();
     uint8_t* cur_pos = start_pos;
 
@@ -39,16 +37,19 @@ bool Rtt1Packet::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     // encode payload 
     if (!crypto_grapher_) {
         payload_offset_ = cur_pos - start_pos;
-        memcpy(cur_pos, payload_.GetStart(), payload_.GetLength());
-        cur_pos += payload_.GetLength();
+        if (payload_.Valid()) {
+            std::memcpy(cur_pos, payload_.GetStart(), payload_.GetLength());
+            cur_pos += payload_.GetLength();
+        }
         buffer->MoveWritePt(cur_pos - span.GetStart());
         return true;
     }
 
     // encode payload whit encrypt
     buffer->MoveWritePt(cur_pos - start_pos);
-    auto header_span = header_.GetHeaderSrcData();
-    auto result = crypto_grapher_->EncryptPacket(packet_number_, header_span, payload_, buffer);
+    auto header_span = header_.GetHeaderSrcData().GetSpan();
+    auto payload_span = payload_.GetSpan();
+    auto result = crypto_grapher_->EncryptPacket(packet_number_, header_span, payload_span, buffer);
     if(result != ICryptographer::Result::kOk) {
         common::LOG_ERROR("encrypt payload failed. result:%d", result);
         return false;
@@ -66,17 +67,23 @@ bool Rtt1Packet::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool Rtt1Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer, bool with_flag) {
+bool Rtt1Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
     if (!header_.DecodeHeader(buffer, with_flag)) {
         common::LOG_ERROR("decode header failed");
         return false;
     }
 
     // decode cipher data
-    packet_src_data_ = buffer->GetReadSpan();
+    auto span = buffer->GetReadableSpan();
+    auto shared_span = buffer->GetSharedReadableSpan();
+    if (!shared_span.Valid()) {
+        common::LOG_ERROR("readable span is invalid");
+        return false;
+    }
+    packet_src_data_ = common::SharedBufferSpan(shared_span.GetChunk(), span.GetStart(), span.GetEnd());
 
     // move buffer read point
-    buffer->MoveReadPt(packet_src_data_.GetLength());
+    buffer->MoveReadPt(span.GetLength());
     return true;
 }
 
@@ -90,9 +97,9 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
         cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), packet_number_);
 
         // decode payload frames
-        payload_ = common::BufferSpan(cur_pos, end);
-        std::shared_ptr<common::BufferReadView> view = std::make_shared<common::BufferReadView>(payload_.GetStart(), payload_.GetEnd());
-        if(!DecodeFrames(view, frames_list_)) {
+        payload_ = common::SharedBufferSpan(packet_src_data_.GetChunk(), cur_pos, end);
+        std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(payload_.GetChunk());
+        if(!DecodeFrames(buffer, frames_list_)) {
             common::LOG_ERROR("decode frame failed.");
             return false;
         }
@@ -101,7 +108,7 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     
     // decrypt header
     uint8_t packet_num_len = 0;
-    common::BufferSpan header_span = header_.GetHeaderSrcData();
+    auto header_span = header_.GetHeaderSrcData().GetSpan();
     common::BufferSpan sample = common::BufferSpan(span.GetStart() + 4,
         span.GetStart() + 4 + kHeaderProtectSampleLength);
     auto result = crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength(), packet_num_len, 
@@ -134,7 +141,7 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     return true;
 }
 
-void Rtt1Packet::SetPayload(common::BufferSpan payload) {
+void Rtt1Packet::SetPayload(const common::SharedBufferSpan& payload) {
     payload_ = payload;
 }
 

@@ -19,10 +19,10 @@ public:
     virtual Result InstallInitSecret(const uint8_t* secret, size_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server) override;
 
     virtual Result DecryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data, common::BufferSpan& ciphertext,
-                             std::shared_ptr<common::IBufferWrite> out_plaintext) override;
+                             std::shared_ptr<common::IBuffer> out_plaintext) override;
 
     virtual Result EncryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data, common::BufferSpan& plaintext,
-                             std::shared_ptr<common::IBufferWrite> out_ciphertext) override;
+                             std::shared_ptr<common::IBuffer> out_ciphertext) override;
 
     virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
                              uint8_t& out_packet_num_len, bool is_short) override;

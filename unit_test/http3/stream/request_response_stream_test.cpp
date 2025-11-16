@@ -15,7 +15,7 @@ namespace {
 class MockClientConnection {
 public:
     MockClientConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        std::shared_ptr<quic::IQuicBidirectionStream> stream) {
+        std::shared_ptr<IQuicBidirectionStream> stream) {
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
         auto response_handler = std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2);
         auto error_handler = std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2);
@@ -57,7 +57,7 @@ private:
 class MockServerConnection {
 public:
     MockServerConnection(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        std::shared_ptr<quic::IQuicBidirectionStream> stream) : http_handler_(nullptr) {
+        std::shared_ptr<IQuicBidirectionStream> stream) : http_handler_(nullptr) {
         // Create a mock http processor
         class MockHttpProcessor : public IHttpProcessor {
         public:
@@ -166,7 +166,7 @@ TEST_F(RequestResponseStreamTest, SendHeaders) {
 TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->AddHeader("Content-Type", "text/plain");
-    request->SetBody("Hello, Server!");
+    request->AppendBody("Hello, Server!");
     request->SetMethod(HttpMethod::kPost);
     request->SetPath("/api/data");
     request->SetScheme("http");
@@ -176,7 +176,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
         std::string content_type;
         EXPECT_TRUE(request->GetHeader("Content-Type", content_type));
         EXPECT_EQ(content_type, "text/plain");
-        EXPECT_EQ(request->GetBody(), "Hello, Server!");
+        EXPECT_EQ(request->GetBodyAsString(), "Hello, Server!");
         EXPECT_EQ(request->GetMethod(), HttpMethod::kPost);
         EXPECT_EQ(request->GetPath(), "/api/data");
         EXPECT_EQ(request->GetScheme(), "http");
@@ -184,7 +184,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
 
         response->SetStatusCode(400);
         response->AddHeader("Content-Type", "text/plain");
-        response->SetBody("Hello, Client!");
+        response->AppendBody("Hello, Client!");
     };
     server_connection_->SetHttpHandler(http_handler);
 
@@ -196,24 +196,24 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
     ASSERT_NE(client_connection_->GetResponse(), nullptr);
     EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
     EXPECT_EQ(content_type, "text/plain");
-    EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, Client!");
+    EXPECT_EQ(client_connection_->GetResponse()->GetBodyAsString(), "Hello, Client!");
     EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 400);
 }
 
 TEST_F(RequestResponseStreamTest, SendBody) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
-    request->SetBody("Hello, Server!");
+    request->AppendBody("Hello, Server!");
     request->SetMethod(HttpMethod::kPost);
 
     auto http_handler = [](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
-        EXPECT_EQ(request->GetBody(), "Hello, Server!");
-        response->SetBody("Hello, Client!");
+        EXPECT_EQ(request->GetBodyAsString(), "Hello, Server!");
+        response->AppendBody("Hello, Client!");
     };
     server_connection_->SetHttpHandler(http_handler);
 
     EXPECT_TRUE(client_connection_->SendRequest(request));
     ASSERT_NE(client_connection_->GetResponse(), nullptr);
-    EXPECT_EQ(client_connection_->GetResponse()->GetBody(), "Hello, Client!");
+    EXPECT_EQ(client_connection_->GetResponse()->GetBodyAsString(), "Hello, Client!");
     EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
 }
 

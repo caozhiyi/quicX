@@ -12,8 +12,8 @@ public:
     PathResponseFrame();
     ~PathResponseFrame();
 
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetData(uint8_t* data);

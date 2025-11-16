@@ -11,21 +11,21 @@
 namespace quicx {
 namespace quic {
 
-struct PacketInfo {
+struct PacketParseResult {
     ConnectionID cid_;
     std::shared_ptr<NetPacket> net_packet_;
     std::vector<std::shared_ptr<IPacket>> packets_;
 
-    PacketInfo() = default;
-    PacketInfo(const PacketInfo& other);
-    PacketInfo& operator=(const PacketInfo& other);
+    PacketParseResult() = default;
+    PacketParseResult(const PacketParseResult& other);
+    PacketParseResult& operator=(const PacketParseResult& other);
 };
 
 // Msg parser
 class MsgParser {
 public:
     // Parse packets
-    static bool ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketInfo& packet_info);
+    static bool ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketParseResult& packet_info);
 };
 
 }

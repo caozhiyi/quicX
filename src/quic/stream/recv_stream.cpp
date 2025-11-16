@@ -22,7 +22,7 @@ RecvStream::RecvStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
     local_data_limit_(init_data_limit),
     final_offset_(0),
     except_offset_(0) {
-    buffer_ = std::make_shared<common::Buffer>(buf_, sizeof(buf_));
+    buffer_ = std::make_shared<common::MultiBlockBuffer>(alloter);
     recv_machine_ = std::make_shared<StreamStateMachineRecv>(std::bind(&RecvStream::Reset, this, 0)); // TODO make error code
 }
 

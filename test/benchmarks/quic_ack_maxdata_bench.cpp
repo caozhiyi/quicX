@@ -1,18 +1,18 @@
 #if defined(QUICX_ENABLE_BENCHMARKS)
 #include <benchmark/benchmark.h>
 #include <memory>
-#include <vector>
 
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/max_data_frame.h"
-#include "common/buffer/buffer.h"
+#include "common/alloter/pool_block.h"
+#include "common/buffer/multi_block_buffer.h"
 
 namespace quicx {
 namespace quic {
 
-static std::shared_ptr<common::Buffer> MakeBuf(size_t cap=4096) {
-    auto mem = std::make_shared<std::vector<uint8_t>>(cap);
-    return std::make_shared<common::Buffer>(mem->data(), (uint32_t)mem->size());
+static std::shared_ptr<common::IBuffer> MakeBuf(size_t cap=4096) {
+    auto pool = std::make_shared<common::BlockMemoryPool>(cap, /*add_num*/128);
+    return std::make_shared<common::MultiBlockBuffer>(pool);
 }
 
 static void BM_AckFrame_EncodeDecode(benchmark::State& state) {

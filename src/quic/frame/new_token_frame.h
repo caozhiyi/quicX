@@ -14,8 +14,8 @@ public:
     NewTokenFrame();
     ~NewTokenFrame();
 
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
 
@@ -28,7 +28,7 @@ public:
 
 private:
     uint32_t token_length_;  // the length of the token in bytes.
-    uint8_t* token_;   // An opaque blob that the client may use with a future Initial packet.
+    uint8_t* token_;   // An opaque blob that the client may use with a future Initial packet. TODO: use shared buffer span
 };
 
 }

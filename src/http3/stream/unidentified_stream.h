@@ -31,8 +31,8 @@ class UnidentifiedStream:
 public:
     using StreamTypeCallback = std::function<void(
         uint64_t stream_type, 
-        std::shared_ptr<quic::IQuicRecvStream> stream,
-        std::shared_ptr<common::IBufferRead> data)>;
+        std::shared_ptr<IQuicRecvStream> stream,
+        std::shared_ptr<IBufferRead> data)>;
     /**
      * @brief Construct an UnidentifiedStream
      * @param stream The QUIC recv stream
@@ -40,14 +40,14 @@ public:
      * @param type_callback Callback invoked when stream type is identified
      */
     UnidentifiedStream(
-        const std::shared_ptr<quic::IQuicRecvStream>& stream,
+        const std::shared_ptr<IQuicRecvStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const StreamTypeCallback& type_callback);
     
     virtual ~UnidentifiedStream() {}
 
 private:
-    void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
+    void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) override;
 
 private:
     bool type_identified_;

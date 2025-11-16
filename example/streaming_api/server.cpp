@@ -19,7 +19,7 @@
 #include "http3/include/if_response.h"
 #include "http3/include/if_async_handler.h"
 
-using namespace quicx::http3;
+using namespace quicx;
 
 // Global server instance for signal handling
 std::shared_ptr<IServer> g_server;
@@ -58,14 +58,14 @@ public:
         if (!file_) {
             std::cerr << "[Upload] Failed to open file: " << filename << std::endl;
             response->SetStatusCode(500);
-            response->SetBody("Failed to open file for writing");
+            response->AppendBody("Failed to open file for writing");
             return;
         }
         
         // Set response (will be sent immediately, before body chunks arrive)
         response->SetStatusCode(200);
         response->AddHeader("Content-Type", "application/json");
-        response->SetBody("{\"status\": \"upload started\"}");
+        response->AppendBody("{\"status\": \"upload started\"}");
         
         bytes_received_ = 0;
         start_time_ = std::chrono::steady_clock::now();
@@ -132,7 +132,7 @@ void HandleFileDownload(std::shared_ptr<IRequest> request,
     
     if (filename.empty()) {
         response->SetStatusCode(400);
-        response->SetBody("Missing filename parameter");
+        response->AppendBody("Missing filename parameter");
         return;
     }
     
@@ -143,7 +143,7 @@ void HandleFileDownload(std::shared_ptr<IRequest> request,
     if (!file) {
         std::cerr << "[Download] File not found: " << filename << std::endl;
         response->SetStatusCode(404);
-        response->SetBody("File not found");
+        response->AppendBody("File not found");
         return;
     }
     
@@ -185,7 +185,7 @@ void HandleStatus(std::shared_ptr<IRequest> request,
     
     response->SetStatusCode(200);
     response->AddHeader("Content-Type", "application/json");
-    response->SetBody(
+    response->AppendBody(
         "{\n"
         "  \"server\": \"quicX HTTP/3 Streaming Demo\",\n"
         "  \"version\": \"1.0\",\n"

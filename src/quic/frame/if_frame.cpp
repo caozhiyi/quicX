@@ -20,7 +20,7 @@ uint16_t IFrame::GetType() {
     return frame_type_; 
 }
 
-bool IFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool IFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     
     if (need_size > buffer->GetFreeLength()) {
@@ -34,7 +34,7 @@ bool IFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool IFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool IFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     if (with_type) {
         common::BufferDecodeWrapper wrapper(buffer);
         wrapper.DecodeFixedUint16(frame_type_);

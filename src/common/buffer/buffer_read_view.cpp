@@ -1,121 +1,162 @@
 #include <cstring>
-#include <cstdlib> // for abort
+#include <cstdlib>
+
+#include "common/log/log.h"
 #include "common/buffer/buffer_read_view.h"
-#include "common/buffer/buffer_write_view.h"
 
 namespace quicx {
 namespace common {
 
-BufferReadView::BufferReadView(BufferSpan span):
-    read_pos_(span.GetStart()),
-    buffer_start_(span.GetStart()),
-    buffer_end_(span.GetEnd()) {
+BufferReadView::BufferReadView() = default;
 
+// Convenience constructor that delegates to Reset().
+BufferReadView::BufferReadView(uint8_t* start, uint32_t len)
+    : BufferReadView(start, start ? start + len : nullptr) {}
+
+BufferReadView::BufferReadView(uint8_t* start, uint8_t* end)
+    : BufferReadView() {
+    Reset(start, end);
 }
 
-BufferReadView::BufferReadView(uint8_t* start, uint32_t len):
-    read_pos_(start),
-    buffer_start_(start),
-    buffer_end_(start + len) {
+void BufferReadView::Reset(uint8_t* start, uint32_t len) {
+    Reset(start, start ? start + len : nullptr);
 }
 
-BufferReadView::BufferReadView(uint8_t* start, uint8_t* end):
-    read_pos_(start),
-    buffer_start_(start),
-    buffer_end_(end) {
+void BufferReadView::Reset(uint8_t* start, uint8_t* end) {
+    buffer_start_ = start;
+    buffer_end_ = end;
+    read_pos_ = start;
 
-}
-
-BufferReadView::~BufferReadView() {
-    // view do nothing
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        buffer_start_ = nullptr;
+        buffer_end_ = nullptr;
+        read_pos_ = nullptr;
+        return;
+    }
 }
 
 uint32_t BufferReadView::ReadNotMovePt(uint8_t* data, uint32_t len) {
-    return Read(data, len, false);
+    if (data == nullptr) {
+        LOG_ERROR("data buffer is nullptr");
+        return 0;
+    }
+    return InnerRead(data, len, false);
 }
 
 uint32_t BufferReadView::MoveReadPt(int32_t len) {
-    /*s-----------r-------------------e*/
-    if (read_pos_ <= buffer_end_) {
-        size_t size = buffer_end_ - read_pos_;
-        if (size <= len) {
-            read_pos_ += size;
-            return (uint32_t)size;
-
-        } else {
-            read_pos_ += len;
-            return len;
-        }
-
-    } else {
-        // shouldn't be here
-        abort();
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
         return 0;
     }
+
+    if (len > 0) {
+        size_t size = buffer_end_ - read_pos_;
+        if (static_cast<int32_t>(size) <= len) {
+            read_pos_ = buffer_end_;
+            return static_cast<uint32_t>(size);
+        }
+        read_pos_ += len;
+        return static_cast<uint32_t>(len);
+    }
+
+    len = -len;
+    size_t size = read_pos_ - buffer_start_;
+    if (static_cast<int32_t>(size) <= len) {
+        read_pos_ = buffer_start_;
+        return static_cast<uint32_t>(size);
+    }
+    read_pos_ -= len;
+    return static_cast<uint32_t>(len);
 }
 
 uint32_t BufferReadView::Read(uint8_t* data, uint32_t len) {
     if (data == nullptr) {
+        LOG_ERROR("data buffer is nullptr");
         return 0;
     }
-    return Read(data, len, true);
+    return InnerRead(data, len, true);
+}
+
+void BufferReadView::VisitData(const std::function<void(uint8_t*, uint32_t)>& visitor) {
+    if (!visitor) {
+        return;
+    }
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return;
+    }
+    uint32_t readable = static_cast<uint32_t>(buffer_end_ - read_pos_);
+    if (readable == 0) {
+        return;
+    }
+    visitor(read_pos_, readable);
 }
 
 uint32_t BufferReadView::GetDataLength() {
-    /*s-----------r-------------------e*/
-    if (read_pos_ <= buffer_end_) {
-        return uint32_t(buffer_end_ - read_pos_);
-
-    } else {
-        // shouldn't be here
-        abort();
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
         return 0;
     }
+    return static_cast<uint32_t>(buffer_end_ - read_pos_);
 }
 
-BufferSpan BufferReadView::GetReadSpan() {
-    return std::move(BufferSpan(read_pos_, buffer_end_));
+uint32_t BufferReadView::GetDataLength() const {
+    return const_cast<BufferReadView*>(this)->GetDataLength();
 }
 
-BufferReadView BufferReadView::GetReadView(uint32_t offset) {
-    return std::move(BufferReadView(buffer_start_ + offset, buffer_end_));
-}
-
-std::shared_ptr<common::IBufferRead> BufferReadView::GetReadViewPtr(uint32_t offset) {
-    return std::make_shared<BufferReadView>(buffer_start_ + offset, buffer_end_);
-}
-
-uint8_t* BufferReadView::GetData() {
+uint8_t* BufferReadView::GetData() const {
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return nullptr;
+    }
     return read_pos_;
 }
 
-uint32_t BufferReadView::Read(uint8_t* data, uint32_t len, bool move_pt) {
-    /*s-----------r-----w-------------e*/
-    if (read_pos_ <= buffer_end_) {
-        size_t size = buffer_end_ - read_pos_;
-        // data can load all
-        if (size <= len) {
-            memcpy(data, read_pos_, size);
-            if(move_pt) {
-                read_pos_ += size;
-            }
-            return (uint32_t)size;
+BufferSpan BufferReadView::GetReadableSpan() const {
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
+        return BufferSpan();
+    }
+    return BufferSpan(read_pos_, buffer_end_);
+}
 
-        // only read len
-        } else {
-            memcpy(data, read_pos_, len);
-            if(move_pt) {
-                read_pos_ += len;
-            }
-            return len;
-        }
+void BufferReadView::Clear() {
+    buffer_start_ = nullptr;
+    buffer_end_ = nullptr;
+    read_pos_ = nullptr;
+}
 
-    } else {
-        // shouldn't be here
-        abort();
+uint32_t BufferReadView::InnerRead(uint8_t* data, uint32_t len, bool move_pt) {
+    if (!Valid()) {
+        LOG_ERROR("span is invalid");
         return 0;
     }
+
+    size_t size = buffer_end_ - read_pos_;
+    if (size <= len) {
+        std::memcpy(data, read_pos_, size);
+        if (move_pt) {
+            read_pos_ = buffer_end_;
+        }
+        return static_cast<uint32_t>(size);
+    }
+
+    std::memcpy(data, read_pos_, len);
+    if (move_pt) {
+        read_pos_ += len;
+    }
+    return len;
+}
+
+bool BufferReadView::Valid() const {
+    return buffer_start_ != nullptr &&
+           buffer_end_ != nullptr &&
+           buffer_start_ <= buffer_end_ &&
+           read_pos_ >= buffer_start_ &&
+           read_pos_ <= buffer_end_;
 }
 
 }
 }
+

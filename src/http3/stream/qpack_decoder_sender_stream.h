@@ -18,7 +18,7 @@ namespace http3 {
 class QpackDecoderSenderStream:
     public ISendStream {
 public:
-    explicit QpackDecoderSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
+    explicit QpackDecoderSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackDecoderSenderStream();
 

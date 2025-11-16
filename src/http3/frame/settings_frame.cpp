@@ -15,7 +15,7 @@ bool SettingsFrame::GetSetting(uint16_t id, uint64_t& value) {
     return true;
 }
 
-bool SettingsFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool SettingsFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (buffer->GetFreeLength() < EvaluateEncodeSize()) {
         return false;
     }
@@ -40,7 +40,7 @@ bool SettingsFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool SettingsFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {

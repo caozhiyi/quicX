@@ -7,15 +7,16 @@
 #include "http3/include/if_async_handler.h"
 
 namespace quicx {
-namespace http3 {
 
 std::shared_ptr<IServer> IServer::Create(const Http3Settings& settings) {
-    return std::make_shared<Server>(settings);
+    return std::make_shared<http3::Server>(settings);
 }
+
+namespace http3 {
 
 Server::Server(const Http3Settings& settings):
     settings_(settings) {
-    quic_ = quic::IQuicServer::Create();
+    quic_ = IQuicServer::Create();
     router_ = std::make_shared<Router>();
     quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this,
         std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
@@ -26,7 +27,7 @@ Server::~Server() {
 }
 
 bool Server::Init(const Http3ServerConfig& config) {
-    quic::QuicServerConfig quic_config;
+    QuicServerConfig quic_config;
     if ((config.cert_pem_ == nullptr || config.key_pem_ == nullptr) &&
         (config.cert_file_.empty() || config.key_file_.empty())) {
         common::LOG_ERROR("cert file or cert pem and key file or key pem must be set.");
@@ -42,7 +43,7 @@ bool Server::Init(const Http3ServerConfig& config) {
     }
     quic_config.alpn_ = kHttp3Alpn;
     quic_config.config_.worker_thread_num_ = config.config_.thread_num_;
-    quic_config.config_.log_level_ = quic::LogLevel(config.config_.log_level_);
+    quic_config.config_.log_level_ = LogLevel(config.config_.log_level_);
     quic_config.config_.enable_ecn_ = config.config_.enable_ecn_;
 
     if (!quic_->Init(quic_config)) {
@@ -86,13 +87,13 @@ void Server::AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_
     }
 }
 
-void Server::OnConnection(std::shared_ptr<quic::IQuicConnection> conn, quic::ConnectionOperation operation, uint32_t error, const std::string& reason) {
+void Server::OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason) {
     std::string addr;
     uint32_t port;
     conn->GetRemoteAddr(addr, port);
     std::string unique_id = addr + ":" + std::to_string(port);
 
-    if (operation == quic::ConnectionOperation::kConnectionClose) {
+    if (operation == ConnectionOperation::kConnectionClose) {
         common::LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
         conn_map_.erase(unique_id);
         return;
@@ -136,7 +137,7 @@ void Server::AfterHandlerProcess(std::shared_ptr<IRequest> request, std::shared_
 
 void Server::OnNotFound(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
     response->SetStatusCode(404);
-    response->SetBody("Not Found");
+    response->AppendBody(std::string("Not Found"));
 }
 
 }

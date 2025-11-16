@@ -10,7 +10,9 @@
 #include "common/timer/timer_task.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "common/alloter/pool_block.h"
+#include "common/buffer/single_block_buffer.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "quic/connection/controler/send_control.h"
 
 using namespace quicx;
@@ -89,7 +91,9 @@ TEST_F(StreamAckTrackingTest, FrameVisitorTracksStreamFrames) {
     frame1->SetStreamID(4);
     frame1->SetOffset(0);
     uint8_t data1[] = "Hello";
-    frame1->SetData(data1, 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer1->Write(data1, 5);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     frame1->SetFin();
     
     EXPECT_TRUE(visitor.HandleFrame(frame1));
@@ -110,7 +114,9 @@ TEST_F(StreamAckTrackingTest, FrameVisitorTracksMultipleStreams) {
     frame1->SetStreamID(4);
     frame1->SetOffset(0);
     uint8_t data1[] = "Hello";
-    frame1->SetData(data1, 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer1->Write(data1, 5);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     EXPECT_TRUE(visitor.HandleFrame(frame1));
     
     // Stream 8
@@ -118,7 +124,9 @@ TEST_F(StreamAckTrackingTest, FrameVisitorTracksMultipleStreams) {
     frame2->SetStreamID(8);
     frame2->SetOffset(0);
     uint8_t data2[] = "World";
-    frame2->SetData(data2, 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer2->Write(data2, 5);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
     frame2->SetFin();
     EXPECT_TRUE(visitor.HandleFrame(frame2));
     
@@ -127,7 +135,9 @@ TEST_F(StreamAckTrackingTest, FrameVisitorTracksMultipleStreams) {
     frame3->SetStreamID(4);
     frame3->SetOffset(5);
     uint8_t data3[] = " Test";
-    frame3->SetData(data3, 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer3 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer3->Write(data3, 5);
+    frame3->SetData(data_buffer3->GetSharedReadableSpan());
     frame3->SetFin();
     EXPECT_TRUE(visitor.HandleFrame(frame3));
     
@@ -316,7 +326,9 @@ TEST_F(StreamAckTrackingTest, FrameVisitorIgnoresNonStreamFrames) {
     frame1->SetStreamID(4);
     frame1->SetOffset(0);
     uint8_t data1[] = "Test";
-    frame1->SetData(data1, 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer1->Write(data1, 4);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     visitor.HandleFrame(frame1);
     
     // Try to add a non-stream frame (e.g., ACK frame)

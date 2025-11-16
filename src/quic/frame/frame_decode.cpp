@@ -68,7 +68,7 @@ static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>(
     {FrameType::kHandshakeDone,               [](uint16_t type) -> std::shared_ptr<IFrame> { return std::make_shared<HandshakeDoneFrame>(); }},
 };
 
-bool DecodeFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
     if(buffer->GetDataLength() == 0) {
         return false;
     }

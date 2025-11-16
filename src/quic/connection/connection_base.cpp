@@ -2,7 +2,6 @@
 #include "common/log/log.h"
 #include "quic/frame/type.h"
 #include "common/util/time.h"
-#include "common/buffer/buffer.h"
 #include "quic/connection/util.h"
 #include "quic/connection/error.h"
 #include "quic/frame/stream_frame.h"
@@ -12,14 +11,18 @@
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
+#include "common/alloter/pool_block.h"
 #include "quic/frame/max_data_frame.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/frame/new_token_frame.h"
+#include "common/buffer/buffer_chunk.h"
 #include "quic/frame/max_streams_frame.h"
 #include "quic/packet/handshake_packet.h"
 #include "quic/stream/bidirection_stream.h"
 #include "quic/frame/path_response_frame.h"
 #include "quic/frame/path_challenge_frame.h"
 #include "quic/connection/connection_base.h"
+#include "common/buffer/single_block_buffer.h"
 #include "quic/frame/connection_close_frame.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
@@ -149,10 +152,13 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     transport_param_.Init(tp_config);
 
     // set transport param. TODO define tp length
-    uint8_t tp_data[1024] = {0};
-    std::shared_ptr<common::Buffer> buf = std::make_shared<common::Buffer>(tp_data, sizeof(tp_data));
-    transport_param_.Encode(buf);
-    tls_connection_->AddTransportParam(buf->GetData(), buf->GetDataLength());
+    uint8_t tp_buffer[1024];
+    common::BufferWriteView write_buffer(tp_buffer, sizeof(tp_buffer));
+    if (!transport_param_.Encode(write_buffer)) {
+        common::LOG_ERROR("encode transport param failed");
+        return;
+    }
+    tls_connection_->AddTransportParam(tp_buffer, write_buffer.GetDataLength());
 }
 
 uint64_t BaseConnection::GetConnectionIDHash() {
@@ -249,8 +255,14 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
             std::shared_ptr<ICryptographer> cryptographer = connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
             if (cryptographer) {
                 packet->SetCryptographer(cryptographer);
-                uint8_t buf[1450] = {0};
-                std::shared_ptr<common::IBuffer> out_plaintext = std::make_shared<common::Buffer>(buf, 1450);
+
+                auto chunk = std::make_shared<common::BufferChunk>(alloter_);
+                if (!chunk || !chunk->Valid()) {
+                    common::LOG_ERROR("failed to allocate decode buffer");
+                    continue;
+                }
+
+                auto out_plaintext = std::make_shared<common::SingleBlockBuffer>(chunk);
                 if (packet->DecodeWithCrypto(out_plaintext)) {
                     // Check if any frame is CONNECTION_CLOSE
                     for (auto& frame : packet->GetFrames()) {
@@ -375,8 +387,12 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
     
     packet->SetCryptographer(cryptographer);
 
-    uint8_t buf[1450] = {0};
-    std::shared_ptr<common::IBuffer> out_plaintext = std::make_shared<common::Buffer>(buf, 1450);
+    auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        common::LOG_ERROR("failed to allocate decode buffer");
+        return false;
+    }
+    auto out_plaintext = std::make_shared<common::SingleBlockBuffer>(chunk);
     if (!packet->DecodeWithCrypto(out_plaintext)) {
         common::LOG_ERROR("decode packet after decrypt failed.");
         return false;

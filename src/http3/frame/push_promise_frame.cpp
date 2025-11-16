@@ -5,7 +5,7 @@
 namespace quicx {
 namespace http3 {
 
-bool PushPromiseFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool PushPromiseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (buffer->GetFreeLength() < EvaluateEncodeSize()) {
         return false;
     }
@@ -25,16 +25,14 @@ bool PushPromiseFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (!wrapper.EncodeVarint(push_id_)) {
         return false;
     }
+    wrapper.Flush();
 
-    // Write encoded fields
-    if (!wrapper.EncodeBytes(encoded_fields_.data(), encoded_fields_.size())) {
-        return false;
-    }
+    buffer->Write(encoded_fields_);
 
     return true;
 }
 
-bool PushPromiseFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
     
     if (with_type) {
@@ -48,18 +46,34 @@ bool PushPromiseFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool 
         return false;
     }
 
+    // Check if we have enough data
+    if (buffer->GetDataLength() < length_) {
+        return false;
+    }
+
     // Read push ID
     if (!wrapper.DecodeVarint(push_id_)) {
         return false;
     }
-
-    // Read encoded fields
-    uint32_t remaining = length_ - common::GetEncodeVarintLength(push_id_);
-    encoded_fields_.resize(remaining);
-    uint8_t* ptr = encoded_fields_.data();
-    if (!wrapper.DecodeBytes(ptr, remaining)) {
+    wrapper.Flush();
+    
+    // Calculate remaining length for encoded fields
+    uint32_t push_id_size = common::GetEncodeVarintLength(push_id_);
+    uint32_t fields_length = length_ - push_id_size;
+    
+    // Check if we have enough data for fields
+    if (buffer->GetDataLength() < fields_length) {
         return false;
     }
+
+    // Read encoded fields - only the remaining length
+    encoded_fields_ = buffer->ShallowClone();
+    if (encoded_fields_->GetDataLength() > fields_length) {
+        encoded_fields_->MoveWritePt(-(static_cast<int32_t>(encoded_fields_->GetDataLength() - fields_length)));
+    }
+    
+    // Advance the buffer read pointer
+    buffer->MoveReadPt(fields_length);
 
     return true;
 }
@@ -77,14 +91,14 @@ uint32_t PushPromiseFrame::EvaluateEncodeSize() {
     size += common::GetEncodeVarintLength(push_id_);
 
     // Size for encoded fields
-    size += encoded_fields_.size();
+    size += encoded_fields_->GetDataLength();
 
     return size;
 }
 
 uint32_t PushPromiseFrame::EvaluatePayloadSize() {
     if (length_ == 0) {
-        length_ = common::GetEncodeVarintLength(push_id_) + encoded_fields_.size();
+        length_ = common::GetEncodeVarintLength(push_id_) + encoded_fields_->GetDataLength();
     }
     return length_;
 }

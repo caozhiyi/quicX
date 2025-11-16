@@ -19,18 +19,18 @@ namespace http3 {
 class QpackDecoderReceiverStream:
     public IRecvStream {
 public:
-    QpackDecoderReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
+    QpackDecoderReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackDecoderReceiverStream();
 
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
+    virtual void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) override;
 
 private:
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     uint64_t insert_count_{0};
     // Parse decoder stream frames: Section Acknowledgement, Stream Cancellation, Insert Count Increment
-    void ParseDecoderFrames(std::shared_ptr<common::IBufferRead> data);
+    void ParseDecoderFrames(std::shared_ptr<IBufferRead> data);
 };
 
 }

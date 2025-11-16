@@ -3,14 +3,17 @@
 namespace quicx {
 namespace common {
 
-BufferEncodeWrapper::BufferEncodeWrapper(std::shared_ptr<IBufferWrite> buffer):
+// Capture the writable span of the supplied buffer. We assume the caller won't
+// mutate the buffer concurrently while the wrapper is alive.
+BufferEncodeWrapper::BufferEncodeWrapper(std::shared_ptr<IBuffer> buffer):
     buffer_(buffer),
     flushed_(false) {
-    auto span = buffer_->GetWriteSpan(); 
+    auto span = buffer_->GetWritableSpan(); 
     pos_ = span.GetStart();
     end_ = span.GetEnd();
 }
 
+// Ensure any staged bytes are accounted for in the underlying buffer.
 BufferEncodeWrapper::~BufferEncodeWrapper() {
     if (!flushed_) {
         Flush();
@@ -19,10 +22,11 @@ BufferEncodeWrapper::~BufferEncodeWrapper() {
 
 void BufferEncodeWrapper::Flush() {
     flushed_ = true;
-    buffer_->MoveWritePt(pos_ - buffer_->GetWriteSpan().GetStart());
+    buffer_->MoveWritePt(pos_ - buffer_->GetWritableSpan().GetStart());
 }
 
 bool BufferEncodeWrapper::EncodeFixedUint8(uint8_t value) {
+    // The encode helpers return nullptr when the output range overflows.
     pos_ = common::FixedEncodeUint8(pos_, end_, value);
     if (!pos_) {
         return false;
@@ -68,12 +72,12 @@ bool BufferEncodeWrapper::EncodeBytes(uint8_t* in, uint32_t len) {
 }
 
 common::BufferSpan BufferEncodeWrapper::GetDataSpan() const {
-    return common::BufferSpan(buffer_->GetWriteSpan().GetStart(), pos_);
+    return common::BufferSpan(buffer_->GetWritableSpan().GetStart(), pos_);
 }
 
 
 uint32_t BufferEncodeWrapper::GetDataLength() const {
-    return pos_ - buffer_->GetWriteSpan().GetStart();
+    return pos_ - buffer_->GetWritableSpan().GetStart();
 }
 
 } // namespace common

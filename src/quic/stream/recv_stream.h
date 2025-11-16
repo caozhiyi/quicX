@@ -4,11 +4,11 @@
 #include <string>
 #include <functional>
 #include <unordered_map>
-#include "common/buffer/buffer.h"
 #include "quic/stream/if_stream.h"
 #include "quic/stream/if_frame_visitor.h"
 #include "quic/stream/state_machine_recv.h"
 #include "quic/include/if_quic_recv_stream.h"
+#include "common/buffer/multi_block_buffer.h"
 
 namespace quicx {
 namespace quic {
@@ -52,8 +52,7 @@ protected:
     uint32_t local_data_limit_;
     // next except data offset
     uint64_t except_offset_;
-    uint8_t buf_[10240] = {0}; // TODO
-    std::shared_ptr<common::Buffer> buffer_;
+    std::shared_ptr<common::MultiBlockBuffer> buffer_;
     std::unordered_map<uint64_t, std::shared_ptr<IFrame>> out_order_frame_;
 
     std::shared_ptr<StreamStateMachineRecv> recv_machine_;

@@ -141,7 +141,7 @@ ICryptographer::Result AeadBaseCryptographer::InstallInitSecret(const uint8_t* s
 }
 
 ICryptographer::Result AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data, common::BufferSpan& ciphertext,
-    std::shared_ptr<common::IBufferWrite> out_plaintext) {
+    std::shared_ptr<common::IBuffer> out_plaintext) {
     if (read_secret_.key_.empty() || read_secret_.iv_.empty()) {
         common::LOG_ERROR("decrypt packet but not install secret");
         return Result::kNotInitialized;
@@ -164,7 +164,7 @@ ICryptographer::Result AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number,
 
     size_t out_length = 0;
     auto tag_length = aead_tag_length_;
-    auto out_span = out_plaintext->GetWriteSpan();
+    auto out_span = out_plaintext->GetWritableSpan();
     if (EVP_AEAD_CTX_open(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce, read_secret_.iv_.size(),
         ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
         common::LOG_ERROR("EVP_AEAD_CTX_open failed");
@@ -175,7 +175,7 @@ ICryptographer::Result AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number,
 }
 
 ICryptographer::Result AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data, common::BufferSpan& plaintext,
-    std::shared_ptr<common::IBufferWrite> out_ciphertext) {
+    std::shared_ptr<common::IBuffer> out_ciphertext) {
     if (write_secret_.key_.empty() || write_secret_.iv_.empty()) {
         common::LOG_ERROR("encrypt packet but not install secret");
         return Result::kNotInitialized;
@@ -197,7 +197,7 @@ ICryptographer::Result AeadBaseCryptographer::EncryptPacket(uint64_t pkt_number,
     }
 
     size_t out_length = 0;
-    auto out_span = out_ciphertext->GetWriteSpan();
+    auto out_span = out_ciphertext->GetWritableSpan();
     if (EVP_AEAD_CTX_seal(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce, write_secret_.iv_.size(),
         plaintext.GetStart(), plaintext.GetLength(), associated_data.GetStart(), associated_data.GetLength()) != 1) {
         common::LOG_ERROR("EVP_AEAD_CTX_seal failed");

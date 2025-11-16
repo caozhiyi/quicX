@@ -6,11 +6,12 @@
 #include "quic/crypto/tls/tls_ctx_server.h"
 
 namespace quicx {
-namespace quic {
 
 std::shared_ptr<IQuicServer> IQuicServer::Create(const QuicTransportParams& params) {
-    return std::make_shared<QuicServer>(params);
+    return std::make_shared<quic::QuicServer>(params);
 }
+    
+namespace quic {
 
 QuicServer::QuicServer(const QuicTransportParams& params):
     params_(params) {

@@ -8,7 +8,6 @@
 
 namespace quicx {
 namespace quic {
-namespace test {
 
 // Network environment configuration
 struct NetworkCondition {
@@ -241,7 +240,6 @@ private:
     uint64_t GenerateRtt();
 };
 
-} // namespace test
 } // namespace quic
 } // namespace quicx
 

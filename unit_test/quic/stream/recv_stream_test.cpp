@@ -3,11 +3,12 @@
 #include <cstring>
 
 #include "quic/frame/type.h"
-#include "common/buffer/buffer.h"
 #include "quic/stream/recv_stream.h"
 #include "quic/frame/stream_frame.h"
 #include "common/alloter/pool_block.h"
 #include "quic/frame/reset_stream_frame.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace quic {
@@ -31,7 +32,7 @@ protected:
             connection_closed_ = true;
             error_code_ = error;
         };
-        recv_cb_ = [this](std::shared_ptr<common::IBufferRead> buffer, bool is_last, uint32_t err) {
+        recv_cb_ = [this](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
             recv_callback_called_ = true;
             is_last_packet_ = is_last;
             error_code_ = err;
@@ -67,8 +68,11 @@ TEST_F(RecvStreamTest, RecvDataBasic) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(5);
     frame->SetOffset(0);
-    uint8_t data[] = "Hello";
-    frame->SetData(data, 5);
+    uint8_t data[5] = {0};
+    memcpy(data, "Hello", 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer->Write(data, 5);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     uint32_t ret = stream->OnFrame(frame);
     
@@ -88,8 +92,11 @@ TEST_F(RecvStreamTest, RecvDataOutOfOrder) {
     auto frame2 = std::make_shared<StreamFrame>();
     frame2->SetStreamID(5);
     frame2->SetOffset(10);
-    uint8_t data2[] = "World";
-    frame2->SetData(data2, 5);
+    uint8_t data2[5] = {0};
+    memcpy(data2, "World", 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer2->Write(data2, 5);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
     
     recv_callback_called_ = false;
     stream->OnFrame(frame2);
@@ -101,8 +108,11 @@ TEST_F(RecvStreamTest, RecvDataOutOfOrder) {
     auto frame1 = std::make_shared<StreamFrame>();
     frame1->SetStreamID(5);
     frame1->SetOffset(0);
-    uint8_t data1[] = "Hello";
-    frame1->SetData(data1, 10);
+    uint8_t data1[10] = {0};
+    memcpy(data1, "Hello", 10);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
+    data_buffer1->Write(data1, 10);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     
     recv_callback_called_ = false;
     stream->OnFrame(frame1);
@@ -122,8 +132,11 @@ TEST_F(RecvStreamTest, RecvDataWithGaps) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(5);
     frame->SetOffset(20);
-    uint8_t data[] = "Data";
-    frame->SetData(data, 4);
+    uint8_t data[4] = {0};
+    memcpy(data, "Data", 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write(data, 4);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     recv_callback_called_ = false;
     stream->OnFrame(frame);
@@ -143,8 +156,11 @@ TEST_F(RecvStreamTest, RecvDataWithFIN) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(5);
     frame->SetOffset(0);
-    uint8_t data[] = "Final";
-    frame->SetData(data, 5);
+    uint8_t data[5] = {0};
+    memcpy(data, "Final", 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer->Write(data, 5);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     
     stream->OnFrame(frame);
@@ -165,8 +181,11 @@ TEST_F(RecvStreamTest, RecvDuplicateData) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(5);
     frame->SetOffset(0);
-    uint8_t data[] = "Data";
-    frame->SetData(data, 4);
+    uint8_t data[4] = {0};
+    memcpy(data, "Data", 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write(data, 4);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     
@@ -190,7 +209,9 @@ TEST_F(RecvStreamTest, RecvDataExceedsLimit) {
     frame->SetOffset(0);
     uint8_t data[200];
     memset(data, 'X', 200);
-    frame->SetData(data, 200);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(200));
+    data_buffer->Write(data, 200);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     
@@ -211,7 +232,9 @@ TEST_F(RecvStreamTest, OnStreamFrameBasic) {
     frame->SetStreamID(5);
     frame->SetOffset(0);
     uint8_t data[] = "Test";
-    frame->SetData(data, 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write(data, 4);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     uint32_t ret = stream->OnFrame(frame);
     
@@ -231,7 +254,9 @@ TEST_F(RecvStreamTest, OnStreamFrameOffset) {
     frame1->SetStreamID(5);
     frame1->SetOffset(0);
     uint8_t data1[] = "AAAA";
-    frame1->SetData(data1, 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer1->Write(data1, 4);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     stream->OnFrame(frame1);
     
     // recv at offset 4
@@ -239,7 +264,9 @@ TEST_F(RecvStreamTest, OnStreamFrameOffset) {
     frame2->SetStreamID(5);
     frame2->SetOffset(4);
     uint8_t data2[] = "BBBB";
-    frame2->SetData(data2, 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer2->Write(data2, 4);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
     
     recv_callback_called_ = false;
     stream->OnFrame(frame2);
@@ -258,7 +285,9 @@ TEST_F(RecvStreamTest, OnStreamFrameFIN) {
     frame->SetStreamID(5);
     frame->SetOffset(0);
     uint8_t data[] = "End";
-    frame->SetData(data, 3);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(3));
+    data_buffer->Write(data, 3);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     
     stream->OnFrame(frame);
@@ -282,7 +311,9 @@ TEST_F(RecvStreamTest, OnStreamFrameInvalidState) {
     frame->SetStreamID(5);
     frame->SetOffset(0);
     uint8_t data[] = "Data";
-    frame->SetData(data, 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write(data, 4);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     recv_callback_called_ = false;
     uint32_t ret = stream->OnFrame(frame);
@@ -306,7 +337,9 @@ TEST_F(RecvStreamTest, OnStreamFrameMultiple) {
         frame->SetOffset(i * 10);
         uint8_t data[10];
         memset(data, 'A' + i, 10);
-        frame->SetData(data, 10);
+        std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
+        data_buffer->Write(data, 10);
+        frame->SetData(data_buffer->GetSharedReadableSpan());
         
         stream->OnFrame(frame);
     }
@@ -328,7 +361,9 @@ TEST_F(RecvStreamTest, OnResetStreamFrameBasic) {
     data_frame->SetStreamID(5);
     data_frame->SetOffset(0);
     uint8_t data[] = "Test";
-    data_frame->SetData(data, 4);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4));
+    data_buffer->Write(data, 4);
+    data_frame->SetData(data_buffer->GetSharedReadableSpan());
     stream->OnFrame(data_frame);
     
     // recv RESET_STREAM
@@ -377,7 +412,9 @@ TEST_F(RecvStreamTest, OnResetStreamFrameMismatch) {
     frame1->SetOffset(0);
     uint8_t data[10];
     memset(data, 'A', 10);
-    frame1->SetData(data, 10);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
+    data_buffer1->Write(data, 10);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     frame1->SetFin();
     stream->OnFrame(frame1);
     
@@ -406,7 +443,9 @@ TEST_F(RecvStreamTest, RecvCallbackTriggered) {
     frame->SetStreamID(5);
     frame->SetOffset(0);
     uint8_t data[] = "Callback test";
-    frame->SetData(data, strlen((char*)data));
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(strlen((char*)data)));
+    data_buffer->Write(data, strlen((char*)data));
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     
@@ -424,7 +463,9 @@ TEST_F(RecvStreamTest, RecvCallbackWithData) {
     frame->SetStreamID(5);
     frame->SetOffset(0);
     uint8_t data[] = "Test data";
-    frame->SetData(data, 9);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(9));
+    data_buffer->Write(data, 9);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     
@@ -438,7 +479,7 @@ TEST_F(RecvStreamTest, RecvCallbackMultipleTimes) {
         alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     int callback_count = 0;
-    stream->SetStreamReadCallBack([&callback_count](std::shared_ptr<common::IBufferRead>, bool, uint32_t) {
+    stream->SetStreamReadCallBack([&callback_count](std::shared_ptr<IBufferRead>, bool, uint32_t) {
         callback_count++;
     });
     
@@ -449,7 +490,9 @@ TEST_F(RecvStreamTest, RecvCallbackMultipleTimes) {
         frame->SetOffset(i * 10);
         uint8_t data[10];
         memset(data, 'A' + i, 10);
-        frame->SetData(data, 10);
+        std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
+        data_buffer->Write(data, 10);
+        frame->SetData(data_buffer->GetSharedReadableSpan());
         
         stream->OnFrame(frame);
     }

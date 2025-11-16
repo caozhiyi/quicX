@@ -12,7 +12,7 @@ namespace {
 
 class MockClient {
 public:
-    MockClient(std::shared_ptr<quic::IQuicConnection> conn) {
+    MockClient(std::shared_ptr<IQuicConnection> conn) {
         conn_ = std::make_shared<ClientConnection>("", kDefaultHttp3Settings, conn,
             std::bind(&MockClient::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClient::PushPromiseHandler, this, std::placeholders::_1),
@@ -45,7 +45,7 @@ private:
 
 class MockServer {
 public:
-    MockServer(std::shared_ptr<quic::IQuicConnection> conn) {
+    MockServer(std::shared_ptr<IQuicConnection> conn) {
         // Create a mock http processor
         class MockHttpProcessor : public IHttpProcessor {
         public:
@@ -119,7 +119,7 @@ TEST_F(HttpConnectionTest, DoRequest) {
     request->AddHeader("User-Agent", "curl/7.64.1");
     request->AddHeader("Accept", "*/*");
     request->AddHeader("Content-Type", "text/plain");
-    request->SetBody("Hello, Server!");
+    request->AppendBody("Hello, Server!");
     
     auto http_handler = [](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
         // check headers
@@ -138,11 +138,11 @@ TEST_F(HttpConnectionTest, DoRequest) {
         EXPECT_EQ(request->GetAuthority(), "localhost");
 
         // check body
-        EXPECT_EQ(request->GetBody(), "Hello, Server!");
+        EXPECT_EQ(request->GetBodyAsString(), "Hello, Server!");
 
         // set response
         response->AddHeader("Content-Type", "text/plain");
-        response->SetBody("Hello, Client!");
+        response->AppendBody("Hello, Client!");
         response->SetStatusCode(400);
     };
     mock_server_->SetHttpHandler(http_handler);
@@ -154,7 +154,7 @@ TEST_F(HttpConnectionTest, DoRequest) {
         EXPECT_EQ(content_type, "text/plain");
 
         // check body
-        EXPECT_EQ(response->GetBody(), "Hello, Client!");
+        EXPECT_EQ(response->GetBodyAsString(), "Hello, Client!");
         // check status code
         EXPECT_EQ(response->GetStatusCode(), 400);
     };

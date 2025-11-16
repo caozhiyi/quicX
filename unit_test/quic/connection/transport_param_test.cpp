@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
-#include "common/buffer/buffer.h"
-#include "common/alloter/pool_block.h"
+
+#include "common/buffer/buffer_read_view.h"
 #include "quic/connection/transport_param.h"
+#include "common/buffer/buffer_write_view.h"
 
 namespace quicx {
 namespace quic {
@@ -11,16 +12,14 @@ TEST(transport_param_utest, test1) {
     TransportParam tp1;
     tp1.Init(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto alloter = common::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
-    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
+    uint8_t buf[1024] = {0};
+    common::BufferWriteView write_buffer(buf, buf + 1024);
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
 
-    auto data_span = write_buffer->GetReadSpan();
-    auto pos_span = read_buffer->GetWriteSpan();
-    memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
-    read_buffer->MoveWritePt(data_span.GetLength());
+    // After encoding, create read_buffer with the actual written length
+    uint32_t written_len = write_buffer.GetDataLength();
+    common::BufferReadView read_buffer(buf, written_len);
 
     TransportParam tp2;
     EXPECT_TRUE(tp2.Decode(read_buffer));
@@ -48,16 +47,11 @@ TEST(transport_param_utest, test1) {
 TEST(transport_param_utest, test2) {
     TransportParam tp1;
 
-    auto alloter = common::MakeBlockMemoryPoolPtr(1024, 2);
-    std::shared_ptr<common::Buffer> read_buffer = std::make_shared<common::Buffer>(alloter);
-    std::shared_ptr<common::Buffer> write_buffer = std::make_shared<common::Buffer>(alloter);
+    uint8_t buf[1024] = {0};
+    common::BufferReadView read_buffer(buf, buf + 1024);
+    common::BufferWriteView write_buffer(buf, buf + 1024);
 
     EXPECT_TRUE(tp1.Encode(write_buffer));
-
-    auto data_span = write_buffer->GetReadSpan();
-    auto pos_span = read_buffer->GetWriteSpan();
-    memcpy(pos_span.GetStart(), data_span.GetStart(), data_span.GetLength());
-    read_buffer->MoveWritePt(data_span.GetLength());
 
     TransportParam tp2;
     EXPECT_TRUE(tp2.Decode(read_buffer));

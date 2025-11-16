@@ -2,13 +2,11 @@
 #include "quic/stream/send_stream.h"
 #include "quic/frame/stream_frame.h"
 #include "common/alloter/pool_block.h"
-#include "common/buffer/buffer_chains.h"
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/stream/state_machine_send.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/stream_data_blocked_frame.h"
-#include "quic/connection/controler/send_control.h"
 
 namespace quicx {
 namespace quic {
@@ -25,7 +23,7 @@ SendStream::SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
     acked_offset_(0),
     fin_sent_(false),
     peer_data_limit_(init_data_limit),
-    send_buffer_(std::make_shared<common::BufferChains>(alloter)) {
+    send_buffer_(std::make_shared<common::MultiBlockBuffer>(alloter)) {
     send_machine_ = std::make_shared<StreamStateMachineSend>(std::bind(&SendStream::Close, this));
 }
 
@@ -66,16 +64,35 @@ int32_t SendStream::Send(uint8_t* data, uint32_t len) {
     return ret;
 }
 
-int32_t SendStream::Send(std::shared_ptr<common::IBufferRead> buffer) {
+int32_t SendStream::Send(std::shared_ptr<IBufferRead> buffer) {
     if (!send_machine_->CanSendAppData()) {
         return -1;
     }
     
-    int32_t ret = send_buffer_->Write(buffer->GetData(), buffer->GetDataLength());
+    int32_t ret = send_buffer_->Write(buffer);
     if (active_send_cb_) {
         active_send_cb_(shared_from_this());
     }
     return ret;
+}
+
+std::shared_ptr<IBufferWrite> SendStream::GetSendBuffer() {
+    return std::dynamic_pointer_cast<IBufferWrite>(send_buffer_);
+}
+
+bool SendStream::Flush() {
+    if (!send_machine_->CanSendAppData()) {
+        return false;
+    }
+
+    if (send_buffer_->GetDataLength() == 0) {
+        return false;
+    }
+
+    if (active_send_cb_) {
+        active_send_cb_(shared_from_this());
+    }
+    return true;
 }
 
 uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
@@ -143,10 +160,8 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     uint32_t send_size = stream_send_size > conn_send_size ? conn_send_size : stream_send_size;
     send_size = send_size > 1000 ? 1000 : send_size;
 
-    // TODO not copy buffer
-    uint8_t buf[1000] = {0};
-    uint32_t size = send_buffer_->ReadNotMovePt(buf, send_size);
-    frame->SetData(buf, size);
+    common::SharedBufferSpan data = send_buffer_->GetSharedBufferSpan(send_size);
+    frame->SetData(data);
 
     if (!send_machine_->OnFrame(frame->GetType())) {
         common::LOG_WARN("stream state transition rejected. stream id:%d, frame type:%d, state=%d", stream_id_, frame->GetType(), static_cast<int>(send_machine_->GetStatus()));
@@ -155,14 +170,14 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     if (!visitor->HandleFrame(frame)) {
         return TrySendResult::kFailed;
     }
-    visitor->AddStreamDataSize(size);
-    common::LOG_DEBUG("stream send data. stream id:%d, send size:%d", stream_id_, size);
+    visitor->AddStreamDataSize(data.GetLength());
+    common::LOG_DEBUG("stream send data. stream id:%d, send size:%d", stream_id_, data.GetLength());
 
-    send_buffer_->MoveReadPt(size);
-    send_data_offset_ += size;
+    send_buffer_->MoveReadPt(data.GetLength());
+    send_data_offset_ += data.GetLength();
 
     if (sended_cb_) {
-        sended_cb_(size, 0);
+        sended_cb_(data.GetLength(), 0);
     }
     return TrySendResult::kSuccess;
 }

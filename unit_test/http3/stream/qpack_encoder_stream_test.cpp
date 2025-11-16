@@ -15,7 +15,7 @@ namespace {
 
 class MockSenderConnection {
 public:
-    MockSenderConnection(std::shared_ptr<quic::IQuicSendStream> stream) 
+    MockSenderConnection(std::shared_ptr<IQuicSendStream> stream) 
         : error_code_(0) {
         sender_stream_ = std::make_shared<QpackEncoderSenderStream>(stream,
             std::bind(&MockSenderConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
@@ -38,8 +38,8 @@ public:
         return sender_stream_->SendDuplicate(index);
     }
 
-    bool SendInstructions(const std::vector<uint8_t>& blob) {
-        return sender_stream_->SendInstructions(blob);
+    bool SendInstructions(const std::vector<std::pair<std::string,std::string>>& inserts) {
+        return sender_stream_->SendInstructions(inserts);
     }
 
     void ErrorHandle(uint64_t stream_id, uint32_t error_code) {
@@ -55,7 +55,7 @@ private:
 
 class MockReceiverConnection {
 public:
-    MockReceiverConnection(std::shared_ptr<quic::IQuicRecvStream> stream) 
+    MockReceiverConnection(std::shared_ptr<IQuicRecvStream> stream) 
         : error_code_(0), notify_count_(0) {
         
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
@@ -69,8 +69,8 @@ public:
     ~MockReceiverConnection() {}
 
     void OnStreamTypeIdentified(uint64_t stream_type, 
-                                std::shared_ptr<quic::IQuicRecvStream> stream,
-                                std::shared_ptr<common::IBufferRead> remaining_data) {
+                                std::shared_ptr<IQuicRecvStream> stream,
+                                std::shared_ptr<IBufferRead> remaining_data) {
         // Verify it's a QPACK encoder stream
         EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kQpackEncoder));
         
@@ -338,13 +338,12 @@ TEST(QpackEncoderStreamTest, SendInstructionsBlobTest) {
     auto receiver = std::make_shared<MockReceiverConnection>(mock_recv_stream);
     
     // Send raw instruction bytes (example: Set Capacity)
-    std::vector<uint8_t> instructions = {0x3f, 0x11};  // Set capacity to some value
+    std::vector<std::pair<std::string,std::string>> instructions = {{"set-capacity", "4096"}};  // Set capacity to some value
     EXPECT_TRUE(sender->SendInstructions(instructions));
     EXPECT_EQ(sender->GetErrorCode(), 0);
     
     // Test with empty blob
-    std::vector<uint8_t> empty_blob;
-    EXPECT_TRUE(sender->SendInstructions(empty_blob));
+    EXPECT_TRUE(sender->SendInstructions({}));
     
     EXPECT_EQ(receiver->GetErrorCode(), 0);
 }

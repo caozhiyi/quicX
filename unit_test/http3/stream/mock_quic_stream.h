@@ -2,11 +2,15 @@
 #define UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
 
 #include <cstdint>
+#include <memory>
 #include "quic/include/if_quic_send_stream.h"
 #include "quic/include/if_quic_recv_stream.h"
 #include "quic/include/if_quic_bidirection_stream.h"
 
 namespace quicx {
+namespace common {
+class IBuffer;
+}
 namespace quic {
 
 class MockQuicStream:
@@ -18,17 +22,20 @@ public:
     
     void SetPeer(std::shared_ptr<MockQuicStream> peer) { peer_ = peer; }
 
-    virtual quic::StreamDirection GetDirection() override;
+    virtual StreamDirection GetDirection() override;
     virtual uint64_t GetStreamID() override;
 
     virtual void Close() override;
 
     virtual void Reset(uint32_t error) override;
 
-    virtual void SetStreamReadCallBack(quic::stream_read_callback cb) override;
+    virtual void SetStreamReadCallBack(stream_read_callback cb) override;
 
     virtual int32_t Send(uint8_t* data, uint32_t len) override;
-    virtual int32_t Send(std::shared_ptr<common::IBufferRead> buffer) override;
+    virtual int32_t Send(std::shared_ptr<IBufferRead> buffer) override;
+
+    virtual std::shared_ptr<IBufferWrite> GetSendBuffer() override;
+    virtual bool Flush() override;
 
     virtual void SetStreamWriteCallBack(stream_write_callback cb) override;
 
@@ -38,6 +45,7 @@ private:
     stream_write_callback write_cb_;
 
     std::weak_ptr<MockQuicStream> peer_;
+    std::shared_ptr<common::IBuffer> send_buffer_;
 };
 
 }

@@ -1,16 +1,20 @@
-#include "common/buffer/buffer.h"
 #include "quic/udp/normal_pakcet_allotor.h"
+#include "common/log/log.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace quic {
 
 std::shared_ptr<NetPacket> NormalPacketAllotor::Malloc() {
-    uint8_t* mem = new uint8_t[1500];
-    auto buffer = std::shared_ptr<common::IBuffer>(
-        new common::Buffer(mem, 1500),
-        [mem](common::IBuffer* p){ delete[] mem; delete p; }
-    );
-    std::shared_ptr<NetPacket> pkt = std::make_shared<NetPacket>();
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(1500);
+    if (!chunk || !chunk->Valid()) {
+        common::LOG_ERROR("failed to allocate buffer chunk");
+        return std::make_shared<NetPacket>();
+    }
+
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+    auto pkt = std::make_shared<NetPacket>();
     pkt->SetData(buffer);
     return pkt;
 }

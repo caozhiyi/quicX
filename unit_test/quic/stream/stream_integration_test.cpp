@@ -2,10 +2,8 @@
 #include <memory>
 #include <vector>
 #include <cstring>
-#include <set>
 
 #include "quic/frame/type.h"
-#include "common/buffer/buffer.h"
 #include "common/timer/if_timer.h"
 #include "quic/connection/error.h"
 #include "quic/stream/send_stream.h"
@@ -16,7 +14,9 @@
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/stream/bidirection_stream.h"
 #include "quic/frame/max_stream_data_frame.h"
+#include "common/buffer/single_block_buffer.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "quic/connection/controler/send_control.h"
 
 namespace quicx {
@@ -67,20 +67,18 @@ public:
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_;
     
     // Packet tracking
-    struct PacketInfo {
+    struct PacketParseResult {
         uint64_t packet_number;
         std::vector<StreamDataInfo> stream_data;
     };
-    std::vector<PacketInfo> sent_packets_;
+    std::vector<PacketParseResult> sent_packets_;
     
     std::shared_ptr<MockTimer> timer_;
     std::shared_ptr<SendControl> send_control_;
     
     // Helper: Encode streams to packet
     bool EncodeStreamsToPacket(std::vector<std::shared_ptr<IStream>>& streams) {
-        uint8_t buffer[1500] = {0};
-        auto buf = std::make_shared<common::Buffer>(buffer, sizeof(buffer));
-        
+    
         FixBufferFrameVisitor visitor(1500);
         visitor.SetStreamDataSizeLimit(1400);
         
@@ -88,12 +86,12 @@ public:
         for (auto& stream : streams) {
             stream->TrySendData(&visitor);
         }
-        
+
         // Get stream data info
         auto stream_data = visitor.GetStreamDataInfo();
         
         if (!stream_data.empty()) {
-            PacketInfo pkt;
+            PacketParseResult pkt;
             pkt.packet_number = sent_packets_.size() + 1;
             pkt.stream_data = stream_data;
             sent_packets_.push_back(pkt);
@@ -220,7 +218,7 @@ TEST_F(StreamIntegrationTest, CompleteRecvStreamLifecycle) {
     auto stream = std::make_shared<RecvStream>(
         alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
-    stream->SetStreamReadCallBack([&](std::shared_ptr<common::IBufferRead> buf, bool last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         callback_count++;
         is_final = last;
         if (buf) {
@@ -235,7 +233,9 @@ TEST_F(StreamIntegrationTest, CompleteRecvStreamLifecycle) {
     frame1->SetStreamID(5);
     frame1->SetOffset(0);
     uint8_t data1[] = "Hello ";
-    frame1->SetData(data1, 6);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(6));
+    data_buffer1->Write(data1, 6);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     
     stream->OnFrame(frame1);
     EXPECT_EQ(callback_count, 1);
@@ -247,7 +247,9 @@ TEST_F(StreamIntegrationTest, CompleteRecvStreamLifecycle) {
     frame2->SetStreamID(5);
     frame2->SetOffset(6);
     uint8_t data2[] = "World";
-    frame2->SetData(data2, 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer2->Write(data2, 5);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
     
     stream->OnFrame(frame2);
     EXPECT_EQ(callback_count, 2);
@@ -258,7 +260,9 @@ TEST_F(StreamIntegrationTest, CompleteRecvStreamLifecycle) {
     frame3->SetStreamID(5);
     frame3->SetOffset(11);
     uint8_t data3[] = "!";
-    frame3->SetData(data3, 1);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer3 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1));
+    data_buffer3->Write(data3, 1);
+    frame3->SetData(data_buffer3->GetSharedReadableSpan());
     frame3->SetFin();
     
     stream->OnFrame(frame3);
@@ -277,11 +281,13 @@ TEST_F(StreamIntegrationTest, BidirectionalRequestResponseFlow) {
     auto stream = std::make_shared<BidirectionStream>(
         alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
-    stream->SetStreamReadCallBack([&](std::shared_ptr<common::IBufferRead> buf, bool last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         if (buf) {
-            for (uint32_t i = 0; i < buf->GetDataLength(); i++) {
-                received_data.push_back(buf->GetData()[i]);
-            }
+            buf->VisitData([&](uint8_t* data, uint32_t len) {
+                for (uint32_t i = 0; i < len; i++) {
+                    received_data.push_back(data[i]);
+                }
+            });
         }
     });
     
@@ -313,7 +319,9 @@ TEST_F(StreamIntegrationTest, BidirectionalRequestResponseFlow) {
     resp_frame->SetStreamID(7);
     resp_frame->SetOffset(0);
     uint8_t response[] = "HTTP/1.1 200 OK";
-    resp_frame->SetData(response, strlen((char*)response));
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(strlen((char*)response)));
+    data_buffer->Write(response, strlen((char*)response));
+    resp_frame->SetData(data_buffer->GetSharedReadableSpan());
     resp_frame->SetFin();
     
     stream->GetRecvStateMachine()->OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag);
@@ -365,7 +373,10 @@ TEST_F(StreamIntegrationTest, StreamResetRecovery) {
     
     // Step 6: Encode RESET_STREAM
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk->Valid());
+    std::memcpy(chunk->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     FixBufferFrameVisitor visitor(1500);
     
     stream->TrySendData(&visitor);
@@ -383,12 +394,14 @@ TEST_F(StreamIntegrationTest, OutOfOrderDataReassembly) {
     auto stream = std::make_shared<RecvStream>(
         alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
-    stream->SetStreamReadCallBack([&](std::shared_ptr<common::IBufferRead> buf, bool last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         callback_count++;
         if (buf) {
-            for (uint32_t i = 0; i < buf->GetDataLength(); i++) {
-                received_data.push_back(buf->GetData()[i]);
-            }
+            buf->VisitData([&](uint8_t* data, uint32_t len) {
+                for (uint32_t i = 0; i < len; i++) {
+                    received_data.push_back(data[i]);
+                }
+            });
         }
     });
     
@@ -397,7 +410,9 @@ TEST_F(StreamIntegrationTest, OutOfOrderDataReassembly) {
     frame3->SetStreamID(5);
     frame3->SetOffset(20);
     uint8_t data3[] = "CCC";
-    frame3->SetData(data3, 3);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer3 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(3));
+    data_buffer3->Write(data3, 3);
+    frame3->SetData(data_buffer3->GetSharedReadableSpan());
     
     stream->OnFrame(frame3);
     EXPECT_EQ(callback_count, 0);  // Should be buffered
@@ -407,7 +422,9 @@ TEST_F(StreamIntegrationTest, OutOfOrderDataReassembly) {
     frame2->SetStreamID(5);
     frame2->SetOffset(10);
     uint8_t data2[] = "BBBBBBBBBB";
-    frame2->SetData(data2, 10);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
+    data_buffer2->Write(data2, 10);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
     
     stream->OnFrame(frame2);
     EXPECT_EQ(callback_count, 0);  // Still buffered
@@ -417,7 +434,9 @@ TEST_F(StreamIntegrationTest, OutOfOrderDataReassembly) {
     frame1->SetStreamID(5);
     frame1->SetOffset(0);
     uint8_t data1[] = "AAAAAAAAAA";
-    frame1->SetData(data1, 10);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
+    data_buffer1->Write(data1, 10);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     
     stream->OnFrame(frame1);
     EXPECT_EQ(callback_count, 1);  // All data delivered at once
@@ -493,13 +512,17 @@ TEST_F(StreamIntegrationTest, StreamMultiplexing) {
     auto frame1 = std::make_shared<StreamFrame>();
     frame1->SetStreamID(4);
     frame1->SetOffset(0);
-    frame1->SetData((uint8_t*)"RespA", 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer1->Write((uint8_t*)"RespA", 5);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     streams[1]->OnFrame(frame1);
     
     auto frame2 = std::make_shared<StreamFrame>();
     frame2->SetStreamID(12);
     frame2->SetOffset(0);
-    frame2->SetData((uint8_t*)"RespB", 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer2->Write((uint8_t*)"RespB", 5);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
     streams[3]->OnFrame(frame2);
     
     // Verify no interference
@@ -537,7 +560,10 @@ TEST_F(StreamIntegrationTest, StreamPriorityAndFairness) {
     
     // Encode with limited space (simulate MTU constraint)
     uint8_t buffer[800] = {0};  // Limited space
-    auto buf = std::make_shared<common::Buffer>(buffer, sizeof(buffer));
+    auto chunk2 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buffer));
+    ASSERT_TRUE(chunk2->Valid());
+    std::memcpy(chunk2->GetData(), buffer, sizeof(buffer));
+    auto buf = std::make_shared<common::SingleBlockBuffer>(chunk2);
     
     FixBufferFrameVisitor visitor(800);
     visitor.SetStreamDataSizeLimit(700);
@@ -569,7 +595,10 @@ TEST_F(StreamIntegrationTest, SendFlowControlBlocking) {
     
     // Encode - should generate STREAM_DATA_BLOCKED
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk3 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk3->Valid());
+    std::memcpy(chunk3->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk3);
     FixBufferFrameVisitor visitor(1500);
     visitor.SetStreamDataSizeLimit(1400);
     
@@ -606,13 +635,18 @@ TEST_F(StreamIntegrationTest, RecvFlowControlAutoExpansion) {
     frame->SetOffset(0);
     uint8_t data[400];
     memset(data, 'D', 400);
-    frame->SetData(data, 400);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(400));
+    data_buffer->Write(data, 400);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     
     // Should auto-send MAX_STREAM_DATA
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk4 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk4->Valid());
+    std::memcpy(chunk4->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk4);
     FixBufferFrameVisitor visitor(1500);
     
     auto result = stream->TrySendData(&visitor);
@@ -633,7 +667,9 @@ TEST_F(StreamIntegrationTest, FlowControlViolationDetection) {
     frame->SetOffset(0);
     uint8_t data[200];
     memset(data, 'E', 200);
-    frame->SetData(data, 200);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(200));
+    data_buffer->Write(data, 200);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     
@@ -764,7 +800,9 @@ TEST_F(StreamIntegrationTest, FinalSizeConsistencyAcrossFrames) {
     frame1->SetOffset(0);
     uint8_t data1[50];
     memset(data1, 'A', 50);
-    frame1->SetData(data1, 50);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(50));
+    data_buffer1->Write(data1, 50);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
     frame1->SetFin();
     
     stream->OnFrame(frame1);
@@ -776,7 +814,9 @@ TEST_F(StreamIntegrationTest, FinalSizeConsistencyAcrossFrames) {
     frame2->SetOffset(40);
     uint8_t data2[10];
     memset(data2, 'A', 10);
-    frame2->SetData(data2, 10);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
+    data_buffer2->Write(data2, 10);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
     frame2->SetFin();
     
     uint32_t ret = stream->OnFrame(frame2);
@@ -789,7 +829,9 @@ TEST_F(StreamIntegrationTest, FinalSizeConsistencyAcrossFrames) {
     frame3->SetOffset(0);
     uint8_t data3[100];
     memset(data3, 'B', 100);
-    frame3->SetData(data3, 100);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer3 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(100));
+    data_buffer3->Write(data3, 100);
+    frame3->SetData(data_buffer3->GetSharedReadableSpan());
     frame3->SetFin();
     
     stream->OnFrame(frame3);
@@ -806,7 +848,7 @@ TEST_F(StreamIntegrationTest, ResetStreamAfterPartialData) {
     auto stream = std::make_shared<RecvStream>(
         alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
-    stream->SetStreamReadCallBack([&](std::shared_ptr<common::IBufferRead> buf, bool last, uint32_t err) {
+    stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         error_code = err;
     });
     
@@ -816,7 +858,9 @@ TEST_F(StreamIntegrationTest, ResetStreamAfterPartialData) {
     frame->SetOffset(0);
     uint8_t data[50];
     memset(data, 'G', 50);
-    frame->SetData(data, 50);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(50));
+    data_buffer->Write(data, 50);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     
     stream->OnFrame(frame);
     
@@ -853,7 +897,10 @@ TEST_F(StreamIntegrationTest, ConcurrentCloseAndReset) {
     
     // Encode - should send RESET_STREAM, not STREAM with FIN
     uint8_t buf[1500] = {0};
-    auto buffer = std::make_shared<common::Buffer>(buf, sizeof(buf));
+    auto chunk5 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    ASSERT_TRUE(chunk5->Valid());
+    std::memcpy(chunk5->GetData(), buf, sizeof(buf));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk5);
     FixBufferFrameVisitor visitor(1500);
     
     stream->TrySendData(&visitor);
@@ -877,7 +924,9 @@ TEST_F(StreamIntegrationTest, StreamReusePrevention) {
     auto frame = std::make_shared<StreamFrame>();
     frame->SetStreamID(7);
     frame->SetOffset(0);
-    frame->SetData((uint8_t*)"X", 1);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1));
+    data_buffer->Write((uint8_t*)"X", 1);
+    frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetFin();
     stream->GetRecvStateMachine()->OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag);
     stream->OnFrame(frame);
@@ -894,7 +943,9 @@ TEST_F(StreamIntegrationTest, StreamReusePrevention) {
     auto new_frame = std::make_shared<StreamFrame>();
     new_frame->SetStreamID(7);
     new_frame->SetOffset(1);
-    new_frame->SetData((uint8_t*)"Y", 1);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1));
+    data_buffer2->Write((uint8_t*)"Y", 1);
+    new_frame->SetData(data_buffer2->GetSharedReadableSpan());
     
     uint32_t ret = stream->OnFrame(new_frame);
     // Terminal states still accept frames for final_size validation

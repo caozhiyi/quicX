@@ -12,7 +12,6 @@
 #include "common/timer/if_timer.h"
 #include "common/buffer/if_buffer.h"
 #include "quic/packet/packet_number.h"
-#include "quic/connection/if_packet_visitor.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/controler/send_control.h"
 #include "quic/connection/controler/flow_control.h"

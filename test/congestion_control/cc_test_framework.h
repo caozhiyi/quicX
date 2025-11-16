@@ -12,7 +12,6 @@
 
 namespace quicx {
 namespace quic {
-namespace test {
 
 // Test metrics collected during simulation
 struct CCTestMetrics {
@@ -129,7 +128,6 @@ public:
     static std::vector<std::pair<std::string, CCTestFramework::CCFactory>> AllAlgorithms();
 };
 
-} // namespace test
 } // namespace quic
 } // namespace quicx
 

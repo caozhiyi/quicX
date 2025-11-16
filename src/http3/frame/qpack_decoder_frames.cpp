@@ -1,18 +1,20 @@
-#include "http3/qpack/util.h"
+#include "common/log/log.h"
 #include "http3/frame/type.h"
+#include "http3/qpack/util.h"
 #include "http3/frame/qpack_decoder_frames.h"
 
 namespace quicx {
 namespace http3 {
 
-bool DecodeQpackDecoderFrames(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IQpackDecoderFrame>>& frames) {
+bool DecodeQpackDecoderFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IQpackDecoderFrame>>& frames) {
     if (!buffer) {
         return false;
     }
     while (buffer->GetDataLength() > 0) {
         uint8_t first = 0;
-        if (buffer->ReadNotMovePt(&first, 1) != 1) return false;
-
+        if (buffer->ReadNotMovePt(&first, 1) != 1) {
+            return false;
+        }
         std::shared_ptr<IQpackDecoderFrame> frame;
         // Dispatch by bit-pattern of the first byte
         if ((first & 0x80) == kQpackDecSectionAckFirstByteMask) {
@@ -25,6 +27,7 @@ bool DecodeQpackDecoderFrames(std::shared_ptr<common::IBufferRead> buffer, std::
             // 00xxxxxx -> Insert Count Increment
             frame = std::make_shared<QpackInsertCountIncrementFrame>();
         } else {
+            common::LOG_ERROR("DecodeQpackDecoderFrames: unknown frame type: %02x", first);
             return false;
         }
 
@@ -41,13 +44,13 @@ QpackSectionAckFrame::QpackSectionAckFrame():
 
 }
 
-bool QpackSectionAckFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool QpackSectionAckFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // 1xxxxxxx with 7-bit prefix
     return QpackEncodePrefixedInteger(buffer, kQpackDecSectionAckPrefixBits, kQpackDecSectionAckFirstByteMask, stream_id_)
         && QpackEncodePrefixedInteger(buffer, kQpackDecoderVarintPrefixBits, kQpackDecoderVarintFirstByteMask, section_number_);
 }
 
-bool QpackSectionAckFrame::Decode(std::shared_ptr<common::IBufferRead> buffer) {
+bool QpackSectionAckFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t fb1 = 0;
     if (!QpackDecodePrefixedInteger(buffer, kQpackDecSectionAckPrefixBits, fb1, stream_id_)) {
         return false;
@@ -83,13 +86,13 @@ QpackStreamCancellationFrame::QpackStreamCancellationFrame():
 
 }
 
-bool QpackStreamCancellationFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool QpackStreamCancellationFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // 01xxxxxx with 6-bit prefix for stream_id
     return QpackEncodePrefixedInteger(buffer, kQpackDecStreamCancelPrefixBits, kQpackDecStreamCancelFirstByteMask, stream_id_)
         && QpackEncodePrefixedInteger(buffer, kQpackDecoderVarintPrefixBits, kQpackDecoderVarintFirstByteMask, section_number_);
 }
 
-bool QpackStreamCancellationFrame::Decode(std::shared_ptr<common::IBufferRead> buffer) {
+bool QpackStreamCancellationFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t fb1 = 0;
     if (!QpackDecodePrefixedInteger(buffer, kQpackDecStreamCancelPrefixBits, fb1, stream_id_)) {
         return false;
@@ -124,12 +127,12 @@ QpackInsertCountIncrementFrame::QpackInsertCountIncrementFrame():
 
 }
 
-bool QpackInsertCountIncrementFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool QpackInsertCountIncrementFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // 00xxxxxx with 6-bit prefix for delta
     return QpackEncodePrefixedInteger(buffer, kQpackDecInsertCountIncPrefixBits, kQpackDecInsertCountIncFirstByteMask, delta_);
 }
 
-bool QpackInsertCountIncrementFrame::Decode(std::shared_ptr<common::IBufferRead> buffer) {
+bool QpackInsertCountIncrementFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t fb = 0;
     return QpackDecodePrefixedInteger(buffer, kQpackDecInsertCountIncPrefixBits, fb, delta_);
 }

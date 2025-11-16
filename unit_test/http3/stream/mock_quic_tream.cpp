@@ -1,12 +1,13 @@
 
-#include "common/buffer/buffer.h"
 #include "unit_test/http3/stream/mock_quic_stream.h"
+#include "common/buffer/standalone_buffer_chunk.h"
+#include "common/buffer/single_block_buffer.h"
 
 namespace quicx {
 namespace quic {
 
-quic::StreamDirection MockQuicStream::GetDirection() {
-    return quic::StreamDirection::kBidi;
+StreamDirection MockQuicStream::GetDirection() {
+    return StreamDirection::kBidi;
 }
 
 uint64_t MockQuicStream::GetStreamID() {
@@ -21,7 +22,7 @@ void MockQuicStream::Reset(uint32_t error) {
     // No-op for mock
 }
 
-void MockQuicStream::SetStreamReadCallBack(quic::stream_read_callback cb) {
+void MockQuicStream::SetStreamReadCallBack(stream_read_callback cb) {
     read_cb_ = cb;
 }
 
@@ -32,15 +33,16 @@ int32_t MockQuicStream::Send(uint8_t* data, uint32_t len) {
 
     auto peer = peer_.lock();
     if (peer && peer->read_cb_) {
-        std::shared_ptr<common::Buffer> buffer = std::make_shared<common::Buffer>(data, len);
-        // Mark the written length so the peer sees correct readable data size
-        buffer->MoveWritePt(len);
-        peer->read_cb_(buffer, false, 0);
+        // Create a standalone readable buffer carrying the payload
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(len);
+        auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
+        buf->Write(data, len);
+        peer->read_cb_(buf, false, 0);
     }
     return len;
 }
 
-int32_t MockQuicStream::Send(std::shared_ptr<common::IBufferRead> buffer) {
+int32_t MockQuicStream::Send(std::shared_ptr<IBufferRead> buffer) {
     int len = buffer->GetDataLength();
     if (write_cb_) {
         write_cb_(len, 0);
@@ -53,7 +55,20 @@ int32_t MockQuicStream::Send(std::shared_ptr<common::IBufferRead> buffer) {
     return len;
 }
 
-void MockQuicStream::SetStreamWriteCallBack(quic::stream_write_callback cb) {
+std::shared_ptr<IBufferWrite> MockQuicStream::GetSendBuffer() {
+    if (!send_buffer_) {
+        // Create a buffer with reasonable capacity for testing
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(64 * 1024);
+        send_buffer_ = std::make_shared<common::SingleBlockBuffer>(chunk);
+    }
+    return send_buffer_;
+}
+
+bool MockQuicStream::Flush() {
+    return true;
+}
+
+void MockQuicStream::SetStreamWriteCallBack(stream_write_callback cb) {
     write_cb_ = cb;
 }
 

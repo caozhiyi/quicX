@@ -93,7 +93,7 @@ std::string ExtractFilename(const std::string& path) {
     return path.substr(last_slash + 1);
 }
 
-void UploadFile(quicx::http3::IClient* client, const std::string& filepath) {
+void UploadFile(quicx::IClient* client, const std::string& filepath) {
     std::string content;
     if (!ReadLocalFile(filepath, content)) {
         return;
@@ -106,18 +106,18 @@ void UploadFile(quicx::http3::IClient* client, const std::string& filepath) {
     std::cout << "Uploading: " << filename << " (" << FormatFileSize(content.size()) << ")" << std::endl;
     
     pending_requests++;
-    auto request = quicx::http3::IRequest::Create();
+    auto request = quicx::IRequest::Create();
     request->AddHeader("Content-Type", "multipart/form-data; boundary=" + boundary);
-    request->SetBody(body);
+    request->AppendBody(body);
     
     client->DoRequest(
         "https://127.0.0.1:8884/upload",
-        quicx::http3::HttpMethod::kPost,
+        quicx::HttpMethod::kPost,
         request,
-        [filename](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [filename](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "  Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "  Response: " << response->GetBody() << std::endl;
+                std::cout << "  Response: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "  Error: " << error << std::endl;
             }
@@ -127,22 +127,22 @@ void UploadFile(quicx::http3::IClient* client, const std::string& filepath) {
     );
 }
 
-void DownloadFile(quicx::http3::IClient* client, const std::string& filename, const std::string& save_as) {
+void DownloadFile(quicx::IClient* client, const std::string& filename, const std::string& save_as) {
     std::cout << "Downloading: " << filename << std::endl;
     
     pending_requests++;
-    auto request = quicx::http3::IRequest::Create();
+    auto request = quicx::IRequest::Create();
     
     client->DoRequest(
         "https://127.0.0.1:8884/files/" + filename,
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         request,
-        [filename, save_as](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [filename, save_as](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "  Status: " << response->GetStatusCode() << std::endl;
                 
                 if (response->GetStatusCode() == 200) {
-                    const std::string& content = response->GetBody();
+                    const std::string content = response->GetBodyAsString();
                     std::string output_file = save_as.empty() ? ("downloaded_" + filename) : save_as;
                     
                     if (WriteLocalFile(output_file, content)) {
@@ -152,7 +152,7 @@ void DownloadFile(quicx::http3::IClient* client, const std::string& filename, co
                         std::cout << "  Failed to save file" << std::endl;
                     }
                 } else {
-                    std::cout << "  Response: " << response->GetBody() << std::endl;
+                    std::cout << "  Response: " << response->GetBodyAsString() << std::endl;
                 }
             } else {
                 std::cout << "  Error: " << error << std::endl;
@@ -163,20 +163,20 @@ void DownloadFile(quicx::http3::IClient* client, const std::string& filename, co
     );
 }
 
-void ListFiles(quicx::http3::IClient* client) {
+void ListFiles(quicx::IClient* client) {
     std::cout << "Listing files..." << std::endl;
     
     pending_requests++;
-    auto request = quicx::http3::IRequest::Create();
+    auto request = quicx::IRequest::Create();
     
     client->DoRequest(
         "https://127.0.0.1:8884/files",
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         request,
-        [](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "  Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "  Files: " << response->GetBody() << std::endl;
+                std::cout << "  Files: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "  Error: " << error << std::endl;
             }
@@ -186,21 +186,21 @@ void ListFiles(quicx::http3::IClient* client) {
     );
 }
 
-void DeleteFile(quicx::http3::IClient* client, const std::string& filename) {
+void DeleteFile(quicx::IClient* client, const std::string& filename) {
     std::cout << "Deleting: " << filename << std::endl;
     
     pending_requests++;
-    auto request = quicx::http3::IRequest::Create();
+    auto request = quicx::IRequest::Create();
     
     client->DoRequest(
         "https://127.0.0.1:8884/files/" + filename,
-        quicx::http3::HttpMethod::kDelete,
+        quicx::HttpMethod::kDelete,
         request,
-        [filename](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [filename](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "  Status: " << response->GetStatusCode() << std::endl;
                 if (response->GetStatusCode() != 204) {
-                    std::cout << "  Response: " << response->GetBody() << std::endl;
+                    std::cout << "  Response: " << response->GetBodyAsString() << std::endl;
                 } else {
                     std::cout << "  Successfully deleted" << std::endl;
                 }
@@ -213,20 +213,20 @@ void DeleteFile(quicx::http3::IClient* client, const std::string& filename) {
     );
 }
 
-void GetStats(quicx::http3::IClient* client) {
+void GetStats(quicx::IClient* client) {
     std::cout << "Getting server statistics..." << std::endl;
     
     pending_requests++;
-    auto request = quicx::http3::IRequest::Create();
+    auto request = quicx::IRequest::Create();
     
     client->DoRequest(
         "https://127.0.0.1:8884/stats",
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         request,
-        [](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "  Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "  Stats: " << response->GetBody() << std::endl;
+                std::cout << "  Stats: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "  Error: " << error << std::endl;
             }
@@ -260,11 +260,11 @@ void CreateTestFile(const std::string& filename, size_t size_kb) {
 }
 
 int main(int argc, char* argv[]) {
-    auto client = quicx::http3::IClient::Create();
+    auto client = quicx::IClient::Create();
 
-    quicx::http3::Http3Config config;
+    quicx::Http3Config config;
     config.thread_num_ = 2;
-    config.log_level_ = quicx::http3::LogLevel::kDebug;
+    config.log_level_ = quicx::LogLevel::kDebug;
     client->Init(config);
 
     std::cout << "==================================" << std::endl;

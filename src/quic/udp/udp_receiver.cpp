@@ -15,6 +15,7 @@
 #include "quic/udp/udp_receiver.h"
 #include "quic/common/constants.h"
 #include "common/network/io_handle.h"
+#include "quic/quicx/global_resource.h"
 #include "common/network/if_event_driver.h"
 
 
@@ -23,7 +24,7 @@ namespace quic {
 
 UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
     event_loop_(event_loop) {
-    packet_allotor_ = IPacketAllotor::MakePacketAllotor(IPacketAllotor::PacketAllotorType::POOL);
+
 }
 
 UdpReceiver::~UdpReceiver() {
@@ -84,10 +85,10 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
 }
 
 void UdpReceiver::OnRead(uint32_t fd) {
-    std::shared_ptr<NetPacket> pkt = packet_allotor_->Malloc();
+    std::shared_ptr<NetPacket> pkt = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
 
     auto buffer = pkt->GetData();
-    auto span = buffer->GetWriteSpan();
+    auto span = buffer->GetWritableSpan();
 
     // Use platform abstraction to capture ECN and peer address
     common::Address peer_addr;

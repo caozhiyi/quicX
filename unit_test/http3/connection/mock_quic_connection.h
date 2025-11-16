@@ -1,7 +1,6 @@
 #ifndef UTEST_CONNECTION_MOCK_QUIC_CONNECTION
 #define UTEST_CONNECTION_MOCK_QUIC_CONNECTION
 
-#include <vector>
 #include <cstdint>
 #include <cstring>
 #include "quic/include/if_quic_stream.h"

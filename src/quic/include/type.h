@@ -5,41 +5,47 @@
 #include <string>
 #include <cstdint>
 #include <functional>
-#include "common/buffer/if_buffer_read.h"
+
+#include "common/include/type.h"
+#include "common/include/if_buffer_read.h"
 
 namespace quicx {
-namespace quic {
 
+/**
+ * @brief Direction of a QUIC stream.
+ */
 enum class StreamDirection: uint8_t {
-    kSend = 0x01, // send stream
-    kRecv = 0x02, // recv stream
-    kBidi = 0x03, // bidirection stream
+    kSend = 0x01,  //!< Locally initiated send-only stream.
+    kRecv = 0x02,  //!< Remotely initiated receive-only stream.
+    kBidi = 0x03,  //!< Bidirectional stream supporting send + receive.
 };
 
-// log level
-enum class LogLevel: uint8_t {
-    kNull   = 0x00, // not print log
-    kFatal  = 0x01,
-    kError  = 0x02 | kFatal,
-    kWarn   = 0x04 | kError,
-    kInfo   = 0x08 | kWarn,
-    kDebug  = 0x10 | kInfo,
-};
-
+/**
+ * @brief Controls how the library orchestrates master/worker loops.
+ */
 enum class ThreadMode: uint8_t {
-    kSingleThread = 0x00, // start a single thread to process worker and master
-    kMultiThread  = 0x01, // start one thread to process master and multiple threads to process workers
+    kSingleThread = 0x00, //!< Master and worker state machines share one thread.
+    kMultiThread  = 0x01, //!< Dedicated master thread plus N worker threads.
 };
 
+/**
+ * @brief Runtime knobs shared by clients and servers.
+ */
 struct QuicConfig {
-    ThreadMode thread_mode_ = ThreadMode::kSingleThread;
-    uint16_t worker_thread_num_ = 2;
-    LogLevel log_level_  = LogLevel::kNull;
+    ThreadMode thread_mode_ = ThreadMode::kSingleThread; //!< Threading strategy.
+    uint16_t worker_thread_num_ = 2;                     //!< Number of worker threads when in multi-thread mode.
+    LogLevel log_level_  = LogLevel::kNull;              //!< Minimum log level emitted by the stack.
 
-    bool enable_ecn_  = false;
-    bool enable_0rtt_ = false;
+    bool enable_ecn_  = false; //!< Toggle ECN handling.
+    bool enable_0rtt_ = false; //!< Allow 0-RTT data when tickets are available.
 };
 
+/**
+ * @brief Transport parameters exchanged during the QUIC handshake.
+ *
+ * Exposed here so applications can customize flow-control, migration, idle
+ * timeout, and other core transport behaviors.
+ */
 struct QuicTransportParams {
     std::string original_destination_connection_id_ = "";
     uint32_t    max_idle_timeout_ms_ = 120000; // 2 minutes
@@ -61,6 +67,9 @@ struct QuicTransportParams {
 };
 static const QuicTransportParams DEFAULT_QUIC_TRANSPORT_PARAMS;
 
+/**
+ * @brief Lifecycle events delivered to connection callbacks.
+ */
 enum class ConnectionOperation: uint32_t {
     kConnectionCreate   = 0x00,
     kConnectionClose    = 0x01
@@ -70,26 +79,46 @@ class IQuicStream;
 class IQuicConnection;
 class IBidirectionStream;
 
-// connection state callback, call this callback when connection state changed, like connected, disconnected, etc.
-// conn: connection instance which state changed
-typedef std::function<void(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason)> connection_state_callback;
+/**
+ * @brief Notifies applications about connection-level state changes.
+ *
+ * @param conn Connection instance whose state changed.
+ * @param operation Whether the connection was created or closed.
+ * @param error Application/transport error code (0 on success).
+ * @param reason Human-readable reason string.
+ */
+typedef std::function<void(std::shared_ptr<IQuicConnection> conn,
+                           ConnectionOperation operation,
+                           uint32_t error,
+                           const std::string& reason)> connection_state_callback;
 
-// stream state callback, call this callback when stream state changed, like created, closed, etc.
-// stream: stream instance which state changed
+/**
+ * @brief Streams lifecycle callback.
+ *
+ * Called when streams are created, closed or encounter an error.
+ */
 typedef std::function<void(std::shared_ptr<IQuicStream> stream, uint32_t error)> stream_state_callback;
 
-// stream read callback, call this callback when stream get data from peer
-// data: data buffer
-typedef std::function<void(std::shared_ptr<common::IBufferRead> data, bool is_last, uint32_t error)> stream_read_callback;
+/**
+ * @brief Read-side callback invoked when data becomes available.
+ *
+ * @param data Buffer referencing the readable bytes.
+ * @param is_last Whether the FIN bit was observed with this chunk.
+ * @param error Transport-level error (0 on success).
+ */
+typedef std::function<void(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error)> stream_read_callback;
 
-// stream write callback, call this callback when stream write data ready to send
-// length: data length
+/**
+ * @brief Write-side callback invoked after a send attempt.
+ *
+ * @param length Number of bytes written or acknowledged.
+ * @param error Non-zero on failure.
+ */
 typedef std::function<void(uint32_t length, uint32_t error)> stream_write_callback;
 
-// timer callback, call this callback when timer expired
+/** @brief Generic timer callback used by IQuicClient/IQuicServer. */
 typedef std::function<void()> timer_callback;
 
-}
 }
 
 #endif

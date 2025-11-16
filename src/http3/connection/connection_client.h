@@ -20,7 +20,7 @@ class ClientConnection:
 public:
     ClientConnection(const std::string& unique_id,
         const Http3Settings& settings,
-        const std::shared_ptr<quic::IQuicConnection>& quic_connection,
+        const std::shared_ptr<IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
         const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
         const http_response_handler& push_handler);
@@ -48,9 +48,9 @@ public:
     virtual void CancelPush(uint64_t push_id);
 
 private:
-    void HandleStream(std::shared_ptr<quic::IQuicStream> stream, uint32_t error);
+    void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error);
     // Callback when stream type is identified (RFC 9114 Section 6.2)
-    void OnStreamTypeIdentified(uint64_t stream_type, std::shared_ptr<quic::IQuicRecvStream> stream, std::shared_ptr<common::IBufferRead> data);
+    void OnStreamTypeIdentified(uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> data);
     // handle goaway frame
     void HandleGoaway(uint64_t id);
     // handle error

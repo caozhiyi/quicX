@@ -6,7 +6,6 @@
 #include "http3/frame/frame_decode.h"
 #include "http3/frame/headers_frame.h"
 #include "http3/stream/pseudo_header.h"
-#include "common/buffer/buffer_read_view.h"
 #include "http3/stream/push_receiver_stream.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 
@@ -14,7 +13,7 @@ namespace quicx {
 namespace http3 {
 
 PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<quic::IQuicRecvStream>& stream,
+    const std::shared_ptr<IQuicRecvStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const http_response_handler& response_handler):
     IRecvStream(StreamType::kPush, stream, error_handler),
@@ -34,7 +33,7 @@ PushReceiverStream::~PushReceiverStream() {
     }
 }
 
- void PushReceiverStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
+ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("PushReceiverStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);
@@ -46,11 +45,12 @@ PushReceiverStream::~PushReceiverStream() {
     // State machine to parse push stream (RFC 9114 Section 4.6)
     // Note: Stream type byte (0x01) has already been read by UnidentifiedStream
     // So we start directly with Push ID
-    while (data->GetDataLength() > 0) {
+    auto buffer = std::dynamic_pointer_cast<common::IBuffer>(data);
+    while (buffer->GetDataLength() > 0) {
         if (parse_state_ == ParseState::kReadingPushId) {
             // Read Push ID varint
             {
-                common::BufferDecodeWrapper wrapper(data);
+                common::BufferDecodeWrapper wrapper(buffer);
                 if (!wrapper.DecodeVarint(push_id_)) {
                     // Not enough data yet, wait for more
                     common::LOG_DEBUG("PushReceiverStream: not enough data to read push id, waiting for more data");
@@ -66,7 +66,7 @@ PushReceiverStream::~PushReceiverStream() {
             common::LOG_DEBUG("PushReceiverStream: attempting to decode frames from %zu bytes", data->GetDataLength());
             
             std::vector<std::shared_ptr<IFrame>> frames;
-            bool decode_ok = DecodeFrames(data, frames);
+            bool decode_ok = DecodeFrames(buffer, frames);
 
             common::LOG_DEBUG("PushReceiverStream: DecodeFrames returned %d, decoded %zu frames", decode_ok, frames.size());
             
@@ -117,8 +117,7 @@ PushReceiverStream::~PushReceiverStream() {
     // TODO check if headers is complete and headers length is correct
 
     // Decode headers using QPACK
-    std::vector<uint8_t> encoded_fields = headers_frame->GetEncodedFields();
-    auto headers_buffer = (std::make_shared<common::BufferReadView>(encoded_fields.data(), encoded_fields.size()));
+    auto headers_buffer = headers_frame->GetEncodedFields();
     if (!qpack_encoder_->Decode(headers_buffer, headers_)) {
         common::LOG_ERROR("IStream::HandleHeaders QPACK decode error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
@@ -148,21 +147,23 @@ PushReceiverStream::~PushReceiverStream() {
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
+   
+    body_->Write(data_frame->GetData());
 
-    const auto& data = data_frame->GetData();
-    body_.insert(body_.end(), data.begin(), data.end());
-
-    if (body_length_ == body_.size()) {
+    if (body_length_ == body_->GetDataLength()) {
         HandleBody();
     }
  }
 
  void PushReceiverStream::HandleBody() {
-    common::LOG_DEBUG("PushReceiverStream: headers count=%zu, body size=%zu", headers_.size(), body_.size());
+    uint32_t body_size = body_ ? body_->GetDataLength() : 0;
+    common::LOG_DEBUG("PushReceiverStream: headers count=%zu, body size=%u", headers_.size(), body_size);
     
-    std::shared_ptr<IResponse> response = std::make_shared<Response>();
+    std::shared_ptr<Response> response = std::make_shared<Response>();
     response->SetHeaders(headers_);
-    response->SetBody(std::string(body_.begin(), body_.end())); // TODO: do not copy body
+    if (body_) {
+        response->SetBody(body_);
+    }
 
     PseudoHeader::Instance().DecodeResponse(response);
 

@@ -48,7 +48,7 @@ bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-void ServerConnection::WriteCryptoData(std::shared_ptr<common::IBufferRead> buffer, int32_t err) {
+void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) {
     if (err != 0) {
         common::LOG_ERROR("get crypto data failed. err:%s", err);
         return;

@@ -191,27 +191,27 @@ int main() {
     // Create database instance
     auto db = std::make_shared<UserDatabase>();
 
-    auto server = quicx::http3::IServer::Create();
+    auto server = quicx::IServer::Create();
 
     // Logging middleware - runs before all handlers
     server->AddMiddleware(
-        quicx::http3::HttpMethod::kAny,
-        quicx::http3::MiddlewarePosition::kBefore,
-        [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        quicx::HttpMethod::kAny,
+        quicx::MiddlewarePosition::kBefore,
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::cout << "[" << req->GetMethodString() << "] " << req->GetPath() << std::endl;
         }
     );
 
     // GET /users - Get all users
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/users",
-        [db](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             auto users = db->GetAllUsers();
             std::string json = UsersToJson(users);
             
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(json);
+            resp->AppendBody(json);
             resp->SetStatusCode(200);
             
             std::cout << "  -> Returned " << users.size() << " users" << std::endl;
@@ -220,13 +220,13 @@ int main() {
 
     // GET /users/:id - Get single user
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/users/:id",
-        [db](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             int id = ExtractIdFromPath(req->GetPath());
             if (id < 0) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid user ID\"}");
+                resp->AppendBody("{\"error\":\"Invalid user ID\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> Error: Invalid ID" << std::endl;
                 return;
@@ -236,12 +236,12 @@ int main() {
             if (db->GetUser(id, user)) {
                 std::string json = UserToJson(user);
                 resp->AddHeader("Content-Type", "application/json");
-                resp->SetBody(json);
+                resp->AppendBody(json);
                 resp->SetStatusCode(200);
                 std::cout << "  -> Returned user: " << user.name << std::endl;
             } else {
                 resp->SetStatusCode(404);
-                resp->SetBody("{\"error\":\"User not found\"}");
+                resp->AppendBody("{\"error\":\"User not found\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> User not found (ID: " << id << ")" << std::endl;
             }
@@ -250,15 +250,15 @@ int main() {
 
     // POST /users - Create new user
     server->AddHandler(
-        quicx::http3::HttpMethod::kPost,
+        quicx::HttpMethod::kPost,
         "/users",
-        [db](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::string name, email;
             int age;
             
-            if (!ParseUserJson(req->GetBody(), name, email, age)) {
+            if (!ParseUserJson(req->GetBodyAsString(), name, email, age)) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid JSON format\"}");
+                resp->AppendBody("{\"error\":\"Invalid JSON format\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> Error: Invalid JSON" << std::endl;
                 return;
@@ -270,7 +270,7 @@ int main() {
             
             resp->AddHeader("Content-Type", "application/json");
             resp->AddHeader("Location", "/users/" + std::to_string(id));
-            resp->SetBody(json);
+            resp->AppendBody(json);
             resp->SetStatusCode(201); // Created
             
             std::cout << "  -> Created user: " << name << " (ID: " << id << ")" << std::endl;
@@ -279,13 +279,13 @@ int main() {
 
     // PUT /users/:id - Update user
     server->AddHandler(
-        quicx::http3::HttpMethod::kPut,
+        quicx::HttpMethod::kPut,
         "/users/:id",
-        [db](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             int id = ExtractIdFromPath(req->GetPath());
             if (id < 0) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid user ID\"}");
+                resp->AppendBody("{\"error\":\"Invalid user ID\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> Error: Invalid ID" << std::endl;
                 return;
@@ -294,9 +294,9 @@ int main() {
             std::string name, email;
             int age;
             
-            if (!ParseUserJson(req->GetBody(), name, email, age)) {
+            if (!ParseUserJson(req->GetBodyAsString(), name, email, age)) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid JSON format\"}");
+                resp->AppendBody("{\"error\":\"Invalid JSON format\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> Error: Invalid JSON" << std::endl;
                 return;
@@ -306,12 +306,12 @@ int main() {
                 User user{id, name, email, age};
                 std::string json = UserToJson(user);
                 resp->AddHeader("Content-Type", "application/json");
-                resp->SetBody(json);
+                resp->AppendBody(json);
                 resp->SetStatusCode(200);
                 std::cout << "  -> Updated user: " << name << " (ID: " << id << ")" << std::endl;
             } else {
                 resp->SetStatusCode(404);
-                resp->SetBody("{\"error\":\"User not found\"}");
+                resp->AppendBody("{\"error\":\"User not found\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> User not found (ID: " << id << ")" << std::endl;
             }
@@ -320,13 +320,13 @@ int main() {
 
     // DELETE /users/:id - Delete user
     server->AddHandler(
-        quicx::http3::HttpMethod::kDelete,
+        quicx::HttpMethod::kDelete,
         "/users/:id",
-        [db](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             int id = ExtractIdFromPath(req->GetPath());
             if (id < 0) {
                 resp->SetStatusCode(400);
-                resp->SetBody("{\"error\":\"Invalid user ID\"}");
+                resp->AppendBody("{\"error\":\"Invalid user ID\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> Error: Invalid ID" << std::endl;
                 return;
@@ -334,11 +334,11 @@ int main() {
 
             if (db->DeleteUser(id)) {
                 resp->SetStatusCode(204); // No Content
-                resp->SetBody("");
+                resp->AppendBody("");
                 std::cout << "  -> Deleted user (ID: " << id << ")" << std::endl;
             } else {
                 resp->SetStatusCode(404);
-                resp->SetBody("{\"error\":\"User not found\"}");
+                resp->AppendBody("{\"error\":\"User not found\"}");
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> User not found (ID: " << id << ")" << std::endl;
             }
@@ -347,14 +347,14 @@ int main() {
 
     // GET /stats - Get statistics
     server->AddHandler(
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         "/stats",
-        [db](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::ostringstream oss;
             oss << "{\"total_users\":" << db->GetUserCount() << "}";
             
             resp->AddHeader("Content-Type", "application/json");
-            resp->SetBody(oss.str());
+            resp->AppendBody(oss.str());
             resp->SetStatusCode(200);
             
             std::cout << "  -> Statistics requested" << std::endl;
@@ -363,20 +363,20 @@ int main() {
 
     // Response time middleware - runs after all handlers
     server->AddMiddleware(
-        quicx::http3::HttpMethod::kAny,
-        quicx::http3::MiddlewarePosition::kAfter,
-        [](std::shared_ptr<quicx::http3::IRequest> req, std::shared_ptr<quicx::http3::IResponse> resp) {
+        quicx::HttpMethod::kAny,
+        quicx::MiddlewarePosition::kAfter,
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             resp->AddHeader("X-Powered-By", "QuicX-HTTP3");
             resp->AddHeader("Access-Control-Allow-Origin", "*"); // CORS
         }
     );
 
     // Configure and start server
-    quicx::http3::Http3ServerConfig config;
+    quicx::Http3ServerConfig config;
     config.cert_pem_ = cert_pem;
     config.key_pem_ = key_pem;
     config.config_.thread_num_ = 2;
-    config.config_.log_level_ = quicx::http3::LogLevel::kError;
+    config.config_.log_level_ = quicx::LogLevel::kError;
     
     server->Init(config);
     

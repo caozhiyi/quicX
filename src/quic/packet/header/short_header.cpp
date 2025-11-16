@@ -22,7 +22,7 @@ ShortHeader::~ShortHeader() {
 
 }
 
-bool ShortHeader::EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) {
+bool ShortHeader::EncodeHeader(std::shared_ptr<common::IBuffer> buffer) {
     if (!HeaderFlag::EncodeFlag(buffer)) {
         return false;
     }
@@ -39,11 +39,11 @@ bool ShortHeader::EncodeHeader(std::shared_ptr<common::IBufferWrite> buffer) {
     }
     auto data_span = wrapper.GetDataSpan();
     // the header src include header flag
-    header_src_data_ = common::BufferSpan(data_span.GetStart() - 1, data_span.GetEnd());
+    header_src_data_ = common::SharedBufferSpan(buffer->GetChunk(), data_span.GetStart() - 1, data_span.GetEnd());
     return true;
 }
 
-bool ShortHeader::DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool with_flag) {
+bool ShortHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
     if (with_flag) {
         if (!HeaderFlag::DecodeFlag(buffer)) {
             return false;
@@ -63,7 +63,7 @@ bool ShortHeader::DecodeHeader(std::shared_ptr<common::IBufferRead> buffer, bool
     }
     auto data_span = wrapper.GetDataSpan();
     // the header src include header flag
-    header_src_data_ = common::BufferSpan(data_span.GetStart() - 1, data_span.GetEnd());
+    header_src_data_ = common::SharedBufferSpan(buffer->GetChunk(), data_span.GetStart() - 1, data_span.GetEnd());
     return true;
 }
 

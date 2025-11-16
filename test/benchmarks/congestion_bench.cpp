@@ -2,8 +2,8 @@
 #include <benchmark/benchmark.h>
 #include <memory>
 
-#include "quic/congestion_control/reno_congestion_control.h"
 #include "quic/congestion_control/if_congestion_control.h"
+#include "quic/congestion_control/reno_congestion_control.h"
 
 namespace quicx {
 namespace quic {

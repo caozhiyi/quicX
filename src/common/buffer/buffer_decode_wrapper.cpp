@@ -3,14 +3,17 @@
 namespace quicx {
 namespace common {
 
-BufferDecodeWrapper::BufferDecodeWrapper(std::shared_ptr<IBufferRead> buffer):
+// Snapshot the readable span of the provided buffer. Callers should avoid
+// mutating the buffer while the wrapper is alive.
+BufferDecodeWrapper::BufferDecodeWrapper(std::shared_ptr<IBuffer> buffer):
     buffer_(buffer), 
     flushed_(false) {
-    auto span = buffer_->GetReadSpan();
+    auto span = buffer_->GetReadableSpan();
     pos_ = span.GetStart();
     end_ = span.GetEnd();
 }
 
+// Commit any consumed bytes back to the underlying buffer.
 BufferDecodeWrapper::~BufferDecodeWrapper() {
     if (!flushed_) {
         Flush();
@@ -19,7 +22,7 @@ BufferDecodeWrapper::~BufferDecodeWrapper() {
 
 void BufferDecodeWrapper::Flush() {
     flushed_ = true;
-    buffer_->MoveReadPt(pos_ - buffer_->GetReadSpan().GetStart());
+    buffer_->MoveReadPt(pos_ - buffer_->GetReadableSpan().GetStart());
 }
 
 bool BufferDecodeWrapper::DecodeFixedUint8(uint8_t& value) {
@@ -72,12 +75,12 @@ bool BufferDecodeWrapper::DecodeBytes(uint8_t*& out, uint32_t len, bool copy) {
 }
 
 common::BufferSpan BufferDecodeWrapper::GetDataSpan() const {
-    return common::BufferSpan(buffer_->GetReadSpan().GetStart(), pos_);
+    return common::BufferSpan(buffer_->GetReadableSpan().GetStart(), pos_);
 }
 
 
 uint32_t BufferDecodeWrapper::GetDataLength() const {
-    return buffer_->GetReadSpan().GetEnd() - pos_;
+    return buffer_->GetReadableSpan().GetEnd() - pos_;
 }
 
 }

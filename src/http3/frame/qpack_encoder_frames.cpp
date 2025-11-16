@@ -17,12 +17,12 @@ QpackSetCapacityFrame::QpackSetCapacityFrame(QpackEncoderType type):
 
 }
 
-bool QpackSetCapacityFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool QpackSetCapacityFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // RFC 9204: 001xxxxx with 5-bit prefix in the first byte
     return QpackEncodePrefixedInteger(buffer, kQpackSetCapacityPrefixBits, kQpackSetCapacityFirstByteMask, capacity_);
 }
 
-bool QpackSetCapacityFrame::Decode(std::shared_ptr<common::IBufferRead> buffer) {
+bool QpackSetCapacityFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t first_byte = 0;
     return QpackDecodePrefixedInteger(buffer, kQpackSetCapacityPrefixBits, first_byte, capacity_);
 }
@@ -32,7 +32,7 @@ QpackInsertWithNameRefFrame::QpackInsertWithNameRefFrame():
 
 }
 
-bool QpackInsertWithNameRefFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool QpackInsertWithNameRefFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // Encoder stream: 1 S i i i i i i (6-bit prefix for index)
     uint8_t mask = kQpackInsertWithNameRefFirstByteBase | (is_static_ ? kQpackInsertWithNameRefStaticBit : 0x00);
     if (!QpackEncodePrefixedInteger(buffer, kQpackInsertWithNameRefPrefixBits, mask, name_index_)) {
@@ -41,7 +41,7 @@ bool QpackInsertWithNameRefFrame::Encode(std::shared_ptr<common::IBufferWrite> b
     return QpackEncodeStringLiteral(value_, buffer, false);
 }
 
-bool QpackInsertWithNameRefFrame::Decode(std::shared_ptr<common::IBufferRead> buffer) {
+bool QpackInsertWithNameRefFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t first = 0;
     uint64_t idx = 0;
     if (!QpackDecodePrefixedInteger(buffer, kQpackInsertWithNameRefPrefixBits, first, idx)) {
@@ -83,7 +83,7 @@ QpackInsertWithoutNameRefFrame::QpackInsertWithoutNameRefFrame():
 
 }
 
-bool QpackInsertWithoutNameRefFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool QpackInsertWithoutNameRefFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // Encoder stream: 01 n n n n n n (6-bit zero) + name/value
     if (!QpackEncodePrefixedInteger(buffer, kQpackInsertWithoutNameRefPrefixBits, kQpackInsertWithoutNameRefFirstByteBase, 0)) {
         return false;
@@ -96,7 +96,7 @@ bool QpackInsertWithoutNameRefFrame::Encode(std::shared_ptr<common::IBufferWrite
     }
     return true;
 }
-bool QpackInsertWithoutNameRefFrame::Decode(std::shared_ptr<common::IBufferRead> buffer) {
+bool QpackInsertWithoutNameRefFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t first = 0;
     uint64_t ignore = 0;
     if (!QpackDecodePrefixedInteger(buffer, kQpackInsertWithoutNameRefPrefixBits, first, ignore)) {
@@ -133,11 +133,11 @@ QpackDuplicateFrame::QpackDuplicateFrame():
 
 }
 
-bool QpackDuplicateFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool QpackDuplicateFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // Encoder stream Duplicate: 0001 xxxx (4-bit prefix index)
     return QpackEncodePrefixedInteger(buffer, kQpackDuplicatePrefixBits, kQpackDuplicateFirstByteBase, index_);
 }
-bool QpackDuplicateFrame::Decode(std::shared_ptr<common::IBufferRead> buffer) {
+bool QpackDuplicateFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t first = 0;
     return QpackDecodePrefixedInteger(buffer, kQpackDuplicatePrefixBits, first, index_);
 }

@@ -10,7 +10,7 @@ namespace quicx {
 namespace http3 {
 
 bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& headers, 
-    std::shared_ptr<common::IBufferWrite> buffer) {
+    std::shared_ptr<common::IBuffer> buffer) {
     
     if (!buffer) {
         common::LOG_ERROR("QpackEncoder::Encode: buffer is null");
@@ -105,7 +105,7 @@ bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& he
     return true;
 }
 
-bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
+bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
     std::unordered_map<std::string, std::string>& headers) {
     
     if (!buffer || buffer->GetDataLength() < 2) {
@@ -299,7 +299,7 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBufferRead> buffer,
 }
 
 bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::string,std::string>>& inserts,
-                                   std::shared_ptr<common::IBufferWrite> instr_buf,
+                                   std::shared_ptr<common::IBuffer> instr_buf,
                                    bool with_name_ref,
                                    bool set_capacity,
                                    uint32_t new_capacity,
@@ -411,7 +411,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
     return true;
 }
 
-bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBufferRead> instr_buf) {
+bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuffer> instr_buf) {
     if (!instr_buf) {
         common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: instr_buf is null");
         return false;
@@ -548,7 +548,7 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
     return true;
 }
 
-void QpackEncoder::WriteHeaderPrefix(std::shared_ptr<common::IBufferWrite> buffer, uint64_t required_insert_count, int64_t base) {
+void QpackEncoder::WriteHeaderPrefix(std::shared_ptr<common::IBuffer> buffer, uint64_t required_insert_count, int64_t base) {
     // RFC 9204 Section 4.5.1: Encode Required Insert Count and Delta Base
     
     // Encode Required Insert Count (8-bit prefix, 0x00 mask)
@@ -578,7 +578,7 @@ void QpackEncoder::WriteHeaderPrefix(std::shared_ptr<common::IBufferWrite> buffe
         abs_delta_base);
 }
 
-bool QpackEncoder::ReadHeaderPrefix(const std::shared_ptr<common::IBufferRead> buffer, uint64_t& required_insert_count, int64_t& base) {
+bool QpackEncoder::ReadHeaderPrefix(const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, int64_t& base) {
     // RFC 9204 Section 4.5.1: Decode Required Insert Count and Delta Base
     
     // Decode Encoded Required Insert Count (8-bit prefix)
@@ -616,7 +616,7 @@ bool QpackEncoder::ReadHeaderPrefix(const std::shared_ptr<common::IBufferRead> b
     return true;
 }
 
-void QpackEncoder::WritePrefix(std::shared_ptr<common::IBufferWrite> buffer, uint64_t required_insert_count, uint64_t base) {
+void QpackEncoder::WritePrefix(std::shared_ptr<common::IBuffer> buffer, uint64_t required_insert_count, uint64_t base) {
     // Simple 2-byte demo: lower byte = RIC (cap 255), next byte = BASE (cap 255)
     uint8_t ric8 = static_cast<uint8_t>(required_insert_count & QpackConst::kByteMask);
     uint8_t base8 = static_cast<uint8_t>(base & QpackConst::kByteMask);
@@ -624,7 +624,7 @@ void QpackEncoder::WritePrefix(std::shared_ptr<common::IBufferWrite> buffer, uin
     buffer->Write(&base8, 1);
 }
 
-bool QpackEncoder::ReadPrefix(const std::shared_ptr<common::IBufferRead> buffer, uint64_t& required_insert_count, uint64_t& base) {
+bool QpackEncoder::ReadPrefix(const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, uint64_t& base) {
     if (buffer->GetDataLength() < 2) {
         common::LOG_ERROR("QpackEncoder::ReadPrefix: buffer data length is less than 2");
         return false;
@@ -638,7 +638,7 @@ bool QpackEncoder::ReadPrefix(const std::shared_ptr<common::IBufferRead> buffer,
 }
 
 // Helper function to encode a string with Huffman encoding if beneficial
-void QpackEncoder::EncodeString(const std::string& str, std::shared_ptr<common::IBufferWrite> buffer) {
+void QpackEncoder::EncodeString(const std::string& str, std::shared_ptr<common::IBuffer> buffer) {
     if (HuffmanEncoder::Instance().ShouldHuffmanEncode(str)) {
         // Encode with Huffman
         std::vector<uint8_t> encoded = HuffmanEncoder::Instance().Encode(str);
@@ -668,7 +668,7 @@ void QpackEncoder::EncodeString(const std::string& str, std::shared_ptr<common::
 }
 
 // Helper function to decode a string that may be Huffman encoded
-bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBufferRead> buffer, std::string& output) {
+bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBuffer> buffer, std::string& output) {
     // RFC 9204 Section 4.1.1: String Literal with 7-bit prefixed length
     uint8_t first_byte = 0;
     uint64_t length = 0;

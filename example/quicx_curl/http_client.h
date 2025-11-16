@@ -39,12 +39,12 @@ public:
                   HttpResponse& response);
     
 private:
-    std::unique_ptr<quicx::http3::IClient> client_;
+    std::unique_ptr<quicx::IClient> client_;
     std::mutex mutex_;
     std::condition_variable cv_;
     bool verbose_;
     
-    static quicx::http3::HttpMethod StringToMethod(const std::string& method);
+    static quicx::HttpMethod StringToMethod(const std::string& method);
 };
 
 

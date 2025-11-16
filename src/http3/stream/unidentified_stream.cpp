@@ -6,7 +6,7 @@ namespace quicx {
 namespace http3 {
 
 UnidentifiedStream::UnidentifiedStream(
-    const std::shared_ptr<quic::IQuicRecvStream>& stream,
+    const std::shared_ptr<IQuicRecvStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const StreamTypeCallback& type_callback):
     IRecvStream(StreamType::kUnidentified, stream, error_handler),
@@ -19,7 +19,7 @@ UnidentifiedStream::UnidentifiedStream(
     common::LOG_DEBUG("UnidentifiedStream created for stream %llu", stream_->GetStreamID());
 }
 
-void UnidentifiedStream::OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) {
+void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("UnidentifiedStream::OnData error: %d on stream %llu", error, stream_->GetStreamID());
         error_handler_(stream_->GetStreamID(), error);
@@ -43,9 +43,10 @@ void UnidentifiedStream::OnData(std::shared_ptr<common::IBufferRead> data, uint3
     }
 
     // Try to decode varint for stream type
+    auto buffer = std::dynamic_pointer_cast<common::IBuffer>(data);
     uint64_t stream_type = 0;
     {
-        common::BufferDecodeWrapper wrapper(data);
+        common::BufferDecodeWrapper wrapper(buffer);
         if (!wrapper.DecodeVarint(stream_type)) {
             // Not enough data yet, wait for more
             common::LOG_DEBUG("UnidentifiedStream: not enough data to read stream type on stream %llu (buffer size=%zu)", 

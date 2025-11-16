@@ -15,8 +15,8 @@ public:
     uint64_t GetStreamId() const { return stream_id_; }
     void SetStreamId(uint64_t id) { stream_id_ = id; }
 
-    bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     uint32_t EvaluateEncodeSize();
     uint32_t EvaluatePayloadSize();
 

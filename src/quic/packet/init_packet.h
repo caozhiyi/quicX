@@ -38,8 +38,8 @@ public:
     virtual ~InitPacket();
 
     virtual uint16_t GetCryptoLevel() const { return PakcetCryptoLevel::kInitialCryptoLevel; }
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBufferRead> buffer, bool with_flag = false);
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag = false);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer);
 
     virtual IHeader* GetHeader() { return &header_; }
@@ -50,8 +50,8 @@ public:
     uint32_t GetTokenLength() { return token_length_; }
     uint8_t* GetToken() { return token_; }
 
-    void SetPayload(common::BufferSpan payload);
-    common::BufferSpan GetPayload() { return payload_; }
+    void SetPayload(const common::SharedBufferSpan& payload);
+    common::SharedBufferSpan GetPayload() { return payload_; }
     uint32_t GetLength() { return length_; }
 
 private:
@@ -60,7 +60,7 @@ private:
     uint8_t* token_;
 
     uint32_t length_;
-    common::BufferSpan payload_;
+    common::SharedBufferSpan payload_;
 
     uint32_t payload_offset_;
     uint32_t packet_num_offset_;

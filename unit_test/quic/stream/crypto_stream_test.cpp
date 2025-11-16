@@ -3,7 +3,9 @@
 #include "quic/frame/frame_decode.h"
 #include "quic/stream/crypto_stream.h"
 #include "common/alloter/pool_block.h"
+#include "common/buffer/single_block_buffer.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace quic {
@@ -24,20 +26,26 @@ TEST(crypto_stream_utest, recv) {
 
     uint8_t data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30};
     std::shared_ptr<CryptoFrame> frame1 = std::make_shared<CryptoFrame>();
-    frame1->SetData(data, 5);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(5));
+    data_buffer->Write(data, 5);
+    frame1->SetData(data_buffer->GetSharedReadableSpan());
     frame1->SetOffset(0);
 
     std::shared_ptr<CryptoFrame> frame2 = std::make_shared<CryptoFrame>();
-    frame2->SetData(data + 5, 10);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
+    data_buffer2->Write(data + 5, 10);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
     frame2->SetOffset(5);
 
     std::shared_ptr<CryptoFrame> frame3 = std::make_shared<CryptoFrame>();
-    frame3->SetData(data + 15, 15);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer3 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(15));
+    data_buffer3->Write(data + 15, 15);
+    frame3->SetData(data_buffer3->GetSharedReadableSpan());
     frame3->SetOffset(15);
 
     uint8_t recv_data[50] = {0};
     uint32_t recv_size = 0;
-    stream->SetStreamReadCallBack([&recv_data, &recv_size](std::shared_ptr<common::IBufferRead> buffer, bool is_last, uint32_t err){
+    stream->SetStreamReadCallBack([&recv_data, &recv_size](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err){
         EXPECT_EQ(err, 0);
         recv_size += buffer->Read(recv_data + recv_size, 50);
     });
@@ -89,20 +97,40 @@ TEST(crypto_stream_utest, send) {
     EXPECT_EQ(stream->TrySendData(&frame_visitor), IStream::TrySendResult::kSuccess);
 
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_TRUE(DecodeFrames(frame_visitor.GetBuffer(), frames));
+    bool decode_result = DecodeFrames(frame_visitor.GetBuffer(), frames);
+    EXPECT_TRUE(decode_result) << "DecodeFrames failed, decoded " << frames.size() << " frames";
+    EXPECT_EQ(frames.size(), 3) << "Expected 3 frames but got " << frames.size();
+    
+    // Only proceed with checks if we successfully decoded all frames
+    if (!decode_result || frames.size() != 3) {
+        return;  // Skip remaining checks if decoding failed
+    }
 
-    EXPECT_EQ(frames.size(), 3);
-    EXPECT_EQ(std::dynamic_pointer_cast<CryptoFrame>(frames[0])->GetOffset(), 0);
-    EXPECT_EQ(std::dynamic_pointer_cast<CryptoFrame>(frames[1])->GetOffset(), 5);
-    EXPECT_EQ(std::dynamic_pointer_cast<CryptoFrame>(frames[2])->GetOffset(), 15);
+    // Verify all casts succeeded before accessing
+    auto frame0 = std::dynamic_pointer_cast<CryptoFrame>(frames[0]);
+    auto frame1 = std::dynamic_pointer_cast<CryptoFrame>(frames[1]);
+    auto frame2 = std::dynamic_pointer_cast<CryptoFrame>(frames[2]);
+    
+    EXPECT_NE(frame0, nullptr) << "Failed to cast frame[0] to CryptoFrame";
+    EXPECT_NE(frame1, nullptr) << "Failed to cast frame[1] to CryptoFrame";
+    EXPECT_NE(frame2, nullptr) << "Failed to cast frame[2] to CryptoFrame";
+    
+    // Skip remaining checks if any cast failed
+    if (!frame0 || !frame1 || !frame2) {
+        return;
+    }
 
-    EXPECT_EQ(std::dynamic_pointer_cast<CryptoFrame>(frames[0])->GetLength(), 5);
-    EXPECT_EQ(std::dynamic_pointer_cast<CryptoFrame>(frames[1])->GetLength(), 10);
-    EXPECT_EQ(std::dynamic_pointer_cast<CryptoFrame>(frames[2])->GetLength(), 15);
+    EXPECT_EQ(frame0->GetOffset(), 0);
+    EXPECT_EQ(frame1->GetOffset(), 5);
+    EXPECT_EQ(frame2->GetOffset(), 15);
 
-    EXPECT_TRUE(Check(std::dynamic_pointer_cast<CryptoFrame>(frames[0])->GetData(), data, 5));
-    EXPECT_TRUE(Check(std::dynamic_pointer_cast<CryptoFrame>(frames[1])->GetData(), data + 5, 10));
-    EXPECT_TRUE(Check(std::dynamic_pointer_cast<CryptoFrame>(frames[2])->GetData(), data + 15, 15));
+    EXPECT_EQ(frame0->GetLength(), 5);
+    EXPECT_EQ(frame1->GetLength(), 10);
+    EXPECT_EQ(frame2->GetLength(), 15);
+
+    EXPECT_TRUE(Check(frame0->GetData().GetStart(), data, 5));
+    EXPECT_TRUE(Check(frame1->GetData().GetStart(), data + 5, 10));
+    EXPECT_TRUE(Check(frame2->GetData().GetStart(), data + 15, 15));
 }
 
 }

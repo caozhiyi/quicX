@@ -26,17 +26,17 @@ class QpackEncoderReceiverStream:
     public IRecvStream {
 public:
     QpackEncoderReceiverStream(
-        const std::shared_ptr<quic::IQuicRecvStream>& stream,
+        const std::shared_ptr<IQuicRecvStream>& stream,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackEncoderReceiverStream();
 
-    virtual void OnData(std::shared_ptr<common::IBufferRead> data, uint32_t error) override;
+    virtual void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) override;
 
 private:
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     // Parse encoder stream instructions
-    void ParseEncoderInstructions(std::shared_ptr<common::IBufferRead> data);
+    void ParseEncoderInstructions(std::shared_ptr<IBufferRead> data);
 };
 
 }

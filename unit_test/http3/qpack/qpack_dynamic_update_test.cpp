@@ -5,14 +5,13 @@
 #include <unordered_map>
 
 #include "http3/qpack/util.h"
-#include "common/buffer/buffer.h"
 #include "http3/qpack/qpack_encoder.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace http3 {
 namespace {
-
-using quicx::common::Buffer;
 
 class QpackDynamicUpdateTest : public ::testing::Test {
 protected:
@@ -23,10 +22,10 @@ protected:
     }
 
     // Helper to make a buffer with given capacity
-    static std::shared_ptr<common::Buffer> MakeBuffer(size_t cap = 1024) {
-        auto mem = std::make_shared<std::vector<uint8_t>>(cap);
+    static std::shared_ptr<common::SingleBlockBuffer> MakeBuffer(size_t cap = 1024) {
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(cap);
         // Construct Buffer on provided memory
-        return std::make_shared<Buffer>(mem->data(), static_cast<uint32_t>(mem->size()));
+        return std::make_shared<common::SingleBlockBuffer>(chunk);
     }
 
     std::unique_ptr<QpackEncoder> decoder_;

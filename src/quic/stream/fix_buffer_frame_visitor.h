@@ -14,7 +14,7 @@ namespace quic {
 class FixBufferFrameVisitor:
     public IFrameVisitor {
 public:
-    FixBufferFrameVisitor(uint32_t size);
+    FixBufferFrameVisitor(uint32_t limit_size);
     virtual ~FixBufferFrameVisitor();
 
     virtual bool HandleFrame(std::shared_ptr<IFrame> frame) override;
@@ -37,7 +37,6 @@ public:
     uint32_t GetFrameTypeBit() const { return frame_type_bit_; }
 
 private:
-    uint8_t* cache_;
     uint8_t encryption_level_;
 
     uint32_t cur_data_offset_;

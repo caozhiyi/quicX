@@ -15,7 +15,7 @@ namespace http3 {
 class ControlServerReceiverStream:
     public ControlReceiverStream {
 public:
-    ControlServerReceiverStream(const std::shared_ptr<quic::IQuicRecvStream>& stream,
+    ControlServerReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
         const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<void(uint64_t id)>& goaway_handler,

@@ -7,20 +7,20 @@
 namespace quicx {
 namespace quic {
 
-PacketInfo::PacketInfo(const PacketInfo& other) {
+PacketParseResult::PacketParseResult(const PacketParseResult& other) {
     cid_ = other.cid_;
     packets_ = other.packets_;
     net_packet_ = other.net_packet_;
 }
 
-PacketInfo& PacketInfo::operator=(const PacketInfo& other) {
+PacketParseResult& PacketParseResult::operator=(const PacketParseResult& other) {
     cid_ = other.cid_;
     packets_ = other.packets_;
     net_packet_ = other.net_packet_;
     return *this;
 }
 
-bool MsgParser::ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketInfo& packet_info) {
+bool MsgParser::ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketParseResult& packet_info) {
     if(!DecodePackets(net_packet->GetData(), packet_info.packets_)) {
         common::LOG_ERROR("decode packet failed");
         return false;

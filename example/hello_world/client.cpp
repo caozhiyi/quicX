@@ -6,20 +6,20 @@
 
 
 int main() {
-    auto client = quicx::http3::IClient::Create();
+    auto client = quicx::IClient::Create();
 
-    quicx::http3::Http3Config config;
+    quicx::Http3Config config;
     config.thread_num_ = 1;
-    config.log_level_ = quicx::http3::LogLevel::kInfo;
+    config.log_level_ = quicx::LogLevel::kInfo;
     client->Init(config);
 
-    auto request = quicx::http3::IRequest::Create();
-    request->SetBody("hello world");
+    auto request = quicx::IRequest::Create();
+    request->AppendBody(std::string("hello world"));
     client->DoRequest(
         "https://127.0.0.1:8882/hello",
-        quicx::http3::HttpMethod::kGet,
+        quicx::HttpMethod::kGet,
         request, 
-        [](std::shared_ptr<quicx::http3::IResponse> response, uint32_t error) {
+        [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             std::cout << "status: " << response->GetStatusCode() << std::endl;
             std::cout << "response: " << response->GetBody() << std::endl;
         }

@@ -20,7 +20,7 @@ namespace http3 {
 class ControlSenderStream:
     public ISendStream {
 public:
-    ControlSenderStream(const std::shared_ptr<quic::IQuicSendStream>& stream,
+    ControlSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~ControlSenderStream();
 

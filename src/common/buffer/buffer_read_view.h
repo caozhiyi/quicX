@@ -1,56 +1,59 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
+#ifndef COMMON_BUFFERNEW_BUFFER_READ_VIEW
+#define COMMON_BUFFERNEW_BUFFER_READ_VIEW
 
-// Author: caozhiyi (caozhiyi5@gmail.com)
-
-#ifndef COMMON_BUFFER_BUFFER_READ_VIEW
-#define COMMON_BUFFER_BUFFER_READ_VIEW
-
-#include "common/buffer/if_buffer_read.h"
+#include <cstdint>
+#include <functional>
+#include "common/buffer/buffer_span.h"
+#include "common/include/if_buffer_read.h"
 
 namespace quicx {
 namespace common {
 
-class BlockMemoryPool;
-// read only buffer
+// BufferReadView provides read-only operations over an externally managed
+// memory range. It is intentionally lightweight: no heap allocations, no
+// reference counting. The caller promises that the backing storage remains
+// valid for the view's entire lifetime.
 class BufferReadView:
-    public IBufferRead {
+    public virtual IBufferRead {
 public:
-    BufferReadView(BufferSpan span);
+    BufferReadView();
+    // Convenience constructors that immediately point the view to a span.
     BufferReadView(uint8_t* start, uint32_t len);
     BufferReadView(uint8_t* start, uint8_t* end);
-    virtual ~BufferReadView();
-    // read to data buf but don't change the read point
-    // return the length of the data actually read
-    virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len);
-    // move read point
-    // return the length of the data actually move
-    virtual uint32_t MoveReadPt(int32_t len);
-    // return the length of the data actually read
-    virtual uint32_t Read(uint8_t* data, uint32_t len);
-    // return remaining length of readable data
-    virtual uint32_t GetDataLength();
-    // return the start and end positions of readable data
-    virtual BufferSpan GetReadSpan();
-    // get a write buffer view
-    virtual BufferReadView GetReadView(uint32_t offset = 0);
-    // get a write buffer view shared ptr
-    virtual std::shared_ptr<common::IBufferRead> GetReadViewPtr(uint32_t offset = 0);
-    // get src data pos
-    virtual uint8_t* GetData();
-    // clear all data
-    virtual void Clear() {}
 
-protected:
-    uint32_t Read(uint8_t* data, uint32_t len, bool move_pt);
+    // Reset the view to a new span. Invalid ranges are rejected and logged,
+    // leaving the view empty.
+    void Reset(uint8_t* start, uint32_t len);
+    void Reset(uint8_t* start, uint8_t* end);
 
-protected:
-    uint8_t* read_pos_;
-    uint8_t* buffer_start_;
-    uint8_t* buffer_end_;
+    // Read APIs mirror the semantics of the legacy buffer interface. len is
+    // capped by the amount of readable data. ReadNotMovePt() leaves the read
+    // pointer untouched; Read() advances it; MoveReadPt() moves without copying.
+    uint32_t ReadNotMovePt(uint8_t* data, uint32_t len) override;
+    uint32_t MoveReadPt(int32_t len) override;
+    uint32_t Read(uint8_t* data, uint32_t len) override;
+    void VisitData(const std::function<void(uint8_t*, uint32_t)>& visitor) override;
+    // Query helpers.
+    uint32_t GetDataLength() override;
+    uint32_t GetDataLength() const;
+    uint8_t* GetData() const;
+    BufferSpan GetReadableSpan() const;
+    void Clear() override;
+
+    // Quick validity check for debugging and defensive programming.
+    bool Valid() const;
+
+private:
+    // Shared implementation for Read()/ReadNotMovePt().
+    uint32_t InnerRead(uint8_t* data, uint32_t len, bool move_pt);
+
+    uint8_t* read_pos_ = nullptr;
+    uint8_t* buffer_start_ = nullptr;
+    uint8_t* buffer_end_ = nullptr;
 };
 
 }
 }
 
 #endif
+

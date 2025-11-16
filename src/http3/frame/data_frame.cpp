@@ -5,7 +5,7 @@
 namespace quicx {
 namespace http3 {
 
-bool DataFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
+bool DataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (buffer->GetFreeLength() < EvaluateEncodeSize()) {
         return false;
     }
@@ -21,16 +21,12 @@ bool DataFrame::Encode(std::shared_ptr<common::IBufferWrite> buffer) {
     if (!wrapper.EncodeVarint(length_)) {
         return false;
     }
-
-    // Encode data
-    if (!wrapper.EncodeBytes(data_.data(), data_.size())) {
-        return false;
-    }
-
+    wrapper.Flush();
+    buffer->Write(data_);
     return true;
 }
 
-bool DataFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type) {
+bool DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
 
     // Decode frame type if needed
@@ -45,12 +41,21 @@ bool DataFrame::Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_ty
         return false;
     }
 
-    // Decode data
-    data_.resize(length_);
-    uint8_t* ptr = data_.data();
-    if (!wrapper.DecodeBytes(ptr, length_)) {
+    wrapper.Flush();
+    
+    // Check if we have enough data
+    if (buffer->GetDataLength() < length_) {
         return false;
     }
+    
+    // Get only the specified length of data
+    data_ = buffer->ShallowClone();
+    if (data_->GetDataLength() > length_) {
+        data_->MoveWritePt(-(static_cast<int32_t>(data_->GetDataLength() - length_)));
+    }
+    
+    // Advance the buffer read pointer
+    buffer->MoveReadPt(length_);
 
     return true;
 }
@@ -72,7 +77,7 @@ uint32_t DataFrame::EvaluateEncodeSize() {
 
 uint32_t DataFrame::EvaluatePayloadSize() {
     if (length_ == 0) { 
-        length_ = data_.size();
+        length_ = data_->GetDataLength();
     }
     return length_;
 }

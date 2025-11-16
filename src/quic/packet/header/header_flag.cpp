@@ -22,7 +22,7 @@ HeaderFlag::HeaderFlag(uint8_t flag) {
     flag_.header_flag_ = flag;
 }
 
-bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBufferWrite> buffer) {
+bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeFlagSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -34,7 +34,7 @@ bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBufferWrite> buffer) {
     return true;
 }
 
-bool HeaderFlag::DecodeFlag(std::shared_ptr<common::IBufferRead> buffer) {
+bool HeaderFlag::DecodeFlag(std::shared_ptr<common::IBuffer> buffer) {
     if (buffer->GetDataLength() < EncodeFlagSize()) {
         return false;
     }

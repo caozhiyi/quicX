@@ -16,8 +16,8 @@ public:
     AckFrame();
     virtual ~AckFrame();
 
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetLargestAck(uint64_t ack) { largest_acknowledged_ = ack; }
@@ -49,8 +49,8 @@ public:
     AckEcnFrame();
     ~AckEcnFrame();
 
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetEct0(uint64_t ect0) { ect_0_ = ect0; }

@@ -2,7 +2,6 @@
 #include "common/log/log.h"
 #include "common/buffer/buffer_read_view.h"
 #include "quic/connection/connection_crypto.h"
-#include "quic/connection/controler/send_control.h"
 
 namespace quicx {
 namespace quic {
@@ -59,7 +58,7 @@ void ConnectionCrypto::OnTransportParams(EncryptionLevel level, const uint8_t* t
     transport_param_done_ = true;
 
     TransportParam remote_tp;
-    std::shared_ptr<common::IBufferRead> buffer = std::make_shared<common::BufferReadView>((uint8_t*)tp, tp_len);
+    common::BufferReadView buffer((uint8_t*)tp, tp_len);
     if (!remote_tp.Decode(buffer)) {
         common::LOG_ERROR("decode remote transport failed.");
         return;

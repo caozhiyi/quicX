@@ -13,8 +13,8 @@ public:
     StreamsBlockedFrame(uint16_t frame_type);
     ~StreamsBlockedFrame();
 
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer);
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer, bool with_type = false);
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
     void SetMaximumStreams(uint64_t max) { maximum_streams_ = max; }

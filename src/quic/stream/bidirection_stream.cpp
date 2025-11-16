@@ -3,7 +3,6 @@
 #include "quic/frame/if_frame.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/stream/bidirection_stream.h"
-#include "quic/connection/controler/send_control.h"
 
 namespace quicx {
 namespace quic {
@@ -50,8 +49,16 @@ int32_t BidirectionStream::Send(uint8_t* data, uint32_t len) {
     return SendStream::Send(data, len);
 }
 
-int32_t BidirectionStream::Send(std::shared_ptr<common::IBufferRead> buffer) {
-    return SendStream::Send(buffer);
+int32_t BidirectionStream::Send(std::shared_ptr<IBufferRead> buffer) {
+    return SendStream::Send(buffer) > 0;
+}
+
+std::shared_ptr<IBufferWrite> BidirectionStream::GetSendBuffer() {
+    return SendStream::GetSendBuffer();
+}
+
+bool BidirectionStream::Flush() {
+    return SendStream::Flush();
 }
 
 void BidirectionStream::SetStreamWriteCallBack(stream_write_callback cb) {

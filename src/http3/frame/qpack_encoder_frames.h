@@ -4,6 +4,8 @@
 #include <string>
 #include <cstdint>
 
+#include "common/buffer/if_buffer.h"
+
 namespace quicx {
 namespace http3 {
 
@@ -20,8 +22,8 @@ public:
     IQpackEncoderFrame(QpackEncoderType type): type_(static_cast<uint8_t>(type)) {}
     virtual ~IQpackEncoderFrame() = default;
     virtual QpackEncoderType GetType() { return static_cast<QpackEncoderType>(type_); }
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer) = 0;
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer) = 0;
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer) = 0;
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer) = 0;
     virtual uint32_t EvaluateEncodeSize() = 0;
 protected:
     uint8_t type_;
@@ -37,8 +39,8 @@ class QpackSetCapacityFrame:
 public:
     QpackSetCapacityFrame(uint8_t type = 0);
     QpackSetCapacityFrame(QpackEncoderType type);
-    virtual bool Encode(std::shared_ptr<common::IBufferWrite> buffer) override;
-    virtual bool Decode(std::shared_ptr<common::IBufferRead> buffer) override;
+    virtual bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
+    virtual bool Decode(std::shared_ptr<common::IBuffer> buffer) override;
     virtual uint32_t EvaluateEncodeSize() override { return 1; }
 
     uint64_t GetCapacity() const { return capacity_; }
@@ -60,8 +62,8 @@ class QpackInsertWithNameRefFrame:
     public IQpackEncoderFrame {
 public:
     QpackInsertWithNameRefFrame();
-    bool Encode(std::shared_ptr<common::IBufferWrite> buffer) override;
-    bool Decode(std::shared_ptr<common::IBufferRead> buffer) override;
+    bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
+    bool Decode(std::shared_ptr<common::IBuffer> buffer) override;
     uint32_t EvaluateEncodeSize() override;
     void Set(bool is_static, uint64_t name_index, const std::string& value);
     bool IsStatic() const;
@@ -88,8 +90,8 @@ class QpackInsertWithoutNameRefFrame:
     public IQpackEncoderFrame {
 public:
     QpackInsertWithoutNameRefFrame();
-    bool Encode(std::shared_ptr<common::IBufferWrite> buffer) override;
-    bool Decode(std::shared_ptr<common::IBufferRead> buffer) override;
+    bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
+    bool Decode(std::shared_ptr<common::IBuffer> buffer) override;
     uint32_t EvaluateEncodeSize() override;
     void Set(const std::string& name, const std::string& value);
     const std::string& GetName() const;
@@ -108,8 +110,8 @@ class QpackDuplicateFrame:
     public IQpackEncoderFrame {
 public:
     QpackDuplicateFrame();
-    bool Encode(std::shared_ptr<common::IBufferWrite> buffer) override;
-    bool Decode(std::shared_ptr<common::IBufferRead> buffer) override;
+    bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
+    bool Decode(std::shared_ptr<common::IBuffer> buffer) override;
     uint32_t EvaluateEncodeSize() override;
     void Set(uint64_t idx);
     uint64_t Get() const;

@@ -4,12 +4,14 @@
 #include <memory>
 #include <vector>
 
+#include "common/buffer/if_buffer.h"
+
 namespace quicx {
 namespace quic {
 
 class IPacket;
 class IBufferRead;
-bool DecodePackets(std::shared_ptr<common::IBufferRead> buffer, std::vector<std::shared_ptr<IPacket>>& packets);
+bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IPacket>>& packets);
 
 }
 }
