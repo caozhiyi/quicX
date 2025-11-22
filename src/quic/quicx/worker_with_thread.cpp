@@ -1,5 +1,6 @@
 #include <sstream>
 #include "quic/quicx/worker_with_thread.h"
+#include "quic/quicx/worker.h"
 #include "quic/quicx/global_resource.h"
 
 namespace quicx {
@@ -30,6 +31,13 @@ void WorkerWithThread::HandlePacket(PacketParseResult& packet_info) {
 void WorkerWithThread::Run() {
     // Save EventLoop reference for cross-thread access
     event_loop_ = GlobalResource::Instance().GetThreadLocalEventLoop();
+    // Also set EventLoop in the underlying worker for HandleActiveSendConnection
+    if (worker_ptr_) {
+        auto worker = std::dynamic_pointer_cast<Worker>(worker_ptr_);
+        if (worker) {
+            worker->SetEventLoop(event_loop_);
+        }
+    }
     
     while (!Thread::IsStop()) {
         event_loop_->Wait();

@@ -18,7 +18,8 @@ Worker::Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::share
     params_(params),
     sender_(sender),
     connection_handler_(connection_handler),
-    active_send_connection_set_1_is_current_(true) {
+    active_send_connection_set_1_is_current_(true),
+    event_loop_(nullptr) {
     ecn_enabled_ = config.enable_ecn_;
 }
 
@@ -40,12 +41,14 @@ std::string Worker::GetWorkerId() {
 }
 
 void Worker::Process() {
+    common::LOG_DEBUG("Worker::Process called");
     ProcessSend();
 }
 
 void Worker::ProcessSend() {
     SwitchActiveSendConnectionSet();
     auto& cur_active_send_connection_set = GetReadActiveSendConnectionSet();
+    common::LOG_DEBUG("Worker::ProcessSend: active_send_connection_set size: %zu", cur_active_send_connection_set.size());
     if (cur_active_send_connection_set.empty()) {
         return;
     }
@@ -140,7 +143,12 @@ void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
     GetWriteActiveSendConnectionSet().insert(conn);
     common::LOG_DEBUG("HandleActiveSendConnection, is current:%d", active_send_connection_set_1_is_current_ ? 1 : 2);
     do_send_ = true;
-    GlobalResource::Instance().GetThreadLocalEventLoop()->Wakeup();
+    // Use saved event_loop_ if available, otherwise fallback to thread-local EventLoop
+    if (event_loop_) {
+        event_loop_->Wakeup();
+    } else {
+        GlobalResource::Instance().GetThreadLocalEventLoop()->Wakeup();
+    }
 }
 
 void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {

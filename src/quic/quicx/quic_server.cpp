@@ -53,8 +53,10 @@ bool QuicServer::Init(const QuicServerConfig& config) {
     worker_map_.reserve(config.config_.worker_thread_num_);
     if (config.config_.thread_mode_ == ThreadMode::kSingleThread) {
         auto worker = std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_);
-        master_->PostTask([worker](){
-            GlobalResource::Instance().GetThreadLocalEventLoop()->AddFixedProcess(std::bind(&ServerWorker::Process, worker));
+        master_->PostTask([worker, master = master_](){
+            auto event_loop = GlobalResource::Instance().GetThreadLocalEventLoop();
+            worker->SetEventLoop(event_loop);  // Save EventLoop reference for cross-thread access
+            event_loop->AddFixedProcess(std::bind(&ServerWorker::Process, worker));
         });
         
         worker->SetConnectionIDNotify(master_);

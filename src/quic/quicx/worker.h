@@ -28,6 +28,8 @@ public:
 
     // process inner packets
     virtual void Process();
+    // Set EventLoop reference for cross-thread access (used in single-thread mode)
+    void SetEventLoop(std::shared_ptr<common::IEventLoop> event_loop) { event_loop_ = event_loop; }
 
 protected:
     void ProcessSend();
@@ -66,6 +68,7 @@ protected:
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_;  // all connections
 
     connection_state_callback connection_handler_;
+    std::shared_ptr<common::IEventLoop> event_loop_;  // Saved EventLoop for cross-thread access
 };
 
 }  // namespace quic
