@@ -1,24 +1,28 @@
 #include "common/log/log.h"
 #include "quic/quicx/master.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
 
-Master::Master(std::shared_ptr<common::IEventLoop> event_loop, bool ecn_enabled):
-    ecn_enabled_(ecn_enabled),
-    event_loop_(event_loop) {
-    
-    if (!event_loop->Init()) {
-        common::LOG_ERROR("event loop init failed");
-        return;
+Master::Master(bool ecn_enabled):
+    ecn_enabled_(ecn_enabled) {}
+
+void Master::Init() {
+    receiver_ = IReceiver::MakeReceiver();
+    receiver_->SetEcnEnabled(ecn_enabled_);
+
+    for (auto& info : pending_listeners_) {
+        if (info.sock != -1) {
+            receiver_->AddReceiver(info.sock, shared_from_this());
+        } else {
+            receiver_->AddReceiver(info.ip, info.port, shared_from_this());
+        }
     }
-    receiver_ = IReceiver::MakeReceiver(event_loop);
-    receiver_->SetEcnEnabled(ecn_enabled);
+    pending_listeners_.clear();
 }
 
-Master::~Master() {
-
-}
+Master::~Master() {}
 
 void Master::AddWorker(std::shared_ptr<IWorker> worker) {
     worker->SetConnectionIDNotify(shared_from_this());
@@ -26,10 +30,23 @@ void Master::AddWorker(std::shared_ptr<IWorker> worker) {
 }
 
 bool Master::AddListener(int32_t listener_sock) {
+    if (!receiver_) {
+        ListenerInfo info;
+        info.sock = listener_sock;
+        pending_listeners_.push_back(info);
+        return true;
+    }
     return receiver_->AddReceiver(listener_sock, shared_from_this());
 }
 
 bool Master::AddListener(const std::string& ip, uint16_t port) {
+    if (!receiver_) {
+        ListenerInfo info;
+        info.ip = ip;
+        info.port = port;
+        pending_listeners_.push_back(info);
+        return true;
+    }
     return receiver_->AddReceiver(ip, port, shared_from_this());
 }
 
@@ -69,5 +86,5 @@ void Master::OnPacket(std::shared_ptr<NetPacket>& pkt) {
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

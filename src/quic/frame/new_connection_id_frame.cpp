@@ -5,7 +5,6 @@
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 
-
 namespace quicx {
 namespace quic {
 
@@ -18,14 +17,13 @@ NewConnectionIDFrame::NewConnectionIDFrame():
     memset(stateless_reset_token_, 0, kStatelessResetTokenLength);
 }
 
-NewConnectionIDFrame::~NewConnectionIDFrame() {
-
-}
+NewConnectionIDFrame::~NewConnectionIDFrame() {}
 
 bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -62,24 +60,26 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     // Check if we have enough data for connection ID
     if (length_ > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient data for connection ID. need:%d, available:%d", length_, buffer->GetDataLength());
+        common::LOG_ERROR(
+            "insufficient data for connection ID. need:%d, available:%d", length_, buffer->GetDataLength());
         return false;
     }
-    
+
     // Clear connection ID buffer before reading
     memset(connection_id_, 0, kMaxCidLength);
     uint8_t* conn_id_ptr = connection_id_;
     wrapper.DecodeBytes(conn_id_ptr, length_);
-    
+
     // Check if we have enough data for stateless reset token
     if (kStatelessResetTokenLength > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient data for stateless reset token. need:%d, available:%d", kStatelessResetTokenLength, buffer->GetDataLength());
+        common::LOG_ERROR("insufficient data for stateless reset token. need:%d, available:%d",
+            kStatelessResetTokenLength, buffer->GetDataLength());
         return false;
     }
-    
+
     uint8_t* token_ptr = stateless_reset_token_;
     wrapper.DecodeBytes(token_ptr, kStatelessResetTokenLength);
-    
+
     return true;
 }
 
@@ -87,10 +87,10 @@ uint32_t NewConnectionIDFrame::EncodeSize() {
     // Calculate the actual size needed for varint encoding
     uint32_t sequence_size = common::GetEncodeVarintLength(sequence_number_);
     uint32_t retire_size = common::GetEncodeVarintLength(retire_prior_to_);
-    
+
     // Fixed sizes: frame type (2) + length (1) + connection ID (length_) + token (16)
     uint32_t fixed_size = 2 + 1 + length_ + kStatelessResetTokenLength;
-    
+
     return sequence_size + retire_size + fixed_size;
 }
 
@@ -103,8 +103,8 @@ void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {
     length_ = len;
 }
 
-void NewConnectionIDFrame::GetConnectionID(ConnectionID& id) {    
-    id.SetID(connection_id_, length_); 
+void NewConnectionIDFrame::GetConnectionID(ConnectionID& id) {
+    id.SetID(connection_id_, length_);
     id.SetSequenceNumber(sequence_number_);
 }
 
@@ -112,5 +112,5 @@ void NewConnectionIDFrame::SetStatelessResetToken(uint8_t* token) {
     memcpy(stateless_reset_token_, token, kStatelessResetTokenLength);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

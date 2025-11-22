@@ -13,7 +13,7 @@ QpackEncoderReceiverStream::QpackEncoderReceiverStream(
     IRecvStream(StreamType::kQpackEncoder, stream, error_handler),
     blocked_registry_(blocked_registry) {
     stream_->SetStreamReadCallBack(
-        std::bind(&QpackEncoderReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2));
+        std::bind(&QpackEncoderReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     
     common::LOG_DEBUG("QpackEncoderReceiverStream created for stream %llu", stream_->GetStreamID());
 }
@@ -24,7 +24,7 @@ QpackEncoderReceiverStream::~QpackEncoderReceiverStream() {
     }
 }
 
-void QpackEncoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, uint32_t error) {
+void QpackEncoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("QpackEncoderReceiverStream::OnData error: %d on stream %llu", 
                          error, stream_->GetStreamID());

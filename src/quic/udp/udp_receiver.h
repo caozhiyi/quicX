@@ -6,7 +6,6 @@
 #include <cstdint>
 
 #include "quic/udp/if_receiver.h"
-#include "quic/udp/if_packet_allotor.h"
 #include "common/network/if_event_loop.h"
 
 namespace quicx {
@@ -17,13 +16,10 @@ namespace quic {
  we can process one connection in a single thread since set REUSE_PORT option to udp socket,
  a fix four set<source ip, source port, dest ip, dest port> is handled by one receiver udp socket.
 */
-class UdpReceiver:
-    public IReceiver,
-    public common::IFdHandler,
-    public std::enable_shared_from_this<UdpReceiver> {
+class UdpReceiver: public IReceiver, public common::IFdHandler, public std::enable_shared_from_this<UdpReceiver> {
 public:
     // create a receiver with socket, may be used as a client
-    UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop);
+    UdpReceiver();
     ~UdpReceiver();
 
     virtual bool AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) override;
@@ -42,11 +38,10 @@ private:
 
 private:
     bool ecn_enabled_;
-    std::weak_ptr<common::IEventLoop> event_loop_;
     std::unordered_map<int32_t, std::weak_ptr<IPacketReceiver>> receiver_map_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

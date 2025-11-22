@@ -6,21 +6,17 @@
 namespace quicx {
 namespace quic {
 
-
 MaxStreamDataFrame::MaxStreamDataFrame():
     IStreamFrame(FrameType::kMaxStreamData),
-    maximum_data_(0) {
+    maximum_data_(0) {}
 
-}
-
-MaxStreamDataFrame::~MaxStreamDataFrame() {
-
-}
+MaxStreamDataFrame::~MaxStreamDataFrame() {}
 
 bool MaxStreamDataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -49,8 +45,9 @@ bool MaxStreamDataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wi
 }
 
 uint32_t MaxStreamDataFrame::EncodeSize() {
-    return sizeof(MaxStreamDataFrame);
+    // frame_type (2 bytes) + stream_id (varint) + maximum_data (varint)
+    return 2 + common::GetEncodeVarintLength(stream_id_) + common::GetEncodeVarintLength(maximum_data_);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

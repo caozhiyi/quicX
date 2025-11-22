@@ -6,20 +6,18 @@
 namespace quicx {
 namespace quic {
 
-
-PathResponseFrame::PathResponseFrame(): 
+PathResponseFrame::PathResponseFrame():
     IFrame(FrameType::kPathResponse) {
     memset(data_, 0, kPathDataLength);
 }
 
-PathResponseFrame::~PathResponseFrame() {
-
-}
+PathResponseFrame::~PathResponseFrame() {}
 
 bool PathResponseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -37,12 +35,13 @@ bool PathResponseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
         if (frame_type_ != FrameType::kPathResponse) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
-        } 
+        }
     }
 
     wrapper.Flush();
     if (kPathDataLength > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), kPathDataLength);
+        common::LOG_ERROR(
+            "insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), kPathDataLength);
         return false;
     }
     auto data = (uint8_t*)data_;
@@ -58,5 +57,5 @@ void PathResponseFrame::SetData(uint8_t* data) {
     memcpy(data_, data, kPathDataLength);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

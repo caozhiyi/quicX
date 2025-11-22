@@ -27,7 +27,7 @@ public:
     void Flush();
 
     // encode varint
-    template<typename T>
+    template <typename T>
     bool EncodeVarint(T value);
 
     bool EncodeFixedUint8(uint8_t value);
@@ -43,28 +43,29 @@ public:
 
 private:
     std::shared_ptr<IBuffer> buffer_;
+    uint8_t* start_;  // Save the start position from constructor
     uint8_t* pos_;
     uint8_t* end_;
     bool flushed_;
 };
 
-template<typename T>
+template <typename T>
 bool BufferEncodeWrapper::EncodeVarint(T value) {
     if (pos_ >= end_) {
         return false;
     }
-    
+
     uint8_t* new_pos = common::EncodeVarint(pos_, end_, value);
     if (new_pos == nullptr || new_pos > end_) {
         return false;
     }
-    
+
     pos_ = new_pos;
     flushed_ = false;
     return true;
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

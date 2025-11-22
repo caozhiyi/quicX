@@ -8,26 +8,27 @@
 namespace quicx {
 namespace http3 {
 
-class SettingsFrame:
-    public IFrame {
+class SettingsFrame: public IFrame {
 public:
-    SettingsFrame(): IFrame(FrameType::kSettings), length_(0) {}
+    SettingsFrame():
+        IFrame(FrameType::kSettings),
+        length_(0) {}
 
     const std::unordered_map<uint16_t, uint64_t>& GetSettings() const { return settings_; }
     void SetSetting(uint16_t id, uint64_t value) { settings_[id] = value; }
     bool GetSetting(uint16_t id, uint64_t& value);
 
-    bool Encode(std::shared_ptr<common::IBuffer> buffer);
-    bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
-    uint32_t EvaluateEncodeSize();
-    uint32_t EvaluatePayloadSize();
+    bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
+    DecodeResult Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false) override;
+    uint32_t EvaluateEncodeSize() override;
+    uint32_t EvaluatePayloadSize() override;
 
 private:
     uint64_t length_;
     std::unordered_map<uint16_t, uint64_t> settings_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
-#endif 
+#endif

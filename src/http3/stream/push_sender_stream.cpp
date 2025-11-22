@@ -17,8 +17,7 @@ PushSenderStream::PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_en
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     ISendStream(StreamType::kPush, stream, error_handler),
     push_id_(0),
-    qpack_encoder_(qpack_encoder) {
-}
+    qpack_encoder_(qpack_encoder) {}
 
 bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IResponse> response) {
     // RFC 9114 Section 4.6: Push stream format
@@ -27,7 +26,7 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
     //   Push ID (i),
     //   HTTP Message (..),
     // }
-    
+
     // 1. Send Stream Type (Push stream type per RFC 9114)
     if (!EnsureStreamPreamble()) {
         return false;
@@ -40,15 +39,6 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
         id_wrapper.EncodeVarint(push_id);
         // Wrapper will flush on destruction
     }
-    
-    if (id_buffer->GetDataLength() > 0) {
-        int32_t sent = stream_->Send(id_buffer);
-        if (sent < 0) {
-            common::LOG_ERROR("PushSenderStream::SendPushResponse send push ID failed");
-            error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
-            return false;
-        }
-    }
 
     // 3. Send HTTP Message (HEADERS + DATA)
     PseudoHeader::Instance().EncodeResponse(response);
@@ -60,28 +50,26 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
     }
 
     // Encode headers using qpack
-    auto headers_buffer = std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    auto headers_buffer =
+        std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer)) {
-        common::LOG_ERROR("PushSenderStream::SendPushResponse qpack encode error");
+        common::LOG_ERROR("qpack encode error");
         return false;
     }
-   
 
     HeadersFrame headers_frame;
     headers_frame.SetEncodedFields(headers_buffer);
     auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
     if (!headers_frame.Encode(frame_buffer)) {
-        common::LOG_ERROR("PushSenderStream::SendPushResponse headers frame encode error");
+        common::LOG_ERROR("encode headers frame error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return false;
     }
-
-    if (stream_->Send(frame_buffer) <= 0) {
-        common::LOG_ERROR("PushSenderStream::SendPushResponse send headers error");
+    if (!stream_->Flush()) {
+        common::LOG_ERROR("send headers error");
         error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
         return false;
     }
-
 
     // Send DATA frame if body exists, TODO may send multiple DATA frames if body is large
     if (body && body_len > 0) {
@@ -91,13 +79,13 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
 
         auto data_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
         if (!data_frame.Encode(data_buffer)) {
-            common::LOG_ERROR("PushSenderStream::SendPushResponse data frame encode error");
+            common::LOG_ERROR("encode data frame error");
             error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             return false;
         }
 
-        if (stream_->Flush()) {
-            common::LOG_ERROR("PushSenderStream::SendPushResponse send data error");
+        if (!stream_->Flush()) {
+            common::LOG_ERROR("send data error");
             error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
             return false;
         }
@@ -108,11 +96,10 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
 
 void PushSenderStream::Reset(uint32_t error_code) {
     if (stream_) {
-        common::LOG_DEBUG("PushSenderStream::Reset: resetting stream %llu with error code %u", 
-                         GetStreamID(), error_code);
+        common::LOG_DEBUG("resetting stream %llu with error code %u", GetStreamID(), error_code);
         stream_->Reset(error_code);
     }
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

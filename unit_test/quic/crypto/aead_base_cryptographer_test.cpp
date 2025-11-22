@@ -72,7 +72,11 @@ bool DecryptHeaderTest(std::shared_ptr<ICryptographer> encrypter, std::shared_pt
 
     uint8_t src_ciphertext[s_plaintext_length] = {0};
     auto src_ciphertext_span = common::BufferSpan((uint8_t*)src_ciphertext, (uint8_t*)src_ciphertext + sizeof(src_ciphertext));
-    memcpy(src_ciphertext_span.GetStart(), plaintext_span.GetStart(), s_plaintext_length);
+    // Copy from the encoded header buffer
+    auto encoded_header_span = plaintext->GetReadableSpan();
+    uint32_t copy_len = std::min(s_plaintext_length, (uint32_t)encoded_header_span.GetLength());
+    memcpy(src_plaintext, encoded_header_span.GetStart(), copy_len);
+    memcpy(src_ciphertext_span.GetStart(), encoded_header_span.GetStart(), copy_len);
     
     common::BufferSpan sample_span = common::BufferSpan((uint8_t*)kSample, (uint8_t*)kSample + sizeof(kSample));
     uint64_t pn_offset = 2;

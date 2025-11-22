@@ -15,6 +15,7 @@ public:
 
     virtual bool Valid() const = 0;
     virtual uint8_t* GetData() const = 0;
+    virtual void SetLimitSize(uint32_t size) = 0;
     virtual uint32_t GetLength() const = 0;
     virtual std::shared_ptr<BlockMemoryPool> GetPool() const = 0;
 };

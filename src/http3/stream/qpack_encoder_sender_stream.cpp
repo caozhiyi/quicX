@@ -51,7 +51,8 @@ bool QpackEncoderSenderStream::SendSetCapacity(uint64_t capacity) {
     }
 
     auto buf = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    QpackSetCapacityFrame f; f.SetCapacity(capacity);
+    QpackSetCapacityFrame f;
+    f.SetCapacity(capacity);
     if (!f.Encode(buf)) {
         return false;
     }   
@@ -64,7 +65,8 @@ bool QpackEncoderSenderStream::SendInsertWithNameRef(bool is_static, uint64_t na
     }
 
     auto buf = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    QpackInsertWithNameRefFrame f; f.Set(is_static, name_index, value);
+    QpackInsertWithNameRefFrame f;
+    f.Set(is_static, name_index, value);
     if (!f.Encode(buf)) {
         return false;
     }
@@ -77,7 +79,8 @@ bool QpackEncoderSenderStream::SendInsertWithoutNameRef(const std::string& name,
     }
     
     auto buf = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    QpackInsertWithoutNameRefFrame f; f.Set(name, value);
+    QpackInsertWithoutNameRefFrame f; 
+    f.Set(name, value);
     if (!f.Encode(buf)) {
         return false;
     }

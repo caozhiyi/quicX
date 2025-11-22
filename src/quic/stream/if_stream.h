@@ -29,9 +29,9 @@ public:
 
     // try generate data to send
     enum class TrySendResult {
-        kSuccess = 0, // generate data done
-        kFailed  = 1, // generate data failed
-        kBreak   = 2  // generate data need send alone
+        kSuccess  = 0, // generate data done
+        kFailed   = 1, // generate data failed
+        kBreak    = 2, // generate data need send alone
     };
 
     virtual TrySendResult TrySendData(IFrameVisitor* visitor);

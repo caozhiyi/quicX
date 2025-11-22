@@ -31,6 +31,11 @@ bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
         return false;
     }
 
+    // Set length flag when encoding (QUIC typically includes length for proper frame parsing)
+    if (length_ > 0) {
+        frame_type_ |= kLenFlag;
+    }
+
     common::BufferEncodeWrapper wrapper(buffer);
     wrapper.EncodeFixedUint16(frame_type_);
     wrapper.EncodeVarint(stream_id_);
@@ -57,12 +62,21 @@ bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
     if (HasLength()) {
         wrapper.DecodeVarint(length_);
     }
+    
+    // Flush first to advance the buffer's read pointer
     wrapper.Flush();
+    
+    // If no length field, stream data extends to the end of the buffer (after Flush!)
+    if (!HasLength()) {
+        length_ = buffer->GetDataLength();
+    }
+    
     if (length_ > buffer->GetDataLength()) {
         common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
         return false;
     }
     data_ = buffer->GetSharedReadableSpan(length_);
+    buffer->MoveReadPt(length_);
     return true;
 }
 

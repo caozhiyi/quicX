@@ -23,12 +23,14 @@ public:
 
     // flush the buffer
     void Flush();
+    // cancel all decode, reset buffer read pos
+    void CancelDecode();
 
     // decode varint
-    template<typename T>
+    template <typename T>
     bool DecodeVarint(T& value);
 
-    template<typename T>
+    template <typename T>
     bool DecodeVarint(T& value, int32_t& len);
 
     bool DecodeFixedUint8(uint8_t& value);
@@ -42,12 +44,13 @@ public:
 
 private:
     std::shared_ptr<IBuffer> buffer_;
+    uint8_t* start_;
     uint8_t* pos_;
     uint8_t* end_;
     bool flushed_;
 };
 
-template<typename T>
+template <typename T>
 bool BufferDecodeWrapper::DecodeVarint(T& value) {
     pos_ = common::DecodeVarint(pos_, end_, value);
     if (pos_ == nullptr) {
@@ -57,7 +60,7 @@ bool BufferDecodeWrapper::DecodeVarint(T& value) {
     return true;
 }
 
-template<typename T>
+template <typename T>
 bool BufferDecodeWrapper::DecodeVarint(T& value, int32_t& len) {
     auto new_pos_ = common::DecodeVarint(pos_, end_, value);
     if (new_pos_ == nullptr) {
@@ -69,8 +72,7 @@ bool BufferDecodeWrapper::DecodeVarint(T& value, int32_t& len) {
     return true;
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif
-

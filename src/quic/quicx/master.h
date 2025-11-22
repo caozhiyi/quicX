@@ -17,10 +17,13 @@ class Master:
     public IPacketReceiver,
     public IConnectionIDNotify,
     public std::enable_shared_from_this<Master> {
-
 public:
-    Master(std::shared_ptr<common::IEventLoop> event_loop, bool ecn_enabled);
+public:
+    Master(bool ecn_enabled);
     virtual ~Master();
+
+    virtual void Init();
+
     // add a worker
     virtual void AddWorker(std::shared_ptr<IWorker> worker) override;
     // add listener
@@ -40,12 +43,18 @@ private:
 protected:
     bool ecn_enabled_;
     std::shared_ptr<IReceiver> receiver_;
-    std::shared_ptr<common::IEventLoop> event_loop_;
     std::unordered_map<uint64_t, std::string> cid_worker_map_;
     std::unordered_map<std::string, std::shared_ptr<IWorker>> worker_map_;
+
+    struct ListenerInfo {
+        std::string ip;
+        uint16_t port;
+        int32_t sock = -1;
+    };
+    std::vector<ListenerInfo> pending_listeners_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

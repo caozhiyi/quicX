@@ -217,6 +217,109 @@ TEST_F(RequestResponseStreamTest, SendBody) {
     EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
 }
 
+// ============================================================================
+// Buffer-based data sending tests (using existing test infrastructure)
+// ============================================================================
+
+TEST_F(RequestResponseStreamTest, SendLargeBodyUsingBuffer) {
+    // Test sending a large body (10KB) using buffer operations
+    std::shared_ptr<IRequest> request = std::make_shared<Request>();
+    request->SetMethod(HttpMethod::kPost);
+    request->SetPath("/upload");
+    request->SetScheme("https");
+    request->SetAuthority("example.com");
+    
+    // Create a 10KB body
+    std::string body_content(10240, 'X');
+    for (size_t i = 0; i < body_content.size(); i++) {
+        body_content[i] = static_cast<char>('A' + (i % 26));
+    }
+    request->AppendBody(reinterpret_cast<const uint8_t*>(body_content.data()), body_content.size());
+    
+    auto http_handler = [&body_content](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+        // Verify the received body matches what was sent
+        std::string received_body = request->GetBodyAsString();
+        EXPECT_EQ(body_content.size(), received_body.size());
+        EXPECT_EQ(body_content, received_body);
+        
+        response->SetStatusCode(200);
+        response->AppendBody("Upload successful");
+    };
+    server_connection_->SetHttpHandler(http_handler);
+    
+    EXPECT_TRUE(client_connection_->SendRequest(request));
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
+    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
+    EXPECT_EQ(client_connection_->GetResponse()->GetBodyAsString(), "Upload successful");
+}
+
+TEST_F(RequestResponseStreamTest, MultipleChunksAppend) {
+    // Test appending body in multiple small chunks
+    std::shared_ptr<IRequest> request = std::make_shared<Request>();
+    request->SetMethod(HttpMethod::kPost);
+    request->SetPath("/data");
+    request->SetScheme("https");
+    request->SetAuthority("example.com");
+    
+    // Append body in multiple small chunks
+    request->AppendBody("chunk1");
+    request->AppendBody("chunk2");
+    request->AppendBody("chunk3");
+    
+    auto http_handler = [](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+        EXPECT_EQ(request->GetBodyAsString(), "chunk1chunk2chunk3");
+        response->SetStatusCode(200);
+        
+        // Response also with multiple chunks
+        response->AppendBody("result1");
+        response->AppendBody("result2");
+    };
+    server_connection_->SetHttpHandler(http_handler);
+    
+    EXPECT_TRUE(client_connection_->SendRequest(request));
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
+    EXPECT_EQ(client_connection_->GetResponse()->GetBodyAsString(), "result1result2");
+}
+
+TEST_F(RequestResponseStreamTest, BinaryDataBuffer) {
+    // Test sending binary data using buffer
+    std::shared_ptr<IRequest> request = std::make_shared<Request>();
+    request->SetMethod(HttpMethod::kPost);
+    request->SetPath("/binary");
+    request->SetScheme("https");
+    request->SetAuthority("example.com");
+    
+    // Create binary data with all byte values
+    std::vector<uint8_t> binary_data(256);
+    for (size_t i = 0; i < 256; i++) {
+        binary_data[i] = static_cast<uint8_t>(i);
+    }
+    request->AppendBody(binary_data.data(), binary_data.size());
+    
+    auto http_handler = [&binary_data](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
+        auto body = request->GetBody();
+        ASSERT_NE(body, nullptr);
+        EXPECT_EQ(body->GetDataLength(), binary_data.size());
+        
+        // Verify binary data integrity
+        std::vector<uint8_t> received_data(binary_data.size());
+        body->Read(received_data.data(), received_data.size());
+        EXPECT_EQ(binary_data, received_data);
+        
+        response->SetStatusCode(200);
+        response->AppendBody(binary_data.data(), binary_data.size());
+    };
+    server_connection_->SetHttpHandler(http_handler);
+    
+    EXPECT_TRUE(client_connection_->SendRequest(request));
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
+    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
+    
+    auto response_body = client_connection_->GetResponse()->GetBody();
+    ASSERT_NE(response_body, nullptr);
+    EXPECT_EQ(response_body->GetDataLength(), binary_data.size());
+}
+
 }  // namespace
 }  // namespace http3
 }  // namespace quicx

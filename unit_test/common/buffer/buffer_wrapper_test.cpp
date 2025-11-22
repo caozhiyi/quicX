@@ -77,12 +77,11 @@ TEST(BufferWrapperTest, DecodeFailureDoesNotAdvanceBuffer) {
     auto chunk = std::make_shared<BufferChunk>(pool);
     auto buffer = std::make_shared<SingleBlockBuffer>(chunk);
 
-    {
-        BufferEncodeWrapper encoder(buffer);
-        EXPECT_TRUE(encoder.EncodeFixedUint16(0x1234u));
-        encoder.Flush();
-    }
-
+    
+    BufferEncodeWrapper encoder(buffer);
+    EXPECT_TRUE(encoder.EncodeFixedUint16(0x1234u));
+    encoder.Flush();
+    
     BufferDecodeWrapper decoder(buffer);
     uint32_t value = 0;
     EXPECT_FALSE(decoder.DecodeFixedUint32(value));  // insufficient bytes

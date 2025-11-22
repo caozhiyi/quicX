@@ -25,7 +25,10 @@ public:
     bool RemoveFd(uint32_t) override { return true; }
     void AddFixedProcess(std::function<void()>) override { return; }
     uint64_t AddTimer(std::function<void()>, uint32_t, bool = false) override { return 1; }
+    uint64_t AddTimer(common::TimerTask& task, uint32_t, bool = false) override { return 1; }
     bool RemoveTimer(uint64_t) override { return true; }
+    bool RemoveTimer(common::TimerTask& task) override { return true; }
+    void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override { return; }
     void PostTask(std::function<void()>) override {}
     void Wakeup() override {}
     std::shared_ptr<common::ITimer> GetTimer() override { return nullptr; }

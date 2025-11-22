@@ -29,7 +29,7 @@ TEST(new_token_frame_utest, codec) {
     EXPECT_EQ(frame1.GetType(), frame2.GetType());
 
     auto data2 = frame2.GetToken();
-    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2));
+    EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2, frame2.GetTokenLength()));
 }
 
 }

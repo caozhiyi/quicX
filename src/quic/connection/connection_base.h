@@ -37,7 +37,6 @@ class BaseConnection:
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start,
         bool ecn_enabled,
-        std::shared_ptr<common::ITimer> timer,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,

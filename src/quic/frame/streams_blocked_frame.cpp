@@ -5,21 +5,17 @@
 namespace quicx {
 namespace quic {
 
-
 StreamsBlockedFrame::StreamsBlockedFrame(uint16_t frame_type):
     IFrame(frame_type),
-    maximum_streams_(0) {
+    maximum_streams_(0) {}
 
-}
-
-StreamsBlockedFrame::~StreamsBlockedFrame() {
-
-}
+StreamsBlockedFrame::~StreamsBlockedFrame() {}
 
 bool StreamsBlockedFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -48,5 +44,5 @@ uint32_t StreamsBlockedFrame::EncodeSize() {
     return sizeof(StreamsBlockedFrame);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

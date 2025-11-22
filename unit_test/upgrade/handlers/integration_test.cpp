@@ -44,9 +44,20 @@ public:
         timer_callbacks_.push_back(callback);
         return next_timer_id_++;
     }
-    
+
+    virtual uint64_t AddTimer(common::TimerTask& task, uint32_t, bool = false) override {
+        return 0;
+    }
     virtual bool RemoveTimer(uint64_t) override {
         return true;
+    }
+    
+    virtual bool RemoveTimer(common::TimerTask& task) override {
+        return true;
+    }
+    
+    virtual void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override {
+        return;
     }
     
     virtual void PostTask(std::function<void()>) override {}

@@ -7,6 +7,7 @@
 #include "common/timer/timer_task.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/packet_number.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/connection/controler/recv_control.h"
 
 namespace quicx {
@@ -20,13 +21,23 @@ public:
 
     uint64_t AddTimer(common::TimerTask& task, uint32_t /*time*/, uint64_t /*now*/ = 0) override {
         add_count++;
+        // Set task ID for test
+        task.SetIdForTest(add_count);
         tasks_.push_back(task);
         return add_count;
     }
 
-    bool RmTimer(common::TimerTask& /*task*/) override {
-        rm_count++;
-        return true;
+    bool RmTimer(common::TimerTask& task) override {
+        // Find task by ID
+        uint64_t id = task.GetId();
+        for (auto it = tasks_.begin(); it != tasks_.end(); ++it) {
+            if (it->GetId() == id) {
+                tasks_.erase(it);
+                rm_count++;
+                return true;
+            }
+        }
+        return false;
     }
 
     int32_t MinTime(uint64_t /*now*/ = 0) override { return tasks_.empty() ? -1 : 0; }
@@ -47,7 +58,8 @@ std::shared_ptr<Rtt1Packet> MakePacket(uint64_t number, FrameTypeBit frame_bits)
 
 TEST(RecvControlTest, AckFrameGeneratedForAckElicitingPackets) {
     auto timer = std::make_shared<MockTimer>();
-    RecvControl recv_control(timer);
+    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    RecvControl recv_control;
 
     recv_control.OnPacketRecv(100, MakePacket(5, FrameTypeBit::kStreamBit));
     recv_control.OnPacketRecv(101, MakePacket(4, FrameTypeBit::kStreamBit));
@@ -70,11 +82,13 @@ TEST(RecvControlTest, AckFrameGeneratedForAckElicitingPackets) {
     EXPECT_EQ(ranges[0].GetAckRangeLength(), 0u);  // single packet range (packet 2)
 
     EXPECT_EQ(timer->rm_count, 1u);  // Timer cancelled when ACK generated
+    GlobalResource::Instance().ResetForTest();
 }
 
 TEST(RecvControlTest, NonAckElicitingPacketsIgnored) {
     auto timer = std::make_shared<MockTimer>();
-    RecvControl recv_control(timer);
+    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    RecvControl recv_control;
 
     recv_control.OnPacketRecv(200, MakePacket(10, FrameTypeBit::kAckBit));
     EXPECT_EQ(timer->add_count, 0u);
@@ -82,11 +96,13 @@ TEST(RecvControlTest, NonAckElicitingPacketsIgnored) {
     auto frame = recv_control.MayGenerateAckFrame(205, PacketNumberSpace::kApplicationNumberSpace, false);
     EXPECT_EQ(frame, nullptr);
     EXPECT_EQ(timer->rm_count, 0u);
+    GlobalResource::Instance().ResetForTest();
 }
 
 TEST(RecvControlTest, EcnCountersReportedInAckEcnFrame) {
     auto timer = std::make_shared<MockTimer>();
-    RecvControl recv_control(timer);
+    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    RecvControl recv_control;
 
     // Two ack-eliciting packets so that ACK is generated later
     recv_control.OnPacketRecv(300, MakePacket(3, FrameTypeBit::kStreamBit));
@@ -105,6 +121,7 @@ TEST(RecvControlTest, EcnCountersReportedInAckEcnFrame) {
     EXPECT_EQ(ack_ecn->GetEct0(), 1u);
     EXPECT_EQ(ack_ecn->GetEct1(), 1u);
     EXPECT_EQ(ack_ecn->GetEcnCe(), 1u);
+    GlobalResource::Instance().ResetForTest();
 }
 
 }  // namespace

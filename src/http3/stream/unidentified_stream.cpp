@@ -14,12 +14,12 @@ UnidentifiedStream::UnidentifiedStream(
     type_callback_(type_callback) {
     
     stream_->SetStreamReadCallBack(
-        std::bind(&UnidentifiedStream::OnData, this, std::placeholders::_1, std::placeholders::_2));
+        std::bind(&UnidentifiedStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     
     common::LOG_DEBUG("UnidentifiedStream created for stream %llu", stream_->GetStreamID());
 }
 
-void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, uint32_t error) {
+void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("UnidentifiedStream::OnData error: %d on stream %llu", error, stream_->GetStreamID());
         error_handler_(stream_->GetStreamID(), error);

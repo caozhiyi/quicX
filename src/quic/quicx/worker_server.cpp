@@ -2,25 +2,19 @@
 #include "quic/common/version.h"
 #include "quic/connection/error.h"
 #include "quic/quicx/worker_server.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/connection/connection_server.h"
 #include "quic/packet/version_negotiation_packet.h"
 
 namespace quicx {
 namespace quic {
 
-ServerWorker::ServerWorker(const QuicServerConfig& config,
-        std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<ISender> sender,
-        const QuicTransportParams& params,
-        std::shared_ptr<common::IEventLoop> event_loop,
-        connection_state_callback connection_handler):
-    Worker(config.config_, ctx, sender, params, event_loop, connection_handler) {
-    server_alpn_ = config.alpn_;
-}
+ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
+    const QuicTransportParams& params, connection_state_callback connection_handler):
+    Worker(config.config_, ctx, sender, params, connection_handler),
+    server_alpn_(config.alpn_) {}
 
-ServerWorker::~ServerWorker() {
-
-}
+ServerWorker::~ServerWorker() {}
 
 bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     if (packet_info.packets_.empty()) {
@@ -38,7 +32,8 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         conn->second->OnObservedPeerAddress(observed_addr);
         // record received bytes on candidate path to unlock anti-amplification budget
         if (packet_info.net_packet_->GetData()) {
-            conn->second->OnCandidatePathDatagramReceived(observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
+            conn->second->OnCandidatePathDatagramReceived(
+                observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
         }
         conn->second->SetPendingEcn(packet_info.net_packet_->GetEcn());
         conn->second->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
@@ -48,7 +43,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // check init packet
     if (!InitPacketCheck(packet_info.packets_[0])) {
         common::LOG_ERROR("init packet check failed");
-        SendVersionNegotiatePacket(packet_info.net_packet_->GetAddress());
+        SendVersionNegotiatePacket(packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetSocket());
         return false;
     }
 
@@ -62,14 +57,13 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     ConnectionID dst_cid(long_header->GetDestinationConnectionId(), long_header->GetDestinationConnectionIdLength());
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(ctx_,
-        server_alpn_,
-        event_loop_->GetTimer(),
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, server_alpn_,
         std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ServerWorker::HandleRetireConnectionId, this, std::placeholders::_1),
-        std::bind(&ServerWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        std::bind(&ServerWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
+            std::placeholders::_3));
     new_conn->AddTransportParam(params_);
     connecting_set_.insert(new_conn);
 
@@ -83,30 +77,33 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     new_conn->SetPendingEcn(packet_info.net_packet_->GetEcn());
     new_conn->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
 
-    event_loop_->AddTimer([new_conn, this]() {
-        if (connecting_set_.find(new_conn) != connecting_set_.end()) {
-            common::LOG_DEBUG("connection timeout during handshake. cid:%llu", new_conn->GetConnectionIDHash());
-            // Properly close the connection to clean up all CIDs
-            HandleConnectionClose(new_conn, QuicErrorCode::kNoError, "handshake timeout");
-        }
-    }, 5000); // TODO add timeout to config
+    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(
+        [new_conn, this]() {
+            if (connecting_set_.find(new_conn) != connecting_set_.end()) {
+                common::LOG_DEBUG("connection timeout during handshake. cid:%llu", new_conn->GetConnectionIDHash());
+                // Properly close the connection to clean up all CIDs
+                HandleConnectionClose(new_conn, QuicErrorCode::kNoError, "handshake timeout");
+            }
+        },
+        5000);  // TODO add timeout to config
     return true;
 }
 
-void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr) {
+void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32_t socket) {
     VersionNegotiationPacket version_negotiation_packet;
     for (auto version : kQuicVersions) {
         version_negotiation_packet.AddSupportVersion(version);
     }
 
-    std::shared_ptr<NetPacket> net_packet = packet_allotor_->Malloc();
+    std::shared_ptr<NetPacket> net_packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
     auto buffer = net_packet->GetData();
     version_negotiation_packet.Encode(buffer);
 
     net_packet->SetAddress(addr);
+    net_packet->SetSocket(socket);
     sender_->Send(net_packet);
     common::LOG_DEBUG("send version negotiate packet. packet size:%d", buffer->GetDataLength());
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

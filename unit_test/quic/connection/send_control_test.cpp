@@ -9,6 +9,7 @@
 #include "common/timer/timer_task.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/packet_number.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/connection/controler/send_control.h"
 
 namespace quicx {
@@ -22,13 +23,23 @@ public:
 
     uint64_t AddTimer(common::TimerTask& task, uint32_t /*time*/, uint64_t /*now*/ = 0) override {
         add_count++;
+        // Set task ID for test
+        task.SetIdForTest(add_count);
         tasks_.push_back(task);
         return add_count;
     }
 
-    bool RmTimer(common::TimerTask& /*task*/) override {
-        rm_count++;
-        return true;
+    bool RmTimer(common::TimerTask& task) override {
+        // Find task by ID
+        uint64_t id = task.GetId();
+        for (auto it = tasks_.begin(); it != tasks_.end(); ++it) {
+            if (it->GetId() == id) {
+                tasks_.erase(it);
+                rm_count++;
+                return true;
+            }
+        }
+        return false;
     }
 
     int32_t MinTime(uint64_t /*now*/ = 0) override { return tasks_.empty() ? -1 : 0; }
@@ -49,7 +60,8 @@ std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, FrameTypeBit fram
 
 TEST(SendControlTest, AckElicitingPacketsTriggerCallbacks) {
     auto timer = std::make_shared<MockTimer>();
-    SendControl send_control(timer);
+    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    SendControl send_control;
 
     std::vector<std::tuple<uint64_t, uint64_t, bool>> callbacks;
     send_control.SetStreamDataAckCallback([
@@ -85,11 +97,13 @@ TEST(SendControlTest, AckElicitingPacketsTriggerCallbacks) {
     EXPECT_EQ(std::get<1>(callbacks[1]), 100u);
     EXPECT_FALSE(std::get<2>(callbacks[1]));
     EXPECT_EQ(timer->rm_count, 2u);
+    GlobalResource::Instance().ResetForTest();
 }
 
 TEST(SendControlTest, NonAckElicitingPacketsAreNotTracked) {
     auto timer = std::make_shared<MockTimer>();
-    SendControl send_control(timer);
+    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    SendControl send_control;
 
     bool callback_invoked = false;
     send_control.SetStreamDataAckCallback([
@@ -113,6 +127,7 @@ TEST(SendControlTest, NonAckElicitingPacketsAreNotTracked) {
     send_control.OnPacketAck(5, PacketNumberSpace::kApplicationNumberSpace, ack);
     EXPECT_FALSE(callback_invoked);
     EXPECT_EQ(timer->rm_count, 0u);
+    GlobalResource::Instance().ResetForTest();
 }
 
 }  // namespace

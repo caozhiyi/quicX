@@ -8,7 +8,7 @@ namespace quicx {
 namespace http3 {
 namespace {
 
-class GoAwayFrameTest : public testing::Test {
+class GoAwayFrameTest: public testing::Test {
 protected:
     void SetUp() override {
         auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
@@ -22,7 +22,7 @@ protected:
 
 TEST_F(GoAwayFrameTest, BasicProperties) {
     EXPECT_EQ(frame_->GetType(), FrameType::kGoAway);
-    
+
     uint64_t stream_id = 100;
     frame_->SetStreamId(stream_id);
     EXPECT_EQ(frame_->GetStreamId(), stream_id);
@@ -37,7 +37,7 @@ TEST_F(GoAwayFrameTest, EncodeAndDecode) {
 
     // Create new frame for decoding
     auto decode_frame = std::make_shared<GoAwayFrame>();
-    EXPECT_TRUE(decode_frame->Decode(buffer_, true));
+    EXPECT_EQ(decode_frame->Decode(buffer_, true), DecodeResult::kSuccess);
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetStreamId(), stream_id);
@@ -59,4 +59,4 @@ TEST_F(GoAwayFrameTest, EvaluateSize) {
 
 }  // namespace
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

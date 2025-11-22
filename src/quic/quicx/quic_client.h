@@ -1,6 +1,7 @@
 #ifndef QUIC_QUICX_QUIC_CLIENT
 #define QUIC_QUICX_QUIC_CLIENT
 
+#include "quic/include/type.h"
 #include "quic/include/if_quic_client.h"
 #include "quic/quicx/master_with_thread.h"
 
@@ -25,10 +26,6 @@ public:
     // all connections will be closed
     virtual void Destroy() override;
 
-    // connect to a quic server
-    virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms) override;
-
     // connect to a quic server with a specific resumption session (DER bytes) for this connection
     virtual bool Connection(const std::string& ip, uint16_t port,
         const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) override;
@@ -38,6 +35,7 @@ public:
     virtual void SetConnectionStateCallBack(connection_state_callback cb) override;
 
 private:
+    ThreadMode thread_mode_;
     QuicTransportParams params_;
     std::shared_ptr<MasterWithThread> master_;
     connection_state_callback connection_state_cb_;

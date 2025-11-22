@@ -125,8 +125,15 @@ bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 
         // decode payload frames
         payload_ = common::SharedBufferSpan(packet_src_data_.GetChunk(), cur_pos, cur_pos + length_ - header_.GetPacketNumberLength());
-        std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(payload_.GetChunk());
-        if(!DecodeFrames(buffer, frames_list_)) {
+        
+        // Create a SingleBlockBuffer from the payload span
+        auto payload_buffer = common::SingleBlockBuffer::FromSpan(payload_);
+        if (!payload_buffer) {
+            common::LOG_ERROR("failed to create buffer from payload span.");
+            return false;
+        }
+        
+        if(!DecodeFrames(payload_buffer, frames_list_)) {
             common::LOG_ERROR("decode frame failed.");
             return false;
         }

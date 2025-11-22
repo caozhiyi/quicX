@@ -31,12 +31,7 @@ std::string Response::GetBodyAsString() const {
     if (!body_) {
         return "";
     }
-    std::string body;
-    body.resize(body_->GetDataLength());
-    body_->VisitData([&](uint8_t* data, uint32_t length) {
-        body.append(reinterpret_cast<char*>(data), length);
-    });
-    return body;
+    return body_->GetDataAsString();
 }
 
 void Response::AppendPush(std::shared_ptr<IResponse> response) {

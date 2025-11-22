@@ -7,7 +7,6 @@
 
 #include "common/timer/if_timer.h"
 
-
 namespace quicx {
 namespace common {
 
@@ -18,7 +17,7 @@ public:
     virtual void OnWrite(uint32_t fd) = 0;
     virtual void OnError(uint32_t fd) = 0;
     virtual void OnClose(uint32_t fd) = 0;
-};  
+};
 
 class IEventLoop {
 public:
@@ -34,20 +33,22 @@ public:
     virtual void AddFixedProcess(std::function<void()> cb) = 0;
 
     virtual uint64_t AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat = false) = 0;
+    virtual uint64_t AddTimer(TimerTask& task, uint32_t delay_ms, bool repeat = false) = 0;
     virtual bool RemoveTimer(uint64_t timer_id) = 0;
+    virtual bool RemoveTimer(TimerTask& task) = 0;
 
     virtual void PostTask(std::function<void()> fn) = 0;
     virtual void Wakeup() = 0;
 
     virtual std::shared_ptr<ITimer> GetTimer() = 0;
+
+    virtual void SetTimerForTest(std::shared_ptr<ITimer> timer) = 0;
 };
 
 // Factory for default implementation
 std::shared_ptr<IEventLoop> MakeEventLoop();
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
-#endif // COMMON_NETWORK_IF_EVENT_LOOP
-
-
+#endif  // COMMON_NETWORK_IF_EVENT_LOOP

@@ -13,7 +13,7 @@ bool EventLoop::Init() {
     if (initialized_) {
         return true;
     }
-    
+
     driver_ = IEventDriver::Create();
     if (!driver_) {
         LOG_ERROR("Failed to create event driver");
@@ -54,25 +54,25 @@ int EventLoop::Wait() {
             LOG_ERROR("No handler found for fd %d", ev.fd);
             continue;
         }
-       auto handler = it->second.lock();
-       if (!handler) {
+        auto handler = it->second.lock();
+        if (!handler) {
             LOG_ERROR("Handler expired for fd %d", ev.fd);
             fd_to_handler_.erase(it);
             continue;
-       }
+        }
         switch (ev.type) {
-        case EventType::ET_READ:
-            handler->OnRead(ev.fd);
-            break;
-        case EventType::ET_WRITE:
-            handler->OnWrite(ev.fd);
-            break;
-        case EventType::ET_ERROR:
-            handler->OnError(ev.fd);
-            break;
-        case EventType::ET_CLOSE:
-            handler->OnClose(ev.fd);
-            break;
+            case EventType::ET_READ:
+                handler->OnRead(ev.fd);
+                break;
+            case EventType::ET_WRITE:
+                handler->OnWrite(ev.fd);
+                break;
+            case EventType::ET_ERROR:
+                handler->OnError(ev.fd);
+                break;
+            case EventType::ET_CLOSE:
+                handler->OnClose(ev.fd);
+                break;
         }
     }
 
@@ -91,15 +91,27 @@ bool EventLoop::RegisterFd(uint32_t fd, int32_t events, std::shared_ptr<IFdHandl
         LOG_ERROR("Handler is null for fd %d", fd);
         return false;
     }
+    if (!driver_) {
+        LOG_ERROR("Event loop driver is not initialized for fd %d", fd);
+        return false;
+    }
     return driver_->AddFd(fd, events);
 }
 
 bool EventLoop::ModifyFd(uint32_t fd, int32_t events) {
+    if (!driver_) {
+        LOG_ERROR("Event loop driver is not initialized for fd %d", fd);
+        return false;
+    }
     return driver_->ModifyFd(fd, events);
 }
 
 bool EventLoop::RemoveFd(uint32_t fd) {
     fd_to_handler_.erase(fd);
+    if (!driver_) {
+        LOG_ERROR("Event loop driver is not initialized for fd %d", fd);
+        return false;
+    }
     return driver_->RemoveFd(fd);
 }
 
@@ -119,12 +131,36 @@ uint64_t EventLoop::AddTimer(std::function<void()> cb, uint32_t delay_ms, bool r
     return id;
 }
 
+uint64_t EventLoop::AddTimer(TimerTask& task, uint32_t delay_ms, bool repeat) {
+    uint64_t now = UTCTimeMsec();
+    uint64_t id = timer_->AddTimer(task, delay_ms, now);
+    timers_.emplace(id, task);
+    if (repeat) {
+        timer_repeat_[id] = true;
+    }
+    Wakeup();
+    return id;
+}
+
 bool EventLoop::RemoveTimer(uint64_t timer_id) {
     auto it = timers_.find(timer_id);
+    if (it == timers_.end()) {
+        return false;
+    }
+    bool ok = timer_->RmTimer(it->second);
+    if (ok) {
+        timers_.erase(it);
+        timer_repeat_.erase(timer_id);
+    }
+    return ok;
+}
+
+bool EventLoop::RemoveTimer(TimerTask& task) {
+    auto it = timers_.find(task.GetId());
     if (it == timers_.end()) return false;
     bool ok = timer_->RmTimer(it->second);
     timers_.erase(it);
-    timer_repeat_.erase(timer_id);
+    timer_repeat_.erase(task.GetId());
     return ok;
 }
 
@@ -146,6 +182,10 @@ std::shared_ptr<ITimer> EventLoop::GetTimer() {
     return timer_;
 }
 
+void EventLoop::SetTimerForTest(std::shared_ptr<ITimer> timer) {
+    timer_ = timer;
+}
+
 void EventLoop::DrainPostedTasks() {
     std::deque<std::function<void()>> q;
     {
@@ -157,5 +197,5 @@ void EventLoop::DrainPostedTasks() {
     }
 }
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx

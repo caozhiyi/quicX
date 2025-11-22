@@ -24,7 +24,7 @@ public:
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackDecoderReceiverStream();
 
-    virtual void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) override;
+    virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) override;
 
 private:
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;

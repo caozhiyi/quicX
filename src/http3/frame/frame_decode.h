@@ -11,6 +11,6 @@ namespace http3 {
 bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IFrame>>& frames);
 
 }
-}
+}  // namespace quicx
 
 #endif

@@ -9,9 +9,8 @@ namespace quicx {
 namespace http3 {
 
 ControlClientSenderStream::ControlClientSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
-    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler): 
-    ControlSenderStream(stream, error_handler) {
-}
+    const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
+    ControlSenderStream(stream, error_handler) {}
 
 ControlClientSenderStream::~ControlClientSenderStream() {
     if (stream_) {
@@ -23,7 +22,7 @@ bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {
     if (!EnsureStreamPreamble()) {
         return false;
     }
-    
+
     MaxPushIdFrame frame;
     frame.SetPushId(push_id);
 
@@ -33,7 +32,8 @@ bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {
         error_handler_(0, Http3ErrorCode::kMessageError);
         return false;
     }
-    common::LOG_DEBUG("ControlClientSenderStream::SendMaxPushId: max_push_id=%llu, buffer length=%llu", push_id, buffer->GetDataLength());
+    common::LOG_DEBUG("ControlClientSenderStream::SendMaxPushId: max_push_id=%llu, buffer length=%llu", push_id,
+        buffer->GetDataLength());
     return stream_->Flush();
 }
 
@@ -41,7 +41,7 @@ bool ControlClientSenderStream::SendCancelPush(uint64_t push_id) {
     if (!EnsureStreamPreamble()) {
         return false;
     }
-    
+
     CancelPushFrame frame;
     frame.SetPushId(push_id);
 
@@ -54,5 +54,5 @@ bool ControlClientSenderStream::SendCancelPush(uint64_t push_id) {
     return stream_->Send(buffer) > 0;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

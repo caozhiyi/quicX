@@ -10,32 +10,30 @@ namespace http3 {
 
 /**
  * @brief IRecvStream is the base class for all HTTP/3 recv streams
- * 
+ *
  * All HTTP/3 recv streams inherit from this class.
- * 
+ *
  * The recv stream is used to receive data from the peer.
  * It is responsible for receiving the data from the peer and calling the callback function.
  */
-class IRecvStream:
-    public IStream {
+class IRecvStream: public IStream {
 public:
-    IRecvStream(StreamType stream_type,
-                const std::shared_ptr<IQuicRecvStream>& stream,
-                const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-                IStream(stream_type, error_handler),
-                stream_(stream) {}
+    IRecvStream(StreamType stream_type, const std::shared_ptr<IQuicRecvStream>& stream,
+        const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
+        IStream(stream_type, error_handler),
+        stream_(stream) {}
     virtual ~IRecvStream() {}
 
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
-    
+
     // when there are some data received, the callback function will be called.
-    virtual void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) = 0;
+    virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) = 0;
 
 protected:
     std::shared_ptr<IQuicRecvStream> stream_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

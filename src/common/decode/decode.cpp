@@ -171,7 +171,12 @@ uint8_t* FixedDecodeUint16(uint8_t *start, uint8_t *end, uint16_t& out) {
     if (start == nullptr || end == nullptr || start + sizeof(uint16_t) > end) {
         return nullptr;
     }
-    out = ntohs(*(const uint16_t*)start);
+    uint8_t byte0 = start[0];
+    uint8_t byte1 = start[1];
+    uint16_t raw_value = *(const uint16_t*)start;
+    out = ntohs(raw_value);
+    common::LOG_DEBUG("FixedDecodeUint16: bytes [%02x %02x], raw=0x%04x, ntohs=0x%04x", 
+                     byte0, byte1, raw_value, out);
     return start + sizeof(uint16_t);
 }
 

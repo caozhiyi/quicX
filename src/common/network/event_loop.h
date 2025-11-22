@@ -16,8 +16,7 @@
 namespace quicx {
 namespace common {
 
-class EventLoop:
-    public IEventLoop {
+class EventLoop: public IEventLoop {
 public:
     EventLoop() = default;
     ~EventLoop() = default;
@@ -34,12 +33,16 @@ public:
     virtual void AddFixedProcess(std::function<void()> cb) override;
 
     virtual uint64_t AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat = false) override;
+    virtual uint64_t AddTimer(TimerTask& task, uint32_t delay_ms, bool repeat = false) override;
     virtual bool RemoveTimer(uint64_t timer_id) override;
+    virtual bool RemoveTimer(TimerTask& task) override;
 
     virtual void PostTask(std::function<void()> fn) override;
     virtual void Wakeup() override;
 
     virtual std::shared_ptr<ITimer> GetTimer() override;
+
+    virtual void SetTimerForTest(std::shared_ptr<ITimer> timer) override;
 
 private:
     void DrainPostedTasks();
@@ -49,7 +52,7 @@ private:
     std::vector<Event> events_;
 
     std::unordered_map<uint64_t, TimerTask> timers_;
-    std::unordered_map<uint64_t, bool> timer_repeat_; // timer id -> repeat
+    std::unordered_map<uint64_t, bool> timer_repeat_;  // timer id -> repeat
     std::unordered_map<uint32_t, std::weak_ptr<IFdHandler>> fd_to_handler_;
 
     std::mutex tasks_mu_;
@@ -60,9 +63,7 @@ private:
     bool initialized_ = false;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
-#endif // COMMON_NETWORK_EVENT_LOOP
-
-
+#endif  // COMMON_NETWORK_EVENT_LOOP

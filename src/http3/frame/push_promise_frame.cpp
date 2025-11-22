@@ -32,61 +32,55 @@ bool PushPromiseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     return true;
 }
 
-bool PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
+DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
-    
+
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
-            return false;
+            return DecodeResult::kError;
         }
     }
 
     // Read length
     if (!wrapper.DecodeVarint(length_)) {
-        return false;
+        return DecodeResult::kError;
     }
 
     // Check if we have enough data
     if (buffer->GetDataLength() < length_) {
-        return false;
+        return DecodeResult::kError;
     }
 
     // Read push ID
     if (!wrapper.DecodeVarint(push_id_)) {
-        return false;
+        return DecodeResult::kError;
     }
     wrapper.Flush();
-    
+
     // Calculate remaining length for encoded fields
     uint32_t push_id_size = common::GetEncodeVarintLength(push_id_);
     uint32_t fields_length = length_ - push_id_size;
-    
+
     // Check if we have enough data for fields
     if (buffer->GetDataLength() < fields_length) {
-        return false;
+        return DecodeResult::kNeedMoreData;
     }
 
     // Read encoded fields - only the remaining length
-    encoded_fields_ = buffer->ShallowClone();
-    if (encoded_fields_->GetDataLength() > fields_length) {
-        encoded_fields_->MoveWritePt(-(static_cast<int32_t>(encoded_fields_->GetDataLength() - fields_length)));
-    }
-    
-    // Advance the buffer read pointer
-    buffer->MoveReadPt(fields_length);
+    encoded_fields_ = buffer->CloneReadable(fields_length);
 
-    return true;
+    return DecodeResult::kSuccess;
 }
 
 uint32_t PushPromiseFrame::EvaluateEncodeSize() {
     uint32_t size = 0;
-    
+
     // Size for frame type
     size += sizeof(type_);
-    
+
     // Size for length field
     size += common::GetEncodeVarintLength(EvaluatePayloadSize());
-    
+
     // Size for push ID
     size += common::GetEncodeVarintLength(push_id_);
 
@@ -103,5 +97,5 @@ uint32_t PushPromiseFrame::EvaluatePayloadSize() {
     return length_;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

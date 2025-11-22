@@ -18,32 +18,19 @@
 #include "quic/quicx/global_resource.h"
 #include "common/network/if_event_driver.h"
 
-
 namespace quicx {
 namespace quic {
 
-UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
-    event_loop_(event_loop) {
+UdpReceiver::UdpReceiver():
+    ecn_enabled_(false) {}
 
-}
-
-UdpReceiver::~UdpReceiver() {
-
-}
+UdpReceiver::~UdpReceiver() {}
 
 bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
-    // set noblocking
-    auto opt_ret = common::SocketNoblocking(socket_fd);
-    if (opt_ret.errno_ != 0) {
-        common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.errno_);
-        return false;
-    }
-
-    if (auto event_loop = event_loop_.lock()) {
-        event_loop->RegisterFd(socket_fd, common::EventType::ET_READ, shared_from_this());
-    }
     receiver_map_[socket_fd] = receiver;
-    return true;
+    auto event_loop = GlobalResource::Instance().GetThreadLocalEventLoop();
+    return event_loop->RegisterFd(
+        socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
 }
 
 bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) {
@@ -52,7 +39,7 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
         common::LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
         return false;
     }
-    
+
     int32_t socket_fd = ret.return_value_;
 
     // set noblocking
@@ -76,8 +63,11 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
         common::Close(socket_fd);
         return false;
     }
-    if (auto event_loop = event_loop_.lock()) {
-        event_loop->RegisterFd(socket_fd, common::EventType::ET_READ, shared_from_this());
+    auto event_loop = GlobalResource::Instance().GetThreadLocalEventLoop();
+    if (!event_loop->RegisterFd(
+            socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this())) {
+        common::LOG_ERROR("register fd failed. fd:%d", socket_fd);
+        return false;
     }
 
     receiver_map_[socket_fd] = receiver;
@@ -101,7 +91,7 @@ void UdpReceiver::OnRead(uint32_t fd) {
         common::LOG_ERROR("recv from failed. err:%d", ret.errno_);
         return;
     }
-        
+
     common::LOG_DEBUG("recv from data from peer. addr: %s, size:%d", peer_addr.AsString().c_str(), ret.return_value_);
     buffer->MoveWritePt(ret.return_value_);
     pkt->SetAddress(std::move(peer_addr));
@@ -130,11 +120,12 @@ void UdpReceiver::OnError(uint32_t fd) {
 
 void UdpReceiver::OnClose(uint32_t fd) {
     receiver_map_.erase(fd);
-    if (auto event_loop = event_loop_.lock()) {
+    auto event_loop = GlobalResource::Instance().GetThreadLocalEventLoop();
+    if (event_loop) {
         event_loop->RemoveFd(fd);
     }
     common::LOG_INFO("udp receiver closed. fd:%d", fd);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

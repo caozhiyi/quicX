@@ -9,6 +9,7 @@
 #include "quic/frame/reset_stream_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/stream_data_blocked_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -545,6 +546,62 @@ TEST_F(RecvStreamTest, ResetInvalidState) {
     // state should remain in terminal state
     EXPECT_EQ(state_before, StreamState::kResetRead);
     EXPECT_EQ(state_after, StreamState::kResetRead);
+}
+
+// ==== 6. Flow Control test (1) ====
+
+// Test 6.1: handle STREAM_DATA_BLOCKED
+TEST_F(RecvStreamTest, RecvStreamDataBlocked) {
+    auto stream = std::make_shared<RecvStream>(
+        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_); // initial limit 10000
+    
+    stream->SetStreamReadCallBack(recv_cb_);
+    
+    // 1. Recv partial data (small enough to NOT trigger auto-update)
+    // Limit 10000. Threshold 7360. Need remaining > 7360.
+    // 10000 - offset > 7360 => offset < 2640.
+    // Send 1000 bytes.
+    auto frame1 = std::make_shared<StreamFrame>();
+    frame1->SetStreamID(5);
+    frame1->SetOffset(0);
+    uint8_t data1[1000];
+    memset(data1, 'A', 1000);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1000));
+    data_buffer1->Write(data1, 1000);
+    frame1->SetData(data_buffer1->GetSharedReadableSpan());
+    
+    stream->OnFrame(frame1);
+    EXPECT_EQ(received_data_length_, 1000);
+    
+    // 2. Recv STREAM_DATA_BLOCKED
+    // Client says it's blocked at 10000.
+    auto block_frame = std::make_shared<StreamDataBlockedFrame>();
+    block_frame->SetStreamID(5);
+    block_frame->SetMaximumData(10000);
+    
+    stream->OnFrame(block_frame);
+    
+    // Server should send MAX_STREAM_DATA (10000 + 3096 = 13096)
+    // AND update local limit to 13096.
+    
+    // 3. Recv data beyond old limit (10000)
+    auto frame2 = std::make_shared<StreamFrame>();
+    frame2->SetStreamID(5);
+    frame2->SetOffset(10000);
+    uint8_t data2[100];
+    memset(data2, 'B', 100);
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(100));
+    data_buffer2->Write(data2, 100);
+    frame2->SetData(data_buffer2->GetSharedReadableSpan());
+    
+    recv_callback_called_ = false;
+    // If limit is not updated, this will return 0 (flow control error or drop)
+    uint32_t ret = stream->OnFrame(frame2);
+    
+    EXPECT_EQ(ret, 100);
+    // Note: callback might not be called if it's out of order (gap 1000-10000), 
+    // but OnFrame should accept it and return length.
+    // If rejected due to flow control, it returns 0.
 }
 
 }

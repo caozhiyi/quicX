@@ -49,22 +49,28 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     
     auto body_buffer = request->GetBody();
     if (!body_provider && body_buffer && body_buffer->GetDataLength() > 0) {
+        common::LOG_DEBUG("SendRequest: adding content-length: %zu", body_buffer->GetDataLength());
         request->AddHeader("content-length", std::to_string(body_buffer->GetDataLength()));
     }
 
     // send headers
     if (!SendHeaders(request->GetHeaders())) {
+        common::LOG_ERROR("SendHeaders error");
         return false;
     }
 
+    common::LOG_DEBUG("SendRequest: headers sent successfully");
     // if body provider is set, send body using provider (streaming mode)
     if (body_provider) {
+        common::LOG_DEBUG("SendRequest: sending body using provider");
         return SendBodyWithProvider(body_provider);
     
     // if body is set, send body directly
     } else if (body_buffer && body_buffer->GetDataLength() > 0) {
+        common::LOG_DEBUG("SendRequest: sending body directly");
         return SendBodyDirectly(std::dynamic_pointer_cast<common::IBuffer>(body_buffer));
     }
+    common::LOG_DEBUG("SendRequest: no body to send");
     return true;
 }
 
@@ -108,6 +114,7 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
     if (async_handler_) {
         data->VisitData([&](uint8_t* data, uint32_t length) {
             async_handler_->OnBodyChunk(data, length, is_last);
+            return true;
         });
         // Streaming mode: call handler immediately chunk as potentially last
         return;
@@ -117,6 +124,7 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
     if (body_length_ == received_body_length_ || is_last) {
         data->VisitData([&](uint8_t* ptr, uint32_t len) {
             response_->AppendBody(ptr, len);
+            return true;
         });
         response_handler_(response_, 0);
     }

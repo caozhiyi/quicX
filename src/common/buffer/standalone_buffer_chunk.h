@@ -23,7 +23,8 @@ public:
 
     bool Valid() const override { return data_ != nullptr; }
     uint8_t* GetData() const override { return data_; }
-    uint32_t GetLength() const override { return length_; }
+    void SetLimitSize(uint32_t size) override { length_ = size; }
+    uint32_t GetLength() const override { return std::min(length_, limit_size_); }
     std::shared_ptr<BlockMemoryPool> GetPool() const override { return nullptr; }
 
 private:
@@ -31,6 +32,7 @@ private:
 
     uint8_t* data_ = nullptr;
     uint32_t length_ = 0;
+    uint32_t limit_size_ = 0;
 };
 
 }

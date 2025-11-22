@@ -1,17 +1,14 @@
 #include <sstream>
 #include "quic/quicx/worker_with_thread.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
 
-WorkerWithThread::WorkerWithThread(std::unique_ptr<IWorker> worker_ptr):
-    worker_ptr_(std::move(worker_ptr)) {
+WorkerWithThread::WorkerWithThread(std::shared_ptr<IWorker> worker_ptr):
+    worker_ptr_(worker_ptr) {}
 
-}
-
-WorkerWithThread::~WorkerWithThread() {
-
-}
+WorkerWithThread::~WorkerWithThread() {}
 
 std::string WorkerWithThread::GetWorkerId() {
     if (worker_id_.empty() && pthread_) {
@@ -25,23 +22,36 @@ std::string WorkerWithThread::GetWorkerId() {
 // Handle packets
 void WorkerWithThread::HandlePacket(PacketParseResult& packet_info) {
     packet_queue_.Emplace(std::move(packet_info));
-    worker_ptr_->GetEventLoop()->Wakeup();
-}
-
-std::shared_ptr<common::IEventLoop> WorkerWithThread::GetEventLoop() {
-    return worker_ptr_->GetEventLoop();
+    if (event_loop_) {
+        event_loop_->Wakeup();
+    }
 }
 
 void WorkerWithThread::Run() {
+    // Save EventLoop reference for cross-thread access
+    event_loop_ = GlobalResource::Instance().GetThreadLocalEventLoop();
+    
     while (!Thread::IsStop()) {
-        worker_ptr_->GetEventLoop()->Wait();
+        event_loop_->Wait();
         ProcessRecv();
     }
 }
 
 void WorkerWithThread::Stop() {
     Thread::Stop();
-    worker_ptr_->GetEventLoop()->Wakeup();
+    if (event_loop_) {
+        event_loop_->Wakeup();
+    }
+}
+
+void WorkerWithThread::PostTask(std::function<void()> task) {
+    if (event_loop_) {
+        event_loop_->PostTask(std::move(task));
+    }
+}
+
+std::shared_ptr<common::IEventLoop> WorkerWithThread::GetEventLoop() {
+    return event_loop_;
 }
 
 void WorkerWithThread::ProcessRecv() {
@@ -51,5 +61,5 @@ void WorkerWithThread::ProcessRecv() {
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

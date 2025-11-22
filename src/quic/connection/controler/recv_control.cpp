@@ -2,14 +2,14 @@
 #include "common/log/log.h"
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/connection/controler/recv_control.h"
 
 namespace quicx {
 namespace quic {
 
-RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
+RecvControl::RecvControl():
     set_timer_(false),
-    timer_(timer),
     max_ack_delay_(10) {
     memset(pkt_num_largest_recvd_, 0, sizeof(pkt_num_largest_recvd_));
     memset(largest_recv_time_, 0, sizeof(largest_recv_time_));
@@ -48,7 +48,7 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     
     if (!set_timer_) {
         set_timer_ = true;
-        timer_->AddTimer(timer_task_, max_ack_delay_);
+        GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(timer_task_, max_ack_delay_);
     }
 }
 
@@ -71,7 +71,7 @@ void RecvControl::OnEcnCounters(uint8_t ecn, PacketNumberSpace ns) {
 
 std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled) {
     if (set_timer_) {
-        timer_->RmTimer(timer_task_);
+        GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(timer_task_);
         set_timer_ = false;
     }
     

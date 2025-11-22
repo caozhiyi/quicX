@@ -44,30 +44,20 @@ uint32_t BufferReadView::ReadNotMovePt(uint8_t* data, uint32_t len) {
     return InnerRead(data, len, false);
 }
 
-uint32_t BufferReadView::MoveReadPt(int32_t len) {
+uint32_t BufferReadView::MoveReadPt(uint32_t len) {
     if (!Valid()) {
         LOG_ERROR("span is invalid");
         return 0;
     }
 
-    if (len > 0) {
-        size_t size = buffer_end_ - read_pos_;
-        if (static_cast<int32_t>(size) <= len) {
-            read_pos_ = buffer_end_;
-            return static_cast<uint32_t>(size);
-        }
-        read_pos_ += len;
-        return static_cast<uint32_t>(len);
-    }
-
-    len = -len;
-    size_t size = read_pos_ - buffer_start_;
+    size_t size = buffer_end_ - read_pos_;
     if (static_cast<int32_t>(size) <= len) {
-        read_pos_ = buffer_start_;
+        read_pos_ = buffer_end_;
         return static_cast<uint32_t>(size);
     }
-    read_pos_ -= len;
+    read_pos_ += len;
     return static_cast<uint32_t>(len);
+   
 }
 
 uint32_t BufferReadView::Read(uint8_t* data, uint32_t len) {
@@ -78,7 +68,7 @@ uint32_t BufferReadView::Read(uint8_t* data, uint32_t len) {
     return InnerRead(data, len, true);
 }
 
-void BufferReadView::VisitData(const std::function<void(uint8_t*, uint32_t)>& visitor) {
+void BufferReadView::VisitData(const std::function<bool(uint8_t*, uint32_t)>& visitor) {
     if (!visitor) {
         return;
     }

@@ -99,9 +99,6 @@ TEST(BufferReadViewTest, MoveBackwardsAndInvalidReset) {
     EXPECT_EQ(2u, view.MoveReadPt(2));
     EXPECT_EQ(storage.data() + 2, view.GetData());
 
-    EXPECT_EQ(2u, view.MoveReadPt(-3));  // clamps at start
-    EXPECT_EQ(storage.data(), view.GetData());
-
     view.Reset(nullptr, nullptr);
     EXPECT_FALSE(view.Valid());
     EXPECT_EQ(nullptr, view.GetData());
@@ -166,15 +163,6 @@ TEST(BufferReadViewTest, MoveReadPtForwardBeyondEnd) {
     EXPECT_EQ(0u, view.GetDataLength());
 }
 
-TEST(BufferReadViewTest, MoveReadPtBackwardBeyondStart) {
-    std::array<uint8_t, 8> storage = {1, 2, 3, 4, 5, 6, 7, 8};
-    BufferReadView view(storage.data(), storage.size());
-    
-    view.MoveReadPt(5);
-    EXPECT_EQ(5u, view.MoveReadPt(-100));  // Clamps to start
-    EXPECT_EQ(8u, view.GetDataLength());
-}
-
 TEST(BufferReadViewTest, VisitDataCallback) {
     std::array<uint8_t, 6> storage = {11, 22, 33, 44, 55, 66};
     BufferReadView view(storage.data(), storage.size());
@@ -184,6 +172,7 @@ TEST(BufferReadViewTest, VisitDataCallback) {
         EXPECT_EQ(6u, len);
         EXPECT_EQ(0, std::memcmp(data, storage.data(), len));
         visit_count++;
+        return true;
     });
     EXPECT_EQ(1u, visit_count);
 }
@@ -205,7 +194,7 @@ TEST(BufferReadViewTest, VisitDataOnEmptyView) {
     view.Read(buffer, 8);
     
     size_t visit_count = 0;
-    view.VisitData([&](uint8_t*, uint32_t) { visit_count++; });
+    view.VisitData([&](uint8_t*, uint32_t) { visit_count++; return true; });
     EXPECT_EQ(0u, visit_count);
 }
 

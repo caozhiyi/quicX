@@ -61,7 +61,7 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
     frame->SetOffset(send_offset_);
     frame->SetEncryptionLevel(level);
 
-    common::SharedBufferSpan data = buffer->GetSharedBufferSpan(1300); // TODO: 1300 is the max length of a crypto frame
+    common::SharedBufferSpan data = buffer->GetSharedReadableSpan(1300); // TODO: 1300 is the max length of a crypto frame
     frame->SetData(data);
 
     if (!visitor->HandleFrame(frame)) {

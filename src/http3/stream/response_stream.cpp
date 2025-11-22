@@ -114,16 +114,20 @@ void ResponseStream::HandleHeaders() {
     // if async server handler is set, call the handler
     if (route_config_.IsAsyncServer()) {
         HandleHttp(std::bind(&IAsyncServerHandler::OnHeaders, route_config_.GetAsyncServerHandler(), request_, response_));
+        common::LOG_DEBUG("HandleHeaders: async server handler called");
         return;
     }
 
+    common::LOG_DEBUG("HandleHeaders: complete handler called, body_length_: %u, has_content_length: %d", body_length_, has_content_length);
     // if complete handler is set and there is no body, call the handler and send response
     if (!has_content_length || body_length_ == 0) {
         // No body expected, handle immediately
         HandleHttp(route_config_.GetCompleteHandler());
         HandleResponse();
+        common::LOG_DEBUG("HandleHeaders: complete handler called and response sent");
         return;
     }
+    common::LOG_DEBUG("HandleHeaders: complete handler called");
     // If body_length_ > 0, wait for HandleData to accumulate and process the body
 }
 
@@ -146,6 +150,7 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
         auto async_handler = route_config_.GetAsyncServerHandler();
         data->VisitData([&](uint8_t* data, uint32_t length) {
             async_handler->OnBodyChunk(data, length, is_last);
+            return true;
         });
 
         // all data received, send response and handle push

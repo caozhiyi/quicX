@@ -76,19 +76,6 @@ public:
     virtual void AddTimer(uint32_t timeout_ms, std::function<void()> cb) = 0;
 
     /**
-     * @brief Establish a QUIC connection to a remote server.
-     *
-     * @param ip Remote IP (IPv4 or IPv6 textual form).
-     * @param port Remote UDP port.
-     * @param alpn ALPN identifier (e.g. "h3").
-     * @param timeout_ms Connection timeout in milliseconds.
-     * @return true if the connect attempt was dispatched, false on immediate
-     *         failure (invalid parameters, no threads, etc.).
-     */
-    virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms) = 0;
-
-    /**
      * @brief Establish a QUIC connection using an explicit resumption ticket.
      *
      * Passing non-empty session bytes allows the client to attempt 0-RTT if the
@@ -103,7 +90,7 @@ public:
      * @return true if the connect attempt was dispatched, false otherwise.
      */
     virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) = 0;
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der = "") = 0;
 
     /**
      * @brief Register a callback that observes connection-level state changes.

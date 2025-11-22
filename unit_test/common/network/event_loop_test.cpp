@@ -46,7 +46,7 @@ TEST(EventLoopTest, PostTaskExecutes) {
     ASSERT_TRUE(loop.Init());
 
     std::atomic<int> ran{0};
-    loop.PostTask([&](){ ran++; });
+    loop.PostTask([&]() { ran++; });
 
     RunLoopNTimes(loop, 2);
     EXPECT_EQ(ran.load(), 1);
@@ -57,7 +57,7 @@ TEST(EventLoopTest, TimerFiresOnce) {
     ASSERT_TRUE(loop.Init());
 
     std::atomic<int> fired{0};
-    uint64_t id = loop.AddTimer([&](){ fired++; }, 5 /*ms*/, false);
+    uint64_t id = loop.AddTimer([&]() { fired++; }, 5 /*ms*/, false);
     EXPECT_GT(id, 0u);
 
     // Run until it should have fired
@@ -72,7 +72,7 @@ TEST(EventLoopTest, TimerCanBeRemoved) {
     EventLoop loop;
     ASSERT_TRUE(loop.Init());
     std::atomic<int> fired{0};
-    uint64_t id = loop.AddTimer([&](){ fired++; }, 20 /*ms*/, false);
+    uint64_t id = loop.AddTimer([&]() { fired++; }, 20 /*ms*/, false);
     ASSERT_GT(id, 0u);
     EXPECT_TRUE(loop.RemoveTimer(id));
 
@@ -86,7 +86,7 @@ TEST(EventLoopTest, WakeupUnblocksWait) {
     ASSERT_TRUE(loop.Init());
 
     // In another thread, wake up the loop shortly
-    std::thread t([&loop](){
+    std::thread t([&loop]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         loop.Wakeup();
     });
@@ -130,8 +130,6 @@ TEST(EventLoopTest, RegisterModifyRemoveFdWithPipeAndDispatchRead) {
     Close(wfd);
 }
 
-} // namespace
-} // namespace common
-} // namespace quicx
-
-
+}  // namespace
+}  // namespace common
+}  // namespace quicx
