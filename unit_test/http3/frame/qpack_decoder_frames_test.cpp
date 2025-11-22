@@ -11,11 +11,11 @@ namespace {
 TEST(QpackDecoderFramesTest, PrefixedIntegerEncodeDecode) {
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(64);
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
-    
+
     // Test encoding and decoding a small value
     uint64_t original_value = 123;
     ASSERT_TRUE(QpackEncodePrefixedInteger(buf, 8, 0, original_value));
-    
+
     uint8_t first_byte = 0;
     uint64_t decoded_value = 0;
     ASSERT_TRUE(QpackDecodePrefixedInteger(buf, 8, first_byte, decoded_value));
@@ -23,7 +23,8 @@ TEST(QpackDecoderFramesTest, PrefixedIntegerEncodeDecode) {
 }
 
 TEST(QpackDecoderFramesTest, SectionAckEncodeDecode) {
-    QpackSectionAckFrame f1; f1.Set(123, 456);
+    QpackSectionAckFrame f1;
+    f1.Set(123, 456);
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(64);
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
     ASSERT_TRUE(f1.Encode(buf));
@@ -36,11 +37,12 @@ TEST(QpackDecoderFramesTest, SectionAckEncodeDecode) {
 }
 
 TEST(QpackDecoderFramesTest, StreamCancellationEncodeDecode) {
-    QpackStreamCancellationFrame f1; f1.Set(777, 888);
+    QpackStreamCancellationFrame f1;
+    f1.Set(777, 888);
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(64);
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
     ASSERT_TRUE(f1.Encode(buf));
-    
+
     QpackStreamCancellationFrame f2;
     ASSERT_TRUE(f2.Decode(buf));
     EXPECT_EQ(f2.GetStreamId(), 777u);
@@ -48,17 +50,17 @@ TEST(QpackDecoderFramesTest, StreamCancellationEncodeDecode) {
 }
 
 TEST(QpackDecoderFramesTest, InsertCountIncrementEncodeDecode) {
-    QpackInsertCountIncrementFrame f1; f1.Set(9999);
+    QpackInsertCountIncrementFrame f1;
+    f1.Set(9999);
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(32);
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
     ASSERT_TRUE(f1.Encode(buf));
-    
+
     QpackInsertCountIncrementFrame f2;
     ASSERT_TRUE(f2.Decode(buf));
     EXPECT_EQ(f2.GetDelta(), 9999u);
 }
 
-
-}
-}
-}
+}  // namespace
+}  // namespace http3
+}  // namespace quicx

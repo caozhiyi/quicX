@@ -1,66 +1,42 @@
 #include "common/log/log.h"
 #include "quic/connection/error.h"
 #include "quic/quicx/worker_client.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/connection/connection_client.h"
 
 namespace quicx {
 namespace quic {
 
 // a normal worker
-ClientWorker::ClientWorker(const QuicConfig& config,
-        std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<ISender> sender,
-        const QuicTransportParams& params,
-        std::shared_ptr<common::IEventLoop> event_loop,
-        connection_state_callback connection_handler):
-    Worker(config, ctx, sender, params, event_loop, connection_handler) {
-}
+ClientWorker::ClientWorker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
+    const QuicTransportParams& params, connection_state_callback connection_handler):
+    Worker(config, ctx, sender, params, connection_handler) {}
 
-ClientWorker::~ClientWorker() {
+ClientWorker::~ClientWorker() {}
 
-}
-
-void ClientWorker::Connect(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms) {
-    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_->GetTimer(),
-        std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-
-    connecting_set_.insert(conn);
-    
-    conn->Dial(common::Address(ip, port), alpn, params_);
-    
-    event_loop_->AddTimer([conn, this]() {
-        HandleConnectionTimeout(conn);
-    }, timeout_ms);
-}
-
-void ClientWorker::Connect(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
-
+void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
+    const std::string& resumption_session_der) {
     auto conn = std::make_shared<ClientConnection>(ctx_,
-        event_loop_->GetTimer(),
         std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-                    
+        std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
+            std::placeholders::_3));
+
     connecting_set_.insert(conn);
-            
-    conn->Dial(common::Address(ip, port), alpn, resumption_session_der, params_);
-                    
-    event_loop_->AddTimer([conn, this]() {
-        HandleConnectionTimeout(conn);
-    }, timeout_ms);
+    if (resumption_session_der.empty()) {
+        conn->Dial(common::Address(ip, port), alpn, params_);
+    } else {
+        conn->Dial(common::Address(ip, port), alpn, resumption_session_der, params_);
+    }
+
+    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer([conn, this]() { HandleConnectionTimeout(conn); }, timeout_ms);
 }
 
 bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     common::LOG_DEBUG("get packet. peer addr:%s", packet_info.net_packet_->GetAddress().AsString().c_str());
-    
+
     // dispatch packet
     auto cid_code = packet_info.cid_.Hash();
     common::LOG_DEBUG("get packet. dcid:%llu", cid_code);
@@ -71,7 +47,8 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         conn->second->OnObservedPeerAddress(observed_addr);
         // record received bytes on candidate path to unlock anti-amplification budget
         if (packet_info.net_packet_->GetData()) {
-            conn->second->OnCandidatePathDatagramReceived(observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
+            conn->second->OnCandidatePathDatagramReceived(
+                observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
         }
         conn->second->SetPendingEcn(packet_info.net_packet_->GetEcn());
         conn->second->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
@@ -79,7 +56,7 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     }
 
     if (packet_info.packets_[0]->GetHeader()->GetPacketType() == PacketType::kNegotiationPacketType) {
-        common::LOG_DEBUG("get a negotiation packet"); // TODO handle negotiation packet
+        common::LOG_DEBUG("get a negotiation packet");  // TODO handle negotiation packet
         return true;
     }
 
@@ -90,9 +67,10 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
 void ClientWorker::HandleConnectionTimeout(std::shared_ptr<IConnection> conn) {
     if (conn_map_.find(conn->GetConnectionIDHash()) != conn_map_.end()) {
         conn_map_.erase(conn->GetConnectionIDHash());
-        connection_handler_(conn, ConnectionOperation::kConnectionClose, QuicErrorCode::kConnectionTimeout, GetErrorString(QuicErrorCode::kConnectionTimeout));
+        connection_handler_(conn, ConnectionOperation::kConnectionClose, QuicErrorCode::kConnectionTimeout,
+            GetErrorString(QuicErrorCode::kConnectionTimeout));
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

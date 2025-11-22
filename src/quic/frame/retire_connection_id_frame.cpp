@@ -8,18 +8,15 @@ namespace quic {
 
 RetireConnectionIDFrame::RetireConnectionIDFrame():
     IFrame(FrameType::kRetireConnectionId),
-    sequence_number_(0) {
+    sequence_number_(0) {}
 
-}
-
-RetireConnectionIDFrame::~RetireConnectionIDFrame() {
-
-}
+RetireConnectionIDFrame::~RetireConnectionIDFrame() {}
 
 bool RetireConnectionIDFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -46,6 +43,6 @@ bool RetireConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bo
 uint32_t RetireConnectionIDFrame::EncodeSize() {
     return sizeof(RetireConnectionIDFrame);
 }
-  
-}
-}
+
+}  // namespace quic
+}  // namespace quicx

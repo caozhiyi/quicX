@@ -9,13 +9,12 @@ namespace quic {
 
 ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
     const std::string& alpn,
-    std::shared_ptr<common::ITimer> timer,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
     std::function<void(ConnectionID&)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
-    BaseConnection(StreamIDGenerator::StreamStarter::kServer, false, timer, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
+    BaseConnection(StreamIDGenerator::StreamStarter::kServer, false, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     server_alpn_(alpn) {
     tls_connection_ = std::make_shared<TLSServerConnection>(ctx, &connection_crypto_, this);
     if (!tls_connection_->Init()) {
@@ -79,25 +78,44 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
     const unsigned char *in, unsigned int inlen, void *arg) {
     
     // parse client alpn list
+    // ALPN format: [length1][protocol1][length2][protocol2]...
     std::vector<std::string> client_protos;
-    for (unsigned int i = 0; i < inlen; i++) {
-        int len = in[i];
-        client_protos.push_back(std::string((const char*)&in[i+1], len));
+    for (unsigned int i = 0; i < inlen;) {
+        if (i >= inlen) {
+            break;
+        }
+        unsigned char len = in[i++];
+        if (i + len > inlen) {
+            common::LOG_ERROR("invalid ALPN format: length %d exceeds remaining data", len);
+            break;
+        }
+        std::string proto((const char*)&in[i], len);
+        client_protos.push_back(proto);
+        common::LOG_DEBUG("client alpn:%s", proto.c_str());
         i += len;
     }
-    
-    // find a alpn
+    common::LOG_DEBUG("server alpn:%s", server_alpn_.c_str());
+
+    // find a matching alpn
     for (auto const& client_proto : client_protos) {
         if (client_proto == server_alpn_) {
             *out = (unsigned char*)server_alpn_.c_str();
             *outlen = server_alpn_.length();
+            common::LOG_DEBUG("ALPN selected: %s", server_alpn_.c_str());
             return;
         }
     }
 
-    common::LOG_ERROR("no alpn found. server alpn:%s", server_alpn_.c_str());
+    common::LOG_ERROR("no alpn found. server alpn:%s (len:%d)", server_alpn_.c_str(), server_alpn_.length());
+    for (size_t i = 0; i < server_alpn_.length(); ++i) {
+        common::LOG_ERROR("server alpn[%d]: 0x%02x", i, (unsigned char)server_alpn_[i]);
+    }
+
     for (auto const& client_proto : client_protos) {
-        common::LOG_ERROR("client alpn:%s", client_proto.c_str());
+        common::LOG_ERROR("client alpn:%s (len:%d)", client_proto.c_str(), client_proto.length());
+        for (size_t i = 0; i < client_proto.length(); ++i) {
+            common::LOG_ERROR("client alpn[%d]: 0x%02x", i, (unsigned char)client_proto[i]);
+        }
     }
 }
 

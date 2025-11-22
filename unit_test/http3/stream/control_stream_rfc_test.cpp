@@ -55,10 +55,8 @@ protected:
     }
 
     void SendFrame(IFrame& frame) {
-        uint8_t storage[256] = {0};
-        auto chunk = std::make_shared<common::StandaloneBufferChunk>(sizeof(storage));
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(256);
         auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-        buffer->Write(storage, sizeof(storage));
         ASSERT_TRUE(frame.Encode(buffer));
         client_stream_->Send(buffer);
     }

@@ -184,7 +184,7 @@ TEST_F(StreamAckTrackingTest, SendStreamAckTracking) {
 
 // Test 5: SendControl callback mechanism
 TEST_F(StreamAckTrackingTest, SendControlCallbackMechanism) {
-    SendControl send_control(timer_);
+    SendControl send_control;
     
     std::vector<std::tuple<uint64_t, uint64_t, bool>> acked_streams;
     
@@ -226,7 +226,7 @@ TEST_F(StreamAckTrackingTest, SendControlCallbackMechanism) {
 
 // Test 6: Multiple packets ACKed
 TEST_F(StreamAckTrackingTest, MultiplePacketsAcked) {
-    SendControl send_control(timer_);
+    SendControl send_control;
     
     std::vector<std::tuple<uint64_t, uint64_t, bool>> acked_data;
     
@@ -279,7 +279,7 @@ TEST_F(StreamAckTrackingTest, MultiplePacketsAcked) {
 
 // Test 7: Integration test - SendControl to Stream
 TEST_F(StreamAckTrackingTest, IntegrationSendControlToStream) {
-    SendControl send_control(timer_);
+    SendControl send_control;
     
     auto stream = std::make_shared<SendStream>(
         alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);

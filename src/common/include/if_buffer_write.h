@@ -23,7 +23,7 @@ public:
     // values advance the pointer, negative values rewind it. The movement is
     // always clamped to the writable range and the actual distance moved is
     // returned to the caller.
-    virtual uint32_t MoveWritePt(int32_t len) = 0;
+    virtual uint32_t MoveWritePt(uint32_t len) = 0;
 };
 
 }

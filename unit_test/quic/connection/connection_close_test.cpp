@@ -82,7 +82,7 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Est
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init(false);
 
-    auto client = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -90,7 +90,7 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Est
 
     client->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // Complete handshake
@@ -413,7 +413,7 @@ TEST_F(ConnectionCloseTest, CloseDuringHandshake) {
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init(false);
 
-    auto client = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");

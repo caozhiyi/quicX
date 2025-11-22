@@ -51,7 +51,7 @@ private:
 class MockConnectionForIntegration {
 public:
     MockConnectionForIntegration() : timer_(std::make_shared<MockTimer>()) {
-        send_control_ = std::make_shared<SendControl>(timer_);
+        send_control_ = std::make_shared<SendControl>();
         
         // Register stream ACK callback
         send_control_->SetStreamDataAckCallback(
@@ -287,6 +287,7 @@ TEST_F(StreamIntegrationTest, BidirectionalRequestResponseFlow) {
                 for (uint32_t i = 0; i < len; i++) {
                     received_data.push_back(data[i]);
                 }
+                return true;
             });
         }
     });
@@ -401,6 +402,7 @@ TEST_F(StreamIntegrationTest, OutOfOrderDataReassembly) {
                 for (uint32_t i = 0; i < len; i++) {
                     received_data.push_back(data[i]);
                 }
+                return true;
             });
         }
     });

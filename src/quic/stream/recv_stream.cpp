@@ -7,7 +7,6 @@
 #include "quic/stream/state_machine_recv.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/stream_data_blocked_frame.h"
-#include "quic/connection/controler/send_control.h"
 
 namespace quicx {
 namespace quic {
@@ -160,12 +159,13 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     }
 
     // TODO put number to config
-    if (local_data_limit_ - except_offset_ < 3096) {
+    if (local_data_limit_ - except_offset_ < 7360) {
         if (recv_machine_->CanSendMaxStrameDataFrame()) {
-            local_data_limit_ += 3096;
+            local_data_limit_ += 7360;
             auto max_frame = std::make_shared<MaxStreamDataFrame>();
             max_frame->SetStreamID(stream_id_);
             max_frame->SetMaximumData(local_data_limit_);
+            frames_list_.emplace_back(max_frame);
     
             ToSend();
         }
@@ -182,9 +182,10 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     auto block_frame = std::dynamic_pointer_cast<StreamDataBlockedFrame>(frame);
     common::LOG_WARN("stream recv data blocked. stream id:%d, offset:%d", stream_id_, block_frame->GetMaximumData());
 
+    local_data_limit_ += 3096; // TODO. define increase steps
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(stream_id_);
-    max_frame->SetMaximumData(local_data_limit_ + 3096); // TODO. define increase steps
+    max_frame->SetMaximumData(local_data_limit_);
     frames_list_.emplace_back(max_frame);
 
     ToSend();

@@ -30,9 +30,9 @@ public:
     // capped by the amount of readable data. ReadNotMovePt() leaves the read
     // pointer untouched; Read() advances it; MoveReadPt() moves without copying.
     uint32_t ReadNotMovePt(uint8_t* data, uint32_t len) override;
-    uint32_t MoveReadPt(int32_t len) override;
+    uint32_t MoveReadPt(uint32_t len) override;
     uint32_t Read(uint8_t* data, uint32_t len) override;
-    void VisitData(const std::function<void(uint8_t*, uint32_t)>& visitor) override;
+    void VisitData(const std::function<bool(uint8_t*, uint32_t)>& visitor) override;
     // Query helpers.
     uint32_t GetDataLength() override;
     uint32_t GetDataLength() const;

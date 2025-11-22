@@ -6,20 +6,17 @@
 namespace quicx {
 namespace quic {
 
-MaxStreamsFrame::MaxStreamsFrame(uint16_t frame_type): 
+MaxStreamsFrame::MaxStreamsFrame(uint16_t frame_type):
     IFrame(frame_type),
-    maximum_streams_(0) {
+    maximum_streams_(0) {}
 
-}
-
-MaxStreamsFrame::~MaxStreamsFrame() {
-
-}
+MaxStreamsFrame::~MaxStreamsFrame() {}
 
 bool MaxStreamsFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -35,8 +32,7 @@ bool MaxStreamsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_
 
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
-        if (frame_type_ != FrameType::kMaxStreamsBidirectional &&
-            frame_type_ != FrameType::kMaxStreamsUnidirectional) {
+        if (frame_type_ != FrameType::kMaxStreamsBidirectional && frame_type_ != FrameType::kMaxStreamsUnidirectional) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
@@ -50,5 +46,5 @@ uint32_t MaxStreamsFrame::EncodeSize() {
     return sizeof(MaxStreamsFrame);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

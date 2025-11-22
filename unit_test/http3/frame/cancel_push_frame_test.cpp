@@ -8,7 +8,7 @@ namespace quicx {
 namespace http3 {
 namespace {
 
-class CancelPushFrameTest : public testing::Test {
+class CancelPushFrameTest: public testing::Test {
 protected:
     void SetUp() override {
         auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
@@ -28,7 +28,7 @@ TEST_F(CancelPushFrameTest, EncodeAndDecode) {
 
     // Create new frame for decoding
     auto decode_frame = std::make_shared<CancelPushFrame>();
-    EXPECT_TRUE(decode_frame->Decode(buffer_, true));
+    EXPECT_EQ(decode_frame->Decode(buffer_, true), DecodeResult::kSuccess);
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetPushId(), push_id);
@@ -65,4 +65,4 @@ TEST_F(CancelPushFrameTest, EvaluateSize) {
 
 }  // namespace
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

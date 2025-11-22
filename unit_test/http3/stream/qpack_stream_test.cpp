@@ -96,10 +96,8 @@ TEST_F(QpackStreamTest, EncoderReceiverNotifiesBlockedStreams) {
 
     QpackSetCapacityFrame frame;
     frame.SetCapacity(128);
-    uint8_t buf[64] = {0};
-    auto chunk = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(64);
     auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-    buffer->Write(buf, sizeof(buf));
     ASSERT_TRUE(frame.Encode(buffer));
     encoder_send_stream_->Send(buffer);
 

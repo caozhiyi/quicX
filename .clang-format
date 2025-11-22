@@ -1,0 +1,27 @@
+BasedOnStyle: Google
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+NamespaceIndentation: None
+AccessModifierOffset: -4
+ColumnLimit: 120
+PointerAlignment: Left
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+
+# Inheritance formatting
+BreakInheritanceList: AfterColon
+SpaceBeforeInheritanceColon: false
+
+# Constructor Initializer formatting
+BreakConstructorInitializers: AfterColon
+SpaceBeforeCtorInitializerColon: false
+ConstructorInitializerIndentWidth: 4
+PackConstructorInitializers: Never
+
+# Argument alignment (don't align to open bracket, use indent)
+AlignAfterOpenBracket: DontAlign
+
+# Disable include sorting to allow manual length-based sorting
+SortIncludes: false
+IncludeBlocks: Preserve

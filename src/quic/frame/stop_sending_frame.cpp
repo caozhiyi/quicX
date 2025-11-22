@@ -6,20 +6,17 @@
 namespace quicx {
 namespace quic {
 
-StopSendingFrame::StopSendingFrame(): 
+StopSendingFrame::StopSendingFrame():
     IStreamFrame(FrameType::kStopSending),
-    app_error_code_(0) {
+    app_error_code_(0) {}
 
-}
-
-StopSendingFrame::~StopSendingFrame() {
-
-}
+StopSendingFrame::~StopSendingFrame() {}
 
 bool StopSendingFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -49,5 +46,5 @@ uint32_t StopSendingFrame::EncodeSize() {
     return sizeof(StopSendingFrame);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

@@ -18,14 +18,16 @@ namespace common {
 // fully implements the IBuffer contract. The caller is responsible for
 // supplying the backing chunk (which may come from either BlockMemoryPool via
 // BufferChunk or StandaloneBufferChunk). The class is not thread-safe.
-class SingleBlockBuffer:
-    public IBuffer {
+class SingleBlockBuffer: public IBuffer {
 public:
     // Construct an empty buffer without backing storage.
     SingleBlockBuffer();
     // Take ownership of an existing chunk.
     explicit SingleBlockBuffer(std::shared_ptr<IBufferChunk> chunk);
     ~SingleBlockBuffer() = default;
+
+    // Create a SingleBlockBuffer from a SharedBufferSpan with correct read/write pointers
+    static std::shared_ptr<SingleBlockBuffer> FromSpan(const SharedBufferSpan& span);
 
     SingleBlockBuffer(const SingleBlockBuffer&) = delete;
     SingleBlockBuffer& operator=(const SingleBlockBuffer&) = delete;
@@ -39,47 +41,48 @@ public:
     // Copy readable data without advancing the read pointer.
     uint32_t ReadNotMovePt(uint8_t* data, uint32_t len) override;
     // Advance (or rewind) the read pointer safely.
-    uint32_t MoveReadPt(int32_t len) override;
+    uint32_t MoveReadPt(uint32_t len) override;
     // Copy readable data and advance the read pointer.
     uint32_t Read(uint8_t* data, uint32_t len) override;
-    void VisitData(const std::function<void(uint8_t*, uint32_t)>& visitor) override;
-    void VisitDataSpans(const std::function<void(SharedBufferSpan&)>& visitor) override;
+    void VisitData(const std::function<bool(uint8_t*, uint32_t)>& visitor) override;
     // Number of bytes currently readable.
     uint32_t GetDataLength() override;
-    // Pointer to the readable region.
-    uint8_t* GetData() const;
+    // Reset read/write pointers without releasing the chunk.
+    void Clear() override;
+
+    // *************************** inner interfaces ***************************
+    std::shared_ptr<IBuffer> CloneReadable(uint32_t length, bool move_write_pt = true) override;
     // Return a read-only view over the readable data.
     BufferReadView GetReadView() const override;
     // Return a non-owning span describing the readable data.
-    BufferSpan GetWritableSpan() const;
     BufferSpan GetReadableSpan() const override;
     // Return a shared span that keeps the chunk alive.
-    SharedBufferSpan GetSharedBufferSpan() const;
-    SharedBufferSpan GetSharedReadableSpan() const override;
-    SharedBufferSpan GetSharedReadableSpan(uint32_t length) const override;
-    SharedBufferSpan GetSharedReadableSpan(uint32_t length, bool must_fill_length) const override;
-    // Reset read/write pointers without releasing the chunk.
-    void Clear() override;
+    SharedBufferSpan GetSharedReadableSpan(uint32_t length = 0, bool must_fill_length = false) const override;
     // Return the data as a string.
     std::string GetDataAsString() override;
+    void VisitDataSpans(const std::function<bool(SharedBufferSpan&)>& visitor) override;
 
     // Write data into the buffer and move the write pointer.
     uint32_t Write(const uint8_t* data, uint32_t len) override;
-    uint32_t Write(std::shared_ptr<IBuffer> buffer) override;
     uint32_t Write(const SharedBufferSpan& span) override;
+    uint32_t Write(std::shared_ptr<IBuffer> buffer) override;
     uint32_t Write(const SharedBufferSpan& span, uint32_t data_len) override;
     // Remaining writable capacity.
     uint32_t GetFreeLength() override;
     // Advance (or rewind) the write pointer safely.
-    uint32_t MoveWritePt(int32_t len) override;
+    uint32_t MoveWritePt(uint32_t len) override;
     BufferSpan GetWritableSpan() override;
     BufferSpan GetWritableSpan(uint32_t expected_length) override;
+    // return the chunk of the buffer
+    std::shared_ptr<IBufferChunk> GetChunk() const override;
 
     // Replace the current chunk with a new one.
     void Reset(std::shared_ptr<IBufferChunk> chunk);
-    // return the chunk of the buffer
-    std::shared_ptr<IBufferChunk> GetChunk() const override;
-    std::shared_ptr<IBuffer> ShallowClone() const override;
+    // Pointer to the readable region.
+    uint8_t* GetData() const;
+    // Return a non-owning span describing the writable data (const version).
+    BufferSpan GetWritableSpan() const;
+
 private:
     // Core implementation for read operations.
     uint32_t InnerRead(uint8_t* data, uint32_t len, bool move_pt);
@@ -95,8 +98,7 @@ private:
     uint8_t* buffer_end_ = nullptr;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif
-

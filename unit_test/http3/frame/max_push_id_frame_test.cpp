@@ -8,7 +8,7 @@ namespace quicx {
 namespace http3 {
 namespace {
 
-class MaxPushIdFrameTest : public testing::Test {
+class MaxPushIdFrameTest: public testing::Test {
 protected:
     void SetUp() override {
         auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
@@ -22,7 +22,7 @@ protected:
 
 TEST_F(MaxPushIdFrameTest, BasicProperties) {
     EXPECT_EQ(frame_->GetType(), FrameType::kMaxPushId);
-    
+
     uint64_t push_id = 100;
     frame_->SetPushId(push_id);
     EXPECT_EQ(frame_->GetPushId(), push_id);
@@ -37,7 +37,7 @@ TEST_F(MaxPushIdFrameTest, EncodeAndDecode) {
 
     // Create new frame for decoding
     auto decode_frame = std::make_shared<MaxPushIdFrame>();
-    EXPECT_TRUE(decode_frame->Decode(buffer_, true));
+    EXPECT_EQ(decode_frame->Decode(buffer_, true), DecodeResult::kSuccess);
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetPushId(), push_id);
@@ -59,4 +59,4 @@ TEST_F(MaxPushIdFrameTest, EvaluateSize) {
 
 }  // namespace
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

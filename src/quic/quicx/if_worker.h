@@ -26,8 +26,6 @@ public:
     virtual std::string GetWorkerId() = 0;
     // Handle packets
     virtual void HandlePacket(PacketParseResult& packet_info) = 0;
-    // Get the event loop
-    virtual std::shared_ptr<common::IEventLoop> GetEventLoop() = 0;
     // add a connection id notify
     virtual void SetConnectionIDNotify(std::shared_ptr<IConnectionIDNotify> connection_id_notify) {
         connection_id_notify_ = connection_id_notify;
@@ -37,7 +35,7 @@ protected:
     std::weak_ptr<IConnectionIDNotify> connection_id_notify_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

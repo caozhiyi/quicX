@@ -6,10 +6,6 @@ namespace quicx {
 namespace http3 {
 
 bool CancelPushFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    if (buffer->GetFreeLength() < EvaluateEncodeSize()) {
-        return false;
-    }
-
     common::BufferEncodeWrapper wrapper(buffer);
     // Write frame type
     if (!wrapper.EncodeFixedUint16(type_)) {
@@ -29,38 +25,38 @@ bool CancelPushFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     return true;
 }
 
-bool CancelPushFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
+DecodeResult CancelPushFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
-    
+
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
-            return false;
+            return DecodeResult::kError;
         }
     }
 
     // Read length
     uint64_t length = 0;
     if (!wrapper.DecodeVarint(length)) {
-        return false;
+        return DecodeResult::kError;
     }
 
     // Read push ID
     if (!wrapper.DecodeVarint(push_id_)) {
-        return false;
+        return DecodeResult::kError;
     }
 
-    return true;
+    return DecodeResult::kSuccess;
 }
 
 uint32_t CancelPushFrame::EvaluateEncodeSize() {
     uint32_t size = 0;
-    
+
     // Size for frame type
     size += sizeof(type_);
-    
+
     // Size for length field
     size += common::GetEncodeVarintLength(EvaluatePayloadSize());
-    
+
     // Size for push ID
     size += common::GetEncodeVarintLength(push_id_);
 
@@ -71,5 +67,5 @@ uint32_t CancelPushFrame::EvaluatePayloadSize() {
     return common::GetEncodeVarintLength(push_id_);
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

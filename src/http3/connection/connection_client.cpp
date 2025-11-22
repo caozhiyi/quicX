@@ -268,7 +268,7 @@ void ClientConnection::OnStreamTypeIdentified(
         streams_[stream->GetStreamID()] = typed_stream;
         
         // Feed remaining data to the new stream if any
-        typed_stream->OnData(remaining_data, 0);
+        typed_stream->OnData(remaining_data, false, 0);
     }
 }
 

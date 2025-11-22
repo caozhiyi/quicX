@@ -8,7 +8,7 @@ namespace quicx {
 namespace http3 {
 namespace {
 
-class SettingsFrameTest : public testing::Test {
+class SettingsFrameTest: public testing::Test {
 protected:
     void SetUp() override {
         auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
@@ -22,7 +22,7 @@ protected:
 
 TEST_F(SettingsFrameTest, BasicProperties) {
     EXPECT_EQ(frame_->GetType(), FrameType::kSettings);
-    
+
     // Test setting and getting values
     uint64_t id = 1;
     uint64_t value = 100;
@@ -47,7 +47,7 @@ TEST_F(SettingsFrameTest, EncodeAndDecode) {
 
     // Create new frame for decoding
     auto decode_frame = std::make_shared<SettingsFrame>();
-    EXPECT_TRUE(decode_frame->Decode(buffer_, true));
+    EXPECT_EQ(decode_frame->Decode(buffer_, true), DecodeResult::kSuccess);
 }
 
 TEST_F(SettingsFrameTest, EvaluateSize) {
@@ -67,4 +67,4 @@ TEST_F(SettingsFrameTest, EvaluateSize) {
 
 }  // namespace
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

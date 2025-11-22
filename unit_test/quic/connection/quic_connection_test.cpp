@@ -71,7 +71,7 @@ TEST(quic_connection_utest, handshake) {
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init(false);
 
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -79,7 +79,7 @@ TEST(quic_connection_utest, handshake) {
 
     client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
     
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // client -------init-----> server
@@ -138,7 +138,7 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     client_ctx->Init(true);
 
     // 1) First connection: full handshake to obtain resumption session
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -146,7 +146,7 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
 
     client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // client -------init-----> server
@@ -169,11 +169,11 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     common::LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
 
     // 2) Second connection: provide session to enable 0-RTT and send early data
-    auto client_conn2 = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn2 = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     client_conn2->Dial(addr, "h3", session_der, DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server_conn2 = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn2 = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn2->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // queue early application data before handshake completes
@@ -256,7 +256,7 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     client_ctx->Init(true);
 
     // 1) First connection: full handshake to obtain resumption session
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -264,7 +264,7 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
 
     client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // client -------init-----> server
@@ -287,7 +287,7 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     common::LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
 
     // 2) Second connection: provide session to enable 0-RTT and send early data
-    auto client_conn2 = std::make_shared<ClientConnection>(client_ctx, common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn2 = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     client_conn2->Dial(addr, "h3", session_der, DEFAULT_QUIC_TRANSPORT_PARAMS);
 
@@ -295,7 +295,7 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     std::shared_ptr<TLSServerCtx> server_ctx_2 = std::make_shared<TLSServerCtx>();
     server_ctx_2->Init(kCertPem, kKeyPem, false, 172800);
 
-    auto server_conn2 = std::make_shared<ServerConnection>(server_ctx_2, "h3", common::MakeTimer(), nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn2 = std::make_shared<ServerConnection>(server_ctx_2, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn2->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // queue early application data before handshake completes

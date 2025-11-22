@@ -39,7 +39,7 @@ public:
         
         // Feed remaining data to the control stream
         if (remaining_data && remaining_data->GetDataLength() > 0) {
-            receiver_stream_->OnData(remaining_data, 0);
+            receiver_stream_->OnData(remaining_data, false, 0);
         }
     }
 
@@ -115,6 +115,8 @@ protected:
 };
 
 TEST_F(ControlServerSenderStreamTest, SendGoAway) {
+    // RFC 9114: First frame on control stream must be SETTINGS
+    server_connection_->SendSettings({});
     server_connection_->SendGoAway(300);
     EXPECT_EQ(client_connection_->GetGoAwayId(), 300);
 }   

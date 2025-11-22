@@ -9,33 +9,27 @@
 #include "quic/udp/if_sender.h"
 #include "quic/quicx/if_worker.h"
 #include "quic/crypto/tls/tls_ctx.h"
-#include "quic/udp/if_packet_allotor.h"
 #include "common/network/if_event_loop.h"
 #include "quic/connection/if_connection.h"
 
 namespace quicx {
 namespace quic {
 
-class Worker:
-    public IWorker{
+class Worker: public IWorker {
 public:
-    Worker(const QuicConfig& config, 
-        std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<ISender> sender,
-        const QuicTransportParams& params,
-        std::shared_ptr<common::IEventLoop> event_loop,
-        connection_state_callback connection_handler);
+    Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
+        const QuicTransportParams& params, connection_state_callback connection_handler);
     virtual ~Worker();
 
     // Get the worker id
     virtual std::string GetWorkerId() override;
     // Handle packets
     virtual void HandlePacket(PacketParseResult& packet_info) override;
-    // Get the event loop
-    virtual std::shared_ptr<common::IEventLoop> GetEventLoop() override;
 
     // process inner packets
     virtual void Process();
+    // Set EventLoop reference for cross-thread access (used in single-thread mode)
+    void SetEventLoop(std::shared_ptr<common::IEventLoop> event_loop) { event_loop_ = event_loop; }
 
 protected:
     void ProcessSend();
@@ -71,14 +65,13 @@ protected:
     std::unordered_set<std::shared_ptr<IConnection>> active_send_connection_set_2_;
 
     std::unordered_set<std::shared_ptr<IConnection>> connecting_set_;
-    std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_; // all connections
+    std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_;  // all connections
 
     connection_state_callback connection_handler_;
-    std::shared_ptr<common::IEventLoop> event_loop_;
-    std::shared_ptr<IPacketAllotor> packet_allotor_;
+    std::shared_ptr<common::IEventLoop> event_loop_;  // Saved EventLoop for cross-thread access
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -83,9 +83,20 @@ int TLSServerConnection::SSLAlpnSelect(SSL* ssl, const unsigned char **out, unsi
     const unsigned char *in, unsigned int inlen, void *arg) {
     TLSServerConnection* conn = (TLSServerConnection*)SSL_get_app_data(ssl);
     
+    // Store original values to detect if handler set them
+    const unsigned char *original_out = *out;
+    unsigned char original_outlen = *outlen;
+    
     conn->ser_handler_->SSLAlpnSelect(out, outlen, in, inlen, arg);
 
-    return 0;
+    // Check if the handler successfully selected an ALPN
+    if (*out != original_out || *outlen != original_outlen) {
+        // ALPN was selected
+        return SSL_TLSEXT_ERR_OK;
+    } else {
+        // No ALPN match found
+        return SSL_TLSEXT_ERR_ALERT_FATAL;
+    }
 }
 
 }

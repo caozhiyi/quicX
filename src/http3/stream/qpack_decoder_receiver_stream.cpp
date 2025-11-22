@@ -11,7 +11,7 @@ QpackDecoderReceiverStream::QpackDecoderReceiverStream(const std::shared_ptr<IQu
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IRecvStream(StreamType::kQpackDecoder, stream, error_handler),
     blocked_registry_(blocked_registry) {
-    stream_->SetStreamReadCallBack(std::bind(&QpackDecoderReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2));
+    stream_->SetStreamReadCallBack(std::bind(&QpackDecoderReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 }
 
 QpackDecoderReceiverStream::~QpackDecoderReceiverStream() {
@@ -20,7 +20,7 @@ QpackDecoderReceiverStream::~QpackDecoderReceiverStream() {
     }
 }
 
-void QpackDecoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, uint32_t error) {
+void QpackDecoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
         common::LOG_ERROR("QpackDecoderReceiverStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);

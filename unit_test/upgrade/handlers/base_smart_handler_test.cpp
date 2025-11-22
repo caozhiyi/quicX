@@ -4,9 +4,11 @@
 #include <string>
 #include <atomic>
 
+#include "common/timer/timer_task.h"
+#include "common/network/if_event_loop.h"
+
 #include "upgrade/include/type.h"
 #include "upgrade/network/tcp_socket.h"
-#include "common/network/if_event_loop.h"
 #include "upgrade/handlers/base_smart_handler.h"
 #include "upgrade/handlers/connection_context.h"
 
@@ -42,9 +44,21 @@ public:
         timer_callbacks_.push_back(callback);
         return next_timer_id_++;
     }
+
+    virtual uint64_t AddTimer(common::TimerTask& task, uint32_t, bool = false) override {
+        return 0;
+    }
     
     virtual bool RemoveTimer(uint64_t) override {
         return true;
+    }
+
+    virtual bool RemoveTimer(common::TimerTask& task) override {
+        return true;
+    }
+
+    virtual void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override {
+        return;
     }
     
     virtual void PostTask(std::function<void()>) override {}

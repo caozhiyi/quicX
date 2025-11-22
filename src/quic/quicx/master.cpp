@@ -1,24 +1,39 @@
 #include "common/log/log.h"
 #include "quic/quicx/master.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
 
-Master::Master(std::shared_ptr<common::IEventLoop> event_loop, bool ecn_enabled):
-    ecn_enabled_(ecn_enabled),
-    event_loop_(event_loop) {
-    
-    if (!event_loop->Init()) {
-        common::LOG_ERROR("event loop init failed");
-        return;
+Master::Master(bool ecn_enabled):
+    ecn_enabled_(ecn_enabled) {
+    receiver_ = IReceiver::MakeReceiver();
+    if (!receiver_) {
+        common::LOG_ERROR("Master::Master: failed to create receiver");
     }
-    receiver_ = IReceiver::MakeReceiver(event_loop);
-    receiver_->SetEcnEnabled(ecn_enabled);
 }
 
-Master::~Master() {
+void Master::Init() {
+    receiver_->SetEcnEnabled(ecn_enabled_);
 
+    common::LOG_DEBUG("Master::Init: processing %zu pending listeners", pending_listeners_.size());
+    for (auto& info : pending_listeners_) {
+        if (info.sock != -1) {
+            common::LOG_DEBUG("Master::Init: adding socket fd=%d to receiver", info.sock);
+            if (!receiver_->AddReceiver(info.sock, shared_from_this())) {
+                common::LOG_ERROR("Master::Init: failed to add socket fd=%d to receiver", info.sock);
+            }
+        } else {
+            common::LOG_DEBUG("Master::Init: adding listener %s:%d to receiver", info.ip.c_str(), info.port);
+            if (!receiver_->AddReceiver(info.ip, info.port, shared_from_this())) {
+                common::LOG_ERROR("Master::Init: failed to add listener %s:%d to receiver", info.ip.c_str(), info.port);
+            }
+        }
+    }
+    pending_listeners_.clear();
 }
+
+Master::~Master() {}
 
 void Master::AddWorker(std::shared_ptr<IWorker> worker) {
     worker->SetConnectionIDNotify(shared_from_this());
@@ -26,10 +41,25 @@ void Master::AddWorker(std::shared_ptr<IWorker> worker) {
 }
 
 bool Master::AddListener(int32_t listener_sock) {
+    if (!receiver_) {
+        common::LOG_DEBUG("Master::AddListener: receiver not initialized, adding socket fd=%d to pending_listeners_", listener_sock);
+        ListenerInfo info;
+        info.sock = listener_sock;
+        pending_listeners_.push_back(info);
+        return true;
+    }
+    common::LOG_DEBUG("Master::AddListener: receiver initialized, adding socket fd=%d directly", listener_sock);
     return receiver_->AddReceiver(listener_sock, shared_from_this());
 }
 
 bool Master::AddListener(const std::string& ip, uint16_t port) {
+    if (!receiver_) {
+        ListenerInfo info;
+        info.ip = ip;
+        info.port = port;
+        pending_listeners_.push_back(info);
+        return true;
+    }
     return receiver_->AddReceiver(ip, port, shared_from_this());
 }
 
@@ -69,5 +99,5 @@ void Master::OnPacket(std::shared_ptr<NetPacket>& pkt) {
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

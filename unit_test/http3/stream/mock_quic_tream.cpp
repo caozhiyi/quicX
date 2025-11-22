@@ -65,6 +65,30 @@ std::shared_ptr<IBufferWrite> MockQuicStream::GetSendBuffer() {
 }
 
 bool MockQuicStream::Flush() {
+    if (!send_buffer_ || send_buffer_->GetDataLength() == 0) {
+        return true;
+    }
+    
+    auto peer = peer_.lock();
+    if (peer && peer->read_cb_) {
+        // Create a copy of the buffer data to send to peer
+        uint32_t data_len = send_buffer_->GetDataLength();
+        auto chunk = std::make_shared<common::StandaloneBufferChunk>(data_len);
+        auto copy_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+        
+        // Copy data from send_buffer to copy_buffer using VisitData
+        send_buffer_->VisitData([&](uint8_t* data, uint32_t len) {
+            copy_buffer->Write(data, len);
+            return true;
+        });
+        
+        // Send the copy to peer
+        peer->read_cb_(copy_buffer, false, 0);
+        
+        // Clear the original buffer
+        send_buffer_->Clear();
+    }
+    
     return true;
 }
 

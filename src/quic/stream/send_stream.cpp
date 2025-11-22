@@ -82,10 +82,12 @@ std::shared_ptr<IBufferWrite> SendStream::GetSendBuffer() {
 
 bool SendStream::Flush() {
     if (!send_machine_->CanSendAppData()) {
+        common::LOG_DEBUG("stream send flush failed. stream id:%d, can send app data:%d", stream_id_, send_machine_->CanSendAppData());
         return false;
     }
 
     if (send_buffer_->GetDataLength() == 0) {
+        common::LOG_DEBUG("stream send flush failed. stream id:%d, buffer length:%d", stream_id_, send_buffer_->GetDataLength());
         return false;
     }
 
@@ -124,25 +126,29 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
             frame->SetMaximumData(peer_data_limit_);
             common::LOG_DEBUG("stream send data blocked. stream id:%d, peer data limit:%d", stream_id_, peer_data_limit_);
             if (!visitor->HandleFrame(frame)) {
+                common::LOG_DEBUG("stream send data blocked failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
                 return TrySendResult::kFailed;
             }
         }
     }
 
     if (peer_data_limit_ <= send_data_offset_) {
+        common::LOG_DEBUG("stream send data failed. stream id:%d, peer data limit:%d, send data offset:%d", stream_id_, peer_data_limit_, send_data_offset_);
         return TrySendResult::kFailed;
     }
-    
+
     for (auto iter = frames_list_.begin(); iter != frames_list_.end();) {
         if (visitor->HandleFrame(*iter)) {
             iter = frames_list_.erase(iter);
 
         } else {
+            common::LOG_DEBUG("stream send data failed. stream id:%d, frame type:%d", stream_id_, (*iter)->GetType());
             return TrySendResult::kFailed;
         }
     }
 
     if (!send_machine_->CanSendStrameFrame()) {
+        common::LOG_DEBUG("stream send data success. stream id:%d, can send stream frame:%d", stream_id_, send_machine_->CanSendStrameFrame());
         return TrySendResult::kSuccess;
     }
 
@@ -154,14 +160,17 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
         frame->SetFin();
         fin_sent_ = true;  // Mark that FIN has been sent
     }
-    
-    uint32_t stream_send_size = peer_data_limit_ - send_data_offset_;
-    uint32_t conn_send_size = visitor->GetLeftStreamDataSize();
-    uint32_t send_size = stream_send_size > conn_send_size ? conn_send_size : stream_send_size;
-    send_size = send_size > 1000 ? 1000 : send_size;
 
-    common::SharedBufferSpan data = send_buffer_->GetSharedBufferSpan(send_size);
-    frame->SetData(data);
+    if (send_buffer_->GetDataLength() > 0) {
+        uint32_t stream_send_size = peer_data_limit_ - send_data_offset_;
+        uint32_t conn_send_size = visitor->GetLeftStreamDataSize();
+        uint32_t send_size = stream_send_size > conn_send_size ? conn_send_size : stream_send_size;
+        send_size = send_size > 1300 ? 1300 : send_size;
+        common::SharedBufferSpan data = send_buffer_->GetSharedReadableSpan(send_size);
+        if (data.Valid()) {
+            frame->SetData(data);
+        }
+    }
 
     if (!send_machine_->OnFrame(frame->GetType())) {
         common::LOG_WARN("stream state transition rejected. stream id:%d, frame type:%d, state=%d", stream_id_, frame->GetType(), static_cast<int>(send_machine_->GetStatus()));
@@ -170,14 +179,16 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     if (!visitor->HandleFrame(frame)) {
         return TrySendResult::kFailed;
     }
-    visitor->AddStreamDataSize(data.GetLength());
-    common::LOG_DEBUG("stream send data. stream id:%d, send size:%d", stream_id_, data.GetLength());
+    visitor->AddStreamDataSize(frame->GetData().GetLength());
+    common::LOG_DEBUG("stream send data. stream id:%d, send size:%d", stream_id_, frame->GetData().GetLength());
 
-    send_buffer_->MoveReadPt(data.GetLength());
-    send_data_offset_ += data.GetLength();
+    send_buffer_->MoveReadPt(frame->GetData().GetLength());
+    send_data_offset_ += frame->GetData().GetLength();
 
+    common::LOG_DEBUG("stream send data callback. stream id:%d, send size:%d", stream_id_, frame->GetData().GetLength());
     if (sended_cb_) {
-        sended_cb_(data.GetLength(), 0);
+        common::LOG_DEBUG("stream send data callback. stream id:%d, send size:%d", stream_id_, frame->GetData().GetLength());
+        sended_cb_(frame->GetData().GetLength(), 0);
     }
     return TrySendResult::kSuccess;
 }

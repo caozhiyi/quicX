@@ -8,19 +8,16 @@ namespace quic {
 
 DataBlockedFrame::DataBlockedFrame():
     IFrame(FrameType::kDataBlocked),
-    maximum_data_(0) {
+    maximum_data_(0) {}
 
-}
-
-DataBlockedFrame::~DataBlockedFrame() {
-
-}
+DataBlockedFrame::~DataBlockedFrame() {}
 
 bool DataBlockedFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
 
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -48,5 +45,5 @@ uint32_t DataBlockedFrame::EncodeSize() {
     return sizeof(DataBlockedFrame);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

@@ -41,7 +41,7 @@ bool QpackDecoderSenderStream::SendSectionAck(uint64_t header_block_id) {
     if (!frame.Encode(buf)) {
         return false;
     }
-    return stream_->Send(buf) > 0;
+    return stream_->Flush();
 }
 
 bool QpackDecoderSenderStream::SendStreamCancel(uint64_t header_block_id) {
@@ -56,7 +56,7 @@ bool QpackDecoderSenderStream::SendStreamCancel(uint64_t header_block_id) {
     if (!frame.Encode(buf)) {
         return false;
     }
-    return stream_->Send(buf) > 0;
+    return stream_->Flush();
 }
 
 bool QpackDecoderSenderStream::SendInsertCountIncrement(uint64_t delta) {
@@ -69,7 +69,7 @@ bool QpackDecoderSenderStream::SendInsertCountIncrement(uint64_t delta) {
     if (!frame.Encode(buf)) {
         return false;
     }
-    return stream_->Send(buf) > 0;
+    return stream_->Flush();
 }
 
 }

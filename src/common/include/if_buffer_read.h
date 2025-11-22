@@ -20,11 +20,11 @@ public:
     virtual uint32_t ReadNotMovePt(uint8_t* data, uint32_t len) = 0;
     // move read point
     // return the length of the data actually move
-    virtual uint32_t MoveReadPt(int32_t len) = 0;
+    virtual uint32_t MoveReadPt(uint32_t len) = 0;
     // return the length of the data actually read
     virtual uint32_t Read(uint8_t* data, uint32_t len) = 0;
     // visit readable segments without modifying state
-    virtual void VisitData(const std::function<void(uint8_t*, uint32_t)>& visitor) = 0;
+    virtual void VisitData(const std::function<bool(uint8_t*, uint32_t)>& visitor) = 0;
     // return remaining length of readable data
     virtual uint32_t GetDataLength() = 0;
     // clear all data

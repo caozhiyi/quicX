@@ -18,6 +18,7 @@
 #include "quic/connection/controler/flow_control.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/controler/recv_control.h"
+#include "common/network/if_event_loop.h"
 
 namespace quicx {
 namespace quic {
@@ -37,7 +38,6 @@ class BaseConnection:
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start,
         bool ecn_enabled,
-        std::shared_ptr<common::ITimer> timer,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
@@ -80,6 +80,11 @@ public:
 
     // Test-only interface to observe connection state
     ConnectionStateType GetConnectionStateForTest() const { return state_; }
+
+    // Set EventLoop reference for automatic cleanup in destructor
+    void SetEventLoop(std::shared_ptr<common::IEventLoop> event_loop) {
+        event_loop_weak_ = event_loop;
+    }
 
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
@@ -203,6 +208,9 @@ protected:
     
     // Queue of pending candidate addresses for path validation
     std::vector<common::Address> pending_candidate_addrs_;
+
+    // EventLoop weak reference for safe cleanup in destructor
+    std::weak_ptr<common::IEventLoop> event_loop_weak_;
 
     void StartPathValidationProbe();
     void StartNextPathProbe(); // Start probing next address in queue

@@ -69,7 +69,12 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
     }
     
     common::LOG_DEBUG("encode to packet. type:%s", FrameType2String(frame->GetType()).c_str());
-    return frame->Encode(buffer_);
+    if (!frame->Encode(buffer_)) {
+        common::LOG_ERROR("failed to encode frame. type:%s", FrameType2String(frame->GetType()).c_str());
+        return false;
+    }
+    common::LOG_DEBUG("encoded frame. type:%s, length:%u", FrameType2String(frame->GetType()).c_str(), buffer_->GetDataLength());
+    return true;
 }
 
 std::vector<StreamDataInfo> FixBufferFrameVisitor::GetStreamDataInfo() const {

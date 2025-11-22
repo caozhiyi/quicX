@@ -8,21 +8,19 @@ namespace quicx {
 namespace http3 {
 
 /*
-* indicates a wildcard node
-*/
-class RouterNodeWildcard:
-    public RouterNode {
+ * indicates a wildcard node
+ */
+class RouterNodeWildcard: public RouterNode {
 public:
-    RouterNodeWildcard(const std::string& section,
-        const std::string& full_path, const RouteConfig& config);
-    
+    RouterNodeWildcard(const std::string& section, const std::string& full_path, const RouteConfig& config);
+
     virtual ~RouterNodeWildcard() {}
 
     // router match
     virtual bool Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result);
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

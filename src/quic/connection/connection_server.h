@@ -17,7 +17,6 @@ class ServerConnection:
 public:
     ServerConnection(std::shared_ptr<TLSCtx> ctx,
         const std::string& alpn,
-        std::shared_ptr<common::ITimer> timer,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,

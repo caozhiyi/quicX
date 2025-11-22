@@ -19,9 +19,44 @@
 namespace quicx {
 namespace quic {
 
+// Encapsulates a set of active streams with both ID tracking and queue ordering
+// The set (ids) is used for fast lookup to avoid duplicates,
+// while the queue maintains the processing order.
+struct ActiveStreamSet {
+    std::unordered_set<uint64_t> ids;
+    std::queue<std::shared_ptr<IStream>> queue;
+
+    bool empty() const { return ids.empty(); }
+
+    void clear() {
+        ids.clear();
+        while (!queue.empty()) {
+            queue.pop();
+        }
+    }
+
+    void add(std::shared_ptr<IStream> stream) {
+        uint64_t sid = stream->GetStreamID();
+        if (ids.find(sid) == ids.end()) {
+            ids.insert(sid);
+            queue.push(stream);
+        }
+    }
+
+    void remove(uint64_t stream_id) { ids.erase(stream_id); }
+
+    void pop() {
+        if (!queue.empty()) {
+            queue.pop();
+        }
+    }
+
+    std::shared_ptr<IStream> front() const { return queue.empty() ? nullptr : queue.front(); }
+};
+
 class SendManager {
 public:
-    SendManager(std::shared_ptr<common::ITimer> timer);
+    SendManager();
     ~SendManager();
 
     void UpdateConfig(const TransportParam& tp);
@@ -33,7 +68,8 @@ public:
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveStream(std::shared_ptr<IStream> stream);
 
-    bool GetSendData(std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
+    bool GetSendData(
+        std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
     void OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame);
     // Reset congestion control and RTT estimator to initial state (on new path)
     void ResetPathSignals();
@@ -58,14 +94,25 @@ public:
 
     void SetFlowControl(FlowControl* flow_control) { flow_control_ = flow_control; }
     void SetLocalConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { local_conn_id_manager_ = manager; }
-    void SetRemoteConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { remote_conn_id_manager_ = manager; }
+    void SetRemoteConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) {
+        remote_conn_id_manager_ = manager;
+    }
+    void SetSendRetryCallBack(std::function<void()> cb) { send_retry_cb_ = cb; }
 
 private:
-    std::shared_ptr<IPacket> MakePacket(IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
+    std::shared_ptr<IPacket> MakePacket(
+        IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
     bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer);
     bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer, IFrameVisitor* visitor);
     bool CheckAndChargeAmpBudget(uint32_t bytes);
     bool IsAllowedOnUnvalidated(uint16_t type) const;
+
+    // Dual-buffer mechanism for active streams (similar to Worker)
+    // This allows callbacks to safely add streams to the write set while
+    // MakePacket is reading from the read set, avoiding race conditions.
+    ActiveStreamSet& GetReadActiveSendStreamSet();
+    ActiveStreamSet& GetWriteActiveSendStreamSet();
+    void SwitchActiveSendStreamSet();
 
 private:
     SendControl send_control_;
@@ -74,29 +121,36 @@ private:
     FlowControl* flow_control_;
     std::list<std::shared_ptr<IFrame>> wait_frame_list_;
 
-    // active stream
-    std::unordered_set<uint64_t> active_send_stream_ids_;
-    std::queue<std::shared_ptr<IStream>> active_send_stream_queue_;
+    // Dual-buffer for active streams (similar to Worker's active_send_connection_set)
+    // This prevents race conditions when sended_cb_ callback adds streams back to the queue
+    // while MakePacket is processing and removing streams from the queue.
+    bool active_send_stream_set_1_is_current_;
+    ActiveStreamSet active_send_stream_set_1_;
+    ActiveStreamSet active_send_stream_set_2_;
 
     // connection id
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
     std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
     friend class BaseConnection;
 
-    bool streams_allowed_ {true};
-    uint16_t mtu_limit_bytes_ {1450};
+    bool streams_allowed_{true};
+    uint16_t mtu_limit_bytes_{1450};
 
     // Anti-amplification counters for unvalidated path
-    uint64_t amp_sent_bytes_ {0};
-    uint64_t amp_recv_bytes_ {0};
+    uint64_t amp_sent_bytes_{0};
+    uint64_t amp_recv_bytes_{0};
 
     // Minimal PMTU probe state (skeleton)
-    bool mtu_probe_inflight_ {false};
-    uint16_t mtu_probe_target_bytes_ {1450};
-    uint64_t mtu_probe_packet_number_ {0};
+    bool mtu_probe_inflight_{false};
+    uint16_t mtu_probe_target_bytes_{1450};
+    uint64_t mtu_probe_packet_number_{0};
+
+    common::TimerTask pacing_timer_task_;
+    std::function<void()> send_retry_cb_;
+    bool is_cwnd_limited_{false};
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -6,10 +6,11 @@ namespace common {
 // Snapshot the readable span of the provided buffer. Callers should avoid
 // mutating the buffer while the wrapper is alive.
 BufferDecodeWrapper::BufferDecodeWrapper(std::shared_ptr<IBuffer> buffer):
-    buffer_(buffer), 
+    buffer_(buffer),
     flushed_(false) {
     auto span = buffer_->GetReadableSpan();
     pos_ = span.GetStart();
+    start_ = pos_;
     end_ = span.GetEnd();
 }
 
@@ -22,55 +23,67 @@ BufferDecodeWrapper::~BufferDecodeWrapper() {
 
 void BufferDecodeWrapper::Flush() {
     flushed_ = true;
-    buffer_->MoveReadPt(pos_ - buffer_->GetReadableSpan().GetStart());
+    buffer_->MoveReadPt(pos_ - start_);
+    // Update start_ to current position for subsequent operations
+    start_ = pos_;
+}
+
+void BufferDecodeWrapper::CancelDecode() {
+    flushed_ = true;
 }
 
 bool BufferDecodeWrapper::DecodeFixedUint8(uint8_t& value) {
-    pos_ = common::FixedDecodeUint8(pos_, end_, value);
-    if (!pos_) {
+    uint8_t* new_pos = common::FixedDecodeUint8(pos_, end_, value);
+    if (!new_pos) {
         return false;
     }
     flushed_ = false;
+    pos_ = new_pos;
     return true;
 }
 
 bool BufferDecodeWrapper::DecodeFixedUint16(uint16_t& value) {
-    pos_ = common::FixedDecodeUint16(pos_, end_, value);
-    if (!pos_) {
+    uint8_t* new_pos = common::FixedDecodeUint16(pos_, end_, value);
+    if (!new_pos) {
         return false;
     }
     flushed_ = false;
+    pos_ = new_pos;
     return true;
 }
 
 bool BufferDecodeWrapper::DecodeFixedUint32(uint32_t& value) {
-    pos_ = common::FixedDecodeUint32(pos_, end_, value);
-    if (!pos_) {
+    uint8_t* new_pos = common::FixedDecodeUint32(pos_, end_, value);
+    if (!new_pos) {
         return false;
     }
     flushed_ = false;
+    pos_ = new_pos;
     return true;
 }
 
 bool BufferDecodeWrapper::DecodeFixedUint64(uint64_t& value) {
-    pos_ = common::FixedDecodeUint64(pos_, end_, value);
-    if (!pos_) {
+    uint8_t* new_pos = common::FixedDecodeUint64(pos_, end_, value);
+    if (!new_pos) {
         return false;
     }
     flushed_ = false;
+    pos_ = new_pos;
     return true;
 }
 
 bool BufferDecodeWrapper::DecodeBytes(uint8_t*& out, uint32_t len, bool copy) {
+    uint8_t* new_pos = nullptr;
     if (copy) {
-        pos_ = common::DecodeBytesCopy(pos_, end_, out, len);
+        new_pos = common::DecodeBytesCopy(pos_, end_, out, len);
     } else {
-        pos_ = common::DecodeBytesNoCopy(pos_, end_, out, len);
+        new_pos = common::DecodeBytesNoCopy(pos_, end_, out, len);
     }
-    if (!pos_) {
+    if (!new_pos) {
         return false;
     }
     flushed_ = false;
+    pos_ = new_pos;
     return true;
 }
 
@@ -78,10 +91,9 @@ common::BufferSpan BufferDecodeWrapper::GetDataSpan() const {
     return common::BufferSpan(buffer_->GetReadableSpan().GetStart(), pos_);
 }
 
-
 uint32_t BufferDecodeWrapper::GetDataLength() const {
     return buffer_->GetReadableSpan().GetEnd() - pos_;
 }
 
-}
-} 
+}  // namespace common
+}  // namespace quicx

@@ -8,7 +8,7 @@ namespace quicx {
 namespace http3 {
 namespace {
 
-class HeadersFrameTest : public testing::Test {
+class HeadersFrameTest: public testing::Test {
 protected:
     void SetUp() override {
         auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
@@ -22,7 +22,7 @@ protected:
 
 TEST_F(HeadersFrameTest, BasicProperties) {
     EXPECT_EQ(frame_->GetType(), FrameType::kHeaders);
-    
+
     uint32_t length = 100;
     frame_->SetLength(length);
     EXPECT_EQ(frame_->GetLength(), length);
@@ -50,7 +50,7 @@ TEST_F(HeadersFrameTest, EncodeAndDecode) {
 
     // Create new frame for decoding
     auto decode_frame = std::make_shared<HeadersFrame>();
-    EXPECT_TRUE(decode_frame->Decode(buffer_, true));
+    EXPECT_EQ(decode_frame->Decode(buffer_, true), DecodeResult::kSuccess);
 
     // Verify decoded data
     EXPECT_EQ(decode_frame->GetLength(), length);
@@ -67,7 +67,7 @@ TEST_F(HeadersFrameTest, EmptyHeadersEncodeDecode) {
     EXPECT_TRUE(frame_->Encode(buffer_));
 
     auto decode_frame = std::make_shared<HeadersFrame>();
-    EXPECT_TRUE(decode_frame->Decode(buffer_, true));
+    EXPECT_EQ(decode_frame->Decode(buffer_, true), DecodeResult::kSuccess);
 
     EXPECT_EQ(decode_frame->GetLength(), 0);
     EXPECT_EQ(decode_frame->GetEncodedFields()->GetDataAsString(), std::string());
@@ -85,10 +85,11 @@ TEST_F(HeadersFrameTest, LargeHeadersEncodeDecode) {
     EXPECT_TRUE(frame_->Encode(buffer_));
 
     auto decode_frame = std::make_shared<HeadersFrame>();
-    EXPECT_TRUE(decode_frame->Decode(buffer_, true));
+    EXPECT_EQ(decode_frame->Decode(buffer_, true), DecodeResult::kSuccess);
 
     EXPECT_EQ(decode_frame->GetLength(), large_fields.size());
-    EXPECT_EQ(decode_frame->GetEncodedFields()->GetDataAsString(), std::string(large_fields.begin(), large_fields.end()));
+    EXPECT_EQ(
+        decode_frame->GetEncodedFields()->GetDataAsString(), std::string(large_fields.begin(), large_fields.end()));
 }
 
 TEST_F(HeadersFrameTest, EvaluateSize) {
@@ -112,4 +113,4 @@ TEST_F(HeadersFrameTest, EvaluateSize) {
 
 }  // namespace
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

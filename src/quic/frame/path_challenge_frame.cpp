@@ -16,14 +16,13 @@ PathChallengeFrame::PathChallengeFrame():
     memset(data_, 0, kPathDataLength);
 }
 
-PathChallengeFrame::~PathChallengeFrame() {
-
-}
+PathChallengeFrame::~PathChallengeFrame() {}
 
 bool PathChallengeFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -44,7 +43,8 @@ bool PathChallengeFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wi
     }
     wrapper.Flush();
     if (kPathDataLength > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), kPathDataLength);
+        common::LOG_ERROR(
+            "insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), kPathDataLength);
         return false;
     }
     auto data = (uint8_t*)data_;
@@ -62,7 +62,7 @@ bool PathChallengeFrame::CompareData(std::shared_ptr<PathResponseFrame> response
 
 void PathChallengeFrame::MakeData() {
     for (uint32_t i = 0; i < kPathDataLength; i++) {
-        int32_t randomChar = random_->Random();        
+        int32_t randomChar = random_->Random();
         if (randomChar < 26) {
             data_[i] = 'a' + randomChar;
 
@@ -75,5 +75,5 @@ void PathChallengeFrame::MakeData() {
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

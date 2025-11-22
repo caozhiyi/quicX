@@ -17,27 +17,26 @@ namespace http3 {
 
 /**
  * @brief RequestStream is the stream for sending requests to the server
- * 
+ *
  * The request stream is used to send requests to the server.
  * It is responsible for sending the request headers and data to the server.
  */
-class RequestStream:
-    public ReqRespBaseStream {
+class RequestStream: public ReqRespBaseStream {
 public:
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-        const std::shared_ptr<IQuicBidirectionStream>& stream,
-        std::shared_ptr<IAsyncClientHandler> async_handler,
+        const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-        const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler);
+        const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>&
+            push_promise_handler);
 
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-        const std::shared_ptr<IQuicBidirectionStream>& stream,
-        http_response_handler response_handler,
+        const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
-        const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler);
-    
+        const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>&
+            push_promise_handler);
+
     virtual ~RequestStream();
 
     // Send request/response
@@ -59,7 +58,7 @@ private:
     std::function<void(std::unordered_map<std::string, std::string>&, uint64_t)> push_promise_handler_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

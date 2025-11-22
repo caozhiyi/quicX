@@ -8,18 +8,15 @@ namespace quic {
 
 CryptoFrame::CryptoFrame():
     IFrame(FrameType::kCrypto),
-    offset_(0) {
+    offset_(0) {}
 
-}
-
-CryptoFrame::~CryptoFrame() {
-
-}
+CryptoFrame::~CryptoFrame() {}
 
 bool CryptoFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -44,12 +41,14 @@ bool CryptoFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
     wrapper.DecodeVarint(offset_);
     wrapper.DecodeVarint(length_);
     if (length_ > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
+        common::LOG_ERROR(
+            "insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
         return false;
     }
     wrapper.Flush();
 
     data_ = buffer->GetSharedReadableSpan(length_);
+    buffer->MoveReadPt(length_);
     return true;
 }
 
@@ -57,5 +56,5 @@ uint32_t CryptoFrame::EncodeSize() {
     return sizeof(CryptoFrame) + length_;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

@@ -30,27 +30,24 @@ static const uint8_t kHPsample[16] = { 0 };
 
 static bool RoundTripPacket(std::shared_ptr<ICryptographer> enc,
                             std::shared_ptr<ICryptographer> dec) {
-    auto chunk = std::make_shared<common::StandaloneBufferChunk>(2048);
-    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-
     // Build plaintext
     const size_t kLen = 512;
-    auto pt = std::make_shared<common::SingleBlockBuffer>(chunk);
-    auto ptw = buffer->GetWritableSpan();
+    auto pt = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2048));
+    auto ptw = pt->GetWritableSpan();
     for (size_t i = 0; i < kLen; ++i) ptw.GetStart()[i] = static_cast<uint8_t>(i);
     pt->MoveWritePt(kLen);
 
     // Encrypt
-    auto ct = std::make_shared<common::SingleBlockBuffer>(chunk);
+    auto ct = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2048));
     common::BufferSpan aad((uint8_t*)kAAD, (uint8_t*)kAAD + sizeof(kAAD));
-    auto ptr = buffer->GetReadableSpan();
+    auto ptr = pt->GetReadableSpan();
     if (enc->EncryptPacket(1, aad, ptr, ct) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << "EncryptPacket failed";
         return false;
     }
 
     // Decrypt
-    auto out = std::make_shared<common::SingleBlockBuffer>(chunk);
+    auto out = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2048));
     auto cts = ct->GetReadableSpan();
     if (dec->DecryptPacket(1, aad, cts, out) != ICryptographer::Result::kOk) {
         ADD_FAILURE() << "DecryptPacket failed";
@@ -64,7 +61,7 @@ static bool RoundTripPacket(std::shared_ptr<ICryptographer> enc,
     }
     auto outv = out->GetReadableSpan();
     for (size_t i = 0; i < kLen; ++i) {
-        if (outv.GetStart()[i] != static_cast<uint8_t>(i + 1)) {
+        if (outv.GetStart()[i] != static_cast<uint8_t>(i)) {
             ADD_FAILURE() << "Plaintext mismatch at index " << i;
             return false;
         }

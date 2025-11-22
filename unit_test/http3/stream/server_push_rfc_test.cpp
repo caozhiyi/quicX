@@ -78,7 +78,7 @@ protected:
         
         // Feed remaining data to the push stream
         if (remaining_data && remaining_data->GetDataLength() > 0) {
-            receiver_stream_->OnData(remaining_data, 0);
+            receiver_stream_->OnData(remaining_data, false, 0);
         }
     }
 

@@ -47,7 +47,7 @@ public:
     virtual ~UnidentifiedStream() {}
 
 private:
-    void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) override;
+    void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) override;
 
 private:
     bool type_identified_;

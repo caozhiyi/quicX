@@ -10,27 +10,22 @@ ConnectionCloseFrame::ConnectionCloseFrame():
     IFrame(FrameType::kConnectionClose),
     is_application_error_(false),
     error_code_(0),
-    err_frame_type_(0) {
-
-}
+    err_frame_type_(0) {}
 
 ConnectionCloseFrame::ConnectionCloseFrame(uint16_t frame_type):
     IFrame(frame_type),
-     is_application_error_(false),
+    is_application_error_(false),
     error_code_(0),
-    err_frame_type_(0) {
+    err_frame_type_(0) {}
 
-}
-
-ConnectionCloseFrame::~ConnectionCloseFrame() {
-
-}
+ConnectionCloseFrame::~ConnectionCloseFrame() {}
 
 bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
 
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -47,7 +42,6 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     uint16_t size = EncodeSize();
 
-    
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         wrapper.DecodeFixedUint16(frame_type_);
@@ -62,11 +56,11 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     wrapper.DecodeVarint(err_frame_type_);
     wrapper.DecodeVarint(reason_length);
     wrapper.Flush();
-    
+
     if (reason_length > buffer->GetDataLength()) {
         return false;
     }
-    
+
     reason_.resize(reason_length);
     auto data = (uint8_t*)reason_.data();
     wrapper.DecodeBytes(data, reason_length);
@@ -77,5 +71,5 @@ uint32_t ConnectionCloseFrame::EncodeSize() {
     return sizeof(ConnectionCloseFrame);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

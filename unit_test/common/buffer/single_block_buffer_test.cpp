@@ -48,6 +48,7 @@ TEST(SingleBlockBufferTest, WriteReadCycleAndVisit) {
         EXPECT_EQ(payload.size(), len);
         EXPECT_EQ(0, std::memcmp(data, payload.data(), len));
         visit_count++;
+        return true;
     });
     EXPECT_EQ(1u, visit_count);
 
@@ -66,13 +67,9 @@ TEST(SingleBlockBufferTest, MoveWritePointerAndClear) {
     EXPECT_EQ(5u, buffer.MoveWritePt(5));
     EXPECT_EQ(5u, buffer.GetDataLength());
 
-    // Shrink the writable section.
-    EXPECT_EQ(3u, buffer.MoveWritePt(-3));
-    EXPECT_EQ(2u, buffer.GetDataLength());
-
     // Writable span matches the current write pointer.
     auto writable = buffer.GetWritableSpan();
-    EXPECT_EQ(14u, writable.GetLength());  // 16 total - 2 consumed
+    EXPECT_EQ(11u, writable.GetLength());  // 16 total - 5 consumed
 
     buffer.Clear();
     EXPECT_EQ(0u, buffer.GetDataLength());
@@ -87,7 +84,7 @@ TEST(SingleBlockBufferTest, InvalidBufferOperationsAreNoops) {
     EXPECT_EQ(0u, buffer.GetDataLength());
 
     size_t visits = 0;
-    buffer.VisitData([&](uint8_t*, uint32_t) { visits++; });
+    buffer.VisitData([&](uint8_t*, uint32_t) { visits++; return true; });
     EXPECT_EQ(0u, visits);
 
     EXPECT_EQ(0u, buffer.MoveWritePt(3));
@@ -99,7 +96,7 @@ TEST(SingleBlockBufferTest, VisitNoOpWhenEmpty) {
     auto chunk = MakeChunk(16);
     SingleBlockBuffer buffer(chunk);
     size_t visit_count = 0;
-    buffer.VisitData([&](uint8_t*, uint32_t) { visit_count++; });
+    buffer.VisitData([&](uint8_t*, uint32_t) { visit_count++; return true; });
     EXPECT_EQ(0u, visit_count);
 }
 
@@ -405,46 +402,6 @@ TEST(SingleBlockBufferTest, MoveReadPtForwardBeyond) {
     EXPECT_EQ(32u, buffer.GetFreeLength());  // Auto-cleared
 }
 
-// Test: MoveReadPt() backward
-TEST(SingleBlockBufferTest, MoveReadPtBackward) {
-    auto chunk = MakeChunk(32);
-    SingleBlockBuffer buffer(chunk);
-    
-    std::array<uint8_t, 10> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    buffer.Write(data.data(), data.size());
-    
-    // Read 6 bytes
-    std::array<uint8_t, 6> out1;
-    buffer.Read(out1.data(), out1.size());
-    EXPECT_EQ(4u, buffer.GetDataLength());
-    
-    // Move backward 3 bytes
-    EXPECT_EQ(3u, buffer.MoveReadPt(-3));
-    EXPECT_EQ(7u, buffer.GetDataLength());
-    
-    // Read again - should get bytes 4-10
-    std::array<uint8_t, 7> out2;
-    buffer.Read(out2.data(), out2.size());
-    EXPECT_TRUE(std::equal(data.begin() + 3, data.end(), out2.begin()));
-}
-
-// Test: MoveReadPt() backward beyond start
-TEST(SingleBlockBufferTest, MoveReadPtBackwardBeyond) {
-    auto chunk = MakeChunk(32);
-    SingleBlockBuffer buffer(chunk);
-    
-    std::array<uint8_t, 10> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    buffer.Write(data.data(), data.size());
-    
-    // Read 5 bytes
-    std::array<uint8_t, 5> out;
-    buffer.Read(out.data(), out.size());
-    
-    // Try to move backward 10 bytes (more than read)
-    EXPECT_EQ(5u, buffer.MoveReadPt(-10));
-    EXPECT_EQ(10u, buffer.GetDataLength());  // Back to start
-}
-
 // Test: MoveWritePt() forward
 TEST(SingleBlockBufferTest, MoveWritePtForward) {
     auto chunk = MakeChunk(32);
@@ -470,42 +427,6 @@ TEST(SingleBlockBufferTest, MoveWritePtForwardBeyond) {
     EXPECT_EQ(16u, buffer.MoveWritePt(100));
     EXPECT_EQ(16u, buffer.GetDataLength());
     EXPECT_EQ(0u, buffer.GetFreeLength());
-}
-
-// Test: MoveWritePt() backward
-TEST(SingleBlockBufferTest, MoveWritePtBackward) {
-    auto chunk = MakeChunk(32);
-    SingleBlockBuffer buffer(chunk);
-    
-    // Write some data
-    std::array<uint8_t, 10> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    buffer.Write(data.data(), data.size());
-    EXPECT_EQ(10u, buffer.GetDataLength());
-    
-    // Move write pointer back 4 bytes
-    EXPECT_EQ(4u, buffer.MoveWritePt(-4));
-    EXPECT_EQ(6u, buffer.GetDataLength());
-    EXPECT_EQ(26u, buffer.GetFreeLength());
-    
-    // Read data - should only get first 6 bytes
-    std::array<uint8_t, 10> out;
-    EXPECT_EQ(6u, buffer.Read(out.data(), out.size()));
-    EXPECT_TRUE(std::equal(data.begin(), data.begin() + 6, out.begin()));
-}
-
-// Test: MoveWritePt() backward beyond read pointer (auto-clear)
-TEST(SingleBlockBufferTest, MoveWritePtBackwardBeyond) {
-    auto chunk = MakeChunk(32);
-    SingleBlockBuffer buffer(chunk);
-    
-    // Write 10 bytes
-    std::array<uint8_t, 10> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    buffer.Write(data.data(), data.size());
-    
-    // Try to move backward 20 bytes (more than written)
-    EXPECT_EQ(10u, buffer.MoveWritePt(-20));
-    EXPECT_EQ(0u, buffer.GetDataLength());
-    EXPECT_EQ(32u, buffer.GetFreeLength());  // Auto-cleared
 }
 
 // Test: GetData()
@@ -669,6 +590,7 @@ TEST(SingleBlockBufferTest, VisitData) {
         EXPECT_EQ(8u, len);
         EXPECT_EQ(0, std::memcmp(ptr, data.data(), len));
         visit_count++;
+        return true;
     });
     EXPECT_EQ(1u, visit_count);
 }
@@ -699,6 +621,7 @@ TEST(SingleBlockBufferTest, VisitDataSpans) {
         EXPECT_EQ(6u, span.GetLength());
         EXPECT_EQ(0, std::memcmp(span.GetStart(), data.data(), span.GetLength()));
         visit_count++;
+        return true;
     });
     EXPECT_EQ(1u, visit_count);
 }
@@ -722,40 +645,6 @@ TEST(SingleBlockBufferTest, GetChunk) {
     
     auto retrieved = buffer.GetChunk();
     EXPECT_EQ(chunk, retrieved);
-}
-
-// Test: ShallowClone()
-TEST(SingleBlockBufferTest, ShallowClone) {
-    auto chunk = MakeChunk(32);
-    SingleBlockBuffer buffer(chunk);
-    
-    // Write some data
-    std::array<uint8_t, 8> data = {1, 2, 3, 4, 5, 6, 7, 8};
-    buffer.Write(data.data(), data.size());
-    
-    // Read 3 bytes
-    std::array<uint8_t, 3> temp;
-    buffer.Read(temp.data(), temp.size());
-    EXPECT_EQ(5u, buffer.GetDataLength());
-    
-    // Clone
-    auto cloned = buffer.ShallowClone();
-    ASSERT_NE(nullptr, cloned);
-    
-    auto cloned_single = std::dynamic_pointer_cast<SingleBlockBuffer>(cloned);
-    ASSERT_NE(nullptr, cloned_single);
-    
-    // Clone should have same state
-    EXPECT_EQ(5u, cloned_single->GetDataLength());
-    EXPECT_EQ(buffer.GetFreeLength(), cloned_single->GetFreeLength());
-    
-    // Clone should share the same chunk
-    EXPECT_EQ(buffer.GetChunk(), cloned_single->GetChunk());
-    
-    // Verify cloned data
-    std::array<uint8_t, 5> out;
-    cloned_single->Read(out.data(), out.size());
-    EXPECT_TRUE(std::equal(data.begin() + 3, data.end(), out.begin()));
 }
 
 // Test: Move constructor self-assignment

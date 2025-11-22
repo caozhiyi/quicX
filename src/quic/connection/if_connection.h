@@ -18,8 +18,7 @@ namespace quic {
 class IConnection:
     public IQuicConnection {
 public:
-    IConnection(std::shared_ptr<common::ITimer> timer,
-        std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+    IConnection(std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
         std::function<void(ConnectionID&)> retire_conn_id_cb,
@@ -79,7 +78,6 @@ protected:
     void* user_data_;
     int32_t sockfd_;
     common::Address peer_addr_;
-    std::shared_ptr<common::ITimer> timer_;
     // callback
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb_;
     std::function<void(ConnectionID&)> retire_conn_id_cb_;

@@ -29,39 +29,39 @@ bool GoAwayFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     return true;
 }
 
-bool GoAwayFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
+DecodeResult GoAwayFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
-    
+
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
-            return false;
+            return DecodeResult::kError;
         }
     }
 
     uint64_t length;
     // Read length
     if (!wrapper.DecodeVarint(length)) {
-        return false;
+        return DecodeResult::kError;
     }
 
     // TODO: check length
     // Read stream ID
     if (!wrapper.DecodeVarint(stream_id_)) {
-        return false;
+        return DecodeResult::kError;
     }
 
-    return true;
+    return DecodeResult::kSuccess;
 }
 
 uint32_t GoAwayFrame::EvaluateEncodeSize() {
     uint32_t size = 0;
-    
+
     // Size for frame type
     size += sizeof(type_);
-    
+
     // Size for length field
     size += common::GetEncodeVarintLength(EvaluatePayloadSize());
-    
+
     // Size for stream ID
     size += common::GetEncodeVarintLength(stream_id_);
 
@@ -72,5 +72,5 @@ uint32_t GoAwayFrame::EvaluatePayloadSize() {
     return common::GetEncodeVarintLength(stream_id_);
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

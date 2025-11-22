@@ -1,12 +1,14 @@
 #include "common/log/log.h"
+#include "common/network/io_handle.h"
+#include "common/log/stdout_logger.h"
+
 #include "quic/udp/if_sender.h"
 #include "quic/quicx/quic_client.h"
-#include "common/network/io_handle.h"
 #include "quic/quicx/worker_client.h"
-#include "common/log/stdout_logger.h"
 #include "quic/quicx/worker_with_thread.h"
 #include "quic/connection/session_cache.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 
@@ -17,13 +19,9 @@ std::shared_ptr<IQuicClient> IQuicClient::Create(const QuicTransportParams& para
 namespace quic {
 
 QuicClient::QuicClient(const QuicTransportParams& params):
-    params_(params) {
+    params_(params) {}
 
-}
-
-QuicClient::~QuicClient() {
-
-}
+QuicClient::~QuicClient() {}
 
 bool QuicClient::Init(const QuicClientConfig& config) {
     if (config.config_.log_level_ != LogLevel::kNull) {
@@ -59,13 +57,17 @@ bool QuicClient::Init(const QuicClientConfig& config) {
         return false;
     }
 
+    thread_mode_ = config.config_.thread_mode_;
     auto sender = ISender::MakeSender(sockfd);
 
     worker_map_.reserve(config.config_.worker_thread_num_);
-    if (config.config_.thread_mode_ == ThreadMode::kSingleThread) {
-        auto worker = std::make_shared<ClientWorker>(
-            config.config_, tls_ctx, sender, params_, master_->GetEventLoop(), connection_state_cb_);
-        master_->GetEventLoop()->AddFixedProcess(std::bind(&ClientWorker::Process, worker));
+    if (thread_mode_ == ThreadMode::kSingleThread) {
+        auto worker = std::make_shared<ClientWorker>(config.config_, tls_ctx, sender, params_, connection_state_cb_);
+        master_->PostTask([worker, master = master_](){
+            auto event_loop = GlobalResource::Instance().GetThreadLocalEventLoop();
+            worker->SetEventLoop(event_loop);  // Save EventLoop reference for cross-thread access
+            event_loop->AddFixedProcess(std::bind(&ClientWorker::Process, worker));
+        });
 
         worker->SetConnectionIDNotify(master_);
         worker_map_[worker->GetWorkerId()] = worker;
@@ -73,8 +75,8 @@ bool QuicClient::Init(const QuicClientConfig& config) {
 
     } else {
         for (size_t i = 0; i < config.config_.worker_thread_num_; i++) {
-            auto worker_ptr = std::make_unique<ClientWorker>(
-                config.config_, tls_ctx, sender, params_, master_->GetEventLoop(), connection_state_cb_);
+            auto worker_ptr =
+                std::make_unique<ClientWorker>(config.config_, tls_ctx, sender, params_, connection_state_cb_);
             worker_ptr->SetConnectionIDNotify(master_);
 
             auto worker = std::make_shared<WorkerWithThread>(std::move(worker_ptr));
@@ -102,33 +104,47 @@ void QuicClient::Destroy() {
 }
 
 void QuicClient::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
-    master_->GetEventLoop()->AddTimer(cb, timeout_ms);
-}
-
-bool QuicClient::Connection(const std::string& ip, uint16_t port,
-    const std::string& alpn, int32_t timeout_ms) {
-    if (!worker_map_.empty()) {
-        auto iter = worker_map_.begin();
-        std::advance(iter, rand() % worker_map_.size());
-        auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
-        worker->GetEventLoop()->PostTask([ip, port, alpn, timeout_ms, worker]() {
-                worker->Connect(ip, port, alpn, timeout_ms);
-            });
-        return true;
+    auto event_loop = master_->GetEventLoop();
+    if (event_loop) {
+        event_loop->AddTimer(cb, timeout_ms);
     }
-    return false;
 }
 
-bool QuicClient::Connection(const std::string& ip, uint16_t port,
-    const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) {
+bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
+    const std::string& resumption_session_der) {
+    if (thread_mode_ == ThreadMode::kSingleThread) {
+        if (!worker_map_.empty()) {
+            auto iter = worker_map_.begin();
+            std::advance(iter, rand() % worker_map_.size());
+            auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
+            auto event_loop = master_->GetEventLoop();
+            if (event_loop) {
+                event_loop->PostTask(
+                    [ip, port, alpn, timeout_ms, worker, resumption_session_der]() { worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der); });
+                return true;
+            }
+        }
+        return false;
+    }
     if (!worker_map_.empty()) {
         auto iter = worker_map_.begin();
         std::advance(iter, rand() % worker_map_.size());
-        auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
-        worker->GetEventLoop()->PostTask([ip, port, alpn, timeout_ms, worker, resumption_session_der]() {
-                worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
-            });
-        return true;
+        auto worker = std::dynamic_pointer_cast<WorkerWithThread>(iter->second);
+        if (!worker) {
+            return false;
+        }
+        auto client_worker = std::dynamic_pointer_cast<ClientWorker>(worker->GetWorker());
+        if (client_worker) {
+            return false;
+        }
+        auto event_loop = worker->GetEventLoop();
+        if (event_loop) {
+            event_loop->PostTask(
+                [ip, port, alpn, timeout_ms, client_worker, resumption_session_der]() { 
+                    client_worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
+                });
+            return true;
+        }
     }
     return false;
 }
@@ -137,5 +153,5 @@ void QuicClient::SetConnectionStateCallBack(connection_state_callback cb) {
     connection_state_cb_ = cb;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

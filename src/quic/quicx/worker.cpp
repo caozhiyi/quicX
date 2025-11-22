@@ -11,39 +11,24 @@
 namespace quicx {
 namespace quic {
 
-Worker::Worker(const QuicConfig& config, 
-        std::shared_ptr<TLSCtx> ctx,
-        std::shared_ptr<ISender> sender,
-        const QuicTransportParams& params,
-        std::shared_ptr<common::IEventLoop> event_loop,
-        connection_state_callback connection_handler):
+Worker::Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
+    const QuicTransportParams& params, connection_state_callback connection_handler):
     IWorker(),
     ctx_(ctx),
     params_(params),
     sender_(sender),
     connection_handler_(connection_handler),
-    event_loop_(event_loop),
-    active_send_connection_set_1_is_current_(true) {
-
+    active_send_connection_set_1_is_current_(true),
+    event_loop_(nullptr) {
     ecn_enabled_ = config.enable_ecn_;
-    if (!event_loop->Init()) {
-        common::LOG_ERROR("event loop init failed");
-        return;
-    }
 }
 
-Worker::~Worker() {
-
-}
+Worker::~Worker() {}
 
 void Worker::HandlePacket(PacketParseResult& packet_info) {
     if (packet_info.net_packet_ && packet_info.net_packet_->GetTime() > 0 && !packet_info.packets_.empty()) {
         InnerHandlePacket(packet_info);
     }
-}
-
-std::shared_ptr<common::IEventLoop> Worker::GetEventLoop() {
-    return event_loop_;
 }
 
 std::string Worker::GetWorkerId() {
@@ -56,19 +41,21 @@ std::string Worker::GetWorkerId() {
 }
 
 void Worker::Process() {
+    common::LOG_DEBUG("Worker::Process called");
     ProcessSend();
 }
 
 void Worker::ProcessSend() {
-    SwitchActiveSendConnectionSet(); 
+    SwitchActiveSendConnectionSet();
     auto& cur_active_send_connection_set = GetReadActiveSendConnectionSet();
+    common::LOG_DEBUG("Worker::ProcessSend: active_send_connection_set size: %zu", cur_active_send_connection_set.size());
     if (cur_active_send_connection_set.empty()) {
         return;
     }
 
     std::shared_ptr<NetPacket> packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
     auto buffer = packet->GetData();
-   
+
     SendOperation send_operation;
     for (auto iter = cur_active_send_connection_set.begin(); iter != cur_active_send_connection_set.end();) {
         if (!(*iter)->GenerateSendData(buffer, send_operation)) {
@@ -86,7 +73,7 @@ void Worker::ProcessSend() {
         packet->SetData(buffer);
         // select destination address from connection (future: candidate path probing)
         packet->SetAddress((*iter)->AcquireSendAddress());
-        packet->SetSocket((*iter)->GetSocket()); // client connection will always -1
+        packet->SetSocket((*iter)->GetSocket());  // client connection will always -1
 
         if (!sender_->Send(packet)) {
             common::LOG_ERROR("udp send failed.");
@@ -99,7 +86,7 @@ void Worker::ProcessSend() {
             case SendOperation::kNextPeriod:
                 iter++;
                 break;
-            case SendOperation::kSendAgainImmediately: // do nothing, send again immediately
+            case SendOperation::kSendAgainImmediately:  // do nothing, send again immediately
             default:
                 break;
         }
@@ -154,9 +141,14 @@ void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 
 void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
     GetWriteActiveSendConnectionSet().insert(conn);
-    common::LOG_DEBUG("HandleActiveSendConnection");
+    common::LOG_DEBUG("HandleActiveSendConnection, is current:%d", active_send_connection_set_1_is_current_ ? 1 : 2);
     do_send_ = true;
-    event_loop_->Wakeup();
+    // Use saved event_loop_ if available, otherwise fallback to thread-local EventLoop
+    if (event_loop_) {
+        event_loop_->Wakeup();
+    } else {
+        GlobalResource::Instance().GetThreadLocalEventLoop()->Wakeup();
+    }
 }
 
 void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
@@ -187,17 +179,25 @@ std::unordered_set<std::shared_ptr<IConnection>>& Worker::GetWriteActiveSendConn
 }
 
 void Worker::SwitchActiveSendConnectionSet() {
+    // Merge Write set into current Read set, then switch to use the Write set as new Read set
     if (active_send_connection_set_1_is_current_) {
-        active_send_connection_set_2_.insert(active_send_connection_set_1_.begin(), active_send_connection_set_1_.end());
+        // current=true: Read=set1, Write=set2
+        // Move unfinished connections from Read(set1) to Write(set2)
+        active_send_connection_set_2_.insert(
+            active_send_connection_set_1_.begin(), active_send_connection_set_1_.end());
         active_send_connection_set_1_.clear();
         active_send_connection_set_1_is_current_ = false;
-
+        // Now Read=set2, Write=set1
     } else {
-        active_send_connection_set_1_.insert(active_send_connection_set_2_.begin(), active_send_connection_set_2_.end());
+        // current=false: Read=set2, Write=set1
+        // Move unfinished connections from Read(set2) to Write(set1)
+        active_send_connection_set_1_.insert(
+            active_send_connection_set_2_.begin(), active_send_connection_set_2_.end());
         active_send_connection_set_2_.clear();
         active_send_connection_set_1_is_current_ = true;
+        // Now Read=set1, Write=set2
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

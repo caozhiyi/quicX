@@ -40,31 +40,31 @@ bool SettingsFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     return true;
 }
 
-bool SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
+DecodeResult SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
-            return false;
+            return DecodeResult::kError;
         }
-    }   
+    }
 
     if (!wrapper.DecodeVarint(length_)) {
-        return false;
-    }   
+        return DecodeResult::kError;
+    }
 
     if (length_ == 0) {
-        return true;
+        return DecodeResult::kSuccess;
     }
 
     int32_t len = (int32_t)length_;
-    while (len > 0) { // TODO: check max loop times
+    while (len > 0) {  // TODO: check max loop times
         uint64_t id, value;
         if (!wrapper.DecodeVarint(id, len) || !wrapper.DecodeVarint(value, len)) {
-            return false;
+            return DecodeResult::kError;
         }
         settings_[id] = value;
     }
-    return true;
+    return DecodeResult::kSuccess;
 }
 
 uint32_t SettingsFrame::EvaluateEncodeSize() {
@@ -74,7 +74,7 @@ uint32_t SettingsFrame::EvaluateEncodeSize() {
     size += sizeof(type_);
 
     // Size for each setting (id and value)
-    size += EvaluatePayloadSize(); 
+    size += EvaluatePayloadSize();
 
     // Size for the number of settings
     size += common::GetEncodeVarintLength(length_);
@@ -94,5 +94,5 @@ uint32_t SettingsFrame::EvaluatePayloadSize() {
     return length_;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

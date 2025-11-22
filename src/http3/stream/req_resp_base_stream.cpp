@@ -1,12 +1,11 @@
-#include "common/log/log.h"
-#include "http3/http/error.h"
-#include "http3/frame/data_frame.h"
-#include "http3/frame/frame_decode.h"
-#include "http3/frame/headers_frame.h"
-#include "quic/quicx/global_resource.h"
-#include "http3/qpack/blocked_registry.h"
-#include "common/buffer/multi_block_buffer.h"
 #include "http3/stream/req_resp_base_stream.h"
+#include "common/buffer/multi_block_buffer.h"
+#include "common/log/log.h"
+#include "http3/frame/data_frame.h"
+#include "http3/frame/headers_frame.h"
+#include "http3/http/error.h"
+#include "http3/qpack/blocked_registry.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace http3 {
@@ -19,16 +18,18 @@ ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_
     is_last_data_(false),
     qpack_encoder_(qpack_encoder),
     blocked_registry_(blocked_registry),
+    is_provider_mode_(false),
     stream_(stream) {
-
-    stream_->SetStreamReadCallBack(std::bind(&ReqRespBaseStream::OnData,
-        this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    stream_->SetStreamReadCallBack(std::bind(
+        &ReqRespBaseStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    stream_->SetStreamWriteCallBack(
+        std::bind(&ReqRespBaseStream::HandleSent, this, std::placeholders::_1, std::placeholders::_2));
 }
 
 ReqRespBaseStream::~ReqRespBaseStream() {
-    // Do NOT call Close() here - it should have been called after sending the last frame
-    // Calling Close() in destructor may cause issues if the stream is already closed
-    // or if the stream state is not suitable for closing
+    // Do NOT call Close() here - it should have been called after sending the
+    // last frame Calling Close() in destructor may cause issues if the stream is
+    // already closed or if the stream state is not suitable for closing
 }
 
 void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
@@ -41,7 +42,8 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
     is_last_data_ = is_last;
 
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(data);
-    // If buffer is empty (e.g., FIN without data, or RESET_STREAM), handle accordingly
+    // If buffer is empty (e.g., FIN without data, or RESET_STREAM), handle
+    // accordingly
     if (data->GetDataLength() == 0) {
         if (is_last) {
             // FIN received with no data: call HandleReadDone to finalize
@@ -51,9 +53,9 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
         // Empty buffer with no FIN: nothing to do (shouldn't happen normally)
         return;
     }
-    
+
     std::vector<std::shared_ptr<IFrame>> frames;
-    if (!DecodeFrames(buffer, frames)) {
+    if (!frame_decoder_.DecodeFrames(buffer, frames)) {
         common::LOG_ERROR("ReqRespBaseStream::OnData decode frames error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
@@ -67,7 +69,7 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
 
 void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     auto headers_frame = std::dynamic_pointer_cast<HeadersFrame>(frame);
-    if (!headers_frame) {   
+    if (!headers_frame) {
         common::LOG_ERROR("ReqRespBaseStream::HandleHeaders error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
@@ -84,7 +86,8 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     // Decode headers using QPACK
     auto encoded_fields = headers_frame->GetEncodedFields();
     if (!qpack_encoder_->Decode(encoded_fields, headers_)) {
-        // If blocked (RIC not satisfied), enqueue a retry once insert count increases
+        // If blocked (RIC not satisfied), enqueue a retry once insert count
+        // increases
         blocked_registry_->Add(header_block_key_, [this, encoded_fields]() {
             std::unordered_map<std::string, std::string> tmp;
             if (qpack_encoder_->Decode(encoded_fields, tmp)) {
@@ -94,6 +97,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
                 HandleHeaders();
             }
         });
+        common::LOG_DEBUG("blocked header block key: %llu", header_block_key_);
         return;
     }
     // emit Section Ack
@@ -111,103 +115,37 @@ void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
     }
 
     const auto& data = data_frame->GetData();
-    
+
     HandleData(data, is_last_data_);
 }
 
 void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
+    common::LOG_DEBUG("HandleFrame: frame type: %d", frame->GetType());
     switch (frame->GetType()) {
-    case FrameType::kHeaders:
-        HandleHeaders(frame);
-        break;
+        case FrameType::kHeaders:
+            HandleHeaders(frame);
+            break;
 
-    case FrameType::kData:
-        HandleData(frame);
-        break;
+        case FrameType::kData:
+            HandleData(frame);
+            break;
 
-    default:
-        common::LOG_ERROR("ReqRespBaseStream::HandleFrame error");
-        error_handler_(GetStreamID(), Http3ErrorCode::kFrameUnexpected);
-        break;
+        default:
+            common::LOG_ERROR("ReqRespBaseStream::HandleFrame error");
+            error_handler_(GetStreamID(), Http3ErrorCode::kFrameUnexpected);
+            break;
     }
 }
 
 bool ReqRespBaseStream::SendBodyWithProvider(const body_provider& provider) {
-    auto buffer = std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    size_t total_sent = 0;
-    size_t chunk_count = 0;
-    const size_t kChunkSize = 2048; // TODO configurable
-    
-    while (true) {
-        // Pull data from provider
-        size_t bytes_provided = 0;
-        
-        try {
-            auto span = buffer->GetWritableSpan(kChunkSize);
-            bytes_provided = provider(span.GetStart(), span.GetLength());
-            buffer->MoveWritePt(bytes_provided);
-
-        } catch (const std::exception& e) {
-            common::LOG_ERROR("body provider exception: %s", e.what());
-            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
-            return false;
-
-        } catch (...) {
-            common::LOG_ERROR("body provider unknown exception");
-            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
-            return false;
-        }
-
-        // Validate return value
-        if (bytes_provided > kChunkSize) {
-            common::LOG_ERROR("body provider returned invalid size %zu > %zu", 
-                            bytes_provided, kChunkSize);
-            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
-            return false;
-        }
-
-        if (bytes_provided == 0) {
-            // End of body
-            common::LOG_DEBUG("body complete, sent %zu bytes in %zu chunks", 
-                            total_sent, chunk_count);
-            break;
-        }
-        
-        // Create DATA frame
-        DataFrame data_frame;
-        data_frame.SetData(buffer);
-        
-        // Encode and send
-        auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-        if (!data_frame.Encode(frame_buffer)) {
-            common::LOG_ERROR("encode error at offset %zu", total_sent);
-            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
-            return false;
-        }
-        
-        if (!stream_->Flush()) {
-            common::LOG_ERROR("send error at offset %zu", total_sent);
-            error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
-            return false;
-        }
-        
-        total_sent += bytes_provided;
-        chunk_count++;
-        
-        // Log progress for large transfers
-        if (total_sent % (1024 * 1024) == 0) {
-            common::LOG_INFO("sent %zu MB", total_sent / 1024 / 1024);
-        }
-    }
-    // Close the send direction after sending all body data
-    // This will send FIN to indicate end of data stream
-    stream_->Close();
-    common::LOG_DEBUG("SendBodyWithProvider: sent %zu bytes in %zu chunks, stream send direction closed (FIN)", total_sent, chunk_count);
+    is_provider_mode_ = true;
+    provider_ = provider;
+    HandleSent(0, 0);
     return true;
 }
 
 bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>& body) {
-    const size_t kMaxDataFramePayload = 2048; // TODO configurable
+    const size_t kMaxDataFramePayload = 1400;  // TODO configurable
     if (!body || body->GetDataLength() == 0) {
         stream_->Close();
         common::LOG_DEBUG("SendBodyDirectly: empty body, closing stream with FIN");
@@ -215,32 +153,56 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
     }
 
     size_t total_sent = 0;
-    size_t offset = 0;
-        
+
+    common::LOG_DEBUG("SendBodyDirectly: body size: %zu", body->GetDataLength());
+
     while (body->GetDataLength() > 0) {
-        size_t chunk_size = std::min<size_t>(kMaxDataFramePayload, body->GetDataLength() - offset);
+        // Get the actual remaining data length (this decreases as we consume data)
+        size_t remaining = body->GetDataLength();
+        size_t chunk_size = std::min<size_t>(kMaxDataFramePayload, remaining);
 
-        DataFrame data_frame;
-        data_frame.SetData(body);
-        data_frame.SetLength(chunk_size);
-
-        auto data_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-        if (!data_frame.Encode(data_buffer)) {
-            common::LOG_ERROR("SendBodyDirectly encode error. chunk size:%zu, offset:%zu, total:%zu",
-                              chunk_size, total_sent, body->GetDataLength());
+        // Use CloneReadable to extract chunk_size bytes and advance body's read
+        // pointer
+        auto chunk_buffer = body->CloneReadable(chunk_size);
+        if (!chunk_buffer) {
+            common::LOG_ERROR(
+                "SendBodyDirectly CloneReadable failed. chunk "
+                "size:%zu, total_sent:%zu, remaining:%zu",
+                chunk_size, total_sent, remaining);
             error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             return false;
         }
 
+        DataFrame data_frame;
+        data_frame.SetData(chunk_buffer);
+        data_frame.SetLength(chunk_size);  // Explicitly set length
+
+        auto data_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
+        common::LOG_DEBUG(
+            "SendBodyDirectly before encode frame. type:DataFrame, "
+            "buffer_length:%u, chunk_size:%zu",
+            data_buffer->GetDataLength(), chunk_size);
+        if (!data_frame.Encode(data_buffer)) {
+            common::LOG_ERROR(
+                "SendBodyDirectly encode error. chunk size:%zu, "
+                "total_sent:%zu, remaining:%zu",
+                chunk_size, total_sent, remaining);
+            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+            return false;
+        }
+        common::LOG_DEBUG(
+            "SendBodyDirectly after encode frame. type:DataFrame, buffer_length:%u", data_buffer->GetDataLength());
+
         if (!stream_->Flush()) {
-            common::LOG_ERROR("SendBodyDirectly send error. chunk size:%zu, offset:%zu, total:%zu",
-                              chunk_size, total_sent, body->GetDataLength());
+            common::LOG_ERROR(
+                "SendBodyDirectly send error. chunk size:%zu, "
+                "total_sent:%zu, remaining:%zu",
+                chunk_size, total_sent, remaining);
             error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
             return false;
         }
 
         total_sent += chunk_size;
-        offset += chunk_size;
     }
 
     stream_->Close();
@@ -249,23 +211,25 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
 }
 
 bool ReqRespBaseStream::SendHeaders(const std::unordered_map<std::string, std::string>& headers) {
-    auto headers_buffer = std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    auto headers_buffer =
+        std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!qpack_encoder_->Encode(headers, headers_buffer)) {
         common::LOG_ERROR("SendHeaders error");
         error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         return false;
     }
-    
+
     // Send HEADERS frame
     HeadersFrame headers_frame;
     headers_frame.SetEncodedFields(headers_buffer);
-
     auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
+    common::LOG_DEBUG("SendHeaders before encode frame. type:HeadersFrame, length:%u", frame_buffer->GetDataLength());
     if (!headers_frame.Encode(frame_buffer)) {
         common::LOG_ERROR("SendHeaders headers frame encode error");
         error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         return false;
     }
+    common::LOG_DEBUG("SendHeaders after encode frame. type:HeadersFrame, length:%u", frame_buffer->GetDataLength());
     if (!stream_->Flush()) {
         common::LOG_ERROR("SendHeaders send headers error");
         error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
@@ -274,5 +238,90 @@ bool ReqRespBaseStream::SendHeaders(const std::unordered_map<std::string, std::s
     return true;
 }
 
+void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
+    if (error != 0) {
+        common::LOG_ERROR("ReqRespBaseStream::HandleSent error: %d", error);
+        error_handler_(GetStreamID(), error);
+        return;
+    }
+    common::LOG_DEBUG("ReqRespBaseStream::HandleSent: sent %u bytes", length);
+
+    if (!is_provider_mode_) {
+        return;
+    }
+
+    auto buffer =
+        std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    size_t total_sent = 0;
+    size_t chunk_count = 0;
+    const size_t kChunkSize = 1200;  // TODO configurable
+
+    common::LOG_DEBUG("SendBodyWithProvider: body size: %zu", buffer->GetDataLength());
+
+    // Pull data from provider
+    size_t bytes_provided = 0;
+
+    try {
+        auto span = buffer->GetWritableSpan(kChunkSize);
+        bytes_provided = provider_(span.GetStart(), span.GetLength());
+        common::LOG_DEBUG("SendBodyWithProvider: bytes provided: %u", bytes_provided);
+        buffer->MoveWritePt(bytes_provided);
+
+    } catch (const std::exception& e) {
+        common::LOG_ERROR("body provider exception: %s", e.what());
+        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        return;
+
+    } catch (...) {
+        common::LOG_ERROR("body provider unknown exception");
+        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        return;
+    }
+
+    // Validate return value
+    if (bytes_provided > kChunkSize) {
+        common::LOG_ERROR("body provider returned invalid size %zu > %zu", bytes_provided, kChunkSize);
+        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        return;
+    }
+
+    // Create DATA frame
+    DataFrame data_frame;
+    data_frame.SetData(buffer);
+
+    common::LOG_DEBUG(
+        "SendBodyWithProvider before encode frame. type:DataFrame, "
+        "buffer_length:%u",
+        buffer->GetDataLength());
+
+    // Encode and send
+    auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
+    if (!data_frame.Encode(frame_buffer)) {
+        common::LOG_ERROR("encode error at offset %zu", total_sent);
+        error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        return;
+    }
+
+    if (bytes_provided > 0) {
+        if (!stream_->Flush()) {
+            common::LOG_ERROR("send error at offset %zu", total_sent);
+            error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
+            return;
+        }
+    }
+
+    if (bytes_provided == 0) {
+        // Close the send direction after sending all body data
+        // This will send FIN to indicate end of data stream
+        stream_->Close();
+        common::LOG_DEBUG(
+            "SendBodyWithProvider: sent %u bytes, stream send "
+            "direction closed (FIN)",
+            bytes_provided);
+    }
+
+    common::LOG_DEBUG("SendBodyWithProvider: sent %u bytes", bytes_provided);
 }
-}
+
+}  // namespace http3
+}  // namespace quicx

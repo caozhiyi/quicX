@@ -6,20 +6,17 @@
 namespace quicx {
 namespace quic {
 
-MaxDataFrame::MaxDataFrame(): 
+MaxDataFrame::MaxDataFrame():
     IFrame(FrameType::kMaxData),
-    maximum_data_(0) {
+    maximum_data_(0) {}
 
-}
-
-MaxDataFrame::~MaxDataFrame() {
-
-}
+MaxDataFrame::~MaxDataFrame() {}
 
 bool MaxDataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -48,5 +45,5 @@ uint32_t MaxDataFrame::EncodeSize() {
     return sizeof(MaxDataFrame);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

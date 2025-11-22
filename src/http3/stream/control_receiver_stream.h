@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include "http3/frame/if_frame.h"
+#include "http3/frame/frame_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_recv_stream.h"
 #include "quic/include/if_quic_recv_stream.h"
@@ -15,11 +16,10 @@ namespace http3 {
 
 /**
  * @brief Control receiver stream
- * 
+ *
  * The control receiver stream is used to receive control frames from the client.
  */
-class ControlReceiverStream:
-    public IRecvStream {
+class ControlReceiverStream: public IRecvStream {
 public:
     ControlReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
         const std::shared_ptr<QpackEncoder>& qpack_encoder,
@@ -28,7 +28,7 @@ public:
         const std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)>& settings_handler);
     virtual ~ControlReceiverStream();
 
-    virtual void OnData(std::shared_ptr<IBufferRead> data, uint32_t error) override;
+    virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) override;
 
 protected:
     virtual void HandleFrame(std::shared_ptr<IFrame> frame);
@@ -40,9 +40,15 @@ protected:
     std::function<void(uint64_t id)> goaway_handler_;
     std::function<void(const std::unordered_map<uint16_t, uint64_t>& settings)> settings_handler_;
     std::function<void(std::shared_ptr<IBufferRead>)> qpack_instr_handler_;
+
+    // RFC 9114: The first frame on the control stream MUST be a SETTINGS frame
+    bool settings_received_ = false;
+
+    // Frame decoder for stateful decoding
+    FrameDecoder frame_decoder_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

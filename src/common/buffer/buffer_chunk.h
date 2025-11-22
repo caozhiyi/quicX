@@ -42,7 +42,7 @@ public:
     uint32_t GetLength() const override { return std::min(length_, limit_size_); }
     std::shared_ptr<BlockMemoryPool> GetPool() const override;
 
-    void SetLimitSize(uint32_t size) { limit_size_ = size; }
+    void SetLimitSize(uint32_t size) override { limit_size_ = size; }
 
 private:
     // Return the memory block to the pool (if any) and reset state.

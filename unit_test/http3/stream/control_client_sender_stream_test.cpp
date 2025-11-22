@@ -77,7 +77,7 @@ public:
         
         // Feed remaining data to the control stream
         if (remaining_data && remaining_data->GetDataLength() > 0) {
-            receiver_stream_->OnData(remaining_data, 0);
+            receiver_stream_->OnData(remaining_data, false, 0);
         }
     }
 
@@ -139,16 +139,22 @@ protected:
 };
 
 TEST_F(ControlClientSenderStreamTest, SendMaxPushId) {
+    // RFC 9114: First frame on control stream must be SETTINGS
+    client_connection_->SendSettings({});
     client_connection_->SendMaxPushId(100);
     EXPECT_EQ(server_connection_->GetMaxPushId(), 100);
 }
 
 TEST_F(ControlClientSenderStreamTest, SendCancelPush) {
+    // RFC 9114: First frame on control stream must be SETTINGS
+    client_connection_->SendSettings({});
     client_connection_->SendCancelPush(200);
     EXPECT_EQ(server_connection_->GetCancelId(), 200);
 }
 
 TEST_F(ControlClientSenderStreamTest, SendGoAway) {
+    // RFC 9114: First frame on control stream must be SETTINGS
+    client_connection_->SendSettings({});
     client_connection_->SendGoAway(300);
     EXPECT_EQ(server_connection_->GetGoAwayId(), 300);
 }   
