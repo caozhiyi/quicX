@@ -39,6 +39,7 @@ private:
     QuicTransportParams params_;
     std::shared_ptr<MasterWithThread> master_;
     connection_state_callback connection_state_cb_;
+    std::shared_ptr<common::IEventLoop> master_event_loop_;
     std::unordered_map<std::string, std::shared_ptr<IWorker>> worker_map_;
 };
 

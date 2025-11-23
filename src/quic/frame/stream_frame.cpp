@@ -50,6 +50,10 @@ bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
+    uint32_t initial_buffer_len = buffer->GetDataLength();
+    common::LOG_DEBUG("StreamFrame::Decode START: initial_buffer_len=%u, with_type=%d", 
+              initial_buffer_len, with_type);
+    
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
@@ -69,14 +73,23 @@ bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
     // If no length field, stream data extends to the end of the buffer (after Flush!)
     if (!HasLength()) {
         length_ = buffer->GetDataLength();
+        common::LOG_DEBUG("StreamFrame::Decode: no length field, using remaining buffer: stream_id=%llu, length=%u", 
+                  stream_id_, length_);
+    } else {
+        common::LOG_DEBUG("StreamFrame::Decode: has length field: stream_id=%llu, offset=%llu, length=%u, buffer_remaining=%u", 
+                  stream_id_, offset_, length_, buffer->GetDataLength());
     }
     
     if (length_ > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
+        common::LOG_ERROR("insufficient remaining data. stream_id=%llu, offset=%llu, remain_size:%d, need_size:%d, initial_buffer=%u", 
+                          stream_id_, offset_, buffer->GetDataLength(), length_, initial_buffer_len);
         return false;
     }
     data_ = buffer->GetSharedReadableSpan(length_);
     buffer->MoveReadPt(length_);
+    
+    common::LOG_DEBUG("StreamFrame::Decode SUCCESS: stream_id=%llu, offset=%llu, length=%u, has_fin=%d", 
+              stream_id_, offset_, length_, IsFin());
     return true;
 }
 

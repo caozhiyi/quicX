@@ -12,14 +12,14 @@ namespace quicx {
 namespace quic {
 
 Worker::Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-    const QuicTransportParams& params, connection_state_callback connection_handler):
+    const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop):
     IWorker(),
     ctx_(ctx),
     params_(params),
     sender_(sender),
     connection_handler_(connection_handler),
     active_send_connection_set_1_is_current_(true),
-    event_loop_(nullptr) {
+    event_loop_(event_loop) {
     ecn_enabled_ = config.enable_ecn_;
 }
 
@@ -146,8 +146,6 @@ void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
     // Use saved event_loop_ if available, otherwise fallback to thread-local EventLoop
     if (event_loop_) {
         event_loop_->Wakeup();
-    } else {
-        GlobalResource::Instance().GetThreadLocalEventLoop()->Wakeup();
     }
 }
 

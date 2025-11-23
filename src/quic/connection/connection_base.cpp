@@ -32,6 +32,7 @@ namespace quicx {
 namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled,
+    std::shared_ptr<common::IEventLoop> loop,
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
@@ -39,6 +40,9 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
     IConnection(active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     ecn_enabled_(ecn_enabled),
+    recv_control_(loop->GetTimer()),
+    send_manager_(loop->GetTimer()),
+    event_loop_(loop),
     last_communicate_time_(0),
     flow_control_(start),
     state_(ConnectionStateType::kStateConnecting),
@@ -79,9 +83,20 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
 BaseConnection::~BaseConnection() {}
 
 void BaseConnection::Close() {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this()]() {
+            self->CloseInternal();
+        });
+        return;
+    }
+    CloseInternal();
+}
+
+void BaseConnection::CloseInternal() {
     if (state_ != ConnectionStateType::kStateConnected) {
         return;
     }
+    common::LOG_INFO("BaseConnection::CloseInternal called");
 
     // Graceful close: Check if there's pending data to send
     if (send_manager_.GetSendOperation() != SendOperation::kAllSendDone) {
@@ -92,7 +107,7 @@ void BaseConnection::Close() {
         // Set a timeout to force close if data doesn't complete in time
         // Use 3×PTO as a reasonable timeout (similar to draining period)
         graceful_close_timer_ = common::TimerTask(std::bind(&BaseConnection::OnGracefulCloseTimeout, this));
-        GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);
+        event_loop_->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);
         common::LOG_DEBUG("Graceful close timeout set to %u ms", GetCloseWaitTime() * 3);
         return;
     }
@@ -112,7 +127,7 @@ void BaseConnection::Close() {
 
     // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(task, GetCloseWaitTime() * 3, 0);
+    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
@@ -221,7 +236,7 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
         graceful_closing_pending_ = false;
 
         // Cancel the graceful close timeout timer since we're completing normally
-        GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(graceful_close_timer_);
+        event_loop_->RemoveTimer(graceful_close_timer_);
 
         // Enter Closing state and send CONNECTION_CLOSE
         state_ = ConnectionStateType::kStateClosing;
@@ -235,7 +250,7 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
 
         // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
         common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(task, GetCloseWaitTime() * 3, 0);
+        event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
     }
 
     return ret;
@@ -352,8 +367,8 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     }
 
     // reset idle timeout timer task
-    GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(idle_timeout_task_);
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
+    event_loop_->RemoveTimer(idle_timeout_task_);
+    event_loop_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
 }
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
@@ -686,7 +701,7 @@ bool BaseConnection::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
     if (graceful_closing_pending_) {
         common::LOG_DEBUG("Canceling graceful close due to peer CONNECTION_CLOSE");
         graceful_closing_pending_ = false;
-        GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(graceful_close_timer_);
+        event_loop_->RemoveTimer(graceful_close_timer_);
     }
 
     // Received CONNECTION_CLOSE from peer: enter Draining state
@@ -698,7 +713,7 @@ bool BaseConnection::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
 
     // Wait 3×PTO before closing (RFC 9000 Section 10.2.2)
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(task, GetCloseWaitTime() * 3, 0);
+    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
     return true;
 }
 
@@ -729,7 +744,7 @@ bool BaseConnection::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
     if (path_probe_inflight_ && memcmp(data, pending_path_challenge_data_, 8) == 0) {
         // token matched: path validated -> promote candidate to active
         path_probe_inflight_ = false;
-        GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(path_probe_task_);  // Cancel retry timer
+        event_loop_->RemoveTimer(path_probe_task_);  // Cancel retry timer
         memset(pending_path_challenge_data_, 0, sizeof(pending_path_challenge_data_));
 
         if (!(candidate_peer_addr_ == peer_addr_)) {
@@ -769,7 +784,7 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     transport_param_.Merge(remote_tp);
     idle_timeout_task_.SetTimeoutCallback(std::bind(&BaseConnection::OnIdleTimeout, this));
     // TODO: modify idle timer set point
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
+    event_loop_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
 
     // Preferred Address Migration (RFC 9000 Section 9.6)
     //
@@ -828,12 +843,12 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
 
 void BaseConnection::ThreadTransferBefore() {
     // remove idle timeout timer task from old timer
-    GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(idle_timeout_task_);
+    event_loop_->RemoveTimer(idle_timeout_task_);
 }
 
 void BaseConnection::ThreadTransferAfter() {
     // add idle timeout timer task to new timer
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
+    event_loop_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
 }
 
 void BaseConnection::OnIdleTimeout() {
@@ -842,7 +857,7 @@ void BaseConnection::OnIdleTimeout() {
 
 void BaseConnection::OnClosingTimeout() {
     // cancel timers
-    GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(idle_timeout_task_);
+    event_loop_->RemoveTimer(idle_timeout_task_);
     // wait closing period done, notify connection close
     connection_close_cb_(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
 }
@@ -866,7 +881,7 @@ void BaseConnection::OnGracefulCloseTimeout() {
 
         // Wait 3×PTO before final close (RFC 9000 Section 10.2: minimum closing period)
         common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(task, GetCloseWaitTime() * 3, 0);
+        event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
     }
 }
 
@@ -942,7 +957,7 @@ void BaseConnection::ExitAntiAmplification() {
 }
 
 void BaseConnection::ScheduleProbeRetry() {
-    GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(path_probe_task_);
+    event_loop_->RemoveTimer(path_probe_task_);
     if (!path_probe_inflight_) return;
 
     if (probe_retry_count_ >= 5) {
@@ -975,7 +990,7 @@ void BaseConnection::ScheduleProbeRetry() {
         ToSendFrame(challenge);
         ScheduleProbeRetry();
     });
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(path_probe_task_, probe_retry_delay_ms_, 0);
+    event_loop_->AddTimer(path_probe_task_, probe_retry_delay_ms_, 0);
 }
 
 void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
@@ -1087,12 +1102,13 @@ void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::
     if (state_ != ConnectionStateType::kStateConnected) {
         return;
     }
+    common::LOG_INFO("BaseConnection::ImmediateClose called. error=%llu, reason=%s", error, reason.c_str());
 
     // Cancel graceful close if it's pending
     if (graceful_closing_pending_) {
         common::LOG_DEBUG("Canceling graceful close due to immediate close");
         graceful_closing_pending_ = false;
-        GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(graceful_close_timer_);
+        event_loop_->RemoveTimer(graceful_close_timer_);
     }
 
     // Error close: enter Closing state
@@ -1117,7 +1133,7 @@ void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::
 
     // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(task, GetCloseWaitTime() * 3, 0);
+    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {
@@ -1160,21 +1176,21 @@ void BaseConnection::RetireConnectionId(ConnectionID& id) {
 std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd) {
     std::shared_ptr<IStream> new_stream;
     if (sd == StreamDirection::kBidi) {
-        new_stream = std::make_shared<BidirectionStream>(alloter_, init_size, stream_id,
+        new_stream = std::make_shared<BidirectionStream>(alloter_, event_loop_, init_size, stream_id,
             std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3));
 
     } else if (sd == StreamDirection::kSend) {
-        new_stream = std::make_shared<SendStream>(alloter_, init_size, stream_id,
+        new_stream = std::make_shared<SendStream>(alloter_, event_loop_, init_size, stream_id,
             std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3));
 
     } else {
-        new_stream = std::make_shared<RecvStream>(alloter_, init_size, stream_id,
+        new_stream = std::make_shared<RecvStream>(alloter_, event_loop_, init_size, stream_id,
             std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,

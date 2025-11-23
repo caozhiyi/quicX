@@ -31,7 +31,7 @@ public:
     virtual uint64_t AddTimer(common::TimerTask& task, uint32_t time, uint64_t now = 0) override {
         return next_timer_id_++;
     }
-    virtual bool RmTimer(common::TimerTask& task) override {
+    virtual bool RemoveTimer(common::TimerTask& task) override {
         return true;
     }
     virtual int32_t MinTime(uint64_t now = 0) override {
@@ -51,7 +51,7 @@ private:
 class MockConnectionForIntegration {
 public:
     MockConnectionForIntegration() : timer_(std::make_shared<MockTimer>()) {
-        send_control_ = std::make_shared<SendControl>();
+        send_control_ = std::make_shared<SendControl>(timer_);
         
         // Register stream ACK callback
         send_control_->SetStreamDataAckCallback(
@@ -171,8 +171,10 @@ protected:
 
 // Test 1.1: Complete send stream lifecycle
 TEST_F(StreamIntegrationTest, CompleteSendStreamLifecycle) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     mock_conn_->streams_[4] = stream;
     
@@ -215,8 +217,10 @@ TEST_F(StreamIntegrationTest, CompleteRecvStreamLifecycle) {
     bool is_final = false;
     uint32_t last_buffer_length = 0;
     
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         callback_count++;
@@ -277,9 +281,11 @@ TEST_F(StreamIntegrationTest, CompleteRecvStreamLifecycle) {
 // Test 1.3: Bidirectional request-response flow
 TEST_F(StreamIntegrationTest, BidirectionalRequestResponseFlow) {
     std::vector<uint8_t> received_data;
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         if (buf) {
@@ -339,9 +345,10 @@ TEST_F(StreamIntegrationTest, BidirectionalRequestResponseFlow) {
 // Test 1.4: Stream reset recovery
 TEST_F(StreamIntegrationTest, StreamResetRecovery) {
     uint32_t error_received = 0;
-    
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamWriteCallBack([&](uint32_t size, uint32_t error) {
         error_received = error;
@@ -392,8 +399,10 @@ TEST_F(StreamIntegrationTest, OutOfOrderDataReassembly) {
     std::vector<uint8_t> received_data;
     int callback_count = 0;
     
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         callback_count++;
@@ -454,13 +463,15 @@ TEST_F(StreamIntegrationTest, OutOfOrderDataReassembly) {
 
 // Test 2.1: Multiple streams in one packet
 TEST_F(StreamIntegrationTest, MultipleStreamsInOnePacket) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     // Create 3 streams
     auto stream1 = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     auto stream2 = std::make_shared<SendStream>(
-        alloter_, 10000, 8, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 8, active_send_cb_, stream_close_cb_, connection_close_cb_);
     auto stream3 = std::make_shared<SendStream>(
-        alloter_, 10000, 12, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 12, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     mock_conn_->streams_[4] = stream1;
     mock_conn_->streams_[8] = stream2;
@@ -494,13 +505,16 @@ TEST_F(StreamIntegrationTest, MultipleStreamsInOnePacket) {
 
 // Test 2.2: Stream multiplexing
 TEST_F(StreamIntegrationTest, StreamMultiplexing) {
-    std::vector<std::shared_ptr<BidirectionStream>> streams;
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     
+    std::vector<std::shared_ptr<BidirectionStream>> streams;
+        
     // Create 5 bidirectional streams
     for (int i = 0; i < 5; i++) {
         uint64_t stream_id = 4 * i;  // 0, 4, 8, 12, 16
         auto stream = std::make_shared<BidirectionStream>(
-            alloter_, 10000, stream_id, active_send_cb_, stream_close_cb_, connection_close_cb_);
+            alloter_, event_loop, 10000, stream_id, active_send_cb_, stream_close_cb_, connection_close_cb_);
         streams.push_back(stream);
         mock_conn_->streams_[stream_id] = stream;
     }
@@ -539,13 +553,15 @@ TEST_F(StreamIntegrationTest, StreamMultiplexing) {
 
 // Test 2.3: Stream priority and fairness
 TEST_F(StreamIntegrationTest, StreamPriorityAndFairness) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     // Create 3 streams with different data sizes
     auto stream1 = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     auto stream2 = std::make_shared<SendStream>(
-        alloter_, 10000, 8, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 8, active_send_cb_, stream_close_cb_, connection_close_cb_);
     auto stream3 = std::make_shared<SendStream>(
-        alloter_, 10000, 12, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 12, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Large data on stream1
     uint8_t large_data[500];
@@ -587,8 +603,10 @@ TEST_F(StreamIntegrationTest, StreamPriorityAndFairness) {
 
 // Test 3.1: Send flow control blocking
 TEST_F(StreamIntegrationTest, SendFlowControlBlocking) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 100, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 100, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send data up to limit
     uint8_t data[100];
@@ -628,8 +646,10 @@ TEST_F(StreamIntegrationTest, SendFlowControlBlocking) {
 
 // Test 3.2: Recv flow control auto-expansion
 TEST_F(StreamIntegrationTest, RecvFlowControlAutoExpansion) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 500, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 500, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Receive data approaching limit
     auto frame = std::make_shared<StreamFrame>();
@@ -660,8 +680,10 @@ TEST_F(StreamIntegrationTest, RecvFlowControlAutoExpansion) {
 
 // Test 3.3: Flow control violation detection
 TEST_F(StreamIntegrationTest, FlowControlViolationDetection) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 100, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 100, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Receive data exceeding limit
     auto frame = std::make_shared<StreamFrame>();
@@ -684,8 +706,10 @@ TEST_F(StreamIntegrationTest, FlowControlViolationDetection) {
 
 // Test 4.1: Partial ACK handling
 TEST_F(StreamIntegrationTest, PartialAckHandling) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     mock_conn_->streams_[4] = stream;
     
@@ -722,8 +746,10 @@ TEST_F(StreamIntegrationTest, PartialAckHandling) {
 
 // Test 4.2: ACK with packet loss simulation
 TEST_F(StreamIntegrationTest, AckWithPacketLossSimulation) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     mock_conn_->streams_[4] = stream;
     
@@ -758,8 +784,10 @@ TEST_F(StreamIntegrationTest, AckWithPacketLossSimulation) {
 
 // Test 4.3: FIN ACK before data ACK
 TEST_F(StreamIntegrationTest, FinAckBeforeDataAck) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     mock_conn_->streams_[4] = stream;
     
@@ -793,8 +821,10 @@ TEST_F(StreamIntegrationTest, FinAckBeforeDataAck) {
 
 // Test 5.1: Final size consistency across multiple frames
 TEST_F(StreamIntegrationTest, FinalSizeConsistencyAcrossFrames) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Receive STREAM with FIN (final_size=50)
     auto frame1 = std::make_shared<StreamFrame>();
@@ -845,10 +875,12 @@ TEST_F(StreamIntegrationTest, FinalSizeConsistencyAcrossFrames) {
 
 // Test 5.2: RESET_STREAM after partial data
 TEST_F(StreamIntegrationTest, ResetStreamAfterPartialData) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     uint32_t error_code = 0;
     
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         error_code = err;
@@ -881,8 +913,10 @@ TEST_F(StreamIntegrationTest, ResetStreamAfterPartialData) {
 
 // Test 5.3: Concurrent close and reset
 TEST_F(StreamIntegrationTest, ConcurrentCloseAndReset) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send data
     stream->Send((uint8_t*)"Data", 4);
@@ -912,8 +946,10 @@ TEST_F(StreamIntegrationTest, ConcurrentCloseAndReset) {
 
 // Test 5.4: Stream reuse prevention
 TEST_F(StreamIntegrationTest, StreamReusePrevention) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Complete stream lifecycle
     stream->Send((uint8_t*)"Data", 4);

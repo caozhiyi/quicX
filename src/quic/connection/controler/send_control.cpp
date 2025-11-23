@@ -11,7 +11,8 @@
 namespace quicx {
 namespace quic {
 
-SendControl::SendControl():
+SendControl::SendControl(std::shared_ptr<common::ITimer> timer):
+    timer_(timer),
     max_ack_delay_(10) {
     memset(pkt_num_largest_sent_, 0, sizeof(pkt_num_largest_sent_));
     memset(pkt_num_largest_acked_, 0, sizeof(pkt_num_largest_acked_));
@@ -46,8 +47,11 @@ void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, ui
     auto timer_task = common::TimerTask([this, pkt_len, packet]{
         lost_packets_.push_back(packet);
         congestion_control_->OnPacketLost(LossEvent{packet->GetPacketNumber(), pkt_len, common::UTCTimeMsec()});
+        if (packet_lost_cb_) {
+            packet_lost_cb_(packet);
+        }
     });
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(timer_task, rtt_calculator_.GetPT0Interval(max_ack_delay_));
+    timer_->AddTimer(timer_task, rtt_calculator_.GetPT0Interval(max_ack_delay_));
     unacked_packets_[ns][packet->GetPacketNumber()] = PacketTimerInfo(largest_sent_time_[ns], pkt_len, timer_task, stream_data);
     common::LOG_DEBUG("SendControl::OnPacketSend: saved packet %llu to unacked_packets[%d], stream_data count=%zu",
                      packet->GetPacketNumber(), ns, stream_data.size());
@@ -108,7 +112,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
         if (task != unacked_packets_[ns].end()) {
             common::LOG_DEBUG("SendControl::OnPacketAck: found packet %llu, stream_data count=%zu",
                              pkt_num, task->second.stream_data.size());
-            GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(task->second.timer_task_);
+            timer_->RemoveTimer(task->second.timer_task_);
             
             // Notify stream data ACK if callback is set
             if (stream_data_ack_cb_ && !task->second.stream_data.empty()) {
@@ -140,7 +144,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
         for (uint32_t i = 0; i <= iter->GetAckRangeLength(); i++) {
             auto task = unacked_packets_[ns].find(pkt_num);
             if (task != unacked_packets_[ns].end()) {
-                GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(task->second.timer_task_);
+                timer_->RemoveTimer(task->second.timer_task_);
                 
                 // Notify stream data ACK if callback is set
                 if (stream_data_ack_cb_ && !task->second.stream_data.empty()) {
@@ -156,7 +160,6 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
         }
     }
 }
-
 
 void SendControl::CanSend(uint64_t now, uint64_t& can_send_bytes) {
     congestion_control_->CanSend(now, can_send_bytes);

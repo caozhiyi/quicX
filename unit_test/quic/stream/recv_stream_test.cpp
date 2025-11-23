@@ -8,7 +8,9 @@
 #include "common/alloter/pool_block.h"
 #include "quic/frame/reset_stream_frame.h"
 #include "common/buffer/single_block_buffer.h"
+#include "quic/quicx/global_resource.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/frame/stream_data_blocked_frame.h"
 
 namespace quicx {
@@ -60,8 +62,10 @@ protected:
 
 // Test 1.1: sequential data recv
 TEST_F(RecvStreamTest, RecvDataBasic) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -84,8 +88,10 @@ TEST_F(RecvStreamTest, RecvDataBasic) {
 
 // Test 1.2: out of order data recv
 TEST_F(RecvStreamTest, RecvDataOutOfOrder) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -124,8 +130,10 @@ TEST_F(RecvStreamTest, RecvDataOutOfOrder) {
 
 // Test 1.3: data with gaps
 TEST_F(RecvStreamTest, RecvDataWithGaps) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -148,8 +156,10 @@ TEST_F(RecvStreamTest, RecvDataWithGaps) {
 
 // Test 1.4: FIN handle
 TEST_F(RecvStreamTest, RecvDataWithFIN) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -173,8 +183,10 @@ TEST_F(RecvStreamTest, RecvDataWithFIN) {
 
 // Test 1.5: duplicate data
 TEST_F(RecvStreamTest, RecvDuplicateData) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -201,8 +213,10 @@ TEST_F(RecvStreamTest, RecvDuplicateData) {
 
 // Test 1.6: exceeds flow control limit
 TEST_F(RecvStreamTest, RecvDataExceedsLimit) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 100, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 100, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // create frame exceeding limit
     auto frame = std::make_shared<StreamFrame>();
@@ -224,8 +238,10 @@ TEST_F(RecvStreamTest, RecvDataExceedsLimit) {
 
 // Test 2.1: basic STREAM frame handle
 TEST_F(RecvStreamTest, OnStreamFrameBasic) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -245,8 +261,10 @@ TEST_F(RecvStreamTest, OnStreamFrameBasic) {
 
 // Test 2.2: offset handle
 TEST_F(RecvStreamTest, OnStreamFrameOffset) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -277,8 +295,10 @@ TEST_F(RecvStreamTest, OnStreamFrameOffset) {
 
 // Test 2.3: FIN flag handle
 TEST_F(RecvStreamTest, OnStreamFrameFIN) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -299,8 +319,10 @@ TEST_F(RecvStreamTest, OnStreamFrameFIN) {
 
 // Test 2.4: invalid state
 TEST_F(RecvStreamTest, OnStreamFrameInvalidState) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -326,8 +348,10 @@ TEST_F(RecvStreamTest, OnStreamFrameInvalidState) {
 
 // Test 2.5: multiple frames
 TEST_F(RecvStreamTest, OnStreamFrameMultiple) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -352,8 +376,10 @@ TEST_F(RecvStreamTest, OnStreamFrameMultiple) {
 
 // Test 3.1: basic RESET_STREAM handle
 TEST_F(RecvStreamTest, OnResetStreamFrameBasic) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -383,8 +409,10 @@ TEST_F(RecvStreamTest, OnResetStreamFrameBasic) {
 
 // Test 3.2: final_size validate
 TEST_F(RecvStreamTest, OnResetStreamFrameFinalSize) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -402,8 +430,10 @@ TEST_F(RecvStreamTest, OnResetStreamFrameFinalSize) {
 
 // Test 3.3: final_size mismatch
 TEST_F(RecvStreamTest, OnResetStreamFrameMismatch) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -435,8 +465,10 @@ TEST_F(RecvStreamTest, OnResetStreamFrameMismatch) {
 
 // Test 4.1: callback triggered
 TEST_F(RecvStreamTest, RecvCallbackTriggered) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -455,8 +487,10 @@ TEST_F(RecvStreamTest, RecvCallbackTriggered) {
 
 // Test 4.2: validate data correctness
 TEST_F(RecvStreamTest, RecvCallbackWithData) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -476,8 +510,10 @@ TEST_F(RecvStreamTest, RecvCallbackWithData) {
 
 // Test 4.3: multiple callback
 TEST_F(RecvStreamTest, RecvCallbackMultipleTimes) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     int callback_count = 0;
     stream->SetStreamReadCallBack([&callback_count](std::shared_ptr<IBufferRead>, bool, uint32_t) {
@@ -505,8 +541,10 @@ TEST_F(RecvStreamTest, RecvCallbackMultipleTimes) {
 
 // Test 5.1: Reset send STOP_SENDING
 TEST_F(RecvStreamTest, ResetWithError) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Reset with error
     stream->Reset(0x400);
@@ -516,8 +554,10 @@ TEST_F(RecvStreamTest, ResetWithError) {
 
 // Test 5.2: Reset error=0, not send
 TEST_F(RecvStreamTest, ResetNoError) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // reset with error=0 (normal completion)
     StreamState state_before = stream->GetRecvStateMachine()->GetStatus();
@@ -531,8 +571,10 @@ TEST_F(RecvStreamTest, ResetNoError) {
 
 // Test 5.3: invalid state Reset
 TEST_F(RecvStreamTest, ResetInvalidState) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // force to terminal state
     stream->GetRecvStateMachine()->OnFrame(FrameType::kResetStream);
@@ -552,8 +594,10 @@ TEST_F(RecvStreamTest, ResetInvalidState) {
 
 // Test 6.1: handle STREAM_DATA_BLOCKED
 TEST_F(RecvStreamTest, RecvStreamDataBlocked) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_); // initial limit 10000
+        alloter_, event_loop, 10000, 5, active_send_cb_, stream_close_cb_, connection_close_cb_); // initial limit 10000
     
     stream->SetStreamReadCallBack(recv_cb_);
     

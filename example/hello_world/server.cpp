@@ -44,7 +44,7 @@ static const char key_pem[] =
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::cout << "get request method: " << req->GetMethodString() << std::endl;
             std::cout << "get request path: " << req->GetPath() << std::endl;
-            std::cout << "get request body: " << req->GetBody() << std::endl;
+            std::cout << "get request body: " << req->GetBodyAsString() << std::endl;
 
             resp->AppendBody(std::string("hello world"));
             resp->SetStatusCode(200);
@@ -54,7 +54,7 @@ static const char key_pem[] =
     config.cert_pem_ = cert_pem;
     config.key_pem_ = key_pem;
     config.config_.thread_num_ = 1;
-    config.config_.log_level_ = quicx::LogLevel::kDebug;
+    config.config_.log_level_ = quicx::LogLevel::kInfo;
     server->Init(config);
     if (!server->Start("0.0.0.0", 8882)) {
         std::cout << "start server failed" << std::endl;

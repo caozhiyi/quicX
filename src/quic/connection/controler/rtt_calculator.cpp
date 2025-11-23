@@ -53,7 +53,7 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
 
 void RttCalculator::Reset() {
     latest_rtt_ = 0;
-    smoothed_rtt_ = kInitRtt * 1000;
+    smoothed_rtt_ = kInitRtt; // kInitRtt is 250ms, no need to multiply by 1000
     rtt_var_ = smoothed_rtt_ / 2;
     min_rtt_ = std::numeric_limits<uint32_t>::max();
 
@@ -62,7 +62,8 @@ void RttCalculator::Reset() {
 
 uint32_t RttCalculator::GetPT0Interval(uint32_t max_ack_delay) {
     // PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay
-    return smoothed_rtt_ + std::max<uint32_t>(rtt_var_ << 2, 1000) + max_ack_delay;
+    // kGranularity is 1ms, so use 1 instead of 1000
+    return smoothed_rtt_ + std::max<uint32_t>(rtt_var_ << 2, 1) + max_ack_delay;
 }
 
 }

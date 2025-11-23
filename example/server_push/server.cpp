@@ -46,7 +46,7 @@ static const char key_pem[] =
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::cout << "get request method: " << req->GetMethodString() << std::endl;
             std::cout << "get request path: " << req->GetPath() << std::endl;
-            std::cout << "get request body: " << req->GetBody() << std::endl;
+            std::cout << "get request body: " << req->GetBodyAsString() << std::endl;
 
             resp->AppendBody("hello world");
             resp->SetStatusCode(200);

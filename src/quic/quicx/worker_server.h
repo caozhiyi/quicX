@@ -5,6 +5,7 @@
 #include "quic/quicx/worker.h"
 #include "quic/udp/if_sender.h"
 #include "quic/include/if_quic_server.h"
+#include "common/network/if_event_loop.h"
 
 namespace quicx {
 namespace quic {
@@ -13,7 +14,7 @@ namespace quic {
 class ServerWorker: public Worker {
 public:
     ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-        const QuicTransportParams& params, connection_state_callback connection_handler);
+        const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop);
     virtual ~ServerWorker();
 
     virtual bool InnerHandlePacket(PacketParseResult& packet_info) override;

@@ -56,7 +56,7 @@ struct ActiveStreamSet {
 
 class SendManager {
 public:
-    SendManager();
+    SendManager(std::shared_ptr<common::ITimer> timer);
     ~SendManager();
 
     void UpdateConfig(const TransportParam& tp);
@@ -145,6 +145,7 @@ private:
     uint16_t mtu_probe_target_bytes_{1450};
     uint64_t mtu_probe_packet_number_{0};
 
+    std::shared_ptr<common::ITimer> timer_;
     common::TimerTask pacing_timer_task_;
     std::function<void()> send_retry_cb_;
     bool is_cwnd_limited_{false};

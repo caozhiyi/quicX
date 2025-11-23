@@ -12,12 +12,13 @@ namespace quicx {
 namespace quic {
 
 SendStream::SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
+    std::shared_ptr<common::IEventLoop> loop,
     uint64_t init_data_limit,
     uint64_t id,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
-    IStream(id, active_send_cb, stream_close_cb, connection_close_cb),
+    IStream(loop, id, active_send_cb, stream_close_cb, connection_close_cb),
     to_fin_(false),
     send_data_offset_(0),
     acked_offset_(0),
@@ -32,6 +33,16 @@ SendStream::~SendStream() {
 }
 
 void SendStream::Close() {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this()]() {
+            auto stream = std::dynamic_pointer_cast<SendStream>(self);
+            if (stream) {
+                stream->Close();
+            }
+        });
+        return;
+    }
+
     to_fin_ = true;
     if (active_send_cb_) {
         active_send_cb_(shared_from_this());
@@ -39,6 +50,13 @@ void SendStream::Close() {
 }
 
 void SendStream::Reset(uint32_t error) {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this(), error]() {
+            self->Reset(error);
+        });
+        return;
+    }
+
     // check status
     if(!send_machine_->OnFrame(FrameType::kResetStream)) {
         return;
@@ -53,18 +71,52 @@ void SendStream::Reset(uint32_t error) {
 }
 
 int32_t SendStream::Send(uint8_t* data, uint32_t len) {
+    common::LOG_DEBUG("SendStream::Send called: stream_id=%llu, len=%u, IsInLoopThread=%d", 
+              GetStreamID(), len, event_loop_->IsInLoopThread());
+    
+    if (!event_loop_->IsInLoopThread()) {
+        common::LOG_WARN("SendStream::Send called from wrong thread, posting to EventLoop: stream_id=%llu, len=%u", 
+                 GetStreamID(), len);
+        std::vector<uint8_t> vec(data, data + len);
+        event_loop_->RunInLoop([self = shared_from_this(), vec = std::move(vec)]() {
+            auto stream = std::dynamic_pointer_cast<SendStream>(self);
+            if (stream) {
+                common::LOG_DEBUG("SendStream::Send async execution in EventLoop: stream_id=%llu, len=%zu", 
+                          stream->GetStreamID(), vec.size());
+                stream->Send(const_cast<uint8_t*>(vec.data()), vec.size());
+            }
+        });
+        return len;
+    }
+
     if (!send_machine_->CanSendAppData()) {
+        common::LOG_WARN("SendStream::Send: cannot send app data, stream_id=%llu, state=%d", 
+                 GetStreamID(), send_machine_->GetStatus());
         return -1;
     }
     
     int32_t ret = send_buffer_->Write(data, len);
+    common::LOG_DEBUG("SendStream::Send: wrote to buffer, stream_id=%llu, requested=%u, written=%d, buffer_size=%u", 
+              GetStreamID(), len, ret, send_buffer_->GetDataLength());
+    
     if (active_send_cb_) {
         active_send_cb_(shared_from_this());
     }
+    
     return ret;
 }
 
 int32_t SendStream::Send(std::shared_ptr<IBufferRead> buffer) {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this(), buffer]() {
+            auto stream = std::dynamic_pointer_cast<SendStream>(self);
+            if (stream) {
+                stream->Send(buffer);
+            }
+        });
+        return buffer->GetDataLength();
+    }
+
     if (!send_machine_->CanSendAppData()) {
         return -1;
     }
@@ -81,6 +133,16 @@ std::shared_ptr<IBufferWrite> SendStream::GetSendBuffer() {
 }
 
 bool SendStream::Flush() {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this()]() {
+            auto stream = std::dynamic_pointer_cast<SendStream>(self);
+            if (stream) {
+                stream->Flush();
+            }
+        });
+        return true;
+    }
+
     if (!send_machine_->CanSendAppData()) {
         common::LOG_DEBUG("stream send flush failed. stream id:%d, can send app data:%d", stream_id_, send_machine_->CanSendAppData());
         return false;

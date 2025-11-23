@@ -18,7 +18,7 @@ namespace quic {
 class Worker: public IWorker {
 public:
     Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-        const QuicTransportParams& params, connection_state_callback connection_handler);
+        const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop);
     virtual ~Worker();
 
     // Get the worker id
@@ -28,8 +28,6 @@ public:
 
     // process inner packets
     virtual void Process();
-    // Set EventLoop reference for cross-thread access (used in single-thread mode)
-    void SetEventLoop(std::shared_ptr<common::IEventLoop> event_loop) { event_loop_ = event_loop; }
 
 protected:
     void ProcessSend();

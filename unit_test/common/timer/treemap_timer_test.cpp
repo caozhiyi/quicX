@@ -23,7 +23,7 @@ TEST(treemap_timer_utest, addtimer2) {
     EXPECT_TRUE(timer->AddTimer(t4, 50));
 }
 
-TEST(treemap_timer_utest, rmtimer) {
+TEST(treemap_timer_utest, RemoveTimer) {
     TimerTask t1, t2, t3, t4;
     auto timer = MakeTimer();
 
@@ -32,10 +32,10 @@ TEST(treemap_timer_utest, rmtimer) {
     EXPECT_TRUE(timer->AddTimer(t3, 40));
     EXPECT_TRUE(timer->AddTimer(t4, 40));
 
-    EXPECT_TRUE(timer->RmTimer(t1));
-    EXPECT_TRUE(timer->RmTimer(t2));
-    EXPECT_TRUE(timer->RmTimer(t3));
-    EXPECT_TRUE(timer->RmTimer(t4));
+    EXPECT_TRUE(timer->RemoveTimer(t1));
+    EXPECT_TRUE(timer->RemoveTimer(t2));
+    EXPECT_TRUE(timer->RemoveTimer(t3));
+    EXPECT_TRUE(timer->RemoveTimer(t4));
 }
 
 TEST(treemap_timer_utest, mintime) {
@@ -49,10 +49,10 @@ TEST(treemap_timer_utest, mintime) {
 
     EXPECT_EQ(10 * TimeUnit::kSecond, timer->MinTime(now));
 
-    timer->RmTimer(t1);
+    timer->RemoveTimer(t1);
     EXPECT_EQ(30 * TimeUnit::kSecond, timer->MinTime(now));
 
-    timer->RmTimer(t2);
+    timer->RemoveTimer(t2);
     EXPECT_EQ(40 * TimeUnit::kMinute, timer->MinTime(now));
 }
 
@@ -80,7 +80,7 @@ TEST(treemap_timer_utest, timerrun1) {
     EXPECT_EQ(2370000, timer->MinTime(now));
 
     EXPECT_FALSE(timer->Empty());
-    timer->RmTimer(t3);
+    timer->RemoveTimer(t3);
     EXPECT_TRUE(timer->Empty());
 }
 

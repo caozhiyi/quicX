@@ -15,6 +15,7 @@
 #include "quic/stream/bidirection_stream.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/quicx/global_resource.h"
 
 using namespace quicx;
 using namespace quic;
@@ -50,8 +51,10 @@ protected:
 
 // Test 1: RecvStream normal completion no STOP_SENDING
 TEST_F(StreamCloseScenarios, RecvStreamNormalCompletionNoStopSending) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // simulate receiving data with FIN
     auto frame = std::make_shared<StreamFrame>();
@@ -92,8 +95,10 @@ TEST_F(StreamCloseScenarios, RecvStreamNormalCompletionNoStopSending) {
 
 // Test 2: RecvStream error sends STOP_SENDING
 TEST_F(StreamCloseScenarios, RecvStreamErrorSendsStopSending) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<RecvStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // application layer calls Reset with error
     stream->Reset(0x123);  // error != 0
@@ -130,8 +135,10 @@ TEST_F(StreamCloseScenarios, RecvStreamErrorSendsStopSending) {
 
 // Test 3: BidirectionStream both directions must be completed to close
 TEST_F(StreamCloseScenarios, BidirectionStreamBothDirectionsRequired) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // send direction completed
     uint8_t data[] = "Request";
@@ -167,8 +174,10 @@ TEST_F(StreamCloseScenarios, BidirectionStreamBothDirectionsRequired) {
 
 // Test 4: BidirectionStream::Reset error handling
 TEST_F(StreamCloseScenarios, BidirectionStreamResetWithError) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // call Reset with error
     stream->Reset(0x456);
@@ -205,8 +214,10 @@ TEST_F(StreamCloseScenarios, BidirectionStreamResetWithError) {
 
 // Test 5: BidirectionStream::Reset with error=0 should warn
 TEST_F(StreamCloseScenarios, BidirectionStreamResetWithZeroWarns) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // call Reset with error=0 (wrong API usage)
     stream->Reset(0);
@@ -242,8 +253,10 @@ TEST_F(StreamCloseScenarios, BidirectionStreamResetWithZeroWarns) {
 
 // Test 6: SendStream receives STOP_SENDING and sends RESET_STREAM
 TEST_F(StreamCloseScenarios, SendStreamRespondsToStopSending) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // send some data
     uint8_t data[] = "Test";

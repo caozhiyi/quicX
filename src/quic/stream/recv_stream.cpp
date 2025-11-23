@@ -12,12 +12,13 @@ namespace quicx {
 namespace quic {
 
 RecvStream::RecvStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
+    std::shared_ptr<common::IEventLoop> loop,
     uint64_t init_data_limit,
     uint64_t id,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
-    IStream(id, active_send_cb, stream_close_cb, connection_close_cb),
+    IStream(loop, id, active_send_cb, stream_close_cb, connection_close_cb),
     local_data_limit_(init_data_limit),
     final_offset_(0),
     except_offset_(0) {
@@ -30,6 +31,13 @@ RecvStream::~RecvStream() {
 }
 
 void RecvStream::Reset(uint32_t error) {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this(), error]() {
+            self->Reset(error);
+        });
+        return;
+    }
+
     // RFC 9000: Only send STOP_SENDING when there's an actual error (error != 0)
     // When error == 0, it means normal completion (received FIN from peer)
     // In that case, do nothing - no need to send STOP_SENDING

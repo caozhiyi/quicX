@@ -1,7 +1,6 @@
 #include "common/log/log.h"
 #include "quic/connection/error.h"
 #include "quic/quicx/worker_client.h"
-#include "quic/quicx/global_resource.h"
 #include "quic/connection/connection_client.h"
 
 namespace quicx {
@@ -9,14 +8,14 @@ namespace quic {
 
 // a normal worker
 ClientWorker::ClientWorker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-    const QuicTransportParams& params, connection_state_callback connection_handler):
-    Worker(config, ctx, sender, params, connection_handler) {}
+    const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop):
+    Worker(config, ctx, sender, params, connection_handler, event_loop) {}
 
 ClientWorker::~ClientWorker() {}
 
 void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
     const std::string& resumption_session_der) {
-    auto conn = std::make_shared<ClientConnection>(ctx_,
+    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_,
         std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
@@ -31,7 +30,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
         conn->Dial(common::Address(ip, port), alpn, resumption_session_der, params_);
     }
 
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer([conn, this]() { HandleConnectionTimeout(conn); }, timeout_ms);
+    event_loop_->AddTimer([conn, this]() { HandleConnectionTimeout(conn); }, timeout_ms);
 }
 
 bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {

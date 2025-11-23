@@ -8,14 +8,15 @@ namespace quicx {
 namespace quic {
 
 BidirectionStream::BidirectionStream(std::shared_ptr<common::BlockMemoryPool> alloter,
+    std::shared_ptr<common::IEventLoop> loop,
     uint64_t init_data_limit, 
     uint64_t id,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
-    IStream(id, active_send_cb, stream_close_cb, connection_close_cb),
-    SendStream(alloter, init_data_limit, id, active_send_cb, stream_close_cb, connection_close_cb),
-    RecvStream(alloter, init_data_limit, id, active_send_cb, stream_close_cb, connection_close_cb) {
+    IStream(loop, id, active_send_cb, stream_close_cb, connection_close_cb),
+    SendStream(alloter, loop, init_data_limit, id, active_send_cb, stream_close_cb, connection_close_cb),
+    RecvStream(alloter, loop, init_data_limit, id, active_send_cb, stream_close_cb, connection_close_cb) {
 
 }
 
@@ -24,6 +25,16 @@ BidirectionStream::~BidirectionStream() {
 }
 
 void BidirectionStream::Close() {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this()]() {
+            auto stream = std::dynamic_pointer_cast<BidirectionStream>(self);
+            if (stream) {
+                stream->Close();
+            }
+        });
+        return;
+    }
+
     SendStream::Close();
     // After closing send direction, check if both directions are terminal
     // Note: Close() sends FIN, but actual terminal state (Data Recvd) is reached
@@ -32,6 +43,16 @@ void BidirectionStream::Close() {
 }
 
 void BidirectionStream::Reset(uint32_t error) {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this(), error]() {
+            auto stream = std::dynamic_pointer_cast<BidirectionStream>(self);
+            if (stream) {
+                stream->Reset(error);
+            }
+        });
+        return;
+    }
+
     // This is a public API for application to reset the stream
     // It should reset both directions when called with an actual error
     if (error != 0) {

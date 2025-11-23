@@ -1,7 +1,6 @@
 #ifndef QUIC_QUICX_WORKER_WITH_THREAD
 #define QUIC_QUICX_WORKER_WITH_THREAD
 
-#include <thread>
 #include "quic/quicx/if_worker.h"
 #include "common/thread/thread.h"
 #include "common/network/if_event_loop.h"
@@ -12,7 +11,7 @@ namespace quic {
 
 class WorkerWithThread: public common::Thread, public IWorker {
 public:
-    WorkerWithThread(std::shared_ptr<IWorker> worker_ptr);
+    WorkerWithThread(std::shared_ptr<common::IEventLoop> event_loop, std::shared_ptr<IWorker> worker_ptr);
     virtual ~WorkerWithThread();
 
     void Run() override;
@@ -24,10 +23,10 @@ public:
     virtual void HandlePacket(PacketParseResult& packet_info) override;
     // post a task to the worker's event loop
     virtual void PostTask(std::function<void()> task);
-    // get the event loop
-    virtual std::shared_ptr<common::IEventLoop> GetEventLoop();
     // get the worker
     std::shared_ptr<IWorker> GetWorker() { return worker_ptr_; }
+    // get the worker's event loop
+    std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_; }
 
 private:
     void ProcessRecv();

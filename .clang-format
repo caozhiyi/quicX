@@ -23,5 +23,5 @@ PackConstructorInitializers: Never
 AlignAfterOpenBracket: DontAlign
 
 # Disable include sorting to allow manual length-based sorting
-SortIncludes: false
+SortIncludes: true
 IncludeBlocks: Preserve

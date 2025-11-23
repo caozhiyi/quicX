@@ -23,7 +23,7 @@ namespace quic {
 */
 class RecvControl {
 public:
-    RecvControl();
+    RecvControl(std::shared_ptr<common::ITimer> timer);
     ~RecvControl() {}
 
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
@@ -43,7 +43,7 @@ private:
     uint64_t ce_count_[PacketNumberSpace::kNumberSpaceCount] {0};
     
     bool set_timer_;
-
+    std::shared_ptr<common::ITimer> timer_;
     common::TimerTask timer_task_;
     std::function<void()> active_send_cb_;
 

@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
+#include <vector>
+#include <thread>
 
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
@@ -44,6 +46,15 @@ public:
 
     virtual void SetTimerForTest(std::shared_ptr<ITimer> timer) override;
 
+    // Check if current thread is the loop thread
+    virtual bool IsInLoopThread() const override;
+    
+    // Execute task immediately if in loop thread, otherwise post it
+    virtual void RunInLoop(std::function<void()> task) override;
+    
+    // Assert that current thread is loop thread
+    virtual void AssertInLoopThread() override;
+
 private:
     void DrainPostedTasks();
 
@@ -61,6 +72,7 @@ private:
     std::vector<std::function<void()>> fixed_processes_;
 
     bool initialized_ = false;
+    std::thread::id thread_id_;
 };
 
 }  // namespace common

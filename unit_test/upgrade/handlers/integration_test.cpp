@@ -70,6 +70,20 @@ public:
         return nullptr;
     }
     
+    virtual bool IsInLoopThread() const override {
+        return true;  // Mock always returns true for testing
+    }
+    
+    virtual void RunInLoop(std::function<void()> task) override {
+        if (task) {
+            task();
+        }
+    }
+    
+    virtual void AssertInLoopThread() override {
+        // Mock implementation - does nothing in test
+    }
+    
     // Test helper methods
     bool IsInitCalled() const { return init_called_; }
     bool IsWakeupCalled() const { return wakeup_called_; }
