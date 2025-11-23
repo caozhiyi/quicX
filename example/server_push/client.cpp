@@ -23,7 +23,7 @@ int main() {
         request, 
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             std::cout << "status: " << response->GetStatusCode() << std::endl;
-            std::cout << "response: " << response->GetBody() << std::endl;
+            std::cout << "response: " << response->GetBodyAsString() << std::endl;
         }
     );
     client->SetPushPromiseHandler(
@@ -39,7 +39,7 @@ int main() {
     client->SetPushHandler(
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             std::cout << "push status: " << response->GetStatusCode() << std::endl;
-            std::cout << "push response: " << response->GetBody() << std::endl;
+            std::cout << "push response: " << response->GetBodyAsString() << std::endl;
         }
     );
 

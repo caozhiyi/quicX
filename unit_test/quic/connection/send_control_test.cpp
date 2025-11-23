@@ -10,6 +10,7 @@
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/packet_number.h"
 #include "quic/quicx/global_resource.h"
+#include "common/network/if_event_loop.h"
 #include "quic/connection/controler/send_control.h"
 
 namespace quicx {
@@ -29,7 +30,7 @@ public:
         return add_count;
     }
 
-    bool RmTimer(common::TimerTask& task) override {
+    bool RemoveTimer(common::TimerTask& task) override {
         // Find task by ID
         uint64_t id = task.GetId();
         for (auto it = tasks_.begin(); it != tasks_.end(); ++it) {
@@ -60,8 +61,10 @@ std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, FrameTypeBit fram
 
 TEST(SendControlTest, AckElicitingPacketsTriggerCallbacks) {
     auto timer = std::make_shared<MockTimer>();
-    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
-    SendControl send_control;
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    event_loop->SetTimerForTest(timer);
+    SendControl send_control(timer);
 
     std::vector<std::tuple<uint64_t, uint64_t, bool>> callbacks;
     send_control.SetStreamDataAckCallback([
@@ -97,13 +100,14 @@ TEST(SendControlTest, AckElicitingPacketsTriggerCallbacks) {
     EXPECT_EQ(std::get<1>(callbacks[1]), 100u);
     EXPECT_FALSE(std::get<2>(callbacks[1]));
     EXPECT_EQ(timer->rm_count, 2u);
-    GlobalResource::Instance().ResetForTest();
 }
 
 TEST(SendControlTest, NonAckElicitingPacketsAreNotTracked) {
     auto timer = std::make_shared<MockTimer>();
-    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
-    SendControl send_control;
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    event_loop->SetTimerForTest(timer);
+    SendControl send_control(timer);
 
     bool callback_invoked = false;
     send_control.SetStreamDataAckCallback([
@@ -127,7 +131,6 @@ TEST(SendControlTest, NonAckElicitingPacketsAreNotTracked) {
     send_control.OnPacketAck(5, PacketNumberSpace::kApplicationNumberSpace, ack);
     EXPECT_FALSE(callback_invoked);
     EXPECT_EQ(timer->rm_count, 0u);
-    GlobalResource::Instance().ResetForTest();
 }
 
 }  // namespace

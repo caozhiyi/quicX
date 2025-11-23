@@ -17,6 +17,7 @@ class SendStream:
     public virtual IQuicSendStream {
 public:
     SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
+        std::shared_ptr<common::IEventLoop> loop,
         uint64_t init_data_limit,
         uint64_t id,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,

@@ -10,7 +10,7 @@ namespace quic {
 class ClientWorker: public Worker {
 public:
     ClientWorker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-        const QuicTransportParams& params, connection_state_callback connection_handler);
+        const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop);
     virtual ~ClientWorker();
 
     virtual void Connect(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,

@@ -10,8 +10,11 @@
 #include "quic/frame/stop_sending_frame.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "common/buffer/single_block_buffer.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
+#include "quic/quicx/global_resource.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
@@ -61,9 +64,11 @@ protected:
 // ==== 1. basic send test (5) ====
 
 // Test 1.1: basic data send
-TEST_F(SendStreamTest, SendDataBasic) {
+TEST_F(SendStreamTest, SendDataBasic) {\
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     uint8_t data[] = "Hello QUIC";
     int32_t ret = stream->Send(data, 10);
@@ -75,8 +80,10 @@ TEST_F(SendStreamTest, SendDataBasic) {
 
 // Test 1.2: send large data
 TEST_F(SendStreamTest, SendLargeData) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     uint8_t data[2000];
     for (int i = 0; i < 2000; i++) {
@@ -91,8 +98,10 @@ TEST_F(SendStreamTest, SendLargeData) {
 
 // Test 1.3: send 0 byte data
 TEST_F(SendStreamTest, SendEmptyData) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     uint8_t data[] = "";
     int32_t ret = stream->Send(data, 0);
@@ -102,8 +111,10 @@ TEST_F(SendStreamTest, SendEmptyData) {
 
 // Test 1.4: send after close (should fail)
 TEST_F(SendStreamTest, SendAfterClose) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Close stream
     stream->Close();
@@ -121,8 +132,10 @@ TEST_F(SendStreamTest, SendAfterClose) {
 
 // Test 1.5: send multiple times, validate accumulation
 TEST_F(SendStreamTest, SendMultipleTimes) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     uint8_t data1[] = "First";
     uint8_t data2[] = "Second";
@@ -142,8 +155,10 @@ TEST_F(SendStreamTest, SendMultipleTimes) {
 
 // Test 2.1: basic close call
 TEST_F(SendStreamTest, CloseBasic) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     active_send_called_ = false;
     stream->Close();
@@ -155,8 +170,10 @@ TEST_F(SendStreamTest, CloseBasic) {
 
 // Test 2.2: close triggers callback
 TEST_F(SendStreamTest, CloseTriggersCallback) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send some data first
     uint8_t data[] = "Test data";
@@ -170,8 +187,10 @@ TEST_F(SendStreamTest, CloseTriggersCallback) {
 
 // Test 2.3: multiple close, validate idempotency
 TEST_F(SendStreamTest, CloseIdempotent) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->Close();
     
@@ -185,8 +204,10 @@ TEST_F(SendStreamTest, CloseIdempotent) {
 
 // Test 3.1: basic reset call
 TEST_F(SendStreamTest, ResetBasic) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     uint8_t data[] = "Test";
     stream->Send(data, 4);
@@ -212,8 +233,10 @@ TEST_F(SendStreamTest, ResetBasic) {
 
 // Test 3.2: Reset validate error_code and final_size
 TEST_F(SendStreamTest, ResetWithError) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send some data
     uint8_t data[100];
@@ -231,8 +254,10 @@ TEST_F(SendStreamTest, ResetWithError) {
 
 // Test 3.3: invalid state Reset, validate reject
 TEST_F(SendStreamTest, ResetInvalidState) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Already in Reset state
     stream->GetSendStateMachine()->OnFrame(FrameType::kStream);
@@ -252,8 +277,10 @@ TEST_F(SendStreamTest, ResetInvalidState) {
 
 // Test 4.1: generate STREAM frame
 TEST_F(SendStreamTest, TrySendDataGeneratesFrame) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamWriteCallBack(send_cb_);
     
@@ -279,8 +306,10 @@ TEST_F(SendStreamTest, TrySendDataGeneratesFrame) {
 
 // Test 4.2: FIN flag set
 TEST_F(SendStreamTest, TrySendDataWithFIN) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send data and close
     uint8_t data[] = "Final data";
@@ -305,8 +334,10 @@ TEST_F(SendStreamTest, TrySendDataWithFIN) {
 // Test 4.3: flow control limit
 TEST_F(SendStreamTest, TrySendDataFlowControl) {
     // Create stream with small flow control limit
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 100, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 100, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send data exceeding limit
     uint8_t data[200];
@@ -330,8 +361,10 @@ TEST_F(SendStreamTest, TrySendDataFlowControl) {
 
 // Test 4.4: no data behavior
 TEST_F(SendStreamTest, TrySendDataEmpty) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Don't send any data
     uint8_t buf[1500] = {0};
@@ -352,8 +385,10 @@ TEST_F(SendStreamTest, TrySendDataEmpty) {
 
 // Test 5.1: OnMaxStreamDataFrame update peer_data_limit_
 TEST_F(SendStreamTest, OnMaxStreamDataFrame) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 100, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 100, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send some data first (so buffer has data)
     uint8_t data[50];
@@ -374,8 +409,10 @@ TEST_F(SendStreamTest, OnMaxStreamDataFrame) {
 
 // Test 5.2: OnStopSendingFrame trigger Reset
 TEST_F(SendStreamTest, OnStopSendingFrame) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamWriteCallBack(send_cb_);
     
@@ -401,8 +438,10 @@ TEST_F(SendStreamTest, OnStopSendingFrame) {
 
 // Test 5.3: invalid frame type
 TEST_F(SendStreamTest, OnInvalidFrame) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Create an invalid frame type (STREAM frame shouldn't be sent to SendStream)
     auto frame = std::make_shared<StreamFrame>();
@@ -416,8 +455,10 @@ TEST_F(SendStreamTest, OnInvalidFrame) {
 
 // Test 6.1: OnDataAcked update acked_offset_
 TEST_F(SendStreamTest, OnDataAckedBasic) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send some data
     uint8_t data[100];
@@ -443,39 +484,6 @@ TEST_F(SendStreamTest, OnDataAckedBasic) {
                 state == StreamState::kReady);
 }
 
-/*
-// Test 6.2: OnDataAcked with FIN，state change to DataRecvd
-TEST_F(SendStreamTest, OnDataAckedWithFIN) {
-    auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
-    
-    // Send data and close
-    uint8_t data[50];
-    memset(data, 'C', 50);
-    stream->Send(data, 50);
-    stream->Close();
-    
-    // Simulate sending
-    uint8_t buf[1500] = {0};
-    auto chunk7 = std::make_shared<common::StandaloneBufferChunk>(sizeof(buf));
-    ASSERT_TRUE(chunk7->Valid());
-    std::memcpy(chunk7->GetData(), buf, sizeof(buf));
-    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk7);
-    FixBufferFrameVisitor visitor(1500);
-    visitor.SetStreamDataSizeLimit(1500);
-    
-    // Send data with FIN
-    stream->GetSendStateMachine()->OnFrame(FrameType::kStream);
-    stream->TrySendData(&visitor);
-    stream->GetSendStateMachine()->OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag);
-    
-    // Acknowledge all data with FIN
-    stream->OnDataAcked(50, true);
-    
-    // Should transition to Data Recvd
-    EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kDataRecvd);
-}
-*/
 }
 }
 }

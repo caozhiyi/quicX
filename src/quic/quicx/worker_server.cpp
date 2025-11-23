@@ -10,8 +10,8 @@ namespace quicx {
 namespace quic {
 
 ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-    const QuicTransportParams& params, connection_state_callback connection_handler):
-    Worker(config.config_, ctx, sender, params, connection_handler),
+    const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop):
+    Worker(config.config_, ctx, sender, params, connection_handler, event_loop),
     server_alpn_(config.alpn_) {}
 
 ServerWorker::~ServerWorker() {}
@@ -57,7 +57,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     ConnectionID dst_cid(long_header->GetDestinationConnectionId(), long_header->GetDestinationConnectionIdLength());
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, server_alpn_,
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_, server_alpn_,
         std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
@@ -77,7 +77,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     new_conn->SetPendingEcn(packet_info.net_packet_->GetEcn());
     new_conn->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
 
-    GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(
+    event_loop_->AddTimer(
         [new_conn, this]() {
             if (connecting_set_.find(new_conn) != connecting_set_.end()) {
                 common::LOG_DEBUG("connection timeout during handshake. cid:%llu", new_conn->GetConnectionIDHash());

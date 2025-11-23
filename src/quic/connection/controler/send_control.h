@@ -39,7 +39,7 @@ using StreamDataAckCallback = std::function<void(uint64_t stream_id, uint64_t ma
 // controller of sender.
 class SendControl {
 public:
-    SendControl();
+    SendControl(std::shared_ptr<common::ITimer> timer);
     ~SendControl() {}
 
     uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
@@ -57,6 +57,10 @@ public:
 
     // Set callback for stream data ACK notification
     void SetStreamDataAckCallback(StreamDataAckCallback callback) { stream_data_ack_cb_ = callback; }
+
+    // Set callback for packet loss notification
+    using PacketLostCallback = std::function<void(std::shared_ptr<IPacket>)>;
+    void SetPacketLostCallback(PacketLostCallback callback) { packet_lost_cb_ = callback; }
 
 private:
     enum class EcnState { kUnknown, kValidated, kFailed };
@@ -82,6 +86,7 @@ private:
     std::unordered_map<uint64_t, PacketTimerInfo> unacked_packets_[PacketNumberSpace::kNumberSpaceCount];
 
     StreamDataAckCallback stream_data_ack_cb_;
+    PacketLostCallback packet_lost_cb_;
 
     uint64_t pkt_num_largest_sent_[PacketNumberSpace::kNumberSpaceCount];
     uint64_t pkt_num_largest_acked_[PacketNumberSpace::kNumberSpaceCount];
@@ -98,6 +103,7 @@ private:
 
     uint32_t max_ack_delay_;
     uint32_t ack_delay_exponent_;
+    std::shared_ptr<common::ITimer> timer_;
 };
 
 }  // namespace quic

@@ -1,13 +1,12 @@
 #include "common/log/log.h"
 #include "quic/quicx/master.h"
-#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
 
-Master::Master(bool ecn_enabled):
+Master::Master(bool ecn_enabled, std::shared_ptr<common::IEventLoop> event_loop):
     ecn_enabled_(ecn_enabled) {
-    receiver_ = IReceiver::MakeReceiver();
+    receiver_ = IReceiver::MakeReceiver(event_loop);
     if (!receiver_) {
         common::LOG_ERROR("Master::Master: failed to create receiver");
     }

@@ -13,6 +13,7 @@ class CryptoStream:
     public IStream {
 public:
     CryptoStream(std::shared_ptr<common::BlockMemoryPool> alloter,
+        std::shared_ptr<common::IEventLoop> loop,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);

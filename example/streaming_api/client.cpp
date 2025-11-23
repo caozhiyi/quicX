@@ -9,7 +9,6 @@
  */
 
 #include <iostream>
-#include <fstream>
 #include <memory>
 #include <thread>
 #include <chrono>
@@ -158,9 +157,9 @@ bool UploadFile(IClient* client, const std::string& url,
                 std::cerr << "[Upload] Request failed with error: " << error << std::endl;
             }
         });
-    
     // Wait for response (in real application, use proper synchronization)
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Increased to 30s to allow large file uploads to complete, especially during congestion recovery
+    std::this_thread::sleep_for(std::chrono::seconds(120));
     
     return success;
 }
@@ -246,7 +245,7 @@ int main(int argc, char* argv[]) {
     
     // Configure client
     Http3Config config;
-    config.log_level_ = LogLevel::kInfo;
+    config.log_level_ = LogLevel::kDebug;
     
     if (!client->Init(config)) {
         std::cerr << "Failed to initialize client" << std::endl;

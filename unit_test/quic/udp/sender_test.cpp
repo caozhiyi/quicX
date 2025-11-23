@@ -4,7 +4,6 @@
 #include <cstring>
 #include "quic/udp/udp_sender.h"
 #include "quic/udp/udp_receiver.h"
-#include "quic/quicx/global_resource.h"
 #include "common/network/io_handle.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
@@ -22,13 +21,15 @@ public:
 };
 
 TEST(UdpSenderTest, Send) {
-    GlobalResource::Instance().ResetForTest();
+    auto event_loop = common::MakeEventLoop();
+    
     auto recv_handler = std::make_shared<RecvHandler>();
     std::vector<std::thread> threads;
-    auto receiver = std::make_shared<UdpReceiver>();
+    auto receiver = std::make_shared<UdpReceiver>(event_loop);
     std::atomic<bool> receiver_ready{false};
 
-    threads.emplace_back([receiver, recv_handler, &receiver_ready]() {
+    threads.emplace_back([receiver, recv_handler, &receiver_ready, event_loop]() {
+        ASSERT_TRUE(event_loop->Init());
         // AddReceiver must be called in the same thread that will call Wait()
         // because EventLoop is thread_local
         ASSERT_TRUE(receiver->AddReceiver("127.0.0.1", 1121, recv_handler));
@@ -43,7 +44,7 @@ TEST(UdpSenderTest, Send) {
         recv_pkt->SetData(recv_buffer);
 
         while (g_recv_times < g_send_times) {
-            GlobalResource::Instance().GetThreadLocalEventLoop()->Wait();
+            event_loop->Wait();
         }
     });
 

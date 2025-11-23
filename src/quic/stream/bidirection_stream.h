@@ -14,6 +14,7 @@ class BidirectionStream:
     public virtual IQuicBidirectionStream {
 public:
     BidirectionStream(std::shared_ptr<common::BlockMemoryPool> alloter,
+        std::shared_ptr<common::IEventLoop> loop,
         uint64_t init_data_limit, 
         uint64_t id,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,

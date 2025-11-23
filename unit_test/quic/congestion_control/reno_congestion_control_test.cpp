@@ -124,4 +124,74 @@ TEST(RenoCongestionControlTest, PacingRateComputesFromSrtt) {
     EXPECT_EQ(cc.GetPacingRateBps(), expected_bps);
 }
 
+TEST(RenoCongestionControlTest, BytesInFlightExceedsCwndAfterRecovery) {
+    // This test reproduces the issue seen in streaming upload where
+    // bytes_in_flight (202395) > cwnd (103036) after entering recovery
+    RenoCongestionControl cc;
+    CcConfigV2 cfg;
+    cfg.mss_bytes = 1460;
+    cfg.initial_cwnd_bytes = 10 * cfg.mss_bytes;  // 14600
+    cfg.beta = 0.5;
+    cc.Configure(cfg);
+    
+    // Simulate slow start growth
+    uint64_t now = 1000;
+    for (int i = 0; i < 100; i++) {
+        // Send a packet
+        cc.OnPacketSent(SentPacketEvent{static_cast<uint64_t>(i), 1460, now, false});
+        now += 1;
+        
+        // ACK it (slow start doubles cwnd)
+        cc.OnPacketAcked(AckEvent{static_cast<uint64_t>(i), 1460, now, 0, false});
+        cc.OnRoundTripSample(10, 0);  // 10ms RTT
+        now += 1;
+    }
+    
+    uint64_t cwnd_before_loss = cc.GetCongestionWindow();
+    uint64_t bytes_in_flight_before = cc.GetBytesInFlight();
+    
+    printf("Before loss: cwnd=%llu, bytes_in_flight=%llu, in_slow_start=%d\n",
+           cwnd_before_loss, bytes_in_flight_before, cc.InSlowStart());
+    
+    // Now send many packets without ACKing (simulating network delay)
+    for (int i = 100; i < 250; i++) {
+        uint64_t can_send = 0;
+        if (cc.CanSend(now, can_send) == ICongestionControl::SendState::kOk && can_send >= 1460) {
+            cc.OnPacketSent(SentPacketEvent{static_cast<uint64_t>(i), 1460, now, false});
+            now += 1;
+        }
+    }
+    
+    uint64_t bytes_in_flight_after_send = cc.GetBytesInFlight();
+    printf("After sending: cwnd=%llu, bytes_in_flight=%llu\n",
+           cc.GetCongestionWindow(), bytes_in_flight_after_send);
+    
+    // Trigger packet loss (simulating timeout)
+    cc.OnPacketLost(LossEvent{150, 1460, now});
+    
+    uint64_t cwnd_after_loss = cc.GetCongestionWindow();
+    uint64_t bytes_in_flight_after_loss = cc.GetBytesInFlight();
+    
+    printf("After loss: cwnd=%llu, bytes_in_flight=%llu, in_recovery=%d\n",
+           cwnd_after_loss, bytes_in_flight_after_loss, cc.InRecovery());
+    
+    // The bug: bytes_in_flight should NEVER exceed cwnd
+    // If it does, CanSend will return 0 forever
+    EXPECT_LE(bytes_in_flight_after_loss, cwnd_after_loss) 
+        << "bytes_in_flight (" << bytes_in_flight_after_loss 
+        << ") should not exceed cwnd (" << cwnd_after_loss << ")";
+    
+    // Verify we can still send after ACKs reduce bytes_in_flight
+    for (int i = 100; i < 150; i++) {
+        cc.OnPacketAcked(AckEvent{static_cast<uint64_t>(i), 1460, now, 0, false});
+        now += 1;
+    }
+    
+    uint64_t can_send = 0;
+    auto state = cc.CanSend(now, can_send);
+    printf("After ACKs: cwnd=%llu, bytes_in_flight=%llu, can_send=%llu, state=%d\n",
+           cc.GetCongestionWindow(), cc.GetBytesInFlight(), can_send, static_cast<int>(state));
+    
+    EXPECT_GT(can_send, 0u) << "Should be able to send after ACKs reduce bytes_in_flight";
+}
 

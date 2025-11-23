@@ -13,6 +13,7 @@
 #include "common/buffer/single_block_buffer.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/connection/controler/send_control.h"
 
 using namespace quicx;
@@ -24,7 +25,7 @@ public:
     virtual uint64_t AddTimer(common::TimerTask& task, uint32_t time, uint64_t now = 0) override {
         return 1;
     }
-    virtual bool RmTimer(common::TimerTask& task) override {
+    virtual bool RemoveTimer(common::TimerTask& task) override {
         return true;
     }
     virtual int32_t MinTime(uint64_t now = 0) override {
@@ -161,8 +162,10 @@ TEST_F(StreamAckTrackingTest, FrameVisitorTracksMultipleStreams) {
 
 // Test 4: SendStream ACK tracking basic
 TEST_F(StreamAckTrackingTest, SendStreamAckTracking) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send some data
     uint8_t data[] = "Hello World";
@@ -184,7 +187,9 @@ TEST_F(StreamAckTrackingTest, SendStreamAckTracking) {
 
 // Test 5: SendControl callback mechanism
 TEST_F(StreamAckTrackingTest, SendControlCallbackMechanism) {
-    SendControl send_control;
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    SendControl send_control(timer_);
     
     std::vector<std::tuple<uint64_t, uint64_t, bool>> acked_streams;
     
@@ -226,7 +231,9 @@ TEST_F(StreamAckTrackingTest, SendControlCallbackMechanism) {
 
 // Test 6: Multiple packets ACKed
 TEST_F(StreamAckTrackingTest, MultiplePacketsAcked) {
-    SendControl send_control;
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    SendControl send_control(timer_);
     
     std::vector<std::tuple<uint64_t, uint64_t, bool>> acked_data;
     
@@ -279,10 +286,12 @@ TEST_F(StreamAckTrackingTest, MultiplePacketsAcked) {
 
 // Test 7: Integration test - SendControl to Stream
 TEST_F(StreamAckTrackingTest, IntegrationSendControlToStream) {
-    SendControl send_control;
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    SendControl send_control(timer_);
     
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Set up callback from SendControl to Stream
     send_control.SetStreamDataAckCallback(
@@ -345,8 +354,10 @@ TEST_F(StreamAckTrackingTest, FrameVisitorIgnoresNonStreamFrames) {
 
 // Test 9: Real-world scenario - Stream sends data through visitor
 TEST_F(StreamAckTrackingTest, RealWorldStreamSendThroughVisitor) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send data
     uint8_t data[] = "Hello World from QUIC!";
@@ -375,10 +386,12 @@ TEST_F(StreamAckTrackingTest, RealWorldStreamSendThroughVisitor) {
 
 // Test 10: Multiple streams in one packet
 TEST_F(StreamAckTrackingTest, MultipleStreamsInOnePacket) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream1 = std::make_shared<SendStream>(
-        alloter_, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
     auto stream2 = std::make_shared<SendStream>(
-        alloter_, 10000, 8, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 8, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send data on both streams
     uint8_t data1[] = "Stream 4";

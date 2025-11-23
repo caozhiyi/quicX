@@ -51,10 +51,16 @@ struct QuicTransportParams {
     uint32_t    max_idle_timeout_ms_ = 120000; // 2 minutes
     std::string stateless_reset_token_ = "";
     uint32_t    max_udp_payload_size_ = 1472;  // 1500 - 28
-    uint32_t    initial_max_data_ = 1472*10;
-    uint32_t    initial_max_stream_data_bidi_local_ = 1472*10;
-    uint32_t    initial_max_stream_data_bidi_remote_ = 1472*10;
-    uint32_t    initial_max_stream_data_uni_ = 1472*10;
+    
+    // RFC 9000 Section 4.1: Flow control limits
+    // Increased from 14KB to prevent flow control blocking with modern congestion windows
+    // These values allow congestion control to operate effectively without being
+    // artificially limited by flow control
+    uint32_t    initial_max_data_ = 10 * 1024 * 1024;                    // 10MB connection-level
+    uint32_t    initial_max_stream_data_bidi_local_ = 1 * 1024 * 1024;   // 1MB per stream (local->remote)
+    uint32_t    initial_max_stream_data_bidi_remote_ = 1 * 1024 * 1024;  // 1MB per stream (remote->local)
+    uint32_t    initial_max_stream_data_uni_ = 1 * 1024 * 1024;          // 1MB for unidirectional streams
+    
     uint32_t    initial_max_streams_bidi_ = 20;
     uint32_t    initial_max_streams_uni_ = 20;
     uint32_t    ack_delay_exponent_ms_ = 5;

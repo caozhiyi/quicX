@@ -32,6 +32,20 @@ public:
     void PostTask(std::function<void()>) override {}
     void Wakeup() override {}
     std::shared_ptr<common::ITimer> GetTimer() override { return nullptr; }
+    
+    bool IsInLoopThread() const override {
+        return true;  // Mock always returns true for testing
+    }
+    
+    void RunInLoop(std::function<void()> task) override {
+        if (task) {
+            task();
+        }
+    }
+    
+    void AssertInLoopThread() override {
+        // Mock implementation - does nothing in test
+    }
 
     bool IsInitCalled() const { return init_called_; }
     const std::vector<std::pair<int, int32_t>>& GetModifyCalls() const { return modify_calls_; }

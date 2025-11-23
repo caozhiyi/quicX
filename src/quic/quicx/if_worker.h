@@ -5,7 +5,6 @@
 #include <memory>
 
 #include "quic/quicx/msg_parser.h"
-#include "common/network/if_event_loop.h"
 
 namespace quicx {
 namespace quic {

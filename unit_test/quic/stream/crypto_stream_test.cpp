@@ -22,7 +22,9 @@ bool Check(uint8_t* data1, uint8_t* data2, uint32_t len) {
 
 TEST(crypto_stream_utest, recv) {
     std::shared_ptr<common::BlockMemoryPool> alloter = common::MakeBlockMemoryPoolPtr(1024, 5);
-    std::shared_ptr<CryptoStream> stream = std::make_shared<CryptoStream>(alloter, nullptr, nullptr, nullptr);
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    std::shared_ptr<CryptoStream> stream = std::make_shared<CryptoStream>(alloter, event_loop, nullptr, nullptr, nullptr);
 
     uint8_t data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30};
     std::shared_ptr<CryptoFrame> frame1 = std::make_shared<CryptoFrame>();
@@ -84,7 +86,9 @@ TEST(crypto_stream_utest, recv) {
 
 TEST(crypto_stream_utest, send) {
     std::shared_ptr<common::BlockMemoryPool> alloter = common::MakeBlockMemoryPoolPtr(1024, 5);
-    std::shared_ptr<CryptoStream> stream = std::make_shared<CryptoStream>(alloter, nullptr, nullptr, nullptr);
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+    std::shared_ptr<CryptoStream> stream = std::make_shared<CryptoStream>(alloter, event_loop, nullptr, nullptr, nullptr);
 
     uint8_t data[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30};
     stream->Send(data, 5, kInitial);

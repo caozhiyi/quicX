@@ -21,19 +21,39 @@
 namespace quicx {
 namespace quic {
 
-UdpReceiver::UdpReceiver():
+UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
+    event_loop_(event_loop),
     ecn_enabled_(false) {}
 
 UdpReceiver::~UdpReceiver() {}
 
 bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
+    common::LOG_DEBUG("UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", 
+                      socket_fd, event_loop_->IsInLoopThread());
+    
+    if (!event_loop_->IsInLoopThread()) {
+        common::LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", socket_fd);
+        event_loop_->RunInLoop([this, socket_fd, receiver]() {
+            this->AddReceiver(socket_fd, receiver);
+        });
+        return true;
+    }
+    
+    common::LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", socket_fd);
     receiver_map_[socket_fd] = receiver;
-    auto event_loop = GlobalResource::Instance().GetThreadLocalEventLoop();
-    return event_loop->RegisterFd(
+    bool result = event_loop_->RegisterFd(
         socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
+    common::LOG_DEBUG("UdpReceiver::AddReceiver: registration result=%d for fd=%d", result, socket_fd);
+    return result;
 }
 
 bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([this, ip, port, receiver]() {
+            this->AddReceiver(ip, port, receiver);
+        });
+        return true;
+    }
     auto ret = common::UdpSocket();
     if (ret.errno_ != 0) {
         common::LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
@@ -63,8 +83,7 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
         common::Close(socket_fd);
         return false;
     }
-    auto event_loop = GlobalResource::Instance().GetThreadLocalEventLoop();
-    if (!event_loop->RegisterFd(
+    if (!event_loop_->RegisterFd(
             socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this())) {
         common::LOG_ERROR("register fd failed. fd:%d", socket_fd);
         return false;
@@ -119,11 +138,14 @@ void UdpReceiver::OnError(uint32_t fd) {
 }
 
 void UdpReceiver::OnClose(uint32_t fd) {
-    receiver_map_.erase(fd);
-    auto event_loop = GlobalResource::Instance().GetThreadLocalEventLoop();
-    if (event_loop) {
-        event_loop->RemoveFd(fd);
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([this, fd]() {
+            this->OnClose(fd);
+        });
+        return;
     }
+    receiver_map_.erase(fd);
+    event_loop_->RemoveFd(fd);
     common::LOG_INFO("udp receiver closed. fd:%d", fd);
 }
 

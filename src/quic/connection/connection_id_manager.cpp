@@ -1,5 +1,6 @@
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/connection_id_generator.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -48,6 +49,7 @@ bool ConnectionIDManager::AddID(ConnectionID& id) {
     if (sequence_cid_map_.size() == 1) { 
         cur_id_ = id;
     }
+    common::LOG_DEBUG("ConnectionIDManager::AddID: seq=%llu, hash=%llu", id.GetSequenceNumber(), id.Hash());
     if (add_connection_id_cb_) {
         add_connection_id_cb_(id);
     }

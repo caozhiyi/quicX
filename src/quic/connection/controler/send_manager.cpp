@@ -20,10 +20,19 @@
 namespace quicx {
 namespace quic {
 
-SendManager::SendManager():
+SendManager::SendManager(std::shared_ptr<common::ITimer> timer):
+    timer_(timer),
+    send_control_(timer),
     active_send_stream_set_1_is_current_(true) {
     pacing_timer_task_ = common::TimerTask();
     pacing_timer_task_.SetTimeoutCallback([this]() {
+        if (send_retry_cb_) {
+            send_retry_cb_();
+        }
+    });
+    
+    send_control_.SetPacketLostCallback([this](std::shared_ptr<IPacket> packet) {
+        common::LOG_WARN("SendManager: packet %llu lost, triggering retransmission", packet->GetPacketNumber());
         if (send_retry_cb_) {
             send_retry_cb_();
         }
@@ -50,7 +59,7 @@ SendOperation SendManager::GetSendOperation() {
             uint64_t next_time = send_control_.GetNextSendTime(now);
             if (next_time > now) {
                 uint64_t delay = next_time - now;
-                GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(pacing_timer_task_, delay);
+                timer_->AddTimer(pacing_timer_task_, delay);
                 common::LOG_DEBUG("pacing limited. delay:%llu", delay);
             } else {
                 is_cwnd_limited_ = true;
@@ -89,7 +98,7 @@ bool SendManager::GetSendData(
 
     // firstly, send resend packet
     if (send_control_.NeedReSend()) {
-        auto lost_list = send_control_.GetLostPacket();
+        auto& lost_list = send_control_.GetLostPacket();
         auto packet = lost_list.front();
         lost_list.pop_front();
         // If the lost packet was our PMTU probe, treat as probe failure and do not retransmit as probe
@@ -219,10 +228,17 @@ void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> fram
     // Pass to send control for RTT/loss/cc updates
     send_control_.OnPacketAck(common::UTCTimeMsec(), ns, frame);
 
+    common::LOG_DEBUG("SendManager::OnPacketAck: is_cwnd_limited_=%d, send_retry_cb_=%p", 
+                      is_cwnd_limited_, (void*)&send_retry_cb_);
+    
     if (is_cwnd_limited_) {
         is_cwnd_limited_ = false;
+        common::LOG_DEBUG("SendManager::OnPacketAck: clearing is_cwnd_limited_, calling send_retry_cb_");
         if (send_retry_cb_) {
             send_retry_cb_();
+            common::LOG_DEBUG("SendManager::OnPacketAck: send_retry_cb_ executed");
+        } else {
+            common::LOG_WARN("SendManager::OnPacketAck: send_retry_cb_ is null!");
         }
     }
 
@@ -477,10 +493,12 @@ bool SendManager::PacketInit(
     packet->SetPacketNumber(pkt_number);
     packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
 
+    common::LOG_DEBUG("PacketInit: encoding packet %llu", pkt_number);
     if (!packet->Encode(buffer)) {
-        common::LOG_ERROR("encode packet error");
+        common::LOG_ERROR("encode packet error. pkt_number=%llu", pkt_number);
         return false;
     }
+    common::LOG_DEBUG("PacketInit: encode success. len=%d", buffer->GetDataLength());
 
     // Get stream data info and frame type bit from visitor for ACK tracking
     std::vector<StreamDataInfo> stream_data;

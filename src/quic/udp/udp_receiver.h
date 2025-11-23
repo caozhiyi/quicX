@@ -19,7 +19,7 @@ namespace quic {
 class UdpReceiver: public IReceiver, public common::IFdHandler, public std::enable_shared_from_this<UdpReceiver> {
 public:
     // create a receiver with socket, may be used as a client
-    UdpReceiver();
+    UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop);
     ~UdpReceiver();
 
     virtual bool AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) override;
@@ -38,6 +38,7 @@ private:
 
 private:
     bool ecn_enabled_;
+    std::shared_ptr<common::IEventLoop> event_loop_;
     std::unordered_map<int32_t, std::weak_ptr<IPacketReceiver>> receiver_map_;
 };
 

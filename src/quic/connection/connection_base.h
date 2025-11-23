@@ -38,6 +38,7 @@ class BaseConnection:
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start,
         bool ecn_enabled,
+        std::shared_ptr<common::IEventLoop> loop,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
@@ -81,10 +82,7 @@ public:
     // Test-only interface to observe connection state
     ConnectionStateType GetConnectionStateForTest() const { return state_; }
 
-    // Set EventLoop reference for automatic cleanup in destructor
-    void SetEventLoop(std::shared_ptr<common::IEventLoop> event_loop) {
-        event_loop_weak_ = event_loop;
-    }
+    std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_; }
 
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
@@ -155,6 +153,19 @@ protected:
         return peer_addr_;
     }
 
+
+    void CloseInternal();
+
+    void StartPathValidationProbe();
+    void StartNextPathProbe(); // Start probing next address in queue
+    // Anti-amplification: while path is unvalidated, restrict sending
+    void EnterAntiAmplification();
+    void ExitAntiAmplification();
+    void ScheduleProbeRetry();
+    
+    // Connection ID pool management
+    void CheckAndReplenishLocalCIDPool();
+
 protected:
     // timer task
     common::TimerTask idle_timeout_task_;
@@ -209,18 +220,9 @@ protected:
     // Queue of pending candidate addresses for path validation
     std::vector<common::Address> pending_candidate_addrs_;
 
-    // EventLoop weak reference for safe cleanup in destructor
-    std::weak_ptr<common::IEventLoop> event_loop_weak_;
+    // EventLoop reference for safe cleanup in destructor
+    std::shared_ptr<common::IEventLoop> event_loop_;
 
-    void StartPathValidationProbe();
-    void StartNextPathProbe(); // Start probing next address in queue
-    // Anti-amplification: while path is unvalidated, restrict sending
-    void EnterAntiAmplification();
-    void ExitAntiAmplification();
-    void ScheduleProbeRetry();
-    
-    // Connection ID pool management
-    void CheckAndReplenishLocalCIDPool();
     static constexpr size_t kMinLocalCIDPoolSize = 3;  // Keep at least 3 CIDs in pool
     static constexpr size_t kMaxLocalCIDPoolSize = 8;  // Generate up to 8 CIDs
 };

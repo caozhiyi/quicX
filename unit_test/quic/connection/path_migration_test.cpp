@@ -4,7 +4,7 @@
 
 #include "quic/frame/type.h"
 #include "quic/packet/type.h"
-#include "common/timer/timer.h"
+#include "common/network/if_event_loop.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
@@ -100,7 +100,9 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Gen
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init(false);
 
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto event_loop = common::MakeEventLoop();
+    event_loop->Init();
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -108,7 +110,7 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Gen
 
     client_conn->Dial(addr, "h3", client_tp);
 
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(server_tp);
 
     // client -------init-----> server

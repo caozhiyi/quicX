@@ -7,7 +7,6 @@
 #include "common/timer/timer_task.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/error.h"
-#include "quic/quicx/global_resource.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 
 namespace quicx {
@@ -26,7 +25,7 @@ public:
         return entries_.size();
     }
 
-    bool RmTimer(common::TimerTask& /*task*/) override {
+    bool RemoveTimer(common::TimerTask& /*task*/) override {
         ++rm_count_;
         return true;
     }
@@ -67,12 +66,15 @@ std::shared_ptr<TLSCtx> MakeTlsContext() {
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, CloseSchedulesThreePtoTimer) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto timer = std::make_shared<RecordingTimer>();
-    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    event_loop->SetTimerForTest(timer);
     bool close_callback_invoked = false;
 
     auto conn = std::make_shared<TestClientConnection>(
         MakeTlsContext(),
+        event_loop,
         nullptr,
         nullptr,
         nullptr,
@@ -91,14 +93,16 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseSchedulesThreePtoTimer) {
     EXPECT_GE(close_wait, 500u);  // Minimum timeout enforced
     EXPECT_EQ(timer->entries().back().timeout_ms, close_wait * 3);
     EXPECT_FALSE(close_callback_invoked);
-    GlobalResource::Instance().ResetForTest();
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, ImmediateCloseStoresErrorAndSchedulesTimer) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto timer = std::make_shared<RecordingTimer>();
-    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(
         MakeTlsContext(),
+        event_loop,
         nullptr,
         nullptr,
         nullptr,
@@ -116,17 +120,19 @@ TEST(ConnectionBaseCloseBehaviorTest, ImmediateCloseStoresErrorAndSchedulesTimer
     ASSERT_FALSE(timer->entries().empty());
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
     EXPECT_EQ(timer->entries().back().timeout_ms, close_wait * 3);
-    GlobalResource::Instance().ResetForTest();
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto timer = std::make_shared<RecordingTimer>();
-    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    event_loop->SetTimerForTest(timer);
     uint64_t error_code = 0;
     std::string reason;
 
     auto conn = std::make_shared<TestClientConnection>(
         MakeTlsContext(),
+        event_loop,
         nullptr,
         nullptr,
         nullptr,
@@ -144,14 +150,15 @@ TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
 
     EXPECT_EQ(error_code, QuicErrorCode::kNoError);
     EXPECT_EQ(reason, "normal close.");
-    GlobalResource::Instance().ResetForTest();
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {
+    auto event_loop = common::MakeEventLoop();
     auto timer = std::make_shared<RecordingTimer>();
-    GlobalResource::Instance().GetThreadLocalEventLoop()->SetTimerForTest(timer);
+    event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(
         MakeTlsContext(),
+        event_loop,
         nullptr,
         nullptr,
         nullptr,
@@ -160,7 +167,6 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {
 
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
     EXPECT_GE(close_wait, 500u);
-    GlobalResource::Instance().ResetForTest();
 }
 
 }  // namespace

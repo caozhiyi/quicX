@@ -1,18 +1,17 @@
 #ifndef QUIC_QUICX_MSG_RECEIVER_WITH_THREAD
 #define QUIC_QUICX_MSG_RECEIVER_WITH_THREAD
 
-#include <thread>
 #include "quic/quicx/master.h"
 #include "common/thread/thread.h"
-#include "common/structure/thread_safe_queue.h"
 #include "common/network/if_event_loop.h"
+#include "common/structure/thread_safe_queue.h"
 
 namespace quicx {
 namespace quic {
 
 class MasterWithThread: public Master, public common::Thread {
 public:
-    MasterWithThread(bool ecn_enabled);
+    MasterWithThread(bool ecn_enabled, std::shared_ptr<common::IEventLoop> event_loop);
     virtual ~MasterWithThread();
 
     void Run() override;
@@ -30,8 +29,6 @@ public:
     virtual void Process() override;
     // post a task to the master's event loop
     virtual void PostTask(std::function<void()> task);
-    // get the event loop
-    virtual std::shared_ptr<common::IEventLoop> GetEventLoop();
 
 private:
     void DoUpdateConnectionID();

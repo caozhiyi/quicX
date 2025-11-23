@@ -16,6 +16,7 @@ class ServerConnection:
     public TlsServerHandlerInterface {
 public:
     ServerConnection(std::shared_ptr<TLSCtx> ctx,
+        std::shared_ptr<common::IEventLoop> loop,
         const std::string& alpn,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,

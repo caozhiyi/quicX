@@ -34,7 +34,7 @@ public:
     // Enable or disable ECN features on underlying sockets created/managed by receiver
     virtual void SetEcnEnabled(bool enabled) = 0;
 
-    static std::shared_ptr<IReceiver> MakeReceiver();
+    static std::shared_ptr<IReceiver> MakeReceiver(std::shared_ptr<common::IEventLoop> event_loop);
 };
 
 }  // namespace quic

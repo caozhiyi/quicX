@@ -6,10 +6,11 @@ namespace quicx {
 namespace quic {
 
 CryptoStream::CryptoStream(std::shared_ptr<common::BlockMemoryPool> alloter,
+    std::shared_ptr<common::IEventLoop> loop,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
-    IStream(0, active_send_cb, stream_close_cb, connection_close_cb),
+    IStream(loop, 0, active_send_cb, stream_close_cb, connection_close_cb),
     alloter_(alloter),
     except_offset_(0),
     send_offset_(0) {
@@ -95,6 +96,15 @@ uint32_t CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
 }
 
 int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level) {
+    if (!event_loop_->IsInLoopThread()) {
+        std::vector<uint8_t> vec(data, data + len);
+        event_loop_->RunInLoop([self = shared_from_this(), vec = std::move(vec), encryption_level]() {
+            auto stream = std::dynamic_pointer_cast<CryptoStream>(self);
+            if (stream) stream->Send(const_cast<uint8_t*>(vec.data()), vec.size(), encryption_level);
+        });
+        return len;
+    }
+
     std::shared_ptr<common::MultiBlockBuffer> buffer = send_buffers_[encryption_level];
     if (!buffer) {
         buffer = std::make_shared<common::MultiBlockBuffer>(alloter_);
@@ -107,10 +117,27 @@ int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level
 }
 
 int32_t CryptoStream::Send(uint8_t* data, uint32_t len) {
+    if (!event_loop_->IsInLoopThread()) {
+        std::vector<uint8_t> vec(data, data + len);
+        event_loop_->RunInLoop([self = shared_from_this(), vec = std::move(vec)]() {
+            auto stream = std::dynamic_pointer_cast<CryptoStream>(self);
+            if (stream) stream->Send(const_cast<uint8_t*>(vec.data()), vec.size());
+        });
+        return len;
+    }
+
     return Send(data, len, GetWaitSendEncryptionLevel());
 }
 
 int32_t CryptoStream::Send(std::shared_ptr<IBufferRead> data) {
+    if (!event_loop_->IsInLoopThread()) {
+        event_loop_->RunInLoop([self = shared_from_this(), data]() {
+            auto stream = std::dynamic_pointer_cast<CryptoStream>(self);
+            if (stream) stream->Send(data);
+        });
+        return data->GetDataLength();
+    }
+
     std::shared_ptr<common::MultiBlockBuffer> buffer = send_buffers_[GetWaitSendEncryptionLevel()];
     if (!buffer) {
         buffer = std::make_shared<common::MultiBlockBuffer>(alloter_);

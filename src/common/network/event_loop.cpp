@@ -1,5 +1,4 @@
 #include <vector>
-#include <algorithm>
 
 #include "common/log/log.h"
 #include "common/util/time.h"
@@ -30,7 +29,26 @@ bool EventLoop::Init() {
     }
     events_.reserve(driver_->GetMaxEvents());
     initialized_ = true;
+    thread_id_ = std::this_thread::get_id();
     return true;
+}
+
+bool EventLoop::IsInLoopThread() const {
+    return std::this_thread::get_id() == thread_id_;
+}
+
+void EventLoop::RunInLoop(std::function<void()> task) {
+    if (IsInLoopThread()) {
+        task();
+    } else {
+        PostTask(std::move(task));
+    }
+}
+
+void EventLoop::AssertInLoopThread() {
+    if (!IsInLoopThread()) {
+        LOG_FATAL("EventLoop accessed from wrong thread!");
+    }
 }
 
 int EventLoop::Wait() {
@@ -86,6 +104,7 @@ int EventLoop::Wait() {
 }
 
 bool EventLoop::RegisterFd(uint32_t fd, int32_t events, std::shared_ptr<IFdHandler> handler) {
+    AssertInLoopThread();
     fd_to_handler_[fd] = handler;
     if (!handler) {
         LOG_ERROR("Handler is null for fd %d", fd);
@@ -99,6 +118,7 @@ bool EventLoop::RegisterFd(uint32_t fd, int32_t events, std::shared_ptr<IFdHandl
 }
 
 bool EventLoop::ModifyFd(uint32_t fd, int32_t events) {
+    AssertInLoopThread();
     if (!driver_) {
         LOG_ERROR("Event loop driver is not initialized for fd %d", fd);
         return false;
@@ -107,6 +127,7 @@ bool EventLoop::ModifyFd(uint32_t fd, int32_t events) {
 }
 
 bool EventLoop::RemoveFd(uint32_t fd) {
+    AssertInLoopThread();
     fd_to_handler_.erase(fd);
     if (!driver_) {
         LOG_ERROR("Event loop driver is not initialized for fd %d", fd);
@@ -116,10 +137,16 @@ bool EventLoop::RemoveFd(uint32_t fd) {
 }
 
 void EventLoop::AddFixedProcess(std::function<void()> cb) {
+    AssertInLoopThread();
     fixed_processes_.push_back(cb);
 }
 
 uint64_t EventLoop::AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat) {
+    AssertInLoopThread();
+    if (!timer_) {
+        LOG_ERROR("EventLoop timer is not initialized. Call Init() first.");
+        return 0;
+    }
     TimerTask task(cb);
     uint64_t now = UTCTimeMsec();
     uint64_t id = timer_->AddTimer(task, delay_ms, now);
@@ -132,6 +159,11 @@ uint64_t EventLoop::AddTimer(std::function<void()> cb, uint32_t delay_ms, bool r
 }
 
 uint64_t EventLoop::AddTimer(TimerTask& task, uint32_t delay_ms, bool repeat) {
+    AssertInLoopThread();
+    if (!timer_) {
+        LOG_ERROR("EventLoop timer is not initialized. Call Init() first.");
+        return 0;
+    }
     uint64_t now = UTCTimeMsec();
     uint64_t id = timer_->AddTimer(task, delay_ms, now);
     timers_.emplace(id, task);
@@ -143,11 +175,16 @@ uint64_t EventLoop::AddTimer(TimerTask& task, uint32_t delay_ms, bool repeat) {
 }
 
 bool EventLoop::RemoveTimer(uint64_t timer_id) {
+    AssertInLoopThread();
+    if (!timer_) {
+        LOG_ERROR("EventLoop timer is not initialized. Call Init() first.");
+        return false;
+    }
     auto it = timers_.find(timer_id);
     if (it == timers_.end()) {
         return false;
     }
-    bool ok = timer_->RmTimer(it->second);
+    bool ok = timer_->RemoveTimer(it->second);
     if (ok) {
         timers_.erase(it);
         timer_repeat_.erase(timer_id);
@@ -156,9 +193,14 @@ bool EventLoop::RemoveTimer(uint64_t timer_id) {
 }
 
 bool EventLoop::RemoveTimer(TimerTask& task) {
+    AssertInLoopThread();
+    if (!timer_) {
+        LOG_ERROR("EventLoop timer is not initialized. Call Init() first.");
+        return false;
+    }
     auto it = timers_.find(task.GetId());
     if (it == timers_.end()) return false;
-    bool ok = timer_->RmTimer(it->second);
+    bool ok = timer_->RemoveTimer(it->second);
     timers_.erase(it);
     timer_repeat_.erase(task.GetId());
     return ok;

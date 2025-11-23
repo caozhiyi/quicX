@@ -22,7 +22,7 @@ public:
     ~TreeMapTimer();
 
     virtual uint64_t AddTimer(TimerTask& task, uint32_t time_ms, uint64_t now = 0);
-    virtual bool RmTimer(TimerTask& task);
+    virtual bool RemoveTimer(TimerTask& task);
 
     // get min next time out time
     // return: 

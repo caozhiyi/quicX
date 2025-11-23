@@ -11,6 +11,7 @@
 #include "quic/connection/connection_server.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
@@ -82,7 +83,12 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Est
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init(false);
 
-    auto client = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto event_loop = common::MakeEventLoop();
+    if (!event_loop->Init()) {
+        // Return empty pair if initialization fails
+        return std::make_pair(nullptr, nullptr);
+    }
+    auto client = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -90,7 +96,7 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Est
 
     client->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server = std::make_shared<ServerConnection>(server_ctx, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // Complete handshake
@@ -413,7 +419,9 @@ TEST_F(ConnectionCloseTest, CloseDuringHandshake) {
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init(false);
 
-    auto client = std::make_shared<ClientConnection>(client_ctx, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto event_loop = common::MakeEventLoop();
+    EXPECT_TRUE(event_loop->Init());
+    auto client = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");

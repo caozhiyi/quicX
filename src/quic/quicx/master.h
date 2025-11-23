@@ -7,7 +7,6 @@
 #include "quic/udp/if_receiver.h"
 #include "quic/quicx/if_master.h"
 #include "quic/quicx/if_worker.h"
-#include "common/network/if_event_loop.h"
 
 namespace quicx {
 namespace quic {
@@ -19,7 +18,7 @@ class Master:
     public std::enable_shared_from_this<Master> {
 public:
 public:
-    Master(bool ecn_enabled);
+    Master(bool ecn_enabled, std::shared_ptr<common::IEventLoop> event_loop);
     virtual ~Master();
 
     virtual void Init();

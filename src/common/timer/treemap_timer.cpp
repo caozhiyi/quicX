@@ -35,7 +35,7 @@ uint64_t TreeMapTimer::AddTimer(TimerTask& task, uint32_t time_ms, uint64_t now)
     return task.id_;
 }
 
-bool TreeMapTimer::RmTimer(TimerTask& task) {
+bool TreeMapTimer::RemoveTimer(TimerTask& task) {
     auto iter = timer_map_.find(task.time_);
     if (iter != timer_map_.end()) {
         iter->second.erase(task.id_);

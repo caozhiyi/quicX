@@ -2,13 +2,13 @@
 #include "common/log/log.h"
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
-#include "quic/quicx/global_resource.h"
 #include "quic/connection/controler/recv_control.h"
 
 namespace quicx {
 namespace quic {
 
-RecvControl::RecvControl():
+RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
+    timer_(timer),
     set_timer_(false),
     max_ack_delay_(10) {
     memset(pkt_num_largest_recvd_, 0, sizeof(pkt_num_largest_recvd_));
@@ -48,7 +48,7 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     
     if (!set_timer_) {
         set_timer_ = true;
-        GlobalResource::Instance().GetThreadLocalEventLoop()->AddTimer(timer_task_, max_ack_delay_);
+        timer_->AddTimer(timer_task_, max_ack_delay_);
     }
 }
 
@@ -71,7 +71,7 @@ void RecvControl::OnEcnCounters(uint8_t ecn, PacketNumberSpace ns) {
 
 std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled) {
     if (set_timer_) {
-        GlobalResource::Instance().GetThreadLocalEventLoop()->RemoveTimer(timer_task_);
+        timer_->RemoveTimer(timer_task_);
         set_timer_ = false;
     }
     
@@ -141,6 +141,12 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     } else {
         frame->SetFirstAckRange(0);
     }
+    
+    // CRITICAL FIX: Clear the ACK queue after generating the ACK frame
+    // Without this, packets remain in the queue forever and are never acknowledged
+    wait_ack_packet_numbers_[ns].clear();
+    common::LOG_DEBUG("RecvControl::MayGenerateAckFrame: cleared ACK queue for ns=%d", ns);
+    
     return frame;
 }
 

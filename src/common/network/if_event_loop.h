@@ -43,6 +43,10 @@ public:
     virtual std::shared_ptr<ITimer> GetTimer() = 0;
 
     virtual void SetTimerForTest(std::shared_ptr<ITimer> timer) = 0;
+
+    virtual bool IsInLoopThread() const = 0;
+    virtual void RunInLoop(std::function<void()> task) = 0;
+    virtual void AssertInLoopThread() = 0;
 };
 
 // Factory for default implementation

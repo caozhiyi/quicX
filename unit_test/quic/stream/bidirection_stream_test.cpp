@@ -8,6 +8,7 @@
 #include "quic/stream/bidirection_stream.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
@@ -68,9 +69,11 @@ protected:
 
 // Test 1.1: send and recv simultaneously
 TEST_F(BidirectionStreamTest, SendAndRecvSimultaneously) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
-    
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        
     stream->SetStreamWriteCallBack(send_cb_);
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -97,8 +100,10 @@ TEST_F(BidirectionStreamTest, SendAndRecvSimultaneously) {
 
 // Test 1.2: send then recv
 TEST_F(BidirectionStreamTest, SendThenRecv) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -122,8 +127,10 @@ TEST_F(BidirectionStreamTest, SendThenRecv) {
 
 // Test 1.3: recv then send
 TEST_F(BidirectionStreamTest, RecvThenSend) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -147,8 +154,10 @@ TEST_F(BidirectionStreamTest, RecvThenSend) {
 
 // Test 1.4: multiple rounds interaction
 TEST_F(BidirectionStreamTest, SendRecvMultipleRounds) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -183,8 +192,10 @@ TEST_F(BidirectionStreamTest, SendRecvMultipleRounds) {
 
 // Test 1.5: CheckStreamClose AND logic validation
 TEST_F(BidirectionStreamTest, CheckStreamCloseLogic) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -219,8 +230,10 @@ TEST_F(BidirectionStreamTest, CheckStreamCloseLogic) {
 
 // Test 2.1: only close send direction
 TEST_F(BidirectionStreamTest, CloseSendDirectionOnly) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->Close();
     
@@ -229,8 +242,10 @@ TEST_F(BidirectionStreamTest, CloseSendDirectionOnly) {
 
 // Test 2.2: recv direction complete (through FIN)
 TEST_F(BidirectionStreamTest, CloseRecvDirectionOnly) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -252,8 +267,10 @@ TEST_F(BidirectionStreamTest, CloseRecvDirectionOnly) {
 
 // Test 2.3: correct order close (send close first)
 TEST_F(BidirectionStreamTest, CloseInCorrectOrder) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -284,8 +301,10 @@ TEST_F(BidirectionStreamTest, CloseInCorrectOrder) {
 
 // Test 2.4: both directions reach terminal state then close
 TEST_F(BidirectionStreamTest, BothDirectionsTerminalThenClose) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -313,8 +332,10 @@ TEST_F(BidirectionStreamTest, BothDirectionsTerminalThenClose) {
 
 // Test 2.5: close callback timing validation
 TEST_F(BidirectionStreamTest, CloseCallbackTiming) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -342,8 +363,10 @@ TEST_F(BidirectionStreamTest, CloseCallbackTiming) {
 
 // Test 3.1: Reset both directions
 TEST_F(BidirectionStreamTest, ResetBothDirections) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Send and receive some data
     stream->Send((uint8_t*)"Data", 4);
@@ -378,8 +401,10 @@ TEST_F(BidirectionStreamTest, ResetBothDirections) {
 
 // Test 3.2: one side direction terminate, the other side complete normally
 TEST_F(BidirectionStreamTest, ResetOneSideOnly) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
@@ -415,8 +440,10 @@ TEST_F(BidirectionStreamTest, ResetOneSideOnly) {
 
 // Test 3.3: Reset(0) generate warning
 TEST_F(BidirectionStreamTest, ResetWithZeroWarns) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     // Reset with error=0 (API misuse)
     stream->Reset(0);
@@ -431,8 +458,10 @@ TEST_F(BidirectionStreamTest, ResetWithZeroWarns) {
 
 // Test 4.1: send and recv callbacks
 TEST_F(BidirectionStreamTest, SendAndRecvCallbacks) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamWriteCallBack(send_cb_);
     stream->SetStreamReadCallBack(recv_cb_);
@@ -459,8 +488,10 @@ TEST_F(BidirectionStreamTest, SendAndRecvCallbacks) {
 
 // Test 4.2: close callback timing
 TEST_F(BidirectionStreamTest, CloseCallback) {
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        alloter_, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        alloter_, event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
     
     stream->SetStreamReadCallBack(recv_cb_);
     
