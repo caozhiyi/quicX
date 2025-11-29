@@ -1,10 +1,8 @@
 #include <cstring>
-#include <fstream>
-#include <iostream>
-
 #include <vector>
-#include "common/log/log.h"
+
 #include "common/buffer/multi_block_buffer_read_view.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace common {
@@ -48,7 +46,6 @@ uint32_t MultiBlockBufferReadView::ReadNotMovePt(uint8_t* data, uint32_t len) {
 
     uint32_t current_offset = 0;
     uint32_t copied = 0;
-
 
     buffer_->VisitData([&](uint8_t* chunk_data, uint32_t chunk_len) -> bool {
         // Calculate the range of this chunk in the logical buffer: [current_offset, current_offset + chunk_len)

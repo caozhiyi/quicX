@@ -243,6 +243,11 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     }
 
     if (!visitor->HandleFrame(frame)) {
+        // Check if the failure was due to insufficient packet space
+        if (visitor->GetLastError() == FrameEncodeError::kInsufficientSpace) {
+            common::LOG_INFO("stream send data: packet full, need retry. stream id:%d, frame type:%d", stream_id_, frame->GetType());
+            return TrySendResult::kBreak;  // Packet is full, stream needs to retry in next packet
+        }
         common::LOG_ERROR("stream send data failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
         return TrySendResult::kFailed;
     }

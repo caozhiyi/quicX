@@ -48,6 +48,9 @@ void SendControl::OnPacketSend(
     // Count this packet in congestion control (bytes_in_flight)
     congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, now, false});
 
+    // Track when we last sent ack-eliciting data for PTO timer
+    last_ack_eliciting_sent_time_ = now;
+
     auto timer_task = common::TimerTask([this, pkt_len, packet, ns] {
         // RFC 9002: Increment PTO backoff on expiration
         rtt_calculator_.OnPTOExpired();
@@ -71,6 +74,12 @@ void SendControl::OnPacketSend(
         "SendControl::OnPacketSend: saved packet %llu to unacked_packets[%d], stream_data count=%zu, "
         "unacked_packets[%d] size=%zu",
         packet->GetPacketNumber(), ns, stream_data.size(), ns, unacked_packets_[ns].size());
+
+    // RFC 9002: Schedule PTO timer to detect persistent timeouts
+    // Cancel existing timer and reschedule with current PTO value
+    timer_->RemoveTimer(pto_timer_);
+    pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
+    timer_->AddTimer(pto_timer_, rtt_calculator_.GetPTOWithBackoff(max_ack_delay_));
 }
 
 void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
@@ -96,8 +105,6 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
                 common::LOG_WARN("Failed to update RTT for packet %llu", pkt_num);
             }
 
-            // RFC 9002: Reset PTO backoff on ACK
-            rtt_calculator_.OnPacketAcked();
             bool ecn_ce = false;
             if (frame->GetType() == FrameType::kAckEcn) {
                 auto ack_ecn = std::dynamic_pointer_cast<AckEcnFrame>(frame);
@@ -223,6 +230,12 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
 
     // RFC 9002 Section 6.1: Detect lost packets based on packet/time threshold
     DetectLostPackets(now, ns, ack_frame->GetLargestAck());
+
+    // RFC 9002: Reset PTO backoff on ACK (call once per ACK frame, not per packet)
+    rtt_calculator_.OnPacketAcked();
+
+    // Cancel PTO timer since we received an ACK
+    timer_->RemoveTimer(pto_timer_);
 
     common::LOG_DEBUG("SendControl::OnPacketAck: completed for ns=%d, unacked_packets[%d] size=%zu", ns, ns,
         unacked_packets_[ns].size());
@@ -351,6 +364,21 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
     if (!lost_packet_nums.empty()) {
         common::LOG_INFO("DetectLostPackets: detected %zu lost packets in ns=%d", lost_packet_nums.size(), ns);
     }
+}
+
+// RFC 9002: PTO timer callback - called when PTO expires without receiving ACK
+void SendControl::OnPTOTimer() {
+    common::LOG_DEBUG("SendControl::OnPTOTimer: PTO timer expired, consecutive_pto_count=%u",
+        rtt_calculator_.GetConsecutivePTOCount());
+
+    // RFC 9002: Increment PTO counter (already done by individual packet timers)
+    // The consecutive_pto_count_ is already incremented by OnPTOExpired() in packet timers
+    // This timer is just for tracking overall connection health
+
+    // Reschedule PTO timer with backoff for next check
+    timer_->RemoveTimer(pto_timer_);
+    pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
+    timer_->AddTimer(pto_timer_, rtt_calculator_.GetPTOWithBackoff(max_ack_delay_));
 }
 
 }  // namespace quic

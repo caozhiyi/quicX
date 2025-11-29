@@ -32,9 +32,12 @@ public:
     virtual uint64_t GetStreamDataSize() override { return cur_data_offset_; }
     
     virtual std::vector<StreamDataInfo> GetStreamDataInfo() const override;
-    
+
     // Get accumulated frame type bit for all frames processed
     uint32_t GetFrameTypeBit() const { return frame_type_bit_; }
+
+    // Get last encoding error
+    virtual FrameEncodeError GetLastError() const override { return last_error_; }
 
 private:
     uint8_t encryption_level_;
@@ -42,12 +45,15 @@ private:
     uint32_t cur_data_offset_;
     uint32_t limit_data_offset_;
     std::shared_ptr<common::IBuffer> buffer_;
-    
+
     // Track stream data for ACK tracking (stream_id -> StreamDataInfo)
     std::unordered_map<uint64_t, StreamDataInfo> stream_data_map_;
-    
+
     // Accumulated frame type bit for all frames processed
     uint32_t frame_type_bit_;
+
+    // Last encoding error
+    FrameEncodeError last_error_;
 };
 
 

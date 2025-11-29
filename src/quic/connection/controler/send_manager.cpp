@@ -472,7 +472,7 @@ std::shared_ptr<IPacket> SendManager::MakePacket(
                 read_set.pop();
 
             } else if (ret == IStream::TrySendResult::kFailed) {
-                // Stream send failed (e.g., flow control blocked with no data)
+                // Stream send failed (e.g., flow control blocked with no data, or other errors)
                 // Remove from active list to prevent infinite retry loop
                 common::LOG_WARN("stream send failed, removing from active list. stream id:%d", sid);
                 read_set.remove(sid);
@@ -480,6 +480,9 @@ std::shared_ptr<IPacket> SendManager::MakePacket(
                 // Continue with next stream instead of returning nullptr
 
             } else if (ret == IStream::TrySendResult::kBreak) {
+                // Packet is full, but stream has more data to send
+                // Don't remove stream from read_set - it will be retried in next packet
+                common::LOG_INFO("packet full, stream id:%d will retry in next packet", sid);
                 need_break = true;
                 break;
             }
