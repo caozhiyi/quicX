@@ -5,25 +5,24 @@
 #include "common/timer/timer_task.h"
 #include "common/timer/treemap_timer.h"
 
-
 namespace quicx {
 namespace common {
 
 static void BM_TreeMapTimer_AddRm(benchmark::State& state) {
     TreeMapTimer t;
     TimerTask task;
-    task.SetTimeoutCallback([](){});
+    task.SetTimeoutCallback([]() {});
     for (auto _ : state) {
-        uint64_t id = t.AddTimer(task, /*time_ms*/10);
+        uint64_t id = t.AddTimer(task, /*time_ms*/ 10);
         benchmark::DoNotOptimize(id);
-        t.RmTimer(task);
+        t.RemoveTimer(task);
     }
 }
 
 static void BM_TreeMapTimer_Run(benchmark::State& state) {
     TreeMapTimer t;
     TimerTask task;
-    task.SetTimeoutCallback([](){});
+    task.SetTimeoutCallback([]() {});
     // add many timers
     for (int i = 0; i < 1000; ++i) {
         t.AddTimer(task, 10 + (i % 10));
@@ -33,14 +32,14 @@ static void BM_TreeMapTimer_Run(benchmark::State& state) {
     }
 }
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
 BENCHMARK(quicx::common::BM_TreeMapTimer_AddRm);
 BENCHMARK(quicx::common::BM_TreeMapTimer_Run);
 BENCHMARK_MAIN();
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif
-
-
