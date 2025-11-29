@@ -106,6 +106,7 @@ jobs:
         -S ${{ github.workspace }}
 
     - name: Build
+      shell: bash
       run: |
         # Limit parallel jobs to avoid memory issues, especially with clang
         # Clang typically uses more memory per compilation unit
