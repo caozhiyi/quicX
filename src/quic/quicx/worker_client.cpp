@@ -1,14 +1,17 @@
+
 #include "common/log/log.h"
+
+#include "quic/connection/connection_client.h"
 #include "quic/connection/error.h"
 #include "quic/quicx/worker_client.h"
-#include "quic/connection/connection_client.h"
 
 namespace quicx {
 namespace quic {
 
 // a normal worker
 ClientWorker::ClientWorker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-    const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop):
+    const QuicTransportParams& params, connection_state_callback connection_handler,
+    std::shared_ptr<common::IEventLoop> event_loop):
     Worker(config, ctx, sender, params, connection_handler, event_loop) {}
 
 ClientWorker::~ClientWorker() {}
@@ -23,7 +26,13 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
         std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3));
 
+    // Set immediate send callback for immediate ACK sending
+    conn->SetImmediateSendCallback([this, conn](std::shared_ptr<common::IBuffer> buffer, const common::Address& addr) {
+        SendImmediate(buffer, addr, conn->GetSocket());
+    });
+
     connecting_set_.insert(conn);
+
     if (resumption_session_der.empty()) {
         conn->Dial(common::Address(ip, port), alpn, params_);
     } else {

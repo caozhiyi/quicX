@@ -1,25 +1,23 @@
 #include "common/log/log.h"
+
 #include "quic/frame/crypto_frame.h"
+#include "quic/quicx/global_resource.h"
 #include "quic/stream/crypto_stream.h"
 
 namespace quicx {
 namespace quic {
 
-CryptoStream::CryptoStream(std::shared_ptr<common::BlockMemoryPool> alloter,
-    std::shared_ptr<common::IEventLoop> loop,
+CryptoStream::CryptoStream(std::shared_ptr<common::IEventLoop> loop,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
     IStream(loop, 0, active_send_cb, stream_close_cb, connection_close_cb),
-    alloter_(alloter),
     except_offset_(0),
     send_offset_(0) {
-    buffer_ = std::make_shared<common::MultiBlockBuffer>(alloter_);
+    buffer_ = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
 }
 
-CryptoStream::~CryptoStream() {
-
-}
+CryptoStream::~CryptoStream() {}
 
 IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
     TrySendResult ret = TrySendResult::kSuccess;
@@ -51,18 +49,18 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
             ret = TrySendResult::kBreak;
         }
     }
-    
+
     if (!buffer) {
         return ret;
     }
-    
 
     // make crypto frame
     auto frame = std::make_shared<CryptoFrame>();
     frame->SetOffset(send_offset_);
     frame->SetEncryptionLevel(level);
 
-    common::SharedBufferSpan data = buffer->GetSharedReadableSpan(1300); // TODO: 1300 is the max length of a crypto frame
+    common::SharedBufferSpan data =
+        buffer->GetSharedReadableSpan(1300);  // TODO: 1300 is the max length of a crypto frame
     frame->SetData(data);
 
     if (!visitor->HandleFrame(frame)) {
@@ -107,7 +105,7 @@ int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level
 
     std::shared_ptr<common::MultiBlockBuffer> buffer = send_buffers_[encryption_level];
     if (!buffer) {
-        buffer = std::make_shared<common::MultiBlockBuffer>(alloter_);
+        buffer = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
         send_buffers_[encryption_level] = buffer;
     }
     int32_t size = buffer->Write(data, len);
@@ -140,7 +138,7 @@ int32_t CryptoStream::Send(std::shared_ptr<IBufferRead> data) {
 
     std::shared_ptr<common::MultiBlockBuffer> buffer = send_buffers_[GetWaitSendEncryptionLevel()];
     if (!buffer) {
-        buffer = std::make_shared<common::MultiBlockBuffer>(alloter_);
+        buffer = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
         send_buffers_[GetWaitSendEncryptionLevel()] = buffer;
     }
     int32_t size = buffer->Write(data);
@@ -176,7 +174,7 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
             except_offset_ += crypto_frame->GetLength();
             out_order_frame_.erase(iter);
         }
-        
+
         if (recv_cb_) {
             recv_cb_(buffer_, false, 0);
         }
@@ -185,5 +183,5 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

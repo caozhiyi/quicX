@@ -1,39 +1,44 @@
+
 #include <cstring>
+
+#include "common/alloter/pool_block.h"
+#include "common/buffer/buffer_chunk.h"
+#include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
-#include "quic/frame/type.h"
 #include "common/util/time.h"
-#include "quic/connection/util.h"
+
+#include "quic/common/version.h"
+#include "quic/connection/connection_base.h"
 #include "quic/connection/error.h"
+#include "quic/connection/util.h"
+#include "quic/frame/connection_close_frame.h"
+#include "quic/frame/max_data_frame.h"
+#include "quic/frame/max_streams_frame.h"
+#include "quic/frame/new_connection_id_frame.h"
+#include "quic/frame/new_token_frame.h"
+#include "quic/frame/padding_frame.h"
+#include "quic/frame/path_challenge_frame.h"
+#include "quic/frame/path_response_frame.h"
+#include "quic/frame/retire_connection_id_frame.h"
 #include "quic/frame/stream_frame.h"
+#include "quic/frame/type.h"
+#include "quic/packet/handshake_packet.h"
 #include "quic/packet/init_packet.h"
-#include "quic/stream/recv_stream.h"
-#include "quic/stream/send_stream.h"
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
-#include "common/alloter/pool_block.h"
-#include "quic/frame/max_data_frame.h"
+#include "quic/packet/type.h"
 #include "quic/quicx/global_resource.h"
-#include "quic/frame/new_token_frame.h"
-#include "common/buffer/buffer_chunk.h"
-#include "quic/frame/max_streams_frame.h"
-#include "quic/packet/handshake_packet.h"
 #include "quic/stream/bidirection_stream.h"
-#include "quic/frame/path_response_frame.h"
-#include "quic/frame/path_challenge_frame.h"
-#include "quic/connection/connection_base.h"
-#include "common/buffer/single_block_buffer.h"
-#include "quic/frame/connection_close_frame.h"
-#include "quic/frame/new_connection_id_frame.h"
-#include "quic/frame/retire_connection_id_frame.h"
-#include "quic/quicx/global_resource.h"
+#include "quic/stream/fix_buffer_frame_visitor.h"
+#include "quic/stream/recv_stream.h"
+#include "quic/stream/send_stream.h"
 
 namespace quicx {
 namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled,
-    std::shared_ptr<common::IEventLoop> loop,
-    std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+    std::shared_ptr<common::IEventLoop> loop, std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
     std::function<void(ConnectionID&)> retire_conn_id_cb,
@@ -45,12 +50,10 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     event_loop_(loop),
     last_communicate_time_(0),
     flow_control_(start),
-    state_(ConnectionStateType::kStateConnecting),
+    state_machine_(this),
     closing_error_code_(0),
     closing_trigger_frame_(0),
     closing_reason_("") {
-    alloter_ =
-        common::MakeBlockMemoryPoolPtr(1500, 4);  // Increased from 1024 to 1500 for HTTP/3 headers (RFC9000 compliance)
     connection_crypto_.SetRemoteTransportParamCB(
         std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
@@ -66,6 +69,10 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     send_manager_.SetRemoteConnectionIDManager(remote_conn_id_manager_);
     send_manager_.SetLocalConnectionIDManager(local_conn_id_manager_);
 
+    // RFC 9000: Setup immediate ACK callback for Initial/Handshake/out-of-order packets
+    recv_control_.SetImmediateAckCB([this](PacketNumberSpace ns) { SendImmediateAckAtLevel(ns); });
+
+    // Setup delayed ACK callback for normal Application packets
     recv_control_.SetActiveSendCB(std::bind(&BaseConnection::ActiveSend, this));
 
     transport_param_.AddTransportParamListener(
@@ -84,19 +91,29 @@ BaseConnection::~BaseConnection() {}
 
 void BaseConnection::Close() {
     if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this()]() {
-            self->CloseInternal();
-        });
+        event_loop_->RunInLoop([self = shared_from_this()]() { self->CloseInternal(); });
         return;
     }
     CloseInternal();
 }
 
+void BaseConnection::SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> active_cb) {
+    active_connection_cb_ = active_cb;
+}
+
+void BaseConnection::SetImmediateSendCallback(ImmediateSendCallback cb) {
+    immediate_send_cb_ = cb;
+}
+
 void BaseConnection::CloseInternal() {
-    if (state_ != ConnectionStateType::kStateConnected) {
+    if (state_machine_.GetState() != ConnectionStateType::kStateConnected) {
+        common::LOG_ERROR("BaseConnection::CloseInternal called in invalid state: %d", state_machine_.GetState());
         return;
     }
     common::LOG_INFO("BaseConnection::CloseInternal called");
+    send_manager_.ClearActiveStreams();
+    // Clear retransmission data to prevent retransmitting packets after close
+    send_manager_.ClearRetransmissionData();
 
     // Graceful close: Check if there's pending data to send
     if (send_manager_.GetSendOperation() != SendOperation::kAllSendDone) {
@@ -113,21 +130,13 @@ void BaseConnection::CloseInternal() {
     }
 
     // No pending data, immediately enter Closing state
-    state_ = ConnectionStateType::kStateClosing;
-
     // Store error info for retransmission
     closing_error_code_ = QuicErrorCode::kNoError;
     closing_trigger_frame_ = 0;
     closing_reason_ = "";
+    last_connection_close_retransmit_time_ = 0;  // Reset retransmit timer
 
-    // Send CONNECTION_CLOSE frame
-    auto frame = std::make_shared<ConnectionCloseFrame>();
-    frame->SetErrorCode(closing_error_code_);
-    ToSendFrame(frame);
-
-    // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
-    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
+    state_machine_.OnClose();
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
@@ -181,9 +190,21 @@ uint64_t BaseConnection::GetConnectionIDHash() {
 
 bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation) {
     // RFC 9000: Draining and Closed states MUST NOT send any packets
-    if (state_ == ConnectionStateType::kStateDraining || state_ == ConnectionStateType::kStateClosed) {
+    if (state_machine_.GetState() == ConnectionStateType::kStateDraining ||
+        state_machine_.GetState() == ConnectionStateType::kStateClosed) {
         send_operation = SendOperation::kAllSendDone;
         return false;
+    }
+
+    // RFC 9000: In Closing state, only send CONNECTION_CLOSE frames
+    // Don't retransmit other packets or send stream data
+    if (state_machine_.GetState() == ConnectionStateType::kStateClosing) {
+        // Only allow sending CONNECTION_CLOSE frames that are already in wait_frame_list_
+        // Don't generate ACK frames or retransmit other packets
+        bool ret = send_manager_.GetSendData(
+            buffer, GetCurEncryptionLevel(), connection_crypto_.GetCryptographer(GetCurEncryptionLevel()));
+        send_operation = send_manager_.GetSendOperation();
+        return ret;
     }
 
     // make quic packet
@@ -212,6 +233,36 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
         }
     }
 
+    // RFC 9000: Generate ACK frames for ALL packet number spaces with pending ACKs
+    // Even after handshake completes, we need to ACK any pending Initial/Handshake packets
+    // to prevent the peer from unnecessary retransmissions
+
+    // Try to generate ACKs for Initial and Handshake spaces first
+    if (encrypto_level >= kHandshake) {
+        // If we're at Handshake or Application level, check if there are pending ACKs for Initial space
+        auto init_ack = recv_control_.MayGenerateAckFrame(
+            common::UTCTimeMsec(), PacketNumberSpace::kInitialNumberSpace, ecn_enabled_);
+        if (init_ack) {
+            // We have pending Initial ACKs, but we're past Initial encryption level
+            // Need to send them in a different packet or clear them
+            // For now, just log a warning - this indicates the issue
+            common::LOG_WARN(
+                "Pending Initial ACKs exist but cannot send at current encryption level=%d", encrypto_level);
+            // TODO: Should send Initial packet with ACK before transitioning
+        }
+    }
+
+    if (encrypto_level >= kApplication) {
+        // If we're at Application level, check for pending Handshake ACKs
+        auto hs_ack = recv_control_.MayGenerateAckFrame(
+            common::UTCTimeMsec(), PacketNumberSpace::kHandshakeNumberSpace, ecn_enabled_);
+        if (hs_ack) {
+            common::LOG_WARN(
+                "Pending Handshake ACKs exist but cannot send at current encryption level=%d", encrypto_level);
+        }
+    }
+
+    // Generate ACK for current encryption level's packet number space
     auto ack_frame = recv_control_.MayGenerateAckFrame(
         common::UTCTimeMsec(), CryptoLevel2PacketNumberSpace(encrypto_level), ecn_enabled_);
     if (ack_frame) {
@@ -231,7 +282,7 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
     // Check for graceful close: if all data is sent and graceful close is pending
     send_operation = send_manager_.GetSendOperation();
     if (send_operation == SendOperation::kAllSendDone && graceful_closing_pending_ &&
-        state_ == ConnectionStateType::kStateConnected) {
+        state_machine_.GetState() == ConnectionStateType::kStateConnected) {
         common::LOG_DEBUG("All data sent, proceeding with graceful close");
         graceful_closing_pending_ = false;
 
@@ -239,18 +290,12 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
         event_loop_->RemoveTimer(graceful_close_timer_);
 
         // Enter Closing state and send CONNECTION_CLOSE
-        state_ = ConnectionStateType::kStateClosing;
         closing_error_code_ = QuicErrorCode::kNoError;
         closing_trigger_frame_ = 0;
         closing_reason_ = "";
+        last_connection_close_retransmit_time_ = 0;  // Reset retransmit timer
 
-        auto frame = std::make_shared<ConnectionCloseFrame>();
-        frame->SetErrorCode(closing_error_code_);
-        ToSendFrame(frame);
-
-        // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
-        common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
+        state_machine_.OnClose();
     }
 
     return ret;
@@ -260,7 +305,7 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     // RFC 9000 Section 10.2: Handle packets based on connection state
 
     // Closing state: Check if packet contains CONNECTION_CLOSE, otherwise retransmit
-    if (state_ == ConnectionStateType::kStateClosing) {
+    if (state_machine_.GetState() == ConnectionStateType::kStateClosing) {
         // Try to parse packet to check for CONNECTION_CLOSE frame
         bool has_connection_close = false;
         for (auto& packet : packets) {
@@ -269,7 +314,8 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
             if (cryptographer) {
                 packet->SetCryptographer(cryptographer);
 
-                auto chunk = std::make_shared<common::BufferChunk>(alloter_);
+                auto chunk =
+                    std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
                 if (!chunk || !chunk->Valid()) {
                     common::LOG_ERROR("failed to allocate decode buffer");
                     continue;
@@ -282,32 +328,63 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
                         if (frame->GetType() == FrameType::kConnectionClose ||
                             frame->GetType() == FrameType::kConnectionCloseApp) {
                             has_connection_close = true;
+                            has_connection_close = true;
                             // Enter draining state: peer is also closing
-                            state_ = ConnectionStateType::kStateDraining;
+                            state_machine_.OnConnectionCloseFrameReceived();
+                            // Clear retransmission data to stop packet loss detection
+                            send_manager_.ClearRetransmissionData();
                             common::LOG_DEBUG(
                                 "Received CONNECTION_CLOSE while in closing state, entering draining state");
                             break;
                         }
                     }
+                } else {
+                    // Decryption failed: likely invalid or delayed old packet, ignore
+                    common::LOG_DEBUG(
+                        "Failed to decrypt packet in closing state (likely delayed old packet), ignoring");
                 }
+            } else {
+                // No cryptographer for this packet level: likely invalid or delayed old packet, ignore
+                common::LOG_DEBUG(
+                    "No cryptographer for packet level %d in closing state (likely delayed old packet), ignoring",
+                    packet->GetCryptoLevel());
             }
-            if (has_connection_close) break;
+            if (has_connection_close) {
+                break;
+            }
         }
 
         if (!has_connection_close) {
             // No CONNECTION_CLOSE found, retransmit our CONNECTION_CLOSE
-            common::LOG_DEBUG("Connection in closing state, retransmit CONNECTION_CLOSE");
-            auto frame = std::make_shared<ConnectionCloseFrame>();
-            frame->SetErrorCode(closing_error_code_);
-            frame->SetErrFrameType(closing_trigger_frame_);
-            frame->SetReason(closing_reason_);
-            ToSendFrame(frame);
+            // But limit retransmission rate to avoid flooding (RFC 9000 Section 10.2)
+            // Retransmit at most once per PTO to avoid excessive retransmissions
+            uint64_t current_time = common::UTCTimeMsec();
+            uint32_t pto = send_manager_.GetPTO(0);  // Use 0 for max_ack_delay (conservative)
+            if (pto == 0) {
+                pto = 100;  // Fallback to 100ms if PTO not available
+            }
+
+            if (last_connection_close_retransmit_time_ == 0 ||
+                (current_time - last_connection_close_retransmit_time_) >= pto) {
+                common::LOG_DEBUG(
+                    "Connection in closing state, retransmit CONNECTION_CLOSE (last retransmit: %llu ms ago)",
+                    last_connection_close_retransmit_time_ == 0
+                        ? 0
+                        : (current_time - last_connection_close_retransmit_time_));
+                auto frame = std::make_shared<ConnectionCloseFrame>();
+                frame->SetErrorCode(closing_error_code_);
+                frame->SetErrFrameType(closing_trigger_frame_);
+                frame->SetReason(closing_reason_);
+                ToSendFrame(frame);
+                last_connection_close_retransmit_time_ = current_time;
+            }
         }
         return;  // Do not process other frames
     }
 
     // Draining or Closed state: Discard all packets
-    if (state_ == ConnectionStateType::kStateDraining || state_ == ConnectionStateType::kStateClosed) {
+    if (state_machine_.GetState() == ConnectionStateType::kStateDraining ||
+        state_machine_.GetState() == ConnectionStateType::kStateClosed) {
         common::LOG_DEBUG("Connection in draining/closed state, discard packets");
         return;
     }
@@ -693,7 +770,8 @@ bool BaseConnection::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
-    if (state_ != ConnectionStateType::kStateConnected && state_ != ConnectionStateType::kStateClosing) {
+    if (state_machine_.GetState() != ConnectionStateType::kStateConnected &&
+        state_machine_.GetState() != ConnectionStateType::kStateClosing) {
         return false;
     }
 
@@ -706,14 +784,11 @@ bool BaseConnection::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
 
     // Received CONNECTION_CLOSE from peer: enter Draining state
     // RFC 9000: In draining state, endpoint MUST NOT send any packets
-    state_ = ConnectionStateType::kStateDraining;
+    state_machine_.OnConnectionCloseFrameReceived();
 
     common::LOG_INFO("Connection entering draining state. error_code:%u, reason:%s", close_frame->GetErrorCode(),
         close_frame->GetReason().c_str());
 
-    // Wait 3×PTO before closing (RFC 9000 Section 10.2.2)
-    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
     return true;
 }
 
@@ -856,32 +931,23 @@ void BaseConnection::OnIdleTimeout() {
 }
 
 void BaseConnection::OnClosingTimeout() {
-    // cancel timers
-    event_loop_->RemoveTimer(idle_timeout_task_);
-    // wait closing period done, notify connection close
-    connection_close_cb_(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
+    state_machine_.OnCloseTimeout();
 }
 
 void BaseConnection::OnGracefulCloseTimeout() {
     // Graceful close timeout: force entering Closing state even if data hasn't finished sending
-    if (graceful_closing_pending_ && state_ == ConnectionStateType::kStateConnected) {
+    // Graceful close timeout: force entering Closing state even if data hasn't finished sending
+    if (graceful_closing_pending_ && state_machine_.GetState() == ConnectionStateType::kStateConnected) {
         common::LOG_WARN("Graceful close timeout, forcing connection close");
         graceful_closing_pending_ = false;
 
         // Force enter Closing state
-        state_ = ConnectionStateType::kStateClosing;
         closing_error_code_ = QuicErrorCode::kNoError;
         closing_trigger_frame_ = 0;
         closing_reason_ = "graceful close timeout";
+        last_connection_close_retransmit_time_ = 0;  // Reset retransmit timer
 
-        // Send CONNECTION_CLOSE frame
-        auto frame = std::make_shared<ConnectionCloseFrame>();
-        frame->SetErrorCode(closing_error_code_);
-        ToSendFrame(frame);
-
-        // Wait 3×PTO before final close (RFC 9000 Section 10.2: minimum closing period)
-        common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-        event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
+        state_machine_.OnClose();
     }
 }
 
@@ -994,8 +1060,9 @@ void BaseConnection::ScheduleProbeRetry() {
 }
 
 void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
-    if (state_ == ConnectionStateType::kStateClosed || state_ == ConnectionStateType::kStateDraining ||
-        state_ == ConnectionStateType::kStateClosing) {
+    if (state_machine_.GetState() == ConnectionStateType::kStateClosed ||
+        state_machine_.GetState() == ConnectionStateType::kStateDraining ||
+        state_machine_.GetState() == ConnectionStateType::kStateClosing) {
         return;
     }
     if (stream->GetStreamID() != 0) {
@@ -1084,9 +1151,141 @@ void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
 }
 
 void BaseConnection::ActiveSend() {
+    // Don't trigger send retry if connection is closing, draining, or closed
+    // This prevents unnecessary retransmissions when connection is terminating
+    if (state_machine_.GetState() == ConnectionStateType::kStateClosing ||
+        state_machine_.GetState() == ConnectionStateType::kStateDraining ||
+        state_machine_.GetState() == ConnectionStateType::kStateClosed) {
+        common::LOG_DEBUG(
+            "ActiveSend called but connection is in state %d, ignoring", static_cast<int>(state_machine_.GetState()));
+        return;
+    }
+
     if (active_connection_cb_) {
         active_connection_cb_(shared_from_this());
     }
+}
+
+// RFC 9000: Send ACK packet immediately at specified encryption level
+// RFC 9002: ACK frames are not congestion controlled
+bool BaseConnection::SendImmediateAckAtLevel(PacketNumberSpace ns) {
+    // Determine target encryption level from packet number space
+    uint8_t target_level;
+    switch (ns) {
+        case kInitialNumberSpace:
+            target_level = kInitial;
+            break;
+        case kHandshakeNumberSpace:
+            target_level = kHandshake;
+            break;
+        case kApplicationNumberSpace:
+            target_level = kApplication;
+            break;
+        default:
+            common::LOG_WARN("SendImmediateAckAtLevel: invalid packet number space %d", ns);
+            return false;
+    }
+
+    // Get cryptographer for target level
+    auto cryptographer = connection_crypto_.GetCryptographer(target_level);
+    if (!cryptographer) {
+        // Can't send at this level (keys not available), defer to normal flow
+        common::LOG_DEBUG("SendImmediateAckAtLevel: no cryptographer for level %d, falling back", target_level);
+        if (active_connection_cb_) {
+            active_connection_cb_(shared_from_this());
+        }
+        return false;
+    }
+
+    // Generate ACK frame for this number space
+    auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), ns, ecn_enabled_);
+    if (!ack_frame) {
+        common::LOG_DEBUG("SendImmediateAckAtLevel: no ACK to send for ns=%d", ns);
+        return false;
+    }
+
+    common::LOG_INFO("Sending immediate ACK for ns=%d at level=%d (bypassing congestion control)", ns, target_level);
+
+    // RFC 9002: ACK-only packets are not congestion controlled
+    // Build ACK packet directly without going through normal send path
+    // Initial packets need 1200 bytes minimum per RFC 9000, need extra space for headers
+    FixBufferFrameVisitor frame_visitor(1400);  // Extra space for packet headers
+
+    // Add the ACK frame
+    if (!frame_visitor.HandleFrame(ack_frame)) {
+        common::LOG_ERROR("SendImmediateAckAtLevel: failed to add ACK frame to visitor");
+        return false;
+    }
+
+    // Create packet based on encryption level
+    std::shared_ptr<IPacket> packet;
+    switch (target_level) {
+        case kInitial:
+            packet = std::make_shared<InitPacket>();
+            break;
+        case kHandshake:
+            packet = std::make_shared<HandshakePacket>();
+            break;
+        case kApplication:
+            packet = std::make_shared<Rtt1Packet>();
+            break;
+        case kEarlyData:
+            packet = std::make_shared<Rtt0Packet>();
+            break;
+        default:
+            common::LOG_ERROR("SendImmediateAckAtLevel: invalid encryption level %d", target_level);
+            return false;
+    }
+
+    // Set connection IDs
+    auto header = packet->GetHeader();
+    if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
+        auto cid = local_conn_id_manager_->GetCurrentID();
+        ((LongHeader*)header)->SetSourceConnectionId(cid.GetID(), cid.GetLength());
+        ((LongHeader*)header)->SetVersion(kQuicVersions[0]);
+    }
+    auto remote_cid = remote_conn_id_manager_->GetCurrentID();
+    header->SetDestinationConnectionId(remote_cid.GetID(), remote_cid.GetLength());
+
+    // Set payload and cryptographer
+    packet->SetPayload(frame_visitor.GetBuffer()->GetSharedReadableSpan());
+    packet->SetCryptographer(cryptographer);
+
+    // Allocate packet number and encode
+    uint64_t pkt_number = send_manager_.pakcet_number_.NextPakcetNumber(ns);
+    packet->SetPacketNumber(pkt_number);
+    header->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
+
+    // Encode packet into send buffer
+    auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        common::LOG_ERROR("SendImmediateAckAtLevel: failed to allocate buffer");
+        return false;
+    }
+    auto send_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+
+    if (!packet->Encode(send_buffer)) {
+        common::LOG_ERROR("SendImmediateAckAtLevel: failed to encode ACK packet");
+        return false;
+    }
+
+    common::LOG_DEBUG(
+        "SendImmediateAckAtLevel: encoded ACK packet #%llu, size=%d", pkt_number, send_buffer->GetDataLength());
+
+    // Register packet with send control for ACK tracking (but NOT for congestion control loss tracking)
+    // ACK-only packets don't count towards bytes_in_flight
+    send_manager_.send_control_.OnPacketSend(common::UTCTimeMsec(), packet, send_buffer->GetDataLength());
+
+    // Send packet immediately via callback
+    if (immediate_send_cb_) {
+        immediate_send_cb_(send_buffer, peer_addr_);
+        common::LOG_DEBUG("SendImmediateAckAtLevel: ACK packet sent successfully");
+    } else {
+        common::LOG_WARN("SendImmediateAckAtLevel: no immediate_send_cb_ set, packet not sent!");
+        return false;
+    }
+
+    return true;
 }
 
 void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason) {
@@ -1099,7 +1298,7 @@ void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame,
 }
 
 void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason) {
-    if (state_ != ConnectionStateType::kStateConnected) {
+    if (state_machine_.GetState() != ConnectionStateType::kStateConnected) {
         return;
     }
     common::LOG_INFO("BaseConnection::ImmediateClose called. error=%llu, reason=%s", error, reason.c_str());
@@ -1112,28 +1311,18 @@ void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::
     }
 
     // Error close: enter Closing state
-    state_ = ConnectionStateType::kStateClosing;
-
     // Store error info for retransmission
     closing_error_code_ = error;
     closing_trigger_frame_ = tigger_frame;
     closing_reason_ = reason;
+    last_connection_close_retransmit_time_ = 0;  // Reset retransmit timer
 
     // Cancel all streams
     for (auto& stream : streams_map_) {
         stream.second->Reset(error);
     }
 
-    // Send CONNECTION_CLOSE frame
-    auto frame = std::make_shared<ConnectionCloseFrame>();
-    frame->SetErrorCode(error);
-    frame->SetErrFrameType(tigger_frame);
-    frame->SetReason(reason);
-    ToSendFrame(frame);
-
-    // Wait 3×PTO before closing (RFC 9000 Section 10.2: minimum closing period)
-    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
+    state_machine_.OnClose();
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {
@@ -1176,21 +1365,21 @@ void BaseConnection::RetireConnectionId(ConnectionID& id) {
 std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd) {
     std::shared_ptr<IStream> new_stream;
     if (sd == StreamDirection::kBidi) {
-        new_stream = std::make_shared<BidirectionStream>(alloter_, event_loop_, init_size, stream_id,
+        new_stream = std::make_shared<BidirectionStream>(event_loop_, init_size, stream_id,
             std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3));
 
     } else if (sd == StreamDirection::kSend) {
-        new_stream = std::make_shared<SendStream>(alloter_, event_loop_, init_size, stream_id,
+        new_stream = std::make_shared<SendStream>(event_loop_, init_size, stream_id,
             std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3));
 
     } else {
-        new_stream = std::make_shared<RecvStream>(alloter_, event_loop_, init_size, stream_id,
+        new_stream = std::make_shared<RecvStream>(event_loop_, init_size, stream_id,
             std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
             std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
@@ -1242,6 +1431,36 @@ void BaseConnection::CheckAndReplenishLocalCIDPool() {
         common::LOG_DEBUG(
             "Generated NEW_CONNECTION_ID: seq=%llu, len=%d", new_cid.GetSequenceNumber(), new_cid.GetLength());
     }
+}
+
+void BaseConnection::OnStateToClosing() {
+    send_manager_.ClearRetransmissionData();
+    send_manager_.ClearActiveStreams();
+    send_manager_.wait_frame_list_.clear();
+
+    auto frame = std::make_shared<ConnectionCloseFrame>();
+    frame->SetErrorCode(closing_error_code_);
+    frame->SetErrFrameType(closing_trigger_frame_);
+    frame->SetReason(closing_reason_);
+    ToSendFrame(frame);
+    last_connection_close_retransmit_time_ = common::UTCTimeMsec();
+
+    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
+    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
+}
+
+void BaseConnection::OnStateToDraining() {
+    send_manager_.ClearRetransmissionData();
+    send_manager_.ClearActiveStreams();
+    send_manager_.wait_frame_list_.clear();
+
+    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
+    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
+}
+
+void BaseConnection::OnStateToClosed() {
+    event_loop_->RemoveTimer(idle_timeout_task_);
+    connection_close_cb_(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
 }
 
 }  // namespace quic

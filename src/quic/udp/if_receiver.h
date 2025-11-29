@@ -31,6 +31,9 @@ public:
     // add a receiver, return the socket fd
     virtual bool AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) = 0;
 
+    // Remove a receiver by socket file descriptor
+    virtual bool RemoveReceiver(int32_t socket_fd) = 0;
+
     // Enable or disable ECN features on underlying sockets created/managed by receiver
     virtual void SetEcnEnabled(bool enabled) = 0;
 

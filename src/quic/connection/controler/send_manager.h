@@ -2,19 +2,19 @@
 #define QUIC_CONNECTION_CONTROLER_SEND_MANAGER
 
 #include <list>
-#include <queue>
 #include <memory>
+#include <queue>
 #include <unordered_set>
 
+#include "common/buffer/if_buffer.h"
+#include "common/timer/if_timer.h"
+#include "quic/connection/connection_id_manager.h"
+#include "quic/connection/controler/flow_control.h"
+#include "quic/connection/controler/send_control.h"
 #include "quic/connection/type.h"
 #include "quic/packet/if_packet.h"
-#include "quic/stream/if_stream.h"
-#include "common/timer/if_timer.h"
-#include "common/buffer/if_buffer.h"
 #include "quic/packet/packet_number.h"
-#include "quic/connection/connection_id_manager.h"
-#include "quic/connection/controler/send_control.h"
-#include "quic/connection/controler/flow_control.h"
+#include "quic/stream/if_stream.h"
 
 namespace quicx {
 namespace quic {
@@ -73,10 +73,18 @@ public:
     void OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame);
     // Reset congestion control and RTT estimator to initial state (on new path)
     void ResetPathSignals();
+
+    // RFC 9002: Check if only ACK frames are pending (to bypass congestion control)
+    bool HasOnlyAckFramesToSend() const;
     // Temporarily disallow stream scheduling (e.g., during path validation / anti-amplification)
     void SetStreamsAllowed(bool allowed) { streams_allowed_ = allowed; }
     // Reset PMTU probing state for a new path (use conservative size until probed)
     void ResetMtuForNewPath();
+
+    // Clear all active streams (used when connection is closing)
+    void ClearActiveStreams();
+    // Clear retransmission data (used when connection is closing to prevent retransmitting packets)
+    void ClearRetransmissionData();
 
     // ---- Anti-amplification (unvalidated path) ----
     // Reset anti-amplification budget when entering validation on a new path.
@@ -98,6 +106,9 @@ public:
         remote_conn_id_manager_ = manager;
     }
     void SetSendRetryCallBack(std::function<void()> cb) { send_retry_cb_ = cb; }
+
+    // RFC 9000 Section 4.10: Discard packet number space (delegates to SendControl)
+    void DiscardPacketNumberSpace(PacketNumberSpace ns) { send_control_.DiscardPacketNumberSpace(ns); }
 
 private:
     std::shared_ptr<IPacket> MakePacket(

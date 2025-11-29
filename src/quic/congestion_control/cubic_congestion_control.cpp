@@ -1,8 +1,8 @@
-#include <cmath>
 #include <algorithm>
+#include <cmath>
 
-#include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/cubic_congestion_control.h"
+#include "quic/congestion_control/normal_pacer.h"
 
 namespace quicx {
 namespace quic {
@@ -36,10 +36,10 @@ void CubicCongestionControl::Configure(const CcConfigV2& cfg) {
     in_slow_start_ = true;
     in_recovery_ = false;
     recovery_start_time_us_ = 0;
-    
+
     // Initialize HyStart
     ResetHyStart();
-    
+
     if (!pacer_) pacer_.reset(new NormalPacer());
 }
 
@@ -63,15 +63,15 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
             } else {
                 w_max_pkts_ = curr_w_max_pkts;
             }
-            
+
             // Reduce cwnd multiplicatively (similar to loss path)
             uint64_t new_cwnd = static_cast<uint64_t>(cwnd_bytes_ * kBetaCubic);
             cwnd_bytes_ = std::max<uint64_t>(new_cwnd, cfg_.min_cwnd_bytes);
             ssthresh_bytes_ = cwnd_bytes_;
             in_recovery_ = true;
             recovery_start_time_us_ = ev.ack_time;
-            epoch_start_us_ = 0; // force cubic epoch reset
-            
+            epoch_start_us_ = 0;  // force cubic epoch reset
+
             // Reset HyStart on congestion signal
             ResetHyStart();
         }
@@ -82,7 +82,7 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
     // Slow start phase with HyStart
     if (in_slow_start_) {
         cwnd_bytes_ += ev.bytes_acked;
-        
+
         // Check traditional ssthresh exit
         if (cwnd_bytes_ >= ssthresh_bytes_) {
             in_slow_start_ = false;
@@ -96,7 +96,7 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
             hystart_found_exit_ = true;
             ResetEpoch(ev.ack_time);
         }
-        
+
         if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
         return;
     }
@@ -125,7 +125,7 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     } else {
         w_max_pkts_ = curr_w_max_pkts;
     }
-    
+
     // Multiplicative decrease
     uint64_t new_cwnd = static_cast<uint64_t>(cwnd_bytes_ * kBetaCubic);
     cwnd_bytes_ = std::max<uint64_t>(new_cwnd, cfg_.min_cwnd_bytes);
@@ -134,11 +134,11 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     in_recovery_ = true;
     in_slow_start_ = false;
     recovery_start_time_us_ = ev.lost_time;
-    epoch_start_us_ = 0; // force reset on next ACK
-    
+    epoch_start_us_ = 0;  // force reset on next ACK
+
     // Reset HyStart on loss
     ResetHyStart();
-    
+
     if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
 }
 
@@ -153,7 +153,9 @@ ICongestionControl::SendState CubicCongestionControl::CanSend(uint64_t now, uint
     (void)now;
     uint64_t left = (cwnd_bytes_ > bytes_in_flight_) ? (cwnd_bytes_ - bytes_in_flight_) : 0;
     can_send_bytes = left;
-    if (left == 0) return SendState::kBlockedByCwnd;
+    if (left == 0) {
+        return SendState::kBlockedByCwnd;
+    }
     return SendState::kOk;
 }
 
@@ -164,7 +166,7 @@ uint64_t CubicCongestionControl::GetPacingRateBps() const {
         // Use QUIC default initial RTT: 333ms
         rtt_us = 333000;
     }
-    
+
     // CUBIC pacing: use 1.25x gain for better burst smoothing
     // rate = (cwnd * 1.25) / RTT
     return (cwnd_bytes_ * 8ull * 1000000ull * 5) / (rtt_us * 4);
@@ -193,7 +195,7 @@ void CubicCongestionControl::IncreaseOnAck(uint64_t bytes_acked, uint64_t now) {
     // t = (now - epoch_start)/1e6
     double t_sec = static_cast<double>(now - epoch_start_us_) / 1e6;
     double t_k = t_sec - k_time_sec_;
-    if (t_k < 0) t_k = -t_k; // account for pre-K period
+    if (t_k < 0) t_k = -t_k;  // account for pre-K period
 
     // CUBIC window in packets: W_cubic(t) = C*(t - K)^3 + Wmax
     double w_cubic_pkts = kCubicC * t_k * t_k * t_k + w_max_pkts_;
@@ -229,52 +231,50 @@ bool CubicCongestionControl::CheckHyStartExit(uint64_t latest_rtt, uint64_t now)
     if (hystart_found_exit_) {
         return false;
     }
-    
+
     // Only apply HyStart when cwnd is above a low threshold
     double cwnd_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
     if (cwnd_pkts < kHyStartLowWindow) {
         return false;
     }
-    
+
     // Initialize round on first call
     if (hystart_round_start_us_ == 0) {
         hystart_round_start_us_ = now;
         hystart_current_round_min_rtt_us_ = latest_rtt;
         return false;
     }
-    
+
     // Update current round min RTT
     if (latest_rtt < hystart_current_round_min_rtt_us_) {
         hystart_current_round_min_rtt_us_ = latest_rtt;
     }
-    
+
     // Update global min RTT
     if (latest_rtt < hystart_min_rtt_us_) {
         hystart_min_rtt_us_ = latest_rtt;
     }
-    
+
     ++hystart_rtt_sample_count_;
-    
+
     // Check 1: RTT increase detection
     // If current round's min RTT increased significantly from baseline, exit
     if (hystart_rtt_sample_count_ >= kHyStartMinSamples) {
         if (hystart_current_round_min_rtt_us_ > hystart_min_rtt_us_ + kHyStartRttThreshUs) {
-            return true; // Exit slow start due to RTT increase
+            return true;  // Exit slow start due to RTT increase
         }
     }
 
     // Check 2: ACK train detection
     // If ACKs arrive too far apart, network may be congested
     if (hystart_last_ack_time_us_ > 0) {
-        uint64_t ack_delta = (now > hystart_last_ack_time_us_) 
-                           ? (now - hystart_last_ack_time_us_) 
-                           : 0;
+        uint64_t ack_delta = (now > hystart_last_ack_time_us_) ? (now - hystart_last_ack_time_us_) : 0;
         if (ack_delta > kHyStartAckDeltaUs) {
-            return true; // Exit slow start due to ACK spacing
+            return true;  // Exit slow start due to ACK spacing
         }
     }
     hystart_last_ack_time_us_ = now;
-    
+
     // Start new round if enough RTT samples collected
     if (hystart_rtt_sample_count_ >= kHyStartMinSamples * 2) {
         hystart_last_round_min_rtt_us_ = hystart_current_round_min_rtt_us_;
@@ -282,11 +282,9 @@ bool CubicCongestionControl::CheckHyStartExit(uint64_t latest_rtt, uint64_t now)
         hystart_round_start_us_ = now;
         hystart_rtt_sample_count_ = 0;
     }
-    
+
     return false;
 }
 
-} // namespace quic
-} // namespace quicx
-
-
+}  // namespace quic
+}  // namespace quicx

@@ -1,17 +1,14 @@
-#include "common/log/log.h"
 #include "quic/quicx/master_with_thread.h"
-
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
 
 MasterWithThread::MasterWithThread(bool ecn_enabled, std::shared_ptr<common::IEventLoop> event_loop):
     Master(ecn_enabled, event_loop),
-    event_loop_(event_loop) {
-}
+    event_loop_(event_loop) {}
 
-MasterWithThread::~MasterWithThread() {
-}
+MasterWithThread::~MasterWithThread() {}
 
 void MasterWithThread::Run() {
     event_loop_->Init();
@@ -23,13 +20,13 @@ void MasterWithThread::Run() {
     Master::Init();
 
     event_loop_->AddFixedProcess(std::bind(&MasterWithThread::Process, this));
-    
+
     // Process any tasks that were posted before EventLoop was initialized
     std::function<void()> task;
     while (pending_tasks_.Pop(task)) {
         event_loop_->PostTask(std::move(task));
     }
-    
+
     while (!IsStop()) {
         event_loop_->Wait();
     }
@@ -71,9 +68,8 @@ void MasterWithThread::PostTask(std::function<void()> task) {
 }
 
 bool MasterWithThread::AddListener(int32_t listener_sock) {
-    common::LOG_DEBUG("MasterWithThread::AddListener called: fd=%d, event_loop=%p", 
-                      listener_sock, event_loop_.get());
-    
+    common::LOG_DEBUG("MasterWithThread::AddListener called: fd=%d, event_loop=%p", listener_sock, event_loop_.get());
+
     // If EventLoop is initialized, use RunInLoop to ensure immediate execution if already in loop thread
     if (event_loop_) {
         common::LOG_DEBUG("MasterWithThread::AddListener: calling RunInLoop for fd=%d", listener_sock);
@@ -84,10 +80,11 @@ bool MasterWithThread::AddListener(int32_t listener_sock) {
         common::LOG_DEBUG("MasterWithThread::AddListener: RunInLoop returned for fd=%d", listener_sock);
         return true;
     }
-    
+
     // If EventLoop is not initialized yet, add directly to pending_listeners_
     // This will be processed in Master::Init() when Run() starts
-    common::LOG_DEBUG("MasterWithThread::AddListener: EventLoop not initialized, adding to pending list for fd=%d", listener_sock);
+    common::LOG_DEBUG(
+        "MasterWithThread::AddListener: EventLoop not initialized, adding to pending list for fd=%d", listener_sock);
     ListenerInfo info;
     info.sock = listener_sock;
     pending_listeners_.push_back(info);
@@ -97,12 +94,10 @@ bool MasterWithThread::AddListener(int32_t listener_sock) {
 bool MasterWithThread::AddListener(const std::string& ip, uint16_t port) {
     // If EventLoop is initialized, post task to Master thread's EventLoop
     if (event_loop_) {
-        event_loop_->RunInLoop([this, ip, port]() {
-            receiver_->AddReceiver(ip, port, shared_from_this());
-        });
+        event_loop_->RunInLoop([this, ip, port]() { receiver_->AddReceiver(ip, port, shared_from_this()); });
         return true;
     }
-    
+
     // If EventLoop is not initialized yet, add directly to pending_listeners_
     // This will be processed in Master::Init() when Run() starts
     ListenerInfo info;

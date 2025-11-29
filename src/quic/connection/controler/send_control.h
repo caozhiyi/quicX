@@ -1,18 +1,18 @@
 #ifndef QUIC_CONNECTION_CONTROLER_SEND_CONTROL
 #define QUIC_CONNECTION_CONTROLER_SEND_CONTROL
 
-#include <list>
-#include <vector>
 #include <functional>
+#include <list>
 #include <unordered_map>
+#include <vector>
 
-#include "quic/packet/type.h"
 #include "common/timer/if_timer.h"
-#include "quic/packet/if_packet.h"
 #include "common/timer/timer_task.h"
-#include "quic/connection/transport_param.h"
-#include "quic/connection/controler/rtt_calculator.h"
 #include "quic/congestion_control/if_congestion_control.h"
+#include "quic/connection/controler/rtt_calculator.h"
+#include "quic/connection/transport_param.h"
+#include "quic/packet/if_packet.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
@@ -62,7 +62,20 @@ public:
     using PacketLostCallback = std::function<void(std::shared_ptr<IPacket>)>;
     void SetPacketLostCallback(PacketLostCallback callback) { packet_lost_cb_ = callback; }
 
+    // Clear all retransmission data (used when connection is closing)
+    void ClearRetransmissionData();
+
+    // RFC 9000 Section 4.10: Discard packet number space state
+    void DiscardPacketNumberSpace(PacketNumberSpace ns);
+
 private:
+    // RFC 9002 Section 6.1.1: Loss detection constants
+    static constexpr uint32_t kPacketThreshold = 3;   // Packets before declaring loss
+    static constexpr uint32_t kTimeThresholdNum = 9;  // Time threshold = 9/8 * RTT
+    static constexpr uint32_t kTimeThresholdDen = 8;
+
+    // RFC 9002 Section 6.1: Detect lost packets based on packet/time threshold
+    void DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t largest_acked);
     enum class EcnState { kUnknown, kValidated, kFailed };
     std::list<std::shared_ptr<IPacket>> lost_packets_;
     struct PacketTimerInfo {
@@ -70,6 +83,8 @@ private:
         uint32_t pkt_len_;
         common::TimerTask timer_task_;
         std::vector<StreamDataInfo> stream_data;  // Stream data contained in this packet
+        std::shared_ptr<IPacket> packet;          // Store packet for retransmission
+        bool is_lost = false;
 
         PacketTimerInfo() {}
         PacketTimerInfo(uint64_t t, uint32_t len, const common::TimerTask& task):
@@ -82,6 +97,13 @@ private:
             pkt_len_(len),
             timer_task_(task),
             stream_data(data) {}
+        PacketTimerInfo(uint64_t t, uint32_t len, const common::TimerTask& task,
+            const std::vector<StreamDataInfo>& data, std::shared_ptr<IPacket> pkt):
+            send_time_(t),
+            pkt_len_(len),
+            timer_task_(task),
+            stream_data(data),
+            packet(pkt) {}
     };
     std::unordered_map<uint64_t, PacketTimerInfo> unacked_packets_[PacketNumberSpace::kNumberSpaceCount];
 

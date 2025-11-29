@@ -93,6 +93,31 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
     return true;
 }
 
+bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
+    common::LOG_DEBUG("UdpReceiver::RemoveReceiver called: fd=%d, IsInLoopThread=%d", 
+                      socket_fd, event_loop_->IsInLoopThread());
+    
+    if (!event_loop_->IsInLoopThread()) {
+        common::LOG_DEBUG("UdpReceiver::RemoveReceiver: posting to EventLoop thread, fd=%d", socket_fd);
+        event_loop_->RunInLoop([this, socket_fd]() {
+            this->RemoveReceiver(socket_fd);
+        });
+        return true;
+    }
+    
+    auto iter = receiver_map_.find(socket_fd);
+    if (iter == receiver_map_.end()) {
+        common::LOG_DEBUG("UdpReceiver::RemoveReceiver: receiver not found for fd=%d", socket_fd);
+        return false;
+    }
+    
+    common::LOG_DEBUG("UdpReceiver::RemoveReceiver: removing fd=%d from EventLoop", socket_fd);
+    receiver_map_.erase(iter);
+    event_loop_->RemoveFd(socket_fd);
+    common::LOG_INFO("UdpReceiver::RemoveReceiver: removed receiver for fd=%d", socket_fd);
+    return true;
+}
+
 void UdpReceiver::OnRead(uint32_t fd) {
     std::shared_ptr<NetPacket> pkt = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
 
