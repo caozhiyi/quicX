@@ -68,7 +68,8 @@ jobs:
       id: strings
       shell: bash
       run: |
-        echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+        # Use relative path to avoid Windows path issues
+        echo "build-output-dir=build" >> "$GITHUB_OUTPUT"
 
     - name: Verify submodules
       shell: bash
@@ -96,14 +97,16 @@ jobs:
         fi
 
     - name: Configure CMake
-      run: >
-        cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
-        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        -DBUILD_EXAMPLES=ON
-        -DENABLE_TESTING=ON
-        -S ${{ github.workspace }}
+      shell: bash
+      run: |
+        BUILD_DIR="${{ steps.strings.outputs.build-output-dir }}"
+        cmake -B "$BUILD_DIR" \
+          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }} \
+          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DBUILD_EXAMPLES=ON \
+          -DENABLE_TESTING=ON \
+          -S .
 
     - name: Build
       shell: bash
@@ -119,12 +122,14 @@ jobs:
         else
           JOBS=4
         fi
+        BUILD_DIR="${{ steps.strings.outputs.build-output-dir }}"
         echo "Building with $JOBS parallel jobs"
-        cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --parallel $JOBS
+        echo "Build directory: $BUILD_DIR"
+        cmake --build "$BUILD_DIR" --config ${{ matrix.build_type }} --parallel $JOBS
 
     - name: Test
       shell: bash
-      working-directory: ${{ steps.strings.outputs.build-output-dir }}
+      working-directory: build
       run: |
         # Try to find the test executable in various locations
         TEST_EXE=""
