@@ -201,30 +201,33 @@ void HandleFileDownload(std::shared_ptr<IRequest> request, std::shared_ptr<IResp
         size_t bytes_sent;
         int last_percent;
         std::chrono::steady_clock::time_point start_time;
-        
-        DownloadState(FILE* f, size_t size) 
-            : file(f), total_size(size), bytes_sent(0), last_percent(-1),
-              start_time(std::chrono::steady_clock::now()) {}
+
+        DownloadState(FILE* f, size_t size):
+            file(f),
+            total_size(size),
+            bytes_sent(0),
+            last_percent(-1),
+            start_time(std::chrono::steady_clock::now()) {}
     };
-    
+
     auto state = std::make_shared<DownloadState>(file, file_size);
 
     // Set body provider for streaming with progress tracking
     response->SetResponseBodyProvider([state](uint8_t* buffer, size_t buffer_size) -> size_t {
         size_t bytes_read = fread(buffer, 1, buffer_size, state->file);
-        
+
         if (bytes_read > 0) {
             state->bytes_sent += bytes_read;
-            
+
             // Calculate and display progress
             if (state->total_size > 0) {
                 int percent = static_cast<int>((state->bytes_sent * 100) / state->total_size);
-                
+
                 // Clamp to 100% maximum
                 if (percent > 100) {
                     percent = 100;
                 }
-                
+
                 // Only update display when percentage changes (avoid too frequent updates)
                 if (percent != state->last_percent) {
                     std::cout << "\r[Download] Progress: " << percent << "%" << std::flush;
@@ -232,31 +235,30 @@ void HandleFileDownload(std::shared_ptr<IRequest> request, std::shared_ptr<IResp
                 }
             }
         }
-        
+
         if (bytes_read == 0) {
             // End of file - close it and print statistics
             fclose(state->file);
             state->file = nullptr;
-            
+
             // Print final progress if we were tracking it
             if (state->total_size > 0 && state->last_percent < 100) {
                 std::cout << "\r[Download] Progress: 100%" << std::endl;
             } else if (state->total_size > 0) {
                 std::cout << std::endl;
             }
-            
+
             auto end_time = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                end_time - state->start_time).count();
-            
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - state->start_time).count();
+
             double speed_mbps = duration > 0 ? state->bytes_sent * 8.0 / duration / 1000.0 : 0;
-            
+
             std::cout << "[Download] Completed:" << std::endl;
             std::cout << "  - Total bytes: " << state->bytes_sent << std::endl;
             std::cout << "  - Duration: " << duration << " ms" << std::endl;
             std::cout << "  - Speed: " << speed_mbps << " Mbps" << std::endl;
         }
-        
+
         return bytes_read;
     });
 }

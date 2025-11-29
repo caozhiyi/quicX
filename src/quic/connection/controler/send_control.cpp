@@ -49,6 +49,9 @@ void SendControl::OnPacketSend(
     congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, now, false});
 
     auto timer_task = common::TimerTask([this, pkt_len, packet, ns] {
+        // RFC 9002: Increment PTO backoff on expiration
+        rtt_calculator_.OnPTOExpired();
+
         lost_packets_.push_back(packet);
         // Mark packet as lost in unacked_packets to prevent double subtraction if acked later
         auto it = unacked_packets_[ns].find(packet->GetPacketNumber());
@@ -60,7 +63,8 @@ void SendControl::OnPacketSend(
             packet_lost_cb_(packet);
         }
     });
-    timer_->AddTimer(timer_task, rtt_calculator_.GetPT0Interval(max_ack_delay_));
+    // RFC 9002: Use PTO with exponential backoff
+    timer_->AddTimer(timer_task, rtt_calculator_.GetPTOWithBackoff(max_ack_delay_));
     unacked_packets_[ns][packet->GetPacketNumber()] =
         PacketTimerInfo(largest_sent_time_[ns], pkt_len, timer_task, stream_data, packet);
     common::LOG_DEBUG(
@@ -87,7 +91,13 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
         if (iter != unacked_packets_[ns].end()) {
             // Scale peer-reported ACK delay by exponent to milliseconds
             uint64_t scaled_ack_delay = ack_frame->GetAckDelay() << ack_delay_exponent_;
-            rtt_calculator_.UpdateRtt(iter->second.send_time_, now, scaled_ack_delay);
+            // Update RTT estimate with this ACK
+            if (!rtt_calculator_.UpdateRtt(iter->second.send_time_, now, scaled_ack_delay)) {
+                common::LOG_WARN("Failed to update RTT for packet %llu", pkt_num);
+            }
+
+            // RFC 9002: Reset PTO backoff on ACK
+            rtt_calculator_.OnPacketAcked();
             bool ecn_ce = false;
             if (frame->GetType() == FrameType::kAckEcn) {
                 auto ack_ecn = std::dynamic_pointer_cast<AckEcnFrame>(frame);
@@ -122,6 +132,18 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
                 congestion_control_->OnPacketAcked(
                     AckEvent{pkt_num, iter->second.pkt_len_, now, ack_frame->GetAckDelay(), ecn_ce});
                 congestion_control_->OnRoundTripSample(rtt_calculator_.GetSmoothedRtt(), ack_frame->GetAckDelay());
+            }
+
+            // Notify stream data ACK if callback is set
+            if (stream_data_ack_cb_ && !iter->second.stream_data.empty()) {
+                common::LOG_DEBUG("SendControl::OnPacketAck: notifying %zu streams for packet %llu",
+                    iter->second.stream_data.size(), pkt_num);
+                for (const auto& stream_info : iter->second.stream_data) {
+                    common::LOG_DEBUG(
+                        "SendControl::OnPacketAck: calling callback for stream_id=%llu, max_offset=%llu, has_fin=%d",
+                        stream_info.stream_id, stream_info.max_offset, stream_info.has_fin);
+                    stream_data_ack_cb_(stream_info.stream_id, stream_info.max_offset, stream_info.has_fin);
+                }
             }
 
             // Remove from unacked_packets now that it's ACKed

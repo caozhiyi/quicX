@@ -245,75 +245,74 @@ bool UploadFile(IClient* client, const std::string& url, const std::string& inpu
     request->AddHeader("Content-Length", std::to_string(file_size));
 
     // Set body provider for streaming upload
-    request->SetRequestBodyProvider(
-        [file, file_size, &bytes_uploaded, &last_percent, &upload_mutex, &upload_cv, &request_body_sent](uint8_t* buffer, size_t buffer_size) -> size_t {
-            size_t bytes_read = fread(buffer, 1, buffer_size, file);
+    request->SetRequestBodyProvider([file, file_size, &bytes_uploaded, &last_percent, &upload_mutex, &upload_cv,
+                                        &request_body_sent](uint8_t* buffer, size_t buffer_size) -> size_t {
+        size_t bytes_read = fread(buffer, 1, buffer_size, file);
 
-            if (bytes_read > 0) {
-                bytes_uploaded += bytes_read;
+        if (bytes_read > 0) {
+            bytes_uploaded += bytes_read;
 
-                // Calculate and display progress
-                if (file_size > 0) {
-                    int percent = static_cast<int>((bytes_uploaded * 100) / file_size);
+            // Calculate and display progress
+            if (file_size > 0) {
+                int percent = static_cast<int>((bytes_uploaded * 100) / file_size);
 
-                    // Clamp to 100% maximum
-                    if (percent > 100) {
-                        percent = 100;
-                    }
+                // Clamp to 100% maximum
+                if (percent > 100) {
+                    percent = 100;
+                }
 
-                    // Only update display when percentage changes (avoid too frequent updates)
-                    if (percent != last_percent) {
-                        std::cout << "\r[Upload] Progress: " << percent << "%" << std::flush;
-                        last_percent = percent;
-                    }
+                // Only update display when percentage changes (avoid too frequent updates)
+                if (percent != last_percent) {
+                    std::cout << "\r[Upload] Progress: " << percent << "%" << std::flush;
+                    last_percent = percent;
                 }
             }
+        }
 
-            if (bytes_read == 0) {
-                // End of file - close it and print final progress
-                fclose(file);
-                if (last_percent < 100) {
-                    std::cout << "\r[Upload] Progress: 100%" << std::endl;
-                } else {
-                    std::cout << std::endl;
-                }
-                std::cout << "[Upload] Request body sent" << std::endl;
-                
-                // Notify that request body is sent
-                {
-                    std::lock_guard<std::mutex> lock(upload_mutex);
-                    request_body_sent = true;
-                }
-                upload_cv.notify_one();
+        if (bytes_read == 0) {
+            // End of file - close it and print final progress
+            fclose(file);
+            if (last_percent < 100) {
+                std::cout << "\r[Upload] Progress: 100%" << std::endl;
+            } else {
+                std::cout << std::endl;
             }
+            std::cout << "[Upload] Request body sent" << std::endl;
 
-            return bytes_read;
-        });
+            // Notify that request body is sent
+            {
+                std::lock_guard<std::mutex> lock(upload_mutex);
+                request_body_sent = true;
+            }
+            upload_cv.notify_one();
+        }
+
+        return bytes_read;
+    });
 
     // Send request (complete mode for response)
-    client->DoRequest(url, HttpMethod::kPost, request, [&success, &upload_mutex, &upload_cv, &response_received](std::shared_ptr<IResponse> response, uint32_t error) {
-        if (error == 0) {
-            std::cout << "[Upload] Response received:" << std::endl;
-            std::cout << "  - Status: " << response->GetStatusCode() << std::endl;
-            std::cout << "  - Body: " << response->GetBodyAsString() << std::endl;
-            success = (response->GetStatusCode() == 200);
-        } else {
-            std::cerr << "[Upload] Request failed with error: " << error << std::endl;
-        }
-        
-        // Notify that response is received
-        {
-            std::lock_guard<std::mutex> lock(upload_mutex);
-            response_received = true;
-        }
-        upload_cv.notify_one();
-    });
+    client->DoRequest(url, HttpMethod::kPost, request,
+        [&success, &upload_mutex, &upload_cv, &response_received](std::shared_ptr<IResponse> response, uint32_t error) {
+            if (error == 0) {
+                std::cout << "[Upload] Response received:" << std::endl;
+                std::cout << "  - Status: " << response->GetStatusCode() << std::endl;
+                std::cout << "  - Body: " << response->GetBodyAsString() << std::endl;
+                success = (response->GetStatusCode() == 200);
+            } else {
+                std::cerr << "[Upload] Request failed with error: " << error << std::endl;
+            }
+
+            // Notify that response is received
+            {
+                std::lock_guard<std::mutex> lock(upload_mutex);
+                response_received = true;
+            }
+            upload_cv.notify_one();
+        });
 
     // Wait for both request body sent and response received
     std::unique_lock<std::mutex> lock(upload_mutex);
-    upload_cv.wait(lock, [&request_body_sent, &response_received] { 
-        return request_body_sent && response_received; 
-    });
+    upload_cv.wait(lock, [&request_body_sent, &response_received] { return request_body_sent && response_received; });
 
     return success;
 }

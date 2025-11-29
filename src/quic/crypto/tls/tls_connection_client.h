@@ -28,6 +28,9 @@ public:
     // add alpn
     virtual bool AddAlpn(uint8_t* alpn, uint32_t len);
 
+    // set server name (SNI) for TLS handshake
+    bool SetServerName(const std::string& server_name);
+
     // opaque session bytes APIs to hide SSL types from upper layers
     bool SetSession(const uint8_t* session_der, size_t session_len);
     bool ExportSession(std::string& out_session_der, SessionInfo& session_info);

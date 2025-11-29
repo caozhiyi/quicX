@@ -62,6 +62,19 @@ bool TLSClientConnection::AddAlpn(uint8_t* alpn, uint32_t len) {
     return true;
 }
 
+bool TLSClientConnection::SetServerName(const std::string& server_name) {
+    if (server_name.empty()) {
+        common::LOG_ERROR("server name is empty");
+        return false;
+    }
+    if (SSL_set_tlsext_host_name(ssl_.get(), server_name.c_str()) == 0) {
+        common::LOG_ERROR("SSL_set_tlsext_host_name failed. server_name:%s", server_name.c_str());
+        return false;
+    }
+    common::LOG_DEBUG("Set SNI: %s", server_name.c_str());
+    return true;
+}
+
 bool TLSClientConnection::SetSession(const uint8_t* session_der, size_t session_len) {
     const unsigned char* p = session_der;
     SSL_SESSION* sess = d2i_SSL_SESSION(nullptr, &p, (long)session_len);

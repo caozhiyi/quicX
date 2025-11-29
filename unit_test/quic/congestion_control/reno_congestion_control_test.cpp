@@ -150,9 +150,6 @@ TEST(RenoCongestionControlTest, BytesInFlightExceedsCwndAfterRecovery) {
     uint64_t cwnd_before_loss = cc.GetCongestionWindow();
     uint64_t bytes_in_flight_before = cc.GetBytesInFlight();
     
-    printf("Before loss: cwnd=%llu, bytes_in_flight=%llu, in_slow_start=%d\n",
-           cwnd_before_loss, bytes_in_flight_before, cc.InSlowStart());
-    
     // Now send many packets without ACKing (simulating network delay)
     for (int i = 100; i < 250; i++) {
         uint64_t can_send = 0;
@@ -163,8 +160,6 @@ TEST(RenoCongestionControlTest, BytesInFlightExceedsCwndAfterRecovery) {
     }
     
     uint64_t bytes_in_flight_after_send = cc.GetBytesInFlight();
-    printf("After sending: cwnd=%llu, bytes_in_flight=%llu\n",
-           cc.GetCongestionWindow(), bytes_in_flight_after_send);
     
     // Trigger packet loss (simulating timeout)
     cc.OnPacketLost(LossEvent{150, 1460, now});
@@ -172,8 +167,6 @@ TEST(RenoCongestionControlTest, BytesInFlightExceedsCwndAfterRecovery) {
     uint64_t cwnd_after_loss = cc.GetCongestionWindow();
     uint64_t bytes_in_flight_after_loss = cc.GetBytesInFlight();
     
-    printf("After loss: cwnd=%llu, bytes_in_flight=%llu, in_recovery=%d\n",
-           cwnd_after_loss, bytes_in_flight_after_loss, cc.InRecovery());
     
     // The bug: bytes_in_flight should NEVER exceed cwnd
     // If it does, CanSend will return 0 forever
@@ -189,9 +182,6 @@ TEST(RenoCongestionControlTest, BytesInFlightExceedsCwndAfterRecovery) {
     
     uint64_t can_send = 0;
     auto state = cc.CanSend(now, can_send);
-    printf("After ACKs: cwnd=%llu, bytes_in_flight=%llu, can_send=%llu, state=%d\n",
-           cc.GetCongestionWindow(), cc.GetBytesInFlight(), can_send, static_cast<int>(state));
-    
     EXPECT_GT(can_send, 0u) << "Should be able to send after ACKs reduce bytes_in_flight";
 }
 

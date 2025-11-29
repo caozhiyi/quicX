@@ -125,6 +125,7 @@ protected:
     void OnIdleTimeout();
     void OnClosingTimeout();
     void OnGracefulCloseTimeout();  // Timeout handler for graceful close
+    void CheckPTOTimeout();         // RFC 9002: Check for idle timeout from excessive PTOs
     uint32_t GetCloseWaitTime();
 
     void ToSendFrame(std::shared_ptr<IFrame> frame);

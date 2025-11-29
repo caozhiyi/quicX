@@ -28,7 +28,7 @@ public:
 
     // connect to a quic server with a specific resumption session (DER bytes) for this connection
     virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der) override;
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der = "", const std::string& server_name = "") override;
 
     // called when connection state changed, like connected, disconnected, etc
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost

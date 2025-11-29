@@ -65,6 +65,7 @@ public:
 
     uint32_t GetRtt() { return send_control_.GetRtt(); }
     uint32_t GetPTO(uint32_t max_ack_delay) { return send_control_.GetPTO(max_ack_delay); }
+    RttCalculator& GetRttCalculator() { return send_control_.GetRttCalculator(); }
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveStream(std::shared_ptr<IStream> stream);
 
@@ -74,8 +75,8 @@ public:
     // Reset congestion control and RTT estimator to initial state (on new path)
     void ResetPathSignals();
 
-    // RFC 9002: Check if only ACK frames are pending (to bypass congestion control)
-    bool HasOnlyAckFramesToSend() const;
+    // RFC 9002: Check if frames are exempt from congestion control (ACKs, CONNECTION_CLOSE)
+    bool IsCongestionControlExempt() const;
     // Temporarily disallow stream scheduling (e.g., during path validation / anti-amplification)
     void SetStreamsAllowed(bool allowed) { streams_allowed_ = allowed; }
     // Reset PMTU probing state for a new path (use conservative size until probed)
