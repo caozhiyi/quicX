@@ -109,42 +109,42 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     common::LOG_DEBUG("RecvControl::MayGenerateAckFrame: ns=%d, generating ACK for %zu packets, largest=%llu", ns,
         nums.size(), pkt_num_largest_recvd_[ns]);
 
-        // Collect runs as [high, low]
-        std::vector<std::pair<uint64_t, uint64_t>> runs;
-        auto rit = nums.rbegin();
-        uint64_t run_high = *rit;
-        uint64_t run_low = run_high;
-        acked_packets.push_back(*rit);
-        ++rit;
+    // Collect runs as [high, low]
+    std::vector<std::pair<uint64_t, uint64_t>> runs;
+    auto rit = nums.rbegin();
+    uint64_t run_high = *rit;
+    uint64_t run_low = run_high;
+    acked_packets.push_back(*rit);
+    ++rit;
 
-        for (; rit != nums.rend(); ++rit) {
-            uint64_t pn = *rit;
-            if (pn + 1 == run_low) {
-                // still contiguous downward
-                run_low = pn;
-                acked_packets.push_back(pn);
-            } else {
-                // close current run and start a new one
-                runs.emplace_back(run_high, run_low);
-
-                if (runs.size() >= kMaxAckRanges) {
-                    // Stop collecting ranges if we hit the limit
-                    // The remaining packets will be ACKed in the next frame
-                    common::LOG_WARN(
-                        "RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%zu), deferring remaining ACKs",
-                        kMaxAckRanges);
-                    break;
-                }
-
-                run_high = pn;
-                run_low = pn;
-                acked_packets.push_back(pn);
-            }
-        }
-    // push last run if we haven't hit the limit
-        if (runs.size() < kMaxAckRanges) {
+    for (; rit != nums.rend(); ++rit) {
+        uint64_t pn = *rit;
+        if (pn + 1 == run_low) {
+            // still contiguous downward
+            run_low = pn;
+            acked_packets.push_back(pn);
+        } else {
+            // close current run and start a new one
             runs.emplace_back(run_high, run_low);
+
+            if (runs.size() >= kMaxAckRanges) {
+                // Stop collecting ranges if we hit the limit
+                // The remaining packets will be ACKed in the next frame
+                common::LOG_WARN(
+                    "RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%zu), deferring remaining ACKs",
+                    kMaxAckRanges);
+                break;
+            }
+
+            run_high = pn;
+            run_low = pn;
+            acked_packets.push_back(pn);
         }
+    }
+    // push last run if we haven't hit the limit
+    if (runs.size() < kMaxAckRanges) {
+        runs.emplace_back(run_high, run_low);
+    }
 
     // Generate ACK or ACK_ECN frame based on ECN enable
     std::shared_ptr<AckFrame> frame;
@@ -172,17 +172,17 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
         frame->SetAckDelay(static_cast<uint32_t>(encoded));
     }
 
-        // First ACK Range is size of first run minus 1
-        uint64_t first_ack_range = runs[0].first - runs[0].second;
-        frame->SetFirstAckRange(static_cast<uint32_t>(first_ack_range));
+    // First ACK Range is size of first run minus 1
+    uint64_t first_ack_range = runs[0].first - runs[0].second;
+    frame->SetFirstAckRange(static_cast<uint32_t>(first_ack_range));
 
-        // Additional ranges: Gap and Range Len (len minus 1)
-        for (size_t i = 1; i < runs.size(); ++i) {
-            uint64_t prev_low = runs[i - 1].second;
-            uint64_t next_high = runs[i].first;
-            uint64_t gap = (prev_low - next_high) - 1;
-            uint64_t range_len = runs[i].first - runs[i].second;
-            frame->AddAckRange(gap, range_len);
+    // Additional ranges: Gap and Range Len (len minus 1)
+    for (size_t i = 1; i < runs.size(); ++i) {
+        uint64_t prev_low = runs[i - 1].second;
+        uint64_t next_high = runs[i].first;
+        uint64_t gap = (prev_low - next_high) - 1;
+        uint64_t range_len = runs[i].first - runs[i].second;
+        frame->AddAckRange(gap, range_len);
     }
 
     // Remove ONLY the packets that were actually included in this ACK frame

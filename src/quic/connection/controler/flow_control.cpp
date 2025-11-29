@@ -1,8 +1,8 @@
+#include "quic/connection/controler/flow_control.h"
+#include "quic/frame/data_blocked_frame.h"
 #include "quic/frame/max_data_frame.h"
 #include "quic/frame/max_streams_frame.h"
-#include "quic/frame/data_blocked_frame.h"
 #include "quic/frame/streams_blocked_frame.h"
-#include "quic/connection/controler/flow_control.h"
 
 namespace quicx {
 namespace quic {
@@ -14,9 +14,7 @@ FlowControl::FlowControl(StreamIDGenerator::StreamStarter starter):
     local_max_unidirectional_stream_id_(0),
     remote_max_bidirectional_stream_id_(0),
     remote_max_unidirectional_stream_id_(0),
-    id_generator_(starter) {
-
-}
+    id_generator_(starter) {}
 
 void FlowControl::UpdateConfig(const TransportParam& tp) {
     local_send_max_data_limit_ = tp.GetInitialMaxData();
@@ -45,7 +43,7 @@ bool FlowControl::CheckLocalSendDataLimit(uint64_t& can_send_size, std::shared_p
         send_frame = frame;
         return false;
     }
-    
+
     // TODO put 8912 to config
     can_send_size = local_send_max_data_limit_ - local_send_data_size_;
     if (local_send_max_data_limit_ - local_send_data_size_ < 8912) {
@@ -129,7 +127,7 @@ bool FlowControl::CheckLocalUnidirectionStreamLimit(uint64_t& stream_id, std::sh
 }
 
 bool FlowControl::CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& send_frame) {
-    if (StreamIDGenerator::GetStreamDirection(id) == StreamIDGenerator::StreamDirection::kUnidirectional)  {
+    if (StreamIDGenerator::GetStreamDirection(id) == StreamIDGenerator::StreamDirection::kUnidirectional) {
         if (id > 0) {
             remote_max_unidirectional_stream_id_ = id;
         }
@@ -170,5 +168,5 @@ bool FlowControl::CheckRemoteUnidirectionStreamLimit(std::shared_ptr<IFrame>& se
     return true;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

@@ -9,6 +9,13 @@
 namespace quicx {
 namespace quic {
 
+// Error type for frame encoding
+enum class FrameEncodeError {
+    kNone = 0,              // No error
+    kInsufficientSpace = 1, // Insufficient buffer space
+    kOtherError = 2,        // Other encoding errors
+};
+
 /*
  iterate all frames in connection, try to decode all data that can be sent
 */
@@ -30,9 +37,12 @@ public:
     virtual uint32_t GetLeftStreamDataSize() = 0;
     virtual void AddStreamDataSize(uint32_t size) {}
     virtual uint64_t GetStreamDataSize()  = 0;
-    
+
     // Get stream data info for ACK tracking
     virtual std::vector<StreamDataInfo> GetStreamDataInfo() const { return {}; }
+
+    // Get last encoding error
+    virtual FrameEncodeError GetLastError() const { return FrameEncodeError::kNone; }
 };
 
 

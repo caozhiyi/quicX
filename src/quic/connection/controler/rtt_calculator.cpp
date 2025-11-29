@@ -1,8 +1,10 @@
-#include "quic/connection/controler/rtt_calculator.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+
 #include "common/log/log.h"
+
+#include "quic/connection/controler/rtt_calculator.h"
 
 namespace quicx {
 namespace quic {

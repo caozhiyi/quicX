@@ -15,7 +15,8 @@ FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t limit_size):
     encryption_level_(kApplication),
     cur_data_offset_(0),
     limit_data_offset_(0),
-    frame_type_bit_(0) {
+    frame_type_bit_(0),
+    last_error_(FrameEncodeError::kNone) {
     auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!chunk || !chunk->Valid()) {
         common::LOG_ERROR("failed to allocate buffer chunk");
@@ -30,15 +31,18 @@ FixBufferFrameVisitor::~FixBufferFrameVisitor() {
 }
 
 bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
+    // Reset error state before processing
+    last_error_ = FrameEncodeError::kNone;
+
     // Update frame type bit for ACK-eliciting detection
     // Use GetFrameTypeBit() which handles STREAM frames correctly
     frame_type_bit_ |= frame->GetFrameTypeBit();
-    
+
     if (frame->GetType() == FrameType::kCrypto) {
         auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frame);
         encryption_level_ = crypto_frame->GetEncryptionLevel();
     }
-    
+
     // Track STREAM frames for ACK tracking
     uint16_t ftype = frame->GetType();
     bool is_stream = StreamFrame::IsStreamFrame(ftype);
@@ -50,7 +54,7 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
             uint64_t offset = stream_frame->GetOffset();
             uint32_t length = stream_frame->GetLength();
             bool has_fin = stream_frame->IsFin();
-            
+
             // Update or insert stream data info (keep maximum offset per stream)
             auto it = stream_data_map_.find(stream_id);
             if (it == stream_data_map_.end()) {
@@ -67,9 +71,21 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
             }
         }
     }
-    
+
+    // Check buffer space before encoding
+    uint32_t free_space = buffer_->GetFreeLength();
+    uint16_t required_size = frame->EncodeSize();
+
     if (!frame->Encode(buffer_)) {
-        common::LOG_ERROR("failed to encode frame. type:%s", FrameType2String(frame->GetType()).c_str());
+        // Encoding failed - determine the reason
+        if (required_size > free_space) {
+            last_error_ = FrameEncodeError::kInsufficientSpace;
+            common::LOG_ERROR("failed to encode frame due to insufficient space. type:%s, required:%u, available:%u",
+                FrameType2String(frame->GetType()).c_str(), required_size, free_space);
+        } else {
+            last_error_ = FrameEncodeError::kOtherError;
+            common::LOG_ERROR("failed to encode frame. type:%s", FrameType2String(frame->GetType()).c_str());
+        }
         return false;
     }
     common::LOG_DEBUG("encoded frame. type:%s, length:%u", FrameType2String(frame->GetType()).c_str(), buffer_->GetDataLength());

@@ -1,7 +1,6 @@
 
 #include <cstring>
 
-#include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
@@ -16,7 +15,6 @@
 #include "quic/frame/max_streams_frame.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/new_token_frame.h"
-#include "quic/frame/padding_frame.h"
 #include "quic/frame/path_challenge_frame.h"
 #include "quic/frame/path_response_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
@@ -158,6 +156,7 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
     }
 
     if (!can_make_stream) {
+        common::LOG_DEBUG("make stream limited.");
         return nullptr;
     }
 

@@ -8,6 +8,7 @@
 
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
+
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/connection/controler/rtt_calculator.h"
 #include "quic/connection/transport_param.h"
@@ -127,6 +128,13 @@ private:
     uint32_t max_ack_delay_;
     uint32_t ack_delay_exponent_;
     std::shared_ptr<common::ITimer> timer_;
+
+    // RFC 9002: PTO timer for detecting persistent timeouts
+    common::TimerTask pto_timer_;
+    uint64_t last_ack_eliciting_sent_time_ = 0;  // Track when we last sent ack-eliciting data
+
+    // RFC 9002: PTO timer callback
+    void OnPTOTimer();
 };
 
 }  // namespace quic

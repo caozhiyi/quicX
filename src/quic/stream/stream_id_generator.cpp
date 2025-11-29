@@ -1,6 +1,7 @@
-#include <cstdlib> // for abort
+#include <cstdlib>  // for abort
 #include "common/log/log.h"
 #include "quic/stream/stream_id_generator.h"
+
 
 namespace quicx {
 namespace quic {
@@ -8,27 +9,22 @@ namespace quic {
 StreamIDGenerator::StreamIDGenerator(StreamStarter starter):
     starter_(starter),
     cur_bidirectional_id_(0),
-    cur_unidirectional_id_(0) {
+    cur_unidirectional_id_(0) {}
 
-}
-
-StreamIDGenerator::~StreamIDGenerator() {
-
-}
+StreamIDGenerator::~StreamIDGenerator() {}
 
 uint64_t StreamIDGenerator::NextStreamID(StreamDirection direction) {
     uint64_t next_stream = 0;
-    switch (direction)
-    {
-    case StreamDirection::kBidirectional:
-        next_stream = cur_bidirectional_id_++;
-        break;
-    case StreamDirection::kUnidirectional:
-        next_stream = cur_unidirectional_id_++;
-        break;
-    default:
-        common::LOG_ERROR("invalid stream direction");
-        abort();
+    switch (direction) {
+        case StreamDirection::kBidirectional:
+            next_stream = cur_bidirectional_id_++;
+            break;
+        case StreamDirection::kUnidirectional:
+            next_stream = cur_unidirectional_id_++;
+            break;
+        default:
+            common::LOG_ERROR("invalid stream direction");
+            abort();
     }
 
     next_stream = next_stream << 2 | (direction | starter_);
@@ -43,5 +39,5 @@ StreamIDGenerator::StreamDirection StreamIDGenerator::GetStreamDirection(uint64_
     return StreamDirection::kBidirectional;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
