@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
+
 #include "http3/frame/data_frame.h"
-#include "http3/frame/frame_decode.h"
+#include "http3/frame/frame_decoder.h"
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/headers_frame.h"
 #include "http3/frame/settings_frame.h"
 #include "http3/frame/push_promise_frame.h"
+
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/standalone_buffer_chunk.h"
@@ -31,8 +33,9 @@ TEST_F(FrameDecodeTest, DecodeDataFrame) {
     data_frame.SetData(buffer);
     data_frame.Encode(buffer_);
 
+    FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_TRUE(DecodeFrames(buffer_, frames));
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
     EXPECT_EQ(frames.size(), 1);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kData);
@@ -52,8 +55,9 @@ TEST_F(FrameDecodeTest, DecodeHeadersFrame) {
     headers_frame.SetEncodedFields(buffer);
     headers_frame.Encode(buffer_);
 
+    FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_TRUE(DecodeFrames(buffer_, frames));
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
     EXPECT_EQ(frames.size(), 1);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kHeaders);
@@ -69,8 +73,9 @@ TEST_F(FrameDecodeTest, DecodeSettingsFrame) {
     settings_frame.SetSetting(2, 200);
     settings_frame.Encode(buffer_);
     
+    FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_TRUE(DecodeFrames(buffer_, frames));
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
     ASSERT_EQ(frames.size(), 1);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kSettings);
@@ -83,8 +88,9 @@ TEST_F(FrameDecodeTest, DecodeGoAwayFrame) {
     GoAwayFrame goaway_frame;
     goaway_frame.SetStreamId(100);
     goaway_frame.Encode(buffer_);
+    FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_TRUE(DecodeFrames(buffer_, frames));
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
     ASSERT_EQ(frames.size(), 1);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kGoAway);
@@ -103,8 +109,9 @@ TEST_F(FrameDecodeTest, DecodePushPromiseFrame) {
     buffer->Write(fields.data(), fields.size());
     push_promise_frame.SetEncodedFields(buffer);
     push_promise_frame.Encode(buffer_);
+    FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_TRUE(DecodeFrames(buffer_, frames));
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
     ASSERT_EQ(frames.size(), 1);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kPushPromise);
@@ -120,14 +127,16 @@ TEST_F(FrameDecodeTest, DecodeInvalidFrameType) {
     common::BufferEncodeWrapper write_wrapper(buffer_);
     write_wrapper.EncodeFixedUint8(0xFF);
     write_wrapper.Flush();
+    FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_FALSE(DecodeFrames(buffer_, frames));
+    EXPECT_FALSE(decoder.DecodeFrames(buffer_, frames));
     EXPECT_EQ(frames.size(), 0);
 }
 
 TEST_F(FrameDecodeTest, DecodeEmptyBuffer) {
+    FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_FALSE(DecodeFrames(buffer_, frames));
+    EXPECT_FALSE(decoder.DecodeFrames(buffer_, frames));
     EXPECT_EQ(frames.size(), 0);
 }
 
@@ -137,7 +146,8 @@ TEST_F(FrameDecodeTest, DecodeIncompleteFrame) {
     write_wrapper.EncodeFixedUint8(static_cast<uint8_t>(FrameType::kData));
     write_wrapper.Flush();
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_FALSE(DecodeFrames(buffer_, frames));
+    FrameDecoder decoder;
+    EXPECT_FALSE(decoder.DecodeFrames(buffer_, frames));
     EXPECT_EQ(frames.size(), 0);
 }
 
@@ -160,7 +170,8 @@ TEST_F(FrameDecodeTest, DecodeMultipleFrames) {
 
     // Decode first frame
     std::vector<std::shared_ptr<IFrame>> frames;
-    EXPECT_TRUE(DecodeFrames(buffer_, frames));
+    FrameDecoder decoder;
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
     ASSERT_EQ(frames.size(), 2);
     auto frame = frames[0];
     EXPECT_EQ(frame->GetType(), FrameType::kData);

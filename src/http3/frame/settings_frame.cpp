@@ -1,7 +1,7 @@
 #include "common/decode/decode.h"
 #include "http3/frame/settings_frame.h"
 #include "common/buffer/buffer_encode_wrapper.h"
-#include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/multi_block_buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace http3 {
@@ -41,29 +41,42 @@ bool SettingsFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 DecodeResult SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
-    common::BufferDecodeWrapper wrapper(buffer);
+    common::MultiBlockBufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
-            return DecodeResult::kError;
+            return DecodeResult::kNeedMoreData;
         }
     }
 
     if (!wrapper.DecodeVarint(length_)) {
-        return DecodeResult::kError;
+        return DecodeResult::kNeedMoreData;
     }
 
     if (length_ == 0) {
+        wrapper.Flush();
         return DecodeResult::kSuccess;
+    }
+
+    // Check if we have enough data for all settings
+    if (wrapper.GetDataLength() < length_) {
+        wrapper.CancelDecode();
+        return DecodeResult::kNeedMoreData;
     }
 
     int32_t len = (int32_t)length_;
     while (len > 0) {  // TODO: check max loop times
         uint64_t id, value;
         if (!wrapper.DecodeVarint(id, len) || !wrapper.DecodeVarint(value, len)) {
+            // If we can't decode, check if it's because we need more data
+            if (wrapper.GetDataLength() == 0) {
+                wrapper.CancelDecode();
+                return DecodeResult::kNeedMoreData;
+            }
             return DecodeResult::kError;
         }
         settings_[id] = value;
     }
+    wrapper.Flush();
     return DecodeResult::kSuccess;
 }
 

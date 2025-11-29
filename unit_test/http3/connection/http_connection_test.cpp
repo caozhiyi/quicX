@@ -50,7 +50,7 @@ public:
         class MockHttpProcessor : public IHttpProcessor {
         public:
             MockHttpProcessor(MockServer* server) : server_(server) {}
-            RouteConfig MatchRoute(HttpMethod method, const std::string& path) override {
+            RouteConfig MatchRoute(HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override {
                 return server_->MatchHandler(method, path);
             }
             void BeforeHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
