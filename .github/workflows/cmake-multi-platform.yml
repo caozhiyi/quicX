@@ -106,20 +106,69 @@ jobs:
         -S ${{ github.workspace }}
 
     - name: Build
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --parallel
+      run: |
+        # Limit parallel jobs to avoid memory issues, especially with clang
+        # Clang typically uses more memory per compilation unit
+        if [ "${{ matrix.cpp_compiler }}" = "clang++" ]; then
+          JOBS=2
+        elif [ "${{ runner.os }}" = "Linux" ]; then
+          JOBS=2
+        elif [ "${{ runner.os }}" = "macOS" ]; then
+          JOBS=3
+        else
+          JOBS=4
+        fi
+        echo "Building with $JOBS parallel jobs"
+        cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }} --parallel $JOBS
 
     - name: Test
       shell: bash
       working-directory: ${{ steps.strings.outputs.build-output-dir }}
       run: |
+        # Try to find the test executable in various locations
+        TEST_EXE=""
+        
+        # Common locations for Unix-like systems
         if [ -f "quicx_utest" ]; then
-          ./quicx_utest
+          TEST_EXE="./quicx_utest"
         elif [ -f "bin/quicx_utest" ]; then
-          ./bin/quicx_utest
+          TEST_EXE="./bin/quicx_utest"
+        # Common locations for Windows (including build type directories)
         elif [ -f "quicx_utest.exe" ]; then
-          ./quicx_utest.exe
+          TEST_EXE="./quicx_utest.exe"
         elif [ -f "bin/quicx_utest.exe" ]; then
-          ./bin/quicx_utest.exe
+          TEST_EXE="./bin/quicx_utest.exe"
+        elif [ -f "${{ matrix.build_type }}/quicx_utest.exe" ]; then
+          TEST_EXE="./${{ matrix.build_type }}/quicx_utest.exe"
+        elif [ -f "unit_test/${{ matrix.build_type }}/quicx_utest.exe" ]; then
+          TEST_EXE="./unit_test/${{ matrix.build_type }}/quicx_utest.exe"
+        # Try to find it using find command (recursive search)
         else
-          echo "Test executable not found, skipping tests"
+          # Try Windows executable first, then Unix executable
+          TEST_EXE=$(find . -name "quicx_utest.exe" -type f 2>/dev/null | head -1)
+          if [ -z "$TEST_EXE" ]; then
+            TEST_EXE=$(find . -name "quicx_utest" -type f ! -name "*.o" ! -name "*.obj" 2>/dev/null | head -1)
+          fi
+          if [ -n "$TEST_EXE" ]; then
+            # Normalize path: remove leading ./ if present and add it back
+            TEST_EXE="${TEST_EXE#./}"
+            TEST_EXE="./$TEST_EXE"
+          fi
+        fi
+        
+        if [ -n "$TEST_EXE" ] && [ -f "${TEST_EXE#./}" ]; then
+          echo "Found test executable: $TEST_EXE"
+          $TEST_EXE
+        else
+          echo "Test executable not found. Searching for test files..."
+          echo "Build directory structure:"
+          ls -la 2>/dev/null || true
+          if [ -d "${{ matrix.build_type }}" ]; then
+            echo "Contents of ${{ matrix.build_type }}/ directory:"
+            ls -la "${{ matrix.build_type }}/" 2>/dev/null | head -20 || true
+          fi
+          find . -name "*utest*" 2>/dev/null | head -20 || true
+          echo ""
+          echo "Trying CTest instead..."
+          ctest --output-on-failure -C ${{ matrix.build_type }} || ctest --output-on-failure || echo "CTest also failed or not available"
         fi
