@@ -1,8 +1,8 @@
-#include "common/log/log.h"
-#include "quic/frame/stream_frame.h"
-#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/log/log.h"
 
+#include "quic/frame/stream_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -10,24 +10,19 @@ namespace quic {
 StreamFrame::StreamFrame():
     IStreamFrame(FrameType::kStream),
     offset_(0),
-    length_(0) {
-
-}
+    length_(0) {}
 
 StreamFrame::StreamFrame(uint16_t frame_type):
     IStreamFrame(frame_type),
-    offset_(0) {
+    offset_(0) {}
 
-}
-
-StreamFrame::~StreamFrame() {
-
-}
+StreamFrame::~StreamFrame() {}
 
 bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint16_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
 
@@ -37,64 +32,68 @@ bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeVarint(stream_id_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(stream_id_), "failed to encode stream id");
     if (HasOffset()) {
-        wrapper.EncodeVarint(offset_);
+        CHECK_ENCODE_ERROR(wrapper.EncodeVarint(offset_), "failed to encode offset");
     }
     if (HasLength()) {
-        wrapper.EncodeVarint(length_);
+        CHECK_ENCODE_ERROR(wrapper.EncodeVarint(length_), "failed to encode length");
     }
-    wrapper.EncodeBytes(data_.GetStart(), length_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeBytes(data_.GetStart(), length_), "failed to encode data");
     return true;
 }
 
 bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     uint32_t initial_buffer_len = buffer->GetDataLength();
-    common::LOG_DEBUG("StreamFrame::Decode START: initial_buffer_len=%u, with_type=%d", 
-              initial_buffer_len, with_type);
-    
+
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
     }
-    wrapper.DecodeVarint(stream_id_);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(stream_id_), "failed to decode stream id");
     if (HasOffset()) {
-        wrapper.DecodeVarint(offset_);
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(offset_), "failed to decode offset");
     }
     if (HasLength()) {
-        wrapper.DecodeVarint(length_);
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(length_), "failed to decode length");
     }
-    
+
     // Flush first to advance the buffer's read pointer
     wrapper.Flush();
-    
+
     // If no length field, stream data extends to the end of the buffer (after Flush!)
     if (!HasLength()) {
         length_ = buffer->GetDataLength();
-        common::LOG_DEBUG("StreamFrame::Decode: no length field, using remaining buffer: stream_id=%llu, length=%u", 
-                  stream_id_, length_);
-    } else {
-        common::LOG_DEBUG("StreamFrame::Decode: has length field: stream_id=%llu, offset=%llu, length=%u, buffer_remaining=%u", 
-                  stream_id_, offset_, length_, buffer->GetDataLength());
     }
-    
+
     if (length_ > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient remaining data. stream_id=%llu, offset=%llu, remain_size:%d, need_size:%d, initial_buffer=%u", 
-                          stream_id_, offset_, buffer->GetDataLength(), length_, initial_buffer_len);
         return false;
     }
     data_ = buffer->GetSharedReadableSpan(length_);
     buffer->MoveReadPt(length_);
-    
-    common::LOG_DEBUG("StreamFrame::Decode SUCCESS: stream_id=%llu, offset=%llu, length=%u, has_fin=%d", 
-              stream_id_, offset_, length_, IsFin());
+
     return true;
 }
 
 uint32_t StreamFrame::EncodeSize() {
-    return sizeof(StreamFrame);
+    // frame type encoded as fixed uint16
+    uint32_t size = sizeof(uint16_t);
+    // Stream ID (always present)
+    size += common::GetEncodeVarintLength(stream_id_);
+    // Offset (if present) - check actual value, not flag, since flag may not be set yet
+    if (HasOffset() || offset_ > 0) {
+        size += common::GetEncodeVarintLength(offset_);
+    }
+    // Length (if present) - check actual value, not flag, since flag may not be set yet
+    // RFC 9000: Length field is included if length > 0
+    if (HasLength() || length_ > 0) {
+        size += common::GetEncodeVarintLength(length_);
+    }
+    // Data payload
+    size += length_;
+    return size;
 }
 
 void StreamFrame::SetOffset(uint64_t offset) {
@@ -106,5 +105,5 @@ bool StreamFrame::IsStreamFrame(uint16_t frame_type) {
     return (frame_type & ~kMaskFlag) == FrameType::kStream;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

@@ -30,12 +30,12 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeVarint(error_code_);
-    wrapper.EncodeVarint(err_frame_type_);
-    wrapper.EncodeVarint(reason_.length());
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(error_code_), "failed to encode error code");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(err_frame_type_), "failed to encode err frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(reason_.length()), "failed to encode reason length");
 
-    wrapper.EncodeBytes((uint8_t*)reason_.data(), reason_.length());
+    CHECK_ENCODE_ERROR(wrapper.EncodeBytes((uint8_t*)reason_.data(), reason_.length()), "failed to encode reason");
     return true;
 }
 
@@ -44,7 +44,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kConnectionClose) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
@@ -52,9 +52,9 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     }
 
     uint32_t reason_length = 0;
-    wrapper.DecodeVarint(error_code_);
-    wrapper.DecodeVarint(err_frame_type_);
-    wrapper.DecodeVarint(reason_length);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(error_code_), "failed to decode error code");
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(err_frame_type_), "failed to decode err frame type");
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(reason_length), "failed to decode reason length");
     wrapper.Flush();
 
     if (reason_length > buffer->GetDataLength()) {
@@ -63,7 +63,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     reason_.resize(reason_length);
     auto data = (uint8_t*)reason_.data();
-    wrapper.DecodeBytes(data, reason_length);
+    CHECK_DECODE_ERROR(wrapper.DecodeBytes(data, reason_length), "failed to decode reason");
     return true;
 }
 

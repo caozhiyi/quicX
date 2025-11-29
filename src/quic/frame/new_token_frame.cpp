@@ -20,9 +20,9 @@ bool NewTokenFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeVarint(token_length_);
-    wrapper.EncodeBytes(token_, token_length_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(token_length_), "failed to encode token length");
+    CHECK_ENCODE_ERROR(wrapper.EncodeBytes(token_, token_length_), "failed to encode token");
     return true;
 }
 
@@ -30,13 +30,13 @@ bool NewTokenFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_ty
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kNewToken) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
-    wrapper.DecodeVarint(token_length_);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(token_length_), "failed to decode token length");
     wrapper.Flush();
     if (token_length_ > buffer->GetDataLength()) {
         common::LOG_ERROR(
@@ -44,7 +44,7 @@ bool NewTokenFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_ty
         return false;
     }
 
-    wrapper.DecodeBytes(token_, token_length_, false);
+    CHECK_DECODE_ERROR(wrapper.DecodeBytes(token_, token_length_, false), "failed to decode token");
     return true;
 }
 

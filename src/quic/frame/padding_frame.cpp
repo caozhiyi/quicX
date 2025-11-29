@@ -24,9 +24,9 @@ bool PaddingFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
     for (size_t i = 0; i < padding_length_; i++) {
-        wrapper.EncodeFixedUint8(0x00);
+        CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint8(0x00), "failed to encode padding");
     }
     return true;
 }
@@ -35,7 +35,7 @@ bool PaddingFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_typ
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kPadding) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;

@@ -26,17 +26,17 @@ bool AckFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
     // Per RFC 9000 ACK frame format:
     // Largest Acknowledged, ACK Delay, ACK Range Count, First ACK Range
-    wrapper.EncodeVarint(largest_acknowledged_);
-    wrapper.EncodeVarint(ack_delay_);
-    wrapper.EncodeVarint(static_cast<uint64_t>(ack_ranges_.size()));
-    wrapper.EncodeVarint(first_ack_range_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(largest_acknowledged_), "failed to encode largest acknowledged");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ack_delay_), "failed to encode ack delay");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(static_cast<uint64_t>(ack_ranges_.size())), "failed to encode ack range count");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(first_ack_range_), "failed to encode first ack range");
 
     for (size_t i = 0; i < ack_ranges_.size(); i++) {
-        wrapper.EncodeVarint(ack_ranges_[i].GetGap());
-        wrapper.EncodeVarint(ack_ranges_[i].GetAckRangeLength());
+        CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ack_ranges_[i].GetGap()), "failed to encode gap");
+        CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ack_ranges_[i].GetAckRangeLength()), "failed to encode ack range length");
     }
     return true;
 }
@@ -48,7 +48,7 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     {
         common::BufferDecodeWrapper wrapper(buffer);
         if (with_type) {
-            wrapper.DecodeFixedUint16(frame_type_);
+            CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
             if (frame_type_ != FrameType::kAck && frame_type_ != FrameType::kAckEcn) {
                 common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
                 return false;
@@ -57,17 +57,17 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
 
         // Per RFC 9000 ACK frame format:
         // Largest Acknowledged, ACK Delay, ACK Range Count, First ACK Range
-        wrapper.DecodeVarint(largest_acknowledged_);
-        wrapper.DecodeVarint(ack_delay_);
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(largest_acknowledged_), "failed to decode largest acknowledged");
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(ack_delay_), "failed to decode ack delay");
         uint64_t ack_range_count = 0;
-        wrapper.DecodeVarint(ack_range_count);
-        wrapper.DecodeVarint(first_ack_range_);
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(ack_range_count), "failed to decode ack range count");
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(first_ack_range_), "failed to decode first ack range");
 
         uint64_t gap;
         uint64_t range;
         for (uint64_t i = 0; i < ack_range_count; i++) {
-            wrapper.DecodeVarint(gap);
-            wrapper.DecodeVarint(range);
+            CHECK_DECODE_ERROR(wrapper.DecodeVarint(gap), "failed to decode gap");
+            CHECK_DECODE_ERROR(wrapper.DecodeVarint(range), "failed to decode range");
             ack_ranges_.emplace_back(AckRange(gap, range));
         }
     }  // wrapper destroyed here, Flush() called
@@ -131,9 +131,9 @@ bool AckEcnFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeVarint(ect_0_);
-    wrapper.EncodeVarint(ect_1_);
-    wrapper.EncodeVarint(ecn_ce_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ect_0_), "failed to encode ect 0");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ect_1_), "failed to encode ect 1");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ecn_ce_), "failed to encode ecn ce");
 
     return true;
 }
@@ -144,9 +144,9 @@ bool AckEcnFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
     }
 
     common::BufferDecodeWrapper wrapper(buffer);
-    wrapper.DecodeVarint(ect_0_);
-    wrapper.DecodeVarint(ect_1_);
-    wrapper.DecodeVarint(ecn_ce_);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(ect_0_), "failed to decode ect 0");
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(ect_1_), "failed to decode ect 1");
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(ecn_ce_), "failed to decode ecn ce");
 
     return true;
 }

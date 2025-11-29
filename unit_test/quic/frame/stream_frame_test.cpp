@@ -1,9 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/stream_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
-
+#include "quic/frame/stream_frame.h"
 
 namespace quicx {
 namespace quic {
@@ -13,11 +12,14 @@ TEST(stream_frame_utest, codec) {
     StreamFrame frame1;
     StreamFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     char frame_data[64] = "1234567890123456789012345678901234567890";
-    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
     data_buffer->Write((uint8_t*)frame_data, strlen(frame_data));
 
     frame1.SetFin();
@@ -43,6 +45,26 @@ TEST(stream_frame_utest, codec) {
     EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2.GetStart(), data2.GetLength()));
 }
 
+TEST(stream_frame_utest, encode_size) {
+    StreamFrame frame;
+    frame.SetStreamID(1);
+    frame.SetOffset(0);
+
+    char frame_data[] = "hello";
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    data_buffer->Write((uint8_t*)frame_data, strlen(frame_data));
+    frame.SetData(data_buffer->GetSharedReadableSpan());
+
+    // Encode to get actual size
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    EXPECT_TRUE(frame.Encode(write_buffer));
+
+    // Check if EncodeSize matches actual encoded length
+    EXPECT_EQ(frame.EncodeSize(), write_buffer->GetDataLength());
 }
-}
-}
+
+}  // namespace
+}  // namespace quic
+}  // namespace quicx
