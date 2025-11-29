@@ -181,6 +181,14 @@ public:
     virtual const std::unordered_map<std::string, std::string>& GetPathParams() const = 0;
 
     /**
+     * @brief Set the path parameters
+     * 
+     * @param params The path parameters to set
+     * @note This is typically called by the router when matching routes with dynamic parameters
+     */
+    virtual void SetPathParams(const std::unordered_map<std::string, std::string>& params) = 0;
+
+    /**
      * @brief Create a request instance
      * 
      * @return The request instance

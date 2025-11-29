@@ -1,9 +1,9 @@
+#include "http3/stream/request_stream.h"
 #include "common/log/log.h"
+#include "http3/frame/push_promise_frame.h"
 #include "http3/http/error.h"
 #include "http3/http/response.h"
 #include "http3/stream/pseudo_header.h"
-#include "http3/stream/request_stream.h"
-#include "http3/frame/push_promise_frame.h"
 
 namespace quicx {
 namespace http3 {
@@ -11,31 +11,25 @@ namespace http3 {
 // Constructor for complete mode
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-    const std::shared_ptr<IQuicBidirectionStream>& stream,
-    std::shared_ptr<IAsyncClientHandler> async_handler,
+    const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
     ReqRespBaseStream(qpack_encoder, blocked_registry, stream, error_handler),
     async_handler_(async_handler),
     body_length_(0),
     received_body_length_(0),
-    push_promise_handler_(push_promise_handler) {
-
-}
+    push_promise_handler_(push_promise_handler) {}
 
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-    const std::shared_ptr<IQuicBidirectionStream>& stream,
-    http_response_handler response_handler,
+    const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
     ReqRespBaseStream(qpack_encoder, blocked_registry, stream, error_handler),
     response_handler_(response_handler),
     body_length_(0),
     received_body_length_(0),
-    push_promise_handler_(push_promise_handler) {
-
-}
+    push_promise_handler_(push_promise_handler) {}
 
 RequestStream::~RequestStream() {
     // Do NOT call Close() here - it should have been called by the base class after sending request
@@ -46,7 +40,7 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
 
     // Check if using streaming mode for request body sending
     auto body_provider = request->GetRequestBodyProvider();
-    
+
     auto body_buffer = request->GetBody();
     if (!body_provider && body_buffer && body_buffer->GetDataLength() > 0) {
         common::LOG_DEBUG("SendRequest: adding content-length: %zu", body_buffer->GetDataLength());
@@ -64,8 +58,8 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     if (body_provider) {
         common::LOG_DEBUG("SendRequest: sending body using provider");
         return SendBodyWithProvider(body_provider);
-    
-    // if body is set, send body directly
+
+        // if body is set, send body directly
     } else if (body_buffer && body_buffer->GetDataLength() > 0) {
         common::LOG_DEBUG("SendRequest: sending body directly");
         return SendBodyDirectly(std::dynamic_pointer_cast<common::IBuffer>(body_buffer));
@@ -75,18 +69,18 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
 }
 
 void RequestStream::HandleHeaders() {
-    //parse header 
+    // parse header
     response_ = std::make_shared<Response>();
     response_->SetHeaders(headers_);
-    
+
     PseudoHeader::Instance().DecodeResponse(response_);
-    
+
     bool has_content_length = false;
     if (headers_.find("content-length") != headers_.end()) {
         body_length_ = std::stoul(headers_["content-length"]);
         has_content_length = true;
     }
-    
+
     if (async_handler_) {
         async_handler_->OnHeaders(response_);
 
@@ -103,29 +97,55 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
     // Validate data size
     if (body_length_ > 0 && received_body_length_ + data->GetDataLength() > body_length_) {
         common::LOG_ERROR("ReqRespBaseStream::HandleData: received more data than content-length, expected %u, got %zu",
-                         body_length_, received_body_length_ + data->GetDataLength());
+            body_length_, received_body_length_ + data->GetDataLength());
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
 
-    received_body_length_ += data->GetDataLength();
+    uint32_t data_length = data->GetDataLength();
+    received_body_length_ += data_length;
 
     // Streaming mode: call handler immediately
     if (async_handler_) {
-        data->VisitData([&](uint8_t* data, uint32_t length) {
-            async_handler_->OnBodyChunk(data, length, is_last);
-            return true;
-        });
-        // Streaming mode: call handler immediately chunk as potentially last
+        // Count total chunks first to identify the last one
+        size_t total_chunks = data->GetChunkCount();
+
+        if (total_chunks > 0) {
+            // Now visit again and mark only the LAST chunk as is_last
+            size_t current_chunk = 0;
+            data->VisitData([&](uint8_t* chunk_data, uint32_t length) {
+                current_chunk++;
+                bool is_last_chunk = is_last && (current_chunk == total_chunks);
+                async_handler_->OnBodyChunk(chunk_data, length, is_last_chunk);
+                return true;
+            });
+
+        } else {
+            if (is_last) {
+                async_handler_->OnBodyChunk(nullptr, 0, is_last);
+            }
+        }
+
+        // CRITICAL: Consume the data from the buffer after processing
+        // This frees up space in RecvStream's buffer for more incoming data
+        if (data_length > 0) {
+            data->MoveReadPt(data_length);
+        }
         return;
     }
-    
-    // Complete mode: accumulate to body_    
+
+    // Complete mode: accumulate to body_
     if (body_length_ == received_body_length_ || is_last) {
-        data->VisitData([&](uint8_t* ptr, uint32_t len) {
-            response_->AppendBody(ptr, len);
-            return true;
-        });
+        // CRITICAL: Consume the data from the buffer after copying
+        // This frees up space in RecvStream's buffer for more incoming data
+        if (data_length > 0) {
+            data->VisitData([&](uint8_t* ptr, uint32_t len) {
+                response_->AppendBody(ptr, len);
+                return true;
+            });
+
+            data->MoveReadPt(data_length);
+        }
         response_handler_(response_, 0);
     }
 }
@@ -155,5 +175,5 @@ void RequestStream::HandlePushPromise(std::shared_ptr<IFrame> frame) {
     push_promise_handler_(headers, push_promise_frame->GetPushId());
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

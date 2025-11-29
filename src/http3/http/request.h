@@ -58,7 +58,7 @@ public:
     virtual const std::unordered_map<std::string, std::string>& GetQueryParams() const override { return query_params_; }
 
     // Path parameters (set by router during pattern matching)
-    virtual void SetPathParams(const std::unordered_map<std::string, std::string>& params) { path_params_ = params; }
+    virtual void SetPathParams(const std::unordered_map<std::string, std::string>& params) override { path_params_ = params; }
     virtual const std::unordered_map<std::string, std::string>& GetPathParams() const override { return path_params_; }
 
 private:

@@ -115,10 +115,14 @@ void Server::HandleError(const std::string& unique_id, uint32_t error_code) {
     }
 }
 
-RouteConfig Server::MatchRoute(HttpMethod method, const std::string& path) {
+RouteConfig Server::MatchRoute(HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request) {
     auto result = router_->Match(method, path);
     if (!result.is_match) {
         return RouteConfig(OnNotFound);
+    }
+    // Set path parameters to request if provided
+    if (request && !result.params.empty()) {
+        request->SetPathParams(result.params);
     }
     return result.config;
 }

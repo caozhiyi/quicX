@@ -54,7 +54,7 @@ private:
     void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason);
     void HandleError(const std::string& unique_id, uint32_t error_code);
     // Match route and return route configuration
-    virtual RouteConfig MatchRoute(HttpMethod method, const std::string& path) override;
+    virtual RouteConfig MatchRoute(HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override;
     // Before handler process
     virtual void BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) override;
     // After handler process
