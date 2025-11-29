@@ -1,18 +1,20 @@
-#include <thread>
 #include <sstream>
+#include <thread>
 
 #include "common/log/log.h"
-#include "quic/quicx/worker.h"
-#include "quic/udp/if_sender.h"
 #include "quic/common/version.h"
 #include "quic/packet/init_packet.h"
 #include "quic/quicx/global_resource.h"
+#include "quic/quicx/worker.h"
+#include "quic/udp/if_sender.h"
+#include "quic/udp/net_packet.h"
 
 namespace quicx {
 namespace quic {
 
 Worker::Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-    const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop):
+    const QuicTransportParams& params, connection_state_callback connection_handler,
+    std::shared_ptr<common::IEventLoop> event_loop):
     IWorker(),
     ctx_(ctx),
     params_(params),
@@ -48,7 +50,8 @@ void Worker::Process() {
 void Worker::ProcessSend() {
     SwitchActiveSendConnectionSet();
     auto& cur_active_send_connection_set = GetReadActiveSendConnectionSet();
-    common::LOG_DEBUG("Worker::ProcessSend: active_send_connection_set size: %zu", cur_active_send_connection_set.size());
+    common::LOG_DEBUG(
+        "Worker::ProcessSend: active_send_connection_set size: %zu", cur_active_send_connection_set.size());
     if (cur_active_send_connection_set.empty()) {
         return;
     }
@@ -93,6 +96,26 @@ void Worker::ProcessSend() {
     }
 }
 
+bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr, int32_t socket) {
+    if (!buffer || buffer->GetDataLength() == 0) {
+        common::LOG_WARN("SendImmediate: invalid buffer or empty data");
+        return false;
+    }
+
+    std::shared_ptr<NetPacket> packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    packet->SetData(buffer);
+    packet->SetAddress(addr);
+    packet->SetSocket(socket);
+
+    if (!sender_->Send(packet)) {
+        common::LOG_ERROR("SendImmediate: udp send failed");
+        return false;
+    }
+
+    common::LOG_DEBUG("SendImmediate: sent %zu bytes to %s", buffer->GetDataLength(), addr.AsString().c_str());
+    return true;
+}
+
 bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet) {
     if (packet->GetHeader()->GetPacketType() != PacketType::kInitialPacketType) {
         common::LOG_ERROR("recv packet whitout connection.");
@@ -132,10 +155,16 @@ void Worker::HandleRetireConnectionId(ConnectionID& cid) {
 }
 
 void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
+    common::LOG_DEBUG("Worker::HandleHandshakeDone called, connecting_set size=%zu", connecting_set_.size());
     if (connecting_set_.find(conn) != connecting_set_.end()) {
+        common::LOG_DEBUG("Connection found in connecting_set, moving to conn_map");
         connecting_set_.erase(conn);
         conn_map_[conn->GetConnectionIDHash()] = conn;
+        common::LOG_DEBUG(
+            "Added to conn_map with hash=%llu, conn_map size=%zu", conn->GetConnectionIDHash(), conn_map_.size());
         connection_handler_(conn, ConnectionOperation::kConnectionCreate, 0, "");
+    } else {
+        common::LOG_WARN("Connection NOT found in connecting_set! Cannot add to conn_map");
     }
 }
 

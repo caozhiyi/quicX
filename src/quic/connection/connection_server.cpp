@@ -1,45 +1,52 @@
 #include "common/log/log.h"
-#include "quic/frame/if_frame.h"
-#include "quic/connection/error.h"
-#include "quic/frame/handshake_done_frame.h"
+
 #include "quic/connection/connection_server.h"
+#include "quic/frame/handshake_done_frame.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
 
-ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx,
-    std::shared_ptr<common::IEventLoop> loop,
-    const std::string& alpn,
-    std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
+    const std::string& alpn, std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
     std::function<void(ConnectionID&)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
-    BaseConnection(StreamIDGenerator::StreamStarter::kServer, false, loop, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
+    BaseConnection(StreamIDGenerator::StreamStarter::kServer, false, loop, active_connection_cb, handshake_done_cb,
+        add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     server_alpn_(alpn) {
     tls_connection_ = std::make_shared<TLSServerConnection>(ctx, &connection_crypto_, this);
     if (!tls_connection_->Init()) {
         common::LOG_ERROR("tls connection init failed.");
     }
-    auto crypto_stream = std::make_shared<CryptoStream>(alloter_, event_loop_,
+    auto crypto_stream = std::make_shared<CryptoStream>(event_loop_,
         std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1),
         std::bind(&ServerConnection::InnerStreamClose, this, std::placeholders::_1),
-        std::bind(&ServerConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    crypto_stream->SetStreamReadCallBack(std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
+        std::bind(&ServerConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
+            std::placeholders::_3));
+    crypto_stream->SetStreamReadCallBack(
+        std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 }
 
-ServerConnection::~ServerConnection() {
-
-}
+ServerConnection::~ServerConnection() {}
 
 void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
     remote_conn_id_manager_->AddID(id);
 }
 
 bool ServerConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
-    InnerConnectionClose(QuicErrorCode::kProtocolViolation, 0, "server handshake done frame received");
+    state_machine_.OnHandshakeDone();
+
+    // RFC 9000 Section 4.10: Discard Initial and Handshake packet number spaces
+    recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
+    recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
+    send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
+    send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
+    common::LOG_INFO("Discarded Initial and Handshake packet number spaces per RFC 9000");
+
     return true;
 }
 
@@ -53,7 +60,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
         common::LOG_ERROR("get crypto data failed. err:%s", err);
         return;
     }
-    
+
     // TODO do not copy data
     uint8_t data[1450] = {0};
     uint32_t len = buffer->Read(data, 1450);
@@ -61,13 +68,20 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
         common::LOG_ERROR("process crypto data failed. err:%s", err);
         return;
     }
-    
+
     if (tls_connection_->DoHandleShake()) {
         common::LOG_DEBUG("handshake done.");
         std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
         ToSendFrame(frame);
 
-        state_ = ConnectionStateType::kStateConnected;
+        // RFC 9000 Section 4.10: Server discards Initial and Handshake spaces after sending HANDSHAKE_DONE
+        recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
+        recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
+        send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
+        send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
+        common::LOG_INFO("Server: Discarded Initial and Handshake packet number spaces after sending HANDSHAKE_DONE");
+
+        state_machine_.OnHandshakeDone();
         // notify handshake done
         if (handshake_done_cb_) {
             handshake_done_cb_(shared_from_this());
@@ -75,9 +89,8 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     }
 }
 
-void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
-    const unsigned char *in, unsigned int inlen, void *arg) {
-    
+void ServerConnection::SSLAlpnSelect(
+    const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg) {
     // parse client alpn list
     // ALPN format: [length1][protocol1][length2][protocol2]...
     std::vector<std::string> client_protos;
@@ -120,5 +133,5 @@ void ServerConnection::SSLAlpnSelect(const unsigned char **out, unsigned char *o
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

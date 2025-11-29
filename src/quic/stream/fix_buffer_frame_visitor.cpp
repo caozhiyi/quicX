@@ -42,8 +42,6 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
     // Track STREAM frames for ACK tracking
     uint16_t ftype = frame->GetType();
     bool is_stream = StreamFrame::IsStreamFrame(ftype);
-    common::LOG_DEBUG("FixBufferFrameVisitor::HandleFrame: type=%d (0x%x), IsStreamFrame=%d", 
-                     ftype, ftype, is_stream);
 
     if (is_stream) {
         auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
@@ -67,15 +65,9 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
                     it->second.has_fin = true;
                 }
             }
-            
-            common::LOG_DEBUG("Tracked stream frame: stream_id=%llu, offset=%llu, length=%u, has_fin=%d, max_offset=%llu",
-                             stream_id, offset, length, has_fin, stream_data_map_[stream_id].max_offset);
-        } else {
-            common::LOG_ERROR("FixBufferFrameVisitor::HandleFrame: dynamic_pointer_cast failed for frame type %d", ftype);
         }
     }
     
-    common::LOG_DEBUG("encode to packet. type:%s", FrameType2String(frame->GetType()).c_str());
     if (!frame->Encode(buffer_)) {
         common::LOG_ERROR("failed to encode frame. type:%s", FrameType2String(frame->GetType()).c_str());
         return false;

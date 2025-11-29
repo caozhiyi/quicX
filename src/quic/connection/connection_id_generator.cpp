@@ -1,5 +1,6 @@
 #include <openssl/rand.h>
 #include <openssl/siphash.h>
+
 #include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
@@ -14,9 +15,7 @@ ConnectionIDGenerator::ConnectionIDGenerator() {
     // sip_hash_key_[1] = 2;
 }
 
-ConnectionIDGenerator::~ConnectionIDGenerator() {
-
-}
+ConnectionIDGenerator::~ConnectionIDGenerator() {}
 
 void ConnectionIDGenerator::Generator(uint8_t* cid, uint32_t len) {
     RAND_bytes(cid, len);
@@ -26,5 +25,5 @@ uint64_t ConnectionIDGenerator::Hash(uint8_t* cid, uint32_t len) {
     return SIPHASH_24(sip_hash_key_, cid, len);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

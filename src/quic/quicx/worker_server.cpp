@@ -64,6 +64,12 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         std::bind(&ServerWorker::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3));
+    
+    // Set immediate send callback for immediate ACK sending
+    new_conn->SetImmediateSendCallback([this, new_conn](std::shared_ptr<common::IBuffer> buffer, const common::Address& addr) {
+        SendImmediate(buffer, addr, new_conn->GetSocket());
+    });
+    
     new_conn->AddTransportParam(params_);
     connecting_set_.insert(new_conn);
 

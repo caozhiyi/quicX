@@ -20,8 +20,8 @@ bool StreamsBlockedFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeVarint(maximum_streams_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(maximum_streams_), "failed to encode maximum streams");
     return true;
 }
 
@@ -29,14 +29,14 @@ bool StreamsBlockedFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool w
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kStreamsBlockedBidirectional &&
             frame_type_ != FrameType::kStreamsBlockedUnidirectional) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
-    wrapper.DecodeVarint(maximum_streams_);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(maximum_streams_), "failed to decode maximum streams");
     return true;
 }
 

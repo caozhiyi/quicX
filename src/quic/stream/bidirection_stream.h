@@ -1,22 +1,16 @@
 #ifndef QUIC_STREAM_BIDIRECTION_STREAM
 #define QUIC_STREAM_BIDIRECTION_STREAM
 
+#include "quic/include/if_quic_bidirection_stream.h"
 #include "quic/stream/recv_stream.h"
 #include "quic/stream/send_stream.h"
-#include "quic/include/if_quic_bidirection_stream.h"
 
 namespace quicx {
 namespace quic {
 
-class BidirectionStream:
-    public virtual SendStream,
-    public virtual RecvStream,
-    public virtual IQuicBidirectionStream {
+class BidirectionStream: public virtual SendStream, public virtual RecvStream, public virtual IQuicBidirectionStream {
 public:
-    BidirectionStream(std::shared_ptr<common::BlockMemoryPool> alloter,
-        std::shared_ptr<common::IEventLoop> loop,
-        uint64_t init_data_limit, 
-        uint64_t id,
+    BidirectionStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);
@@ -45,15 +39,15 @@ public:
     virtual void SetStreamWriteCallBack(stream_write_callback cb) override;
 
     // when there are some data received, the callback function will be called.
-    // the callback function will be called in the recv thread. so you should not do any blocking operation in the callback function.
-    // you should set the callback function firstly, otherwise the data received will be discarded.
+    // the callback function will be called in the recv thread. so you should not do any blocking operation in the
+    // callback function. you should set the callback function firstly, otherwise the data received will be discarded.
     virtual void SetStreamReadCallBack(stream_read_callback cb) override;
 
     // ***************  inner interface ***************//
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) override;
 
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor) override;
-    
+
     // Override to trigger CheckStreamClose after ACK
     virtual void OnDataAcked(uint64_t max_offset, bool has_fin) override;
 
@@ -61,7 +55,7 @@ protected:
     void CheckStreamClose();
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

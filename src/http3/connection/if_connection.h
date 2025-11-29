@@ -1,14 +1,14 @@
 #ifndef HTTP3_CONNECTION_IF_CONNECTION
 #define HTTP3_CONNECTION_IF_CONNECTION
 
-#include <memory>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 
 #include "http3/include/type.h"
-#include "http3/stream/if_stream.h"
-#include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_encoder.h"
+#include "http3/stream/if_stream.h"
 #include "quic/include/if_quic_connection.h"
 
 namespace quicx {
@@ -16,7 +16,7 @@ namespace http3 {
 
 /**
  * @brief IConnection is the base class for all HTTP/3 connections
- * 
+ *
  * This class is used to manage the HTTP/3 connection.
  */
 class IConnection {
@@ -27,8 +27,7 @@ public:
      * @param quic_connection The QUIC connection
      * @param error_handler The error handler
      */
-    IConnection(const std::string& unique_id,
-        const std::shared_ptr<IQuicConnection>& quic_connection,
+    IConnection(const std::string& unique_id, const std::shared_ptr<IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler);
     virtual ~IConnection();
 
@@ -51,8 +50,14 @@ protected:
     virtual void HandleError(uint64_t stream_id, uint32_t error_code) = 0;
     // handle settings
     virtual void HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings);
-    
+
     static const std::unordered_map<uint16_t, uint64_t> AdaptSettings(const Http3Settings& settings);
+
+    /**
+     * @brief Check if peer SETTINGS has been received
+     * @return True if SETTINGS received, false otherwise
+     */
+    bool SettingsReceived() const { return settings_received_; }
 
 protected:
     // indicate the unique id of the connection
@@ -65,9 +70,12 @@ protected:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
 
     std::shared_ptr<IQuicConnection> quic_connection_;
+
+    // RFC 9114 Section 4.1: Track if peer SETTINGS frame has been received
+    bool settings_received_ = false;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

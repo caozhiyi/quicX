@@ -21,8 +21,8 @@ bool RetireConnectionIDFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeVarint(sequence_number_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(sequence_number_), "failed to encode sequence number");
     return true;
 }
 
@@ -30,13 +30,13 @@ bool RetireConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bo
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kRetireConnectionId) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
-    wrapper.DecodeVarint(sequence_number_);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(sequence_number_), "failed to decode sequence number");
     return true;
 }
 

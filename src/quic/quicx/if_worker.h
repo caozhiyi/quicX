@@ -1,8 +1,8 @@
 #ifndef QUIC_QUICX_IF_WORKER
 #define QUIC_QUICX_IF_WORKER
 
-#include <string>
 #include <memory>
+#include <string>
 
 #include "quic/quicx/msg_parser.h"
 

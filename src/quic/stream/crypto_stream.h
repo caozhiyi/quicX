@@ -2,19 +2,16 @@
 #define QUIC_STREAM_CRYPTO_STREAM
 
 #include <unordered_map>
+#include "common/buffer/multi_block_buffer.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/stream/if_stream.h"
-#include "common/buffer/multi_block_buffer.h"
 
 namespace quicx {
 namespace quic {
 
-class CryptoStream:
-    public IStream {
+class CryptoStream: public IStream {
 public:
-    CryptoStream(std::shared_ptr<common::BlockMemoryPool> alloter,
-        std::shared_ptr<common::IEventLoop> loop,
-        std::function<void(std::shared_ptr<IStream>)> active_send_cb,
+    CryptoStream(std::shared_ptr<common::IEventLoop> loop, std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);
     virtual ~CryptoStream();
@@ -43,7 +40,6 @@ protected:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
 private:
-    std::shared_ptr<common::BlockMemoryPool> alloter_;
     std::shared_ptr<common::MultiBlockBuffer> buffer_;
 
     // in order next data offset
@@ -56,7 +52,7 @@ private:
     stream_read_callback recv_cb_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

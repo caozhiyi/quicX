@@ -3,50 +3,49 @@
 
 // #include <set>
 // #include <list>
-#include <memory>
-#include <vector>
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
+#include <vector>
 
-#include "quic/include/type.h"
-#include "quic/connection/type.h"
 #include "common/alloter/pool_block.h"
-#include "quic/connection/if_connection.h"
-#include "quic/connection/transport_param.h"
+#include "common/network/if_event_loop.h"
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/controler/flow_control.h"
-#include "quic/connection/controler/send_manager.h"
 #include "quic/connection/controler/recv_control.h"
-#include "common/network/if_event_loop.h"
+#include "quic/connection/controler/send_manager.h"
+#include "quic/connection/if_connection.h"
+#include "quic/connection/transport_param.h"
+#include "quic/connection/type.h"
+#include "quic/include/type.h"
+
+#include "quic/connection/connection_state_machine.h"
 
 namespace quicx {
 namespace quic {
 
-// connection state
-enum class ConnectionStateType {
-    kStateConnecting,
-    kStateConnected,
-    kStateClosing,   // Initiated connection close, sent CONNECTION_CLOSE, waiting 1×PTO
-    kStateDraining,  // Received CONNECTION_CLOSE from peer, no packets sent, waiting 3×PTO
-    kStateClosed,
-};
-
 class BaseConnection:
     public IConnection,
+    public IConnectionStateListener,
     public std::enable_shared_from_this<BaseConnection> {
 public:
-    BaseConnection(StreamIDGenerator::StreamStarter start,
-        bool ecn_enabled,
-        std::shared_ptr<common::IEventLoop> loop,
+    BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled, std::shared_ptr<common::IEventLoop> loop,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
         std::function<void(ConnectionID&)> retire_conn_id_cb,
-        std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb);
+        std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)>
+            connection_close_cb);
+
+    // RFC 9000: Callback for immediate packet sending (bypasses normal flow)
+    using ImmediateSendCallback = std::function<void(std::shared_ptr<common::IBuffer>, const common::Address&)>;
+    void SetImmediateSendCallback(ImmediateSendCallback cb);
+
     virtual ~BaseConnection();
     //*************** outside interface ***************//
     virtual void Close() override;
+    void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb);
     virtual void Reset(uint32_t error_code) override;
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) override;
 
@@ -68,21 +67,24 @@ public:
     virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t level) override {
         return connection_crypto_.GetCryptographer(level);
     }
-    
+
     // Test-only helper to check remote CID manager state
-    std::shared_ptr<ConnectionIDManager> GetRemoteConnectionIDManagerForTest() {
-        return remote_conn_id_manager_;
-    }
+    std::shared_ptr<ConnectionIDManager> GetRemoteConnectionIDManagerForTest() { return remote_conn_id_manager_; }
 
     // Get all local CID hashes for this connection (for cleanup on close)
-    virtual std::vector<uint64_t> GetAllLocalCIDHashes() override {
-        return local_conn_id_manager_->GetAllIDHashes();
-    }
+    virtual std::vector<uint64_t> GetAllLocalCIDHashes() override { return local_conn_id_manager_->GetAllIDHashes(); }
 
     // Test-only interface to observe connection state
-    ConnectionStateType GetConnectionStateForTest() const { return state_; }
+    ConnectionStateType GetConnectionStateForTest() const { return state_machine_.GetState(); }
 
     std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_; }
+
+    // IConnectionStateListener
+    virtual void OnStateToConnecting() override {}
+    virtual void OnStateToConnected() override {}
+    virtual void OnStateToClosing() override;
+    virtual void OnStateToDraining() override;
+    virtual void OnStateToClosed() override;
 
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
@@ -108,17 +110,21 @@ protected:
     bool OnConnectionCloseAppFrame(std::shared_ptr<IFrame> frame);
     bool OnPathChallengeFrame(std::shared_ptr<IFrame> frame);
     bool OnPathResponseFrame(std::shared_ptr<IFrame> frame);
-    virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) = 0;
+    virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) { return false; }
+
+    // Send ACK packet immediately at specified encryption level
+    // Used when immediate ACK is required but current encryption level differs
+    bool SendImmediateAckAtLevel(PacketNumberSpace ns);
 
     void OnTransportParams(TransportParam& remote_tp);
 
 protected:
-    virtual void ThreadTransferBefore() override; 
+    virtual void ThreadTransferBefore() override;
     virtual void ThreadTransferAfter() override;
     // idle timeout
     void OnIdleTimeout();
     void OnClosingTimeout();
-    void OnGracefulCloseTimeout(); // Timeout handler for graceful close
+    void OnGracefulCloseTimeout();  // Timeout handler for graceful close
     uint32_t GetCloseWaitTime();
 
     void ToSendFrame(std::shared_ptr<IFrame> frame);
@@ -128,13 +134,13 @@ protected:
     void InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason);
     void ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason);
     void InnerStreamClose(uint64_t stream_id);
-    
+
     // Stream data ACK notification callback
     void OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin);
 
     void AddConnectionId(ConnectionID& id);
     void RetireConnectionId(ConnectionID& id);
-    
+
     std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd);
 
     virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) = 0;
@@ -153,16 +159,15 @@ protected:
         return peer_addr_;
     }
 
-
     void CloseInternal();
 
     void StartPathValidationProbe();
-    void StartNextPathProbe(); // Start probing next address in queue
+    void StartNextPathProbe();  // Start probing next address in queue
     // Anti-amplification: while path is unvalidated, restrict sending
     void EnterAntiAmplification();
     void ExitAntiAmplification();
     void ScheduleProbeRetry();
-    
+
     // Connection ID pool management
     void CheckAndReplenishLocalCIDPool();
 
@@ -171,17 +176,15 @@ protected:
     common::TimerTask idle_timeout_task_;
     // transport param verify done
     TransportParam transport_param_;
-    // connection memory pool
-    std::shared_ptr<common::BlockMemoryPool> alloter_;
     // last time communicate, use to idle shutdown
-    uint64_t last_communicate_time_; 
+    uint64_t last_communicate_time_;
     // streams
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_map_;
     // connection id
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
     std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
 
-    uint8_t pending_ecn_ {0};
+    uint8_t pending_ecn_{0};
     bool ecn_enabled_;
     // flow control
     FlowControl flow_control_;
@@ -193,16 +196,17 @@ protected:
     std::string token_;
     std::shared_ptr<TLSConnection> tls_connection_;
 
-    ConnectionStateType state_;
-    
+    ConnectionStateMachine state_machine_;
+
     // Store error info for CONNECTION_CLOSE retransmission in Closing state
     uint64_t closing_error_code_;
     uint16_t closing_trigger_frame_;
     std::string closing_reason_;
-    
+    uint64_t last_connection_close_retransmit_time_;  // Timestamp of last CONNECTION_CLOSE retransmission
+
     // Graceful close: wait for all data to be sent before entering Closing state
     bool graceful_closing_pending_ = false;
-    common::TimerTask graceful_close_timer_; // Timeout for graceful close
+    common::TimerTask graceful_close_timer_;  // Timeout for graceful close
 
     // hint for early-data scheduling: whether any application stream (id != 0) has pending send
     bool has_app_send_pending_ = false;
@@ -211,23 +215,26 @@ protected:
 
     // candidate path state (address only for now)
     common::Address candidate_peer_addr_;
-    bool path_probe_inflight_ {false};
-    uint8_t pending_path_challenge_data_[8] {0};
+    bool path_probe_inflight_{false};
+    uint8_t pending_path_challenge_data_[8]{0};
     common::TimerTask path_probe_task_;
-    uint32_t probe_retry_count_ {0};
-    uint32_t probe_retry_delay_ms_ {0};
-    
+    uint32_t probe_retry_count_{0};
+    uint32_t probe_retry_delay_ms_{0};
+
     // Queue of pending candidate addresses for path validation
     std::vector<common::Address> pending_candidate_addrs_;
 
     // EventLoop reference for safe cleanup in destructor
     std::shared_ptr<common::IEventLoop> event_loop_;
 
+    // Immediate send callback for bypassing normal send flow (e.g., immediate ACK)
+    ImmediateSendCallback immediate_send_cb_;
+
     static constexpr size_t kMinLocalCIDPoolSize = 3;  // Keep at least 3 CIDs in pool
     static constexpr size_t kMaxLocalCIDPoolSize = 8;  // Generate up to 8 CIDs
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

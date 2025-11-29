@@ -2,24 +2,21 @@
 #define QUIC_STREAM_SEND_STREAM
 
 #include <string>
-#include "quic/stream/if_stream.h"
+
+#include "common/buffer/multi_block_buffer.h"
 #include "common/include/if_buffer_read.h"
 #include "common/include/if_buffer_write.h"
-#include "quic/stream/state_machine_send.h"
+
 #include "quic/include/if_quic_send_stream.h"
-#include "common/buffer/multi_block_buffer.h"
+#include "quic/stream/if_stream.h"
+#include "quic/stream/state_machine_send.h"
 
 namespace quicx {
 namespace quic {
 
-class SendStream:
-    public virtual IStream,
-    public virtual IQuicSendStream {
+class SendStream: public virtual IStream, public virtual IQuicSendStream {
 public:
-    SendStream(std::shared_ptr<common::BlockMemoryPool>& alloter,
-        std::shared_ptr<common::IEventLoop> loop,
-        uint64_t init_data_limit,
-        uint64_t id,
+    SendStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);
@@ -47,10 +44,10 @@ public:
 
     // try generate data to send
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor) override;
-    
+
     // Stream data ACK tracking
     virtual void OnDataAcked(uint64_t max_offset, bool has_fin);
-    
+
     // Getter for testing
     std::shared_ptr<StreamStateMachineSend> GetSendStateMachine() const { return send_machine_; }
 
@@ -60,18 +57,18 @@ protected:
     void CheckAllDataAcked();
 
 protected:
-    bool to_fin_; // whether to send fin
-    uint64_t send_data_offset_; // the offset of data that has been sent
-    uint64_t acked_offset_;     // the maximum offset that has been ACKed
-    bool fin_sent_;             // whether FIN has been sent
-    uint64_t peer_data_limit_;  // the data limit that peer limit
+    bool to_fin_;                // whether to send fin
+    uint64_t send_data_offset_;  // the offset of data that has been sent
+    uint64_t acked_offset_;      // the maximum offset that has been ACKed
+    bool fin_sent_;              // whether FIN has been sent
+    uint64_t peer_data_limit_;   // the data limit that peer limit
     std::shared_ptr<common::MultiBlockBuffer> send_buffer_;
 
     std::shared_ptr<StreamStateMachineSend> send_machine_;
     stream_write_callback sended_cb_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

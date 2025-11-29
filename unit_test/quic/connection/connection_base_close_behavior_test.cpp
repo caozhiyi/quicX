@@ -47,7 +47,7 @@ class TestClientConnection : public ClientConnection {
 public:
     using ClientConnection::ClientConnection;
 
-    void ForceState(ConnectionStateType state) { state_ = state; }
+    void ForceState(ConnectionStateType state) { state_machine_.SetState(state); }
     void TriggerIdleTimeoutForTest() { OnIdleTimeout(); }
     void TriggerClosingTimeoutForTest() { OnClosingTimeout(); }
     void TriggerImmediateCloseForTest(uint64_t error, uint16_t frame_type, const std::string& reason) {

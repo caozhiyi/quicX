@@ -18,7 +18,7 @@ int main() {
 
     quicx::Http3Config config;
     config.thread_num_ = 2;
-    config.log_level_ = quicx::LogLevel::kError;
+    config.log_level_ = quicx::LogLevel::kDebug;
     client->Init(config);
 
     std::cout << "==================================" << std::endl;
@@ -38,7 +38,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
                 
                 std::string content_type;
                 if (response->GetHeader("Content-Type", content_type)) {
@@ -65,7 +65,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "Error: " << error << std::endl;
             }
@@ -90,7 +90,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
                 
                 std::string location;
                 if (response->GetHeader("Location", location)) {
@@ -120,7 +120,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "Error: " << error << std::endl;
             }
@@ -142,7 +142,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "Error: " << error << std::endl;
             }
@@ -164,7 +164,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "Error: " << error << std::endl;
             }
@@ -187,7 +187,7 @@ int main() {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
                 if (response->GetStatusCode() != 204) {
-                    std::cout << "Response: " << response->GetBody() << std::endl;
+                    std::cout << "Response: " << response->GetBodyAsString() << std::endl;
                 } else {
                     std::cout << "Response: (No Content)" << std::endl;
                 }
@@ -212,7 +212,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "Error: " << error << std::endl;
             }
@@ -234,7 +234,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "Error: " << error << std::endl;
             }
@@ -256,7 +256,7 @@ int main() {
         [](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0) {
                 std::cout << "Status: " << response->GetStatusCode() << std::endl;
-                std::cout << "Response: " << response->GetBody() << std::endl;
+                std::cout << "Response: " << response->GetBodyAsString() << std::endl;
             } else {
                 std::cout << "Error: " << error << std::endl;
             }

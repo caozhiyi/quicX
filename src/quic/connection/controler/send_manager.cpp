@@ -1,21 +1,20 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
 
-#include "quic/frame/type.h"
 #include "quic/common/version.h"
-#include "quic/frame/ack_frame.h"
+#include "quic/connection/controler/send_manager.h"
 #include "quic/connection/util.h"
 #include "quic/crypto/tls/type.h"
-#include "quic/frame/ping_frame.h"
-#include "quic/packet/init_packet.h"
+#include "quic/frame/ack_frame.h"
 #include "quic/frame/padding_frame.h"
-#include "quic/packet/rtt_0_packet.h"
-#include "quic/packet/rtt_1_packet.h"
-#include "quic/quicx/global_resource.h"
+#include "quic/frame/ping_frame.h"
+#include "quic/frame/type.h"
 #include "quic/packet/handshake_packet.h"
 #include "quic/packet/header/long_header.h"
+#include "quic/packet/init_packet.h"
+#include "quic/packet/rtt_0_packet.h"
+#include "quic/packet/rtt_1_packet.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
-#include "quic/connection/controler/send_manager.h"
 
 namespace quicx {
 namespace quic {
@@ -30,9 +29,11 @@ SendManager::SendManager(std::shared_ptr<common::ITimer> timer):
             send_retry_cb_();
         }
     });
-    
+
     send_control_.SetPacketLostCallback([this](std::shared_ptr<IPacket> packet) {
         common::LOG_WARN("SendManager: packet %llu lost, triggering retransmission", packet->GetPacketNumber());
+        // Note: send_retry_cb_ (which calls BaseConnection::ActiveSend) will check connection state
+        // and ignore the callback if connection is closing/draining/closed
         if (send_retry_cb_) {
             send_retry_cb_();
         }
@@ -56,16 +57,21 @@ SendOperation SendManager::GetSendOperation() {
         uint64_t now = common::UTCTimeMsec();
         send_control_.CanSend(now, can_send_size);
         if (can_send_size == 0) {
-            uint64_t next_time = send_control_.GetNextSendTime(now);
-            if (next_time > now) {
-                uint64_t delay = next_time - now;
-                timer_->AddTimer(pacing_timer_task_, delay);
-                common::LOG_DEBUG("pacing limited. delay:%llu", delay);
-            } else {
-                is_cwnd_limited_ = true;
-                common::LOG_WARN("congestion control send data limited.");
+            // RFC 9002: Allow ACK-only packets to bypass congestion control
+            if (!HasOnlyAckFramesToSend()) {
+                uint64_t next_time = send_control_.GetNextSendTime(now);
+                if (next_time > now) {
+                    uint64_t delay = next_time - now;
+                    timer_->AddTimer(pacing_timer_task_, delay);
+                    common::LOG_DEBUG("pacing limited. delay:%llu", delay);
+                } else {
+                    is_cwnd_limited_ = true;
+                    common::LOG_WARN("congestion control send data limited.");
+                }
+                return SendOperation::kNextPeriod;
             }
-            return SendOperation::kNextPeriod;
+            // Have ACK-only frames, allow sending
+            common::LOG_DEBUG("GetSendOperation: bypassing congestion for ACK-only frames");
         }
     }
     is_cwnd_limited_ = false;
@@ -92,8 +98,14 @@ bool SendManager::GetSendData(
     // check congestion control
     send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
     if (can_send_size == 0) {
-        common::LOG_WARN("congestion control send data limited.");
-        return true;
+        // RFC 9002 Section 2: ACK-only packets are not congestion controlled
+        if (!HasOnlyAckFramesToSend()) {
+            common::LOG_WARN("congestion control send data limited.");
+            return true;
+        }
+        // Allow ACK-only packets to bypass congestion control
+        common::LOG_DEBUG("Bypassing congestion control for ACK-only packet");
+        can_send_size = mtu_limit_bytes_;
     }
 
     // firstly, send resend packet
@@ -107,7 +119,27 @@ bool SendManager::GetSendData(
             OnMtuProbeResult(false);
             // fall through to normal send path below instead of retransmitting probe
         } else {
-            return PacketInit(packet, buffer);
+            // CRITICAL FIX: The lost packet may have old crypto_level (e.g. kInitial),
+            // but we're now at a different level (e.g. kApplication).
+            // PacketInit allocates packet numbers based on packet->GetCryptoLevel(),
+            // so we need to override the number space explicitly.
+            // We do this by calling NextPacketNumber with the CURRENT encryption level.
+
+            uint64_t pkt_number = pakcet_number_.NextPakcetNumber(CryptoLevel2PacketNumberSpace(encrypto_level));
+            packet->SetPacketNumber(pkt_number);
+            packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
+
+            common::LOG_DEBUG("SendManager::SendPacket: Retransmitting lost packet as #%llu at current level=%d",
+                pkt_number, encrypto_level);
+
+            if (!packet->Encode(buffer)) {
+                common::LOG_ERROR("encode retransmission packet error. pkt_number=%llu", pkt_number);
+                return false;
+            }
+
+            // Manually call OnPacketSend since we bypassed PacketInit
+            send_control_.OnPacketSend(common::UTCTimeMsec(), packet, buffer->GetDataLength(), {});
+            return true;
         }
 
     } else {
@@ -140,6 +172,8 @@ bool SendManager::GetSendData(
             }
             // record probe packet number for ack/loss correlation
             mtu_probe_packet_number_ = packet->GetPacketNumber();
+            common::LOG_DEBUG("SendManager::SendPacket: Sending PMTU probe packet as #%llu at current level=%d",
+                packet->GetPacketNumber(), encrypto_level);
             return true;
         }
 
@@ -179,7 +213,10 @@ bool SendManager::GetSendData(
                 // Allow PATH_CHALLENGE/PATH_RESPONSE to bypass budget check
                 common::LOG_DEBUG("Allowing path validation frame despite budget limit");
             }
-            return PacketInit(packet, buffer, &frame_visitor);
+            bool ret = PacketInit(packet, buffer, &frame_visitor);
+            common::LOG_DEBUG("SendManager::SendPacket: Sending packet. probe packet as #%llu at current level=%d",
+                packet->GetPacketNumber(), encrypto_level);
+            return ret;
         }
 
         // check flow control
@@ -218,7 +255,10 @@ bool SendManager::GetSendData(
                 common::LOG_DEBUG("Allowing path validation frame despite budget limit");
             }
         }
-        return PacketInit(packet, buffer, &frame_visitor);
+        bool ret = PacketInit(packet, buffer, &frame_visitor);
+        common::LOG_DEBUG("SendManager::SendPacket: Sending packet. probe packet as #%llu at current level=%d",
+            packet->GetPacketNumber(), encrypto_level);
+        return ret;
     }
 
     return true;
@@ -228,9 +268,9 @@ void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> fram
     // Pass to send control for RTT/loss/cc updates
     send_control_.OnPacketAck(common::UTCTimeMsec(), ns, frame);
 
-    common::LOG_DEBUG("SendManager::OnPacketAck: is_cwnd_limited_=%d, send_retry_cb_=%p", 
-                      is_cwnd_limited_, (void*)&send_retry_cb_);
-    
+    common::LOG_DEBUG(
+        "SendManager::OnPacketAck: is_cwnd_limited_=%d, send_retry_cb_=%p", is_cwnd_limited_, (void*)&send_retry_cb_);
+
     if (is_cwnd_limited_) {
         is_cwnd_limited_ = false;
         common::LOG_DEBUG("SendManager::OnPacketAck: clearing is_cwnd_limited_, calling send_retry_cb_");
@@ -288,8 +328,21 @@ void SendManager::ResetPathSignals() {
 }
 
 void SendManager::ResetMtuForNewPath() {
-    // Conservative default until DPLPMTUD re-probes
-    mtu_limit_bytes_ = 1200;  // RFC9000 minimum
+    mtu_probe_inflight_ = false;
+    mtu_probe_packet_number_ = 0;
+    // Conservative start
+    mtu_limit_bytes_ = 1200;  // RFC 9000 min
+}
+
+void SendManager::ClearActiveStreams() {
+    active_send_stream_set_1_.clear();
+    active_send_stream_set_2_.clear();
+    wait_frame_list_.clear();
+    send_control_.ClearRetransmissionData();
+}
+
+void SendManager::ClearRetransmissionData() {
+    send_control_.ClearRetransmissionData();
 }
 
 bool SendManager::CheckAndChargeAmpBudget(uint32_t bytes) {
@@ -415,8 +468,12 @@ std::shared_ptr<IPacket> SendManager::MakePacket(
                 read_set.pop();
 
             } else if (ret == IStream::TrySendResult::kFailed) {
-                common::LOG_ERROR("get stream send data failed.");
-                return nullptr;
+                // Stream send failed (e.g., flow control blocked with no data)
+                // Remove from active list to prevent infinite retry loop
+                common::LOG_WARN("stream send failed, removing from active list. stream id:%d", sid);
+                read_set.remove(sid);
+                read_set.pop();
+                // Continue with next stream instead of returning nullptr
 
             } else if (ret == IStream::TrySendResult::kBreak) {
                 need_break = true;
@@ -559,6 +616,33 @@ void SendManager::SwitchActiveSendStreamSet() {
     active_send_stream_set_1_is_current_ = !active_send_stream_set_1_is_current_;
 
     common::LOG_DEBUG("SwitchActiveSendStreamSet: switched to set %d", active_send_stream_set_1_is_current_ ? 1 : 2);
+}
+
+// RFC 9002: Check if we only have ACK frames to send (bypass congestion control)
+bool SendManager::HasOnlyAckFramesToSend() const {
+    // Don't check active streams - even if streams are waiting, we should send ACKs first
+    // Only check the wait_frame_list_ for what's immediately pending
+
+    if (wait_frame_list_.empty()) {
+        common::LOG_DEBUG("HasOnlyAckFramesToSend: no pending frames, returning false");
+        return false;
+    }
+
+    // Check if all pending frames are ACK frames
+    size_t total_frames = wait_frame_list_.size();
+    size_t ack_frames = 0;
+    for (const auto& frame : wait_frame_list_) {
+        auto frame_type = frame->GetType();
+        if (frame_type == FrameType::kAck || frame_type == FrameType::kAckEcn) {
+            ack_frames++;
+        } else {
+            common::LOG_DEBUG("HasOnlyAckFramesToSend: found non-ACK frame type=%d, returning false", frame_type);
+            return false;
+        }
+    }
+
+    common::LOG_DEBUG("HasOnlyAckFramesToSend: all %zu pending frames are ACKs, returning true", ack_frames);
+    return true;
 }
 
 }  // namespace quic

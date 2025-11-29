@@ -22,10 +22,10 @@ bool ResetStreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeVarint(stream_id_);
-    wrapper.EncodeVarint(app_error_code_);
-    wrapper.EncodeVarint(final_size_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(stream_id_), "failed to encode stream id");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(app_error_code_), "failed to encode app error code");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(final_size_), "failed to encode final size");
 
     return true;
 }
@@ -34,15 +34,15 @@ bool ResetStreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kResetStream) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
-    wrapper.DecodeVarint(stream_id_);
-    wrapper.DecodeVarint(app_error_code_);
-    wrapper.DecodeVarint(final_size_);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(stream_id_), "failed to decode stream id");
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(app_error_code_), "failed to decode app error code");
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(final_size_), "failed to decode final size");
     return true;
 }
 

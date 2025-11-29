@@ -29,6 +29,10 @@ public:
     // process inner packets
     virtual void Process();
 
+    // Send packet immediately (bypasses normal flow)
+    // Used for immediate ACK sending when encryption level differs from current level
+    bool SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr, int32_t socket = -1);
+
 protected:
     void ProcessSend();
 

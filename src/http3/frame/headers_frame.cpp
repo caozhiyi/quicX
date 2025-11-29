@@ -2,7 +2,7 @@
 #include "common/log/log.h"
 #include "http3/frame/headers_frame.h"
 #include "common/buffer/buffer_encode_wrapper.h"
-#include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/multi_block_buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace http3 {
@@ -43,7 +43,7 @@ bool HeadersFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 DecodeResult HeadersFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
-    common::BufferDecodeWrapper wrapper(buffer);
+    common::MultiBlockBufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
@@ -57,17 +57,17 @@ DecodeResult HeadersFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     }
 
     // Check if we have enough data
-    if (buffer->GetDataLength() < length_) {
+    if (wrapper.GetDataLength() < length_) {
         wrapper.CancelDecode();
         common::LOG_DEBUG("HeadersFrame::Decode: insufficient data (need %u, have %u), waiting for more", length_,
-            buffer->GetDataLength());
+            wrapper.GetDataLength());
         return DecodeResult::kNeedMoreData;  // Not an error, just need more data
     }
 
     wrapper.Flush();
     // Read encoded fields - shallow copy with specified length
     // CloneReadable creates a shallow copy and advances the read pointer
-    encoded_fields_ = buffer->CloneReadable(length_);
+    encoded_fields_ = wrapper.GetBuffer()->CloneReadable(length_);
     if (!encoded_fields_) {
         common::LOG_ERROR("HeadersFrame::Decode: CloneReadable failed for length %u", length_);
         return DecodeResult::kError;

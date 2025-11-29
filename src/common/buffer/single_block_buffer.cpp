@@ -316,6 +316,9 @@ std::shared_ptr<IBufferChunk> SingleBlockBuffer::GetChunk() const {
     return chunk_;
 }
 
+uint32_t SingleBlockBuffer::GetChunkCount() const {
+    return 1;
+}
 // Replace the backing chunk and refresh internal pointers.
 void SingleBlockBuffer::Reset(std::shared_ptr<IBufferChunk> chunk) {
     chunk_ = std::move(chunk);

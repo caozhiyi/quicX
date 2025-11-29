@@ -24,6 +24,7 @@ public:
 
     virtual bool AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) override;
     virtual bool AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) override;
+    virtual bool RemoveReceiver(int32_t socket_fd) override;
 
     virtual void SetEcnEnabled(bool enabled) override { ecn_enabled_ = enabled; }
 

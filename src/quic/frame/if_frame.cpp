@@ -29,7 +29,7 @@ bool IFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
     
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
 
     return true;
 }
@@ -37,7 +37,7 @@ bool IFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 bool IFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     if (with_type) {
         common::BufferDecodeWrapper wrapper(buffer);
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
     }
     return true;
 }

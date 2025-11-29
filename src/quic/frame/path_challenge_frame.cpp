@@ -27,15 +27,15 @@ bool PathChallengeFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeBytes(data_, kPathDataLength);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeBytes(data_, kPathDataLength), "failed to encode data");
     return true;
 }
 
 bool PathChallengeFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kPathChallenge) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
@@ -48,7 +48,7 @@ bool PathChallengeFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wi
         return false;
     }
     auto data = (uint8_t*)data_;
-    wrapper.DecodeBytes(data, kPathDataLength);
+    CHECK_DECODE_ERROR(wrapper.DecodeBytes(data, kPathDataLength), "failed to decode data");
     return true;
 }
 

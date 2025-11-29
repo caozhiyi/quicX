@@ -1,19 +1,17 @@
+#include "http3/connection/if_connection.h"
 #include "common/log/log.h"
 #include "http3/connection/type.h"
-#include "http3/connection/if_connection.h"
 
 namespace quicx {
 namespace http3 {
 
-IConnection::IConnection(const std::string& unique_id,
-    const std::shared_ptr<IQuicConnection>& quic_connection,
+IConnection::IConnection(const std::string& unique_id, const std::shared_ptr<IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler):
     unique_id_(unique_id),
     error_handler_(error_handler),
     quic_connection_(quic_connection) {
-
-    quic_connection_->SetStreamStateCallBack(std::bind(&IConnection::HandleStream, this, 
-        std::placeholders::_1, std::placeholders::_2));
+    quic_connection_->SetStreamStateCallBack(
+        std::bind(&IConnection::HandleStream, this, std::placeholders::_1, std::placeholders::_2));
 
     qpack_encoder_ = std::make_shared<QpackEncoder>();
     blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
@@ -34,6 +32,9 @@ void IConnection::Close(uint32_t error_code) {
 }
 
 void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
+    // RFC 9114 Section 4.1: Mark SETTINGS as received
+    settings_received_ = true;
+
     // merge settings
     for (auto iter = settings.begin(); iter != settings.end(); ++iter) {
         settings_[iter->first] = std::min(settings_[iter->first], iter->second);
@@ -57,5 +58,5 @@ const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Ht
     return settings_map;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

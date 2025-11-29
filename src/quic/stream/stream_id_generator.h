@@ -14,7 +14,7 @@ public:
     };
 
     enum StreamDirection {
-        kBidirectional  = 0x0,
+        kBidirectional = 0x0,
         kUnidirectional = 0x2,
     };
 
@@ -31,7 +31,7 @@ private:
     uint64_t cur_unidirectional_id_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

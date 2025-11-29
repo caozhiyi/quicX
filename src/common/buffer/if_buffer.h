@@ -82,6 +82,8 @@ public:
     virtual BufferSpan GetWritableSpan(uint32_t expected_length) = 0;
     // return the chunk of the buffer
     virtual std::shared_ptr<IBufferChunk> GetChunk() const = 0;
+    // return the count of buffer chunks
+    virtual uint32_t GetChunkCount() const = 0;
 };
 
 }  // namespace common

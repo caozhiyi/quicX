@@ -1,11 +1,10 @@
-#include "common/log/log.h"
 #include "common/log/file_logger.h"
-#include "common/log/stdout_logger.h"
+#include "common/log/log.h"
 
+#include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/quicx/quic_server.h"
 #include "quic/quicx/worker_server.h"
 #include "quic/quicx/worker_with_thread.h"
-#include "quic/crypto/tls/tls_ctx_server.h"
 
 namespace quicx {
 
@@ -22,9 +21,9 @@ QuicServer::~QuicServer() {}
 
 bool QuicServer::Init(const QuicServerConfig& config) {
     if (config.config_.log_level_ != LogLevel::kNull) {
-        //std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
+        // std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
         std::shared_ptr<common::FileLogger> file_log = std::make_shared<common::FileLogger>("server.log");
-        //file_log->SetLogger(log);
+        // file_log->SetLogger(log);
         common::LOG_SET(file_log);
         common::LOG_SET_LEVEL(common::LogLevel(config.config_.log_level_));
     }
@@ -60,11 +59,11 @@ bool QuicServer::Init(const QuicServerConfig& config) {
     auto sender = ISender::MakeSender();
     worker_map_.reserve(config.config_.worker_thread_num_);
     if (config.config_.thread_mode_ == ThreadMode::kSingleThread) {
-        auto worker = std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
-        master_event_loop_->RunInLoop([worker, this]() {
-            master_event_loop_->AddFixedProcess(std::bind(&ServerWorker::Process, worker));
-        });
-       
+        auto worker =
+            std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
+        master_event_loop_->RunInLoop(
+            [worker, this]() { master_event_loop_->AddFixedProcess(std::bind(&ServerWorker::Process, worker)); });
+
         worker->SetConnectionIDNotify(master_);
         worker_map_[worker->GetWorkerId()] = worker;
         master_->AddWorker(worker);
@@ -77,7 +76,8 @@ bool QuicServer::Init(const QuicServerConfig& config) {
                 return false;
             }
 
-            auto worker_ptr = std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_, worker_loop);
+            auto worker_ptr =
+                std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_, worker_loop);
             worker_ptr->SetConnectionIDNotify(master_);
 
             auto worker = std::make_shared<WorkerWithThread>(worker_loop, worker_ptr);
@@ -104,9 +104,7 @@ void QuicServer::Destroy() {
 }
 
 void QuicServer::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
-    master_event_loop_->RunInLoop([this, timeout_ms, cb]() {
-        master_event_loop_->AddTimer(cb, timeout_ms);
-    });
+    master_event_loop_->RunInLoop([this, timeout_ms, cb]() { master_event_loop_->AddTimer(cb, timeout_ms); });
 }
 
 bool QuicServer::ListenAndAccept(const std::string& ip, uint16_t port) {

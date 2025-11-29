@@ -21,10 +21,10 @@ bool CryptoFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeVarint(offset_);
-    wrapper.EncodeVarint(length_);
-    wrapper.EncodeBytes(data_.GetStart(), length_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(offset_), "failed to encode offset");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(length_), "failed to encode length");
+    CHECK_ENCODE_ERROR(wrapper.EncodeBytes(data_.GetStart(), length_), "failed to encode data");
     return true;
 }
 
@@ -32,14 +32,14 @@ bool CryptoFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kCrypto) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
-    wrapper.DecodeVarint(offset_);
-    wrapper.DecodeVarint(length_);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(offset_), "failed to decode offset");
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(length_), "failed to decode length");
     if (length_ > buffer->GetDataLength()) {
         common::LOG_ERROR(
             "insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);

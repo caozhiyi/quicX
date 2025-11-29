@@ -59,6 +59,7 @@ public:
     BufferSpan GetWritableSpan() override;
     BufferSpan GetWritableSpan(uint32_t expected_length) override;
     std::shared_ptr<IBufferChunk> GetChunk() const override;
+    uint32_t GetChunkCount() const override;
 
     // Additional helper functions
     uint32_t Write(std::shared_ptr<IBufferRead> buffer);

@@ -4,12 +4,12 @@
 #include <memory>
 #include <unordered_map>
 
-#include "http3/include/type.h"
-#include "http3/frame/if_frame.h"
 #include "http3/frame/frame_decoder.h"
-#include "http3/stream/if_stream.h"
-#include "http3/qpack/qpack_encoder.h"
+#include "http3/frame/if_frame.h"
+#include "http3/include/type.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_encoder.h"
+#include "http3/stream/if_stream.h"
 #include "quic/include/if_quic_bidirection_stream.h"
 
 namespace quicx {
@@ -62,8 +62,10 @@ protected:
     std::unordered_map<std::string, std::string> headers_;
     std::shared_ptr<common::IBuffer> body_;
     bool is_last_data_;
+    bool current_frame_is_last_;  // Track if current frame is last in OnData batch
 
     bool is_provider_mode_;
+    bool all_provider_data_sent_;
     body_provider provider_;
 
     // Frame decoder for stateful decoding

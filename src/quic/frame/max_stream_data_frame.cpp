@@ -21,9 +21,9 @@ bool MaxStreamDataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    wrapper.EncodeFixedUint16(frame_type_);
-    wrapper.EncodeVarint(stream_id_);
-    wrapper.EncodeVarint(maximum_data_);
+    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(stream_id_), "failed to encode stream id");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(maximum_data_), "failed to encode maximum data");
 
     return true;
 }
@@ -32,14 +32,14 @@ bool MaxStreamDataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wi
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        wrapper.DecodeFixedUint16(frame_type_);
+        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
         if (frame_type_ != FrameType::kMaxStreamData) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
-    wrapper.DecodeVarint(stream_id_);
-    wrapper.DecodeVarint(maximum_data_);
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(stream_id_), "failed to decode stream id");
+    CHECK_DECODE_ERROR(wrapper.DecodeVarint(maximum_data_), "failed to decode maximum data");
 
     return true;
 }

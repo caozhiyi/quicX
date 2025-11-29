@@ -1,7 +1,6 @@
 #ifndef QUIC_STREAM_STATE_MACHINE_RECV
 #define QUIC_STREAM_STATE_MACHINE_RECV
 
-#include <string>
 #include "quic/stream/if_state_machine.h"
 
 namespace quicx {
@@ -19,7 +18,7 @@ receiving stream states
 |  Recv | Recv RESET_STREAM
 |       |-----------------------.
 +-------+                       |
-    |                           |  
+    |                           |
     | Recv STREAM + FIN         |
     v                           |
 +-------+                       |
@@ -42,8 +41,7 @@ receiving stream states
 +-------+                   +-------+
 */
 
-class StreamStateMachineRecv:
-    public IStreamStateMachine {
+class StreamStateMachineRecv: public IStreamStateMachine {
 public:
     StreamStateMachineRecv(std::function<void()> stream_close_cb, StreamState state = StreamState::kRecv);
     ~StreamStateMachineRecv();
@@ -67,7 +65,7 @@ public:
     bool AppReadAllData();
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -1,10 +1,10 @@
 #ifndef QUIC_QUICX_MSG_RECEIVER_WITH_THREAD
 #define QUIC_QUICX_MSG_RECEIVER_WITH_THREAD
 
-#include "quic/quicx/master.h"
-#include "common/thread/thread.h"
 #include "common/network/if_event_loop.h"
 #include "common/structure/thread_safe_queue.h"
+#include "common/thread/thread.h"
+#include "quic/quicx/master.h"
 
 namespace quicx {
 namespace quic {
@@ -35,10 +35,7 @@ private:
 
 private:
     std::shared_ptr<common::IEventLoop> event_loop_;  // Saved EventLoop for cross-thread access
-    enum ConnectionOperation {
-        ADD_CONNECTION_ID = 0,
-        RETIRE_CONNECTION_ID = 1
-    };
+    enum ConnectionOperation { ADD_CONNECTION_ID = 0, RETIRE_CONNECTION_ID = 1 };
     struct ConnectionOpInfo {
         ConnectionOperation operation_;
         ConnectionID cid_;

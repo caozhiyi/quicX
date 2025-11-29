@@ -1,19 +1,19 @@
 #ifndef COMMON_NETWORK_EVENT_LOOP
 #define COMMON_NETWORK_EVENT_LOOP
 
-#include <deque>
-#include <mutex>
-#include <memory>
 #include <cstdint>
+#include <deque>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
-#include <thread>
 
+#include "common/network/if_event_driver.h"
+#include "common/network/if_event_loop.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
-#include "common/network/if_event_loop.h"
-#include "common/network/if_event_driver.h"
 
 namespace quicx {
 namespace common {
@@ -48,10 +48,10 @@ public:
 
     // Check if current thread is the loop thread
     virtual bool IsInLoopThread() const override;
-    
+
     // Execute task immediately if in loop thread, otherwise post it
     virtual void RunInLoop(std::function<void()> task) override;
-    
+
     // Assert that current thread is loop thread
     virtual void AssertInLoopThread() override;
 
@@ -73,6 +73,11 @@ private:
 
     bool initialized_ = false;
     std::thread::id thread_id_;
+
+    // Optimization: avoid pipe write for same-thread wakeup
+    // When AddTimer/PostTask called from event loop thread, just set this flag
+    // to make next Wait() use timeout=0 instead of writing to wakeup pipe
+    bool need_immediate_wakeup_ = false;
 };
 
 }  // namespace common

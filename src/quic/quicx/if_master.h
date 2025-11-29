@@ -3,8 +3,8 @@
 
 #include <memory>
 
-#include "quic/quicx/if_worker.h"
 #include "quic/connection/connection_id.h"
+#include "quic/quicx/if_worker.h"
 
 namespace quicx {
 namespace quic {
@@ -29,7 +29,7 @@ public:
     virtual void Process() = 0;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

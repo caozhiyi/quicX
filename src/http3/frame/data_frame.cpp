@@ -1,6 +1,8 @@
 #include "http3/frame/data_frame.h"
-#include "common/buffer/buffer_decode_wrapper.h"
+#include <cstring>  // for memcpy
 #include "common/buffer/buffer_encode_wrapper.h"
+#include "common/buffer/multi_block_buffer_decode_wrapper.h"
+#include "common/decode/decode.h"
 #include "common/log/log.h"
 
 namespace quicx {
@@ -45,35 +47,39 @@ bool DataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
-    common::BufferDecodeWrapper wrapper(buffer);
+    common::MultiBlockBufferDecodeWrapper wrapper(buffer);
 
-    // Decode frame type if needed
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
-            common::LOG_ERROR("DataFrame::Decode: failed to decode frame type");
-            return DecodeResult::kError;
+            common::LOG_DEBUG("DataFrame::Decode: insufficient data for frame type");
+            return DecodeResult::kNeedMoreData;
         }
     }
 
-    // Decode length
-    if (!wrapper.DecodeVarint(length_)) {
-        common::LOG_ERROR("DataFrame::Decode: failed to decode length");
-        return DecodeResult::kError;
+    // Read length
+    uint64_t length_64 = 0;
+    if (!wrapper.DecodeVarint(length_64)) {
+        common::LOG_DEBUG("DataFrame::Decode: failed to decode length varint");
+        return DecodeResult::kNeedMoreData;
     }
 
-    // Check if we have enough data for the payload
-    if (buffer->GetDataLength() < length_) {
+    length_ = static_cast<uint32_t>(length_64);
+
+    // Check if we have enough data for the complete frame
+    if (wrapper.GetDataLength() < length_) {
         wrapper.CancelDecode();
-        common::LOG_DEBUG("DataFrame::Decode: insufficient data (need %u, have %u), waiting for more", length_,
-            buffer->GetDataLength());
-        return DecodeResult::kNeedMoreData;  // Not an error, just need more data
+        common::LOG_DEBUG("DataFrame::Decode: insufficient data for complete frame (need %u, have %u)",
+            length_, wrapper.GetDataLength());
+        return DecodeResult::kNeedMoreData;
     }
+
     wrapper.Flush();
-    // Use CloneReadable helper to extract exactly length_ bytes and advance read
-    // pointer This works correctly for both SingleBlockBuffer and
-    // MultiBlockBuffer
-    data_ = buffer->CloneReadable(length_);
+    // Extract payload - shallow copy with specified length
+    // CloneReadable creates a shallow copy and advances the read pointer
+    data_ = wrapper.GetBuffer()->CloneReadable(length_);
     if (!data_) {
+        common::LOG_ERROR(
+            "DataFrame::Decode: CloneReadable failed for length %u (buffer has %u)", length_, wrapper.GetBuffer()->GetDataLength());
         return DecodeResult::kError;
     }
 

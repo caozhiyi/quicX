@@ -1,6 +1,6 @@
 #include "http3/frame/push_promise_frame.h"
 #include "common/buffer/buffer_encode_wrapper.h"
-#include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/multi_block_buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace http3 {
@@ -33,7 +33,7 @@ bool PushPromiseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
-    common::BufferDecodeWrapper wrapper(buffer);
+    common::MultiBlockBufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
         if (!wrapper.DecodeFixedUint16(type_)) {
@@ -47,7 +47,7 @@ DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, b
     }
 
     // Check if we have enough data
-    if (buffer->GetDataLength() < length_) {
+    if (wrapper.GetDataLength() < length_) {
         return DecodeResult::kError;
     }
 
@@ -62,12 +62,12 @@ DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, b
     uint32_t fields_length = length_ - push_id_size;
 
     // Check if we have enough data for fields
-    if (buffer->GetDataLength() < fields_length) {
+    if (wrapper.GetBuffer()->GetDataLength() < fields_length) {
         return DecodeResult::kNeedMoreData;
     }
 
     // Read encoded fields - only the remaining length
-    encoded_fields_ = buffer->CloneReadable(fields_length);
+    encoded_fields_ = wrapper.GetBuffer()->CloneReadable(fields_length);
 
     return DecodeResult::kSuccess;
 }

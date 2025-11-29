@@ -1,18 +1,18 @@
-#include "http3/frame/frame_decoder.h"
-#include "http3/frame/type.h"
-#include "common/log/log.h"
-#include "common/buffer/buffer_decode_wrapper.h"
-
-#include "http3/frame/data_frame.h"
-#include "http3/frame/headers_frame.h"
-#include "http3/frame/settings_frame.h"
-#include "http3/frame/cancel_push_frame.h"
-#include "http3/frame/goaway_frame.h"
-#include "http3/frame/max_push_id_frame.h"
-#include "http3/frame/push_promise_frame.h"
-
 #include <functional>
 #include <unordered_map>
+
+#include "common/buffer/multi_block_buffer_decode_wrapper.h"
+#include "common/log/log.h"
+
+#include "http3/frame/cancel_push_frame.h"
+#include "http3/frame/data_frame.h"
+#include "http3/frame/frame_decoder.h"
+#include "http3/frame/goaway_frame.h"
+#include "http3/frame/headers_frame.h"
+#include "http3/frame/max_push_id_frame.h"
+#include "http3/frame/push_promise_frame.h"
+#include "http3/frame/settings_frame.h"
+#include "http3/frame/type.h"
 
 namespace quicx {
 namespace http3 {
@@ -35,15 +35,29 @@ FrameDecoder::FrameDecoder():
 FrameDecoder::~FrameDecoder() {}
 
 bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IFrame>>& frames) {
+    // Return false if buffer is empty
+    if (buffer->GetDataLength() == 0) {
+        return false;
+    }
+
     while (buffer->GetDataLength() > 0) {
         if (state_ == State::kReadingFrameType) {
             // Try to decode frame type
-            common::BufferDecodeWrapper wrapper(buffer);
+            common::MultiBlockBufferDecodeWrapper wrapper(buffer);
             uint16_t frame_type = 0;
             if (!wrapper.DecodeFixedUint16(frame_type)) {
-                common::LOG_ERROR("DecodeFrames: failed to decode frame type, remaining=%u", buffer->GetDataLength());
+                // DecodeFixedUint16 needs 2 bytes
+                // If buffer has exactly 0 bytes, we already returned false at the start
+                // If buffer has 1 byte, it's an error (incomplete frame type)
+                // If buffer has 2+ bytes but decode failed, it's corrupt data
+                common::LOG_ERROR(
+                    "DecodeFrames: failed to decode frame type (corrupt or incomplete data), remaining=%u", wrapper.GetDataLength());
                 return false;
             }
+
+            // CRITICAL: Flush to commit the frame type read and advance buffer's read pointer
+            // Without this, DataFrame::Decode will re-read these 2 bytes as length!
+            wrapper.Flush();
 
             // Create frame instance
             auto creator = kFrameCreatorMap.find(frame_type);

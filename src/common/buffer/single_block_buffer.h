@@ -75,7 +75,7 @@ public:
     BufferSpan GetWritableSpan(uint32_t expected_length) override;
     // return the chunk of the buffer
     std::shared_ptr<IBufferChunk> GetChunk() const override;
-
+    uint32_t GetChunkCount() const override;
     // Replace the current chunk with a new one.
     void Reset(std::shared_ptr<IBufferChunk> chunk);
     // Pointer to the readable region.

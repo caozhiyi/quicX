@@ -1,14 +1,13 @@
+#include "common/log/file_logger.h"
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
-#include "common/log/stdout_logger.h"
-#include "common/log/file_logger.h"
 
-#include "quic/udp/if_sender.h"
+#include "quic/connection/session_cache.h"
+#include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/quicx/quic_client.h"
 #include "quic/quicx/worker_client.h"
 #include "quic/quicx/worker_with_thread.h"
-#include "quic/connection/session_cache.h"
-#include "quic/crypto/tls/tls_ctx_client.h"
+#include "quic/udp/if_sender.h"
 
 namespace quicx {
 
@@ -25,9 +24,9 @@ QuicClient::~QuicClient() {}
 
 bool QuicClient::Init(const QuicClientConfig& config) {
     if (config.config_.log_level_ != LogLevel::kNull) {
-        //std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
+        // std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
         std::shared_ptr<common::FileLogger> file_log = std::make_shared<common::FileLogger>("client.log");
-        //file_log->SetLogger(log);
+        // file_log->SetLogger(log);
         common::LOG_SET(file_log);
         common::LOG_SET_LEVEL(common::LogLevel(config.config_.log_level_));
     }
@@ -70,10 +69,10 @@ bool QuicClient::Init(const QuicClientConfig& config) {
 
     worker_map_.reserve(config.config_.worker_thread_num_);
     if (thread_mode_ == ThreadMode::kSingleThread) {
-        auto worker = std::make_shared<ClientWorker>(config.config_, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
-        master_event_loop_->RunInLoop([worker, this]() {
-            master_event_loop_->AddFixedProcess(std::bind(&ClientWorker::Process, worker));
-        });
+        auto worker = std::make_shared<ClientWorker>(
+            config.config_, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
+        master_event_loop_->RunInLoop(
+            [worker, this]() { master_event_loop_->AddFixedProcess(std::bind(&ClientWorker::Process, worker)); });
 
         worker->SetConnectionIDNotify(master_);
         worker_map_[worker->GetWorkerId()] = worker;
@@ -87,13 +86,13 @@ bool QuicClient::Init(const QuicClientConfig& config) {
                 return false;
             }
 
-            auto worker_ptr =
-                std::make_shared<ClientWorker>(config.config_, tls_ctx, sender, params_, connection_state_cb_, worker_loop);
+            auto worker_ptr = std::make_shared<ClientWorker>(
+                config.config_, tls_ctx, sender, params_, connection_state_cb_, worker_loop);
             worker_ptr->SetConnectionIDNotify(master_);
 
             auto worker = std::make_shared<WorkerWithThread>(worker_loop, worker_ptr);
             worker->Start();
-            
+
             worker_map_[worker->GetWorkerId()] = worker;
             master_->AddWorker(worker);
         }
@@ -116,9 +115,7 @@ void QuicClient::Destroy() {
 }
 
 void QuicClient::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
-    master_event_loop_->RunInLoop([this, timeout_ms, cb]() {
-        master_event_loop_->AddTimer(cb, timeout_ms);
-    });
+    master_event_loop_->RunInLoop([this, timeout_ms, cb]() { master_event_loop_->AddTimer(cb, timeout_ms); });
 }
 
 bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
@@ -129,8 +126,9 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::str
             std::advance(iter, rand() % worker_map_.size());
             auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
             if (master_event_loop_) {
-                master_event_loop_->RunInLoop(
-                    [ip, port, alpn, timeout_ms, worker, resumption_session_der]() { worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der); });
+                master_event_loop_->RunInLoop([ip, port, alpn, timeout_ms, worker, resumption_session_der]() {
+                    worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
+                });
                 return true;
             }
         }
@@ -150,10 +148,9 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::str
         }
         auto event_loop = worker->GetEventLoop();
         if (event_loop) {
-            event_loop->RunInLoop(
-                [ip, port, alpn, timeout_ms, client_worker, resumption_session_der]() { 
-                    client_worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
-                });
+            event_loop->RunInLoop([ip, port, alpn, timeout_ms, client_worker, resumption_session_der]() {
+                client_worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
+            });
             return true;
         }
     }
