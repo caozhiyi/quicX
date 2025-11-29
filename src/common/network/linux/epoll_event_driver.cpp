@@ -13,15 +13,16 @@
 namespace quicx {
 namespace common {
 
-EpollEventDriver::EpollEventDriver() 
-    : epoll_fd_(-1), wakeup_fd_{-1, -1}, max_events_(1024) {
+EpollEventDriver::EpollEventDriver() {
+    wakeup_fd_[0] = -1;
+    wakeup_fd_[1] = -1;
 }
 
 EpollEventDriver::~EpollEventDriver() {
-    if (wakeup_fd_[0] >= 0) {
+    if (wakeup_fd_[0] > 0) {
         common::Close(wakeup_fd_[0]);
     }
-    if (wakeup_fd_[1] >= 0) {
+    if (wakeup_fd_[1] > 0) {
         common::Close(wakeup_fd_[1]);
     }
     if (epoll_fd_ >= 0) {
@@ -223,7 +224,7 @@ EventType EpollEventDriver::ConvertFromEpollEvents(uint32_t epoll_events) const 
 }
 
 void EpollEventDriver::Wakeup() {
-    if (wakeup_fd_[1] >= 0) {
+    if (wakeup_fd_[1] > 0) {
         // Write a byte to wake up the epoll_wait
         char data = 'w';
         common::LOG_DEBUG("EpollEventDriver::Wakeup: writing to wakeup pipe");

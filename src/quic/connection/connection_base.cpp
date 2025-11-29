@@ -189,6 +189,9 @@ uint64_t BaseConnection::GetConnectionIDHash() {
 }
 
 bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation) {
+    // Check if connection should timeout due to excessive PTOs
+    // CheckPTOTimeout();
+
     // RFC 9000: Draining and Closed states MUST NOT send any packets
     if (state_machine_.GetState() == ConnectionStateType::kStateDraining ||
         state_machine_.GetState() == ConnectionStateType::kStateClosed) {
@@ -204,6 +207,9 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
         bool ret = send_manager_.GetSendData(
             buffer, GetCurEncryptionLevel(), connection_crypto_.GetCryptographer(GetCurEncryptionLevel()));
         send_operation = send_manager_.GetSendOperation();
+        // In Closing state, if GetSendData returns true but buffer is empty,
+        // it means there's no CONNECTION_CLOSE frame to send (wait_frame_list_ is empty)
+        // This is valid - we just don't have anything to send right now
         return ret;
     }
 
@@ -358,12 +364,15 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
             // No CONNECTION_CLOSE found, retransmit our CONNECTION_CLOSE
             // But limit retransmission rate to avoid flooding (RFC 9000 Section 10.2)
             // Retransmit at most once per PTO to avoid excessive retransmissions
-            uint64_t current_time = common::UTCTimeMsec();
+            // Use the 'now' parameter passed to OnPackets for time comparison
+            uint64_t current_time = (now > 0) ? now : common::UTCTimeMsec();
             uint32_t pto = send_manager_.GetPTO(0);  // Use 0 for max_ack_delay (conservative)
             if (pto == 0) {
                 pto = 100;  // Fallback to 100ms if PTO not available
             }
 
+            // Always retransmit if last_connection_close_retransmit_time_ is 0 (first retransmit)
+            // or if enough time has passed since last retransmit
             if (last_connection_close_retransmit_time_ == 0 ||
                 (current_time - last_connection_close_retransmit_time_) >= pto) {
                 common::LOG_DEBUG(
@@ -375,8 +384,17 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
                 frame->SetErrorCode(closing_error_code_);
                 frame->SetErrFrameType(closing_trigger_frame_);
                 frame->SetReason(closing_reason_);
-                ToSendFrame(frame);
+                send_manager_.ToSendFrame(frame);
+                // In Closing state, directly trigger active_connection_cb_ to allow sending CONNECTION_CLOSE
+                // ActiveSend() is blocked in Closing state, so we need to call the callback directly
+                if (active_connection_cb_) {
+                    active_connection_cb_(shared_from_this());
+                }
                 last_connection_close_retransmit_time_ = current_time;
+            } else {
+                common::LOG_DEBUG(
+                    "Connection in closing state, skipping retransmit (last retransmit: %llu ms ago, PTO: %u ms)",
+                    current_time - last_connection_close_retransmit_time_, pto);
             }
         }
         return;  // Do not process other frames
@@ -951,6 +969,24 @@ void BaseConnection::OnGracefulCloseTimeout() {
     }
 }
 
+// RFC 9002: Check for idle timeout from excessive PTOs
+void BaseConnection::CheckPTOTimeout() {
+    // Only check in Connected state to avoid closing during handshake
+    if (state_machine_.GetState() != ConnectionStateType::kStateConnected) {
+        return;
+    }
+
+    uint32_t consecutive_ptos = send_manager_.GetRttCalculator().GetConsecutivePTOCount();
+
+    // RFC 9002: Close connection after persistent timeout (~3 PTO cycles)
+    if (consecutive_ptos >= RttCalculator::kMaxConsecutivePTOs) {
+        common::LOG_WARN(
+            "Connection idle timeout: %u consecutive PTOs without ACK, closing connection", consecutive_ptos);
+        // Close with no error (idle timeout is normal termination)
+        InnerConnectionClose(QuicErrorCode::kNoError, 0, "Persistent PTO timeout");
+    }
+}
+
 uint32_t BaseConnection::GetCloseWaitTime() {
     // RFC 9000: Use PTO (Probe Timeout) for connection close timing
     // PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay
@@ -1443,6 +1479,9 @@ void BaseConnection::OnStateToClosing() {
     frame->SetErrFrameType(closing_trigger_frame_);
     frame->SetReason(closing_reason_);
     ToSendFrame(frame);
+    // Record the time when CONNECTION_CLOSE is first sent
+    // RFC 9000 Section 10.2: Retransmit at most once per PTO to avoid flooding
+    // This ensures we don't retransmit too frequently when receiving packets
     last_connection_close_retransmit_time_ = common::UTCTimeMsec();
 
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));

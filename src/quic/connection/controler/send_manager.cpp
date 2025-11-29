@@ -58,7 +58,7 @@ SendOperation SendManager::GetSendOperation() {
         send_control_.CanSend(now, can_send_size);
         if (can_send_size == 0) {
             // RFC 9002: Allow ACK-only packets to bypass congestion control
-            if (!HasOnlyAckFramesToSend()) {
+            if (!IsCongestionControlExempt()) {
                 uint64_t next_time = send_control_.GetNextSendTime(now);
                 if (next_time > now) {
                     uint64_t delay = next_time - now;
@@ -97,9 +97,11 @@ bool SendManager::GetSendData(
 
     // check congestion control
     send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
+    common::LOG_DEBUG(
+        "GetSendData: can_send_size=%llu, IsCongestionControlExempt=%d", can_send_size, IsCongestionControlExempt());
     if (can_send_size == 0) {
         // RFC 9002 Section 2: ACK-only packets are not congestion controlled
-        if (!HasOnlyAckFramesToSend()) {
+        if (!IsCongestionControlExempt()) {
             common::LOG_WARN("congestion control send data limited.");
             return true;
         }
@@ -373,6 +375,8 @@ bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {
         case FrameType::kPadding:
         case FrameType::kNewConnectionId:
         case FrameType::kRetireConnectionId:
+        case FrameType::kConnectionClose:
+        case FrameType::kConnectionCloseApp:
             return true;
         default:
             break;
@@ -618,30 +622,31 @@ void SendManager::SwitchActiveSendStreamSet() {
     common::LOG_DEBUG("SwitchActiveSendStreamSet: switched to set %d", active_send_stream_set_1_is_current_ ? 1 : 2);
 }
 
-// RFC 9002: Check if we only have ACK frames to send (bypass congestion control)
-bool SendManager::HasOnlyAckFramesToSend() const {
-    // Don't check active streams - even if streams are waiting, we should send ACKs first
+// RFC 9002: Check if frames are exempt from congestion control (ACKs, CONNECTION_CLOSE)
+bool SendManager::IsCongestionControlExempt() const {
+    // Don't check active streams - even if streams are waiting, we should send ACKs/Close first
     // Only check the wait_frame_list_ for what's immediately pending
 
     if (wait_frame_list_.empty()) {
-        common::LOG_DEBUG("HasOnlyAckFramesToSend: no pending frames, returning false");
+        common::LOG_DEBUG("IsCongestionControlExempt: no pending frames, returning false");
         return false;
     }
 
-    // Check if all pending frames are ACK frames
+    // Check if all pending frames are exempt (ACKs or CONNECTION_CLOSE)
     size_t total_frames = wait_frame_list_.size();
-    size_t ack_frames = 0;
+    size_t exempt_frames = 0;
     for (const auto& frame : wait_frame_list_) {
         auto frame_type = frame->GetType();
-        if (frame_type == FrameType::kAck || frame_type == FrameType::kAckEcn) {
-            ack_frames++;
+        if (frame_type == FrameType::kAck || frame_type == FrameType::kAckEcn ||
+            frame_type == FrameType::kConnectionClose || frame_type == FrameType::kConnectionCloseApp) {
+            exempt_frames++;
         } else {
-            common::LOG_DEBUG("HasOnlyAckFramesToSend: found non-ACK frame type=%d, returning false", frame_type);
+            common::LOG_DEBUG("IsCongestionControlExempt: found non-exempt frame type=%d, returning false", frame_type);
             return false;
         }
     }
 
-    common::LOG_DEBUG("HasOnlyAckFramesToSend: all %zu pending frames are ACKs, returning true", ack_frames);
+    common::LOG_DEBUG("IsCongestionControlExempt: all %zu pending frames are exempt, returning true", exempt_frames);
     return true;
 }
 

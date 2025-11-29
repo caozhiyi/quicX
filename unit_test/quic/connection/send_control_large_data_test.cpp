@@ -151,13 +151,6 @@ TEST(SendControlLargeDataTest, DoubleSubtractionBug) {
     // CWND allows sending 1000 more bytes than it should.
     // This leads to congestion.
 
-    // So to reproduce, we need to have SOME packets still in flight or send new ones.
-
-    // Let's verify that bytes_in_flight is 0 after ACKing all lost packets.
-    // And verify that we can send reasonable amount.
-
-    std::cout << "Can send bytes: " << can_send_bytes << std::endl;
-
     // With Reno, on loss, CWND reduces to half (or min).
     // If we ACK everything, we are in recovery/slow start again?
     // If bug was present, we might have underflowed if we acked more than inflight?

@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include <memory>
+#include <thread>
+#include <chrono>
 
 #include "common/timer/timer.h"
 #include "quic/packet/packet_decode.h"
@@ -288,12 +290,19 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
             std::vector<std::shared_ptr<IPacket>> packets;
             if (DecodePackets(buffer, packets)) {
                 // Client receives packet while in Closing state
-                client->OnPackets(0, packets);
+                // RFC 9000 Section 10.2: Retransmit CONNECTION_CLOSE at most once per PTO
+                // The implementation checks if PTO time has passed since last retransmit
+                // Since OnStateToClosing sets last_connection_close_retransmit_time_ to current time,
+                // we need to pass a timestamp that is >= PTO time after the initial close
+                // PTO fallback is 100ms if not available (per implementation)
+                uint64_t pto_ms = 100;  // Use PTO fallback value
+                uint64_t time_after_pto = pto_ms + 10;  // Add small buffer to ensure we're past PTO
+                client->OnPackets(time_after_pto, packets);
                 
                 // Verify client still in Closing state (should not change to Draining on data packets)
                 EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
                 
-                // Client should send a response (CONNECTION_CLOSE retransmission)
+                // Client should send a response (CONNECTION_CLOSE retransmission) after PTO time
                 buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
                 client->GenerateSendData(buffer, send_operation);
                 EXPECT_GT(buffer->GetDataLength(), 0);

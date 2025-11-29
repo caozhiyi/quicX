@@ -14,7 +14,7 @@ public:
     virtual ~ClientWorker();
 
     virtual void Connect(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
-        const std::string& resumption_session_der = "");
+        const std::string& resumption_session_der = "", const std::string& server_name = "");
 
 private:
     virtual bool InnerHandlePacket(PacketParseResult& packet_info) override;

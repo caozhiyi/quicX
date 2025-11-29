@@ -17,7 +17,7 @@ ClientWorker::ClientWorker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx
 ClientWorker::~ClientWorker() {}
 
 void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
-    const std::string& resumption_session_der) {
+    const std::string& resumption_session_der, const std::string& server_name) {
     auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_,
         std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
@@ -34,9 +34,9 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     connecting_set_.insert(conn);
 
     if (resumption_session_der.empty()) {
-        conn->Dial(common::Address(ip, port), alpn, params_);
+        conn->Dial(common::Address(ip, port), alpn, params_, server_name);
     } else {
-        conn->Dial(common::Address(ip, port), alpn, resumption_session_der, params_);
+        conn->Dial(common::Address(ip, port), alpn, resumption_session_der, params_, server_name);
     }
 
     event_loop_->AddTimer([conn, this]() { HandleConnectionTimeout(conn); }, timeout_ms);

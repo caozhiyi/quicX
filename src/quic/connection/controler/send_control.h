@@ -44,6 +44,7 @@ public:
 
     uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
     uint32_t GetPTO(uint32_t max_ack_delay) { return rtt_calculator_.GetPT0Interval(max_ack_delay); }
+    RttCalculator& GetRttCalculator() { return rtt_calculator_; }
     void OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len);
     void OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len,
         const std::vector<StreamDataInfo>& stream_data);

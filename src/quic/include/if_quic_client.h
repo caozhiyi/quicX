@@ -90,7 +90,7 @@ public:
      * @return true if the connect attempt was dispatched, false otherwise.
      */
     virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der = "") = 0;
+        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der = "", const std::string& server_name = "") = 0;
 
     /**
      * @brief Register a callback that observes connection-level state changes.

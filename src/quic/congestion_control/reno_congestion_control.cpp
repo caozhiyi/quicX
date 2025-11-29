@@ -132,6 +132,9 @@ void RenoCongestionControl::EnterRecovery(uint64_t now) {
 
     ssthresh_bytes_ = static_cast<uint64_t>(cwnd_bytes_ * cfg_.beta);
     cwnd_bytes_ = std::max<uint64_t>(cfg_.min_cwnd_bytes, ssthresh_bytes_);
+    if (cwnd_bytes_ < bytes_in_flight_) {
+        cwnd_bytes_ = bytes_in_flight_;
+    }
     in_recovery_ = true;
     recovery_start_time_ = now;
     in_slow_start_ = false;

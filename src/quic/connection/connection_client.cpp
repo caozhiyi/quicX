@@ -35,13 +35,21 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
 ClientConnection::~ClientConnection() {}
 
 bool ClientConnection::Dial(
-    const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config) {
+    const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config, const std::string& server_name) {
     auto tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
     // set application protocol
     uint8_t* alpn_data = (uint8_t*)alpn.c_str();
     if (!tls_conn->AddAlpn(alpn_data, alpn.size())) {
         common::LOG_ERROR("add alpn failed. alpn:%s", alpn.c_str());
         return false;
+    }
+
+    // set server name (SNI) for TLS handshake
+    if (!server_name.empty()) {
+        if (!tls_conn->SetServerName(server_name)) {
+            common::LOG_ERROR("set server name failed. server_name:%s", server_name.c_str());
+            return false;
+        }
     }
 
     SetPeerAddress(std::move(addr));
@@ -68,13 +76,21 @@ bool ClientConnection::Dial(
 }
 
 bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn,
-    const std::string& resumption_session_der, const QuicTransportParams& tp_config) {
+    const std::string& resumption_session_der, const QuicTransportParams& tp_config, const std::string& server_name) {
     auto tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
     // set application protocol
     uint8_t* alpn_data = (uint8_t*)alpn.c_str();
     if (!tls_conn->AddAlpn(alpn_data, alpn.size())) {
         common::LOG_ERROR("add alpn failed. alpn:%s", alpn.c_str());
         return false;
+    }
+
+    // set server name (SNI) for TLS handshake
+    if (!server_name.empty()) {
+        if (!tls_conn->SetServerName(server_name)) {
+            common::LOG_ERROR("set server name failed. server_name:%s", server_name.c_str());
+            return false;
+        }
     }
 
     // set transport param. TODO define tp length

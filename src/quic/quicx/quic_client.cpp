@@ -119,15 +119,15 @@ void QuicClient::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
 }
 
 bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
-    const std::string& resumption_session_der) {
+    const std::string& resumption_session_der, const std::string& server_name) {
     if (thread_mode_ == ThreadMode::kSingleThread) {
         if (!worker_map_.empty()) {
             auto iter = worker_map_.begin();
             std::advance(iter, rand() % worker_map_.size());
             auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
             if (master_event_loop_) {
-                master_event_loop_->RunInLoop([ip, port, alpn, timeout_ms, worker, resumption_session_der]() {
-                    worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
+                master_event_loop_->RunInLoop([ip, port, alpn, timeout_ms, worker, resumption_session_der, server_name]() {
+                    worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der, server_name);
                 });
                 return true;
             }
@@ -148,8 +148,8 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::str
         }
         auto event_loop = worker->GetEventLoop();
         if (event_loop) {
-            event_loop->RunInLoop([ip, port, alpn, timeout_ms, client_worker, resumption_session_der]() {
-                client_worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der);
+            event_loop->RunInLoop([ip, port, alpn, timeout_ms, client_worker, resumption_session_der, server_name]() {
+                client_worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der, server_name);
             });
             return true;
         }

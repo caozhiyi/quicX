@@ -5,6 +5,7 @@
 #include <string>
 #include <variant>
 #include <unordered_map>
+#include <queue>
 
 #include "common/http/url.h"
 #include "http3/include/if_client.h"
@@ -78,7 +79,9 @@ private:
             return nullptr;
         }
     };
-    std::unordered_map<std::string, WaitRequestContext> wait_request_map_;
+    // Map from address string to queue of waiting requests
+    // This allows multiple requests to wait for the same connection to be established
+    std::unordered_map<std::string, std::queue<WaitRequestContext>> wait_request_map_;
 };
 
 }
