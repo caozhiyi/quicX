@@ -95,5 +95,8 @@ uint32_t BufferDecodeWrapper::GetDataLength() const {
     return buffer_->GetReadableSpan().GetEnd() - pos_;
 }
 
+uint32_t BufferDecodeWrapper::GetReadLength() const {
+    return pos_ - start_;
+}
 }  // namespace common
 }  // namespace quicx

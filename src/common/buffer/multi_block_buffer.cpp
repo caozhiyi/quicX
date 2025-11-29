@@ -541,6 +541,9 @@ std::shared_ptr<IBufferChunk> MultiBlockBuffer::GetChunk() const {
     return nullptr;
 }
 
+uint32_t MultiBlockBuffer::GetChunkCount() const {
+    return chunks_.size();
+}
 uint32_t MultiBlockBuffer::Write(std::shared_ptr<IBufferRead> buffer) {
     if (!buffer) {
         return 0;

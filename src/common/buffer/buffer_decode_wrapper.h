@@ -1,11 +1,13 @@
 #ifndef COMMON_BUFFER_BUFFER_DECODE_WRAPPER
 #define COMMON_BUFFER_BUFFER_DECODE_WRAPPER
 
-#include <memory>
+#include <sys/types.h>
 #include <cstdint>
-#include "common/decode/decode.h"
-#include "common/buffer/if_buffer.h"
+#include <memory>
 #include "common/buffer/buffer_span.h"
+#include "common/buffer/if_buffer.h"
+#include "common/decode/decode.h"
+#include "if_buffer.h"
 
 namespace quicx {
 namespace common {
@@ -41,6 +43,7 @@ public:
 
     common::BufferSpan GetDataSpan() const;
     uint32_t GetDataLength() const;
+    uint32_t GetReadLength() const;
 
 private:
     std::shared_ptr<IBuffer> buffer_;

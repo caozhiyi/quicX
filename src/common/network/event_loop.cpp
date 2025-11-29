@@ -1,9 +1,9 @@
 #include <vector>
 
 #include "common/log/log.h"
-#include "common/util/time.h"
-#include "common/timer/timer.h"
 #include "common/network/event_loop.h"
+#include "common/timer/timer.h"
+#include "common/util/time.h"
 
 namespace quicx {
 namespace common {
@@ -57,6 +57,13 @@ int EventLoop::Wait() {
 
     int32_t next_ms = timer_->MinTime(now);
     int timeout_ms = next_ms >= 0 ? static_cast<int>(next_ms) : 1000;
+
+    // Check if same-thread wakeup requested (e.g., from AddTimer/PostTask)
+    // If so, use timeout=0 to return immediately instead of blocking
+    if (need_immediate_wakeup_) {
+        timeout_ms = 0;
+        need_immediate_wakeup_ = false;  // Clear flag
+    }
 
     int n = driver_->Wait(events_, timeout_ms);
     if (n < 0) {
@@ -207,16 +214,32 @@ bool EventLoop::RemoveTimer(TimerTask& task) {
 }
 
 void EventLoop::PostTask(std::function<void()> fn) {
+    bool need_wakeup = false;
     {
         std::lock_guard<std::mutex> lk(tasks_mu_);
+        // Only need to wakeup if the queue was empty before adding this task
+        // If queue already had tasks, the event loop  will drain them in current or next iteration
+        need_wakeup = tasks_.empty();
         tasks_.push_back(std::move(fn));
     }
-    Wakeup();
+    // Only wakeup if:
+    // 1. Queue was empty (so event loop might be waiting)
+    // 2. We're not already in the loop thread (would deadlock on wakeup)
+    if (need_wakeup && !IsInLoopThread()) {
+        Wakeup();
+    }
 }
 
 void EventLoop::Wakeup() {
-    if (driver_) {
-        driver_->Wakeup();
+    if (IsInLoopThread()) {
+        // Same thread: just set flag to make next Wait() return immediately
+        // This avoids writing to wakeup pipe 26K+ times during packet loss
+        need_immediate_wakeup_ = true;
+    } else {
+        // Cross-thread: must write pipe to interrupt epoll/kqueue Wait()
+        if (driver_) {
+            driver_->Wakeup();
+        }
     }
 }
 
