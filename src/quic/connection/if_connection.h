@@ -41,6 +41,10 @@ public:
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) = 0;
     // set the callback function to handle the stream state change.
     virtual void SetStreamStateCallBack(stream_state_callback cb) { stream_state_cb_ = cb; }
+    // add a timer, implementation in BaseConnection
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) = 0;
+    // remove a timer, implementation in BaseConnection
+    virtual void RemoveTimer(uint64_t timer_id) = 0;
 
     //*************** inner interface ***************//
     virtual void AddTransportParam(const QuicTransportParams& tp_config) = 0;

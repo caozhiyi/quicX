@@ -1,0 +1,59 @@
+version: '3.8'
+
+# Docker Compose for local interop testing
+# Run: docker-compose -f interop/docker-compose.yml up
+
+services:
+  # quicX Server
+  server:
+    build:
+      context: ..
+      dockerfile: interop/Dockerfile
+    image: quicx-interop:latest
+    container_name: quicx-server
+    environment:
+      - ROLE=server
+      - TESTCASE=handshake
+      - PORT=443
+      - WWW=/www
+      - QLOGDIR=/logs
+      - SSLKEYLOGFILE=/logs/keys.log
+    ports:
+      - "443:443/udp"
+    volumes:
+      - ./logs/server:/logs
+      - ./www:/www
+    networks:
+      - quic-interop
+    restart: unless-stopped
+
+  # quicX Client
+  client:
+    build:
+      context: ..
+      dockerfile: interop/Dockerfile
+    image: quicx-interop:latest
+    container_name: quicx-client
+    environment:
+      - ROLE=client
+      - TESTCASE=handshake
+      - SERVER=server
+      - PORT=443
+      - REQUESTS=https://server:443/1MB.bin https://server:443/10MB.bin
+      - DOWNLOADS=/downloads
+      - QLOGDIR=/logs
+      - SSLKEYLOGFILE=/logs/keys.log
+    volumes:
+      - ./logs/client:/logs
+      - ./downloads:/downloads
+    networks:
+      - quic-interop
+    depends_on:
+      - server
+    # Don't auto-start client, run manually
+    profiles:
+      - manual
+
+networks:
+  quic-interop:
+    driver: bridge

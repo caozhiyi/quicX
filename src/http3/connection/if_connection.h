@@ -64,6 +64,12 @@ protected:
     // Schedule stream removal - moves stream to holding area to delay destruction
     void ScheduleStreamRemoval(uint64_t stream_id);
 
+private:
+    // Start periodic cleanup timer for destroyed streams
+    void StartCleanupTimer();
+    // Clean up destroyed streams (called by timer)
+    void CleanupDestroyedStreams();
+
 protected:
     // indicate the unique id of the connection
     std::string unique_id_;
@@ -82,6 +88,9 @@ protected:
     // Temporary holding area for completed streams to delay destruction
     // This prevents use-after-free when error_handler_ is called from within stream callbacks
     std::vector<std::shared_ptr<IStream>> streams_to_destroy_;
+
+    // Timer ID for periodic cleanup of destroyed streams
+    uint64_t cleanup_timer_id_;
 };
 
 }  // namespace http3

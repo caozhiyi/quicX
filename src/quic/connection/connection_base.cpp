@@ -201,6 +201,22 @@ bool BaseConnection::MakeStreamAsync(StreamDirection type, stream_creation_callb
     return true;  // Successfully queued
 }
 
+uint64_t BaseConnection::AddTimer(timer_callback callback, uint32_t timeout_ms) {
+    if (!event_loop_) {
+        common::LOG_ERROR("BaseConnection::AddTimer: event_loop_ is null");
+        return 0;
+    }
+    return event_loop_->AddTimer(callback, timeout_ms);
+}
+
+void BaseConnection::RemoveTimer(uint64_t timer_id) {
+    if (!event_loop_) {
+        common::LOG_ERROR("BaseConnection::RemoveTimer: event_loop_ is null");
+        return;
+    }
+    event_loop_->RemoveTimer(timer_id);
+}
+
 void BaseConnection::RetryPendingStreamRequests() {
     std::lock_guard<std::mutex> lock(pending_streams_mutex_);
 
@@ -700,7 +716,11 @@ bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     uint64_t stream_id = stream_frame->GetStreamID();
     auto stream = streams_map_.find(stream_id);
     if (stream != streams_map_.end()) {
-        flow_control_.AddRemoteSendData(stream->second->OnFrame(frame));
+        // CRITICAL: Hold a local shared_ptr to prevent use-after-free
+        // If the callback calls error_handler_ which removes the stream,
+        // this local copy keeps the object alive until we return
+        auto stream_ptr = stream->second;
+        flow_control_.AddRemoteSendData(stream_ptr->OnFrame(frame));
         return true;
     }
 

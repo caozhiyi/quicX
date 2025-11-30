@@ -1,0 +1,18 @@
+{
+  "name": "quicX",
+  "image": "quicx-interop:latest",
+  "url": "https://github.com/yourusername/quicX",
+  "description": "A high-performance QUIC and HTTP/3 implementation in C++",
+  "role": "both",
+  "test_cases": [
+    "handshake",
+    "transfer",
+    "retry",
+    "resumption",
+    "zerortt",
+    "http3",
+    "multiconnect",
+    "versionnegotiation",
+    "chacha20"
+  ]
+}

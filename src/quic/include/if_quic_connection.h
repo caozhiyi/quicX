@@ -77,6 +77,22 @@ public:
      * @param cb Callback invoked when streams are created, closed or error out.
      */
     virtual void SetStreamStateCallBack(stream_state_callback cb) = 0;
+
+    /**
+     * @brief Schedule a timer callback to execute after a delay.
+     *
+     * @param callback Function to invoke when timer expires.
+     * @param timeout_ms Delay in milliseconds before callback is invoked.
+     * @return Timer ID that can be used to cancel the timer.
+     */
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) = 0;
+
+    /**
+     * @brief Cancel a previously scheduled timer.
+     *
+     * @param timer_id Timer ID returned by AddTimer.
+     */
+    virtual void RemoveTimer(uint64_t timer_id) = 0;
 };
 
 }  // namespace quicx

@@ -12,7 +12,7 @@ namespace quic {
 class MockQuicConnection:
     public IQuicConnection {
 public:
-    MockQuicConnection(): user_data_(nullptr), stream_state_cb_(nullptr) {}
+    MockQuicConnection(): user_data_(nullptr), stream_state_cb_(nullptr), next_timer_id_(1) {}
 
     void SetPeer(std::shared_ptr<MockQuicConnection> peer) { peer_ = peer; }
 
@@ -41,11 +41,18 @@ public:
     // return true and fill out if available; only meaningful on client connections
     virtual bool ExportResumptionSession(std::string& out_session_der);
 
+    // Timer methods
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms);
+    virtual void RemoveTimer(uint64_t timer_id);
+
 private:
     void* user_data_;
     stream_state_callback stream_state_cb_;
 
     std::weak_ptr<MockQuicConnection> peer_;
+    
+    // Timer management
+    uint64_t next_timer_id_;
 };
 
 }
