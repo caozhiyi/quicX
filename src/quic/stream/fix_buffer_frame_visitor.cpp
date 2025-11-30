@@ -1,11 +1,12 @@
+#include "common/buffer/buffer_chunk.h"
+#include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
+
 #include "quic/connection/util.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/crypto_frame.h"
 #include "quic/frame/stream_frame.h"
 #include "quic/quicx/global_resource.h"
-#include "common/buffer/buffer_chunk.h"
-#include "common/buffer/single_block_buffer.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
 
 namespace quicx {
@@ -26,9 +27,7 @@ FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t limit_size):
     buffer_ = std::make_shared<common::SingleBlockBuffer>(chunk);
 }
 
-FixBufferFrameVisitor::~FixBufferFrameVisitor() {
-
-}
+FixBufferFrameVisitor::~FixBufferFrameVisitor() {}
 
 bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
     // Reset error state before processing
@@ -80,7 +79,7 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
         // Encoding failed - determine the reason
         if (required_size > free_space) {
             last_error_ = FrameEncodeError::kInsufficientSpace;
-            common::LOG_ERROR("failed to encode frame due to insufficient space. type:%s, required:%u, available:%u",
+            common::LOG_DEBUG("failed to encode frame due to insufficient space. type:%s, required:%u, available:%u",
                 FrameType2String(frame->GetType()).c_str(), required_size, free_space);
         } else {
             last_error_ = FrameEncodeError::kOtherError;
@@ -88,7 +87,8 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
         }
         return false;
     }
-    common::LOG_DEBUG("encoded frame. type:%s, length:%u", FrameType2String(frame->GetType()).c_str(), buffer_->GetDataLength());
+    common::LOG_DEBUG(
+        "encoded frame. type:%s, length:%u", FrameType2String(frame->GetType()).c_str(), buffer_->GetDataLength());
     return true;
 }
 
@@ -101,5 +101,5 @@ std::vector<StreamDataInfo> FixBufferFrameVisitor::GetStreamDataInfo() const {
     return result;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

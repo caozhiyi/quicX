@@ -31,6 +31,9 @@ public:
     // create a new stream, only supported send stream and bidirection stream.
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type);
 
+    // create a new stream asynchronously, callback is invoked when stream is ready
+    virtual bool MakeStreamAsync(StreamDirection type, stream_creation_callback callback);
+
     // set the callback function to handle the stream state change.
     virtual void SetStreamStateCallBack(stream_state_callback cb);
 

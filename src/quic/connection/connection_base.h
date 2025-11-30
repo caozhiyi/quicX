@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <queue>
 #include <unordered_map>
 #include <vector>
 
@@ -45,6 +47,7 @@ public:
     void SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> cb);
     virtual void Reset(uint32_t error_code) override;
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) override;
+    virtual bool MakeStreamAsync(StreamDirection type, stream_creation_callback callback) override;
 
     // *************** inner interface ***************//
     // set transport param
@@ -136,6 +139,9 @@ protected:
     // Stream data ACK notification callback
     void OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin);
 
+    // Retry pending stream creation requests after receiving MAX_STREAMS
+    void RetryPendingStreamRequests();
+
     void AddConnectionId(ConnectionID& id);
     void RetireConnectionId(ConnectionID& id);
 
@@ -224,6 +230,14 @@ protected:
 
     // EventLoop reference for safe cleanup in destructor
     std::shared_ptr<common::IEventLoop> event_loop_;
+
+    // Pending stream creation requests (blocked due to stream limit)
+    struct PendingStreamRequest {
+        StreamDirection type;
+        stream_creation_callback callback;
+    };
+    std::queue<PendingStreamRequest> pending_stream_requests_;
+    std::mutex pending_streams_mutex_;
 
     // Immediate send callback for bypassing normal send flow (e.g., immediate ACK)
     ImmediateSendCallback immediate_send_cb_;

@@ -141,29 +141,50 @@ bool FlowControl::CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& s
 }
 
 bool FlowControl::CheckRemoteBidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame) {
-    if (remote_bidirectional_stream_limit_ < remote_max_bidirectional_stream_id_ >> 2) {
+    uint64_t current_stream_count = remote_max_bidirectional_stream_id_ >> 2;
+
+    if (remote_bidirectional_stream_limit_ < current_stream_count) {
         return false;
     }
 
-    if (remote_bidirectional_stream_limit_ - (remote_max_bidirectional_stream_id_ >> 2) < 4) {
+    uint64_t remaining = remote_bidirectional_stream_limit_ - current_stream_count;
+
+    // Proactive stream limit increase: when remaining streams < threshold, expand capacity
+    // This reduces latency by avoiding STREAMS_BLOCKED -> MAX_STREAMS round trip
+    if (remaining < 4) {
+        uint64_t old_limit = remote_bidirectional_stream_limit_;
         remote_bidirectional_stream_limit_ += 8;
         auto frame = std::make_shared<MaxStreamsFrame>(FrameType::kMaxStreamsBidirectional);
         frame->SetMaximumStreams(remote_bidirectional_stream_limit_);
         send_frame = frame;
+
+        common::LOG_DEBUG(
+            "FlowControl: Proactive bidirectional stream limit increase: %llu -> %llu (remaining was %llu)", old_limit,
+            remote_bidirectional_stream_limit_, remaining);
     }
     return true;
 }
 
 bool FlowControl::CheckRemoteUnidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame) {
-    if (remote_unidirectional_stream_limit_ < remote_max_unidirectional_stream_id_ >> 2) {
+    uint64_t current_stream_count = remote_max_unidirectional_stream_id_ >> 2;
+
+    if (remote_unidirectional_stream_limit_ < current_stream_count) {
         return false;
     }
 
-    if (remote_unidirectional_stream_limit_ - (remote_max_unidirectional_stream_id_ >> 2) < 4) {
+    uint64_t remaining = remote_unidirectional_stream_limit_ - current_stream_count;
+
+    // Proactive stream limit increase: when remaining streams < threshold, expand capacity
+    if (remaining < 4) {
+        uint64_t old_limit = remote_unidirectional_stream_limit_;
         remote_unidirectional_stream_limit_ += 8;
         auto frame = std::make_shared<MaxStreamsFrame>(FrameType::kMaxStreamsUnidirectional);
         frame->SetMaximumStreams(remote_unidirectional_stream_limit_);
         send_frame = frame;
+
+        common::LOG_DEBUG(
+            "FlowControl: Proactive unidirectional stream limit increase: %llu -> %llu (remaining was %llu)", old_limit,
+            remote_unidirectional_stream_limit_, remaining);
     }
     return true;
 }

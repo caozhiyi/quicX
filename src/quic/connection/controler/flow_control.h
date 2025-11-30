@@ -1,9 +1,9 @@
 #ifndef QUIC_CONNECTION_CONTROLER_FLOW_CONTROL
 #define QUIC_CONNECTION_CONTROLER_FLOW_CONTROL
 
+#include "quic/connection/transport_param.h"
 #include "quic/frame/if_frame.h"
 #include "quic/stream/stream_id_generator.h"
-#include "quic/connection/transport_param.h"
 
 namespace quicx {
 namespace quic {
@@ -28,7 +28,7 @@ public:
     // send_frame is the stream data block frame to send
     bool CheckLocalSendDataLimit(uint64_t& can_send_size, std::shared_ptr<IFrame>& send_frame);
 
-    // check remote send data 
+    // check remote send data
     // add remote send data offset when receive stream data frame
     void AddRemoteSendData(uint32_t size);
     // check if remote send data limit, return true if can send data
@@ -37,7 +37,7 @@ public:
 
     // check count of local stream limit
     // add local bidirection stream limit when receive max streams frame
-    void AddLocalBidirectionStreamLimit(uint64_t limit);    
+    void AddLocalBidirectionStreamLimit(uint64_t limit);
     // check local bidirection stream limit, return true if not limit
     // send_frame is the stream block frame to send
     bool CheckLocalBidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame);
@@ -47,9 +47,14 @@ public:
     // send_frame is the stream block frame to send
     bool CheckLocalUnidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame);
 
+    // Get current stream limits (for retry queue size validation)
+    uint64_t GetLocalBidirectionStreamLimit() const { return local_bidirectional_stream_limit_; }
+    uint64_t GetLocalUnidirectionStreamLimit() const { return local_unidirectional_stream_limit_; }
+
     // check remote stream limit
     // send_frame is the stream block frame to send
-    bool CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& send_frame) ;
+    bool CheckRemoteStreamLimit(uint64_t id, std::shared_ptr<IFrame>& send_frame);
+
 private:
     bool CheckRemoteBidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame);
     bool CheckRemoteUnidirectionStreamLimit(std::shared_ptr<IFrame>& send_frame);
@@ -65,7 +70,7 @@ private:
     uint64_t local_bidirectional_stream_limit_;
     uint64_t local_max_unidirectional_stream_id_;
     uint64_t local_unidirectional_stream_limit_;
-    
+
     uint64_t remote_max_bidirectional_stream_id_;
     uint64_t remote_bidirectional_stream_limit_;
     uint64_t remote_max_unidirectional_stream_id_;
@@ -74,7 +79,7 @@ private:
     StreamIDGenerator id_generator_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

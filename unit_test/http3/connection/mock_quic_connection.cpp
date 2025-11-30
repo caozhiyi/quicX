@@ -26,6 +26,16 @@ std::shared_ptr<IQuicStream> MockQuicConnection::MakeStream(StreamDirection type
     return stream1;
 }
 
+bool MockQuicConnection::MakeStreamAsync(StreamDirection type, stream_creation_callback callback) {
+    // For mock, immediately create stream and invoke callback
+    auto stream = MakeStream(type);
+    if (stream && callback) {
+        callback(stream);
+        return true;
+    }
+    return false;
+}
+
 void MockQuicConnection::SetStreamStateCallBack(stream_state_callback cb) {
     stream_state_cb_ = cb;
 }
