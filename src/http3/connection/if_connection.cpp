@@ -9,12 +9,16 @@ IConnection::IConnection(const std::string& unique_id, const std::shared_ptr<IQu
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler):
     unique_id_(unique_id),
     error_handler_(error_handler),
-    quic_connection_(quic_connection) {
+    quic_connection_(quic_connection),
+    cleanup_timer_id_(0) {
     quic_connection_->SetStreamStateCallBack(
         std::bind(&IConnection::HandleStream, this, std::placeholders::_1, std::placeholders::_2));
 
     qpack_encoder_ = std::make_shared<QpackEncoder>();
     blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
+
+    // Start periodic cleanup timer for completed streams (runs every 100ms)
+    StartCleanupTimer();
 }
 
 IConnection::~IConnection() {
@@ -58,6 +62,29 @@ const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Ht
     return settings_map;
 }
 
+void IConnection::StartCleanupTimer() {
+    if (!quic_connection_) {
+        return;
+    }
+
+    // Create a periodic timer that runs every 100ms to cleanup completed streams
+    cleanup_timer_id_ = quic_connection_->AddTimer(
+        [this]() {
+            CleanupDestroyedStreams();
+            // Re-schedule next cleanup
+            StartCleanupTimer();
+        },
+        100);  // 100ms
+}
+
+void IConnection::CleanupDestroyedStreams() {
+    if (!streams_to_destroy_.empty()) {
+        common::LOG_DEBUG("IConnection::CleanupDestroyedStreams: cleaning up %zu completed streams",
+            streams_to_destroy_.size());
+        streams_to_destroy_.clear();
+    }
+}
+
 void IConnection::ScheduleStreamRemoval(uint64_t stream_id) {
     // Move stream from active map to holding area
     // This removes it from streams_ (so it won't count against limits)
@@ -66,22 +93,11 @@ void IConnection::ScheduleStreamRemoval(uint64_t stream_id) {
     if (iter != streams_.end()) {
         common::LOG_DEBUG("IConnection::ScheduleStreamRemoval: moving stream %llu to holding area", stream_id);
 
-        // Move to holding area - this keeps the object alive
+        // Move to holding area - this keeps the object alive until next cleanup cycle
         streams_to_destroy_.push_back(iter->second);
 
-        // Remove from active streams map
+        // Remove from active streams map immediately
         streams_.erase(iter);
-
-        // Limit holding area size to prevent memory bloat
-        // Clear old streams periodically (keep last 100)
-        if (streams_to_destroy_.size() > 100) {
-            common::LOG_DEBUG("IConnection::ScheduleStreamRemoval: clearing holding area, size=%zu",
-                streams_to_destroy_.size());
-            // Remove oldest half
-            streams_to_destroy_.erase(
-                streams_to_destroy_.begin(),
-                streams_to_destroy_.begin() + 50);
-        }
     }
 }
 

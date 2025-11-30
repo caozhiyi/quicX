@@ -48,6 +48,8 @@ public:
     virtual void Reset(uint32_t error_code) override;
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) override;
     virtual bool MakeStreamAsync(StreamDirection type, stream_creation_callback callback) override;
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) override;
+    virtual void RemoveTimer(uint64_t timer_id) override;
 
     // *************** inner interface ***************//
     // set transport param
