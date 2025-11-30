@@ -274,8 +274,9 @@ void ClientConnection::HandleGoaway(uint64_t id) {
 
 void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
     if (error_code == 0) {
-        // stream is closed by peer
-        streams_.erase(stream_id);
+        // Stream completed normally - schedule removal to avoid use-after-free
+        // The stream object may still be in use on the call stack
+        ScheduleStreamRemoval(stream_id);
         return;
     }
 

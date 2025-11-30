@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 #include "http3/include/type.h"
 #include "http3/qpack/blocked_registry.h"
@@ -60,6 +61,10 @@ protected:
     bool SettingsReceived() const { return settings_received_; }
 
 protected:
+    // Schedule stream removal - moves stream to holding area to delay destruction
+    void ScheduleStreamRemoval(uint64_t stream_id);
+
+protected:
     // indicate the unique id of the connection
     std::string unique_id_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
@@ -73,6 +78,10 @@ protected:
 
     // RFC 9114 Section 4.1: Track if peer SETTINGS frame has been received
     bool settings_received_ = false;
+
+    // Temporary holding area for completed streams to delay destruction
+    // This prevents use-after-free when error_handler_ is called from within stream callbacks
+    std::vector<std::shared_ptr<IStream>> streams_to_destroy_;
 };
 
 }  // namespace http3

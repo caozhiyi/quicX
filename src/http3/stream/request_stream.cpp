@@ -84,10 +84,18 @@ void RequestStream::HandleHeaders() {
     if (async_handler_) {
         async_handler_->OnHeaders(response_);
 
+        // For responses with no body, signal completion immediately
+        // OnBodyChunk will be called with (nullptr, 0, true) when FIN arrives
+        // but if there's no body at all, we rely on the FIN handler in HandleData
+
     } else if (response_handler_) {
         // Complete mode: only call handler if no body expected
         if (!has_content_length || body_length_ == 0) {
             response_handler_(response_, 0);
+
+            // CRITICAL: Notify connection that stream is complete and can be removed
+            // For responses with no body, this is the only place to signal completion
+            error_handler_(GetStreamID(), 0);
         }
         // If body_length_ > 0, wait for HandleData to receive and process the body
     }
@@ -131,6 +139,12 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
         if (data_length > 0) {
             data->MoveReadPt(data_length);
         }
+
+        // CRITICAL: Notify connection that stream is complete and can be removed
+        // error_code=0 means normal completion (not an actual error)
+        if (is_last) {
+            error_handler_(GetStreamID(), 0);
+        }
         return;
     }
 
@@ -147,6 +161,12 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
             data->MoveReadPt(data_length);
         }
         response_handler_(response_, 0);
+
+        // CRITICAL: Notify connection that stream is complete and can be removed
+        // error_code=0 means normal completion (not an actual error)
+        if (is_last) {
+            error_handler_(GetStreamID(), 0);
+        }
     }
 }
 

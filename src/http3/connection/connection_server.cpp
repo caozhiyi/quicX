@@ -352,8 +352,14 @@ void ServerConnection::HandleError(uint64_t stream_id, uint32_t error) {
             }
         }
 
-        // Remove from streams_ map after cleanup
-        streams_.erase(iter);
+        if (error == 0) {
+            // Stream completed normally - schedule removal to avoid use-after-free
+            // The stream object may still be in use on the call stack
+            ScheduleStreamRemoval(stream_id);
+        } else {
+            // Error case - remove immediately
+            streams_.erase(iter);
+        }
     }
 
     // something wrong, notify error handler

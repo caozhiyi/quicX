@@ -141,6 +141,10 @@ void ResponseStream::HandleHeaders() {
         HandleHttp(route_config_.GetCompleteHandler());
         HandleResponse();
         common::LOG_DEBUG("HandleHeaders: complete handler called and response sent");
+
+        // CRITICAL: Notify connection that stream is complete and can be removed
+        // For requests with no body, this is the only place to signal completion
+        error_handler_(GetStreamID(), 0);
         return;
     }
     common::LOG_DEBUG("HandleHeaders: complete handler called");
@@ -195,6 +199,10 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
         // all data received, send response and handle push
         if (is_last) {
             HandleResponse();
+
+            // CRITICAL: Notify connection that stream is complete and can be removed
+            // error_code=0 means normal completion (not an actual error)
+            error_handler_(GetStreamID(), 0);
         }
         return;
     }
@@ -221,6 +229,12 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
         common::LOG_DEBUG("ResponseStream::HandleData: calling handler and sending response");
         HandleHttp(route_config_.GetCompleteHandler());
         HandleResponse();
+
+        // CRITICAL: Notify connection that stream is complete and can be removed
+        // error_code=0 means normal completion (not an actual error)
+        if (is_last) {
+            error_handler_(GetStreamID(), 0);
+        }
         return;
     }
 }

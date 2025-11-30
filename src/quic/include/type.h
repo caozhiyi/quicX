@@ -61,8 +61,8 @@ struct QuicTransportParams {
     uint32_t initial_max_stream_data_bidi_remote_ = 1 * 1024 * 1024;  // 1MB per stream (remote->local)
     uint32_t initial_max_stream_data_uni_ = 1 * 1024 * 1024;          // 1MB for unidirectional streams
 
-    uint32_t initial_max_streams_bidi_ = 100;  // Increased from 20 to support concurrent requests
-    uint32_t initial_max_streams_uni_ = 100;   // Increased from 20 for consistency
+    uint32_t initial_max_streams_bidi_ = 200;  // default value
+    uint32_t initial_max_streams_uni_ = 200;   // default value
     uint32_t ack_delay_exponent_ms_ = 3;
     uint32_t max_ack_delay_ms_ = 25;
     bool disable_active_migration_ = false;
