@@ -2,13 +2,12 @@
 #define QUIC_FRAME_STREAMS_BLOCKED_FRAME
 
 #include <cstdint>
-#include "quic/frame/if_stream_frame.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
 
-class StreamsBlockedFrame:
-    public IFrame {
+class StreamsBlockedFrame: public IFrame {
 public:
     StreamsBlockedFrame(uint16_t frame_type);
     ~StreamsBlockedFrame();
@@ -24,7 +23,7 @@ private:
     uint32_t maximum_streams_;  // the stream limit at the time the frame was sent.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

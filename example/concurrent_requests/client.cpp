@@ -314,7 +314,8 @@ int main(int argc, char* argv[]) {
 
     quicx::Http3Config config;
     config.thread_num_ = 4;
-    config.log_level_ = quicx::LogLevel::kError;
+    config.log_level_ = quicx::LogLevel::kDebug;
+    config.connection_timeout_ms_ = 0;  // 0 = no timeout, rely on idle timeout (recommended for long-running tests)
     client->Init(config);
 
     std::string base_url = "https://127.0.0.1:8885";

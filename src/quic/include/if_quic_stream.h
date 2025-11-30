@@ -28,6 +28,6 @@ public:
     virtual uint64_t GetStreamID() = 0;
 };
 
-}
+}  // namespace quicx
 
 #endif

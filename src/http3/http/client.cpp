@@ -27,6 +27,9 @@ Client::~Client() {
 }
 
 bool Client::Init(const Http3Config& config) {
+    // Store config for later use
+    config_ = config;
+
     QuicClientConfig quic_config;
     quic_config.config_.worker_thread_num_ = config.thread_num_;
     quic_config.config_.log_level_ = LogLevel(config.log_level_);
@@ -73,10 +76,12 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
     
     // Add request to waiting queue
     wait_request_map_[addr_key].push(WaitRequestContext{host, request, handler});
-    
+
     // If this is the first request for this address, create connection
     if (wait_request_map_[addr_key].size() == 1) {
-        quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, kClientConnectionTimeoutMs, "", host);
+        // Use configured timeout (0 means no timeout, rely on idle timeout)
+        uint32_t timeout_ms = config_.connection_timeout_ms_;
+        quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, timeout_ms, "", host);
     }
     
     return true;
@@ -119,10 +124,12 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
     
     // Add request to waiting queue
     wait_request_map_[addr_key].push(WaitRequestContext{host, request, handler});
-    
+
     // If this is the first request for this address, create connection
     if (wait_request_map_[addr_key].size() == 1) {
-        quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, kClientConnectionTimeoutMs, "", host);
+        // Use configured timeout (0 means no timeout, rely on idle timeout)
+        uint32_t timeout_ms = config_.connection_timeout_ms_;
+        quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, timeout_ms, "", host);
     }
     
     return true;

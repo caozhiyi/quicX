@@ -61,6 +61,17 @@ public:
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) = 0;
 
     /**
+     * @brief Create a new application stream asynchronously.
+     *
+     * Only unidirectional-sender and bidirectional streams can be opened
+     * locally. Receive-only streams are delivered via callbacks.
+     *
+     * @param type Desired stream direction.
+     * @param callback Callback invoked when the stream is created.
+     */
+    virtual bool MakeStreamAsync(StreamDirection type, stream_creation_callback callback) = 0;
+
+    /**
      * @brief Install a callback that reports stream lifecycle changes.
      *
      * @param cb Callback invoked when streams are created, closed or error out.
@@ -68,7 +79,6 @@ public:
     virtual void SetStreamStateCallBack(stream_state_callback cb) = 0;
 };
 
-}
-
+}  // namespace quicx
 
 #endif

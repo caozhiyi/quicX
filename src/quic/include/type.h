@@ -61,8 +61,8 @@ struct QuicTransportParams {
     uint32_t initial_max_stream_data_bidi_remote_ = 1 * 1024 * 1024;  // 1MB per stream (remote->local)
     uint32_t initial_max_stream_data_uni_ = 1 * 1024 * 1024;          // 1MB for unidirectional streams
 
-    uint32_t initial_max_streams_bidi_ = 20;
-    uint32_t initial_max_streams_uni_ = 20;
+    uint32_t initial_max_streams_bidi_ = 200;  // default value
+    uint32_t initial_max_streams_uni_ = 200;   // default value
     uint32_t ack_delay_exponent_ms_ = 3;
     uint32_t max_ack_delay_ms_ = 25;
     bool disable_active_migration_ = false;
@@ -120,6 +120,13 @@ typedef std::function<void(uint32_t length, uint32_t error)> stream_write_callba
 
 /** @brief Generic timer callback used by IQuicClient/IQuicServer. */
 typedef std::function<void()> timer_callback;
+
+/**
+ * @brief Callback invoked when a stream is created.
+ *
+ * @param stream The newly created stream.
+ */
+typedef std::function<void(std::shared_ptr<IQuicStream>)> stream_creation_callback;
 
 }  // namespace quicx
 

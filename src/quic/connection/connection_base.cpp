@@ -170,6 +170,68 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
     return new_stream;
 }
 
+bool BaseConnection::MakeStreamAsync(StreamDirection type, stream_creation_callback callback) {
+    // Try to create stream immediately
+    auto stream = MakeStream(type);
+    if (stream) {
+        // Success, invoke callback immediately
+        callback(stream);
+        return true;
+    }
+
+    // Stream creation blocked, check queue size limit
+    std::lock_guard<std::mutex> lock(pending_streams_mutex_);
+
+    // Queue size limit: initial_max_streams_bidi_ (user's requirement)
+    uint64_t max_queue_size = (type == StreamDirection::kSend) ? flow_control_.GetLocalUnidirectionStreamLimit()
+                                                               : flow_control_.GetLocalBidirectionStreamLimit();
+
+    if (pending_stream_requests_.size() >= max_queue_size) {
+        common::LOG_ERROR("MakeStreamAsync: retry queue full (size: %zu, limit: %llu), rejecting request",
+            pending_stream_requests_.size(), max_queue_size);
+        return false;  // Queue full, reject request
+    }
+
+    // Add to retry queue
+    pending_stream_requests_.push({type, callback});
+
+    common::LOG_DEBUG("MakeStreamAsync: stream creation blocked, queued for retry (queue size: %zu/%llu)",
+        pending_stream_requests_.size(), max_queue_size);
+
+    return true;  // Successfully queued
+}
+
+void BaseConnection::RetryPendingStreamRequests() {
+    std::lock_guard<std::mutex> lock(pending_streams_mutex_);
+
+    if (pending_stream_requests_.empty()) {
+        return;
+    }
+
+    size_t retry_count = 0;
+    size_t success_count = 0;
+    size_t initial_size = pending_stream_requests_.size();
+
+    while (!pending_stream_requests_.empty()) {
+        auto& request = pending_stream_requests_.front();
+        auto stream = MakeStream(request.type);
+
+        if (stream) {
+            // Success, invoke callback
+            request.callback(stream);
+            pending_stream_requests_.pop();
+            success_count++;
+        } else {
+            // Still blocked, stop retrying (wait for next MAX_STREAMS)
+            break;
+        }
+        retry_count++;
+    }
+
+    common::LOG_INFO("RetryPendingStreamRequests: retried %zu requests, %zu succeeded, %zu remaining (initial: %zu)",
+        retry_count, success_count, pending_stream_requests_.size(), initial_size);
+}
+
 void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     transport_param_.Init(tp_config);
 
@@ -726,18 +788,36 @@ bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
     flow_control_.CheckRemoteStreamLimit(0, send_frame);
     if (send_frame) {
         ToSendFrame(send_frame);
+        ActiveSend();  // Immediately send MAX_STREAMS to reduce latency
+
+        common::LOG_INFO("Received STREAMS_BLOCKED, sending MAX_STREAMS immediately");
     }
     return true;
 }
 
 bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_block_frame = std::dynamic_pointer_cast<MaxStreamsFrame>(frame);
-    if (stream_block_frame->GetType() == FrameType::kMaxStreamsBidirectional) {
-        flow_control_.AddLocalBidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
 
+    uint64_t old_limit = 0;
+    uint64_t new_limit = stream_block_frame->GetMaximumStreams();
+
+    if (stream_block_frame->GetType() == FrameType::kMaxStreamsBidirectional) {
+        old_limit = flow_control_.GetLocalBidirectionStreamLimit();
+        flow_control_.AddLocalBidirectionStreamLimit(new_limit);
+
+        common::LOG_INFO(
+            "Received MAX_STREAMS_BIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     } else {
-        flow_control_.AddLocalUnidirectionStreamLimit(stream_block_frame->GetMaximumStreams());
+        old_limit = flow_control_.GetLocalUnidirectionStreamLimit();
+        flow_control_.AddLocalUnidirectionStreamLimit(new_limit);
+
+        common::LOG_INFO(
+            "Received MAX_STREAMS_UNIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     }
+
+    // Trigger retry of pending stream creation requests
+    RetryPendingStreamRequests();
+
     return true;
 }
 

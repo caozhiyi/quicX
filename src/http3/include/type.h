@@ -41,7 +41,7 @@ enum class MiddlewarePosition: uint8_t {
 
 /**
  * @brief HTTP3 configuration
- * 
+ *
  * This configuration is used to initialize the HTTP3 client and server.
  */
 struct Http3Config {
@@ -49,6 +49,19 @@ struct Http3Config {
     LogLevel log_level_ = LogLevel::kNull;   // log level
 
     bool enable_ecn_ = false;                // enable ecn
+
+    /**
+     * @brief Connection timeout in milliseconds
+     *
+     * This timeout controls how long the connection can exist from the initial
+     * handshake phase. Set to 0 to disable and rely on idle timeout only.
+     *
+     * Default: 0 (no timeout, rely on idle timeout mechanism)
+     *
+     * Note: This is different from idle timeout. Connection timeout starts
+     * from connection creation, while idle timeout resets on each activity.
+     */
+    uint32_t connection_timeout_ms_ = 0;     // 0 = no timeout (rely on idle timeout)
 };
 
 /**
@@ -59,7 +72,7 @@ struct Http3Config {
 struct Http3Settings {
     uint64_t max_header_list_size = 100;      // max header list size
     uint64_t enable_push = 0;                 // enable push
-    uint64_t max_concurrent_streams = 100;    // max concurrent streams
+    uint64_t max_concurrent_streams = 200;    // max concurrent streams
     uint64_t max_frame_size = 16384;          // max frame size
     uint64_t max_field_section_size = 16384;  // max field section size
     uint64_t qpack_max_table_capacity = 0;    // qpack max table capacity

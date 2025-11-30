@@ -71,10 +71,14 @@ void BufferChunk::Release() {
     if (data_ != nullptr) {
         auto pool = pool_.lock();
         if (pool) {
-            void* memory = data_;
-            pool->PoolLargeFree(memory);
+            // Cast uint8_t* to void* and pass by reference so it can be nullified
+            void* ptr = static_cast<void*>(data_);
+            pool->PoolLargeFree(ptr);
+            // Update data_ after PoolLargeFree (which may modify ptr)
+            data_ = static_cast<uint8_t*>(ptr);
         }
 
+        // Ensure data_ is cleared even if pool is gone
         data_ = nullptr;
         length_ = 0;
         limit_size_ = 0;

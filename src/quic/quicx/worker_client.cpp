@@ -39,7 +39,20 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
         conn->Dial(common::Address(ip, port), alpn, resumption_session_der, params_, server_name);
     }
 
-    event_loop_->AddTimer([conn, this]() { HandleConnectionTimeout(conn); }, timeout_ms);
+    // Only set timeout for handshake phase (0 means no timeout - rely on idle timeout)
+    if (timeout_ms > 0) {
+        auto timer_id = event_loop_->AddTimer([conn, timeout_ms, this]() {
+            // Only timeout if still in connecting state (handshake not completed)
+            if (connecting_set_.find(conn) != connecting_set_.end()) {
+                common::LOG_WARN("handshake timeout for connection. cid:%llu, timeout_ms:%d",
+                    conn->GetConnectionIDHash(), timeout_ms);
+                HandleConnectionTimeout(conn);
+            }
+        }, timeout_ms);
+
+        // Store timer ID so we can cancel it when handshake completes
+        handshake_timers_[conn] = timer_id;
+    }
 }
 
 bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
@@ -72,9 +85,27 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     return false;
 }
 
+void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
+    // Cancel handshake timeout timer if it exists
+    auto timer_it = handshake_timers_.find(conn);
+    if (timer_it != handshake_timers_.end()) {
+        event_loop_->RemoveTimer(timer_it->second);
+        handshake_timers_.erase(timer_it);
+        common::LOG_DEBUG("handshake completed, cancelled timeout timer for connection. cid:%llu",
+            conn->GetConnectionIDHash());
+    }
+
+    // Call base class implementation
+    Worker::HandleHandshakeDone(conn);
+}
+
 void ClientWorker::HandleConnectionTimeout(std::shared_ptr<IConnection> conn) {
-    if (conn_map_.find(conn->GetConnectionIDHash()) != conn_map_.end()) {
-        conn_map_.erase(conn->GetConnectionIDHash());
+    // Clean up timer from map
+    handshake_timers_.erase(conn);
+
+    // Remove from connecting set and close connection
+    if (connecting_set_.find(conn) != connecting_set_.end()) {
+        connecting_set_.erase(conn);
         connection_handler_(conn, ConnectionOperation::kConnectionClose, QuicErrorCode::kConnectionTimeout,
             GetErrorString(QuicErrorCode::kConnectionTimeout));
     }

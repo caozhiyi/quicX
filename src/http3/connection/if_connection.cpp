@@ -58,5 +58,32 @@ const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Ht
     return settings_map;
 }
 
+void IConnection::ScheduleStreamRemoval(uint64_t stream_id) {
+    // Move stream from active map to holding area
+    // This removes it from streams_ (so it won't count against limits)
+    // but keeps the shared_ptr alive temporarily to prevent use-after-free
+    auto iter = streams_.find(stream_id);
+    if (iter != streams_.end()) {
+        common::LOG_DEBUG("IConnection::ScheduleStreamRemoval: moving stream %llu to holding area", stream_id);
+
+        // Move to holding area - this keeps the object alive
+        streams_to_destroy_.push_back(iter->second);
+
+        // Remove from active streams map
+        streams_.erase(iter);
+
+        // Limit holding area size to prevent memory bloat
+        // Clear old streams periodically (keep last 100)
+        if (streams_to_destroy_.size() > 100) {
+            common::LOG_DEBUG("IConnection::ScheduleStreamRemoval: clearing holding area, size=%zu",
+                streams_to_destroy_.size());
+            // Remove oldest half
+            streams_to_destroy_.erase(
+                streams_to_destroy_.begin(),
+                streams_to_destroy_.begin() + 50);
+        }
+    }
+}
+
 }  // namespace http3
 }  // namespace quicx

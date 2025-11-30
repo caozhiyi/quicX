@@ -52,6 +52,7 @@ private:
     http_push_promise_handler push_promise_handler_;
     error_handler error_handler_;
     Http3Settings settings_;
+    Http3Config config_;  // Store config for connection timeout
 
     struct WaitRequestContext {
         std::string host;
