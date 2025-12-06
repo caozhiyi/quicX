@@ -2,6 +2,8 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
 
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 #include "quic/connection/util.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/crypto_frame.h"
@@ -89,6 +91,10 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
     }
     common::LOG_DEBUG(
         "encoded frame. type:%s, length:%u", FrameType2String(frame->GetType()).c_str(), buffer_->GetDataLength());
+
+    // Metrics: Frame transmitted
+    common::Metrics::CounterInc(common::MetricsStd::FramesTxTotal);
+
     return true;
 }
 

@@ -35,6 +35,8 @@ public:
     bool InRecovery() const override { return false; }
     uint64_t GetSsthresh() const override { return ssthresh_bytes_; }
 
+    void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) override;
+
 private:
     enum class Mode { kStartup, kDrain, kProbeBw, kProbeRtt };
     
@@ -128,6 +130,9 @@ private:
 
     // Pacer
     std::unique_ptr<IPacer> pacer_;
+
+    // Qlog
+    std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
 } // namespace quic

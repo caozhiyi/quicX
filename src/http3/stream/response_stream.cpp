@@ -1,5 +1,7 @@
 #include "common/buffer/multi_block_buffer.h"
 #include "common/log/log.h"
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 
 #include "quic/quicx/global_resource.h"
 
@@ -92,7 +94,14 @@ bool ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
     } else if (body && body_size > 0) {
         // Complete mode: send entire body
         common::LOG_DEBUG("ResponseStream::SendResponse: sending body directly, size=%zu", body_size);
-        return SendBodyDirectly(std::dynamic_pointer_cast<common::IBuffer>(body));
+        bool result = SendBodyDirectly(std::dynamic_pointer_cast<common::IBuffer>(body));
+        
+        // Metrics: Track response bytes sent (server side)
+        if (result) {
+            common::Metrics::CounterInc(common::MetricsStd::Http3ResponseBytesTx, body_size);
+        }
+        
+        return result;
     }
     common::LOG_DEBUG("ResponseStream::SendResponse: no body to send, complete");
     return true;
@@ -258,7 +267,7 @@ void ResponseStream::HandleResponse() {
 
     // handle push
     if (push_handler_) {
-        push_handler_(response_, shared_from_this());
+        push_handler_(response_, std::dynamic_pointer_cast<ResponseStream>(shared_from_this()));
     }
 }
 

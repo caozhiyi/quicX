@@ -1,5 +1,7 @@
 #include "common/log/log.h"
 
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 #include "quic/connection/error.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/reset_stream_frame.h"
@@ -184,6 +186,10 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
                 local_data_limit_, except_offset_);
         }
     }
+
+    // Metrics: Stream data received
+    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsBytesRx, stream_frame->GetLength());
+
     return stream_frame->GetLength();
 }
 
@@ -233,6 +239,9 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     if (recv_cb_) {
         recv_cb_(buffer_, false, reset_frame->GetAppErrorCode());
     }
+
+    // Metrics: RESET_STREAM received
+    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsResetRx);
 }
 
 }  // namespace quic

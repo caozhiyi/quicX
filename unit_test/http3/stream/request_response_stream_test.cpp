@@ -25,6 +25,7 @@ public:
 
         request_stream_ = std::make_shared<RequestStream>(
             qpack_encoder, blocked_registry_, stream, response_handler, error_handler, push_promise_handler);
+        request_stream_->Init();  // CRITICAL: Initialize callbacks
     }
     ~MockClientConnection() {}
 
@@ -81,6 +82,7 @@ public:
             std::make_shared<ResponseStream>(qpack_encoder, blocked_registry_, stream, processor, push_handler,
                 std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
                 []() { return true; });  // Mock: always return true for settings_received
+        response_stream_->Init();  // CRITICAL: Initialize callbacks
     }
     ~MockServerConnection() {}
 

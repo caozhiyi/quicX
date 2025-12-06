@@ -31,10 +31,46 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
     connection_crypto_.SetCryptoStream(crypto_stream);
 }
 
-ServerConnection::~ServerConnection() {}
+ServerConnection::~ServerConnection() {
+    // 清理 qlog trace
+    if (qlog_trace_) {
+        // Use connection ID hash as trace identifier
+        std::string trace_id = std::to_string(local_conn_id_manager_->GetCurrentID().Hash());
+        common::QlogManager::Instance().RemoveTrace(trace_id);
+    }
+}
 
 void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
     remote_conn_id_manager_->AddID(id);
+
+    // Create qlog trace for this connection (if not already created)
+    if (!qlog_trace_ && common::QlogManager::Instance().IsEnabled()) {
+        // Use connection ID hash as trace identifier
+        std::string trace_id = std::to_string(local_conn_id_manager_->GetCurrentID().Hash());
+        qlog_trace_ = common::QlogManager::Instance().CreateTrace(
+            trace_id,
+            common::VantagePoint::kServer
+        );
+
+        // Log connection_started event
+        common::ConnectionStartedData data;
+        // Server gets address from received packet
+        auto peer_addr = GetPeerAddress();
+        data.src_ip = peer_addr.GetIp();
+        data.src_port = peer_addr.GetPort();
+        data.dst_ip = "0.0.0.0";  // Server listening address (TODO: get from socket)
+        data.dst_port = 0;         // TODO: get from socket
+        // Use hash values for connection IDs
+        data.src_cid = std::to_string(id.Hash());
+        data.dst_cid = std::to_string(local_conn_id_manager_->GetCurrentID().Hash());
+        data.protocol = "QUIC";
+        data.ip_version = "ipv4";  // TODO: Add IsIPv6() method to Address class
+
+        QLOG_CONNECTION_STARTED(qlog_trace_, data);
+
+        // 传递 trace 给子组件
+        send_manager_.SetQlogTrace(qlog_trace_);
+    }
 }
 
 bool ServerConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {

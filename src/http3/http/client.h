@@ -1,23 +1,24 @@
 #ifndef HTTP3_HTTP_CLIENT
 #define HTTP3_HTTP_CLIENT
 
+#include <condition_variable>
 #include <memory>
-#include <string>
-#include <variant>
-#include <unordered_map>
+#include <mutex>
 #include <queue>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <variant>
 
-#include "common/http/url.h"
+#include "http3/connection/connection_client.h"
 #include "http3/include/if_client.h"
 #include "quic/include/if_quic_client.h"
 #include "quic/include/if_quic_connection.h"
-#include "http3/connection/connection_client.h"
 
 namespace quicx {
 namespace http3 {
 
-class Client:
-    public IClient {
+class Client: public IClient {
 public:
     Client(const Http3Settings& settings = kDefaultHttp3Settings);
     virtual ~Client();
@@ -26,19 +27,22 @@ public:
     virtual bool Init(const Http3Config& config) override;
 
     // Send a request in complete mode (entire response body buffered)
-    virtual bool DoRequest(const std::string& url, HttpMethod method,
-        std::shared_ptr<IRequest> request, const http_response_handler& handler) override;
-    
+    virtual bool DoRequest(const std::string& url, HttpMethod method, std::shared_ptr<IRequest> request,
+        const http_response_handler& handler) override;
+
     // Send a request with async handler for streaming response
-    virtual bool DoRequest(const std::string& url, HttpMethod method,
-        std::shared_ptr<IRequest> request, std::shared_ptr<IAsyncClientHandler> handler) override;
+    virtual bool DoRequest(const std::string& url, HttpMethod method, std::shared_ptr<IRequest> request,
+        std::shared_ptr<IAsyncClientHandler> handler) override;
 
     virtual void SetPushPromiseHandler(const http_push_promise_handler& push_promise_handler) override;
     virtual void SetPushHandler(const http_response_handler& push_handler) override;
     virtual void SetErrorHandler(const error_handler& error_handler) override;
 
+    virtual void Close() override;
+
 private:
-    void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason);
+    void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error,
+        const std::string& reason);
 
     void HandleError(const std::string& unique_id, uint32_t error_code);
     bool HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
@@ -54,16 +58,17 @@ private:
     Http3Settings settings_;
     Http3Config config_;  // Store config for connection timeout
 
+    // Track connections that are in closing state
+    bool is_closing_ = false;
+
     struct WaitRequestContext {
         std::string host;
         std::shared_ptr<IRequest> request;
         std::variant<http_response_handler, std::shared_ptr<IAsyncClientHandler>> handler;
-        
+
         // Helper to check if async handler
-        bool IsAsync() const {
-            return std::holds_alternative<std::shared_ptr<IAsyncClientHandler>>(handler);
-        }
-        
+        bool IsAsync() const { return std::holds_alternative<std::shared_ptr<IAsyncClientHandler>>(handler); }
+
         // Get complete mode handler
         http_response_handler GetCompleteHandler() const {
             if (std::holds_alternative<http_response_handler>(handler)) {
@@ -71,7 +76,7 @@ private:
             }
             return nullptr;
         }
-        
+
         // Get async mode handler
         std::shared_ptr<IAsyncClientHandler> GetAsyncHandler() const {
             if (std::holds_alternative<std::shared_ptr<IAsyncClientHandler>>(handler)) {
@@ -82,10 +87,11 @@ private:
     };
     // Map from address string to queue of waiting requests
     // This allows multiple requests to wait for the same connection to be established
+    // host => queue of waiting requests
     std::unordered_map<std::string, std::queue<WaitRequestContext>> wait_request_map_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

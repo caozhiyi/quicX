@@ -25,7 +25,12 @@ struct QuicServerConfig {
     std::string alpn_ = "";
     /** Session ticket validity window in seconds (default: 2 days). */
     uint32_t session_ticket_timeout_ = 172800;
-    
+
+    /** Retry configuration */
+    bool force_retry_ = false;            // Force Retry for all connections (testing)
+    bool enable_retry_ = true;            // Enable Retry mechanism
+    uint32_t retry_token_lifetime_ = 60;  // Retry token lifetime in seconds
+
     /** Transport/runtime knobs (threading, logging, congestion control, etc.). */
     QuicConfig config_;
 };
@@ -92,6 +97,6 @@ public:
     static std::shared_ptr<IQuicServer> Create(const QuicTransportParams& params = DEFAULT_QUIC_TRANSPORT_PARAMS);
 };
 
-}
+}  // namespace quicx
 
 #endif

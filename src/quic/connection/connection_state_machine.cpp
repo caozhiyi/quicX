@@ -1,3 +1,6 @@
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
+
 #include "quic/connection/connection_state_machine.h"
 
 namespace quicx {
@@ -10,11 +13,19 @@ ConnectionStateMachine::ConnectionStateMachine(IConnectionStateListener* listene
 void ConnectionStateMachine::OnHandshakeDone() {
     if (state_ == ConnectionStateType::kStateConnecting) {
         SetState(ConnectionStateType::kStateConnected);
+
+        // Metrics: Handshake success
+        common::Metrics::CounterInc(common::MetricsStd::QuicHandshakeSuccess);
     }
 }
 
 void ConnectionStateMachine::OnClose() {
     if (state_ == ConnectionStateType::kStateConnected || state_ == ConnectionStateType::kStateConnecting) {
+        // Metrics: Handshake failed if closing from connecting state
+        if (state_ == ConnectionStateType::kStateConnecting) {
+            common::Metrics::CounterInc(common::MetricsStd::QuicHandshakeFail);
+        }
+
         SetState(ConnectionStateType::kStateClosing);
     }
 }

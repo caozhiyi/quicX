@@ -10,7 +10,8 @@ IConnection::IConnection(const std::string& unique_id, const std::shared_ptr<IQu
     unique_id_(unique_id),
     error_handler_(error_handler),
     quic_connection_(quic_connection),
-    cleanup_timer_id_(0) {
+    cleanup_timer_id_(0),
+    is_destroying_(std::make_shared<std::atomic<bool>>(false)) {
     quic_connection_->SetStreamStateCallBack(
         std::bind(&IConnection::HandleStream, this, std::placeholders::_1, std::placeholders::_2));
 
@@ -22,6 +23,9 @@ IConnection::IConnection(const std::string& unique_id, const std::shared_ptr<IQu
 }
 
 IConnection::~IConnection() {
+    // Set flag to prevent timer callbacks from accessing this object
+    is_destroying_->store(true);
+
     Close(0);
 }
 
@@ -67,20 +71,29 @@ void IConnection::StartCleanupTimer() {
         return;
     }
 
+    // Capture the destroying flag to safely handle timer callbacks after object destruction
+    auto destroying_flag = is_destroying_;
+
     // Create a periodic timer that runs every 100ms to cleanup completed streams
     cleanup_timer_id_ = quic_connection_->AddTimer(
-        [this]() {
+        [this, destroying_flag]() {
+            // Check if the connection is being destroyed
+            if (destroying_flag->load()) {
+                // Connection is being destroyed, do nothing
+                return;
+            }
+
             CleanupDestroyedStreams();
             // Re-schedule next cleanup
             StartCleanupTimer();
         },
-        100);  // 100ms
+        100);  // 100ms TODO, do not use fix time, loop support defer
 }
 
 void IConnection::CleanupDestroyedStreams() {
     if (!streams_to_destroy_.empty()) {
-        common::LOG_DEBUG("IConnection::CleanupDestroyedStreams: cleaning up %zu completed streams",
-            streams_to_destroy_.size());
+        common::LOG_DEBUG(
+            "IConnection::CleanupDestroyedStreams: cleaning up %zu completed streams", streams_to_destroy_.size());
         streams_to_destroy_.clear();
     }
 }

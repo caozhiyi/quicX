@@ -1,5 +1,5 @@
-#include <cstring>
 #include "quic/packet/packet_number.h"
+#include <cstring>
 
 namespace quicx {
 namespace quic {
@@ -10,6 +10,10 @@ PacketNumber::PacketNumber() {
 
 uint64_t PacketNumber::NextPakcetNumber(PacketNumberSpace space) {
     return ++cur_packet_number_[space];
+}
+
+void PacketNumber::Reset(PacketNumberSpace space) {
+    cur_packet_number_[space] = -1;
 }
 
 uint32_t PacketNumber::GetPacketNumberLength(uint64_t packet_number) {
@@ -66,5 +70,5 @@ uint64_t PacketNumber::Decode(uint64_t largest_pn, uint64_t truncated_pn, uint64
     return candidate_pn;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

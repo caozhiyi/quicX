@@ -1,6 +1,6 @@
 #include "quic/connection/connection_id_manager.h"
-#include "quic/connection/connection_id_generator.h"
 #include "common/log/log.h"
+#include "quic/connection/connection_id_generator.h"
 
 namespace quicx {
 namespace quic {
@@ -35,8 +35,8 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
             break;
         }
     }
-    
-    if (cur_retire && !sequence_cid_map_.empty()){
+
+    if (cur_retire && !sequence_cid_map_.empty()) {
         cur_id_ = sequence_cid_map_.begin()->second;
     } else {
         return false;
@@ -46,10 +46,11 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
 
 bool ConnectionIDManager::AddID(ConnectionID& id) {
     sequence_cid_map_[id.GetSequenceNumber()] = id;
-    if (sequence_cid_map_.size() == 1) { 
+    if (sequence_cid_map_.size() == 1) {
         cur_id_ = id;
     }
-    common::LOG_DEBUG("ConnectionIDManager::AddID: seq=%llu, hash=%llu", id.GetSequenceNumber(), id.Hash());
+    common::LOG_DEBUG("ConnectionIDManager::AddID: seq=%llu, hash=%llu, map_size=%zu", id.GetSequenceNumber(),
+        id.Hash(), sequence_cid_map_.size());
     if (add_connection_id_cb_) {
         add_connection_id_cb_(id);
     }
@@ -62,11 +63,16 @@ bool ConnectionIDManager::AddID(const uint8_t* id, uint16_t len) {
 }
 
 bool ConnectionIDManager::UseNextID() {
+    common::LOG_DEBUG("ConnectionIDManager::UseNextID: map_size=%zu, cur_seq=%llu", sequence_cid_map_.size(),
+        cur_id_.GetSequenceNumber());
+
     if (sequence_cid_map_.empty() || sequence_cid_map_.size() == 1) {
+        common::LOG_WARN("ConnectionIDManager::UseNextID: failed, map size %zu", sequence_cid_map_.size());
         return false;
     }
 
-    RetireIDBySequence(cur_id_.GetSequenceNumber()); // retire current id
+    RetireIDBySequence(cur_id_.GetSequenceNumber());  // retire current id
+    common::LOG_DEBUG("ConnectionIDManager::UseNextID: switched to new ID, seq=%llu", cur_id_.GetSequenceNumber());
     return true;
 }
 
@@ -78,5 +84,5 @@ std::vector<uint64_t> ConnectionIDManager::GetAllIDHashes() {
     return hashes;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

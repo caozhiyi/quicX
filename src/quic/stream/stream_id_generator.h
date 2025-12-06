@@ -23,6 +23,10 @@ public:
 
     uint64_t NextStreamID(StreamDirection direction);
 
+    // Peek at the next stream ID without incrementing the counter
+    // Used to check if stream creation would exceed limits before allocating
+    uint64_t PeekNextStreamID(StreamDirection direction) const;
+
     static StreamDirection GetStreamDirection(uint64_t id);
 
 private:

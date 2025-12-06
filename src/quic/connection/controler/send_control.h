@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "common/qlog/qlog.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
 
@@ -67,8 +68,14 @@ public:
     // Clear all retransmission data (used when connection is closing)
     void ClearRetransmissionData();
 
+    // Set qlog trace for instrumentation
+    void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace);
+
     // RFC 9000 Section 4.10: Discard packet number space state
     void DiscardPacketNumberSpace(PacketNumberSpace ns);
+
+    // Reset Initial packet number to 0 (used for Retry)
+    void ResetInitialPacketNumber();
 
 private:
     // RFC 9002 Section 6.1.1: Loss detection constants
@@ -135,6 +142,16 @@ private:
 
     // RFC 9002: PTO timer callback
     void OnPTOTimer();
+
+    // Qlog trace for instrumentation
+    std::shared_ptr<common::QlogTrace> qlog_trace_;
+
+    // Helper for logging recovery metrics with sampling
+    void LogRecoveryMetricsIfChanged(uint64_t now);
+
+    // Sampling state for recovery_metrics_updated
+    uint64_t last_logged_cwnd_ = 0;
+    uint64_t last_metrics_log_time_ = 0;
 };
 
 }  // namespace quic

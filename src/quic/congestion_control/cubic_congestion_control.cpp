@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "common/qlog/qlog.h"
 #include "quic/congestion_control/cubic_congestion_control.h"
 #include "quic/congestion_control/normal_pacer.h"
 
@@ -284,6 +285,10 @@ bool CubicCongestionControl::CheckHyStartExit(uint64_t latest_rtt, uint64_t now)
     }
 
     return false;
+}
+
+void CubicCongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
+    qlog_trace_ = trace;
 }
 
 }  // namespace quic

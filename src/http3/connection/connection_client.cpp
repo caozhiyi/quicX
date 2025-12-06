@@ -1,6 +1,7 @@
 #include "common/log/log.h"
-
-#include "quic/include/if_quic_stream.h"
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
+#include "common/util/time.h"
 
 #include "http3/connection/connection_client.h"
 #include "http3/connection/type.h"
@@ -16,6 +17,7 @@
 #include "http3/stream/request_stream.h"
 #include "http3/stream/type.h"
 #include "http3/stream/unidentified_stream.h"
+#include "quic/include/if_quic_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -114,7 +116,16 @@ void ClientConnection::CreateAndSendRequestStream(
         std::bind(&ClientConnection::HandleError, shared_from_this(), std::placeholders::_1, std::placeholders::_2),
         std::bind(
             &ClientConnection::HandlePushPromise, shared_from_this(), std::placeholders::_1, std::placeholders::_2));
+    request_stream->Init();  // Must be called after construction to set up callbacks
     streams_[stream->GetStreamID()] = request_stream;
+
+    // Metrics: HTTP/3 request started
+    common::Metrics::CounterInc(common::MetricsStd::Http3RequestsTotal);
+    common::Metrics::GaugeInc(common::MetricsStd::Http3RequestsActive);
+
+    // Metrics: Record request start time
+    request_start_times_[stream->GetStreamID()] = common::UTCTimeMsec();
+
     request_stream->SendRequest(request);
 }
 
@@ -125,7 +136,16 @@ void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> requ
         std::bind(&ClientConnection::HandleError, shared_from_this(), std::placeholders::_1, std::placeholders::_2),
         std::bind(
             &ClientConnection::HandlePushPromise, shared_from_this(), std::placeholders::_1, std::placeholders::_2));
+    request_stream->Init();  // Must be called after construction to set up callbacks
     streams_[stream->GetStreamID()] = request_stream;
+
+    // Metrics: HTTP/3 request started
+    common::Metrics::CounterInc(common::MetricsStd::Http3RequestsTotal);
+    common::Metrics::GaugeInc(common::MetricsStd::Http3RequestsActive);
+
+    // Metrics: Record request start time
+    request_start_times_[stream->GetStreamID()] = common::UTCTimeMsec();
+
     request_stream->SendRequest(request);
 }
 
@@ -182,11 +202,28 @@ void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
         return;
     }
 
-    // RFC 9114: Client MUST NOT initiate bidirectional streams
+    // RFC 9114: Server MUST NOT initiate bidirectional streams
     if (stream->GetDirection() == StreamDirection::kBidi) {
-        common::LOG_ERROR("ClientConnection: received bidirectional stream from server (protocol violation)");
-        quic_connection_->Reset(Http3ErrorCode::kStreamCreationError);
-        return;
+        uint64_t stream_id = stream->GetStreamID();
+        // Check if this is a server-initiated stream (stream_id & 0x1 == 1)
+        // Client-initiated streams have (stream_id & 0x1 == 0)
+        bool is_server_initiated = (stream_id & 0x1) == 1;
+
+        if (is_server_initiated) {
+            // True protocol violation: server initiated a bidirectional stream
+            common::LOG_ERROR(
+                "ClientConnection: received bidirectional stream from server (protocol violation), stream id: %llu",
+                stream_id);
+            quic_connection_->Reset(Http3ErrorCode::kStreamCreationError);
+            return;
+        } else {
+            // This is a client-initiated stream that was already closed
+            // Likely receiving retransmitted or out-of-order data for a closed stream
+            // Silently ignore it - the stream is already cleaned up
+            common::LOG_DEBUG(
+                "ClientConnection: received data for already-closed client-initiated stream %llu, ignoring", stream_id);
+            return;
+        }
     }
 
     // Check stream limit
@@ -273,12 +310,28 @@ void ClientConnection::HandleGoaway(uint64_t id) {
 }
 
 void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
+    // Metrics: Calculate and record request duration
+    auto it = request_start_times_.find(stream_id);
+    if (it != request_start_times_.end()) {
+        uint64_t duration_us = (common::UTCTimeMsec() - it->second) * 1000;
+        common::Metrics::GaugeSet(common::MetricsStd::Http3RequestDurationUs, duration_us);
+        request_start_times_.erase(it);
+    }
+
     if (error_code == 0) {
         // Stream completed normally - schedule removal to avoid use-after-free
         // The stream object may still be in use on the call stack
+
+        // Metrics: HTTP/3 request completed successfully
+        common::Metrics::GaugeDec(common::MetricsStd::Http3RequestsActive);
+
         ScheduleStreamRemoval(stream_id);
         return;
     }
+
+    // Metrics: HTTP/3 request failed
+    common::Metrics::GaugeDec(common::MetricsStd::Http3RequestsActive);
+    common::Metrics::CounterInc(common::MetricsStd::Http3RequestsFailed);
 
     // something wrong, notify error handler
     if (error_handler_) {
@@ -287,6 +340,9 @@ void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
 }
 
 void ClientConnection::HandlePushPromise(std::unordered_map<std::string, std::string>& headers, uint64_t push_id) {
+    // Metrics: Push promise received
+    common::Metrics::CounterInc(common::MetricsStd::Http3PushPromisesRx);
+
     if (!push_promise_handler_) {
         return;
     }

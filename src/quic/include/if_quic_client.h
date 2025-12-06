@@ -18,6 +18,11 @@ struct QuicClientConfig {
     /** Directory used to persist session tickets when caching is enabled. */
     std::string session_cache_path_ = "./session_cache";
 
+    /** QUIC version to prefer (for version negotiation testing). */
+    uint32_t preferred_version_ = 0x00000001;  // QUIC v1 (RFC 9000)
+    /** List of supported QUIC versions. */
+    std::vector<uint32_t> supported_versions_ = {0x00000001};
+
     /** Embedded QUIC transport/runtime configuration. */
     QuicConfig config_;
 };
@@ -89,8 +94,8 @@ public:
      * @param resumption_session_der Serialized TLS session (DER).
      * @return true if the connect attempt was dispatched, false otherwise.
      */
-    virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der = "", const std::string& server_name = "") = 0;
+    virtual bool Connection(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
+        const std::string& resumption_session_der = "", const std::string& server_name = "") = 0;
 
     /**
      * @brief Register a callback that observes connection-level state changes.
@@ -113,6 +118,6 @@ public:
     static std::shared_ptr<IQuicClient> Create(const QuicTransportParams& params = DEFAULT_QUIC_TRANSPORT_PARAMS);
 };
 
-}
+}  // namespace quicx
 
 #endif

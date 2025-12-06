@@ -5,6 +5,8 @@
 #include "common/timer/timer.h"
 #include "common/util/time.h"
 
+#include "quic/quicx/global_resource.h"
+
 namespace quicx {
 namespace common {
 
@@ -30,6 +32,16 @@ bool EventLoop::Init() {
     events_.reserve(driver_->GetMaxEvents());
     initialized_ = true;
     thread_id_ = std::this_thread::get_id();
+
+    // Register this event loop for the current thread (for lock-free pool operations)
+    // In test environments EventLoop may be stack-allocated, so we need to handle that case
+    try {
+        quic::GlobalResource::Instance().RegisterThreadEventLoop(shared_from_this());
+    } catch (const std::bad_weak_ptr&) {
+        // EventLoop is not managed by shared_ptr (e.g., in unit tests) - skip registration
+        // This is fine for testing since those tests don't use GlobalResource
+    }
+
     return true;
 }
 

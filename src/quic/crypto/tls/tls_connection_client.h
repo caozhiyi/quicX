@@ -8,14 +8,13 @@ namespace quicx {
 namespace quic {
 
 struct SessionInfo {
-    uint64_t creation_time;      // Session creation time (Unix timestamp)
-    uint32_t timeout;            // Session timeout in seconds
-    bool early_data_capable;     // Whether session supports 0-RTT
-    std::string server_name;     // Server name (hostname)
+    uint64_t creation_time;   // Session creation time (Unix timestamp)
+    uint32_t timeout;         // Session timeout in seconds
+    bool early_data_capable;  // Whether session supports 0-RTT
+    std::string server_name;  // Server name (hostname)
 };
 
-class TLSClientConnection:
-    public TLSConnection {
+class TLSClientConnection: public TLSConnection {
 public:
     TLSClientConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler);
     ~TLSClientConnection();
@@ -30,6 +29,9 @@ public:
 
     // set server name (SNI) for TLS handshake
     bool SetServerName(const std::string& server_name);
+
+    // Reset TLS connection for Retry (recreate SSL object)
+    bool Reset(const std::string& alpn);
 
     // opaque session bytes APIs to hide SSL types from upper layers
     bool SetSession(const uint8_t* session_der, size_t session_len);
@@ -48,12 +50,12 @@ private:
 
     // Get server name from SSL object
     std::string GetServerNameFromSSL(SSL* ssl);
-    
+
 private:
-    SSL_SESSION* saved_session_ {nullptr};
+    SSL_SESSION* saved_session_{nullptr};
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

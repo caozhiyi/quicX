@@ -147,14 +147,22 @@ public:
 
     /**
      * @brief Set the error handler
-     * 
+     *
      * @param error_handler The error handler
      */
     virtual void SetErrorHandler(const error_handler& error_handler) = 0;
 
     /**
+     * @brief Gracefully close all connections
+     *
+     * Sends CONNECTION_CLOSE frames to all active connections and allows
+     * outstanding data to be flushed before closing.
+     */
+    virtual void Close() = 0;
+
+    /**
      * @brief Create a client instance
-     * 
+     *
      * @param settings HTTP3 settings
      * @return Client instance
      */

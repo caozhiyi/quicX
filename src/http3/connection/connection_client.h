@@ -68,6 +68,9 @@ private:
 
     std::shared_ptr<ControlClientSenderStream> control_sender_stream_;
     std::shared_ptr<ControlReceiverStream> control_recv_stream_;
+
+    // Metrics: Track request start times for duration calculation
+    std::unordered_map<uint64_t, uint64_t> request_start_times_;
 };
 
 }  // namespace http3

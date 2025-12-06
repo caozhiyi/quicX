@@ -2,6 +2,8 @@
 
 #include "common/log/log.h"
 
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 #include "quic/connection/controler/recv_control.h"
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
@@ -36,6 +38,9 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
             "RecvControl::OnPacketRecv: packet %llu is not ack-eliciting, skipping", packet->GetPacketNumber());
         return;
     }
+
+    // Metrics: Packet received
+    common::Metrics::CounterInc(common::MetricsStd::QuicPacketsRx);
 
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
     uint64_t pkt_num = packet->GetPacketNumber();
@@ -192,6 +197,14 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
 
     common::LOG_DEBUG("RecvControl::MayGenerateAckFrame: generated ACK for %zu packets, remaining in queue: %zu",
         acked_packets.size(), wait_ack_packet_numbers_[ns].size());
+
+    // Metrics: Track ACK frequency
+    ack_count_++;
+    if (last_ack_time_ > 0 && now > last_ack_time_) {
+        uint64_t frequency = 1000 / (now - last_ack_time_);  // ACKs per second
+        common::Metrics::GaugeSet(common::MetricsStd::AckFrequency, frequency);
+    }
+    last_ack_time_ = now;
 
     return frame;
 }

@@ -1,5 +1,9 @@
-#include "http3/stream/request_stream.h"
+
 #include "common/log/log.h"
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
+
+#include "http3/stream/request_stream.h"
 #include "http3/frame/push_promise_frame.h"
 #include "http3/http/error.h"
 #include "http3/http/response.h"
@@ -75,6 +79,18 @@ void RequestStream::HandleHeaders() {
 
     PseudoHeader::Instance().DecodeResponse(response_);
 
+    // Metrics: Track HTTP/3 response status codes
+    int status_code = response_->GetStatusCode();
+    if (status_code >= 200 && status_code < 300) {
+        common::Metrics::CounterInc(common::MetricsStd::Http3Responses2xx);
+    } else if (status_code >= 300 && status_code < 400) {
+        common::Metrics::CounterInc(common::MetricsStd::Http3Responses3xx);
+    } else if (status_code >= 400 && status_code < 500) {
+        common::Metrics::CounterInc(common::MetricsStd::Http3Responses4xx);
+    } else if (status_code >= 500 && status_code < 600) {
+        common::Metrics::CounterInc(common::MetricsStd::Http3Responses5xx);
+    }
+
     bool has_content_length = false;
     if (headers_.find("content-length") != headers_.end()) {
         body_length_ = std::stoul(headers_["content-length"]);
@@ -112,6 +128,11 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
 
     uint32_t data_length = data->GetDataLength();
     received_body_length_ += data_length;
+    
+    // Metrics: Track response bytes received (client side)
+    if (data_length > 0) {
+        common::Metrics::CounterInc(common::MetricsStd::Http3ResponseBytesRx, data_length);
+    }
 
     // Streaming mode: call handler immediately
     if (async_handler_) {

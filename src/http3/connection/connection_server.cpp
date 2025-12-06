@@ -208,6 +208,7 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
             std::bind(&ServerConnection::HandlePush, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&ServerConnection::SettingsReceived, this));
+        response_stream->Init();  // Must be called after construction to set up callbacks
         streams_[response_stream->GetStreamID()] = response_stream;
 
     } else if (stream->GetDirection() == StreamDirection::kRecv) {
