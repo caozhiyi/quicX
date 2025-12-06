@@ -1,0 +1,12 @@
+# Test artifacts - auto-generated
+www/*.bin
+downloads/
+logs/
+
+# Temporary files
+*.log
+*.pcap
+*.qlog
+
+# Session cache
+session_cache/

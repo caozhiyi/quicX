@@ -13,6 +13,7 @@ public:
     ~PacketNumber() {};
 
     uint64_t NextPakcetNumber(PacketNumberSpace space);
+    void Reset(PacketNumberSpace space);
 
     // encode packet number to buffer
     static uint32_t GetPacketNumberLength(uint64_t packet_number);
@@ -28,7 +29,7 @@ private:
     uint64_t cur_packet_number_[PacketNumberSpace::kNumberSpaceCount];
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

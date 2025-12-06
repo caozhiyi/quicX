@@ -5,19 +5,17 @@
 #include <string>
 #include <unordered_map>
 
-#include "http3/router/router.h"
-#include "http3/include/if_server.h"
-#include "quic/include/if_quic_server.h"
-#include "http3/stream/response_stream.h"
 #include "http3/connection/connection_server.h"
+#include "http3/include/if_server.h"
+#include "http3/router/router.h"
+#include "http3/stream/response_stream.h"
+#include "quic/include/if_quic_server.h"
+
 
 namespace quicx {
 namespace http3 {
 
-class Server:
-    public IServer,
-    public IHttpProcessor,
-    public std::enable_shared_from_this<Server> {
+class Server: public IServer, public IHttpProcessor, public std::enable_shared_from_this<Server> {
 public:
     Server(const Http3Settings& settings = kDefaultHttp3Settings);
     virtual ~Server();
@@ -35,26 +33,25 @@ public:
     virtual void Join() override;
 
     // Register a handler for complete mode (entire body buffered)
-    virtual void AddHandler(HttpMethod method, const std::string& path, 
-                           const http_handler& handler) override;
-    
+    virtual void AddHandler(HttpMethod method, const std::string& path, const http_handler& handler) override;
+
     // Register an async handler for streaming mode
-    virtual void AddHandler(HttpMethod method, const std::string& path, 
-                           std::shared_ptr<IAsyncServerHandler> handler) override;
+    virtual void AddHandler(
+        HttpMethod method, const std::string& path, std::shared_ptr<IAsyncServerHandler> handler) override;
 
     // Register a middleware for a specific method and position
     virtual void AddMiddleware(HttpMethod method, MiddlewarePosition mp, const http_handler& handler) override;
 
     // Set the error handler
-    virtual void SetErrorHandler(const error_handler& error_handler) override {
-        error_handler_ = error_handler;
-    }
+    virtual void SetErrorHandler(const error_handler& error_handler) override { error_handler_ = error_handler; }
 
 private:
-    void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason);
+    void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error,
+        const std::string& reason);
     void HandleError(const std::string& unique_id, uint32_t error_code);
     // Match route and return route configuration
-    virtual RouteConfig MatchRoute(HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override;
+    virtual RouteConfig MatchRoute(
+        HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override;
     // Before handler process
     virtual void BeforeHandlerProcess(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) override;
     // After handler process
@@ -76,7 +73,7 @@ private:
     Http3Settings settings_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

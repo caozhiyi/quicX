@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "common/network/if_event_loop.h"
+#include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_id_manager.h"
@@ -81,9 +82,12 @@ public:
 
     std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_; }
 
+    // Get qlog trace for this connection
+    std::shared_ptr<common::QlogTrace> GetQlogTrace() const { return qlog_trace_; }
+
     // IConnectionStateListener
     virtual void OnStateToConnecting() override {}
-    virtual void OnStateToConnected() override {}
+    virtual void OnStateToConnected() override;
     virtual void OnStateToClosing() override;
     virtual void OnStateToDraining() override;
     virtual void OnStateToClosed() override;
@@ -214,6 +218,12 @@ protected:
     bool graceful_closing_pending_ = false;
     common::TimerTask graceful_close_timer_;  // Timeout for graceful close
 
+    // Track whether connection close callback has been invoked to prevent duplicate calls
+    bool connection_close_cb_invoked_ = false;
+
+    // Qlog trace for this connection
+    std::shared_ptr<common::QlogTrace> qlog_trace_;
+
     // hint for early-data scheduling: whether any application stream (id != 0) has pending send
     bool has_app_send_pending_ = false;
     // Track whether Initial packet has been sent in 0-RTT scenarios
@@ -243,6 +253,9 @@ protected:
 
     // Immediate send callback for bypassing normal send flow (e.g., immediate ACK)
     ImmediateSendCallback immediate_send_cb_;
+
+    // Metrics: Handshake timing
+    uint64_t handshake_start_time_{0};
 
     static constexpr size_t kMinLocalCIDPoolSize = 3;  // Keep at least 3 CIDs in pool
     static constexpr size_t kMaxLocalCIDPoolSize = 8;  // Generate up to 8 CIDs

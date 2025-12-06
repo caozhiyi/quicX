@@ -1,25 +1,27 @@
 #include "common/log/log.h"
-#include "http3/http/type.h"
+
+#include "quic/include/if_quic_server.h"
+
 #include "http3/http/server.h"
+#include "http3/http/type.h"
+#include "http3/include/if_async_handler.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
-#include "quic/include/if_quic_server.h"
-#include "http3/include/if_async_handler.h"
+#include "http3/metric/metrics_handler.h"
 
 namespace quicx {
 
 std::shared_ptr<IServer> IServer::Create(const Http3Settings& settings) {
     return std::make_shared<http3::Server>(settings);
 }
-
 namespace http3 {
 
 Server::Server(const Http3Settings& settings):
     settings_(settings) {
     quic_ = IQuicServer::Create();
     router_ = std::make_shared<Router>();
-    quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this,
-        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+    quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this, std::placeholders::_1,
+        std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
 }
 
 Server::~Server() {
@@ -50,6 +52,13 @@ bool Server::Init(const Http3ServerConfig& config) {
         common::LOG_ERROR("init quic server failed.");
         return false;
     }
+
+    // Auto-register metrics endpoint if enabled
+    if (config.config_.metrics_.enable) {
+        AddHandler(HttpMethod::kGet, config.config_.metrics_.path, MetricsHandler::Handle);
+        common::LOG_INFO("Metrics endpoint registered at %s", config.config_.metrics_.path.c_str());
+    }
+
     return true;
 }
 
@@ -65,15 +74,13 @@ void Server::Join() {
     quic_->Join();
 }
 
-void Server::AddHandler(HttpMethod method, const std::string& path, 
-                       const http_handler& handler) {
+void Server::AddHandler(HttpMethod method, const std::string& path, const http_handler& handler) {
     // Create route configuration for complete mode and add to router
     RouteConfig config(handler);
     router_->AddRoute(method, path, config);
 }
 
-void Server::AddHandler(HttpMethod method, const std::string& path, 
-                       std::shared_ptr<IAsyncServerHandler> handler) {
+void Server::AddHandler(HttpMethod method, const std::string& path, std::shared_ptr<IAsyncServerHandler> handler) {
     // Create route configuration for async mode and add to router
     RouteConfig config(handler);
     router_->AddRoute(method, path, config);
@@ -87,7 +94,8 @@ void Server::AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_
     }
 }
 
-void Server::OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason) {
+void Server::OnConnection(
+    std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason) {
     std::string addr;
     uint32_t port;
     conn->GetRemoteAddr(addr, port);
@@ -100,8 +108,7 @@ void Server::OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOpera
     }
 
     // create a new server connection
-    auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, 
-        shared_from_this(), quic_, conn,
+    auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, shared_from_this(), quic_, conn,
         std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2));
 
     conn_map_[unique_id] = server_conn;
@@ -144,5 +151,5 @@ void Server::OnNotFound(std::shared_ptr<IRequest> request, std::shared_ptr<IResp
     response->AppendBody(std::string("Not Found"));
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

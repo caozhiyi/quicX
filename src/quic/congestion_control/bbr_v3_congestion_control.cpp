@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "common/qlog/qlog.h"
 #include "quic/congestion_control/util.h"
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v3_congestion_control.h"
@@ -414,6 +415,10 @@ bool BBRv3CongestionControl::ShouldAdvanceProbeBwState(uint64_t now_us) const {
         default:
             return false;
     }
+}
+
+void BBRv3CongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
+    qlog_trace_ = trace;
 }
 
 } // namespace quic

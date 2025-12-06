@@ -1,6 +1,8 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
 
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 #include "quic/common/version.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/util.h"
@@ -141,6 +143,20 @@ bool SendManager::GetSendData(
 
             // Manually call OnPacketSend since we bypassed PacketInit
             send_control_.OnPacketSend(common::UTCTimeMsec(), packet, buffer->GetDataLength(), {});
+
+            // Log packet_sent event to qlog
+            if (qlog_trace_) {
+                common::PacketSentData data;
+                data.packet_number = pkt_number;
+                data.packet_type = packet->GetHeader()->GetPacketType();
+                data.packet_size = buffer->GetDataLength();
+                // Frame types will be collected in P3 phase
+                QLOG_PACKET_SENT(qlog_trace_, data);
+            }
+
+            // Metrics: Packet retransmitted
+            common::Metrics::CounterInc(common::MetricsStd::QuicPacketsRetransmit);
+
             return true;
         }
 
@@ -176,6 +192,17 @@ bool SendManager::GetSendData(
             mtu_probe_packet_number_ = packet->GetPacketNumber();
             common::LOG_DEBUG("SendManager::SendPacket: Sending PMTU probe packet as #%llu at current level=%d",
                 packet->GetPacketNumber(), encrypto_level);
+
+            // Log packet_sent event to qlog
+            if (qlog_trace_) {
+                common::PacketSentData data;
+                data.packet_number = packet->GetPacketNumber();
+                data.packet_type = packet->GetHeader()->GetPacketType();
+                data.packet_size = buffer->GetDataLength();
+                // Frame types will be collected in P3 phase
+                QLOG_PACKET_SENT(qlog_trace_, data);
+            }
+
             return true;
         }
 
@@ -218,6 +245,17 @@ bool SendManager::GetSendData(
             bool ret = PacketInit(packet, buffer, &frame_visitor);
             common::LOG_DEBUG("SendManager::SendPacket: Sending packet. probe packet as #%llu at current level=%d",
                 packet->GetPacketNumber(), encrypto_level);
+
+            // Log packet_sent event to qlog
+            if (ret && qlog_trace_) {
+                common::PacketSentData data;
+                data.packet_number = packet->GetPacketNumber();
+                data.packet_type = packet->GetHeader()->GetPacketType();
+                data.packet_size = buffer->GetDataLength();
+                // Frame types will be collected in P3 phase
+                QLOG_PACKET_SENT(qlog_trace_, data);
+            }
+
             return ret;
         }
 
@@ -260,6 +298,17 @@ bool SendManager::GetSendData(
         bool ret = PacketInit(packet, buffer, &frame_visitor);
         common::LOG_DEBUG("SendManager::SendPacket: Sending packet. probe packet as #%llu at current level=%d",
             packet->GetPacketNumber(), encrypto_level);
+
+        // Log packet_sent event to qlog
+        if (ret && qlog_trace_) {
+            common::PacketSentData data;
+            data.packet_number = packet->GetPacketNumber();
+            data.packet_type = packet->GetHeader()->GetPacketType();
+            data.packet_size = buffer->GetDataLength();
+            // Frame types will be collected in P3 phase
+            QLOG_PACKET_SENT(qlog_trace_, data);
+        }
+
         return ret;
     }
 
@@ -396,6 +445,22 @@ void SendManager::OnCandidatePathBytesReceived(uint32_t bytes) {
     }
 }
 
+bool SendManager::ShouldSendRetry() const {
+    // Only consider Retry if path is unvalidated
+    if (streams_allowed_) {
+        return false;
+    }
+
+    // No bytes received yet, can't send Retry
+    if (amp_recv_bytes_ == 0) {
+        return false;
+    }
+
+    // RFC 9000: Trigger Retry when approaching 3x limit
+    // Send Retry at 2x to have room for the Retry packet itself
+    return amp_sent_bytes_ >= 2 * amp_recv_bytes_;
+}
+
 void SendManager::StartMtuProbe() {
     // Minimal skeleton: attempt to raise MTU target slightly
     if (mtu_limit_bytes_ < 1450) {
@@ -504,7 +569,12 @@ std::shared_ptr<IPacket> SendManager::MakePacket(
 
     switch (encrypto_level) {
         case kInitial: {
-            packet = std::make_shared<InitPacket>();
+            auto init_packet = std::make_shared<InitPacket>();
+            if (!token_.empty()) {
+                init_packet->SetToken((uint8_t*)token_.data(), token_.length());
+                common::LOG_DEBUG("MakePacket: Setting token of length %zu for Initial packet", token_.length());
+            }
+            packet = init_packet;
             // add padding frame
             auto padding_frame = std::make_shared<PaddingFrame>();
             padding_frame->SetPaddingLength(1300 - visitor->GetBuffer()->GetDataLength());
@@ -536,6 +606,15 @@ std::shared_ptr<IPacket> SendManager::MakePacket(
     }
 
     auto cid = remote_conn_id_manager_->GetCurrentID();
+
+    // DEBUG: Print DCID being written to packet header
+    char dcid_hex[65] = {0};
+    for (int i = 0; i < cid.GetLength() && i < 20; i++) {
+        sprintf(dcid_hex + i * 2, "%02x", cid.GetID()[i]);
+    }
+    common::LOG_ERROR(
+        "SendManager: Writing DCID to packet header: len=%u, hex=%s, hash=%llu", cid.GetLength(), dcid_hex, cid.Hash());
+
     packet->GetHeader()->SetDestinationConnectionId(cid.GetID(), cid.GetLength());
     packet->SetPayload(visitor->GetBuffer()->GetSharedReadableSpan());
     packet->SetCryptographer(cryptographer);
@@ -581,6 +660,10 @@ bool SendManager::PacketInit(
     }
 
     send_control_.OnPacketSend(common::UTCTimeMsec(), packet, buffer->GetDataLength(), stream_data);
+
+    // Metrics: Packet transmitted
+    common::Metrics::CounterInc(common::MetricsStd::QuicPacketsTx);
+
     return true;
 }
 
@@ -651,6 +734,11 @@ bool SendManager::IsCongestionControlExempt() const {
 
     common::LOG_DEBUG("IsCongestionControlExempt: all %zu pending frames are exempt, returning true", exempt_frames);
     return true;
+}
+
+void SendManager::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
+    qlog_trace_ = trace;
+    send_control_.SetQlogTrace(trace);
 }
 
 }  // namespace quic

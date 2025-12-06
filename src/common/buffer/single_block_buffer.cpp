@@ -1,12 +1,12 @@
 #include <algorithm>
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 
-#include "common/log/log.h"
-#include "common/buffer/buffer_span.h"
 #include "common/buffer/buffer_read_view.h"
+#include "common/buffer/buffer_span.h"
 #include "common/buffer/shared_buffer_span.h"
 #include "common/buffer/single_block_buffer.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace common {
@@ -113,7 +113,6 @@ void SingleBlockBuffer::VisitData(const std::function<bool(uint8_t*, uint32_t)>&
 // Return the number of bytes currently available for reading.
 uint32_t SingleBlockBuffer::GetDataLength() {
     if (!Valid()) {
-        LOG_ERROR("buffer is invalid");
         return 0;
     }
     return static_cast<uint32_t>(write_pos_ - read_pos_);

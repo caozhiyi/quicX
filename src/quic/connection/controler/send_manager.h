@@ -7,6 +7,7 @@
 #include <unordered_set>
 
 #include "common/buffer/if_buffer.h"
+#include "common/qlog/qlog.h"
 #include "common/timer/if_timer.h"
 
 #include "quic/connection/connection_id_manager.h"
@@ -83,6 +84,9 @@ public:
     // Reset PMTU probing state for a new path (use conservative size until probed)
     void ResetMtuForNewPath();
 
+    // Set qlog trace for instrumentation
+    void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace);
+
     // Clear all active streams (used when connection is closing)
     void ClearActiveStreams();
     // Clear retransmission data (used when connection is closing to prevent retransmitting packets)
@@ -95,6 +99,8 @@ public:
     void ResetAmpBudget();
     // Account bytes received on the candidate path to increase send budget.
     void OnCandidatePathBytesReceived(uint32_t bytes);
+    // Check if should send Retry (approaching amplification limit)
+    bool ShouldSendRetry() const;
 
     // ---- PMTU probing (skeleton) ----
     // Start a simple PMTU probe sequence after migration (skeleton only).
@@ -109,8 +115,16 @@ public:
     }
     void SetSendRetryCallBack(std::function<void()> cb) { send_retry_cb_ = cb; }
 
+    void SetToken(const std::string& token) { token_ = token; }
+
     // RFC 9000 Section 4.10: Discard packet number space (delegates to SendControl)
     void DiscardPacketNumberSpace(PacketNumberSpace ns) { send_control_.DiscardPacketNumberSpace(ns); }
+
+    // Reset Initial packet number to 0 (used for Retry)
+    void ResetInitialPacketNumber() {
+        send_control_.ResetInitialPacketNumber();
+        pakcet_number_.Reset(kInitialNumberSpace);
+    }
 
 private:
     std::shared_ptr<IPacket> MakePacket(
@@ -162,6 +176,12 @@ private:
     common::TimerTask pacing_timer_task_;
     std::function<void()> send_retry_cb_;
     bool is_cwnd_limited_{false};
+
+    // Qlog trace for instrumentation
+    std::shared_ptr<common::QlogTrace> qlog_trace_;
+
+    // Retry token
+    std::string token_;
 };
 
 }  // namespace quic

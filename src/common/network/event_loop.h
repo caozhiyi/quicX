@@ -18,7 +18,7 @@
 namespace quicx {
 namespace common {
 
-class EventLoop: public IEventLoop {
+class EventLoop: public IEventLoop, public std::enable_shared_from_this<EventLoop> {
 public:
     EventLoop() = default;
     ~EventLoop() = default;

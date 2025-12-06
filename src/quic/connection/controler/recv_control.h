@@ -66,6 +66,10 @@ private:
 
     uint32_t max_ack_delay_;
     uint32_t ack_delay_exponent_{3};
+
+    // Metrics: ACK frequency tracking
+    uint64_t ack_count_{0};
+    uint64_t last_ack_time_{0};
 };
 
 }  // namespace quic

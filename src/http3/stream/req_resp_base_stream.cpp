@@ -25,16 +25,29 @@ ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_
     is_provider_mode_(false),
     all_provider_data_sent_(false),
     stream_(stream) {
-    stream_->SetStreamReadCallBack(std::bind(
-        &ReqRespBaseStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    stream_->SetStreamWriteCallBack(
-        std::bind(&ReqRespBaseStream::HandleSent, this, std::placeholders::_1, std::placeholders::_2));
+    // Callback registration moved to Init() method
+    // Cannot call shared_from_this() here because object is not yet managed by shared_ptr
 }
 
 ReqRespBaseStream::~ReqRespBaseStream() {
     // Do NOT call Close() here - it should have been called after sending the
     // last frame Calling Close() in destructor may cause issues if the stream is
     // already closed or if the stream state is not suitable for closing
+}
+
+void ReqRespBaseStream::Init() {
+    // Use weak_ptr to prevent use-after-free when callbacks are invoked after stream destruction
+    auto weak_self = std::weak_ptr<ReqRespBaseStream>(shared_from_this());
+    stream_->SetStreamReadCallBack([weak_self](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+        if (auto self = weak_self.lock()) {
+            self->OnData(data, is_last, error);
+        }
+    });
+    stream_->SetStreamWriteCallBack([weak_self](uint32_t length, uint32_t error) {
+        if (auto self = weak_self.lock()) {
+            self->HandleSent(length, error);
+        }
+    });
 }
 
 void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {

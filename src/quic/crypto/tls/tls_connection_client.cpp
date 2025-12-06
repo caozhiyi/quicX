@@ -1,6 +1,6 @@
+#include <openssl/ssl.h>
 #include <cstring>
 #include <vector>
-#include <openssl/ssl.h>
 
 #include "common/log/log.h"
 #include "quic/crypto/tls/tls_connection_client.h"
@@ -9,13 +9,9 @@ namespace quicx {
 namespace quic {
 
 TLSClientConnection::TLSClientConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler):
-    TLSConnection(ctx, handler) {
+    TLSConnection(ctx, handler) {}
 
-}
-
-TLSClientConnection::~TLSClientConnection() {
-
-}
+TLSClientConnection::~TLSClientConnection() {}
 
 bool TLSClientConnection::Init() {
     if (!TLSConnection::Init()) {
@@ -42,6 +38,45 @@ bool TLSClientConnection::DoHandleShake() {
         return false;
     }
 
+    return true;
+}
+
+bool TLSClientConnection::Reset(const std::string& alpn) {
+    // RFC 9000: When receiving a Retry packet, client must restart TLS handshake
+    // from scratch with updated transport parameters
+    common::LOG_DEBUG("Resetting TLS connection for Retry");
+
+    // Save current SNI if set
+    const char* sni = SSL_get_servername(ssl_.get(), TLSEXT_NAMETYPE_host_name);
+    std::string saved_sni;
+    if (sni) {
+        saved_sni = sni;
+    }
+
+    // Recreate SSL object
+    if (!Init()) {
+        common::LOG_ERROR("Failed to reinitialize SSL after Retry");
+        return false;
+    }
+
+    // Restore ALPN
+    if (!alpn.empty()) {
+        uint8_t* alpn_data = (uint8_t*)alpn.c_str();
+        if (!AddAlpn(alpn_data, alpn.size())) {
+            common::LOG_ERROR("Failed to restore ALPN after Retry reset");
+            return false;
+        }
+    }
+
+    // Restore SNI if it was set
+    if (!saved_sni.empty()) {
+        if (!SetServerName(saved_sni)) {
+            common::LOG_ERROR("Failed to restore SNI after Retry reset");
+            return false;
+        }
+    }
+
+    common::LOG_DEBUG("Successfully reset TLS connection");
     return true;
 }
 
@@ -81,11 +116,11 @@ bool TLSClientConnection::SetSession(const uint8_t* session_der, size_t session_
     if (!sess) {
         return false;
     }
-    
+
     // Debug: Check session 0-RTT capabilities
     int early_data_capable = SSL_SESSION_early_data_capable(sess);
     common::LOG_DEBUG("Session early_data_capable: %d", early_data_capable);
-    
+
     bool ok = SSL_set_session(ssl_.get(), sess) == 1;
     SSL_SESSION_free(sess);
     return ok;
@@ -145,17 +180,17 @@ bool TLSClientConnection::ExtractSessionInfo(SSL_SESSION* session, SessionInfo& 
     if (!session) {
         return false;
     }
-    
+
     // Extract session information using BoringSSL APIs
     info.creation_time = SSL_SESSION_get_time(session);
     info.timeout = SSL_SESSION_get_timeout(session);
     info.early_data_capable = SSL_SESSION_early_data_capable(session) != 0;
-    
+
     // Note: SSL_SESSION doesn't store server name directly
     // Server name needs to be obtained from SSL object during handshake
     common::LOG_DEBUG("Extracted session info: creation_time=%llu, timeout=%u, early_data_capable=%d",
-                     (unsigned long long)info.creation_time, info.timeout, info.early_data_capable);
-    
+        (unsigned long long)info.creation_time, info.timeout, info.early_data_capable);
+
     return true;
 }
 
@@ -163,13 +198,13 @@ std::string TLSClientConnection::GetServerNameFromSSL(SSL* ssl) {
     if (!ssl) {
         return "";
     }
-    
+
     // Get server name from SSL object
     const char* server_name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     if (server_name) {
         return std::string(server_name);
     }
-    
+
     // Fallback: try to get from SSL_get_servername_type
     if (SSL_get_servername_type(ssl) == TLSEXT_NAMETYPE_host_name) {
         server_name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
@@ -177,9 +212,9 @@ std::string TLSClientConnection::GetServerNameFromSSL(SSL* ssl) {
             return std::string(server_name);
         }
     }
-    
+
     return "";
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

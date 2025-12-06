@@ -14,7 +14,8 @@ static std::unique_ptr<ICongestionControl> MakeReno() {
 
 static void BM_Congestion_OnAck(benchmark::State& state) {
     auto cc = MakeReno();
-    CcConfigV2 cfg; cc->Configure(cfg);
+    CcConfigV2 cfg;
+    cc->Configure(cfg);
     // simulate N packets sent
     for (uint64_t i = 0; i < 10000; ++i) {
         cc->OnPacketSent({i, 1200, i});
@@ -29,7 +30,8 @@ static void BM_Congestion_OnAck(benchmark::State& state) {
 
 static void BM_Congestion_OnLoss(benchmark::State& state) {
     auto cc = MakeReno();
-    CcConfigV2 cfg; cc->Configure(cfg);
+    CcConfigV2 cfg;
+    cc->Configure(cfg);
     for (uint64_t i = 0; i < 10000; ++i) {
         cc->OnPacketSent({i, 1200, i});
     }
@@ -40,14 +42,14 @@ static void BM_Congestion_OnLoss(benchmark::State& state) {
     }
 }
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
 BENCHMARK(quicx::quic::BM_Congestion_OnAck);
 BENCHMARK(quicx::quic::BM_Congestion_OnLoss);
 BENCHMARK_MAIN();
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif
-
-

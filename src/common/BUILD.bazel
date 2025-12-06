@@ -34,6 +34,11 @@ cc_library(
         "log/log_stream.cpp",
         "log/log.cpp",
         "log/stdout_logger.cpp",
+        
+        # metrics
+        "metrics/metrics.cpp",
+        "metrics/metrics_std.cpp",
+        "metrics/metrics_registry.cpp",
 
         # network (platform-specific impls are selected below)
         "network/address.cpp",

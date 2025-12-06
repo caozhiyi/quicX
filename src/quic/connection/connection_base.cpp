@@ -6,6 +6,8 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
 
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 #include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
 #include "quic/connection/error.h"
@@ -52,6 +54,8 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     closing_error_code_(0),
     closing_trigger_frame_(0),
     closing_reason_("") {
+    // Metrics: Record handshake start time
+    handshake_start_time_ = common::UTCTimeMsec();
     connection_crypto_.SetRemoteTransportParamCB(
         std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
@@ -83,9 +87,21 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // Set stream data ACK callback for tracking stream completion
     send_manager_.send_control_.SetStreamDataAckCallback(std::bind(
         &BaseConnection::OnStreamDataAcked, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+
+    // Metrics: Connection created
+    common::Metrics::GaugeInc(common::MetricsStd::QuicConnectionsActive);
+    common::Metrics::CounterInc(common::MetricsStd::QuicConnectionsTotal);
 }
 
-BaseConnection::~BaseConnection() {}
+BaseConnection::~BaseConnection() {
+    // Metrics: Connection closed
+    common::Metrics::GaugeDec(common::MetricsStd::QuicConnectionsActive);
+    common::Metrics::CounterInc(common::MetricsStd::QuicConnectionsClosed);
+
+    // Metrics: Record PTO count per connection
+    uint32_t pto_count = send_manager_.GetRttCalculator().GetConsecutivePTOCount();
+    common::Metrics::HistogramObserve(common::MetricsStd::PtoCountPerConnection, pto_count);
+}
 
 void BaseConnection::Close() {
     if (!event_loop_->IsInLoopThread()) {
@@ -167,6 +183,11 @@ std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
         new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiLocal(), stream_id, StreamDirection::kBidi);
     }
     streams_map_[stream_id] = new_stream;
+
+    // Metrics: Stream created
+    common::Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
+    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsCreated);
+
     return new_stream;
 }
 
@@ -546,6 +567,8 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     if (!connection_crypto_.InitIsReady()) {
         LongHeader* header = (LongHeader*)packet->GetHeader();
+        common::LOG_INFO("Installing Initial Secret for decryption from packet DCID: length=%u",
+            header->GetDestinationConnectionIdLength());
         connection_crypto_.InstallInitSecret(
             (uint8_t*)header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(), true);
     }
@@ -583,6 +606,16 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
 
+    // Log packet_received event to qlog
+    if (qlog_trace_) {
+        common::PacketReceivedData data;
+        data.packet_number = packet->GetPacketNumber();
+        data.packet_type = packet->GetHeader()->GetPacketType();
+        data.packet_size = out_plaintext->GetDataLength();
+        // Frame types will be collected in P3 phase
+        QLOG_PACKET_RECEIVED(qlog_trace_, data);
+    }
+
     if (!OnFrames(packet->GetFrames(), packet->GetCryptoLevel())) {
         common::LOG_ERROR("process frames failed.");
         return false;
@@ -595,6 +628,9 @@ bool BaseConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level) {
+    // Metrics: Frames received
+    common::Metrics::CounterInc(common::MetricsStd::FramesRxTotal, frames.size());
+
     for (size_t i = 0; i < frames.size(); i++) {
         uint16_t type = frames[i]->GetType();
         common::LOG_DEBUG("recv frame: %s", FrameType2String(type).c_str());
@@ -633,6 +669,8 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
                 }
                 break;
             case FrameType::kDataBlocked:
+                // Metrics: Connection-level flow control blocked
+                common::Metrics::CounterInc(common::MetricsStd::QuicFlowControlBlocked);
                 if (!OnDataBlockFrame(frames[i])) {
                     return false;
                 }
@@ -899,6 +937,11 @@ bool BaseConnection::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
         event_loop_->RemoveTimer(graceful_close_timer_);
     }
 
+    // Store error info from peer's CONNECTION_CLOSE for application notification
+    closing_error_code_ = close_frame->GetErrorCode();
+    closing_trigger_frame_ = close_frame->GetErrFrameType();
+    closing_reason_ = close_frame->GetReason();
+
     // Received CONNECTION_CLOSE from peer: enter Draining state
     // RFC 9000: In draining state, endpoint MUST NOT send any packets
     state_machine_.OnConnectionCloseFrameReceived();
@@ -1044,6 +1087,9 @@ void BaseConnection::ThreadTransferAfter() {
 }
 
 void BaseConnection::OnIdleTimeout() {
+    // Metrics: Idle timeout
+    common::Metrics::CounterInc(common::MetricsStd::IdleTimeoutTotal);
+
     InnerConnectionClose(QuicErrorCode::kNoError, 0, "idle timeout.");
 }
 
@@ -1081,6 +1127,10 @@ void BaseConnection::CheckPTOTimeout() {
     if (consecutive_ptos >= RttCalculator::kMaxConsecutivePTOs) {
         common::LOG_WARN(
             "Connection idle timeout: %u consecutive PTOs without ACK, closing connection", consecutive_ptos);
+
+        // Metrics: PTO count
+        common::Metrics::CounterInc(common::MetricsStd::PtoCountTotal);
+
         // Close with no error (idle timeout is normal termination)
         InnerConnectionClose(QuicErrorCode::kNoError, 0, "Persistent PTO timeout");
     }
@@ -1425,6 +1475,27 @@ bool BaseConnection::SendImmediateAckAtLevel(PacketNumberSpace ns) {
 
 void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason) {
     if (error != QuicErrorCode::kNoError) {
+        // Metrics: Error statistics
+        switch (error) {
+            case QuicErrorCode::kFlowControlError:
+                common::Metrics::CounterInc(common::MetricsStd::ErrorsFlowControl);
+                break;
+            case QuicErrorCode::kStreamLimitError:
+                common::Metrics::CounterInc(common::MetricsStd::ErrorsStreamLimit);
+                break;
+            case QuicErrorCode::kProtocolViolation:
+            case QuicErrorCode::kFrameEncodingError:
+            case QuicErrorCode::kTransportParameterError:
+            case QuicErrorCode::kConnectionIdLimitError:
+                common::Metrics::CounterInc(common::MetricsStd::ErrorsProtocol);
+                break;
+            case QuicErrorCode::kInternalError:
+                common::Metrics::CounterInc(common::MetricsStd::ErrorsInternal);
+                break;
+            default:
+                break;
+        }
+
         ImmediateClose(error, tigger_frame, reason);
 
     } else {
@@ -1465,6 +1536,10 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
     auto stream = streams_map_.find(stream_id);
     if (stream != streams_map_.end()) {
         streams_map_.erase(stream);
+
+        // Metrics: Stream closed
+        common::Metrics::GaugeDec(common::MetricsStd::QuicStreamsActive);
+        common::Metrics::CounterInc(common::MetricsStd::QuicStreamsClosed);
     }
 }
 
@@ -1520,6 +1595,10 @@ std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t
             std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
                 std::placeholders::_3));
     }
+    // Metrics: Stream created
+    common::Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
+    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsCreated);
+
     return new_stream;
 }
 
@@ -1568,7 +1647,36 @@ void BaseConnection::CheckAndReplenishLocalCIDPool() {
     }
 }
 
+void BaseConnection::OnStateToConnected() {
+    // Log connection_state_updated event to qlog
+    if (qlog_trace_) {
+        common::ConnectionStateUpdatedData data;
+        data.old_state = "handshake";
+        data.new_state = "connected";
+
+        auto event_data = std::make_unique<common::ConnectionStateUpdatedData>(data);
+        QLOG_EVENT(qlog_trace_, common::QlogEvents::kConnectionStateUpdated, std::move(event_data));
+    }
+
+    // Metrics: Calculate and record handshake duration
+    if (handshake_start_time_ > 0) {
+        uint64_t duration_us = (common::UTCTimeMsec() - handshake_start_time_) * 1000;
+        common::Metrics::GaugeSet(common::MetricsStd::QuicHandshakeDurationUs, duration_us);
+        common::LOG_DEBUG("Handshake completed in %llu microseconds", duration_us);
+    }
+}
+
 void BaseConnection::OnStateToClosing() {
+    // Log connection_state_updated event to qlog
+    if (qlog_trace_) {
+        common::ConnectionStateUpdatedData data;
+        data.old_state = "connected";  // Could be "handshake" if closing early
+        data.new_state = "closing";
+
+        auto event_data = std::make_unique<common::ConnectionStateUpdatedData>(data);
+        QLOG_EVENT(qlog_trace_, common::QlogEvents::kConnectionStateUpdated, std::move(event_data));
+    }
+
     send_manager_.ClearRetransmissionData();
     send_manager_.ClearActiveStreams();
     send_manager_.wait_frame_list_.clear();
@@ -1577,7 +1685,17 @@ void BaseConnection::OnStateToClosing() {
     frame->SetErrorCode(closing_error_code_);
     frame->SetErrFrameType(closing_trigger_frame_);
     frame->SetReason(closing_reason_);
-    ToSendFrame(frame);
+
+    // Add CONNECTION_CLOSE frame to send queue
+    send_manager_.ToSendFrame(frame);
+
+    // Trigger active connection callback to send CONNECTION_CLOSE frame
+    // Note: We need to explicitly trigger sending because ActiveSend() is blocked in Closing state
+    if (active_connection_cb_) {
+        common::LOG_DEBUG("Triggering active connection callback to send CONNECTION_CLOSE frame");
+        active_connection_cb_(shared_from_this());
+    }
+
     // Record the time when CONNECTION_CLOSE is first sent
     // RFC 9000 Section 10.2: Retransmit at most once per PTO to avoid flooding
     // This ensures we don't retransmit too frequently when receiving packets
@@ -1588,17 +1706,61 @@ void BaseConnection::OnStateToClosing() {
 }
 
 void BaseConnection::OnStateToDraining() {
+    // Log connection_state_updated event to qlog
+    if (qlog_trace_) {
+        common::ConnectionStateUpdatedData data;
+        data.old_state = "closing";  // Could be "connected" if peer initiated close
+        data.new_state = "draining";
+
+        auto event_data = std::make_unique<common::ConnectionStateUpdatedData>(data);
+        QLOG_EVENT(qlog_trace_, common::QlogEvents::kConnectionStateUpdated, std::move(event_data));
+    }
+
     send_manager_.ClearRetransmissionData();
     send_manager_.ClearActiveStreams();
     send_manager_.wait_frame_list_.clear();
+
+    // Immediately notify application layer when entering Draining state
+    // This allows the application to cleanup resources and update UI quickly
+    // while QUIC layer still waits for the draining timeout per RFC 9000
+    if (connection_close_cb_ && !connection_close_cb_invoked_) {
+        connection_close_cb_invoked_ = true;
+        common::LOG_INFO("OnStateToDraining: notifying application layer of connection close");
+        connection_close_cb_(shared_from_this(), closing_error_code_, closing_reason_);
+    }
 
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
     event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
 }
 
 void BaseConnection::OnStateToClosed() {
+    // Log connection_closed event
+    if (qlog_trace_) {
+        common::ConnectionClosedData data;
+        data.error_code = closing_error_code_;
+        data.reason = closing_reason_;
+
+        // Determine trigger based on error code
+        if (closing_error_code_ == 0) {
+            data.trigger = "clean";
+        } else if (closing_trigger_frame_ != 0) {
+            data.trigger = "error";
+        } else {
+            data.trigger = "application";
+        }
+
+        QLOG_CONNECTION_CLOSED(qlog_trace_, data);
+        qlog_trace_->Flush();  // 确保事件写入
+    }
+
     event_loop_->RemoveTimer(idle_timeout_task_);
-    connection_close_cb_(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
+
+    // Only invoke callback if it hasn't been called yet
+    // (may have been called earlier in OnStateToDraining)
+    if (connection_close_cb_ && !connection_close_cb_invoked_) {
+        connection_close_cb_invoked_ = true;
+        connection_close_cb_(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
+    }
 }
 
 }  // namespace quic

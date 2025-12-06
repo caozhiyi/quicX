@@ -1,22 +1,24 @@
-#include <memory>
 #include <cstdlib>
+#include <memory>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
-#include <sys/socket.h>
-#include <netinet/ip.h>
-#include <netinet/ip6.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
+#include <sys/socket.h>
 #endif
 #include "common/log/log.h"
-#include "common/util/time.h"
-#include "quic/udp/udp_receiver.h"
-#include "quic/common/constants.h"
-#include "common/network/io_handle.h"
-#include "quic/quicx/global_resource.h"
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 #include "common/network/if_event_driver.h"
+#include "common/network/io_handle.h"
+#include "common/util/time.h"
+#include "quic/common/constants.h"
+#include "quic/quicx/global_resource.h"
+#include "quic/udp/udp_receiver.h"
 
 namespace quicx {
 namespace quic {
@@ -28,17 +30,15 @@ UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
 UdpReceiver::~UdpReceiver() {}
 
 bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
-    common::LOG_DEBUG("UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", 
-                      socket_fd, event_loop_->IsInLoopThread());
-    
+    common::LOG_DEBUG(
+        "UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, event_loop_->IsInLoopThread());
+
     if (!event_loop_->IsInLoopThread()) {
         common::LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", socket_fd);
-        event_loop_->RunInLoop([this, socket_fd, receiver]() {
-            this->AddReceiver(socket_fd, receiver);
-        });
+        event_loop_->RunInLoop([this, socket_fd, receiver]() { this->AddReceiver(socket_fd, receiver); });
         return true;
     }
-    
+
     common::LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", socket_fd);
     receiver_map_[socket_fd] = receiver;
     bool result = event_loop_->RegisterFd(
@@ -49,9 +49,7 @@ bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver
 
 bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) {
     if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([this, ip, port, receiver]() {
-            this->AddReceiver(ip, port, receiver);
-        });
+        event_loop_->RunInLoop([this, ip, port, receiver]() { this->AddReceiver(ip, port, receiver); });
         return true;
     }
     auto ret = common::UdpSocket();
@@ -94,23 +92,21 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
 }
 
 bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
-    common::LOG_DEBUG("UdpReceiver::RemoveReceiver called: fd=%d, IsInLoopThread=%d", 
-                      socket_fd, event_loop_->IsInLoopThread());
-    
+    common::LOG_DEBUG(
+        "UdpReceiver::RemoveReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, event_loop_->IsInLoopThread());
+
     if (!event_loop_->IsInLoopThread()) {
         common::LOG_DEBUG("UdpReceiver::RemoveReceiver: posting to EventLoop thread, fd=%d", socket_fd);
-        event_loop_->RunInLoop([this, socket_fd]() {
-            this->RemoveReceiver(socket_fd);
-        });
+        event_loop_->RunInLoop([this, socket_fd]() { this->RemoveReceiver(socket_fd); });
         return true;
     }
-    
+
     auto iter = receiver_map_.find(socket_fd);
     if (iter == receiver_map_.end()) {
         common::LOG_DEBUG("UdpReceiver::RemoveReceiver: receiver not found for fd=%d", socket_fd);
         return false;
     }
-    
+
     common::LOG_DEBUG("UdpReceiver::RemoveReceiver: removing fd=%d from EventLoop", socket_fd);
     receiver_map_.erase(iter);
     event_loop_->RemoveFd(socket_fd);
@@ -143,14 +139,21 @@ void UdpReceiver::OnRead(uint32_t fd) {
     pkt->SetTime(common::UTCTimeMsec());
     pkt->SetEcn(ecn_enabled_ ? ecn : 0);
 
+    // Metrics: UDP packet received successfully
+    common::Metrics::CounterInc(common::MetricsStd::UdpPacketsRx);
+    common::Metrics::CounterInc(common::MetricsStd::UdpBytesRx, ret.return_value_);
+
     auto iter = receiver_map_.find(fd);
     if (iter == receiver_map_.end()) {
         common::LOG_ERROR("receiver not found. fd:%d", fd);
+        common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
         return;
     }
 
     if (auto receiver = iter->second.lock()) {
         receiver->OnPacket(pkt);
+    } else {
+        common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
     }
 }
 
@@ -164,9 +167,7 @@ void UdpReceiver::OnError(uint32_t fd) {
 
 void UdpReceiver::OnClose(uint32_t fd) {
     if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([this, fd]() {
-            this->OnClose(fd);
-        });
+        event_loop_->RunInLoop([this, fd]() { this->OnClose(fd); });
         return;
     }
     receiver_map_.erase(fd);

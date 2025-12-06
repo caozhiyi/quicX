@@ -3,6 +3,8 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
 
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 #include "quic/congestion_control/congestion_control_factory.h"
 #include "quic/connection/controler/send_control.h"
 #include "quic/connection/util.h"
@@ -62,6 +64,10 @@ void SendControl::OnPacketSend(
             it->second.is_lost = true;
         }
         congestion_control_->OnPacketLost(LossEvent{packet->GetPacketNumber(), pkt_len, common::UTCTimeMsec()});
+
+        // Metrics: Packet lost
+        common::Metrics::CounterInc(common::MetricsStd::QuicPacketsLost);
+
         if (packet_lost_cb_) {
             packet_lost_cb_(packet);
         }
@@ -92,6 +98,39 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
     common::LOG_DEBUG("SendControl::OnPacketAck: largest_ack=%llu, first_ack_range=%u, ns=%d",
         ack_frame->GetLargestAck(), ack_frame->GetFirstAckRange(), ns);
 
+    // Log packets_acked event to qlog
+    if (qlog_trace_) {
+        common::PacketsAckedData data;
+
+        // Build ACK ranges
+        uint64_t largest = ack_frame->GetLargestAck();
+        uint64_t first_range = ack_frame->GetFirstAckRange();
+
+        // First ACK range
+        common::PacketsAckedData::AckRange range;
+        range.start = largest - first_range;
+        range.end = largest;
+        data.ack_ranges.push_back(range);
+
+        // Additional ACK ranges
+        auto additional_ranges = ack_frame->GetAckRange();
+        uint64_t current_pkt = largest - first_range - 1;  // After first range
+        for (const auto& ack_range : additional_ranges) {
+            current_pkt = current_pkt - ack_range.GetGap();  // Skip gap
+            range.end = current_pkt;
+            range.start = current_pkt - ack_range.GetAckRangeLength();
+            data.ack_ranges.push_back(range);
+            current_pkt = range.start - 1;  // Move to before this range
+        }
+
+        // ACK delay (scale to microseconds)
+        uint64_t scaled_ack_delay_ms = ack_frame->GetAckDelay() << ack_delay_exponent_;
+        data.ack_delay_us = scaled_ack_delay_ms * 1000;  // Convert ms to us
+
+        auto event_data = std::make_unique<common::PacketsAckedData>(data);
+        QLOG_EVENT(qlog_trace_, common::QlogEvents::kPacketsAcked, std::move(event_data));
+    }
+
     uint64_t pkt_num = ack_frame->GetLargestAck();
     if (pkt_num_largest_acked_[ns] < pkt_num) {
         pkt_num_largest_acked_[ns] = pkt_num;
@@ -103,6 +142,18 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
             // Update RTT estimate with this ACK
             if (!rtt_calculator_.UpdateRtt(iter->second.send_time_, now, scaled_ack_delay)) {
                 common::LOG_WARN("Failed to update RTT for packet %llu", pkt_num);
+            } else {
+                // Metrics: RTT updated
+                common::Metrics::GaugeSet(common::MetricsStd::RttSmoothedUs, rtt_calculator_.GetSmoothedRtt() * 1000);
+                common::Metrics::GaugeSet(common::MetricsStd::RttVarianceUs, rtt_calculator_.GetRttVar() * 1000);
+                common::Metrics::GaugeSet(common::MetricsStd::RttMinUs, rtt_calculator_.GetMinRtt() * 1000);
+
+                // Metrics: ACK delay
+                common::Metrics::GaugeSet(common::MetricsStd::AckDelayUs, scaled_ack_delay);
+
+                // Metrics: ACK ranges per frame
+                size_t ack_range_count = 1 + ack_frame->GetAckRange().size();  // first range + additional ranges
+                common::Metrics::GaugeSet(common::MetricsStd::AckRangesPerFrame, ack_range_count);
             }
 
             bool ecn_ce = false;
@@ -139,6 +190,9 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
                 congestion_control_->OnPacketAcked(
                     AckEvent{pkt_num, iter->second.pkt_len_, now, ack_frame->GetAckDelay(), ecn_ce});
                 congestion_control_->OnRoundTripSample(rtt_calculator_.GetSmoothedRtt(), ack_frame->GetAckDelay());
+
+                // Metrics: Packet acknowledged
+                common::Metrics::CounterInc(common::MetricsStd::QuicPacketsAcked);
             }
 
             // Notify stream data ACK if callback is set
@@ -173,6 +227,9 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
             if (!task->second.is_lost) {
                 congestion_control_->OnPacketAcked(
                     AckEvent{pkt_num, task->second.pkt_len_, now, ack_frame->GetAckDelay(), false});
+
+                // Metrics: Packet acknowledged
+                common::Metrics::CounterInc(common::MetricsStd::QuicPacketsAcked);
             }
 
             // Notify stream data ACK if callback is set
@@ -212,6 +269,9 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
                 if (!task->second.is_lost) {
                     congestion_control_->OnPacketAcked(
                         AckEvent{pkt_num, task->second.pkt_len_, now, ack_frame->GetAckDelay(), false});
+
+                    // Metrics: Packet acknowledged
+                    common::Metrics::CounterInc(common::MetricsStd::QuicPacketsAcked);
                 }
 
                 // Notify stream data ACK if callback is set
@@ -236,6 +296,9 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
 
     // Cancel PTO timer since we received an ACK
     timer_->RemoveTimer(pto_timer_);
+
+    // Log recovery metrics with sampling
+    LogRecoveryMetricsIfChanged(now);
 
     common::LOG_DEBUG("SendControl::OnPacketAck: completed for ns=%d, unacked_packets[%d] size=%zu", ns, ns,
         unacked_packets_[ns].size());
@@ -281,6 +344,33 @@ void SendControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {
     largest_sent_time_[ns] = 0;
 
     common::LOG_INFO("SendControl: Discarded packet number space %d per RFC 9000", ns);
+}
+
+// Reset Initial packet number to 0 (used for Retry)
+void SendControl::ResetInitialPacketNumber() {
+    PacketNumberSpace ns = PacketNumberSpace::kInitialNumberSpace;
+
+    // Clear unacked packets for Initial space
+    for (auto& pair : unacked_packets_[ns]) {
+        timer_->RemoveTimer(pair.second.timer_task_);
+    }
+    unacked_packets_[ns].clear();
+
+    // Remove any lost packets from Initial space
+    for (auto it = lost_packets_.begin(); it != lost_packets_.end();) {
+        if (CryptoLevel2PacketNumberSpace((*it)->GetCryptoLevel()) == ns) {
+            it = lost_packets_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Reset packet number tracking
+    pkt_num_largest_sent_[ns] = 0;
+    pkt_num_largest_acked_[ns] = 0;
+    largest_sent_time_[ns] = 0;
+
+    common::LOG_INFO("SendControl: Reset Initial packet number space for Retry");
 }
 
 // RFC 9002 Section 6.1: Detect lost packets based on packet/time threshold
@@ -348,12 +438,34 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
             // Notify congestion control
             congestion_control_->OnPacketLost(LossEvent{pkt_num, it->second.pkt_len_, now});
 
+            // Metrics: Packet lost
+            common::Metrics::CounterInc(common::MetricsStd::QuicPacketsLost);
+
             // Trigger retransmission callback
             if (packet_lost_cb_ && it->second.packet) {
                 packet_lost_cb_(it->second.packet);
             }
 
             common::LOG_WARN("DetectLostPackets: declared packet %llu lost, triggering retransmission", pkt_num);
+
+            // Log packet_lost event to qlog
+            if (qlog_trace_ && it->second.packet) {
+                common::PacketLostData data;
+                data.packet_number = pkt_num;
+                data.packet_type = it->second.packet->GetHeader()->GetPacketType();
+
+                // Determine trigger reason by re-checking conditions
+                if (largest_acked >= pkt_num + kPacketThreshold) {
+                    data.trigger = "packet_threshold";
+                } else if (largest_acked_send_time > 0 &&
+                           (largest_acked_send_time - it->second.send_time_) > loss_delay) {
+                    data.trigger = "time_threshold";
+                } else {
+                    data.trigger = "pto_expired";  // Fallback
+                }
+
+                QLOG_PACKET_LOST(qlog_trace_, data);
+            }
 
             // BUGFIX: Remove the lost packet from unacked_packets to prevent memory leak
             // The retransmitted packet will be added with a new packet number
@@ -364,6 +476,9 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
     if (!lost_packet_nums.empty()) {
         common::LOG_INFO("DetectLostPackets: detected %zu lost packets in ns=%d", lost_packet_nums.size(), ns);
     }
+
+    // Log recovery metrics with sampling
+    LogRecoveryMetricsIfChanged(now);
 }
 
 // RFC 9002: PTO timer callback - called when PTO expires without receiving ACK
@@ -379,6 +494,52 @@ void SendControl::OnPTOTimer() {
     timer_->RemoveTimer(pto_timer_);
     pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
     timer_->AddTimer(pto_timer_, rtt_calculator_.GetPTOWithBackoff(max_ack_delay_));
+}
+
+void SendControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
+    qlog_trace_ = trace;
+    if (congestion_control_) {
+        congestion_control_->SetQlogTrace(trace);
+    }
+}
+
+void SendControl::LogRecoveryMetricsIfChanged(uint64_t now) {
+    if (!qlog_trace_ || !congestion_control_) {
+        return;
+    }
+
+    uint64_t current_cwnd = congestion_control_->GetCongestionWindow();
+
+    // Sampling strategy: CWND changed by more than 10% or time elapsed > 100ms
+    bool significant_change = false;
+    if (last_logged_cwnd_ > 0) {
+        int64_t cwnd_diff = std::abs(static_cast<int64_t>(current_cwnd) - static_cast<int64_t>(last_logged_cwnd_));
+        significant_change = (cwnd_diff * 10 > static_cast<int64_t>(last_logged_cwnd_));
+    }
+
+    bool time_elapsed =
+        (last_metrics_log_time_ == 0) || ((now - last_metrics_log_time_) >= 100000);  // 100ms in microseconds
+
+    if (!significant_change && !time_elapsed) {
+        return;
+    }
+
+    // Update sampling state
+    last_logged_cwnd_ = current_cwnd;
+    last_metrics_log_time_ = now;
+
+    // Log recovery metrics event
+    common::RecoveryMetricsData data;
+    data.min_rtt_us = rtt_calculator_.GetMinRtt() * 1000;
+    data.smoothed_rtt_us = rtt_calculator_.GetSmoothedRtt() * 1000;
+    data.latest_rtt_us = rtt_calculator_.GetLatestRtt() * 1000;
+    data.rtt_variance_us = rtt_calculator_.GetRttVar() * 1000;
+    data.cwnd_bytes = current_cwnd;
+    data.bytes_in_flight = congestion_control_->GetBytesInFlight();
+    data.ssthresh = congestion_control_->GetSsthresh();
+    data.pacing_rate_bps = congestion_control_->GetPacingRateBps();
+
+    QLOG_METRICS_UPDATED(qlog_trace_, data);
 }
 
 }  // namespace quic

@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "common/qlog/qlog.h"
 #include "quic/congestion_control/util.h"
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v1_congestion_control.h"
@@ -259,6 +260,10 @@ void BBRv1CongestionControl::CheckFullBandwidthReached(uint64_t now_us) {
             cycle_start_us_ = now_us;
         }
     }
+}
+
+void BBRv1CongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
+    qlog_trace_ = trace;
 }
 
 } // namespace quic

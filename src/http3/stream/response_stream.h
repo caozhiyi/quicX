@@ -36,7 +36,7 @@ public:
  * The response stream is used to send responses to the client.
  * It is responsible for sending the response headers and data to the client.
  */
-class ResponseStream: public ReqRespBaseStream, public std::enable_shared_from_this<ResponseStream> {
+class ResponseStream: public ReqRespBaseStream {
 public:
     ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,

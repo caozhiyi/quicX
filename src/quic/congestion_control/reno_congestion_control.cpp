@@ -1,7 +1,12 @@
-#include "quic/congestion_control/reno_congestion_control.h"
 #include <algorithm>
+
 #include "common/log/log.h"
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
+#include "common/qlog/qlog.h"
+
 #include "quic/congestion_control/normal_pacer.h"
+#include "quic/congestion_control/reno_congestion_control.h"
 
 namespace quicx {
 namespace quic {
@@ -29,6 +34,10 @@ void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     common::LOG_DEBUG(
         "RenoCongestionControl::OnPacketSent: pn=%llu, bytes=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu", ev.pn,
         ev.bytes, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
+
+    // Metrics: Bytes in flight
+    common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
+
     if (pacer_) {
         pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
     }
@@ -39,6 +48,9 @@ void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
     uint64_t old_cwnd = cwnd_bytes_;
 
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
+
+    // Metrics: Bytes in flight
+    common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
     common::LOG_DEBUG(
         "RenoCongestionControl::OnPacketAcked: pn=%llu, bytes_acked=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu",
@@ -54,6 +66,13 @@ void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
     }
     if (in_recovery_) {
         if (ev.ack_time > recovery_start_time_) {
+            // Log congestion state transition: recovery -> congestion_avoidance
+            if (qlog_trace_) {
+                common::CongestionStateUpdatedData data;
+                data.old_state = "recovery";
+                data.new_state = "congestion_avoidance";
+                QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, data);
+            }
             in_recovery_ = false;
         } else {
             return;
@@ -70,6 +89,10 @@ void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
 void RenoCongestionControl::OnPacketLost(const LossEvent& ev) {
     uint64_t old_bytes_in_flight = bytes_in_flight_;
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
+
+    // Metrics: Bytes in flight
+    common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
+
     common::LOG_WARN(
         "RenoCongestionControl::OnPacketLost: pn=%llu, bytes_lost=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu", ev.pn,
         ev.bytes_lost, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
@@ -116,6 +139,13 @@ void RenoCongestionControl::IncreaseOnAck(uint64_t bytes_acked) {
     if (in_slow_start_) {
         cwnd_bytes_ += bytes_acked;
         if (cwnd_bytes_ >= ssthresh_bytes_) {
+            // Log congestion state transition: slow_start -> congestion_avoidance
+            if (qlog_trace_) {
+                common::CongestionStateUpdatedData data;
+                data.old_state = "slow_start";
+                data.new_state = "congestion_avoidance";
+                QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, data);
+            }
             in_slow_start_ = false;
         }
     } else {
@@ -124,11 +154,22 @@ void RenoCongestionControl::IncreaseOnAck(uint64_t bytes_acked) {
         cwnd_bytes_ += std::max<uint64_t>(add, 1);
     }
     cwnd_bytes_ = std::min<uint64_t>(cwnd_bytes_, cfg_.max_cwnd_bytes);
+
+    // Metrics: Congestion window updated
+    common::Metrics::GaugeSet(common::MetricsStd::CongestionWindowBytes, cwnd_bytes_);
 }
 
 void RenoCongestionControl::EnterRecovery(uint64_t now) {
     uint64_t old_cwnd = cwnd_bytes_;
     uint64_t old_ssthresh = ssthresh_bytes_;
+
+    // Log congestion state transition: -> recovery
+    if (qlog_trace_) {
+        common::CongestionStateUpdatedData data;
+        data.old_state = in_slow_start_ ? "slow_start" : "congestion_avoidance";
+        data.new_state = "recovery";
+        QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, data);
+    }
 
     ssthresh_bytes_ = static_cast<uint64_t>(cwnd_bytes_ * cfg_.beta);
     cwnd_bytes_ = std::max<uint64_t>(cfg_.min_cwnd_bytes, ssthresh_bytes_);
@@ -142,13 +183,30 @@ void RenoCongestionControl::EnterRecovery(uint64_t now) {
     common::LOG_WARN(
         "RenoCongestionControl::EnterRecovery: cwnd: %llu->%llu, ssthresh: %llu->%llu, bytes_in_flight=%llu", old_cwnd,
         cwnd_bytes_, old_ssthresh, ssthresh_bytes_, bytes_in_flight_);
+
+    // Metrics: Congestion event
+    common::Metrics::CounterInc(common::MetricsStd::CongestionEventsTotal);
+    common::Metrics::GaugeSet(common::MetricsStd::CongestionWindowBytes, cwnd_bytes_);
+
+    // Metrics: Slow start exit
+    if (old_cwnd != cwnd_bytes_ && in_slow_start_ != (cwnd_bytes_ < ssthresh_bytes_)) {
+        common::Metrics::CounterInc(common::MetricsStd::SlowStartExits);
+    }
 }
 
 void RenoCongestionControl::UpdatePacingRate() {
     if (!pacer_) {
         return;
     }
-    pacer_->OnPacingRateUpdated(GetPacingRateBps());
+    uint64_t pacing_rate = GetPacingRateBps();
+    pacer_->OnPacingRateUpdated(pacing_rate);
+
+    // Metrics: Pacing rate
+    common::Metrics::GaugeSet(common::MetricsStd::PacingRateBytesPerSec, pacing_rate / 8);
+}
+
+void RenoCongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
+    qlog_trace_ = trace;
 }
 
 }  // namespace quic

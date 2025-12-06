@@ -1,5 +1,7 @@
 #include "common/log/log.h"
 
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/frame/stop_sending_frame.h"
@@ -63,6 +65,9 @@ void SendStream::Reset(uint32_t error) {
     frame->SetAppErrorCode(error);
     common::LOG_DEBUG("stream send reset stream. stream id:%d, error:%d", stream_id_, error);
     frames_list_.emplace_back(frame);
+
+    // Metrics: RESET_STREAM sent
+    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsResetTx);
 }
 
 int32_t SendStream::Send(uint8_t* data, uint32_t len) {
@@ -184,6 +189,10 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
             frame->SetMaximumData(peer_data_limit_);
             common::LOG_DEBUG(
                 "stream send data blocked. stream id:%d, peer data limit:%d", stream_id_, peer_data_limit_);
+
+            // Metrics: Stream blocked by flow control
+            common::Metrics::CounterInc(common::MetricsStd::QuicStreamDataBlocked);
+
             if (!visitor->HandleFrame(frame)) {
                 common::LOG_DEBUG(
                     "stream send data blocked failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
@@ -245,7 +254,8 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     if (!visitor->HandleFrame(frame)) {
         // Check if the failure was due to insufficient packet space
         if (visitor->GetLastError() == FrameEncodeError::kInsufficientSpace) {
-            common::LOG_INFO("stream send data: packet full, need retry. stream id:%d, frame type:%d", stream_id_, frame->GetType());
+            common::LOG_INFO(
+                "stream send data: packet full, need retry. stream id:%d, frame type:%d", stream_id_, frame->GetType());
             return TrySendResult::kBreak;  // Packet is full, stream needs to retry in next packet
         }
         common::LOG_ERROR("stream send data failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
@@ -265,6 +275,9 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
             frame->GetData().GetLength(), frame->IsFin());
         sended_cb_(frame->GetData().GetLength(), 0);
     }
+
+    // Metrics: Stream data sent
+    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsBytesTx, frame->GetData().GetLength());
 
     // if there is still data in the buffer, call the active send callback
     if (send_buffer_->GetDataLength() > 0) {

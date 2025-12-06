@@ -6,44 +6,50 @@
 #ifndef COMMON_ALLOTER_POOL_BLOCK
 #define COMMON_ALLOTER_POOL_BLOCK
 
-#include <vector>
-#include <memory>
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace quicx {
 namespace common {
 
+class IEventLoop;  // Forward declaration
+
 // all memory must return memory pool before destroy.
 class BlockMemoryPool {
 public:
-    // bulk memory size. 
+    // bulk memory size.
     // every time add nodes num
     BlockMemoryPool(uint32_t large_sz, uint32_t add_num);
     virtual ~BlockMemoryPool();
 
-    // for bulk memory. 
+    // for bulk memory.
     // return one bulk memory node
     virtual void* PoolLargeMalloc();
-    virtual void PoolLargeFree(void* &m);
+    virtual void PoolLargeFree(void*& m);
 
     // return bulk memory list size
     virtual uint32_t GetSize();
     // return length of bulk memory
     virtual uint32_t GetBlockLength();
 
+    // Set event loop for thread-safe deferred operations
+    virtual void SetEventLoop(std::shared_ptr<IEventLoop> loop);
+
     // release half memory
     virtual void ReleaseHalf();
     virtual void Expansion(uint32_t num = 0);
 
 private:
-    uint32_t                  number_large_add_nodes_; //every time add nodes num
-    uint32_t                  large_size_;             //bulk memory size
-    std::vector<void*>        free_mem_vec_;           //free bulk memory list
+    uint32_t number_large_add_nodes_;       // every time add nodes num
+    uint32_t large_size_;                   // bulk memory size
+    std::vector<void*> free_mem_vec_;       // free bulk memory list
+    std::weak_ptr<IEventLoop> event_loop_;  // owning thread's event loop
 };
 
 std::shared_ptr<common::BlockMemoryPool> MakeBlockMemoryPoolPtr(uint32_t large_sz, uint32_t add_num);
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

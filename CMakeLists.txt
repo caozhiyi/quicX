@@ -113,6 +113,15 @@ foreach(HEADER ${PUBLIC_HEADERS})
     file(COPY ${HEADER} DESTINATION ${DEST_DIR})
 endforeach()
 
+# qlog support
+option(QUICX_ENABLE_QLOG "Enable qlog support" ON)
+if(QUICX_ENABLE_QLOG)
+    add_definitions(-DQUICX_ENABLE_QLOG)
+    message(STATUS "qlog support: ENABLED")
+else()
+    message(STATUS "qlog support: DISABLED")
+endif()
+
 # Build examples
 option(BUILD_EXAMPLES "Build examples" ON)
 if(BUILD_EXAMPLES)
@@ -143,4 +152,16 @@ endif()
 option(ENABLE_CC_SIMULATOR "Enable building congestion control simulator tests" ON)
 if(ENABLE_CC_SIMULATOR)
     add_subdirectory(test/congestion_control)
+endif()
+
+# integration tests
+option(ENABLE_INTERGRATION "Enable building integration tests" ON)
+if(ENABLE_INTERGRATION)
+    add_subdirectory(test/integration)
+endif()
+
+# interop tests
+option(ENABLE_INTEROP "Enable building interop tests" OFF)
+if(ENABLE_INTEROP)
+    add_subdirectory(test/interop)
 endif()

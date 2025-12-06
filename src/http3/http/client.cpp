@@ -1,15 +1,19 @@
-#include "common/log/log.h"
-#include "http3/http/type.h"
-#include "http3/http/error.h"
-#include "common/http/url.h"
 #include "http3/http/client.h"
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+
+#include "common/http/url.h"
+#include "common/log/log.h"
 #include "common/network/address.h"
 #include "common/network/io_handle.h"
+#include "http3/http/error.h"
+#include "http3/http/type.h"
 
 namespace quicx {
 
 std::unique_ptr<IClient> IClient::Create(const Http3Settings& settings) {
-    return std::unique_ptr<IClient>(new http3::Client(settings));
+    return std::unique_ptr<IClient>(static_cast<IClient*>(new http3::Client(settings)));
 }
 
 namespace http3 {
@@ -17,12 +21,12 @@ namespace http3 {
 Client::Client(const Http3Settings& settings):
     settings_(settings) {
     quic_ = IQuicClient::Create();
-    quic_->SetConnectionStateCallBack(std::bind(&Client::OnConnection, this, 
-        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+    quic_->SetConnectionStateCallBack(std::bind(&Client::OnConnection, this, std::placeholders::_1,
+        std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
 }
 
 Client::~Client() {
-    quic_->Destroy();
+    Close();
     quic_->Join();
 }
 
@@ -39,8 +43,8 @@ bool Client::Init(const Http3Config& config) {
     return quic_->Init(quic_config);
 }
 
-bool Client::DoRequest(const std::string& url, HttpMethod method,
-        std::shared_ptr<IRequest> request, const http_response_handler& handler) {
+bool Client::DoRequest(const std::string& url, HttpMethod method, std::shared_ptr<IRequest> request,
+    const http_response_handler& handler) {
     // Parse URL once for both pseudo-headers and connection management
     std::string scheme, host, path_with_query;
     uint16_t port;
@@ -55,7 +59,7 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
     request->SetAuthority(common::BuildAuthority(host, port, scheme));
     request->SetPath(path_with_query);
 
-    // Check if the connection is already established   
+    // Check if the connection is already established
     auto it = conn_map_.find(host);
     if (it != conn_map_.end()) {
         // Use the existing connection
@@ -71,9 +75,9 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
         return false;
     }
     addr.SetPort(port);
-    
+
     std::string addr_key = addr.AsString();
-    
+
     // Add request to waiting queue
     wait_request_map_[addr_key].push(WaitRequestContext{host, request, handler});
 
@@ -83,12 +87,12 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
         uint32_t timeout_ms = config_.connection_timeout_ms_;
         quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, timeout_ms, "", host);
     }
-    
+
     return true;
 }
 
-bool Client::DoRequest(const std::string& url, HttpMethod method,
-        std::shared_ptr<IRequest> request, std::shared_ptr<IAsyncClientHandler> handler) {
+bool Client::DoRequest(const std::string& url, HttpMethod method, std::shared_ptr<IRequest> request,
+    std::shared_ptr<IAsyncClientHandler> handler) {
     // Parse URL once for both pseudo-headers and connection management
     std::string scheme, host, path_with_query;
     uint16_t port;
@@ -103,7 +107,7 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
     request->SetAuthority(common::BuildAuthority(host, port, scheme));
     request->SetPath(path_with_query);
 
-    // Check if the connection is already established   
+    // Check if the connection is already established
     auto it = conn_map_.find(host);
     if (it != conn_map_.end()) {
         // Use the existing connection
@@ -119,9 +123,9 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
         return false;
     }
     addr.SetPort(port);
-    
+
     std::string addr_key = addr.AsString();
-    
+
     // Add request to waiting queue
     wait_request_map_[addr_key].push(WaitRequestContext{host, request, handler});
 
@@ -131,22 +135,23 @@ bool Client::DoRequest(const std::string& url, HttpMethod method,
         uint32_t timeout_ms = config_.connection_timeout_ms_;
         quic_->Connection(addr.GetIp(), addr.GetPort(), kHttp3Alpn, timeout_ms, "", host);
     }
-    
+
     return true;
 }
 
-void Client::OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason) {
+void Client::OnConnection(
+    std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error, const std::string& reason) {
+    // get remote address
     std::string addr;
     uint32_t port;
     conn->GetRemoteAddr(addr, port);
 
     std::string addr_key = addr + ":" + std::to_string(port);
-    
+
     if (operation == ConnectionOperation::kConnectionClose) {
         common::LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
-        
+
         // Clear waiting requests for this address (connection failed)
-        // Note: The connection will be removed from conn_map_ in HandleError callback
         auto wait_it = wait_request_map_.find(addr_key);
         if (wait_it != wait_request_map_.end()) {
             // Notify all waiting requests about the connection failure
@@ -163,7 +168,7 @@ void Client::OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOpera
         return;
     }
 
-    // Connection created - check if it succeeded
+    // Connection failed to create
     if (error != 0) {
         common::LOG_ERROR("connection creation failed. error: %d, reason: %s", error, reason.c_str());
         // Handle connection failure - notify all waiting requests
@@ -205,14 +210,14 @@ void Client::OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOpera
     // Process all waiting requests in the queue
     while (!wait_it->second.empty()) {
         auto& context = wait_it->second.front();
-        
+
         // Send request with the appropriate handler type
         if (context.IsAsync()) {
             client_conn->DoRequest(context.request, context.GetAsyncHandler());
         } else {
             client_conn->DoRequest(context.request, context.GetCompleteHandler());
         }
-        
+
         wait_it->second.pop();
     }
 
@@ -254,5 +259,18 @@ void Client::SetErrorHandler(const error_handler& error_handler) {
     error_handler_ = error_handler;
 }
 
+void Client::Close() {
+    common::LOG_INFO("Client::Close() - gracefully closing all connections (%zu active)", conn_map_.size());
+
+    // Close all active HTTP/3 connections
+    for (auto& pair : conn_map_) {
+        common::LOG_DEBUG("Closing connection to %s", pair.first.c_str());
+        pair.second->Close(0);  // error_code=0 means normal close
+    }
+
+    // TODO configure the timeout
+    quic_->AddTimer(1000, [this]() { quic_->Destroy(); });
 }
-}
+
+}  // namespace http3
+}  // namespace quicx

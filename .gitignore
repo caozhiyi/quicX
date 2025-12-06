@@ -19,3 +19,14 @@ temp
 winbuild
 third.bk
 seeds
+# Test artifacts - auto-generated
+www/*.bin
+downloads/
+logs/
+
+# Temporary files
+*.pcap
+*.qlog
+
+# Session cache
+session_cache/

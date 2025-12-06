@@ -32,6 +32,8 @@ public:
     bool InRecovery() const override { return in_recovery_; }
     uint64_t GetSsthresh() const override { return ssthresh_bytes_; }
 
+    void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) override;
+
 private:
     void ResetEpoch(uint64_t now);
     void IncreaseOnAck(uint64_t bytes_acked, uint64_t now);
@@ -85,6 +87,9 @@ private:
 
     // Pacer
     std::unique_ptr<IPacer> pacer_;
+
+    // Qlog
+    std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
 } // namespace quic

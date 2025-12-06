@@ -1,6 +1,7 @@
 #ifndef HTTP3_CONNECTION_IF_CONNECTION
 #define HTTP3_CONNECTION_IF_CONNECTION
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -90,7 +91,11 @@ protected:
     std::vector<std::shared_ptr<IStream>> streams_to_destroy_;
 
     // Timer ID for periodic cleanup of destroyed streams
-    uint64_t cleanup_timer_id_;
+    uint64_t cleanup_timer_id_ = 0;
+
+    // Flag to indicate if the connection is being destroyed
+    // This is checked by timer callbacks to avoid accessing destroyed objects
+    std::shared_ptr<std::atomic<bool>> is_destroying_;
 };
 
 }  // namespace http3

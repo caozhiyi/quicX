@@ -2,8 +2,14 @@
 #define QUIC_CONGESTION_CONTROL_IF_CONGESTION_CONTROL
 
 #include <cstdint>
+#include <memory>
 
 namespace quicx {
+
+namespace common {
+    class QlogTrace;
+}
+
 namespace quic {
 
 struct CcConfigV2 {
@@ -59,6 +65,9 @@ public:
     virtual bool InSlowStart() const = 0;
     virtual bool InRecovery() const = 0;
     virtual uint64_t GetSsthresh() const = 0;
+
+    // Qlog support
+    virtual void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) = 0;
 };
 
 } // namespace quic

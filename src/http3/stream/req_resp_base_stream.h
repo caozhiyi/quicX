@@ -22,7 +22,7 @@ namespace http3 {
  * The req resp base stream is used to handle the request and response frames.
  * It is responsible for handling the headers and data frames.
  */
-class ReqRespBaseStream: public IStream {
+class ReqRespBaseStream: public IStream, public std::enable_shared_from_this<ReqRespBaseStream> {
 public:
     ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
@@ -31,6 +31,11 @@ public:
     virtual ~ReqRespBaseStream();
 
     virtual uint64_t GetStreamID() override { return stream_->GetStreamID(); }
+
+    // Must be called after construction to set up callbacks
+    // Cannot be called in constructor because shared_from_this() requires object to be managed by shared_ptr
+    void Init();
+
     virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error);
 
 protected:

@@ -81,14 +81,19 @@ void FlowControl::AddLocalBidirectionStreamLimit(uint64_t limit) {
 }
 
 bool FlowControl::CheckLocalBidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame) {
-    stream_id = id_generator_.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
-    // reaching the upper limit of flow control
+    // Peek at next stream ID without incrementing counter
+    stream_id = id_generator_.PeekNextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
+
+    // Check if we've reached the upper limit of flow control
     if (stream_id >> 2 > local_bidirectional_stream_limit_) {
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedBidirectional);
         frame->SetMaximumStreams(local_bidirectional_stream_limit_);
         send_frame = frame;
-        return false;
+        return false;  // Don't increment counter on failure
     }
+
+    // Check passed, now actually allocate the stream ID
+    stream_id = id_generator_.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
 
     // TODO put 4 to config
     if (local_bidirectional_stream_limit_ - (stream_id >> 2) < 4) {
@@ -107,14 +112,19 @@ void FlowControl::AddLocalUnidirectionStreamLimit(uint64_t limit) {
 }
 
 bool FlowControl::CheckLocalUnidirectionStreamLimit(uint64_t& stream_id, std::shared_ptr<IFrame>& send_frame) {
-    stream_id = id_generator_.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
-    // reaching the upper limit of flow control
+    // Peek at next stream ID without incrementing counter
+    stream_id = id_generator_.PeekNextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
+
+    // Check if we've reached the upper limit of flow control
     if (stream_id >> 2 > local_unidirectional_stream_limit_) {
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedUnidirectional);
         frame->SetMaximumStreams(local_unidirectional_stream_limit_);
         send_frame = frame;
-        return false;
+        return false;  // Don't increment counter on failure
     }
+
+    // Check passed, now actually allocate the stream ID
+    stream_id = id_generator_.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
 
     // TODO put 4 to config
     if (local_unidirectional_stream_limit_ - (stream_id >> 2) < 4) {
