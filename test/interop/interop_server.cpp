@@ -12,18 +12,16 @@
  * - SSLKEYLOGFILE: File for TLS key logging
  */
 
+#include <signal.h>
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <string>
-#include <cstdlib>
-#include <signal.h>
-#include <fstream>
 #include <vector>
-#include <thread>
-#include <chrono>
 
-#include "http3/include/if_server.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
+#include "http3/include/if_server.h"
 
 using namespace quicx;
 
@@ -36,8 +34,11 @@ private:
     FILE* keylog_file_;
 
 public:
-    InteropServer(const std::string& root_dir, uint16_t port)
-        : root_dir_(root_dir), port_(port), running_(true), keylog_file_(nullptr) {}
+    InteropServer(const std::string& root_dir, uint16_t port):
+        root_dir_(root_dir),
+        port_(port),
+        running_(true),
+        keylog_file_(nullptr) {}
 
     ~InteropServer() {
         if (keylog_file_) {
@@ -78,9 +79,7 @@ public:
 
         // Register file serving handler - match any path
         server_->AddHandler(HttpMethod::kGet, "/*",
-            [this](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
-                this->ServeFile(req, resp);
-            });
+            [this](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) { this->ServeFile(req, resp); });
 
         std::cout << "Server initialized on port " << port_ << std::endl;
         std::cout << "Serving files from: " << root_dir_ << std::endl;

@@ -117,8 +117,10 @@ public:
         std::cout << "Downloading: " << url << std::endl;
 
         bool success = false;
+        bool done = false;
+
         client_->DoRequest(url, HttpMethod::kGet, request,
-            [this, &success, url](std::shared_ptr<IResponse> response, uint32_t error) {
+            [this, &success, &done, url](std::shared_ptr<IResponse> response, uint32_t error) {
                 if (error != 0) {
                     std::cerr << "Request failed with error: " << error << std::endl;
                     success = false;
@@ -130,21 +132,37 @@ public:
                         std::cerr << "Response has no body" << std::endl;
                         success = false;
                     } else {
-                        size_t body_length = body->GetDataLength();
-                        std::cout << "Response body length: " << body_length << " bytes" << std::endl;
+                        // Read body data in a loop until EOF
+                        std::vector<uint8_t> data;
+                        const size_t CHUNK_SIZE = 64 * 1024;  // 64KB chunks
 
-                        // Read body data
-                        std::vector<uint8_t> buffer(body_length);
-                        uint32_t read_len = body->Read(buffer.data(), body_length);
-                        std::string data(reinterpret_cast<char*>(buffer.data()), read_len);
+                        while (true) {
+                            std::vector<uint8_t> chunk(CHUNK_SIZE);
+                            uint32_t read_len = body->Read(chunk.data(), CHUNK_SIZE);
+
+                            if (read_len == 0) {
+                                break;  // EOF
+                            }
+
+                            data.insert(data.end(), chunk.begin(), chunk.begin() + read_len);
+                        }
+
+                        std::cout << "Response body length: " << data.size() << " bytes" << std::endl;
 
                         // Extract filename and save
                         std::string filename = ExtractFilename(url);
-                        success = SaveToFile(filename, data);
+                        std::string str_data(reinterpret_cast<char*>(data.data()), data.size());
+                        success = SaveToFile(filename, str_data);
                     }
                 }
                 completed_++;
+                done = true;
             });
+
+        // Wait for this specific request to complete
+        while (!done) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
 
         return success;
     }

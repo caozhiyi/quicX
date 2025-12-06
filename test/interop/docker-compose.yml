@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Docker Compose for local interop testing
 # Run: docker-compose -f interop/docker-compose.yml up
 
