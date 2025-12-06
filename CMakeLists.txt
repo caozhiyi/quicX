@@ -133,7 +133,7 @@ option(ENABLE_TESTING "Enable building of unit tests" ON)
 
 # Enable testing if the option is set
 if(ENABLE_TESTING)
-    add_subdirectory(unit_test)
+    add_subdirectory(test/unit_test)
 endif()
 
 # Benchmarks
