@@ -1,5 +1,5 @@
-#include "unit_test/http3/stream/mock_quic_stream.h"
-#include "unit_test/http3/connection/mock_quic_connection.h"
+#include "test/unit_test/http3/stream/mock_quic_stream.h"
+#include "test/unit_test/http3/connection/mock_quic_connection.h"
 
 namespace quicx {
 namespace quic {

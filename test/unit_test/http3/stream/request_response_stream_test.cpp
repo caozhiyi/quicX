@@ -6,7 +6,7 @@
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/request_stream.h"
 #include "http3/stream/response_stream.h"
-#include "unit_test/http3/stream/mock_quic_stream.h"
+#include "test/unit_test/http3/stream/mock_quic_stream.h"
 
 namespace quicx {
 namespace http3 {

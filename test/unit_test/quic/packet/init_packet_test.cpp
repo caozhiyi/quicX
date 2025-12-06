@@ -1,22 +1,25 @@
 #include <gtest/gtest.h>
 
-#include "quic/packet/handshake_packet.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
-#include "unit_test/quic/packet/common_test_frame.h"
+
+#include "quic/packet/init_packet.h"
+#include "quic/packet/init_packet.h"
+
+#include "test/unit_test/quic/packet/common_test_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(handshake_packet_utest, codec) {
+TEST(init_packet_utest, codec) {
     auto frame = PacketTest::GetTestFrame();
 
     // Create empty buffer for encoding frame
     std::shared_ptr<common::SingleBlockBuffer> frame_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(kBufLength));
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
-    HandshakePacket packet;
+    InitPacket packet;
     common::SharedBufferSpan payload(frame_buffer->GetSharedReadableSpan());
     packet.SetPayload(payload);
     packet.SetPacketNumber(10);
@@ -29,7 +32,7 @@ TEST(handshake_packet_utest, codec) {
     HeaderFlag flag;
     EXPECT_TRUE(flag.DecodeFlag(packet_buffer));
 
-    HandshakePacket new_packet(flag.GetFlag());
+    InitPacket new_packet(flag.GetFlag());
     EXPECT_TRUE(new_packet.DecodeWithoutCrypto(packet_buffer));
     EXPECT_TRUE(new_packet.DecodeWithCrypto(nullptr));
 
@@ -44,14 +47,14 @@ TEST(handshake_packet_utest, codec) {
     }
 }
 
-TEST(handshake_packet_utest, crypto_codec) {
+TEST(init_packet_utest, crypto_codec) {
     auto frame = PacketTest::GetTestFrame();
 
     // Create empty buffer for encoding frame
     std::shared_ptr<common::SingleBlockBuffer> frame_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(kBufLength));
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
-    HandshakePacket packet;
+    InitPacket packet;
     common::SharedBufferSpan payload(frame_buffer->GetSharedReadableSpan());
     packet.SetPayload(payload);
     packet.SetPacketNumber(10);
@@ -65,7 +68,7 @@ TEST(handshake_packet_utest, crypto_codec) {
     HeaderFlag flag;
     EXPECT_TRUE(flag.DecodeFlag(packet_buffer));
 
-    HandshakePacket new_packet(flag.GetFlag());
+    InitPacket new_packet(flag.GetFlag());
     new_packet.SetCryptographer(PacketTest::Instance().GetTestServerCryptographer());
     EXPECT_TRUE(new_packet.DecodeWithoutCrypto(packet_buffer));
 

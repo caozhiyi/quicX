@@ -4,7 +4,7 @@
 #include "http3/include/if_response.h"
 #include "http3/connection/connection_client.h"
 #include "http3/connection/connection_server.h"
-#include "unit_test/http3/connection/mock_quic_connection.h"
+#include "test/unit_test/http3/connection/mock_quic_connection.h"
 
 namespace quicx {
 namespace http3 {
