@@ -97,6 +97,7 @@ protected:
     bool On0rttPacket(std::shared_ptr<IPacket> packet);
     bool On1rttPacket(std::shared_ptr<IPacket> packet);
     bool OnNormalPacket(std::shared_ptr<IPacket> packet);
+    bool OnVersionNegotiationPacket(std::shared_ptr<IPacket> packet);
     virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) = 0;
 

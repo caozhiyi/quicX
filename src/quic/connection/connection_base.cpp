@@ -4,10 +4,10 @@
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
-#include "common/util/time.h"
-
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
+#include "common/util/time.h"
+
 #include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
 #include "quic/connection/error.h"
@@ -28,6 +28,7 @@
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/type.h"
+#include "quic/packet/version_negotiation_packet.h"
 #include "quic/quicx/global_resource.h"
 #include "quic/stream/bidirection_stream.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
@@ -517,6 +518,13 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         // Process packet (decrypt and decode frames)
         bool packet_processed = false;
         switch (packets[i]->GetHeader()->GetPacketType()) {
+            case PacketType::kNegotiationPacketType:
+                // Version Negotiation packet - handle specially
+                packet_processed = OnVersionNegotiationPacket(packets[i]);
+                if (!packet_processed) {
+                    common::LOG_ERROR("version negotiation packet handle failed.");
+                }
+                break;
             case PacketType::kInitialPacketType:
                 packet_processed = OnInitialPacket(std::dynamic_pointer_cast<InitPacket>(packets[i]));
                 if (!packet_processed) {
@@ -584,6 +592,35 @@ bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
 
 bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
     return OnNormalPacket(packet);
+}
+
+bool BaseConnection::OnVersionNegotiationPacket(std::shared_ptr<IPacket> packet) {
+    // Version Negotiation packets are not encrypted and don't contain frames
+    // They are only sent by servers in response to an unsupported version
+    // RFC 9000 Section 6: Version Negotiation
+
+    auto vn_packet = std::dynamic_pointer_cast<VersionNegotiationPacket>(packet);
+    if (!vn_packet) {
+        common::LOG_ERROR("Failed to cast to VersionNegotiationPacket");
+        return false;
+    }
+
+    auto supported_versions = vn_packet->GetSupportVersion();
+    common::LOG_WARN("Received Version Negotiation packet with %zu supported versions", supported_versions.size());
+    for (size_t i = 0; i < supported_versions.size(); i++) {
+        common::LOG_INFO("  Server supports version: 0x%08x", supported_versions[i]);
+    }
+
+    // RFC 9000 Section 6.2: Clients MUST discard Version Negotiation packets
+    // that list the QUIC version that was sent in the Initial packet.
+    // This is a protection against version downgrade attacks.
+
+    // For now, just log and return true to indicate we handled it
+    // In a full implementation, the client should retry with a compatible version
+    common::LOG_WARN("Version negotiation not yet implemented - connection will fail");
+
+    // Mark packet as processed so it doesn't cause errors
+    return true;
 }
 
 bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
