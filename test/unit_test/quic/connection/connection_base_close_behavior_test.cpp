@@ -53,10 +53,10 @@ public:
     void TriggerImmediateCloseForTest(uint64_t error, uint16_t frame_type, const std::string& reason) {
         ImmediateClose(error, frame_type, reason);
     }
-    uint32_t GetCloseWaitTimeForTest() { return GetCloseWaitTime(); }
-    uint64_t GetStoredClosingError() const { return closing_error_code_; }
-    uint16_t GetStoredClosingTriggerFrame() const { return closing_trigger_frame_; }
-    std::string GetStoredClosingReason() const { return closing_reason_; }
+    uint32_t GetCloseWaitTimeForTest() { return connection_closer_->GetCloseWaitTime(); }
+    uint64_t GetStoredClosingError() const { return connection_closer_->GetClosingErrorCode(); }
+    uint16_t GetStoredClosingTriggerFrame() const { return connection_closer_->GetClosingTriggerFrame(); }
+    std::string GetStoredClosingReason() const { return connection_closer_->GetClosingReason(); }
 };
 
 std::shared_ptr<TLSCtx> MakeTlsContext() {

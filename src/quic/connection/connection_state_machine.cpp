@@ -1,3 +1,4 @@
+#include "common/log/log.h"
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
 

@@ -1,10 +1,7 @@
 #ifndef QUIC_CONNECTION_CONNECTION_STATE_MACHINE
 #define QUIC_CONNECTION_CONNECTION_STATE_MACHINE
 
-#include <cstdint>
-#include <functional>
 #include <string>
-#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {

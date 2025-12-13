@@ -31,13 +31,17 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
         std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
+
+    // Set HANDSHAKE_DONE frame handler callback
+    frame_processor_->SetHandshakeDoneCallback(
+        std::bind(&ClientConnection::HandleHandshakeDoneFrame, this, std::placeholders::_1));
 }
 
 ClientConnection::~ClientConnection() {
     // 清理 qlog trace
     if (qlog_trace_) {
         // Use connection ID hash as trace identifier
-        std::string trace_id = std::to_string(remote_conn_id_manager_->GetCurrentID().Hash());
+        std::string trace_id = std::to_string(cid_coordinator_->GetRemoteConnectionIDManager()->GetCurrentID().Hash());
         common::QlogManager::Instance().RemoveTrace(trace_id);
     }
 }
@@ -78,7 +82,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     }
 
     // generate connection id
-    auto dcid = remote_conn_id_manager_->Generator();
+    auto dcid = cid_coordinator_->GetRemoteConnectionIDManager()->Generator();
 
     // RFC 9000: Save original DCID for Retry handling
     // If server sends Retry, we need to include this in transport parameters
@@ -110,7 +114,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
         data.dst_ip = addr.GetIp();
         data.dst_port = addr.GetPort();
         // Use hash values for connection IDs (hex conversion can be added later if needed)
-        data.src_cid = std::to_string(local_conn_id_manager_->GetCurrentID().Hash());
+        data.src_cid = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
         data.dst_cid = std::to_string(dcid.Hash());
         data.protocol = "QUIC";
         data.ip_version = "ipv4";  // TODO: Add IsIPv6() method to Address class
@@ -158,7 +162,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     SetPeerAddress(std::move(addr));
 
     // generate connection id
-    auto dcid = remote_conn_id_manager_->Generator();
+    auto dcid = cid_coordinator_->GetRemoteConnectionIDManager()->Generator();
 
     // RFC 9000: Save original DCID for Retry handling
     original_dcid_ = dcid;
@@ -181,7 +185,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
         data.dst_ip = addr.GetIp();
         data.dst_port = addr.GetPort();
         // Use hash values for connection IDs (hex conversion can be added later if needed)
-        data.src_cid = std::to_string(local_conn_id_manager_->GetCurrentID().Hash());
+        data.src_cid = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
         data.dst_cid = std::to_string(dcid.Hash());
         data.protocol = "QUIC";
         data.ip_version = "ipv4";  // TODO: Add IsIPv6() method to Address class
@@ -215,13 +219,14 @@ bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
 
     // client side should update remote connection id here
     auto long_header = static_cast<LongHeader*>(handshake_packet->GetHeader());
-    remote_conn_id_manager_->AddID(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
-    remote_conn_id_manager_->UseNextID();
+    cid_coordinator_->GetRemoteConnectionIDManager()->AddID(
+        long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
+    cid_coordinator_->GetRemoteConnectionIDManager()->UseNextID();
     return OnNormalPacket(packet);
 }
 
-bool ClientConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
-    common::LOG_DEBUG("ClientConnection::OnHandshakeDoneFrame called");
+bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
+    common::LOG_DEBUG("ClientConnection::HandleHandshakeDoneFrame called");
     state_machine_.OnHandshakeDone();
 
     // RFC 9000 Section 4.10: Discard Initial and Handshake packet number spaces
@@ -261,8 +266,9 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     ConnectionID src_cid(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
 
     // Update remote connection ID (this is the new server CID)
-    remote_conn_id_manager_->AddID(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
-    remote_conn_id_manager_->UseNextID();
+    cid_coordinator_->GetRemoteConnectionIDManager()->AddID(
+        long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
+    cid_coordinator_->GetRemoteConnectionIDManager()->UseNextID();
 
     // Update token
     auto token_span = retry_packet->GetRetryToken();
@@ -338,7 +344,7 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     // RFC 9000 Section 17.2.5: Install asymmetric Initial Secrets for Retry
     // - Write secret: derived from Retry's Source CID (for encrypting outbound packets)
     // - Read secret: derived from our local Source CID (server encrypts with this)
-    auto local_cid = local_conn_id_manager_->GetCurrentID();
+    auto local_cid = cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID();
     if (!connection_crypto_.InstallInitSecretForRetry(src_cid.GetID(), src_cid.GetLength(),  // Write CID (Retry Source)
             local_cid.GetID(), local_cid.GetLength())) {                                     // Read CID (local)
         common::LOG_ERROR("Failed to install Initial Secrets for Retry");
