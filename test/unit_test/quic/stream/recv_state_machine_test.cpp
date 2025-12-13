@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/type.h"
 #include "quic/frame/stream_frame.h"
+#include "quic/frame/type.h"
 #include "quic/stream/state_machine_recv.h"
 
 namespace quicx {
@@ -9,7 +9,7 @@ namespace quic {
 namespace {
 
 TEST(recv_state_machine_utest, normal_state_change) {
-    StreamStateMachineRecv state(nullptr);
+    StreamStateMachineRecv state;
     EXPECT_EQ(state.GetStatus(), StreamState::kRecv);
 
     EXPECT_FALSE(state.OnFrame(FrameType::kStopSending));
@@ -31,7 +31,7 @@ TEST(recv_state_machine_utest, normal_state_change) {
 }
 
 TEST(recv_state_machine_utest, wrong_state_change) {
-    StreamStateMachineRecv state(nullptr);
+    StreamStateMachineRecv state;
     EXPECT_EQ(state.GetStatus(), StreamState::kRecv);
 
     EXPECT_FALSE(state.RecvAllData());
@@ -50,6 +50,6 @@ TEST(recv_state_machine_utest, wrong_state_change) {
     EXPECT_EQ(state.GetStatus(), StreamState::kResetRead);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

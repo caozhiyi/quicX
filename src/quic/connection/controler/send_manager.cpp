@@ -1,8 +1,8 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
-
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
+
 #include "quic/common/version.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/util.h"
@@ -122,6 +122,7 @@ bool SendManager::GetSendData(
             packet->GetPacketNumber() == static_cast<uint64_t>(mtu_probe_packet_number_)) {
             OnMtuProbeResult(false);
             // fall through to normal send path below instead of retransmitting probe
+            
         } else {
             // CRITICAL FIX: The lost packet may have old crypto_level (e.g. kInitial),
             // but we're now at a different level (e.g. kApplication).
@@ -136,6 +137,7 @@ bool SendManager::GetSendData(
             common::LOG_DEBUG("SendManager::SendPacket: Retransmitting lost packet as #%llu at current level=%d",
                 pkt_number, encrypto_level);
 
+            // RFC 9002 Section 4.1: If QUIC needs to retransmit that data, it MUST use the same keys even if TLS has already updated to newer keys.
             if (!packet->Encode(buffer)) {
                 common::LOG_ERROR("encode retransmission packet error. pkt_number=%llu", pkt_number);
                 return false;

@@ -25,7 +25,7 @@ SendStream::SendStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_d
     fin_sent_(false),
     peer_data_limit_(init_data_limit),
     send_buffer_(std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool())) {
-    send_machine_ = std::make_shared<StreamStateMachineSend>(std::bind(&SendStream::Close, this));
+    send_machine_ = std::make_shared<StreamStateMachineSend>();
 }
 
 SendStream::~SendStream() {}
@@ -65,6 +65,7 @@ void SendStream::Reset(uint32_t error) {
     frame->SetAppErrorCode(error);
     common::LOG_DEBUG("stream send reset stream. stream id:%d, error:%d", stream_id_, error);
     frames_list_.emplace_back(frame);
+    ToSend();
 
     // Metrics: RESET_STREAM sent
     common::Metrics::CounterInc(common::MetricsStd::QuicStreamsResetTx);
@@ -89,9 +90,8 @@ int32_t SendStream::Send(uint8_t* data, uint32_t len) {
         return len;
     }
 
-    if (!send_machine_->CanSendAppData()) {
-        common::LOG_WARN("SendStream::Send: cannot send app data, stream_id=%llu, state=%d", GetStreamID(),
-            send_machine_->GetStatus());
+    if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
+        common::LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%d,", stream_id_);
         return -1;
     }
 
@@ -117,7 +117,7 @@ int32_t SendStream::Send(std::shared_ptr<IBufferRead> buffer) {
         return buffer->GetDataLength();
     }
 
-    if (!send_machine_->CanSendAppData()) {
+    if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
         return -1;
     }
 
@@ -143,9 +143,8 @@ bool SendStream::Flush() {
         return true;
     }
 
-    if (!send_machine_->CanSendAppData()) {
-        common::LOG_DEBUG("stream send flush failed. stream id:%d, can send app data:%d", stream_id_,
-            send_machine_->CanSendAppData());
+    if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
+        common::LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%d,", stream_id_);
         return false;
     }
 
@@ -182,7 +181,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     // check peer limit
     // TODO put number to config
     if (peer_data_limit_ - send_data_offset_ < 2048) {
-        if (send_machine_->CanSendDataBlockFrame()) {
+        if (send_machine_->CheckCanSendFrame(FrameType::kStreamDataBlocked)) {
             // make stream block frame
             std::shared_ptr<StreamDataBlockedFrame> frame = std::make_shared<StreamDataBlockedFrame>();
             frame->SetStreamID(stream_id_);
@@ -217,9 +216,9 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
         }
     }
 
-    if (!send_machine_->CanSendStrameFrame()) {
+    if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
         common::LOG_DEBUG("stream send data success. stream id:%d, can send stream frame:%d", stream_id_,
-            send_machine_->CanSendStrameFrame());
+            send_machine_->CheckCanSendFrame(FrameType::kStream));
         return TrySendResult::kSuccess;
     }
 
@@ -310,9 +309,18 @@ void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
     auto stop_frame = std::dynamic_pointer_cast<StopSendingFrame>(frame);
     uint32_t err = stop_frame->GetAppErrorCode();
 
-    if (send_machine_->CanSendResetStreamFrame()) {
+    // RFC 9000 Section 3.5: An endpoint that receives a STOP_SENDING frame send a RESET_STREAM frame if the stream is
+    // in the "Ready" or "Send" state.
+    if (send_machine_->CheckCanSendFrame(FrameType::kResetStream)) {
+        // RFC 9000 Section 3.5: An endpoint SHOULD copy the error code from the STOP_SENDING frame to the RESET_STREAM
+        // frame it sends, but it can use any application error code.
         Reset(err);
     }
+
+    // TODO RFC 9000 Section 3.5: If the stream is in the "Data Sent" state, the endpoint May defer
+    // sending the RESET_STREAM frame until the packets containing outstanding data are acknowledged or declared lost.
+    // If any outstanding data is declared lost, the endpoint SHOULD send a RESET_STREAM frame instead of retransmitting
+    // the data.
 
     if (sended_cb_) {
         sended_cb_(0, err);

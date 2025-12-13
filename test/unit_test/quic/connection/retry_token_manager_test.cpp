@@ -162,7 +162,7 @@ TEST_F(RetryTokenManagerTest, ConcurrentAccess) {
     std::atomic<int> success_count{0};
 
     for (int i = 0; i < num_threads; ++i) {
-        threads.emplace_back([this, &success_count, i]() {
+        threads.emplace_back([this, &success_count, i, tokens_per_thread]() {
             Address local_addr;
             local_addr.SetIp("192.168.1." + std::to_string(i));
             local_addr.SetPort(10000 + i);

@@ -1,7 +1,7 @@
 #include "common/log/log.h"
-
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
+
 #include "quic/connection/error.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/reset_stream_frame.h"
@@ -22,10 +22,10 @@ RecvStream::RecvStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_d
     IStream(loop, id, active_send_cb, stream_close_cb, connection_close_cb),
     local_data_limit_(init_data_limit),
     final_offset_(0),
-    except_offset_(0) {
+    except_offset_(0),
+    reset_error_(0) {
     buffer_ = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
-    recv_machine_ =
-        std::make_shared<StreamStateMachineRecv>(std::bind(&RecvStream::Reset, this, 0));  // TODO make error code
+    recv_machine_ = std::make_shared<StreamStateMachineRecv>();
 }
 
 RecvStream::~RecvStream() {}
@@ -40,7 +40,9 @@ void RecvStream::Reset(uint32_t error) {
     // When error == 0, it means normal completion (received FIN from peer)
     // In that case, do nothing - no need to send STOP_SENDING
     if (error != 0) {
-        if (!recv_machine_->OnFrame(FrameType::kResetStream)) {
+        // Check if we can send STOP_SENDING frame in current state
+        if (!recv_machine_->CheckCanSendFrame(FrameType::kStopSending)) {
+            common::LOG_WARN("stream recv cannot send STOP_SENDING in current state. stream id:%d", stream_id_);
             return;
         }
 
@@ -49,6 +51,10 @@ void RecvStream::Reset(uint32_t error) {
         stop_frame->SetAppErrorCode(error);
 
         frames_list_.emplace_back(stop_frame);
+
+        // Transition state machine to kResetRecvd when locally initiated reset
+        recv_machine_->OnFrame(FrameType::kResetStream);
+
         ToSend();
         common::LOG_DEBUG("stream recv reset due to error. stream id:%d, error:%d", stream_id_, error);
     } else {
@@ -150,7 +156,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         }
 
         if (recv_cb_) {
-            recv_cb_(buffer_, is_last, 0);
+            recv_cb_(buffer_, is_last, reset_error_);
         }
 
         if (recv_machine_->CanAppReadAllData()) {
@@ -158,9 +164,11 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         }
 
     } else {
-        // recv a repeat packet
+        // RFC 9002 Section 2.2: The data at a given offset MUST NOT change if it is sent multiple times.
         if (out_order_frame_.find(stream_frame->GetOffset()) != out_order_frame_.end() ||
             stream_frame->GetOffset() < except_offset_) {
+            common::LOG_DEBUG(
+                "stream recv repeat packet. stream id:%d, offset:%d", stream_id_, stream_frame->GetOffset());
             return 0;
         }
 
@@ -170,11 +178,11 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // BUGFIX: Improved flow control window update strategy
     // Update window when consumed more than 50% to prevent stalling
     // Increase by larger increments (64KB) for better throughput
-    const uint64_t kWindowThreshold = local_data_limit_ / 2;  // Trigger at 50% consumption
-    const uint64_t kWindowIncrement = 65536;                  // Increase by 64KB each time
+    const uint64_t kWindowThreshold = local_data_limit_ / 2;  // Trigger at 50% consumption TODO configurable
+    const uint64_t kWindowIncrement = 65536;                  // Increase by 64KB each time TODO configurable
 
     if (local_data_limit_ - except_offset_ < kWindowThreshold) {
-        if (recv_machine_->CanSendMaxStrameDataFrame()) {
+        if (recv_machine_->CheckCanSendFrame(FrameType::kMaxStreamData)) {
             local_data_limit_ += kWindowIncrement;
             auto max_frame = std::make_shared<MaxStreamDataFrame>();
             max_frame->SetStreamID(stream_id_);
@@ -235,9 +243,13 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     final_offset_ = fin_offset;
 
-    // TODO delay call it
-    if (recv_cb_) {
-        recv_cb_(buffer_, false, reset_frame->GetAppErrorCode());
+    if (recv_machine_->GetStatus() == StreamState::kResetRecvd) {
+        if (recv_cb_) {
+            recv_cb_(buffer_, false, reset_frame->GetAppErrorCode());
+        }
+
+    } else {
+        reset_error_ = reset_frame->GetAppErrorCode();
     }
 
     // Metrics: RESET_STREAM received
