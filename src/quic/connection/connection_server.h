@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include "common/timer/if_timer.h"
+
 #include "quic/connection/connection_base.h"
 #include "quic/crypto/tls/tls_connection_server.h"
 
@@ -25,9 +25,11 @@ public:
     virtual void AddRemoteConnectionId(ConnectionID& id);
 
 protected:
-    virtual bool OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) override;
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) override;
     virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) override;
+
+    // HANDSHAKE_DONE frame handler (set as callback to frame processor)
+    bool HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
 
 private:
     virtual void SSLAlpnSelect(const unsigned char** out, unsigned char* outlen, const unsigned char* in,

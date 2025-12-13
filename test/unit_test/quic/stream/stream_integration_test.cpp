@@ -178,30 +178,29 @@ TEST_F(StreamIntegrationTest, CompleteSendStreamLifecycle) {
     int32_t sent = stream->Send(data, 100);
     EXPECT_EQ(sent, 100);
 
-    // Step 2: Encode to packet
+    // Step 2: Encode to packet (state automatically transitions Ready -> Send)
     std::vector<std::shared_ptr<IStream>> streams = {stream};
     bool encoded = mock_conn_->EncodeStreamsToPacket(streams);
     EXPECT_TRUE(encoded);
     EXPECT_EQ(mock_conn_->sent_packets_.size(), 1);
+    EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kSend);
 
-    // Step 3: Transition state
-    stream->GetSendStateMachine()->OnFrame(FrameType::kStream);
-
-    // Step 4: Simulate ACK
+    // Step 3: Simulate ACK
     mock_conn_->SimulateAck(1);
 
-    // Step 5: Close stream
+    // Step 4: Close stream
     stream->Close();
 
-    // Step 6: Encode FIN
-    stream->GetSendStateMachine()->OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag);
+    // Step 5: Encode FIN (state automatically transitions Send -> Data Sent)
     encoded = mock_conn_->EncodeStreamsToPacket(streams);
     EXPECT_TRUE(encoded);
+    EXPECT_EQ(mock_conn_->sent_packets_.size(), 2);
+    EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kDataSent);
 
-    // Step 7: Simulate FIN ACK
+    // Step 6: Simulate FIN ACK (transitions Data Sent -> Data Recvd)
     mock_conn_->SimulateAck(2);
 
-    // Step 8: Verify terminal state
+    // Step 7: Verify terminal state
     EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kDataRecvd);
 }
 
@@ -301,18 +300,18 @@ TEST_F(StreamIntegrationTest, BidirectionalRequestResponseFlow) {
     uint8_t request[] = "GET /index.html";
     stream->Send(request, strlen((char*)request));
 
-    // Step 2: Encode request
+    // Step 2: Encode request (state automatically transitions Ready -> Send)
     std::vector<std::shared_ptr<IStream>> streams = {stream};
-    stream->GetSendStateMachine()->OnFrame(FrameType::kStream);
     mock_conn_->EncodeStreamsToPacket(streams);
+    EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kSend);
 
     // Step 3: ACK request
     mock_conn_->SimulateAck(1);
 
-    // Step 4: Close send direction
+    // Step 4: Close send direction (state automatically transitions Send -> Data Sent)
     stream->Close();
-    stream->GetSendStateMachine()->OnFrame(FrameType::kStream | StreamFrameFlag::kFinFlag);
     mock_conn_->EncodeStreamsToPacket(streams);
+    EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kDataSent);
     mock_conn_->SimulateAck(2);
 
     EXPECT_EQ(stream->GetSendStateMachine()->GetStatus(), StreamState::kDataRecvd);

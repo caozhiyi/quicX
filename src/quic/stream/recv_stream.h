@@ -30,7 +30,7 @@ public:
     virtual void SetStreamReadCallBack(stream_read_callback cb) { recv_cb_ = cb; }
 
     // *************** inner interface ***************//
-    // process recv frames
+    // process recv frames, return the number of bytes consumed.
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
 
     // try generate data to send
@@ -55,6 +55,7 @@ protected:
 
     std::shared_ptr<StreamStateMachineRecv> recv_machine_;
     stream_read_callback recv_cb_;
+    uint32_t reset_error_;
 };
 
 }  // namespace quic

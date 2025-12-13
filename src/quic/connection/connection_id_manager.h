@@ -1,12 +1,11 @@
 #ifndef QUIC_CONNECTION_CONNECTION_ID_MANAGER
 #define QUIC_CONNECTION_CONNECTION_ID_MANAGER
 
-#include <map>
-#include <string>
-#include <cstring>
 #include <cstdint>
+#include <cstring>
 #include <functional>
-#include "quic/connection/type.h"
+#include <map>
+
 #include "quic/connection/connection_id.h"
 
 namespace quicx {
@@ -18,10 +17,10 @@ public:
     // add_connection_id_cb: callback when a new connection id is generated
     // retire_connection_id_cb: callback when a connection id is retired
     ConnectionIDManager(std::function<void(ConnectionID&)> add_connection_id_cb = nullptr,
-                        std::function<void(ConnectionID&)> retire_connection_id_cb = nullptr):
-                        cur_sequence_number_(0),
-                        add_connection_id_cb_(add_connection_id_cb),
-                        retire_connection_id_cb_(retire_connection_id_cb) {}
+        std::function<void(ConnectionID&)> retire_connection_id_cb = nullptr):
+        cur_sequence_number_(0),
+        add_connection_id_cb_(add_connection_id_cb),
+        retire_connection_id_cb_(retire_connection_id_cb) {}
 
     ~ConnectionIDManager() {}
 
@@ -31,10 +30,10 @@ public:
     bool AddID(ConnectionID& id);
     bool AddID(const uint8_t* id, uint16_t len);
     bool UseNextID();
-    
+
     // Get the number of available CIDs in the pool
     size_t GetAvailableIDCount() const { return sequence_cid_map_.size(); }
-    
+
     // Get all CIDs managed by this manager (for cleanup on connection close)
     std::vector<uint64_t> GetAllIDHashes();
 
@@ -47,7 +46,7 @@ private:
     std::function<void(ConnectionID&)> retire_connection_id_cb_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

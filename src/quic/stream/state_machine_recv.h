@@ -7,6 +7,7 @@ namespace quicx {
 namespace quic {
 
 /*
+Reference: RFC 9000 Section 3.2
 receiving stream states
     o
     | Recv STREAM / STREAM_DATA_BLOCKED / RESET_STREAM
@@ -43,18 +44,14 @@ receiving stream states
 
 class StreamStateMachineRecv: public IStreamStateMachine {
 public:
-    StreamStateMachineRecv(std::function<void()> stream_close_cb, StreamState state = StreamState::kRecv);
+    StreamStateMachineRecv(StreamState state = StreamState::kRecv);
     ~StreamStateMachineRecv();
 
     // current recv frame type
     bool OnFrame(uint16_t frame_type);
 
-    // can send max stream data frame?
-    bool CanSendMaxStrameDataFrame();
-
-    // can send stop sending frame?
-    bool CanSendStopSendingFrame();
-
+    // check if can send this frame type?
+    bool CheckCanSendFrame(uint16_t frame_type);
     // can application read all data?
     bool CanAppReadAllData();
 
@@ -63,6 +60,9 @@ public:
 
     // application read all data
     bool AppReadAllData();
+
+private:
+    bool is_reset_received_;
 };
 
 }  // namespace quic

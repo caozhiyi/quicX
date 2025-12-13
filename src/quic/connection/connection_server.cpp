@@ -29,28 +29,29 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
         std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
+
+    // Set HANDSHAKE_DONE frame handler callback
+    frame_processor_->SetHandshakeDoneCallback(
+        std::bind(&ServerConnection::HandleHandshakeDoneFrame, this, std::placeholders::_1));
 }
 
 ServerConnection::~ServerConnection() {
     // 清理 qlog trace
     if (qlog_trace_) {
         // Use connection ID hash as trace identifier
-        std::string trace_id = std::to_string(local_conn_id_manager_->GetCurrentID().Hash());
+        std::string trace_id = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
         common::QlogManager::Instance().RemoveTrace(trace_id);
     }
 }
 
 void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
-    remote_conn_id_manager_->AddID(id);
+    cid_coordinator_->GetRemoteConnectionIDManager()->AddID(id);
 
     // Create qlog trace for this connection (if not already created)
     if (!qlog_trace_ && common::QlogManager::Instance().IsEnabled()) {
         // Use connection ID hash as trace identifier
-        std::string trace_id = std::to_string(local_conn_id_manager_->GetCurrentID().Hash());
-        qlog_trace_ = common::QlogManager::Instance().CreateTrace(
-            trace_id,
-            common::VantagePoint::kServer
-        );
+        std::string trace_id = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
+        qlog_trace_ = common::QlogManager::Instance().CreateTrace(trace_id, common::VantagePoint::kServer);
 
         // Log connection_started event
         common::ConnectionStartedData data;
@@ -59,10 +60,10 @@ void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
         data.src_ip = peer_addr.GetIp();
         data.src_port = peer_addr.GetPort();
         data.dst_ip = "0.0.0.0";  // Server listening address (TODO: get from socket)
-        data.dst_port = 0;         // TODO: get from socket
+        data.dst_port = 0;        // TODO: get from socket
         // Use hash values for connection IDs
         data.src_cid = std::to_string(id.Hash());
-        data.dst_cid = std::to_string(local_conn_id_manager_->GetCurrentID().Hash());
+        data.dst_cid = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
         data.protocol = "QUIC";
         data.ip_version = "ipv4";  // TODO: Add IsIPv6() method to Address class
 
@@ -73,7 +74,7 @@ void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
     }
 }
 
-bool ServerConnection::OnHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
+bool ServerConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
     state_machine_.OnHandshakeDone();
 
     // RFC 9000 Section 4.10: Discard Initial and Handshake packet number spaces
@@ -108,7 +109,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     if (tls_connection_->DoHandleShake()) {
         common::LOG_DEBUG("handshake done.");
         std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
-        ToSendFrame(frame);
+        ToSendFrame(frame);  // TODO, The server MUST send a HANDSHAKE_DONE frame as soon as the handshake is complete
 
         // RFC 9000 Section 4.10: Server discards Initial and Handshake spaces after sending HANDSHAKE_DONE
         recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);

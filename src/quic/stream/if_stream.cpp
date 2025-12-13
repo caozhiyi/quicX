@@ -1,12 +1,9 @@
 #include "quic/stream/if_stream.h"
-#include "quic/connection/controler/send_control.h"
 
 namespace quicx {
 namespace quic {
 
-IStream::~IStream() {
-
-}
+IStream::~IStream() {}
 
 IStream::TrySendResult IStream::TrySendData(IFrameVisitor* visitor) {
     is_active_send_ = false;
@@ -21,7 +18,7 @@ void IStream::ToClose() {
 
 void IStream::ToSend() {
     if (is_active_send_) {
-        //return; // TODO crypto stream need resend
+        // return; // TODO crypto stream need resend
     }
     is_active_send_ = true;
 
@@ -30,5 +27,5 @@ void IStream::ToSend() {
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

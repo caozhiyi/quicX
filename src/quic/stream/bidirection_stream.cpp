@@ -50,8 +50,8 @@ void BidirectionStream::Reset(uint32_t error) {
     // This is a public API for application to reset the stream
     // It should reset both directions when called with an actual error
     if (error != 0) {
-        SendStream::Reset(error);
-        RecvStream::Reset(error);
+        SendStream::Reset(error);  // send reset frame
+        RecvStream::Reset(error);  // send stop sending frame
         // After resetting both directions, check if both are in terminal state
         CheckStreamClose();
     } else {

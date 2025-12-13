@@ -13,14 +13,6 @@
 #include "quic/connection/error.h"
 #include "quic/connection/util.h"
 #include "quic/frame/connection_close_frame.h"
-#include "quic/frame/max_data_frame.h"
-#include "quic/frame/max_streams_frame.h"
-#include "quic/frame/new_connection_id_frame.h"
-#include "quic/frame/new_token_frame.h"
-#include "quic/frame/path_challenge_frame.h"
-#include "quic/frame/path_response_frame.h"
-#include "quic/frame/retire_connection_id_frame.h"
-#include "quic/frame/stream_frame.h"
 #include "quic/frame/type.h"
 #include "quic/packet/handshake_packet.h"
 #include "quic/packet/init_packet.h"
@@ -30,10 +22,7 @@
 #include "quic/packet/type.h"
 #include "quic/packet/version_negotiation_packet.h"
 #include "quic/quicx/global_resource.h"
-#include "quic/stream/bidirection_stream.h"
 #include "quic/stream/fix_buffer_frame_visitor.h"
-#include "quic/stream/recv_stream.h"
-#include "quic/stream/send_stream.h"
 
 namespace quicx {
 namespace quic {
@@ -51,26 +40,20 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     event_loop_(loop),
     last_communicate_time_(0),
     flow_control_(start),
-    state_machine_(this),
-    closing_error_code_(0),
-    closing_trigger_frame_(0),
-    closing_reason_("") {
+    state_machine_(this) {
     // Metrics: Record handshake start time
     handshake_start_time_ = common::UTCTimeMsec();
     connection_crypto_.SetRemoteTransportParamCB(
         std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
-    // remote CID manager: manages CIDs provided by peer for us to use
-    // We manually send RETIRE_CONNECTION_ID when switching CIDs, not automatically on retire
-    remote_conn_id_manager_ = std::make_shared<ConnectionIDManager>();
-    local_conn_id_manager_ =
-        std::make_shared<ConnectionIDManager>(std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
-            std::bind(&BaseConnection::RetireConnectionId, this, std::placeholders::_1));
+    // Initialize connection ID coordinator (refactored)
+    cid_coordinator_ = std::make_unique<ConnectionIDCoordinator>(event_loop_, send_manager_,
+        std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
+        std::bind(&BaseConnection::RetireConnectionId, this, std::placeholders::_1));
+    cid_coordinator_->Initialize();
 
     send_manager_.SetSendRetryCallBack(std::bind(&BaseConnection::ActiveSend, this));
     send_manager_.SetFlowControl(&flow_control_);
-    send_manager_.SetRemoteConnectionIDManager(remote_conn_id_manager_);
-    send_manager_.SetLocalConnectionIDManager(local_conn_id_manager_);
 
     // RFC 9000: Setup immediate ACK callback for Initial/Handshake/out-of-order packets
     recv_control_.SetImmediateAckCB([this](PacketNumberSpace ns) { SendImmediateAckAtLevel(ns); });
@@ -88,6 +71,41 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // Set stream data ACK callback for tracking stream completion
     send_manager_.send_control_.SetStreamDataAckCallback(std::bind(
         &BaseConnection::OnStreamDataAcked, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+
+    // Initialize timer coordinator (refactored)
+    timer_coordinator_ =
+        std::make_unique<TimerCoordinator>(event_loop_, transport_param_, send_manager_, state_machine_);
+
+    // Initialize path manager (refactored)
+    path_manager_ = std::make_unique<PathManager>(event_loop_, send_manager_, *cid_coordinator_, transport_param_,
+        peer_addr_, std::bind(&BaseConnection::ToSendFrame, this, std::placeholders::_1),
+        std::bind(&BaseConnection::ActiveSend, this),
+        [this](const common::Address& addr) { this->SetPeerAddress(addr); });
+
+    // Initialize stream manager (refactored)
+    stream_manager_ = std::make_unique<StreamManager>(event_loop_, flow_control_, transport_param_, send_manager_,
+        stream_state_cb_, std::bind(&BaseConnection::ToSendFrame, this, std::placeholders::_1),
+        std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
+        std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
+        std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
+            std::placeholders::_3));
+
+    // Initialize connection closer (refactored)
+    connection_closer_ = std::make_unique<ConnectionCloser>(
+        event_loop_, state_machine_, send_manager_, transport_param_, connection_close_cb);
+
+    // Initialize frame processor (refactored)
+    frame_processor_ =
+        std::make_unique<FrameProcessor>(state_machine_, connection_crypto_, flow_control_, send_manager_,
+            *stream_manager_, *cid_coordinator_, *path_manager_, *connection_closer_, transport_param_, token_);
+    // Set callbacks for frame processor
+    frame_processor_->SetToSendFrameCallback(std::bind(&BaseConnection::ToSendFrame, this, std::placeholders::_1));
+    frame_processor_->SetActiveSendCallback(std::bind(&BaseConnection::ActiveSend, this));
+    frame_processor_->SetInnerConnectionCloseCallback(std::bind(&BaseConnection::InnerConnectionClose, this,
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    frame_processor_->SetStreamStateCallback(stream_state_cb_);
+    frame_processor_->SetRetryPendingStreamRequestsCallback(
+        std::bind(&BaseConnection::RetryPendingStreamRequests, this));
 
     // Metrics: Connection created
     common::Metrics::GaugeInc(common::MetricsStd::QuicConnectionsActive);
@@ -130,28 +148,8 @@ void BaseConnection::CloseInternal() {
     // Clear retransmission data to prevent retransmitting packets after close
     send_manager_.ClearRetransmissionData();
 
-    // Graceful close: Check if there's pending data to send
-    if (send_manager_.GetSendOperation() != SendOperation::kAllSendDone) {
-        // Mark for graceful closing, will enter Closing state when data send completes
-        common::LOG_DEBUG("Graceful close pending, waiting for data to be sent");
-        graceful_closing_pending_ = true;
-
-        // Set a timeout to force close if data doesn't complete in time
-        // Use 3×PTO as a reasonable timeout (similar to draining period)
-        graceful_close_timer_ = common::TimerTask(std::bind(&BaseConnection::OnGracefulCloseTimeout, this));
-        event_loop_->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);
-        common::LOG_DEBUG("Graceful close timeout set to %u ms", GetCloseWaitTime() * 3);
-        return;
-    }
-
-    // No pending data, immediately enter Closing state
-    // Store error info for retransmission
-    closing_error_code_ = QuicErrorCode::kNoError;
-    closing_trigger_frame_ = 0;
-    closing_reason_ = "";
-    last_connection_close_retransmit_time_ = 0;  // Reset retransmit timer
-
-    state_machine_.OnClose();
+    // Delegate to connection closer
+    connection_closer_->StartGracefulClose(std::bind(&BaseConnection::ActiveSend, this));
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
@@ -159,115 +157,34 @@ void BaseConnection::Reset(uint32_t error_code) {
 }
 
 std::shared_ptr<IQuicStream> BaseConnection::MakeStream(StreamDirection type) {
-    // check streams limit
-    uint64_t stream_id;
-    std::shared_ptr<IFrame> frame;
-    bool can_make_stream = false;
-    if (type == StreamDirection::kSend) {
-        can_make_stream = flow_control_.CheckLocalUnidirectionStreamLimit(stream_id, frame);
-    } else {
-        can_make_stream = flow_control_.CheckLocalBidirectionStreamLimit(stream_id, frame);
-    }
-    if (frame) {
-        ToSendFrame(frame);
-    }
-
-    if (!can_make_stream) {
-        common::LOG_DEBUG("make stream limited.");
-        return nullptr;
-    }
-
-    std::shared_ptr<IStream> new_stream;
-    if (type == StreamDirection::kSend) {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::kSend);
-    } else {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataBidiLocal(), stream_id, StreamDirection::kBidi);
-    }
-    streams_map_[stream_id] = new_stream;
-
-    // Metrics: Stream created
-    common::Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
-    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsCreated);
-
-    return new_stream;
+    // Delegate to stream manager
+    return stream_manager_->MakeStreamWithFlowControl(type);
 }
 
 bool BaseConnection::MakeStreamAsync(StreamDirection type, stream_creation_callback callback) {
-    // Try to create stream immediately
-    auto stream = MakeStream(type);
-    if (stream) {
-        // Success, invoke callback immediately
-        callback(stream);
-        return true;
-    }
-
-    // Stream creation blocked, check queue size limit
-    std::lock_guard<std::mutex> lock(pending_streams_mutex_);
-
-    // Queue size limit: initial_max_streams_bidi_ (user's requirement)
-    uint64_t max_queue_size = (type == StreamDirection::kSend) ? flow_control_.GetLocalUnidirectionStreamLimit()
-                                                               : flow_control_.GetLocalBidirectionStreamLimit();
-
-    if (pending_stream_requests_.size() >= max_queue_size) {
-        common::LOG_ERROR("MakeStreamAsync: retry queue full (size: %zu, limit: %llu), rejecting request",
-            pending_stream_requests_.size(), max_queue_size);
-        return false;  // Queue full, reject request
-    }
-
-    // Add to retry queue
-    pending_stream_requests_.push({type, callback});
-
-    common::LOG_DEBUG("MakeStreamAsync: stream creation blocked, queued for retry (queue size: %zu/%llu)",
-        pending_stream_requests_.size(), max_queue_size);
-
-    return true;  // Successfully queued
+    // Delegate to stream manager
+    return stream_manager_->MakeStreamAsync(type, callback);
 }
 
 uint64_t BaseConnection::AddTimer(timer_callback callback, uint32_t timeout_ms) {
-    if (!event_loop_) {
-        common::LOG_ERROR("BaseConnection::AddTimer: event_loop_ is null");
+    if (!timer_coordinator_) {
+        common::LOG_ERROR("BaseConnection::AddTimer: timer_coordinator_ is null");
         return 0;
     }
-    return event_loop_->AddTimer(callback, timeout_ms);
+    return timer_coordinator_->AddTimer(callback, timeout_ms);
 }
 
 void BaseConnection::RemoveTimer(uint64_t timer_id) {
-    if (!event_loop_) {
-        common::LOG_ERROR("BaseConnection::RemoveTimer: event_loop_ is null");
+    if (!timer_coordinator_) {
+        common::LOG_ERROR("BaseConnection::RemoveTimer: timer_coordinator_ is null");
         return;
     }
-    event_loop_->RemoveTimer(timer_id);
+    timer_coordinator_->RemoveTimer(timer_id);
 }
 
 void BaseConnection::RetryPendingStreamRequests() {
-    std::lock_guard<std::mutex> lock(pending_streams_mutex_);
-
-    if (pending_stream_requests_.empty()) {
-        return;
-    }
-
-    size_t retry_count = 0;
-    size_t success_count = 0;
-    size_t initial_size = pending_stream_requests_.size();
-
-    while (!pending_stream_requests_.empty()) {
-        auto& request = pending_stream_requests_.front();
-        auto stream = MakeStream(request.type);
-
-        if (stream) {
-            // Success, invoke callback
-            request.callback(stream);
-            pending_stream_requests_.pop();
-            success_count++;
-        } else {
-            // Still blocked, stop retrying (wait for next MAX_STREAMS)
-            break;
-        }
-        retry_count++;
-    }
-
-    common::LOG_INFO("RetryPendingStreamRequests: retried %zu requests, %zu succeeded, %zu remaining (initial: %zu)",
-        retry_count, success_count, pending_stream_requests_.size(), initial_size);
+    // Delegate to stream manager
+    stream_manager_->RetryPendingStreamRequests();
 }
 
 void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
@@ -280,11 +197,14 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
         common::LOG_ERROR("encode transport param failed");
         return;
     }
+
+    // RFC9001 4.1.3: Before starting the handshake, QUIC provides TLS with the transport parameters (see Section 8.2)
+    // that it wishes to carry.
     tls_connection_->AddTransportParam(tp_buffer, write_buffer.GetDataLength());
 }
 
 uint64_t BaseConnection::GetConnectionIDHash() {
-    return local_conn_id_manager_->GetCurrentID().Hash();
+    return cid_coordinator_->GetConnectionIDHash();
 }
 
 bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation) {
@@ -330,7 +250,7 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
 
     // PATH_CHALLENGE/PATH_RESPONSE frames can only be sent in 1-RTT packets
     // If we're doing path validation and Application keys are ready, use them
-    if (path_probe_inflight_ && encrypto_level < kApplication) {
+    if (path_manager_->IsPathProbeInflight() && encrypto_level < kApplication) {
         auto app_crypto = connection_crypto_.GetCryptographer(kApplication);
         if (app_crypto) {
             encrypto_level = kApplication;
@@ -386,21 +306,10 @@ bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, S
 
     // Check for graceful close: if all data is sent and graceful close is pending
     send_operation = send_manager_.GetSendOperation();
-    if (send_operation == SendOperation::kAllSendDone && graceful_closing_pending_ &&
+    if (send_operation == SendOperation::kAllSendDone &&
         state_machine_.GetState() == ConnectionStateType::kStateConnected) {
-        common::LOG_DEBUG("All data sent, proceeding with graceful close");
-        graceful_closing_pending_ = false;
-
-        // Cancel the graceful close timeout timer since we're completing normally
-        event_loop_->RemoveTimer(graceful_close_timer_);
-
-        // Enter Closing state and send CONNECTION_CLOSE
-        closing_error_code_ = QuicErrorCode::kNoError;
-        closing_trigger_frame_ = 0;
-        closing_reason_ = "";
-        last_connection_close_retransmit_time_ = 0;  // Reset retransmit timer
-
-        state_machine_.OnClose();
+        // Delegate to connection closer to check if graceful close can complete
+        connection_closer_->CheckGracefulCloseComplete(std::bind(&BaseConnection::ActiveSend, this));
     }
 
     return ret;
@@ -461,39 +370,24 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
 
         if (!has_connection_close) {
             // No CONNECTION_CLOSE found, retransmit our CONNECTION_CLOSE
-            // But limit retransmission rate to avoid flooding (RFC 9000 Section 10.2)
-            // Retransmit at most once per PTO to avoid excessive retransmissions
-            // Use the 'now' parameter passed to OnPackets for time comparison
+            // Delegate to connection closer to check if retransmission is needed
             uint64_t current_time = (now > 0) ? now : common::UTCTimeMsec();
-            uint32_t pto = send_manager_.GetPTO(0);  // Use 0 for max_ack_delay (conservative)
-            if (pto == 0) {
-                pto = 100;  // Fallback to 100ms if PTO not available
-            }
 
-            // Always retransmit if last_connection_close_retransmit_time_ is 0 (first retransmit)
-            // or if enough time has passed since last retransmit
-            if (last_connection_close_retransmit_time_ == 0 ||
-                (current_time - last_connection_close_retransmit_time_) >= pto) {
-                common::LOG_DEBUG(
-                    "Connection in closing state, retransmit CONNECTION_CLOSE (last retransmit: %llu ms ago)",
-                    last_connection_close_retransmit_time_ == 0
-                        ? 0
-                        : (current_time - last_connection_close_retransmit_time_));
+            if (connection_closer_->ShouldRetransmitConnectionClose(current_time)) {
+                common::LOG_DEBUG("Connection in closing state, retransmit CONNECTION_CLOSE");
                 auto frame = std::make_shared<ConnectionCloseFrame>();
-                frame->SetErrorCode(closing_error_code_);
-                frame->SetErrFrameType(closing_trigger_frame_);
-                frame->SetReason(closing_reason_);
+                frame->SetErrorCode(connection_closer_->GetClosingErrorCode());
+                frame->SetErrFrameType(connection_closer_->GetClosingTriggerFrame());
+                frame->SetReason(connection_closer_->GetClosingReason());
                 send_manager_.ToSendFrame(frame);
                 // In Closing state, directly trigger active_connection_cb_ to allow sending CONNECTION_CLOSE
                 // ActiveSend() is blocked in Closing state, so we need to call the callback directly
                 if (active_connection_cb_) {
                     active_connection_cb_(shared_from_this());
                 }
-                last_connection_close_retransmit_time_ = current_time;
+                connection_closer_->MarkConnectionCloseRetransmitted(current_time);
             } else {
-                common::LOG_DEBUG(
-                    "Connection in closing state, skipping retransmit (last retransmit: %llu ms ago, PTO: %u ms)",
-                    current_time - last_connection_close_retransmit_time_, pto);
+                common::LOG_DEBUG("Connection in closing state, skipping retransmit (too soon)");
             }
         }
         return;  // Do not process other frames
@@ -568,8 +462,7 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     }
 
     // reset idle timeout timer task
-    event_loop_->RemoveTimer(idle_timeout_task_);
-    event_loop_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
+    timer_coordinator_->ResetIdleTimer();
 }
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
@@ -668,395 +561,28 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
     // Metrics: Frames received
     common::Metrics::CounterInc(common::MetricsStd::FramesRxTotal, frames.size());
 
+    // Update last communicate time for PING frames
     for (size_t i = 0; i < frames.size(); i++) {
         uint16_t type = frames[i]->GetType();
         common::LOG_DEBUG("recv frame: %s", FrameType2String(type).c_str());
-        switch (type) {
-            case FrameType::kPadding:
-                // do nothing
-                break;
-            case FrameType::kPing:
-                last_communicate_time_ = common::UTCTimeMsec();
-                break;
-            case FrameType::kAck:
-            case FrameType::kAckEcn:
-                if (!OnAckFrame(frames[i], crypto_level)) {
-                    return false;
-                }
-                break;
-            case FrameType::kCrypto:
-                if (!OnCryptoFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kNewToken:
-                if (!OnNewTokenFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kMaxData:
-                if (!OnMaxDataFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kMaxStreamsBidirectional:
-            case FrameType::kMaxStreamsUnidirectional:
-                if (!OnMaxStreamFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kDataBlocked:
-                // Metrics: Connection-level flow control blocked
-                common::Metrics::CounterInc(common::MetricsStd::QuicFlowControlBlocked);
-                if (!OnDataBlockFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kStreamsBlockedBidirectional:
-            case FrameType::kStreamsBlockedUnidirectional:
-                if (!OnStreamBlockFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kNewConnectionId:
-                if (!OnNewConnectionIDFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kRetireConnectionId:
-                if (!OnRetireConnectionIDFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kPathChallenge:
-                if (!OnPathChallengeFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kPathResponse:
-                if (!OnPathResponseFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kConnectionClose:
-                if (!OnConnectionCloseFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kConnectionCloseApp:
-                if (!OnConnectionCloseAppFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            case FrameType::kHandshakeDone:
-                if (!OnHandshakeDoneFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            // ********** stream frame **********
-            case FrameType::kResetStream:
-            case FrameType::kStopSending:
-            case FrameType::kStreamDataBlocked:
-            case FrameType::kMaxStreamData:
-                if (!OnStreamFrame(frames[i])) {
-                    return false;
-                }
-                break;
-            default:
-                if (StreamFrame::IsStreamFrame(type)) {
-                    if (!OnStreamFrame(frames[i])) {
-                        return false;
-                    }
-                } else {
-                    common::LOG_ERROR("invalid frame type. type:%s", type);
-                    return false;
-                }
+        if (type == FrameType::kPing) {
+            last_communicate_time_ = common::UTCTimeMsec();
+        }
+        // Metrics: Connection-level flow control blocked
+        if (type == FrameType::kDataBlocked) {
+            common::Metrics::CounterInc(common::MetricsStd::QuicFlowControlBlocked);
         }
     }
-    return true;
-}
 
-bool BaseConnection::OnStreamFrame(std::shared_ptr<IFrame> frame) {
-    auto stream_frame = std::dynamic_pointer_cast<IStreamFrame>(frame);
-    if (!stream_frame) {
-        common::LOG_ERROR("invalid stream frame.");
-        return false;
-    }
-
-    // Allow processing of application data only when encryption is ready; 0-RTT stream frames
-    // arrive before handshake confirmation and must be accepted per RFC (subject to anti-replay policy
-    // which is handled at TLS/session level). Here we don't gate on connection state.
-    common::LOG_DEBUG("process stream data frame. stream id:%d", stream_frame->GetStreamID());
-    // find stream
-    uint64_t stream_id = stream_frame->GetStreamID();
-    auto stream = streams_map_.find(stream_id);
-    if (stream != streams_map_.end()) {
-        // CRITICAL: Hold a local shared_ptr to prevent use-after-free
-        // If the callback calls error_handler_ which removes the stream,
-        // this local copy keeps the object alive until we return
-        auto stream_ptr = stream->second;
-        flow_control_.AddRemoteSendData(stream_ptr->OnFrame(frame));
-        return true;
-    }
-
-    // check streams limit
-    std::shared_ptr<IFrame> send_frame;
-    bool can_make_stream = flow_control_.CheckRemoteStreamLimit(stream_id, send_frame);
-    if (send_frame) {
-        ToSendFrame(send_frame);
-    }
-    if (!can_make_stream) {
-        return false;
-    }
-
-    // create new stream
-    std::shared_ptr<IStream> new_stream;
-    if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::StreamDirection::kBidirectional) {
-        new_stream =
-            MakeStream(transport_param_.GetInitialMaxStreamDataBidiRemote(), stream_id, StreamDirection::kBidi);
-
-    } else {
-        new_stream = MakeStream(transport_param_.GetInitialMaxStreamDataUni(), stream_id, StreamDirection::kRecv);
-    }
-    // check peer data limit
-    if (!flow_control_.CheckRemoteSendDataLimit(send_frame)) {
-        InnerConnectionClose(QuicErrorCode::kFlowControlError, frame->GetType(), "flow control stream data limit.");
-        return false;
-    }
-    if (send_frame) {
-        ToSendFrame(send_frame);
-    }
-    // notify stream state
-    if (stream_state_cb_) {
-        stream_state_cb_(new_stream, 0);
-    }
-    // new stream process frame
-    streams_map_[stream_id] = new_stream;
-    flow_control_.AddRemoteSendData(new_stream->OnFrame(frame));
-    return true;
-}
-
-bool BaseConnection::OnAckFrame(std::shared_ptr<IFrame> frame, uint16_t crypto_level) {
-    auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
-    send_manager_.OnPacketAck(ns, frame);
-    return true;
-}
-
-bool BaseConnection::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
-    connection_crypto_.OnCryptoFrame(frame);
-    return true;
-}
-
-bool BaseConnection::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
-    auto token_frame = std::dynamic_pointer_cast<NewTokenFrame>(frame);
-    if (!token_frame) {
-        common::LOG_ERROR("invalid new token frame.");
-        return false;
-    }
-    auto data = token_frame->GetToken();
-    token_ = std::move(std::string((const char*)data, token_frame->GetTokenLength()));
-    return true;
-}
-
-bool BaseConnection::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
-    auto max_data_frame = std::dynamic_pointer_cast<MaxDataFrame>(frame);
-    if (!max_data_frame) {
-        common::LOG_ERROR("invalid max data frame.");
-        return false;
-    }
-    uint64_t max_data_size = max_data_frame->GetMaximumData();
-    flow_control_.AddLocalSendDataLimit(max_data_size);
-    return true;
-}
-
-bool BaseConnection::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
-    std::shared_ptr<IFrame> send_frame;
-    flow_control_.CheckRemoteSendDataLimit(send_frame);
-    if (send_frame) {
-        ToSendFrame(send_frame);
-    }
-    return true;
-}
-
-bool BaseConnection::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
-    std::shared_ptr<IFrame> send_frame;
-    flow_control_.CheckRemoteStreamLimit(0, send_frame);
-    if (send_frame) {
-        ToSendFrame(send_frame);
-        ActiveSend();  // Immediately send MAX_STREAMS to reduce latency
-
-        common::LOG_INFO("Received STREAMS_BLOCKED, sending MAX_STREAMS immediately");
-    }
-    return true;
-}
-
-bool BaseConnection::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
-    auto stream_block_frame = std::dynamic_pointer_cast<MaxStreamsFrame>(frame);
-
-    uint64_t old_limit = 0;
-    uint64_t new_limit = stream_block_frame->GetMaximumStreams();
-
-    if (stream_block_frame->GetType() == FrameType::kMaxStreamsBidirectional) {
-        old_limit = flow_control_.GetLocalBidirectionStreamLimit();
-        flow_control_.AddLocalBidirectionStreamLimit(new_limit);
-
-        common::LOG_INFO(
-            "Received MAX_STREAMS_BIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
-    } else {
-        old_limit = flow_control_.GetLocalUnidirectionStreamLimit();
-        flow_control_.AddLocalUnidirectionStreamLimit(new_limit);
-
-        common::LOG_INFO(
-            "Received MAX_STREAMS_UNIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
-    }
-
-    // Trigger retry of pending stream creation requests
-    RetryPendingStreamRequests();
-
-    return true;
-}
-
-bool BaseConnection::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
-    auto new_cid_frame = std::dynamic_pointer_cast<NewConnectionIDFrame>(frame);
-    if (!new_cid_frame) {
-        common::LOG_ERROR("invalid new connection id frame.");
-        return false;
-    }
-
-    // If Retire Prior To > 0, we need to retire old CIDs and send RETIRE_CONNECTION_ID
-    uint64_t retire_prior_to = new_cid_frame->GetRetirePriorTo();
-    if (retire_prior_to > 0) {
-        // Send RETIRE_CONNECTION_ID for all CIDs with sequence < retire_prior_to
-        // We need to iterate from 0 to retire_prior_to-1
-        for (uint64_t seq = 0; seq < retire_prior_to; ++seq) {
-            auto retire = std::make_shared<RetireConnectionIDFrame>();
-            retire->SetSequenceNumber(seq);
-            ToSendFrame(retire);
-        }
-        // Remove these CIDs from our remote pool
-        remote_conn_id_manager_->RetireIDBySequence(retire_prior_to - 1);
-    }
-
-    // Add new CID to pool
-    ConnectionID id;
-    new_cid_frame->GetConnectionID(id);
-    remote_conn_id_manager_->AddID(id);
-    return true;
-}
-
-bool BaseConnection::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
-    auto retire_cid_frame = std::dynamic_pointer_cast<RetireConnectionIDFrame>(frame);
-    if (!retire_cid_frame) {
-        common::LOG_ERROR("invalid retire connection id frame.");
-        return false;
-    }
-    // Peer is retiring a CID we provided to them, remove from local pool
-    local_conn_id_manager_->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
-    return true;
-}
-
-bool BaseConnection::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
-    auto close_frame = std::dynamic_pointer_cast<ConnectionCloseFrame>(frame);
-    if (!close_frame) {
-        common::LOG_ERROR("invalid connection close frame.");
-        return false;
-    }
-
-    if (state_machine_.GetState() != ConnectionStateType::kStateConnected &&
-        state_machine_.GetState() != ConnectionStateType::kStateClosing) {
-        return false;
-    }
-
-    // Cancel graceful close if it's pending (peer initiated close)
-    if (graceful_closing_pending_) {
-        common::LOG_DEBUG("Canceling graceful close due to peer CONNECTION_CLOSE");
-        graceful_closing_pending_ = false;
-        event_loop_->RemoveTimer(graceful_close_timer_);
-    }
-
-    // Store error info from peer's CONNECTION_CLOSE for application notification
-    closing_error_code_ = close_frame->GetErrorCode();
-    closing_trigger_frame_ = close_frame->GetErrFrameType();
-    closing_reason_ = close_frame->GetReason();
-
-    // Received CONNECTION_CLOSE from peer: enter Draining state
-    // RFC 9000: In draining state, endpoint MUST NOT send any packets
-    state_machine_.OnConnectionCloseFrameReceived();
-
-    common::LOG_INFO("Connection entering draining state. error_code:%u, reason:%s", close_frame->GetErrorCode(),
-        close_frame->GetReason().c_str());
-
-    return true;
-}
-
-bool BaseConnection::OnConnectionCloseAppFrame(std::shared_ptr<IFrame> frame) {
-    return OnConnectionCloseFrame(frame);
-}
-
-bool BaseConnection::OnPathChallengeFrame(std::shared_ptr<IFrame> frame) {
-    auto challenge_frame = std::dynamic_pointer_cast<PathChallengeFrame>(frame);
-    if (!challenge_frame) {
-        common::LOG_ERROR("invalid path challenge frame.");
-        return false;
-    }
-    auto data = challenge_frame->GetData();
-    auto response_frame = std::make_shared<PathResponseFrame>();
-    response_frame->SetData(data);
-    ToSendFrame(response_frame);
-    return true;
-}
-
-bool BaseConnection::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
-    auto response_frame = std::dynamic_pointer_cast<PathResponseFrame>(frame);
-    if (!response_frame) {
-        common::LOG_ERROR("invalid path response frame.");
-        return false;
-    }
-    auto data = response_frame->GetData();
-    if (path_probe_inflight_ && memcmp(data, pending_path_challenge_data_, 8) == 0) {
-        // token matched: path validated -> promote candidate to active
-        path_probe_inflight_ = false;
-        event_loop_->RemoveTimer(path_probe_task_);  // Cancel retry timer
-        memset(pending_path_challenge_data_, 0, sizeof(pending_path_challenge_data_));
-
-        if (!(candidate_peer_addr_ == peer_addr_)) {
-            common::LOG_INFO("Path validated successfully, switching from %s:%d to %s:%d", peer_addr_.GetIp().c_str(),
-                peer_addr_.GetPort(), candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
-
-            SetPeerAddress(candidate_peer_addr_);
-            // Rotate to next remote CID and retire the old one
-            auto old_cid = remote_conn_id_manager_->GetCurrentID();
-            if (remote_conn_id_manager_->UseNextID()) {
-                // Send RETIRE_CONNECTION_ID for the old CID
-                auto retire = std::make_shared<RetireConnectionIDFrame>();
-                retire->SetSequenceNumber(old_cid.GetSequenceNumber());
-                ToSendFrame(retire);
-            }
-            // reset cwnd/RTT and PMTU for new path
-            send_manager_.ResetPathSignals();
-            send_manager_.ResetMtuForNewPath();
-            // kick off a minimal PMTU probe sequence on the new path
-            send_manager_.StartMtuProbe();
-            ExitAntiAmplification();
-        }
-
-        // candidate consumed
-        candidate_peer_addr_ = common::Address();
-
-        // Check and replenish local CID pool after successful migration
-        CheckAndReplenishLocalCIDPool();
-
-        // Start probing next address in queue if any
-        StartNextPathProbe();
-    }
-    return true;
+    // Delegate to frame processor
+    return frame_processor_->OnFrames(frames, crypto_level);
 }
 
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     transport_param_.Merge(remote_tp);
-    idle_timeout_task_.SetTimeoutCallback(std::bind(&BaseConnection::OnIdleTimeout, this));
-    // TODO: modify idle timer set point
-    event_loop_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
+
+    // Start idle timeout timer through coordinator
+    timer_coordinator_->StartIdleTimer(std::bind(&BaseConnection::OnIdleTimeout, this));
 
     // Preferred Address Migration (RFC 9000 Section 9.6)
     //
@@ -1091,8 +617,7 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
                 if (!(addr == GetPeerAddress())) {
                     common::LOG_INFO("Client initiating migration to server's preferred address: %s:%d",
                         addr.GetIp().c_str(), addr.GetPort());
-                    candidate_peer_addr_ = addr;
-                    StartPathValidationProbe();
+                    path_manager_->OnObservedPeerAddress(addr);
                 } else {
                     common::LOG_DEBUG("Preferred address is same as current address, no migration needed");
                 }
@@ -1107,20 +632,17 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
 
     // Start any deferred path probes now that Application keys should be ready
     // (OnTransportParams is called after handshake completes)
-    if (!path_probe_inflight_ && !pending_candidate_addrs_.empty()) {
-        common::LOG_INFO("Starting deferred path probe (Application keys now ready)");
-        StartNextPathProbe();
-    }
+    path_manager_->StartNextPathProbe();
 }
 
 void BaseConnection::ThreadTransferBefore() {
-    // remove idle timeout timer task from old timer
-    event_loop_->RemoveTimer(idle_timeout_task_);
+    // remove idle timeout timer task from old timer (delegated to coordinator)
+    timer_coordinator_->OnThreadTransferBefore();
 }
 
 void BaseConnection::ThreadTransferAfter() {
-    // add idle timeout timer task to new timer
-    event_loop_->AddTimer(idle_timeout_task_, transport_param_.GetMaxIdleTimeout(), 0);
+    // add idle timeout timer task to new timer (delegated to coordinator)
+    timer_coordinator_->OnThreadTransferAfter();
 }
 
 void BaseConnection::OnIdleTimeout() {
@@ -1132,23 +654,6 @@ void BaseConnection::OnIdleTimeout() {
 
 void BaseConnection::OnClosingTimeout() {
     state_machine_.OnCloseTimeout();
-}
-
-void BaseConnection::OnGracefulCloseTimeout() {
-    // Graceful close timeout: force entering Closing state even if data hasn't finished sending
-    // Graceful close timeout: force entering Closing state even if data hasn't finished sending
-    if (graceful_closing_pending_ && state_machine_.GetState() == ConnectionStateType::kStateConnected) {
-        common::LOG_WARN("Graceful close timeout, forcing connection close");
-        graceful_closing_pending_ = false;
-
-        // Force enter Closing state
-        closing_error_code_ = QuicErrorCode::kNoError;
-        closing_trigger_frame_ = 0;
-        closing_reason_ = "graceful close timeout";
-        last_connection_close_retransmit_time_ = 0;  // Reset retransmit timer
-
-        state_machine_.OnClose();
-    }
 }
 
 // RFC 9002: Check for idle timeout from excessive PTOs
@@ -1173,112 +678,9 @@ void BaseConnection::CheckPTOTimeout() {
     }
 }
 
-uint32_t BaseConnection::GetCloseWaitTime() {
-    // RFC 9000: Use PTO (Probe Timeout) for connection close timing
-    // PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay
-    uint32_t max_ack_delay = transport_param_.GetMaxAckDelay();
-    uint32_t pto = send_manager_.GetPTO(max_ack_delay);
-
-    // Ensure minimum timeout of 500ms for close timing
-    if (pto < 500000) {  // PTO is in microseconds
-        pto = 500000;
-    }
-
-    return pto / 1000;  // Convert to milliseconds for timer
-}
-
 void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {
     send_manager_.ToSendFrame(frame);
     ActiveSend();
-}
-
-void BaseConnection::StartPathValidationProbe() {
-    if (path_probe_inflight_) {
-        return;
-    }
-
-    // PATH_CHALLENGE can only be sent in 1-RTT packets, so Application keys must be ready
-    // If not ready yet, the probe will be triggered later when OnTransportParams completes
-    if (!connection_crypto_.GetCryptographer(kApplication)) {
-        common::LOG_DEBUG("Path validation deferred: Application keys not ready yet");
-        // Don't add to pending queue here - caller (OnObservedPeerAddress) already did that
-        return;
-    }
-
-    // generate PATH_CHALLENGE
-    auto challenge = std::make_shared<PathChallengeFrame>();
-    challenge->MakeData();
-    memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
-    path_probe_inflight_ = true;
-    EnterAntiAmplification();
-    // reset anti-amplification budget on send manager
-    send_manager_.ResetAmpBudget();
-    ToSendFrame(challenge);
-    probe_retry_count_ = 0;
-    probe_retry_delay_ms_ = 1 * 100;  // start with 100ms
-    ScheduleProbeRetry();
-}
-
-void BaseConnection::StartNextPathProbe() {
-    // Check if there are pending addresses to probe
-    if (pending_candidate_addrs_.empty()) {
-        return;
-    }
-
-    // Get next address from queue
-    candidate_peer_addr_ = pending_candidate_addrs_.front();
-    pending_candidate_addrs_.erase(pending_candidate_addrs_.begin());
-
-    common::LOG_INFO("Starting next path probe from queue to %s:%d (remaining in queue: %zu)",
-        candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort(), pending_candidate_addrs_.size());
-
-    StartPathValidationProbe();
-}
-
-void BaseConnection::EnterAntiAmplification() {
-    // Disable streams while path is unvalidated to limit to probing/ACK frames
-    send_manager_.SetStreamsAllowed(false);
-}
-
-void BaseConnection::ExitAntiAmplification() {
-    send_manager_.SetStreamsAllowed(true);
-}
-
-void BaseConnection::ScheduleProbeRetry() {
-    event_loop_->RemoveTimer(path_probe_task_);
-    if (!path_probe_inflight_) return;
-
-    if (probe_retry_count_ >= 5) {
-        // Give up probing after max retries; revert to old path
-        common::LOG_WARN("Path validation failed after %d attempts, reverting to old path. candidate: %s:%d",
-            probe_retry_count_, candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
-
-        // Clean up probe state
-        path_probe_inflight_ = false;
-        candidate_peer_addr_ = common::Address();
-        memset(pending_path_challenge_data_, 0, sizeof(pending_path_challenge_data_));
-
-        // Critical: restore stream sending capability
-        ExitAntiAmplification();
-
-        // Start probing next address in queue if any
-        StartNextPathProbe();
-        return;
-    }
-
-    probe_retry_count_++;
-    probe_retry_delay_ms_ = std::min<uint32_t>(probe_retry_delay_ms_ * 2, 2000);
-    path_probe_task_.SetTimeoutCallback([this]() {
-        if (!path_probe_inflight_) return;
-        auto challenge = std::make_shared<PathChallengeFrame>();
-        challenge->MakeData();
-        common::LOG_DEBUG("Retrying path validation (attempt %d/%d) to %s:%d", probe_retry_count_ + 1, 5,
-            candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
-        memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
-        ToSendFrame(challenge);
-        ScheduleProbeRetry();
-    });
-    event_loop_->AddTimer(path_probe_task_, probe_retry_delay_ms_, 0);
 }
 
 void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
@@ -1317,58 +719,8 @@ EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
 }
 
 void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
-    if (addr == peer_addr_) {
-        return;
-    }
-
-    common::LOG_INFO("Observed new peer address: %s:%d (current: %s:%d)", addr.GetIp().c_str(), addr.GetPort(),
-        peer_addr_.GetIp().c_str(), peer_addr_.GetPort());
-
-    // Respect disable_active_migration: ignore proactive migration but allow NAT rebinding
-    // Heuristic: if we have received any packet from the new address (workers call
-    // OnCandidatePathDatagramReceived before this frame processing), it's likely NAT rebinding.
-    if (transport_param_.GetDisableActiveMigration()) {
-        // Only consider as NAT rebinding if we see repeated observations; otherwise ignore
-        if (!(addr == candidate_peer_addr_)) {
-            // First observation: store candidate but do not start probe yet
-            common::LOG_DEBUG("First observation of new address (migration disabled), waiting for confirmation");
-            candidate_peer_addr_ = addr;
-            return;
-        }
-        // Second consecutive observation of same new address: treat as rebinding and probe
-        common::LOG_INFO("Second observation confirmed, treating as NAT rebinding");
-    }
-
-    // Check if this address is already in the queue or currently being probed
-    if (path_probe_inflight_ && addr == candidate_peer_addr_) {
-        common::LOG_DEBUG("Address %s:%d is already being probed, ignoring", addr.GetIp().c_str(), addr.GetPort());
-        return;
-    }
-
-    for (const auto& pending : pending_candidate_addrs_) {
-        if (addr == pending) {
-            common::LOG_DEBUG("Address %s:%d already in probe queue, ignoring", addr.GetIp().c_str(), addr.GetPort());
-            return;
-        }
-    }
-
-    // If probe is in progress, add to queue; otherwise start immediately
-    if (path_probe_inflight_) {
-        pending_candidate_addrs_.push_back(addr);
-        common::LOG_INFO("Added %s:%d to probe queue (queue size: %zu)", addr.GetIp().c_str(), addr.GetPort(),
-            pending_candidate_addrs_.size());
-    } else {
-        candidate_peer_addr_ = addr;
-        StartPathValidationProbe();
-
-        // If probe didn't start (e.g., Application keys not ready), queue the address for later
-        if (!path_probe_inflight_) {
-            pending_candidate_addrs_.push_back(addr);
-            common::LOG_INFO("Path probe deferred, added %s:%d to queue (queue size: %zu)", addr.GetIp().c_str(),
-                addr.GetPort(), pending_candidate_addrs_.size());
-        } else {
-            common::LOG_INFO("Started path validation probe to %s:%d", addr.GetIp().c_str(), addr.GetPort());
-        }
+    if (path_manager_) {
+        path_manager_->OnObservedPeerAddress(addr);
     }
 }
 
@@ -1462,11 +814,11 @@ bool BaseConnection::SendImmediateAckAtLevel(PacketNumberSpace ns) {
     // Set connection IDs
     auto header = packet->GetHeader();
     if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
-        auto cid = local_conn_id_manager_->GetCurrentID();
+        auto cid = cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID();
         ((LongHeader*)header)->SetSourceConnectionId(cid.GetID(), cid.GetLength());
         ((LongHeader*)header)->SetVersion(kQuicVersions[0]);
     }
-    auto remote_cid = remote_conn_id_manager_->GetCurrentID();
+    auto remote_cid = cid_coordinator_->GetRemoteConnectionIDManager()->GetCurrentID();
     header->SetDestinationConnectionId(remote_cid.GetID(), remote_cid.GetLength());
 
     // Set payload and cryptographer
@@ -1544,35 +896,20 @@ void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::
     if (state_machine_.GetState() != ConnectionStateType::kStateConnected) {
         return;
     }
-    common::LOG_INFO("BaseConnection::ImmediateClose called. error=%llu, reason=%s", error, reason.c_str());
 
-    // Cancel graceful close if it's pending
-    if (graceful_closing_pending_) {
-        common::LOG_DEBUG("Canceling graceful close due to immediate close");
-        graceful_closing_pending_ = false;
-        event_loop_->RemoveTimer(graceful_close_timer_);
-    }
+    // Cancel all streams (delegated to stream manager)
+    stream_manager_->ResetAllStreams(error);
 
-    // Error close: enter Closing state
-    // Store error info for retransmission
-    closing_error_code_ = error;
-    closing_trigger_frame_ = tigger_frame;
-    closing_reason_ = reason;
-    last_connection_close_retransmit_time_ = 0;  // Reset retransmit timer
-
-    // Cancel all streams
-    for (auto& stream : streams_map_) {
-        stream.second->Reset(error);
-    }
-
-    state_machine_.OnClose();
+    // Delegate to connection closer
+    connection_closer_->StartImmediateClose(error, tigger_frame, reason, std::bind(&BaseConnection::ActiveSend, this));
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {
-    // remove stream
-    auto stream = streams_map_.find(stream_id);
-    if (stream != streams_map_.end()) {
-        streams_map_.erase(stream);
+    // Check if stream exists before closing (for metrics)
+    auto stream = stream_manager_->FindStream(stream_id);
+    if (stream) {
+        // Delegate to stream manager
+        stream_manager_->CloseStream(stream_id);
 
         // Metrics: Stream closed
         common::Metrics::GaugeDec(common::MetricsStd::QuicStreamsActive);
@@ -1581,20 +918,8 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
 }
 
 void BaseConnection::OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin) {
-    common::LOG_DEBUG("OnStreamDataAcked: stream_id=%llu, max_offset=%llu, has_fin=%d", stream_id, max_offset, has_fin);
-
-    auto it = streams_map_.find(stream_id);
-    if (it == streams_map_.end()) {
-        common::LOG_DEBUG("OnStreamDataAcked: stream %llu not found (already closed)", stream_id);
-        return;
-    }
-
-    // Notify stream about data ACK
-    // Cast to SendStream to call OnDataAcked (will be implemented next)
-    auto send_stream = std::dynamic_pointer_cast<SendStream>(it->second);
-    if (send_stream) {
-        send_stream->OnDataAcked(max_offset, has_fin);
-    }
+    // Delegate to stream manager
+    stream_manager_->OnStreamDataAcked(stream_id, max_offset, has_fin);
 }
 
 void BaseConnection::AddConnectionId(ConnectionID& id) {
@@ -1609,79 +934,9 @@ void BaseConnection::RetireConnectionId(ConnectionID& id) {
     }
 }
 
-std::shared_ptr<IStream> BaseConnection::MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection sd) {
-    std::shared_ptr<IStream> new_stream;
-    if (sd == StreamDirection::kBidi) {
-        new_stream = std::make_shared<BidirectionStream>(event_loop_, init_size, stream_id,
-            std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
-            std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
-            std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3));
-
-    } else if (sd == StreamDirection::kSend) {
-        new_stream = std::make_shared<SendStream>(event_loop_, init_size, stream_id,
-            std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
-            std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
-            std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3));
-
-    } else {
-        new_stream = std::make_shared<RecvStream>(event_loop_, init_size, stream_id,
-            std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
-            std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
-            std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-                std::placeholders::_3));
-    }
-    // Metrics: Stream created
-    common::Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
-    common::Metrics::CounterInc(common::MetricsStd::QuicStreamsCreated);
-
-    return new_stream;
-}
-
 void BaseConnection::CheckAndReplenishLocalCIDPool() {
-    if (!local_conn_id_manager_) {
-        return;
-    }
-
-    size_t current_count = local_conn_id_manager_->GetAvailableIDCount();
-
-    // Ensure we have enough *spare* CIDs beyond the one currently in use
-    // For connection migration, the peer needs additional CIDs to switch to
-    // current_count includes the CID currently in use, so we need total >= kMinLocalCIDPoolSize + 1
-    // to ensure kMinLocalCIDPoolSize spare CIDs
-    if (current_count >= kMinLocalCIDPoolSize + 1) {
-        return;
-    }
-
-    // Calculate how many CIDs to generate (up to max pool size)
-    size_t to_generate = std::min<size_t>(kMaxLocalCIDPoolSize - current_count, kMaxLocalCIDPoolSize);
-
-    common::LOG_DEBUG("replenishing local CID pool: current=%zu, generating=%zu", current_count, to_generate);
-
-    for (size_t i = 0; i < to_generate; ++i) {
-        // Generate new connection ID
-        ConnectionID new_cid = local_conn_id_manager_->Generator();
-
-        // Create and send NEW_CONNECTION_ID frame
-        auto frame = std::make_shared<NewConnectionIDFrame>();
-        frame->SetSequenceNumber(new_cid.GetSequenceNumber());
-        frame->SetRetirePriorTo(0);  // Don't force retirement of older IDs
-        frame->SetConnectionID(const_cast<uint8_t*>(new_cid.GetID()), new_cid.GetLength());
-
-        // Generate stateless reset token (using random data for now)
-        // In production, this should be derived from a secret
-        uint8_t reset_token[16];
-        for (int j = 0; j < 16; ++j) {
-            reset_token[j] = static_cast<uint8_t>(rand() % 256);
-        }
-        frame->SetStatelessResetToken(reset_token);
-
-        ToSendFrame(frame);
-
-        common::LOG_DEBUG(
-            "Generated NEW_CONNECTION_ID: seq=%llu, len=%d", new_cid.GetSequenceNumber(), new_cid.GetLength());
-    }
+    // Delegate to ConnectionIDCoordinator
+    cid_coordinator_->CheckAndReplenishLocalCIDPool();
 }
 
 void BaseConnection::OnStateToConnected() {
@@ -1719,9 +974,9 @@ void BaseConnection::OnStateToClosing() {
     send_manager_.wait_frame_list_.clear();
 
     auto frame = std::make_shared<ConnectionCloseFrame>();
-    frame->SetErrorCode(closing_error_code_);
-    frame->SetErrFrameType(closing_trigger_frame_);
-    frame->SetReason(closing_reason_);
+    frame->SetErrorCode(connection_closer_->GetClosingErrorCode());
+    frame->SetErrFrameType(connection_closer_->GetClosingTriggerFrame());
+    frame->SetReason(connection_closer_->GetClosingReason());
 
     // Add CONNECTION_CLOSE frame to send queue
     send_manager_.ToSendFrame(frame);
@@ -1736,10 +991,10 @@ void BaseConnection::OnStateToClosing() {
     // Record the time when CONNECTION_CLOSE is first sent
     // RFC 9000 Section 10.2: Retransmit at most once per PTO to avoid flooding
     // This ensures we don't retransmit too frequently when receiving packets
-    last_connection_close_retransmit_time_ = common::UTCTimeMsec();
+    connection_closer_->MarkConnectionCloseRetransmitted(common::UTCTimeMsec());
 
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
+    event_loop_->AddTimer(task, connection_closer_->GetCloseWaitTime() * 3, 0);
 }
 
 void BaseConnection::OnStateToDraining() {
@@ -1760,44 +1015,39 @@ void BaseConnection::OnStateToDraining() {
     // Immediately notify application layer when entering Draining state
     // This allows the application to cleanup resources and update UI quickly
     // while QUIC layer still waits for the draining timeout per RFC 9000
-    if (connection_close_cb_ && !connection_close_cb_invoked_) {
-        connection_close_cb_invoked_ = true;
-        common::LOG_INFO("OnStateToDraining: notifying application layer of connection close");
-        connection_close_cb_(shared_from_this(), closing_error_code_, closing_reason_);
-    }
+    connection_closer_->InvokeConnectionCloseCallback(
+        shared_from_this(), connection_closer_->GetClosingErrorCode(), connection_closer_->GetClosingReason());
 
     common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    event_loop_->AddTimer(task, GetCloseWaitTime() * 3, 0);
+    event_loop_->AddTimer(task, connection_closer_->GetCloseWaitTime() * 3, 0);
 }
 
 void BaseConnection::OnStateToClosed() {
     // Log connection_closed event
     if (qlog_trace_) {
         common::ConnectionClosedData data;
-        data.error_code = closing_error_code_;
-        data.reason = closing_reason_;
+        data.error_code = connection_closer_->GetClosingErrorCode();
+        data.reason = connection_closer_->GetClosingReason();
 
         // Determine trigger based on error code
-        if (closing_error_code_ == 0) {
+        if (connection_closer_->GetClosingErrorCode() == 0) {
             data.trigger = "clean";
-        } else if (closing_trigger_frame_ != 0) {
+        } else if (connection_closer_->GetClosingTriggerFrame() != 0) {
             data.trigger = "error";
         } else {
             data.trigger = "application";
         }
 
         QLOG_CONNECTION_CLOSED(qlog_trace_, data);
-        qlog_trace_->Flush();  // 确保事件写入
+        qlog_trace_->Flush();  // ensure event is written
     }
 
-    event_loop_->RemoveTimer(idle_timeout_task_);
+    // Stop idle timer through coordinator
+    timer_coordinator_->StopIdleTimer();
 
     // Only invoke callback if it hasn't been called yet
     // (may have been called earlier in OnStateToDraining)
-    if (connection_close_cb_ && !connection_close_cb_invoked_) {
-        connection_close_cb_invoked_ = true;
-        connection_close_cb_(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
-    }
+    connection_closer_->InvokeConnectionCloseCallback(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
 }
 
 }  // namespace quic

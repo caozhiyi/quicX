@@ -2,7 +2,7 @@
 #define QUIC_STREAM_STATE_IF_MACHINE_INTERFACE
 
 #include <cstdint>
-#include <functional>
+
 #include "quic/stream/type.h"
 
 namespace quicx {
@@ -16,23 +16,26 @@ class IStreamStateMachine {
 public:
     // stream_close_cb: called when stream is going to close
     // state: initial state
-    IStreamStateMachine(std::function<void()> stream_close_cb, StreamState state = StreamState::kUnknown):
-        stream_close_cb_(stream_close_cb), state_(state) {}
+    IStreamStateMachine(StreamState state = StreamState::kUnknown):
+        state_(state) {}
     virtual ~IStreamStateMachine() {}
 
     // current process frame type
-    // return false if the state machine refuse frame type  
+    // return true if the state machine accept frame type, otherwise return false.
     virtual bool OnFrame(uint16_t frame_type) = 0;
+
+    // check if can send this frame type?
+    // return true if the state machine can send this frame type, otherwise return false.
+    virtual bool CheckCanSendFrame(uint16_t frame_type) = 0;
 
     // get current state machine state
     StreamState GetStatus() { return state_; }
 
 protected:
     StreamState state_;
-    std::function<void()> stream_close_cb_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif
