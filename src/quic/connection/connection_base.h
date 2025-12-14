@@ -16,7 +16,7 @@
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/connection_timer_coordinator.h"
-#include "quic/connection/controler/flow_control.h"
+#include "quic/connection/controler/connection_flow_control.h"
 #include "quic/connection/controler/recv_control.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/if_connection.h"
@@ -181,7 +181,7 @@ protected:
     uint8_t pending_ecn_{0};
     bool ecn_enabled_;
     // flow control
-    FlowControl flow_control_;
+    ConnectionFlowControl flow_control_;
     RecvControl recv_control_;
     SendManager send_manager_;
     // crypto

@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_server.h"
 #include "quic/frame/handshake_done_frame.h"

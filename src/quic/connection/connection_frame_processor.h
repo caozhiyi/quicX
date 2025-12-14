@@ -15,7 +15,7 @@ namespace quic {
 // Forward declarations
 class ConnectionStateMachine;
 class ConnectionCrypto;
-class FlowControl;
+class ConnectionFlowControl;
 class SendManager;
 class StreamManager;
 class ConnectionIDCoordinator;
@@ -47,7 +47,7 @@ public:
     using HandshakeDoneCallback = std::function<bool(std::shared_ptr<IFrame>)>;
 
     FrameProcessor(ConnectionStateMachine& state_machine, ConnectionCrypto& connection_crypto,
-        FlowControl& flow_control, SendManager& send_manager, StreamManager& stream_manager,
+        ConnectionFlowControl& flow_control, SendManager& send_manager, StreamManager& stream_manager,
         ConnectionIDCoordinator& cid_coordinator, PathManager& path_manager, ConnectionCloser& connection_closer,
         TransportParam& transport_param, std::string& token);
 
@@ -118,7 +118,7 @@ private:
     // Dependencies (injected references)
     ConnectionStateMachine& state_machine_;
     ConnectionCrypto& connection_crypto_;
-    FlowControl& flow_control_;
+    ConnectionFlowControl& flow_control_;
     SendManager& send_manager_;
     StreamManager& stream_manager_;
     ConnectionIDCoordinator& cid_coordinator_;
