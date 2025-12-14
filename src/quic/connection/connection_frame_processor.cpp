@@ -157,6 +157,21 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
+    // check peer data limit
+    // RFC 9000 Section 4.1: A receiver MUST close the connection with an error of type FLOW_CONTROL_ERROR if the
+    // sender violates the advertised connection or stream data limits
+    std::shared_ptr<IFrame> send_frame;
+    if (!flow_control_.CheckControlPeerSendDataLimit(send_frame)) {
+        if (inner_connection_close_cb_) {
+            inner_connection_close_cb_(
+                QuicErrorCode::kFlowControlError, frame->GetType(), "flow control stream data limit.");
+        }
+        return false;
+    }
+    if (send_frame && to_send_frame_cb_) {
+        to_send_frame_cb_(send_frame);
+    }
+
     // Allow processing of application data only when encryption is ready; 0-RTT stream frames
     // arrive before handshake confirmation and must be accepted per RFC (subject to anti-replay policy
     // which is handled at TLS/session level). Here we don't gate on connection state.
@@ -173,7 +188,6 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     }
 
     // check streams limit
-    std::shared_ptr<IFrame> send_frame;
     bool can_make_stream = flow_control_.CheckControlPeerStreamLimit(stream_id, send_frame);
     if (send_frame && to_send_frame_cb_) {
         to_send_frame_cb_(send_frame);
@@ -206,19 +220,6 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
-    // check peer data limit
-    // RFC 9000 Section 4.1: A receiver MUST close the connection with an error of type FLOW_CONTROL_ERROR if the
-    // sender violates the advertised connection or stream data limits
-    if (!flow_control_.CheckControlPeerSendDataLimit(send_frame)) {
-        if (inner_connection_close_cb_) {
-            inner_connection_close_cb_(
-                QuicErrorCode::kFlowControlError, frame->GetType(), "flow control stream data limit.");
-        }
-        return false;
-    }
-    if (send_frame && to_send_frame_cb_) {
-        to_send_frame_cb_(send_frame);
-    }
     // notify stream state
     if (stream_state_cb_) {
         stream_state_cb_(new_stream, 0);

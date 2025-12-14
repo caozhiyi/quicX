@@ -312,7 +312,7 @@ bool SendManager::GetSendData(
             // Frame types will be collected in P3 phase
             QLOG_PACKET_SENT(qlog_trace_, data);
         }
-
+        flow_control_->AddPeerControlSendData(buffer->GetDataLength());
         return ret;
     }
 
