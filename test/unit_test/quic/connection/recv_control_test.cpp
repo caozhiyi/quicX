@@ -1,20 +1,21 @@
 #include <gtest/gtest.h>
 #include <memory>
 
-#include "quic/frame/type.h"
-#include "quic/frame/ack_frame.h"
+#include "common/network/if_event_loop.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
-#include "quic/packet/rtt_1_packet.h"
-#include "quic/packet/packet_number.h"
-#include "common/network/if_event_loop.h"
+
 #include "quic/connection/controler/recv_control.h"
+#include "quic/frame/ack_frame.h"
+#include "quic/frame/type.h"
+#include "quic/packet/packet_number.h"
+#include "quic/packet/rtt_1_packet.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-class MockTimer : public common::ITimer {
+class MockTimer: public common::ITimer {
 public:
     uint32_t add_count = 0;
     uint32_t rm_count = 0;
@@ -75,12 +76,12 @@ TEST(RecvControlTest, AckFrameGeneratedForAckElicitingPackets) {
     ASSERT_NE(ack, nullptr);
 
     EXPECT_EQ(ack->GetLargestAck(), 5u);
-    EXPECT_EQ(ack->GetAckDelay(), 7u);  // (160 - 150) >> 3 with exponent default 3
+    EXPECT_EQ(ack->GetAckDelay(), 7u);       // (160 - 150) >> 3 with exponent default 3
     EXPECT_EQ(ack->GetFirstAckRange(), 1u);  // packets 5 and 4 contiguous
 
     const auto& ranges = ack->GetAckRange();
     ASSERT_EQ(ranges.size(), 1u);
-    EXPECT_EQ(ranges[0].GetGap(), 1u);       // gap between 4 and 2 is one packet (packet 3 missing)
+    EXPECT_EQ(ranges[0].GetGap(), 1u);             // gap between 4 and 2 is one packet (packet 3 missing)
     EXPECT_EQ(ranges[0].GetAckRangeLength(), 0u);  // single packet range (packet 2)
 
     EXPECT_EQ(timer->rm_count, 1u);  // Timer cancelled when ACK generated

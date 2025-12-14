@@ -23,26 +23,21 @@
 #include "quic/connection/transport_param.h"
 #include "quic/connection/type.h"
 #include "quic/include/type.h"
+#include "quic/udp/if_sender.h"
 
 namespace quicx {
 namespace quic {
 
-class BaseConnection:
-    public IConnection,
-    public IConnectionStateListener,
-    public std::enable_shared_from_this<BaseConnection> {
+class BaseConnection: public IConnection, public IConnectionStateListener {
 public:
-    BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled, std::shared_ptr<common::IEventLoop> loop,
+    BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled, std::shared_ptr<ISender> sender,
+        std::shared_ptr<common::IEventLoop> loop,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
         std::function<void(ConnectionID&)> retire_conn_id_cb,
         std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)>
             connection_close_cb);
-
-    // RFC 9000: Callback for immediate packet sending (bypasses normal flow)
-    using ImmediateSendCallback = std::function<void(std::shared_ptr<common::IBuffer>, const common::Address&)>;
-    void SetImmediateSendCallback(ImmediateSendCallback cb);
 
     virtual ~BaseConnection();
     //*************** outside interface ***************//
@@ -155,7 +150,7 @@ protected:
         return peer_addr_;
     }
 
-    void CloseInternal();
+    virtual void CloseInternal() override;
 
     // Connection ID pool management
     void CheckAndReplenishLocalCIDPool();
@@ -202,9 +197,6 @@ protected:
 
     // EventLoop reference for safe cleanup in destructor
     std::shared_ptr<common::IEventLoop> event_loop_;
-
-    // Immediate send callback for bypassing normal send flow (e.g., immediate ACK)
-    ImmediateSendCallback immediate_send_cb_;
 
     // Metrics: Handshake timing
     uint64_t handshake_start_time_{0};

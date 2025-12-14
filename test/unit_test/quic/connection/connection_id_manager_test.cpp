@@ -9,11 +9,8 @@ namespace {
 
 TEST(ConnectionIDManagerTest, GeneratorAddsIdsAndCallbacks) {
     std::vector<uint64_t> added_sequences;
-    ConnectionIDManager manager([
-        &added_sequences
-    ](ConnectionID& id) {
-        added_sequences.push_back(id.GetSequenceNumber());
-    });
+    ConnectionIDManager manager(
+        [&added_sequences](ConnectionID& id) { added_sequences.push_back(id.GetSequenceNumber()); });
 
     auto id1 = manager.Generator();
     auto id2 = manager.Generator();
@@ -29,11 +26,8 @@ TEST(ConnectionIDManagerTest, GeneratorAddsIdsAndCallbacks) {
 
 TEST(ConnectionIDManagerTest, RetireIdBySequenceInvokesCallback) {
     std::vector<uint64_t> retired_sequences;
-    ConnectionIDManager manager(nullptr, [
-        &retired_sequences
-    ](ConnectionID& id) {
-        retired_sequences.push_back(id.GetSequenceNumber());
-    });
+    ConnectionIDManager manager(
+        nullptr, [&retired_sequences](ConnectionID& id) { retired_sequences.push_back(id.GetSequenceNumber()); });
 
     auto id1 = manager.Generator();
     auto id2 = manager.Generator();

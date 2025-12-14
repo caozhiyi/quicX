@@ -55,65 +55,6 @@ void Worker::ProcessSend() {
     if (cur_active_send_connection_set.empty()) {
         return;
     }
-
-    std::shared_ptr<NetPacket> packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
-    auto buffer = packet->GetData();
-
-    SendOperation send_operation;
-    for (auto iter = cur_active_send_connection_set.begin(); iter != cur_active_send_connection_set.end();) {
-        if (!(*iter)->GenerateSendData(buffer, send_operation)) {
-            common::LOG_ERROR("generate send data failed.");
-            iter = cur_active_send_connection_set.erase(iter);
-            continue;
-        }
-
-        if (buffer->GetDataLength() == 0) {
-            common::LOG_WARN("generate send data length is 0.");
-            iter = cur_active_send_connection_set.erase(iter);
-            continue;
-        }
-
-        packet->SetData(buffer);
-        // select destination address from connection (future: candidate path probing)
-        packet->SetAddress((*iter)->AcquireSendAddress());
-        packet->SetSocket((*iter)->GetSocket());  // client connection will always -1
-
-        if (!sender_->Send(packet)) {
-            common::LOG_ERROR("udp send failed.");
-        }
-        buffer->Clear();
-        switch (send_operation) {
-            case SendOperation::kAllSendDone:
-                iter = cur_active_send_connection_set.erase(iter);
-                break;
-            case SendOperation::kNextPeriod:
-                iter++;
-                break;
-            case SendOperation::kSendAgainImmediately:  // do nothing, send again immediately
-            default:
-                break;
-        }
-    }
-}
-
-bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr, int32_t socket) {
-    if (!buffer || buffer->GetDataLength() == 0) {
-        common::LOG_WARN("SendImmediate: invalid buffer or empty data");
-        return false;
-    }
-
-    std::shared_ptr<NetPacket> packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
-    packet->SetData(buffer);
-    packet->SetAddress(addr);
-    packet->SetSocket(socket);
-
-    if (!sender_->Send(packet)) {
-        common::LOG_ERROR("SendImmediate: udp send failed");
-        return false;
-    }
-
-    common::LOG_DEBUG("SendImmediate: sent %zu bytes to %s", buffer->GetDataLength(), addr.AsString().c_str());
-    return true;
 }
 
 bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet) {

@@ -6,12 +6,12 @@
 #include "common/network/if_event_loop.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
+
 #include "quic/connection/controler/send_control.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/type.h"
 #include "quic/packet/packet_number.h"
 #include "quic/packet/rtt_1_packet.h"
-#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {

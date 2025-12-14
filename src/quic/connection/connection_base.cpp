@@ -29,12 +29,14 @@ namespace quicx {
 namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled,
-    std::shared_ptr<common::IEventLoop> loop, std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
+    std::shared_ptr<ISender> sender, std::shared_ptr<common::IEventLoop> loop,
+    std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
     std::function<void(ConnectionID&)> retire_conn_id_cb,
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
-    IConnection(active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
+    IConnection(
+        sender, active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
     ecn_enabled_(ecn_enabled),
     recv_control_(loop->GetTimer()),
     send_manager_(loop->GetTimer()),
@@ -133,10 +135,6 @@ void BaseConnection::Close() {
 
 void BaseConnection::SetActiveConnectionCB(std::function<void(std::shared_ptr<IConnection>)> active_cb) {
     active_connection_cb_ = active_cb;
-}
-
-void BaseConnection::SetImmediateSendCallback(ImmediateSendCallback cb) {
-    immediate_send_cb_ = cb;
 }
 
 void BaseConnection::CloseInternal() {
@@ -852,13 +850,7 @@ bool BaseConnection::SendImmediateAckAtLevel(PacketNumberSpace ns) {
     send_manager_.send_control_.OnPacketSend(common::UTCTimeMsec(), packet, send_buffer->GetDataLength());
 
     // Send packet immediately via callback
-    if (immediate_send_cb_) {
-        immediate_send_cb_(send_buffer, peer_addr_);
-        common::LOG_DEBUG("SendImmediateAckAtLevel: ACK packet sent successfully");
-    } else {
-        common::LOG_WARN("SendImmediateAckAtLevel: no immediate_send_cb_ set, packet not sent!");
-        return false;
-    }
+    SendImmediate(send_buffer);
 
     return true;
 }

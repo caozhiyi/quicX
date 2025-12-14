@@ -3,20 +3,13 @@
 #include "common/metrics/metrics_std.h"
 
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/connection_flow_control.h"
-#include "quic/connection/controler/send_manager.h"
-#include "quic/connection/transport_param.h"
-#include "quic/frame/if_frame.h"
 #include "quic/stream/bidirection_stream.h"
-#include "quic/stream/if_stream.h"
-#include "quic/stream/recv_stream.h"
-#include "quic/stream/send_stream.h"
 
 namespace quicx {
 namespace quic {
 
 StreamManager::StreamManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop,
-    ConnectionFlowControl& flow_control, TransportParam& transport_param, SendManager& send_manager,
+    ConnectionFlowControl& flow_control, TransportParam& transport_param, StreamManager& send_manager,
     StreamStateCallback stream_state_cb, ToSendFrameCallback to_send_frame_cb,
     ActiveSendStreamCallback active_send_stream_cb, InnerStreamCloseCallback inner_stream_close_cb,
     InnerConnectionCloseCallback inner_connection_close_cb):
@@ -223,6 +216,65 @@ std::vector<uint64_t> StreamManager::GetAllStreamIDs() const {
     }
 
     return stream_ids;
+}
+
+void StreamManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
+    wait_frame_list_.emplace_front(frame);
+}
+
+void StreamManager::ActiveStream(std::shared_ptr<IStream> stream) {
+    common::LOG_DEBUG("active stream. stream id:%d", stream->GetStreamID());
+    // Always add to the write set, which is safe even during MakePacket processing
+    auto& write_set = GetWriteActiveSendStreamSet();
+    write_set.add(stream);
+    common::LOG_DEBUG("active stream added to write set. stream id:%d, is_current:%d", stream->GetStreamID(),
+        active_send_stream_set_1_is_current_ ? 1 : 2);
+}
+
+bool StreamManager::GetSendData(
+    std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
+    return send_manager_.GetSendData(buffer, encrypto_level, cryptographer);
+}
+
+// Dual-buffer mechanism implementation (similar to Worker::GetReadActiveSendConnectionSet)
+ActiveStreamSet& StreamManager::GetReadActiveSendStreamSet() {
+    return active_send_stream_set_1_is_current_ ? active_send_stream_set_1_ : active_send_stream_set_2_;
+}
+
+ActiveStreamSet& StreamManager::GetWriteActiveSendStreamSet() {
+    // Write set is always the opposite of read set
+    return active_send_stream_set_1_is_current_ ? active_send_stream_set_2_ : active_send_stream_set_1_;
+}
+
+void StreamManager::SwitchActiveSendStreamSet() {
+    // This method is called at the beginning of MakePacket to switch the active sets.
+    // It merges any remaining streams from the read set into the write set,
+    // then switches the read/write sets so that:
+    // - The old write set becomes the new read set (to be processed)
+    // - The old read set becomes the new write set (for new additions)
+    //
+    // This ensures that:
+    // 1. Streams added during callbacks (in write set) are safe from being removed
+    // 2. Any streams that weren't fully processed in the previous read set are preserved
+    // 3. The next MakePacket will process streams from the new read set
+
+    auto& read_set = GetReadActiveSendStreamSet();
+    auto& write_set = GetWriteActiveSendStreamSet();
+
+    // Move any remaining streams from read set to write set
+    while (!read_set.queue.empty()) {
+        auto stream = read_set.front();
+        if (stream) {
+            write_set.add(stream);
+        }
+        read_set.pop();
+    }
+    read_set.clear();
+
+    // Switch the current set flag
+    active_send_stream_set_1_is_current_ = !active_send_stream_set_1_is_current_;
+
+    common::LOG_DEBUG("SwitchActiveSendStreamSet: switched to set %d", active_send_stream_set_1_is_current_ ? 1 : 2);
 }
 
 }  // namespace quic

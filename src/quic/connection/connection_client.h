@@ -14,7 +14,8 @@ namespace quic {
 
 class ClientConnection: public BaseConnection {
 public:
-    ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
+    ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
+        std::shared_ptr<common::IEventLoop> loop,
         std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
         std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,

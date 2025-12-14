@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
 #include "quic/connection/connection_id_generator.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace quic {
@@ -34,6 +34,6 @@ TEST(connnection_id_generator_utest, hash) {
     EXPECT_EQ(h1, h2);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

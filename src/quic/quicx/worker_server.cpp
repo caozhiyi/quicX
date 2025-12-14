@@ -1,16 +1,17 @@
+#include "quic/quicx/worker_server.h"
 #include "common/log/log.h"
 #include "quic/common/version.h"
-#include "quic/connection/error.h"
-#include "quic/quicx/worker_server.h"
-#include "quic/quicx/global_resource.h"
 #include "quic/connection/connection_server.h"
+#include "quic/connection/error.h"
 #include "quic/packet/version_negotiation_packet.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
 
 ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-    const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop):
+    const QuicTransportParams& params, connection_state_callback connection_handler,
+    std::shared_ptr<common::IEventLoop> event_loop):
     Worker(config.config_, ctx, sender, params, connection_handler, event_loop),
     server_alpn_(config.alpn_) {}
 
@@ -57,19 +58,14 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     ConnectionID dst_cid(long_header->GetDestinationConnectionId(), long_header->GetDestinationConnectionIdLength());
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_, server_alpn_,
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, sender_, event_loop_, server_alpn_,
         std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ServerWorker::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ServerWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3));
-    
-    // Set immediate send callback for immediate ACK sending
-    new_conn->SetImmediateSendCallback([this, new_conn](std::shared_ptr<common::IBuffer> buffer, const common::Address& addr) {
-        SendImmediate(buffer, addr, new_conn->GetSocket());
-    });
-    
+
     new_conn->AddTransportParam(params_);
     connecting_set_.insert(new_conn);
 

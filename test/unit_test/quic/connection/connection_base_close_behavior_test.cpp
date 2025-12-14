@@ -13,7 +13,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-class RecordingTimer : public common::ITimer {
+class RecordingTimer: public common::ITimer {
 public:
     struct Entry {
         common::TimerTask task;
@@ -30,7 +30,9 @@ public:
         return true;
     }
 
-    int32_t MinTime(uint64_t /*now*/ = 0) override { return entries_.empty() ? -1 : static_cast<int32_t>(entries_.front().timeout_ms); }
+    int32_t MinTime(uint64_t /*now*/ = 0) override {
+        return entries_.empty() ? -1 : static_cast<int32_t>(entries_.front().timeout_ms);
+    }
     void TimerRun(uint64_t /*now*/ = 0) override {}
     bool Empty() override { return entries_.empty(); }
 
@@ -40,10 +42,10 @@ public:
 
 private:
     std::vector<Entry> entries_;
-    size_t rm_count_ {0};
+    size_t rm_count_{0};
 };
 
-class TestClientConnection : public ClientConnection {
+class TestClientConnection: public ClientConnection {
 public:
     using ClientConnection::ClientConnection;
 
@@ -72,16 +74,11 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseSchedulesThreePtoTimer) {
     event_loop->SetTimerForTest(timer);
     bool close_callback_invoked = false;
 
-    auto conn = std::make_shared<TestClientConnection>(
-        MakeTlsContext(),
-        event_loop,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        [&close_callback_invoked](std::shared_ptr<IConnection>, uint64_t, const std::string&) {
-            close_callback_invoked = true;
-        });
+    auto conn =
+        std::make_shared<TestClientConnection>(MakeTlsContext(), ISender::MakeSender(), event_loop, nullptr, nullptr,
+            nullptr, nullptr, [&close_callback_invoked](std::shared_ptr<IConnection>, uint64_t, const std::string&) {
+                close_callback_invoked = true;
+            });
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->Close();
@@ -101,13 +98,7 @@ TEST(ConnectionBaseCloseBehaviorTest, ImmediateCloseStoresErrorAndSchedulesTimer
     auto timer = std::make_shared<RecordingTimer>();
     event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(
-        MakeTlsContext(),
-        event_loop,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr);
+        MakeTlsContext(), ISender::MakeSender(), event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->TriggerImmediateCloseForTest(0xdead, 0x15, "fatal");
@@ -130,17 +121,12 @@ TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
     uint64_t error_code = 0;
     std::string reason;
 
-    auto conn = std::make_shared<TestClientConnection>(
-        MakeTlsContext(),
-        event_loop,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        [&error_code, &reason](std::shared_ptr<IConnection>, uint64_t err, const std::string& r) {
-            error_code = err;
-            reason = r;
-        });
+    auto conn =
+        std::make_shared<TestClientConnection>(MakeTlsContext(), ISender::MakeSender(), event_loop, nullptr, nullptr,
+            nullptr, nullptr, [&error_code, &reason](std::shared_ptr<IConnection>, uint64_t err, const std::string& r) {
+                error_code = err;
+                reason = r;
+            });
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->Close();
@@ -157,13 +143,7 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {
     auto timer = std::make_shared<RecordingTimer>();
     event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(
-        MakeTlsContext(),
-        event_loop,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr);
+        MakeTlsContext(), ISender::MakeSender(), event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
     EXPECT_GE(close_wait, 500u);

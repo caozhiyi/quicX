@@ -1,19 +1,20 @@
 #include <gtest/gtest.h>
-#include <thread>
 #include <chrono>
+#include <thread>
 
-#include "quic/frame/type.h"
-#include "quic/packet/type.h"
-#include "common/network/if_event_loop.h"
-#include "quic/frame/stream_frame.h"
-#include "quic/packet/packet_decode.h"
-#include "quic/crypto/tls/tls_ctx_client.h"
-#include "quic/crypto/tls/tls_ctx_server.h"
-#include "quic/include/if_quic_send_stream.h"
-#include "quic/connection/connection_client.h"
-#include "quic/connection/connection_server.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "common/network/if_event_loop.h"
+
+#include "quic/connection/connection_client.h"
+#include "quic/connection/connection_server.h"
+#include "quic/crypto/tls/tls_ctx_client.h"
+#include "quic/crypto/tls/tls_ctx_server.h"
+#include "quic/frame/stream_frame.h"
+#include "quic/frame/type.h"
+#include "quic/include/if_quic_send_stream.h"
+#include "quic/packet/packet_decode.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
@@ -21,38 +22,38 @@ namespace {
 
 // Test certificate
 static const char kCertPem[] =
-      "-----BEGIN CERTIFICATE-----\n"
-      "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
-      "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
-      "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
-      "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
-      "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
-      "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
-      "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
-      "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
-      "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
-      "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
-      "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
-      "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
-      "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
-      "-----END CERTIFICATE-----\n";
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
+    "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
+    "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
+    "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
+    "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
+    "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
+    "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
+    "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
+    "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
+    "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
+    "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
+    "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
+    "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
+    "-----END CERTIFICATE-----\n";
 
 static const char kKeyPem[] =
-      "-----BEGIN RSA PRIVATE KEY-----\n"
-      "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
-      "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
-      "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
-      "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
-      "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
-      "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
-      "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
-      "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
-      "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
-      "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
-      "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
-      "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
-      "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
-      "-----END RSA PRIVATE KEY-----\n"; 
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
+    "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
+    "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
+    "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
+    "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
+    "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
+    "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
+    "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
+    "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
+    "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
+    "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
+    "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
+    "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
+    "-----END RSA PRIVATE KEY-----\n";
 
 static QuicTransportParams TEST_TRANSPORT_PARAMS = {
     "",        // original_destination_connection_id
@@ -78,22 +79,23 @@ static QuicTransportParams TEST_TRANSPORT_PARAMS = {
 static bool ConnectionProcess(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver) {
     auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
     quic::SendOperation op;
-    
+
     if (!sender->GenerateSendData(buffer, op)) {
         return false;
     }
-    
+
     std::vector<std::shared_ptr<IPacket>> pkts;
     if (!DecodePackets(buffer, pkts) || pkts.empty()) {
         return false;
     }
-    
+
     receiver->OnPackets(0, pkts);
     return true;
 }
 
 static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> GenerateHandshakeDoneConnections(
-    const QuicTransportParams& client_tp = TEST_TRANSPORT_PARAMS, const QuicTransportParams& server_tp = TEST_TRANSPORT_PARAMS) {
+    const QuicTransportParams& client_tp = TEST_TRANSPORT_PARAMS,
+    const QuicTransportParams& server_tp = TEST_TRANSPORT_PARAMS) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -102,7 +104,8 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Gen
 
     auto event_loop = common::MakeEventLoop();
     event_loop->Init();
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(
+        client_ctx, ISender::MakeSender(), event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -110,7 +113,8 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Gen
 
     client_conn->Dial(addr, "h3", client_tp);
 
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(
+        server_ctx, ISender::MakeSender(), event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(server_tp);
 
     // client -------init-----> server
@@ -124,10 +128,10 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Gen
     // client <----session----- server
     EXPECT_TRUE(ConnectionProcess(server_conn, client_conn));
 
-    EXPECT_TRUE(server_conn->GetCurEncryptionLevel() == kApplication) 
+    EXPECT_TRUE(server_conn->GetCurEncryptionLevel() == kApplication)
         << "Server connection should be in application encryption level, but got "
         << server_conn->GetCurEncryptionLevel();
-    EXPECT_TRUE(client_conn->GetCurEncryptionLevel() == kApplication) 
+    EXPECT_TRUE(client_conn->GetCurEncryptionLevel() == kApplication)
         << "Client connection should be in application encryption level, but got "
         << client_conn->GetCurEncryptionLevel();
 
@@ -139,8 +143,7 @@ TEST(path_migration, validation_failure_recovery) {
     auto client_conn = connections.first;
     auto server_conn = connections.second;
     // Verify connection works normally
-    auto stream_before = std::dynamic_pointer_cast<IQuicSendStream>(
-        client_conn->MakeStream(StreamDirection::kSend));
+    auto stream_before = std::dynamic_pointer_cast<IQuicSendStream>(client_conn->MakeStream(StreamDirection::kSend));
     ASSERT_NE(stream_before, nullptr);
     const char* test_data = "before migration";
     EXPECT_GT(stream_before->Send((uint8_t*)test_data, strlen(test_data)), 0);
@@ -151,19 +154,19 @@ TEST(path_migration, validation_failure_recovery) {
 
     // Simulate network black hole: drop all PATH_CHALLENGEs
     for (int attempt = 0; attempt < 10; ++attempt) {
-        auto drop_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+        auto drop_buffer =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation drop_op;
         ASSERT_TRUE(client_conn->GenerateSendData(drop_buffer, drop_op));
-        
+
         // Wait for retry trigger
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
     // Critical verification: after failure, stream data should resume normal sending
-    auto stream_after = std::dynamic_pointer_cast<IQuicSendStream>(
-        client_conn->MakeStream(StreamDirection::kSend));
+    auto stream_after = std::dynamic_pointer_cast<IQuicSendStream>(client_conn->MakeStream(StreamDirection::kSend));
     ASSERT_NE(stream_after, nullptr) << "Should be able to create stream after validation failure";
-    
+
     const char* recovery_data = "after validation failure";
     int sent_bytes = stream_after->Send((uint8_t*)recovery_data, strlen(recovery_data));
     EXPECT_GT(sent_bytes, 0) << "Should be able to send data after validation failure (anti-amplification exited)";
@@ -181,14 +184,15 @@ TEST(path_migration, concurrent_path_probing) {
     common::Address addr1("127.0.0.1", 10001);
     common::Address addr2("127.0.0.1", 10002);
     common::Address addr3("127.0.0.1", 10003);
-    
-    client_conn->OnObservedPeerAddress(addr1); // Start probing immediately
-    client_conn->OnObservedPeerAddress(addr2); // Should be queued
-    client_conn->OnObservedPeerAddress(addr3); // Should be queued
+
+    client_conn->OnObservedPeerAddress(addr1);  // Start probing immediately
+    client_conn->OnObservedPeerAddress(addr2);  // Should be queued
+    client_conn->OnObservedPeerAddress(addr3);  // Should be queued
 
     // Verify first PATH_CHALLENGE by server's PATH_RESPONSE (avoid decrypting in test)
     {
-        auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+        auto buffer =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
         ASSERT_TRUE(client_conn->GenerateSendData(buffer, op));
 
@@ -209,10 +213,11 @@ TEST(path_migration, concurrent_path_probing) {
         ASSERT_NE(cli_crypto, nullptr);
         for (auto& p : rsp) {
             p->SetCryptographer(cli_crypto);
-            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+            auto tmp_buf =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             for (auto& f : p->GetFrames()) {
-                if (f->GetType() == FrameType::kPathResponse) { 
+                if (f->GetType() == FrameType::kPathResponse) {
                     found_path_response = true;
                     break;
                 }
@@ -225,8 +230,8 @@ TEST(path_migration, concurrent_path_probing) {
     }
 
     // Duplicate address changes should be ignored
-    client_conn->OnObservedPeerAddress(addr2); // Already in queue, should be ignored
-    
+    client_conn->OnObservedPeerAddress(addr2);  // Already in queue, should be ignored
+
     // Verify queue contains addr2 and addr3 via logs or internal state
     // (In actual implementation, can add public interface to get queue size)
 }
@@ -257,14 +262,15 @@ TEST(path_migration, cid_pool_replenishment) {
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(sb, pkts));
-        
+
         auto cli_crypto = client_conn->GetCryptographerForTest(kApplication);
         ASSERT_NE(cli_crypto, nullptr);
         // Check if NEW_CONNECTION_ID frame is sent (CID pool replenishment)
         bool found_new_cid = false;
         for (auto& p : pkts) {
             p->SetCryptographer(cli_crypto);
-            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+            auto tmp_buf =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             for (auto& f : p->GetFrames()) {
                 if (f->GetType() == FrameType::kNewConnectionId) {
@@ -273,9 +279,9 @@ TEST(path_migration, cid_pool_replenishment) {
                 }
             }
         }
-        
+
         client_conn->OnPackets(0, pkts);
-        
+
         // Server should automatically replenish CID pool after path switch
         // (May be sent in subsequent packets)
     }
@@ -283,10 +289,10 @@ TEST(path_migration, cid_pool_replenishment) {
     // Verify can continue migration (CID pool replenished)
     common::Address addr2("127.0.0.1", 10000);
     client_conn->OnObservedPeerAddress(addr2);
-    
+
     auto buffer2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation op2;
-    EXPECT_TRUE(client_conn->GenerateSendData(buffer2, op2)) 
+    EXPECT_TRUE(client_conn->GenerateSendData(buffer2, op2))
         << "Should be able to migrate again after CID pool replenishment";
 }
 
@@ -300,12 +306,13 @@ TEST(path_migration, preferred_address_mechanism) {
 
     // After handshake, client should automatically start probing preferred_address
     // (This will be triggered in OnTransportParams)
-    
+
     // Verify client sends PATH_CHALLENGE to preferred_address
     {
-        auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+        auto buffer =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
-        
+
         if (client_conn->GenerateSendData(buffer, op)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
             if (DecodePackets(buffer, pkts)) {
@@ -318,7 +325,8 @@ TEST(path_migration, preferred_address_mechanism) {
                     auto recv_crypto = server_conn->GetCryptographerForTest(p->GetCryptoLevel());
                     ASSERT_NE(recv_crypto, nullptr);
                     p->SetCryptographer(recv_crypto);
-                    auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+                    auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(
+                        std::make_shared<common::StandaloneBufferChunk>(4096));
                     ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
                     for (auto& f : p->GetFrames()) {
                         if (f->GetType() == FrameType::kPathChallenge) {
@@ -355,28 +363,25 @@ TEST(path_migration, duplicate_path_response) {
         std::vector<std::shared_ptr<IPacket>> challenge_pkts;
         ASSERT_TRUE(DecodePackets(cb, challenge_pkts));
         server_conn->OnPackets(0, challenge_pkts);
-        
+
         auto sb = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation sop;
         ASSERT_TRUE(server_conn->GenerateSendData(sb, sop));
         ASSERT_TRUE(DecodePackets(sb, response_pkts));
-        
+
         // First processing
         client_conn->OnPackets(0, response_pkts);
     }
 
     // Re-send same PATH_RESPONSE (simulate network retransmission)
-    EXPECT_NO_THROW(client_conn->OnPackets(0, response_pkts)) 
-        << "Should handle duplicate PATH_RESPONSE gracefully";
-    
+    EXPECT_NO_THROW(client_conn->OnPackets(0, response_pkts)) << "Should handle duplicate PATH_RESPONSE gracefully";
+
     // Verify connection still works normally
-    auto stream = std::dynamic_pointer_cast<IQuicSendStream>(
-        client_conn->MakeStream(StreamDirection::kSend));
+    auto stream = std::dynamic_pointer_cast<IQuicSendStream>(client_conn->MakeStream(StreamDirection::kSend));
     ASSERT_NE(stream, nullptr);
     const char* data = "after duplicate response";
     EXPECT_GT(stream->Send((uint8_t*)data, strlen(data)), 0);
 }
-
 
 TEST(path_migration, path_token_validation_and_promotion) {
     auto connections = GenerateHandshakeDoneConnections();
@@ -388,7 +393,8 @@ TEST(path_migration, path_token_validation_and_promotion) {
     client_conn->OnObservedPeerAddress(new_addr);
 
     // Generate probe packet(s)
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+    std::shared_ptr<common::SingleBlockBuffer> buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation send_operation;
     ASSERT_TRUE(client_conn->GenerateSendData(buffer, send_operation));
 
@@ -415,13 +421,15 @@ TEST(path_migration, path_token_validation_and_promotion) {
     const char* data = "ping after migration";
     ASSERT_GT(s->Send((uint8_t*)data, (uint32_t)strlen(data)), 0);
 
-    // CID rotation and retirement should occur on path switch: push multiple remote CIDs and ensure UseNextID() retires current
-    // Prepare by adding extra remote CIDs to client
+    // CID rotation and retirement should occur on path switch: push multiple remote CIDs and ensure UseNextID() retires
+    // current Prepare by adding extra remote CIDs to client
     {
         // simulate NEW_CONNECTION_ID frames were received earlier (we call manager via public API if exposed;
-        // here we force client to send more flights to trigger UseNextID path; the correctness is covered by not crashing
+        // here we force client to send more flights to trigger UseNextID path; the correctness is covered by not
+        // crashing
         for (int i = 0; i < 3; ++i) {
-            auto b2 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+            auto b2 =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
             quic::SendOperation op2;
             (void)client_conn->GenerateSendData(b2, op2);
         }
@@ -511,9 +519,8 @@ TEST(path_migration, amp_gating_blocks_streams_before_validation) {
         auto& frames = p->GetFrames();
         for (auto& f : frames) {
             auto t = f->GetType();
-            EXPECT_TRUE(t == FrameType::kPathChallenge || t == FrameType::kPathResponse ||
-                        t == FrameType::kAck || t == FrameType::kAckEcn ||
-                        t == FrameType::kPing || t == FrameType::kPadding ||
+            EXPECT_TRUE(t == FrameType::kPathChallenge || t == FrameType::kPathResponse || t == FrameType::kAck ||
+                        t == FrameType::kAckEcn || t == FrameType::kPing || t == FrameType::kPadding ||
                         StreamFrame::IsStreamFrame(t) == false);
         }
     }
@@ -616,7 +623,8 @@ TEST(path_migration, pmtu_probe_loss_fallback) {
         // Intentionally drop
     }
 
-    // Advance time/send loop to cause retransmission timeout path to mark loss and fallback; here we just run extra cycles.
+    // Advance time/send loop to cause retransmission timeout path to mark loss and fallback; here we just run extra
+    // cycles.
     for (int i = 0; i < 5; ++i) {
         (void)ConnectionProcess(client_conn, server_conn);
         (void)ConnectionProcess(server_conn, client_conn);
@@ -647,11 +655,12 @@ TEST(path_migration, disable_active_migration_semantics) {
         ASSERT_NE(srv_crypto, nullptr);
         for (auto& p : pkts) {
             p->SetCryptographer(srv_crypto);
-            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+            auto tmp_buf =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             bool found_path_challenge = false;
             for (auto& f : p->GetFrames()) {
-                if (f->GetType() == FrameType::kPathChallenge) { 
+                if (f->GetType() == FrameType::kPathChallenge) {
                     found_path_challenge = true;
                     break;
                 }
@@ -685,10 +694,14 @@ TEST(path_migration, disable_active_migration_semantics) {
         bool found_path_response = false;
         for (auto& p : rsp) {
             p->SetCryptographer(cli_crypto);
-            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+            auto tmp_buf =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             if (!p->DecodeWithCrypto(tmp_buf)) continue;
             for (auto& f : p->GetFrames()) {
-                if (f->GetType() == FrameType::kPathResponse) { found_path_response = true; break; }
+                if (f->GetType() == FrameType::kPathResponse) {
+                    found_path_response = true;
+                    break;
+                }
             }
             if (found_path_response) break;
         }
@@ -709,7 +722,8 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
     auto client_remote_mgr = client_base->GetRemoteConnectionIDManagerForTest();
     ASSERT_NE(client_remote_mgr, nullptr);
     size_t remote_cid_count = client_remote_mgr->GetAvailableIDCount();
-    ASSERT_GT(remote_cid_count, 1) << "Client should have received extra CIDs from server (count: " << remote_cid_count << ")";
+    ASSERT_GT(remote_cid_count, 1) << "Client should have received extra CIDs from server (count: " << remote_cid_count
+                                   << ")";
 
     // Trigger migration on client
     common::Address new_addr("127.0.0.1", 9999);
@@ -752,11 +766,12 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
     bool saw_retire = false;
     for (auto& p : post_pkts) {
         p->SetCryptographer(ser_crypto);
-        auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+        auto tmp_buf =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
         ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
         ASSERT_FALSE(p->GetFrames().empty());
         for (auto& f : p->GetFrames()) {
-            if (f->GetType() == FrameType::kRetireConnectionId) { 
+            if (f->GetType() == FrameType::kRetireConnectionId) {
                 saw_retire = true;
                 break;
             }
@@ -771,7 +786,8 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
             ASSERT_TRUE(DecodePackets(ab, pkts));
             for (auto& p : pkts) {
                 p->SetCryptographer(ser_crypto);
-                auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+                auto tmp_buf =
+                    std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
                 ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
                 ASSERT_FALSE(p->GetFrames().empty());
                 for (auto& f : p->GetFrames()) {
@@ -782,7 +798,8 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
                 }
             }
             if (!saw_retire) {
-                auto ab = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+                auto ab =
+                    std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
                 quic::SendOperation aop;
                 if (client_conn->GenerateSendData(ab, aop)) {
                     std::vector<std::shared_ptr<IPacket>> pkts;
@@ -819,7 +836,8 @@ TEST(path_migration, path_challenge_retry_backoff_limits) {
         ASSERT_NE(ser_crypto, nullptr);
         for (auto& p : pkts) {
             p->SetCryptographer(ser_crypto);
-            auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+            auto tmp_buf =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
             ASSERT_TRUE(p->DecodeWithCrypto(tmp_buf));
             ASSERT_FALSE(p->GetFrames().empty());
             for (auto& f : p->GetFrames()) {
@@ -834,6 +852,6 @@ TEST(path_migration, path_challenge_retry_backoff_limits) {
     EXPECT_LE(path_challenge_count, 6);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

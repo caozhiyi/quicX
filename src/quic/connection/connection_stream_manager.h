@@ -8,23 +8,19 @@
 #include <queue>
 #include <unordered_map>
 
+#include "common/buffer/if_buffer.h"
+#include "common/network/if_event_loop.h"
+
+#include "quic/connection/controler/connection_flow_control.h"
+#include "quic/connection/controler/send_manager.h"
+#include "quic/connection/transport_param.h"
+#include "quic/crypto/if_cryptographer.h"
+#include "quic/frame/if_frame.h"
 #include "quic/include/type.h"
+#include "quic/stream/if_stream.h"
 
 namespace quicx {
-
-// Forward declarations from common namespace
-namespace common {
-class IEventLoop;
-}
-
 namespace quic {
-
-// Forward declarations
-class IStream;
-class IFrame;
-class ConnectionFlowControl;
-class SendManager;
-class TransportParam;
 
 /**
  * @brief Stream manager for QUIC stream lifecycle management
@@ -136,6 +132,38 @@ public:
      */
     std::vector<uint64_t> GetAllStreamIDs() const;
 
+    /**
+     * @brief Send a frame to waiting send list
+     * @param frame Frame to send
+     */
+    void ToSendFrame(std::shared_ptr<IFrame> frame);
+
+    /**
+     * @brief Add a stream to active send list
+     * @param stream Stream to add
+     */
+    void ActiveStream(std::shared_ptr<IStream> stream);
+
+    /**
+     * @brief Get send data from stream
+     * @param buffer Buffer to store send data
+     * @param encrypto_level Encryption level
+     * @param cryptographer Cryptographer
+     * @return True if send data is available, false otherwise
+     */
+    bool GetSendData(
+        std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
+
+private:
+    ActiveStreamSet& GetReadActiveSendStreamSet();
+    ActiveStreamSet& GetWriteActiveSendStreamSet();
+    void SwitchActiveSendStreamSet();
+
+    std::shared_ptr<IPacket> MakePacket(
+        IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
+    bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer);
+    bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer, IFrameVisitor* visitor);
+
 private:
     // Stream map
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_map_;
@@ -160,6 +188,15 @@ private:
     ActiveSendStreamCallback active_send_stream_cb_;
     InnerStreamCloseCallback inner_stream_close_cb_;
     InnerConnectionCloseCallback inner_connection_close_cb_;
+
+    std::list<std::shared_ptr<IFrame>> wait_frame_list_;
+
+    // Dual-buffer for active streams (similar to Worker's active_send_connection_set)
+    // This prevents race conditions when sended_cb_ callback adds streams back to the queue
+    // while MakePacket is processing and removing streams from the queue.
+    bool active_send_stream_set_1_is_current_;
+    ActiveStreamSet active_send_stream_set_1_;
+    ActiveStreamSet active_send_stream_set_2_;
 };
 
 }  // namespace quic

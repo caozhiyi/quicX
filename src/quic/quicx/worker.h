@@ -1,16 +1,16 @@
 #ifndef QUIC_QUICX_WORKER
 #define QUIC_QUICX_WORKER
 
-#include <memory>
 #include <functional>
+#include <memory>
 #include <unordered_set>
 
-#include "quic/include/type.h"
-#include "quic/udp/if_sender.h"
-#include "quic/quicx/if_worker.h"
-#include "quic/crypto/tls/tls_ctx.h"
 #include "common/network/if_event_loop.h"
 #include "quic/connection/if_connection.h"
+#include "quic/crypto/tls/tls_ctx.h"
+#include "quic/include/type.h"
+#include "quic/quicx/if_worker.h"
+#include "quic/udp/if_sender.h"
 
 namespace quicx {
 namespace quic {
@@ -18,7 +18,8 @@ namespace quic {
 class Worker: public IWorker {
 public:
     Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::shared_ptr<ISender> sender,
-        const QuicTransportParams& params, connection_state_callback connection_handler, std::shared_ptr<common::IEventLoop> event_loop);
+        const QuicTransportParams& params, connection_state_callback connection_handler,
+        std::shared_ptr<common::IEventLoop> event_loop);
     virtual ~Worker();
 
     // Get the worker id
@@ -28,10 +29,6 @@ public:
 
     // process inner packets
     virtual void Process();
-
-    // Send packet immediately (bypasses normal flow)
-    // Used for immediate ACK sending when encryption level differs from current level
-    bool SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr, int32_t socket = -1);
 
 protected:
     void ProcessSend();

@@ -1,58 +1,58 @@
 #include <gtest/gtest.h>
 
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "common/log/log.h"
-#include "common/timer/timer.h"
-#include "quic/packet/packet_decode.h"
+
+#include "quic/connection/connection_client.h"
+#include "quic/connection/connection_server.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/include/if_quic_send_stream.h"
-#include "quic/connection/connection_client.h"
-#include "quic/connection/connection_server.h"
-#include "common/buffer/single_block_buffer.h"
-#include "common/buffer/standalone_buffer_chunk.h"
-#include "quic/quicx/global_resource.h"
-
+#include "quic/packet/packet_decode.h"
+#include "quic/udp/if_sender.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
 static const char kCertPem[] =
-      "-----BEGIN CERTIFICATE-----\n"
-      "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
-      "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
-      "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
-      "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
-      "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
-      "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
-      "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
-      "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
-      "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
-      "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
-      "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
-      "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
-      "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
-      "-----END CERTIFICATE-----\n";
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
+    "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
+    "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
+    "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
+    "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
+    "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
+    "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
+    "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
+    "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
+    "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
+    "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
+    "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
+    "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
+    "-----END CERTIFICATE-----\n";
 
 static const char kKeyPem[] =
-      "-----BEGIN RSA PRIVATE KEY-----\n"
-      "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
-      "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
-      "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
-      "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
-      "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
-      "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
-      "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
-      "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
-      "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
-      "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
-      "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
-      "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
-      "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
-      "-----END RSA PRIVATE KEY-----\n"; 
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
+    "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
+    "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
+    "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
+    "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
+    "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
+    "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
+    "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
+    "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
+    "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
+    "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
+    "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
+    "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
+    "-----END RSA PRIVATE KEY-----\n";
 
 bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn) {
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+    std::shared_ptr<common::SingleBlockBuffer> buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation send_operation;
     send_conn->GenerateSendData(buffer, send_operation);
 
@@ -74,15 +74,17 @@ TEST(quic_connection_utest, handshake) {
 
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(
+        client_ctx, ISender::MakeSender(), event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
     addr.SetPort(9432);
 
     client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-    
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+
+    auto server_conn = std::make_shared<ServerConnection>(
+        server_ctx, ISender::MakeSender(), event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // client -------init-----> server
@@ -103,7 +105,8 @@ TEST(quic_connection_utest, handshake) {
     // This ensures the session ticket with 0-RTT capability is properly captured
     for (int i = 0; i < 10; ++i) {
         // Try to process any remaining handshake data
-        std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+        std::shared_ptr<common::SingleBlockBuffer> buffer =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation op;
         if (server_conn->GenerateSendData(buffer, op)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -114,7 +117,7 @@ TEST(quic_connection_utest, handshake) {
                 }
             }
         }
-        
+
         // Also try client side
         if (client_conn->GenerateSendData(buffer, op)) {
             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -143,7 +146,8 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     // 1) First connection: full handshake to obtain resumption session
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(
+        client_ctx, ISender::MakeSender(), event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -151,7 +155,8 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
 
     client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(
+        server_ctx, ISender::MakeSender(), event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // client -------init-----> server
@@ -176,11 +181,13 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     // 2) Second connection: provide session to enable 0-RTT and send early data
     auto event_loop2 = common::MakeEventLoop();
     ASSERT_TRUE(event_loop2->Init());
-    auto client_conn2 = std::make_shared<ClientConnection>(client_ctx, event_loop2, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn2 = std::make_shared<ClientConnection>(
+        client_ctx, ISender::MakeSender(), event_loop2, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     client_conn2->Dial(addr, "h3", session_der, DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server_conn2 = std::make_shared<ServerConnection>(server_ctx, event_loop2, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn2 = std::make_shared<ServerConnection>(
+        server_ctx, ISender::MakeSender(), event_loop2, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn2->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // queue early application data before handshake completes
@@ -191,17 +198,17 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     ASSERT_GT(s->Send((uint8_t*)early, (uint32_t)strlen(early)), 0);
 
     // First flight from client should be Initial or 0-RTT (if session supports it)
-    std::shared_ptr<common::SingleBlockBuffer> buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+    std::shared_ptr<common::SingleBlockBuffer> buffer1 =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation op1;
     ASSERT_TRUE(client_conn2->GenerateSendData(buffer1, op1));
     std::vector<std::shared_ptr<IPacket>> pkts1;
     ASSERT_TRUE(DecodePackets(buffer1, pkts1));
     ASSERT_FALSE(pkts1.empty());
-    
+
     // In 0-RTT scenario, the first packet might be 0-RTT instead of Initial
     auto packet_type = pkts1[0]->GetHeader()->GetPacketType();
-    EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || 
-                packet_type == PacketType::k0RttPacketType);
+    EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || packet_type == PacketType::k0RttPacketType);
 
     // Deliver to server to let it process ClientHello and set up 0-RTT keys
     server_conn2->OnPackets(0, pkts1);
@@ -209,7 +216,8 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     // Next flight from client should contain 0-RTT (if keys available and stream data queued)
     bool found_0rtt = false;
     for (int i = 0; i < 4 && !found_0rtt; ++i) {
-        auto buffern = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+        auto buffern =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation opn;
         if (!client_conn2->GenerateSendData(buffern, opn)) {
             // If no more data to send, break
@@ -231,7 +239,8 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     for (int i = 0; i < 10 && server_conn2->GetCurEncryptionLevel() != kApplication; ++i) {
         // server -> client
         {
-            auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+            auto buffer =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
             quic::SendOperation op;
             if (server_conn2->GenerateSendData(buffer, op)) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -242,7 +251,8 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
         }
         // client -> server
         {
-            auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+            auto buffer =
+                std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
             quic::SendOperation op;
             if (client_conn2->GenerateSendData(buffer, op)) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -265,7 +275,8 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     // 1) First connection: full handshake to obtain resumption session
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(
+        client_ctx, ISender::MakeSender(), event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -273,7 +284,8 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
 
     client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(
+        server_ctx, ISender::MakeSender(), event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // client -------init-----> server
@@ -298,15 +310,16 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     // 2) Second connection: provide session to enable 0-RTT and send early data
     auto event_loop2 = common::MakeEventLoop();
     ASSERT_TRUE(event_loop2->Init());
-    auto client_conn2 = std::make_shared<ClientConnection>(client_ctx, event_loop2, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn2 = std::make_shared<ClientConnection>(
+        client_ctx, ISender::MakeSender(), event_loop2, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     client_conn2->Dial(addr, "h3", session_der, DEFAULT_QUIC_TRANSPORT_PARAMS);
-
 
     std::shared_ptr<TLSServerCtx> server_ctx_2 = std::make_shared<TLSServerCtx>();
     server_ctx_2->Init(kCertPem, kKeyPem, false, 172800);
 
-    auto server_conn2 = std::make_shared<ServerConnection>(server_ctx_2, event_loop2, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn2 = std::make_shared<ServerConnection>(
+        server_ctx_2, ISender::MakeSender(), event_loop2, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn2->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // queue early application data before handshake completes
@@ -317,17 +330,17 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     ASSERT_GT(s->Send((uint8_t*)early, (uint32_t)strlen(early)), 0);
 
     // First flight from client should be Initial or 0-RTT (if session supports it)
-    std::shared_ptr<common::SingleBlockBuffer> buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+    std::shared_ptr<common::SingleBlockBuffer> buffer1 =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
     quic::SendOperation op1;
     ASSERT_TRUE(client_conn2->GenerateSendData(buffer1, op1));
     std::vector<std::shared_ptr<IPacket>> pkts1;
     ASSERT_TRUE(DecodePackets(buffer1, pkts1));
     ASSERT_FALSE(pkts1.empty());
-    
+
     // In 0-RTT scenario, the first packet might be 0-RTT instead of Initial
     auto packet_type = pkts1[0]->GetHeader()->GetPacketType();
-    EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || 
-                packet_type == PacketType::k0RttPacketType);
+    EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || packet_type == PacketType::k0RttPacketType);
 
     // Deliver to server to let it process ClientHello and set up 0-RTT keys
     server_conn2->OnPackets(0, pkts1);
@@ -335,7 +348,8 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     // Next flight from client should contain 0-RTT (if keys available and stream data queued)
     bool found_0rtt = false;
     for (int i = 0; i < 5 && !found_0rtt; ++i) {
-        auto buffern = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
+        auto buffern =
+            std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
         quic::SendOperation opn;
         if (!client_conn2->GenerateSendData(buffern, opn)) {
             // If no more data to send, break
@@ -356,6 +370,6 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     EXPECT_NE(server_conn2->GetCurEncryptionLevel(), kApplication);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

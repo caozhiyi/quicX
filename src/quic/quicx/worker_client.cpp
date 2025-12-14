@@ -18,18 +18,13 @@ ClientWorker::~ClientWorker() {}
 
 void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
     const std::string& resumption_session_der, const std::string& server_name) {
-    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_,
+    auto conn = std::make_shared<ClientConnection>(ctx_, sender_, event_loop_,
         std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1),
         std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3));
-
-    // Set immediate send callback for immediate ACK sending
-    conn->SetImmediateSendCallback([this, conn](std::shared_ptr<common::IBuffer> buffer, const common::Address& addr) {
-        SendImmediate(buffer, addr, conn->GetSocket());
-    });
 
     connecting_set_.insert(conn);
 
@@ -41,14 +36,16 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
 
     // Only set timeout for handshake phase (0 means no timeout - rely on idle timeout)
     if (timeout_ms > 0) {
-        auto timer_id = event_loop_->AddTimer([conn, timeout_ms, this]() {
-            // Only timeout if still in connecting state (handshake not completed)
-            if (connecting_set_.find(conn) != connecting_set_.end()) {
-                common::LOG_WARN("handshake timeout for connection. cid:%llu, timeout_ms:%d",
-                    conn->GetConnectionIDHash(), timeout_ms);
-                HandleConnectionTimeout(conn);
-            }
-        }, timeout_ms);
+        auto timer_id = event_loop_->AddTimer(
+            [conn, timeout_ms, this]() {
+                // Only timeout if still in connecting state (handshake not completed)
+                if (connecting_set_.find(conn) != connecting_set_.end()) {
+                    common::LOG_WARN("handshake timeout for connection. cid:%llu, timeout_ms:%d",
+                        conn->GetConnectionIDHash(), timeout_ms);
+                    HandleConnectionTimeout(conn);
+                }
+            },
+            timeout_ms);
 
         // Store timer ID so we can cancel it when handshake completes
         handshake_timers_[conn] = timer_id;
@@ -91,8 +88,8 @@ void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     if (timer_it != handshake_timers_.end()) {
         event_loop_->RemoveTimer(timer_it->second);
         handshake_timers_.erase(timer_it);
-        common::LOG_DEBUG("handshake completed, cancelled timeout timer for connection. cid:%llu",
-            conn->GetConnectionIDHash());
+        common::LOG_DEBUG(
+            "handshake completed, cancelled timeout timer for connection. cid:%llu", conn->GetConnectionIDHash());
     }
 
     // Call base class implementation
