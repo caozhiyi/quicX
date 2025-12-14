@@ -7,7 +7,7 @@
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/flow_control.h"
+#include "quic/connection/controler/connection_flow_control.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/error.h"
 #include "quic/connection/transport_param.h"
@@ -27,7 +27,7 @@ namespace quicx {
 namespace quic {
 
 FrameProcessor::FrameProcessor(ConnectionStateMachine& state_machine, ConnectionCrypto& connection_crypto,
-    FlowControl& flow_control, SendManager& send_manager, StreamManager& stream_manager,
+    ConnectionFlowControl& flow_control, SendManager& send_manager, StreamManager& stream_manager,
     ConnectionIDCoordinator& cid_coordinator, PathManager& path_manager, ConnectionCloser& connection_closer,
     TransportParam& transport_param, std::string& token):
     state_machine_(state_machine),
@@ -157,6 +157,21 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
+    // check peer data limit
+    // RFC 9000 Section 4.1: A receiver MUST close the connection with an error of type FLOW_CONTROL_ERROR if the
+    // sender violates the advertised connection or stream data limits
+    std::shared_ptr<IFrame> send_frame;
+    if (!flow_control_.CheckControlPeerSendDataLimit(send_frame)) {
+        if (inner_connection_close_cb_) {
+            inner_connection_close_cb_(
+                QuicErrorCode::kFlowControlError, frame->GetType(), "flow control stream data limit.");
+        }
+        return false;
+    }
+    if (send_frame && to_send_frame_cb_) {
+        to_send_frame_cb_(send_frame);
+    }
+
     // Allow processing of application data only when encryption is ready; 0-RTT stream frames
     // arrive before handshake confirmation and must be accepted per RFC (subject to anti-replay policy
     // which is handled at TLS/session level). Here we don't gate on connection state.
@@ -168,17 +183,23 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // CRITICAL: Hold a local shared_ptr to prevent use-after-free
         // If the callback calls error_handler_ which removes the stream,
         // this local copy keeps the object alive until we return
-        flow_control_.AddRemoteSendData(stream_ptr->OnFrame(frame));
+        flow_control_.AddControlPeerSendData(stream_ptr->OnFrame(frame));
         return true;
     }
 
     // check streams limit
-    std::shared_ptr<IFrame> send_frame;
-    bool can_make_stream = flow_control_.CheckRemoteStreamLimit(stream_id, send_frame);
+    bool can_make_stream = flow_control_.CheckControlPeerStreamLimit(stream_id, send_frame);
     if (send_frame && to_send_frame_cb_) {
         to_send_frame_cb_(send_frame);
     }
+
     if (!can_make_stream) {
+        // RFC 9000 Section 4.6: An endpoint that receives a frame with a
+        // stream ID exceeding the limit it has sent treat this as a connection error of type STREAM_LIMIT_ERROR
+        if (inner_connection_close_cb_) {
+            inner_connection_close_cb_(QuicErrorCode::kStreamLimitError, frame->GetType(), "stream limit error.");
+        }
+        common::LOG_ERROR("stream limit error. stream id:%d", stream_id);
         return false;
     }
 
@@ -199,23 +220,12 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
-    // check peer data limit
-    if (!flow_control_.CheckRemoteSendDataLimit(send_frame)) {
-        if (inner_connection_close_cb_) {
-            inner_connection_close_cb_(
-                QuicErrorCode::kFlowControlError, frame->GetType(), "flow control stream data limit.");
-        }
-        return false;
-    }
-    if (send_frame && to_send_frame_cb_) {
-        to_send_frame_cb_(send_frame);
-    }
     // notify stream state
     if (stream_state_cb_) {
         stream_state_cb_(new_stream, 0);
     }
     // new stream process frame
-    flow_control_.AddRemoteSendData(new_stream->OnFrame(frame));
+    flow_control_.AddControlPeerSendData(new_stream->OnFrame(frame));
     return true;
 }
 
@@ -248,13 +258,13 @@ bool FrameProcessor::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     uint64_t max_data_size = max_data_frame->GetMaximumData();
-    flow_control_.AddLocalSendDataLimit(max_data_size);
+    flow_control_.AddPeerControlSendDataLimit(max_data_size);
     return true;
 }
 
 bool FrameProcessor::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
-    flow_control_.CheckRemoteSendDataLimit(send_frame);
+    flow_control_.CheckControlPeerSendDataLimit(send_frame);
     if (send_frame && to_send_frame_cb_) {
         to_send_frame_cb_(send_frame);
     }
@@ -263,7 +273,7 @@ bool FrameProcessor::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
 
 bool FrameProcessor::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
     std::shared_ptr<IFrame> send_frame;
-    flow_control_.CheckRemoteStreamLimit(0, send_frame);
+    flow_control_.CheckControlPeerStreamLimit(0, send_frame);
     if (send_frame && to_send_frame_cb_) {
         to_send_frame_cb_(send_frame);
         if (active_send_cb_) {
@@ -282,14 +292,14 @@ bool FrameProcessor::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
     uint64_t new_limit = stream_block_frame->GetMaximumStreams();
 
     if (stream_block_frame->GetType() == FrameType::kMaxStreamsBidirectional) {
-        old_limit = flow_control_.GetLocalBidirectionStreamLimit();
-        flow_control_.AddLocalBidirectionStreamLimit(new_limit);
+        old_limit = flow_control_.GetPeerControlBidirectionStreamLimit();
+        flow_control_.AddPeerControlBidirectionStreamLimit(new_limit);
 
         common::LOG_INFO(
             "Received MAX_STREAMS_BIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     } else {
-        old_limit = flow_control_.GetLocalUnidirectionStreamLimit();
-        flow_control_.AddLocalUnidirectionStreamLimit(new_limit);
+        old_limit = flow_control_.GetPeerControlUnidirectionStreamLimit();
+        flow_control_.AddPeerControlUnidirectionStreamLimit(new_limit);
 
         common::LOG_INFO(
             "Received MAX_STREAMS_UNIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);

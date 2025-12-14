@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_client.h"
 #include "quic/connection/session_cache.h"

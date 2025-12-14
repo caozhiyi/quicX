@@ -6,7 +6,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "common/qlog/qlog.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
 

@@ -164,7 +164,19 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         }
 
     } else {
-        // RFC 9002 Section 2.2: The data at a given offset MUST NOT change if it is sent multiple times.
+        // RFC 9000 Section 4.6: If a RESET_STREAM or STREAM frame
+        // is received indicating a change in the final size for the stream, an endpoint MUST respond with
+        // an error of type FINAL_SIZE_ERROR.
+        if (final_offset_ != 0 && stream_frame->GetOffset() > final_offset_) {
+            common::LOG_ERROR("stream recv data out of final size. stream id:%d, offset:%d, final offset:%d",
+                stream_id_, stream_frame->GetOffset(), final_offset_);
+            if (connection_close_cb_) {
+                connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "data out of final size.");
+            }
+            return 0;
+        }
+
+        // RFC 9000 Section 2.2: The data at a given offset MUST NOT change if it is sent multiple times.
         if (out_order_frame_.find(stream_frame->GetOffset()) != out_order_frame_.end() ||
             stream_frame->GetOffset() < except_offset_) {
             common::LOG_DEBUG(
@@ -175,7 +187,6 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         out_order_frame_[stream_frame->GetOffset()] = stream_frame;
     }
 
-    // BUGFIX: Improved flow control window update strategy
     // Update window when consumed more than 50% to prevent stalling
     // Increase by larger increments (64KB) for better throughput
     const uint64_t kWindowThreshold = local_data_limit_ / 2;  // Trigger at 50% consumption TODO configurable

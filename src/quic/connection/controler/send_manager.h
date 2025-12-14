@@ -7,11 +7,10 @@
 #include <unordered_set>
 
 #include "common/buffer/if_buffer.h"
-#include "common/qlog/qlog.h"
 #include "common/timer/if_timer.h"
 
 #include "quic/connection/connection_id_manager.h"
-#include "quic/connection/controler/flow_control.h"
+#include "quic/connection/controler/connection_flow_control.h"
 #include "quic/connection/controler/send_control.h"
 #include "quic/connection/type.h"
 #include "quic/packet/if_packet.h"
@@ -108,7 +107,7 @@ public:
     // Notify probe result (success selects the higher MTU, failure falls back).
     void OnMtuProbeResult(bool success);
 
-    void SetFlowControl(FlowControl* flow_control) { flow_control_ = flow_control; }
+    void SetFlowControl(ConnectionFlowControl* flow_control) { flow_control_ = flow_control; }
     void SetLocalConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { local_conn_id_manager_ = manager; }
     void SetRemoteConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) {
         remote_conn_id_manager_ = manager;
@@ -145,7 +144,7 @@ private:
     SendControl send_control_;
     // packet number
     PacketNumber pakcet_number_;
-    FlowControl* flow_control_;
+    ConnectionFlowControl* flow_control_;
     std::list<std::shared_ptr<IFrame>> wait_frame_list_;
 
     // Dual-buffer for active streams (similar to Worker's active_send_connection_set)

@@ -1,6 +1,6 @@
 # QuicX
 
-<p align="left"><img width="500" src="./doc/image/logo.png" alt="cppnet logo"></p>
+<p align="left"><img width="500" src="./docs/image/logo.png" alt="cppnet logo"></p>
 
 <p align="left">
     <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-bsd-orange.svg" alt="Licenses"></a>

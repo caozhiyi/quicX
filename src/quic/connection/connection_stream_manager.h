@@ -22,7 +22,7 @@ namespace quic {
 // Forward declarations
 class IStream;
 class IFrame;
-class FlowControl;
+class ConnectionFlowControl;
 class SendManager;
 class TransportParam;
 
@@ -46,7 +46,7 @@ public:
     using InnerConnectionCloseCallback =
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& reason)>;
 
-    StreamManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop, FlowControl& flow_control,
+    StreamManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop, ConnectionFlowControl& flow_control,
         TransportParam& transport_param, SendManager& send_manager, StreamStateCallback stream_state_cb,
         ToSendFrameCallback to_send_frame_cb, ActiveSendStreamCallback active_send_stream_cb,
         InnerStreamCloseCallback inner_stream_close_cb, InnerConnectionCloseCallback inner_connection_close_cb);
@@ -150,7 +150,7 @@ private:
 
     // Dependencies (injected)
     std::shared_ptr<::quicx::common::IEventLoop> event_loop_;
-    FlowControl& flow_control_;
+    ConnectionFlowControl& flow_control_;
     TransportParam& transport_param_;
     SendManager& send_manager_;
 

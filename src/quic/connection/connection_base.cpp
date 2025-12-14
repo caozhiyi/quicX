@@ -6,6 +6,7 @@
 #include "common/log/log.h"
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
+#include "common/qlog/qlog.h"
 #include "common/util/time.h"
 
 #include "quic/common/version.h"
@@ -66,7 +67,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     transport_param_.AddTransportParamListener(
         std::bind(&SendManager::UpdateConfig, &send_manager_, std::placeholders::_1));
     transport_param_.AddTransportParamListener(
-        std::bind(&FlowControl::UpdateConfig, &flow_control_, std::placeholders::_1));
+        std::bind(&ConnectionFlowControl::UpdateConfig, &flow_control_, std::placeholders::_1));
 
     // Set stream data ACK callback for tracking stream completion
     send_manager_.send_control_.SetStreamDataAckCallback(std::bind(

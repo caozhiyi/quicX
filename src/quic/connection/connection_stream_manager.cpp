@@ -3,7 +3,7 @@
 #include "common/metrics/metrics_std.h"
 
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/flow_control.h"
+#include "quic/connection/controler/connection_flow_control.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/transport_param.h"
 #include "quic/frame/if_frame.h"
@@ -15,10 +15,11 @@
 namespace quicx {
 namespace quic {
 
-StreamManager::StreamManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop, FlowControl& flow_control,
-    TransportParam& transport_param, SendManager& send_manager, StreamStateCallback stream_state_cb,
-    ToSendFrameCallback to_send_frame_cb, ActiveSendStreamCallback active_send_stream_cb,
-    InnerStreamCloseCallback inner_stream_close_cb, InnerConnectionCloseCallback inner_connection_close_cb):
+StreamManager::StreamManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop,
+    ConnectionFlowControl& flow_control, TransportParam& transport_param, SendManager& send_manager,
+    StreamStateCallback stream_state_cb, ToSendFrameCallback to_send_frame_cb,
+    ActiveSendStreamCallback active_send_stream_cb, InnerStreamCloseCallback inner_stream_close_cb,
+    InnerConnectionCloseCallback inner_connection_close_cb):
     event_loop_(event_loop),
     flow_control_(flow_control),
     transport_param_(transport_param),
@@ -37,9 +38,9 @@ std::shared_ptr<IStream> StreamManager::MakeStreamWithFlowControl(StreamDirectio
     std::shared_ptr<IFrame> frame;
     bool can_make_stream = false;
     if (type == StreamDirection::kSend) {
-        can_make_stream = flow_control_.CheckLocalUnidirectionStreamLimit(stream_id, frame);
+        can_make_stream = flow_control_.CheckPeerControlUnidirectionStreamLimit(stream_id, frame);
     } else {
-        can_make_stream = flow_control_.CheckLocalBidirectionStreamLimit(stream_id, frame);
+        can_make_stream = flow_control_.CheckPeerControlBidirectionStreamLimit(stream_id, frame);
     }
     if (frame && to_send_frame_cb_) {
         to_send_frame_cb_(frame);
