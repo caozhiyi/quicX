@@ -41,6 +41,15 @@ public:
 
     ConnectionStateType GetState() const { return state_; }
 
+    // Query methods for cleaner state checks (Phase 3 optimization)
+    bool CanSendData() const;
+    bool CanReceiveData() const;
+    bool IsClosing() const;
+    bool IsDraining() const;
+    bool IsClosed() const;
+    bool IsTerminating() const;        // Closing || Draining || Closed
+    bool ShouldIgnorePackets() const;  // Draining || Closed
+
     void SetState(ConnectionStateType new_state);
     std::string StateToString(ConnectionStateType state) const;
 

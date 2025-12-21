@@ -101,7 +101,7 @@ void TimerCoordinator::OnIdleTimeoutInternal() {
 
 void TimerCoordinator::CheckPTOTimeout() {
     // Only check in Connected state to avoid closing during handshake
-    if (state_machine_.GetState() != ConnectionStateType::kStateConnected) {
+    if (!state_machine_.CanSendData()) {
         return;
     }
 

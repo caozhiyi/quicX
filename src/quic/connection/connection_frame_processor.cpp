@@ -7,9 +7,11 @@
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/connection_flow_control.h"
+#include "quic/connection/controler/recv_flow_controller.h"
+#include "quic/connection/controler/send_flow_controller.h"
 #include "quic/connection/controler/send_manager.h"
 #include "quic/connection/error.h"
+#include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/util.h"
 #include "quic/frame/connection_close_frame.h"
@@ -26,13 +28,16 @@
 namespace quicx {
 namespace quic {
 
-FrameProcessor::FrameProcessor(ConnectionStateMachine& state_machine, ConnectionCrypto& connection_crypto,
-    ConnectionFlowControl& flow_control, SendManager& send_manager, StreamManager& stream_manager,
+FrameProcessor::FrameProcessor(IConnectionEventSink& event_sink, ConnectionStateMachine& state_machine,
+    ConnectionCrypto& connection_crypto, SendManager& send_manager, StreamManager& stream_manager,
     ConnectionIDCoordinator& cid_coordinator, PathManager& path_manager, ConnectionCloser& connection_closer,
-    TransportParam& transport_param, std::string& token):
+    TransportParam& transport_param, std::string& token, SendFlowController* send_flow_controller,
+    RecvFlowController* recv_flow_controller):
+    event_sink_(event_sink),
     state_machine_(state_machine),
     connection_crypto_(connection_crypto),
-    flow_control_(flow_control),
+    send_flow_controller_(send_flow_controller),
+    recv_flow_controller_(recv_flow_controller),
     send_manager_(send_manager),
     stream_manager_(stream_manager),
     cid_coordinator_(cid_coordinator),
@@ -161,15 +166,10 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // RFC 9000 Section 4.1: A receiver MUST close the connection with an error of type FLOW_CONTROL_ERROR if the
     // sender violates the advertised connection or stream data limits
     std::shared_ptr<IFrame> send_frame;
-    if (!flow_control_.CheckControlPeerSendDataLimit(send_frame)) {
-        if (inner_connection_close_cb_) {
-            inner_connection_close_cb_(
-                QuicErrorCode::kFlowControlError, frame->GetType(), "flow control stream data limit.");
+    if (recv_flow_controller_ && recv_flow_controller_->ShouldSendMaxData(send_frame)) {
+        if (send_frame) {
+            event_sink_.OnFrameReady(send_frame);
         }
-        return false;
-    }
-    if (send_frame && to_send_frame_cb_) {
-        to_send_frame_cb_(send_frame);
     }
 
     // Allow processing of application data only when encryption is ready; 0-RTT stream frames
@@ -183,22 +183,31 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // CRITICAL: Hold a local shared_ptr to prevent use-after-free
         // If the callback calls error_handler_ which removes the stream,
         // this local copy keeps the object alive until we return
-        flow_control_.AddControlPeerSendData(stream_ptr->OnFrame(frame));
+        uint32_t bytes_received = stream_ptr->OnFrame(frame);
+
+        // Track received data for flow control
+        if (recv_flow_controller_) {
+            recv_flow_controller_->OnDataReceived(bytes_received);
+        }
+
         return true;
     }
 
     // check streams limit
-    bool can_make_stream = flow_control_.CheckControlPeerStreamLimit(stream_id, send_frame);
-    if (send_frame && to_send_frame_cb_) {
-        to_send_frame_cb_(send_frame);
+    std::shared_ptr<IFrame> streams_frame;
+    bool can_create_stream = true;
+    if (recv_flow_controller_) {
+        can_create_stream = recv_flow_controller_->OnStreamCreated(stream_id, streams_frame);
+        if (streams_frame) {
+            event_sink_.OnFrameReady(streams_frame);
+        }
     }
 
-    if (!can_make_stream) {
+    if (!can_create_stream) {
         // RFC 9000 Section 4.6: An endpoint that receives a frame with a
         // stream ID exceeding the limit it has sent treat this as a connection error of type STREAM_LIMIT_ERROR
-        if (inner_connection_close_cb_) {
-            inner_connection_close_cb_(QuicErrorCode::kStreamLimitError, frame->GetType(), "stream limit error.");
-        }
+        // Close connection using event interface
+        event_sink_.OnConnectionClose(QuicErrorCode::kStreamLimitError, frame->GetType(), "stream limit error.");
         common::LOG_ERROR("stream limit error. stream id:%d", stream_id);
         return false;
     }
@@ -224,8 +233,15 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if (stream_state_cb_) {
         stream_state_cb_(new_stream, 0);
     }
+
     // new stream process frame
-    flow_control_.AddControlPeerSendData(new_stream->OnFrame(frame));
+    uint32_t new_stream_bytes = new_stream->OnFrame(frame);
+
+    // Track received data for flow control
+    if (recv_flow_controller_) {
+        recv_flow_controller_->OnDataReceived(new_stream_bytes);
+    }
+
     return true;
 }
 
@@ -258,57 +274,73 @@ bool FrameProcessor::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
     uint64_t max_data_size = max_data_frame->GetMaximumData();
-    flow_control_.AddPeerControlSendDataLimit(max_data_size);
+
+    // Update send flow control limit
+    if (send_flow_controller_) {
+        send_flow_controller_->OnMaxDataReceived(max_data_size);
+    }
+
     return true;
 }
 
 bool FrameProcessor::OnDataBlockFrame(std::shared_ptr<IFrame> frame) {
+    // Peer is blocked - send updated MAX_DATA
     std::shared_ptr<IFrame> send_frame;
-    flow_control_.CheckControlPeerSendDataLimit(send_frame);
-    if (send_frame && to_send_frame_cb_) {
-        to_send_frame_cb_(send_frame);
+    if (recv_flow_controller_ && recv_flow_controller_->ShouldSendMaxData(send_frame)) {
+        if (send_frame) {
+            event_sink_.OnFrameReady(send_frame);
+        }
     }
+
     return true;
 }
 
 bool FrameProcessor::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
+    // Peer is blocked on stream creation - send updated MAX_STREAMS
+    // Note: Using 0 as stream_id is a special case to trigger MAX_STREAMS generation
     std::shared_ptr<IFrame> send_frame;
-    flow_control_.CheckControlPeerStreamLimit(0, send_frame);
-    if (send_frame && to_send_frame_cb_) {
-        to_send_frame_cb_(send_frame);
-        if (active_send_cb_) {
-            active_send_cb_();  // Immediately send MAX_STREAMS to reduce latency
+    if (recv_flow_controller_ && recv_flow_controller_->OnStreamCreated(0, send_frame)) {
+        if (send_frame) {
+            event_sink_.OnFrameReady(send_frame);
+            // Immediately send using event interface
+            event_sink_.OnConnectionActive();
+            common::LOG_INFO("Received STREAMS_BLOCKED, sending MAX_STREAMS immediately");
         }
-
-        common::LOG_INFO("Received STREAMS_BLOCKED, sending MAX_STREAMS immediately");
     }
+
     return true;
 }
 
 bool FrameProcessor::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_block_frame = std::dynamic_pointer_cast<MaxStreamsFrame>(frame);
 
-    uint64_t old_limit = 0;
     uint64_t new_limit = stream_block_frame->GetMaximumStreams();
 
     if (stream_block_frame->GetType() == FrameType::kMaxStreamsBidirectional) {
-        old_limit = flow_control_.GetPeerControlBidirectionStreamLimit();
-        flow_control_.AddPeerControlBidirectionStreamLimit(new_limit);
+        uint64_t old_limit = send_flow_controller_ ? send_flow_controller_->GetBidiStreamLimit() : 0;
+
+        // Update send flow control limit
+        if (send_flow_controller_) {
+            send_flow_controller_->OnMaxStreamsBidiReceived(new_limit);
+        }
 
         common::LOG_INFO(
             "Received MAX_STREAMS_BIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     } else {
-        old_limit = flow_control_.GetPeerControlUnidirectionStreamLimit();
-        flow_control_.AddPeerControlUnidirectionStreamLimit(new_limit);
+        uint64_t old_limit = send_flow_controller_ ? send_flow_controller_->GetUniStreamLimit() : 0;
+
+        // Update send flow control limit
+        if (send_flow_controller_) {
+            send_flow_controller_->OnMaxStreamsUniReceived(new_limit);
+        }
 
         common::LOG_INFO(
             "Received MAX_STREAMS_UNIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     }
 
     // Trigger retry of pending stream creation requests
-    if (retry_pending_stream_requests_cb_) {
-        retry_pending_stream_requests_cb_();
-    }
+    // Retry pending streams directly
+    stream_manager_.RetryPendingStreamRequests();
 
     return true;
 }
@@ -328,9 +360,8 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
         for (uint64_t seq = 0; seq < retire_prior_to; ++seq) {
             auto retire = std::make_shared<RetireConnectionIDFrame>();
             retire->SetSequenceNumber(seq);
-            if (to_send_frame_cb_) {
-                to_send_frame_cb_(retire);
-            }
+            // Send frame directly using event interface
+            event_sink_.OnFrameReady(retire);
         }
         // Remove these CIDs from our remote pool
         cid_coordinator_.GetRemoteConnectionIDManager()->RetireIDBySequence(retire_prior_to - 1);
@@ -361,8 +392,7 @@ bool FrameProcessor::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
-    if (state_machine_.GetState() != ConnectionStateType::kStateConnected &&
-        state_machine_.GetState() != ConnectionStateType::kStateClosing) {
+    if (!state_machine_.CanReceiveData()) {
         return false;
     }
 
@@ -396,8 +426,8 @@ bool FrameProcessor::OnPathChallengeFrame(std::shared_ptr<IFrame> frame) {
     auto data = challenge_frame->GetData();
     std::shared_ptr<IFrame> response_frame;
     path_manager_.OnPathChallenge(data, response_frame);
-    if (response_frame && to_send_frame_cb_) {
-        to_send_frame_cb_(response_frame);
+    if (response_frame) {
+        event_sink_.OnFrameReady(response_frame);
     }
     return true;
 }

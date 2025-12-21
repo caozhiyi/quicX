@@ -15,7 +15,9 @@ namespace quic {
 // Forward declarations
 class ConnectionStateMachine;
 class ConnectionCrypto;
-class ConnectionFlowControl;
+class IConnectionEventSink;
+class SendFlowController;
+class RecvFlowController;
 class SendManager;
 class StreamManager;
 class ConnectionIDCoordinator;
@@ -34,22 +36,21 @@ class IStream;
  * - Process flow control frames (MAX_DATA, MAX_STREAMS, etc.)
  * - Process path validation frames (PATH_CHALLENGE, PATH_RESPONSE)
  * - Process connection ID frames (NEW_CONNECTION_ID, RETIRE_CONNECTION_ID)
+ *
+ * Refactored (Phase 3): Uses IConnectionEventSink interface instead of callbacks
+ * to reduce std::bind overhead and improve performance.
  */
 class FrameProcessor {
 public:
-    // Callbacks for cross-module communication
-    using ToSendFrameCallback = std::function<void(std::shared_ptr<IFrame>)>;
-    using ActiveSendCallback = std::function<void()>;
-    using InnerConnectionCloseCallback =
-        std::function<void(uint64_t error, uint16_t frame_type, const std::string& reason)>;
+    // Application-level callbacks (cannot be replaced by event interface)
     using StreamStateCallback = std::function<void(std::shared_ptr<IStream>, uint32_t error)>;
-    using RetryPendingStreamRequestsCallback = std::function<void()>;
     using HandshakeDoneCallback = std::function<bool(std::shared_ptr<IFrame>)>;
 
-    FrameProcessor(ConnectionStateMachine& state_machine, ConnectionCrypto& connection_crypto,
-        ConnectionFlowControl& flow_control, SendManager& send_manager, StreamManager& stream_manager,
+    FrameProcessor(IConnectionEventSink& event_sink, ConnectionStateMachine& state_machine,
+        ConnectionCrypto& connection_crypto, SendManager& send_manager, StreamManager& stream_manager,
         ConnectionIDCoordinator& cid_coordinator, PathManager& path_manager, ConnectionCloser& connection_closer,
-        TransportParam& transport_param, std::string& token);
+        TransportParam& transport_param, std::string& token, SendFlowController* send_flow_controller = nullptr,
+        RecvFlowController* recv_flow_controller = nullptr);
 
     ~FrameProcessor() = default;
 
@@ -63,34 +64,12 @@ public:
      */
     bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level);
 
-    // ==================== Callback Management ====================
+    // ==================== Callback Management (Application-level only) ====================
 
     /**
-     * @brief Set callback for sending frames
-     */
-    void SetToSendFrameCallback(ToSendFrameCallback cb) { to_send_frame_cb_ = cb; }
-
-    /**
-     * @brief Set callback for active sending
-     */
-    void SetActiveSendCallback(ActiveSendCallback cb) { active_send_cb_ = cb; }
-
-    /**
-     * @brief Set callback for connection close
-     */
-    void SetInnerConnectionCloseCallback(InnerConnectionCloseCallback cb) { inner_connection_close_cb_ = cb; }
-
-    /**
-     * @brief Set callback for stream state change
+     * @brief Set callback for stream state change (application notification)
      */
     void SetStreamStateCallback(StreamStateCallback cb) { stream_state_cb_ = cb; }
-
-    /**
-     * @brief Set callback for retrying pending stream requests
-     */
-    void SetRetryPendingStreamRequestsCallback(RetryPendingStreamRequestsCallback cb) {
-        retry_pending_stream_requests_cb_ = cb;
-    }
 
     /**
      * @brief Set callback for handshake done (client-only)
@@ -116,9 +95,11 @@ private:
     bool OnPathResponseFrame(std::shared_ptr<IFrame> frame);
 
     // Dependencies (injected references)
+    IConnectionEventSink& event_sink_;  // Event interface (replaces most callbacks)
     ConnectionStateMachine& state_machine_;
     ConnectionCrypto& connection_crypto_;
-    ConnectionFlowControl& flow_control_;
+    SendFlowController* send_flow_controller_;  // Send-side flow controller
+    RecvFlowController* recv_flow_controller_;  // Recv-side flow controller
     SendManager& send_manager_;
     StreamManager& stream_manager_;
     ConnectionIDCoordinator& cid_coordinator_;
@@ -127,12 +108,8 @@ private:
     TransportParam& transport_param_;
     std::string& token_;
 
-    // Callbacks
-    ToSendFrameCallback to_send_frame_cb_;
-    ActiveSendCallback active_send_cb_;
-    InnerConnectionCloseCallback inner_connection_close_cb_;
+    // Application-level callbacks (cannot be replaced by event interface)
     StreamStateCallback stream_state_cb_;
-    RetryPendingStreamRequestsCallback retry_pending_stream_requests_cb_;
     HandshakeDoneCallback handshake_done_cb_;
 };
 

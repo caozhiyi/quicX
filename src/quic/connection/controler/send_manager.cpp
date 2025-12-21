@@ -1,31 +1,19 @@
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
-#include "common/qlog/qlog.h"
 #include "common/util/time.h"
 
-#include "quic/common/version.h"
+#include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/controler/send_manager.h"
-#include "quic/connection/util.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/ack_frame.h"
-#include "quic/frame/padding_frame.h"
-#include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
-#include "quic/packet/handshake_packet.h"
-#include "quic/packet/header/long_header.h"
-#include "quic/packet/init_packet.h"
-#include "quic/packet/rtt_0_packet.h"
-#include "quic/packet/rtt_1_packet.h"
-#include "quic/stream/fix_buffer_frame_visitor.h"
 
 namespace quicx {
 namespace quic {
 
 SendManager::SendManager(std::shared_ptr<common::ITimer> timer):
-    timer_(timer),
     send_control_(timer),
-    active_send_stream_set_1_is_current_(true) {
+    send_flow_controller_(nullptr),
+    pakcet_number_() {
     pacing_timer_task_ = common::TimerTask();
     pacing_timer_task_.SetTimeoutCallback([this]() {
         if (send_retry_cb_) {
@@ -50,9 +38,13 @@ void SendManager::UpdateConfig(const TransportParam& tp) {
 }
 
 SendOperation SendManager::GetSendOperation() {
-    // Check both sets for active streams
-    bool has_active_streams = !active_send_stream_set_1_.empty() || !active_send_stream_set_2_.empty();
-    if (wait_frame_list_.empty() && !has_active_streams) {
+    // Check if there are frames or active streams to send
+    bool has_active_data = !wait_frame_list_.empty();
+    if (stream_manager_) {
+        has_active_data = has_active_data || stream_manager_->HasActiveStreams();
+    }
+
+    if (!has_active_data) {
         return SendOperation::kAllSendDone;
 
     } else {
@@ -83,240 +75,6 @@ SendOperation SendManager::GetSendOperation() {
 
 void SendManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
     wait_frame_list_.emplace_front(frame);
-}
-
-void SendManager::ActiveStream(std::shared_ptr<IStream> stream) {
-    common::LOG_DEBUG("active stream. stream id:%d", stream->GetStreamID());
-    // Always add to the write set, which is safe even during MakePacket processing
-    auto& write_set = GetWriteActiveSendStreamSet();
-    write_set.add(stream);
-    common::LOG_DEBUG("active stream added to write set. stream id:%d, is_current:%d", stream->GetStreamID(),
-        active_send_stream_set_1_is_current_ ? 1 : 2);
-}
-
-bool SendManager::GetSendData(
-    std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
-    uint64_t can_send_size = mtu_limit_bytes_;  // respect current MTU limit
-
-    // check congestion control
-    send_control_.CanSend(common::UTCTimeMsec(), can_send_size);
-    common::LOG_DEBUG(
-        "GetSendData: can_send_size=%llu, IsCongestionControlExempt=%d", can_send_size, IsCongestionControlExempt());
-    if (can_send_size == 0) {
-        // RFC 9002 Section 2: ACK-only packets are not congestion controlled
-        if (!IsCongestionControlExempt()) {
-            common::LOG_WARN("congestion control send data limited.");
-            return true;
-        }
-        // Allow ACK-only packets to bypass congestion control
-        common::LOG_DEBUG("Bypassing congestion control for ACK-only packet");
-        can_send_size = mtu_limit_bytes_;
-    }
-
-    // firstly, send resend packet
-    if (send_control_.NeedReSend()) {
-        auto& lost_list = send_control_.GetLostPacket();
-        auto packet = lost_list.front();
-        lost_list.pop_front();
-        // If the lost packet was our PMTU probe, treat as probe failure and do not retransmit as probe
-        if (mtu_probe_inflight_ && packet->GetPacketNumber() &&
-            packet->GetPacketNumber() == static_cast<uint64_t>(mtu_probe_packet_number_)) {
-            OnMtuProbeResult(false);
-            // fall through to normal send path below instead of retransmitting probe
-
-        } else {
-            // CRITICAL FIX: The lost packet may have old crypto_level (e.g. kInitial),
-            // but we're now at a different level (e.g. kApplication).
-            // PacketInit allocates packet numbers based on packet->GetCryptoLevel(),
-            // so we need to override the number space explicitly.
-            // We do this by calling NextPacketNumber with the CURRENT encryption level.
-
-            uint64_t pkt_number = pakcet_number_.NextPakcetNumber(CryptoLevel2PacketNumberSpace(encrypto_level));
-            packet->SetPacketNumber(pkt_number);
-            packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
-
-            common::LOG_DEBUG("SendManager::SendPacket: Retransmitting lost packet as #%llu at current level=%d",
-                pkt_number, encrypto_level);
-
-            // RFC 9002 Section 4.1: If QUIC needs to retransmit that data, it MUST use the same keys even if TLS has
-            // already updated to newer keys.
-            if (!packet->Encode(buffer)) {
-                common::LOG_ERROR("encode retransmission packet error. pkt_number=%llu", pkt_number);
-                return false;
-            }
-
-            // Manually call OnPacketSend since we bypassed PacketInit
-            send_control_.OnPacketSend(common::UTCTimeMsec(), packet, buffer->GetDataLength(), {});
-
-            // Log packet_sent event to qlog
-            if (qlog_trace_) {
-                common::PacketSentData data;
-                data.packet_number = pkt_number;
-                data.packet_type = packet->GetHeader()->GetPacketType();
-                data.packet_size = buffer->GetDataLength();
-                // Frame types will be collected in P3 phase
-                QLOG_PACKET_SENT(qlog_trace_, data);
-            }
-
-            // Metrics: Packet retransmitted
-            common::Metrics::CounterInc(common::MetricsStd::QuicPacketsRetransmit);
-
-            return true;
-        }
-
-    } else {
-        // secondly, send new packet
-        // If PMTU probe is in-flight and not yet sent, craft a probe packet with PING+PADDING only
-        if (mtu_probe_inflight_ && mtu_probe_packet_number_ == 0) {
-            uint64_t probe_size = mtu_probe_target_bytes_;
-            can_send_size = probe_size;
-            FixBufferFrameVisitor frame_visitor(probe_size);
-            // Add a PING to ensure ack-eliciting
-            auto ping = std::make_shared<PingFrame>();
-            frame_visitor.HandleFrame(ping);
-            // Call MakePacket to include any pending frames (like RETIRE_CONNECTION_ID)
-            auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
-            if (!packet) {
-                common::LOG_WARN("make PMTU probe packet failed.");
-                return false;
-            }
-            // Pad up to target size AFTER MakePacket has added all pending frames
-            uint32_t current_size = frame_visitor.GetBuffer()->GetDataLength();
-            if (current_size < probe_size) {
-                auto padding_frame = std::make_shared<PaddingFrame>();
-                padding_frame->SetPaddingLength(static_cast<uint32_t>(probe_size - current_size));
-                if (!frame_visitor.HandleFrame(padding_frame)) {
-                    common::LOG_WARN("Failed to add padding to PMTU probe, proceeding with size %u", current_size);
-                }
-            }
-            if (!PacketInit(packet, buffer, &frame_visitor)) {
-                return false;
-            }
-            // record probe packet number for ack/loss correlation
-            mtu_probe_packet_number_ = packet->GetPacketNumber();
-            common::LOG_DEBUG("SendManager::SendPacket: Sending PMTU probe packet as #%llu at current level=%d",
-                packet->GetPacketNumber(), encrypto_level);
-
-            // Log packet_sent event to qlog
-            if (qlog_trace_) {
-                common::PacketSentData data;
-                data.packet_number = packet->GetPacketNumber();
-                data.packet_type = packet->GetHeader()->GetPacketType();
-                data.packet_size = buffer->GetDataLength();
-                // Frame types will be collected in P3 phase
-                QLOG_PACKET_SENT(qlog_trace_, data);
-            }
-
-            return true;
-        }
-
-        if (!streams_allowed_) {
-            // Only allow connection-level control/probing frames
-            FixBufferFrameVisitor frame_visitor(mtu_limit_bytes_ - 50);
-            auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
-            if (!packet) {
-                // No frames to send, return true (success with no data)
-                return true;
-            }
-
-            // Get packet size before checking budget
-            uint32_t packet_size = frame_visitor.GetBuffer()->GetDataLength();
-
-            if (packet_size == 0) {
-                // Empty packet, return true (success with no data)
-                return true;
-            }
-
-            // anti-amplification: bytes budget (3x)
-            // Note: PATH_CHALLENGE/PATH_RESPONSE frames should always be allowed
-            // even if budget is exhausted, to ensure path validation can proceed
-            if (!CheckAndChargeAmpBudget(packet_size)) {
-                // If we have PATH_CHALLENGE or PATH_RESPONSE, allow it anyway
-                bool has_path_frame = false;
-                for (auto& frame : packet->GetFrames()) {
-                    if (frame->GetType() == FrameType::kPathChallenge || frame->GetType() == FrameType::kPathResponse) {
-                        has_path_frame = true;
-                        break;
-                    }
-                }
-                if (!has_path_frame) {
-                    common::LOG_DEBUG("Anti-amplification budget exhausted, dropping non-path-validation packet");
-                    return true;  // Return true to indicate no error, just no data to send
-                }
-                // Allow PATH_CHALLENGE/PATH_RESPONSE to bypass budget check
-                common::LOG_DEBUG("Allowing path validation frame despite budget limit");
-            }
-            bool ret = PacketInit(packet, buffer, &frame_visitor);
-            common::LOG_DEBUG("SendManager::SendPacket: Sending packet. probe packet as #%llu at current level=%d",
-                packet->GetPacketNumber(), encrypto_level);
-
-            // Log packet_sent event to qlog
-            if (ret && qlog_trace_) {
-                common::PacketSentData data;
-                data.packet_number = packet->GetPacketNumber();
-                data.packet_type = packet->GetHeader()->GetPacketType();
-                data.packet_size = buffer->GetDataLength();
-                // Frame types will be collected in P3 phase
-                QLOG_PACKET_SENT(qlog_trace_, data);
-            }
-
-            return ret;
-        }
-
-        // check flow control
-        std::shared_ptr<IFrame> frame;
-        if (!flow_control_->CheckPeerControlSendDataLimit(can_send_size, frame)) {
-            common::LOG_WARN("local send data limited.");
-            return false;
-        }
-        if (frame) {
-            ToSendFrame(frame);
-        }
-
-        FixBufferFrameVisitor frame_visitor(mtu_limit_bytes_ - 50);  // leave headroom
-        frame_visitor.SetStreamDataSizeLimit(can_send_size);
-        auto packet = MakePacket(&frame_visitor, encrypto_level, cryptographer);
-        if (!packet) {
-            common::LOG_WARN("make packet failed.");
-            return false;
-        }
-        if (!streams_allowed_) {
-            uint32_t packet_size = frame_visitor.GetBuffer()->GetDataLength();
-            if (!CheckAndChargeAmpBudget(packet_size)) {
-                // If we have PATH_CHALLENGE or PATH_RESPONSE, allow it anyway
-                bool has_path_frame = false;
-                for (auto& frame : packet->GetFrames()) {
-                    if (frame->GetType() == FrameType::kPathChallenge || frame->GetType() == FrameType::kPathResponse) {
-                        has_path_frame = true;
-                        break;
-                    }
-                }
-                if (!has_path_frame) {
-                    common::LOG_DEBUG("Anti-amplification budget exhausted, dropping non-path-validation packet");
-                    return true;  // Return true to indicate no error, just no data to send
-                }
-                // Allow PATH_CHALLENGE/PATH_RESPONSE to bypass budget check
-                common::LOG_DEBUG("Allowing path validation frame despite budget limit");
-            }
-        }
-        bool ret = PacketInit(packet, buffer, &frame_visitor);
-        common::LOG_DEBUG("SendManager::SendPacket: Sending packet. probe packet as #%llu at current level=%d",
-            packet->GetPacketNumber(), encrypto_level);
-
-        // Log packet_sent event to qlog
-        if (ret && qlog_trace_) {
-            common::PacketSentData data;
-            data.packet_number = packet->GetPacketNumber();
-            data.packet_type = packet->GetHeader()->GetPacketType();
-            data.packet_size = buffer->GetDataLength();
-            // Frame types will be collected in P3 phase
-            QLOG_PACKET_SENT(qlog_trace_, data);
-        }
-        flow_control_->AddPeerControlSendData(buffer->GetDataLength());
-        return ret;
-    }
-
-    return true;
 }
 
 void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
@@ -390,8 +148,9 @@ void SendManager::ResetMtuForNewPath() {
 }
 
 void SendManager::ClearActiveStreams() {
-    active_send_stream_set_1_.clear();
-    active_send_stream_set_2_.clear();
+    if (stream_manager_) {
+        stream_manager_->ClearActiveStreams();
+    }
     wait_frame_list_.clear();
     send_control_.ClearRetransmissionData();
 }
@@ -483,235 +242,6 @@ void SendManager::OnMtuProbeResult(bool success) {
     mtu_probe_inflight_ = false;
 }
 
-std::shared_ptr<IPacket> SendManager::MakePacket(
-    IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer) {
-    // Switch active stream sets at the beginning of MakePacket
-    // This ensures that any streams added during callbacks go to the write set,
-    // while we process streams from the read set.
-    SwitchActiveSendStreamSet();
-
-    std::shared_ptr<IPacket> packet;
-
-    for (auto iter = wait_frame_list_.begin(); iter != wait_frame_list_.end();) {
-        if (!IsAllowedOnUnvalidated((*iter)->GetType())) {
-            ++iter;  // defer disallowed frames until validation succeeds
-            continue;
-        }
-        if (visitor->HandleFrame(*iter)) {
-            iter = wait_frame_list_.erase(iter);
-        } else {
-            common::LOG_ERROR("handle frame failed.");
-            return nullptr;
-        }
-    }
-
-    // Get reference to the read set (current set being processed)
-    auto& read_set = GetReadActiveSendStreamSet();
-
-    // Attach stream frames with encryption-level awareness:
-    // - Crypto stream (id == 0) may be sent at any level (Initial/Handshake/1-RTT)
-    // - Application streams (id != 0) only at 0-RTT or 1-RTT
-    bool need_break = false;
-    while (true) {
-        if (read_set.empty() || need_break) {
-            break;
-        }
-
-        // Process streams from the read queue
-        while (!read_set.queue.empty()) {
-            auto stream = read_set.front();
-            if (!stream) {
-                read_set.pop();
-                continue;
-            }
-
-            uint64_t sid = stream->GetStreamID();
-            // filter by level for non-crypto streams
-            if (sid != 0 && !(encrypto_level == kEarlyData || encrypto_level == kApplication)) {
-                // cannot send app stream at this level; stop attaching streams for this packet
-                need_break = true;
-                break;
-            }
-
-            common::LOG_DEBUG("try make send stream data. stream id:%d", stream->GetStreamID());
-            auto ret = stream->TrySendData(visitor);
-            if (ret == IStream::TrySendResult::kSuccess) {
-                // Remove from read set after successful send
-                read_set.remove(sid);
-                read_set.pop();
-
-            } else if (ret == IStream::TrySendResult::kFailed) {
-                // Stream send failed (e.g., flow control blocked with no data, or other errors)
-                // Remove from active list to prevent infinite retry loop
-                common::LOG_WARN("stream send failed, removing from active list. stream id:%d", sid);
-                read_set.remove(sid);
-                read_set.pop();
-                // Continue with next stream instead of returning nullptr
-
-            } else if (ret == IStream::TrySendResult::kBreak) {
-                // Packet is full, but stream has more data to send
-                // Don't remove stream from read_set - it will be retried in next packet
-                common::LOG_INFO("packet full, stream id:%d will retry in next packet", sid);
-                need_break = true;
-                break;
-            }
-        }
-    }
-
-    if (visitor->GetBuffer()->GetDataLength() == 0) {
-        // If nothing scheduled, but the current encryption level is Initial, we still must send at least
-        // an Initial with PADDING to progress handshake when TLS produced data earlier.
-        if (encrypto_level == kInitial) {
-            auto padding_frame = std::make_shared<PaddingFrame>();
-            padding_frame->SetPaddingLength(1200);  // RFC9000: >=1200
-            visitor->HandleFrame(padding_frame);
-        } else {
-            common::LOG_INFO("there is no data to send.");
-            return nullptr;
-        }
-    }
-
-    switch (encrypto_level) {
-        case kInitial: {
-            auto init_packet = std::make_shared<InitPacket>();
-            if (!token_.empty()) {
-                init_packet->SetToken((uint8_t*)token_.data(), token_.length());
-                common::LOG_DEBUG("MakePacket: Setting token of length %zu for Initial packet", token_.length());
-            }
-            packet = init_packet;
-            // add padding frame
-            auto padding_frame = std::make_shared<PaddingFrame>();
-            padding_frame->SetPaddingLength(1300 - visitor->GetBuffer()->GetDataLength());
-            visitor->HandleFrame(padding_frame);
-            break;
-        }
-        case kEarlyData: {
-            packet = std::make_shared<Rtt0Packet>();
-            break;
-        }
-        case kHandshake: {
-            packet = std::make_shared<HandshakePacket>();
-            break;
-        }
-        case kApplication: {
-            packet = std::make_shared<Rtt1Packet>();
-            break;
-        }
-    }
-
-    auto header = packet->GetHeader();
-    if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
-        auto cid = local_conn_id_manager_->GetCurrentID();
-        ((LongHeader*)header)->SetSourceConnectionId(cid.GetID(), cid.GetLength());
-        ((LongHeader*)header)->SetVersion(kQuicVersions[0]);
-
-        common::LOG_DEBUG("send long header packet. packet type:%d, packet size:%d, scid:%llu", encrypto_level,
-            visitor->GetBuffer()->GetDataLength(), cid.Hash());
-    }
-
-    auto cid = remote_conn_id_manager_->GetCurrentID();
-
-    // DEBUG: Print DCID being written to packet header
-    char dcid_hex[65] = {0};
-    for (int i = 0; i < cid.GetLength() && i < 20; i++) {
-        sprintf(dcid_hex + i * 2, "%02x", cid.GetID()[i]);
-    }
-    common::LOG_ERROR(
-        "SendManager: Writing DCID to packet header: len=%u, hex=%s, hash=%llu", cid.GetLength(), dcid_hex, cid.Hash());
-
-    packet->GetHeader()->SetDestinationConnectionId(cid.GetID(), cid.GetLength());
-    packet->SetPayload(visitor->GetBuffer()->GetSharedReadableSpan());
-    packet->SetCryptographer(cryptographer);
-
-    common::LOG_DEBUG("send packet. packet type:%d, packet size:%d, dcid:%llu", encrypto_level,
-        visitor->GetBuffer()->GetDataLength(), cid.Hash());
-
-    return packet;
-}
-
-bool SendManager::PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer) {
-    return PacketInit(packet, buffer, nullptr);
-}
-
-bool SendManager::PacketInit(
-    std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer, IFrameVisitor* visitor) {
-    // make packet numer
-    uint64_t pkt_number = pakcet_number_.NextPakcetNumber(CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel()));
-    packet->SetPacketNumber(pkt_number);
-    packet->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
-
-    common::LOG_DEBUG("PacketInit: encoding packet %llu", pkt_number);
-    if (!packet->Encode(buffer)) {
-        common::LOG_ERROR("encode packet error. pkt_number=%llu", pkt_number);
-        return false;
-    }
-    common::LOG_DEBUG("PacketInit: encode success. len=%d", buffer->GetDataLength());
-
-    // Get stream data info and frame type bit from visitor for ACK tracking
-    std::vector<StreamDataInfo> stream_data;
-    if (visitor) {
-        stream_data = visitor->GetStreamDataInfo();
-
-        // Set packet's frame_type_bit from visitor (for ACK-eliciting detection)
-        auto fix_visitor = dynamic_cast<FixBufferFrameVisitor*>(visitor);
-        if (fix_visitor) {
-            uint32_t visitor_frame_bit = fix_visitor->GetFrameTypeBit();
-            // Use AddFrameTypeBit to OR the bits (don't overwrite existing bits)
-            packet->AddFrameTypeBit(static_cast<FrameTypeBit>(visitor_frame_bit));
-            common::LOG_DEBUG("PacketInit: packet_number=%llu, stream_data count=%zu, frame_type_bit=%u", pkt_number,
-                stream_data.size(), packet->GetFrameTypeBit());
-        }
-    }
-
-    send_control_.OnPacketSend(common::UTCTimeMsec(), packet, buffer->GetDataLength(), stream_data);
-
-    // Metrics: Packet transmitted
-    common::Metrics::CounterInc(common::MetricsStd::QuicPacketsTx);
-
-    return true;
-}
-
-// Dual-buffer mechanism implementation (similar to Worker::GetReadActiveSendConnectionSet)
-ActiveStreamSet& SendManager::GetReadActiveSendStreamSet() {
-    return active_send_stream_set_1_is_current_ ? active_send_stream_set_1_ : active_send_stream_set_2_;
-}
-
-ActiveStreamSet& SendManager::GetWriteActiveSendStreamSet() {
-    // Write set is always the opposite of read set
-    return active_send_stream_set_1_is_current_ ? active_send_stream_set_2_ : active_send_stream_set_1_;
-}
-
-void SendManager::SwitchActiveSendStreamSet() {
-    // This method is called at the beginning of MakePacket to switch the active sets.
-    // It merges any remaining streams from the read set into the write set,
-    // then switches the read/write sets so that:
-    // - The old write set becomes the new read set (to be processed)
-    // - The old read set becomes the new write set (for new additions)
-    //
-    // This ensures that:
-    // 1. Streams added during callbacks (in write set) are safe from being removed
-    // 2. Any streams that weren't fully processed in the previous read set are preserved
-    // 3. The next MakePacket will process streams from the new read set
-
-    auto& read_set = GetReadActiveSendStreamSet();
-    auto& write_set = GetWriteActiveSendStreamSet();
-
-    // Move any remaining streams from read set to write set
-    while (!read_set.queue.empty()) {
-        auto stream = read_set.front();
-        if (stream) {
-            write_set.add(stream);
-        }
-        read_set.pop();
-    }
-    read_set.clear();
-
-    // Switch the current set flag
-    active_send_stream_set_1_is_current_ = !active_send_stream_set_1_is_current_;
-
-    common::LOG_DEBUG("SwitchActiveSendStreamSet: switched to set %d", active_send_stream_set_1_is_current_ ? 1 : 2);
-}
-
 // RFC 9002: Check if frames are exempt from congestion control (ACKs, CONNECTION_CLOSE)
 bool SendManager::IsCongestionControlExempt() const {
     // Don't check active streams - even if streams are waiting, we should send ACKs/Close first
@@ -743,6 +273,56 @@ bool SendManager::IsCongestionControlExempt() const {
 void SendManager::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
     qlog_trace_ = trace;
     send_control_.SetQlogTrace(trace);
+}
+
+uint32_t SendManager::GetAvailableWindow() {
+    uint64_t can_send_size = mtu_limit_bytes_;
+    uint64_t now = common::UTCTimeMsec();
+    send_control_.CanSend(now, can_send_size);
+
+    common::LOG_DEBUG("SendManager::GetAvailableWindow: can_send=%llu bytes", can_send_size);
+    return static_cast<uint32_t>(can_send_size);
+}
+
+std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLevel level, uint32_t max_bytes) {
+    std::vector<std::shared_ptr<IFrame>> result;
+    uint32_t total_bytes = 0;
+
+    // Iterate through wait_frame_list_ and collect frames suitable for this encryption level
+    for (auto iter = wait_frame_list_.begin(); iter != wait_frame_list_.end();) {
+        auto frame = *iter;
+        uint32_t frame_size = frame->EncodeSize();
+
+        // Check if adding this frame would exceed max_bytes
+        if (total_bytes + frame_size > max_bytes) {
+            common::LOG_DEBUG("SendManager::GetPendingFrames: reached max_bytes limit (%u), stopping", max_bytes);
+            break;
+        }
+
+        // Check if frame is suitable for this encryption level
+        // TODO: Add proper encryption level filtering if needed
+        // For now, assume all frames in wait_frame_list_ are suitable
+
+        result.push_back(frame);
+        total_bytes += frame_size;
+        iter = wait_frame_list_.erase(iter);  // Remove from pending list
+    }
+
+    common::LOG_DEBUG("SendManager::GetPendingFrames: level=%d, collected %zu frames, total=%u bytes", level,
+        result.size(), total_bytes);
+    return result;
+}
+
+bool SendManager::HasStreamData(EncryptionLevel level) {
+    if (!stream_manager_) {
+        return false;
+    }
+
+    // Check if StreamManager has active streams
+    bool has_data = stream_manager_->HasActiveStreams();
+
+    common::LOG_DEBUG("SendManager::HasStreamData: level=%d, has_data=%d", level, has_data);
+    return has_data;
 }
 
 }  // namespace quic

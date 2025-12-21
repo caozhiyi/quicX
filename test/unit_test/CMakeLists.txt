@@ -26,8 +26,8 @@ target_include_directories(quicx_utest PRIVATE
     ${CMAKE_SOURCE_DIR}
 )
 
-# Link both gtest and gtest_main libraries
-target_link_libraries(quicx_utest PRIVATE http3 GTest::gtest GTest::gtest_main)
+# Link gtest, gmock, and gtest_main libraries
+target_link_libraries(quicx_utest PRIVATE http3 GTest::gtest GTest::gmock GTest::gtest_main)
 
 # Register the test with CTest
 add_test(NAME quicx_utest COMMAND quicx_utest)

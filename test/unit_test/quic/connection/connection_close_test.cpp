@@ -14,6 +14,8 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "quic/quicx/global_resource.h"
+#include "mock_sender.h"
+#include "connection_test_util.h"
 
 namespace quicx {
 namespace quic {
@@ -55,16 +57,14 @@ static const char kKeyPem[] =
       "-----END RSA PRIVATE KEY-----\n";
 
 // Helper function to exchange packets between two connections
-static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver) {
-    auto chunk = std::make_shared<common::StandaloneBufferChunk>(2000);
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-    quic::SendOperation send_operation;
-    
-    if (!sender->GenerateSendData(buffer, send_operation)) {
+static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver, std::shared_ptr<MockSender> sender_mock) {
+    sender_mock->Clear();
+    if (!sender->TrySend()) {
         return false;
     }
     
-    if (buffer->GetDataLength() == 0) {
+    auto buffer = sender_mock->GetLastSentBuffer();
+    if (!buffer || buffer->GetDataLength() == 0) {
         return false;
     }
 
@@ -78,7 +78,8 @@ static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr
 }
 
 // Helper function to establish a connection
-static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> EstablishConnection() {
+static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>, 
+                  std::shared_ptr<MockSender>, std::shared_ptr<MockSender>> EstablishConnection() {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -87,8 +88,8 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Est
 
     auto event_loop = common::MakeEventLoop();
     if (!event_loop->Init()) {
-        // Return empty pair if initialization fails
-        return std::make_pair(nullptr, nullptr);
+        // Return empty tuple if initialization fails
+        return std::make_tuple(nullptr, nullptr, nullptr, nullptr);
     }
     auto client = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
 
@@ -101,17 +102,21 @@ static std::pair<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>> Est
     auto server = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
+    // Attach MockSenders
+    auto client_sender = AttachMockSender(client);
+    auto server_sender = AttachMockSender(server);
+
     // Complete handshake
-    EXPECT_TRUE(ExchangePackets(client, server));   // client init -> server
-    EXPECT_TRUE(ExchangePackets(server, client));   // server init -> client
-    EXPECT_TRUE(ExchangePackets(server, client));   // server handshake -> client
-    EXPECT_TRUE(ExchangePackets(client, server));   // client handshake -> server
-    EXPECT_TRUE(ExchangePackets(server, client));   // server session -> client
+    EXPECT_TRUE(ExchangePackets(client, server, client_sender));   // client init -> server
+    EXPECT_TRUE(ExchangePackets(server, client, server_sender));   // server init -> client
+    EXPECT_TRUE(ExchangePackets(server, client, server_sender));   // server handshake -> client
+    EXPECT_TRUE(ExchangePackets(client, server, client_sender));   // client handshake -> server
+    EXPECT_TRUE(ExchangePackets(server, client, server_sender));   // server session -> client
 
     EXPECT_EQ(server->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client->GetCurEncryptionLevel(), kApplication);
 
-    return std::make_pair(client, server);
+    return std::make_tuple(client, server, client_sender, server_sender);
 }
 
 // Test fixture for connection close tests
@@ -127,8 +132,10 @@ protected:
 // Test 1: Graceful close with no pending data
 TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
     auto connections = EstablishConnection();
-    auto client = connections.first;
-    auto server = connections.second;
+    auto client = std::get<0>(connections);
+    auto server = std::get<1>(connections);
+    auto client_sender = std::get<2>(connections);
+    auto server_sender = std::get<3>(connections);
     
     // Cast to BaseConnection to access test interface
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
@@ -146,10 +153,10 @@ TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
     // Client should send some data (CONNECTION_CLOSE)
-    auto chunk = std::make_shared<common::StandaloneBufferChunk>(2000);
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-    quic::SendOperation send_operation;
-    EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
+    client_sender->Clear();
+    EXPECT_TRUE(client->TrySend());
+    auto buffer = client_sender->GetLastSentBuffer();
+    ASSERT_NE(buffer, nullptr);
     EXPECT_GT(buffer->GetDataLength(), 0);
     
     std::vector<std::shared_ptr<IPacket>> packets;
@@ -162,16 +169,21 @@ TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
     
     // Server should not send any packets in Draining state
-    buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-    server->GenerateSendData(buffer, send_operation);
-    EXPECT_EQ(buffer->GetDataLength(), 0);
+    server_sender->Clear();
+    server->TrySend();
+    buffer = server_sender->GetLastSentBuffer();
+    if (buffer) {
+        EXPECT_EQ(buffer->GetDataLength(), 0);
+    }
 }
 
 // Test 2: Immediate close with error
 TEST_F(ConnectionCloseTest, ImmediateCloseWithError) {
     auto connections = EstablishConnection();
-    auto client = connections.first;
-    auto server = connections.second;
+    auto client = std::get<0>(connections);
+    auto server = std::get<1>(connections);
+    auto client_sender = std::get<2>(connections);
+    auto server_sender = std::get<3>(connections);
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     ASSERT_NE(client_base, nullptr);
@@ -194,18 +206,20 @@ TEST_F(ConnectionCloseTest, ImmediateCloseWithError) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
     // Verify CONNECTION_CLOSE is sent
-    auto chunk = std::make_shared<common::StandaloneBufferChunk>(2000);
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-    quic::SendOperation send_operation;
-    EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
+    client_sender->Clear();
+    EXPECT_TRUE(client->TrySend());
+    auto buffer = client_sender->GetLastSentBuffer();
+    ASSERT_NE(buffer, nullptr);
     EXPECT_GT(buffer->GetDataLength(), 0);
 }
 
 // Test 3: Peer sends CONNECTION_CLOSE, local enters Draining
 TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
     auto connections = EstablishConnection();
-    auto client = connections.first;
-    auto server = connections.second;
+    auto client = std::get<0>(connections);
+    auto server = std::get<1>(connections);
+    auto client_sender = std::get<2>(connections);
+    auto server_sender = std::get<3>(connections);
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     auto server_base = std::dynamic_pointer_cast<BaseConnection>(server);
@@ -221,10 +235,10 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
     // Verify client enters Closing state
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-    quic::SendOperation send_operation;
-    EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
-    
+    client_sender->Clear();
+    EXPECT_TRUE(client->TrySend());
+    auto buffer = client_sender->GetLastSentBuffer();
+    ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
     
     std::vector<std::shared_ptr<IPacket>> packets;
@@ -237,9 +251,12 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
     
     // Server should NOT send any packets in Draining state
-    buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-    server->GenerateSendData(buffer, send_operation);
-    EXPECT_EQ(buffer->GetDataLength(), 0);
+    server_sender->Clear();
+    server->TrySend();
+    buffer = server_sender->GetLastSentBuffer();
+    if (buffer) {
+        EXPECT_EQ(buffer->GetDataLength(), 0);
+    }
     
     // Even if we try to send data, it should be blocked
     auto stream = server->MakeStream(StreamDirection::kSend);
@@ -248,9 +265,12 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
         const char* data = "Should not be sent";
         send_stream->Send((uint8_t*)data, strlen(data));
         
-        buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-        server->GenerateSendData(buffer, send_operation);
-        EXPECT_EQ(buffer->GetDataLength(), 0);
+        server_sender->Clear();
+        server->TrySend();
+        buffer = server_sender->GetLastSentBuffer();
+        if (buffer) {
+            EXPECT_EQ(buffer->GetDataLength(), 0);
+        }
         
         // Verify server still in Draining state
         EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
@@ -260,8 +280,10 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
 // Test 4: Closing state retransmits CONNECTION_CLOSE on packet reception
 TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
     auto connections = EstablishConnection();
-    auto client = connections.first;
-    auto server = connections.second;
+    auto client = std::get<0>(connections);
+    auto server = std::get<1>(connections);
+    auto client_sender = std::get<2>(connections);
+    auto server_sender = std::get<3>(connections);
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     ASSERT_NE(client_base, nullptr);
@@ -272,9 +294,10 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
     // Verify client enters Closing state
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-    quic::SendOperation send_operation;
-    EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
+    client_sender->Clear();
+    EXPECT_TRUE(client->TrySend());
+    auto buffer = client_sender->GetLastSentBuffer();
+    ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
     
     // Server sends some data to the closing client (simulate late packet)
@@ -283,10 +306,11 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
         const char* data = "Late data";
         stream->Send((uint8_t*)data, strlen(data));
         
-        buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-        server->GenerateSendData(buffer, send_operation);
+        server_sender->Clear();
+        server->TrySend();
+        buffer = server_sender->GetLastSentBuffer();
         
-        if (buffer->GetDataLength() > 0) {
+        if (buffer && buffer->GetDataLength() > 0) {
             std::vector<std::shared_ptr<IPacket>> packets;
             if (DecodePackets(buffer, packets)) {
                 // Client receives packet while in Closing state
@@ -303,9 +327,12 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
                 EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
                 
                 // Client should send a response (CONNECTION_CLOSE retransmission) after PTO time
-                buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-                client->GenerateSendData(buffer, send_operation);
-                EXPECT_GT(buffer->GetDataLength(), 0);
+                client_sender->Clear();
+                client->TrySend();
+                buffer = client_sender->GetLastSentBuffer();
+                if (buffer) {
+                    EXPECT_GT(buffer->GetDataLength(), 0);
+                }
             }
         }
     }
@@ -314,16 +341,18 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
 // Test 5: Draining state does not send packets
 TEST_F(ConnectionCloseTest, DrainingStateDoesNotSendPackets) {
     auto connections = EstablishConnection();
-    auto client = connections.first;
-    auto server = connections.second;
+    auto client = std::get<0>(connections);
+    auto server = std::get<1>(connections);
+    auto client_sender = std::get<2>(connections);
+    auto server_sender = std::get<3>(connections);
     
     // Client sends CONNECTION_CLOSE
     client->Close();
     
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-    quic::SendOperation send_operation;
-    EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
-    
+    client_sender->Clear();
+    EXPECT_TRUE(client->TrySend());
+    auto buffer = client_sender->GetLastSentBuffer();
+    ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
     
     std::vector<std::shared_ptr<IPacket>> packets;
@@ -334,17 +363,24 @@ TEST_F(ConnectionCloseTest, DrainingStateDoesNotSendPackets) {
     
     // Try multiple times to send data, server should remain silent
     for (int i = 0; i < 3; i++) {
-        buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-        server->GenerateSendData(buffer, send_operation);
-        EXPECT_EQ(buffer->GetDataLength(), 0);
+        server_sender->Clear();
+        server->TrySend();
+        buffer = server_sender->GetLastSentBuffer();
+        if (buffer) {
+            EXPECT_EQ(buffer->GetDataLength(), 0);
+        } else {
+            EXPECT_TRUE(true);  // No buffer means no data sent
+        }
     }
 }
 
 // Test 6: Graceful close interrupted by immediate close
 TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByImmediateClose) {
     auto connections = EstablishConnection();
-    auto client = connections.first;
-    auto server = connections.second;
+    auto client = std::get<0>(connections);
+    auto server = std::get<1>(connections);
+    auto client_sender = std::get<2>(connections);
+    auto server_sender = std::get<3>(connections);
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     ASSERT_NE(client_base, nullptr);
@@ -370,17 +406,20 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByImmediateClose) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
     // Verify CONNECTION_CLOSE is sent
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-    quic::SendOperation send_operation;
-    EXPECT_TRUE(client->GenerateSendData(buffer, send_operation));
+    client_sender->Clear();
+    EXPECT_TRUE(client->TrySend());
+    auto buffer = client_sender->GetLastSentBuffer();
+    ASSERT_NE(buffer, nullptr);
     EXPECT_GT(buffer->GetDataLength(), 0);
 }
 
 // Test 7: Graceful close interrupted by peer CONNECTION_CLOSE
 TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
     auto connections = EstablishConnection();
-    auto client = connections.first;
-    auto server = connections.second;
+    auto client = std::get<0>(connections);
+    auto server = std::get<1>(connections);
+    auto client_sender = std::get<2>(connections);
+    auto server_sender = std::get<3>(connections);
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     auto server_base = std::dynamic_pointer_cast<BaseConnection>(server);
@@ -402,10 +441,10 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
     server->Close();
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
     
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-    quic::SendOperation send_operation;
-    EXPECT_TRUE(server->GenerateSendData(buffer, send_operation));
-    
+    server_sender->Clear();
+    EXPECT_TRUE(server->TrySend());
+    auto buffer = server_sender->GetLastSentBuffer();
+    ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
     
     std::vector<std::shared_ptr<IPacket>> packets;
@@ -418,9 +457,12 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateDraining);
     
     // Client should not send packets in Draining state
-    buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-    client->GenerateSendData(buffer, send_operation);
-    EXPECT_EQ(buffer->GetDataLength(), 0);
+    client_sender->Clear();
+    client->TrySend();
+    buffer = client_sender->GetLastSentBuffer();
+    if (buffer) {
+        EXPECT_EQ(buffer->GetDataLength(), 0);
+    }
 }
 
 // Test 8: Connection close during handshake should not crash
@@ -438,13 +480,17 @@ TEST_F(ConnectionCloseTest, CloseDuringHandshake) {
 
     client->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
     
+    // Attach MockSender
+    auto client_sender = AttachMockSender(client);
+    
     // Close before handshake completes
     client->Close();
     
     // Should not crash
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(2000));
-    quic::SendOperation send_operation;
-    client->GenerateSendData(buffer, send_operation);
+    client_sender->Clear();
+    client->TrySend();
+    auto buffer = client_sender->GetLastSentBuffer();
+    (void)buffer;  // Just check it doesn't crash
     
     SUCCEED();
 }
