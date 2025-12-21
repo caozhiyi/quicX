@@ -1,22 +1,24 @@
 #ifndef QUIC_CONNECTION_IF_CONNECTION
 #define QUIC_CONNECTION_IF_CONNECTION
 
-#include <memory>
 #include <functional>
-#include "quic/crypto/tls/type.h"
-#include "quic/connection/type.h"
-#include "quic/packet/if_packet.h"
-#include "common/timer/if_timer.h"
+#include <memory>
+
 #include "common/network/address.h"
-#include "quic/crypto/if_cryptographer.h"
+
 #include "quic/connection/connection_id.h"
+#include "quic/crypto/if_cryptographer.h"
+#include "quic/crypto/tls/type.h"
 #include "quic/include/if_quic_connection.h"
+#include "quic/packet/if_packet.h"
 
 namespace quicx {
 namespace quic {
 
-class IConnection:
-    public IQuicConnection {
+// Forward declaration
+class ISender;
+
+class IConnection: public IQuicConnection {
 public:
     IConnection(std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
         std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
@@ -51,8 +53,10 @@ public:
     virtual uint64_t GetConnectionIDHash() = 0;
     // Get all local CID hashes for this connection (for cleanup on close)
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() = 0;
-    // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_done) = 0;
+    // Main send interface (replaces GenerateSendData)
+    virtual bool TrySend() = 0;
+    // Set sender for direct packet transmission (used by tests)
+    virtual void SetSender(std::shared_ptr<ISender> sender) {}
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
     // provide ECN value for the next OnPackets call (per received datagram)
     virtual void SetPendingEcn(uint8_t ecn) = 0;
@@ -61,7 +65,7 @@ public:
     virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t /*level*/) { return nullptr; }
 
     // connection transfer between threads
-    virtual void ThreadTransferBefore() = 0; 
+    virtual void ThreadTransferBefore() = 0;
     virtual void ThreadTransferAfter() = 0;
 
     // peer address
@@ -71,7 +75,10 @@ public:
     // observe peer address from incoming datagrams; default no-op
     virtual void OnObservedPeerAddress(const common::Address& addr) { (void)addr; }
     // notify candidate-path datagram was received with its address and size; default no-op
-    virtual void OnCandidatePathDatagramReceived(const common::Address& addr, uint32_t bytes) { (void)addr; (void)bytes; }
+    virtual void OnCandidatePathDatagramReceived(const common::Address& addr, uint32_t bytes) {
+        (void)addr;
+        (void)bytes;
+    }
     // get destination address for next datagram; default current peer address
     virtual common::Address AcquireSendAddress() { return peer_addr_; }
 
@@ -90,10 +97,9 @@ protected:
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb_;
 
     stream_state_callback stream_state_cb_;
-
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -3,11 +3,14 @@
 #include "common/metrics/metrics_std.h"
 
 #include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/controler/connection_flow_control.h"
+#include "quic/connection/controler/send_flow_controller.h"
 #include "quic/connection/controler/send_manager.h"
+#include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/transport_param.h"
+#include "quic/crypto/tls/type.h"
 #include "quic/frame/if_frame.h"
 #include "quic/stream/bidirection_stream.h"
+#include "quic/stream/if_frame_visitor.h"
 #include "quic/stream/if_stream.h"
 #include "quic/stream/recv_stream.h"
 #include "quic/stream/send_stream.h"
@@ -15,35 +18,39 @@
 namespace quicx {
 namespace quic {
 
-StreamManager::StreamManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop,
-    ConnectionFlowControl& flow_control, TransportParam& transport_param, SendManager& send_manager,
-    StreamStateCallback stream_state_cb, ToSendFrameCallback to_send_frame_cb,
-    ActiveSendStreamCallback active_send_stream_cb, InnerStreamCloseCallback inner_stream_close_cb,
-    InnerConnectionCloseCallback inner_connection_close_cb):
+StreamManager::StreamManager(IConnectionEventSink& event_sink, std::shared_ptr<::quicx::common::IEventLoop> event_loop,
+    TransportParam& transport_param, SendManager& send_manager, StreamStateCallback stream_state_cb,
+    SendFlowController* send_flow_controller):
+    event_sink_(event_sink),
     event_loop_(event_loop),
-    flow_control_(flow_control),
+    send_flow_controller_(send_flow_controller),
     transport_param_(transport_param),
     send_manager_(send_manager),
-    stream_state_cb_(stream_state_cb),
-    to_send_frame_cb_(to_send_frame_cb),
-    active_send_stream_cb_(active_send_stream_cb),
-    inner_stream_close_cb_(inner_stream_close_cb),
-    inner_connection_close_cb_(inner_connection_close_cb) {}
+    stream_state_cb_(stream_state_cb) {}
 
 // ==================== Stream Creation ====================
 
 std::shared_ptr<IStream> StreamManager::MakeStreamWithFlowControl(StreamDirection type) {
-    // Check streams limit
+    // Check streams limit using NEW flow controller
     uint64_t stream_id;
     std::shared_ptr<IFrame> frame;
     bool can_make_stream = false;
-    if (type == StreamDirection::kSend) {
-        can_make_stream = flow_control_.CheckPeerControlUnidirectionStreamLimit(stream_id, frame);
-    } else {
-        can_make_stream = flow_control_.CheckPeerControlBidirectionStreamLimit(stream_id, frame);
+
+    if (!send_flow_controller_) {
+        common::LOG_ERROR("StreamManager::MakeStreamWithFlowControl: send_flow_controller is null");
+        return nullptr;
     }
-    if (frame && to_send_frame_cb_) {
-        to_send_frame_cb_(frame);
+
+    // Use new flow controller exclusively - clean migration
+    if (type == StreamDirection::kSend) {
+        can_make_stream = send_flow_controller_->CanCreateUniStream(stream_id, frame);
+    } else {
+        can_make_stream = send_flow_controller_->CanCreateBidiStream(stream_id, frame);
+    }
+
+    // Send STREAMS_BLOCKED frame if generated (using event interface)
+    if (frame) {
+        event_sink_.OnFrameReady(frame);
     }
 
     if (!can_make_stream) {
@@ -116,17 +123,25 @@ void StreamManager::RetryPendingStreamRequests() {
 }
 
 std::shared_ptr<IStream> StreamManager::MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection type) {
-    // Create stream object directly based on type
+    // Create lambda wrappers to bridge stream callbacks to event interface
+    // This avoids need to refactor all stream classes immediately
+    auto active_send_cb = [this](std::shared_ptr<IStream> stream) { event_sink_.OnStreamDataReady(stream); };
+    auto stream_close_cb = [this](uint64_t stream_id) { event_sink_.OnStreamClosed(stream_id); };
+    auto connection_close_cb = [this](uint64_t error, uint16_t frame_type, const std::string& reason) {
+        event_sink_.OnConnectionClose(error, frame_type, reason);
+    };
+
+    // Create stream object based on type
     std::shared_ptr<IStream> stream;
     if (type == StreamDirection::kBidi) {
-        stream = std::make_shared<BidirectionStream>(event_loop_, init_size, stream_id, active_send_stream_cb_,
-            inner_stream_close_cb_, inner_connection_close_cb_);
+        stream = std::make_shared<BidirectionStream>(event_loop_, init_size, stream_id, active_send_cb,
+            stream_close_cb, connection_close_cb);
     } else if (type == StreamDirection::kSend) {
-        stream = std::make_shared<SendStream>(event_loop_, init_size, stream_id, active_send_stream_cb_,
-            inner_stream_close_cb_, inner_connection_close_cb_);
+        stream = std::make_shared<SendStream>(event_loop_, init_size, stream_id, active_send_cb, stream_close_cb,
+            connection_close_cb);
     } else {
-        stream = std::make_shared<RecvStream>(event_loop_, init_size, stream_id, active_send_stream_cb_,
-            inner_stream_close_cb_, inner_connection_close_cb_);
+        stream = std::make_shared<RecvStream>(event_loop_, init_size, stream_id, active_send_cb, stream_close_cb,
+            connection_close_cb);
     }
 
     if (stream) {
@@ -223,6 +238,91 @@ std::vector<uint64_t> StreamManager::GetAllStreamIDs() const {
     }
 
     return stream_ids;
+}
+
+// ==================== Stream Scheduling (Week 4 Refactoring) ====================
+
+void StreamManager::MarkStreamActive(std::shared_ptr<IStream> stream) {
+    if (!stream) {
+        common::LOG_ERROR("StreamManager::MarkStreamActive: null stream");
+        return;
+    }
+
+    uint64_t stream_id = stream->GetStreamID();
+    common::LOG_DEBUG("StreamManager: marking stream %llu as active", stream_id);
+
+    // Add to write buffer (safe during BuildStreamFrames processing)
+    active_streams_.Add(stream);
+
+    // NOTE: Do NOT call event_sink_.OnStreamDataReady(stream) here!
+    // This would cause infinite recursion:
+    // ActiveSendStream -> MarkStreamActive -> OnStreamDataReady -> ActiveSendStream -> ...
+    // The caller (ActiveSendStream) already handles triggering the send via ActiveSend()
+}
+
+bool StreamManager::BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_level) {
+    if (!visitor) {
+        common::LOG_ERROR("StreamManager::BuildStreamFrames: null visitor");
+        return false;
+    }
+
+    // Swap buffers: move unfinished streams from read to write buffer
+    active_streams_.Swap();
+    auto& streams = active_streams_.GetReadBuffer();
+
+    bool has_more_data = false;
+
+    // Iterate through active streams
+    for (auto iter = streams.begin(); iter != streams.end();) {
+        auto stream = *iter;
+        if (!stream) {
+            iter = streams.erase(iter);
+            continue;
+        }
+
+        uint64_t sid = stream->GetStreamID();
+
+        // Encryption level filtering (from SendManager::MakePacket logic)
+        // Crypto stream (id == 0) can be sent at any level
+        // Application streams (id != 0) can only be sent at 0-RTT or 1-RTT
+        if (sid != 0 && !(encrypto_level == kEarlyData || encrypto_level == kApplication)) {
+            // Current encryption level doesn't allow this stream
+            // Keep it in the active list for later encryption levels
+            common::LOG_DEBUG("StreamManager: stream %llu deferred (encryption level %u)", sid, encrypto_level);
+            has_more_data = true;
+            ++iter;  // Move to next stream
+            continue;  // Skip this stream and continue with others
+        }
+
+        // Try to send stream data
+        common::LOG_DEBUG("StreamManager: building frames for stream %llu", sid);
+        auto ret = stream->TrySendData(visitor);
+
+        if (ret == IStream::TrySendResult::kSuccess) {
+            // Stream data sent successfully, remove from active list
+            common::LOG_DEBUG("StreamManager: stream %llu send complete", sid);
+            iter = streams.erase(iter);
+
+        } else if (ret == IStream::TrySendResult::kFailed) {
+            // Stream send failed (flow control or error), remove to prevent infinite retry
+            common::LOG_WARN("StreamManager: stream %llu send failed, removing", sid);
+            iter = streams.erase(iter);
+
+        } else if (ret == IStream::TrySendResult::kBreak) {
+            // Packet full, but stream has more data
+            // Keep in active list for next packet
+            common::LOG_INFO("StreamManager: packet full, stream %llu will retry", sid);
+            has_more_data = true;
+            break;
+        }
+    }
+
+    return has_more_data;
+}
+
+void StreamManager::ClearActiveStreams() {
+    common::LOG_DEBUG("StreamManager: clearing all active streams");
+    active_streams_.Clear();
 }
 
 }  // namespace quic

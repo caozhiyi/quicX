@@ -167,7 +167,7 @@ uint32_t ConnectionCloser::GetCloseWaitTime() {
 
 void ConnectionCloser::OnGracefulCloseTimeout() {
     // Graceful close timeout: force entering Closing state even if data hasn't finished sending
-    if (graceful_closing_pending_ && state_machine_.GetState() == ConnectionStateType::kStateConnected) {
+    if (graceful_closing_pending_ && state_machine_.CanSendData()) {
         common::LOG_WARN("Graceful close timeout, forcing connection close");
         graceful_closing_pending_ = false;
 

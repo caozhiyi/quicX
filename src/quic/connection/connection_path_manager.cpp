@@ -5,6 +5,7 @@
 
 #include "common/log/log.h"
 
+#include "common/network/if_event_loop.h"
 #include "quic/connection/connection_id_coordinator.h"
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/controler/send_manager.h"

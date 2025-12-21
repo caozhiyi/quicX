@@ -1,59 +1,28 @@
 #ifndef QUIC_CONNECTION_CONTROLER_SEND_MANAGER
 #define QUIC_CONNECTION_CONTROLER_SEND_MANAGER
 
+#include <functional>
 #include <list>
 #include <memory>
-#include <queue>
-#include <unordered_set>
+#include <string>
+#include <vector>
 
-#include "common/buffer/if_buffer.h"
 #include "common/timer/if_timer.h"
 
 #include "quic/connection/connection_id_manager.h"
-#include "quic/connection/controler/connection_flow_control.h"
 #include "quic/connection/controler/send_control.h"
+#include "quic/connection/controler/send_flow_controller.h"
+#include "quic/connection/packet_builder.h"
 #include "quic/connection/type.h"
-#include "quic/packet/if_packet.h"
+#include "quic/frame/if_frame.h"
 #include "quic/packet/packet_number.h"
-#include "quic/stream/if_stream.h"
 
 namespace quicx {
 namespace quic {
 
-// Encapsulates a set of active streams with both ID tracking and queue ordering
-// The set (ids) is used for fast lookup to avoid duplicates,
-// while the queue maintains the processing order.
-struct ActiveStreamSet {
-    std::unordered_set<uint64_t> ids;
-    std::queue<std::shared_ptr<IStream>> queue;
-
-    bool empty() const { return ids.empty(); }
-
-    void clear() {
-        ids.clear();
-        while (!queue.empty()) {
-            queue.pop();
-        }
-    }
-
-    void add(std::shared_ptr<IStream> stream) {
-        uint64_t sid = stream->GetStreamID();
-        if (ids.find(sid) == ids.end()) {
-            ids.insert(sid);
-            queue.push(stream);
-        }
-    }
-
-    void remove(uint64_t stream_id) { ids.erase(stream_id); }
-
-    void pop() {
-        if (!queue.empty()) {
-            queue.pop();
-        }
-    }
-
-    std::shared_ptr<IStream> front() const { return queue.empty() ? nullptr : queue.front(); }
-};
+// Forward declarations
+class SendFlowController;
+class StreamManager;
 
 class SendManager {
 public:
@@ -68,10 +37,31 @@ public:
     uint32_t GetPTO(uint32_t max_ack_delay) { return send_control_.GetPTO(max_ack_delay); }
     RttCalculator& GetRttCalculator() { return send_control_.GetRttCalculator(); }
     void ToSendFrame(std::shared_ptr<IFrame> frame);
-    void ActiveStream(std::shared_ptr<IStream> stream);
 
-    bool GetSendData(
-        std::shared_ptr<common::IBuffer> buffer, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
+    // ==================== New High-Level Interfaces ====================
+
+    /**
+     * @brief Get available send window size (congestion control)
+     * @return Available bytes that can be sent
+     */
+    uint32_t GetAvailableWindow();
+
+    /**
+     * @brief Get pending frames for a specific encryption level
+     * @param level Encryption level
+     * @param max_bytes Maximum bytes allowed (from congestion window)
+     * @return Vector of frames to send
+     */
+    std::vector<std::shared_ptr<IFrame>> GetPendingFrames(EncryptionLevel level, uint32_t max_bytes);
+
+    /**
+     * @brief Check if there is stream data to send
+     * @param level Encryption level
+     * @return true if stream data is available
+     */
+    bool HasStreamData(EncryptionLevel level);
+
+    // ==================== Deprecated Interfaces ====================
     void OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame);
     // Reset congestion control and RTT estimator to initial state (on new path)
     void ResetPathSignals();
@@ -107,7 +97,10 @@ public:
     // Notify probe result (success selects the higher MTU, failure falls back).
     void OnMtuProbeResult(bool success);
 
-    void SetFlowControl(ConnectionFlowControl* flow_control) { flow_control_ = flow_control; }
+    void SetSendFlowController(SendFlowController* send_flow_controller) {
+        send_flow_controller_ = send_flow_controller;
+    }
+    void SetStreamManager(StreamManager* stream_manager) { stream_manager_ = stream_manager; }
     void SetLocalConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) { local_conn_id_manager_ = manager; }
     void SetRemoteConnectionIDManager(std::shared_ptr<ConnectionIDManager> manager) {
         remote_conn_id_manager_ = manager;
@@ -115,6 +108,7 @@ public:
     void SetSendRetryCallBack(std::function<void()> cb) { send_retry_cb_ = cb; }
 
     void SetToken(const std::string& token) { token_ = token; }
+    const std::string& GetToken() const { return token_; }
 
     // RFC 9000 Section 4.10: Discard packet number space (delegates to SendControl)
     void DiscardPacketNumberSpace(PacketNumberSpace ns) { send_control_.DiscardPacketNumberSpace(ns); }
@@ -125,38 +119,28 @@ public:
         pakcet_number_.Reset(kInitialNumberSpace);
     }
 
+    // Accessors for BaseConnection (needed for TrySend)
+    PacketNumber& GetPacketNumber() { return pakcet_number_; }
+    SendControl& GetSendControl() { return send_control_; }
+
 private:
-    std::shared_ptr<IPacket> MakePacket(
-        IFrameVisitor* visitor, uint8_t encrypto_level, std::shared_ptr<ICryptographer> cryptographer);
-    bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer);
-    bool PacketInit(std::shared_ptr<IPacket>& packet, std::shared_ptr<common::IBuffer> buffer, IFrameVisitor* visitor);
     bool CheckAndChargeAmpBudget(uint32_t bytes);
     bool IsAllowedOnUnvalidated(uint16_t type) const;
-
-    // Dual-buffer mechanism for active streams (similar to Worker)
-    // This allows callbacks to safely add streams to the write set while
-    // MakePacket is reading from the read set, avoiding race conditions.
-    ActiveStreamSet& GetReadActiveSendStreamSet();
-    ActiveStreamSet& GetWriteActiveSendStreamSet();
-    void SwitchActiveSendStreamSet();
 
 private:
     SendControl send_control_;
     // packet number
     PacketNumber pakcet_number_;
-    ConnectionFlowControl* flow_control_;
+    SendFlowController* send_flow_controller_;  // Send-side flow controller
+    StreamManager* stream_manager_{nullptr};    // Stream manager for flow scheduling
     std::list<std::shared_ptr<IFrame>> wait_frame_list_;
-
-    // Dual-buffer for active streams (similar to Worker's active_send_connection_set)
-    // This prevents race conditions when sended_cb_ callback adds streams back to the queue
-    // while MakePacket is processing and removing streams from the queue.
-    bool active_send_stream_set_1_is_current_;
-    ActiveStreamSet active_send_stream_set_1_;
-    ActiveStreamSet active_send_stream_set_2_;
 
     // connection id
     std::shared_ptr<ConnectionIDManager> local_conn_id_manager_;
     std::shared_ptr<ConnectionIDManager> remote_conn_id_manager_;
+
+    // Packet builder for unified packet construction
+    PacketBuilder packet_builder_;
     friend class BaseConnection;
 
     bool streams_allowed_{true};

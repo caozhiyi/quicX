@@ -9,7 +9,6 @@
 #include "common/qlog/qlog.h"
 #include "common/util/time.h"
 
-#include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
 #include "quic/connection/error.h"
 #include "quic/connection/util.h"
@@ -23,7 +22,7 @@
 #include "quic/packet/type.h"
 #include "quic/packet/version_negotiation_packet.h"
 #include "quic/quicx/global_resource.h"
-#include "quic/stream/fix_buffer_frame_visitor.h"
+#include "quic/udp/net_packet.h"
 
 namespace quicx {
 namespace quic {
@@ -40,8 +39,10 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     send_manager_(loop->GetTimer()),
     event_loop_(loop),
     last_communicate_time_(0),
-    flow_control_(start),
-    state_machine_(this) {
+    send_flow_controller_(start),
+    recv_flow_controller_(),
+    state_machine_(this),
+    packet_builder_(std::make_unique<PacketBuilder>()) {
     // Metrics: Record handshake start time
     handshake_start_time_ = common::UTCTimeMsec();
     connection_crypto_.SetRemoteTransportParamCB(
@@ -54,10 +55,10 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     cid_coordinator_->Initialize();
 
     send_manager_.SetSendRetryCallBack(std::bind(&BaseConnection::ActiveSend, this));
-    send_manager_.SetFlowControl(&flow_control_);
+    send_manager_.SetSendFlowController(&send_flow_controller_);
 
     // RFC 9000: Setup immediate ACK callback for Initial/Handshake/out-of-order packets
-    recv_control_.SetImmediateAckCB([this](PacketNumberSpace ns) { SendImmediateAckAtLevel(ns); });
+    recv_control_.SetImmediateAckCB([this](PacketNumberSpace ns) { SendImmediateAck(ns); });
 
     // Setup delayed ACK callback for normal Application packets
     recv_control_.SetActiveSendCB(std::bind(&BaseConnection::ActiveSend, this));
@@ -67,7 +68,9 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     transport_param_.AddTransportParamListener(
         std::bind(&SendManager::UpdateConfig, &send_manager_, std::placeholders::_1));
     transport_param_.AddTransportParamListener(
-        std::bind(&ConnectionFlowControl::UpdateConfig, &flow_control_, std::placeholders::_1));
+        std::bind(&SendFlowController::UpdateConfig, &send_flow_controller_, std::placeholders::_1));
+    transport_param_.AddTransportParamListener(
+        std::bind(&RecvFlowController::UpdateConfig, &recv_flow_controller_, std::placeholders::_1));
 
     // Set stream data ACK callback for tracking stream completion
     send_manager_.send_control_.SetStreamDataAckCallback(std::bind(
@@ -83,30 +86,27 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
         std::bind(&BaseConnection::ActiveSend, this),
         [this](const common::Address& addr) { this->SetPeerAddress(addr); });
 
-    // Initialize stream manager (refactored)
-    stream_manager_ = std::make_unique<StreamManager>(event_loop_, flow_control_, transport_param_, send_manager_,
-        stream_state_cb_, std::bind(&BaseConnection::ToSendFrame, this, std::placeholders::_1),
-        std::bind(&BaseConnection::ActiveSendStream, this, std::placeholders::_1),
-        std::bind(&BaseConnection::InnerStreamClose, this, std::placeholders::_1),
-        std::bind(&BaseConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3));
+    // Initialize encryption level scheduler (refactored) - centralizes encryption level selection
+    encryption_scheduler_ =
+        std::make_unique<EncryptionLevelScheduler>(connection_crypto_, recv_control_, *path_manager_);
+
+    // Initialize stream manager (refactored) - uses IConnectionEventSink interface (no callbacks!)
+    stream_manager_ = std::make_unique<StreamManager>(
+        *this, event_loop_, transport_param_, send_manager_, stream_state_cb_, &send_flow_controller_);
+
+    // Inject stream manager into send manager for stream scheduling
+    send_manager_.SetStreamManager(stream_manager_.get());
 
     // Initialize connection closer (refactored)
     connection_closer_ = std::make_unique<ConnectionCloser>(
         event_loop_, state_machine_, send_manager_, transport_param_, connection_close_cb);
 
-    // Initialize frame processor (refactored)
-    frame_processor_ =
-        std::make_unique<FrameProcessor>(state_machine_, connection_crypto_, flow_control_, send_manager_,
-            *stream_manager_, *cid_coordinator_, *path_manager_, *connection_closer_, transport_param_, token_);
-    // Set callbacks for frame processor
-    frame_processor_->SetToSendFrameCallback(std::bind(&BaseConnection::ToSendFrame, this, std::placeholders::_1));
-    frame_processor_->SetActiveSendCallback(std::bind(&BaseConnection::ActiveSend, this));
-    frame_processor_->SetInnerConnectionCloseCallback(std::bind(&BaseConnection::InnerConnectionClose, this,
-        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    // Initialize frame processor (refactored) - uses IConnectionEventSink interface (no callbacks!)
+    frame_processor_ = std::make_unique<FrameProcessor>(*this, state_machine_, connection_crypto_, send_manager_,
+        *stream_manager_, *cid_coordinator_, *path_manager_, *connection_closer_, transport_param_, token_,
+        &send_flow_controller_, &recv_flow_controller_);
+    // Set application-level callbacks only
     frame_processor_->SetStreamStateCallback(stream_state_cb_);
-    frame_processor_->SetRetryPendingStreamRequestsCallback(
-        std::bind(&BaseConnection::RetryPendingStreamRequests, this));
 
     // Metrics: Connection created
     common::Metrics::GaugeInc(common::MetricsStd::QuicConnectionsActive);
@@ -121,6 +121,16 @@ BaseConnection::~BaseConnection() {
     // Metrics: Record PTO count per connection
     uint32_t pto_count = send_manager_.GetRttCalculator().GetConsecutivePTOCount();
     common::Metrics::HistogramObserve(common::MetricsStd::PtoCountPerConnection, pto_count);
+
+    // Clear stream manager first to prevent callbacks from accessing destroyed objects
+    // Streams may still hold callbacks that reference stream_manager_, so we need to
+    // ensure stream_manager_ is cleared before other members are destroyed
+    stream_manager_.reset();
+}
+
+void BaseConnection::SetSender(std::shared_ptr<ISender> sender) {
+    sender_ = sender;
+    common::LOG_DEBUG("BaseConnection: Sender injected");
 }
 
 void BaseConnection::Close() {
@@ -135,12 +145,8 @@ void BaseConnection::SetActiveConnectionCB(std::function<void(std::shared_ptr<IC
     active_connection_cb_ = active_cb;
 }
 
-void BaseConnection::SetImmediateSendCallback(ImmediateSendCallback cb) {
-    immediate_send_cb_ = cb;
-}
-
 void BaseConnection::CloseInternal() {
-    if (state_machine_.GetState() != ConnectionStateType::kStateConnected) {
+    if (!state_machine_.CanSendData()) {
         common::LOG_ERROR("BaseConnection::CloseInternal called in invalid state: %d", state_machine_.GetState());
         return;
     }
@@ -208,119 +214,11 @@ uint64_t BaseConnection::GetConnectionIDHash() {
     return cid_coordinator_->GetConnectionIDHash();
 }
 
-bool BaseConnection::GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation) {
-    // Check if connection should timeout due to excessive PTOs
-    // CheckPTOTimeout();
-
-    // RFC 9000: Draining and Closed states MUST NOT send any packets
-    if (state_machine_.GetState() == ConnectionStateType::kStateDraining ||
-        state_machine_.GetState() == ConnectionStateType::kStateClosed) {
-        send_operation = SendOperation::kAllSendDone;
-        return false;
-    }
-
-    // RFC 9000: In Closing state, only send CONNECTION_CLOSE frames
-    // Don't retransmit other packets or send stream data
-    if (state_machine_.GetState() == ConnectionStateType::kStateClosing) {
-        // Only allow sending CONNECTION_CLOSE frames that are already in wait_frame_list_
-        // Don't generate ACK frames or retransmit other packets
-        bool ret = send_manager_.GetSendData(
-            buffer, GetCurEncryptionLevel(), connection_crypto_.GetCryptographer(GetCurEncryptionLevel()));
-        send_operation = send_manager_.GetSendOperation();
-        // In Closing state, if GetSendData returns true but buffer is empty,
-        // it means there's no CONNECTION_CLOSE frame to send (wait_frame_list_ is empty)
-        // This is valid - we just don't have anything to send right now
-        return ret;
-    }
-
-    // make quic packet
-    uint8_t encrypto_level = GetCurEncryptionLevel();
-    auto crypto_grapher = connection_crypto_.GetCryptographer(encrypto_level);
-    if (!crypto_grapher) {
-        // fallback to Initial keys if available (early handshake bootstrap)
-        auto init_crypto = connection_crypto_.GetCryptographer(kInitial);
-        if (init_crypto) {
-            encrypto_level = kInitial;
-            crypto_grapher = init_crypto;
-        }
-    }
-    if (!crypto_grapher) {
-        common::LOG_ERROR("encrypt grapher is not ready.");
-        return false;
-    }
-
-    // PATH_CHALLENGE/PATH_RESPONSE frames can only be sent in 1-RTT packets
-    // If we're doing path validation and Application keys are ready, use them
-    if (path_manager_->IsPathProbeInflight() && encrypto_level < kApplication) {
-        auto app_crypto = connection_crypto_.GetCryptographer(kApplication);
-        if (app_crypto) {
-            encrypto_level = kApplication;
-            crypto_grapher = app_crypto;
-        }
-    }
-
-    // RFC 9000: Generate ACK frames for ALL packet number spaces with pending ACKs
-    // Even after handshake completes, we need to ACK any pending Initial/Handshake packets
-    // to prevent the peer from unnecessary retransmissions
-
-    // Try to generate ACKs for Initial and Handshake spaces first
-    if (encrypto_level >= kHandshake) {
-        // If we're at Handshake or Application level, check if there are pending ACKs for Initial space
-        auto init_ack = recv_control_.MayGenerateAckFrame(
-            common::UTCTimeMsec(), PacketNumberSpace::kInitialNumberSpace, ecn_enabled_);
-        if (init_ack) {
-            // We have pending Initial ACKs, but we're past Initial encryption level
-            // Need to send them in a different packet or clear them
-            // For now, just log a warning - this indicates the issue
-            common::LOG_WARN(
-                "Pending Initial ACKs exist but cannot send at current encryption level=%d", encrypto_level);
-            // TODO: Should send Initial packet with ACK before transitioning
-        }
-    }
-
-    if (encrypto_level >= kApplication) {
-        // If we're at Application level, check for pending Handshake ACKs
-        auto hs_ack = recv_control_.MayGenerateAckFrame(
-            common::UTCTimeMsec(), PacketNumberSpace::kHandshakeNumberSpace, ecn_enabled_);
-        if (hs_ack) {
-            common::LOG_WARN(
-                "Pending Handshake ACKs exist but cannot send at current encryption level=%d", encrypto_level);
-        }
-    }
-
-    // Generate ACK for current encryption level's packet number space
-    auto ack_frame = recv_control_.MayGenerateAckFrame(
-        common::UTCTimeMsec(), CryptoLevel2PacketNumberSpace(encrypto_level), ecn_enabled_);
-    if (ack_frame) {
-        send_manager_.ToSendFrame(ack_frame);
-    }
-
-    bool ret = send_manager_.GetSendData(buffer, encrypto_level, crypto_grapher);
-    if (!ret) {
-        common::LOG_WARN("there is no data to send.");
-    }
-
-    // Mark Initial packet as sent if we just sent one
-    if (encrypto_level == kInitial && buffer->GetDataLength() > 0) {
-        initial_packet_sent_ = true;
-    }
-
-    // Check for graceful close: if all data is sent and graceful close is pending
-    send_operation = send_manager_.GetSendOperation();
-    if (send_operation == SendOperation::kAllSendDone &&
-        state_machine_.GetState() == ConnectionStateType::kStateConnected) {
-        // Delegate to connection closer to check if graceful close can complete
-        connection_closer_->CheckGracefulCloseComplete(std::bind(&BaseConnection::ActiveSend, this));
-    }
-
-    return ret;
-}
-
 void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
     // RFC 9000 Section 10.2: Handle packets based on connection state
 
     // Closing state: Check if packet contains CONNECTION_CLOSE, otherwise retransmit
-    if (state_machine_.GetState() == ConnectionStateType::kStateClosing) {
+    if (state_machine_.IsClosing()) {
         // Try to parse packet to check for CONNECTION_CLOSE frame
         bool has_connection_close = false;
         for (auto& packet : packets) {
@@ -395,8 +293,7 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     }
 
     // Draining or Closed state: Discard all packets
-    if (state_machine_.GetState() == ConnectionStateType::kStateDraining ||
-        state_machine_.GetState() == ConnectionStateType::kStateClosed) {
+    if (state_machine_.ShouldIgnorePackets()) {
         common::LOG_DEBUG("Connection in draining/closed state, discard packets");
         return;
     }
@@ -660,7 +557,7 @@ void BaseConnection::OnClosingTimeout() {
 // RFC 9002: Check for idle timeout from excessive PTOs
 void BaseConnection::CheckPTOTimeout() {
     // Only check in Connected state to avoid closing during handshake
-    if (state_machine_.GetState() != ConnectionStateType::kStateConnected) {
+    if (!state_machine_.CanSendData()) {
         return;
     }
 
@@ -685,15 +582,20 @@ void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {
 }
 
 void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
-    if (state_machine_.GetState() == ConnectionStateType::kStateClosed ||
-        state_machine_.GetState() == ConnectionStateType::kStateDraining ||
-        state_machine_.GetState() == ConnectionStateType::kStateClosing) {
+    if (state_machine_.IsTerminating()) {
+        return;
+    }
+    // Guard against accessing stream_manager_ after destruction
+    if (!stream_manager_) {
         return;
     }
     if (stream->GetStreamID() != 0) {
         has_app_send_pending_ = true;
+        // Notify scheduler that early data (0-RTT) might be needed
+        encryption_scheduler_->SetEarlyDataPending(true);
     }
-    send_manager_.ActiveStream(stream);
+    // Use StreamManager for stream scheduling (Week 4 refactoring)
+    stream_manager_->MarkStreamActive(stream);
     ActiveSend();
 }
 
@@ -728,11 +630,8 @@ void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
 void BaseConnection::ActiveSend() {
     // Don't trigger send retry if connection is closing, draining, or closed
     // This prevents unnecessary retransmissions when connection is terminating
-    if (state_machine_.GetState() == ConnectionStateType::kStateClosing ||
-        state_machine_.GetState() == ConnectionStateType::kStateDraining ||
-        state_machine_.GetState() == ConnectionStateType::kStateClosed) {
-        common::LOG_DEBUG(
-            "ActiveSend called but connection is in state %d, ignoring", static_cast<int>(state_machine_.GetState()));
+    if (state_machine_.IsTerminating()) {
+        common::LOG_DEBUG("ActiveSend called but connection is terminating, ignoring");
         return;
     }
 
@@ -741,126 +640,64 @@ void BaseConnection::ActiveSend() {
     }
 }
 
-// RFC 9000: Send ACK packet immediately at specified encryption level
-// RFC 9002: ACK frames are not congestion controlled
-bool BaseConnection::SendImmediateAckAtLevel(PacketNumberSpace ns) {
-    // Determine target encryption level from packet number space
-    uint8_t target_level;
-    switch (ns) {
-        case kInitialNumberSpace:
-            target_level = kInitial;
-            break;
-        case kHandshakeNumberSpace:
-            target_level = kHandshake;
-            break;
-        case kApplicationNumberSpace:
-            target_level = kApplication;
-            break;
-        default:
-            common::LOG_WARN("SendImmediateAckAtLevel: invalid packet number space %d", ns);
-            return false;
+// ==================== IConnectionEventSink Implementation ====================
+// These methods replace callback-based event notification with direct method calls,
+// reducing std::bind overhead and improving performance.
+
+void BaseConnection::OnStreamDataReady(std::shared_ptr<IStream> stream) {
+    // Delegate to existing ActiveSendStream method
+    ActiveSendStream(stream);
+}
+
+void BaseConnection::OnFrameReady(std::shared_ptr<IFrame> frame) {
+    // Delegate to existing ToSendFrame method
+    ToSendFrame(frame);
+}
+
+void BaseConnection::OnConnectionActive() {
+    // Delegate to existing ActiveSend method
+    ActiveSend();
+}
+
+void BaseConnection::OnStreamClosed(uint64_t stream_id) {
+    // Delegate to existing InnerStreamClose method
+    InnerStreamClose(stream_id);
+}
+
+void BaseConnection::OnConnectionClose(uint64_t error, uint16_t frame_type, const std::string& reason) {
+    // Delegate to existing InnerConnectionClose method
+    InnerConnectionClose(error, frame_type, reason);
+}
+
+// ==================== End of IConnectionEventSink Implementation ====================
+
+// Immediate send for critical frames (ACK, PATH_CHALLENGE/RESPONSE, CONNECTION_CLOSE)
+// Bypasses normal send path for low latency
+bool BaseConnection::SendImmediate(std::shared_ptr<common::IBuffer> buffer) {
+    if (!buffer || buffer->GetDataLength() == 0) {
+        common::LOG_WARN("SendImmediate: empty buffer");
+        return false;
     }
 
-    // Get cryptographer for target level
-    auto cryptographer = connection_crypto_.GetCryptographer(target_level);
-    if (!cryptographer) {
-        // Can't send at this level (keys not available), defer to normal flow
-        common::LOG_DEBUG("SendImmediateAckAtLevel: no cryptographer for level %d, falling back", target_level);
-        if (active_connection_cb_) {
-            active_connection_cb_(shared_from_this());
+    // Prefer sender_ (direct UDP send) if available
+    if (sender_) {
+        auto net_packet = std::make_shared<NetPacket>();
+        net_packet->SetData(buffer);
+        net_packet->SetAddress(peer_addr_);
+        net_packet->SetTime(common::UTCTimeMsec());
+
+        bool result = sender_->Send(net_packet);
+        if (result) {
+            common::LOG_DEBUG("SendImmediate: packet sent via sender_, size=%d", buffer->GetDataLength());
+        } else {
+            common::LOG_ERROR("SendImmediate: sender_->Send() failed");
         }
-        return false;
-    }
+        return result;
 
-    // Generate ACK frame for this number space
-    auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), ns, ecn_enabled_);
-    if (!ack_frame) {
-        common::LOG_DEBUG("SendImmediateAckAtLevel: no ACK to send for ns=%d", ns);
-        return false;
-    }
-
-    common::LOG_INFO("Sending immediate ACK for ns=%d at level=%d (bypassing congestion control)", ns, target_level);
-
-    // RFC 9002: ACK-only packets are not congestion controlled
-    // Build ACK packet directly without going through normal send path
-    // Initial packets need 1200 bytes minimum per RFC 9000, need extra space for headers
-    FixBufferFrameVisitor frame_visitor(1400);  // Extra space for packet headers
-
-    // Add the ACK frame
-    if (!frame_visitor.HandleFrame(ack_frame)) {
-        common::LOG_ERROR("SendImmediateAckAtLevel: failed to add ACK frame to visitor");
-        return false;
-    }
-
-    // Create packet based on encryption level
-    std::shared_ptr<IPacket> packet;
-    switch (target_level) {
-        case kInitial:
-            packet = std::make_shared<InitPacket>();
-            break;
-        case kHandshake:
-            packet = std::make_shared<HandshakePacket>();
-            break;
-        case kApplication:
-            packet = std::make_shared<Rtt1Packet>();
-            break;
-        case kEarlyData:
-            packet = std::make_shared<Rtt0Packet>();
-            break;
-        default:
-            common::LOG_ERROR("SendImmediateAckAtLevel: invalid encryption level %d", target_level);
-            return false;
-    }
-
-    // Set connection IDs
-    auto header = packet->GetHeader();
-    if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
-        auto cid = cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID();
-        ((LongHeader*)header)->SetSourceConnectionId(cid.GetID(), cid.GetLength());
-        ((LongHeader*)header)->SetVersion(kQuicVersions[0]);
-    }
-    auto remote_cid = cid_coordinator_->GetRemoteConnectionIDManager()->GetCurrentID();
-    header->SetDestinationConnectionId(remote_cid.GetID(), remote_cid.GetLength());
-
-    // Set payload and cryptographer
-    packet->SetPayload(frame_visitor.GetBuffer()->GetSharedReadableSpan());
-    packet->SetCryptographer(cryptographer);
-
-    // Allocate packet number and encode
-    uint64_t pkt_number = send_manager_.pakcet_number_.NextPakcetNumber(ns);
-    packet->SetPacketNumber(pkt_number);
-    header->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pkt_number));
-
-    // Encode packet into send buffer
-    auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
-    if (!chunk || !chunk->Valid()) {
-        common::LOG_ERROR("SendImmediateAckAtLevel: failed to allocate buffer");
-        return false;
-    }
-    auto send_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-
-    if (!packet->Encode(send_buffer)) {
-        common::LOG_ERROR("SendImmediateAckAtLevel: failed to encode ACK packet");
-        return false;
-    }
-
-    common::LOG_DEBUG(
-        "SendImmediateAckAtLevel: encoded ACK packet #%llu, size=%d", pkt_number, send_buffer->GetDataLength());
-
-    // Register packet with send control for ACK tracking (but NOT for congestion control loss tracking)
-    // ACK-only packets don't count towards bytes_in_flight
-    send_manager_.send_control_.OnPacketSend(common::UTCTimeMsec(), packet, send_buffer->GetDataLength());
-
-    // Send packet immediately via callback
-    if (immediate_send_cb_) {
-        immediate_send_cb_(send_buffer, peer_addr_);
-        common::LOG_DEBUG("SendImmediateAckAtLevel: ACK packet sent successfully");
     } else {
-        common::LOG_WARN("SendImmediateAckAtLevel: no immediate_send_cb_ set, packet not sent!");
+        common::LOG_ERROR("SendImmediate: no sender_ available");
         return false;
     }
-
-    return true;
 }
 
 void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason) {
@@ -894,7 +731,7 @@ void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t tigger_frame,
 }
 
 void BaseConnection::ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason) {
-    if (state_machine_.GetState() != ConnectionStateType::kStateConnected) {
+    if (!state_machine_.CanSendData()) {
         return;
     }
 
@@ -1049,6 +886,220 @@ void BaseConnection::OnStateToClosed() {
     // Only invoke callback if it hasn't been called yet
     // (may have been called earlier in OnStateToDraining)
     connection_closer_->InvokeConnectionCloseCallback(shared_from_this(), QuicErrorCode::kNoError, "normal close.");
+}
+
+// ==================== New High-Level Send Interfaces Implementation ====================
+
+bool BaseConnection::TrySend() {
+    // 1. State check - allow Connecting, Connected, and Closing states
+    // - Connecting: needed for handshake packets
+    // - Connected: normal data transmission
+    // - Closing: needed to send CONNECTION_CLOSE frames
+    // - Draining/Closed: should not send any packets
+    if (state_machine_.IsClosed() || state_machine_.IsDraining()) {
+        common::LOG_DEBUG(
+            "BaseConnection::TrySend: connection is closed/draining, state=%d", state_machine_.GetState());
+        return false;
+    }
+
+    // 2. Get send context (determine encryption level)
+    auto send_ctx = encryption_scheduler_->GetNextSendContext();
+    common::LOG_DEBUG("BaseConnection::TrySend: selected encryption level=%d", send_ctx.level);
+
+    // 3. Get cryptographer
+    auto cryptographer = connection_crypto_.GetCryptographer(send_ctx.level);
+    if (!cryptographer) {
+        common::LOG_ERROR("BaseConnection::TrySend: no cryptographer for level=%d", send_ctx.level);
+        return false;
+    }
+
+    // 4. Check congestion window
+    uint32_t max_bytes = send_manager_.GetAvailableWindow();
+    if (max_bytes == 0) {
+        common::LOG_DEBUG("BaseConnection::TrySend: congestion window full");
+        return false;
+    }
+
+    // 5. Get pending frames
+    auto frames = send_manager_.GetPendingFrames(send_ctx.level, max_bytes);
+    common::LOG_DEBUG("BaseConnection::TrySend: got %zu pending frames", frames.size());
+
+    // 6. Add pending ACK if needed
+    if (send_ctx.has_pending_ack) {
+        auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), send_ctx.ack_space, ecn_enabled_);
+        if (ack_frame) {
+            frames.insert(frames.begin(), ack_frame);
+            common::LOG_DEBUG("BaseConnection::TrySend: added ACK frame for ns=%d", send_ctx.ack_space);
+        }
+    }
+
+    // 7. Check if there's stream data to send
+    bool has_stream_data = send_manager_.HasStreamData(send_ctx.level);
+    common::LOG_DEBUG("BaseConnection::TrySend: has_stream_data=%d", has_stream_data);
+
+    // 8. If no data at all, return
+    if (frames.empty() && !has_stream_data) {
+        common::LOG_DEBUG("BaseConnection::TrySend: no data to send");
+        return false;
+    }
+
+    // 9. Build data packet context
+    PacketBuilder::DataPacketContext build_ctx;
+    build_ctx.level = send_ctx.level;
+    build_ctx.cryptographer = cryptographer;
+    build_ctx.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
+    build_ctx.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
+    build_ctx.frames = std::move(frames);
+    build_ctx.stream_manager = stream_manager_.get();
+    build_ctx.include_stream_data = has_stream_data;
+    build_ctx.add_padding = (send_ctx.level == kInitial);
+    build_ctx.min_size = 1200;
+    build_ctx.token = send_manager_.GetToken();
+
+    // 10. Build packet - allocate buffer chunk first
+    auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        common::LOG_ERROR("BaseConnection::TrySend: failed to allocate buffer chunk");
+        return false;
+    }
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+
+    auto result = packet_builder_->BuildDataPacket(
+        build_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+
+    if (!result.success) {
+        common::LOG_ERROR("BaseConnection::TrySend: failed to build packet: %s", result.error_message.c_str());
+        return false;
+    }
+
+    common::LOG_DEBUG(
+        "BaseConnection::TrySend: built packet pn=%llu, size=%u bytes", result.packet_number, result.packet_size);
+
+    // 11. Mark Initial packet as sent (if needed)
+    if (send_ctx.level == kInitial) {
+        encryption_scheduler_->SetInitialPacketSent(true);
+    }
+
+    // 12. Send buffer
+    return SendBuffer(buffer);
+}
+
+bool BaseConnection::SendBuffer(std::shared_ptr<common::IBuffer> buffer) {
+    if (!buffer || buffer->GetDataLength() == 0) {
+        common::LOG_WARN("BaseConnection::SendBuffer: empty buffer");
+        return false;
+    }
+
+    // Use sender_ if available (preferred)
+    if (sender_) {
+        auto packet = std::make_shared<NetPacket>();
+        packet->SetData(buffer);
+        packet->SetAddress(AcquireSendAddress());
+
+        if (!sender_->Send(packet)) {
+            common::LOG_ERROR("BaseConnection::SendBuffer: sender_->Send() failed");
+            return false;
+        }
+
+        common::LOG_DEBUG("BaseConnection::SendBuffer: sent %u bytes via sender_", buffer->GetDataLength());
+        return true;
+    }
+
+    common::LOG_ERROR("BaseConnection::SendBuffer: no sender available");
+    return false;
+}
+
+bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
+    common::LOG_DEBUG("BaseConnection::SendImmediateAck: ns=%d", ns);
+
+    // 1. Determine encryption level from packet number space
+    EncryptionLevel target_level;
+    switch (ns) {
+        case kInitialNumberSpace:
+            target_level = kInitial;
+            break;
+        case kHandshakeNumberSpace:
+            target_level = kHandshake;
+            break;
+        case kApplicationNumberSpace:
+            target_level = kApplication;
+            break;
+        default:
+            common::LOG_WARN("BaseConnection::SendImmediateAck: invalid packet number space %d", ns);
+            return false;
+    }
+
+    // 2. Get cryptographer
+    auto cryptographer = connection_crypto_.GetCryptographer(target_level);
+    if (!cryptographer) {
+        common::LOG_WARN("BaseConnection::SendImmediateAck: no cryptographer for level=%d", target_level);
+        return false;
+    }
+
+    // 3. Generate ACK frame
+    auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), ns, ecn_enabled_);
+    if (!ack_frame) {
+        common::LOG_DEBUG("BaseConnection::SendImmediateAck: no ACK to send for ns=%d", ns);
+        return false;
+    }
+
+    // 4. Use PacketBuilder to build ACK packet - allocate buffer chunk first
+    auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        common::LOG_ERROR("BaseConnection::SendImmediateAck: failed to allocate buffer chunk");
+        return false;
+    }
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+
+    auto result = packet_builder_->BuildAckPacket(target_level, cryptographer, ack_frame,
+        cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
+        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+
+    if (!result.success) {
+        common::LOG_ERROR("BaseConnection::SendImmediateAck: failed to build packet: %s", result.error_message.c_str());
+        return false;
+    }
+
+    common::LOG_DEBUG("BaseConnection::SendImmediateAck: built ACK packet pn=%llu, size=%u", result.packet_number,
+        result.packet_size);
+
+    // 5. Send immediately
+    return SendImmediate(buffer);
+}
+
+bool BaseConnection::SendImmediateFrame(std::shared_ptr<IFrame> frame, EncryptionLevel level) {
+    common::LOG_DEBUG("BaseConnection::SendImmediateFrame: frame_type=%d, level=%d", frame->GetType(), level);
+
+    // 1. Get cryptographer
+    auto cryptographer = connection_crypto_.GetCryptographer(level);
+    if (!cryptographer) {
+        common::LOG_ERROR("BaseConnection::SendImmediateFrame: no cryptographer for level=%d", level);
+        return false;
+    }
+
+    // 2. Use PacketBuilder to build single-frame packet - allocate buffer chunk first
+    auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        common::LOG_ERROR("BaseConnection::SendImmediateFrame: failed to allocate buffer chunk");
+        return false;
+    }
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+
+    auto result = packet_builder_->BuildImmediatePacket(frame, level, cryptographer,
+        cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
+        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+
+    if (!result.success) {
+        common::LOG_ERROR(
+            "BaseConnection::SendImmediateFrame: failed to build packet: %s", result.error_message.c_str());
+        return false;
+    }
+
+    common::LOG_DEBUG(
+        "BaseConnection::SendImmediateFrame: built packet pn=%llu, size=%u", result.packet_number, result.packet_size);
+
+    // 3. Send immediately
+    return SendImmediate(buffer);
 }
 
 }  // namespace quic

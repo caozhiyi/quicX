@@ -8,6 +8,7 @@
 #include <queue>
 #include <unordered_map>
 
+#include "common/structure/double_buffer.h"
 #include "quic/include/type.h"
 
 namespace quicx {
@@ -22,7 +23,9 @@ namespace quic {
 // Forward declarations
 class IStream;
 class IFrame;
-class ConnectionFlowControl;
+class IFrameVisitor;
+class IConnectionEventSink;
+class SendFlowController;
 class SendManager;
 class TransportParam;
 
@@ -35,23 +38,23 @@ class TransportParam;
  * - Stream limit enforcement
  * - Pending stream request queue management
  * - Stream data ACK notifications
+ *
+ * Refactored (Phase 3): Uses IConnectionEventSink interface instead of callbacks
+ * to reduce std::bind overhead and improve performance.
  */
 class StreamManager {
 public:
     using StreamCreationCallback = std::function<void(std::shared_ptr<IStream>, uint32_t error)>;
     using StreamStateCallback = std::function<void(std::shared_ptr<IStream> stream, uint32_t error)>;
-    using ToSendFrameCallback = std::function<void(std::shared_ptr<IFrame>)>;
-    using ActiveSendStreamCallback = std::function<void(std::shared_ptr<IStream>)>;
-    using InnerStreamCloseCallback = std::function<void(uint64_t stream_id)>;
-    using InnerConnectionCloseCallback =
-        std::function<void(uint64_t error, uint16_t frame_type, const std::string& reason)>;
 
-    StreamManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop, ConnectionFlowControl& flow_control,
+    StreamManager(IConnectionEventSink& event_sink, std::shared_ptr<::quicx::common::IEventLoop> event_loop,
         TransportParam& transport_param, SendManager& send_manager, StreamStateCallback stream_state_cb,
-        ToSendFrameCallback to_send_frame_cb, ActiveSendStreamCallback active_send_stream_cb,
-        InnerStreamCloseCallback inner_stream_close_cb, InnerConnectionCloseCallback inner_connection_close_cb);
+        SendFlowController* send_flow_controller);
 
-    ~StreamManager() = default;
+    ~StreamManager() {
+        // Clear callback to prevent use-after-free
+        stream_state_cb_ = nullptr;
+    }
 
     // ==================== Stream Creation ====================
 
@@ -136,9 +139,49 @@ public:
      */
     std::vector<uint64_t> GetAllStreamIDs() const;
 
+    // ==================== Stream Scheduling (Week 4 Refactoring) ====================
+
+    /**
+     * @brief Mark stream as active for sending
+     *
+     * Adds stream to the active streams queue for scheduling. Uses double-buffer
+     * mechanism to avoid concurrency issues during packet building.
+     *
+     * @param stream Stream to mark as active
+     */
+    void MarkStreamActive(std::shared_ptr<IStream> stream);
+
+    /**
+     * @brief Build STREAM frames for active streams
+     *
+     * Iterates through active streams and builds STREAM frames for packet.
+     * Handles encryption level filtering and flow control limits.
+     *
+     * @param visitor Frame visitor to receive STREAM frames
+     * @param encrypto_level Current encryption level
+     * @return true if more stream data pending, false otherwise
+     */
+    bool BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_level);
+
+    /**
+     * @brief Clear all active streams (called during connection close)
+     */
+    void ClearActiveStreams();
+
+    /**
+     * @brief Check if there are active streams pending send
+     * @return true if active streams exist, false otherwise
+     */
+    bool HasActiveStreams() const {
+        return !active_streams_.IsEmpty();
+    }
+
 private:
     // Stream map
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_map_;
+
+    // Active streams (Week 4 refactoring) - uses double-buffer for concurrency safety
+    common::DoubleBuffer<std::shared_ptr<IStream>> active_streams_;
 
     // Pending stream creation requests
     struct PendingStreamRequest {
@@ -149,17 +192,14 @@ private:
     std::mutex pending_streams_mutex_;
 
     // Dependencies (injected)
+    IConnectionEventSink& event_sink_;  // Event interface (replaces callbacks)
     std::shared_ptr<::quicx::common::IEventLoop> event_loop_;
-    ConnectionFlowControl& flow_control_;
+    SendFlowController* send_flow_controller_;  // Send-side flow controller
     TransportParam& transport_param_;
     SendManager& send_manager_;
 
-    // Callbacks
+    // External callback (for application notification)
     StreamStateCallback stream_state_cb_;
-    ToSendFrameCallback to_send_frame_cb_;
-    ActiveSendStreamCallback active_send_stream_cb_;
-    InnerStreamCloseCallback inner_stream_close_cb_;
-    InnerConnectionCloseCallback inner_connection_close_cb_;
 };
 
 }  // namespace quic

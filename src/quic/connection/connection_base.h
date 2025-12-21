@@ -16,13 +16,16 @@
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/connection_timer_coordinator.h"
-#include "quic/connection/controler/connection_flow_control.h"
 #include "quic/connection/controler/recv_control.h"
+#include "quic/connection/controler/recv_flow_controller.h"
+#include "quic/connection/controler/send_flow_controller.h"
 #include "quic/connection/controler/send_manager.h"
+#include "quic/connection/encryption_level_scheduler.h"
 #include "quic/connection/if_connection.h"
+#include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/transport_param.h"
-#include "quic/connection/type.h"
 #include "quic/include/type.h"
+#include "quic/udp/if_sender.h"
 
 namespace quicx {
 namespace quic {
@@ -30,6 +33,7 @@ namespace quic {
 class BaseConnection:
     public IConnection,
     public IConnectionStateListener,
+    public IConnectionEventSink,
     public std::enable_shared_from_this<BaseConnection> {
 public:
     BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled, std::shared_ptr<common::IEventLoop> loop,
@@ -39,10 +43,8 @@ public:
         std::function<void(ConnectionID&)> retire_conn_id_cb,
         std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)>
             connection_close_cb);
-
-    // RFC 9000: Callback for immediate packet sending (bypasses normal flow)
-    using ImmediateSendCallback = std::function<void(std::shared_ptr<common::IBuffer>, const common::Address&)>;
-    void SetImmediateSendCallback(ImmediateSendCallback cb);
+    // Set sender for direct packet transmission
+    void SetSender(std::shared_ptr<ISender> sender) override;
 
     virtual ~BaseConnection();
     //*************** outside interface ***************//
@@ -58,8 +60,42 @@ public:
     // set transport param
     void AddTransportParam(const QuicTransportParams& tp_config) override;
     virtual uint64_t GetConnectionIDHash() override;
-    // try to build a quic message
-    virtual bool GenerateSendData(std::shared_ptr<common::IBuffer> buffer, SendOperation& send_operation) override;
+
+    // ==================== New High-Level Send Interfaces ====================
+
+    /**
+     * @brief Main send interface (replaces GenerateSendData)
+     *
+     * Called by Worker to attempt sending data. Internally decides whether to send,
+     * what to send, and handles all packet building and transmission.
+     *
+     * @return true if successfully sent data, false if no data or send failed
+     */
+    bool TrySend() override;
+
+    /**
+     * @brief Send ACK packet immediately
+     *
+     * Simplified interface for immediate ACK sending, used for cross-level ACKs
+     * or when immediate ACK is required.
+     *
+     * @param ns Packet number space
+     * @return true if successfully sent
+     */
+    bool SendImmediateAck(PacketNumberSpace ns);
+
+    /**
+     * @brief Send single frame immediately
+     *
+     * Used for frames requiring immediate transmission such as PATH_CHALLENGE,
+     * PATH_RESPONSE, or CONNECTION_CLOSE.
+     *
+     * @param frame Frame to send
+     * @param level Encryption level (defaults to current level)
+     * @return true if successfully sent
+     */
+    bool SendImmediateFrame(std::shared_ptr<IFrame> frame, EncryptionLevel level = kApplication);
+
     // handle packets
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) override;
     virtual void SetPendingEcn(uint8_t ecn) override { pending_ecn_ = ecn; }
@@ -81,6 +117,10 @@ public:
     // Get all local CID hashes for this connection (for cleanup on close)
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() override { return cid_coordinator_->GetAllLocalCIDHashes(); }
 
+    // Flow controller accessors for use by FrameProcessor and StreamManager
+    SendFlowController& GetSendFlowController() { return send_flow_controller_; }
+    RecvFlowController& GetRecvFlowController() { return recv_flow_controller_; }
+
     // Test-only interface to observe connection state
     ConnectionStateType GetConnectionStateForTest() const { return state_machine_.GetState(); }
 
@@ -96,6 +136,13 @@ public:
     virtual void OnStateToDraining() override;
     virtual void OnStateToClosed() override;
 
+    // IConnectionEventSink - Event interface to replace callbacks
+    virtual void OnStreamDataReady(std::shared_ptr<IStream> stream) override;
+    virtual void OnFrameReady(std::shared_ptr<IFrame> frame) override;
+    virtual void OnConnectionActive() override;
+    virtual void OnStreamClosed(uint64_t stream_id) override;
+    virtual void OnConnectionClose(uint64_t error, uint16_t frame_type, const std::string& reason) override;
+
 protected:
     bool OnInitialPacket(std::shared_ptr<IPacket> packet);
     bool On0rttPacket(std::shared_ptr<IPacket> packet);
@@ -108,11 +155,17 @@ protected:
     // handle frames (delegated to frame processor)
     bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level);
 
-    // Send ACK packet immediately at specified encryption level
-    // Used when immediate ACK is required but current encryption level differs
-    bool SendImmediateAckAtLevel(PacketNumberSpace ns);
-
     void OnTransportParams(TransportParam& remote_tp);
+
+private:
+    // Internal helper methods for TrySend()
+
+    /**
+     * @brief Send buffer using sender_ (internal helper)
+     * @param buffer Buffer to send
+     * @return true if successfully sent
+     */
+    bool SendBuffer(std::shared_ptr<common::IBuffer> buffer);
 
 protected:
     virtual void ThreadTransferBefore() override;
@@ -125,6 +178,10 @@ protected:
     void ToSendFrame(std::shared_ptr<IFrame> frame);
     void ActiveSendStream(std::shared_ptr<IStream> stream);
     void ActiveSend();
+
+    // Immediate send for critical frames (ACK, PATH_CHALLENGE/RESPONSE, CONNECTION_CLOSE)
+    // Bypasses normal send path and uses sender_ directly
+    bool SendImmediate(std::shared_ptr<common::IBuffer> buffer);
 
     void InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason);
     void ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason);
@@ -181,11 +238,16 @@ protected:
     uint8_t pending_ecn_{0};
     bool ecn_enabled_;
     // flow control
-    ConnectionFlowControl flow_control_;
+    SendFlowController send_flow_controller_;  // Send-side flow controller
+    RecvFlowController recv_flow_controller_;  // Receive-side flow controller
     RecvControl recv_control_;
     SendManager send_manager_;
     // crypto
     ConnectionCrypto connection_crypto_;
+    // Encryption level scheduler (centralized encryption level selection)
+    std::unique_ptr<EncryptionLevelScheduler> encryption_scheduler_;
+    // Packet builder for unified packet construction
+    std::unique_ptr<PacketBuilder> packet_builder_;
     // token
     std::string token_;
     std::shared_ptr<TLSConnection> tls_connection_;
@@ -203,11 +265,11 @@ protected:
     // EventLoop reference for safe cleanup in destructor
     std::shared_ptr<common::IEventLoop> event_loop_;
 
-    // Immediate send callback for bypassing normal send flow (e.g., immediate ACK)
-    ImmediateSendCallback immediate_send_cb_;
-
     // Metrics: Handshake timing
     uint64_t handshake_start_time_{0};
+
+    // Sender for direct packet transmission (改动5: Sender down-shift)
+    std::shared_ptr<ISender> sender_;
 };
 
 }  // namespace quic

@@ -2,6 +2,7 @@
 #include <thread>
 
 #include "common/log/log.h"
+
 #include "quic/common/version.h"
 #include "quic/packet/init_packet.h"
 #include "quic/quicx/global_resource.h"
@@ -20,7 +21,6 @@ Worker::Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::share
     params_(params),
     sender_(sender),
     connection_handler_(connection_handler),
-    active_send_connection_set_1_is_current_(true),
     event_loop_(event_loop) {
     ecn_enabled_ = config.enable_ecn_;
 }
@@ -48,50 +48,35 @@ void Worker::Process() {
 }
 
 void Worker::ProcessSend() {
-    SwitchActiveSendConnectionSet();
-    auto& cur_active_send_connection_set = GetReadActiveSendConnectionSet();
-    common::LOG_DEBUG(
-        "Worker::ProcessSend: active_send_connection_set size: %zu", cur_active_send_connection_set.size());
-    if (cur_active_send_connection_set.empty()) {
+    // Swap buffers: move unfinished connections from read to write buffer
+    active_send_connections_.Swap();
+    auto& active_connections = active_send_connections_.GetReadBuffer();
+
+    common::LOG_DEBUG("Worker::ProcessSend: active_send_connections size: %zu", active_connections.size());
+    if (active_connections.empty()) {
         return;
     }
 
-    std::shared_ptr<NetPacket> packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
-    auto buffer = packet->GetData();
+    // Iterate through active connections and try to send data
+    for (auto iter = active_connections.begin(); iter != active_connections.end();) {
+        bool has_more_data = false;
 
-    SendOperation send_operation;
-    for (auto iter = cur_active_send_connection_set.begin(); iter != cur_active_send_connection_set.end();) {
-        if (!(*iter)->GenerateSendData(buffer, send_operation)) {
-            common::LOG_ERROR("generate send data failed.");
-            iter = cur_active_send_connection_set.erase(iter);
-            continue;
+        // Try to send data using the new high-level interface
+        // TrySend() handles all packet building and sending internally
+        while ((*iter)->TrySend()) {
+            has_more_data = true;
+
+            // Limit packets sent per connection to avoid starvation
+            // TODO: Add configurable limit or time-based yielding if needed
+            // For now, allow continuous sending until TrySend() returns false
         }
 
-        if (buffer->GetDataLength() == 0) {
-            common::LOG_WARN("generate send data length is 0.");
-            iter = cur_active_send_connection_set.erase(iter);
-            continue;
-        }
-
-        packet->SetData(buffer);
-        // select destination address from connection (future: candidate path probing)
-        packet->SetAddress((*iter)->AcquireSendAddress());
-        packet->SetSocket((*iter)->GetSocket());  // client connection will always -1
-
-        if (!sender_->Send(packet)) {
-            common::LOG_ERROR("udp send failed.");
-        }
-        buffer->Clear();
-        switch (send_operation) {
-            case SendOperation::kAllSendDone:
-                iter = cur_active_send_connection_set.erase(iter);
-                break;
-            case SendOperation::kNextPeriod:
-                iter++;
-                break;
-            case SendOperation::kSendAgainImmediately:  // do nothing, send again immediately
-            default:
-                break;
+        // If connection has no more data to send, remove from active set
+        if (!has_more_data) {
+            common::LOG_DEBUG("Worker::ProcessSend: connection has no more data, removing from active set");
+            iter = active_connections.erase(iter);
+        } else {
+            ++iter;
         }
     }
 }
@@ -169,8 +154,9 @@ void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 }
 
 void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
-    GetWriteActiveSendConnectionSet().insert(conn);
-    common::LOG_DEBUG("HandleActiveSendConnection, is current:%d", active_send_connection_set_1_is_current_ ? 1 : 2);
+    // Add to write buffer (safe during ProcessSend execution)
+    active_send_connections_.Add(conn);
+    common::LOG_DEBUG("HandleActiveSendConnection: added connection to write buffer");
     do_send_ = true;
     // Use saved event_loop_ if available, otherwise fallback to thread-local EventLoop
     if (event_loop_) {
@@ -195,35 +181,6 @@ void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t e
     connecting_set_.erase(conn);
 
     connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
-}
-
-std::unordered_set<std::shared_ptr<IConnection>>& Worker::GetReadActiveSendConnectionSet() {
-    return active_send_connection_set_1_is_current_ ? active_send_connection_set_1_ : active_send_connection_set_2_;
-}
-
-std::unordered_set<std::shared_ptr<IConnection>>& Worker::GetWriteActiveSendConnectionSet() {
-    return active_send_connection_set_1_is_current_ ? active_send_connection_set_2_ : active_send_connection_set_1_;
-}
-
-void Worker::SwitchActiveSendConnectionSet() {
-    // Merge Write set into current Read set, then switch to use the Write set as new Read set
-    if (active_send_connection_set_1_is_current_) {
-        // current=true: Read=set1, Write=set2
-        // Move unfinished connections from Read(set1) to Write(set2)
-        active_send_connection_set_2_.insert(
-            active_send_connection_set_1_.begin(), active_send_connection_set_1_.end());
-        active_send_connection_set_1_.clear();
-        active_send_connection_set_1_is_current_ = false;
-        // Now Read=set2, Write=set1
-    } else {
-        // current=false: Read=set2, Write=set1
-        // Move unfinished connections from Read(set2) to Write(set1)
-        active_send_connection_set_1_.insert(
-            active_send_connection_set_2_.begin(), active_send_connection_set_2_.end());
-        active_send_connection_set_2_.clear();
-        active_send_connection_set_1_is_current_ = true;
-        // Now Read=set1, Write=set2
-    }
 }
 
 }  // namespace quic

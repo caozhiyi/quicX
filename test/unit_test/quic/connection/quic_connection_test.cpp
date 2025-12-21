@@ -11,11 +11,16 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "quic/quicx/global_resource.h"
+#include "mock_sender.h"
+#include "connection_test_util.h"
 
 
 namespace quicx {
 namespace quic {
 namespace {
+
+using quicx::quic::ConnectionProcess;
+using quicx::quic::AttachMockSender;
 
 static const char kCertPem[] =
       "-----BEGIN CERTIFICATE-----\n"
@@ -51,19 +56,7 @@ static const char kKeyPem[] =
       "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
       "-----END RSA PRIVATE KEY-----\n"; 
 
-bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn) {
-    std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
-    quic::SendOperation send_operation;
-    send_conn->GenerateSendData(buffer, send_operation);
-
-    std::vector<std::shared_ptr<IPacket>> packets;
-    if (!DecodePackets(buffer, packets)) {
-        return false;
-    }
-
-    recv_conn->OnPackets(0, packets);
-    return true;
-}
+// Note: ConnectionProcess is defined in connection_test_util.h
 
 TEST(quic_connection_utest, handshake) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
@@ -81,20 +74,24 @@ TEST(quic_connection_utest, handshake) {
     addr.SetPort(9432);
 
     client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
-    
+
     auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
+    // Attach MockSenders
+    auto client_sender = AttachMockSender(client_conn);
+    auto server_sender = AttachMockSender(server_conn);
+
     // client -------init-----> server
-    ConnectionProcess(client_conn, server_conn);
+    ConnectionProcess(client_conn, server_conn, client_sender);
     // client <------init------ server
-    ConnectionProcess(server_conn, client_conn);
+    ConnectionProcess(server_conn, client_conn, server_sender);
     // client <---handshake---- server
-    ConnectionProcess(server_conn, client_conn);
+    ConnectionProcess(server_conn, client_conn, server_sender);
     // client ----handshake---> server
-    ConnectionProcess(client_conn, server_conn);
+    ConnectionProcess(client_conn, server_conn, client_sender);
     // client <----session----- server
-    ConnectionProcess(server_conn, client_conn);
+    ConnectionProcess(server_conn, client_conn, server_sender);
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
@@ -103,25 +100,31 @@ TEST(quic_connection_utest, handshake) {
     // This ensures the session ticket with 0-RTT capability is properly captured
     for (int i = 0; i < 10; ++i) {
         // Try to process any remaining handshake data
-        std::shared_ptr<common::SingleBlockBuffer> buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
-        quic::SendOperation op;
-        if (server_conn->GenerateSendData(buffer, op)) {
-            std::vector<std::shared_ptr<IPacket>> pkts;
-            if (DecodePackets(buffer, pkts)) {
-                for (auto& pkt : pkts) {
-                    std::vector<std::shared_ptr<IPacket>> pkt_vec = {pkt};
-                    client_conn->OnPackets(0, pkt_vec);
+        server_sender->Clear();
+        if (server_conn->TrySend()) {
+            auto buffer = server_sender->GetLastSentBuffer();
+            if (buffer && buffer->GetDataLength() > 0) {
+                std::vector<std::shared_ptr<IPacket>> pkts;
+                if (DecodePackets(buffer, pkts)) {
+                    for (auto& pkt : pkts) {
+                        std::vector<std::shared_ptr<IPacket>> pkt_vec = {pkt};
+                        client_conn->OnPackets(0, pkt_vec);
+                    }
                 }
             }
         }
         
         // Also try client side
-        if (client_conn->GenerateSendData(buffer, op)) {
-            std::vector<std::shared_ptr<IPacket>> pkts;
-            if (DecodePackets(buffer, pkts)) {
-                for (auto& pkt : pkts) {
-                    std::vector<std::shared_ptr<IPacket>> pkt_vec = {pkt};
-                    server_conn->OnPackets(0, pkt_vec);
+        client_sender->Clear();
+        if (client_conn->TrySend()) {
+            auto buffer = client_sender->GetLastSentBuffer();
+            if (buffer && buffer->GetDataLength() > 0) {
+                std::vector<std::shared_ptr<IPacket>> pkts;
+                if (DecodePackets(buffer, pkts)) {
+                    for (auto& pkt : pkts) {
+                        std::vector<std::shared_ptr<IPacket>> pkt_vec = {pkt};
+                        server_conn->OnPackets(0, pkt_vec);
+                    }
                 }
             }
         }
@@ -154,16 +157,20 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
+    // Attach MockSenders for first connection
+    auto client_sender = AttachMockSender(client_conn);
+    auto server_sender = AttachMockSender(server_conn);
+
     // client -------init-----> server
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
     // client <------init------ server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
     // client <---handshake---- server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
     // client ----handshake---> server
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
     // client <----session----- server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
@@ -183,6 +190,10 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     auto server_conn2 = std::make_shared<ServerConnection>(server_ctx, event_loop2, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn2->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
+    // Attach MockSender for second connection
+    auto client_sender2 = AttachMockSender(client_conn2);
+    auto server_sender2 = AttachMockSender(server_conn2);
+
     // queue early application data before handshake completes
     auto s_base = client_conn2->MakeStream(StreamDirection::kSend);
     auto s = std::dynamic_pointer_cast<IQuicSendStream>(s_base);
@@ -191,9 +202,11 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     ASSERT_GT(s->Send((uint8_t*)early, (uint32_t)strlen(early)), 0);
 
     // First flight from client should be Initial or 0-RTT (if session supports it)
-    std::shared_ptr<common::SingleBlockBuffer> buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
-    quic::SendOperation op1;
-    ASSERT_TRUE(client_conn2->GenerateSendData(buffer1, op1));
+    client_sender2->Clear();
+    ASSERT_TRUE(client_conn2->TrySend());
+    auto buffer1 = client_sender2->GetLastSentBuffer();
+    ASSERT_NE(buffer1, nullptr);
+    ASSERT_GT(buffer1->GetDataLength(), 0);
     std::vector<std::shared_ptr<IPacket>> pkts1;
     ASSERT_TRUE(DecodePackets(buffer1, pkts1));
     ASSERT_FALSE(pkts1.empty());
@@ -209,10 +222,13 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     // Next flight from client should contain 0-RTT (if keys available and stream data queued)
     bool found_0rtt = false;
     for (int i = 0; i < 4 && !found_0rtt; ++i) {
-        auto buffern = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
-        quic::SendOperation opn;
-        if (!client_conn2->GenerateSendData(buffern, opn)) {
+        client_sender2->Clear();
+        if (!client_conn2->TrySend()) {
             // If no more data to send, break
+            break;
+        }
+        auto buffern = client_sender2->GetLastSentBuffer();
+        if (!buffern || buffern->GetDataLength() == 0) {
             break;
         }
         std::vector<std::shared_ptr<IPacket>> pktsn;
@@ -231,23 +247,27 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     for (int i = 0; i < 10 && server_conn2->GetCurEncryptionLevel() != kApplication; ++i) {
         // server -> client
         {
-            auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
-            quic::SendOperation op;
-            if (server_conn2->GenerateSendData(buffer, op)) {
-                std::vector<std::shared_ptr<IPacket>> pkts;
-                if (DecodePackets(buffer, pkts) && !pkts.empty()) {
-                    client_conn2->OnPackets(0, pkts);
+            server_sender2->Clear();
+            if (server_conn2->TrySend()) {
+                auto buffer = server_sender2->GetLastSentBuffer();
+                if (buffer && buffer->GetDataLength() > 0) {
+                    std::vector<std::shared_ptr<IPacket>> pkts;
+                    if (DecodePackets(buffer, pkts) && !pkts.empty()) {
+                        client_conn2->OnPackets(0, pkts);
+                    }
                 }
             }
         }
         // client -> server
         {
-            auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
-            quic::SendOperation op;
-            if (client_conn2->GenerateSendData(buffer, op)) {
-                std::vector<std::shared_ptr<IPacket>> pkts;
-                if (DecodePackets(buffer, pkts) && !pkts.empty()) {
-                    server_conn2->OnPackets(0, pkts);
+            client_sender2->Clear();
+            if (client_conn2->TrySend()) {
+                auto buffer = client_sender2->GetLastSentBuffer();
+                if (buffer && buffer->GetDataLength() > 0) {
+                    std::vector<std::shared_ptr<IPacket>> pkts;
+                    if (DecodePackets(buffer, pkts) && !pkts.empty()) {
+                        server_conn2->OnPackets(0, pkts);
+                    }
                 }
             }
         }
@@ -276,16 +296,20 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
+    // Attach MockSenders for first connection
+    auto client_sender = AttachMockSender(client_conn);
+    auto server_sender = AttachMockSender(server_conn);
+
     // client -------init-----> server
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
     // client <------init------ server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
     // client <---handshake---- server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
     // client ----handshake---> server
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn));
+    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
     // client <----session----- server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn));
+    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
@@ -309,6 +333,10 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     auto server_conn2 = std::make_shared<ServerConnection>(server_ctx_2, event_loop2, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
     server_conn2->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
+    // Attach MockSender for second connection
+    auto client_sender2 = AttachMockSender(client_conn2);
+    auto server_sender2 = AttachMockSender(server_conn2);
+
     // queue early application data before handshake completes
     auto s_base = client_conn2->MakeStream(StreamDirection::kSend);
     auto s = std::dynamic_pointer_cast<IQuicSendStream>(s_base);
@@ -317,9 +345,11 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     ASSERT_GT(s->Send((uint8_t*)early, (uint32_t)strlen(early)), 0);
 
     // First flight from client should be Initial or 0-RTT (if session supports it)
-    std::shared_ptr<common::SingleBlockBuffer> buffer1 = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
-    quic::SendOperation op1;
-    ASSERT_TRUE(client_conn2->GenerateSendData(buffer1, op1));
+    client_sender2->Clear();
+    ASSERT_TRUE(client_conn2->TrySend());
+    auto buffer1 = client_sender2->GetLastSentBuffer();
+    ASSERT_NE(buffer1, nullptr);
+    ASSERT_GT(buffer1->GetDataLength(), 0);
     std::vector<std::shared_ptr<IPacket>> pkts1;
     ASSERT_TRUE(DecodePackets(buffer1, pkts1));
     ASSERT_FALSE(pkts1.empty());
@@ -335,10 +365,13 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     // Next flight from client should contain 0-RTT (if keys available and stream data queued)
     bool found_0rtt = false;
     for (int i = 0; i < 5 && !found_0rtt; ++i) {
-        auto buffern = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(1500));
-        quic::SendOperation opn;
-        if (!client_conn2->GenerateSendData(buffern, opn)) {
+        client_sender2->Clear();
+        if (!client_conn2->TrySend()) {
             // If no more data to send, break
+            break;
+        }
+        auto buffern = client_sender2->GetLastSentBuffer();
+        if (!buffern || buffern->GetDataLength() == 0) {
             break;
         }
         std::vector<std::shared_ptr<IPacket>> pktsn;

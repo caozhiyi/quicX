@@ -98,5 +98,35 @@ std::string ConnectionStateMachine::StateToString(ConnectionStateType state) con
     }
 }
 
+// Phase 3 optimization: Query methods for cleaner state checks
+bool ConnectionStateMachine::CanSendData() const {
+    return state_ == ConnectionStateType::kStateConnected;
+}
+
+bool ConnectionStateMachine::CanReceiveData() const {
+    return state_ == ConnectionStateType::kStateConnected || state_ == ConnectionStateType::kStateClosing;
+}
+
+bool ConnectionStateMachine::IsClosing() const {
+    return state_ == ConnectionStateType::kStateClosing;
+}
+
+bool ConnectionStateMachine::IsDraining() const {
+    return state_ == ConnectionStateType::kStateDraining;
+}
+
+bool ConnectionStateMachine::IsClosed() const {
+    return state_ == ConnectionStateType::kStateClosed;
+}
+
+bool ConnectionStateMachine::IsTerminating() const {
+    return state_ == ConnectionStateType::kStateClosing || state_ == ConnectionStateType::kStateDraining ||
+           state_ == ConnectionStateType::kStateClosed;
+}
+
+bool ConnectionStateMachine::ShouldIgnorePackets() const {
+    return state_ == ConnectionStateType::kStateDraining || state_ == ConnectionStateType::kStateClosed;
+}
+
 }  // namespace quic
 }  // namespace quicx
