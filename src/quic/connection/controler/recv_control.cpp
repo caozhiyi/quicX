@@ -107,12 +107,8 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     const size_t kMaxAckRanges = 64;
 
     if (nums.empty()) {
-        common::LOG_DEBUG("RecvControl::MayGenerateAckFrame: ns=%d, no packets to ACK", ns);
         return nullptr;
     }
-
-    common::LOG_DEBUG("RecvControl::MayGenerateAckFrame: ns=%d, generating ACK for %zu packets, largest=%llu", ns,
-        nums.size(), pkt_num_largest_recvd_[ns]);
 
     // Collect runs as [high, low]
     std::vector<std::pair<uint64_t, uint64_t>> runs;

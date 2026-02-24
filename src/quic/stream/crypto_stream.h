@@ -15,41 +15,48 @@ public:
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);
     virtual ~CryptoStream();
-    virtual StreamDirection GetDirection() { return StreamDirection::kBidi; }
+    virtual StreamDirection GetDirection() override { return StreamDirection::kBidi; }
 
-    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor);
+    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor, EncryptionLevel level = kApplication) override;
 
-    virtual uint64_t GetStreamID() { return stream_id_; }
+    virtual uint64_t GetStreamID() override { return stream_id_; }
 
     // reset the stream
-    virtual void Reset(uint32_t error);
+    virtual void Reset(uint32_t error) override;
+
+    // Reset state for Retry (clears Initial level buffers and offsets)
+    void ResetForRetry();
 
     virtual void Close();
 
-    virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame);
+    virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) override;
 
     virtual int32_t Send(uint8_t* data, uint32_t len, uint8_t encryption_level);
     virtual int32_t Send(uint8_t* data, uint32_t len);
-    virtual int32_t Send(std::shared_ptr<IBufferRead> data);
+    virtual int32_t Send(std::shared_ptr<IBufferRead> buffer);
 
     virtual uint8_t GetWaitSendEncryptionLevel();
 
-    virtual void SetStreamReadCallBack(stream_read_callback cb) { recv_cb_ = cb; }
+    using crypto_stream_read_callback =
+        std::function<void(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level)>;
+    virtual void SetCryptoStreamReadCallBack(crypto_stream_read_callback cb) { recv_cb_ = cb; }
 
 protected:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
 private:
-    std::shared_ptr<common::MultiBlockBuffer> buffer_;
+    // read buffers for each encryption level
+    std::shared_ptr<common::MultiBlockBuffer> read_buffers_[kNumEncryptionLevels];
 
-    // in order next data offset
-    uint64_t except_offset_;
-    std::unordered_map<uint64_t, std::shared_ptr<IFrame>> out_order_frame_;
+    // in order next data offset for each encryption level
+    uint64_t next_read_offset_[kNumEncryptionLevels];
+    std::unordered_map<uint64_t, std::shared_ptr<IFrame>> out_order_frame_[kNumEncryptionLevels];
 
-    // local data send offset
-    uint64_t send_offset_;
+    // local data send offset for each encryption level
+    uint64_t send_offset_[kNumEncryptionLevels];
     std::shared_ptr<common::MultiBlockBuffer> send_buffers_[kNumEncryptionLevels];
-    stream_read_callback recv_cb_;
+
+    crypto_stream_read_callback recv_cb_;
 };
 
 }  // namespace quic

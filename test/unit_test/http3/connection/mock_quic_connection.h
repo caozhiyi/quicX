@@ -3,16 +3,18 @@
 
 #include <cstdint>
 #include <cstring>
-#include "quic/include/if_quic_stream.h"
 #include "quic/include/if_quic_connection.h"
+#include "quic/include/if_quic_stream.h"
 
 namespace quicx {
 namespace quic {
 
-class MockQuicConnection:
-    public IQuicConnection {
+class MockQuicConnection: public IQuicConnection {
 public:
-    MockQuicConnection(): user_data_(nullptr), stream_state_cb_(nullptr), next_timer_id_(1) {}
+    MockQuicConnection():
+        user_data_(nullptr),
+        stream_state_cb_(nullptr),
+        next_timer_id_(1) {}
 
     void SetPeer(std::shared_ptr<MockQuicConnection> peer) { peer_ = peer; }
 
@@ -45,17 +47,24 @@ public:
     virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms);
     virtual void RemoveTimer(uint64_t timer_id);
 
+    // State check
+    virtual bool IsTerminating() const { return is_terminating_; }
+    void SetTerminating(bool val) { is_terminating_ = val; }
+
 private:
     void* user_data_;
     stream_state_callback stream_state_cb_;
 
     std::weak_ptr<MockQuicConnection> peer_;
-    
+
     // Timer management
     uint64_t next_timer_id_;
+
+    // State
+    bool is_terminating_ = false;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
-#endif  // MOCK_QUIC_RECV_STREAM_H 
+#endif  // MOCK_QUIC_RECV_STREAM_H

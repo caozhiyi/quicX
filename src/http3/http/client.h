@@ -1,13 +1,10 @@
 #ifndef HTTP3_HTTP_CLIENT
 #define HTTP3_HTTP_CLIENT
 
-#include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <queue>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <variant>
 
 #include "http3/connection/connection_client.h"
@@ -24,7 +21,8 @@ public:
     virtual ~Client();
 
     // Initialize the client with a certificate and a key
-    virtual bool Init(const Http3Config& config) override;
+    // Initialize the client with config
+    virtual bool Init(const Http3ClientConfig& config) override;
 
     // Send a request in complete mode (entire response body buffered)
     virtual bool DoRequest(const std::string& url, HttpMethod method, std::shared_ptr<IRequest> request,
@@ -39,6 +37,12 @@ public:
     virtual void SetErrorHandler(const error_handler& error_handler) override;
 
     virtual void Close() override;
+
+    virtual bool InitiateMigration() override;
+
+    virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) override;
+
+    virtual void SetMigrationCallback(migration_callback cb) override;
 
 private:
     void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation operation, uint32_t error,
@@ -56,10 +60,13 @@ private:
     http_push_promise_handler push_promise_handler_;
     error_handler error_handler_;
     Http3Settings settings_;
-    Http3Config config_;  // Store config for connection timeout
+    Http3ClientConfig config_;  // Store config for connection timeout
 
     // Track connections that are in closing state
     bool is_closing_ = false;
+
+    // Migration callback to forward to all connections
+    migration_callback migration_cb_;
 
     struct WaitRequestContext {
         std::string host;

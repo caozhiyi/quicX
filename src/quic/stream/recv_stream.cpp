@@ -89,6 +89,11 @@ IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
             iter = frames_list_.erase(iter);
 
         } else {
+            // Check if the failure was due to insufficient packet space
+            if (visitor->GetLastError() == FrameEncodeError::kInsufficientSpace) {
+                common::LOG_INFO("recv stream: packet full, need retry. stream id:%d", stream_id_);
+                return TrySendResult::kBreak;  // Packet is full, stream needs to retry in next packet
+            }
             return TrySendResult::kFailed;
         }
     }
@@ -155,6 +160,11 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             recv_machine_->RecvAllData();
         }
 
+        common::LOG_DEBUG("RecvStream::OnStreamFrame triggering recv_cb_. stream id:%d, has_cb:%d, is_last:%d, "
+            "buffer_len:%d, final_offset:%d, except_offset:%d, out_order_size:%d",
+            stream_id_, (recv_cb_ ? 1 : 0), is_last, buffer_->GetDataLength(),
+            final_offset_, except_offset_, (int)out_order_frame_.size());
+
         if (recv_cb_) {
             recv_cb_(buffer_, is_last, reset_error_);
         }
@@ -187,22 +197,32 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         out_order_frame_[stream_frame->GetOffset()] = stream_frame;
     }
 
-    // Update window when consumed more than 50% to prevent stalling
-    // Increase by larger increments (64KB) for better throughput
-    const uint64_t kWindowThreshold = local_data_limit_ / 2;  // Trigger at 50% consumption TODO configurable
-    const uint64_t kWindowIncrement = 65536;                  // Increase by 64KB each time TODO configurable
+    // Proactive flow control window update strategy:
+    // - Send MAX_STREAM_DATA early (when 25% consumed) to prevent sender stalling
+    // - Use large increments (1MB) to reduce frequency of updates
+    // - This allows sender to continue at full speed without waiting for window updates
+    const uint64_t kWindowThreshold = local_data_limit_ / 4;      // Trigger at 25% remaining (proactive)
+    const uint64_t kWindowIncrement = 2 * 1024 * 1024;            // Increase by 1MB each time for high throughput TODO configurable
 
-    if (local_data_limit_ - except_offset_ < kWindowThreshold) {
+    uint64_t remaining_window = local_data_limit_ - except_offset_;
+    if (remaining_window < kWindowThreshold) {
         if (recv_machine_->CheckCanSendFrame(FrameType::kMaxStreamData)) {
-            local_data_limit_ += kWindowIncrement;
+            // Calculate increment to restore window to a healthy size
+            // Aim for at least 2MB available window after update
+            uint64_t target_window = 2 * 1024 * 1024;  // 2MB target available window
+            uint64_t needed = (target_window > remaining_window) ? (target_window - remaining_window) : kWindowIncrement;
+            // Round up to nearest kWindowIncrement
+            needed = ((needed + kWindowIncrement - 1) / kWindowIncrement) * kWindowIncrement;
+            
+            local_data_limit_ += needed;
             auto max_frame = std::make_shared<MaxStreamDataFrame>();
             max_frame->SetStreamID(stream_id_);
             max_frame->SetMaximumData(local_data_limit_);
             frames_list_.emplace_back(max_frame);
 
             ToSend();
-            common::LOG_DEBUG("Updated flow control window: stream_id=%llu, new_limit=%llu, consumed=%llu", stream_id_,
-                local_data_limit_, except_offset_);
+            common::LOG_DEBUG("Proactive flow control update: stream_id=%llu, new_limit=%llu, consumed=%llu, added=%llu", 
+                stream_id_, local_data_limit_, except_offset_, needed);
         }
     }
 
@@ -220,13 +240,19 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     }
 
     auto block_frame = std::dynamic_pointer_cast<StreamDataBlockedFrame>(frame);
-    common::LOG_WARN("stream recv data blocked. stream id:%d, offset:%d", stream_id_, block_frame->GetMaximumData());
 
-    local_data_limit_ += 3096;  // TODO. define increase steps
+    // When peer is blocked, increase window significantly to allow high throughput
+    // Use 1MB increments to support large file transfers without frequent blocking
+    const uint64_t kBlockedWindowIncrement = 4 * 1024 * 1024;  // 1MB increment when blocked
+    local_data_limit_ += kBlockedWindowIncrement;
+
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(stream_id_);
     max_frame->SetMaximumData(local_data_limit_);
     frames_list_.emplace_back(max_frame);
+
+    common::LOG_DEBUG("stream recv data blocked, increased window. stream id:%d, blocked_at:%llu, new_limit:%llu",
+        stream_id_, block_frame->GetMaximumData(), local_data_limit_);
 
     ToSend();
 }

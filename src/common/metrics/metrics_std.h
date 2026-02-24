@@ -126,6 +126,14 @@ struct MetricsStd {
     // ==================== Version Negotiation ====================
     static MetricID VersionNegotiationTotal;  // Version negotiation events
     static MetricID QuicVersionInUse;         // Current QUIC version (Gauge)
+
+    // ==================== Retry Mechanism ====================
+    static MetricID QuicRetryPacketsSent;       // Total Retry packets sent
+    static MetricID QuicRetryByHighRate;        // Retry triggered by high connection rate
+    static MetricID QuicRetryBySuspiciousIP;    // Retry triggered by suspicious IP
+    static MetricID QuicRetryByPolicy;          // Retry triggered by ALWAYS policy
+    static MetricID QuicRetryTokensValidated;   // Valid Retry tokens received
+    static MetricID QuicRetryTokensInvalid;     // Invalid Retry tokens received
 };
 
 // Initialize all standard metrics

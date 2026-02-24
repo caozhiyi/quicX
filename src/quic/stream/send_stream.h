@@ -43,7 +43,7 @@ public:
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) override;
 
     // try generate data to send
-    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor) override;
+    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor, EncryptionLevel level = kApplication) override;
 
     // Stream data ACK tracking
     virtual void OnDataAcked(uint64_t max_offset, bool has_fin);
@@ -62,6 +62,7 @@ protected:
     uint64_t acked_offset_;      // the maximum offset that has been ACKed
     bool fin_sent_;              // whether FIN has been sent
     uint64_t peer_data_limit_;   // the data limit that peer limit
+    uint64_t blocked_at_limit_;  // the limit at which we sent STREAM_DATA_BLOCKED (to avoid duplicate)
     std::shared_ptr<common::MultiBlockBuffer> send_buffer_;
 
     std::shared_ptr<StreamStateMachineSend> send_machine_;

@@ -32,7 +32,7 @@ bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(stream_id_), "failed to encode stream id");
     if (HasOffset()) {
         CHECK_ENCODE_ERROR(wrapper.EncodeVarint(offset_), "failed to encode offset");
@@ -50,7 +50,9 @@ bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
+        uint64_t type = 0;
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
+        frame_type_ = static_cast<uint16_t>(type);
     }
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(stream_id_), "failed to decode stream id");
     if (HasOffset()) {
@@ -78,8 +80,8 @@ bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
 }
 
 uint32_t StreamFrame::EncodeSize() {
-    // frame type encoded as fixed uint16
-    uint32_t size = sizeof(uint16_t);
+    // frame type encoded as varint
+    uint32_t size = common::GetEncodeVarintLength(frame_type_);
     // Stream ID (always present)
     size += common::GetEncodeVarintLength(stream_id_);
     // Offset (if present) - check actual value, not flag, since flag may not be set yet

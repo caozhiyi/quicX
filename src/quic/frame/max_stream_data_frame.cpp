@@ -1,7 +1,7 @@
-#include "common/log/log.h"
 #include "quic/frame/max_stream_data_frame.h"
-#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -21,7 +21,7 @@ bool MaxStreamDataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(stream_id_), "failed to encode stream id");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(maximum_data_), "failed to encode maximum data");
 
@@ -32,7 +32,9 @@ bool MaxStreamDataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wi
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
+        uint64_t type = 0;
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
+        frame_type_ = static_cast<uint16_t>(type);
         if (frame_type_ != FrameType::kMaxStreamData) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
@@ -45,8 +47,8 @@ bool MaxStreamDataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wi
 }
 
 uint32_t MaxStreamDataFrame::EncodeSize() {
-    // frame_type (2 bytes) + stream_id (varint) + maximum_data (varint)
-    return 2 + common::GetEncodeVarintLength(stream_id_) + common::GetEncodeVarintLength(maximum_data_);
+    return common::GetEncodeVarintLength(frame_type_) + common::GetEncodeVarintLength(stream_id_) +
+           common::GetEncodeVarintLength(maximum_data_);
 }
 
 }  // namespace quic

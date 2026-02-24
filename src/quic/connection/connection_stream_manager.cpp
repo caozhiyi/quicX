@@ -2,6 +2,7 @@
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
 
+#include "common/log/log_context.h"
 #include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/controler/send_flow_controller.h"
 #include "quic/connection/controler/send_manager.h"
@@ -62,8 +63,10 @@ std::shared_ptr<IStream> StreamManager::MakeStreamWithFlowControl(StreamDirectio
     uint32_t init_size;
     if (type == StreamDirection::kSend) {
         init_size = transport_param_.GetInitialMaxStreamDataUni();
+        common::LOG_DEBUG("StreamManager::MakeStreamWithFlowControl: GetInitialMaxStreamDataUni=%u", init_size);
     } else {
         init_size = transport_param_.GetInitialMaxStreamDataBidiLocal();
+        common::LOG_DEBUG("StreamManager::MakeStreamWithFlowControl: GetInitialMaxStreamDataBidiLocal=%u", init_size);
     }
 
     // Create stream
@@ -134,15 +137,18 @@ std::shared_ptr<IStream> StreamManager::MakeStream(uint32_t init_size, uint64_t 
     // Create stream object based on type
     std::shared_ptr<IStream> stream;
     if (type == StreamDirection::kBidi) {
-        stream = std::make_shared<BidirectionStream>(event_loop_, init_size, stream_id, active_send_cb,
-            stream_close_cb, connection_close_cb);
+        stream = std::make_shared<BidirectionStream>(
+            event_loop_, init_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
     } else if (type == StreamDirection::kSend) {
-        stream = std::make_shared<SendStream>(event_loop_, init_size, stream_id, active_send_cb, stream_close_cb,
-            connection_close_cb);
+        stream = std::make_shared<SendStream>(
+            event_loop_, init_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
     } else {
-        stream = std::make_shared<RecvStream>(event_loop_, init_size, stream_id, active_send_cb, stream_close_cb,
-            connection_close_cb);
+        stream = std::make_shared<RecvStream>(
+            event_loop_, init_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
     }
+
+    common::LOG_DEBUG("StreamManager::MakeStream: created stream %llu, type %d, init_size %u", stream_id,
+        static_cast<int>(type), init_size);
 
     if (stream) {
         streams_map_[stream_id] = stream;
@@ -201,6 +207,7 @@ std::shared_ptr<IStream> StreamManager::CreateRemoteStream(
 // ==================== Stream ACK Notification ====================
 
 void StreamManager::OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin) {
+    common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
     auto stream = FindStream(stream_id);
     if (!stream) {
         common::LOG_DEBUG("StreamManager: stream %llu not found in OnStreamDataAcked", stream_id);
@@ -249,6 +256,7 @@ void StreamManager::MarkStreamActive(std::shared_ptr<IStream> stream) {
     }
 
     uint64_t stream_id = stream->GetStreamID();
+    common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
     common::LOG_DEBUG("StreamManager: marking stream %llu as active", stream_id);
 
     // Add to write buffer (safe during BuildStreamFrames processing)
@@ -271,6 +279,7 @@ bool StreamManager::BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_l
     auto& streams = active_streams_.GetReadBuffer();
 
     bool has_more_data = false;
+    bool all_flow_control_blocked = true;  // Track if ALL streams are flow control blocked
 
     // Iterate through active streams
     for (auto iter = streams.begin(); iter != streams.end();) {
@@ -281,40 +290,62 @@ bool StreamManager::BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_l
         }
 
         uint64_t sid = stream->GetStreamID();
+        common::LogTagGuard guard("|strm:" + std::to_string(sid));
 
         // Encryption level filtering (from SendManager::MakePacket logic)
         // Crypto stream (id == 0) can be sent at any level
         // Application streams (id != 0) can only be sent at 0-RTT or 1-RTT
+        common::LOG_DEBUG("StreamManager loop: stream %llu, level %u", sid, encrypto_level);
         if (sid != 0 && !(encrypto_level == kEarlyData || encrypto_level == kApplication)) {
             // Current encryption level doesn't allow this stream
             // Keep it in the active list for later encryption levels
             common::LOG_DEBUG("StreamManager: stream %llu deferred (encryption level %u)", sid, encrypto_level);
             has_more_data = true;
-            ++iter;  // Move to next stream
+            all_flow_control_blocked = false;  // Deferred is not flow control blocked
+            ++iter;    // Move to next stream
             continue;  // Skip this stream and continue with others
         }
 
         // Try to send stream data
         common::LOG_DEBUG("StreamManager: building frames for stream %llu", sid);
-        auto ret = stream->TrySendData(visitor);
+        auto ret = stream->TrySendData(visitor, (EncryptionLevel)encrypto_level);
 
         if (ret == IStream::TrySendResult::kSuccess) {
             // Stream data sent successfully, remove from active list
             common::LOG_DEBUG("StreamManager: stream %llu send complete", sid);
             iter = streams.erase(iter);
+            all_flow_control_blocked = false;  // Successfully sent data
 
         } else if (ret == IStream::TrySendResult::kFailed) {
-            // Stream send failed (flow control or error), remove to prevent infinite retry
+            // Stream send failed (permanent error), remove from active list
             common::LOG_WARN("StreamManager: stream %llu send failed, removing", sid);
             iter = streams.erase(iter);
+            all_flow_control_blocked = false;  // Failed is not flow control blocked
+
+        } else if (ret == IStream::TrySendResult::kFlowControlBlocked) {
+            // Flow control blocked, keep in active list waiting for MAX_STREAM_DATA
+            // Note: STREAM_DATA_BLOCKED frame was already sent by TrySendData
+            common::LOG_DEBUG("StreamManager: stream %llu flow control blocked, keeping in active list", sid);
+            has_more_data = true;
+            // Don't set all_flow_control_blocked = false, this stream IS flow control blocked
+            ++iter;  // Move to next stream, don't remove
 
         } else if (ret == IStream::TrySendResult::kBreak) {
             // Packet full, but stream has more data
             // Keep in active list for next packet
             common::LOG_INFO("StreamManager: packet full, stream %llu will retry", sid);
             has_more_data = true;
+            all_flow_control_blocked = false;  // Break means we can send more
             break;
         }
+    }
+
+    // If ALL streams are flow control blocked, return false to stop the send loop
+    // This prevents infinite sending of STREAM_DATA_BLOCKED frames
+    // The streams remain in active list and will be retried when MAX_STREAM_DATA arrives
+    if (has_more_data && all_flow_control_blocked) {
+        common::LOG_DEBUG("StreamManager: all streams flow control blocked, stopping send loop");
+        return false;  // Stop send loop, wait for MAX_STREAM_DATA
     }
 
     return has_more_data;

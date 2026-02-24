@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "common/log/log_context.h"
 
 #include "quic/connection/connection_closer.h"
 #include "quic/connection/connection_crypto.h"
@@ -15,6 +16,7 @@
 #include "quic/connection/transport_param.h"
 #include "quic/connection/util.h"
 #include "quic/frame/connection_close_frame.h"
+#include "quic/frame/crypto_frame.h"
 #include "quic/frame/max_data_frame.h"
 #include "quic/frame/max_streams_frame.h"
 #include "quic/frame/new_connection_id_frame.h"
@@ -63,11 +65,13 @@ bool FrameProcessor::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
                     return false;
                 }
                 break;
-            case FrameType::kCrypto:
+            case FrameType::kCrypto: {
+                auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frames[i]);
+                crypto_frame->SetEncryptionLevel(crypto_level);
                 if (!OnCryptoFrame(frames[i])) {
                     return false;
                 }
-                break;
+            } break;
             case FrameType::kNewToken:
                 if (!OnNewTokenFrame(frames[i])) {
                     return false;
@@ -172,12 +176,11 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         }
     }
 
-    // Allow processing of application data only when encryption is ready; 0-RTT stream frames
     // arrive before handshake confirmation and must be accepted per RFC (subject to anti-replay policy
     // which is handled at TLS/session level). Here we don't gate on connection state.
-    common::LOG_DEBUG("process stream data frame. stream id:%d", stream_frame->GetStreamID());
-    // find stream
     uint64_t stream_id = stream_frame->GetStreamID();
+    common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
+    // find stream
     auto stream_ptr = stream_manager_.FindStream(stream_id);
     if (stream_ptr) {
         // CRITICAL: Hold a local shared_ptr to prevent use-after-free

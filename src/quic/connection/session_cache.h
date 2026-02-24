@@ -39,6 +39,9 @@ public:
     
     // Retrieve a session for a server (loads from disk if needed)
     bool GetSession(const std::string& server_name, std::string& out_session_der);
+
+    // Retrieve a session with full info including remembered transport params
+    bool GetSessionWithInfo(const std::string& server_name, std::string& out_session_der, SessionInfo& out_info);
     
     // Check if a valid session exists for 0-RTT (with lazy cleanup)
     bool HasValidSessionFor0RTT(const std::string& server_name);

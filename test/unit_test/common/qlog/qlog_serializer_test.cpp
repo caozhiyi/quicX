@@ -6,9 +6,9 @@
 #include <memory>
 #include <string>
 
-#include "common/qlog/serializer/json_seq_serializer.h"
-#include "common/qlog/event/transport_events.h"
 #include "common/qlog/event/connectivity_events.h"
+#include "common/qlog/event/transport_events.h"
+#include "common/qlog/serializer/json_seq_serializer.h"
 #include "common/qlog/util/qlog_constants.h"
 
 namespace quicx {
@@ -32,12 +32,8 @@ TEST(QlogSerializerTest, SerializeTraceHeaderBasic) {
     config.time_offset = 0;
     config.time_units = "us";
 
-    std::string header = serializer.SerializeTraceHeader(
-        "test-connection-id",
-        VantagePoint::kServer,
-        common_fields,
-        config
-    );
+    std::string header =
+        serializer.SerializeTraceHeader("test-connection-id", VantagePoint::kServer, common_fields, config);
 
     // Verify structure: two lines separated by \n
     EXPECT_TRUE(header.find('\n') != std::string::npos);
@@ -56,7 +52,7 @@ TEST(QlogSerializerTest, SerializeTraceHeaderBasic) {
     EXPECT_TRUE(header.find("\"configuration\":{") != std::string::npos);
     EXPECT_TRUE(header.find("\"time_offset\":0") != std::string::npos);
     EXPECT_TRUE(header.find("\"time_units\":\"us\"") != std::string::npos);
-    EXPECT_TRUE(header.find("\"events\":[]") != std::string::npos);
+    // Note: JSON-SEQ format does not include "events":[] in the trace header
 }
 
 // Test trace header with client vantage point
@@ -66,12 +62,8 @@ TEST(QlogSerializerTest, SerializeTraceHeaderClient) {
     CommonFields common_fields;
     QlogConfiguration config;
 
-    std::string header = serializer.SerializeTraceHeader(
-        "client-conn-123",
-        VantagePoint::kClient,
-        common_fields,
-        config
-    );
+    std::string header =
+        serializer.SerializeTraceHeader("client-conn-123", VantagePoint::kClient, common_fields, config);
 
     EXPECT_TRUE(header.find("\"title\":\"QuicX client\"") != std::string::npos);
     EXPECT_TRUE(header.find("\"name\":\"client\"") != std::string::npos);
@@ -88,12 +80,7 @@ TEST(QlogSerializerTest, SerializeTraceHeaderWithGroupId) {
 
     QlogConfiguration config;
 
-    std::string header = serializer.SerializeTraceHeader(
-        "conn-456",
-        VantagePoint::kServer,
-        common_fields,
-        config
-    );
+    std::string header = serializer.SerializeTraceHeader("conn-456", VantagePoint::kServer, common_fields, config);
 
     EXPECT_TRUE(header.find("\"group_id\":\"test-group-123\"") != std::string::npos);
 }
@@ -108,12 +95,7 @@ TEST(QlogSerializerTest, SerializeTraceHeaderWithoutGroupId) {
 
     QlogConfiguration config;
 
-    std::string header = serializer.SerializeTraceHeader(
-        "conn-789",
-        VantagePoint::kServer,
-        common_fields,
-        config
-    );
+    std::string header = serializer.SerializeTraceHeader("conn-789", VantagePoint::kServer, common_fields, config);
 
     // Should not include group_id when empty
     EXPECT_TRUE(header.find("\"group_id\"") == std::string::npos);
@@ -224,12 +206,7 @@ TEST(QlogSerializerTest, JsonSeqFormatCompliance) {
     CommonFields common_fields;
     QlogConfiguration config;
 
-    std::string header = serializer.SerializeTraceHeader(
-        "test-conn",
-        VantagePoint::kServer,
-        common_fields,
-        config
-    );
+    std::string header = serializer.SerializeTraceHeader("test-conn", VantagePoint::kServer, common_fields, config);
 
     // Count newlines (should have 2: one after first line, one after second line)
     size_t newline_count = 0;
@@ -291,8 +268,7 @@ TEST(QlogSerializerTest, MultipleEventsSerialization) {
 
     // Verify each event is unique
     for (size_t i = 0; i < serialized_events.size(); i++) {
-        EXPECT_TRUE(serialized_events[i].find("\"packet_number\":" + std::to_string(i))
-                    != std::string::npos);
+        EXPECT_TRUE(serialized_events[i].find("\"packet_number\":" + std::to_string(i)) != std::string::npos);
     }
 }
 
@@ -304,23 +280,19 @@ TEST(QlogSerializerTest, VantagePointStrings) {
     QlogConfiguration config;
 
     // Test client
-    std::string header = serializer.SerializeTraceHeader(
-        "conn1", VantagePoint::kClient, common_fields, config);
+    std::string header = serializer.SerializeTraceHeader("conn1", VantagePoint::kClient, common_fields, config);
     EXPECT_TRUE(header.find("\"client\"") != std::string::npos);
 
     // Test server
-    header = serializer.SerializeTraceHeader(
-        "conn2", VantagePoint::kServer, common_fields, config);
+    header = serializer.SerializeTraceHeader("conn2", VantagePoint::kServer, common_fields, config);
     EXPECT_TRUE(header.find("\"server\"") != std::string::npos);
 
     // Test network
-    header = serializer.SerializeTraceHeader(
-        "conn3", VantagePoint::kNetwork, common_fields, config);
+    header = serializer.SerializeTraceHeader("conn3", VantagePoint::kNetwork, common_fields, config);
     EXPECT_TRUE(header.find("\"network\"") != std::string::npos);
 
     // Test unknown
-    header = serializer.SerializeTraceHeader(
-        "conn4", VantagePoint::kUnknown, common_fields, config);
+    header = serializer.SerializeTraceHeader("conn4", VantagePoint::kUnknown, common_fields, config);
     EXPECT_TRUE(header.find("\"unknown\"") != std::string::npos);
 }
 
@@ -342,8 +314,7 @@ TEST(QlogSerializerTest, LargePacketNumber) {
     std::string json = serializer.SerializeEvent(event);
 
     // Verify large number is serialized correctly
-    EXPECT_TRUE(json.find("\"packet_number\":" + std::to_string(UINT64_MAX))
-                != std::string::npos);
+    EXPECT_TRUE(json.find("\"packet_number\":" + std::to_string(UINT64_MAX)) != std::string::npos);
 }
 
 // Test empty frames list

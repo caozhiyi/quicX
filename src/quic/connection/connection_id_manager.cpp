@@ -63,16 +63,11 @@ bool ConnectionIDManager::AddID(const uint8_t* id, uint16_t len) {
 }
 
 bool ConnectionIDManager::UseNextID() {
-    common::LOG_DEBUG("ConnectionIDManager::UseNextID: map_size=%zu, cur_seq=%llu", sequence_cid_map_.size(),
-        cur_id_.GetSequenceNumber());
-
     if (sequence_cid_map_.empty() || sequence_cid_map_.size() == 1) {
-        common::LOG_WARN("ConnectionIDManager::UseNextID: failed, map size %zu", sequence_cid_map_.size());
         return false;
     }
 
     RetireIDBySequence(cur_id_.GetSequenceNumber());  // retire current id
-    common::LOG_DEBUG("ConnectionIDManager::UseNextID: switched to new ID, seq=%llu", cur_id_.GetSequenceNumber());
     return true;
 }
 

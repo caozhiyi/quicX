@@ -2,19 +2,19 @@
 #define QUIC_PACKET_HEADER_HEADER_FLAG
 
 #include <memory>
-#include "quic/packet/type.h"
-#include "quic/packet/header/type.h"
 #include "common/buffer/if_buffer.h"
+#include "quic/packet/header/type.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
 
 struct LongHeaderFlag {
-    uint8_t packet_number_length_:2; /*encryption protection*/ // must set when encode and decode
-    uint8_t reserved_bits_:2;        /*encryption protection*/
-    uint8_t packet_type_:2;
-    uint8_t fix_bit_:1;
-    uint8_t header_form_:1;
+    uint8_t packet_number_length_ : 2; /*encryption protection*/  // must set when encode and decode
+    uint8_t reserved_bits_ : 2;                                   /*encryption protection*/
+    uint8_t packet_type_ : 2;
+    uint8_t fix_bit_ : 1;
+    uint8_t header_form_ : 1;
 
     uint8_t GetReservedBits() { return reserved_bits_; }
     void SetReservedBits(uint8_t bits) { reserved_bits_ = bits; }
@@ -24,12 +24,12 @@ struct LongHeaderFlag {
 };
 
 struct ShortHeaderFlag {
-    uint8_t packet_number_length_:2; /*encryption protection*/
-    uint8_t key_phase_:1;            /*encryption protection*/
-    uint8_t reserved_bits_:2;        /*encryption protection*/
-    uint8_t spin_bit_:1;
-    uint8_t fix_bit_:1;
-    uint8_t header_form_:1;
+    uint8_t packet_number_length_ : 2; /*encryption protection*/
+    uint8_t key_phase_ : 1;            /*encryption protection*/
+    uint8_t reserved_bits_ : 2;        /*encryption protection*/
+    uint8_t spin_bit_ : 1;
+    uint8_t fix_bit_ : 1;
+    uint8_t header_form_ : 1;
 
     uint8_t GetKeyPhase() { return key_phase_; }
     void SetKeyPhase(uint8_t phase) { key_phase_ = phase; }
@@ -53,15 +53,19 @@ public:
     virtual uint32_t EncodeFlagSize();
 
     virtual PacketHeaderType GetHeaderType() const;
-    uint8_t GetFixBit() const { return flag_.long_header_flag_.fix_bit_; } 
+    uint8_t GetFixBit() const { return flag_.long_header_flag_.fix_bit_; }
 
     virtual PacketType GetPacketType();
 
     uint8_t GetFlag() { return flag_.header_flag_; }
 
-    uint8_t GetPacketNumberLength() { return flag_.long_header_flag_.packet_number_length_; }
-    void SetPacketNumberLength(uint8_t len) { 
-        flag_.long_header_flag_.packet_number_length_ = len;
+    uint8_t GetPacketNumberLength() {
+        // RFC 9000: packet_number_length field stores (actual_length - 1)
+        return flag_.long_header_flag_.packet_number_length_ + 1;
+    }
+    void SetPacketNumberLength(uint8_t len) {
+        // RFC 9000: packet_number_length field encodes (actual_length - 1)
+        flag_.long_header_flag_.packet_number_length_ = len - 1;
     }
     LongHeaderFlag& GetLongHeaderFlag() { return flag_.long_header_flag_; }
     ShortHeaderFlag& GetShortHeaderFlag() { return flag_.short_header_flag_; }
@@ -69,12 +73,12 @@ public:
 protected:
     union HeaderFlagUnion {
         uint8_t header_flag_;
-        LongHeaderFlag  long_header_flag_;
+        LongHeaderFlag long_header_flag_;
         ShortHeaderFlag short_header_flag_;
     } flag_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -60,10 +60,11 @@ PacketBuilder::BuildResult PacketBuilder::BuildPacket(const BuildContext& ctx) {
     // Set connection IDs (source for long headers, destination for all)
     SetConnectionIDs(packet, ctx.local_cid_manager, ctx.remote_cid_manager);
 
-    // Set version for long headers
+    // Set version for long headers (use context version, or default if not specified)
     auto header = packet->GetHeader();
     if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
-        ((LongHeader*)header)->SetVersion(kQuicVersions[0]);
+        uint32_t version = ctx.quic_version != 0 ? ctx.quic_version : kQuicVersions[0];
+        ((LongHeader*)header)->SetVersion(version);
     }
 
     // Set payload from frame visitor
@@ -76,8 +77,8 @@ PacketBuilder::BuildResult PacketBuilder::BuildPacket(const BuildContext& ctx) {
     if (ctx.packet_number != 0) {
         packet->SetPacketNumber(ctx.packet_number);
         header->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(ctx.packet_number));
-        common::LOG_DEBUG(
-            "PacketBuilder::BuildPacket: set packet number %llu, length=%u", ctx.packet_number, header->GetPacketNumberLength());
+        common::LOG_DEBUG("PacketBuilder::BuildPacket: set packet number %llu, length=%u", ctx.packet_number,
+            header->GetPacketNumberLength());
     }
 
     result.success = true;
@@ -90,22 +91,18 @@ std::shared_ptr<IPacket> PacketBuilder::CreatePacketByLevel(EncryptionLevel leve
     switch (level) {
         case kInitial: {
             auto packet = std::make_shared<InitPacket>();
-            common::LOG_DEBUG("PacketBuilder::CreatePacketByLevel: created InitPacket");
             return packet;
         }
         case kHandshake: {
             auto packet = std::make_shared<HandshakePacket>();
-            common::LOG_DEBUG("PacketBuilder::CreatePacketByLevel: created HandshakePacket");
             return packet;
         }
         case kEarlyData: {
             auto packet = std::make_shared<Rtt0Packet>();
-            common::LOG_DEBUG("PacketBuilder::CreatePacketByLevel: created Rtt0Packet");
             return packet;
         }
         case kApplication: {
             auto packet = std::make_shared<Rtt1Packet>();
-            common::LOG_DEBUG("PacketBuilder::CreatePacketByLevel: created Rtt1Packet");
             return packet;
         }
         default:
@@ -122,21 +119,13 @@ void PacketBuilder::SetConnectionIDs(
     if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
         auto local_cid = local_cid_manager->GetCurrentID();
         ((LongHeader*)header)->SetSourceConnectionId(local_cid.GetID(), local_cid.GetLength());
-        common::LOG_DEBUG(
-            "PacketBuilder::SetConnectionIDs: set source CID, length=%u, hash=%llu", local_cid.GetLength(), local_cid.Hash());
+        common::LOG_DEBUG("PacketBuilder::SetConnectionIDs: set source CID, length=%u, hash=%llu",
+            local_cid.GetLength(), local_cid.Hash());
     }
 
     // Set destination CID for all packets
     auto remote_cid = remote_cid_manager->GetCurrentID();
     header->SetDestinationConnectionId(remote_cid.GetID(), remote_cid.GetLength());
-
-    // Debug logging
-    char dcid_hex[65] = {0};
-    for (int i = 0; i < remote_cid.GetLength() && i < 32; i++) {
-        sprintf(dcid_hex + i * 2, "%02x", remote_cid.GetID()[i]);
-    }
-    common::LOG_DEBUG("PacketBuilder::SetConnectionIDs: set destination CID, length=%u, hex=%s, hash=%llu",
-        remote_cid.GetLength(), dcid_hex, remote_cid.Hash());
 }
 
 void PacketBuilder::HandleInitialPacketRequirements(std::shared_ptr<IPacket> packet, const BuildContext& ctx) {
@@ -149,8 +138,7 @@ void PacketBuilder::HandleInitialPacketRequirements(std::shared_ptr<IPacket> pac
     // Set token if provided
     if (ctx.token_data && ctx.token_length > 0) {
         init_packet->SetToken(const_cast<uint8_t*>(ctx.token_data), ctx.token_length);
-        common::LOG_DEBUG(
-            "PacketBuilder::HandleInitialPacketRequirements: set token of length %zu", ctx.token_length);
+        common::LOG_DEBUG("PacketBuilder::HandleInitialPacketRequirements: set token of length %zu", ctx.token_length);
     }
 
     // Add padding if requested
@@ -165,7 +153,8 @@ void PacketBuilder::HandleInitialPacketRequirements(std::shared_ptr<IPacket> pac
             if (!ctx.frame_visitor->HandleFrame(padding_frame)) {
                 common::LOG_WARN("PacketBuilder::HandleInitialPacketRequirements: failed to add padding frame");
             } else {
-                common::LOG_DEBUG("PacketBuilder::HandleInitialPacketRequirements: added %u bytes padding to reach %u bytes",
+                common::LOG_DEBUG(
+                    "PacketBuilder::HandleInitialPacketRequirements: added %u bytes padding to reach %u bytes",
                     target_size - current_size, target_size);
             }
         }
@@ -174,12 +163,8 @@ void PacketBuilder::HandleInitialPacketRequirements(std::shared_ptr<IPacket> pac
 
 // ==================== High-level Interfaces Implementation ====================
 
-PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(
-    const DataPacketContext& ctx,
-    std::shared_ptr<common::IBuffer> output_buffer,
-    PacketNumber& packet_number,
-    SendControl& send_control) {
-
+PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContext& ctx,
+    std::shared_ptr<common::IBuffer> output_buffer, PacketNumber& packet_number, SendControl& send_control) {
     BuildResult result;
     result.success = false;
 
@@ -196,8 +181,13 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(
         return result;
     }
 
-    // 2. Create frame visitor with reasonable MTU limit (1450 bytes)
-    FixBufferFrameVisitor visitor(1450);
+    // 2. Create frame visitor with MTU limit
+    // kMaxV4PacketSize (1472) - header overhead (13 bytes: 1 flag + 8 DCID + 4 PN max) - AEAD tag (16 bytes) = 1443
+    // Use slightly smaller value (1420) to be safe with various header sizes
+    FixBufferFrameVisitor visitor(1420);
+
+    // Set stream data size limit for flow control
+    visitor.SetStreamDataSizeLimit(ctx.max_stream_data_size);
 
     // 3. Add all control frames
     for (auto& frame : ctx.frames) {
@@ -261,10 +251,11 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(
     // 9. Set connection IDs
     SetConnectionIDs(packet, ctx.local_cid_manager, ctx.remote_cid_manager);
 
-    // 10. Set version for long headers
+    // 10. Set version for long headers (use context version, or default if not specified)
     auto header = packet->GetHeader();
     if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
-        ((LongHeader*)header)->SetVersion(kQuicVersions[0]);
+        uint32_t version = ctx.quic_version != 0 ? ctx.quic_version : kQuicVersions[0];
+        ((LongHeader*)header)->SetVersion(version);
     }
 
     // 11. Assign packet number
@@ -278,7 +269,10 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(
     packet->SetPayload(payload_buffer->GetSharedReadableSpan());
     packet->SetCryptographer(ctx.cryptographer);
 
-    // 13. Encode packet to output buffer
+    // 13. Set frame type bit for ACK-eliciting detection
+    packet->AddFrameTypeBit(static_cast<FrameTypeBit>(visitor.GetFrameTypeBit()));
+
+    // 14. Encode packet to output buffer
     if (!packet->Encode(output_buffer)) {
         result.error_message = "failed to encode packet";
         common::LOG_ERROR("PacketBuilder::BuildDataPacket: %s", result.error_message.c_str());
@@ -288,11 +282,11 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(
     uint32_t encoded_size = output_buffer->GetDataLength();
     common::LOG_DEBUG("PacketBuilder::BuildDataPacket: encoded packet size=%u bytes", encoded_size);
 
-    // 14. Record packet send event (for congestion control)
+    // 15. Record packet send event (for congestion control)
     auto stream_data_info = visitor.GetStreamDataInfo();
     send_control.OnPacketSend(common::UTCTimeMsec(), packet, encoded_size, stream_data_info);
 
-    // 15. Success! Fill in result
+    // 16. Success! Fill in result
     result.success = true;
     result.packet = packet;
     result.packet_number = pn;
@@ -303,24 +297,20 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(
     return result;
 }
 
-PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(
-    EncryptionLevel level,
-    std::shared_ptr<ICryptographer> cryptographer,
-    std::shared_ptr<IFrame> ack_frame,
-    ConnectionIDManager* local_cid_mgr,
-    ConnectionIDManager* remote_cid_mgr,
-    std::shared_ptr<common::IBuffer> output_buffer,
-    PacketNumber& packet_number,
-    SendControl& send_control) {
-
+PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
+    std::shared_ptr<ICryptographer> cryptographer, std::shared_ptr<IFrame> ack_frame,
+    ConnectionIDManager* local_cid_mgr, ConnectionIDManager* remote_cid_mgr,
+    std::shared_ptr<common::IBuffer> output_buffer, PacketNumber& packet_number, SendControl& send_control,
+    uint32_t quic_version) {
     // Simplified: use DataPacketContext with only ACK frame
     DataPacketContext ctx;
     ctx.level = level;
     ctx.cryptographer = cryptographer;
     ctx.local_cid_manager = local_cid_mgr;
     ctx.remote_cid_manager = remote_cid_mgr;
+    ctx.quic_version = quic_version;
     ctx.frames.push_back(ack_frame);
-    ctx.include_stream_data = false;  // ACK packets don't include stream data
+    ctx.include_stream_data = false;        // ACK packets don't include stream data
     ctx.add_padding = (level == kInitial);  // Initial packets need padding
     ctx.min_size = 1200;
 
@@ -328,25 +318,20 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(
     return BuildDataPacket(ctx, output_buffer, packet_number, send_control);
 }
 
-PacketBuilder::BuildResult PacketBuilder::BuildImmediatePacket(
-    std::shared_ptr<IFrame> frame,
-    EncryptionLevel level,
-    std::shared_ptr<ICryptographer> cryptographer,
-    ConnectionIDManager* local_cid_mgr,
-    ConnectionIDManager* remote_cid_mgr,
-    std::shared_ptr<common::IBuffer> output_buffer,
-    PacketNumber& packet_number,
-    SendControl& send_control) {
-
+PacketBuilder::BuildResult PacketBuilder::BuildImmediatePacket(std::shared_ptr<IFrame> frame, EncryptionLevel level,
+    std::shared_ptr<ICryptographer> cryptographer, ConnectionIDManager* local_cid_mgr,
+    ConnectionIDManager* remote_cid_mgr, std::shared_ptr<common::IBuffer> output_buffer, PacketNumber& packet_number,
+    SendControl& send_control, uint32_t quic_version) {
     // Simplified: use DataPacketContext with single frame
     DataPacketContext ctx;
     ctx.level = level;
     ctx.cryptographer = cryptographer;
     ctx.local_cid_manager = local_cid_mgr;
     ctx.remote_cid_manager = remote_cid_mgr;
+    ctx.quic_version = quic_version;
     ctx.frames.push_back(frame);
     ctx.include_stream_data = false;  // Immediate packets don't include stream data
-    ctx.add_padding = false;  // No padding for immediate packets (except Initial)
+    ctx.add_padding = false;          // No padding for immediate packets (except Initial)
 
     common::LOG_DEBUG("PacketBuilder::BuildImmediatePacket: building immediate packet with frame type=%d at level=%d",
         frame->GetType(), level);

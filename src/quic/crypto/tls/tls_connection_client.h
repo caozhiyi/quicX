@@ -12,6 +12,18 @@ struct SessionInfo {
     uint32_t timeout;         // Session timeout in seconds
     bool early_data_capable;  // Whether session supports 0-RTT
     std::string server_name;  // Server name (hostname)
+
+    // RFC 9000 Section 7.4.1: Remembered transport parameters for 0-RTT
+    // Client MUST remember these from the previous connection and use them
+    // when attempting 0-RTT on a new connection.
+    bool has_transport_params = false;
+    uint32_t initial_max_data = 0;
+    uint32_t initial_max_streams_bidi = 0;
+    uint32_t initial_max_streams_uni = 0;
+    uint32_t initial_max_stream_data_bidi_local = 0;
+    uint32_t initial_max_stream_data_bidi_remote = 0;
+    uint32_t initial_max_stream_data_uni = 0;
+    uint32_t active_connection_id_limit = 0;
 };
 
 class TLSClientConnection: public TLSConnection {

@@ -8,13 +8,13 @@
 namespace quicx {
 namespace quic {
 
-RecvFlowController::RecvFlowController()
-    : received_bytes_(0),
-      max_data_(0),
-      max_streams_bidi_(0),
-      max_streams_uni_(0),
-      max_bidi_stream_id_(0),
-      max_uni_stream_id_(0) {}
+RecvFlowController::RecvFlowController():
+    received_bytes_(0),
+    max_data_(0),
+    max_streams_bidi_(0),
+    max_streams_uni_(0),
+    max_bidi_stream_id_(0),
+    max_uni_stream_id_(0) {}
 
 void RecvFlowController::UpdateConfig(const TransportParam& tp) {
     max_data_ = tp.GetInitialMaxData();
@@ -32,7 +32,8 @@ bool RecvFlowController::OnDataReceived(uint32_t size) {
 
     // Check if peer exceeded our limit (protocol violation)
     if (received_bytes_ > max_data_) {
-        common::LOG_ERROR("RecvFlowController::OnDataReceived: peer exceeded MAX_DATA limit (received=%llu, limit=%llu)",
+        common::LOG_ERROR(
+            "RecvFlowController::OnDataReceived: peer exceeded MAX_DATA limit (received=%llu, limit=%llu)",
             received_bytes_, max_data_);
         return false;
     }
@@ -48,10 +49,14 @@ bool RecvFlowController::ShouldSendMaxData(std::shared_ptr<IFrame>& max_data_fra
     }
 
     // Check if we should increase the limit (peer is near the window)
+    // Use percentage-based threshold: trigger when less than 10% remaining
     uint64_t remaining = max_data_ - received_bytes_;
-    if (remaining <= kDataIncreaseThreshold) {
-        // Increase the limit
-        max_data_ += kDataIncreaseAmount;
+    uint64_t threshold = max_data_ / 10;  // 10% of max_data
+
+    if (remaining <= threshold) {
+        // Increase the limit by doubling the window
+        uint64_t increase_amount = max_data_;
+        max_data_ += increase_amount;
 
         auto frame = std::make_shared<MaxDataFrame>();
         frame->SetMaximumData(max_data_);
@@ -59,7 +64,7 @@ bool RecvFlowController::ShouldSendMaxData(std::shared_ptr<IFrame>& max_data_fra
 
         common::LOG_DEBUG(
             "RecvFlowController::ShouldSendMaxData: increasing limit to %llu (remaining was %llu, threshold=%llu)",
-            max_data_, remaining, kDataIncreaseThreshold);
+            max_data_, remaining, threshold);
     }
 
     return true;
@@ -107,8 +112,9 @@ bool RecvFlowController::CheckBidiStreamLimit(std::shared_ptr<IFrame>& max_strea
         frame->SetMaximumStreams(max_streams_bidi_);
         max_streams_frame = frame;
 
-        common::LOG_DEBUG("RecvFlowController::CheckBidiStreamLimit: increasing limit to %llu (remaining was %llu, "
-                          "threshold=%llu)",
+        common::LOG_DEBUG(
+            "RecvFlowController::CheckBidiStreamLimit: increasing limit to %llu (remaining was %llu, "
+            "threshold=%llu)",
             max_streams_bidi_, remaining, kStreamsIncreaseThreshold);
     }
 
@@ -138,8 +144,9 @@ bool RecvFlowController::CheckUniStreamLimit(std::shared_ptr<IFrame>& max_stream
         frame->SetMaximumStreams(max_streams_uni_);
         max_streams_frame = frame;
 
-        common::LOG_DEBUG("RecvFlowController::CheckUniStreamLimit: increasing limit to %llu (remaining was %llu, "
-                          "threshold=%llu)",
+        common::LOG_DEBUG(
+            "RecvFlowController::CheckUniStreamLimit: increasing limit to %llu (remaining was %llu, "
+            "threshold=%llu)",
             max_streams_uni_, remaining, kStreamsIncreaseThreshold);
     }
 

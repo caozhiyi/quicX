@@ -373,9 +373,9 @@ void PrintUsage(const char* program) {
               << std::endl;
     std::cout << std::endl;
     std::cout << "Examples:" << std::endl;
-    std::cout << "  " << program << " https://localhost:8443/status" << std::endl;
-    std::cout << "  " << program << " https://localhost:8443/upload/test.dat input.dat" << std::endl;
-    std::cout << "  " << program << " https://localhost:8443/download/test.dat output.dat" << std::endl;
+    std::cout << "  " << program << " https://localhost:7009/status" << std::endl;
+    std::cout << "  " << program << " https://localhost:7009/upload/test.dat input.dat" << std::endl;
+    std::cout << "  " << program << " https://localhost:7009/download/test.dat output.dat" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -406,8 +406,8 @@ int main(int argc, char* argv[]) {
     }
 
     // Configure client
-    Http3Config config;
-    config.log_level_ = LogLevel::kError;
+    Http3ClientConfig config;
+    config.quic_config_.config_.log_level_ = LogLevel::kError;
 
     if (!client->Init(config)) {
         std::cerr << "Failed to initialize client" << std::endl;

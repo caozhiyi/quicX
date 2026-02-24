@@ -1,17 +1,16 @@
+#include "http3/qpack/qpack_encoder.h"
 #include <cstdint>
 #include "common/log/log.h"
-#include "http3/qpack/util.h"
-#include "http3/qpack/static_table.h"
-#include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/huffman_encoder.h"
 #include "http3/qpack/qpack_constants.h"
+#include "http3/qpack/static_table.h"
+#include "http3/qpack/util.h"
 
 namespace quicx {
 namespace http3 {
 
-bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& headers, 
-    std::shared_ptr<common::IBuffer> buffer) {
-    
+bool QpackEncoder::Encode(
+    const std::unordered_map<std::string, std::string>& headers, std::shared_ptr<common::IBuffer> buffer) {
     if (!buffer) {
         common::LOG_ERROR("QpackEncoder::Encode: buffer is null");
         return false;
@@ -20,48 +19,50 @@ bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& he
     // Write header block prefix per RFC 9204 Section 4.5.1
     // Required Insert Count: minimum number of dynamic table insertions required to decode this block
     // Base: reference point for relative indexing
-    
+
     uint64_t insert_count = dynamic_table_.GetEntryCount();
-    
+
     // Optimization opportunity: We could track which dynamic table entries are actually used
     // in this header block and set Required Insert Count to the minimum needed.
     // Current simple implementation: assume all current entries might be referenced.
     uint64_t required_insert_count = insert_count;
-    
+
     // RFC 9204 Section 4.5.1: Base is the reference point for dynamic table indexing
     // Base = Required Insert Count means all references are "pre-base" (backward references)
     // If we wanted to use Post-Base indexing, we would set Base < Required Insert Count
     // Current implementation: Base = RIC (no Post-Base references in encoding)
     int64_t base = static_cast<int64_t>(required_insert_count);
-    
+
     WriteHeaderPrefix(buffer, required_insert_count, base);
 
-    // Encode each header field
-    for (const auto& header : headers) {
-        const std::string& name = header.first;
-        const std::string& value = header.second;
+    // RFC 9114 Section 4.3: Pseudo-headers MUST appear before regular headers
+    // and MUST be in a specific order: :method, :scheme, :authority, :path (for requests)
+    // or :status (for responses)
+    static const std::vector<std::string> pseudo_header_order = {
+        ":method", ":scheme", ":authority", ":path", ":status"};
 
+    // Helper lambda to encode a single header
+    auto encode_header = [&](const std::string& name, const std::string& value) -> bool {
         // Try to find in static table first
         int32_t index = StaticTable::Instance().FindHeaderItemIndex(name, value);
         if (index >= 0) {
             // Indexed Header Field — static table (11xxxxxx)
-            QpackEncodePrefixedInteger(buffer, 
-                QpackHeaderPattern::kIndexedStaticPrefix, 
-                QpackHeaderPattern::kIndexedStatic, 
-                static_cast<uint64_t>(index));
-            continue;
+            QpackEncodePrefixedInteger(buffer, QpackHeaderPattern::kIndexedStaticPrefix,
+                QpackHeaderPattern::kIndexedStatic, static_cast<uint64_t>(index));
+            return true;
         }
 
-        // Name-only match in static table
-        index = StaticTable::Instance().FindHeaderItemIndex(name);
+        // No match in static table. Use lowercase name for better static table matching (RFC 9114 requires lowercase)
+        std::string lower_name = name;
+        for (auto& c : lower_name) c = std::tolower(static_cast<unsigned char>(c));
+
+        index = StaticTable::Instance().FindHeaderItemIndex(lower_name);
         if (index >= 0) {
-            // Literal Header Field With Name Reference — static (011xxxxx)
-            QpackEncodePrefixedInteger(buffer, 
-                QpackHeaderPattern::kLiteralNameRefStaticPrefix, 
-                QpackHeaderPattern::kLiteralNameRefStatic, 
-                static_cast<uint64_t>(index));
+            // Literal Header Field With Name Reference — static (0101xxxx)
+            QpackEncodePrefixedInteger(buffer, QpackHeaderPattern::kLiteralNameRefStaticPrefix,
+                QpackHeaderPattern::kLiteralNameRefStatic, static_cast<uint64_t>(index));
             EncodeString(value, buffer);
-            continue;
+            return true;
         }
 
         // No match in static table. Try dynamic table if enabled
@@ -71,15 +72,13 @@ bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& he
                 // Indexed Header Field — dynamic (10xxxxxx)
                 // relative_index = base - 1 - absolute_index; base == ric here
                 uint64_t relative = static_cast<uint64_t>(base - 1 - dindex);
-                QpackEncodePrefixedInteger(buffer, 
-                    QpackHeaderPattern::kIndexedDynamicPrefix, 
-                    QpackHeaderPattern::kIndexedDynamic, 
-                    relative);
-                continue;
+                QpackEncodePrefixedInteger(
+                    buffer, QpackHeaderPattern::kIndexedDynamicPrefix, QpackHeaderPattern::kIndexedDynamic, relative);
+                return true;
             }
 
             // Prefer Insert With Name Reference if name exists in static or dynamic table
-            int32_t s_name_idx = StaticTable::Instance().FindHeaderItemIndex(name);
+            int32_t s_name_idx = StaticTable::Instance().FindHeaderItemIndex(lower_name);
             int32_t d_name_idx = dynamic_table_.FindHeaderNameIndex(name);
             bool with_name_ref = (s_name_idx >= 0) || (d_name_idx >= 0);
             dynamic_table_.AddHeaderItem(name, value);
@@ -87,27 +86,56 @@ bool QpackEncoder::Encode(const std::unordered_map<std::string, std::string>& he
                 instruction_sender_({{name, value}});
             }
 
-            // Literal Header Field With Literal Name — no indexing (001xxxxx)
-            uint8_t literal = QpackHeaderPattern::kLiteralNoNameRef;
-            buffer->Write(&literal, 1);
-            EncodeString(name, buffer);
-            EncodeString(value, buffer);
-            continue;
+            // Fallback to Literal Header Field Without Name Reference
         }
 
-        // Fallback: encode as literal header field with literal name (001xxxxx)
-        uint8_t literal = QpackHeaderPattern::kLiteralNoNameRef;
-        buffer->Write(&literal, 1);
-        EncodeString(name, buffer);
+        // RFC 9204 Section 4.5.6: Literal Header Field Without Name Reference (001xxxxx)
+        // Format: 001 N H NameLen(3)
+        bool use_huffman = HuffmanEncoder::Instance().ShouldHuffmanEncode(name);
+        uint8_t first_byte = QpackHeaderPattern::kLiteralNoNameRef;
+        if (use_huffman) {
+            first_byte |= 0x08;  // H bit
+        }
+
+        std::string name_to_encode = name;
+        if (use_huffman) {
+            std::vector<uint8_t> encoded = HuffmanEncoder::Instance().Encode(name);
+            name_to_encode.assign(reinterpret_cast<char*>(encoded.data()), encoded.size());
+        }
+
+        QpackEncodePrefixedInteger(buffer, 3, first_byte, static_cast<uint64_t>(name_to_encode.length()));
+        buffer->Write(reinterpret_cast<const uint8_t*>(name_to_encode.data()), name_to_encode.length());
+
         EncodeString(value, buffer);
-    }   
+        return true;
+    };
+
+    // First, encode pseudo-headers in the correct order
+    for (const auto& pseudo : pseudo_header_order) {
+        auto it = headers.find(pseudo);
+        if (it != headers.end()) {
+            if (!encode_header(it->first, it->second)) {
+                return false;
+            }
+        }
+    }
+
+    // Then, encode regular headers (non-pseudo-headers)
+    for (const auto& header : headers) {
+        // Skip pseudo-headers (already encoded above)
+        if (!header.first.empty() && header.first[0] == ':') {
+            continue;
+        }
+        if (!encode_header(header.first, header.second)) {
+            return false;
+        }
+    }
 
     return true;
 }
 
-bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
-    std::unordered_map<std::string, std::string>& headers) {
-    
+bool QpackEncoder::Decode(
+    const std::shared_ptr<common::IBuffer> buffer, std::unordered_map<std::string, std::string>& headers) {
     if (!buffer || buffer->GetDataLength() < 2) {
         common::LOG_ERROR("QpackEncoder::Decode: buffer is null or data length is less than 2");
         return false;
@@ -123,7 +151,9 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
     // If required_insert_count > current inserted count, this header block is blocked
     if (required_insert_count > dynamic_table_.GetEntryCount()) {
         // Signal blocked; in full RFC flow, should queue this header block and return
-        common::LOG_ERROR("QpackEncoder::Decode: required insert count is greater than current inserted count.required_insert_count:%llu, current_inserted_count:%llu",
+        common::LOG_ERROR(
+            "QpackEncoder::Decode: required insert count is greater than current inserted "
+            "count.required_insert_count:%llu, current_inserted_count:%llu",
             required_insert_count, dynamic_table_.GetEntryCount());
         return false;
     }
@@ -132,12 +162,12 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
         uint8_t first_byte;
         buffer->Read(&first_byte, 1);
 
-        auto decode_after_first = [&](uint8_t first, uint8_t prefix_bits, uint64_t& value)->bool {
+        auto decode_after_first = [&](uint8_t first, uint8_t prefix_bits, uint64_t& value) -> bool {
             if (prefix_bits == 0 || prefix_bits > 8) {
                 common::LOG_ERROR("QpackEncoder::Decode: decode after first failed. prefix_bits:%d", prefix_bits);
                 return false;
             }
-            
+
             uint8_t max_in_prefix = static_cast<uint8_t>((1u << prefix_bits) - 1u);
             value = static_cast<uint64_t>(first & max_in_prefix);
             if (value < max_in_prefix) {
@@ -153,7 +183,6 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
                 value += static_cast<uint64_t>(b & QpackConst::kVarintValueMask) << m;
                 m += 7;
             } while (b & QpackConst::kVarintContinueBit);
-
             return true;
         };
 
@@ -170,7 +199,7 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
                 return false;
             }
             headers[item->name_] = item->value_;
-            
+
         } else if ((first_byte & QpackHeaderPattern::kIndexedDynamicMask) == QpackHeaderPattern::kIndexedDynamic) {
             // Indexed — dynamic (10xxxxxx)
             uint64_t rel = 0;
@@ -190,8 +219,9 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
             }
             headers[item->name_] = item->value_;
 
-        } else if ((first_byte & QpackHeaderPattern::kLiteralNameRefStaticMask) == QpackHeaderPattern::kLiteralNameRefStatic) {
-            // Literal with name reference — static (011xxxxx)
+        } else if ((first_byte & QpackHeaderPattern::kLiteralNameRefStaticMask) ==
+                   QpackHeaderPattern::kLiteralNameRefStatic) {
+            // Literal with name reference — static (0101xxxx, T=1)
             uint64_t sidx = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kLiteralNameRefStaticPrefix, sidx)) {
                 common::LOG_ERROR("QpackEncoder::Decode: decode literal name ref static failed. sidx:%llu", sidx);
@@ -204,12 +234,14 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
             }
             std::string value;
             if (!DecodeString(buffer, value)) {
-                common::LOG_ERROR("QpackEncoder::Decode: decode string failed. value:%s", value.c_str());
+                common::LOG_ERROR("QpackEncoder::Decode: decode string failed. name:%s, value:%s", item->name_.c_str(),
+                    value.c_str());
                 return false;
             }
             headers[item->name_] = value;
-            
-        } else if ((first_byte & QpackHeaderPattern::kLiteralNameRefDynamicMask) == QpackHeaderPattern::kLiteralNameRefDynamic) {
+
+        } else if ((first_byte & QpackHeaderPattern::kLiteralNameRefDynamicMask) ==
+                   QpackHeaderPattern::kLiteralNameRefDynamic) {
             // Literal with name reference — dynamic (010xxxxx)
             uint64_t rel = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kLiteralNameRefDynamicPrefix, rel)) {
@@ -234,12 +266,48 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
             headers[item->name_] = value;
 
         } else if ((first_byte & QpackHeaderPattern::kLiteralNoNameRefMask) == QpackHeaderPattern::kLiteralNoNameRef) {
-            // Literal without indexing — literal name and value (001xxxxx)
-            std::string name, value;
-            if (!DecodeString(buffer, name) || !DecodeString(buffer, value)) {
-                common::LOG_ERROR("QpackEncoder::Decode: decode string failed. name:%s, value:%s", name.c_str(), value.c_str());
+            // RFC 9204 Section 4.5.6: Literal Field Line With Literal Name (001xxxxx)
+            // Format: 001 N H NameLen(3+) | Name | H ValueLen(7+) | Value
+            // first_byte already consumed, contains N, H bits and 3-bit name length prefix
+            bool name_huffman = (first_byte & 0x08) != 0;  // H bit for name (bit 3)
+            uint64_t name_len = 0;
+            // Name length uses 3-bit prefix (bits 0-2)
+            if (!decode_after_first(first_byte, 3, name_len)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode name length failed for LiteralNoNameRef");
                 return false;
             }
+
+            // Read name string
+            std::string name;
+            if (name_len > 0) {
+                if (name_huffman) {
+                    std::vector<uint8_t> encoded;
+                    encoded.resize(static_cast<size_t>(name_len));
+                    if (buffer->Read(encoded.data(), static_cast<uint32_t>(name_len)) !=
+                        static_cast<int32_t>(name_len)) {
+                        common::LOG_ERROR("QpackEncoder::Decode: read huffman name failed. len:%llu", name_len);
+                        return false;
+                    }
+                    name = HuffmanEncoder::Instance().Decode(encoded);
+                } else {
+                    name.resize(static_cast<size_t>(name_len));
+                    if (buffer->Read((uint8_t*)name.data(), static_cast<uint32_t>(name_len)) !=
+                        static_cast<int32_t>(name_len)) {
+                        common::LOG_ERROR("QpackEncoder::Decode: read name failed. len:%llu", name_len);
+                        return false;
+                    }
+                }
+            }
+
+            // Read value using DecodeString (7-bit prefix with H bit)
+            std::string value;
+            if (!DecodeString(buffer, value)) {
+                common::LOG_ERROR("QpackEncoder::Decode: decode value string failed. name:%s", name.c_str());
+                return false;
+            }
+
+            common::LOG_DEBUG("QpackEncoder::Decode: LiteralNoNameRef decoded header: %s=%s, remaining=%u",
+                name.c_str(), value.c_str(), buffer->GetDataLength());
             headers[name] = value;
 
         } else if ((first_byte & QpackHeaderPattern::kPostBaseIndexedMask) == QpackHeaderPattern::kPostBaseIndexed) {
@@ -247,7 +315,8 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
             // Index is relative to Base, references entries inserted AFTER Base
             uint64_t post_base_index = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kPostBaseIndexedPrefix, post_base_index)) {
-                common::LOG_ERROR("QpackEncoder::Decode: decode post base indexed failed. post_base_index:%llu", post_base_index);
+                common::LOG_ERROR(
+                    "QpackEncoder::Decode: decode post base indexed failed. post_base_index:%llu", post_base_index);
                 return false;
             }
             // Convert to absolute index: abs_index = Base + post_base_index
@@ -263,12 +332,15 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
             }
             headers[item->name_] = item->value_;
 
-        } else if ((first_byte & QpackHeaderPattern::kPostBaseLiteralNameRefMask) == QpackHeaderPattern::kPostBaseLiteralNameRef) {
+        } else if ((first_byte & QpackHeaderPattern::kPostBaseLiteralNameRefMask) ==
+                   QpackHeaderPattern::kPostBaseLiteralNameRef) {
             // RFC 9204 Section 4.5.5: Literal Header Field With Post-Base Name Reference (0000xxxx)
             // Name reference is relative to Base, value is literal
             uint64_t post_base_index = 0;
             if (!decode_after_first(first_byte, QpackHeaderPattern::kPostBaseLiteralNameRefPrefix, post_base_index)) {
-                common::LOG_ERROR("QpackEncoder::Decode: decode post base literal name ref failed. post_base_index:%llu", post_base_index);
+                common::LOG_ERROR(
+                    "QpackEncoder::Decode: decode post base literal name ref failed. post_base_index:%llu",
+                    post_base_index);
                 return false;
             }
             // Convert to absolute index: abs_index = Base + post_base_index
@@ -298,12 +370,9 @@ bool QpackEncoder::Decode(const std::shared_ptr<common::IBuffer> buffer,
     return true;
 }
 
-bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::string,std::string>>& inserts,
-                                   std::shared_ptr<common::IBuffer> instr_buf,
-                                   bool with_name_ref,
-                                   bool set_capacity,
-                                   uint32_t new_capacity,
-                                   int32_t duplicate_index) {
+bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::string, std::string>>& inserts,
+    std::shared_ptr<common::IBuffer> instr_buf, bool with_name_ref, bool set_capacity, uint32_t new_capacity,
+    int32_t duplicate_index) {
     if (!instr_buf) {
         common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: instr_buf is null");
         return false;
@@ -311,22 +380,21 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
 
     if (set_capacity) {
         // Set Dynamic Table Capacity (001xxxxx)
-        if (!QpackEncodePrefixedInteger(instr_buf, 
-            QpackEncoderInstr::kSetDynamicTableCapacityPrefix, 
-            QpackEncoderInstr::kSetDynamicTableCapacity, 
-            new_capacity)) {
-            common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode set dynamic table capacity failed. new_capacity:%u", new_capacity);
+        if (!QpackEncodePrefixedInteger(instr_buf, QpackEncoderInstr::kSetDynamicTableCapacityPrefix,
+                QpackEncoderInstr::kSetDynamicTableCapacity, new_capacity)) {
+            common::LOG_ERROR(
+                "QpackEncoder::EncodeEncoderInstructions: encode set dynamic table capacity failed. new_capacity:%u",
+                new_capacity);
             return false;
         }
     }
 
     if (duplicate_index >= 0) {
         // Duplicate (0001xxxx)
-        if (!QpackEncodePrefixedInteger(instr_buf, 
-            QpackEncoderInstr::kDuplicatePrefix, 
-            QpackEncoderInstr::kDuplicate, 
-            static_cast<uint64_t>(duplicate_index))) {
-            common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode duplicate failed. duplicate_index:%d", duplicate_index);
+        if (!QpackEncodePrefixedInteger(instr_buf, QpackEncoderInstr::kDuplicatePrefix, QpackEncoderInstr::kDuplicate,
+                static_cast<uint64_t>(duplicate_index))) {
+            common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode duplicate failed. duplicate_index:%d",
+                duplicate_index);
             return false;
         }
     }
@@ -342,11 +410,11 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
             if (is_static) {
                 // S=1, encode static index
                 mask |= QpackEncoderInstr::kInsertWithNameRefStaticBit;
-                if (!QpackEncodePrefixedInteger(instr_buf, 
-                    QpackEncoderInstr::kInsertWithNameRefPrefix, 
-                    mask, 
-                    static_cast<uint64_t>(s_name_idx))) {
-                    common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert with name ref failed. s_name_idx:%d", s_name_idx);
+                if (!QpackEncodePrefixedInteger(instr_buf, QpackEncoderInstr::kInsertWithNameRefPrefix, mask,
+                        static_cast<uint64_t>(s_name_idx))) {
+                    common::LOG_ERROR(
+                        "QpackEncoder::EncodeEncoderInstructions: encode insert with name ref failed. s_name_idx:%d",
+                        s_name_idx);
                     return false;
                 }
 
@@ -356,54 +424,59 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                 // If name not found, fall back to Insert Without Name Reference
                 if (d_name_idx < 0) {
                     // Insert Without Name Reference (01xxxxxx)
-                    if (!QpackEncodePrefixedInteger(instr_buf, 
-                        QpackEncoderInstr::kInsertWithoutNameRefPrefix, 
-                        QpackEncoderInstr::kInsertWithoutNameRef, 
-                        0)) {
-                        common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert without name ref failed.");
+                    if (!QpackEncodePrefixedInteger(instr_buf, QpackEncoderInstr::kInsertWithoutNameRefPrefix,
+                            QpackEncoderInstr::kInsertWithoutNameRef, 0)) {
+                        common::LOG_ERROR(
+                            "QpackEncoder::EncodeEncoderInstructions: encode insert without name ref failed.");
                         return false;
                     }
                     if (!QpackEncodeStringLiteral(p.first, instr_buf, false)) {
-                        common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. name:%s", p.first.c_str());
+                        common::LOG_ERROR(
+                            "QpackEncoder::EncodeEncoderInstructions: encode string literal failed. name:%s",
+                            p.first.c_str());
                         return false;
                     }
                     if (!QpackEncodeStringLiteral(p.second, instr_buf, false)) {
-                        common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s", p.second.c_str());
+                        common::LOG_ERROR(
+                            "QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s",
+                            p.second.c_str());
                         return false;
                     }
                     continue;
                 }
                 // dynamic relative index = ric - 1 - absolute_index
-                uint64_t relative = static_cast<uint64_t>(static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(d_name_idx));
-                if (!QpackEncodePrefixedInteger(instr_buf, 
-                    QpackEncoderInstr::kInsertWithNameRefPrefix, 
-                    mask, 
-                    relative)) {
-                    common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert with name ref failed. relative:%llu", relative);
+                uint64_t relative =
+                    static_cast<uint64_t>(static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(d_name_idx));
+                if (!QpackEncodePrefixedInteger(
+                        instr_buf, QpackEncoderInstr::kInsertWithNameRefPrefix, mask, relative)) {
+                    common::LOG_ERROR(
+                        "QpackEncoder::EncodeEncoderInstructions: encode insert with name ref failed. relative:%llu",
+                        relative);
                     return false;
                 }
             }
 
             if (!QpackEncodeStringLiteral(p.second, instr_buf, false)) {
-                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s", p.second.c_str());
+                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s",
+                    p.second.c_str());
                 return false;
             }
 
         } else {
             // Insert Without Name Reference (01xxxxxx)
-            if (!QpackEncodePrefixedInteger(instr_buf, 
-                QpackEncoderInstr::kInsertWithoutNameRefPrefix, 
-                QpackEncoderInstr::kInsertWithoutNameRef, 
-                0)) {
+            if (!QpackEncodePrefixedInteger(instr_buf, QpackEncoderInstr::kInsertWithoutNameRefPrefix,
+                    QpackEncoderInstr::kInsertWithoutNameRef, 0)) {
                 common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert without name ref failed.");
                 return false;
             }
             if (!QpackEncodeStringLiteral(p.first, instr_buf, false)) {
-                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. name:%s", p.first.c_str());
+                common::LOG_ERROR(
+                    "QpackEncoder::EncodeEncoderInstructions: encode string literal failed. name:%s", p.first.c_str());
                 return false;
             }
             if (!QpackEncodeStringLiteral(p.second, instr_buf, false)) {
-                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s", p.second.c_str());
+                common::LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. value:%s",
+                    p.second.c_str());
                 return false;
             }
         }
@@ -419,9 +492,10 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
 
     while (instr_buf->GetDataLength() > 0) {
         uint8_t fb = 0;
-        auto decode_after_first = [&](uint8_t first, uint8_t prefix_bits, uint64_t& value)->bool {
+        auto decode_after_first = [&](uint8_t first, uint8_t prefix_bits, uint64_t& value) -> bool {
             if (prefix_bits == 0 || prefix_bits > 8) {
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode after first failed. prefix_bits:%d", prefix_bits);
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: decode after first failed. prefix_bits:%d", prefix_bits);
                 return false;
             }
             uint8_t max_in_prefix = static_cast<uint8_t>((1u << prefix_bits) - 1u);
@@ -442,7 +516,7 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
 
             return true;
         };
-        
+
         if (instr_buf->Read(&fb, 1) != 1) {
             common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: read byte failed. fb:%d", fb);
             return false;
@@ -452,20 +526,23 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             // Insert With Name Reference (1Sxxxxxx)
             uint64_t idx = 0;
             if (!decode_after_first(fb, QpackEncoderInstr::kInsertWithNameRefPrefix, idx)) {
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode insert with name ref failed. idx:%llu", idx);
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: decode insert with name ref failed. idx:%llu", idx);
                 return false;
             }
-            bool is_static = (fb & QpackEncoderInstr::kInsertWithNameRefStaticBit) != 0; // S bit
+            bool is_static = (fb & QpackEncoderInstr::kInsertWithNameRefStaticBit) != 0;  // S bit
             std::string value;
             if (!QpackDecodeStringLiteral(instr_buf, value)) {
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode string literal failed. value:%s", value.c_str());
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: decode string literal failed. value:%s", value.c_str());
                 return false;
             }
             std::string name;
             if (is_static) {
                 auto hi = StaticTable::Instance().FindHeaderItem(static_cast<uint32_t>(idx));
                 if (!hi) {
-                    common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: find header item failed. idx:%llu", idx);
+                    common::LOG_ERROR(
+                        "QpackEncoder::DecodeEncoderInstructions: find header item failed. idx:%llu", idx);
                     return false;
                 }
                 name = hi->name_;
@@ -474,12 +551,14 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
                 uint64_t ric = dynamic_table_.GetEntryCount();
                 int64_t abs = static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(idx);
                 if (abs < 0) {
-                    common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: absolute index is less than 0. abs:%lld", abs);
+                    common::LOG_ERROR(
+                        "QpackEncoder::DecodeEncoderInstructions: absolute index is less than 0. abs:%lld", abs);
                     return false;
                 }
                 auto hi = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs));
                 if (!hi) {
-                    common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: find header item failed. abs:%lld", abs);
+                    common::LOG_ERROR(
+                        "QpackEncoder::DecodeEncoderInstructions: find header item failed. abs:%lld", abs);
                     return false;
                 }
                 name = hi->name_;
@@ -490,35 +569,44 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             // Insert Without Name Reference (01xxxxxx)
             uint64_t ignore = 0;
             if (!decode_after_first(fb, QpackEncoderInstr::kInsertWithoutNameRefPrefix, ignore)) {
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode insert without name ref failed. ignore:%llu", ignore);
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: decode insert without name ref failed. ignore:%llu",
+                    ignore);
                 return false;
             }
             std::string name, value;
             if (!QpackDecodeStringLiteral(instr_buf, name)) {
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode string literal failed. name:%s", name.c_str());
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: decode string literal failed. name:%s", name.c_str());
                 return false;
             }
             if (!QpackDecodeStringLiteral(instr_buf, value)) {
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode string literal failed. value:%s", value.c_str());
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: decode string literal failed. value:%s", value.c_str());
                 return false;
             }
             dynamic_table_.AddHeaderItem(name, value);
 
-        } else if ((fb & QpackEncoderInstr::kSetDynamicTableCapacityMask) == QpackEncoderInstr::kSetDynamicTableCapacity) {
+        } else if ((fb & QpackEncoderInstr::kSetDynamicTableCapacityMask) ==
+                   QpackEncoderInstr::kSetDynamicTableCapacity) {
             // RFC 9204 Section 4.3.1: Set Dynamic Table Capacity (001xxxxx)
             uint64_t cap = 0;
             if (!decode_after_first(fb, QpackEncoderInstr::kSetDynamicTableCapacityPrefix, cap)) {
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode set dynamic table capacity failed. cap:%llu", cap);
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: decode set dynamic table capacity failed. cap:%llu", cap);
                 return false;
             }
-            
+
             // RFC 9204 Section 3.2.3: Validate capacity against SETTINGS_QPACK_MAX_TABLE_CAPACITY
             if (cap > max_table_capacity_) {
                 // Decoder MUST treat this as a connection error (QPACK_ENCODER_STREAM_ERROR)
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: capacity is greater than max table capacity. cap:%llu, max_table_capacity:%u", cap, max_table_capacity_);
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: capacity is greater than max table capacity. cap:%llu, "
+                    "max_table_capacity:%u",
+                    cap, max_table_capacity_);
                 return false;
             }
-            
+
             dynamic_table_.UpdateMaxTableSize(static_cast<uint32_t>(cap));
 
         } else if ((fb & QpackEncoderInstr::kDuplicateMask) == QpackEncoderInstr::kDuplicate) {
@@ -531,7 +619,8 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             uint64_t ric = dynamic_table_.GetEntryCount();
             int64_t abs = static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(rel);
             if (abs < 0) {
-                common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: absolute index is less than 0. abs:%lld", abs);
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: absolute index is less than 0. abs:%lld", abs);
                 return false;
             }
             // Use DuplicateEntry method which handles the duplication properly
@@ -548,9 +637,10 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
     return true;
 }
 
-void QpackEncoder::WriteHeaderPrefix(std::shared_ptr<common::IBuffer> buffer, uint64_t required_insert_count, int64_t base) {
+void QpackEncoder::WriteHeaderPrefix(
+    std::shared_ptr<common::IBuffer> buffer, uint64_t required_insert_count, int64_t base) {
     // RFC 9204 Section 4.5.1: Encode Required Insert Count and Delta Base
-    
+
     // Encode Required Insert Count (8-bit prefix, 0x00 mask)
     // RFC 9204 Section 4.5.1.1: Encoded Required Insert Count
     uint64_t encoded_ric = 0;
@@ -560,11 +650,8 @@ void QpackEncoder::WriteHeaderPrefix(std::shared_ptr<common::IBuffer> buffer, ui
         // Here we assume MaxEntries is large enough that wrapping doesn't occur
         encoded_ric = required_insert_count;
     }
-    QpackEncodePrefixedInteger(buffer, 
-        QpackHeaderPrefix::kRequiredInsertCountPrefix, 
-        0x00, 
-        encoded_ric);
-    
+    QpackEncodePrefixedInteger(buffer, QpackHeaderPrefix::kRequiredInsertCountPrefix, 0x00, encoded_ric);
+
     // Encode Delta Base (7-bit prefix with S bit)
     // Delta Base = Base - Required Insert Count
     // S=0 if Delta Base >= 0, S=1 if Delta Base < 0
@@ -572,47 +659,41 @@ void QpackEncoder::WriteHeaderPrefix(std::shared_ptr<common::IBuffer> buffer, ui
     bool s_bit = (delta_base < 0);
     uint64_t abs_delta_base = static_cast<uint64_t>(s_bit ? -delta_base : delta_base);
     uint8_t s_mask = s_bit ? QpackHeaderPrefix::kDeltaBaseSignBit : 0x00;
-    QpackEncodePrefixedInteger(buffer, 
-        QpackHeaderPrefix::kDeltaBasePrefix, 
-        s_mask, 
-        abs_delta_base);
+    QpackEncodePrefixedInteger(buffer, QpackHeaderPrefix::kDeltaBasePrefix, s_mask, abs_delta_base);
 }
 
-bool QpackEncoder::ReadHeaderPrefix(const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, int64_t& base) {
+bool QpackEncoder::ReadHeaderPrefix(
+    const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, int64_t& base) {
     // RFC 9204 Section 4.5.1: Decode Required Insert Count and Delta Base
-    
+
     // Decode Encoded Required Insert Count (8-bit prefix)
     uint8_t first = 0;
     uint64_t encoded_ric = 0;
-    if (!QpackDecodePrefixedInteger(buffer, 
-        QpackHeaderPrefix::kRequiredInsertCountPrefix, 
-        first, 
-        encoded_ric)) {
-        common::LOG_ERROR("QpackEncoder::ReadHeaderPrefix: decode required insert count failed. encoded_ric:%llu", encoded_ric);
+    if (!QpackDecodePrefixedInteger(buffer, QpackHeaderPrefix::kRequiredInsertCountPrefix, first, encoded_ric)) {
+        common::LOG_ERROR(
+            "QpackEncoder::ReadHeaderPrefix: decode required insert count failed. encoded_ric:%llu", encoded_ric);
         return false;
     }
-    
+
     // For simplicity, we directly use the encoded value
     // Full RFC algorithm would decode: RIC = (EncodedRIC - 1) or handle wrapping
     required_insert_count = encoded_ric;
-    
+
     // Decode Delta Base (7-bit prefix with S bit)
     uint64_t abs_delta_base = 0;
-    if (!QpackDecodePrefixedInteger(buffer, 
-        QpackHeaderPrefix::kDeltaBasePrefix, 
-        first, 
-        abs_delta_base)) {
-        common::LOG_ERROR("QpackEncoder::ReadHeaderPrefix: decode delta base failed. abs_delta_base:%llu", abs_delta_base);
+    if (!QpackDecodePrefixedInteger(buffer, QpackHeaderPrefix::kDeltaBasePrefix, first, abs_delta_base)) {
+        common::LOG_ERROR(
+            "QpackEncoder::ReadHeaderPrefix: decode delta base failed. abs_delta_base:%llu", abs_delta_base);
         return false;
     }
     bool s_bit = (first & QpackHeaderPrefix::kDeltaBaseSignBit) != 0;
-    
+
     // Calculate Base from Required Insert Count and Delta Base
     // Base = Required Insert Count + Delta Base (if S=0)
     // Base = Required Insert Count - Delta Base (if S=1)
     int64_t delta_base = s_bit ? -static_cast<int64_t>(abs_delta_base) : static_cast<int64_t>(abs_delta_base);
     base = static_cast<int64_t>(required_insert_count) + delta_base;
-    
+
     return true;
 }
 
@@ -624,7 +705,8 @@ void QpackEncoder::WritePrefix(std::shared_ptr<common::IBuffer> buffer, uint64_t
     buffer->Write(&base8, 1);
 }
 
-bool QpackEncoder::ReadPrefix(const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, uint64_t& base) {
+bool QpackEncoder::ReadPrefix(
+    const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, uint64_t& base) {
     if (buffer->GetDataLength() < 2) {
         common::LOG_ERROR("QpackEncoder::ReadPrefix: buffer data length is less than 2");
         return false;
@@ -642,24 +724,19 @@ void QpackEncoder::EncodeString(const std::string& str, std::shared_ptr<common::
     if (HuffmanEncoder::Instance().ShouldHuffmanEncode(str)) {
         // Encode with Huffman
         std::vector<uint8_t> encoded = HuffmanEncoder::Instance().Encode(str);
-        
+
         // Write length prefix with H bit set (7-bit prefix)
         // RFC 9204 Section 4.1.1: String Literal with 7-bit prefixed length
-        QpackEncodePrefixedInteger(buffer, 
-            QpackString::kLengthPrefix, 
-            QpackString::kHuffmanBit, 
-            static_cast<uint64_t>(encoded.size()));
-        
+        QpackEncodePrefixedInteger(
+            buffer, QpackString::kLengthPrefix, QpackString::kHuffmanBit, static_cast<uint64_t>(encoded.size()));
+
         // Write Huffman-encoded string
         buffer->Write(encoded.data(), encoded.size());
     } else {
         // Write length prefix without H bit (7-bit prefix)
         // RFC 9204 Section 4.1.1: String Literal with 7-bit prefixed length
-        QpackEncodePrefixedInteger(buffer, 
-            QpackString::kLengthPrefix, 
-            0x00, 
-            static_cast<uint64_t>(str.length()));
-        
+        QpackEncodePrefixedInteger(buffer, QpackString::kLengthPrefix, 0x00, static_cast<uint64_t>(str.length()));
+
         // Write string directly
         if (!str.empty()) {
             buffer->Write((uint8_t*)str.data(), str.length());
@@ -672,16 +749,13 @@ bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBuffer> buffer, s
     // RFC 9204 Section 4.1.1: String Literal with 7-bit prefixed length
     uint8_t first_byte = 0;
     uint64_t length = 0;
-    if (!QpackDecodePrefixedInteger(buffer, 
-        QpackString::kLengthPrefix, 
-        first_byte, 
-        length)) {
+    if (!QpackDecodePrefixedInteger(buffer, QpackString::kLengthPrefix, first_byte, length)) {
         common::LOG_ERROR("QpackEncoder::DecodeString: decode prefixed integer failed. length:%llu", length);
         return false;
     }
-    
+
     bool huffman = (first_byte & QpackString::kHuffmanBit) != 0;
-    
+
     if (length == 0) {
         output.clear();
         return true;
@@ -706,5 +780,5 @@ bool QpackEncoder::DecodeString(const std::shared_ptr<common::IBuffer> buffer, s
     return true;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

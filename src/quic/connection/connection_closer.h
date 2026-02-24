@@ -35,7 +35,7 @@ public:
     ConnectionCloser(std::shared_ptr<::quicx::common::IEventLoop> event_loop, ConnectionStateMachine& state_machine,
         SendManager& send_manager, TransportParam& transport_param, ConnectionCloseCallback connection_close_cb);
 
-    ~ConnectionCloser() = default;
+    ~ConnectionCloser();
 
     // ==================== Graceful Close ====================
 

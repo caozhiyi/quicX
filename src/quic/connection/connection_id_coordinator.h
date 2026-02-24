@@ -87,6 +87,12 @@ public:
      */
     bool RotateRemoteConnectionID();
 
+    /**
+     * @brief Set peer's active connection ID limit (from transport parameters)
+     * @param limit Active connection ID limit
+     */
+    void SetPeerActiveConnectionIDLimit(uint64_t limit);
+
     // ==================== Accessors ====================
 
     /**
@@ -129,6 +135,8 @@ private:
     // Pool size constants
     static constexpr size_t kMinLocalCIDPoolSize = 3;  // Keep at least 3 CIDs in pool
     static constexpr size_t kMaxLocalCIDPoolSize = 8;  // Generate up to 8 CIDs
+
+    uint64_t peer_active_cid_limit_{2};  // Default to 2 (RFC 9000)
 };
 
 }  // namespace quic

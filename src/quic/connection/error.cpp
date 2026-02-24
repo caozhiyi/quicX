@@ -20,6 +20,7 @@ static const std::unordered_map<QuicErrorCode, std::string> kErrorCodeReasons = 
     {kCryptoBufferExceeded, "crypto buffer exceeded"},
     {kCryptoError, "crypto error"},
     {kConnectionTimeout, "connection timeout"},
+    {kVersionNegotiationError, "version negotiation error"},
 };
 
 const std::string& GetErrorString(QuicErrorCode code) {

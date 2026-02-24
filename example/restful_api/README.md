@@ -5,21 +5,21 @@ This example demonstrates how to build a complete RESTful API service using the 
 ## Features Demonstrated
 
 ### Server-Side Features
-- ✅ **Full CRUD Operations** - GET, POST, PUT, DELETE methods
-- ✅ **JSON Request/Response** - JSON data parsing and formatting
-- ✅ **Path Parameters** - Extract parameters from URL paths (e.g., `/users/:id`)
-- ✅ **Custom Headers** - Set and read HTTP headers
-- ✅ **Status Codes** - Proper HTTP status code usage (200, 201, 204, 400, 404)
-- ✅ **Middleware** - Request logging and response processing
-- ✅ **CORS Support** - Cross-Origin Resource Sharing headers
-- ✅ **Thread-Safe** - In-memory database with mutex protection
+- **Full CRUD Operations** - GET, POST, PUT, DELETE methods
+- **JSON Request/Response** - JSON data parsing and formatting
+- **Path Parameters** - Extract parameters from URL paths (e.g., `/users/:id`)
+- **Custom Headers** - Set and read HTTP headers
+- **Status Codes** - Proper HTTP status code usage (200, 201, 204, 400, 404)
+- **Middleware** - Request logging and response processing
+- **CORS Support** - Cross-Origin Resource Sharing headers
+- **Thread-Safe** - In-memory database with mutex protection
 
 ### Client-Side Features
-- ✅ **Multiple HTTP Methods** - GET, POST, PUT, DELETE requests
-- ✅ **Custom Headers** - Add headers to requests
-- ✅ **Async Callbacks** - Non-blocking request handling
-- ✅ **Error Handling** - Handle different status codes and errors
-- ✅ **Sequential Testing** - Comprehensive API testing workflow
+- **Multiple HTTP Methods** - GET, POST, PUT, DELETE requests
+- **Custom Headers** - Add headers to requests
+- **Async Callbacks** - Non-blocking request handling
+- **Error Handling** - Handle different status codes and errors
+- **Sequential Testing** - Comprehensive API testing workflow
 
 ## API Endpoints
 

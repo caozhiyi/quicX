@@ -46,6 +46,7 @@ private:
     virtual void HandleHeaders() override;
     virtual void HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) override;
     virtual void HandleFrame(std::shared_ptr<IFrame> frame) override;
+    virtual void HandleFinWithoutData() override;
     void HandlePushPromise(std::shared_ptr<IFrame> frame);
 
 private:

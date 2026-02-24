@@ -57,42 +57,49 @@ public:
      */
     struct BuildContext {
         // Required parameters
-        EncryptionLevel encryption_level;                  // Encryption level (Initial, Handshake, 0-RTT, 1-RTT)
-        std::shared_ptr<ICryptographer> cryptographer;     // Cryptographer for encryption
-        IFrameVisitor* frame_visitor;                      // Frame visitor with payload data
-        ConnectionIDManager* local_cid_manager;            // Local connection ID manager
-        ConnectionIDManager* remote_cid_manager;           // Remote connection ID manager
+        EncryptionLevel encryption_level;               // Encryption level (Initial, Handshake, 0-RTT, 1-RTT)
+        std::shared_ptr<ICryptographer> cryptographer;  // Cryptographer for encryption
+        IFrameVisitor* frame_visitor;                   // Frame visitor with payload data
+        ConnectionIDManager* local_cid_manager;         // Local connection ID manager
+        ConnectionIDManager* remote_cid_manager;        // Remote connection ID manager
+
+        // QUIC version for Long Header packets (0 = use default version)
+        uint32_t quic_version;
 
         // Optional parameters for Initial packets
-        const uint8_t* token_data;                         // Token data (for Initial packets)
-        size_t token_length;                               // Token length
-        bool add_padding;                                  // Whether to pad Initial packets to 1200 bytes
+        const uint8_t* token_data;  // Token data (for Initial packets)
+        size_t token_length;        // Token length
+        bool add_padding;           // Whether to pad Initial packets to 1200 bytes
 
         // Packet number (if 0, packet number assignment is deferred)
-        uint64_t packet_number;                            // Packet number (0 = defer assignment)
+        uint64_t packet_number;  // Packet number (0 = defer assignment)
 
-        BuildContext()
-            : encryption_level(kInitial),
-              frame_visitor(nullptr),
-              local_cid_manager(nullptr),
-              remote_cid_manager(nullptr),
-              token_data(nullptr),
-              token_length(0),
-              add_padding(true),
-              packet_number(0) {}
+        BuildContext():
+            encryption_level(kInitial),
+            frame_visitor(nullptr),
+            local_cid_manager(nullptr),
+            remote_cid_manager(nullptr),
+            quic_version(0),
+            token_data(nullptr),
+            token_length(0),
+            add_padding(true),
+            packet_number(0) {}
     };
 
     /**
      * @brief Build result containing the built packet and status
      */
     struct BuildResult {
-        bool success;                                      // Whether build succeeded
-        std::shared_ptr<IPacket> packet;                   // The built packet (nullptr if failed)
-        uint64_t packet_number;                            // Packet number (if success)
-        uint32_t packet_size;                              // Packet size in bytes (if success)
-        std::string error_message;                         // Error message (if failed)
+        bool success;                     // Whether build succeeded
+        std::shared_ptr<IPacket> packet;  // The built packet (nullptr if failed)
+        uint64_t packet_number;           // Packet number (if success)
+        uint32_t packet_size;             // Packet size in bytes (if success)
+        std::string error_message;        // Error message (if failed)
 
-        BuildResult() : success(false), packet_number(0), packet_size(0) {}
+        BuildResult():
+            success(false),
+            packet_number(0),
+            packet_size(0) {}
     };
 
     PacketBuilder() = default;
@@ -125,33 +132,39 @@ public:
      */
     struct DataPacketContext {
         // Required: Encryption settings
-        EncryptionLevel level;                             // Encryption level
-        std::shared_ptr<ICryptographer> cryptographer;     // Cryptographer for encryption
+        EncryptionLevel level;                          // Encryption level
+        std::shared_ptr<ICryptographer> cryptographer;  // Cryptographer for encryption
 
         // Required: Connection ID managers
-        ConnectionIDManager* local_cid_manager;            // Local CID manager
-        ConnectionIDManager* remote_cid_manager;           // Remote CID manager
+        ConnectionIDManager* local_cid_manager;   // Local CID manager
+        ConnectionIDManager* remote_cid_manager;  // Remote CID manager
+
+        // QUIC version for Long Header packets (0 = use default version)
+        uint32_t quic_version;
 
         // Optional: Control frames to send
-        std::vector<std::shared_ptr<IFrame>> frames;       // Non-stream frames (ACK, PING, etc.)
+        std::vector<std::shared_ptr<IFrame>> frames;  // Non-stream frames (ACK, PING, etc.)
 
         // Optional: Stream data
-        StreamManager* stream_manager;                     // Stream manager for fetching stream frames
-        bool include_stream_data;                          // Whether to include stream data
+        StreamManager* stream_manager;  // Stream manager for fetching stream frames
+        bool include_stream_data;       // Whether to include stream data
+        uint32_t max_stream_data_size;  // Maximum stream data size (flow control limit)
 
         // Optional: Initial packet requirements
-        std::string token;                                 // Token (for Initial packets)
-        bool add_padding;                                  // Whether to pad to 1200 bytes
-        uint32_t min_size;                                 // Minimum packet size (for padding)
+        std::string token;  // Token (for Initial packets)
+        bool add_padding;   // Whether to pad to 1200 bytes
+        uint32_t min_size;  // Minimum packet size (for padding)
 
-        DataPacketContext()
-            : level(kInitial),
-              local_cid_manager(nullptr),
-              remote_cid_manager(nullptr),
-              stream_manager(nullptr),
-              include_stream_data(true),
-              add_padding(false),
-              min_size(1200) {}
+        DataPacketContext():
+            level(kInitial),
+            local_cid_manager(nullptr),
+            remote_cid_manager(nullptr),
+            quic_version(0),
+            stream_manager(nullptr),
+            include_stream_data(true),
+            max_stream_data_size(1300),  // Default to reasonable packet size
+            add_padding(false),
+            min_size(1200) {}
     };
 
     /**
@@ -172,11 +185,8 @@ public:
      * @param send_control Send control (for recording packet send event)
      * @return BuildResult with success status, packet, packet number, and size
      */
-    BuildResult BuildDataPacket(
-        const DataPacketContext& ctx,
-        std::shared_ptr<common::IBuffer> output_buffer,
-        PacketNumber& packet_number,
-        SendControl& send_control);
+    BuildResult BuildDataPacket(const DataPacketContext& ctx, std::shared_ptr<common::IBuffer> output_buffer,
+        PacketNumber& packet_number, SendControl& send_control);
 
     /**
      * @brief Build a pure ACK packet for immediate sending
@@ -194,15 +204,10 @@ public:
      * @param send_control Send control
      * @return BuildResult with success status and packet info
      */
-    BuildResult BuildAckPacket(
-        EncryptionLevel level,
-        std::shared_ptr<ICryptographer> cryptographer,
-        std::shared_ptr<IFrame> ack_frame,
-        ConnectionIDManager* local_cid_mgr,
-        ConnectionIDManager* remote_cid_mgr,
-        std::shared_ptr<common::IBuffer> output_buffer,
-        PacketNumber& packet_number,
-        SendControl& send_control);
+    BuildResult BuildAckPacket(EncryptionLevel level, std::shared_ptr<ICryptographer> cryptographer,
+        std::shared_ptr<IFrame> ack_frame, ConnectionIDManager* local_cid_mgr, ConnectionIDManager* remote_cid_mgr,
+        std::shared_ptr<common::IBuffer> output_buffer, PacketNumber& packet_number, SendControl& send_control,
+        uint32_t quic_version = 0);
 
     /**
      * @brief Build a single-frame packet for immediate sending
@@ -220,15 +225,10 @@ public:
      * @param send_control Send control
      * @return BuildResult with success status and packet info
      */
-    BuildResult BuildImmediatePacket(
-        std::shared_ptr<IFrame> frame,
-        EncryptionLevel level,
-        std::shared_ptr<ICryptographer> cryptographer,
-        ConnectionIDManager* local_cid_mgr,
-        ConnectionIDManager* remote_cid_mgr,
-        std::shared_ptr<common::IBuffer> output_buffer,
-        PacketNumber& packet_number,
-        SendControl& send_control);
+    BuildResult BuildImmediatePacket(std::shared_ptr<IFrame> frame, EncryptionLevel level,
+        std::shared_ptr<ICryptographer> cryptographer, ConnectionIDManager* local_cid_mgr,
+        ConnectionIDManager* remote_cid_mgr, std::shared_ptr<common::IBuffer> output_buffer,
+        PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0);
 
 private:
     /**
@@ -252,8 +252,8 @@ private:
      * @param local_cid_manager Local connection ID manager
      * @param remote_cid_manager Remote connection ID manager
      */
-    void SetConnectionIDs(
-        std::shared_ptr<IPacket> packet, ConnectionIDManager* local_cid_manager, ConnectionIDManager* remote_cid_manager);
+    void SetConnectionIDs(std::shared_ptr<IPacket> packet, ConnectionIDManager* local_cid_manager,
+        ConnectionIDManager* remote_cid_manager);
 
     /**
      * @brief Handle Initial packet specific requirements

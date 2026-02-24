@@ -1,8 +1,8 @@
-#include "common/log/log.h"
 #include "quic/frame/ack_frame.h"
-#include "common/decode/decode.h"
-#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/decode/decode.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -26,17 +26,19 @@ bool AckFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
     // Per RFC 9000 ACK frame format:
     // Largest Acknowledged, ACK Delay, ACK Range Count, First ACK Range
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(largest_acknowledged_), "failed to encode largest acknowledged");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ack_delay_), "failed to encode ack delay");
-    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(static_cast<uint64_t>(ack_ranges_.size())), "failed to encode ack range count");
+    CHECK_ENCODE_ERROR(
+        wrapper.EncodeVarint(static_cast<uint64_t>(ack_ranges_.size())), "failed to encode ack range count");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(first_ack_range_), "failed to encode first ack range");
 
     for (size_t i = 0; i < ack_ranges_.size(); i++) {
         CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ack_ranges_[i].GetGap()), "failed to encode gap");
-        CHECK_ENCODE_ERROR(wrapper.EncodeVarint(ack_ranges_[i].GetAckRangeLength()), "failed to encode ack range length");
+        CHECK_ENCODE_ERROR(
+            wrapper.EncodeVarint(ack_ranges_[i].GetAckRangeLength()), "failed to encode ack range length");
     }
     return true;
 }
@@ -48,7 +50,9 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     {
         common::BufferDecodeWrapper wrapper(buffer);
         if (with_type) {
-            CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
+            uint64_t type = 0;
+            CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
+            frame_type_ = static_cast<uint16_t>(type);
             if (frame_type_ != FrameType::kAck && frame_type_ != FrameType::kAckEcn) {
                 common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
                 return false;
@@ -79,8 +83,8 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
 }
 
 uint32_t AckFrame::EncodeSize() {
-    // frame type encoded as fixed uint16
-    uint32_t size = sizeof(uint16_t);
+    // frame type encoded as varint
+    uint32_t size = common::GetEncodeVarintLength(frame_type_);
     // Largest Acknowledged
     size += common::GetEncodeVarintLength(largest_acknowledged_);
     // ACK Delay
@@ -156,7 +160,7 @@ uint32_t AckEcnFrame::EncodeSize() {
     uint32_t ect0_size = common::GetEncodeVarintLength(ect_0_);
     uint32_t ect1_size = common::GetEncodeVarintLength(ect_1_);
     uint32_t ecn_ce_size = common::GetEncodeVarintLength(ecn_ce_);
-    return ect0_size + ect1_size + ecn_ce_size;
+    return AckFrame::EncodeSize() + ect0_size + ect1_size + ecn_ce_size;
 }
 
 }  // namespace quic

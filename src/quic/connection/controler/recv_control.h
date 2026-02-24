@@ -30,11 +30,22 @@ packet, and the packet numbers are not contiguous.
 class RecvControl {
 public:
     RecvControl(std::shared_ptr<common::ITimer> timer);
-    ~RecvControl() {}
+    ~RecvControl() {
+        // Cancel timer to prevent use-after-free when timer fires after destruction
+        if (timer_ && set_timer_) {
+            timer_->RemoveTimer(timer_task_);
+        }
+        // Clear callbacks to prevent dangling references
+        immediate_ack_cb_ = nullptr;
+        active_send_cb_ = nullptr;
+    }
 
     void OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet);
     void OnEcnCounters(uint8_t ecn, PacketNumberSpace ns);
     std::shared_ptr<IFrame> MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled = true);
+
+    // Check if there are packets waiting to be ACKed
+    bool HasPendingAck(PacketNumberSpace ns) const { return !wait_ack_packet_numbers_[ns].empty(); }
 
     // RFC 9000 Section 4.10: Discard packet number space when keys discarded
     void DiscardPacketNumberSpace(PacketNumberSpace ns);

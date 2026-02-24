@@ -1,10 +1,10 @@
+#include "quic/frame/path_challenge_frame.h"
 #include <cstring>
+#include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/log/log.h"
 #include "common/util/random.h"
 #include "quic/frame/path_response_frame.h"
-#include "quic/frame/path_challenge_frame.h"
-#include "common/buffer/buffer_encode_wrapper.h"
-#include "common/buffer/buffer_decode_wrapper.h"
 
 namespace quicx {
 namespace quic {
@@ -27,7 +27,7 @@ bool PathChallengeFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
     CHECK_ENCODE_ERROR(wrapper.EncodeBytes(data_, kPathDataLength), "failed to encode data");
     return true;
 }
@@ -35,7 +35,9 @@ bool PathChallengeFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 bool PathChallengeFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
-        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
+        uint64_t type = 0;
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
+        frame_type_ = static_cast<uint16_t>(type);
         if (frame_type_ != FrameType::kPathChallenge) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
@@ -53,7 +55,7 @@ bool PathChallengeFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wi
 }
 
 uint32_t PathChallengeFrame::EncodeSize() {
-    return sizeof(PathChallengeFrame);
+    return common::GetEncodeVarintLength(frame_type_) + kPathDataLength;
 }
 
 bool PathChallengeFrame::CompareData(std::shared_ptr<PathResponseFrame> response) {

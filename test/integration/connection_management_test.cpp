@@ -24,10 +24,10 @@ protected:
         server_ = quicx::IServer::Create();
 
         quicx::Http3ServerConfig config;
-        config.cert_pem_ = cert_pem_;
-        config.key_pem_ = key_pem_;
-        config.config_.thread_num_ = 2;
-        config.config_.log_level_ = quicx::LogLevel::kError;
+        config.quic_config_.cert_pem_ = cert_pem_;
+        config.quic_config_.key_pem_ = key_pem_;
+        config.quic_config_.config_.worker_thread_num_ = 2;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
         ASSERT_TRUE(server_->Init(config));
 
@@ -96,9 +96,9 @@ const char ConnectionManagementTest::key_pem_[] =
 TEST_F(ConnectionManagementTest, BasicConnection) {
     auto client = quicx::IClient::Create();
 
-    quicx::Http3Config config;
-    config.thread_num_ = 1;
-    config.log_level_ = quicx::LogLevel::kError;
+    quicx::Http3ClientConfig config;
+    config.quic_config_.config_.worker_thread_num_ = 1;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
     ASSERT_TRUE(client->Init(config));
 
@@ -125,9 +125,9 @@ TEST_F(ConnectionManagementTest, BasicConnection) {
 TEST_F(ConnectionManagementTest, ConnectionReuse) {
     auto client = quicx::IClient::Create();
 
-    quicx::Http3Config config;
-    config.thread_num_ = 1;
-    config.log_level_ = quicx::LogLevel::kError;
+    quicx::Http3ClientConfig config;
+    config.quic_config_.config_.worker_thread_num_ = 1;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
     ASSERT_TRUE(client->Init(config));
 
@@ -155,9 +155,9 @@ TEST_F(ConnectionManagementTest, ConnectionReuse) {
 TEST_F(ConnectionManagementTest, ConnectionTimeout) {
     auto client = quicx::IClient::Create();
 
-    quicx::Http3Config config;
-    config.thread_num_ = 1;
-    config.log_level_ = quicx::LogLevel::kError;
+    quicx::Http3ClientConfig config;
+    config.quic_config_.config_.worker_thread_num_ = 1;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
     config.connection_timeout_ms_ = 2000;  // 2 second timeout
 
     ASSERT_TRUE(client->Init(config));
@@ -190,9 +190,9 @@ TEST_F(ConnectionManagementTest, MultipleConnections) {
     for (int i = 0; i < num_clients; ++i) {
         auto client = quicx::IClient::Create();
 
-        quicx::Http3Config config;
-        config.thread_num_ = 1;
-        config.log_level_ = quicx::LogLevel::kError;
+        quicx::Http3ClientConfig config;
+        config.quic_config_.config_.worker_thread_num_ = 1;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
         ASSERT_TRUE(client->Init(config));
         clients.push_back(std::move(client));

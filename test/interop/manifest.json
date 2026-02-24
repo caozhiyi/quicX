@@ -1,18 +1,34 @@
 {
-  "name": "quicX",
-  "image": "quicx-interop:latest",
-  "url": "https://github.com/yourusername/quicX",
-  "description": "A high-performance QUIC and HTTP/3 implementation in C++",
+  "name": "quicx",
+  "image": "ghcr.io/quicx/quicx-interop:latest",
+  "url": "https://github.com/caozhiyi/quicX",
   "role": "both",
-  "test_cases": [
-    "handshake",
-    "transfer",
-    "retry",
-    "resumption",
-    "zerortt",
-    "http3",
-    "multiconnect",
-    "versionnegotiation",
-    "chacha20"
-  ]
+  "test_cases": {
+    "supported": [
+      "handshake",
+      "transfer",
+      "retry",
+      "resumption",
+      "zerortt",
+      "http3",
+      "multiconnect",
+      "versionnegotiation",
+      "chacha20",
+      "keyupdate",
+      "v2",
+      "rebind-port",
+      "rebind-addr",
+      "connectionmigration"
+    ],
+    "unsupported": []
+  },
+  "features": {
+    "http3": true,
+    "qlog": true,
+    "ecn": true,
+    "chacha20": true,
+    "resumption": true,
+    "zerortt": true,
+    "quicv2": true
+  }
 }

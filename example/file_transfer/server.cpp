@@ -45,10 +45,8 @@ static const char key_pem[] =
     "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
     "-----END RSA PRIVATE KEY-----\n";
 
-// Calculate SHA-256 checksum of a file
+// Calculate simple checksum of a file
 std::string CalculateChecksum(const std::string& filepath) {
-    // For demo purposes, return a simple hash
-    // In production, use a proper SHA-256 implementation
     std::ifstream file(filepath, std::ios::binary);
     if (!file) {
         return "";
@@ -58,6 +56,86 @@ std::string CalculateChecksum(const std::string& filepath) {
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     return std::to_string(hasher(content));
 }
+
+// Streaming file upload handler
+class FileUploadHandler: public quicx::IAsyncServerHandler {
+private:
+    std::string root_directory_;
+    std::string filepath_;
+    std::ofstream file_;
+    uint64_t bytes_received_ = 0;
+    std::shared_ptr<quicx::IResponse> response_;
+
+public:
+    explicit FileUploadHandler(const std::string& root_dir):
+        root_directory_(root_dir) {}
+
+    void OnHeaders(std::shared_ptr<quicx::IRequest> request, std::shared_ptr<quicx::IResponse> response) override {
+        response_ = response;
+        bytes_received_ = 0;  // Reset for each new upload request
+        std::string path = request->GetPath();
+
+        // Remove leading /upload/
+        if (path.find("/upload/") == 0) {
+            path = path.substr(8);
+        } else if (path.front() == '/') {
+            path = path.substr(1);
+        }
+
+        // Construct full file path
+        fs::path full_path = fs::path(root_directory_) / path;
+
+        // Security check - prevent directory traversal
+        auto canonical_root = fs::canonical(root_directory_);
+        auto canonical_file = fs::weakly_canonical(full_path);
+
+        if (canonical_file.string().find(canonical_root.string()) != 0) {
+            response->SetStatusCode(403);
+            response->AppendBody("Forbidden: Access denied");
+            return;
+        }
+
+        // Create parent directories if needed
+        if (full_path.has_parent_path()) {
+            fs::create_directories(full_path.parent_path());
+        }
+
+        filepath_ = full_path.string();
+        file_.open(filepath_, std::ios::binary | std::ios::trunc);
+
+        if (!file_) {
+            response->SetStatusCode(500);
+            response->AppendBody("Failed to create file");
+            return;
+        }
+
+        std::cout << "Upload started: " << filepath_ << std::endl;
+
+        // Don't set response yet - wait until upload completes
+    }
+
+    void OnBodyChunk(const uint8_t* data, size_t length, bool is_last) override {
+        if (file_.is_open() && length > 0) {
+            file_.write(reinterpret_cast<const char*>(data), length);
+            bytes_received_ += length;
+        }
+
+        if (is_last) {
+            if (file_.is_open()) {
+                file_.close();
+                std::cout << "Upload completed: " << filepath_ << " (" << bytes_received_ << " bytes)" << std::endl;
+
+                // Calculate checksum
+                std::string checksum = CalculateChecksum(filepath_);
+
+                response_->SetStatusCode(200);
+                response_->AddHeader("X-Checksum", checksum);
+                response_->AddHeader("X-Bytes-Received", std::to_string(bytes_received_));
+                response_->AppendBody("Upload successful: " + std::to_string(bytes_received_) + " bytes");
+            }
+        }
+    }
+};
 
 class FileTransferServer {
 private:
@@ -72,30 +150,39 @@ public:
 
     bool Init() {
         quicx::Http3ServerConfig config;
-        config.config_.thread_num_ = 4;
-        config.config_.log_level_ = quicx::LogLevel::kInfo;
+        config.quic_config_.config_.worker_thread_num_ = 4;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
 
         // Load certificates
-        config.cert_pem_ = cert_pem;
-        config.key_pem_ = key_pem;
+        config.quic_config_.cert_pem_ = cert_pem;
+        config.quic_config_.key_pem_ = key_pem;
 
         if (!server_->Init(config)) {
             std::cerr << "Failed to initialize server" << std::endl;
             return false;
         }
 
-        // Register file download handler
+        // Register streaming upload handler (POST /upload/*)
+        server_->AddHandler(
+            quicx::HttpMethod::kPost, "/upload/*", std::make_shared<FileUploadHandler>(root_directory_));
+
+        // Register file download handler (GET /*)
+        // Use streaming response via body provider
         server_->AddHandler(quicx::HttpMethod::kGet, "/*",
             [this](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
-                HandleFileRequest(req, resp);
+                HandleFileDownload(req, resp);
             });
 
+        std::cout << "File Transfer Server started" << std::endl;
         std::cout << "Serving files from: " << root_directory_ << std::endl;
+        std::cout << "Endpoints:" << std::endl;
+        std::cout << "  GET  /*         - Download file (streaming)" << std::endl;
+        std::cout << "  POST /upload/*  - Upload file (streaming)" << std::endl;
 
         return true;
     }
 
-    void HandleFileRequest(std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
+    void HandleFileDownload(std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
         std::string path = req->GetPath();
 
         // Remove leading slash
@@ -162,25 +249,10 @@ public:
             return;
         }
 
-        // Open file
-        std::ifstream file(filepath.string(), std::ios::binary);
-        if (!file) {
-            resp->SetStatusCode(500);
-            resp->AppendBody("Failed to open file");
-            return;
-        }
-
-        // Seek to start position
-        file.seekg(start_byte);
-
         // Calculate content length
         uint64_t content_length = end_byte - start_byte + 1;
 
-        // Read file content
-        std::vector<char> buffer(content_length);
-        file.read(buffer.data(), content_length);
-
-        // Set response
+        // Set response headers
         if (is_partial) {
             resp->SetStatusCode(206);  // Partial Content
             resp->AddHeader("Content-Range", "bytes " + std::to_string(start_byte) + "-" + std::to_string(end_byte) +
@@ -199,15 +271,44 @@ public:
             resp->AddHeader("X-Checksum", checksum);
         }
 
-        // Set body
-        resp->AppendBody(std::string(buffer.begin(), buffer.end()));
-
-        std::cout << "Served: " << path << " (" << start_byte << "-" << end_byte << "/" << file_size << ")"
+        std::cout << "Download started: " << path << " (" << start_byte << "-" << end_byte << "/" << file_size << ")"
                   << std::endl;
+
+        // Use streaming response via body provider
+        std::string filepath_str = filepath.string();
+        uint64_t remaining = content_length;
+        uint64_t current_pos = start_byte;
+
+        // Open file for streaming - capture by value
+        auto file_ptr = std::make_shared<std::ifstream>(filepath_str, std::ios::binary);
+        if (!file_ptr->is_open()) {
+            resp->SetStatusCode(500);
+            resp->AppendBody("Failed to open file");
+            return;
+        }
+        file_ptr->seekg(start_byte);
+
+        // Set body provider for streaming response
+        resp->SetResponseBodyProvider([file_ptr, remaining, path](uint8_t* buf, size_t size) mutable -> size_t {
+            if (remaining == 0 || !file_ptr->is_open() || file_ptr->eof()) {
+                if (file_ptr->is_open()) {
+                    file_ptr->close();
+                    std::cout << "Download completed: " << path << std::endl;
+                }
+                return 0;
+            }
+
+            size_t to_read = std::min(static_cast<size_t>(remaining), size);
+            file_ptr->read(reinterpret_cast<char*>(buf), to_read);
+            size_t actually_read = file_ptr->gcount();
+
+            remaining -= actually_read;
+            return actually_read;
+        });
     }
 
     void Run() {
-        server_->Start("0.0.0.0", 8443);
+        server_->Start("0.0.0.0", 7006);
 
         std::cout << "Press Ctrl+C to stop..." << std::endl;
 
@@ -221,8 +322,8 @@ public:
 int main(int argc, char* argv[]) {
     std::string root_dir = "./files";
 
-    if (argc > 2) {
-        root_dir = argv[2];
+    if (argc > 1) {
+        root_dir = argv[1];
     }
 
     // Create root directory if it doesn't exist

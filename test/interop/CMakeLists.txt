@@ -8,7 +8,7 @@ add_executable(interop_server
 )
 
 target_link_libraries(interop_server
-    http3
+    quicx
 )
 
 target_include_directories(interop_server PRIVATE
@@ -21,7 +21,7 @@ add_executable(interop_client
 )
 
 target_link_libraries(interop_client
-    http3
+    quicx
 )
 
 target_include_directories(interop_client PRIVATE

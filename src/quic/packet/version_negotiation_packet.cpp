@@ -41,19 +41,6 @@ bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
-    // Version Negotiation packet has special decoding logic
-    // RFC 9000 Section 17.2.1: Unused bits (including fixed bit position) can be arbitrary values,
-    // so we don't check the fixed bit like other long header packets
-
-    if (with_flag) {
-        // Flag already decoded by caller in packet_decode.cpp, skip it here
-        // We do NOT call header_.DecodeHeader() because it would check fixed bit
-    }
-
-    // IMPORTANT: Set packet type explicitly to kNegotiationPacketType
-    // Otherwise GetPacketType() will return the wrong type based on flag bits
-    header_.GetLongHeaderFlag().SetPacketType(PacketType::kNegotiationPacketType);
-
     common::BufferDecodeWrapper wrapper(buffer);
 
     // Decode Version (must be 0 for Version Negotiation)

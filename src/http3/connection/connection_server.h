@@ -26,7 +26,9 @@ public:
         const std::shared_ptr<IHttpProcessor>& http_processor,
         std::shared_ptr<IQuicServer> quic_server,
         const std::shared_ptr<IQuicConnection>& quic_connection,
-        const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler);
+        const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
+        uint64_t max_concurrent_streams = 200,
+        bool enable_push = false);
     virtual ~ServerConnection();
 
 private:

@@ -6,9 +6,9 @@
 #ifndef COMMON_LOG_BASE_LOGGER
 #define COMMON_LOG_BASE_LOGGER
 
-#include <memory>
-#include <cstdint>
 #include <stdarg.h>
+#include <cstdint>
+#include <memory>
 
 #include "common/log/log.h"
 #include "common/log/log_stream.h"
@@ -49,11 +49,11 @@ protected:
     uint16_t block_size_;
 
     std::shared_ptr<IAlloter> allocter_;
-    ThreadSafeQueue<Log*>    cache_queue_;
-    std::shared_ptr<Logger>  logger_;
+    ThreadSafeQueue<Log*> cache_queue_;
+    std::shared_ptr<Logger> logger_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

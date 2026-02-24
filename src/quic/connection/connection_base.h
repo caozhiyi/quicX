@@ -23,6 +23,7 @@
 #include "quic/connection/encryption_level_scheduler.h"
 #include "quic/connection/if_connection.h"
 #include "quic/connection/if_connection_event_sink.h"
+#include "quic/connection/key_update_trigger.h"
 #include "quic/connection/transport_param.h"
 #include "quic/include/type.h"
 #include "quic/udp/if_sender.h"
@@ -53,8 +54,29 @@ public:
     virtual void Reset(uint32_t error_code) override;
     virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) override;
     virtual bool MakeStreamAsync(StreamDirection type, stream_creation_callback callback) override;
+    // Override to also update FrameProcessor's callback
+    virtual void SetStreamStateCallBack(stream_state_callback cb) override;
     virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) override;
     virtual void RemoveTimer(uint64_t timer_id) override;
+    virtual bool IsTerminating() const override;
+
+    // RFC 9001 Section 6: Key Update support
+    void SetKeyUpdateEnabled(bool enabled) { key_update_trigger_.SetEnabled(enabled); }
+    bool TriggerKeyUpdate() { return connection_crypto_.TriggerKeyUpdate(); }
+
+    // RFC 9369: QUIC Version management
+    void SetVersion(uint32_t version) {
+        quic_version_ = version;
+        connection_crypto_.SetVersion(version);
+    }
+    uint32_t GetVersion() const { return quic_version_; }
+
+    // RFC 9000 Section 6: Version Negotiation
+    typedef std::function<void(uint32_t new_version)> version_negotiation_callback;
+    void SetVersionNegotiationCallback(version_negotiation_callback cb) { version_negotiation_cb_ = cb; }
+    void SetVersionNegotiationDone() { version_negotiation_done_ = true; }
+    bool IsVersionNegotiationNeeded() const { return version_negotiation_needed_; }
+    uint32_t GetNegotiatedVersion() const { return negotiated_version_; }
 
     // *************** inner interface ***************//
     // set transport param
@@ -196,7 +218,7 @@ protected:
     void AddConnectionId(ConnectionID& id);
     void RetireConnectionId(ConnectionID& id);
 
-    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) = 0;
+    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) = 0;
 
     // record bytes received on candidate path to increase amp budget while probing
     virtual void OnCandidatePathDatagramReceived(const common::Address& addr, uint32_t bytes) override {
@@ -211,6 +233,29 @@ protected:
         }
         return peer_addr_;
     }
+
+    // RFC 9000 Section 9: Connection Migration
+    // Simple API: delegates to production API with current IP and system-chosen port
+    // This ensures interop tests use the same code path as production
+    virtual bool InitiateMigration() override;
+
+    // Full migration API (production use - specify new local address)
+    virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) override;
+
+    // Set callback for migration events
+    virtual void SetMigrationCallback(migration_callback cb) override;
+
+    // Get current local address
+    virtual void GetLocalAddr(std::string& addr, uint32_t& port) override;
+
+    // Check if migration is supported (peer didn't disable it)
+    virtual bool IsMigrationSupported() const override;
+
+    // Check if migration is in progress
+    virtual bool IsMigrationInProgress() const override;
+
+    // Internal: Handle migration completion callback from PathManager
+    void OnMigrationComplete(const MigrationInfo& info);
 
     void CloseInternal();
 
@@ -262,6 +307,16 @@ protected:
     // Track whether Initial packet has been sent in 0-RTT scenarios
     bool initial_packet_sent_ = false;
 
+    // Remembered remote transport params for 0-RTT session caching (RFC 9000 Section 7.4.1)
+    bool has_remote_tp_ = false;
+    uint32_t remote_initial_max_data_ = 0;
+    uint32_t remote_initial_max_streams_bidi_ = 0;
+    uint32_t remote_initial_max_streams_uni_ = 0;
+    uint32_t remote_initial_max_stream_data_bidi_local_ = 0;
+    uint32_t remote_initial_max_stream_data_bidi_remote_ = 0;
+    uint32_t remote_initial_max_stream_data_uni_ = 0;
+    uint32_t remote_active_connection_id_limit_ = 0;
+
     // EventLoop reference for safe cleanup in destructor
     std::shared_ptr<common::IEventLoop> event_loop_;
 
@@ -270,6 +325,18 @@ protected:
 
     // Sender for direct packet transmission (改动5: Sender down-shift)
     std::shared_ptr<ISender> sender_;
+
+    // Key Update trigger (RFC 9001 Section 6)
+    KeyUpdateTrigger key_update_trigger_;
+
+    // QUIC version for this connection (RFC 9369: default to v2)
+    uint32_t quic_version_ = 0x6b3343cf;
+
+    // Version negotiation (RFC 9000 Section 6)
+    version_negotiation_callback version_negotiation_cb_;
+    uint32_t negotiated_version_ = 0;
+    bool version_negotiation_needed_ = false;
+    bool version_negotiation_done_ = false;  // Prevent infinite version negotiation loops
 };
 
 }  // namespace quic

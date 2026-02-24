@@ -22,9 +22,16 @@ QpackDecoderSenderStream::QpackDecoderSenderStream(const std::shared_ptr<IQuicSe
 }
 
 QpackDecoderSenderStream::~QpackDecoderSenderStream() {
-    if (stream_) {
-        stream_->Close();
-    }
+    // Note: Do NOT call stream_->Close() here during destruction.
+    // When IConnection is being destroyed, the streams_ map is cleared
+    // which triggers this destructor. Calling Close() would invoke
+    // active_send_cb_ which captures StreamManager's this pointer,
+    // but StreamManager may already be destroyed at this point,
+    // leading to use-after-free crash.
+    //
+    // The underlying QUIC stream will be properly cleaned up by the
+    // QUIC connection's own cleanup mechanism.
+    stream_.reset();
 }
 
 bool QpackDecoderSenderStream::SendSectionAck(uint64_t header_block_id) {

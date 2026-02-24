@@ -31,7 +31,6 @@ void WorkerWithThread::HandlePacket(PacketParseResult& packet_info) {
 }
 
 void WorkerWithThread::Run() {
-    event_loop_->Init();
     if (!event_loop_->Init()) {
         common::LOG_ERROR("init event loop failed.");
         return;

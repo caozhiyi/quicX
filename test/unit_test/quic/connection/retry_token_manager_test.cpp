@@ -32,8 +32,8 @@ protected:
 TEST_F(RetryTokenManagerTest, GenerateToken) {
     std::string token = manager_->GenerateToken(addr_, dcid_);
 
-    // Token should be timestamp (8 bytes) + HMAC (32 bytes) = 40 bytes
-    EXPECT_EQ(40, token.size());
+    // Token should be timestamp (8 bytes) + cid_len (1 byte) + cid (8 bytes) + HMAC (32 bytes) = 49 bytes
+    EXPECT_EQ(49, token.size());
 }
 
 TEST_F(RetryTokenManagerTest, ValidateValidToken) {
@@ -64,15 +64,16 @@ TEST_F(RetryTokenManagerTest, ValidateWrongAddress) {
     EXPECT_FALSE(manager_->ValidateToken(token, wrong_addr, dcid_));
 }
 
-TEST_F(RetryTokenManagerTest, ValidateWrongConnectionId) {
-    // Generate token for dcid1
+TEST_F(RetryTokenManagerTest, ValidateAndExtractConnectionID) {
+    // Generate token for dcid_
     std::string token = manager_->GenerateToken(addr_, dcid_);
 
-    // Try to validate with different connection ID
-    uint8_t wrong_cid_data[] = {0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18};
-    ConnectionID wrong_dcid(wrong_cid_data, sizeof(wrong_cid_data));
+    // Validate with an empty variable to capture the extracted ID
+    ConnectionID extracted_dcid;
 
-    EXPECT_FALSE(manager_->ValidateToken(token, addr_, wrong_dcid));
+    // Validation should succeed and extract the correct DCID
+    EXPECT_TRUE(manager_->ValidateToken(token, addr_, extracted_dcid));
+    EXPECT_EQ(dcid_, extracted_dcid);
 }
 
 TEST_F(RetryTokenManagerTest, ValidateInvalidTokenSize) {

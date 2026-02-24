@@ -24,6 +24,7 @@ SendStream::SendStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_d
     acked_offset_(0),
     fin_sent_(false),
     peer_data_limit_(init_data_limit),
+    blocked_at_limit_(0),  // Initialize to 0 - means STREAM_DATA_BLOCKED not sent yet
     send_buffer_(std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool())) {
     send_machine_ = std::make_shared<StreamStateMachineSend>();
 }
@@ -175,13 +176,15 @@ uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
     return 0;
 }
 
-IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
-    IStream::TrySendData(nullptr);
+IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, EncryptionLevel level) {
+    IStream::TrySendData(nullptr, level);
 
     // check peer limit
     // TODO put number to config
     if (peer_data_limit_ - send_data_offset_ < 2048) {
-        if (send_machine_->CheckCanSendFrame(FrameType::kStreamDataBlocked)) {
+        // Only send STREAM_DATA_BLOCKED once per limit value
+        // When peer sends MAX_STREAM_DATA with new limit, blocked_at_limit_ will be less than new peer_data_limit_
+        if (blocked_at_limit_ != peer_data_limit_ && send_machine_->CheckCanSendFrame(FrameType::kStreamDataBlocked)) {
             // make stream block frame
             std::shared_ptr<StreamDataBlockedFrame> frame = std::make_shared<StreamDataBlockedFrame>();
             frame->SetStreamID(stream_id_);
@@ -197,13 +200,15 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
                     "stream send data blocked failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
                 return TrySendResult::kFailed;
             }
+            // Mark that we've sent STREAM_DATA_BLOCKED for this limit
+            blocked_at_limit_ = peer_data_limit_;
         }
     }
 
     if (peer_data_limit_ <= send_data_offset_) {
-        common::LOG_DEBUG("stream send data failed. stream id:%d, peer data limit:%d, send data offset:%d", stream_id_,
+        common::LOG_DEBUG("stream send data flow control blocked. stream id:%d, peer data limit:%d, send data offset:%d", stream_id_,
             peer_data_limit_, send_data_offset_);
-        return TrySendResult::kFailed;
+        return TrySendResult::kFlowControlBlocked;  // Keep in active list, waiting for MAX_STREAM_DATA
     }
 
     for (auto iter = frames_list_.begin(); iter != frames_list_.end();) {
@@ -232,24 +237,51 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
         uint32_t conn_send_size = visitor->GetLeftStreamDataSize();
         send_size = stream_send_size > conn_send_size ? conn_send_size : stream_send_size;
         send_size = send_size > 1300 ? 1300 : send_size;  // TODO: 1300 is the max length of a stream frame
-        common::SharedBufferSpan data = send_buffer_->GetSharedReadableSpan(send_size);
-        if (data.Valid()) {
-            frame->SetData(data);
+
+        common::LOG_DEBUG("stream send calc: stream_id:%d, peer_limit:%llu, send_offset:%llu, stream_send_size:%u, conn_send_size:%u, final_send_size:%u",
+            stream_id_, peer_data_limit_, send_data_offset_, stream_send_size, conn_send_size, send_size);
+
+        // Only try to get data if we have space to send
+        if (send_size > 0) {
+            common::SharedBufferSpan data = send_buffer_->GetSharedReadableSpan(send_size);
+            if (data.Valid()) {
+                frame->SetData(data);
+            }
         }
     }
 
+    bool has_fin = false;
     if (to_fin_) {
         if (send_buffer_->GetDataLength() - frame->GetData().GetLength() == 0) {
             frame->SetFin();
-            fin_sent_ = true;  // Mark that FIN has been sent
+            has_fin = true;
         }
     }
 
-    if (!send_machine_->OnFrame(frame->GetType())) {
-        common::LOG_WARN("stream state transition rejected. stream id:%d, frame type:%d, state=%d", stream_id_,
-            frame->GetType(), static_cast<int>(send_machine_->GetStatus()));
+    // If no data and no FIN to send, check why
+    if (frame->GetData().GetLength() == 0 && !has_fin) {
+        // Check if we have data in buffer but couldn't send due to flow control
+        if (send_buffer_->GetDataLength() > 0) {
+            // We have data but flow control is blocking us
+            common::LOG_DEBUG("stream send data: flow control blocked. stream id:%d, buffer_len:%d, peer_limit:%llu, send_offset:%llu",
+                stream_id_, send_buffer_->GetDataLength(), peer_data_limit_, send_data_offset_);
+            
+            // Send STREAM_DATA_BLOCKED frame to notify peer
+            auto blocked_frame = std::make_shared<StreamDataBlockedFrame>();
+            blocked_frame->SetStreamID(stream_id_);
+            blocked_frame->SetMaximumData(peer_data_limit_);
+            visitor->HandleFrame(blocked_frame);
+            common::LOG_DEBUG("stream send: sent STREAM_DATA_BLOCKED frame. stream id:%d, limit:%llu",
+                stream_id_, peer_data_limit_);
+            
+            return TrySendResult::kFlowControlBlocked;
+        }
+        // No data in buffer, truly nothing to send
+        common::LOG_DEBUG("stream send data: no data to send. stream id:%d", stream_id_);
+        return TrySendResult::kSuccess;
     }
 
+    // Try to send the frame first, before updating state machine
     if (!visitor->HandleFrame(frame)) {
         // Check if the failure was due to insufficient packet space
         if (visitor->GetLastError() == FrameEncodeError::kInsufficientSpace) {
@@ -259,6 +291,17 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
         }
         common::LOG_ERROR("stream send data failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
         return TrySendResult::kFailed;
+    }
+
+    // Update state machine only after successful send
+    if (!send_machine_->OnFrame(frame->GetType())) {
+        common::LOG_WARN("stream state transition rejected. stream id:%d, frame type:%d, state=%d", stream_id_,
+            frame->GetType(), static_cast<int>(send_machine_->GetStatus()));
+    }
+
+    // Mark FIN as sent only after successful transmission
+    if (has_fin) {
+        fin_sent_ = true;
     }
     visitor->AddStreamDataSize(frame->GetData().GetLength());
     common::LOG_DEBUG("stream send data. stream id:%d, send size:%d,is fin:%d, left data size:%d", stream_id_,
@@ -278,11 +321,11 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor) {
     // Metrics: Stream data sent
     common::Metrics::CounterInc(common::MetricsStd::QuicStreamsBytesTx, frame->GetData().GetLength());
 
-    // if there is still data in the buffer, call the active send callback
+    // if there is still data in the buffer, signal that more packets are needed
     if (send_buffer_->GetDataLength() > 0) {
-        if (active_send_cb_) {
-            active_send_cb_(shared_from_this());
-        }
+        // Still have data to send - return kBreak to stay in active list
+        // and trigger immediate sending of next packet
+        return TrySendResult::kBreak;
     }
     return TrySendResult::kSuccess;
 }

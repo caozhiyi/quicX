@@ -5,7 +5,7 @@ namespace quic {
 
 IStream::~IStream() {}
 
-IStream::TrySendResult IStream::TrySendData(IFrameVisitor* visitor) {
+IStream::TrySendResult IStream::TrySendData(IFrameVisitor* visitor, EncryptionLevel level) {
     is_active_send_ = false;
     return TrySendResult::kSuccess;
 }

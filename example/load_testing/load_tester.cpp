@@ -83,9 +83,9 @@ private:
     void RunClient(int client_id) {
         auto client = quicx::IClient::Create();
 
-        quicx::Http3Config config;
-        config.thread_num_ = 1;
-        config.log_level_ = quicx::LogLevel::kError;
+        quicx::Http3ClientConfig config;
+        config.quic_config_.config_.worker_thread_num_ = 1;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
         config.connection_timeout_ms_ = 10000;
 
         if (!client->Init(config)) {
@@ -261,7 +261,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  --rampup <seconds> Ramp-up time (default: 0)" << std::endl;
         std::cout << "  --duration <seconds> Test duration (default: 0, use requests)" << std::endl;
         std::cout << "\nExample:" << std::endl;
-        std::cout << "  " << argv[0] << " https://localhost:8443/hello --clients 50 --requests 100" << std::endl;
+        std::cout << "  " << argv[0] << " https://localhost:7001/hello --clients 50 --requests 100" << std::endl;
         return 1;
     }
 

@@ -51,7 +51,7 @@ TEST(crypto_stream_utest, recv) {
 
     uint8_t recv_data[50] = {0};
     uint32_t recv_size = 0;
-    stream->SetStreamReadCallBack(
+    stream->SetCryptoStreamReadCallBack(
         [&recv_data, &recv_size](std::shared_ptr<IBufferRead> buffer, bool is_last, uint32_t err) {
             EXPECT_EQ(err, 0);
             recv_size += buffer->Read(recv_data + recv_size, 50);
@@ -101,9 +101,9 @@ TEST(crypto_stream_utest, send) {
     stream->Send(data + 15, 15, kApplication);
 
     FixBufferFrameVisitor frame_visitor(1450);
-    EXPECT_EQ(stream->TrySendData(&frame_visitor), IStream::TrySendResult::kBreak);
-    EXPECT_EQ(stream->TrySendData(&frame_visitor), IStream::TrySendResult::kBreak);
-    EXPECT_EQ(stream->TrySendData(&frame_visitor), IStream::TrySendResult::kSuccess);
+    EXPECT_EQ(stream->TrySendData(&frame_visitor, kInitial), IStream::TrySendResult::kSuccess);
+    EXPECT_EQ(stream->TrySendData(&frame_visitor, kHandshake), IStream::TrySendResult::kSuccess);
+    EXPECT_EQ(stream->TrySendData(&frame_visitor, kApplication), IStream::TrySendResult::kSuccess);
 
     std::vector<std::shared_ptr<IFrame>> frames;
     bool decode_result = DecodeFrames(frame_visitor.GetBuffer(), frames);
@@ -130,8 +130,8 @@ TEST(crypto_stream_utest, send) {
     }
 
     EXPECT_EQ(frame0->GetOffset(), 0);
-    EXPECT_EQ(frame1->GetOffset(), 5);
-    EXPECT_EQ(frame2->GetOffset(), 15);
+    EXPECT_EQ(frame1->GetOffset(), 0);
+    EXPECT_EQ(frame2->GetOffset(), 0);
 
     EXPECT_EQ(frame0->GetLength(), 5);
     EXPECT_EQ(frame1->GetLength(), 10);

@@ -23,6 +23,7 @@ enum QuicErrorCode: uint32_t {
     kCryptoBufferExceeded    = 0x0d, // received more data in CRYPTO frames than it can buffer.
     kCryptoError             = 0x10, // cryptographic handshake failed.
     kConnectionTimeout       = 0x11, // connection timeout.
+    kVersionNegotiationError = 0x12, // version negotiation failed.
 };
 
 const std::string& GetErrorString(QuicErrorCode code);

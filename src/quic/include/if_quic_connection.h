@@ -93,6 +93,89 @@ public:
      * @param timer_id Timer ID returned by AddTimer.
      */
     virtual void RemoveTimer(uint64_t timer_id) = 0;
+
+    /**
+     * @brief Check if the connection is in a terminating state.
+     *
+     * @return true if connection is Closing, Draining, or Closed.
+     */
+    virtual bool IsTerminating() const = 0;
+
+    // ==================== Connection Migration (RFC 9000 Section 9) ====================
+
+    /**
+     * @brief Initiate connection migration (client-side only, simple API).
+     *
+     * This is a convenience wrapper for interop tests that delegates to
+     * InitiateMigrationTo() with the current local IP and a system-chosen port.
+     * 
+     * The migration will:
+     * - Keep the same local IP address
+     * - Bind to a new ephemeral port (system-chosen)
+     * - Create a new socket and switch to it
+     * - Rotate DCID and perform path validation
+     *
+     * @return true if migration was successfully initiated, false otherwise.
+     * 
+     * @note For production use, prefer InitiateMigrationTo() which provides
+     *       detailed error codes and explicit address control.
+     */
+    virtual bool InitiateMigration() { return false; }
+
+    /**
+     * @brief Initiate connection migration to a specific local address (client-side only).
+     *
+     * RFC 9000 Section 9: Client-initiated connection migration.
+     * This creates a new socket bound to the specified local address,
+     * rotates the DCID, and initiates path validation.
+     *
+     * @param local_addr New local address to migrate to (IP:port).
+     *                   If port is 0, system chooses an ephemeral port.
+     * @return MigrationResult indicating success or failure reason.
+     */
+    virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) {
+        (void)local_ip;
+        (void)local_port;
+        return MigrationResult::kFailedInvalidState;
+    }
+
+    /**
+     * @brief Set callback for migration events.
+     *
+     * The callback is invoked when:
+     * - Client-initiated migration completes (success or failure)
+     * - NAT rebinding is detected and path validation completes
+     *
+     * @param cb Callback to invoke on migration events.
+     */
+    virtual void SetMigrationCallback(migration_callback cb) { (void)cb; }
+
+    /**
+     * @brief Get current local address of the connection.
+     *
+     * @param addr Filled with the local IP string.
+     * @param port Filled with the local UDP port.
+     */
+    virtual void GetLocalAddr(std::string& addr, uint32_t& port) {
+        addr = "";
+        port = 0;
+    }
+
+    /**
+     * @brief Check if active migration is supported.
+     *
+     * Migration is not supported if peer sent disable_active_migration transport parameter.
+     *
+     * @return true if active migration is allowed.
+     */
+    virtual bool IsMigrationSupported() const { return false; }
+
+    /**
+     * @brief Check if a migration/path validation is currently in progress.
+     *
+     * @return true if migration is ongoing.
+     */
+    virtual bool IsMigrationInProgress() const { return false; }
 };
 
 }  // namespace quicx

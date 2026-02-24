@@ -4,7 +4,6 @@
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
 #include "common/qlog/qlog.h"
-#include "common/util/time.h"
 
 #include "quic/congestion_control/congestion_control_factory.h"
 #include "quic/connection/controler/send_control.h"
@@ -28,10 +27,14 @@ void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, ui
 }
 
 void SendControl::OnPacketSend(
-    uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len, const std::vector<StreamDataInfo>& stream_data) {
+    uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len,
+    const std::vector<StreamDataInfo>& stream_data) {
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
     common::LOG_DEBUG("SendControl::OnPacketSend: packet_number=%llu, ns=%d, frame_type_bit=%u, stream_data count=%zu",
         packet->GetPacketNumber(), ns, packet->GetFrameTypeBit(), stream_data.size());
+
+    // Metrics: Packet transmitted
+    common::Metrics::CounterInc(common::MetricsStd::QuicPacketsTx);
 
     if (pkt_num_largest_sent_[ns] > packet->GetPacketNumber()) {
         common::LOG_ERROR("invalid packet number. number:%d", packet->GetPacketNumber());
@@ -55,8 +58,10 @@ void SendControl::OnPacketSend(
     last_ack_eliciting_sent_time_ = now;
 
     auto timer_task = common::TimerTask([this, pkt_len, packet, ns] {
-        // RFC 9002: Increment PTO backoff on expiration
-        rtt_calculator_.OnPTOExpired();
+        // NOTE: Do NOT call rtt_calculator_.OnPTOExpired() here.
+        // PTO backoff is managed by the global OnPTOTimer() to avoid
+        // exponential over-counting when multiple packets time out together
+        // (e.g., packets 2-7 all lost → 6 callbacks → pto_count_ jumps to 6).
 
         lost_packets_.push_back(packet);
         // Mark packet as lost in unacked_packets to prevent double subtraction if acked later
@@ -298,6 +303,14 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
     // Cancel PTO timer since we received an ACK
     timer_->RemoveTimer(pto_timer_);
 
+    // RFC 9002 §6.2.2.1: During handshake, keep PTO timer alive even after ACK
+    // This ensures the client will send probes if the handshake stalls
+    // (e.g., when server is anti-amplification limited)
+    if (!handshake_complete_) {
+        pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
+        timer_->AddTimer(pto_timer_, rtt_calculator_.GetPTOWithBackoff(max_ack_delay_));
+    }
+
     // Log recovery metrics with sampling
     LogRecoveryMetricsIfChanged(now);
 
@@ -347,7 +360,7 @@ void SendControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {
     common::LOG_INFO("SendControl: Discarded packet number space %d per RFC 9000", ns);
 }
 
-// Reset Initial packet number to 0 (used for Retry)
+// Reset Initial packet state for Retry (clear unacked/lost packets, keep PN tracking)
 void SendControl::ResetInitialPacketNumber() {
     PacketNumberSpace ns = PacketNumberSpace::kInitialNumberSpace;
 
@@ -366,12 +379,10 @@ void SendControl::ResetInitialPacketNumber() {
         }
     }
 
-    // Reset packet number tracking
-    pkt_num_largest_sent_[ns] = 0;
-    pkt_num_largest_acked_[ns] = 0;
-    largest_sent_time_[ns] = 0;
+    // Do NOT reset pkt_num_largest_sent_ / pkt_num_largest_acked_ / largest_sent_time_
+    // The PN counter must continue incrementing after Retry per interop requirements
 
-    common::LOG_INFO("SendControl: Reset Initial packet number space for Retry");
+    common::LOG_INFO("SendControl: Reset Initial packet state for Retry (PN not reset)");
 }
 
 // RFC 9002 Section 6.1: Detect lost packets based on packet/time threshold
@@ -482,16 +493,46 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
     LogRecoveryMetricsIfChanged(now);
 }
 
-// RFC 9002: PTO timer callback - called when PTO expires without receiving ACK
+// RFC 9002 §6.2: PTO timer callback - called when PTO expires without receiving ACK
 void SendControl::OnPTOTimer() {
-    common::LOG_DEBUG("SendControl::OnPTOTimer: PTO timer expired, consecutive_pto_count=%u",
+    // RFC 9002: Increment PTO backoff once per PTO firing (not per packet)
+    rtt_calculator_.OnPTOExpired();
+
+    common::LOG_WARN("SendControl::OnPTOTimer: PTO fired, pto_count=%u, triggering probe",
         rtt_calculator_.GetConsecutivePTOCount());
 
-    // RFC 9002: Increment PTO counter (already done by individual packet timers)
-    // The consecutive_pto_count_ is already incremented by OnPTOExpired() in packet timers
-    // This timer is just for tracking overall connection health
+    // RFC 9002 §6.2.4: Send probe packets to elicit ACK from peer
+    // Trigger retransmission via the packet_lost_cb_ chain → ActiveSend → TrySend
+    bool found_retransmit = false;
+    if (packet_lost_cb_) {
+        // Find the oldest unacked packet to probe with
+        // This ensures a probe is sent even if per-packet timers haven't fired yet
+        for (int ns = 0; ns < PacketNumberSpace::kNumberSpaceCount; ns++) {
+            if (!unacked_packets_[ns].empty()) {
+                auto it = unacked_packets_[ns].begin();
+                if (it->second.packet && !it->second.is_lost) {
+                    // Mark as lost and trigger retransmission
+                    it->second.is_lost = true;
+                    lost_packets_.push_back(it->second.packet);
+                    congestion_control_->OnPacketLost(
+                        LossEvent{it->first, it->second.pkt_len_, common::UTCTimeMsec()});
+                    timer_->RemoveTimer(it->second.timer_task_);
+                    packet_lost_cb_(it->second.packet);
+                    found_retransmit = true;
+                    break;
+                }
+            }
+        }
+    }
 
-    // Reschedule PTO timer with backoff for next check
+    // RFC 9002 §6.2.2.1: During handshake, if no ACK-eliciting data to retransmit,
+    // client MUST send a PING in Initial or Handshake space to elicit ACK from server
+    if (!found_retransmit && !handshake_complete_ && probe_needed_cb_) {
+        common::LOG_WARN("SendControl::OnPTOTimer: handshake not complete, no data to retransmit, sending probe");
+        probe_needed_cb_();
+    }
+
+    // Reschedule PTO timer with updated backoff for next probe
     timer_->RemoveTimer(pto_timer_);
     pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
     timer_->AddTimer(pto_timer_, rtt_calculator_.GetPTOWithBackoff(max_ack_delay_));

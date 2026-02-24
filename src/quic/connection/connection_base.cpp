@@ -1,4 +1,5 @@
 
+#include <unistd.h>
 #include <cstring>
 
 #include "common/buffer/buffer_chunk.h"
@@ -9,13 +10,16 @@
 #include "common/qlog/qlog.h"
 #include "common/util/time.h"
 
+#include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
 #include "quic/connection/error.h"
 #include "quic/connection/util.h"
 #include "quic/frame/connection_close_frame.h"
+#include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
 #include "quic/packet/handshake_packet.h"
 #include "quic/packet/init_packet.h"
+#include "quic/packet/packet_number.h"
 #include "quic/packet/retry_packet.h"
 #include "quic/packet/rtt_0_packet.h"
 #include "quic/packet/rtt_1_packet.h"
@@ -48,6 +52,15 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     connection_crypto_.SetRemoteTransportParamCB(
         std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
 
+    // RFC 9000: When 0-RTT write key is installed, trigger early connection callback
+    // so the application can start sending data before the handshake completes
+    connection_crypto_.SetEarlyDataReadyCB([this]() {
+        common::LOG_INFO("0-RTT early data ready, triggering early connection callback");
+        if (handshake_done_cb_) {
+            handshake_done_cb_(shared_from_this());
+        }
+    });
+
     // Initialize connection ID coordinator (refactored)
     cid_coordinator_ = std::make_unique<ConnectionIDCoordinator>(event_loop_, send_manager_,
         std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
@@ -56,6 +69,14 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
 
     send_manager_.SetSendRetryCallBack(std::bind(&BaseConnection::ActiveSend, this));
     send_manager_.SetSendFlowController(&send_flow_controller_);
+
+    // RFC 9002 §6.2.2.1: During handshake, if PTO fires and no ACK-eliciting
+    // data to retransmit, send PING to elicit ACK from peer (anti-amplification)
+    send_manager_.GetSendControl().SetProbeNeededCallback([this]() {
+        common::LOG_INFO("Handshake probe: sending PING frame to elicit ACK");
+        auto ping = std::make_shared<PingFrame>();
+        ToSendFrame(ping);
+    });
 
     // RFC 9000: Setup immediate ACK callback for Initial/Handshake/out-of-order packets
     recv_control_.SetImmediateAckCB([this](PacketNumberSpace ns) { SendImmediateAck(ns); });
@@ -173,6 +194,17 @@ bool BaseConnection::MakeStreamAsync(StreamDirection type, stream_creation_callb
     return stream_manager_->MakeStreamAsync(type, callback);
 }
 
+void BaseConnection::SetStreamStateCallBack(stream_state_callback cb) {
+    // Update base class member
+    stream_state_cb_ = cb;
+    // Also update FrameProcessor's callback so it can notify HTTP/3 layer of new streams
+    if (frame_processor_) {
+        frame_processor_->SetStreamStateCallback(cb);
+    }
+    common::LOG_DEBUG(
+        "BaseConnection::SetStreamStateCallBack: callback updated in both IConnection and FrameProcessor");
+}
+
 uint64_t BaseConnection::AddTimer(timer_callback callback, uint32_t timeout_ms) {
     if (!timer_coordinator_) {
         common::LOG_ERROR("BaseConnection::AddTimer: timer_coordinator_ is null");
@@ -189,6 +221,10 @@ void BaseConnection::RemoveTimer(uint64_t timer_id) {
     timer_coordinator_->RemoveTimer(timer_id);
 }
 
+bool BaseConnection::IsTerminating() const {
+    return state_machine_.IsTerminating();
+}
+
 void BaseConnection::RetryPendingStreamRequests() {
     // Delegate to stream manager
     stream_manager_->RetryPendingStreamRequests();
@@ -199,15 +235,15 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
 
     // set transport param. TODO define tp length
     uint8_t tp_buffer[1024];
-    common::BufferWriteView write_buffer(tp_buffer, sizeof(tp_buffer));
-    if (!transport_param_.Encode(write_buffer)) {
+    size_t bytes_written = 0;
+    if (!transport_param_.Encode(tp_buffer, sizeof(tp_buffer), bytes_written)) {
         common::LOG_ERROR("encode transport param failed");
         return;
     }
 
     // RFC9001 4.1.3: Before starting the handshake, QUIC provides TLS with the transport parameters (see Section 8.2)
     // that it wishes to carry.
-    tls_connection_->AddTransportParam(tp_buffer, write_buffer.GetDataLength());
+    tls_connection_->AddTransportParam(tp_buffer, bytes_written);
 }
 
 uint64_t BaseConnection::GetConnectionIDHash() {
@@ -215,8 +251,6 @@ uint64_t BaseConnection::GetConnectionIDHash() {
 }
 
 void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
-    // RFC 9000 Section 10.2: Handle packets based on connection state
-
     // Closing state: Check if packet contains CONNECTION_CLOSE, otherwise retransmit
     if (state_machine_.IsClosing()) {
         // Try to parse packet to check for CONNECTION_CLOSE frame
@@ -318,31 +352,31 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
                 }
                 break;
             case PacketType::kInitialPacketType:
-                packet_processed = OnInitialPacket(std::dynamic_pointer_cast<InitPacket>(packets[i]));
+                packet_processed = OnInitialPacket(packets[i]);
                 if (!packet_processed) {
                     common::LOG_ERROR("init packet handle failed.");
                 }
                 break;
             case PacketType::k0RttPacketType:
-                packet_processed = On0rttPacket(std::dynamic_pointer_cast<Rtt0Packet>(packets[i]));
+                packet_processed = On0rttPacket(packets[i]);
                 if (!packet_processed) {
                     common::LOG_ERROR("0 rtt packet handle failed.");
                 }
                 break;
             case PacketType::kHandshakePacketType:
-                packet_processed = OnHandshakePacket(std::dynamic_pointer_cast<HandshakePacket>(packets[i]));
+                packet_processed = OnHandshakePacket(packets[i]);
                 if (!packet_processed) {
-                    common::LOG_ERROR("handshakee packet handle failed.");
+                    common::LOG_ERROR("handshake packet handle failed.");
                 }
                 break;
             case PacketType::kRetryPacketType:
-                packet_processed = OnRetryPacket(std::dynamic_pointer_cast<RetryPacket>(packets[i]));
+                packet_processed = OnRetryPacket(packets[i]);
                 if (!packet_processed) {
                     common::LOG_ERROR("retry packet handle failed.");
                 }
                 break;
             case PacketType::k1RttPacketType:
-                packet_processed = On1rttPacket(std::dynamic_pointer_cast<Rtt1Packet>(packets[i]));
+                packet_processed = On1rttPacket(packets[i]);
                 if (!packet_processed) {
                     common::LOG_ERROR("1 rtt packet handle failed.");
                 }
@@ -366,8 +400,19 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
     if (!connection_crypto_.InitIsReady()) {
         LongHeader* header = (LongHeader*)packet->GetHeader();
-        common::LOG_INFO("Installing Initial Secret for decryption from packet DCID: length=%u",
-            header->GetDestinationConnectionIdLength());
+
+        // Use the version from the incoming packet for Initial secret derivation.
+        // This is critical: if the peer sends v1 Initial packets, we must use v1 salt,
+        // not our default preferred version (which may be v2).
+        uint32_t pkt_version = header->GetVersion();
+        if (pkt_version != 0 && pkt_version != quic_version_) {
+            common::LOG_INFO("Updating connection version from packet: 0x%08x -> 0x%08x",
+                quic_version_, pkt_version);
+            SetVersion(pkt_version);
+        }
+
+        common::LOG_INFO("Installing Initial Secret for decryption from packet DCID: length=%u, version=0x%08x",
+            header->GetDestinationConnectionIdLength(), quic_version_);
         connection_crypto_.InstallInitSecret(
             (uint8_t*)header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(), true);
     }
@@ -398,19 +443,77 @@ bool BaseConnection::OnVersionNegotiationPacket(std::shared_ptr<IPacket> packet)
 
     auto supported_versions = vn_packet->GetSupportVersion();
     common::LOG_WARN("Received Version Negotiation packet with %zu supported versions", supported_versions.size());
+
+    // Log all supported versions
     for (size_t i = 0; i < supported_versions.size(); i++) {
-        common::LOG_INFO("  Server supports version: 0x%08x", supported_versions[i]);
+        common::LOG_INFO(
+            "  Server supports version: 0x%08x (%s)", supported_versions[i], VersionToString(supported_versions[i]));
     }
 
-    // RFC 9000 Section 6.2: Clients MUST discard Version Negotiation packets
-    // that list the QUIC version that was sent in the Initial packet.
-    // This is a protection against version downgrade attacks.
+    // RFC 9000 Section 6.2: Version Negotiation Validation
+    // A client MUST discard a Version Negotiation packet that lists
+    // the QUIC version from the original Initial packet.
+    // This prevents downgrade attacks.
 
-    // For now, just log and return true to indicate we handled it
-    // In a full implementation, the client should retry with a compatible version
-    common::LOG_WARN("Version negotiation not yet implemented - connection will fail");
+    // Check if our current version is in the list (which would indicate an attack)
+    uint32_t our_version = quic_version_;
+    bool our_version_in_list = false;
 
-    // Mark packet as processed so it doesn't cause errors
+    for (auto version : supported_versions) {
+        if (version == our_version) {
+            // RFC 9000: If our version is listed, this is likely an attack or error
+            // The server should have accepted our Initial packet, not sent VN
+            our_version_in_list = true;
+            common::LOG_WARN("Version Negotiation lists our current version 0x%08x - possible attack!", our_version);
+        }
+    }
+
+    // If our version is in the list, discard the VN packet (per RFC 9000)
+    if (our_version_in_list) {
+        common::LOG_WARN("Discarding Version Negotiation packet - our version was listed (possible downgrade attack)");
+        // Return true to indicate packet was handled (but we're ignoring it)
+        return true;
+    }
+
+    // RFC 9000 Section 6: Version negotiation should only happen once
+    // If we've already performed version negotiation and receive another VN packet,
+    // this indicates a protocol error or infinite loop - close the connection
+    if (version_negotiation_done_) {
+        common::LOG_ERROR("Received Version Negotiation packet after already negotiating version - closing connection");
+        InnerConnectionClose(QuicErrorCode::kProtocolViolation, 0, "Version negotiation attempted multiple times");
+        return true;
+    }
+
+    // Select a compatible version using our preference order
+    uint32_t compatible_version = SelectVersion(supported_versions);
+
+    // Check if we found a compatible version
+    if (compatible_version != 0 && compatible_version != our_version) {
+        common::LOG_INFO("Found compatible version: 0x%08x (%s), will reconnect", compatible_version,
+            VersionToString(compatible_version));
+
+        // Store the negotiated version
+        negotiated_version_ = compatible_version;
+        version_negotiation_needed_ = true;
+
+        // Trigger version negotiation callback if set
+        if (version_negotiation_cb_) {
+            version_negotiation_cb_(compatible_version);
+        } else {
+            // No callback - just close with error
+            common::LOG_WARN("Version negotiation callback not set, closing connection");
+            InnerConnectionClose(
+                QuicErrorCode::kVersionNegotiationError, 0, "Version negotiation required but no handler");
+        }
+    } else {
+        // No compatible version found
+        common::LOG_ERROR("No compatible QUIC version found in server's list");
+        InnerConnectionClose(QuicErrorCode::kVersionNegotiationError, 0, "No compatible QUIC version");
+    }
+
+    // Metrics: Version negotiation event
+    common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
+
     return true;
 }
 
@@ -439,8 +542,14 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
         common::PacketReceivedData data;
         data.packet_number = packet->GetPacketNumber();
         data.packet_type = packet->GetHeader()->GetPacketType();
-        data.packet_size = out_plaintext->GetDataLength();
-        // Frame types will be collected in P3 phase
+        data.packet_size = packet->GetSrcBuffer().GetLength();
+
+        // Populate frame types
+        auto& frames = packet->GetFrames();
+        for (const auto& frame : frames) {
+            data.frames.push_back(static_cast<FrameType>(frame->GetType()));
+        }
+
         QLOG_PACKET_RECEIVED(qlog_trace_, data);
     }
 
@@ -478,7 +587,21 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
 
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     transport_param_.Merge(remote_tp);
+    // send_flow_controller_.UpdateConfig(remote_tp);
+    send_flow_controller_.UpdateConfig(remote_tp);
 
+    // Remember remote transport params for 0-RTT session caching (RFC 9000 Section 7.4.1)
+    has_remote_tp_ = true;
+    remote_initial_max_data_ = remote_tp.GetInitialMaxData();
+    remote_initial_max_streams_bidi_ = remote_tp.GetInitialMaxStreamsBidi();
+    remote_initial_max_streams_uni_ = remote_tp.GetInitialMaxStreamsUni();
+    remote_initial_max_stream_data_bidi_local_ = remote_tp.GetInitialMaxStreamDataBidiLocal();
+    remote_initial_max_stream_data_bidi_remote_ = remote_tp.GetInitialMaxStreamDataBidiRemote();
+    remote_initial_max_stream_data_uni_ = remote_tp.GetInitialMaxStreamDataUni();
+    remote_active_connection_id_limit_ = remote_tp.GetActiveConnectionIdLimit();
+
+    // Update peer's active connection ID limit in coordinator
+    cid_coordinator_->SetPeerActiveConnectionIDLimit(remote_tp.GetActiveConnectionIdLimit());
     // Start idle timeout timer through coordinator
     timer_coordinator_->StartIdleTimer(std::bind(&BaseConnection::OnIdleTimeout, this));
 
@@ -683,6 +806,7 @@ bool BaseConnection::SendImmediate(std::shared_ptr<common::IBuffer> buffer) {
     if (sender_) {
         auto net_packet = std::make_shared<NetPacket>();
         net_packet->SetData(buffer);
+        net_packet->SetSocket(sockfd_);
         net_packet->SetAddress(peer_addr_);
         net_packet->SetTime(common::UTCTimeMsec());
 
@@ -775,6 +899,121 @@ void BaseConnection::RetireConnectionId(ConnectionID& id) {
 void BaseConnection::CheckAndReplenishLocalCIDPool() {
     // Delegate to ConnectionIDCoordinator
     cid_coordinator_->CheckAndReplenishLocalCIDPool();
+}
+
+bool BaseConnection::InitiateMigration() {
+    // RFC 9000 Section 9: Connection Migration (Simple API for interop tests)
+    // This is a convenience wrapper that delegates to the production API.
+    // It keeps the same local IP but gets a new ephemeral port from the system.
+
+    common::LOG_INFO("InitiateMigration: delegating to production API InitiateMigrationTo()");
+
+    // Get current local address
+    std::string current_ip;
+    uint32_t current_port;
+    GetLocalAddr(current_ip, current_port);
+
+    if (current_ip.empty()) {
+        common::LOG_WARN("InitiateMigration: failed to get current local address, using 0.0.0.0");
+        current_ip = "0.0.0.0";
+    }
+
+    // Delegate to production API: same IP, but port=0 means system chooses new port
+    // This creates a real socket switch, which is what production migration does
+    MigrationResult result = InitiateMigrationTo(current_ip, 0);
+
+    bool success = (result == MigrationResult::kSuccess);
+    if (!success) {
+        common::LOG_WARN("InitiateMigration: failed with result %d", static_cast<int>(result));
+    }
+
+    return success;
+}
+
+MigrationResult BaseConnection::InitiateMigrationTo(const std::string& local_ip, uint16_t local_port) {
+    // RFC 9000 Section 9: Connection Migration (Production API)
+    // This implements full client-initiated connection migration with local address change
+
+    common::LOG_INFO("BaseConnection::InitiateMigrationTo: starting migration to %s:%d", local_ip.c_str(), local_port);
+
+    // 1. Check if connection is in a state that allows migration
+    if (!state_machine_.CanSendData()) {
+        common::LOG_WARN("InitiateMigrationTo: connection not in connected state");
+        return MigrationResult::kFailedInvalidState;
+    }
+
+    // 2. Setup callbacks for socket management
+    if (path_manager_) {
+        path_manager_->SetSocketCallbacks(
+            [this]() { return sockfd_; }, [this](int32_t sock) { migration_sockfd_ = sock; });
+
+        // Set migration complete callback to handle socket switch
+        path_manager_->SetMigrationCompleteCallback([this](const MigrationInfo& info) { OnMigrationComplete(info); });
+    }
+
+    // 3. Create address and delegate to PathManager
+    common::Address local_addr(local_ip, local_port);
+
+    if (!path_manager_) {
+        return MigrationResult::kFailedInvalidState;
+    }
+
+    return path_manager_->InitiateMigrationToAddress(local_addr);
+}
+
+void BaseConnection::SetMigrationCallback(migration_callback cb) {
+    migration_cb_ = cb;
+}
+
+void BaseConnection::GetLocalAddr(std::string& addr, uint32_t& port) {
+    // Use IConnection's implementation which queries from socket
+    IConnection::GetLocalAddr(addr, port);
+}
+
+bool BaseConnection::IsMigrationSupported() const {
+    return !transport_param_.GetDisableActiveMigration();
+}
+
+bool BaseConnection::IsMigrationInProgress() const {
+    return path_manager_ && path_manager_->IsPathProbeInflight();
+}
+
+void BaseConnection::OnMigrationComplete(const MigrationInfo& info) {
+    common::LOG_INFO("BaseConnection::OnMigrationComplete: result=%d, is_nat_rebinding=%d",
+        static_cast<int>(info.result_), info.is_nat_rebinding_);
+
+    if (info.result_ == MigrationResult::kSuccess) {
+        // Migration successful: switch to the new socket
+        if (migration_sockfd_ > 0) {
+            int32_t old_sock = sockfd_;
+            sockfd_ = migration_sockfd_;
+            migration_sockfd_ = -1;
+
+            // Update cached local address
+            common::Address new_local;
+            if (GetLocalAddressFromSocket(sockfd_, new_local)) {
+                local_addr_ = new_local;
+            }
+
+            common::LOG_INFO("BaseConnection: switched to migration socket %d (old: %d)", sockfd_, old_sock);
+
+            // Note: The old socket might still be in use by the event loop
+            // We don't close it here - the caller (Worker) should manage socket lifecycle
+        }
+    } else {
+        // Migration failed: cleanup migration socket if any
+        if (migration_sockfd_ > 0) {
+            close(migration_sockfd_);
+            migration_sockfd_ = -1;
+        }
+    }
+
+    // Notify application layer
+    if (migration_cb_) {
+        // Need to cast shared_from_this() to IQuicConnection
+        auto self = std::dynamic_pointer_cast<IQuicConnection>(shared_from_this());
+        migration_cb_(self, info);
+    }
 }
 
 void BaseConnection::OnStateToConnected() {
@@ -902,6 +1141,63 @@ bool BaseConnection::TrySend() {
         return false;
     }
 
+    // 1.5 RFC 9000 §13.3: Retransmit lost packets first
+    // QUIC does not retransmit lost packets directly. Instead, the lost packet
+    // (which still holds its original payload/frames) is re-encoded with a new
+    // packet number and re-encrypted, then sent as a brand-new packet.
+    auto& send_control = send_manager_.GetSendControl();
+    if (send_control.NeedReSend()) {
+        auto& lost_packets = send_control.GetLostPacket();
+        auto lost_pkt = lost_packets.front();
+        lost_packets.pop_front();
+
+        // Determine encryption level and get cryptographer
+        auto crypto_level = lost_pkt->GetCryptoLevel();
+        auto cryptographer = connection_crypto_.GetCryptographer(crypto_level);
+        if (!cryptographer) {
+            common::LOG_WARN("BaseConnection::TrySend: no cryptographer for lost packet level=%d, dropping", crypto_level);
+            return !lost_packets.empty();  // try next lost packet
+        }
+
+        // Check congestion window before retransmitting
+        uint32_t max_bytes = send_manager_.GetAvailableWindow();
+        if (max_bytes == 0) {
+            // Put the packet back for later retransmission
+            lost_packets.push_front(lost_pkt);
+            send_manager_.SetCwndLimited();
+            return false;
+        }
+
+        // Assign new packet number
+        auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
+        uint64_t new_pn = send_manager_.GetPacketNumber().NextPakcetNumber(ns);
+        lost_pkt->SetPacketNumber(new_pn);
+        lost_pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(new_pn));
+        lost_pkt->SetCryptographer(cryptographer);
+
+        // Re-encode with new packet number and fresh encryption
+        auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+        if (!chunk || !chunk->Valid()) {
+            common::LOG_ERROR("BaseConnection::TrySend: failed to allocate buffer for retransmission");
+            return false;
+        }
+        auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+
+        if (!lost_pkt->Encode(buffer)) {
+            common::LOG_ERROR("BaseConnection::TrySend: failed to re-encode lost packet pn=%llu", new_pn);
+            return false;
+        }
+
+        uint32_t encoded_size = buffer->GetDataLength();
+
+        // Record this retransmission in SendControl so it is tracked for ACK/loss
+        send_control.OnPacketSend(common::UTCTimeMsec(), lost_pkt, encoded_size);
+
+        common::LOG_INFO("BaseConnection::TrySend: retransmitted lost packet with new pn=%llu, size=%u", new_pn, encoded_size);
+
+        return SendBuffer(buffer);
+    }
+
     // 2. Get send context (determine encryption level)
     auto send_ctx = encryption_scheduler_->GetNextSendContext();
     common::LOG_DEBUG("BaseConnection::TrySend: selected encryption level=%d", send_ctx.level);
@@ -917,6 +1213,8 @@ bool BaseConnection::TrySend() {
     uint32_t max_bytes = send_manager_.GetAvailableWindow();
     if (max_bytes == 0) {
         common::LOG_DEBUG("BaseConnection::TrySend: congestion window full");
+        // Mark as cwnd limited so that when ACK arrives, send_retry_cb_ will be called
+        send_manager_.SetCwndLimited();
         return false;
     }
 
@@ -949,12 +1247,29 @@ bool BaseConnection::TrySend() {
     build_ctx.cryptographer = cryptographer;
     build_ctx.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
     build_ctx.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
+    build_ctx.quic_version = connection_crypto_.GetVersion();
     build_ctx.frames = std::move(frames);
     build_ctx.stream_manager = stream_manager_.get();
     build_ctx.include_stream_data = has_stream_data;
     build_ctx.add_padding = (send_ctx.level == kInitial);
     build_ctx.min_size = 1200;
     build_ctx.token = send_manager_.GetToken();
+
+    // Set connection-level flow control limit for stream data
+    uint64_t conn_flow_limit = 0;
+    std::shared_ptr<IFrame> blocked_frame;
+    if (send_flow_controller_.CanSendData(conn_flow_limit, blocked_frame)) {
+        // Use minimum of congestion window and flow control limit
+        build_ctx.max_stream_data_size =
+            static_cast<uint32_t>(std::min(static_cast<uint64_t>(max_bytes), conn_flow_limit));
+    } else {
+        // Flow control blocked, don't send stream data
+        build_ctx.max_stream_data_size = 0;
+        if (blocked_frame) {
+            // Queue the DATA_BLOCKED frame
+            send_manager_.ToSendFrame(blocked_frame);
+        }
+    }
 
     // 10. Build packet - allocate buffer chunk first
     auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
@@ -981,7 +1296,21 @@ bool BaseConnection::TrySend() {
     }
 
     // 12. Send buffer
-    return SendBuffer(buffer);
+    bool send_success = SendBuffer(buffer);
+
+    // 13. RFC 9001 Section 6: Check if Key Update should be triggered
+    if (send_success && send_ctx.level == kApplication && key_update_trigger_.IsEnabled()) {
+        if (key_update_trigger_.OnBytesSent(result.packet_size)) {
+            // Trigger key update
+            if (connection_crypto_.TriggerKeyUpdate()) {
+                key_update_trigger_.MarkTriggered();
+                key_update_trigger_.Reset();
+                common::LOG_INFO("Key Update triggered after sending %u bytes", result.packet_size);
+            }
+        }
+    }
+
+    return send_success;
 }
 
 bool BaseConnection::SendBuffer(std::shared_ptr<common::IBuffer> buffer) {
@@ -995,6 +1324,7 @@ bool BaseConnection::SendBuffer(std::shared_ptr<common::IBuffer> buffer) {
         auto packet = std::make_shared<NetPacket>();
         packet->SetData(buffer);
         packet->SetAddress(AcquireSendAddress());
+        packet->SetSocket(sockfd_);
 
         if (!sender_->Send(packet)) {
             common::LOG_ERROR("BaseConnection::SendBuffer: sender_->Send() failed");
@@ -1053,7 +1383,7 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
 
     auto result = packet_builder_->BuildAckPacket(target_level, cryptographer, ack_frame,
         cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
-        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion());
 
     if (!result.success) {
         common::LOG_ERROR("BaseConnection::SendImmediateAck: failed to build packet: %s", result.error_message.c_str());
@@ -1087,7 +1417,7 @@ bool BaseConnection::SendImmediateFrame(std::shared_ptr<IFrame> frame, Encryptio
 
     auto result = packet_builder_->BuildImmediatePacket(frame, level, cryptographer,
         cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
-        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion());
 
     if (!result.success) {
         common::LOG_ERROR(

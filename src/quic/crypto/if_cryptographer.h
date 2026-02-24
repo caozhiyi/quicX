@@ -34,8 +34,14 @@ public:
     virtual CryptographerId GetCipherId() = 0;
 
     virtual Result InstallSecret(const uint8_t* secret, size_t secret_len, bool is_write) = 0;
+    
+    // Version-aware secret installation (uses version-specific labels)
+    virtual Result InstallSecretWithVersion(const uint8_t* secret, size_t secret_len, bool is_write, uint32_t version) = 0;
 
     virtual Result InstallInitSecret(const uint8_t* secret, size_t secret_len, const uint8_t *salt, size_t saltlen, bool is_server) = 0;
+    
+    // Version-aware Initial secret installation (RFC 9369 support)
+    virtual Result InstallInitSecretWithVersion(const uint8_t* secret, size_t secret_len, uint32_t version, bool is_server) = 0;
 
     virtual Result DecryptPacket(uint64_t pn, common::BufferSpan& associated_data, common::BufferSpan& ciphertext,
                              std::shared_ptr<common::IBuffer> out_plaintext) = 0;
@@ -53,6 +59,13 @@ public:
 
     // QUIC Key Update support: rotate secrets with new base secret
     virtual Result KeyUpdate(const uint8_t* new_base_secret, size_t secret_len, bool update_write) = 0;
+    
+    // Version-aware Key Update (RFC 9369)
+    virtual Result KeyUpdateWithVersion(const uint8_t* new_base_secret, size_t secret_len, bool update_write, uint32_t version) = 0;
+    
+    // Set/Get current QUIC version for this cryptographer
+    virtual void SetVersion(uint32_t version) = 0;
+    virtual uint32_t GetVersion() const = 0;
     
     static CryptographerId AdapterCryptographerType(uint32_t cipher_id);
 };

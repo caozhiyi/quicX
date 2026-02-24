@@ -38,10 +38,10 @@ std::string JsonSeqSerializer::SerializeTraceHeader(const std::string& connectio
     oss << "\"configuration\":{";
     oss << "\"time_offset\":" << config.time_offset << ",";
     oss << "\"time_units\":\"" << config.time_units << "\"";
-    oss << "},";
+    oss << "}";  // Close configuration
 
-    // Empty events array (placeholder)
-    oss << "\"events\":[]";
+    // Note: In JSON-SEQ, events are not included in the trace header array.
+    // They follow as separate records.
     oss << "}\n";
 
     return oss.str();

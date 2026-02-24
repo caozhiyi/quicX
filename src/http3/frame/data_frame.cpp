@@ -19,8 +19,8 @@ bool DataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // Encode frame header in a separate scope
     common::BufferEncodeWrapper wrapper(buffer);
 
-    // Encode frame type
-    if (!wrapper.EncodeFixedUint16(type_)) {
+    // Encode frame type (varint per RFC 9114)
+    if (!wrapper.EncodeVarint(type_)) {
         common::LOG_ERROR("DataFrame::Encode: failed to encode frame type");
         return false;
     }
@@ -50,10 +50,12 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
     common::MultiBlockBufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        if (!wrapper.DecodeFixedUint16(type_)) {
+        uint64_t frame_type;
+        if (!wrapper.DecodeVarint(frame_type)) {
             common::LOG_DEBUG("DataFrame::Decode: insufficient data for frame type");
             return DecodeResult::kNeedMoreData;
         }
+        type_ = static_cast<uint16_t>(frame_type);
     }
 
     // Read length
@@ -68,8 +70,8 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
     // Check if we have enough data for the complete frame
     if (wrapper.GetDataLength() < length_) {
         wrapper.CancelDecode();
-        common::LOG_DEBUG("DataFrame::Decode: insufficient data for complete frame (need %u, have %u)",
-            length_, wrapper.GetDataLength());
+        common::LOG_DEBUG("DataFrame::Decode: insufficient data for complete frame (need %u, have %u)", length_,
+            wrapper.GetDataLength());
         return DecodeResult::kNeedMoreData;
     }
 
@@ -78,8 +80,8 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
     // CloneReadable creates a shallow copy and advances the read pointer
     data_ = wrapper.GetBuffer()->CloneReadable(length_);
     if (!data_) {
-        common::LOG_ERROR(
-            "DataFrame::Decode: CloneReadable failed for length %u (buffer has %u)", length_, wrapper.GetBuffer()->GetDataLength());
+        common::LOG_ERROR("DataFrame::Decode: CloneReadable failed for length %u (buffer has %u)", length_,
+            wrapper.GetBuffer()->GetDataLength());
         return DecodeResult::kError;
     }
 
@@ -89,9 +91,8 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
 uint32_t DataFrame::EvaluateEncodeSize() {
     uint32_t size = 0;
 
-    // Frame type size
-    size += sizeof(type_);
-    ;
+    // Frame type size (varint per RFC 9114)
+    size += common::GetEncodeVarintLength(type_);
 
     // Data size (this also updates length_ if it's 0)
     size += EvaluatePayloadSize();

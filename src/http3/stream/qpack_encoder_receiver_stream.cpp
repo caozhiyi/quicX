@@ -19,9 +19,9 @@ QpackEncoderReceiverStream::QpackEncoderReceiverStream(
 }
 
 QpackEncoderReceiverStream::~QpackEncoderReceiverStream() {
-    if (stream_) {
-        stream_->Reset(0);
-    }
+    // Note: Do NOT call stream_->Reset() here during destruction.
+    // See QpackDecoderSenderStream destructor comment for details.
+    stream_.reset();
 }
 
 void QpackEncoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {

@@ -348,7 +348,9 @@ TEST_F(SendStreamTest, TrySendDataFlowControl) {
     // Should only send up to flow control limit
     auto result = stream->TrySendData(&visitor);
 
-    EXPECT_EQ(result, IStream::TrySendResult::kSuccess);
+    // When flow control limits sending, a STREAM_DATA_BLOCKED frame is generated
+    // which causes kBreak to be returned (frame needs to be sent alone)
+    EXPECT_EQ(result, IStream::TrySendResult::kBreak);
 }
 
 // Test 4.4: no data behavior

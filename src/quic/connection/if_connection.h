@@ -28,25 +28,25 @@ public:
     virtual ~IConnection();
 
     //*************** outside interface ***************//
-    virtual void SetUserData(void* user_data) { user_data_ = user_data; }
-    virtual void* GetUserData() { return user_data_; }
+    virtual void SetUserData(void* user_data) override { user_data_ = user_data; }
+    virtual void* GetUserData() override { return user_data_; }
 
-    virtual void GetRemoteAddr(std::string& addr, uint32_t& port);
+    virtual void GetRemoteAddr(std::string& addr, uint32_t& port) override;
 
     // close the connection gracefully. that means all the streams will be closed gracefully.
-    virtual void Close() = 0;
+    virtual void Close() override = 0;
 
     // close the connection immediately. that means all the streams will be closed immediately.
-    virtual void Reset(uint32_t error_code) = 0;
+    virtual void Reset(uint32_t error_code) override = 0;
 
     // create a new stream, only supported send stream and bidirection stream.
-    virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) = 0;
+    virtual std::shared_ptr<IQuicStream> MakeStream(StreamDirection type) override = 0;
     // set the callback function to handle the stream state change.
-    virtual void SetStreamStateCallBack(stream_state_callback cb) { stream_state_cb_ = cb; }
+    virtual void SetStreamStateCallBack(stream_state_callback cb) override { stream_state_cb_ = cb; }
     // add a timer, implementation in BaseConnection
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) = 0;
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) override = 0;
     // remove a timer, implementation in BaseConnection
-    virtual void RemoveTimer(uint64_t timer_id) = 0;
+    virtual void RemoveTimer(uint64_t timer_id) override = 0;
 
     //*************** inner interface ***************//
     virtual void AddTransportParam(const QuicTransportParams& tp_config) = 0;
@@ -82,19 +82,53 @@ public:
     // get destination address for next datagram; default current peer address
     virtual common::Address AcquireSendAddress() { return peer_addr_; }
 
+    // ==================== Connection Migration (RFC 9000 Section 9) ====================
+    
+    // Simple migration API (for interop tests - system chooses new address)
+    virtual bool InitiateMigration() override { return false; }
+    
+    // Full migration API (production use - specify new local address)
+    virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) override {
+        (void)local_ip;
+        (void)local_port;
+        return MigrationResult::kFailedInvalidState;
+    }
+    
+    // Set callback for migration events
+    virtual void SetMigrationCallback(migration_callback cb) override { migration_cb_ = cb; }
+    
+    // Get current local address
+    virtual void GetLocalAddr(std::string& addr, uint32_t& port) override;
+    
+    // Check if migration is supported (peer didn't disable it)
+    virtual bool IsMigrationSupported() const override { return false; }
+    
+    // Check if migration is in progress
+    virtual bool IsMigrationInProgress() const override { return false; }
+    
+    // Internal: Set migration socket for sending during migration
+    virtual void SetMigrationSocket(int32_t sockfd) { migration_sockfd_ = sockfd; }
+    virtual int32_t GetMigrationSocket() const { return migration_sockfd_; }
+    
+    // Internal: Get local address bound to socket
+    virtual bool GetLocalAddressFromSocket(int32_t sockfd, common::Address& addr);
+
     void SetSocket(int32_t sockfd) { sockfd_ = sockfd; }
     int32_t GetSocket() const { return sockfd_; }
 
 protected:
     void* user_data_;
     int32_t sockfd_;
+    int32_t migration_sockfd_{-1};  // Socket used during migration
     common::Address peer_addr_;
+    common::Address local_addr_;    // Cached local address
     // callback
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb_;
     std::function<void(ConnectionID&)> retire_conn_id_cb_;
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb_;
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb_;
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb_;
+    migration_callback migration_cb_;  // Migration event callback
 
     stream_state_callback stream_state_cb_;
 };

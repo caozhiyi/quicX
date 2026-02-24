@@ -1,159 +1,215 @@
 #!/bin/bash
+################################################################################
+# quicX QUIC Interop Runner Endpoint Script
+#
+# Fully compatible with official quic-interop-runner framework
+# Reference: https://github.com/quic-interop/quic-interop-runner
+# Reference: https://github.com/quic-interop/quic-network-simulator
+#
+# Environment variables (set by interop runner):
+#   ROLE          - "server" or "client"
+#   TESTCASE      - test case name (e.g., handshake, transfer, v2)
+#   SERVER_PARAMS - additional server parameters
+#   CLIENT_PARAMS - additional client parameters
+#   REQUESTS      - space-separated URLs for client to download
+#   QLOGDIR       - directory for qlog output
+#   SSLKEYLOGFILE - path for TLS key log
+################################################################################
+
 set -e
 
-# quic-interop-runner endpoint script for quicX
-# This script is called by the interop runner with different test scenarios
-#
-# Environment variables set by interop runner:
-# - ROLE: "client" or "server"
-# - TESTCASE: test scenario name (e.g., "handshake", "transfer", "retry", etc.)
-# - SSLKEYLOGFILE: path to write TLS secrets for Wireshark decryption
-# - QLOGDIR: path to write qlog files
-# - SERVER: server hostname (for client mode)
-# - PORT: server port (for client mode)
-# - REQUESTS: URLs to download (for client mode)
-# - WWW: directory containing files to serve (for server mode)
+# Execute network setup (required by quic-network-simulator)
+# /setup.sh is provided by martenseemann/quic-network-simulator-endpoint base image
+/setup.sh
 
-QUICX_BIN="/quicx/build/bin"
-ROLE="${ROLE:-server}"
-TESTCASE="${TESTCASE:-handshake}"
-PORT="${PORT:-443}"
-WWW="${WWW:-/www}"
-DOWNLOADS="${DOWNLOADS:-/downloads}"
-LOGS="${LOGS:-/logs}"
+# Display version info
+echo "quicX Interop Endpoint"
+echo "======================"
+echo "Git commit: $(cat /commit.txt 2>/dev/null || echo 'unknown')"
+echo "Role: ${ROLE:-server}"
+echo "Test case: ${TESTCASE:-handshake}"
+echo ""
 
-# Generate self-signed certificate for server
-generate_cert() {
-    if [ ! -f /certs/cert.pem ]; then
-        mkdir -p /certs
-        openssl req -x509 -newkey rsa:2048 -nodes \
-            -keyout /certs/key.pem \
-            -out /certs/cert.pem \
-            -days 365 \
-            -subj "/CN=test.example.com"
+# Define supported and unsupported test cases
+# Supported tests: tests that quicX can handle
+SUPPORTED_TESTS="handshake transfer retry resumption zerortt multiplexing versionnegotiation"
+
+# Explicitly unsupported tests
+# http3 requires HTTP/3 protocol (ALPN=h3), but current binary uses hq-interop protocol.
+UNSUPPORTED_TESTS="http3"
+
+# Check if test case is supported
+check_testcase_support() {
+    local testcase=$1
+    
+    # Check if explicitly unsupported
+    for unsupported in $UNSUPPORTED_TESTS; do
+        if [ "$testcase" = "$unsupported" ]; then
+            echo "ERROR: Test case '$testcase' is not supported by quicX"
+            exit 127  # Official convention: unsupported tests exit with 127
+        fi
+    done
+    
+    # Check if in supported list
+    local is_supported=0
+    for supported in $SUPPORTED_TESTS; do
+        if [ "$testcase" = "$supported" ]; then
+            is_supported=1
+            break
+        fi
+    done
+    
+    # If not in supported list, return UNSUPPORTED
+    if [ $is_supported -eq 0 ]; then
+        echo "ERROR: Test case '$testcase' is unknown/unsupported by quicX"
+        echo "Supported tests: $SUPPORTED_TESTS"
+        exit 127  # Official convention: unsupported tests exit with 127
     fi
 }
 
-# Run as server
-run_server() {
-    echo "Starting quicX server on port ${PORT}"
-    echo "Test case: ${TESTCASE}"
-    echo "WWW directory: ${WWW}"
+# Check test case support
+# Official interop-runner uses TESTCASE_CLIENT/TESTCASE_SERVER for compliance checks
+# Use whichever is set (TESTCASE_CLIENT for client role, TESTCASE_SERVER for server role)
+ACTUAL_TESTCASE="${TESTCASE_CLIENT:-${TESTCASE_SERVER:-${TESTCASE:-handshake}}}"
+check_testcase_support "$ACTUAL_TESTCASE"
 
-    generate_cert
-
-    # Build server command based on test case
-    CMD="${QUICX_BIN}/interop_server"
-    CMD+=" --port ${PORT}"
-    CMD+=" --cert /certs/cert.pem"
-    CMD+=" --key /certs/key.pem"
-    CMD+=" --root ${WWW}"
-
-    # Add test-specific flags
-    case "${TESTCASE}" in
-        versionnegotiation)
-            # Server should reject unsupported versions
-            CMD+=" --enforce-version"
-            ;;
-        retry)
-            # Server should send Retry packet
-            CMD+=" --force-retry"
-            ;;
-        resumption)
-            # Server should support session resumption
-            CMD+=" --enable-resumption"
-            ;;
-        zerortt)
-            # Server should accept 0-RTT data
-            CMD+=" --enable-0rtt"
-            ;;
-        multiconnect)
-            # Multiple connections test
-            CMD+=" --max-connections 100"
-            ;;
-        *)
-            # Default server behavior
-            ;;
-    esac
-
-    # Enable QLOG if requested
-    if [ -n "${QLOGDIR}" ]; then
-        CMD+=" --qlog-dir ${QLOGDIR}"
-    fi
-
-    echo "Command: ${CMD}"
-    exec ${CMD}
-}
-
-# Run as client
+# Client mode
 run_client() {
-    echo "Starting quicX client"
-    echo "Test case: ${TESTCASE}"
-    echo "Server: ${SERVER}:${PORT}"
+    echo "Starting quicX client..."
+    echo "Server: ${SERVER}:${PORT:-443}"
     echo "Requests: ${REQUESTS}"
-
+    echo "Downloads: ${DOWNLOADS:-/downloads}"
+    
+    # Wait for network simulator to be ready (required by quic-network-simulator)
+    # /wait-for-it.sh is provided by the base image
+    # Only wait when running inside the network simulator (check if sim is in custom bridge network)
+    # In host network mode (used by interop_runner.py), skip this wait
+    # Check if we're in a custom Docker network by looking for 193.167.x.x addresses
+    if ip addr show | grep -q "193\.167\."; then
+        echo "Network simulator environment detected (custom bridge network), waiting for sim..."
+        if getent hosts sim > /dev/null 2>&1; then
+            /wait-for-it.sh sim:57832 -s -t 30 || true
+        fi
+    else
+        echo "Host network mode detected, skipping network simulator wait."
+    fi
+    
     # Build client command
-    CMD="${QUICX_BIN}/interop_client"
-    CMD+=" --server ${SERVER}"
-    CMD+=" --port ${PORT}"
-    CMD+=" --download-dir ${DOWNLOADS}"
-
-    # Add test-specific flags
-    case "${TESTCASE}" in
+    local cmd="/usr/local/bin/interop_client"
+    # Note: Server hostname and port are automatically extracted from the request URLs
+    cmd+=" --download-dir ${DOWNLOADS:-/downloads}"
+    
+    # Test case specific parameters
+    case "$ACTUAL_TESTCASE" in
         versionnegotiation)
-            # Client requests unsupported version
-            CMD+=" --force-version 0x1a2a3a4a"
+            cmd+=" --force-version 0x1a2a3a4a"
             ;;
         retry)
-            # Client should handle Retry packet
-            CMD+=" --enable-retry"
+            cmd+=" --expect-retry"
             ;;
         resumption)
-            # Client should resume previous session
-            CMD+=" --enable-resumption"
+            cmd+=" --session-cache /tmp/session"
+            cmd+=" --resumption"
             ;;
         zerortt)
-            # Client should send 0-RTT data
-            CMD+=" --enable-0rtt"
+            cmd+=" --session-cache /tmp/session"
+            cmd+=" --zerortt"
+            ;;
+        chacha20)
+            cmd+=" --cipher TLS_CHACHA20_POLY1305_SHA256"
+            ;;
+        keyupdate)
+            cmd+=" --force-keyupdate"
+            ;;
+        v2)
+            cmd+=" --quic-version 2"
             ;;
         http3)
-            # HTTP/3 test
-            CMD+=" --http3"
-            ;;
-        multiconnect)
-            # Multiple connections
-            CMD+=" --connections 100"
-            ;;
-        *)
-            # Default client behavior
+            cmd+=" --http3"
             ;;
     esac
-
-    # Enable QLOG if requested
+    
+    # Enable QLOG
     if [ -n "${QLOGDIR}" ]; then
-        CMD+=" --qlog-dir ${QLOGDIR}"
+        cmd+=" --qlog-dir ${QLOGDIR}"
     fi
-
-    # Add URLs to download
+    
+    # Pass additional client parameters (from official runner)
+    if [ -n "${CLIENT_PARAMS}" ]; then
+        cmd+=" ${CLIENT_PARAMS}"
+    fi
+    
+    # Add request URLs
     for url in ${REQUESTS}; do
-        CMD+=" ${url}"
+        cmd+=" ${url}"
     done
-
-    echo "Command: ${CMD}"
-    exec ${CMD}
+    
+    echo "Command: $cmd"
+    exec $cmd
 }
 
-# Main
+# Server mode
+run_server() {
+    echo "Starting quicX server..."
+    echo "Port: ${PORT:-443}"
+    echo "WWW: ${WWW:-/www}"
+    
+    # Build server command
+    local cmd="/usr/local/bin/interop_server"
+    cmd+=" --port ${PORT:-443}"
+    cmd+=" --root ${WWW:-/www}"
+    
+    # Use official standard certificate paths (/certs is mounted by runner)
+    cmd+=" --cert /certs/cert.pem"
+    cmd+=" --key /certs/priv.key"
+    
+    # Test case specific parameters
+    case "$ACTUAL_TESTCASE" in
+        retry)
+            cmd+=" --force-retry"
+            ;;
+        resumption|zerortt)
+            cmd+=" --enable-resumption"
+            cmd+=" --enable-0rtt"
+            ;;
+        chacha20)
+            cmd+=" --cipher TLS_CHACHA20_POLY1305_SHA256"
+            ;;
+        keyupdate)
+            cmd+=" --enable-keyupdate"
+            ;;
+        versionnegotiation)
+            cmd+=" --strict-version"
+            ;;
+        v2)
+            cmd+=" --quic-version 2"
+            ;;
+    esac
+    
+    # Enable QLOG
+    if [ -n "${QLOGDIR}" ]; then
+        cmd+=" --qlog-dir ${QLOGDIR}"
+    fi
+    
+    # Pass additional server parameters (from official runner)
+    if [ -n "${SERVER_PARAMS}" ]; then
+        cmd+=" ${SERVER_PARAMS}"
+    fi
+    
+    echo "Command: $cmd"
+    exec $cmd
+}
+
+# Main logic
 case "${ROLE}" in
-    server)
-        run_server
-        ;;
     client)
         run_client
         ;;
+    server|"")
+        run_server
+        ;;
     *)
-        echo "Unknown role: ${ROLE}"
-        echo "Must be 'server' or 'client'"
+        echo "ERROR: Unknown role '${ROLE}'. Must be 'client' or 'server'."
         exit 1
         ;;
 esac

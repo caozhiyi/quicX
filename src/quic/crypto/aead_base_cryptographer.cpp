@@ -30,32 +30,41 @@ AeadBaseCryptographer::~AeadBaseCryptographer() {
 }
 
 ICryptographer::Result AeadBaseCryptographer::InstallSecret(const uint8_t* secret, size_t secret_len, bool is_write) {
+    // Default to using stored version
+    return InstallSecretWithVersion(secret, secret_len, is_write, quic_version_);
+}
+
+ICryptographer::Result AeadBaseCryptographer::InstallSecretWithVersion(
+    const uint8_t* secret, size_t secret_len, bool is_write, uint32_t version) {
     Secret& dest_secret = is_write ? write_secret_ : read_secret_;
+
+    // Get version-specific labels
+    QuicLabels labels = GetQuicLabels(version);
 
     // make packet protect key
     dest_secret.key_.resize(aead_key_length_);
-    size_t len = 0;
-    if (!Hkdf::HkdfExpand(dest_secret.key_.data(), aead_key_length_, secret, secret_len, kTlsLabelKey.data(),
-            kTlsLabelKey.size(), digest_)) {
+    if (!Hkdf::HkdfExpand(dest_secret.key_.data(), aead_key_length_, secret, secret_len,
+            labels.key, labels.key_len, digest_)) {
         CleanSecret(dest_secret);
         return Result::kDeriveFailed;
     }
 
     // make packet protect iv
     dest_secret.iv_.resize(aead_iv_length_);
-    if (!Hkdf::HkdfExpand(dest_secret.iv_.data(), aead_iv_length_, secret, secret_len, kTlsLabelIv.data(),
-            kTlsLabelIv.size(), digest_)) {
+    if (!Hkdf::HkdfExpand(dest_secret.iv_.data(), aead_iv_length_, secret, secret_len,
+            labels.iv, labels.iv_len, digest_)) {
         CleanSecret(dest_secret);
         return Result::kDeriveFailed;
     }
 
-    // make header protext key
+    // make header protect key
     dest_secret.hp_.resize(cipher_key_length_);
-    if (!Hkdf::HkdfExpand(dest_secret.hp_.data(), cipher_key_length_, secret, secret_len, kTlsLabelHp.data(),
-            kTlsLabelHp.size(), digest_)) {
+    if (!Hkdf::HkdfExpand(dest_secret.hp_.data(), cipher_key_length_, secret, secret_len,
+            labels.hp, labels.hp_len, digest_)) {
         CleanSecret(dest_secret);
         return Result::kDeriveFailed;
     }
+    
     // Initialize or refresh cached contexts
     if (is_write) {
         write_aead_ctx_.reset(
@@ -77,8 +86,14 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecret(const uint8_t* secre
 
 ICryptographer::Result AeadBaseCryptographer::KeyUpdate(
     const uint8_t* new_base_secret, size_t secret_len, bool update_write) {
+    // Use stored version
+    return KeyUpdateWithVersion(new_base_secret, secret_len, update_write, quic_version_);
+}
+
+ICryptographer::Result AeadBaseCryptographer::KeyUpdateWithVersion(
+    const uint8_t* new_base_secret, size_t secret_len, bool update_write, uint32_t version) {
     // RFC 9001 §6: next_secret = HKDF-Expand-Label(current_secret, "tls13 quic ku", "", hash_len)
-    // Here we allow caller to pass a base secret; if null, derive from current read/write secret.
+    // RFC 9369: For v2, use "tls13 quicv2 ku" label
     const Secret& current = update_write ? write_secret_ : read_secret_;
     std::vector<uint8_t> base;
     if (new_base_secret && secret_len > 0) {
@@ -87,14 +102,18 @@ ICryptographer::Result AeadBaseCryptographer::KeyUpdate(
         // Use current key as input secret for ku step (same hash as digest_)
         base = current.key_;
     }
+    
+    // Get version-specific labels
+    QuicLabels labels = GetQuicLabels(version);
+    
     size_t hash_len = EVP_MD_size(digest_);
     std::vector<uint8_t> next_secret(hash_len);
-    if (!Hkdf::HkdfExpand(next_secret.data(), next_secret.size(), base.data(), base.size(), kTlsLabelKu.data(),
-            kTlsLabelKu.size(), digest_)) {
+    if (!Hkdf::HkdfExpand(next_secret.data(), next_secret.size(), base.data(), base.size(),
+            labels.ku, labels.ku_len, digest_)) {
         return Result::kDeriveFailed;
     }
     // Reinstall secrets using next_secret
-    auto r = InstallSecret(next_secret.data(), next_secret.size(), update_write);
+    auto r = InstallSecretWithVersion(next_secret.data(), next_secret.size(), update_write, version);
     if (r == Result::kOk) key_updated_flag_ = true;
     return r;
 }
@@ -119,8 +138,10 @@ ICryptographer::Result AeadBaseCryptographer::InstallInitSecret(
     const uint8_t* write_label = kTlsLabelServer.data();
     size_t write_label_len = kTlsLabelServer.size();
 
-    if (!is_server) std::swap(read_label, write_label);
-    if (!is_server) std::swap(read_label_len, write_label_len);
+    if (!is_server) {
+        std::swap(read_label, write_label);
+        std::swap(read_label_len, write_label_len);
+    }
 
     uint8_t init_read_secret[kMaxInitSecretLength] = {0};
     if (!Hkdf::HkdfExpand(init_read_secret, kMaxInitSecretLength, init_secret, kMaxInitSecretLength, read_label,
@@ -134,25 +155,30 @@ ICryptographer::Result AeadBaseCryptographer::InstallInitSecret(
         return Result::kDeriveFailed;
     }
 
-    // DEBUG: Print derived secrets to compare with Nginx
-    char client_secret_hex[65] = {0};
-    char server_secret_hex[65] = {0};
-    for (int i = 0; i < 32; i++) {
-        sprintf(client_secret_hex + i * 2, "%02x", init_read_secret[i]);
-        sprintf(server_secret_hex + i * 2, "%02x", init_write_secret[i]);
-    }
-    common::LOG_ERROR("QUIC Initial Secrets (is_server=%d):\n  client_secret: %s\n  server_secret: %s", is_server,
-        client_secret_hex, server_secret_hex);
-
-    if (InstallSecret(init_read_secret, kMaxInitSecretLength, false) != Result::kOk) {
+    // Use version-aware secret installation (default labels for Initial are same in v1/v2)
+    if (InstallSecretWithVersion(init_read_secret, kMaxInitSecretLength, false, quic_version_) != Result::kOk) {
         return Result::kDeriveFailed;
     }
 
-    if (InstallSecret(init_write_secret, kMaxInitSecretLength, true) != Result::kOk) {
+    if (InstallSecretWithVersion(init_write_secret, kMaxInitSecretLength, true, quic_version_) != Result::kOk) {
         return Result::kDeriveFailed;
     }
 
     return Result::kOk;
+}
+
+ICryptographer::Result AeadBaseCryptographer::InstallInitSecretWithVersion(
+    const uint8_t* secret, size_t secret_len, uint32_t version, bool is_server) {
+    // Store version for future operations
+    quic_version_ = version;
+    
+    // Get version-specific salt
+    const uint8_t* salt = GetInitialSalt(version);
+    size_t salt_len = GetInitialSaltLength(version);
+    
+    common::LOG_INFO("Installing Initial secret with version 0x%08x", version);
+    
+    return InstallInitSecret(secret, secret_len, salt, salt_len, is_server);
 }
 
 ICryptographer::Result AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data,
@@ -181,6 +207,7 @@ ICryptographer::Result AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number,
     size_t out_length = 0;
     auto tag_length = aead_tag_length_;
     auto out_span = out_plaintext->GetWritableSpan();
+
     if (EVP_AEAD_CTX_open(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce, read_secret_.iv_.size(),
             ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(),
             associated_data.GetLength()) != 1) {
@@ -247,15 +274,19 @@ ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& 
 
     // remove protection for first byte
     uint8_t* pos = ciphertext.GetStart();
+    uint8_t old_flag = *pos;
     if (is_short) {
         *pos = *pos ^ (mask[0] & 0x1f);
 
     } else {
         *pos = *pos ^ (mask[0] & 0x0f);
     }
+    uint8_t new_flag = *pos;
 
-    // get length of packet number
-    out_packet_num_len = (*pos & 0x03);
+    // get length of packet number from header flags
+    // RFC 9000: The 2-bit field encodes (actual_length - 1)
+    uint8_t stored_pn_len = (*pos & 0x03);
+    out_packet_num_len = stored_pn_len + 1;  // Convert to actual length
 
     // remove protection for packet number
     uint8_t* pkt_number_pos = pos + pn_offset;
@@ -341,6 +372,7 @@ bool AeadBaseCryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, st
 #endif
         if (!chacha) {
             // Not available at compile time; cannot produce mask deterministically here
+            common::LOG_ERROR("ChaCha20 not available");
             return false;
         }
         if (EVP_EncryptInit_ex(tmp.get(), chacha, nullptr, key.data(), iv) != 1) return false;

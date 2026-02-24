@@ -15,6 +15,7 @@ struct PacketParseResult {
     ConnectionID cid_;
     std::shared_ptr<NetPacket> net_packet_;
     std::vector<std::shared_ptr<IPacket>> packets_;
+    uint32_t datagram_size_ = 0;  // Original UDP datagram size before DecodePackets consumes the buffer
 
     PacketParseResult() = default;
     PacketParseResult(const PacketParseResult& other);

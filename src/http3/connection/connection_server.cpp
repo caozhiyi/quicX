@@ -22,7 +22,9 @@ namespace http3 {
 ServerConnection::ServerConnection(const std::string& unique_id, const Http3Settings& settings,
     const std::shared_ptr<IHttpProcessor>& http_processor, std::shared_ptr<IQuicServer> quic_server,
     const std::shared_ptr<IQuicConnection>& quic_connection,
-    const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler):
+    const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
+    uint64_t max_concurrent_streams,
+    bool enable_push):
     IConnection(unique_id, quic_connection, error_handler),
     http_processor_(http_processor),
     quic_server_(quic_server),
@@ -30,6 +32,9 @@ ServerConnection::ServerConnection(const std::string& unique_id, const Http3Sett
     next_push_id_(0),
     send_limit_push_id_(0),
     push_timer_active_(false) {  // No active timer initially
+    // Store local connection limits
+    max_concurrent_streams_ = max_concurrent_streams;
+    enable_push_ = enable_push;
 
     // create control stream
     auto control_stream = quic_connection_->MakeStream(StreamDirection::kSend);
@@ -111,7 +116,7 @@ ServerConnection::ServerConnection(const std::string& unique_id, const Http3Sett
 ServerConnection::~ServerConnection() {}
 
 bool ServerConnection::SendPush(uint64_t push_id, std::shared_ptr<IResponse> response) {
-    if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
+    if (streams_.size() >= max_concurrent_streams_) {
         common::LOG_ERROR("ServerConnection::SendPush max concurrent streams reached");
         return false;
     }
@@ -193,7 +198,7 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
     }
 
     // Check stream limit
-    if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
+    if (streams_.size() >= max_concurrent_streams_) {
         common::LOG_ERROR("ServerConnection::HandleStream max concurrent streams reached");
         Close(Http3ErrorCode::kStreamCreationError);
         return;
@@ -433,7 +438,7 @@ void ServerConnection::HandleTimer() {
 }
 
 bool ServerConnection::IsEnabledPush() const {
-    return settings_.find(SettingsType::kEnablePush) != settings_.end() && settings_.at(SettingsType::kEnablePush) == 1;
+    return enable_push_;
 }
 
 bool ServerConnection::CanPush() const {

@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "common/metrics/metrics.h"
 
 #include "quic/include/if_quic_server.h"
 
@@ -18,7 +19,7 @@ namespace http3 {
 
 Server::Server(const Http3Settings& settings):
     settings_(settings) {
-    quic_ = IQuicServer::Create();
+    quic_ = IQuicServer::Create(settings.quic_transport_params_);
     router_ = std::make_shared<Router>();
     quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this, std::placeholders::_1,
         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
@@ -29,34 +30,32 @@ Server::~Server() {
 }
 
 bool Server::Init(const Http3ServerConfig& config) {
-    QuicServerConfig quic_config;
-    if ((config.cert_pem_ == nullptr || config.key_pem_ == nullptr) &&
-        (config.cert_file_.empty() || config.key_file_.empty())) {
+    // Store config for later use
+    config_ = config;
+
+    // Basic validation (though QuicServer might handle it)
+    if ((config.quic_config_.cert_pem_ == nullptr || config.quic_config_.key_pem_ == nullptr) &&
+        (config.quic_config_.cert_file_.empty() || config.quic_config_.key_file_.empty())) {
         common::LOG_ERROR("cert file or cert pem and key file or key pem must be set.");
         return false;
     }
 
-    if (config.cert_pem_ != nullptr && config.key_pem_ != nullptr) {
-        quic_config.cert_pem_ = config.cert_pem_;
-        quic_config.key_pem_ = config.key_pem_;
-    } else {
-        quic_config.cert_file_ = config.cert_file_;
-        quic_config.key_file_ = config.key_file_;
-    }
+    // Copy the config and enforce ALPN
+    QuicServerConfig quic_config = config.quic_config_;
     quic_config.alpn_ = kHttp3Alpn;
-    quic_config.config_.worker_thread_num_ = config.config_.thread_num_;
-    quic_config.config_.log_level_ = LogLevel(config.config_.log_level_);
-    quic_config.config_.enable_ecn_ = config.config_.enable_ecn_;
 
     if (!quic_->Init(quic_config)) {
         common::LOG_ERROR("init quic server failed.");
         return false;
     }
 
+    // Initialize global metrics
+    common::Metrics::Initialize(config.metrics_);
+
     // Auto-register metrics endpoint if enabled
-    if (config.config_.metrics_.enable) {
-        AddHandler(HttpMethod::kGet, config.config_.metrics_.path, MetricsHandler::Handle);
-        common::LOG_INFO("Metrics endpoint registered at %s", config.config_.metrics_.path.c_str());
+    if (config.metrics_.http_enable) {
+        AddHandler(HttpMethod::kGet, config.metrics_.http_path, MetricsHandler::Handle);
+        common::LOG_INFO("Metrics endpoint registered at %s", config.metrics_.http_path.c_str());
     }
 
     return true;
@@ -109,7 +108,11 @@ void Server::OnConnection(
 
     // create a new server connection
     auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, shared_from_this(), quic_, conn,
-        std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2));
+        std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2),
+        config_.max_concurrent_streams_, config_.enable_push_);
+
+    // Initialize connection (starts timers)
+    server_conn->Init();
 
     conn_map_[unique_id] = server_conn;
 }

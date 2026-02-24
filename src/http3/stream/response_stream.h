@@ -49,9 +49,14 @@ public:
     void SendPushPromise(const std::unordered_map<std::string, std::string>& headers, int32_t push_id);
     bool SendResponse(std::shared_ptr<IResponse> response);
 
+    // ResponseStream should signal completion after sending response body
+    // because the server's job is done after sending the response
+    bool ShouldSignalCompletionAfterSend() const override { return true; }
+
 private:
     virtual void HandleHeaders() override;
     virtual void HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) override;
+    virtual void HandleFinWithoutData() override;
     // call upper layer handler
     void HandleHttp(
         std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> handler);

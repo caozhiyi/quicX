@@ -1,9 +1,48 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_SERVER
 #define QUIC_INCLUDE_IF_QUIC_SERVER
 
+#include <cstdint>
+#include <string>
 #include "quic/include/type.h"
 
 namespace quicx {
+
+/**
+ * @brief Retry policy enumeration.
+ *
+ * According to RFC 9000 Section 8.1, Retry is an optional address validation
+ * mechanism. Servers should decide dynamically based on load and security posture.
+ *
+ * - NEVER:     Never send Retry packets (performance priority, trusted environment)
+ * - SELECTIVE: Smart selection based on connection rate and IP frequency (recommended)
+ * - ALWAYS:    Always send Retry for new connections (security priority, testing)
+ */
+enum class RetryPolicy {
+    NEVER,      ///< Never send Retry packets
+    SELECTIVE,  ///< Dynamically decide based on server load and IP behavior
+    ALWAYS      ///< Always send Retry for connections without valid token
+};
+
+/**
+ * @brief Configuration for SELECTIVE retry policy mode.
+ *
+ * These parameters control when Retry packets are sent in SELECTIVE mode:
+ * - Connection rate threshold: triggers Retry when new connections/sec exceeds this
+ * - IP rate threshold: marks an IP as suspicious if it exceeds this rate
+ */
+struct SelectiveRetryConfig {
+    /** Connection rate threshold (connections/second). Retry enabled when exceeded. */
+    uint32_t rate_threshold_ = 1000;
+
+    /** Per-IP rate threshold (connections/minute). IP marked suspicious when exceeded. */
+    uint32_t ip_rate_threshold_ = 100;
+
+    /** Maximum number of IP entries in the LRU cache. */
+    uint32_t ip_cache_size_ = 10000;
+
+    /** Time window for IP rate tracking (seconds). */
+    uint32_t ip_window_seconds_ = 60;
+};
 
 /**
  * @brief Server-side configuration bundle.
@@ -26,10 +65,19 @@ struct QuicServerConfig {
     /** Session ticket validity window in seconds (default: 2 days). */
     uint32_t session_ticket_timeout_ = 172800;
 
-    /** Retry configuration */
-    bool force_retry_ = false;            // Force Retry for all connections (testing)
-    bool enable_retry_ = true;            // Enable Retry mechanism
-    uint32_t retry_token_lifetime_ = 60;  // Retry token lifetime in seconds
+    /**
+     * @brief Retry policy configuration.
+     *
+     * Replaces the previous force_retry_ and enable_retry_ flags with a unified
+     * policy-based approach per RFC 9000 recommendations.
+     */
+    RetryPolicy retry_policy_ = RetryPolicy::SELECTIVE;
+
+    /** Configuration for SELECTIVE retry policy mode. */
+    SelectiveRetryConfig selective_retry_config_;
+
+    /** Retry token lifetime in seconds. */
+    uint32_t retry_token_lifetime_ = 60;
 
     /** Transport/runtime knobs (threading, logging, congestion control, etc.). */
     QuicConfig config_;

@@ -11,8 +11,6 @@ namespace common {
 // Global enable flag for fast check
 static bool g_metrics_enabled = false;
 
-// --- Metrics Class Implementation ---
-
 bool Metrics::Initialize(const MetricsConfig& config) {
     g_metrics_enabled = config.enable;
 

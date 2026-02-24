@@ -14,9 +14,9 @@ ControlSenderStream::ControlSenderStream(const std::shared_ptr<IQuicSendStream>&
 }
 
 ControlSenderStream::~ControlSenderStream() {
-    if (stream_) {
-        stream_->Close();
-    }
+    // Note: Do NOT call stream_->Close() here during destruction.
+    // See QpackDecoderSenderStream destructor comment for details.
+    stream_.reset();
 }
 
 bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {

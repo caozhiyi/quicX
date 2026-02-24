@@ -1,6 +1,9 @@
+#include <algorithm>
+
 #include "http3/http/response.h"
 #include "common/buffer/multi_block_buffer.h"
 #include "quic/quicx/global_resource.h"
+
 
 namespace quicx {
 
@@ -10,12 +13,22 @@ std::shared_ptr<IResponse> IResponse::Create() {
 
 namespace http3 {
 
+// Helper function to convert header name to lowercase (HTTP/2 and HTTP/3 requirement)
+static std::string ToLowerCase(const std::string& str) {
+    std::string result = str;
+    std::transform(result.begin(), result.end(), result.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return result;
+}
+
 void Response::AddHeader(const std::string& name, const std::string& value) {
-    headers_[name] = value;
+    // HTTP/2 and HTTP/3 require header names to be lowercase
+    headers_[ToLowerCase(name)] = value;
 }
 
 bool Response::GetHeader(const std::string& name, std::string& value) const {
-    auto it = headers_.find(name);
+    // Search with lowercase key for case-insensitive matching
+    auto it = headers_.find(ToLowerCase(name));
     if (it != headers_.end()) {
         value = it->second;
         return true;

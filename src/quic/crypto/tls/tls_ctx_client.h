@@ -1,6 +1,7 @@
 #ifndef QUIC_CRYPTO_TLS_TLS_CLIENT_CTX
 #define QUIC_CRYPTO_TLS_TLS_CLIENT_CTX
 
+#include <string>
 #include "quic/crypto/tls/tls_ctx.h"
 
 namespace quicx {
@@ -12,7 +13,8 @@ public:
     TLSClientCtx();
     ~TLSClientCtx();
     // init ssl library and create global ssl ctx
-    virtual bool Init(bool enable_early_data);
+    // cipher_suites: TLS 1.3 cipher suites string (e.g., "TLS_CHACHA20_POLY1305_SHA256")
+    virtual bool Init(bool enable_early_data, const std::string& cipher_suites = "");
 };
 
 }
