@@ -41,28 +41,57 @@ SysCallInt32Result Close(int32_t sockfd) {
 }
 
 SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
-    if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp() == "::") {
-        struct sockaddr_in6 addr_in6;
-        memset(&addr_in6, 0, sizeof(addr_in6));
-        addr_in6.sin6_family = AF_INET6;
-        addr_in6.sin6_port = htons(addr.GetPort());
-        inet_pton(AF_INET6, addr.GetIp().c_str(), &addr_in6.sin6_addr);
-        const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
-        return {rc, rc != -1 ? 0 : errno};
+    // Get the socket's address family
+    struct sockaddr_storage ss;
+    socklen_t len = sizeof(ss);
+    if (getsockname(sockfd, (struct sockaddr*)&ss, &len) == 0) {
+        // Socket already bound or we can determine its family
+        // Use the socket family if available
     }
-    // For IPv4 addresses on a dual-stack socket, use IPv4-mapped IPv6 address
-    struct sockaddr_in6 addr_in6;
-    memset(&addr_in6, 0, sizeof(addr_in6));
-    addr_in6.sin6_family = AF_INET6;
-    addr_in6.sin6_port = htons(addr.GetPort());
+    
+    // Determine socket family by attempting to get socket option
+    int domain = 0;
+    socklen_t domain_len = sizeof(domain);
+    if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, &domain, &domain_len) == 0) {
+        if (domain == AF_INET6) {
+            // IPv6 socket
+            if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp() == "::") {
+                struct sockaddr_in6 addr_in6;
+                memset(&addr_in6, 0, sizeof(addr_in6));
+                addr_in6.sin6_family = AF_INET6;
+                addr_in6.sin6_port = htons(addr.GetPort());
+                inet_pton(AF_INET6, addr.GetIp().c_str(), &addr_in6.sin6_addr);
+                const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
+                return {rc, rc != -1 ? 0 : errno};
+            }
+            // For IPv4 addresses on a dual-stack socket, use IPv4-mapped IPv6 address
+            struct sockaddr_in6 addr_in6;
+            memset(&addr_in6, 0, sizeof(addr_in6));
+            addr_in6.sin6_family = AF_INET6;
+            addr_in6.sin6_port = htons(addr.GetPort());
+            if (addr.GetIp() == "0.0.0.0" || addr.GetIp().empty()) {
+                addr_in6.sin6_addr = in6addr_any;
+            } else {
+                // Convert IPv4 to IPv4-mapped IPv6: ::ffff:x.x.x.x
+                std::string mapped = "::ffff:" + addr.GetIp();
+                inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
+            }
+            const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
+            return {rc, rc != -1 ? 0 : errno};
+        }
+    }
+    
+    // Default to IPv4 for AF_INET sockets
+    struct sockaddr_in addr_in;
+    memset(&addr_in, 0, sizeof(addr_in));
+    addr_in.sin_family = AF_INET;
+    addr_in.sin_port = htons(addr.GetPort());
     if (addr.GetIp() == "0.0.0.0" || addr.GetIp().empty()) {
-        addr_in6.sin6_addr = in6addr_any;
+        addr_in.sin_addr.s_addr = INADDR_ANY;
     } else {
-        // Convert IPv4 to IPv4-mapped IPv6: ::ffff:x.x.x.x
-        std::string mapped = "::ffff:" + addr.GetIp();
-        inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
+        inet_pton(AF_INET, addr.GetIp().c_str(), &addr_in.sin_addr);
     }
-    const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
+    const int32_t rc = bind(sockfd, (sockaddr*)&addr_in, sizeof(addr_in));
     return {rc, rc != -1 ? 0 : errno};
 }
 
