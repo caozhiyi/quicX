@@ -25,10 +25,10 @@ protected:
         server_ = quicx::IServer::Create();
 
         quicx::Http3ServerConfig server_config;
-        server_config.cert_pem_ = cert_pem_;
-        server_config.key_pem_ = key_pem_;
-        server_config.config_.thread_num_ = 4;
-        server_config.config_.log_level_ = quicx::LogLevel::kError;
+        server_config.quic_config_.cert_pem_ = cert_pem_;
+        server_config.quic_config_.key_pem_ = key_pem_;
+        server_config.quic_config_.config_.worker_thread_num_ = 4;
+        server_config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
         ASSERT_TRUE(server_->Init(server_config));
 
@@ -106,9 +106,9 @@ TEST_F(StressTest, HighConcurrency) {
         threads.emplace_back([&, i]() {
             auto client = quicx::IClient::Create();
 
-            quicx::Http3Config config;
-            config.thread_num_ = 1;
-            config.log_level_ = quicx::LogLevel::kError;
+            quicx::Http3ClientConfig config;
+            config.quic_config_.config_.worker_thread_num_ = 1;
+            config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
             if (!client->Init(config)) {
                 return;
@@ -172,9 +172,9 @@ TEST_F(StressTest, SustainedLoad) {
         threads.emplace_back([&]() {
             auto client = quicx::IClient::Create();
 
-            quicx::Http3Config config;
-            config.thread_num_ = 1;
-            config.log_level_ = quicx::LogLevel::kError;
+            quicx::Http3ClientConfig config;
+            config.quic_config_.config_.worker_thread_num_ = 1;
+            config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
             if (!client->Init(config)) {
                 return;
@@ -226,9 +226,9 @@ TEST_F(StressTest, SustainedLoad) {
 TEST_F(StressTest, LargeDataTransfer) {
     auto client = quicx::IClient::Create();
 
-    quicx::Http3Config config;
-    config.thread_num_ = 2;
-    config.log_level_ = quicx::LogLevel::kError;
+    quicx::Http3ClientConfig config;
+    config.quic_config_.config_.worker_thread_num_ = 2;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
     ASSERT_TRUE(client->Init(config));
 

@@ -159,7 +159,6 @@ uint64_t TimerCoordinator::AddTimer(TimerCallback callback, uint32_t timeout_ms)
     }
 
     uint64_t timer_id = event_loop_->AddTimer(callback, timeout_ms);
-    common::LOG_DEBUG("TimerCoordinator: added user timer %llu with timeout %u ms", timer_id, timeout_ms);
 
     return timer_id;
 }

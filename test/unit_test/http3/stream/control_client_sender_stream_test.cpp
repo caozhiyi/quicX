@@ -160,7 +160,7 @@ TEST_F(ControlClientSenderStreamTest, SendGoAway) {
 }   
 
 TEST_F(ControlClientSenderStreamTest, SendSettings) {
-    std::unordered_map<uint16_t, uint64_t> settings = {{SettingsType::kMaxHeaderListSize, 100}, {SettingsType::kMaxConcurrentStreams, 200}};
+    std::unordered_map<uint16_t, uint64_t> settings = {{SettingsType::kMaxFieldSectionSize, 100}, {SettingsType::kQpackMaxTableCapacity, 4096}};
     client_connection_->SendSettings(settings);
     EXPECT_EQ(server_connection_->GetSettings(), settings);
 }

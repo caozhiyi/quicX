@@ -284,6 +284,11 @@ uint32_t SendManager::GetAvailableWindow() {
     return static_cast<uint32_t>(can_send_size);
 }
 
+void SendManager::SetCwndLimited() {
+    is_cwnd_limited_ = true;
+    common::LOG_DEBUG("SendManager::SetCwndLimited: marked as cwnd limited, will resume on ACK");
+}
+
 std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLevel level, uint32_t max_bytes) {
     std::vector<std::shared_ptr<IFrame>> result;
     uint32_t total_bytes = 0;
@@ -300,8 +305,23 @@ std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLev
         }
 
         // Check if frame is suitable for this encryption level
-        // TODO: Add proper encryption level filtering if needed
-        // For now, assume all frames in wait_frame_list_ are suitable
+        if (level != EncryptionLevel::kApplication) {
+            FrameType type = static_cast<FrameType>(frame->GetType());
+            bool allowed = false;
+            // RFC 9000 Section 12.1: Packet Protection
+            // Initial/Handshake only allow ACK, CRYPTO, PADDING, PING, CONNECTION_CLOSE
+            if (type == FrameType::kAck || type == FrameType::kAckEcn || type == FrameType::kCrypto ||
+                type == FrameType::kConnectionClose || type == FrameType::kPadding || type == FrameType::kPing) {
+                allowed = true;
+            }
+
+            if (!allowed) {
+                // usage of other frames is forbidden in Initial/Handshake packets
+                common::LOG_DEBUG("SendManager::GetPendingFrames: skipping frame type %d for level %d", type, level);
+                ++iter;
+                continue;
+            }
+        }
 
         result.push_back(frame);
         total_bytes += frame_size;

@@ -17,7 +17,7 @@
 namespace quicx {
 namespace http3 {
 
-static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>()>> kFrameCreatorMap = {
+static const std::unordered_map<uint64_t, std::function<std::shared_ptr<IFrame>()>> kFrameCreatorMap = {
     {FrameType::kData, []() -> std::shared_ptr<IFrame> { return std::make_shared<DataFrame>(); }},
     {FrameType::kHeaders, []() -> std::shared_ptr<IFrame> { return std::make_shared<HeadersFrame>(); }},
     {FrameType::kCancelPush, []() -> std::shared_ptr<IFrame> { return std::make_shared<CancelPushFrame>(); }},
@@ -30,7 +30,8 @@ static const std::unordered_map<uint16_t, std::function<std::shared_ptr<IFrame>(
 FrameDecoder::FrameDecoder():
     state_(State::kReadingFrameType),
     current_frame_(nullptr),
-    current_frame_type_(0) {}
+    current_frame_type_(0),
+    skip_remaining_(0) {}
 
 FrameDecoder::~FrameDecoder() {}
 
@@ -41,29 +42,71 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
     }
 
     while (buffer->GetDataLength() > 0) {
+        // Handle partial skip of unknown frame payload from a previous call
+        if (state_ == State::kSkippingUnknownFrame) {
+            uint32_t available = buffer->GetDataLength();
+            if (available >= skip_remaining_) {
+                buffer->MoveReadPt(static_cast<uint32_t>(skip_remaining_));
+                skip_remaining_ = 0;
+                state_ = State::kReadingFrameType;
+                continue;
+            } else {
+                skip_remaining_ -= available;
+                buffer->MoveReadPt(available);
+                return true;  // Need more data
+            }
+        }
+
         if (state_ == State::kReadingFrameType) {
-            // Try to decode frame type
+            // Try to decode frame type using varint (RFC 9114 Section 9)
             common::MultiBlockBufferDecodeWrapper wrapper(buffer);
-            uint16_t frame_type = 0;
-            if (!wrapper.DecodeFixedUint16(frame_type)) {
-                // DecodeFixedUint16 needs 2 bytes
-                // If buffer has exactly 0 bytes, we already returned false at the start
-                // If buffer has 1 byte, it's an error (incomplete frame type)
-                // If buffer has 2+ bytes but decode failed, it's corrupt data
+            uint64_t frame_type = 0;
+            if (!wrapper.DecodeVarint(frame_type)) {
+                // VarInt decode failed - either incomplete or corrupt data
+                if (buffer->GetDataLength() == 0) {
+                    return true;  // Need more data
+                }
                 common::LOG_ERROR(
-                    "DecodeFrames: failed to decode frame type (corrupt or incomplete data), remaining=%u", wrapper.GetDataLength());
+                    "DecodeFrames: failed to decode frame type varint (corrupt or incomplete data), remaining=%u",
+                    wrapper.GetDataLength());
                 return false;
             }
 
             // CRITICAL: Flush to commit the frame type read and advance buffer's read pointer
-            // Without this, DataFrame::Decode will re-read these 2 bytes as length!
+            // Without this, DataFrame::Decode will re-read these bytes as length!
             wrapper.Flush();
 
             // Create frame instance
             auto creator = kFrameCreatorMap.find(frame_type);
             if (creator == kFrameCreatorMap.end()) {
-                common::LOG_ERROR("FrameDecoder: unknown frame type=%u (0x%04x)", frame_type, frame_type);
-                return false;
+                // RFC 9114 Section 9: Implementations MUST ignore unknown frame types.
+                // Unknown frames follow the standard type-length-payload format,
+                // so we read the length varint and skip that many bytes.
+                common::MultiBlockBufferDecodeWrapper len_wrapper(buffer);
+                uint64_t payload_length = 0;
+                if (!len_wrapper.DecodeVarint(payload_length)) {
+                    // Can't read length yet — need more data
+                    common::LOG_DEBUG("FrameDecoder: unknown frame type=0x%llx, waiting for length",
+                        (unsigned long long)frame_type);
+                    return true;
+                }
+                len_wrapper.Flush();
+
+                // Skip the payload bytes
+                uint32_t available = buffer->GetDataLength();
+                if (available < payload_length) {
+                    skip_remaining_ = payload_length - available;
+                    buffer->MoveReadPt(available);
+                    state_ = State::kSkippingUnknownFrame;
+                    common::LOG_DEBUG("FrameDecoder: skipping unknown frame type=0x%llx, need %llu more bytes",
+                        (unsigned long long)frame_type, (unsigned long long)skip_remaining_);
+                    return true;
+                }
+
+                buffer->MoveReadPt(static_cast<uint32_t>(payload_length));
+                common::LOG_DEBUG("FrameDecoder: ignored unknown frame type=0x%llx, length=%llu",
+                    (unsigned long long)frame_type, (unsigned long long)payload_length);
+                continue;
             }
 
             current_frame_ = creator->second();
@@ -77,21 +120,23 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
             DecodeResult result = current_frame_->Decode(buffer, false);
 
             if (result == DecodeResult::kError) {
-                common::LOG_ERROR("FrameDecoder: failed to decode frame type=%u", current_frame_type_);
+                common::LOG_ERROR("FrameDecoder: failed to decode frame type=0x%llx",
+                    (unsigned long long)current_frame_type_);
                 return false;
             }
 
             if (result == DecodeResult::kNeedMoreData) {
                 // Frame is partially decoded, save state and wait for more data
-                common::LOG_DEBUG("FrameDecoder: need more data to decode frame type=%u", current_frame_type_);
+                common::LOG_DEBUG("FrameDecoder: need more data to decode frame type=0x%llx",
+                    (unsigned long long)current_frame_type_);
                 return true;
             }
 
             // Frame successfully decoded
             uint32_t length_after = buffer->GetDataLength();
             uint32_t consumed = length_before - length_after;
-            common::LOG_DEBUG("FrameDecoder: successfully decoded frame type=%u, consumed=%u bytes, remaining=%u",
-                current_frame_type_, consumed, buffer->GetDataLength());
+            common::LOG_DEBUG("FrameDecoder: successfully decoded frame type=0x%llx, consumed=%u bytes, remaining=%u",
+                (unsigned long long)current_frame_type_, consumed, buffer->GetDataLength());
 
             frames.push_back(current_frame_);
 

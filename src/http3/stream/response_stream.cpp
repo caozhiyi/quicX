@@ -95,15 +95,23 @@ bool ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
         // Complete mode: send entire body
         common::LOG_DEBUG("ResponseStream::SendResponse: sending body directly, size=%zu", body_size);
         bool result = SendBodyDirectly(std::dynamic_pointer_cast<common::IBuffer>(body));
-        
+
         // Metrics: Track response bytes sent (server side)
         if (result) {
             common::Metrics::CounterInc(common::MetricsStd::Http3ResponseBytesTx, body_size);
         }
-        
+
         return result;
     }
-    common::LOG_DEBUG("ResponseStream::SendResponse: no body to send, complete");
+
+    // No body to send - close stream with FIN and signal completion
+    stream_->Close();
+    common::LOG_DEBUG("ResponseStream::SendResponse: no body to send, stream closed with FIN");
+
+    // Signal stream completion to the connection
+    if (error_handler_) {
+        error_handler_(GetStreamID(), 0);
+    }
     return true;
 }
 
@@ -151,9 +159,16 @@ void ResponseStream::HandleHeaders() {
         HandleResponse();
         common::LOG_DEBUG("HandleHeaders: complete handler called and response sent");
 
-        // CRITICAL: Notify connection that stream is complete and can be removed
-        // For requests with no body, this is the only place to signal completion
-        error_handler_(GetStreamID(), 0);
+        // NOTE: Do NOT call error_handler_ here to signal stream completion!
+        // For body provider mode (e.g., large file downloads), the stream must remain
+        // alive until all data is sent. The stream completion will be signaled in
+        // HandleSent() when all_provider_data_sent_ becomes true, OR for direct body
+        // mode, in SendBodyDirectly() after the FIN is sent.
+        //
+        // Previously, calling error_handler_(GetStreamID(), 0) here caused the
+        // ResponseStream to be removed from the connection's streams_ map, which
+        // caused weak_self.lock() to return nullptr in the sended_cb_ callback,
+        // preventing HandleSent from being called and body provider from continuing.
         return;
     }
     common::LOG_DEBUG("HandleHeaders: complete handler called");
@@ -250,9 +265,16 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
 
 void ResponseStream::HandleHttp(
     std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response)> handler) {
+    // Metrics: HTTP/3 request received
+    common::Metrics::CounterInc(common::MetricsStd::Http3RequestsTotal);
+    common::Metrics::GaugeInc(common::MetricsStd::Http3RequestsActive);
+
     http_processor_->BeforeHandlerProcess(request_, response_);
     handler(request_, response_);
     http_processor_->AfterHandlerProcess(request_, response_);
+
+    // Metrics: Request completed
+    common::Metrics::GaugeDec(common::MetricsStd::Http3RequestsActive);
 }
 
 void ResponseStream::HandleResponse() {
@@ -268,6 +290,28 @@ void ResponseStream::HandleResponse() {
     // handle push
     if (push_handler_) {
         push_handler_(response_, std::dynamic_pointer_cast<ResponseStream>(shared_from_this()));
+    }
+}
+
+void ResponseStream::HandleFinWithoutData() {
+    // Called when FIN is received but no HTTP/3 frames were decoded
+    // For server side (ResponseStream), this means the client finished sending the request
+    if (route_config_.IsAsyncServer()) {
+        auto async_handler = route_config_.GetAsyncServerHandler();
+        // Notify async handler that request body is complete (empty)
+        async_handler->OnBodyChunk(nullptr, 0, true);
+        // Send response and complete
+        HandleResponse();
+        error_handler_(GetStreamID(), 0);
+
+    } else {
+        // Complete mode: call handler and send response
+        if (!is_response_sent_) {
+            is_response_sent_ = true;
+            HandleHttp(route_config_.GetCompleteHandler());
+            HandleResponse();
+            error_handler_(GetStreamID(), 0);
+        }
     }
 }
 

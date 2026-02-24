@@ -26,8 +26,8 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
         std::bind(&ServerConnection::InnerStreamClose, this, std::placeholders::_1),
         std::bind(&ServerConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3));
-    crypto_stream->SetStreamReadCallBack(
-        std::bind(&ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
+    crypto_stream->SetCryptoStreamReadCallBack(std::bind(
+        &ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 
@@ -70,7 +70,6 @@ void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
 
         QLOG_CONNECTION_STARTED(qlog_trace_, data);
 
-        // 传递 trace 给子组件
         send_manager_.SetQlogTrace(qlog_trace_);
     }
 }
@@ -93,7 +92,7 @@ bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) {
+void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
     if (err != 0) {
         common::LOG_ERROR("get crypto data failed. err:%s", err);
         return;
@@ -102,7 +101,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     // TODO do not copy data
     uint8_t data[1450] = {0};
     uint32_t len = buffer->Read(data, 1450);
-    if (!tls_connection_->ProcessCryptoData(data, len)) {
+    if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {
         common::LOG_ERROR("process crypto data failed. err:%s", err);
         return;
     }
@@ -111,6 +110,9 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
         common::LOG_DEBUG("handshake done.");
         std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
         ToSendFrame(frame);  // TODO, The server MUST send a HANDSHAKE_DONE frame as soon as the handshake is complete
+
+        // Mark handshake complete to stop PTO probing
+        send_manager_.GetSendControl().SetHandshakeComplete();
 
         // RFC 9000 Section 4.10: Server discards Initial and Handshake spaces after sending HANDSHAKE_DONE
         recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);

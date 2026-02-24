@@ -1,57 +1,121 @@
-# Docker Compose for local interop testing
-# Run: docker-compose -f interop/docker-compose.yml up
+# Docker Compose for quicX QUIC Interop Testing
+#
+# Compatible with official quic-interop-runner framework
+# Reference: https://github.com/quic-interop/quic-interop-runner/blob/master/docker-compose.yml
+#
+# Usage:
+#   # Build the quicX interop image
+#   docker compose build
+#
+#   # Run basic tests (handshake, transfer, etc.)
+#   docker compose up sim server client
+#
+#   # Run network simulation tests (rebind, migration)
+#   SCENARIO="rebind --delay=15ms --bandwidth=10Mbps --queue=25 --first-rebind=1s --rebind-freq=5s" \
+#     docker compose up sim server client
 
 services:
-  # quicX Server
+  # ----------------------------------------------------------------
+  # ns-3 Network Simulator
+  # Official: https://github.com/quic-interop/quic-network-simulator
+  # ----------------------------------------------------------------
+  sim:
+    image: martenseemann/quic-network-simulator:latest
+    container_name: sim
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - WAITFORSERVER=server:443
+      - SCENARIO=${SCENARIO:-simple-p2p --delay=15ms --bandwidth=10Mbps --queue=25}
+    networks:
+      leftnet:
+        ipv4_address: 193.167.0.2
+      rightnet:
+        ipv4_address: 193.167.100.2
+    stdin_open: true
+    tty: true
+
+  # ----------------------------------------------------------------
+  # QUIC Server
+  # ----------------------------------------------------------------
   server:
     build:
-      context: ..
-      dockerfile: interop/Dockerfile
-    image: quicx-interop:latest
-    container_name: quicx-server
+      context: ../..
+      dockerfile: test/interop/Dockerfile
+    image: ${SERVER:-quicx-interop:latest}
+    container_name: server
+    depends_on:
+      - sim
+    cap_add:
+      - NET_ADMIN
+    ulimits:
+      memlock: 67108864
     environment:
       - ROLE=server
-      - TESTCASE=handshake
-      - PORT=443
-      - WWW=/www
-      - QLOGDIR=/logs
+      - TESTCASE=${TESTCASE_SERVER:-handshake}
+      - SERVER_PARAMS=${SERVER_PARAMS:-}
       - SSLKEYLOGFILE=/logs/keys.log
-    ports:
-      - "443:443/udp"
+      - QLOGDIR=/logs/qlog/
+      - CRON=${CRON:-}
     volumes:
-      - ./logs/server:/logs
-      - ./www:/www
+      - ${WWW:-./www}:/www:ro
+      - ${CERTS:-./certs}:/certs:ro
+      - ${SERVER_LOGS:-./logs/server}:/logs
     networks:
-      - quic-interop
-    restart: unless-stopped
+      rightnet:
+        ipv4_address: 193.167.100.100
+    stdin_open: true
+    tty: true
 
-  # quicX Client
+  # ----------------------------------------------------------------
+  # QUIC Client
+  # ----------------------------------------------------------------
   client:
     build:
-      context: ..
-      dockerfile: interop/Dockerfile
-    image: quicx-interop:latest
-    container_name: quicx-client
+      context: ../..
+      dockerfile: test/interop/Dockerfile
+    image: ${CLIENT:-quicx-interop:latest}
+    container_name: client
+    depends_on:
+      - sim
+    cap_add:
+      - NET_ADMIN
+    ulimits:
+      memlock: 67108864
     environment:
       - ROLE=client
-      - TESTCASE=handshake
-      - SERVER=server
-      - PORT=443
-      - REQUESTS=https://server:443/1MB.bin https://server:443/10MB.bin
-      - DOWNLOADS=/downloads
-      - QLOGDIR=/logs
+      - TESTCASE=${TESTCASE_CLIENT:-handshake}
+      - REQUESTS=${REQUESTS:-https://server:443/1KB.bin}
+      - CLIENT_PARAMS=${CLIENT_PARAMS:-}
       - SSLKEYLOGFILE=/logs/keys.log
+      - QLOGDIR=/logs/qlog/
+      - CRON=${CRON:-}
     volumes:
-      - ./logs/client:/logs
-      - ./downloads:/downloads
+      - ${DOWNLOADS:-./downloads}:/downloads:delegated
+      - ${CERTS:-./certs}:/certs:ro
+      - ${CLIENT_LOGS:-./logs/client}:/logs
     networks:
-      - quic-interop
-    depends_on:
-      - server
-    # Don't auto-start client, run manually
-    profiles:
-      - manual
+      leftnet:
+        ipv4_address: 193.167.0.100
+    stdin_open: true
+    tty: true
 
+# ----------------------------------------------------------------
+# Networks (matches official quic-network-simulator topology)
+# ----------------------------------------------------------------
 networks:
-  quic-interop:
+  leftnet:
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+    ipam:
+      config:
+        - subnet: 193.167.0.0/24
+  rightnet:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+    ipam:
+      config:
+        - subnet: 193.167.100.0/24

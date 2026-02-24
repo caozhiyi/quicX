@@ -9,8 +9,14 @@
 namespace quicx {
 namespace common {
 
-class StandaloneBufferChunk:
-    public IBufferChunk {
+/**
+ * @brief A buffer chunk that manages memory independently (not from a pool)
+ *
+ * This class uses standard `new` and `delete` for memory management.
+ * It is useful for test scenarios or when a buffer with a specific size
+ * that doesn't fit into the standard block pool is required.
+ */
+class StandaloneBufferChunk: public IBufferChunk {
 public:
     explicit StandaloneBufferChunk(uint32_t size);
     ~StandaloneBufferChunk();
@@ -35,8 +41,7 @@ private:
     uint32_t limit_size_ = 0;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif
-

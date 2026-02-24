@@ -4,7 +4,7 @@
 #ifndef COMMON_QLOG_UTIL_QLOG_TYPES
 #define COMMON_QLOG_UTIL_QLOG_TYPES
 
-#include "common/qlog/qlog_config.h"
+#include "common/include/type.h"
 #include "quic/frame/type.h"
 #include "quic/packet/type.h"
 
@@ -87,6 +87,10 @@ inline const char* FrameTypeToQlogString(quic::FrameType type) {
         case quic::FrameType::kHandshakeDone:
             return "handshake_done";
         default:
+            // Handle STREAM frame range (0x08-0x0f)
+            if (type >= quic::FrameType::kStream && type <= 0x0f) {
+                return "stream";
+            }
             return "unknown";
     }
 }

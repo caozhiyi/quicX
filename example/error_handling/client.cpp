@@ -21,9 +21,9 @@ public:
     }
 
     bool Init() {
-        quicx::Http3Config config;
-        config.thread_num_ = 2;
-        config.log_level_ = quicx::LogLevel::kWarn;
+        quicx::Http3ClientConfig config;
+        config.quic_config_.config_.worker_thread_num_ = 2;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kWarn;
         config.connection_timeout_ms_ = 5000;  // 5s connection timeout
 
         if (!client_->Init(config)) {
@@ -265,12 +265,12 @@ int main(int argc, char* argv[]) {
         std::cout << "  retry    - Test retry logic" << std::endl;
         std::cout << "  large    - Test large response" << std::endl;
         std::cout << "  normal   - Test normal request" << std::endl;
-        std::cout << "\nExample: " << argv[0] << " all https://localhost:8443" << std::endl;
+        std::cout << "\nExample: " << argv[0] << " all https://localhost:7005" << std::endl;
         return 1;
     }
 
     std::string scenario = argv[1];
-    std::string base_url = argc > 2 ? argv[2] : "https://localhost:8443";
+    std::string base_url = argc > 2 ? argv[2] : "https://localhost:7005";
 
     ErrorHandlingClient client(base_url);
 

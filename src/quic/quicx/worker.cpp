@@ -2,6 +2,7 @@
 #include <thread>
 
 #include "common/log/log.h"
+#include "common/log/log_context.h"
 
 #include "quic/common/version.h"
 #include "quic/packet/init_packet.h"
@@ -23,6 +24,8 @@ Worker::Worker(const QuicConfig& config, std::shared_ptr<TLSCtx> ctx, std::share
     connection_handler_(connection_handler),
     event_loop_(event_loop) {
     ecn_enabled_ = config.enable_ecn_;
+    enable_key_update_ = config.enable_key_update_;
+    quic_version_ = config.quic_version_;
 }
 
 Worker::~Worker() {}
@@ -43,7 +46,6 @@ std::string Worker::GetWorkerId() {
 }
 
 void Worker::Process() {
-    common::LOG_DEBUG("Worker::Process called");
     ProcessSend();
 }
 
@@ -52,7 +54,6 @@ void Worker::ProcessSend() {
     active_send_connections_.Swap();
     auto& active_connections = active_send_connections_.GetReadBuffer();
 
-    common::LOG_DEBUG("Worker::ProcessSend: active_send_connections size: %zu", active_connections.size());
     if (active_connections.empty()) {
         return;
     }
@@ -60,15 +61,25 @@ void Worker::ProcessSend() {
     // Iterate through active connections and try to send data
     for (auto iter = active_connections.begin(); iter != active_connections.end();) {
         bool has_more_data = false;
+        auto conn = *iter;
+        common::LogTagGuard guard("conn:" + std::to_string(conn->GetConnectionIDHash()));
 
         // Try to send data using the new high-level interface
         // TrySend() handles all packet building and sending internally
-        while ((*iter)->TrySend()) {
+        // Limit packets per round to allow event loop to process incoming data
+        // This is critical for flow control: we need to receive MAX_STREAM_DATA
+        // frames from the peer to unblock flow control
+        constexpr int kMaxPacketsPerRound = 100;
+        int packets_sent = 0;
+        
+        while (packets_sent < kMaxPacketsPerRound && conn->TrySend()) {
             has_more_data = true;
-
-            // Limit packets sent per connection to avoid starvation
-            // TODO: Add configurable limit or time-based yielding if needed
-            // For now, allow continuous sending until TrySend() returns false
+            packets_sent++;
+        }
+        
+        // If we hit the limit, keep connection in active set for next round
+        if (packets_sent >= kMaxPacketsPerRound) {
+            has_more_data = true;
         }
 
         // If connection has no more data to send, remove from active set
@@ -101,17 +112,18 @@ bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common
     return true;
 }
 
-bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet) {
+bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet, uint32_t datagram_size) {
     if (packet->GetHeader()->GetPacketType() != PacketType::kInitialPacketType) {
         common::LOG_ERROR("recv packet whitout connection.");
         return false;
     }
 
-    // check init packet length according to RFC9000
-    // Initial packets MUST be sent with a payload length of at least 1200 bytes
-    // unless the client knows that the server supports a larger minimum PMTU
-    if (packet->GetSrcBuffer().GetLength() < 1200) {
-        common::LOG_ERROR("init packet length too small. length:%d", packet->GetSrcBuffer().GetLength());
+    // RFC 9000 §14.1: A server MUST discard an Initial packet that is carried
+    // in a UDP datagram with a payload that is smaller than the smallest
+    // maximum datagram size of 1200 bytes.
+    // NOTE: We check the original UDP datagram size, not the decoded packet body size.
+    if (datagram_size < 1200) {
+        common::LOG_ERROR("init packet datagram too small. datagram_size:%d", datagram_size);
         return false;
     }
 
@@ -147,9 +159,21 @@ void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
         conn_map_[conn->GetConnectionIDHash()] = conn;
         common::LOG_DEBUG(
             "Added to conn_map with hash=%llu, conn_map size=%zu", conn->GetConnectionIDHash(), conn_map_.size());
-        connection_handler_(conn, ConnectionOperation::kConnectionCreate, 0, "");
+
+        // Check if 0-RTT early data write key is available: if so, this is an early connection
+        auto early_crypto = conn->GetCryptographerForTest(kEarlyData);
+        ConnectionOperation op = early_crypto ? ConnectionOperation::kEarlyConnection
+                                              : ConnectionOperation::kConnectionCreate;
+        connection_handler_(conn, op, 0, "");
     } else {
-        common::LOG_WARN("Connection NOT found in connecting_set! Cannot add to conn_map");
+        // Connection already moved out of connecting_set (e.g. early connection triggered earlier).
+        // If this is the full handshake completion after an early connection, notify kConnectionCreate.
+        if (conn_map_.count(conn->GetConnectionIDHash())) {
+            common::LOG_DEBUG("Post-early-connection handshake done, notifying kConnectionCreate");
+            connection_handler_(conn, ConnectionOperation::kConnectionCreate, 0, "");
+        } else {
+            common::LOG_WARN("Connection NOT found in connecting_set or conn_map! Cannot handle handshake done");
+        }
     }
 }
 

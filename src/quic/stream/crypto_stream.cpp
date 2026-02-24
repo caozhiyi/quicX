@@ -11,71 +11,92 @@ CryptoStream::CryptoStream(std::shared_ptr<common::IEventLoop> loop,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
-    IStream(loop, 0, active_send_cb, stream_close_cb, connection_close_cb),
-    except_offset_(0),
-    send_offset_(0) {
-    buffer_ = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    IStream(loop, 0, active_send_cb, stream_close_cb, connection_close_cb) {
+    for (int i = 0; i < kNumEncryptionLevels; i++) {
+        next_read_offset_[i] = 0;
+        send_offset_[i] = 0;
+        read_buffers_[i] =
+            std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
+        send_buffers_[i] = nullptr;
+    }
 }
 
 CryptoStream::~CryptoStream() {}
 
-IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor) {
-    TrySendResult ret = TrySendResult::kSuccess;
-    std::shared_ptr<common::MultiBlockBuffer> buffer;
-    uint8_t level;
-    if (send_buffers_[kInitial] && send_buffers_[kInitial]->GetDataLength() > 0) {
-        buffer = send_buffers_[kInitial];
-        level = kInitial;
+IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, EncryptionLevel level) {
+    if (level >= kNumEncryptionLevels) {
+        return IStream::TrySendResult::kFailed;
     }
 
-    if (send_buffers_[kHandshake] && send_buffers_[kHandshake]->GetDataLength() > 0) {
-        if (!buffer) {
-            buffer = send_buffers_[kHandshake];
-            level = kHandshake;
-            send_buffers_[kInitial] = nullptr;
-
-        } else {
-            ret = TrySendResult::kBreak;
-        }
-    }
-
-    if (send_buffers_[kApplication] && send_buffers_[kApplication]->GetDataLength() > 0) {
-        if (!buffer) {
-            buffer = send_buffers_[kApplication];
-            level = kApplication;
-            send_buffers_[kHandshake] = nullptr;
-
-        } else {
-            ret = TrySendResult::kBreak;
-        }
-    }
-
-    if (!buffer) {
-        return ret;
+    if (!send_buffers_[level] || send_buffers_[level]->GetDataLength() == 0) {
+        return IStream::TrySendResult::kSuccess;
     }
 
     // make crypto frame
     auto frame = std::make_shared<CryptoFrame>();
-    frame->SetOffset(send_offset_);
+    frame->SetOffset(send_offset_[level]);
     frame->SetEncryptionLevel(level);
 
-    common::SharedBufferSpan data =
-        buffer->GetSharedReadableSpan(1300);  // TODO: 1300 is the max length of a crypto frame
+    // TODO: move to common/util
+    uint32_t write_size = visitor->GetLeftStreamDataSize();
+    if (write_size > 1300) {
+        write_size = 1300;
+    }
+
+    common::SharedBufferSpan data = send_buffers_[level]->GetSharedReadableSpan(write_size);
     frame->SetData(data);
 
     if (!visitor->HandleFrame(frame)) {
-        ret = TrySendResult::kFailed;
-        return ret;
+        common::LOG_WARN("CryptoStream::TrySendData: visitor handle frame failed. level:%d", level);
+        return IStream::TrySendResult::kFailed;
     }
 
-    buffer->MoveReadPt(data.GetLength());
-    send_offset_ += data.GetLength();
-    return ret;
+    common::LOG_DEBUG("CryptoStream::TrySendData: sent frame level:%d, offset:%llu, len:%d", level, send_offset_[level],
+        data.GetLength());
+
+    send_buffers_[level]->MoveReadPt(data.GetLength());
+    send_offset_[level] += data.GetLength();
+
+    // Check if we still have data for this level
+    if (send_buffers_[level]->GetDataLength() > 0) {
+        ToSend();
+        return IStream::TrySendResult::kSuccess;
+    }
+
+    // Check if we have data for other levels
+    for (uint8_t i = 0; i < kNumEncryptionLevels; i++) {
+        if (i == level) {
+            continue;
+        }
+        if (send_buffers_[i] && send_buffers_[i]->GetDataLength() > 0) {
+            ToSend();
+            break;
+        }
+    }
+
+    return IStream::TrySendResult::kSuccess;
 }
 
 // reset the stream
 void CryptoStream::Reset(uint32_t error) {
     // do nothing
+}
+
+void CryptoStream::ResetForRetry() {
+    common::LOG_INFO("Resetting CryptoStream for Retry");
+
+    // Clear Initial level state to restart handshake from offset 0
+    uint8_t level = kInitial;
+
+    // Reset read state
+    read_buffers_[level] =
+        std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    next_read_offset_[level] = 0;
+    out_order_frame_[level].clear();
+
+    // Reset send state
+    send_buffers_[level] = nullptr;  // Next send will recreate it if needed
+    send_offset_[level] = 0;
 }
 
 void CryptoStream::Close() {
@@ -136,10 +157,11 @@ int32_t CryptoStream::Send(std::shared_ptr<IBufferRead> data) {
         return data->GetDataLength();
     }
 
-    std::shared_ptr<common::MultiBlockBuffer> buffer = send_buffers_[GetWaitSendEncryptionLevel()];
+    uint8_t level = GetWaitSendEncryptionLevel();
+    std::shared_ptr<common::MultiBlockBuffer> buffer = send_buffers_[level];
     if (!buffer) {
         buffer = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
-        send_buffers_[GetWaitSendEncryptionLevel()] = buffer;
+        send_buffers_[level] = buffer;
     }
     int32_t size = buffer->Write(data);
 
@@ -159,27 +181,43 @@ uint8_t CryptoStream::GetWaitSendEncryptionLevel() {
 
 void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
     auto crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(frame);
-    if (crypto_frame->GetOffset() == except_offset_) {
-        buffer_->Write(crypto_frame->GetData(), crypto_frame->GetLength());
-        except_offset_ += crypto_frame->GetLength();
+    // CRITICAL: Use the level from the frame to select correct state
+    // FrameProcessor/Connection layer MUST ensure this level is set
+    uint8_t level = crypto_frame->GetEncryptionLevel();
 
+    // Bounds check
+    if (level >= kNumEncryptionLevels) {
+        common::LOG_ERROR("CryptoStream received frame with invalid level %d", level);
+        return;
+    }
+
+    common::LOG_INFO("CryptoStream::OnCryptoFrame: level=%d, offset=%llu, len=%u, expected=%llu", level,
+        crypto_frame->GetOffset(), crypto_frame->GetLength(), next_read_offset_[level]);
+
+    if (crypto_frame->GetOffset() == next_read_offset_[level]) {
+        read_buffers_[level]->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+        next_read_offset_[level] += crypto_frame->GetLength();
+
+        // Check for out-of-order frames that can now be processed
+        auto& out_order = out_order_frame_[level];
         while (true) {
-            auto iter = out_order_frame_.find(except_offset_);
-            if (iter == out_order_frame_.end()) {
+            auto iter = out_order.find(next_read_offset_[level]);
+            if (iter == out_order.end()) {
                 break;
             }
 
             crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(iter->second);
-            buffer_->Write(crypto_frame->GetData(), crypto_frame->GetLength());
-            except_offset_ += crypto_frame->GetLength();
-            out_order_frame_.erase(iter);
+            read_buffers_[level]->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+            next_read_offset_[level] += crypto_frame->GetLength();
+            out_order.erase(iter);
         }
 
+        // Notify upper layer (TLS) with correct level
         if (recv_cb_) {
-            recv_cb_(buffer_, false, 0);
+            recv_cb_(read_buffers_[level], 0, level);
         }
     } else {
-        out_order_frame_[crypto_frame->GetOffset()] = crypto_frame;
+        out_order_frame_[level][crypto_frame->GetOffset()] = crypto_frame;
     }
 }
 

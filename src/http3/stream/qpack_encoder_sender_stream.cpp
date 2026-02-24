@@ -22,9 +22,9 @@ QpackEncoderSenderStream::QpackEncoderSenderStream(const std::shared_ptr<IQuicSe
     ISendStream(StreamType::kQpackEncoder, stream, error_handler) {}
 
 QpackEncoderSenderStream::~QpackEncoderSenderStream() {
-    if (stream_) {
-        stream_->Close();
-    }
+    // Note: Do NOT call stream_->Close() here during destruction.
+    // See QpackDecoderSenderStream destructor comment for details.
+    stream_.reset();
 }
 
 bool QpackEncoderSenderStream::SendInstructions(const std::vector<std::pair<std::string,std::string>>& inserts) {

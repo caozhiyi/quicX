@@ -4,18 +4,18 @@
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/headers_frame.h"
-#include "http3/frame/settings_frame.h"
 #include "http3/frame/push_promise_frame.h"
+#include "http3/frame/settings_frame.h"
 
-#include "common/buffer/single_block_buffer.h"
 #include "common/buffer/buffer_encode_wrapper.h"
+#include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
 namespace quicx {
 namespace http3 {
 namespace {
 
-class FrameDecodeTest : public testing::Test {
+class FrameDecodeTest: public testing::Test {
 protected:
     void SetUp() override {
         auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
@@ -72,7 +72,7 @@ TEST_F(FrameDecodeTest, DecodeSettingsFrame) {
     settings_frame.SetSetting(1, 100);
     settings_frame.SetSetting(2, 200);
     settings_frame.Encode(buffer_);
-    
+
     FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
     EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
@@ -147,7 +147,7 @@ TEST_F(FrameDecodeTest, DecodeIncompleteFrame) {
     write_wrapper.Flush();
     std::vector<std::shared_ptr<IFrame>> frames;
     FrameDecoder decoder;
-    EXPECT_FALSE(decoder.DecodeFrames(buffer_, frames));
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
     EXPECT_EQ(frames.size(), 0);
 }
 
@@ -182,4 +182,4 @@ TEST_F(FrameDecodeTest, DecodeMultipleFrames) {
 
 }  // namespace
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

@@ -170,7 +170,11 @@ bool LookupAddress(const std::string& host, Address& addr) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
     
-    hints.ai_family = AF_UNSPEC;    // Allow IPv4 or IPv6
+    // Check if host is an explicit IPv4 address (contains dots and no colons)
+    bool is_ipv4_literal = (host.find('.') != std::string::npos && host.find(':') == std::string::npos);
+    
+    // If it's an IPv4 literal or looks like one, prefer IPv4
+    hints.ai_family = is_ipv4_literal ? AF_INET : AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM; // Datagram socket for UDP
     hints.ai_flags = AI_PASSIVE;    // For wildcard IP address
 
@@ -180,30 +184,42 @@ bool LookupAddress(const std::string& host, Address& addr) {
         return false;
     }
 
-    // Get the first valid address
+    // Prefer IPv4 addresses over IPv6 for better compatibility
+    struct addrinfo *ipv4_addr = nullptr;
+    struct addrinfo *ipv6_addr = nullptr;
+    
     for (struct addrinfo *rp = result; rp != nullptr; rp = rp->ai_next) {
-        void *addr_ptr;
-        char ip_str[INET6_ADDRSTRLEN];
-
-        if (rp->ai_family == AF_INET) { // IPv4
-            struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
-            addr_ptr = &(ipv4->sin_addr);
-            addr.SetAddressType(AddressType::kIpv4);
-        } else { // IPv6
-            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)rp->ai_addr;
-            addr_ptr = &(ipv6->sin6_addr);
-            addr.SetAddressType(AddressType::kIpv6);
+        if (rp->ai_family == AF_INET && !ipv4_addr) {
+            ipv4_addr = rp;
+        } else if (rp->ai_family == AF_INET6 && !ipv6_addr) {
+            ipv6_addr = rp;
         }
-
-        // Convert IP to string
-        inet_ntop(rp->ai_family, addr_ptr, ip_str, sizeof(ip_str));
-        addr.SetIp(ip_str);
-        freeaddrinfo(result);
-        return true;
     }
-
+    
+    // Use IPv4 if available, otherwise use IPv6
+    struct addrinfo *selected = ipv4_addr ? ipv4_addr : ipv6_addr;
+    if (!selected) {
+        freeaddrinfo(result);
+        return false;
+    }
+    
+    void *addr_ptr;
+    char ip_str[INET6_ADDRSTRLEN];
+    
+    if (selected->ai_family == AF_INET) {
+        struct sockaddr_in *ipv4 = (struct sockaddr_in *)selected->ai_addr;
+        addr_ptr = &(ipv4->sin_addr);
+        addr.SetAddressType(AddressType::kIpv4);
+    } else {
+        struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)selected->ai_addr;
+        addr_ptr = &(ipv6->sin6_addr);
+        addr.SetAddressType(AddressType::kIpv6);
+    }
+    
+    inet_ntop(selected->ai_family, addr_ptr, ip_str, sizeof(ip_str));
+    addr.SetIp(ip_str);
     freeaddrinfo(result);
-    return false;
+    return true;
 }
 
 bool Pipe(int32_t& pipe1, int32_t& pipe2) {

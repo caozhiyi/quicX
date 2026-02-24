@@ -1,7 +1,8 @@
-#include "common/decode/decode.h"
-#include "http3/frame/settings_frame.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/multi_block_buffer_decode_wrapper.h"
+#include "common/decode/decode.h"
+
+#include "http3/frame/settings_frame.h"
 
 namespace quicx {
 namespace http3 {
@@ -21,8 +22,8 @@ bool SettingsFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    // Write the frame type
-    if (!wrapper.EncodeFixedUint16(GetType())) {
+    // Write the frame type (varint per RFC 9114)
+    if (!wrapper.EncodeVarint(GetType())) {
         return false;
     }
 
@@ -43,9 +44,11 @@ bool SettingsFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 DecodeResult SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     common::MultiBlockBufferDecodeWrapper wrapper(buffer);
     if (with_type) {
-        if (!wrapper.DecodeFixedUint16(type_)) {
+        uint64_t frame_type;
+        if (!wrapper.DecodeVarint(frame_type)) {
             return DecodeResult::kNeedMoreData;
         }
+        type_ = static_cast<uint16_t>(frame_type);
     }
 
     if (!wrapper.DecodeVarint(length_)) {
@@ -83,8 +86,8 @@ DecodeResult SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool
 uint32_t SettingsFrame::EvaluateEncodeSize() {
     uint32_t size = 0;
 
-    // Size for the frame type
-    size += sizeof(type_);
+    // Size for the frame type (varint per RFC 9114)
+    size += common::GetEncodeVarintLength(GetType());
 
     // Size for each setting (id and value)
     size += EvaluatePayloadSize();

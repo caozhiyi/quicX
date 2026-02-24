@@ -6,17 +6,17 @@
 #include <functional>
 #include <memory>
 
-#include "common/buffer/if_buffer.h"
 #include "common/alloter/pool_block.h"
+#include "common/buffer/if_buffer.h"
 #include "common/buffer/shared_buffer_span.h"
 
 namespace quicx {
 namespace common {
 
-// MultiBlockBuffer manages a queue of SharedBufferSpan objects to provide a
+// MultiBlockBuffer manages a queue of IBufferChunk objects to provide a
 // growable read/write buffer. It mirrors the data access APIs of the legacy
 // Buffer implementation but intentionally avoids exposing raw chunk_ ownership
-// or span/view helpers. Because it stores SharedBufferSpan instances it can
+// or span/view helpers. Because it stores IBufferChunk instances it can
 // safely extend across asynchronous pipelines without worrying about dangling
 // memory – each span keeps the underlying BufferChunk alive.
 class MultiBlockBuffer: public IBuffer, public std::enable_shared_from_this<MultiBlockBuffer> {

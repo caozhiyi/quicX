@@ -74,9 +74,9 @@ public:
             ConnectionInfo new_conn;
             new_conn.client = quicx::IClient::Create();
 
-            quicx::Http3Config config;
-            config.thread_num_ = 2;
-            config.log_level_ = quicx::LogLevel::kWarn;
+            quicx::Http3ClientConfig config;
+            config.quic_config_.config_.worker_thread_num_ = 2;
+            config.quic_config_.config_.log_level_ = quicx::LogLevel::kWarn;
             config.connection_timeout_ms_ = 5000;
 
             if (new_conn.client->Init(config)) {
@@ -300,7 +300,7 @@ private:
 };
 
 int main(int argc, char* argv[]) {
-    std::string base_url = argc > 1 ? argv[1] : "https://localhost:8443";
+    std::string base_url = argc > 1 ? argv[1] : "https://localhost:7004";
 
     std::cout << "Connection Lifecycle Management Demo" << std::endl;
     std::cout << "Target: " << base_url << std::endl;

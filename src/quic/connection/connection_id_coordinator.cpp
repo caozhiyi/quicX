@@ -83,8 +83,14 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
         return;
     }
 
-    // Calculate how many CIDs to generate (up to max pool size)
-    size_t to_generate = std::min<size_t>(kMaxLocalCIDPoolSize - current_count, kMaxLocalCIDPoolSize);
+    // Calculate how many CIDs to generate (up to max pool size and respecting peer limit)
+    size_t max_allowed = peer_active_cid_limit_;
+    if (current_count >= max_allowed) {
+        return;
+    }
+    size_t to_generate = std::min<size_t>(kMaxLocalCIDPoolSize, max_allowed - current_count);
+    // Also cap by kMaxLocalCIDPoolSize - current_count to avoid over-generating beyond our own max
+    to_generate = std::min<size_t>(to_generate, kMaxLocalCIDPoolSize - current_count);
 
     common::LOG_DEBUG("ConnectionIDCoordinator: replenishing local CID pool: current=%zu, generating=%zu",
         current_count, to_generate);
@@ -138,6 +144,14 @@ bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
     common::LOG_DEBUG("ConnectionIDCoordinator: rotated remote CID, retired seq=%llu", old_cid.GetSequenceNumber());
 
     return true;
+}
+
+void ConnectionIDCoordinator::SetPeerActiveConnectionIDLimit(uint64_t limit) {
+    if (limit < 2) {
+        limit = 2;  // RFC 9000: MUST be at least 2
+    }
+    peer_active_cid_limit_ = limit;
+    CheckAndReplenishLocalCIDPool();  // Trigger replenishment if limit increased
 }
 
 }  // namespace quic

@@ -1,39 +1,29 @@
 # Dockerfile for quic-interop-runner
-# This container will be used by https://github.com/marten-seemann/quic-interop-runner
-# to test QUIC interoperability with other implementations
+# Fully compatible with official quic-network-simulator
+# Reference: https://github.com/quic-interop/quic-network-simulator#building-your-own-quic-docker-image
 
-FROM ubuntu:22.04
+# ============================================================
+# Stage 1: Build quicX
+# ============================================================
+FROM ubuntu:22.04 AS builder
 
-# Set noninteractive mode to avoid prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    git \
-    libssl-dev \
-    wget \
-    net-tools \
-    tcpdump \
-    tshark \
-    iptables \
-    ethtool \
-    iproute2 \
+    build-essential cmake git libssl-dev wget curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /quicx
+WORKDIR /src
 
-# Copy source code
-COPY . .
+# Copy only necessary files for build
+COPY CMakeLists.txt ./
+COPY src ./src
+COPY third ./third
+COPY test/interop ./test/interop
 
-# Build quicX
-# Clean any existing build artifacts and build fresh
-# Only build interop test binaries (disable examples and other tests)
-RUN rm -rf build && \
-    mkdir -p build && \
-    cd build && \
+# Build quicX interop binaries
+RUN rm -rf build && mkdir -p build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
              -DBUILD_EXAMPLES=OFF \
              -DENABLE_TESTING=OFF \
@@ -42,22 +32,42 @@ RUN rm -rf build && \
              -DENABLE_CC_SIMULATOR=OFF \
              -DENABLE_INTERGRATION=OFF \
              -DENABLE_INTEROP=ON && \
-    cmake --build . --target interop_server --target interop_client -j4
+    cmake --build . --target interop_server interop_client -j$(nproc)
 
-# Create directories for test files
-RUN mkdir -p /www /downloads /logs
+# ============================================================
+# Stage 2: Runtime image
+# Must be based on the official quic-network-simulator endpoint
+# This provides /setup.sh and /wait-for-it.sh
+# ============================================================
+FROM martenseemann/quic-network-simulator-endpoint:latest
 
-# Generate test files (required by interop runner)
-# 1MB, 10MB test files
-RUN dd if=/dev/urandom of=/www/1MB.bin bs=1M count=1 && \
-    dd if=/dev/urandom of=/www/10MB.bin bs=1M count=10
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Copy run script
+# Install runtime dependencies (OpenSSL)
+RUN apt-get update && apt-get install -y \
+    libssl3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy built binaries from builder stage
+COPY --from=builder /src/build/bin/interop_server /usr/local/bin/
+COPY --from=builder /src/build/bin/interop_client /usr/local/bin/
+
+# Create required directories (official convention)
+# /www       - server web root (mounted read-only by runner)
+# /downloads - client download directory (mounted read-write by runner)
+# /certs     - TLS certificates (mounted read-only by runner)
+# /logs      - log output directory
+RUN mkdir -p /www /downloads /logs/qlog /certs
+
+# Save Git commit info for debugging
+ARG GIT_COMMIT=unknown
+RUN echo "${GIT_COMMIT}" > /commit.txt
+
+# Copy endpoint script
 COPY test/interop/run_endpoint.sh /run_endpoint.sh
 RUN chmod +x /run_endpoint.sh
 
 # Expose QUIC port (UDP 443)
 EXPOSE 443/udp
 
-# Set entrypoint
 ENTRYPOINT ["/run_endpoint.sh"]

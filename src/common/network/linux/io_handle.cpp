@@ -22,8 +22,17 @@ SysCallInt32Result TcpSocket() {
 }
 
 SysCallInt32Result UdpSocket() {
-    int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    return {sock, sock != -1 ? 0 : errno};
+    // Use AF_INET6 dual-stack socket to support both IPv4 and IPv6
+    int32_t sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock == -1) {
+        // Fallback to IPv4-only if IPv6 not available
+        sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        return {sock, sock != -1 ? 0 : errno};
+    }
+    // Enable dual-stack: accept both IPv4 and IPv6
+    int off = 0;
+    setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+    return {sock, 0};
 }
 
 SysCallInt32Result Close(int32_t sockfd) {
@@ -32,30 +41,56 @@ SysCallInt32Result Close(int32_t sockfd) {
 }
 
 SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
-    struct sockaddr_in addr_in;
-    addr_in.sin_family = AF_INET;
-    addr_in.sin_port = htons(addr.GetPort());
-    addr_in.sin_addr.s_addr = inet_addr(addr.GetIp().c_str());
-
-    const int32_t rc = bind(sockfd, (sockaddr*)&addr_in, sizeof(addr_in));
+    if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp() == "::") {
+        struct sockaddr_in6 addr_in6;
+        memset(&addr_in6, 0, sizeof(addr_in6));
+        addr_in6.sin6_family = AF_INET6;
+        addr_in6.sin6_port = htons(addr.GetPort());
+        inet_pton(AF_INET6, addr.GetIp().c_str(), &addr_in6.sin6_addr);
+        const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
+        return {rc, rc != -1 ? 0 : errno};
+    }
+    // For IPv4 addresses on a dual-stack socket, use IPv4-mapped IPv6 address
+    struct sockaddr_in6 addr_in6;
+    memset(&addr_in6, 0, sizeof(addr_in6));
+    addr_in6.sin6_family = AF_INET6;
+    addr_in6.sin6_port = htons(addr.GetPort());
+    if (addr.GetIp() == "0.0.0.0" || addr.GetIp().empty()) {
+        addr_in6.sin6_addr = in6addr_any;
+    } else {
+        // Convert IPv4 to IPv4-mapped IPv6: ::ffff:x.x.x.x
+        std::string mapped = "::ffff:" + addr.GetIp();
+        inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
+    }
+    const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
     return {rc, rc != -1 ? 0 : errno};
 }
 
 SysCallInt32Result Accept(int32_t sockfd, Address& addr) {
-    struct sockaddr_in addr_cli;
-    socklen_t addr_len = sizeof(addr_cli);
-    const int32_t rc = accept(sockfd, (sockaddr*)&addr_cli, &addr_len);
+    struct sockaddr_storage addr_ss;
+    memset(&addr_ss, 0, sizeof(addr_ss));
+    socklen_t addr_len = sizeof(addr_ss);
+    const int32_t rc = accept(sockfd, (sockaddr*)&addr_ss, &addr_len);
     if (rc == -1) {
         if (errno == EWOULDBLOCK || errno == EAGAIN || errno == ECONNABORTED) {
             return {-1, 0};
         }
         return {-1, errno};
     }
-    char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &addr_cli.sin_addr, ip, sizeof(ip));
-    addr.SetIp(ip);
-    addr.SetPort(ntohs(addr_cli.sin_port));
-    addr.SetAddressType(Address::CheckAddressType(addr.GetIp()));
+    char ipstr[INET6_ADDRSTRLEN] = {0};
+    if (addr_ss.ss_family == AF_INET) {
+        auto* sin = (struct sockaddr_in*)&addr_ss;
+        inet_ntop(AF_INET, &sin->sin_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin->sin_port));
+        addr.SetAddressType(AddressType::kIpv4);
+    } else if (addr_ss.ss_family == AF_INET6) {
+        auto* sin6 = (struct sockaddr_in6*)&addr_ss;
+        inet_ntop(AF_INET6, &sin6->sin6_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin6->sin6_port));
+        addr.SetAddressType(AddressType::kIpv6);
+    }
     return {rc, 0};
 }
 
@@ -82,12 +117,18 @@ SysCallInt32Result Writev(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
 }
 
 SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
-    struct sockaddr_in addr_cli;
-    addr_cli.sin_family = AF_INET;
-    addr_cli.sin_port = htons(addr.GetPort());
-    addr_cli.sin_addr.s_addr = inet_addr(addr.GetIp().c_str());
-
-    const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_cli, sizeof(addr_cli));
+    struct sockaddr_in6 addr_in6;
+    memset(&addr_in6, 0, sizeof(addr_in6));
+    addr_in6.sin6_family = AF_INET6;
+    addr_in6.sin6_port = htons(addr.GetPort());
+    if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp().find(':') != std::string::npos) {
+        inet_pton(AF_INET6, addr.GetIp().c_str(), &addr_in6.sin6_addr);
+    } else {
+        // IPv4-mapped IPv6: ::ffff:x.x.x.x
+        std::string mapped = "::ffff:" + addr.GetIp();
+        inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
+    }
+    const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_in6, sizeof(addr_in6));
     return {rc, rc != -1 ? 0 : errno};
 }
 
@@ -112,17 +153,39 @@ SysCallInt32Result Readv(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
 }
 
 SysCallInt32Result RecvFrom(int32_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr) {
-    struct sockaddr_in addr_cli;
-    socklen_t fromlen = sizeof(sockaddr);
+    struct sockaddr_storage addr_ss;
+    memset(&addr_ss, 0, sizeof(addr_ss));
+    socklen_t fromlen = sizeof(addr_ss);
 
-    const int32_t rc = recvfrom(sockfd, buf, len, flag, (sockaddr*)&addr_cli, &fromlen);
+    const int32_t rc = recvfrom(sockfd, buf, len, flag, (sockaddr*)&addr_ss, &fromlen);
     if (rc == -1) {
         return {rc, errno};
     }
 
-    addr.SetIp(inet_ntoa(addr_cli.sin_addr));
-    addr.SetPort(ntohs(addr_cli.sin_port));
-    addr.SetAddressType(Address::CheckAddressType(addr.GetIp()));
+    char ipstr[INET6_ADDRSTRLEN] = {0};
+    if (addr_ss.ss_family == AF_INET) {
+        auto* sin = (struct sockaddr_in*)&addr_ss;
+        inet_ntop(AF_INET, &sin->sin_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin->sin_port));
+        addr.SetAddressType(AddressType::kIpv4);
+    } else if (addr_ss.ss_family == AF_INET6) {
+        auto* sin6 = (struct sockaddr_in6*)&addr_ss;
+        // Check for IPv4-mapped IPv6 address (::ffff:x.x.x.x)
+        if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+            struct in_addr ipv4_addr;
+            memcpy(&ipv4_addr, &sin6->sin6_addr.s6_addr[12], 4);
+            inet_ntop(AF_INET, &ipv4_addr, ipstr, sizeof(ipstr));
+            addr.SetIp(ipstr);
+            addr.SetPort(ntohs(sin6->sin6_port));
+            addr.SetAddressType(AddressType::kIpv4);
+        } else {
+            inet_ntop(AF_INET6, &sin6->sin6_addr, ipstr, sizeof(ipstr));
+            addr.SetIp(ipstr);
+            addr.SetPort(ntohs(sin6->sin6_port));
+            addr.SetAddressType(AddressType::kIpv6);
+        }
+    }
     return {rc, 0};
 }
 
@@ -152,15 +215,28 @@ SysCallInt32Result SocketNoblocking(int32_t sockfd) {
 }
 
 bool ParseRemoteAddress(uint16_t fd, Address& addr) {
-    struct sockaddr_in addr_in;
-    socklen_t addr_len = sizeof(addr_in);
+    struct sockaddr_storage addr_ss;
+    memset(&addr_ss, 0, sizeof(addr_ss));
+    socklen_t addr_len = sizeof(addr_ss);
 
-    if (getpeername(fd, (struct sockaddr*)&addr_in, &addr_len) == -1) {
+    if (getpeername(fd, (struct sockaddr*)&addr_ss, &addr_len) == -1) {
         return false;
     }
 
-    addr.SetIp(inet_ntoa(addr_in.sin_addr));
-    addr.SetPort(ntohs(addr_in.sin_port));
+    char ipstr[INET6_ADDRSTRLEN] = {0};
+    if (addr_ss.ss_family == AF_INET) {
+        auto* sin = (struct sockaddr_in*)&addr_ss;
+        inet_ntop(AF_INET, &sin->sin_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin->sin_port));
+        addr.SetAddressType(AddressType::kIpv4);
+    } else if (addr_ss.ss_family == AF_INET6) {
+        auto* sin6 = (struct sockaddr_in6*)&addr_ss;
+        inet_ntop(AF_INET6, &sin6->sin6_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin6->sin6_port));
+        addr.SetAddressType(AddressType::kIpv6);
+    }
     return true;
 }
 
@@ -168,7 +244,11 @@ bool LookupAddress(const std::string& host, Address& addr) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
     
-    hints.ai_family = AF_UNSPEC;    // Allow IPv4 or IPv6
+    // Check if host is an explicit IPv4 address (contains dots and no colons)
+    bool is_ipv4_literal = (host.find('.') != std::string::npos && host.find(':') == std::string::npos);
+    
+    // If it's an IPv4 literal or looks like one, prefer IPv4
+    hints.ai_family = is_ipv4_literal ? AF_INET : AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM; // Datagram socket for UDP
     hints.ai_flags = AI_PASSIVE;    // For wildcard IP address
 
@@ -178,30 +258,42 @@ bool LookupAddress(const std::string& host, Address& addr) {
         return false;
     }
 
-    // Get the first valid address
+    // Prefer IPv4 addresses over IPv6 for better compatibility
+    struct addrinfo *ipv4_addr = nullptr;
+    struct addrinfo *ipv6_addr = nullptr;
+    
     for (struct addrinfo *rp = result; rp != nullptr; rp = rp->ai_next) {
-        void *addr_ptr;
-        char ip_str[INET6_ADDRSTRLEN];
-
-        if (rp->ai_family == AF_INET) { // IPv4
-            struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
-            addr_ptr = &(ipv4->sin_addr);
-            addr.SetAddressType(AddressType::kIpv4);
-        } else { // IPv6
-            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)rp->ai_addr;
-            addr_ptr = &(ipv6->sin6_addr);
-            addr.SetAddressType(AddressType::kIpv6);
+        if (rp->ai_family == AF_INET && !ipv4_addr) {
+            ipv4_addr = rp;
+        } else if (rp->ai_family == AF_INET6 && !ipv6_addr) {
+            ipv6_addr = rp;
         }
-
-        // Convert IP to string
-        inet_ntop(rp->ai_family, addr_ptr, ip_str, sizeof(ip_str));
-        addr.SetIp(ip_str);
-        freeaddrinfo(result);
-        return true;
     }
-
+    
+    // Use IPv4 if available, otherwise use IPv6
+    struct addrinfo *selected = ipv4_addr ? ipv4_addr : ipv6_addr;
+    if (!selected) {
+        freeaddrinfo(result);
+        return false;
+    }
+    
+    void *addr_ptr;
+    char ip_str[INET6_ADDRSTRLEN];
+    
+    if (selected->ai_family == AF_INET) {
+        struct sockaddr_in *ipv4 = (struct sockaddr_in *)selected->ai_addr;
+        addr_ptr = &(ipv4->sin_addr);
+        addr.SetAddressType(AddressType::kIpv4);
+    } else {
+        struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)selected->ai_addr;
+        addr_ptr = &(ipv6->sin6_addr);
+        addr.SetAddressType(AddressType::kIpv6);
+    }
+    
+    inet_ntop(selected->ai_family, addr_ptr, ip_str, sizeof(ip_str));
+    addr.SetIp(ip_str);
     freeaddrinfo(result);
-    return false;
+    return true;
 }
 
 bool Pipe(int32_t& pipe1, int32_t& pipe2) {
@@ -216,14 +308,12 @@ bool Pipe(int32_t& pipe1, int32_t& pipe2) {
 
 SysCallInt32Result EnableUdpEcn(int32_t sockfd) {
     int on = 1;
-    int rc1 = setsockopt(sockfd, IPPROTO_IP, IP_RECVTOS, &on, sizeof(on));
+    // Try both IPv4 and IPv6 options - on a dual-stack socket, one may fail
+    setsockopt(sockfd, IPPROTO_IP, IP_RECVTOS, &on, sizeof(on));
 #ifdef IPV6_RECVTCLASS
-    int rc2 = setsockopt(sockfd, IPPROTO_IPV6, IPV6_RECVTCLASS, &on, sizeof(on));
-#else
-    int rc2 = 0;
+    setsockopt(sockfd, IPPROTO_IPV6, IPV6_RECVTCLASS, &on, sizeof(on));
 #endif
-    int ok = (rc1 == -1 || rc2 == -1) ? -1 : 0;
-    return {ok, ok != -1 ? 0 : errno};
+    return {0, 0};
 }
 
 SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
@@ -249,10 +339,19 @@ SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint
         addr.SetAddressType(AddressType::kIpv4);
     } else if (addr_ss.ss_family == AF_INET6) {
         auto* sin6 = (struct sockaddr_in6*)&addr_ss;
-        inet_ntop(AF_INET6, &sin6->sin6_addr, ipstr, sizeof(ipstr));
-        addr.SetIp(ipstr);
-        addr.SetPort(ntohs(sin6->sin6_port));
-        addr.SetAddressType(AddressType::kIpv6);
+        if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
+            struct in_addr ipv4_addr;
+            memcpy(&ipv4_addr, &sin6->sin6_addr.s6_addr[12], 4);
+            inet_ntop(AF_INET, &ipv4_addr, ipstr, sizeof(ipstr));
+            addr.SetIp(ipstr);
+            addr.SetPort(ntohs(sin6->sin6_port));
+            addr.SetAddressType(AddressType::kIpv4);
+        } else {
+            inet_ntop(AF_INET6, &sin6->sin6_addr, ipstr, sizeof(ipstr));
+            addr.SetIp(ipstr);
+            addr.SetPort(ntohs(sin6->sin6_port));
+            addr.SetAddressType(AddressType::kIpv6);
+        }
     }
     // ECN
     ecn = 0;
@@ -272,17 +371,14 @@ SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint
 }
 
 SysCallInt32Result EnableUdpEcnMarking(int32_t sockfd, uint8_t ecn_codepoint) {
-    // Set TOS low 2 bits (ECN field). Keep upper bits 0.
     int tos = static_cast<int>(ecn_codepoint & 0x03);
-    int rc1 = setsockopt(sockfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
+    // Try both IPv4 and IPv6 options - on a dual-stack socket, one may fail
+    setsockopt(sockfd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos));
 #ifdef IPV6_TCLASS
     int tclass = static_cast<int>(ecn_codepoint & 0x03);
-    int rc2 = setsockopt(sockfd, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
-#else
-    int rc2 = 0;
+    setsockopt(sockfd, IPPROTO_IPV6, IPV6_TCLASS, &tclass, sizeof(tclass));
 #endif
-    int ok = (rc1 == -1 || rc2 == -1) ? -1 : 0;
-    return {ok, ok != -1 ? 0 : errno};
+    return {0, 0};
 }
 
 }

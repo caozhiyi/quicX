@@ -42,6 +42,8 @@ public:
         std::cout << "[Upload] Headers received" << std::endl;
         std::cout << "[Upload] Headers path: " << request->GetPath() << std::endl;
 
+        response_ = response;
+
         // Get filename from path parameter
         std::string filename = "uploaded_file.dat";
         auto& path_params = request->GetPathParams();
@@ -71,13 +73,12 @@ public:
             std::cerr << "[Upload] Failed to open file: " << filename << std::endl;
             response->SetStatusCode(500);
             response->AppendBody("Failed to open file for writing");
+            // If failed to open file, we send error immediately and handle no more chunks logic specially or let error
+            // propergate Ideally we should just return. Subsequent chunks will check if (file_) which is nullptr.
             return;
         }
 
-        // Set response (will be sent immediately, before body chunks arrive)
-        response->SetStatusCode(200);
-        response->AddHeader("Content-Type", "application/json");
-        response->AppendBody("{\"status\": \"upload started\"}");
+        // We do NOT send response here. We wait for body.
 
         bytes_received_ = 0;
         last_percent_ = -1;
@@ -134,6 +135,13 @@ public:
             std::cout << "  - Total bytes: " << bytes_received_ << std::endl;
             std::cout << "  - Duration: " << duration << " ms" << std::endl;
             std::cout << "  - Speed: " << speed_mbps << " Mbps" << std::endl;
+
+            // Send success response now
+            if (response_) {
+                response_->SetStatusCode(200);
+                response_->AddHeader("Content-Type", "application/json");
+                response_->AppendBody("{\"status\": \"upload completed\"}");
+            }
         }
     }
 
@@ -145,6 +153,7 @@ public:
 
 private:
     FILE* file_ = nullptr;
+    std::shared_ptr<IResponse> response_;
     size_t bytes_received_ = 0;
     size_t total_size_ = 0;  // Total expected size from Content-Length header
     int last_percent_ = -1;  // Last displayed percentage
@@ -214,6 +223,9 @@ void HandleFileDownload(std::shared_ptr<IRequest> request, std::shared_ptr<IResp
 
     // Set body provider for streaming with progress tracking
     response->SetResponseBodyProvider([state](uint8_t* buffer, size_t buffer_size) -> size_t {
+        if (!state->file) {
+            return 0;
+        }
         size_t bytes_read = fread(buffer, 1, buffer_size, state->file);
 
         if (bytes_read > 0) {
@@ -319,15 +331,13 @@ int main(int argc, char* argv[]) {
         "-----END RSA PRIVATE KEY-----\n";
     // Parse arguments
     std::string addr = "0.0.0.0";
-    uint16_t port = 8443;
+    uint16_t port = 7009;
     // Setup signal handlers
     signal(SIGINT, SignalHandler);
     signal(SIGTERM, SignalHandler);
 
     // Create server
     Http3Settings settings;
-    settings.max_concurrent_streams = 100;
-    settings.max_header_list_size = 1024;
 
     g_server = IServer::Create(settings);
     if (!g_server) {
@@ -337,10 +347,12 @@ int main(int argc, char* argv[]) {
 
     // Configure server
     Http3ServerConfig config;
-    config.cert_pem_ = cert_pem;
-    config.key_pem_ = key_pem;
-    config.config_.thread_num_ = 1;
-    config.config_.log_level_ = LogLevel::kError;
+    config.quic_config_.cert_pem_ = cert_pem;
+    config.quic_config_.key_pem_ = key_pem;
+    config.quic_config_.config_.worker_thread_num_ = 1;
+    config.max_concurrent_streams_ = 100;  // Set max concurrent streams
+    // Note: max_header_list_size is now max_field_section_size and is set in settings, not config
+    config.quic_config_.config_.log_level_ = LogLevel::kError;
 
     if (!g_server->Init(config)) {
         std::cerr << "Failed to initialize server" << std::endl;

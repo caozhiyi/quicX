@@ -22,7 +22,9 @@ uint32_t PacketNumber::GetPacketNumberLength(uint64_t packet_number) {
         len++;
         packet_number = packet_number >> 8;
     }
-    return len;
+    // RFC 9000: Initial packets should use at least 2-byte packet numbers
+    // to avoid ambiguity and ensure interoperability
+    return len < 2 ? 2 : len;
 }
 
 uint8_t* PacketNumber::Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t packet_number) {

@@ -1,9 +1,9 @@
-#include <cstring>
-#include "common/log/log.h"
-#include "common/decode/decode.h"
 #include "quic/frame/new_connection_id_frame.h"
-#include "common/buffer/buffer_encode_wrapper.h"
+#include <cstring>
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/decode/decode.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -28,12 +28,13 @@ bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(sequence_number_), "failed to encode sequence number");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(retire_prior_to_), "failed to encode retire prior to");
     CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint8(length_), "failed to encode length");
     CHECK_ENCODE_ERROR(wrapper.EncodeBytes(connection_id_, length_), "failed to encode connection id");
-    CHECK_ENCODE_ERROR(wrapper.EncodeBytes(stateless_reset_token_, kStatelessResetTokenLength), "failed to encode stateless reset token");
+    CHECK_ENCODE_ERROR(wrapper.EncodeBytes(stateless_reset_token_, kStatelessResetTokenLength),
+        "failed to encode stateless reset token");
 
     return true;
 }
@@ -42,7 +43,9 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
+        uint64_t type = 0;
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
+        frame_type_ = static_cast<uint16_t>(type);
         if (frame_type_ != FrameType::kNewConnectionId) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
@@ -78,7 +81,8 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     }
 
     uint8_t* token_ptr = stateless_reset_token_;
-    CHECK_DECODE_ERROR(wrapper.DecodeBytes(token_ptr, kStatelessResetTokenLength), "failed to decode stateless reset token");
+    CHECK_DECODE_ERROR(
+        wrapper.DecodeBytes(token_ptr, kStatelessResetTokenLength), "failed to decode stateless reset token");
 
     return true;
 }
@@ -88,8 +92,8 @@ uint32_t NewConnectionIDFrame::EncodeSize() {
     uint32_t sequence_size = common::GetEncodeVarintLength(sequence_number_);
     uint32_t retire_size = common::GetEncodeVarintLength(retire_prior_to_);
 
-    // Fixed sizes: frame type (2) + length (1) + connection ID (length_) + token (16)
-    uint32_t fixed_size = 2 + 1 + length_ + kStatelessResetTokenLength;
+    // Fixed sizes: frame type (varint) + length (1) + connection ID (length_) + token (16)
+    uint32_t fixed_size = common::GetEncodeVarintLength(frame_type_) + 1 + length_ + kStatelessResetTokenLength;
 
     return sequence_size + retire_size + fixed_size;
 }

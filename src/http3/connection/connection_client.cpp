@@ -26,10 +26,16 @@ ClientConnection::ClientConnection(const std::string& unique_id, const Http3Sett
     const std::shared_ptr<IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
     const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
-    const http_response_handler& push_handler):
+    const http_response_handler& push_handler,
+    uint64_t max_concurrent_streams,
+    bool enable_push):
     IConnection(unique_id, quic_connection, error_handler),
     push_promise_handler_(push_promise_handler),
     push_handler_(push_handler) {
+    // Store local connection limits
+    max_concurrent_streams_ = max_concurrent_streams;
+    enable_push_ = enable_push;
+
     // create control stream
     auto control_stream = quic_connection_->MakeStream(StreamDirection::kSend);
     control_sender_stream_ =
@@ -40,71 +46,61 @@ ClientConnection::ClientConnection(const std::string& unique_id, const Http3Sett
     control_sender_stream_->SendSettings(settings_);
 
     // Send MAX_PUSH_ID if push is enabled (RFC 9114 Section 7.2.7)
-    if (settings.enable_push) {
+    if (enable_push_) {
         // Set a reasonable limit for concurrent pushes (100 is a common default)
         control_sender_stream_->SendMaxPushId(100);
     }
 
-    // RFC 9204: QPACK is mandatory for HTTP/3, but dynamic table usage is optional
-    // Create QPACK streams only if dynamic table is enabled
-    bool qpack_enabled = (settings.qpack_max_table_capacity > 0 || settings.qpack_blocked_streams > 0);
+    // RFC 9204: QPACK is mandatory for HTTP/3, and encoder/decoder streams MUST be created
+    // even if the dynamic table capacity is 0.
 
-    if (qpack_enabled) {
-        common::LOG_DEBUG("ClientConnection: QPACK enabled (max_table_capacity=%llu, blocked_streams=%llu)",
-            settings.qpack_max_table_capacity, settings.qpack_blocked_streams);
+    // Create QPACK streams
+    auto qpack_enc_stream = quic_connection_->MakeStream(StreamDirection::kSend);
+    auto qpack_dec_stream = quic_connection_->MakeStream(StreamDirection::kRecv);
+    auto qpack_dec_sender_stream = quic_connection_->MakeStream(StreamDirection::kSend);
 
-        // Create QPACK streams
-        auto qpack_enc_stream = quic_connection_->MakeStream(StreamDirection::kSend);
-        auto qpack_dec_stream = quic_connection_->MakeStream(StreamDirection::kRecv);
-        auto qpack_dec_sender_stream = quic_connection_->MakeStream(StreamDirection::kSend);
-
-        // Wire QPACK instruction sender to QPACK encoder stream
-        auto encoder_sender =
-            std::make_shared<QpackEncoderSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream),
-                std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-        // create decoder receiver stream to apply inserts
-        auto decoder_receiver = std::make_shared<quicx::http3::QpackDecoderReceiverStream>(
-            std::dynamic_pointer_cast<IQuicRecvStream>(qpack_dec_stream), blocked_registry_,
+    // Wire QPACK instruction sender to QPACK encoder stream
+    auto encoder_sender =
+        std::make_shared<QpackEncoderSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream),
             std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-        streams_[encoder_sender->GetStreamID()] = encoder_sender;
-        streams_[decoder_receiver->GetStreamID()] = decoder_receiver;
+    // create decoder receiver stream to apply inserts
+    auto decoder_receiver = std::make_shared<quicx::http3::QpackDecoderReceiverStream>(
+        std::dynamic_pointer_cast<IQuicRecvStream>(qpack_dec_stream), blocked_registry_,
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
+    streams_[encoder_sender->GetStreamID()] = encoder_sender;
+    streams_[decoder_receiver->GetStreamID()] = decoder_receiver;
 
-        auto weak_enc = encoder_sender;
-        qpack_encoder_->SetInstructionSender(
-            [weak_enc](const std::vector<std::pair<std::string, std::string>>& inserts) {
-                if (!weak_enc) {
-                    return;
-                }
-                weak_enc->SendInstructions(inserts);
-            });
+    auto weak_enc = encoder_sender;
+    qpack_encoder_->SetInstructionSender([weak_enc](const std::vector<std::pair<std::string, std::string>>& inserts) {
+        if (!weak_enc) {
+            return;
+        }
+        weak_enc->SendInstructions(inserts);
+    });
 
-        // Wire decoder feedback sender to QPACK decoder sender stream
-        auto decoder_sender = std::make_shared<QpackDecoderSenderStream>(
-            std::dynamic_pointer_cast<IQuicSendStream>(qpack_dec_sender_stream),
+    // Wire decoder feedback sender to QPACK decoder sender stream
+    auto decoder_sender =
+        std::make_shared<QpackDecoderSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(qpack_dec_sender_stream),
             std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-        streams_[decoder_sender->GetStreamID()] = decoder_sender;
-        qpack_encoder_->SetDecoderFeedbackSender([decoder_sender](uint8_t type, uint64_t value) {
-            if (!decoder_sender) {
-                return;
-            }
-            switch (type) {
-                case static_cast<uint8_t>(QpackDecoderInstrType::kSectionAck):
-                    decoder_sender->SendSectionAck(value);
-                    break;
-                case static_cast<uint8_t>(QpackDecoderInstrType::kStreamCancellation):
-                    decoder_sender->SendStreamCancel(value);
-                    break;
-                case static_cast<uint8_t>(QpackDecoderInstrType::kInsertCountInc):
-                    decoder_sender->SendInsertCountIncrement(value);
-                    break;
-                default:
-                    break;
-            }
-        });
-
-    } else {
-        common::LOG_DEBUG("ClientConnection: QPACK disabled (no dynamic table configuration)");
-    }
+    streams_[decoder_sender->GetStreamID()] = decoder_sender;
+    qpack_encoder_->SetDecoderFeedbackSender([decoder_sender](uint8_t type, uint64_t value) {
+        if (!decoder_sender) {
+            return;
+        }
+        switch (type) {
+            case static_cast<uint8_t>(QpackDecoderInstrType::kSectionAck):
+                decoder_sender->SendSectionAck(value);
+                break;
+            case static_cast<uint8_t>(QpackDecoderInstrType::kStreamCancellation):
+                decoder_sender->SendStreamCancel(value);
+                break;
+            case static_cast<uint8_t>(QpackDecoderInstrType::kInsertCountInc):
+                decoder_sender->SendInsertCountIncrement(value);
+                break;
+            default:
+                break;
+        }
+    });
 }
 
 ClientConnection::~ClientConnection() {}
@@ -113,9 +109,10 @@ void ClientConnection::CreateAndSendRequestStream(
     std::shared_ptr<IRequest> request, std::shared_ptr<IQuicStream> stream, const http_response_handler& handler) {
     std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_, blocked_registry_,
         std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), handler,
-        std::bind(&ClientConnection::HandleError, shared_from_this(), std::placeholders::_1, std::placeholders::_2),
-        std::bind(
-            &ClientConnection::HandlePushPromise, shared_from_this(), std::placeholders::_1, std::placeholders::_2));
+        std::bind(&ClientConnection::HandleError, std::static_pointer_cast<ClientConnection>(shared_from_this()),
+            std::placeholders::_1, std::placeholders::_2),
+        std::bind(&ClientConnection::HandlePushPromise, std::static_pointer_cast<ClientConnection>(shared_from_this()),
+            std::placeholders::_1, std::placeholders::_2));
     request_stream->Init();  // Must be called after construction to set up callbacks
     streams_[stream->GetStreamID()] = request_stream;
 
@@ -133,9 +130,10 @@ void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> requ
     std::shared_ptr<IQuicStream> stream, std::shared_ptr<IAsyncClientHandler> handler) {
     std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_, blocked_registry_,
         std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), handler,
-        std::bind(&ClientConnection::HandleError, shared_from_this(), std::placeholders::_1, std::placeholders::_2),
-        std::bind(
-            &ClientConnection::HandlePushPromise, shared_from_this(), std::placeholders::_1, std::placeholders::_2));
+        std::bind(&ClientConnection::HandleError, std::static_pointer_cast<ClientConnection>(shared_from_this()),
+            std::placeholders::_1, std::placeholders::_2),
+        std::bind(&ClientConnection::HandlePushPromise, std::static_pointer_cast<ClientConnection>(shared_from_this()),
+            std::placeholders::_1, std::placeholders::_2));
     request_stream->Init();  // Must be called after construction to set up callbacks
     streams_[stream->GetStreamID()] = request_stream;
 
@@ -150,12 +148,12 @@ void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> requ
 }
 
 bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler) {
-    if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
+    if (streams_.size() >= max_concurrent_streams_) {
         common::LOG_ERROR("ClientConnection::DoRequest max concurrent streams reached");
         return false;
     }
 
-    auto self = shared_from_this();
+    auto self = std::static_pointer_cast<ClientConnection>(shared_from_this());
     return quic_connection_->MakeStreamAsync(
         StreamDirection::kBidi, [self, request, handler](std::shared_ptr<IQuicStream> stream) {
             if (!stream) {
@@ -167,12 +165,12 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_r
 }
 
 bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IAsyncClientHandler> handler) {
-    if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
+    if (streams_.size() >= max_concurrent_streams_) {
         common::LOG_ERROR("ClientConnection::DoRequest max concurrent streams reached");
         return false;
     }
 
-    auto self = shared_from_this();
+    auto self = std::static_pointer_cast<ClientConnection>(shared_from_this());
     return quic_connection_->MakeStreamAsync(
         StreamDirection::kBidi, [self, request, handler](std::shared_ptr<IQuicStream> stream) {
             if (!stream) {
@@ -227,7 +225,7 @@ void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
     }
 
     // Check stream limit
-    if (streams_.size() >= settings_[SettingsType::kMaxConcurrentStreams]) {
+    if (streams_.size() >= max_concurrent_streams_) {
         common::LOG_ERROR("ClientConnection::HandleStream max concurrent streams reached");
         Close(Http3ErrorCode::kStreamCreationError);
         return;

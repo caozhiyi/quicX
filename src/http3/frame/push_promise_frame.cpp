@@ -11,8 +11,8 @@ bool PushPromiseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    // Write frame type
-    if (!wrapper.EncodeFixedUint16(type_)) {
+    // Write frame type (varint per RFC 9114)
+    if (!wrapper.EncodeVarint(type_)) {
         return false;
     }
 
@@ -36,9 +36,11 @@ DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, b
     common::MultiBlockBufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        if (!wrapper.DecodeFixedUint16(type_)) {
+        uint64_t frame_type;
+        if (!wrapper.DecodeVarint(frame_type)) {
             return DecodeResult::kError;
         }
+        type_ = static_cast<uint16_t>(frame_type);
     }
 
     // Read length
@@ -75,8 +77,8 @@ DecodeResult PushPromiseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, b
 uint32_t PushPromiseFrame::EvaluateEncodeSize() {
     uint32_t size = 0;
 
-    // Size for frame type
-    size += sizeof(type_);
+    // Size for frame type (varint per RFC 9114)
+    size += common::GetEncodeVarintLength(type_);
 
     // Size for length field
     size += common::GetEncodeVarintLength(EvaluatePayloadSize());

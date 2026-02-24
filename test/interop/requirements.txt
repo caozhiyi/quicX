@@ -1,0 +1,2 @@
+# quicX interop test runner dependencies
+# No external dependencies required - uses only Python stdlib

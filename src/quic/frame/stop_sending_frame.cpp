@@ -1,6 +1,6 @@
-#include "common/log/log.h"
-#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/log/log.h"
 
 #include "quic/frame/stop_sending_frame.h"
 
@@ -22,7 +22,7 @@ bool StopSendingFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(stream_id_), "failed to encode stream id");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(app_error_code_), "failed to encode app error code");
     return true;
@@ -32,7 +32,9 @@ bool StopSendingFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with
     common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
-        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
+        uint64_t type = 0;
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
+        frame_type_ = static_cast<uint16_t>(type);
         if (frame_type_ != FrameType::kStopSending) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
@@ -44,7 +46,10 @@ bool StopSendingFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with
 }
 
 uint32_t StopSendingFrame::EncodeSize() {
-    return sizeof(StopSendingFrame);
+    uint32_t size = common::GetEncodeVarintLength(frame_type_);
+    size += common::GetEncodeVarintLength(stream_id_);
+    size += common::GetEncodeVarintLength(app_error_code_);
+    return size;
 }
 
 }  // namespace quic

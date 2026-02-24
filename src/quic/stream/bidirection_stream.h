@@ -46,7 +46,7 @@ public:
     // ***************  inner interface ***************//
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) override;
 
-    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor) override;
+    virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor, EncryptionLevel level = kApplication) override;
 
     // Override to trigger CheckStreamClose after ACK
     virtual void OnDataAcked(uint64_t max_offset, bool has_fin) override;

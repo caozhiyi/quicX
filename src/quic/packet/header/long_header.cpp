@@ -1,12 +1,12 @@
-#include <memory>
 #include <cstring>
+#include <memory>
 
-#include "common/log/log.h"
-#include "quic/common/constants.h"
 #include "common/alloter/if_alloter.h"
-#include "quic/packet/header/long_header.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/buffer_encode_wrapper.h"
+#include "common/log/log.h"
+#include "quic/common/constants.h"
+#include "quic/packet/header/long_header.h"
 
 namespace quicx {
 namespace quic {
@@ -15,21 +15,15 @@ LongHeader::LongHeader():
     IHeader(PacketHeaderType::kLongHeader),
     version_(0),
     destination_connection_id_length_(0),
-    source_connection_id_length_(0) {
-
-}
+    source_connection_id_length_(0) {}
 
 LongHeader::LongHeader(uint8_t flag):
     IHeader(flag),
     version_(0),
     destination_connection_id_length_(0),
-    source_connection_id_length_(0) {
+    source_connection_id_length_(0) {}
 
-}
-
-LongHeader::~LongHeader() {
-
-}
+LongHeader::~LongHeader() {}
 
 bool LongHeader::EncodeHeader(std::shared_ptr<common::IBuffer> buffer) {
     if (!HeaderFlag::EncodeFlag(buffer)) {
@@ -38,10 +32,11 @@ bool LongHeader::EncodeHeader(std::shared_ptr<common::IBuffer> buffer) {
 
     uint16_t need_size = EncodeHeaderSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
+        common::LOG_ERROR(
+            "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
-    
+
     common::BufferEncodeWrapper wrapper(buffer);
 
     // encode version
@@ -74,7 +69,7 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
         common::LOG_ERROR("quic fixed bit is not set");
         return false;
     }
-    
+
     common::BufferDecodeWrapper wrapper(buffer);
     // decode version
     wrapper.DecodeFixedUint32(version_);
@@ -92,10 +87,16 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
         auto cid = (uint8_t*)source_connection_id_;
         wrapper.DecodeBytes(cid, source_connection_id_length_);
     }
-    
+
     auto data_span = wrapper.GetDataSpan();
-    // the header src include header flag
-    header_src_data_ = common::SharedBufferSpan(buffer->GetChunk(), data_span.GetStart() - 1, data_span.GetEnd());
+    // the header src must include header flag for AEAD AD construction
+    // When with_flag=false, the flag was already decoded separately, but we need
+    // to ensure it's in the buffer for AD. Write flag byte before the version field.
+    uint8_t* header_start = data_span.GetStart() - 1;
+    *header_start = flag_.header_flag_;  // Write the flag byte to ensure it's correct
+
+    header_src_data_ = common::SharedBufferSpan(buffer->GetChunk(), header_start, data_span.GetEnd());
+    
     return true;
 }
 
@@ -117,5 +118,5 @@ void LongHeader::SetSourceConnectionId(const uint8_t* id, uint8_t len) {
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

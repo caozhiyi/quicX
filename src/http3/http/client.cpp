@@ -1,12 +1,9 @@
-#include "http3/http/client.h"
-#include <chrono>
-#include <condition_variable>
-#include <mutex>
-
 #include "common/http/url.h"
 #include "common/log/log.h"
 #include "common/network/address.h"
 #include "common/network/io_handle.h"
+
+#include "http3/http/client.h"
 #include "http3/http/error.h"
 #include "http3/http/type.h"
 
@@ -20,7 +17,7 @@ namespace http3 {
 
 Client::Client(const Http3Settings& settings):
     settings_(settings) {
-    quic_ = IQuicClient::Create();
+    quic_ = IQuicClient::Create(settings.quic_transport_params_);
     quic_->SetConnectionStateCallBack(std::bind(&Client::OnConnection, this, std::placeholders::_1,
         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
 }
@@ -30,17 +27,11 @@ Client::~Client() {
     quic_->Join();
 }
 
-bool Client::Init(const Http3Config& config) {
+bool Client::Init(const Http3ClientConfig& config) {
     // Store config for later use
     config_ = config;
 
-    QuicClientConfig quic_config;
-    quic_config.config_.worker_thread_num_ = config.thread_num_;
-    quic_config.config_.log_level_ = LogLevel(config.log_level_);
-    quic_config.config_.enable_ecn_ = config.enable_ecn_;
-    quic_config.enable_session_cache_ = false;
-    quic_config.session_cache_path_ = "";
-    return quic_->Init(quic_config);
+    return quic_->Init(config.quic_config_);
 }
 
 bool Client::DoRequest(const std::string& url, HttpMethod method, std::shared_ptr<IRequest> request,
@@ -202,7 +193,11 @@ void Client::OnConnection(
     auto client_conn = std::make_shared<ClientConnection>(host_name, settings_, conn,
         std::bind(&Client::HandleError, this, std::placeholders::_1, std::placeholders::_2),
         std::bind(&Client::HandlePushPromise, this, std::placeholders::_1),
-        std::bind(&Client::HandlePush, this, std::placeholders::_1, std::placeholders::_2));
+        std::bind(&Client::HandlePush, this, std::placeholders::_1, std::placeholders::_2),
+        config_.max_concurrent_streams_, config_.enable_push_);
+
+    // Initialize connection (starts timers)
+    client_conn->Init();
 
     // Store connection in map
     conn_map_[host_name] = client_conn;
@@ -226,7 +221,12 @@ void Client::OnConnection(
 }
 
 void Client::HandleError(const std::string& unique_id, uint32_t error_code) {
-    common::LOG_ERROR("handle error. unique_id: %s, error_code: %d", unique_id.c_str(), error_code);
+    // H3_NO_ERROR (0x100 = 256) indicates graceful closure, not a real error
+    if (error_code == static_cast<uint32_t>(Http3ErrorCode::kNoError)) {
+        common::LOG_DEBUG("handle graceful close. unique_id: %s", unique_id.c_str());
+    } else {
+        common::LOG_ERROR("handle error. unique_id: %s, error_code: %d", unique_id.c_str(), error_code);
+    }
     conn_map_.erase(unique_id);
     if (error_handler_) {
         error_handler_(unique_id, error_code);
@@ -270,6 +270,61 @@ void Client::Close() {
 
     // TODO configure the timeout
     quic_->AddTimer(1000, [this]() { quic_->Destroy(); });
+}
+
+bool Client::InitiateMigration() {
+    bool result = false;
+    common::LOG_INFO("Client::InitiateMigration() - initiating migration on %zu connections", conn_map_.size());
+
+    // Initiate migration on all active HTTP/3 connections
+    for (auto& pair : conn_map_) {
+        common::LOG_DEBUG("Initiating migration on connection to %s", pair.first.c_str());
+        if (pair.second->InitiateMigration()) {
+            result = true;
+            common::LOG_INFO("Migration initiated on connection to %s", pair.first.c_str());
+        } else {
+            common::LOG_WARN("Migration failed on connection to %s", pair.first.c_str());
+        }
+    }
+
+    return result;
+}
+
+MigrationResult Client::InitiateMigrationTo(const std::string& local_ip, uint16_t local_port) {
+    common::LOG_INFO("Client::InitiateMigrationTo() - initiating migration to %s:%d on %zu connections",
+        local_ip.c_str(), local_port, conn_map_.size());
+
+    if (conn_map_.empty()) {
+        common::LOG_WARN("Client::InitiateMigrationTo: no active connections");
+        return MigrationResult::kFailedInvalidState;
+    }
+
+    // Initiate migration on the first (or all) active HTTP/3 connection(s)
+    // For simplicity, we initiate on the first connection. In production,
+    // you might want to migrate all connections or a specific one.
+    for (auto& pair : conn_map_) {
+        common::LOG_DEBUG(
+            "Initiating migration to %s:%d on connection to %s", local_ip.c_str(), local_port, pair.first.c_str());
+        auto result = pair.second->InitiateMigrationTo(local_ip, local_port);
+        if (result == MigrationResult::kSuccess) {
+            common::LOG_INFO("Migration initiated on connection to %s", pair.first.c_str());
+            return result;
+        } else {
+            common::LOG_WARN(
+                "Migration failed on connection to %s with result %d", pair.first.c_str(), static_cast<int>(result));
+        }
+    }
+
+    return MigrationResult::kFailedInvalidState;
+}
+
+void Client::SetMigrationCallback(migration_callback cb) {
+    migration_cb_ = cb;
+
+    // Forward callback to all existing connections
+    for (auto& pair : conn_map_) {
+        pair.second->SetMigrationCallback(cb);
+    }
 }
 
 }  // namespace http3

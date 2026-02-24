@@ -102,6 +102,13 @@ MetricID MetricsStd::PtoCountPerConnection = kInvalidMetricID;
 MetricID MetricsStd::VersionNegotiationTotal = kInvalidMetricID;
 MetricID MetricsStd::QuicVersionInUse = kInvalidMetricID;
 
+MetricID MetricsStd::QuicRetryPacketsSent = kInvalidMetricID;
+MetricID MetricsStd::QuicRetryByHighRate = kInvalidMetricID;
+MetricID MetricsStd::QuicRetryBySuspiciousIP = kInvalidMetricID;
+MetricID MetricsStd::QuicRetryByPolicy = kInvalidMetricID;
+MetricID MetricsStd::QuicRetryTokensValidated = kInvalidMetricID;
+MetricID MetricsStd::QuicRetryTokensInvalid = kInvalidMetricID;
+
 void InitializeStandardMetrics() {
     // UDP Layer
     MetricsStd::UdpPacketsRx = Metrics::RegisterCounter("udp_packets_rx", "Total UDP packets received");
@@ -251,6 +258,20 @@ void InitializeStandardMetrics() {
     MetricsStd::VersionNegotiationTotal =
         Metrics::RegisterCounter("version_negotiation_total", "Version negotiation events");
     MetricsStd::QuicVersionInUse = Metrics::RegisterGauge("quic_version_in_use", "Current QUIC version in use");
+
+    // Retry Mechanism
+    MetricsStd::QuicRetryPacketsSent =
+        Metrics::RegisterCounter("quic_retry_packets_sent", "Total Retry packets sent");
+    MetricsStd::QuicRetryByHighRate =
+        Metrics::RegisterCounter("quic_retry_by_high_rate", "Retry triggered by high connection rate");
+    MetricsStd::QuicRetryBySuspiciousIP =
+        Metrics::RegisterCounter("quic_retry_by_suspicious_ip", "Retry triggered by suspicious IP");
+    MetricsStd::QuicRetryByPolicy =
+        Metrics::RegisterCounter("quic_retry_by_policy", "Retry triggered by ALWAYS policy");
+    MetricsStd::QuicRetryTokensValidated =
+        Metrics::RegisterCounter("quic_retry_tokens_validated", "Valid Retry tokens received");
+    MetricsStd::QuicRetryTokensInvalid =
+        Metrics::RegisterCounter("quic_retry_tokens_invalid", "Invalid Retry tokens received");
 }
 
 }  // namespace common

@@ -1,8 +1,10 @@
+#include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <cstring>
 #include <vector>
 
 #include "common/log/log.h"
+#include "quic/connection/session_cache.h"
 #include "quic/crypto/tls/tls_connection_client.h"
 
 namespace quicx {
@@ -23,6 +25,8 @@ bool TLSClientConnection::Init() {
 
     // set connect state, this will start the handshake process.
     SSL_set_connect_state(ssl_.get());
+    // TODO: make this configurable
+    SSL_set_verify(ssl_.get(), SSL_VERIFY_NONE, nullptr);
     return true;
 }
 
@@ -32,8 +36,16 @@ bool TLSClientConnection::DoHandleShake() {
     if (ret <= 0) {
         int32_t ssl_err = SSL_get_error(ssl_.get(), ret);
         if (ssl_err != SSL_ERROR_WANT_READ) {
-            const char* err = SSL_error_description(ssl_err);
-            common::LOG_ERROR("SSL_do_handshake failed. err:%s", err);
+            const char* err_str = SSL_error_description(ssl_err);
+            common::LOG_ERROR("SSL_do_handshake failed. ret:%d, ssl_err:%d, desc:%s", ret, ssl_err, err_str);
+
+            // Print OpenSSL error queue
+            unsigned long err_code;
+            while ((err_code = ERR_get_error()) != 0) {
+                char output[256];
+                ERR_error_string_n(err_code, output, sizeof(output));
+                common::LOG_ERROR("OpenSSL Error: %s", output);
+            }
         }
         return false;
     }
@@ -123,6 +135,14 @@ bool TLSClientConnection::SetSession(const uint8_t* session_der, size_t session_
 
     bool ok = SSL_set_session(ssl_.get(), sess) == 1;
     SSL_SESSION_free(sess);
+
+    // Enable early data on the SSL object for 0-RTT
+    // This is required in addition to SSL_CTX_set_early_data_enabled
+    if (ok && early_data_capable) {
+        SSL_set_early_data_enabled(ssl_.get(), 1);
+        common::LOG_INFO("0-RTT early data enabled on SSL object");
+    }
+
     return ok;
 }
 
@@ -168,6 +188,23 @@ void TLSClientConnection::OnNewSession(SSL_SESSION* session) {
     }
     saved_session_ = session;
     SSL_SESSION_up_ref(saved_session_);
+
+    // Immediately persist to SessionCache (don't wait for HANDSHAKE_DONE)
+    if (SessionCache::Instance().IsEnableSessionCache()) {
+        SessionInfo info;
+        if (ExtractSessionInfo(session, info)) {
+            info.server_name = GetServerNameFromSSL(ssl_.get());
+            int len = i2d_SSL_SESSION(session, nullptr);
+            if (len > 0) {
+                std::string der;
+                der.resize(static_cast<size_t>(len));
+                unsigned char* p = reinterpret_cast<unsigned char*>(&der[0]);
+                i2d_SSL_SESSION(session, &p);
+                SessionCache::Instance().StoreSession(der, info);
+                common::LOG_INFO("NewSessionTicket saved to cache for %s", info.server_name.c_str());
+            }
+        }
+    }
 }
 
 SSL_SESSION* TLSClientConnection::StealSavedSession() {

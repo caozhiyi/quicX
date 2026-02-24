@@ -17,7 +17,9 @@ IConnection::IConnection(const std::string& unique_id, const std::shared_ptr<IQu
 
     qpack_encoder_ = std::make_shared<QpackEncoder>();
     blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
+}
 
+void IConnection::Init() {
     // Start periodic cleanup timer for completed streams (runs every 100ms)
     StartCleanupTimer();
 }
@@ -26,17 +28,60 @@ IConnection::~IConnection() {
     // Set flag to prevent timer callbacks from accessing this object
     is_destroying_->store(true);
 
-    Close(0);
+    // Only call Close if the QUIC connection is still active
+    // If already closing/draining/closed, skip to avoid duplicate CloseInternal error
+    if (quic_connection_ && !quic_connection_->IsTerminating()) {
+        Close(0);
+    }
 }
 
 void IConnection::Close(uint32_t error_code) {
-    if (quic_connection_) {
-        if (error_code != 0) {
-            quic_connection_->Reset(error_code);
-        } else {
-            quic_connection_->Close();
-        }
+    // Skip if QUIC connection is already in terminating state
+    if (!quic_connection_ || quic_connection_->IsTerminating()) {
+        return;
     }
+
+    if (error_code != 0) {
+        quic_connection_->Reset(error_code);
+    } else {
+        quic_connection_->Close();
+    }
+}
+
+bool IConnection::InitiateMigration() {
+    if (!quic_connection_) {
+        common::LOG_WARN("IConnection::InitiateMigration: no QUIC connection");
+        return false;
+    }
+    return quic_connection_->InitiateMigration();
+}
+
+MigrationResult IConnection::InitiateMigrationTo(const std::string& local_ip, uint16_t local_port) {
+    if (!quic_connection_) {
+        common::LOG_WARN("IConnection::InitiateMigrationTo: no QUIC connection");
+        return MigrationResult::kFailedInvalidState;
+    }
+    return quic_connection_->InitiateMigrationTo(local_ip, local_port);
+}
+
+void IConnection::SetMigrationCallback(migration_callback cb) {
+    if (quic_connection_) {
+        quic_connection_->SetMigrationCallback(cb);
+    }
+}
+
+bool IConnection::IsMigrationSupported() const {
+    if (!quic_connection_) {
+        return false;
+    }
+    return quic_connection_->IsMigrationSupported();
+}
+
+bool IConnection::IsMigrationInProgress() const {
+    if (!quic_connection_) {
+        return false;
+    }
+    return quic_connection_->IsMigrationInProgress();
 }
 
 void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings) {
@@ -45,6 +90,14 @@ void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& s
 
     // merge settings
     for (auto iter = settings.begin(); iter != settings.end(); ++iter) {
+        // RFC 9114 §7.2.4.1: IDs 0x02, 0x03, 0x04, 0x05 are reserved (HTTP/2 legacy).
+        // Receipt of these MUST be treated as a connection error of type H3_SETTINGS_ERROR.
+        uint16_t id = iter->first;
+        if (id == 0x02 || id == 0x03 || id == 0x04 || id == 0x05) {
+            common::LOG_ERROR("received forbidden HTTP/2 settings id: 0x%02x", id);
+            Close(0x109);  // H3_SETTINGS_ERROR
+            return;
+        }
         settings_[iter->first] = std::min(settings_[iter->first], iter->second);
         common::LOG_DEBUG("settings. key:%d, value:%d", iter->first, settings_[iter->first]);
     }
@@ -52,15 +105,11 @@ void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& s
 
 const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Http3Settings& settings) {
     std::unordered_map<uint16_t, uint64_t> settings_map;
-    settings_map[SettingsType::kMaxHeaderListSize] = settings.max_header_list_size;
-    settings_map[SettingsType::kEnablePush] = settings.enable_push;
-    settings_map[SettingsType::kMaxConcurrentStreams] = settings.max_concurrent_streams;
-    settings_map[SettingsType::kMaxFrameSize] = settings.max_frame_size;
+    // RFC 9114 §7.2.4.1: Only valid HTTP/3 settings may be sent on the wire.
+    // IDs 0x02-0x05 are forbidden (HTTP/2 legacy) and MUST NOT be sent.
     settings_map[SettingsType::kMaxFieldSectionSize] = settings.max_field_section_size;
-
-    // TODO: implement below settings
-    settings_map[SettingsType::kQpackMaxTableCapacity] = 0;
-    settings_map[SettingsType::kQpackBlockedStreams] = 0;
+    settings_map[SettingsType::kQpackMaxTableCapacity] = settings.qpack_max_table_capacity;
+    settings_map[SettingsType::kQpackBlockedStreams] = settings.qpack_blocked_streams;
     settings_map[SettingsType::kEnableConnectProtocol] = 0;
 
     return settings_map;
@@ -71,21 +120,22 @@ void IConnection::StartCleanupTimer() {
         return;
     }
 
-    // Capture the destroying flag to safely handle timer callbacks after object destruction
-    auto destroying_flag = is_destroying_;
+    // Capture weak_ptr to this to safely handle timer callbacks after object destruction
+    std::weak_ptr<IConnection> weak_self = weak_from_this();
 
     // Create a periodic timer that runs every 100ms to cleanup completed streams
     cleanup_timer_id_ = quic_connection_->AddTimer(
-        [this, destroying_flag]() {
-            // Check if the connection is being destroyed
-            if (destroying_flag->load()) {
-                // Connection is being destroyed, do nothing
+        [weak_self]() {
+            // Check if the connection relies alive
+            auto self = weak_self.lock();
+            if (!self) {
+                // Connection destroyed, do nothing
                 return;
             }
 
-            CleanupDestroyedStreams();
+            self->CleanupDestroyedStreams();
             // Re-schedule next cleanup
-            StartCleanupTimer();
+            self->StartCleanupTimer();
         },
         100);  // 100ms TODO, do not use fix time, loop support defer
 }

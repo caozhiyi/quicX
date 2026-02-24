@@ -47,6 +47,13 @@ public:
     uint32_t GetAvailableWindow();
 
     /**
+     * @brief Notify that congestion window is limiting send
+     * This should be called when TrySend() finds cwnd=0
+     * When ACK is received, send_retry_cb_ will be called to resume sending
+     */
+    void SetCwndLimited();
+
+    /**
      * @brief Get pending frames for a specific encryption level
      * @param level Encryption level
      * @param max_bytes Maximum bytes allowed (from congestion window)
@@ -113,10 +120,12 @@ public:
     // RFC 9000 Section 4.10: Discard packet number space (delegates to SendControl)
     void DiscardPacketNumberSpace(PacketNumberSpace ns) { send_control_.DiscardPacketNumberSpace(ns); }
 
-    // Reset Initial packet number to 0 (used for Retry)
+    // Reset Initial packet state for Retry (clear unacked/lost packets but keep PN counter)
+    // RFC 9000 Section 17.2.5.3: PN must NOT be reset after Retry
     void ResetInitialPacketNumber() {
         send_control_.ResetInitialPacketNumber();
-        pakcet_number_.Reset(kInitialNumberSpace);
+        // Do NOT reset pakcet_number_ — interop tests require PN to be
+        // strictly greater than the highest PN sent before Retry
     }
 
     // Accessors for BaseConnection (needed for TrySend)

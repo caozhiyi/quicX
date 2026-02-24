@@ -26,12 +26,12 @@ public:
     /**
      * @brief Generate a Retry token for a client.
      *
-     * Token format: timestamp (8 bytes) || HMAC-SHA256 (32 bytes)
-     * HMAC is computed over: client_ip || timestamp || original_dcid
+     * Token format: timestamp (8 bytes) || cid_len (1 byte) || original_dcid (N bytes) || HMAC-SHA256 (32 bytes)
+     * HMAC is computed over: client_ip || timestamp || cid_len || original_dcid
      *
      * @param client_addr Client's network address
      * @param original_dcid Original destination connection ID from Initial packet
-     * @return Base64-encoded token string
+     * @return Token string
      */
     std::string GenerateToken(const common::Address& client_addr, const ConnectionID& original_dcid);
 
@@ -45,11 +45,11 @@ public:
      *
      * @param token Token string from client
      * @param client_addr Client's network address
-     * @param original_dcid Original destination connection ID
+     * @param[out] out_original_dcid Output parameter to store the extracted Original DCID
      * @param max_age_seconds Maximum token age in seconds (default: 60)
      * @return true if token is valid, false otherwise
      */
-    bool ValidateToken(const std::string& token, const common::Address& client_addr, const ConnectionID& original_dcid,
+    bool ValidateToken(const std::string& token, const common::Address& client_addr, ConnectionID& out_original_dcid,
         uint64_t max_age_seconds = 60);
 
     /**

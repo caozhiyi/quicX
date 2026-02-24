@@ -1,6 +1,7 @@
 #include "common/log/file_logger.h"
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
+#include "common/qlog/qlog_manager.h"
 
 #include "quic/connection/session_cache.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
@@ -25,16 +26,31 @@ QuicClient::~QuicClient() {}
 bool QuicClient::Init(const QuicClientConfig& config) {
     if (config.config_.log_level_ != LogLevel::kNull) {
         // std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
-        std::shared_ptr<common::FileLogger> file_log = std::make_shared<common::FileLogger>("client.log");
+        std::shared_ptr<common::FileLogger> file_log =
+            std::make_shared<common::FileLogger>(config.config_.log_path_ + "/client.log");
         // file_log->SetLogger(log);
         common::LOG_SET(file_log);
         common::LOG_SET_LEVEL(common::LogLevel(config.config_.log_level_));
     }
 
+    // Initialize QLog if enabled
+    if (config.config_.qlog_config_.enabled) {
+        common::QlogManager::Instance().SetConfig(config.config_.qlog_config_);
+        common::QlogManager::Instance().Enable(true);
+        common::LOG_INFO("QLog enabled. Output dir: %s", config.config_.qlog_config_.output_dir.c_str());
+    } else {
+        common::QlogManager::Instance().Enable(false);
+    }
+
     auto tls_ctx = std::make_shared<TLSClientCtx>();
-    if (!tls_ctx->Init(config.config_.enable_0rtt_)) {
+    if (!tls_ctx->Init(config.config_.enable_0rtt_, config.config_.cipher_suites_)) {
         common::LOG_ERROR("tls ctx init faliled.");
         return false;
+    }
+
+    // Enable TLS key logging if configured
+    if (!config.config_.keylog_file_.empty()) {
+        tls_ctx->EnableKeyLog(config.config_.keylog_file_);
     }
 
     if (config.enable_session_cache_) {
@@ -126,9 +142,10 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::str
             std::advance(iter, rand() % worker_map_.size());
             auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
             if (master_event_loop_) {
-                master_event_loop_->RunInLoop([ip, port, alpn, timeout_ms, worker, resumption_session_der, server_name]() {
-                    worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der, server_name);
-                });
+                master_event_loop_->RunInLoop(
+                    [ip, port, alpn, timeout_ms, worker, resumption_session_der, server_name]() {
+                        worker->Connect(ip, port, alpn, timeout_ms, resumption_session_der, server_name);
+                    });
                 return true;
             }
         }
@@ -143,7 +160,7 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::str
             return false;
         }
         auto client_worker = std::dynamic_pointer_cast<ClientWorker>(worker->GetWorker());
-        if (client_worker) {
+        if (!client_worker) {
             return false;
         }
         auto event_loop = worker->GetEventLoop();

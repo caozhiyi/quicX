@@ -1,16 +1,14 @@
 #ifndef QUIC_CONNECTION_TRANSPORT_PARAM
 #define QUIC_CONNECTION_TRANSPORT_PARAM
 
-#include <string>
-#include <memory>
 #include <cstdint>
-#include "quic/include/type.h"
+#include <memory>
+#include <string>
 #include "common/buffer/buffer_read_view.h"
-#include "common/buffer/buffer_write_view.h"
+#include "quic/include/type.h"
 
 namespace quicx {
 namespace quic {
-
 
 class TransportParamConfig;
 class TransportParam {
@@ -29,7 +27,7 @@ public:
     /*
      * serialization and deserialization operations
      */
-    bool Encode(common::BufferWriteView& buffer);
+    bool Encode(uint8_t* buffer, size_t buffer_size, size_t& bytes_written);
     bool Decode(common::BufferReadView& buffer);
     uint32_t EncodeSize();
 
@@ -51,7 +49,7 @@ public:
     bool GetDisableActiveMigration() const { return disable_active_migration_; }
     const std::string& GetPreferredAddress() const { return preferred_address_; }
     uint32_t GetActiveConnectionIdLimit() const { return active_connection_id_limit_; }
-    
+
     // Server-only: Set preferred address for client migration suggestion
     // Format: "ip:port" (e.g., "192.168.1.100:8443")
     // The server advertises this address to suggest the client migrate to it
@@ -72,28 +70,28 @@ private:
 
 private:
     std::string original_destination_connection_id_;
-    uint32_t    max_idle_timeout_;
-    std::string stateless_reset_token_; // no client
-    uint32_t    max_udp_payload_size_;
-    uint32_t    initial_max_data_;
-    uint32_t    initial_max_stream_data_bidi_local_;
-    uint32_t    initial_max_stream_data_bidi_remote_;
-    uint32_t    initial_max_stream_data_uni_;
-    uint32_t    initial_max_streams_bidi_;
-    uint32_t    initial_max_streams_uni_;
-    uint32_t    ack_delay_exponent_; // no client
-    uint32_t    max_ack_delay_;      // no client
-    bool        disable_active_migration_; 
+    uint32_t max_idle_timeout_;
+    std::string stateless_reset_token_;  // no client
+    uint32_t max_udp_payload_size_;
+    uint32_t initial_max_data_;
+    uint32_t initial_max_stream_data_bidi_local_;
+    uint32_t initial_max_stream_data_bidi_remote_;
+    uint32_t initial_max_stream_data_uni_;
+    uint32_t initial_max_streams_bidi_;
+    uint32_t initial_max_streams_uni_;
+    uint32_t ack_delay_exponent_;  // no client
+    uint32_t max_ack_delay_;       // no client
+    bool disable_active_migration_;
     std::string preferred_address_;  // no client
-    uint32_t    active_connection_id_limit_;
-    std::string initial_source_connection_id_; // no client
-    std::string retry_source_connection_id_;   // no client
+    uint32_t active_connection_id_limit_;
+    std::string initial_source_connection_id_;  // no client
+    std::string retry_source_connection_id_;    // no client
 
 private:
     std::vector<std::function<void(const TransportParam&)>> transport_param_listeners_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

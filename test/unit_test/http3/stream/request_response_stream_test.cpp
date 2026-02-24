@@ -64,7 +64,8 @@ public:
         public:
             MockHttpProcessor(MockServerConnection* server):
                 server_(server) {}
-            RouteConfig MatchRoute(HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override {
+            RouteConfig MatchRoute(
+                HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override {
                 return server_->MatchHandler(method, path);
             }
             void BeforeHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
@@ -82,7 +83,7 @@ public:
             std::make_shared<ResponseStream>(qpack_encoder, blocked_registry_, stream, processor, push_handler,
                 std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
                 []() { return true; });  // Mock: always return true for settings_received
-        response_stream_->Init();  // CRITICAL: Initialize callbacks
+        response_stream_->Init();        // CRITICAL: Initialize callbacks
     }
     ~MockServerConnection() {}
 
@@ -135,7 +136,7 @@ protected:
 
 TEST_F(RequestResponseStreamTest, SendHeaders) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
-    request->AddHeader("Content-Type", "text/plain");
+    request->AddHeader("content-type", "text/plain");
     request->SetMethod(HttpMethod::kGet);
     request->SetPath("/api/data");
     request->SetScheme("http");
@@ -143,10 +144,10 @@ TEST_F(RequestResponseStreamTest, SendHeaders) {
 
     auto http_handler = [](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
         std::string content_type;
-        EXPECT_TRUE(request->GetHeader("Content-Type", content_type));
+        EXPECT_TRUE(request->GetHeader("content-type", content_type));
         EXPECT_EQ(content_type, "text/plain");
 
-        response->AddHeader("Content-Type", "text/plain");
+        response->AddHeader("content-type", "text/plain");
     };
     server_connection_->SetHttpHandler(http_handler);
 
@@ -157,7 +158,7 @@ TEST_F(RequestResponseStreamTest, SendHeaders) {
 
     std::string content_type;
     ASSERT_NE(client_connection_->GetResponse(), nullptr);
-    EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
+    EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("content-type", content_type));
     EXPECT_EQ(content_type, "text/plain");
 
     EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
@@ -165,7 +166,7 @@ TEST_F(RequestResponseStreamTest, SendHeaders) {
 
 TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
-    request->AddHeader("Content-Type", "text/plain");
+    request->AddHeader("content-type", "text/plain");
     request->AppendBody("Hello, Server!");
     request->SetMethod(HttpMethod::kPost);
     request->SetPath("/api/data");
@@ -174,7 +175,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
 
     auto http_handler = [](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
         std::string content_type;
-        EXPECT_TRUE(request->GetHeader("Content-Type", content_type));
+        EXPECT_TRUE(request->GetHeader("content-type", content_type));
         EXPECT_EQ(content_type, "text/plain");
         EXPECT_EQ(request->GetBodyAsString(), "Hello, Server!");
         EXPECT_EQ(request->GetMethod(), HttpMethod::kPost);
@@ -183,7 +184,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
         EXPECT_EQ(request->GetAuthority(), "api.example.com");
 
         response->SetStatusCode(400);
-        response->AddHeader("Content-Type", "text/plain");
+        response->AddHeader("content-type", "text/plain");
         response->AppendBody("Hello, Client!");
     };
     server_connection_->SetHttpHandler(http_handler);
@@ -194,7 +195,7 @@ TEST_F(RequestResponseStreamTest, SendHeadersAndBody) {
     // (no-op here, but placeholder if later made asynchronous)
     std::string content_type;
     ASSERT_NE(client_connection_->GetResponse(), nullptr);
-    EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("Content-Type", content_type));
+    EXPECT_TRUE(client_connection_->GetResponse()->GetHeader("content-type", content_type));
     EXPECT_EQ(content_type, "text/plain");
     EXPECT_EQ(client_connection_->GetResponse()->GetBodyAsString(), "Hello, Client!");
     EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 400);

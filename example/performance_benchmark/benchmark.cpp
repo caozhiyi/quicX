@@ -20,9 +20,9 @@ public:
         url_(url) {
         client_ = quicx::IClient::Create();
 
-        quicx::Http3Config config;
-        config.thread_num_ = 4;
-        config.log_level_ = quicx::LogLevel::kError;  // Minimal logging for performance
+        quicx::Http3ClientConfig config;
+        config.quic_config_.config_.worker_thread_num_ = 4;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;  // Minimal logging for performance
 
         client_->Init(config);
     }
@@ -178,7 +178,7 @@ private:
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cout << "Usage: " << argv[0] << " <url>" << std::endl;
-        std::cout << "Example: " << argv[0] << " https://localhost:8443/hello" << std::endl;
+        std::cout << "Example: " << argv[0] << " https://localhost:7001/hello" << std::endl;
         return 1;
     }
 

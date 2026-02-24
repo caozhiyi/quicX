@@ -310,15 +310,17 @@ void RunScalabilityTest(ConcurrentTester& tester, const std::string& base_url) {
 }
 
 int main(int argc, char* argv[]) {
-    auto client = quicx::IClient::Create();
+    quicx::Http3Settings settings;
+    settings.quic_transport_params_.initial_max_streams_bidi_ = 2000;
+    auto client = quicx::IClient::Create(settings);
 
-    quicx::Http3Config config;
-    config.thread_num_ = 4;
-    config.log_level_ = quicx::LogLevel::kDebug;
+    quicx::Http3ClientConfig config;
+    config.quic_config_.config_.worker_thread_num_ = 4;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
     config.connection_timeout_ms_ = 0;  // 0 = no timeout, rely on idle timeout (recommended for long-running tests)
     client->Init(config);
 
-    std::string base_url = "https://127.0.0.1:8885";
+    std::string base_url = "https://127.0.0.1:7003";
 
     std::cout << "==================================" << std::endl;
     std::cout << "HTTP/3 Concurrent Request Tester" << std::endl;

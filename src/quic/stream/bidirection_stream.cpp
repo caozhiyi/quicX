@@ -120,8 +120,16 @@ uint32_t BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
     return result;
 }
 
-IStream::TrySendResult BidirectionStream::TrySendData(IFrameVisitor* visitor) {
-    return SendStream::TrySendData(visitor);
+IStream::TrySendResult BidirectionStream::TrySendData(IFrameVisitor* visitor, EncryptionLevel level) {
+    // First, send any pending recv-side frames (like MAX_STREAM_DATA)
+    // This is important for flow control window updates
+    auto recv_result = RecvStream::TrySendData(visitor);
+    if (recv_result == TrySendResult::kFailed) {
+        return recv_result;
+    }
+
+    // Then send stream data
+    return SendStream::TrySendData(visitor, level);
 }
 
 void BidirectionStream::OnDataAcked(uint64_t max_offset, bool has_fin) {

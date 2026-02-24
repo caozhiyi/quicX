@@ -65,13 +65,9 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
     // If buffer is empty (e.g., FIN without data, or RESET_STREAM)
     if (data->GetDataLength() == 0) {
         if (is_last) {
-            // FIN with no data: need to notify HTTP layer that stream ended
-            // Call HandleData with empty buffer to trigger final callbacks
+            // FIN with no data: notify subclass to handle stream completion
             common::LOG_DEBUG("ReqRespBaseStream::OnData: FIN with empty buffer, notifying end");
-
-            // Create empty buffer and call HandleData
-            static const auto empty_buffer = std::make_shared<common::SingleBlockBuffer>();
-            HandleData(empty_buffer, true);
+            HandleFinWithoutData();
         }
         return;
     }
@@ -90,6 +86,13 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
             // Only mark the last frame as is_last if we received FIN
             current_frame_is_last_ = is_last_data_ && (i == frames.size() - 1);
             HandleFrame(frames[i]);
+        }
+
+        // CRITICAL FIX: If we got FIN but no frames were decoded,
+        // we need to notify via HandleFinWithoutData (implemented in subclass)
+        if (is_last_data_ && frames.empty()) {
+            common::LOG_DEBUG("ReqRespBaseStream::OnData: FIN received but no frames decoded");
+            HandleFinWithoutData();
         }
     }
 }
@@ -248,6 +251,12 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
 
     stream_->Close();
     common::LOG_DEBUG("SendBodyDirectly: sent %zu bytes, stream send direction closed (FIN)", total_sent);
+
+    // Signal stream completion to the connection ONLY for response streams
+    // Request streams need to wait for the response before being removed
+    if (ShouldSignalCompletionAfterSend() && error_handler_) {
+        error_handler_(GetStreamID(), 0);
+    }
     return true;
 }
 
@@ -287,7 +296,12 @@ bool ReqRespBaseStream::SendHeaders(const std::unordered_map<std::string, std::s
 
 void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("ReqRespBaseStream::HandleSent error: %d", error);
+        // H3_NO_ERROR (0x100 = 256) indicates graceful stream closure, not a real error
+        if (error == static_cast<uint32_t>(Http3ErrorCode::kNoError)) {
+            common::LOG_DEBUG("ReqRespBaseStream::HandleSent: stream closed gracefully (H3_NO_ERROR)");
+        } else {
+            common::LOG_ERROR("ReqRespBaseStream::HandleSent error: %d", error);
+        }
         if (error_handler_) {
             error_handler_(GetStreamID(), error);
         }
@@ -306,93 +320,111 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
         return;
     }
 
-    auto buffer =
+    // Optimized batching: Read multiple chunks from provider and send as single DataFrame
+    // This reduces HTTP/3 frame overhead and improves throughput significantly
+    const size_t kMaxBatchSize = 64 * 1024;  // 64KB per batch - matches upload optimization
+
+    // Create a single buffer for the entire batch
+    auto batch_buffer =
         std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    size_t total_sent = 0;
-    size_t chunk_count = 0;
-    const size_t kChunkSize = 1200;  // TODO configurable
 
-    common::LOG_DEBUG("SendBodyWithProvider: body size: %zu", buffer->GetDataLength());
+    size_t total_bytes_this_batch = 0;
 
-    // Pull data from provider
-    size_t bytes_provided = 0;
+    // Keep reading from provider until we have 64KB or provider is done
+    while (total_bytes_this_batch < kMaxBatchSize) {
+        try {
+            // Get whatever space is available in the current buffer chunk
+            // MultiBlockBuffer will automatically allocate new chunks as needed
+            auto span = batch_buffer->GetWritableSpan();
+            if (!span.Valid()) {
+                common::LOG_ERROR("SendBodyWithProvider: failed to get writable span (buffer allocation failed)");
+                if (error_handler_) {
+                    error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+                }
+                return;
+            }
 
-    try {
-        auto span = buffer->GetWritableSpan(kChunkSize);
-        if (!span.Valid()) {
-            common::LOG_ERROR("SendBodyWithProvider: failed to get writable span (buffer allocation failed)");
+            // Request only as much as we can write to current span
+            size_t request_size =
+                std::min(span.GetLength(), static_cast<uint32_t>(kMaxBatchSize - total_bytes_this_batch));
+            size_t bytes_provided = provider_(span.GetStart(), request_size);
+            common::LOG_DEBUG(
+                "SendBodyWithProvider: bytes provided: %zu (requested %zu)", bytes_provided, request_size);
+
+            if (bytes_provided > request_size) {
+                common::LOG_ERROR("body provider returned invalid size %zu > %zu", bytes_provided, request_size);
+                if (error_handler_) {
+                    error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+                }
+                return;
+            }
+
+            // Provider returned 0 - all data has been provided
+            if (bytes_provided == 0) {
+                // If we have accumulated data, send it first before closing
+                if (total_bytes_this_batch > 0) {
+                    break;  // Exit loop to send accumulated data
+                }
+
+                // No data accumulated and provider done - close stream
+                stream_->Close();
+                all_provider_data_sent_ = true;
+                common::LOG_DEBUG(
+                    "SendBodyWithProvider: provider returned 0, stream send "
+                    "direction closed (FIN), total_bytes_this_batch=%zu",
+                    total_bytes_this_batch);
+
+                // Signal stream completion to the connection ONLY for response streams
+                // Request streams need to wait for the response before being removed
+                if (ShouldSignalCompletionAfterSend() && error_handler_) {
+                    error_handler_(GetStreamID(), 0);
+                }
+                return;
+            }
+
+            batch_buffer->MoveWritePt(bytes_provided);
+            total_bytes_this_batch += bytes_provided;
+
+        } catch (const std::exception& e) {
+            common::LOG_ERROR("body provider exception: %s", e.what());
+            if (error_handler_) {
+                error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+            }
+            return;
+
+        } catch (...) {
+            common::LOG_ERROR("body provider unknown exception");
+            if (error_handler_) {
+                error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+            }
+            return;
+        }
+    }
+
+    // Send accumulated data as a single DataFrame
+    if (total_bytes_this_batch > 0) {
+        DataFrame data_frame;
+        data_frame.SetData(batch_buffer);
+
+        common::LOG_DEBUG("SendBodyWithProvider: sending batch DataFrame, size=%zu", batch_buffer->GetDataLength());
+
+        auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
+        if (!data_frame.Encode(frame_buffer)) {
+            common::LOG_ERROR("encode error");
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             }
             return;
         }
 
-        bytes_provided = provider_(span.GetStart(), span.GetLength());
-        common::LOG_DEBUG("SendBodyWithProvider: bytes provided: %u", bytes_provided);
-        buffer->MoveWritePt(bytes_provided);
-
-    } catch (const std::exception& e) {
-        common::LOG_ERROR("body provider exception: %s", e.what());
-        if (error_handler_) {
-            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
-        }
-        return;
-
-    } catch (...) {
-        common::LOG_ERROR("body provider unknown exception");
-        if (error_handler_) {
-            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
-        }
-        return;
-    }
-
-    // Validate return value
-    if (bytes_provided > kChunkSize) {
-        common::LOG_ERROR("body provider returned invalid size %zu > %zu", bytes_provided, kChunkSize);
-        if (error_handler_) {
-            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
-        }
-        return;
-    }
-
-    // Create DATA frame
-    DataFrame data_frame;
-    data_frame.SetData(buffer);
-
-    common::LOG_DEBUG(
-        "SendBodyWithProvider before encode frame. type:DataFrame, "
-        "buffer_length:%u",
-        buffer->GetDataLength());
-
-    // Encode and send
-    auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    if (!data_frame.Encode(frame_buffer)) {
-        common::LOG_ERROR("encode error at offset %zu", total_sent);
-        if (error_handler_) {
-            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
-        }
-        return;
-    }
-
-    if (bytes_provided > 0) {
         if (!stream_->Flush()) {
-            common::LOG_ERROR("send error at offset %zu", total_sent);
+            common::LOG_ERROR("send error after batching %zu bytes", total_bytes_this_batch);
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
             }
             return;
         }
-    }
-
-    if (bytes_provided == 0) {
-        // Close the send direction after sending all body data
-        // This will send FIN to indicate end of data stream
-        stream_->Close();
-        all_provider_data_sent_ = true;
-        common::LOG_DEBUG(
-            "SendBodyWithProvider: sent %u bytes, stream send "
-            "direction closed (FIN)",
-            bytes_provided);
+        common::LOG_DEBUG("SendBodyWithProvider: flushed batch of %zu bytes", total_bytes_this_batch);
     }
 }
 

@@ -1,10 +1,12 @@
-#include "quic/connection/retry_token_manager.h"
+
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <chrono>
 #include <cstring>
 #include <ctime>
+
 #include "common/log/log.h"
+#include "quic/connection/retry_token_manager.h"
 
 namespace quicx {
 namespace quic {
@@ -23,26 +25,32 @@ std::string RetryTokenManager::GenerateToken(const common::Address& client_addr,
         RotateSecret();
     }
 
-    // Build data: client_ip || timestamp || dcid
     // Use milliseconds for better precision
     auto now_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
             .count();
     uint64_t timestamp = static_cast<uint64_t>(now_ms);
-    std::string data;
-    data += client_addr.GetIp();
-    data.append((char*)&timestamp, sizeof(timestamp));
+
+    // Build payload: client_ip || timestamp || cid_len || cid
+    std::string payload;
+    payload += client_addr.GetIp();
+    payload.append((char*)&timestamp, sizeof(timestamp));
+
     // Serialize ConnectionID: length + id bytes
     uint8_t cid_len = original_dcid.GetLength();
-    data.append((char*)&cid_len, sizeof(cid_len));
-    data.append((char*)original_dcid.GetID(), cid_len);
+    payload.append((char*)&cid_len, sizeof(cid_len));
+    payload.append((char*)original_dcid.GetID(), cid_len);
 
-    // Compute HMAC
-    std::string hmac = ComputeHMAC(data);
+    // Compute HMAC over payload
+    std::string hmac = ComputeHMAC(payload);
 
-    // Build token: timestamp || HMAC
+    // Build final token: timestamp || cid_len || cid || HMAC
+    // We recreate the token structure to allow easy parsing:
+    // Token = timestamp (8) + cid_len (1) + cid (N) + HMAC (32)
     std::string token;
     token.append((char*)&timestamp, sizeof(timestamp));
+    token.append((char*)&cid_len, sizeof(cid_len));
+    token.append((char*)original_dcid.GetID(), cid_len);
     token.append(hmac);
 
     common::LOG_DEBUG("Generated Retry token for %s, size=%zu", client_addr.GetIp().c_str(), token.size());
@@ -51,16 +59,40 @@ std::string RetryTokenManager::GenerateToken(const common::Address& client_addr,
 }
 
 bool RetryTokenManager::ValidateToken(const std::string& token, const common::Address& client_addr,
-    const ConnectionID& original_dcid, uint64_t max_age_seconds) {
-    // Check token size
-    if (token.size() != sizeof(uint64_t) + 32) {
-        common::LOG_WARN("Invalid Retry token size: %zu (expected %zu)", token.size(), sizeof(uint64_t) + 32);
+    ConnectionID& out_original_dcid, uint64_t max_age_seconds) {
+    // Minimum size: timestamp(8) + cid_len(1) + HMAC(32) = 41 bytes
+    if (token.size() < sizeof(uint64_t) + 1 + 32) {
+        common::LOG_WARN("Invalid Retry token size: %zu (too short)", token.size());
         return false;
     }
 
     // Extract timestamp
     uint64_t timestamp;
-    std::memcpy(&timestamp, token.data(), sizeof(timestamp));
+    size_t offset = 0;
+    std::memcpy(&timestamp, token.data() + offset, sizeof(timestamp));
+    offset += sizeof(timestamp);
+
+    // Extract CID Length
+    uint8_t cid_len = token[offset];
+    offset += 1;
+
+    // Check size consistency considering CID length
+    if (token.size() != offset + cid_len + 32) {
+        common::LOG_WARN("Invalid Retry token size: %zu (expected %zu for CID len %d)", token.size(),
+            offset + cid_len + 32, cid_len);
+        return false;
+    }
+
+    // Extract Original DCID
+    if (cid_len > 0) {
+        out_original_dcid = ConnectionID(reinterpret_cast<const uint8_t*>(token.data() + offset), cid_len);
+    } else {
+        out_original_dcid = ConnectionID();
+    }
+    offset += cid_len;
+
+    // The rest is HMAC (32 bytes)
+    std::string actual_hmac = token.substr(offset);
 
     // Check expiration
     auto now_ms =
@@ -81,21 +113,19 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
         return false;
     }
 
-    // Rebuild data
-    std::string data;
-    data += client_addr.GetIp();
-    data.append((char*)&timestamp, sizeof(timestamp));
-    // Serialize ConnectionID: length + id bytes
-    uint8_t cid_len = original_dcid.GetLength();
-    data.append((char*)&cid_len, sizeof(cid_len));
-    data.append((char*)original_dcid.GetID(), cid_len);
+    // Rebuild payload for HMAC verification: client_ip || timestamp || cid_len || cid
+    std::string payload;
+    payload += client_addr.GetIp();
+    payload.append((char*)&timestamp, sizeof(timestamp));
+    payload.append((char*)&cid_len, sizeof(cid_len));
+    if (cid_len > 0) {
+        payload.append((char*)out_original_dcid.GetID(), cid_len);
+    }
 
     std::lock_guard<std::mutex> lock(mutex_);
 
     // Try current secret
-    std::string expected_hmac = ComputeHMAC(data);
-    std::string actual_hmac = token.substr(sizeof(timestamp));
-
+    std::string expected_hmac = ComputeHMAC(payload);
     if (expected_hmac == actual_hmac) {
         common::LOG_DEBUG("Retry token validated successfully (current secret)");
         return true;
@@ -105,7 +135,7 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
     if (!previous_secret_.empty()) {
         std::string temp = current_secret_;
         current_secret_ = previous_secret_;
-        expected_hmac = ComputeHMAC(data);
+        expected_hmac = ComputeHMAC(payload);
         current_secret_ = temp;
 
         if (expected_hmac == actual_hmac) {

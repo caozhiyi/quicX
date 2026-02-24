@@ -71,6 +71,7 @@ private:
     error_handler error_handler_;
 
     Http3Settings settings_;
+    Http3ServerConfig config_;  // Store config for local connection limits
 };
 
 }  // namespace http3

@@ -11,7 +11,6 @@ MasterWithThread::MasterWithThread(bool ecn_enabled, std::shared_ptr<common::IEv
 MasterWithThread::~MasterWithThread() {}
 
 void MasterWithThread::Run() {
-    event_loop_->Init();
     if (!event_loop_->Init()) {
         common::LOG_ERROR("init event loop failed.");
         return;

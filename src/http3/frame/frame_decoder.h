@@ -26,13 +26,15 @@ public:
 
 private:
     enum class State {
-        kReadingFrameType,  // Waiting to read frame type
-        kDecodingFrame      // Currently decoding a frame's payload
+        kReadingFrameType,      // Waiting to read frame type
+        kDecodingFrame,         // Currently decoding a frame's payload
+        kSkippingUnknownFrame   // Skipping payload of an unknown frame type (RFC 9114 §9)
     };
 
     State state_;
     std::shared_ptr<IFrame> current_frame_;  // Frame being decoded
-    uint16_t current_frame_type_;            // Type of current frame
+    uint64_t current_frame_type_;            // Type of current frame
+    uint64_t skip_remaining_ = 0;            // Bytes remaining to skip for unknown frame
 };
 
 }  // namespace http3

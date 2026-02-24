@@ -1,11 +1,11 @@
 #include <iostream>
-#include <string>
 #include <map>
 #include <mutex>
 #include <sstream>
-#include "http3/include/if_server.h"
+#include <string>
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"
+#include "http3/include/if_server.h"
 
 // Simple in-memory database for users
 struct User {
@@ -81,8 +81,7 @@ public:
 // Helper functions for JSON-like string formatting
 std::string UserToJson(const User& user) {
     std::ostringstream oss;
-    oss << "{\"id\":" << user.id 
-        << ",\"name\":\"" << user.name << "\""
+    oss << "{\"id\":" << user.id << ",\"name\":\"" << user.name << "\""
         << ",\"email\":\"" << user.email << "\""
         << ",\"age\":" << user.age << "}";
     return oss.str();
@@ -107,25 +106,25 @@ bool ParseUserJson(const std::string& json, std::string& name, std::string& emai
     size_t name_pos = json.find("\"name\":\"");
     size_t email_pos = json.find("\"email\":\"");
     size_t age_pos = json.find("\"age\":");
-    
+
     if (name_pos == std::string::npos || email_pos == std::string::npos || age_pos == std::string::npos) {
         return false;
     }
 
     // Extract name
-    name_pos += 8; // length of "name":"
+    name_pos += 8;  // length of "name":"
     size_t name_end = json.find("\"", name_pos);
     if (name_end == std::string::npos) return false;
     name = json.substr(name_pos, name_end - name_pos);
 
     // Extract email
-    email_pos += 9; // length of "email":"
+    email_pos += 9;  // length of "email":"
     size_t email_end = json.find("\"", email_pos);
     if (email_end == std::string::npos) return false;
     email = json.substr(email_pos, email_end - email_pos);
 
     // Extract age
-    age_pos += 6; // length of "age":
+    age_pos += 6;  // length of "age":
     size_t age_end = json.find_first_of(",}", age_pos);
     if (age_end == std::string::npos) return false;
     std::string age_str = json.substr(age_pos, age_end - age_pos);
@@ -153,40 +152,39 @@ int ExtractIdFromPath(const std::string& path) {
 }
 
 int main() {
-
     static const char cert_pem[] =
-      "-----BEGIN CERTIFICATE-----\n"
-      "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
-      "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
-      "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
-      "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
-      "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
-      "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
-      "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
-      "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
-      "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
-      "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
-      "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
-      "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
-      "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
-      "-----END CERTIFICATE-----\n";
+        "-----BEGIN CERTIFICATE-----\n"
+        "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
+        "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
+        "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
+        "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
+        "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
+        "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
+        "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
+        "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
+        "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
+        "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
+        "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
+        "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
+        "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
+        "-----END CERTIFICATE-----\n";
 
     static const char key_pem[] =
-      "-----BEGIN RSA PRIVATE KEY-----\n"
-      "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
-      "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
-      "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
-      "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
-      "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
-      "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
-      "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
-      "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
-      "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
-      "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
-      "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
-      "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
-      "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
-      "-----END RSA PRIVATE KEY-----\n";
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
+        "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
+        "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
+        "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
+        "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
+        "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
+        "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
+        "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
+        "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
+        "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
+        "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
+        "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
+        "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
+        "-----END RSA PRIVATE KEY-----\n";
 
     // Create database instance
     auto db = std::make_shared<UserDatabase>();
@@ -194,34 +192,26 @@ int main() {
     auto server = quicx::IServer::Create();
 
     // Logging middleware - runs before all handlers
-    server->AddMiddleware(
-        quicx::HttpMethod::kAny,
-        quicx::MiddlewarePosition::kBefore,
+    server->AddMiddleware(quicx::HttpMethod::kAny, quicx::MiddlewarePosition::kBefore,
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::cout << "[" << req->GetMethodString() << "] " << req->GetPath() << std::endl;
-        }
-    );
+        });
 
     // GET /users - Get all users
-    server->AddHandler(
-        quicx::HttpMethod::kGet,
-        "/users",
+    server->AddHandler(quicx::HttpMethod::kGet, "/users",
         [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             auto users = db->GetAllUsers();
             std::string json = UsersToJson(users);
-            
+
             resp->AddHeader("Content-Type", "application/json");
             resp->AppendBody(json);
             resp->SetStatusCode(200);
-            
+
             std::cout << "  -> Returned " << users.size() << " users" << std::endl;
-        }
-    );
+        });
 
     // GET /users/:id - Get single user
-    server->AddHandler(
-        quicx::HttpMethod::kGet,
-        "/users/:id",
+    server->AddHandler(quicx::HttpMethod::kGet, "/users/:id",
         [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             int id = ExtractIdFromPath(req->GetPath());
             if (id < 0) {
@@ -245,17 +235,14 @@ int main() {
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> User not found (ID: " << id << ")" << std::endl;
             }
-        }
-    );
+        });
 
     // POST /users - Create new user
-    server->AddHandler(
-        quicx::HttpMethod::kPost,
-        "/users",
+    server->AddHandler(quicx::HttpMethod::kPost, "/users",
         [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::string name, email;
             int age;
-            
+
             if (!ParseUserJson(req->GetBodyAsString(), name, email, age)) {
                 resp->SetStatusCode(400);
                 resp->AppendBody("{\"error\":\"Invalid JSON format\"}");
@@ -267,20 +254,17 @@ int main() {
             int id = db->AddUser(name, email, age);
             User user{id, name, email, age};
             std::string json = UserToJson(user);
-            
+
             resp->AddHeader("Content-Type", "application/json");
             resp->AddHeader("Location", "/users/" + std::to_string(id));
             resp->AppendBody(json);
-            resp->SetStatusCode(201); // Created
-            
+            resp->SetStatusCode(201);  // Created
+
             std::cout << "  -> Created user: " << name << " (ID: " << id << ")" << std::endl;
-        }
-    );
+        });
 
     // PUT /users/:id - Update user
-    server->AddHandler(
-        quicx::HttpMethod::kPut,
-        "/users/:id",
+    server->AddHandler(quicx::HttpMethod::kPut, "/users/:id",
         [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             int id = ExtractIdFromPath(req->GetPath());
             if (id < 0) {
@@ -293,7 +277,7 @@ int main() {
 
             std::string name, email;
             int age;
-            
+
             if (!ParseUserJson(req->GetBodyAsString(), name, email, age)) {
                 resp->SetStatusCode(400);
                 resp->AppendBody("{\"error\":\"Invalid JSON format\"}");
@@ -315,13 +299,10 @@ int main() {
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> User not found (ID: " << id << ")" << std::endl;
             }
-        }
-    );
+        });
 
     // DELETE /users/:id - Delete user
-    server->AddHandler(
-        quicx::HttpMethod::kDelete,
-        "/users/:id",
+    server->AddHandler(quicx::HttpMethod::kDelete, "/users/:id",
         [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             int id = ExtractIdFromPath(req->GetPath());
             if (id < 0) {
@@ -333,7 +314,7 @@ int main() {
             }
 
             if (db->DeleteUser(id)) {
-                resp->SetStatusCode(204); // No Content
+                resp->SetStatusCode(204);  // No Content
                 resp->AppendBody("");
                 std::cout << "  -> Deleted user (ID: " << id << ")" << std::endl;
             } else {
@@ -342,48 +323,41 @@ int main() {
                 resp->AddHeader("Content-Type", "application/json");
                 std::cout << "  -> User not found (ID: " << id << ")" << std::endl;
             }
-        }
-    );
+        });
 
     // GET /stats - Get statistics
-    server->AddHandler(
-        quicx::HttpMethod::kGet,
-        "/stats",
+    server->AddHandler(quicx::HttpMethod::kGet, "/stats",
         [db](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             std::ostringstream oss;
             oss << "{\"total_users\":" << db->GetUserCount() << "}";
-            
+
             resp->AddHeader("Content-Type", "application/json");
             resp->AppendBody(oss.str());
             resp->SetStatusCode(200);
-            
+
             std::cout << "  -> Statistics requested" << std::endl;
-        }
-    );
+        });
 
     // Response time middleware - runs after all handlers
-    server->AddMiddleware(
-        quicx::HttpMethod::kAny,
-        quicx::MiddlewarePosition::kAfter,
+    server->AddMiddleware(quicx::HttpMethod::kAny, quicx::MiddlewarePosition::kAfter,
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             resp->AddHeader("X-Powered-By", "QuicX-HTTP3");
-            resp->AddHeader("Access-Control-Allow-Origin", "*"); // CORS
-        }
-    );
+            resp->AddHeader("Access-Control-Allow-Origin", "*");  // CORS
+        });
 
     // Configure and start server
     quicx::Http3ServerConfig config;
-    config.cert_pem_ = cert_pem;
-    config.key_pem_ = key_pem;
-    config.config_.thread_num_ = 2;
-    config.config_.log_level_ = quicx::LogLevel::kError;
-    
+    config.quic_config_.cert_pem_ = cert_pem;
+    config.quic_config_.key_pem_ = key_pem;
+    config.quic_config_.config_.worker_thread_num_ = 2;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
+
     server->Init(config);
-    
+
     std::cout << "==================================" << std::endl;
     std::cout << "RESTful API Server Starting..." << std::endl;
     std::cout << "==================================" << std::endl;
-    std::cout << "Listen on: https://0.0.0.0:8883" << std::endl;
+    std::cout << "Listen on: https://0.0.0.0:7007" << std::endl;
     std::cout << std::endl;
     std::cout << "Available endpoints:" << std::endl;
     std::cout << "  GET    /users       - Get all users" << std::endl;
@@ -395,12 +369,11 @@ int main() {
     std::cout << "==================================" << std::endl;
     std::cout << std::endl;
 
-    if (!server->Start("0.0.0.0", 8883)) {
+    if (!server->Start("0.0.0.0", 7007)) {
         std::cout << "Failed to start server" << std::endl;
         return 1;
     }
-    
+
     server->Join();
     return 0;
 }
-

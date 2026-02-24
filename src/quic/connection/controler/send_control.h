@@ -41,7 +41,15 @@ using StreamDataAckCallback = std::function<void(uint64_t stream_id, uint64_t ma
 class SendControl {
 public:
     SendControl(std::shared_ptr<common::ITimer> timer);
-    ~SendControl() {}
+    ~SendControl() {
+        // Cancel PTO timer to prevent use-after-free when timer fires after destruction
+        if (timer_) {
+            timer_->RemoveTimer(pto_timer_);
+        }
+        // Clear callbacks to prevent dangling references
+        stream_data_ack_cb_ = nullptr;
+        packet_lost_cb_ = nullptr;
+    }
 
     uint32_t GetRtt() { return rtt_calculator_.GetSmoothedRtt(); }
     uint32_t GetPTO(uint32_t max_ack_delay) { return rtt_calculator_.GetPT0Interval(max_ack_delay); }
@@ -63,6 +71,14 @@ public:
     // Set callback for packet loss notification
     using PacketLostCallback = std::function<void(std::shared_ptr<IPacket>)>;
     void SetPacketLostCallback(PacketLostCallback callback) { packet_lost_cb_ = callback; }
+
+    // Set callback for handshake probe needed (RFC 9002 §6.2.2.1)
+    // Called when PTO fires during handshake but no ACK-eliciting data to retransmit
+    using ProbeNeededCallback = std::function<void()>;
+    void SetProbeNeededCallback(ProbeNeededCallback callback) { probe_needed_cb_ = callback; }
+
+    // Mark handshake as complete (disables handshake probe timer)
+    void SetHandshakeComplete() { handshake_complete_ = true; }
 
     // Clear all retransmission data (used when connection is closing)
     void ClearRetransmissionData();
@@ -117,6 +133,8 @@ private:
 
     StreamDataAckCallback stream_data_ack_cb_;
     PacketLostCallback packet_lost_cb_;
+    ProbeNeededCallback probe_needed_cb_;
+    bool handshake_complete_ = false;
 
     uint64_t pkt_num_largest_sent_[PacketNumberSpace::kNumberSpaceCount];
     uint64_t pkt_num_largest_acked_[PacketNumberSpace::kNumberSpaceCount];

@@ -19,8 +19,8 @@ bool SerializedSessionData::Serialize(std::ofstream& file) const {
     const uint32_t magic = 0x53455353; // "SESS"
     file.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
     
-    // Write version
-    const uint32_t version = 1;
+    // Write version (2 = includes remembered transport params for 0-RTT)
+    const uint32_t version = 2;
     file.write(reinterpret_cast<const char*>(&version), sizeof(version));
     
     // Write SessionInfo
@@ -37,6 +37,16 @@ bool SerializedSessionData::Serialize(std::ofstream& file) const {
     uint32_t session_der_len = static_cast<uint32_t>(session_der.length());
     file.write(reinterpret_cast<const char*>(&session_der_len), sizeof(session_der_len));
     file.write(session_der.c_str(), session_der_len);
+
+    // Version 2: Write remembered transport params for 0-RTT (RFC 9000 Section 7.4.1)
+    file.write(reinterpret_cast<const char*>(&info.has_transport_params), sizeof(info.has_transport_params));
+    file.write(reinterpret_cast<const char*>(&info.initial_max_data), sizeof(info.initial_max_data));
+    file.write(reinterpret_cast<const char*>(&info.initial_max_streams_bidi), sizeof(info.initial_max_streams_bidi));
+    file.write(reinterpret_cast<const char*>(&info.initial_max_streams_uni), sizeof(info.initial_max_streams_uni));
+    file.write(reinterpret_cast<const char*>(&info.initial_max_stream_data_bidi_local), sizeof(info.initial_max_stream_data_bidi_local));
+    file.write(reinterpret_cast<const char*>(&info.initial_max_stream_data_bidi_remote), sizeof(info.initial_max_stream_data_bidi_remote));
+    file.write(reinterpret_cast<const char*>(&info.initial_max_stream_data_uni), sizeof(info.initial_max_stream_data_uni));
+    file.write(reinterpret_cast<const char*>(&info.active_connection_id_limit), sizeof(info.active_connection_id_limit));
     
     return file.good();
 }
@@ -57,7 +67,7 @@ bool SerializedSessionData::Deserialize(std::ifstream& file) {
     // Read version
     uint32_t version;
     file.read(reinterpret_cast<char*>(&version), sizeof(version));
-    if (version != 1) {
+    if (version != 1 && version != 2) {
         common::LOG_ERROR("Unsupported session file version: %u", version);
         return false;
     }
@@ -86,6 +96,18 @@ bool SerializedSessionData::Deserialize(std::ifstream& file) {
     }
     session_der.resize(session_der_len);
     file.read(&session_der[0], session_der_len);
+
+    // Version 2: Read remembered transport params for 0-RTT
+    if (version >= 2) {
+        file.read(reinterpret_cast<char*>(&info.has_transport_params), sizeof(info.has_transport_params));
+        file.read(reinterpret_cast<char*>(&info.initial_max_data), sizeof(info.initial_max_data));
+        file.read(reinterpret_cast<char*>(&info.initial_max_streams_bidi), sizeof(info.initial_max_streams_bidi));
+        file.read(reinterpret_cast<char*>(&info.initial_max_streams_uni), sizeof(info.initial_max_streams_uni));
+        file.read(reinterpret_cast<char*>(&info.initial_max_stream_data_bidi_local), sizeof(info.initial_max_stream_data_bidi_local));
+        file.read(reinterpret_cast<char*>(&info.initial_max_stream_data_bidi_remote), sizeof(info.initial_max_stream_data_bidi_remote));
+        file.read(reinterpret_cast<char*>(&info.initial_max_stream_data_uni), sizeof(info.initial_max_stream_data_uni));
+        file.read(reinterpret_cast<char*>(&info.active_connection_id_limit), sizeof(info.active_connection_id_limit));
+    }
     
     return file.good();
 }
@@ -238,6 +260,54 @@ bool SessionCache::GetSession(const std::string& server_name, std::string& out_s
     
     common::LOG_DEBUG("Retrieved valid session for %s, remaining lifetime: %u seconds", 
                      server_name.c_str(), GetSessionRemainingLifetime(info));
+    return true;
+}
+
+bool SessionCache::GetSessionWithInfo(const std::string& server_name, std::string& out_session_der, SessionInfo& out_info) {
+    if (!enable_session_cache_) {
+        return false;
+    }
+    
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    CheckLazyCleanup();
+    
+    auto it = sessions_cache_.find(server_name);
+    if (it == sessions_cache_.end()) {
+        return false;
+    }
+    
+    const SessionInfo& info = it->second;
+    if (!IsSessionValid(info)) {
+        sessions_cache_.erase(it);
+        RemoveSessionFile(server_name);
+        RemoveLRUEntry(server_name);
+        return false;
+    }
+    
+    // Load session_der from disk (which also has full info including TP)
+    SerializedSessionData data;
+    std::string filepath = data.GetFilePath(session_cache_path_, server_name);
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) {
+        sessions_cache_.erase(it);
+        RemoveLRUEntry(server_name);
+        return false;
+    }
+    if (!data.Deserialize(file)) {
+        sessions_cache_.erase(it);
+        RemoveSessionFile(server_name);
+        RemoveLRUEntry(server_name);
+        return false;
+    }
+    
+    out_session_der = data.session_der;
+    out_info = data.info;
+    
+    UpdateLRUOrder(server_name);
+    
+    common::LOG_DEBUG("Retrieved session with info for %s, has_tp=%d, remaining: %u seconds",
+                     server_name.c_str(), out_info.has_transport_params, GetSessionRemainingLifetime(info));
     return true;
 }
 

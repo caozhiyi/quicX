@@ -1,7 +1,7 @@
-#include "common/log/log.h"
 #include "quic/frame/connection_close_frame.h"
-#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -30,9 +30,13 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     }
 
     common::BufferEncodeWrapper wrapper(buffer);
-    CHECK_ENCODE_ERROR(wrapper.EncodeFixedUint16(frame_type_), "failed to encode frame type");
+    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(frame_type_), "failed to encode frame type");
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(error_code_), "failed to encode error code");
-    CHECK_ENCODE_ERROR(wrapper.EncodeVarint(err_frame_type_), "failed to encode err frame type");
+
+    if (frame_type_ == FrameType::kConnectionClose) {
+        CHECK_ENCODE_ERROR(wrapper.EncodeVarint(err_frame_type_), "failed to encode err frame type");
+    }
+
     CHECK_ENCODE_ERROR(wrapper.EncodeVarint(reason_.length()), "failed to encode reason length");
 
     CHECK_ENCODE_ERROR(wrapper.EncodeBytes((uint8_t*)reason_.data(), reason_.length()), "failed to encode reason");
@@ -44,8 +48,10 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
-        CHECK_DECODE_ERROR(wrapper.DecodeFixedUint16(frame_type_), "failed to decode frame type");
-        if (frame_type_ != FrameType::kConnectionClose) {
+        uint64_t type = 0;
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
+        frame_type_ = static_cast<uint16_t>(type);
+        if (frame_type_ != FrameType::kConnectionClose && frame_type_ != FrameType::kConnectionCloseApp) {
             common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
@@ -53,7 +59,14 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     uint32_t reason_length = 0;
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(error_code_), "failed to decode error code");
-    CHECK_DECODE_ERROR(wrapper.DecodeVarint(err_frame_type_), "failed to decode err frame type");
+
+    // err_frame_type_ is only present in Transport Layer CONNECTION_CLOSE (0x1c)
+    if (frame_type_ == FrameType::kConnectionClose) {
+        CHECK_DECODE_ERROR(wrapper.DecodeVarint(err_frame_type_), "failed to decode err frame type");
+    } else {
+        err_frame_type_ = 0;  // Not applicable for Application Layer close
+    }
+
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(reason_length), "failed to decode reason length");
     wrapper.Flush();
 
@@ -68,7 +81,14 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 }
 
 uint32_t ConnectionCloseFrame::EncodeSize() {
-    return sizeof(ConnectionCloseFrame);
+    uint32_t size = common::GetEncodeVarintLength(frame_type_);
+    size += common::GetEncodeVarintLength(error_code_);
+    if (frame_type_ == FrameType::kConnectionClose) {
+        size += common::GetEncodeVarintLength(err_frame_type_);
+    }
+    size += common::GetEncodeVarintLength(reason_.length());
+    size += reason_.length();
+    return size;
 }
 
 }  // namespace quic

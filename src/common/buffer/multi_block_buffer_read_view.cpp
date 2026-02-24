@@ -57,8 +57,6 @@ uint32_t MultiBlockBufferReadView::ReadNotMovePt(uint8_t* data, uint32_t len) {
         uint32_t read_start = read_offset_;
         uint32_t read_end = read_offset_ + to_read;
 
-        common::LOG_DEBUG("  Chunk: [%u, %u), Read: [%u, %u)", chunk_start, chunk_end, read_start, read_end);
-
         if (chunk_end <= read_start) {
             // This chunk is entirely before the read range
             return true;
@@ -78,9 +76,6 @@ uint32_t MultiBlockBufferReadView::ReadNotMovePt(uint8_t* data, uint32_t len) {
 
         // Calculate offset within the destination buffer
         uint32_t dest_offset = overlap_start - read_start;
-
-        common::LOG_DEBUG("    Overlap: [%u, %u), len=%u, chunk_offset=%u, dest_offset=%u", overlap_start, overlap_end,
-            overlap_len, chunk_offset, dest_offset);
 
         memcpy(data + dest_offset, chunk_data + chunk_offset, overlap_len);
         copied += overlap_len;

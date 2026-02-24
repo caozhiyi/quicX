@@ -1,8 +1,8 @@
-#include <gtest/gtest.h>
-#include "common/decode/decode.h"
 #include "http3/frame/max_push_id_frame.h"
+#include <gtest/gtest.h>
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "common/decode/decode.h"
 
 namespace quicx {
 namespace http3 {
@@ -52,7 +52,7 @@ TEST_F(MaxPushIdFrameTest, EvaluateSize) {
     // 3. payload (push_id)
     uint32_t payload_size = frame_->EvaluatePayloadSize();
     uint32_t length_field_size = common::GetEncodeVarintLength(payload_size);
-    uint32_t expected_size = sizeof(uint16_t) + length_field_size + payload_size;
+    uint32_t expected_size = common::GetEncodeVarintLength(frame_->GetType()) + length_field_size + payload_size;
 
     EXPECT_EQ(expected_size, frame_->EvaluateEncodeSize());
 }

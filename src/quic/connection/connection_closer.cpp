@@ -20,6 +20,15 @@ ConnectionCloser::ConnectionCloser(std::shared_ptr<::quicx::common::IEventLoop> 
     transport_param_(transport_param),
     connection_close_cb_(connection_close_cb) {}
 
+ConnectionCloser::~ConnectionCloser() {
+    // Cancel graceful close timer to prevent use-after-free
+    if (graceful_closing_pending_ && event_loop_) {
+        event_loop_->RemoveTimer(graceful_close_timer_);
+    }
+    // Clear callback to prevent dangling references
+    connection_close_cb_ = nullptr;
+}
+
 // ==================== Graceful Close ====================
 
 bool ConnectionCloser::StartGracefulClose(ActiveSendCallback active_send_cb) {

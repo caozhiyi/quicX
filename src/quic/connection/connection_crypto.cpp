@@ -3,6 +3,7 @@
 #include "common/buffer/buffer_read_view.h"
 #include "common/log/log.h"
 
+#include "quic/common/version.h"
 #include "quic/connection/connection_crypto.h"
 #include "quic/crypto/hkdf.h"
 #include "quic/crypto/if_cryptographer.h"
@@ -14,7 +15,8 @@ namespace quic {
 
 ConnectionCrypto::ConnectionCrypto():
     cur_encryption_level_(kInitial),
-    transport_param_done_(false) {
+    transport_param_done_(false),
+    quic_version_(GetDefaultVersion()) {
     memset(cryptographers_, 0, sizeof(std::shared_ptr<ICryptographer>) * kNumEncryptionLevels);
 }
 
@@ -25,10 +27,11 @@ void ConnectionCrypto::SetReadSecret(
     std::shared_ptr<ICryptographer> cryptographer = cryptographers_[level];
     if (cryptographer == nullptr) {
         cryptographer = MakeCryptographer(cipher);
+        cryptographer->SetVersion(quic_version_);
         cryptographers_[level] = cryptographer;
     }
     cur_encryption_level_ = level;
-    cryptographer->InstallSecret(secret, (uint32_t)secret_len, false);
+    cryptographer->InstallSecretWithVersion(secret, (uint32_t)secret_len, false, quic_version_);
 }
 
 void ConnectionCrypto::SetWriteSecret(
@@ -36,10 +39,17 @@ void ConnectionCrypto::SetWriteSecret(
     std::shared_ptr<ICryptographer> cryptographer = cryptographers_[level];
     if (cryptographer == nullptr) {
         cryptographer = MakeCryptographer(cipher);
+        cryptographer->SetVersion(quic_version_);
         cryptographers_[level] = cryptographer;
     }
     cur_encryption_level_ = level;
-    cryptographer->InstallSecret(secret, (uint32_t)secret_len, true);
+    cryptographer->InstallSecretWithVersion(secret, (uint32_t)secret_len, true, quic_version_);
+
+    // When 0-RTT write key is installed, notify the connection that early data can be sent
+    if (level == kEarlyData && early_data_ready_cb_) {
+        common::LOG_INFO("0-RTT write key installed, triggering early data ready callback");
+        early_data_ready_cb_();
+    }
 }
 
 void ConnectionCrypto::WriteMessage(EncryptionLevel level, const uint8_t* data, size_t len) {
@@ -83,19 +93,37 @@ void ConnectionCrypto::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 }
 
 bool ConnectionCrypto::InstallInitSecret(const uint8_t* secret, uint32_t len, bool is_server) {
+    // Use version-aware method with current version
+    return InstallInitSecretWithVersion(secret, len, quic_version_, is_server);
+}
+
+bool ConnectionCrypto::InstallInitSecretWithVersion(const uint8_t* secret, uint32_t len, uint32_t version, bool is_server) {
     if (cryptographers_[kInitial]) {
         return false;
     }
+    
+    // Update stored version
+    quic_version_ = version;
 
     // make initial cryptographer
     std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(kCipherIdAes128GcmSha256);
-    cryptographer->InstallInitSecret(secret, len, kInitialSalt.data(), kInitialSalt.size(), is_server);
+    cryptographer->SetVersion(version);
+    
+    // Use version-aware initial secret installation
+    cryptographer->InstallInitSecretWithVersion(secret, len, version, is_server);
     cryptographers_[kInitial] = cryptographer;
+    
+    common::LOG_INFO("Installed Initial secret with version %s (0x%08x)", VersionToString(version), version);
     return true;
 }
 
 bool ConnectionCrypto::InstallInitSecretForRetry(
     const uint8_t* write_cid, uint32_t write_len, const uint8_t* read_cid, uint32_t read_len) {
+    return InstallInitSecretForRetryWithVersion(write_cid, write_len, read_cid, read_len, quic_version_);
+}
+
+bool ConnectionCrypto::InstallInitSecretForRetryWithVersion(
+    const uint8_t* write_cid, uint32_t write_len, const uint8_t* read_cid, uint32_t read_len, uint32_t version) {
     // RFC 9000: After Retry, client needs asymmetric Initial Secrets:
     // - Write secret derived from Retry's Source CID (new DCID for client's packets)
     // - Read secret derived from client's own Source CID (server uses this as DCID)
@@ -103,13 +131,21 @@ bool ConnectionCrypto::InstallInitSecretForRetry(
     if (cryptographers_[kInitial]) {
         return false;
     }
+    
+    // Update stored version
+    quic_version_ = version;
+    
+    // Get version-specific salt
+    const uint8_t* salt = GetInitialSalt(version);
+    size_t salt_len = GetInitialSaltLength(version);
 
     // Strategy: Install with local CID first (sets correct read), then manually update write
     // Step 1: Create cryptographer and install with local CID using is_server=false
     // This gives us: read="server in", write="client in"
     // But we're using local_cid, so read is correct (server will encrypt with our local cid)
     std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(kCipherIdAes128GcmSha256);
-    cryptographer->InstallInitSecret(read_cid, read_len, kInitialSalt.data(), kInitialSalt.size(), false);
+    cryptographer->SetVersion(version);
+    cryptographer->InstallInitSecret(read_cid, read_len, salt, salt_len, false);
 
     // Step 2: Now manually derive and install write secret using Retry Source CID
     // We need to derive: init_secret = HKDF-Extract(retry_cid, salt)
@@ -121,7 +157,7 @@ bool ConnectionCrypto::InstallInitSecretForRetry(
     uint8_t init_secret[32] = {0};
 
     // HKDF-Extract
-    if (!Hkdf::HkdfExtract(init_secret, 32, write_cid, write_len, kInitialSalt.data(), kInitialSalt.size(), digest)) {
+    if (!Hkdf::HkdfExtract(init_secret, 32, write_cid, write_len, salt, salt_len, digest)) {
         return false;
     }
 
@@ -131,12 +167,43 @@ bool ConnectionCrypto::InstallInitSecretForRetry(
         return false;
     }
 
-    // Install write secret (is_write=true)
-    if (cryptographer->InstallSecret(write_secret, 32, true) != ICryptographer::Result::kOk) {
+    // Install write secret (is_write=true) with version-aware labels
+    if (cryptographer->InstallSecretWithVersion(write_secret, 32, true, version) != ICryptographer::Result::kOk) {
         return false;
     }
 
     cryptographers_[kInitial] = cryptographer;
+    common::LOG_INFO("Installed Initial secret for Retry with version %s (0x%08x)", VersionToString(version), version);
+    return true;
+}
+
+bool ConnectionCrypto::TriggerKeyUpdate() {
+    // RFC 9001 Section 6: Key Update
+    // Key updates can only be performed on Application level keys
+    auto cryptographer = cryptographers_[kApplication];
+    if (!cryptographer) {
+        common::LOG_ERROR("Cannot trigger key update: Application level cryptographer not ready");
+        return false;
+    }
+
+    // Trigger key update for both read and write directions using version-aware method
+    // First update write keys (our outgoing traffic)
+    auto result = cryptographer->KeyUpdateWithVersion(nullptr, 0, true, quic_version_);
+    if (result != ICryptographer::Result::kOk) {
+        common::LOG_ERROR("Key update failed for write keys: %d", static_cast<int>(result));
+        return false;
+    }
+
+    // Then update read keys (incoming traffic)
+    // Note: In practice, we might want to delay read key update until we receive
+    // a packet with the new Key Phase bit, but for simplicity we update both here
+    result = cryptographer->KeyUpdateWithVersion(nullptr, 0, false, quic_version_);
+    if (result != ICryptographer::Result::kOk) {
+        common::LOG_ERROR("Key update failed for read keys: %d", static_cast<int>(result));
+        return false;
+    }
+
+    common::LOG_INFO("Key update completed successfully (version: %s)", VersionToString(quic_version_));
     return true;
 }
 

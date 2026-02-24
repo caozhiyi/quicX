@@ -26,10 +26,10 @@ protected:
         server_ = quicx::IServer::Create();
 
         quicx::Http3ServerConfig server_config;
-        server_config.cert_pem_ = cert_pem_;
-        server_config.key_pem_ = key_pem_;
-        server_config.config_.thread_num_ = 2;
-        server_config.config_.log_level_ = quicx::LogLevel::kError;
+        server_config.quic_config_.cert_pem_ = cert_pem_;
+        server_config.quic_config_.key_pem_ = key_pem_;
+        server_config.quic_config_.config_.worker_thread_num_ = 2;
+        server_config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
         ASSERT_TRUE(server_->Init(server_config));
 
@@ -44,9 +44,9 @@ protected:
         // Create and configure client
         client_ = quicx::IClient::Create();
 
-        quicx::Http3Config client_config;
-        client_config.thread_num_ = 2;
-        client_config.log_level_ = quicx::LogLevel::kError;
+        quicx::Http3ClientConfig client_config;
+        client_config.quic_config_.config_.worker_thread_num_ = 2;
+        client_config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
         client_config.connection_timeout_ms_ = 5000;
 
         ASSERT_TRUE(client_->Init(client_config));

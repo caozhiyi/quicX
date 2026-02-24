@@ -15,13 +15,15 @@
 namespace quicx {
 namespace http3 {
 
-class ClientConnection: public IConnection, public std::enable_shared_from_this<ClientConnection> {
+class ClientConnection: public IConnection {
 public:
     ClientConnection(const std::string& unique_id, const Http3Settings& settings,
         const std::shared_ptr<IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
         const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
-        const http_response_handler& push_handler);
+        const http_response_handler& push_handler,
+        uint64_t max_concurrent_streams = 200,
+        bool enable_push = false);
     virtual ~ClientConnection();
 
     /**
@@ -45,8 +47,8 @@ public:
 
 private:
     // Helper to create and send RequestStream with http_response_handler
-    void CreateAndSendRequestStream(std::shared_ptr<IRequest> request, std::shared_ptr<IQuicStream> stream,
-        const http_response_handler& handler);
+    void CreateAndSendRequestStream(
+        std::shared_ptr<IRequest> request, std::shared_ptr<IQuicStream> stream, const http_response_handler& handler);
     // Helper to create and send RequestStream with IAsyncClientHandler
     void CreateAndSendRequestStream(std::shared_ptr<IRequest> request, std::shared_ptr<IQuicStream> stream,
         std::shared_ptr<IAsyncClientHandler> handler);

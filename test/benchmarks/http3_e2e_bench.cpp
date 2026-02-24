@@ -48,7 +48,6 @@ static const char kKey[] =
 
 static void BM_H3_E2E_Request_Response(benchmark::State& state) {
     Http3Settings settings = kDefaultHttp3Settings;
-    settings.enable_push = 1;
     auto server = IServer::Create(settings);
     server->AddHandler(
         HttpMethod::kGet, "/hello", [](std::shared_ptr<IRequest> /*req*/, std::shared_ptr<IResponse> resp) {
@@ -61,18 +60,20 @@ static void BM_H3_E2E_Request_Response(benchmark::State& state) {
             resp->AppendPush(push_resp);
         });
     Http3ServerConfig sc;
-    sc.cert_pem_ = kCert;
-    sc.key_pem_ = kKey;
-    sc.config_.thread_num_ = 1;
-    sc.config_.log_level_ = LogLevel::kError;
+    sc.quic_config_.cert_pem_ = kCert;
+    sc.quic_config_.key_pem_ = kKey;
+    sc.quic_config_.config_.worker_thread_num_ = 1;
+    sc.quic_config_.config_.log_level_ = LogLevel::kError;
+    sc.enable_push_ = true;  // Enable server push
     server->Init(sc);
 
     std::thread th([&]() { server->Start("127.0.0.1", 8890); });
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     auto client = IClient::Create(settings);
-    Http3Config cc;
-    cc.thread_num_ = 1;
+    Http3ClientConfig cc;
+    cc.quic_config_.config_.worker_thread_num_ = 1;
+    cc.enable_push_ = true;  // Enable client push reception
     client->Init(cc);
     client->SetPushPromiseHandler([](std::unordered_map<std::string, std::string>&) { return true; });
     client->SetPushHandler([](std::shared_ptr<IResponse> /*resp*/, uint32_t /*err*/) {});

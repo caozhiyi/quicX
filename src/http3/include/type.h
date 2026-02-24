@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "common/include/type.h"
+#include "quic/include/type.h"
 
 namespace quicx {
 
@@ -40,69 +40,18 @@ enum class MiddlewarePosition : uint8_t {
 };
 
 /**
- * @brief HTTP/3 Metrics endpoint configuration
- *
- * Configuration for the built-in metrics endpoint that exports
- * Prometheus-format metrics via HTTP/3.
- */
-struct Http3MetricsConfig {
-    bool enable = false;            // Enable metrics endpoint
-    uint16_t port = 8828;           // Metrics endpoint port (default: 8828)
-    std::string path = "/metrics";  // Metrics endpoint path
-
-    /**
-     * @brief Default constructor with metrics disabled
-     */
-    Http3MetricsConfig() = default;
-
-    /**
-     * @brief Constructor with enable flag
-     * @param enabled Whether to enable metrics endpoint
-     */
-    explicit Http3MetricsConfig(bool enabled):
-        enable(enabled) {}
-};
-
-/**
- * @brief HTTP3 configuration
- *
- * This configuration is used to initialize the HTTP3 client and server.
- */
-struct Http3Config {
-    uint16_t thread_num_ = 1;               // the number of threads to handle requests
-    LogLevel log_level_ = LogLevel::kNull;  // log level
-
-    bool enable_ecn_ = false;  // enable ecn
-
-    Http3MetricsConfig metrics_;  // metrics endpoint configuration
-
-    /**
-     * @brief Connection timeout in milliseconds
-     *
-     * This timeout controls how long the connection can exist from the initial
-     * handshake phase. Set to 0 to disable and rely on idle timeout only.
-     *
-     * Default: 0 (no timeout, rely on idle timeout mechanism)
-     *
-     * Note: This is different from idle timeout. Connection timeout starts
-     * from connection creation, while idle timeout resets on each activity.
-     */
-    uint32_t connection_timeout_ms_ = 0;  // 0 = no timeout (rely on idle timeout)
-};
-
-/**
  * @brief HTTP3 settings
  *
- * This settings is used to initialize the HTTP3 client and server.
+ * These settings will be sent to the peer via HTTP/3 SETTINGS frame (RFC 9114 §7.2.4).
+ * Only valid HTTP/3 settings should be included here.
+ * Local-only configurations (max_concurrent_streams, enable_push) are in Http3Config.
  */
 struct Http3Settings {
-    uint64_t max_header_list_size = 100;      // max header list size
-    uint64_t enable_push = 0;                 // enable push
-    uint64_t max_concurrent_streams = 200;    // max concurrent streams
-    uint64_t max_frame_size = 16384;          // max frame size
-    uint64_t max_field_section_size = 16384;  // max field section size
-    uint64_t qpack_max_table_capacity = 0;    // qpack max table capacity
-    uint64_t qpack_blocked_streams = 0;       // qpack blocked streams
+    uint64_t max_field_section_size = 16384;  // max field section size (0x06)
+    uint64_t qpack_max_table_capacity = 0;    // qpack max table capacity (0x01)
+    uint64_t qpack_blocked_streams = 0;       // qpack blocked streams (0x07)
+
+    QuicTransportParams quic_transport_params_ = DEFAULT_QUIC_TRANSPORT_PARAMS;
 };
 static const Http3Settings kDefaultHttp3Settings;
 
@@ -121,11 +70,7 @@ class IResponse;
  * @param length Length of the chunk
  * @param is_last True if this is the last chunk, false otherwise
  */
-typedef std::function<void(const uint8_t* data,  // data pointer
-    size_t length,                               // data length
-    bool is_last                                 // whether is the last chunk
-    )>
-    body_consumer;
+typedef std::function<void(const uint8_t* data, size_t length, bool is_last)> body_consumer;
 
 /**
  * @brief Body Provider callback: provide body data to send
@@ -141,7 +86,7 @@ typedef std::function<void(const uint8_t* data,  // data pointer
  *       - Fill the buffer with up to buffer_size bytes
  *       - Return the actual number of bytes filled
  *       - Return 0 to indicate end of body
- *       - NEVER return more than buffer_size
+ *       - kNever return more than buffer_size
  *
  * @example
  * @code
@@ -153,10 +98,7 @@ typedef std::function<void(const uint8_t* data,  // data pointer
  * });
  * @endcode
  */
-typedef std::function<size_t(uint8_t* buffer,  // buffer provided by library
-    size_t buffer_size                         // buffer size
-    )>
-    body_provider;
+typedef std::function<size_t(uint8_t* buffer, size_t buffer_size)> body_provider;
 
 // ========== Handler definitions ==========
 /**

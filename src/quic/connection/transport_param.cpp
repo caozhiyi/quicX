@@ -74,14 +74,14 @@ bool TransportParam::Merge(const TransportParam& tp) {
     return true;
 }
 
-bool TransportParam::Encode(common::BufferWriteView& buffer) {
-    if (buffer.GetFreeLength() < EncodeSize()) {
+bool TransportParam::Encode(uint8_t* buffer, size_t buffer_size, size_t& bytes_written) {
+    if (buffer_size < EncodeSize()) {
         return false;
     }
 
-    auto span = buffer.GetWritableSpan();
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
+    uint8_t* pos = buffer;
+    uint8_t* end = buffer + buffer_size;
+
     if (!original_destination_connection_id_.empty()) {
         pos = EncodeString(pos, end, original_destination_connection_id_,
             static_cast<uint32_t>(TransportParamType::kOriginalDestinationConnectionId));
@@ -179,10 +179,10 @@ bool TransportParam::Encode(common::BufferWriteView& buffer) {
         if (pos == nullptr) return false;
     }
 
-    if (pos == nullptr || pos < span.GetStart() || pos > span.GetEnd()) {
+    if (pos == nullptr || pos < buffer || pos > end) {
         return false;
     }
-    buffer.MoveWritePt(pos - span.GetStart());
+    bytes_written = pos - buffer;
     return true;
 }
 

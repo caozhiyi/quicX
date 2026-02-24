@@ -1,6 +1,7 @@
 #ifndef COMMON_STRUCTURE_DOUBLE_BUFFER
 #define COMMON_STRUCTURE_DOUBLE_BUFFER
 
+#include <cstddef>
 #include <unordered_set>
 
 namespace quicx {

@@ -13,9 +13,9 @@ ControlClientSenderStream::ControlClientSenderStream(const std::shared_ptr<IQuic
     ControlSenderStream(stream, error_handler) {}
 
 ControlClientSenderStream::~ControlClientSenderStream() {
-    if (stream_) {
-        stream_->Close();
-    }
+    // Note: Do NOT call stream_->Close() here during destruction.
+    // See QpackDecoderSenderStream destructor comment for details.
+    stream_.reset();
 }
 
 bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {

@@ -112,7 +112,12 @@ int main() {
         "-----END RSA PRIVATE KEY-----\n";
 
     auto stats = std::make_shared<RequestStats>();
-    auto server = quicx::IServer::Create();
+
+    // Create settings with increased max streams
+    quicx::Http3Settings settings;
+    settings.quic_transport_params_.initial_max_streams_bidi_ = 2000;
+
+    auto server = quicx::IServer::Create(settings);
 
     // Request logging middleware
     server->AddMiddleware(quicx::HttpMethod::kAny, quicx::MiddlewarePosition::kBefore,
@@ -288,18 +293,19 @@ int main() {
 
     // Configure and start server
     quicx::Http3ServerConfig config;
-    config.cert_pem_ = cert_pem;
-    config.key_pem_ = key_pem;
-    config.config_.thread_num_ = 4;  // More threads for concurrent handling
-    config.config_.log_level_ = quicx::LogLevel::kDebug;
+    config.quic_config_.cert_pem_ = cert_pem;
+    config.quic_config_.key_pem_ = key_pem;
+    config.quic_config_.config_.worker_thread_num_ = 4;  // More threads for concurrent handling
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
 
     server->Init(config);
 
     std::cout << "==================================" << std::endl;
     std::cout << "Concurrent Requests Server" << std::endl;
     std::cout << "==================================" << std::endl;
-    std::cout << "Listen on: https://0.0.0.0:8885" << std::endl;
+    std::cout << "Listen on: https://0.0.0.0:7003" << std::endl;
     std::cout << "Worker threads: 4" << std::endl;
+    std::cout << "Max Streams: 2000" << std::endl;
     std::cout << std::endl;
     std::cout << "Endpoints:" << std::endl;
     std::cout << "  GET /fast        - 10ms delay" << std::endl;
@@ -311,7 +317,7 @@ int main() {
     std::cout << "==================================" << std::endl;
     std::cout << std::endl;
 
-    if (!server->Start("0.0.0.0", 8885)) {
+    if (!server->Start("0.0.0.0", 7003)) {
         std::cout << "Failed to start server" << std::endl;
         return 1;
     }

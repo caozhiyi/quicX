@@ -21,7 +21,7 @@ namespace http3 {
  *
  * This class is used to manage the HTTP/3 connection.
  */
-class IConnection {
+class IConnection: public std::enable_shared_from_this<IConnection> {
 public:
     /**
      * @brief Constructor
@@ -34,6 +34,11 @@ public:
     virtual ~IConnection();
 
     /**
+     * @brief Initialize the connection
+     */
+    virtual void Init();
+
+    /**
      * @brief Get the unique id of the connection
      * @return The unique id of the connection
      */
@@ -44,6 +49,38 @@ public:
      * @param error_code The error code
      */
     virtual void Close(uint32_t error_code);
+
+    /**
+     * @brief Initiate connection migration (simple API for interop tests)
+     * @return True if migration was initiated successfully
+     */
+    virtual bool InitiateMigration();
+
+    /**
+     * @brief Initiate connection migration to a specific local address (production API)
+     * @param local_ip New local IP address
+     * @param local_port New local port (0 = system chooses)
+     * @return MigrationResult indicating success or failure
+     */
+    virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0);
+
+    /**
+     * @brief Set callback for migration events
+     * @param cb Callback to invoke on migration events
+     */
+    virtual void SetMigrationCallback(migration_callback cb);
+
+    /**
+     * @brief Check if active migration is supported by peer
+     * @return True if migration is supported
+     */
+    virtual bool IsMigrationSupported() const;
+
+    /**
+     * @brief Check if migration is currently in progress
+     * @return True if migration is in progress
+     */
+    virtual bool IsMigrationInProgress() const;
 
 protected:
     // handle stream
@@ -85,6 +122,10 @@ protected:
 
     // RFC 9114 Section 4.1: Track if peer SETTINGS frame has been received
     bool settings_received_ = false;
+
+    // Local-only connection limits (from Http3Config, not sent in SETTINGS frame)
+    uint64_t max_concurrent_streams_ = 200;
+    bool enable_push_ = false;
 
     // Temporary holding area for completed streams to delay destruction
     // This prevents use-after-free when error_handler_ is called from within stream callbacks

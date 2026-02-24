@@ -1,8 +1,18 @@
+#include <openssl/aead.h>
+#include "common/buffer/buffer_chunk.h"
 #include "common/log/log.h"
+#include "common/log/log_context.h"
+#include "common/metrics/metrics.h"
+#include "common/metrics/metrics_std.h"
 
 #include "quic/common/version.h"
+#include "quic/connection/connection_id.h"
+#include "quic/connection/connection_id_generator.h"
 #include "quic/connection/connection_server.h"
 #include "quic/connection/error.h"
+#include "quic/crypto/type.h"
+#include "quic/packet/init_packet.h"
+#include "quic/packet/retry_packet.h"
 #include "quic/packet/version_negotiation_packet.h"
 #include "quic/quicx/global_resource.h"
 #include "quic/quicx/worker_server.h"
@@ -14,9 +24,74 @@ ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCt
     const QuicTransportParams& params, connection_state_callback connection_handler,
     std::shared_ptr<common::IEventLoop> event_loop):
     Worker(config.config_, ctx, sender, params, connection_handler, event_loop),
-    server_alpn_(config.alpn_) {}
+    server_alpn_(config.alpn_),
+    retry_policy_(config.retry_policy_),
+    selective_config_(config.selective_retry_config_),
+    retry_token_lifetime_(config.retry_token_lifetime_) {
+    // Initialize Retry infrastructure based on policy
+    if (retry_policy_ != RetryPolicy::NEVER) {
+        retry_token_manager_ = std::make_shared<RetryTokenManager>();
+
+        // Initialize rate monitoring components for SELECTIVE mode
+        if (retry_policy_ == RetryPolicy::SELECTIVE) {
+            rate_monitor_ = std::make_shared<ConnectionRateMonitor>(event_loop);
+            ip_limiter_ = std::make_shared<IPRateLimiter>(selective_config_.ip_cache_size_,
+                selective_config_.ip_rate_threshold_, selective_config_.ip_window_seconds_);
+            common::LOG_INFO(
+                "Retry mechanism enabled (SELECTIVE mode). rate_threshold=%u, ip_threshold=%u, token_lifetime=%u",
+                selective_config_.rate_threshold_, selective_config_.ip_rate_threshold_, retry_token_lifetime_);
+        } else {
+            common::LOG_INFO("Retry mechanism enabled (ALWAYS mode). token_lifetime=%u", retry_token_lifetime_);
+        }
+    } else {
+        common::LOG_INFO("Retry mechanism disabled (NEVER mode)");
+    }
+}
 
 ServerWorker::~ServerWorker() {}
+
+bool ServerWorker::ShouldSendRetry(bool has_valid_token, const common::Address& client_addr) {
+    // If client already has a valid token, never send another Retry (RFC 9000 requirement)
+    if (has_valid_token) {
+        return false;
+    }
+
+    switch (retry_policy_) {
+        case RetryPolicy::NEVER:
+            // Performance priority: never send Retry
+            return false;
+
+        case RetryPolicy::ALWAYS:
+            // Security priority: always send Retry for new connections without token
+            common::Metrics::CounterInc(common::MetricsStd::QuicRetryByPolicy);
+            return true;
+
+        case RetryPolicy::SELECTIVE: {
+            // Smart decision based on server load and IP behavior
+
+            // Check 1: High connection rate (server under load)
+            if (rate_monitor_ && rate_monitor_->IsHighRate(selective_config_.rate_threshold_)) {
+                common::LOG_DEBUG("ShouldSendRetry: high connection rate detected, sending Retry");
+                common::Metrics::CounterInc(common::MetricsStd::QuicRetryByHighRate);
+                return true;
+            }
+
+            // Check 2: Suspicious IP (potential attack)
+            if (ip_limiter_ && ip_limiter_->IsSuspicious(client_addr)) {
+                common::LOG_DEBUG("ShouldSendRetry: suspicious IP %s, sending Retry", client_addr.GetIp().c_str());
+                common::Metrics::CounterInc(common::MetricsStd::QuicRetryBySuspiciousIP);
+                return true;
+            }
+
+            // Normal conditions: accept connection directly (better performance)
+            return false;
+        }
+
+        default:
+            common::LOG_WARN("ShouldSendRetry: unknown retry policy, defaulting to no Retry");
+            return false;
+    }
+}
 
 bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     if (packet_info.packets_.empty()) {
@@ -28,6 +103,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     common::LOG_DEBUG("get packet. dcid:%llu", packet_info.cid_.Hash());
     auto conn = conn_map_.find(packet_info.cid_.Hash());
     if (conn != conn_map_.end()) {
+        common::LogTagGuard guard("conn:" + std::to_string(packet_info.cid_.Hash()));
         conn->second->SetSocket(packet_info.net_packet_->GetSocket());
         // report observed address for path change detection
         auto& observed_addr = packet_info.net_packet_->GetAddress();
@@ -43,7 +119,9 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     }
 
     // check init packet
-    if (!InitPacketCheck(packet_info.packets_[0])) {
+    // Pass the original UDP datagram size for RFC 9000 §14.1 minimum size check
+    // datagram_size_ is saved by MsgParser::ParsePacket() before DecodePackets consumes the buffer
+    if (!InitPacketCheck(packet_info.packets_[0], packet_info.datagram_size_)) {
         common::LOG_ERROR("init packet check failed");
         SendVersionNegotiatePacket(packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetSocket());
         return false;
@@ -57,6 +135,56 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     }
     ConnectionID src_cid(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
     ConnectionID dst_cid(long_header->GetDestinationConnectionId(), long_header->GetDestinationConnectionIdLength());
+    common::LogTagGuard guard("conn:" + std::to_string(dst_cid.Hash()));
+
+    // Record this connection attempt for rate monitoring
+    const auto& client_addr = packet_info.net_packet_->GetAddress();
+    if (rate_monitor_) {
+        rate_monitor_->RecordNewConnection();
+    }
+    if (ip_limiter_) {
+        ip_limiter_->RecordConnection(client_addr);
+    }
+
+    // Check if Retry is needed based on policy
+    if (retry_policy_ != RetryPolicy::NEVER) {
+        // Check if this Initial packet contains a valid Retry token
+        auto init_pkt = std::dynamic_pointer_cast<InitPacket>(init_packet);
+        if (init_pkt) {
+            uint8_t* token_data = init_pkt->GetToken();
+            uint32_t token_len = init_pkt->GetTokenLength();
+            bool has_valid_token = false;
+
+            if (token_data != nullptr && token_len > 0) {
+                // Validate the token and extract ODCID
+                std::string token((char*)token_data, token_len);
+                ConnectionID odcid;
+                has_valid_token = ValidateRetryToken(token, client_addr, odcid);
+
+                if (has_valid_token) {
+                    common::LOG_DEBUG("Valid Retry token received. ODCID extracted: %llu", odcid.Hash());
+                    common::Metrics::CounterInc(common::MetricsStd::QuicRetryTokensValidated);
+                    // TODO: Set ODCID on connection context for transport parameters
+                } else {
+                    common::LOG_WARN("Invalid Retry token received");
+                    common::Metrics::CounterInc(common::MetricsStd::QuicRetryTokensInvalid);
+                }
+            }
+
+            // Use policy-based decision for Retry
+            if (ShouldSendRetry(has_valid_token, client_addr)) {
+                common::LOG_INFO("Sending Retry packet to client (policy=%d)", static_cast<int>(retry_policy_));
+                uint32_t client_version = long_header->GetVersion();
+                if (SendRetryPacket(client_addr, packet_info.net_packet_->GetSocket(), dst_cid, src_cid, client_version)) {
+                    common::Metrics::CounterInc(common::MetricsStd::QuicRetryPacketsSent);
+                    return true;  // Retry sent, don't create connection yet
+                } else {
+                    common::LOG_ERROR("Failed to send Retry packet");
+                    // Fall through to create connection anyway
+                }
+            }
+        }
+    }
 
     // create new connection
     auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_, server_alpn_,
@@ -69,6 +197,9 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
 
     // Inject Sender for direct packet transmission
     new_conn->SetSender(sender_);
+
+    // Set QUIC version from configuration
+    new_conn->SetVersion(quic_version_);
 
     new_conn->AddTransportParam(params_);
     connecting_set_.insert(new_conn);
@@ -93,6 +224,141 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         },
         5000);  // TODO add timeout to config
     return true;
+}
+
+bool ServerWorker::SendRetryPacket(
+    const common::Address& addr, int32_t socket, const ConnectionID& original_dcid, const ConnectionID& original_scid,
+    uint32_t version) {
+    if (!retry_token_manager_) {
+        common::LOG_ERROR("Retry token manager not initialized");
+        return false;
+    }
+
+    // Generate a new server connection ID for this Retry
+    static const uint8_t kRetryCidLength = 8;  // Use 8 bytes for Retry SCID TODO configurable
+    uint8_t new_scid_data[kRetryCidLength];
+    ConnectionIDGenerator::Instance().Generator(new_scid_data, kRetryCidLength);
+    ConnectionID new_scid(new_scid_data, kRetryCidLength);
+
+    // Generate Retry token
+    std::string token = retry_token_manager_->GenerateToken(addr, original_dcid);
+    if (token.empty()) {
+        common::LOG_ERROR("Failed to generate Retry token");
+        return false;
+    }
+
+    // Build Retry packet
+    RetryPacket retry_packet;
+    auto& header = *static_cast<LongHeader*>(retry_packet.GetHeader());
+
+    // Set header fields - use the version from client's Initial packet
+    header.SetVersion(version);
+    header.SetSourceConnectionId(new_scid.GetID(), new_scid.GetLength());
+    header.SetDestinationConnectionId(original_scid.GetID(), original_scid.GetLength());
+
+    // Allocate buffer for token and copy data
+    auto token_chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!token_chunk || !token_chunk->Valid()) {
+        common::LOG_ERROR("Failed to allocate token buffer");
+        return false;
+    }
+    uint8_t* token_start = token_chunk->GetData();
+    memcpy(token_start, token.data(), token.size());
+    auto token_span = common::SharedBufferSpan(token_chunk, token_start, token_start + token.size());
+    retry_packet.SetRetryToken(token_span);
+
+    // Compute Retry Integrity Tag (RFC 9001 Section 5.8)
+    // First, encode the retry packet without the integrity tag to build the pseudo-packet
+    // Retry Pseudo-Packet = ODCID_Len(1) || ODCID || Retry_Packet_Without_Tag
+    
+    // Encode retry packet body (without integrity tag) to a temp buffer
+    std::shared_ptr<NetPacket> temp_pkt = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    auto temp_buffer = temp_pkt->GetData();
+    
+    // Set a placeholder tag first for encoding
+    uint8_t placeholder_tag[kRetryIntegrityTagLength] = {0};
+    retry_packet.SetRetryIntegrityTag(placeholder_tag);
+    if (!retry_packet.Encode(temp_buffer)) {
+        common::LOG_ERROR("Failed to encode Retry packet for integrity tag");
+        return false;
+    }
+    
+    // Build Retry Pseudo-Packet for AEAD AAD:
+    // ODCID_Len (1 byte) || ODCID || encoded_retry_packet_without_tag
+    uint32_t encoded_len = temp_buffer->GetDataLength();
+    uint32_t retry_body_len = encoded_len - kRetryIntegrityTagLength;  // exclude placeholder tag
+    uint32_t odcid_len = original_dcid.GetLength();
+    uint32_t pseudo_packet_len = 1 + odcid_len + retry_body_len;
+    
+    std::vector<uint8_t> pseudo_packet(pseudo_packet_len);
+    size_t offset = 0;
+    pseudo_packet[offset++] = static_cast<uint8_t>(odcid_len);
+    memcpy(&pseudo_packet[offset], original_dcid.GetID(), odcid_len);
+    offset += odcid_len;
+    // Copy encoded retry packet body (without the 16-byte tag at the end)
+    auto data_span = temp_buffer->GetReadableSpan();
+    memcpy(&pseudo_packet[offset], data_span.GetStart(), retry_body_len);
+    
+    // Select retry integrity key/nonce based on version
+    const uint8_t* retry_key;
+    const uint8_t* retry_nonce;
+    if (IsQuicV2(version)) {
+        retry_key = kRetryIntegrityKeyV2.data();
+        retry_nonce = kRetryIntegrityNonceV2.data();
+    } else {
+        retry_key = kRetryIntegrityKeyV1.data();
+        retry_nonce = kRetryIntegrityNonceV1.data();
+    }
+    
+    // Compute AES-128-GCM tag: encrypt empty plaintext with pseudo-packet as AAD
+    const EVP_AEAD* aead = EVP_aead_aes_128_gcm();
+    EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, retry_key, 16, kRetryIntegrityTagLength);
+    if (!ctx) {
+        common::LOG_ERROR("Failed to create AEAD context for Retry integrity tag");
+        return false;
+    }
+    
+    uint8_t integrity_tag[kRetryIntegrityTagLength];
+    size_t out_tag_len = 0;
+    // Seal with empty plaintext; the output is just the 16-byte tag
+    uint8_t out_buf[kRetryIntegrityTagLength];
+    size_t out_len = 0;
+    int seal_ok = EVP_AEAD_CTX_seal(ctx, out_buf, &out_len, sizeof(out_buf),
+        retry_nonce, 12,
+        nullptr, 0,  // empty plaintext
+        pseudo_packet.data(), pseudo_packet.size());
+    EVP_AEAD_CTX_free(ctx);
+    
+    if (!seal_ok || out_len != kRetryIntegrityTagLength) {
+        common::LOG_ERROR("Failed to compute Retry integrity tag, seal_ok=%d, out_len=%zu", seal_ok, out_len);
+        return false;
+    }
+    memcpy(integrity_tag, out_buf, kRetryIntegrityTagLength);
+    retry_packet.SetRetryIntegrityTag(integrity_tag);
+
+    // Encode and send
+    std::shared_ptr<NetPacket> net_packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    auto buffer = net_packet->GetData();
+
+    if (!retry_packet.Encode(buffer)) {
+        common::LOG_ERROR("Failed to encode Retry packet");
+        return false;
+    }
+
+    net_packet->SetAddress(addr);
+    net_packet->SetSocket(socket);
+    sender_->Send(net_packet);
+
+    common::LOG_INFO("Sent Retry packet. new_scid:%llu, token_len:%zu", new_scid.Hash(), token.size());
+    return true;
+}
+
+bool ServerWorker::ValidateRetryToken(
+    const std::string& token, const common::Address& addr, ConnectionID& out_original_dcid) {
+    if (!retry_token_manager_) {
+        return false;
+    }
+    return retry_token_manager_->ValidateToken(token, addr, out_original_dcid, retry_token_lifetime_);
 }
 
 void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32_t socket) {

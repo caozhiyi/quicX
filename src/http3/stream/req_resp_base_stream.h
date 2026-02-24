@@ -56,6 +56,16 @@ protected:
     // handle the data sent callback
     void HandleSent(uint32_t length, uint32_t error);
 
+    // Override in subclasses to control whether stream completion should be signaled
+    // after all body data is sent.
+    // - ResponseStream returns true (server sends response, then stream is done)
+    // - RequestStream returns false (client sends request, then waits for response)
+    virtual bool ShouldSignalCompletionAfterSend() const { return false; }
+
+    // Called when FIN is received but no HTTP/3 frames were decoded
+    // Subclasses should implement this to notify handlers of stream completion
+    virtual void HandleFinWithoutData() = 0;
+
 protected:
     uint64_t header_block_key_{0};
     uint32_t next_section_number_{0};

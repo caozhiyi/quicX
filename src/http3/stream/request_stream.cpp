@@ -3,11 +3,11 @@
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
 
-#include "http3/stream/request_stream.h"
 #include "http3/frame/push_promise_frame.h"
 #include "http3/http/error.h"
 #include "http3/http/response.h"
 #include "http3/stream/pseudo_header.h"
+#include "http3/stream/request_stream.h"
 
 namespace quicx {
 namespace http3 {
@@ -57,18 +57,14 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
         return false;
     }
 
-    common::LOG_DEBUG("SendRequest: headers sent successfully");
     // if body provider is set, send body using provider (streaming mode)
     if (body_provider) {
-        common::LOG_DEBUG("SendRequest: sending body using provider");
         return SendBodyWithProvider(body_provider);
 
         // if body is set, send body directly
     } else if (body_buffer && body_buffer->GetDataLength() > 0) {
-        common::LOG_DEBUG("SendRequest: sending body directly");
         return SendBodyDirectly(std::dynamic_pointer_cast<common::IBuffer>(body_buffer));
     }
-    common::LOG_DEBUG("SendRequest: no body to send");
     return true;
 }
 
@@ -79,6 +75,7 @@ void RequestStream::HandleHeaders() {
 
     PseudoHeader::Instance().DecodeResponse(response_);
 
+    common::LOG_DEBUG("RequestStream::HandleHeaders: headers decoded");
     // Metrics: Track HTTP/3 response status codes
     int status_code = response_->GetStatusCode();
     if (status_code >= 200 && status_code < 300) {
@@ -95,6 +92,9 @@ void RequestStream::HandleHeaders() {
     if (headers_.find("content-length") != headers_.end()) {
         body_length_ = std::stoul(headers_["content-length"]);
         has_content_length = true;
+        common::LOG_DEBUG("RequestStream::HandleHeaders: content-length found: %u", body_length_);
+    } else {
+        common::LOG_DEBUG("RequestStream::HandleHeaders: content-length NOT found");
     }
 
     if (async_handler_) {
@@ -105,8 +105,11 @@ void RequestStream::HandleHeaders() {
         // but if there's no body at all, we rely on the FIN handler in HandleData
 
     } else if (response_handler_) {
+        common::LOG_DEBUG("RequestStream::HandleHeaders: checking completion condition. has_cl=%d, body_len=%u",
+            has_content_length, body_length_);
         // Complete mode: only call handler if no body expected
         if (!has_content_length || body_length_ == 0) {
+            common::LOG_DEBUG("RequestStream::HandleHeaders: calling response handler (no body expected)");
             response_handler_(response_, 0);
 
             // CRITICAL: Notify connection that stream is complete and can be removed
@@ -128,7 +131,7 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
 
     uint32_t data_length = data->GetDataLength();
     received_body_length_ += data_length;
-    
+
     // Metrics: Track response bytes received (client side)
     if (data_length > 0) {
         common::Metrics::CounterInc(common::MetricsStd::Http3ResponseBytesRx, data_length);
@@ -170,17 +173,20 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
     }
 
     // Complete mode: accumulate to body_
-    if (body_length_ == received_body_length_ || is_last) {
-        // CRITICAL: Consume the data from the buffer after copying
-        // This frees up space in RecvStream's buffer for more incoming data
-        if (data_length > 0) {
-            data->VisitData([&](uint8_t* ptr, uint32_t len) {
-                response_->AppendBody(ptr, len);
-                return true;
-            });
+    common::LOG_DEBUG("RequestStream::HandleData: accumulating body. received=%u, expected=%u, is_last=%d",
+        received_body_length_, body_length_, is_last);
 
-            data->MoveReadPt(data_length);
-        }
+    if (data_length > 0) {
+        data->VisitData([&](uint8_t* ptr, uint32_t len) {
+            response_->AppendBody(ptr, len);
+            return true;
+        });
+        data->MoveReadPt(data_length);
+    }
+
+    // Only call handler when all data is received
+    if (body_length_ == received_body_length_ || is_last) {
+        common::LOG_DEBUG("RequestStream::HandleData: calling response handler (complete)");
         response_handler_(response_, 0);
 
         // CRITICAL: Notify connection that stream is complete and can be removed
@@ -214,6 +220,21 @@ void RequestStream::HandlePushPromise(std::shared_ptr<IFrame> frame) {
     }
 
     push_promise_handler_(headers, push_promise_frame->GetPushId());
+}
+
+void RequestStream::HandleFinWithoutData() {
+    // Called when FIN is received but no HTTP/3 frames were decoded
+    // This can happen with small responses or when frames are incomplete
+    if (async_handler_) {
+        // Notify the async handler that the stream has ended
+        async_handler_->OnBodyChunk(nullptr, 0, true);
+        // Signal stream completion
+        error_handler_(GetStreamID(), 0);
+    } else if (response_handler_) {
+        // For complete mode, call the response handler
+        response_handler_(response_, 0);
+        error_handler_(GetStreamID(), 0);
+    }
 }
 
 }  // namespace http3

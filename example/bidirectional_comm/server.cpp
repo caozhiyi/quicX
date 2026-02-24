@@ -55,10 +55,10 @@ public:
             "-----END RSA PRIVATE KEY-----\n";
 
         quicx::Http3ServerConfig config;
-        config.cert_pem_ = cert_pem;
-        config.key_pem_ = key_pem;
-        config.config_.thread_num_ = 4;
-        config.config_.log_level_ = quicx::LogLevel::kDebug;
+        config.quic_config_.cert_pem_ = cert_pem;
+        config.quic_config_.key_pem_ = key_pem;
+        config.quic_config_.config_.worker_thread_num_ = 4;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
 
         if (!server_->Init(config)) {
             std::cerr << "Failed to initialize server" << std::endl;
@@ -132,7 +132,7 @@ public:
 };
 
 int main(int argc, char* argv[]) {
-    uint16_t port = 8443;
+    uint16_t port = 7002;
 
     if (argc > 1) {
         port = static_cast<uint16_t>(std::atoi(argv[1]));

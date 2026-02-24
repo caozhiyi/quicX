@@ -1,18 +1,19 @@
 #ifndef HTTP3_HTTP_IF_RESPONSE
 #define HTTP3_HTTP_IF_RESPONSE
 
-#include <string>
 #include <memory>
-#include <vector>
+#include <string>
 #include <unordered_map>
-#include "http3/include/type.h" 
+#include <vector>
+
 #include "common/include/if_buffer_read.h"
+#include "http3/include/type.h"
 
 namespace quicx {
 
 /**
  * @brief Interface for HTTP3 responses
- * 
+ *
  * This interface provides methods to set and get response information.
  */
 class IResponse {
@@ -22,28 +23,28 @@ public:
 
     /**
      * @brief Set the status code
-     * 
+     *
      * @param status_code The status code
      */
     virtual void SetStatusCode(uint32_t status_code) = 0;
 
     /**
      * @brief Get the status code
-     * 
+     *
      * @return The status code
      */
     virtual uint32_t GetStatusCode() const = 0;
 
     /**
      * @brief Get the response body as a string
-     * 
+     *
      * @return The response body as a string
      */
     virtual std::string GetBodyAsString() const = 0;
 
     /**
      * @brief Add a header
-     * 
+     *
      * @param name The header name
      * @param value The header value
      */
@@ -51,34 +52,34 @@ public:
 
     /**
      * @brief Get a header
-     * 
+     *
      * @param name The header name
      * @param value The header value
      * @return True if the header is found, false otherwise
      */
     virtual bool GetHeader(const std::string& name, std::string& value) const = 0;
-    
+
     /**
      * @brief Set the headers
-     * 
+     *
      * @param headers The headers
      */
     virtual void SetHeaders(const std::unordered_map<std::string, std::string>& headers) = 0;
 
     /**
      * @brief Get the headers
-     * 
+     *
      * @return The headers
      */
     virtual std::unordered_map<std::string, std::string>& GetHeaders() = 0;
-    
+
     /**
      * @brief Set complete response body (complete mode)
-     * 
+     *
      * Use this for small to medium-sized bodies that can be buffered in memory.
-     * 
+     *
      * @param body The complete response body as a string or buffer
-     * 
+     *
      * @note If SetResponseBodyProvider() is called, this body will be ignored.
      */
     virtual void AppendBody(const std::string& body) = 0;
@@ -86,21 +87,21 @@ public:
 
     /**
      * @brief Get the complete response body
-     * 
+     *
      * @return Reference to the response body string
      */
-     virtual std::shared_ptr<IBufferRead> GetBody() const = 0;
+    virtual std::shared_ptr<IBufferRead> GetBody() const = 0;
 
     /**
      * @brief Set response body provider for streaming mode
-     * 
+     *
      * Use this for large bodies that should be sent incrementally without
      * buffering the entire content in memory.
-     * 
+     *
      * @param provider Callback function that provides body chunks
-     * 
+     *
      * @note If this is set, SetBody() content will be ignored.
-     * 
+     *
      * @example
      * @code
      * FILE* file = fopen("large_file.dat", "rb");
@@ -111,19 +112,18 @@ public:
      * });
      * @endcode
      */
-     virtual void SetResponseBodyProvider(const body_provider& provider) = 0;
+    virtual void SetResponseBodyProvider(const body_provider& provider) = 0;
 
     /**
      * @brief Get the response body provider
-     * 
+     *
      * @return The response body provider
      */
     virtual body_provider GetResponseBodyProvider() const = 0;
-    
 
     /**
      * @brief Append a push response
-     * 
+     *
      * @param response The push response
      * @note can be called multiple times, if push response is not enabled, it will be ignored
      */
@@ -131,19 +131,19 @@ public:
 
     /**
      * @brief Get the push responses
-     * 
+     *
      * @return The push responses
      */
     virtual std::vector<std::shared_ptr<IResponse>>& GetPushResponses() = 0;
 
     /**
      * @brief Create a response instance
-     * 
+     *
      * @return The response instance
      */
     static std::shared_ptr<IResponse> Create();
 };
 
-}
+}  // namespace quicx
 
 #endif

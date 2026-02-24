@@ -30,9 +30,9 @@ public:
     ~BidirectionalClient() { Shutdown(); }
 
     bool Init() {
-        quicx::Http3Config config;
-        config.thread_num_ = 2;
-        config.log_level_ = quicx::LogLevel::kDebug;
+        quicx::Http3ClientConfig config;
+        config.quic_config_.config_.worker_thread_num_ = 2;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
         config.connection_timeout_ms_ = 10000;
 
         if (!client_->Init(config)) {
@@ -177,7 +177,7 @@ private:
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cout << "Usage: " << argv[0] << " <server_url>" << std::endl;
-        std::cout << "Example: " << argv[0] << " https://localhost:8443" << std::endl;
+        std::cout << "Example: " << argv[0] << " https://127.0.0.1:7002" << std::endl;
         return 1;
     }
 

@@ -137,10 +137,11 @@ private:
     uint64_t max_uni_stream_id_;       // Highest unidirectional stream ID seen from peer
 
     // Flow control thresholds (TODO: make configurable)
-    static constexpr uint64_t kDataIncreaseThreshold = 8912;     // Bytes threshold for MAX_DATA increase
-    static constexpr uint64_t kDataIncreaseAmount = 8912;        // Bytes to add when increasing
-    static constexpr uint64_t kStreamsIncreaseThreshold = 4;    // Streams threshold for MAX_STREAMS increase
-    static constexpr uint64_t kStreamsIncreaseAmount = 8;       // Streams to add when increasing
+    // Use larger values for high-throughput scenarios
+    static constexpr uint64_t kDataIncreaseThreshold = 512 * 1024;   // 512KB - trigger when 512KB remaining
+    static constexpr uint64_t kDataIncreaseAmount = 2 * 1024 * 1024; // 2MB - increase by 2MB each time
+    static constexpr uint64_t kStreamsIncreaseThreshold = 50;        // Streams threshold for MAX_STREAMS increase
+    static constexpr uint64_t kStreamsIncreaseAmount = 100;          // Streams to add when increasing
 };
 
 }  // namespace quic

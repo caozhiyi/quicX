@@ -40,7 +40,7 @@ protected:
     void ProcessSend();
 
     virtual bool InnerHandlePacket(PacketParseResult& packet_info) = 0;
-    bool InitPacketCheck(std::shared_ptr<IPacket> packet);
+    bool InitPacketCheck(std::shared_ptr<IPacket> packet, uint32_t datagram_size);
 
     void HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnection> conn);
     void HandleRetireConnectionId(ConnectionID& cid);
@@ -51,6 +51,8 @@ protected:
 protected:
     bool do_send_;
     bool ecn_enabled_;
+    bool enable_key_update_;  // RFC 9001: Key Update support
+    uint32_t quic_version_;   // QUIC version from config
     std::string worker_id_;
     QuicTransportParams params_;
 

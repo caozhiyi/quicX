@@ -28,8 +28,8 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
         std::bind(&ClientConnection::InnerStreamClose, this, std::placeholders::_1),
         std::bind(&ClientConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3));
-    crypto_stream->SetStreamReadCallBack(
-        std::bind(&ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2));
+    crypto_stream->SetCryptoStreamReadCallBack(std::bind(
+        &ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 
@@ -71,14 +71,44 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
 
     SetPeerAddress(std::move(addr));
 
+    // RFC 9000: Set initial_source_connection_id in transport parameters
+    // This must match the SCID we'll use in the Initial packet
+    auto local_scid = cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID();
+    QuicTransportParams updated_tp = tp_config;
+    updated_tp.initial_source_connection_id_ =
+        std::string(reinterpret_cast<const char*>(local_scid.GetID()), local_scid.GetLength());
+
     // set transport param. TODO define tp length
-    AddTransportParam(tp_config);
+    AddTransportParam(updated_tp);
 
     std::string session_der;
-    if (SessionCache::Instance().GetSession(GetPeerAddress().AsString(), session_der)) {
+    // Use server_name (SNI) as session cache key to match StoreSession which uses SNI
+    std::string session_key = server_name.empty() ? GetPeerAddress().AsString() : server_name;
+    SessionInfo cached_session_info;
+    if (SessionCache::Instance().GetSessionWithInfo(session_key, session_der, cached_session_info)) {
         if (!tls_conn->SetSession(reinterpret_cast<const uint8_t*>(session_der.data()), session_der.size())) {
             common::LOG_ERROR("set session failed. session_der:%s", session_der.c_str());
             return false;
+        }
+        // RFC 9000 Section 7.4.1: Pre-initialize send flow controller with remembered
+        // transport params for 0-RTT. This allows MakeStream to work before the
+        // handshake completes and new transport params are received.
+        if (cached_session_info.has_transport_params && cached_session_info.early_data_capable) {
+            TransportParam remembered_tp;
+            QuicTransportParams remembered_qtp;
+            remembered_qtp.initial_max_data_ = cached_session_info.initial_max_data;
+            remembered_qtp.initial_max_streams_bidi_ = cached_session_info.initial_max_streams_bidi;
+            remembered_qtp.initial_max_streams_uni_ = cached_session_info.initial_max_streams_uni;
+            remembered_qtp.initial_max_stream_data_bidi_local_ = cached_session_info.initial_max_stream_data_bidi_local;
+            remembered_qtp.initial_max_stream_data_bidi_remote_ = cached_session_info.initial_max_stream_data_bidi_remote;
+            remembered_qtp.initial_max_stream_data_uni_ = cached_session_info.initial_max_stream_data_uni;
+            remembered_tp.Init(remembered_qtp);
+            send_flow_controller_.UpdateConfig(remembered_tp);
+            common::LOG_INFO("0-RTT: Pre-initialized flow controller with remembered TP: "
+                "max_data=%u, max_streams_bidi=%u, max_streams_uni=%u",
+                cached_session_info.initial_max_data,
+                cached_session_info.initial_max_streams_bidi,
+                cached_session_info.initial_max_streams_uni);
         }
     }
 
@@ -89,16 +119,16 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     // If server sends Retry, we need to include this in transport parameters
     original_dcid_ = dcid;
 
-    // DEBUG: Print DCID used for Initial Secret derivation
-    char dcid_hex[65] = {0};
-    for (int i = 0; i < dcid.GetLength() && i < 20; i++) {
-        sprintf(dcid_hex + i * 2, "%02x", dcid.GetID()[i]);
-    }
-    common::LOG_ERROR(
-        "Dial: Using DCID for InitSecret: len=%u, hex=%s, hash=%llu", dcid.GetLength(), dcid_hex, dcid.Hash());
+    // CRITICAL FIX: Ensure the generated DCID becomes the current ID
+    // Generator() adds the CID to the map but doesn't make it current if map already has entries
+    // We need to explicitly switch to this new CID
+    cid_coordinator_->GetRemoteConnectionIDManager()->UseNextID();
 
-    // install initial secret
-    connection_crypto_.InstallInitSecret(dcid.GetID(), dcid.GetLength(), false);
+    // Verify that current ID matches the one we'll use for secrets
+    auto current_dcid = cid_coordinator_->GetRemoteConnectionIDManager()->GetCurrentID();
+
+    // install initial secret using the CURRENT DCID (which should now match the generated one)
+    connection_crypto_.InstallInitSecret(current_dcid.GetID(), current_dcid.GetLength(), false);
 
     tls_conn->DoHandleShake();
 
@@ -230,6 +260,9 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
     common::LOG_DEBUG("ClientConnection::HandleHandshakeDoneFrame called");
     state_machine_.OnHandshakeDone();
 
+    // Mark handshake complete to stop PTO probing
+    send_manager_.GetSendControl().SetHandshakeComplete();
+
     // RFC 9000 Section 4.10: Discard Initial and Handshake packet number spaces
     recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
     recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
@@ -249,6 +282,19 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
         std::string session_der;
         auto client_tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
         if (client_tls_conn->ExportSession(session_der, session_info)) {
+            // RFC 9000 Section 7.4.1: Save remembered transport params for 0-RTT
+            if (has_remote_tp_) {
+                session_info.has_transport_params = true;
+                session_info.initial_max_data = remote_initial_max_data_;
+                session_info.initial_max_streams_bidi = remote_initial_max_streams_bidi_;
+                session_info.initial_max_streams_uni = remote_initial_max_streams_uni_;
+                session_info.initial_max_stream_data_bidi_local = remote_initial_max_stream_data_bidi_local_;
+                session_info.initial_max_stream_data_bidi_remote = remote_initial_max_stream_data_bidi_remote_;
+                session_info.initial_max_stream_data_uni = remote_initial_max_stream_data_uni_;
+                session_info.active_connection_id_limit = remote_active_connection_id_limit_;
+                common::LOG_INFO("Saving remembered TP: max_data=%u, max_streams_bidi=%u, max_streams_uni=%u",
+                    remote_initial_max_data_, remote_initial_max_streams_bidi_, remote_initial_max_streams_uni_);
+            }
             SessionCache::Instance().StoreSession(session_der, session_info);
         }
     }
@@ -319,14 +365,14 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
 
     // Encode and set updated transport parameters for TLS
     uint8_t tp_buffer[1024];
-    common::BufferWriteView write_buffer(tp_buffer, sizeof(tp_buffer));
-    if (!transport_param_.Encode(write_buffer)) {
+    size_t bytes_written = 0;
+    if (!transport_param_.Encode(tp_buffer, sizeof(tp_buffer), bytes_written)) {
         common::LOG_ERROR("Failed to encode updated transport param for Retry");
         return false;
     }
 
     // Update TLS with new transport parameters (this will be used in the new ClientHello)
-    if (!tls_conn->AddTransportParam(tp_buffer, write_buffer.GetDataLength())) {
+    if (!tls_conn->AddTransportParam(tp_buffer, bytes_written)) {
         common::LOG_ERROR("Failed to update TLS transport param for Retry");
         return false;
     }
@@ -339,20 +385,21 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     // Reset Initial packet number space
     send_manager_.ResetInitialPacketNumber();
 
+    // Reset Crypto Stream state (offset=0) since handshake restarts
+    auto crypto_stream = connection_crypto_.GetCryptoStream();
+    if (crypto_stream) {
+        crypto_stream->ResetForRetry();
+    }
+
     // Reset Initial cryptographer keys
     connection_crypto_.Reset();
 
-    // RFC 9000 Section 17.2.5: Install asymmetric Initial Secrets for Retry
-    // - Write secret: derived from Retry's Source CID (for encrypting outbound packets)
-    // - Read secret: derived from our local Source CID (server encrypts with this)
-    auto local_cid = cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID();
-    if (!connection_crypto_.InstallInitSecretForRetry(src_cid.GetID(), src_cid.GetLength(),  // Write CID (Retry Source)
-            local_cid.GetID(), local_cid.GetLength())) {                                     // Read CID (local)
+    // RFC 9000 Section 5.2: The Initial secret is derived from the new Destination Connection ID (Retry's Source CID)
+    if (!connection_crypto_.InstallInitSecret(src_cid.GetID(), src_cid.GetLength(), false)) {
         common::LOG_ERROR("Failed to install Initial Secrets for Retry");
         return false;
     }
-    common::LOG_INFO("Installed asymmetric Initial Secrets for Retry - Write CID hash: %llu, Read CID hash: %llu",
-        src_cid.Hash(), local_cid.Hash());
+    common::LOG_INFO("Installed Initial Secrets for Retry using new DCID (hash: %llu)", src_cid.Hash());
 
     // Step 4: NOW restart TLS handshake - crypto keys are ready, will generate new ClientHello
     if (!tls_conn->DoHandleShake()) {
@@ -370,7 +417,6 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     // Step 5: Trigger resend of Initial packet
     // The new ClientHello generated by DoHandleShake() will be in the crypto stream
     // ActiveSendStream will queue it for transmission with the new Token
-    auto crypto_stream = connection_crypto_.GetCryptoStream();
     if (crypto_stream) {
         ActiveSendStream(crypto_stream);
     } else {
@@ -381,7 +427,9 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     return true;
 }
 
-void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) {
+void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
+    common::LOG_INFO("ClientConnection::WriteCryptoData called. buffer_len=%d, err=%d, level=%d",
+        buffer->GetDataLength(), err, encryption_level);
     if (err != 0) {
         common::LOG_ERROR("get crypto data failed. err:%s", err);
         return;
@@ -390,7 +438,7 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     // TODO do not copy data
     uint8_t data[1450] = {0};
     uint32_t len = buffer->Read(data, 1450);
-    if (!tls_connection_->ProcessCryptoData(data, len)) {
+    if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {  // Pass level here
         common::LOG_ERROR("process crypto data failed. err:%s", err);
         return;
     }

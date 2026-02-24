@@ -36,7 +36,7 @@ public:
 protected:
     virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet) override;
     virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) override;
-    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err) override;
+    virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) override;
 
     // HANDSHAKE_DONE frame handler (set as callback to frame processor)
     bool HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
