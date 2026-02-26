@@ -61,6 +61,8 @@ SysCallInt32Result SocketNoblocking(int32_t sockfd);
 
 bool ParseRemoteAddress(uint16_t fd, Address& addr);
 
+bool ParseLocalAddress(int32_t fd, Address& addr);
+
 bool LookupAddress(const std::string& host, Address& addr);
 
 bool Pipe(int32_t& pipe1, int32_t& pipe2);

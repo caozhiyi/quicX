@@ -113,7 +113,7 @@ TEST_F(RecvStreamTest, RecvDataOutOfOrder) {
     frame1->SetStreamID(5);
     frame1->SetOffset(0);
     uint8_t data1[10] = {0};
-    memcpy(data1, "Hello", 10);
+    memcpy(data1, "HelloWorld", 10);
     std::shared_ptr<common::SingleBlockBuffer> data_buffer1 =
         std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(10));
     data_buffer1->Write(data1, 10);

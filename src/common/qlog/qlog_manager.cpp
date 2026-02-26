@@ -53,13 +53,13 @@ void QlogManager::Enable(bool enabled) {
 }
 
 void QlogManager::SetConfig(const QlogConfig& config) {
-    std::lock_guard<std::mutex> lock(config_mutex_);
+    std::unique_lock<std::mutex> lock(config_mutex_);
     bool was_enabled = config_.enabled;
     config_ = config;
 
     // if state changes, reinitialize
     if (was_enabled != config_.enabled) {
-        lock.~lock_guard();  // unlock after calling Enable
+        lock.unlock();  // unlock before calling Enable
         Enable(config_.enabled);
     } else if (config_.enabled && writer_) {
         // update writer config

@@ -173,7 +173,7 @@ TEST_F(IPRateLimiterTest, ConcurrentAccess) {
     
     std::vector<std::thread> threads;
     for (int i = 0; i < kThreads; ++i) {
-        threads.emplace_back([this, i]() {
+        threads.emplace_back([this, i, kConnectionsPerThread]() {
             Address addr;
             addr.SetIp("192.168.1." + std::to_string(i + 1));
             addr.SetPort(12345);

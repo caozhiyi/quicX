@@ -1,10 +1,10 @@
 #ifdef _WIN32
-// Windows headers must be included in the correct order
+// Windows networking headers (winsock2 first). No need to include windows.h directly.
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
+
 #include <string>
 #include "common/network/io_handle.h"
 
@@ -18,11 +18,8 @@ static LPFN_WSARECVMSG ResolveWSARecvMsg(SOCKET sockfd) {
     if (!initialized) {
         GUID guid = WSAID_WSARECVMSG;
         DWORD bytes = 0;
-        if (WSAIoctl(sockfd,
-                     SIO_GET_EXTENSION_FUNCTION_POINTER,
-                     &guid, sizeof(guid),
-                     &wsa_recv_msg, sizeof(wsa_recv_msg),
-                     &bytes, NULL, NULL) == SOCKET_ERROR) {
+        if (WSAIoctl(sockfd, SIO_GET_EXTENSION_FUNCTION_POINTER, &guid, sizeof(guid), &wsa_recv_msg,
+                sizeof(wsa_recv_msg), &bytes, NULL, NULL) == SOCKET_ERROR) {
             wsa_recv_msg = nullptr;
         }
         initialized = true;
@@ -46,39 +43,44 @@ SysCallInt32Result Close(int32_t sockfd) {
 }
 
 SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
-    // Get the socket's address family
-    int domain = 0;
-    int domain_len = sizeof(domain);
-    if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, (char*)&domain, &domain_len) == 0) {
-        if (domain == AF_INET6) {
-            // IPv6 socket
-            if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp() == "::") {
-                struct sockaddr_in6 addr_in6;
-                memset(&addr_in6, 0, sizeof(addr_in6));
-                addr_in6.sin6_family = AF_INET6;
-                addr_in6.sin6_port = htons(addr.GetPort());
+    // Determine socket address family using getsockname (Windows does not support SO_DOMAIN)
+    sockaddr_storage ss;
+    int ss_len = sizeof(ss);
+    int family = AF_INET;
+
+    if (getsockname(sockfd, reinterpret_cast<sockaddr*>(&ss), &ss_len) == 0) {
+        family = ss.ss_family;
+    }
+
+    if (family == AF_INET6) {
+        // IPv6 / dual-stack socket
+        struct sockaddr_in6 addr_in6;
+        memset(&addr_in6, 0, sizeof(addr_in6));
+        addr_in6.sin6_family = AF_INET6;
+        addr_in6.sin6_port = htons(addr.GetPort());
+
+        if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp() == "::") {
+            // Pure IPv6 address (or wildcard)
+            if (addr.GetIp() == "::" || addr.GetIp().empty()) {
+                addr_in6.sin6_addr = in6addr_any;
+            } else {
                 inet_pton(AF_INET6, addr.GetIp().c_str(), &addr_in6.sin6_addr);
-                const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
-                return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
             }
-            // For IPv4 addresses on a dual-stack socket, use IPv4-mapped IPv6 address
-            struct sockaddr_in6 addr_in6;
-            memset(&addr_in6, 0, sizeof(addr_in6));
-            addr_in6.sin6_family = AF_INET6;
-            addr_in6.sin6_port = htons(addr.GetPort());
+        } else {
+            // For IPv4 addresses on a dual-stack socket, use IPv4-mapped IPv6 address ::ffff:x.x.x.x
             if (addr.GetIp() == "0.0.0.0" || addr.GetIp().empty()) {
                 addr_in6.sin6_addr = in6addr_any;
             } else {
-                // Convert IPv4 to IPv4-mapped IPv6: ::ffff:x.x.x.x
                 std::string mapped = "::ffff:" + addr.GetIp();
                 inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
             }
-            const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
-            return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
         }
+
+        const int32_t rc = bind(sockfd, reinterpret_cast<sockaddr*>(&addr_in6), sizeof(addr_in6));
+        return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
     }
-    
-    // Default to IPv4 for AF_INET sockets
+
+    // Fallback / default: IPv4 socket
     struct sockaddr_in addr_in;
     memset(&addr_in, 0, sizeof(addr_in));
     addr_in.sin_family = AF_INET;
@@ -116,18 +118,18 @@ SysCallInt32Result Listen(int32_t sockfd, int32_t backlog) {
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
-SysCallInt32Result Write(int32_t sockfd, const char *data, uint32_t len) {
+SysCallInt32Result Write(int32_t sockfd, const char* data, uint32_t len) {
     const int32_t rc = send(sockfd, data, len, 0);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
-SysCallInt32Result Writev(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
+SysCallInt32Result Writev(int32_t sockfd, Iovec* vec, uint32_t vec_len) {
     DWORD bytes_sent;
     const int32_t rc = WSASend(sockfd, (WSABUF*)vec, vec_len, &bytes_sent, 0, NULL, NULL);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
-SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
+SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
     struct sockaddr_in addr_cli;
     addr_cli.sin_family = AF_INET;
     addr_cli.sin_port = htons(addr.GetPort());
@@ -156,18 +158,18 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
     return {rc, 0};
 }
 
-SysCallInt32Result Recv(int32_t sockfd, char *data, uint32_t len, uint16_t flag) {
+SysCallInt32Result Recv(int32_t sockfd, char* data, uint32_t len, uint16_t flag) {
     const int32_t rc = recv(sockfd, data, len, flag);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
-SysCallInt32Result Readv(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
+SysCallInt32Result Readv(int32_t sockfd, Iovec* vec, uint32_t vec_len) {
     DWORD bytes_received;
     const int32_t rc = WSARecv(sockfd, (WSABUF*)vec, vec_len, &bytes_received, NULL, NULL, NULL);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
-SysCallInt32Result RecvFrom(int32_t sockfd, char *msg, uint32_t len, uint16_t flag, Address& addr) {
+SysCallInt32Result RecvFrom(int32_t sockfd, char* msg, uint32_t len, uint16_t flag, Address& addr) {
     struct sockaddr_in addr_cli;
     int addr_len = sizeof(addr_cli);
     const int32_t rc = recvfrom(sockfd, msg, len, flag, (sockaddr*)&addr_cli, &addr_len);
@@ -207,7 +209,7 @@ SysCallInt32Result RecvmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
     return {rc, 0};
 }
 
-SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void *optval, uint32_t optlen) {
+SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void* optval, uint32_t optlen) {
     const int32_t rc = setsockopt(sockfd, level, optname, (const char*)optval, optlen);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
@@ -231,6 +233,19 @@ bool ParseRemoteAddress(uint16_t fd, Address& addr) {
     return true;
 }
 
+bool ParseLocalAddress(int32_t fd, Address& addr) {
+    struct sockaddr_in addr_in;
+    socklen_t addr_len = sizeof(addr_in);
+
+    if (getsockname(fd, (struct sockaddr*)&addr_in, &addr_len) == -1) {
+        return false;
+    }
+
+    addr.SetIp(inet_ntoa(addr_in.sin_addr));
+    addr.SetPort(ntohs(addr_in.sin_port));
+    return true;
+}
+
 bool LookupAddress(const std::string& host, Address& addr) {
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
@@ -243,7 +258,7 @@ bool LookupAddress(const std::string& host, Address& addr) {
         return false;
     }
 
-    struct sockaddr_in *addr_in = (struct sockaddr_in *)res->ai_addr;
+    struct sockaddr_in* addr_in = (struct sockaddr_in*)res->ai_addr;
     char ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &addr_in->sin_addr, ip, sizeof(ip));
     addr.SetIp(ip);
@@ -267,7 +282,7 @@ bool Pipe(int32_t& pipe1, int32_t& pipe2) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0; // let system choose port
+    addr.sin_port = 0;  // let system choose port
 
     if (bind(listen_sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
         closesocket(listen_sock);
@@ -316,7 +331,8 @@ SysCallInt32Result EnableUdpEcn(int32_t sockfd) {
     return {0, 0};
 }
 
-SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
+SysCallInt32Result RecvFromWithEcn(
+    int32_t sockfd, char* buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
     // Fallback to RecvFrom without ECN on Windows for now
     auto ret = RecvFrom(sockfd, buf, len, flag, addr);
     ecn = 0;
@@ -324,12 +340,13 @@ SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint
 }
 
 SysCallInt32Result EnableUdpEcnMarking(int32_t sockfd, uint8_t ecn_codepoint) {
-    (void)sockfd; (void)ecn_codepoint;
+    (void)sockfd;
+    (void)ecn_codepoint;
     // TODO: implement IP_TOS/TrafficClass on Windows if required
     return {0, 0};
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

@@ -269,6 +269,32 @@ bool ParseRemoteAddress(uint16_t fd, Address& addr) {
     return true;
 }
 
+bool ParseLocalAddress(int32_t fd, Address& addr) {
+    struct sockaddr_storage addr_ss;
+    memset(&addr_ss, 0, sizeof(addr_ss));
+    socklen_t addr_len = sizeof(addr_ss);
+
+    if (getsockname(fd, (struct sockaddr*)&addr_ss, &addr_len) == -1) {
+        return false;
+    }
+
+    char ipstr[INET6_ADDRSTRLEN] = {0};
+    if (addr_ss.ss_family == AF_INET) {
+        auto* sin = (struct sockaddr_in*)&addr_ss;
+        inet_ntop(AF_INET, &sin->sin_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin->sin_port));
+        addr.SetAddressType(AddressType::kIpv4);
+    } else if (addr_ss.ss_family == AF_INET6) {
+        auto* sin6 = (struct sockaddr_in6*)&addr_ss;
+        inet_ntop(AF_INET6, &sin6->sin6_addr, ipstr, sizeof(ipstr));
+        addr.SetIp(ipstr);
+        addr.SetPort(ntohs(sin6->sin6_port));
+        addr.SetAddressType(AddressType::kIpv6);
+    }
+    return true;
+}
+
 bool LookupAddress(const std::string& host, Address& addr) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
