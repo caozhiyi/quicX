@@ -1,5 +1,5 @@
-#ifndef COMMON_BUFFERNEW_MULTI_BLOCK_BUFFER
-#define COMMON_BUFFERNEW_MULTI_BLOCK_BUFFER
+#ifndef COMMON_BUFFER_MULTI_BLOCK_BUFFER
+#define COMMON_BUFFER_MULTI_BLOCK_BUFFER
 
 #include <cstdint>
 #include <deque>
@@ -41,7 +41,6 @@ public:
 
     // *************************** inner interfaces ***************************
     std::shared_ptr<IBuffer> CloneReadable(uint32_t length, bool move_write_pt = true) override;
-    BufferReadView GetReadView() const override;
     BufferSpan GetReadableSpan() const override;
     SharedBufferSpan GetSharedReadableSpan(uint32_t length = 0, bool must_fill_length = false) const override;
     std::string GetDataAsString() override;

@@ -1,18 +1,21 @@
-#include "quic/packet/header/short_header.h"
 #include <cstring>
+
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/log/log.h"
+
+#include "quic/packet/header/short_header.h"
+#include "quic/config.h"
 
 namespace quicx {
 namespace quic {
 
 ShortHeader::ShortHeader():
-    destination_connection_id_length_(20),  // TODO: get from config
+    destination_connection_id_length_(kDefaultDestinationCidLength),
     IHeader(PacketHeaderType::kShortHeader) {}
 
 ShortHeader::ShortHeader(uint8_t flag):
-    destination_connection_id_length_(20),  // TODO: get from config
+    destination_connection_id_length_(kDefaultDestinationCidLength),
     IHeader(flag) {}
 
 ShortHeader::~ShortHeader() {}

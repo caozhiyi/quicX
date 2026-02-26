@@ -199,20 +199,6 @@ std::shared_ptr<IBuffer> MultiBlockBuffer::CloneReadable(uint32_t length, bool m
     return clone;
 }
 
-BufferReadView MultiBlockBuffer::GetReadView() const {
-    for (const auto& state : chunks_) {
-        if (!state.chunk_ || !state.chunk_->Valid()) {
-            continue;
-        }
-        uint32_t readable = state.Readable();
-        if (readable == 0) {
-            continue;
-        }
-        return BufferReadView(state.read_pos_, state.write_pos_);
-    }
-    return BufferReadView();
-}
-
 BufferSpan MultiBlockBuffer::GetReadableSpan() const {
     for (const auto& state : chunks_) {
         if (!state.chunk_ || !state.chunk_->Valid()) {

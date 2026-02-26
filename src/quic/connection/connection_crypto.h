@@ -1,6 +1,7 @@
 #ifndef QUIC_CONNECTION_CONNECTION_CRYPTO
 #define QUIC_CONNECTION_CONNECTION_CRYPTO
 
+#include "quic/common/version.h"
 #include "quic/connection/transport_param.h"
 #include "quic/crypto/if_cryptographer.h"
 #include "quic/crypto/tls/tls_connection.h"
@@ -88,7 +89,7 @@ private:
     std::shared_ptr<ICryptographer> cryptographers_[kNumEncryptionLevels];
     
     // QUIC version for this connection (default to v2 as preferred)
-    uint32_t quic_version_ = 0x6b3343cf;
+    uint32_t quic_version_ = kQuicVersion2;
 };
 
 }  // namespace quic

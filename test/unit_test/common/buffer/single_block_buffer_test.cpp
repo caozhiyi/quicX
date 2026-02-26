@@ -33,10 +33,6 @@ TEST(SingleBlockBufferTest, WriteReadCycleAndVisit) {
     EXPECT_EQ(payload.size(), buffer.Write(payload.data(), payload.size()));
     EXPECT_EQ(payload.size(), buffer.GetDataLength());
 
-    auto view = buffer.GetReadView();
-    ASSERT_TRUE(view.Valid());
-    EXPECT_EQ(payload.size(), view.GetDataLength());
-
     auto span = buffer.GetReadableSpan();
     EXPECT_EQ(payload.size(), span.GetLength());
     auto shared = buffer.GetSharedReadableSpan();
@@ -454,17 +450,17 @@ TEST(SingleBlockBufferTest, GetDataAsString) {
     EXPECT_EQ(text, result);
 }
 
-// Test: GetReadView()
-TEST(SingleBlockBufferTest, GetReadView) {
+// Test: GetReadableSpan() replaces GetReadView()
+TEST(SingleBlockBufferTest, GetReadableSpanAsView) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
     
     std::array<uint8_t, 8> data = {1, 2, 3, 4, 5, 6, 7, 8};
     buffer.Write(data.data(), data.size());
     
-    auto view = buffer.GetReadView();
-    EXPECT_TRUE(view.Valid());
-    EXPECT_EQ(8u, view.GetDataLength());
+    auto span = buffer.GetReadableSpan();
+    EXPECT_TRUE(span.Valid());
+    EXPECT_EQ(8u, span.GetLength());
 }
 
 // Test: GetReadableSpan()
@@ -679,10 +675,8 @@ TEST(SingleBlockBufferTest, InvalidBufferOperations) {
     EXPECT_EQ(nullptr, buffer.GetData());
     EXPECT_EQ("", buffer.GetDataAsString());
     
-    auto view = buffer.GetReadView();
-    EXPECT_FALSE(view.Valid());
-    
     auto span = buffer.GetReadableSpan();
+    EXPECT_FALSE(span.Valid());
     EXPECT_EQ(0u, span.GetLength());
     
     auto shared_span = buffer.GetSharedReadableSpan();

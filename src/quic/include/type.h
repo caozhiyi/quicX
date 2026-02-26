@@ -44,7 +44,7 @@ struct QuicConfig {
     std::string cipher_suites_ = "";  //!< Cipher suites (e.g. TLS_AES_128_GCM_SHA256).
 
     //! QUIC version to use (RFC 9000 v1 or RFC 9369 v2).
-    //! Default to QUIC v2 (0x6b3343cf) as preferred version.
+    //! Default to QUIC v2 (kQuicVersion2) as preferred version.
     uint32_t quic_version_ = quic::kQuicVersion2;
 
     QlogConfig qlog_config_;  //!< QLog configuration.

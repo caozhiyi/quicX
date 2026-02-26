@@ -3,9 +3,9 @@
 #include "common/network/address.h"
 #include "common/network/io_handle.h"
 
+#include "http3/config.h"
 #include "http3/http/client.h"
 #include "http3/http/error.h"
-#include "http3/http/type.h"
 
 namespace quicx {
 
@@ -268,8 +268,7 @@ void Client::Close() {
         pair.second->Close(0);  // error_code=0 means normal close
     }
 
-    // TODO configure the timeout
-    quic_->AddTimer(1000, [this]() { quic_->Destroy(); });
+    quic_->AddTimer(kConnectionCloseDestroyTimeoutMs, [this]() { quic_->Destroy(); });
 }
 
 bool Client::InitiateMigration() {

@@ -1,7 +1,7 @@
 #include <functional>
 #include <unordered_map>
 
-#include "common/buffer/multi_block_buffer_decode_wrapper.h"
+#include "common/buffer/buffer_decode_wrapper.h"
 #include "common/log/log.h"
 
 #include "http3/frame/cancel_push_frame.h"
@@ -59,7 +59,7 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
 
         if (state_ == State::kReadingFrameType) {
             // Try to decode frame type using varint (RFC 9114 Section 9)
-            common::MultiBlockBufferDecodeWrapper wrapper(buffer);
+            common::BufferDecodeWrapper wrapper(buffer);
             uint64_t frame_type = 0;
             if (!wrapper.DecodeVarint(frame_type)) {
                 // VarInt decode failed - either incomplete or corrupt data
@@ -82,7 +82,7 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
                 // RFC 9114 Section 9: Implementations MUST ignore unknown frame types.
                 // Unknown frames follow the standard type-length-payload format,
                 // so we read the length varint and skip that many bytes.
-                common::MultiBlockBufferDecodeWrapper len_wrapper(buffer);
+                common::BufferDecodeWrapper len_wrapper(buffer);
                 uint64_t payload_length = 0;
                 if (!len_wrapper.DecodeVarint(payload_length)) {
                     // Can't read length yet — need more data

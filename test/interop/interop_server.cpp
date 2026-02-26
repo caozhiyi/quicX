@@ -17,7 +17,7 @@
  *   SSLKEYLOGFILE  - File for TLS key logging
  *   RETRY          - "1" to force retry
  *   CIPHER_SUITE   - TLS cipher suite override
- *   QUIC_VERSION   - QUIC version hex (e.g. 0x6b3343cf for v2)
+ *   QUIC_VERSION   - QUIC version hex (e.g. 0x00000001 for v1, 0x6b3343cf for v2)
  */
 
 #include <signal.h>
@@ -25,9 +25,7 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <unordered_map>
 
 #include "quic/include/if_quic_server.h"
 #include "quic/include/if_quic_connection.h"

@@ -1,6 +1,6 @@
 #include <cstring>
 
-#include "common/buffer/buffer_read_view.h"
+#include "common/buffer/buffer_span.h"
 #include "common/log/log.h"
 
 #include "quic/common/version.h"
@@ -69,7 +69,7 @@ void ConnectionCrypto::OnTransportParams(EncryptionLevel level, const uint8_t* t
     transport_param_done_ = true;
 
     TransportParam remote_tp;
-    common::BufferReadView buffer((uint8_t*)tp, tp_len);
+    common::BufferSpan buffer((uint8_t*)tp, (uint32_t)tp_len);
     if (!remote_tp.Decode(buffer)) {
         common::LOG_ERROR("decode remote transport failed.");
         return;

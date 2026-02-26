@@ -8,7 +8,6 @@
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/buffer_span.h"
 #include "common/buffer/if_buffer_chunk.h"
-#include "common/buffer/buffer_read_view.h"
 #include "common/buffer/shared_buffer_span.h"
 
 namespace quicx {
@@ -52,8 +51,6 @@ public:
 
     // *************************** inner interfaces ***************************
     std::shared_ptr<IBuffer> CloneReadable(uint32_t length, bool move_write_pt = true) override;
-    // Return a read-only view over the readable data.
-    BufferReadView GetReadView() const override;
     // Return a non-owning span describing the readable data.
     BufferSpan GetReadableSpan() const override;
     // Return a shared span that keeps the chunk alive.

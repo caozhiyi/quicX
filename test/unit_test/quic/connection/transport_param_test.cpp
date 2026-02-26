@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "common/buffer/buffer_read_view.h"
+#include "common/buffer/buffer_span.h"
 #include "quic/connection/transport_param.h"
 
 namespace quicx {
@@ -13,11 +13,12 @@ TEST(transport_param_utest, test1) {
 
     uint8_t buf[1024] = {0};
     size_t bytes_written = 0;
+    common::BufferSpan write_buffer(buf, sizeof(buf));
 
-    EXPECT_TRUE(tp1.Encode(buf, sizeof(buf), bytes_written));
+    EXPECT_TRUE(tp1.Encode(write_buffer, bytes_written));
 
-    // After encoding, create read_buffer with the actual written length
-    common::BufferReadView read_buffer(buf, bytes_written);
+    // After encoding, create BufferSpan with the actual written length
+    common::BufferSpan read_buffer(buf, static_cast<uint32_t>(bytes_written));
 
     TransportParam tp2;
     EXPECT_TRUE(tp2.Decode(read_buffer));
@@ -46,10 +47,11 @@ TEST(transport_param_utest, test2) {
 
     uint8_t buf[1024] = {0};
     size_t bytes_written = 0;
+    common::BufferSpan write_buffer(buf, sizeof(buf));
 
-    EXPECT_TRUE(tp1.Encode(buf, sizeof(buf), bytes_written));
+    EXPECT_TRUE(tp1.Encode(write_buffer, bytes_written));
 
-    common::BufferReadView read_buffer(buf, bytes_written);
+    common::BufferSpan read_buffer(buf, static_cast<uint32_t>(bytes_written));
     TransportParam tp2;
     EXPECT_TRUE(tp2.Decode(read_buffer));
 

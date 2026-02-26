@@ -40,16 +40,43 @@ enum class MiddlewarePosition : uint8_t {
 };
 
 /**
+ * @brief HTTP3 configuration
+ *
+ * This configuration is used to initialize the HTTP3 client and server.
+ */
+struct Http3Config {
+    /** Core QUIC configuration */
+    QuicConfig quic_config_;
+
+    MetricsConfig metrics_;  // metrics endpoint configuration
+
+    /**
+     * @brief Connection timeout in milliseconds
+     */
+    uint32_t connection_timeout_ms_ = 0;
+
+    /**
+     * @brief Local connection limits (not sent in SETTINGS frame)
+     * These are local-only configurations that control connection behavior
+     * but are NOT transmitted to the peer via HTTP/3 SETTINGS frame.
+     */
+    uint64_t max_concurrent_streams_ = 200;  // max concurrent streams allowed
+    bool enable_push_ = false;               // whether to enable push streams
+};
+
+/**
  * @brief HTTP3 settings
  *
- * These settings will be sent to the peer via HTTP/3 SETTINGS frame (RFC 9114 §7.2.4).
- * Only valid HTTP/3 settings should be included here.
- * Local-only configurations (max_concurrent_streams, enable_push) are in Http3Config.
+ * This settings is used to initialize the HTTP3 client and server.
  */
 struct Http3Settings {
-    uint64_t max_field_section_size = 16384;  // max field section size (0x06)
-    uint64_t qpack_max_table_capacity = 0;    // qpack max table capacity (0x01)
-    uint64_t qpack_blocked_streams = 0;       // qpack blocked streams (0x07)
+    uint64_t max_header_list_size = 100;      // max header list size
+    uint64_t enable_push = 0;                 // enable push
+    uint64_t max_concurrent_streams = 200;    // max concurrent streams
+    uint64_t max_frame_size = 16384;          // max frame size
+    uint64_t max_field_section_size = 16384;  // max field section size
+    uint64_t qpack_max_table_capacity = 0;    // qpack max table capacity
+    uint64_t qpack_blocked_streams = 0;       // qpack blocked streams
 
     QuicTransportParams quic_transport_params_ = DEFAULT_QUIC_TRANSPORT_PARAMS;
 };

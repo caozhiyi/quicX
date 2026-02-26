@@ -2,6 +2,7 @@
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
 
+#include "quic/config.h"
 #include "quic/connection/error.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/reset_stream_frame.h"
@@ -199,17 +200,17 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
 
     // Proactive flow control window update strategy:
     // - Send MAX_STREAM_DATA early (when 25% consumed) to prevent sender stalling
-    // - Use large increments (1MB) to reduce frequency of updates
+    // - Use large increments to reduce frequency of updates
     // - This allows sender to continue at full speed without waiting for window updates
     const uint64_t kWindowThreshold = local_data_limit_ / 4;      // Trigger at 25% remaining (proactive)
-    const uint64_t kWindowIncrement = 2 * 1024 * 1024;            // Increase by 1MB each time for high throughput TODO configurable
+    const uint64_t kWindowIncrement = kStreamWindowIncrement;     // Use configured increment for high throughput
 
     uint64_t remaining_window = local_data_limit_ - except_offset_;
     if (remaining_window < kWindowThreshold) {
         if (recv_machine_->CheckCanSendFrame(FrameType::kMaxStreamData)) {
             // Calculate increment to restore window to a healthy size
             // Aim for at least 2MB available window after update
-            uint64_t target_window = 2 * 1024 * 1024;  // 2MB target available window
+            uint64_t target_window = kStreamWindowIncrement;
             uint64_t needed = (target_window > remaining_window) ? (target_window - remaining_window) : kWindowIncrement;
             // Round up to nearest kWindowIncrement
             needed = ((needed + kWindowIncrement - 1) / kWindowIncrement) * kWindowIncrement;

@@ -1,8 +1,9 @@
-#include "http3/frame/headers_frame.h"
 #include "common/buffer/buffer_encode_wrapper.h"
-#include "common/buffer/multi_block_buffer_decode_wrapper.h"
+#include "common/buffer/buffer_decode_wrapper.h"
 #include "common/decode/decode.h"
 #include "common/log/log.h"
+
+#include "http3/frame/headers_frame.h"
 
 namespace quicx {
 namespace http3 {
@@ -43,7 +44,7 @@ bool HeadersFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 DecodeResult HeadersFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
-    common::MultiBlockBufferDecodeWrapper wrapper(buffer);
+    common::BufferDecodeWrapper wrapper(buffer);
 
     if (with_type) {
         uint64_t frame_type;

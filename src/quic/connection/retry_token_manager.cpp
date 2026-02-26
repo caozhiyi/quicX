@@ -1,12 +1,11 @@
 
-#include <openssl/hmac.h>
-#include <openssl/rand.h>
 #include <chrono>
 #include <cstring>
 #include <ctime>
 
 #include "common/log/log.h"
 #include "quic/connection/retry_token_manager.h"
+#include "quic/crypto/retry_crypto.h"
 
 namespace quicx {
 namespace quic {
@@ -41,8 +40,12 @@ std::string RetryTokenManager::GenerateToken(const common::Address& client_addr,
     payload.append((char*)&cid_len, sizeof(cid_len));
     payload.append((char*)original_dcid.GetID(), cid_len);
 
-    // Compute HMAC over payload
-    std::string hmac = ComputeHMAC(payload);
+    // Compute HMAC over payload using crypto module
+    std::string hmac;
+    if (!RetryCrypto::ComputeTokenHMAC(payload, current_secret_, hmac)) {
+        common::LOG_ERROR("Failed to compute token HMAC");
+        return "";
+    }
 
     // Build final token: timestamp || cid_len || cid || HMAC
     // We recreate the token structure to allow easy parsing:
@@ -124,23 +127,26 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Try current secret
-    std::string expected_hmac = ComputeHMAC(payload);
-    if (expected_hmac == actual_hmac) {
+    // Try current secret using crypto module
+    std::string expected_hmac;
+    if (!RetryCrypto::ComputeTokenHMAC(payload, current_secret_, expected_hmac)) {
+        common::LOG_ERROR("Failed to compute HMAC for validation");
+        return false;
+    }
+
+    if (RetryCrypto::VerifyTokenHMAC(expected_hmac, actual_hmac)) {
         common::LOG_DEBUG("Retry token validated successfully (current secret)");
         return true;
     }
 
     // Try previous secret (during rotation window)
     if (!previous_secret_.empty()) {
-        std::string temp = current_secret_;
-        current_secret_ = previous_secret_;
-        expected_hmac = ComputeHMAC(payload);
-        current_secret_ = temp;
-
-        if (expected_hmac == actual_hmac) {
-            common::LOG_DEBUG("Retry token validated successfully (previous secret)");
-            return true;
+        std::string prev_hmac;
+        if (RetryCrypto::ComputeTokenHMAC(payload, previous_secret_, prev_hmac)) {
+            if (RetryCrypto::VerifyTokenHMAC(prev_hmac, actual_hmac)) {
+                common::LOG_DEBUG("Retry token validated successfully (previous secret)");
+                return true;
+            }
         }
     }
 
@@ -156,19 +162,20 @@ void RetryTokenManager::RotateSecret() {
 }
 
 std::string RetryTokenManager::ComputeHMAC(const std::string& data) {
-    unsigned char hmac[32];
-    unsigned int hmac_len;
-
-    HMAC(EVP_sha256(), current_secret_.data(), current_secret_.size(), (unsigned char*)data.data(), data.size(), hmac,
-        &hmac_len);
-
-    return std::string((char*)hmac, hmac_len);
+    std::string hmac;
+    if (!RetryCrypto::ComputeTokenHMAC(data, current_secret_, hmac)) {
+        common::LOG_ERROR("ComputeHMAC failed");
+        return "";
+    }
+    return hmac;
 }
 
 void RetryTokenManager::GenerateRandomSecret() {
-    unsigned char key[SECRET_SIZE];
-    RAND_bytes(key, SECRET_SIZE);
-    current_secret_.assign((char*)key, SECRET_SIZE);
+    if (!RetryCrypto::GenerateRandomSecret(SECRET_SIZE, current_secret_)) {
+        common::LOG_ERROR("Failed to generate random secret for Retry tokens");
+        // Fallback: use empty secret (not secure, but prevents crash)
+        current_secret_.clear();
+    }
 }
 
 }  // namespace quic

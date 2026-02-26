@@ -1,4 +1,5 @@
 #include "quic/connection/controler/connection_flow_control.h"
+#include "quic/config.h"
 #include "quic/frame/data_blocked_frame.h"
 #include "quic/frame/max_data_frame.h"
 #include "quic/frame/max_streams_frame.h"
@@ -8,12 +9,18 @@ namespace quicx {
 namespace quic {
 
 ConnectionFlowControl::ConnectionFlowControl(StreamIDGenerator::StreamStarter starter):
+    peer_control_send_max_data_limit_(0),
     peer_control_send_data_size_(0),
-    control_peer_send_data_size_(0),
     peer_control_max_bidirectional_stream_id_(0),
+    peer_control_bidirectional_stream_limit_(0),
     peer_control_max_unidirectional_stream_id_(0),
+    peer_control_unidirectional_stream_limit_(0),
+    control_peer_send_max_data_limit_(0),
+    control_peer_send_data_size_(0),
     control_peer_max_bidirectional_stream_id_(0),
+    control_peer_bidirectional_stream_limit_(0),
     control_peer_max_unidirectional_stream_id_(0),
+    control_peer_unidirectional_stream_limit_(0),
     id_generator_(starter) {}
 
 void ConnectionFlowControl::UpdateConfig(const TransportParam& tp) {
@@ -45,9 +52,8 @@ bool ConnectionFlowControl::CheckPeerControlSendDataLimit(
         return false;
     }
 
-    // TODO put 8912 to config
     can_send_size = peer_control_send_max_data_limit_ - peer_control_send_data_size_;
-    if (peer_control_send_max_data_limit_ - peer_control_send_data_size_ < 8912) {
+    if (peer_control_send_max_data_limit_ - peer_control_send_data_size_ < kDataBlockedThreshold) {
         auto frame = std::make_shared<DataBlockedFrame>();
         frame->SetMaximumData(peer_control_send_max_data_limit_);
         send_frame = frame;
@@ -66,9 +72,10 @@ bool ConnectionFlowControl::CheckControlPeerSendDataLimit(std::shared_ptr<IFrame
         return false;
     }
 
-    // check remote data limit. TODO put 8912 to config
-    if (control_peer_send_max_data_limit_ - control_peer_send_data_size_ < 8912) {
-        control_peer_send_max_data_limit_ += 8912;
+    // check remote data limit
+    uint64_t remaining = control_peer_send_max_data_limit_ - control_peer_send_data_size_;
+    if (remaining < kDataIncreaseThreshold) {
+        control_peer_send_max_data_limit_ += kDataIncreaseAmount;
         auto frame = std::make_shared<MaxDataFrame>();
         frame->SetMaximumData(control_peer_send_max_data_limit_);
         send_frame = frame;
@@ -101,8 +108,7 @@ bool ConnectionFlowControl::CheckPeerControlBidirectionStreamLimit(
     // Check passed, now actually allocate the stream ID
     stream_id = id_generator_.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
 
-    // TODO put 4 to config
-    if (peer_control_bidirectional_stream_limit_ - (stream_id >> 2) < 4) {
+    if (peer_control_bidirectional_stream_limit_ - (stream_id >> 2) < kStreamsBlockedThreshold) {
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedBidirectional);
         frame->SetMaximumStreams(peer_control_bidirectional_stream_limit_);
         send_frame = frame;
@@ -133,8 +139,7 @@ bool ConnectionFlowControl::CheckPeerControlUnidirectionStreamLimit(
     // Check passed, now actually allocate the stream ID
     stream_id = id_generator_.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
 
-    // TODO put 4 to config
-    if (peer_control_unidirectional_stream_limit_ - (stream_id >> 2) < 4) {
+    if (peer_control_unidirectional_stream_limit_ - (stream_id >> 2) < kStreamsBlockedThreshold) {
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedUnidirectional);
         frame->SetMaximumStreams(peer_control_unidirectional_stream_limit_);
         send_frame = frame;
@@ -168,9 +173,9 @@ bool ConnectionFlowControl::CheckControlPeerBidirectionStreamLimit(std::shared_p
 
     // Proactive stream limit increase: when remaining streams < threshold, expand capacity
     // This reduces latency by avoiding STREAMS_BLOCKED -> MAX_STREAMS round trip
-    if (remaining < 4) {
+    if (remaining < kStreamsIncreaseThreshold) {
         uint64_t old_limit = control_peer_bidirectional_stream_limit_;
-        control_peer_bidirectional_stream_limit_ += 8;
+        control_peer_bidirectional_stream_limit_ += kStreamsLimitIncreaseAmount;
         auto frame = std::make_shared<MaxStreamsFrame>(FrameType::kMaxStreamsBidirectional);
         frame->SetMaximumStreams(control_peer_bidirectional_stream_limit_);
         send_frame = frame;
@@ -192,9 +197,9 @@ bool ConnectionFlowControl::CheckControlPeerUnidirectionStreamLimit(std::shared_
     uint64_t remaining = control_peer_unidirectional_stream_limit_ - current_stream_count;
 
     // Proactive stream limit increase: when remaining streams < threshold, expand capacity
-    if (remaining < 4) {
+    if (remaining < kStreamsIncreaseThreshold) {
         uint64_t old_limit = control_peer_unidirectional_stream_limit_;
-        control_peer_unidirectional_stream_limit_ += 8;
+        control_peer_unidirectional_stream_limit_ += kStreamsLimitIncreaseAmount;
         auto frame = std::make_shared<MaxStreamsFrame>(FrameType::kMaxStreamsUnidirectional);
         frame->SetMaximumStreams(control_peer_unidirectional_stream_limit_);
         send_frame = frame;
