@@ -1,5 +1,6 @@
-#include "http3/connection/if_connection.h"
 #include "common/log/log.h"
+
+#include "http3/connection/if_connection.h"
 #include "http3/connection/type.h"
 
 namespace quicx {

@@ -1,10 +1,9 @@
 #include "common/log/log.h"
 
+#include "http3/config.h"
 #include "http3/connection/connection_server.h"
-#include "http3/connection/type.h"
 #include "http3/frame/qpack_decoder_frames.h"
 #include "http3/http/error.h"
-#include "http3/http/type.h"
 #include "http3/stream/control_client_sender_stream.h"
 #include "http3/stream/control_server_receiver_stream.h"
 #include "http3/stream/push_sender_stream.h"

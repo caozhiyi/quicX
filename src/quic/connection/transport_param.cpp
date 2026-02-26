@@ -1,6 +1,7 @@
-#include "quic/connection/transport_param.h"
 #include "common/decode/decode.h"
 #include "common/log/log.h"
+
+#include "quic/connection/transport_param.h"
 #include "quic/connection/type.h"
 
 namespace quicx {
@@ -74,13 +75,18 @@ bool TransportParam::Merge(const TransportParam& tp) {
     return true;
 }
 
-bool TransportParam::Encode(uint8_t* buffer, size_t buffer_size, size_t& bytes_written) {
+bool TransportParam::Encode(const common::BufferSpan& buffer, size_t& bytes_written) {
+    if (!buffer.Valid()) {
+        return false;
+    }
+
+    size_t buffer_size = buffer.GetLength();
     if (buffer_size < EncodeSize()) {
         return false;
     }
 
-    uint8_t* pos = buffer;
-    uint8_t* end = buffer + buffer_size;
+    uint8_t* pos = buffer.GetStart();
+    uint8_t* end = buffer.GetEnd();
 
     if (!original_destination_connection_id_.empty()) {
         pos = EncodeString(pos, end, original_destination_connection_id_,
@@ -179,18 +185,17 @@ bool TransportParam::Encode(uint8_t* buffer, size_t buffer_size, size_t& bytes_w
         if (pos == nullptr) return false;
     }
 
-    if (pos == nullptr || pos < buffer || pos > end) {
+    if (pos == nullptr || pos < buffer.GetStart() || pos > buffer.GetEnd()) {
         return false;
     }
-    bytes_written = pos - buffer;
+    bytes_written = pos - buffer.GetStart();
     return true;
 }
 
-bool TransportParam::Decode(common::BufferReadView& buffer) {
+bool TransportParam::Decode(const common::BufferSpan& buffer) {
     uint64_t type = 0;
-    auto span = buffer.GetReadableSpan();
-    uint8_t* pos = span.GetStart();
-    uint8_t* end = span.GetEnd();
+    uint8_t* pos = buffer.GetStart();
+    uint8_t* end = buffer.GetEnd();
     while (pos != nullptr && pos < end) {
         pos = common::DecodeVarint(pos, end, type);
         if (pos == nullptr) {
@@ -272,7 +277,6 @@ bool TransportParam::Decode(common::BufferReadView& buffer) {
                 return false;
         }
     }
-    buffer.MoveReadPt(pos - span.GetStart());
     return true;
 }
 

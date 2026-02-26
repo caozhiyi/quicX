@@ -1,5 +1,5 @@
 #include "common/buffer/buffer_encode_wrapper.h"
-#include "common/buffer/multi_block_buffer_decode_wrapper.h"
+#include "common/buffer/buffer_decode_wrapper.h"
 #include "common/decode/decode.h"
 
 #include "http3/frame/settings_frame.h"
@@ -42,7 +42,7 @@ bool SettingsFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 DecodeResult SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
-    common::MultiBlockBufferDecodeWrapper wrapper(buffer);
+    common::BufferDecodeWrapper wrapper(buffer);
     if (with_type) {
         uint64_t frame_type;
         if (!wrapper.DecodeVarint(frame_type)) {

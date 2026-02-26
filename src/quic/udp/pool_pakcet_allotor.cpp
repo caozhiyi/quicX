@@ -1,13 +1,15 @@
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/single_block_buffer.h"
+
+#include "quic/config.h"
 #include "quic/udp/pool_pakcet_allotor.h"
 
 namespace quicx {
 namespace quic {
 
 PoolPacketAllotor::PoolPacketAllotor():
-    packet_size_(200), // TODO: put into config
-    pool_(common::MakeBlockMemoryPoolPtr(1500, 64)) {
+    packet_size_(kPacketPoolSize),
+    pool_(common::MakeBlockMemoryPoolPtr(kPacketBufferSize, kPacketPoolBlockCount)) {
     for (uint32_t i = 0; i < packet_size_; ++i) {
         auto chunk = std::make_shared<common::BufferChunk>(pool_);
         if (!chunk || !chunk->Valid()) {

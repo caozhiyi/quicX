@@ -4,6 +4,7 @@
 
 #include "quic/quicx/global_resource.h"
 
+#include "http3/config.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
 #include "http3/http/error.h"
@@ -183,7 +184,6 @@ bool ReqRespBaseStream::SendBodyWithProvider(const body_provider& provider) {
 }
 
 bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>& body) {
-    const size_t kMaxDataFramePayload = 1400;  // TODO configurable
     if (!body || body->GetDataLength() == 0) {
         stream_->Close();
         common::LOG_DEBUG("SendBodyDirectly: empty body, closing stream with FIN");

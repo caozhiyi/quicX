@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include "common/util/c_smart_ptr.h"
+#include "quic/common/version.h"
 
 namespace quicx {
 namespace quic {
@@ -115,8 +116,8 @@ using EVPAEADCTXPtr = common::CSmartPtr<EVP_AEAD_CTX, EVP_AEAD_CTX_free>;
 
 // Get Initial Salt based on QUIC version
 inline const uint8_t* GetInitialSalt(uint32_t version) {
-    // QUIC v2 (0x6b3343cf)
-    if (version == 0x6b3343cf) {
+    // QUIC v2
+    if (version == kQuicVersion2) {
         return kInitialSaltV2.data();
     }
     // Default to v1 salt
@@ -129,14 +130,14 @@ inline size_t GetInitialSaltLength(uint32_t version) {
 
 // Get Retry Integrity Key based on QUIC version
 inline const uint8_t* GetRetryIntegrityKey(uint32_t version) {
-    if (version == 0x6b3343cf) {
+    if (version == kQuicVersion2) {
         return kRetryIntegrityKeyV2.data();
     }
     return kRetryIntegrityKeyV1.data();
 }
 
 inline const uint8_t* GetRetryIntegrityNonce(uint32_t version) {
-    if (version == 0x6b3343cf) {
+    if (version == kQuicVersion2) {
         return kRetryIntegrityNonceV2.data();
     }
     return kRetryIntegrityNonceV1.data();
@@ -156,7 +157,7 @@ struct QuicLabels {
 
 // Get HKDF labels based on QUIC version
 inline QuicLabels GetQuicLabels(uint32_t version) {
-    if (version == 0x6b3343cf) {
+    if (version == kQuicVersion2) {
         // QUIC v2
         return QuicLabels{
             kTlsLabelKeyV2.data(), kTlsLabelKeyV2.size(),

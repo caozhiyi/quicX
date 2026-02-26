@@ -2,9 +2,9 @@
 #define QUIC_CONNECTION_TRANSPORT_PARAM
 
 #include <cstdint>
-#include <memory>
 #include <string>
-#include "common/buffer/buffer_read_view.h"
+
+#include "common/buffer/buffer_span.h"
 #include "quic/include/type.h"
 
 namespace quicx {
@@ -27,8 +27,8 @@ public:
     /*
      * serialization and deserialization operations
      */
-    bool Encode(uint8_t* buffer, size_t buffer_size, size_t& bytes_written);
-    bool Decode(common::BufferReadView& buffer);
+    bool Encode(const common::BufferSpan& buffer, size_t& bytes_written);
+    bool Decode(const common::BufferSpan& buffer);
     uint32_t EncodeSize();
 
     /**

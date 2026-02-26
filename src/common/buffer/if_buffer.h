@@ -9,7 +9,6 @@
 #include <cstdint>
 #include <string>
 
-#include "common/buffer/buffer_read_view.h"
 #include "common/buffer/buffer_span.h"
 #include "common/buffer/shared_buffer_span.h"
 #include "common/include/if_buffer_read.h"
@@ -50,10 +49,6 @@ public:
     // This is useful for protocols that need to extract a fixed-length payload
     // while keeping the rest for further processing.
     virtual std::shared_ptr<IBuffer> CloneReadable(uint32_t length, bool move_write_pt = true) = 0;
-    // set the read limit of the buffer
-    // virtual void SetReadableLimit(uint32_t limit) = 0;
-    // Return a read-only view over the readable data.
-    virtual BufferReadView GetReadView() const = 0;
     // Return a non-owning span describing the readable data.
     virtual BufferSpan GetReadableSpan() const = 0;
     // Return a shared span that keeps the chunk alive.

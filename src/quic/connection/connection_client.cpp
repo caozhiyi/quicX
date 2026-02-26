@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 #include "common/qlog/qlog.h"
+#include "common/buffer/buffer_span.h"
 
 #include "quic/connection/connection_client.h"
 #include "quic/connection/session_cache.h"
@@ -366,7 +367,8 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     // Encode and set updated transport parameters for TLS
     uint8_t tp_buffer[1024];
     size_t bytes_written = 0;
-    if (!transport_param_.Encode(tp_buffer, sizeof(tp_buffer), bytes_written)) {
+    common::BufferSpan buffer_span(tp_buffer, sizeof(tp_buffer));
+    if (!transport_param_.Encode(buffer_span, bytes_written)) {
         common::LOG_ERROR("Failed to encode updated transport param for Retry");
         return false;
     }

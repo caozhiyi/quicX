@@ -352,10 +352,10 @@ TEST_F(RecvFlowControllerTest, OnStreamCreatedValidatesUniStreams) {
 
 // Test: OnStreamCreated generates MAX_STREAMS frame when near limit
 TEST_F(RecvFlowControllerTest, OnStreamCreatedGeneratesMaxStreamsFrameNearLimit) {
-    // We need to set initial limit > threshold (50) to test the behavior properly
+    // We need to set initial limit > threshold (4) to test the behavior properly
     QuicTransportParams config;
     config.initial_max_data_ = 10000;
-    config.initial_max_streams_bidi_ = 60;  // 60 > 50 (kStreamsIncreaseThreshold)
+    config.initial_max_streams_bidi_ = 10;  // 10 > 4 (kStreamsIncreaseThreshold)
     config.initial_max_streams_uni_ = 10;
 
     TransportParam tp;
@@ -364,20 +364,20 @@ TEST_F(RecvFlowControllerTest, OnStreamCreatedGeneratesMaxStreamsFrameNearLimit)
 
     std::shared_ptr<IFrame> max_streams_frame;
 
-    // Create streams up to near the limit (threshold is 50)
-    // Stream ID 37 (count 9), remaining = 60 - 9 = 51 (above threshold)
-    controller_->OnStreamCreated(37, max_streams_frame);
+    // Create streams up to near the limit (threshold is 4)
+    // Stream ID 21 (count 5), remaining = 10 - 5 = 5 (above threshold)
+    controller_->OnStreamCreated(21, max_streams_frame);
     EXPECT_EQ(max_streams_frame, nullptr);
 
-    // Stream ID 41 (count 10), remaining = 60 - 10 = 50 (at threshold)
-    controller_->OnStreamCreated(41, max_streams_frame);
+    // Stream ID 25 (count 6), remaining = 10 - 6 = 4 (at threshold)
+    controller_->OnStreamCreated(25, max_streams_frame);
     ASSERT_NE(max_streams_frame, nullptr);
 
     // Verify it's a MAX_STREAMS frame with increased limit
     auto max_streams = std::dynamic_pointer_cast<MaxStreamsFrame>(max_streams_frame);
     ASSERT_NE(max_streams, nullptr);
     EXPECT_EQ(max_streams->GetType(), FrameType::kMaxStreamsBidirectional);
-    EXPECT_GT(max_streams->GetMaximumStreams(), 60u);  // Should be increased
+    EXPECT_GT(max_streams->GetMaximumStreams(), 10u);  // Should be increased to 10 + 10 = 20
 }
 
 // Test: OnStreamCreated handles both stream types independently

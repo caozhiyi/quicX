@@ -2,6 +2,7 @@
 
 #include "common/log/log.h"
 
+#include "quic/config.h"
 #include "quic/frame/data_blocked_frame.h"
 #include "quic/frame/streams_blocked_frame.h"
 

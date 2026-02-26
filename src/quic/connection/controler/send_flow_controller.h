@@ -154,10 +154,6 @@ private:
 
     // Stream ID generator
     StreamIDGenerator id_generator_;
-
-    // Flow control thresholds (TODO: make configurable)
-    static constexpr uint64_t kDataBlockedThreshold = 8912;      // Bytes threshold for DATA_BLOCKED
-    static constexpr uint64_t kStreamsBlockedThreshold = 4;     // Streams threshold for STREAMS_BLOCKED
 };
 
 }  // namespace quic

@@ -1,4 +1,3 @@
-#include <openssl/aead.h>
 #include "common/buffer/buffer_chunk.h"
 #include "common/log/log.h"
 #include "common/log/log_context.h"
@@ -6,10 +5,12 @@
 #include "common/metrics/metrics_std.h"
 
 #include "quic/common/version.h"
+#include "quic/config.h"
 #include "quic/connection/connection_id.h"
 #include "quic/connection/connection_id_generator.h"
 #include "quic/connection/connection_server.h"
 #include "quic/connection/error.h"
+#include "quic/crypto/retry_crypto.h"
 #include "quic/crypto/type.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/retry_packet.h"
@@ -222,7 +223,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                 HandleConnectionClose(new_conn, QuicErrorCode::kNoError, "handshake timeout");
             }
         },
-        5000);  // TODO add timeout to config
+        kHandshakeTimeoutMs);
     return true;
 }
 
@@ -235,7 +236,6 @@ bool ServerWorker::SendRetryPacket(
     }
 
     // Generate a new server connection ID for this Retry
-    static const uint8_t kRetryCidLength = 8;  // Use 8 bytes for Retry SCID TODO configurable
     uint8_t new_scid_data[kRetryCidLength];
     ConnectionIDGenerator::Instance().Generator(new_scid_data, kRetryCidLength);
     ConnectionID new_scid(new_scid_data, kRetryCidLength);
@@ -268,10 +268,7 @@ bool ServerWorker::SendRetryPacket(
     retry_packet.SetRetryToken(token_span);
 
     // Compute Retry Integrity Tag (RFC 9001 Section 5.8)
-    // First, encode the retry packet without the integrity tag to build the pseudo-packet
-    // Retry Pseudo-Packet = ODCID_Len(1) || ODCID || Retry_Packet_Without_Tag
-    
-    // Encode retry packet body (without integrity tag) to a temp buffer
+    // Step 1: Encode retry packet without tag to get the packet body
     std::shared_ptr<NetPacket> temp_pkt = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
     auto temp_buffer = temp_pkt->GetData();
     
@@ -283,57 +280,20 @@ bool ServerWorker::SendRetryPacket(
         return false;
     }
     
-    // Build Retry Pseudo-Packet for AEAD AAD:
-    // ODCID_Len (1 byte) || ODCID || encoded_retry_packet_without_tag
-    uint32_t encoded_len = temp_buffer->GetDataLength();
-    uint32_t retry_body_len = encoded_len - kRetryIntegrityTagLength;  // exclude placeholder tag
-    uint32_t odcid_len = original_dcid.GetLength();
-    uint32_t pseudo_packet_len = 1 + odcid_len + retry_body_len;
-    
-    std::vector<uint8_t> pseudo_packet(pseudo_packet_len);
-    size_t offset = 0;
-    pseudo_packet[offset++] = static_cast<uint8_t>(odcid_len);
-    memcpy(&pseudo_packet[offset], original_dcid.GetID(), odcid_len);
-    offset += odcid_len;
-    // Copy encoded retry packet body (without the 16-byte tag at the end)
+    // Get encoded packet body (without the 16-byte tag at the end)
     auto data_span = temp_buffer->GetReadableSpan();
-    memcpy(&pseudo_packet[offset], data_span.GetStart(), retry_body_len);
+    uint32_t encoded_len = data_span.GetLength();
+    uint32_t retry_body_len = encoded_len - kRetryIntegrityTagLength;
     
-    // Select retry integrity key/nonce based on version
-    const uint8_t* retry_key;
-    const uint8_t* retry_nonce;
-    if (IsQuicV2(version)) {
-        retry_key = kRetryIntegrityKeyV2.data();
-        retry_nonce = kRetryIntegrityNonceV2.data();
-    } else {
-        retry_key = kRetryIntegrityKeyV1.data();
-        retry_nonce = kRetryIntegrityNonceV1.data();
-    }
-    
-    // Compute AES-128-GCM tag: encrypt empty plaintext with pseudo-packet as AAD
-    const EVP_AEAD* aead = EVP_aead_aes_128_gcm();
-    EVP_AEAD_CTX* ctx = EVP_AEAD_CTX_new(aead, retry_key, 16, kRetryIntegrityTagLength);
-    if (!ctx) {
-        common::LOG_ERROR("Failed to create AEAD context for Retry integrity tag");
-        return false;
-    }
-    
+    // Step 2: Compute integrity tag using crypto module
     uint8_t integrity_tag[kRetryIntegrityTagLength];
-    size_t out_tag_len = 0;
-    // Seal with empty plaintext; the output is just the 16-byte tag
-    uint8_t out_buf[kRetryIntegrityTagLength];
-    size_t out_len = 0;
-    int seal_ok = EVP_AEAD_CTX_seal(ctx, out_buf, &out_len, sizeof(out_buf),
-        retry_nonce, 12,
-        nullptr, 0,  // empty plaintext
-        pseudo_packet.data(), pseudo_packet.size());
-    EVP_AEAD_CTX_free(ctx);
-    
-    if (!seal_ok || out_len != kRetryIntegrityTagLength) {
-        common::LOG_ERROR("Failed to compute Retry integrity tag, seal_ok=%d, out_len=%zu", seal_ok, out_len);
+    if (!RetryCrypto::ComputeRetryIntegrityTag(
+            original_dcid, data_span.GetStart(), retry_body_len, version, integrity_tag)) {
+        common::LOG_ERROR("Failed to compute Retry integrity tag");
         return false;
     }
-    memcpy(integrity_tag, out_buf, kRetryIntegrityTagLength);
+    
+    // Step 3: Set the computed tag and re-encode
     retry_packet.SetRetryIntegrityTag(integrity_tag);
 
     // Encode and send

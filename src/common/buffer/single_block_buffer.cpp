@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "common/buffer/buffer_read_view.h"
 #include "common/buffer/buffer_span.h"
 #include "common/buffer/shared_buffer_span.h"
 #include "common/buffer/single_block_buffer.h"
@@ -153,17 +152,6 @@ std::shared_ptr<IBuffer> SingleBlockBuffer::CloneReadable(uint32_t length, bool 
     }
 
     return clone;
-}
-
-// Produce a lightweight read-only window over the readable portion. The view
-// is returned by value, so subsequent modifications to the buffer do not affect
-// existing views.
-BufferReadView SingleBlockBuffer::GetReadView() const {
-    if (!Valid()) {
-        LOG_ERROR("buffer is invalid");
-        return BufferReadView();
-    }
-    return BufferReadView(read_pos_, write_pos_);
 }
 
 BufferSpan SingleBlockBuffer::GetReadableSpan() const {

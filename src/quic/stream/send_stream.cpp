@@ -2,6 +2,8 @@
 
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
+
+#include "quic/config.h"
 #include "quic/frame/max_stream_data_frame.h"
 #include "quic/frame/reset_stream_frame.h"
 #include "quic/frame/stop_sending_frame.h"
@@ -180,8 +182,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     IStream::TrySendData(nullptr, level);
 
     // check peer limit
-    // TODO put number to config
-    if (peer_data_limit_ - send_data_offset_ < 2048) {
+    if (peer_data_limit_ - send_data_offset_ < kStreamDataBlockedThreshold) {
         // Only send STREAM_DATA_BLOCKED once per limit value
         // When peer sends MAX_STREAM_DATA with new limit, blocked_at_limit_ will be less than new peer_data_limit_
         if (blocked_at_limit_ != peer_data_limit_ && send_machine_->CheckCanSendFrame(FrameType::kStreamDataBlocked)) {

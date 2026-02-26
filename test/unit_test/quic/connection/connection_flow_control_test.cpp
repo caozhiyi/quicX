@@ -1,6 +1,9 @@
-#include "quic/connection/controler/connection_flow_control.h"
 #include <gtest/gtest.h>
+
 #include "common/util/singleton.h"
+
+#include "quic/connection/controler/connection_flow_control.h"
+#include "quic/config.h"
 #include "quic/connection/transport_param.h"
 #include "quic/include/type.h"
 
@@ -12,7 +15,9 @@ class TransportParamTest: public common::Singleton<TransportParamTest> {
 public:
     TransportParamTest() {
         QuicTransportParams tp;
-        tp.initial_max_data_ = 10000;
+        // Set initial_max_data large enough to avoid threshold triggers in basic tests
+        // kDataIncreaseThreshold = 512KB, so use 1MB to be safe
+        tp.initial_max_data_ = 1024 * 1024;  // 1MB, larger than kDataIncreaseThreshold (512KB)
         tp.initial_max_stream_data_bidi_local_ = 8;
         tp.initial_max_stream_data_bidi_remote_ = 8;
         tp.initial_max_stream_data_uni_ = 8;
@@ -35,30 +40,37 @@ TEST(connection_control_flow, local_send_data) {
 
     uint64_t can_send_size = 0;
     std::shared_ptr<IFrame> frame;
+    
+    // Initial check - should have 1MB available
     EXPECT_TRUE(flow_control.CheckPeerControlSendDataLimit(can_send_size, frame));
-    EXPECT_EQ(can_send_size, 10000);
+    EXPECT_EQ(can_send_size, 1024 * 1024);  // 1MB
     EXPECT_TRUE(frame == nullptr);
 
-    flow_control.AddPeerControlSendData(5000);
+    // Send 500KB, remaining = 524KB > 16KB threshold
+    flow_control.AddPeerControlSendData(500 * 1024);
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckPeerControlSendDataLimit(can_send_size, frame));
-    EXPECT_EQ(can_send_size, 5000);
-    EXPECT_TRUE(frame != nullptr);
+    EXPECT_EQ(can_send_size, 524 * 1024);  // 524KB
+    EXPECT_TRUE(frame == nullptr);  // Still above threshold
 
-    flow_control.AddPeerControlSendDataLimit(20000);
+    // Peer increases our limit to 2MB
+    flow_control.AddPeerControlSendDataLimit(2 * 1024 * 1024);
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckPeerControlSendDataLimit(can_send_size, frame));
-    EXPECT_EQ(can_send_size, 15000);
+    // Already sent 500KB, new limit 2MB, so remaining = 2MB - 500KB = 1548KB
+    EXPECT_EQ(can_send_size, 1548 * 1024);
     EXPECT_TRUE(frame == nullptr);
 
-    flow_control.AddPeerControlSendData(10000);
+    // Send almost all remaining data, leaving only 15KB
+    // Need to send: 1548KB - 15KB = 1533KB
+    flow_control.AddPeerControlSendData(1533 * 1024);
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckPeerControlSendDataLimit(can_send_size, frame));
-    EXPECT_EQ(can_send_size, 5000);
-    EXPECT_TRUE(frame != nullptr);
+    EXPECT_EQ(can_send_size, 15 * 1024);  // 15KB remaining < 16KB threshold
+    EXPECT_TRUE(frame != nullptr);  // Below threshold, DATA_BLOCKED frame generated
 }
 
 TEST(connection_control_flow, remote_send_data) {
@@ -69,13 +81,23 @@ TEST(connection_control_flow, remote_send_data) {
     EXPECT_TRUE(flow_control.CheckControlPeerSendDataLimit(frame));
     EXPECT_TRUE(frame == nullptr);
 
-    flow_control.AddControlPeerSendData(5000);
+    // Receive data but stay above threshold (1MB - 200KB = 824KB > kDataIncreaseThreshold=512KB)
+    flow_control.AddControlPeerSendData(200 * 1024);  // 200KB
 
     frame = nullptr;
     EXPECT_TRUE(flow_control.CheckControlPeerSendDataLimit(frame));
-    EXPECT_TRUE(frame != nullptr);
+    EXPECT_TRUE(frame == nullptr);  // Still above threshold, no MAX_DATA frame
 
-    flow_control.AddControlPeerSendData(20000);
+    // Receive more data to trigger MAX_DATA (1MB - 600KB = 424KB < kDataIncreaseThreshold=512KB)
+    flow_control.AddControlPeerSendData(400 * 1024);  // 400KB, total 600KB, remaining = 448KB < 512KB
+
+    frame = nullptr;
+    EXPECT_TRUE(flow_control.CheckControlPeerSendDataLimit(frame));
+    EXPECT_TRUE(frame != nullptr);  // Below threshold, MAX_DATA frame generated
+    // Note: limit is now increased to 1MB + kDataIncreaseAmount (2MB) = 3MB
+
+    // Exceed the NEW limit should fail (600KB + 3MB > 3MB)
+    flow_control.AddControlPeerSendData(3 * 1024 * 1024);  // 3MB, exceeds the new limit
 
     frame = nullptr;
     EXPECT_FALSE(flow_control.CheckControlPeerSendDataLimit(frame));

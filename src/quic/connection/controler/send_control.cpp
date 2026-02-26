@@ -5,6 +5,7 @@
 #include "common/metrics/metrics_std.h"
 #include "common/qlog/qlog.h"
 
+#include "quic/config.h"
 #include "quic/congestion_control/congestion_control_factory.h"
 #include "quic/connection/controler/send_control.h"
 #include "quic/connection/util.h"
@@ -15,7 +16,7 @@ namespace quic {
 
 SendControl::SendControl(std::shared_ptr<common::ITimer> timer):
     timer_(timer),
-    max_ack_delay_(25) {  // TODO move to config
+    max_ack_delay_(kMaxAckDelay) {
     memset(pkt_num_largest_sent_, 0, sizeof(pkt_num_largest_sent_));
     memset(pkt_num_largest_acked_, 0, sizeof(pkt_num_largest_acked_));
     memset(largest_sent_time_, 0, sizeof(largest_sent_time_));
@@ -27,8 +28,7 @@ void SendControl::OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, ui
 }
 
 void SendControl::OnPacketSend(
-    uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len,
-    const std::vector<StreamDataInfo>& stream_data) {
+    uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len, const std::vector<StreamDataInfo>& stream_data) {
     auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
     common::LOG_DEBUG("SendControl::OnPacketSend: packet_number=%llu, ns=%d, frame_type_bit=%u, stream_data count=%zu",
         packet->GetPacketNumber(), ns, packet->GetFrameTypeBit(), stream_data.size());
@@ -498,8 +498,8 @@ void SendControl::OnPTOTimer() {
     // RFC 9002: Increment PTO backoff once per PTO firing (not per packet)
     rtt_calculator_.OnPTOExpired();
 
-    common::LOG_WARN("SendControl::OnPTOTimer: PTO fired, pto_count=%u, triggering probe",
-        rtt_calculator_.GetConsecutivePTOCount());
+    common::LOG_WARN(
+        "SendControl::OnPTOTimer: PTO fired, pto_count=%u, triggering probe", rtt_calculator_.GetConsecutivePTOCount());
 
     // RFC 9002 §6.2.4: Send probe packets to elicit ACK from peer
     // Trigger retransmission via the packet_lost_cb_ chain → ActiveSend → TrySend
@@ -514,8 +514,7 @@ void SendControl::OnPTOTimer() {
                     // Mark as lost and trigger retransmission
                     it->second.is_lost = true;
                     lost_packets_.push_back(it->second.packet);
-                    congestion_control_->OnPacketLost(
-                        LossEvent{it->first, it->second.pkt_len_, common::UTCTimeMsec()});
+                    congestion_control_->OnPacketLost(LossEvent{it->first, it->second.pkt_len_, common::UTCTimeMsec()});
                     timer_->RemoveTimer(it->second.timer_task_);
                     packet_lost_cb_(it->second.packet);
                     found_retransmit = true;

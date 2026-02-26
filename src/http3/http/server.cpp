@@ -3,8 +3,8 @@
 
 #include "quic/include/if_quic_server.h"
 
+#include "http3/config.h"
 #include "http3/http/server.h"
-#include "http3/http/type.h"
 #include "http3/include/if_async_handler.h"
 #include "http3/include/if_request.h"
 #include "http3/include/if_response.h"

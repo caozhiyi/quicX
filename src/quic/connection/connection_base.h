@@ -85,37 +85,25 @@ public:
 
     // ==================== New High-Level Send Interfaces ====================
 
-    /**
-     * @brief Main send interface (replaces GenerateSendData)
-     *
-     * Called by Worker to attempt sending data. Internally decides whether to send,
-     * what to send, and handles all packet building and transmission.
-     *
-     * @return true if successfully sent data, false if no data or send failed
-     */
+    // Main send interface (replaces GenerateSendData)
+// Called by Worker to attempt sending data. Internally decides whether to send,
+// what to send, and handles all packet building and transmission.
+// @return true if successfully sent data, false if no data or send failed
     bool TrySend() override;
 
-    /**
-     * @brief Send ACK packet immediately
-     *
-     * Simplified interface for immediate ACK sending, used for cross-level ACKs
-     * or when immediate ACK is required.
-     *
-     * @param ns Packet number space
-     * @return true if successfully sent
-     */
+    // Send ACK packet immediately
+// Simplified interface for immediate ACK sending, used for cross-level ACKs
+// or when immediate ACK is required.
+// @param ns Packet number space
+// @return true if successfully sent
     bool SendImmediateAck(PacketNumberSpace ns);
 
-    /**
-     * @brief Send single frame immediately
-     *
-     * Used for frames requiring immediate transmission such as PATH_CHALLENGE,
-     * PATH_RESPONSE, or CONNECTION_CLOSE.
-     *
-     * @param frame Frame to send
-     * @param level Encryption level (defaults to current level)
-     * @return true if successfully sent
-     */
+    // Send single frame immediately
+// Used for frames requiring immediate transmission such as PATH_CHALLENGE,
+// PATH_RESPONSE, or CONNECTION_CLOSE.
+// @param frame Frame to send
+// @param level Encryption level (defaults to current level)
+// @return true if successfully sent
     bool SendImmediateFrame(std::shared_ptr<IFrame> frame, EncryptionLevel level = kApplication);
 
     // handle packets
@@ -182,11 +170,9 @@ protected:
 private:
     // Internal helper methods for TrySend()
 
-    /**
-     * @brief Send buffer using sender_ (internal helper)
-     * @param buffer Buffer to send
-     * @return true if successfully sent
-     */
+    // Send buffer using sender_ (internal helper)
+// @param buffer Buffer to send
+// @return true if successfully sent
     bool SendBuffer(std::shared_ptr<common::IBuffer> buffer);
 
 protected:
@@ -330,7 +316,7 @@ protected:
     KeyUpdateTrigger key_update_trigger_;
 
     // QUIC version for this connection (RFC 9369: default to v2)
-    uint32_t quic_version_ = 0x6b3343cf;
+    uint32_t quic_version_ = kQuicVersion2;
 
     // Version negotiation (RFC 9000 Section 6)
     version_negotiation_callback version_negotiation_cb_;
