@@ -19,6 +19,7 @@ temp
 winbuild
 third.bk
 seeds
+vsbuild
 # Test artifacts - auto-generated
 www/*.bin
 downloads/

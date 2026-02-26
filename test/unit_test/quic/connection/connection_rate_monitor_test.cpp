@@ -101,7 +101,7 @@ TEST_F(ConnectionRateMonitorTest, ConcurrentAccess) {
     
     std::vector<std::thread> threads;
     for (int i = 0; i < kThreads; ++i) {
-        threads.emplace_back([this]() {
+        threads.emplace_back([this, kConnectionsPerThread]() {
             for (int j = 0; j < kConnectionsPerThread; ++j) {
                 monitor_->RecordNewConnection();
             }

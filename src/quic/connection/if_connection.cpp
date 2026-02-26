@@ -1,8 +1,5 @@
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
+#include "common/network/io_handle.h"
 #include "quic/connection/if_connection.h"
 
 namespace quicx {
@@ -72,33 +69,7 @@ bool IConnection::GetLocalAddressFromSocket(int32_t sockfd, common::Address& add
     if (sockfd <= 0) {
         return false;
     }
-    
-    struct sockaddr_storage ss;
-    socklen_t len = sizeof(ss);
-    
-    if (getsockname(sockfd, (struct sockaddr*)&ss, &len) != 0) {
-        return false;
-    }
-    
-    char ip_str[INET6_ADDRSTRLEN];
-    
-    if (ss.ss_family == AF_INET) {
-        struct sockaddr_in* sin = (struct sockaddr_in*)&ss;
-        inet_ntop(AF_INET, &sin->sin_addr, ip_str, sizeof(ip_str));
-        addr.SetIp(ip_str);
-        addr.SetPort(ntohs(sin->sin_port));
-        addr.SetAddressType(common::AddressType::kIpv4);
-        return true;
-    } else if (ss.ss_family == AF_INET6) {
-        struct sockaddr_in6* sin6 = (struct sockaddr_in6*)&ss;
-        inet_ntop(AF_INET6, &sin6->sin6_addr, ip_str, sizeof(ip_str));
-        addr.SetIp(ip_str);
-        addr.SetPort(ntohs(sin6->sin6_port));
-        addr.SetAddressType(common::AddressType::kIpv6);
-        return true;
-    }
-    
-    return false;
+    return common::ParseLocalAddress(sockfd, addr);
 }
 
 }

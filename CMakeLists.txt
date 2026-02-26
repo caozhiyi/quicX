@@ -29,7 +29,7 @@ if(WIN32)
     
     # MSVC-specific compiler flags
     if(MSVC)
-        add_compile_options(/wd4996 /wd4267 /wd4244)
+        add_compile_options(/wd4996 /wd4267 /wd4244 /utf-8 /MP)
         add_definitions(-D_CRT_SECURE_NO_WARNINGS)
         add_definitions(-DWIN32_LEAN_AND_MEAN)
         add_definitions(-DNOMINMAX)

@@ -1,5 +1,3 @@
-
-#include <unistd.h>
 #include <cstring>
 
 #include "common/buffer/buffer_chunk.h"
@@ -7,6 +5,7 @@
 #include "common/log/log.h"
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
+#include "common/network/io_handle.h"
 #include "common/qlog/qlog.h"
 #include "common/util/time.h"
 
@@ -406,8 +405,7 @@ bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
         // not our default preferred version (which may be v2).
         uint32_t pkt_version = header->GetVersion();
         if (pkt_version != 0 && pkt_version != quic_version_) {
-            common::LOG_INFO("Updating connection version from packet: 0x%08x -> 0x%08x",
-                quic_version_, pkt_version);
+            common::LOG_INFO("Updating connection version from packet: 0x%08x -> 0x%08x", quic_version_, pkt_version);
             SetVersion(pkt_version);
         }
 
@@ -1003,7 +1001,7 @@ void BaseConnection::OnMigrationComplete(const MigrationInfo& info) {
     } else {
         // Migration failed: cleanup migration socket if any
         if (migration_sockfd_ > 0) {
-            close(migration_sockfd_);
+            common::Close(migration_sockfd_);
             migration_sockfd_ = -1;
         }
     }
@@ -1155,7 +1153,8 @@ bool BaseConnection::TrySend() {
         auto crypto_level = lost_pkt->GetCryptoLevel();
         auto cryptographer = connection_crypto_.GetCryptographer(crypto_level);
         if (!cryptographer) {
-            common::LOG_WARN("BaseConnection::TrySend: no cryptographer for lost packet level=%d, dropping", crypto_level);
+            common::LOG_WARN(
+                "BaseConnection::TrySend: no cryptographer for lost packet level=%d, dropping", crypto_level);
             return !lost_packets.empty();  // try next lost packet
         }
 
@@ -1193,7 +1192,8 @@ bool BaseConnection::TrySend() {
         // Record this retransmission in SendControl so it is tracked for ACK/loss
         send_control.OnPacketSend(common::UTCTimeMsec(), lost_pkt, encoded_size);
 
-        common::LOG_INFO("BaseConnection::TrySend: retransmitted lost packet with new pn=%llu, size=%u", new_pn, encoded_size);
+        common::LOG_INFO(
+            "BaseConnection::TrySend: retransmitted lost packet with new pn=%llu, size=%u", new_pn, encoded_size);
 
         return SendBuffer(buffer);
     }
