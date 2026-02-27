@@ -1,5 +1,3 @@
-
-#include <unistd.h>
 #include <cstring>
 
 #include "common/buffer/buffer_chunk.h"
