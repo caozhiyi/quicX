@@ -1,106 +1,351 @@
 # QuicX
 
-<p align="left"><img width="500" src="./docs/image/logo.png" alt="cppnet logo"></p>
+<p align="left"><img width="500" src="./docs/image/logo.png" alt="quicX logo"></p>
 
 <p align="left">
-    <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-bsd-orange.svg" alt="Licenses"></a>
-</p> 
+  <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
+</p>
 
+[English](./README.md)
 
-QuicX 是一个基于 QUIC 协议（RFC 9000）的高性能 HTTP/3 库，使用 C++11 实现。该项目提供了一个完整的 QUIC 和 HTTP/3 网络传输解决方案，支持高并发、低延迟的网络通信需求。
+**QuicX** 是一个基于 QUIC 协议（RFC 9000 / RFC 9369）的 C++17 HTTP/3 库。它提供了一个完整的传输与应用层协议栈——从 UDP 套接字和 TLS 1.3（基于 BoringSSL）贯穿 QUIC 流，直至 HTTP/3 路由、QPACK 头部压缩和服务端推送——无需依赖任何外部 HTTP 框架。
+
+---
+
+## 目录
+
+- [功能特性](#功能特性)
+- [架构概览](#架构概览)
+- [快速开始](#快速开始)
+- [构建](#构建)
+- [示例](#示例)
+- [配置说明](#配置说明)
+- [可观测性](#可观测性)
+- [测试](#测试)
+- [许可证](#许可证)
+
+---
 
 ## 功能特性
 
-### QUIC 协议实现
-- **连接管理**
-  - 基于 BoringSSL 的 TLS 1.3 加密和安全握手
-  - 支持 0-RTT 和 1-RTT 连接建立
-  - 连接迁移支持
-  - 优雅的连接关闭处理
+### QUIC 协议（RFC 9000 / RFC 9369）
 
-- **流量控制**
-  - 基于窗口的流量控制
-  - Stream 级别和 Connection 级别的并发控制
-  - 支持 STREAM_DATA_BLOCKED 和 DATA_BLOCKED 帧
+| 功能域 | 说明 |
+|---|---|
+| **TLS** | 基于 BoringSSL 的 TLS 1.3；0-RTT / 1-RTT 握手；会话票据缓存；支持 SSLKEYLOGFILE |
+| **协议版本** | QUIC v1 (`0x00000001`) 和 QUIC v2 (`0x6b3343cf`)，支持版本协商 |
+| **连接管理** | 多连接管理；优雅的 `CONNECTION_CLOSE`；Retry 包防放大攻击 |
+| **连接迁移** | 主动迁移（RFC 9000 §9）；NAT 重绑定检测；通过 `PATH_CHALLENGE` / `PATH_RESPONSE` 进行路径验证 |
+| **流管理** | 双向流和单向流；流级别和连接级别的流量控制；`STREAM_DATA_BLOCKED` / `DATA_BLOCKED` 帧 |
+| **拥塞控制** | BBR v1 / v2 / v3、CUBIC、Reno——通过工厂类按连接选择；内置数据包 Pacer |
+| **丢包恢复** | 基于 ACK 的丢包检测；PTO（探测超时）；支持加密级别追踪的包重传 |
+| **ECN** | 可选的 ECN 标记和处理 |
+| **密钥更新** | 可选的自动密钥更新 |
 
-- **拥塞控制**
-  - 实现多种拥塞控制算法：
-    - BBR
-    - Cubic
-    - Reno
-  - 智能的包重传策略
+### HTTP/3
 
-- **数据传输**
-  - 可靠的包传输和确认机制
-  - 高效的帧打包和解析
-  - 支持 PING/PONG 心跳检测
-  - PATH_CHALLENGE/PATH_RESPONSE 路径验证
+| 功能域 | 说明 |
+|---|---|
+| **QPACK** | 静态表 + 动态表（RFC 9204）；Huffman 编解码 |
+| **流** | 请求/响应流；服务端推送流（可选）；控制流；编码器/解码器流 |
+| **路由** | 路径参数匹配（`:param`）；通配路由（`*`）；按 HTTP 方法注册处理器 |
+| **中间件** | 支持 Before / After 中间件链，按 HTTP 方法生效 |
+| **处理器模式** | **完整模式**——完整 body 缓冲后再调用处理器；**流式模式**——`IAsyncServerHandler` / `IAsyncClientHandler` 按块接收数据 |
+| **HTTP 方法** | GET、HEAD、POST、PUT、DELETE、CONNECT、OPTIONS、TRACE、PATCH |
+| **服务端推送** | `PUSH_PROMISE` 帧；客户端侧可选推送接受/拒绝回调 |
+| **HTTP 升级** | HTTP/1.1 → HTTP/3 升级路径（`src/upgrade`） |
 
-### HTTP/3 实现
-- **头部压缩**
-  - 实现 QPACK 动态表和静态表
-  - 高效的 Huffman 编码
-  - 头部字段验证和处理
+### 核心基础设施
 
-- **流管理**
-  - 双向流和单向流支持
-  - 流优先级处理
-  - 流量控制和背压处理
+| 组件 | 说明 |
+|---|---|
+| **内存管理** | 自定义 Slab 分配器（`NormalAlloter`）；池化的 `BufferChunk` 链；接近零拷贝的 I/O 路径 |
+| **网络 I/O** | 跨平台 UDP I/O（`linux/`、`macos/`、`windows/`）；非阻塞事件循环 |
+| **线程模型** | 单线程或多线程模式；可配置 Worker 线程数 |
+| **定时器** | 分层时间轮，用于连接空闲、PTO 和应用层定时器 |
+| **日志** | 分级日志（Null / Debug / Info / Warn / Error）；可配置输出路径 |
+| **QLog** | 符合 RFC 9001 的 QLog 跟踪（可选，`-DQUICX_ENABLE_QLOG=ON`） |
+| **指标** | 丰富的内置 Metrics 注册表——涵盖 UDP、QUIC、HTTP/3、拥塞控制、内存、TLS、连接迁移、Retry 等 |
 
-- **请求处理**
-  - 支持所有 HTTP 方法
-  - 灵活的路由系统
-  - 中间件机制
-  - 请求和响应的完整生命周期管理
+---
 
-### 核心组件
+## 架构概览
 
-- **内存管理**
-  - 高效的内存池实现
-  - 智能的缓冲区管理
-  - 零拷贝数据传输优化
+```
+┌─────────────────────────────────────────┐
+│         应用程序 / 示例                  │
+├─────────────────────────────────────────┤
+│   HTTP/3 层  (src/http3)                │
+│   IClient / IServer  ←→  Router        │
+│   QPACK  ·  Frames  ·  Push            │
+├─────────────────────────────────────────┤
+│   HTTP 升级层  (src/upgrade)             │
+├─────────────────────────────────────────┤
+│   QUIC 层  (src/quic)                   │
+│   Connection  ·  Stream  ·  Crypto      │
+│   拥塞控制  ·  丢包恢复                  │
+│   Packet / Frame 编解码                  │
+├─────────────────────────────────────────┤
+│   公共组件  (src/common)                 │
+│   Buffer  ·  Alloter  ·  Network I/O   │
+│   Timer  ·  Log  ·  Metrics  ·  QLog   │
+└─────────────────────────────────────────┘
+```
 
-- **并发控制**
-  - 线程安全的数据结构
-  - 无锁队列实现
-  - 高效的事件循环
-
-- **日志系统**
-  - 多级别日志支持
-  - 可配置的日志输出
-  - 性能统计和监控
+---
 
 ## 快速开始
 
-### 构建要求
-- C++11 或更高版本
-- BoringSSL
-- GTest（可选，用于单元测试）
+### 极简 HTTP/3 服务器
 
-### 构建步骤
-```bash
-git clone https://github.com/caozhiyi/quicX.git
-cd quicX
-make
+```cpp
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
+#include "http3/include/if_server.h"
+
+int main() {
+    auto server = quicx::IServer::Create();
+
+    server->AddHandler(quicx::HttpMethod::kGet, "/hello",
+        [](std::shared_ptr<quicx::IRequest> req,
+           std::shared_ptr<quicx::IResponse> resp) {
+            resp->AppendBody(std::string("hello world"));
+            resp->SetStatusCode(200);
+        });
+
+    quicx::Http3ServerConfig config;
+    config.quic_config_.cert_pem_ = /* PEM 字符串 */;
+    config.quic_config_.key_pem_  = /* PEM 字符串 */;
+    config.quic_config_.config_.worker_thread_num_ = 2;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kInfo;
+
+    server->Init(config);
+    server->Start("0.0.0.0", 7001);
+    server->Join();
+}
 ```
 
+### 极简 HTTP/3 客户端
 
-## 性能优化
+```cpp
+#include "http3/include/if_client.h"
+#include "http3/include/if_response.h"
 
-### 内存管理
-- 使用内存池减少内存分配开销
-- 智能的缓冲区管理避免频繁的内存拷贝
-- 实现零拷贝机制提升数据传输效率
+int main() {
+    auto client = quicx::IClient::Create();
 
-### 并发处理
-- 多线程事件循环处理网络 I/O
-- 无锁数据结构减少线程竞争
-- 高效的任务调度机制
+    quicx::Http3ClientConfig config;
+    config.quic_config_.config_.worker_thread_num_ = 1;
+    client->Init(config);
 
-### 网络优化
-- 智能的包重传策略
-- 自适应的拥塞控制
-- 高效的流量控制算法
+    auto request = quicx::IRequest::Create();
+    client->DoRequest("https://127.0.0.1:7001/hello",
+        quicx::HttpMethod::kGet, request,
+        [](std::shared_ptr<quicx::IResponse> resp, uint32_t error) {
+            if (error == 0)
+                std::cout << resp->GetBodyAsString() << "\n";
+        });
+
+    // 等待响应 …
+}
+```
+
+### 流式（异步）处理器
+
+```cpp
+class FileUploadHandler : public quicx::IAsyncServerHandler {
+public:
+    void OnHeaders(std::shared_ptr<quicx::IRequest> req,
+                   std::shared_ptr<quicx::IResponse> resp) override {
+        file_ = fopen("upload.dat", "wb");
+        resp->SetStatusCode(200);
+    }
+    void OnBodyChunk(const uint8_t* data, size_t len, bool is_last) override {
+        if (file_) fwrite(data, 1, len, file_);
+        if (is_last && file_) { fclose(file_); file_ = nullptr; }
+    }
+    void OnError(uint32_t error) override {
+        if (file_) { fclose(file_); file_ = nullptr; }
+    }
+private:
+    FILE* file_ = nullptr;
+};
+
+server->AddHandler(quicx::HttpMethod::kPost, "/upload",
+                   std::make_shared<FileUploadHandler>());
+```
+
+---
+
+## 构建
+
+### 环境要求
+
+| 依赖 | 版本要求 |
+|---|---|
+| C++ 编译器 | C++17 及以上（GCC / Clang / MSVC） |
+| CMake | ≥ 3.16 |
+| BoringSSL | Git 子模块（`third/boringssl`） |
+| 线程库 | POSIX threads / Windows threads |
+| GTest | 可选，用于单元测试（自动拉取） |
+
+### 构建步骤
+
+```bash
+# 克隆仓库并初始化子模块（BoringSSL 为子模块）
+git clone --recurse-submodules https://github.com/caozhiyi/quicX.git
+cd quicX
+
+# 配置
+cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_EXAMPLES=ON \
+    -DENABLE_TESTING=ON \
+    -DQUICX_ENABLE_QLOG=ON
+
+# 编译
+cmake --build build --parallel $(nproc)
+
+# 运行单元测试
+./build/bin/quicx_utest
+```
+
+### CMake 构建选项
+
+| 选项 | 默认值 | 说明 |
+|---|---|---|
+| `BUILD_EXAMPLES` | `ON` | 构建所有示例程序 |
+| `ENABLE_TESTING` | `ON` | 构建单元测试（GTest） |
+| `ENABLE_BENCHMARKS` | `ON` | 构建性能基准测试套件 |
+| `ENABLE_CC_SIMULATOR` | `ON` | 构建拥塞控制模拟器 |
+| `ENABLE_INTERGRATION` | `ON` | 构建集成测试 |
+| `ENABLE_FUZZING` | `OFF` | 构建 libFuzzer 模糊测试目标 |
+| `ENABLE_INTEROP` | `OFF` | 构建 QUIC Interop Runner 目标 |
+| `QUICX_ENABLE_QLOG` | `ON` | 启用 QLog 协议跟踪 |
+
+### 支持平台
+
+CI 对每次推送在以下平台/编译器组合上运行测试：
+
+| 操作系统 | 编译器 |
+|---|---|
+| Ubuntu (latest) | GCC、Clang |
+| Windows (latest) | MSVC (`cl`) |
+| macOS (latest) | Clang |
+
+---
+
+## 示例
+
+所有示例位于 `example/` 目录下，通过 `-DBUILD_EXAMPLES=ON` 编译。
+
+| 示例 | 说明 |
+|---|---|
+| `hello_world` | 最小化 GET 请求 / 响应 |
+| `restful_api` | 带路径参数的 REST API |
+| `file_transfer` | 使用流式处理器的大文件上传 / 下载 |
+| `streaming_api` | 分块流式响应 |
+| `bidirectional_comm` | 双向流通信 |
+| `concurrent_requests` | 多并发请求 |
+| `connection_lifecycle` | 连接事件与优雅关闭 |
+| `error_handling` | 协议错误处理模式 |
+| `server_push` | HTTP/3 服务端推送（`PUSH_PROMISE`） |
+| `load_testing` | 简单负载生成 |
+| `performance_benchmark` | 吞吐量 / 延迟基准测试 |
+| `metrics_monitoring` | 运行时读取内置指标 |
+| `qlog_integration` | 生成用于 Wireshark / qvis 的 QLog 跟踪文件 |
+| `upgrade_h3` | HTTP/1.1 → HTTP/3 升级 |
+| `quicx_curl` | 类 curl 命令行客户端 |
+
+---
+
+## 配置说明
+
+### `QuicConfig` 关键字段
+
+```cpp
+quicx::QuicConfig cfg;
+cfg.thread_mode_       = quicx::ThreadMode::kMultiThread;
+cfg.worker_thread_num_ = 4;
+cfg.log_level_         = quicx::LogLevel::kInfo;
+cfg.log_path_          = "./logs";
+cfg.enable_0rtt_       = true;   // 0-RTT 会话恢复
+cfg.enable_ecn_        = false;  // ECN 支持
+cfg.enable_key_update_ = false;  // 自动密钥更新
+cfg.quic_version_      = quic::kQuicVersion2;  // 优先使用 QUIC v2
+cfg.keylog_file_       = "./tls_keys.log";     // Wireshark 密钥日志
+```
+
+### 传输参数（`QuicTransportParams`）
+
+```cpp
+quicx::QuicTransportParams tp;
+tp.max_idle_timeout_ms_                 = 120000;        // 2 分钟
+tp.max_udp_payload_size_                = 1472;          // 1500 - 28
+tp.initial_max_data_                    = 64*1024*1024;  // 64 MB 连接级
+tp.initial_max_stream_data_bidi_local_  = 16*1024*1024;  // 每流 16 MB
+tp.initial_max_stream_data_bidi_remote_ = 16*1024*1024;
+tp.initial_max_streams_bidi_            = 200;
+tp.disable_active_migration_            = false;
+```
+
+### 连接迁移
+
+```cpp
+quicx::MigrationConfig mc;
+mc.enable_active_migration_    = true;
+mc.path_validation_timeout_ms_ = 6000;
+mc.max_probe_retries_          = 5;
+```
+
+---
+
+## 可观测性
+
+### 内置 Metrics
+
+QuicX 内置了覆盖以下维度的 Metrics 注册表：
+
+- **UDP 层**：收发包 / 字节数、丢包、发送错误
+- **QUIC 连接**：活跃连接数、总量、握手成功 / 失败次数、时长直方图
+- **QUIC 数据包**：收发、重传、丢失、丢弃、确认
+- **QUIC 流**：活跃数、创建 / 关闭数、收发字节、RESET 帧统计
+- **流量控制**：阻塞事件次数
+- **HTTP/3**：请求总量 / 活跃数 / 失败数、时延直方图、推送承诺、状态码分桶（2xx/3xx/4xx/5xx）
+- **拥塞控制**：拥塞窗口、事件次数、慢启动退出次数、在途字节、Pacing 速率
+- **延迟**：平滑 RTT、RTT 方差、最小 RTT、包处理时间、ACK 延迟
+- **内存**：池分配次数、空闲 / 已用块数
+- **TLS**：握手时长、会话恢复 / 缓存次数
+- **连接迁移**：总次数、失败次数
+- **Retry**：发送次数、触发原因、Token 验证情况
+
+通过 `MetricsRegistry` 在运行时读取指标，或借助 `Http3ServerConfig::metrics_` / `Http3ClientConfig::metrics_` 中配置的可选 HTTP 指标端点对外暴露。
+
+### QLog
+
+使用 `-DQUICX_ENABLE_QLOG=ON` 编译并在 `QuicConfig::qlog_config_` 中配置输出路径即可启用。生成的跟踪文件兼容 [qvis](https://qvis.quictools.info/) 和 Wireshark。
+
+---
+
+## 测试
+
+```bash
+# 单元测试
+./build/bin/quicx_utest
+
+# 集成测试（需要本地 server / client）
+python3 run_tests.py
+
+# 拥塞控制模拟器
+./build/bin/cc_simulator
+
+# 模糊测试（需要 Clang + libFuzzer）
+cmake -B build_fuzz -DENABLE_FUZZING=ON -DCMAKE_CXX_COMPILER=clang++
+cmake --build build_fuzz
+```
+
+---
 
 ## 许可证
-MIT License - 查看 [LICENSE](LICENSE) 文件了解更多信息。
+
+BSD 3-Clause License — 详见 [LICENSE](LICENSE) 文件。
