@@ -118,9 +118,9 @@ jobs:
         elif [ "${{ runner.os }}" = "Linux" ]; then
           JOBS=2
         elif [ "${{ runner.os }}" = "macOS" ]; then
-          JOBS=3
+          JOBS=2
         else
-          JOBS=4
+          JOBS=1
         fi
         BUILD_DIR="${{ steps.strings.outputs.build-output-dir }}"
         echo "Building with $JOBS parallel jobs"

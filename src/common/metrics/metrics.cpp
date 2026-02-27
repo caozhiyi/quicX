@@ -25,19 +25,19 @@ bool Metrics::Initialize(const MetricsConfig& config) {
 MetricID Metrics::RegisterCounter(
     const std::string& name, const std::string& help, const std::map<std::string, std::string>& labels) {
     if (!g_metrics_enabled) return kInvalidMetricID;
-    return GlobalRegistry::Instance()->Register(name, help, labels, MetricType::kCounter);
+    return GlobalRegistry::Instance().Register(name, help, labels, MetricType::kCounter);
 }
 
 MetricID Metrics::RegisterGauge(
     const std::string& name, const std::string& help, const std::map<std::string, std::string>& labels) {
     if (!g_metrics_enabled) return kInvalidMetricID;
-    return GlobalRegistry::Instance()->Register(name, help, labels, MetricType::kGauge);
+    return GlobalRegistry::Instance().Register(name, help, labels, MetricType::kGauge);
 }
 
 MetricID Metrics::RegisterHistogram(const std::string& name, const std::string& help,
     const std::vector<uint64_t>& buckets, const std::map<std::string, std::string>& labels) {
     if (!g_metrics_enabled) return kInvalidMetricID;
-    return GlobalRegistry::Instance()->Register(name, help, labels, MetricType::kHistogram, buckets);
+    return GlobalRegistry::Instance().Register(name, help, labels, MetricType::kHistogram, buckets);
 }
 
 void Metrics::CounterInc(MetricID id, uint64_t val) {
@@ -63,7 +63,7 @@ void Metrics::GaugeSet(MetricID id, int64_t val) {
 void Metrics::HistogramObserve(MetricID id, uint64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
 
-    auto* meta = GlobalRegistry::Instance()->GetMeta(id);
+    auto* meta = GlobalRegistry::Instance().GetMeta(id);
     if (!meta || meta->type != MetricType::kHistogram) return;
 
     auto& storage = GetThreadStorage().GetHistogram(id, meta->buckets);
@@ -87,10 +87,10 @@ std::string Metrics::ExportPrometheus() {
     std::vector<int64_t> gauges;
     std::vector<std::unique_ptr<HistogramStorage>> histograms;
 
-    GlobalRegistry::Instance()->Collect(counters, gauges, histograms);
+    GlobalRegistry::Instance().Collect(counters, gauges, histograms);
 
     std::stringstream ss;
-    auto* registry = GlobalRegistry::Instance();
+    auto& registry = GlobalRegistry::Instance();
 
     auto format_labels = [](const std::map<std::string, std::string>& labels) -> std::string {
         if (labels.empty()) return "";
@@ -127,7 +127,7 @@ std::string Metrics::ExportPrometheus() {
     if (histograms.size() > max_id) max_id = histograms.size();
 
     for (MetricID id = 0; id < max_id; ++id) {
-        auto* meta = registry->GetMeta(id);
+        auto* meta = registry.GetMeta(id);
         if (!meta) continue;
 
         if (meta->type == MetricType::kCounter) {

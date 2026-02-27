@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 
+#include "common/util/singleton.h"
 #include "common/metrics/metrics_internal.h"
 
 namespace quicx {
@@ -13,10 +14,8 @@ namespace common {
 class ThreadMetricStorage;
 
 // Global Registry - manages metric metadata and thread registration
-class GlobalRegistry {
+class GlobalRegistry: public Singleton<GlobalRegistry> {
 public:
-    static GlobalRegistry* Instance();
-
     MetricID Register(const std::string& name, const std::string& help,
         const std::map<std::string, std::string>& labels, MetricType type, const std::vector<uint64_t>& buckets = {});
 

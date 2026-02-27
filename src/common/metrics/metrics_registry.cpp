@@ -6,12 +6,6 @@ namespace quicx {
 namespace common {
 
 // --- GlobalRegistry Implementation ---
-
-GlobalRegistry* GlobalRegistry::Instance() {
-    static GlobalRegistry instance;
-    return &instance;
-}
-
 MetricID GlobalRegistry::Register(const std::string& name, const std::string& help,
     const std::map<std::string, std::string>& labels, MetricType type, const std::vector<uint64_t>& buckets) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -174,11 +168,11 @@ void GlobalRegistry::Collect(std::vector<uint64_t>& counters, std::vector<int64_
 // --- ThreadMetricStorage Implementation ---
 
 ThreadMetricStorage::ThreadMetricStorage() {
-    GlobalRegistry::Instance()->RegisterThread(this);
+    GlobalRegistry::Instance().RegisterThread(this);
 }
 
 ThreadMetricStorage::~ThreadMetricStorage() {
-    GlobalRegistry::Instance()->UnregisterThread(this);
+    GlobalRegistry::Instance().UnregisterThread(this);
 }
 
 std::atomic<uint64_t>& ThreadMetricStorage::GetCounter(MetricID id) {

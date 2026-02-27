@@ -1,5 +1,5 @@
-#ifndef COMMON_METRICS_METRICS_H
-#define COMMON_METRICS_METRICS_H
+#ifndef COMMON_METRICS_METRICS
+#define COMMON_METRICS_METRICS
 
 #include <cstdint>
 #include <map>
