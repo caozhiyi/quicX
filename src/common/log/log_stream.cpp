@@ -1,8 +1,3 @@
-// Use of this source code is governed by a BSD 3-Clause License
-// that can be found in the LICENSE file.
-
-// Author: caozhiyi (caozhiyi5@gmail.com)
-
 #include "common/log/log.h"
 #include "common/log/if_logger.h"
 #include "common/log/log_stream.h"

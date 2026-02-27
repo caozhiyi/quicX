@@ -11,7 +11,7 @@ namespace common {
 
 class BlockMemoryPool;
 
-// BufferChunk is the lowest-level building block in the buffernew module. It
+// BufferChunk is the lowest-level building block in the buffer module. It
 // owns exactly one fixed-size memory block sourced from a BlockMemoryPool and
 // guarantees RAII semantics: once the BufferChunk instance leaves scope the
 // memory is automatically returned to the originating pool. Higher level buffer

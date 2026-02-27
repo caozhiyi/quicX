@@ -1,5 +1,5 @@
-#ifndef COMMON_METRICS_METRICS_STD_H
-#define COMMON_METRICS_METRICS_STD_H
+#ifndef COMMON_METRICS_METRICS_STD
+#define COMMON_METRICS_METRICS_STD
 
 #include "common/metrics/metrics.h"
 
