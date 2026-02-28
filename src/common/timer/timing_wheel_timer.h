@@ -6,6 +6,7 @@
 #include <limits>
 #include <list>
 #include <vector>
+#include <unordered_map>
 
 #include "common/timer/if_timer.h"
 #include "common/util/random.h"
@@ -107,6 +108,9 @@ private:
     bool     cache_dirty_        = false;
 
     RangeRandom random_;
+
+    // Map to keep track of timer locations because user objects are copied.
+    std::unordered_map<uint64_t, std::list<TimerTask>::iterator> location_map_;
 };
 
 }  // namespace common

@@ -47,26 +47,30 @@ uint64_t TimingWheelTimer::AddTimer(TimerTask& task, uint32_t time_ms, uint64_t 
 // O(1) erase. Invalidate cache if this task held the current minimum.
 // ---------------------------------------------------------------------------
 bool TimingWheelTimer::RemoveTimer(TimerTask& task) {
-    if (task.wheel_idx_ < 0) {
+    auto loc_it = location_map_.find(task.id_);
+    if (loc_it == location_map_.end()) {
         return false;
     }
 
+    auto it = loc_it->second;
     Slot* slot = nullptr;
-    switch (task.wheel_idx_) {
-        case 0: slot = &wheel0_[task.slot_idx_]; break;
-        case 1: slot = &wheel1_[task.slot_idx_]; break;
-        case 2: slot = &wheel2_[task.slot_idx_]; break;
+    switch (it->wheel_idx_) {
+        case 0: slot = &wheel0_[it->slot_idx_]; break;
+        case 1: slot = &wheel1_[it->slot_idx_]; break;
+        case 2: slot = &wheel2_[it->slot_idx_]; break;
         case 3: slot = &overflow_;               break;
         default: return false;
     }
 
-    slot->erase(task.list_it_);
+    uint64_t old_time = it->time_;
+    slot->erase(it);
+    location_map_.erase(loc_it);
     task.wheel_idx_ = -1;
     --total_tasks_;
 
     // If we removed the task that was the cached minimum, the cache is now
     // stale. Mark dirty so MinTime() will rescan on the next call.
-    if (task.time_ <= min_deadline_cache_) {
+    if (old_time <= min_deadline_cache_) {
         min_deadline_cache_ = kInvalidDeadline;
         cache_dirty_        = true;
     }
@@ -147,6 +151,9 @@ void TimingWheelTimer::Insert(TimerTask& task, uint64_t reference) {
         it->wheel_idx_ = level;
         it->slot_idx_  = slot_idx;
         it->list_it_   = it;
+        
+        location_map_[task.id_] = it;
+        
         // Write back to caller's task for RemoveTimer.
         task.wheel_idx_ = level;
         task.slot_idx_  = slot_idx;
@@ -222,6 +229,7 @@ void TimingWheelTimer::Tick(uint64_t now) {
         bool any_fired = !fired.empty();
         for (TimerTask& t : fired) {
             --total_tasks_;
+            location_map_.erase(t.id_);
             if (t.tcb_) {
                 t.tcb_();
             }
