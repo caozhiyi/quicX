@@ -8,6 +8,7 @@
 #include "common/qlog/qlog.h"
 #include "common/util/time.h"
 #include "common/buffer/buffer_span.h"
+#include "common/network/io_handle.h"
 
 #include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
@@ -998,7 +999,7 @@ void BaseConnection::OnMigrationComplete(const MigrationInfo& info) {
     } else {
         // Migration failed: cleanup migration socket if any
         if (migration_sockfd_ > 0) {
-            close(migration_sockfd_);
+            common::Close(migration_sockfd_);
             migration_sockfd_ = -1;
         }
     }
