@@ -14,10 +14,8 @@
 
 - [Features](#features)
 - [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Build](#build)
+- [Documentation & Tutorials](#documentation--tutorials)
 - [Examples](#examples)
-- [Configuration](#configuration)
 - [Observability](#observability)
 - [Testing](#testing)
 - [License](#license)
@@ -92,150 +90,24 @@
 
 ---
 
-## Quick Start
+## Documentation & Tutorials
 
-### Minimal HTTP/3 Server
+We provide comprehensive guides to help you integrate and master `quicX`. For detailed integrations, code snippets, and fine-tuning, please refer to the following documents:
 
-```cpp
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
-#include "http3/include/if_server.h"
+### Getting Started
+* [Build & Compilation Guide](./docs/en/getting-started/build.md) - Learn how to build `quicX` via CMake or Bazel and integrate it into your cross-platform projects.
+* [Running Your First Program](./docs/en/getting-started/quick_start.md) - Run and understand the native HTTP/3 Server and Client `Hello World` example.
 
-int main() {
-    auto server = quicx::IServer::Create();
-
-    server->AddHandler(quicx::HttpMethod::kGet, "/hello",
-        [](std::shared_ptr<quicx::IRequest> req,
-           std::shared_ptr<quicx::IResponse> resp) {
-            resp->AppendBody(std::string("hello world"));
-            resp->SetStatusCode(200);
-        });
-
-    quicx::Http3ServerConfig config;
-    config.quic_config_.cert_pem_ = /* PEM string */;
-    config.quic_config_.key_pem_  = /* PEM string */;
-    config.quic_config_.config_.worker_thread_num_ = 2;
-    config.quic_config_.config_.log_level_ = quicx::LogLevel::kInfo;
-
-    server->Init(config);
-    server->Start("0.0.0.0", 7001);
-    server->Join();
-}
-```
-
-### Minimal HTTP/3 Client
-
-```cpp
-#include "http3/include/if_client.h"
-#include "http3/include/if_response.h"
-
-int main() {
-    auto client = quicx::IClient::Create();
-
-    quicx::Http3ClientConfig config;
-    config.quic_config_.config_.worker_thread_num_ = 1;
-    client->Init(config);
-
-    auto request = quicx::IRequest::Create();
-    client->DoRequest("https://127.0.0.1:7001/hello",
-        quicx::HttpMethod::kGet, request,
-        [](std::shared_ptr<quicx::IResponse> resp, uint32_t error) {
-            if (error == 0)
-                std::cout << resp->GetBodyAsString() << "\n";
-        });
-
-    // wait for response …
-}
-```
-
-### Streaming (Async) Handler
-
-```cpp
-class FileUploadHandler : public quicx::IAsyncServerHandler {
-public:
-    void OnHeaders(std::shared_ptr<quicx::IRequest> req,
-                   std::shared_ptr<quicx::IResponse> resp) override {
-        file_ = fopen("upload.dat", "wb");
-        resp->SetStatusCode(200);
-    }
-    void OnBodyChunk(const uint8_t* data, size_t len, bool is_last) override {
-        if (file_) fwrite(data, 1, len, file_);
-        if (is_last && file_) { fclose(file_); file_ = nullptr; }
-    }
-    void OnError(uint32_t error) override {
-        if (file_) { fclose(file_); file_ = nullptr; }
-    }
-private:
-    FILE* file_ = nullptr;
-};
-
-server->AddHandler(quicx::HttpMethod::kPost, "/upload",
-                   std::make_shared<FileUploadHandler>());
-```
-
----
-
-## Build
-
-### Prerequisites
-
-| Requirement | Version |
-|---|---|
-| C++ compiler | C++17 or later (GCC / Clang / MSVC) |
-| CMake | ≥ 3.16 |
-| BoringSSL | Git submodule (`third/boringssl`) |
-| Threads | POSIX threads / Windows threads |
-| GTest | Optional — for unit tests (auto-fetched) |
-
-### Steps
-
-```bash
-# Clone with submodules (BoringSSL is a submodule)
-git clone --recurse-submodules https://github.com/caozhiyi/quicX.git
-cd quicX
-
-# Configure
-cmake -B build \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_EXAMPLES=ON \
-    -DENABLE_TESTING=ON \
-    -DQUICX_ENABLE_QLOG=ON
-
-# Build
-cmake --build build --parallel $(nproc)
-
-# Run unit tests
-./build/bin/quicx_utest
-```
-
-### CMake Options
-
-| Option | Default | Description |
-|---|---|---|
-| `BUILD_EXAMPLES` | `ON` | Build all example programs |
-| `ENABLE_TESTING` | `ON` | Build unit tests (GTest) |
-| `ENABLE_BENCHMARKS` | `ON` | Build benchmark suite |
-| `ENABLE_CC_SIMULATOR` | `ON` | Build congestion control simulator |
-| `ENABLE_INTERGRATION` | `ON` | Build integration tests |
-| `ENABLE_FUZZING` | `OFF` | Build libFuzzer fuzz targets |
-| `ENABLE_INTEROP` | `OFF` | Build QUIC Interop Runner targets |
-| `QUICX_ENABLE_QLOG` | `ON` | Enable QLog protocol tracing |
-
-### Platforms
-
-The CI matrix tests the following configurations on every push:
-
-| OS | Compiler |
-|---|---|
-| Ubuntu (latest) | GCC, Clang |
-| Windows (latest) | MSVC (`cl`) |
-| macOS (latest) | Clang |
+### Core API & Configuration
+* [HTTP/3 Application Layer API Guide](./docs/en/tutorial/http3_api_guide.md) - The out-of-the-box guide covering Route dispatching, Middlewares, Async Data Streaming (for large files), and Server Push.
+* [Core QUIC Transport Layer API Guide](./docs/en/tutorial/quic_api_guide.md) - Deep dive into customizing private RPCs or game tunnels using raw QUIC Engine, Connection, and Stream abstractions.
+* [Configuration Reference](./docs/en/tutorial/configuration_reference.md) - Detailed dictionary of all core structs (`QuicConfig`, `Http3Config`) including limits, flow control windows, connection migration, Qlog, and anti-DDoS mechanisms.
 
 ---
 
 ## Examples
 
-All examples live under `example/` and are built with `-DBUILD_EXAMPLES=ON`.
+All examples live under `example/` and are built with `-DBUILD_EXAMPLES=ON`. 
 
 | Example | Description |
 |---|---|
@@ -254,47 +126,6 @@ All examples live under `example/` and are built with `-DBUILD_EXAMPLES=ON`.
 | `qlog_integration` | Generating QLog traces for Wireshark / qvis |
 | `upgrade_h3` | HTTP/1.1 → HTTP/3 upgrade |
 | `quicx_curl` | curl-like command-line client |
-
----
-
-## Configuration
-
-### Key `QuicConfig` fields
-
-```cpp
-quicx::QuicConfig cfg;
-cfg.thread_mode_       = quicx::ThreadMode::kMultiThread;
-cfg.worker_thread_num_ = 4;
-cfg.log_level_         = quicx::LogLevel::kInfo;
-cfg.log_path_          = "./logs";
-cfg.enable_0rtt_       = true;   // 0-RTT session resumption
-cfg.enable_ecn_        = false;  // ECN support
-cfg.enable_key_update_ = false;  // automatic key update
-cfg.quic_version_      = quic::kQuicVersion2;  // QUIC v2 preferred
-cfg.keylog_file_       = "./tls_keys.log";     // Wireshark key log
-```
-
-### Transport Parameters (`QuicTransportParams`)
-
-```cpp
-quicx::QuicTransportParams tp;
-tp.max_idle_timeout_ms_              = 120000;        // 2 minutes
-tp.max_udp_payload_size_             = 1472;          // 1500 - 28
-tp.initial_max_data_                 = 64*1024*1024;  // 64 MB
-tp.initial_max_stream_data_bidi_local_  = 16*1024*1024;
-tp.initial_max_stream_data_bidi_remote_ = 16*1024*1024;
-tp.initial_max_streams_bidi_         = 200;
-tp.disable_active_migration_         = false;
-```
-
-### Connection Migration
-
-```cpp
-quicx::MigrationConfig mc;
-mc.enable_active_migration_     = true;
-mc.path_validation_timeout_ms_  = 6000;
-mc.max_probe_retries_           = 5;
-```
 
 ---
 

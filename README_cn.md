@@ -16,10 +16,8 @@
 
 - [功能特性](#功能特性)
 - [架构概览](#架构概览)
-- [快速开始](#快速开始)
-- [构建](#构建)
+- [文档与教程](#文档与教程)
 - [示例](#示例)
-- [配置说明](#配置说明)
 - [可观测性](#可观测性)
 - [测试](#测试)
 - [许可证](#许可证)
@@ -94,150 +92,24 @@
 
 ---
 
-## 快速开始
+## 文档与教程
 
-### 极简 HTTP/3 服务器
+为了帮助你快速集成并掌握 `quicX`，我们提供了完善的中英文开发者文档。有关集成方式、代码示例和底层核心配置调优，请参考下列指南：
 
-```cpp
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
-#include "http3/include/if_server.h"
+### 快速入门指南
+* [编译与构建指南](./docs/zh/getting-started/build.md) - 学习如何通过 CMake 或 Bazel 在各大平台编译 `quicX` 并将其引入你的项目中。
+* [运行你的第一个程序](./docs/zh/getting-started/quick_start.md) - 编译并理解原生的 HTTP/3 客户端与服务端 `Hello World` 示例。
 
-int main() {
-    auto server = quicx::IServer::Create();
-
-    server->AddHandler(quicx::HttpMethod::kGet, "/hello",
-        [](std::shared_ptr<quicx::IRequest> req,
-           std::shared_ptr<quicx::IResponse> resp) {
-            resp->AppendBody(std::string("hello world"));
-            resp->SetStatusCode(200);
-        });
-
-    quicx::Http3ServerConfig config;
-    config.quic_config_.cert_pem_ = /* PEM 字符串 */;
-    config.quic_config_.key_pem_  = /* PEM 字符串 */;
-    config.quic_config_.config_.worker_thread_num_ = 2;
-    config.quic_config_.config_.log_level_ = quicx::LogLevel::kInfo;
-
-    server->Init(config);
-    server->Start("0.0.0.0", 7001);
-    server->Join();
-}
-```
-
-### 极简 HTTP/3 客户端
-
-```cpp
-#include "http3/include/if_client.h"
-#include "http3/include/if_response.h"
-
-int main() {
-    auto client = quicx::IClient::Create();
-
-    quicx::Http3ClientConfig config;
-    config.quic_config_.config_.worker_thread_num_ = 1;
-    client->Init(config);
-
-    auto request = quicx::IRequest::Create();
-    client->DoRequest("https://127.0.0.1:7001/hello",
-        quicx::HttpMethod::kGet, request,
-        [](std::shared_ptr<quicx::IResponse> resp, uint32_t error) {
-            if (error == 0)
-                std::cout << resp->GetBodyAsString() << "\n";
-        });
-
-    // 等待响应 …
-}
-```
-
-### 流式（异步）处理器
-
-```cpp
-class FileUploadHandler : public quicx::IAsyncServerHandler {
-public:
-    void OnHeaders(std::shared_ptr<quicx::IRequest> req,
-                   std::shared_ptr<quicx::IResponse> resp) override {
-        file_ = fopen("upload.dat", "wb");
-        resp->SetStatusCode(200);
-    }
-    void OnBodyChunk(const uint8_t* data, size_t len, bool is_last) override {
-        if (file_) fwrite(data, 1, len, file_);
-        if (is_last && file_) { fclose(file_); file_ = nullptr; }
-    }
-    void OnError(uint32_t error) override {
-        if (file_) { fclose(file_); file_ = nullptr; }
-    }
-private:
-    FILE* file_ = nullptr;
-};
-
-server->AddHandler(quicx::HttpMethod::kPost, "/upload",
-                   std::make_shared<FileUploadHandler>());
-```
-
----
-
-## 构建
-
-### 环境要求
-
-| 依赖 | 版本要求 |
-|---|---|
-| C++ 编译器 | C++17 及以上（GCC / Clang / MSVC） |
-| CMake | ≥ 3.16 |
-| BoringSSL | Git 子模块（`third/boringssl`） |
-| 线程库 | POSIX threads / Windows threads |
-| GTest | 可选，用于单元测试（自动拉取） |
-
-### 构建步骤
-
-```bash
-# 克隆仓库并初始化子模块（BoringSSL 为子模块）
-git clone --recurse-submodules https://github.com/caozhiyi/quicX.git
-cd quicX
-
-# 配置
-cmake -B build \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_EXAMPLES=ON \
-    -DENABLE_TESTING=ON \
-    -DQUICX_ENABLE_QLOG=ON
-
-# 编译
-cmake --build build --parallel $(nproc)
-
-# 运行单元测试
-./build/bin/quicx_utest
-```
-
-### CMake 构建选项
-
-| 选项 | 默认值 | 说明 |
-|---|---|---|
-| `BUILD_EXAMPLES` | `ON` | 构建所有示例程序 |
-| `ENABLE_TESTING` | `ON` | 构建单元测试（GTest） |
-| `ENABLE_BENCHMARKS` | `ON` | 构建性能基准测试套件 |
-| `ENABLE_CC_SIMULATOR` | `ON` | 构建拥塞控制模拟器 |
-| `ENABLE_INTERGRATION` | `ON` | 构建集成测试 |
-| `ENABLE_FUZZING` | `OFF` | 构建 libFuzzer 模糊测试目标 |
-| `ENABLE_INTEROP` | `OFF` | 构建 QUIC Interop Runner 目标 |
-| `QUICX_ENABLE_QLOG` | `ON` | 启用 QLog 协议跟踪 |
-
-### 支持平台
-
-CI 对每次推送在以下平台/编译器组合上运行测试：
-
-| 操作系统 | 编译器 |
-|---|---|
-| Ubuntu (latest) | GCC、Clang |
-| Windows (latest) | MSVC (`cl`) |
-| macOS (latest) | Clang |
+### 核心 API 与配置参考
+* [HTTP/3 应用层 API 核心指南](./docs/zh/tutorial/http3_api_guide.md) - 开发 Web 服务端的开箱即用首选指南。包括路由引擎、中间件编排、大文件流式传输和服务端主动推送。
+* [QUIC 传输层 API 核心指南](./docs/zh/tutorial/quic_api_guide.md) - 适用于开发私有 RPC 协议或游戏加速通道的开发者，深入了解核心的 QUIC Engine, Connection 和 Stream 的抽象。
+* [配置项大全 (Configuration Reference)](./docs/zh/tutorial/configuration_reference.md) - 极其详尽的结构体字典。全方位解析流量控制（滑动窗口）、高并发限制、防 DDoS 攻击的 Retry 策略以及编译期配置。
 
 ---
 
 ## 示例
 
-所有示例位于 `example/` 目录下，通过 `-DBUILD_EXAMPLES=ON` 编译。
+所有示例代码均位于 `example/` 目录下，并在 CMake 开启 `-DBUILD_EXAMPLES=ON` 时默认编译。
 
 | 示例 | 说明 |
 |---|---|
@@ -256,47 +128,6 @@ CI 对每次推送在以下平台/编译器组合上运行测试：
 | `qlog_integration` | 生成用于 Wireshark / qvis 的 QLog 跟踪文件 |
 | `upgrade_h3` | HTTP/1.1 → HTTP/3 升级 |
 | `quicx_curl` | 类 curl 命令行客户端 |
-
----
-
-## 配置说明
-
-### `QuicConfig` 关键字段
-
-```cpp
-quicx::QuicConfig cfg;
-cfg.thread_mode_       = quicx::ThreadMode::kMultiThread;
-cfg.worker_thread_num_ = 4;
-cfg.log_level_         = quicx::LogLevel::kInfo;
-cfg.log_path_          = "./logs";
-cfg.enable_0rtt_       = true;   // 0-RTT 会话恢复
-cfg.enable_ecn_        = false;  // ECN 支持
-cfg.enable_key_update_ = false;  // 自动密钥更新
-cfg.quic_version_      = quic::kQuicVersion2;  // 优先使用 QUIC v2
-cfg.keylog_file_       = "./tls_keys.log";     // Wireshark 密钥日志
-```
-
-### 传输参数（`QuicTransportParams`）
-
-```cpp
-quicx::QuicTransportParams tp;
-tp.max_idle_timeout_ms_                 = 120000;        // 2 分钟
-tp.max_udp_payload_size_                = 1472;          // 1500 - 28
-tp.initial_max_data_                    = 64*1024*1024;  // 64 MB 连接级
-tp.initial_max_stream_data_bidi_local_  = 16*1024*1024;  // 每流 16 MB
-tp.initial_max_stream_data_bidi_remote_ = 16*1024*1024;
-tp.initial_max_streams_bidi_            = 200;
-tp.disable_active_migration_            = false;
-```
-
-### 连接迁移
-
-```cpp
-quicx::MigrationConfig mc;
-mc.enable_active_migration_    = true;
-mc.path_validation_timeout_ms_ = 6000;
-mc.max_probe_retries_          = 5;
-```
 
 ---
 
