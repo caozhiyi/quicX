@@ -34,7 +34,7 @@ TEST_F(TcpSocketTest, SocketCreation) {
 TEST_F(TcpSocketTest, SocketCreationWithFd) {
     // Create a socket first
     auto result = common::TcpSocket();
-    ASSERT_EQ(result.errno_, 0);
+    ASSERT_EQ(result.error_code_, 0);
     int test_fd = result.return_value_;
     
     auto socket = std::make_unique<TcpSocket>(test_fd, common::Address("127.0.0.1", 8080));

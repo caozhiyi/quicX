@@ -122,14 +122,51 @@ TEST_F(FrameDecodeTest, DecodePushPromiseFrame) {
     EXPECT_EQ(decode_frame->GetEncodedFields()->GetDataAsString(), std::string(fields.begin(), fields.end()));
 }
 
-TEST_F(FrameDecodeTest, DecodeInvalidFrameType) {
-    // Write invalid frame type
+TEST_F(FrameDecodeTest, DecodeUnknownFrameTypeSkipped) {
+    // RFC 9114 Section 9: unknown frame types MUST be ignored.
+    // Write an unknown frame type (0x21 = reserved/unknown) with a valid length + payload.
+    common::BufferEncodeWrapper write_wrapper(buffer_);
+    write_wrapper.EncodeVarint(0x21);  // Unknown frame type (0x21 is a GREASE-like value)
+    write_wrapper.EncodeVarint(3);     // Payload length = 3 bytes
+    write_wrapper.EncodeFixedUint8(0xAA);
+    write_wrapper.EncodeFixedUint8(0xBB);
+    write_wrapper.EncodeFixedUint8(0xCC);
+    write_wrapper.Flush();
+
+    FrameDecoder decoder;
+    std::vector<std::shared_ptr<IFrame>> frames;
+    // Decoder should succeed (skip unknown frame) and produce no frames
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
+    EXPECT_EQ(frames.size(), 0);
+}
+
+TEST_F(FrameDecodeTest, DecodeCorruptVarintFrameType) {
+    // Write 0xFF which starts an 8-byte varint (high 2 bits = 11) but only provide 1 byte.
+    // The varint decode will fail because there are not enough bytes to complete it,
+    // and the decoder correctly identifies this as corrupt data (not just "need more data")
+    // since the buffer still has unread data after the failed decode attempt.
     common::BufferEncodeWrapper write_wrapper(buffer_);
     write_wrapper.EncodeFixedUint8(0xFF);
     write_wrapper.Flush();
+
     FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;
     EXPECT_FALSE(decoder.DecodeFrames(buffer_, frames));
+    EXPECT_EQ(frames.size(), 0);
+}
+
+TEST_F(FrameDecodeTest, DecodeUnknownFrameTypeMissingLength) {
+    // Write a complete single-byte varint for an unknown frame type (e.g., 0x21),
+    // but don't provide the length field. The decoder should return true (need more data).
+    common::BufferEncodeWrapper write_wrapper(buffer_);
+    write_wrapper.EncodeVarint(0x21);  // Single-byte varint, unknown frame type
+    write_wrapper.Flush();
+
+    FrameDecoder decoder;
+    std::vector<std::shared_ptr<IFrame>> frames;
+    // Decoder reads frame type (0x21), finds it unknown, tries to read length varint,
+    // but no data left → returns true (need more data).
+    EXPECT_TRUE(decoder.DecodeFrames(buffer_, frames));
     EXPECT_EQ(frames.size(), 0);
 }
 

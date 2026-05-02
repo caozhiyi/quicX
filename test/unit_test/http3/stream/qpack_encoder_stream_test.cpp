@@ -59,6 +59,7 @@ public:
         : error_code_(0), notify_count_(0) {
         
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
+        qpack_encoder_ = std::make_shared<QpackEncoder>();
         
         // Start with UnidentifiedStream to read stream type
         unidentified_stream_ = std::make_shared<UnidentifiedStream>(stream,
@@ -76,7 +77,7 @@ public:
         
         // Create the actual QPACK encoder receiver stream
         receiver_stream_ = std::make_shared<QpackEncoderReceiverStream>(stream,
-            blocked_registry_,
+            qpack_encoder_, blocked_registry_,
             std::bind(&MockReceiverConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
         
         // Feed remaining data to the encoder stream
@@ -101,6 +102,7 @@ private:
     uint32_t error_code_;
     uint32_t notify_count_;
     
+    std::shared_ptr<QpackEncoder> qpack_encoder_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     std::shared_ptr<UnidentifiedStream> unidentified_stream_;
     std::shared_ptr<QpackEncoderReceiverStream> receiver_stream_;

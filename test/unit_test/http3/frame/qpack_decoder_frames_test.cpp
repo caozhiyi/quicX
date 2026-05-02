@@ -33,7 +33,10 @@ TEST(QpackDecoderFramesTest, SectionAckEncodeDecode) {
     QpackSectionAckFrame f2;
     ASSERT_TRUE(f2.Decode(buf));
     EXPECT_EQ(f2.GetStreamId(), 123u);
-    EXPECT_EQ(f2.GetSectionNumber(), 456u);
+    // RFC 9204 §4.4.1: Section Acknowledgment wire format only carries the
+    // Stream ID. Section number is a decoder-local hint and is not serialized,
+    // so after decoding it is always 0.
+    EXPECT_EQ(f2.GetSectionNumber(), 0u);
 }
 
 TEST(QpackDecoderFramesTest, StreamCancellationEncodeDecode) {
@@ -46,7 +49,9 @@ TEST(QpackDecoderFramesTest, StreamCancellationEncodeDecode) {
     QpackStreamCancellationFrame f2;
     ASSERT_TRUE(f2.Decode(buf));
     EXPECT_EQ(f2.GetStreamId(), 777u);
-    EXPECT_EQ(f2.GetSectionNumber(), 888u);
+    // RFC 9204 §4.4.2: Stream Cancellation wire format only carries the Stream
+    // ID; section number is not on the wire.
+    EXPECT_EQ(f2.GetSectionNumber(), 0u);
 }
 
 TEST(QpackDecoderFramesTest, InsertCountIncrementEncodeDecode) {

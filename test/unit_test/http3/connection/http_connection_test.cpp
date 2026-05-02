@@ -12,7 +12,8 @@ namespace {
 
 class MockClient {
 public:
-    MockClient(std::shared_ptr<IQuicConnection> conn) {
+    MockClient(std::shared_ptr<IQuicConnection> conn)
+        : error_code_(0) {
         conn_ = std::make_shared<ClientConnection>("", kDefaultHttp3Settings, conn,
             std::bind(&MockClient::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClient::PushPromiseHandler, this, std::placeholders::_1),
@@ -20,7 +21,8 @@ public:
     }
 
     void ErrorHandler(const std::string& unique_id, uint32_t error_code) {
-        // TODO: implement this
+        error_code_ = error_code;
+        last_error_unique_id_ = unique_id;
     }
     bool PushPromiseHandler(std::unordered_map<std::string, std::string>& headers) {
         // TODO: implement this
@@ -39,13 +41,18 @@ public:
     void CancelPush(uint64_t push_id) {
         conn_->CancelPush(push_id);
     }
+    uint32_t GetErrorCode() const { return error_code_; }
+    const std::string& GetLastErrorUniqueId() const { return last_error_unique_id_; }
 private:
+    uint32_t error_code_;
+    std::string last_error_unique_id_;
     std::shared_ptr<ClientConnection> conn_;
 };
 
 class MockServer {
 public:
-    MockServer(std::shared_ptr<IQuicConnection> conn) {
+    MockServer(std::shared_ptr<IQuicConnection> conn)
+        : error_code_(0) {
         // Create a mock http processor
         class MockHttpProcessor : public IHttpProcessor {
         public:
@@ -65,8 +72,11 @@ public:
     }
 
     void ErrorHandler(const std::string& unique_id, uint32_t error_code) {
-        // TODO: implement this
+        error_code_ = error_code;
+        last_error_unique_id_ = unique_id;
     }
+    uint32_t GetErrorCode() const { return error_code_; }
+    const std::string& GetLastErrorUniqueId() const { return last_error_unique_id_; }
 
     RouteConfig MatchHandler(HttpMethod method, const std::string& path) {
         // Create wrapper that accesses http_handler_ at call time (not bind time)
@@ -85,6 +95,8 @@ public:
     }
 
 private:
+    uint32_t error_code_;
+    std::string last_error_unique_id_;
     std::shared_ptr<ServerConnection> conn_;
     http_handler http_handler_;
 };

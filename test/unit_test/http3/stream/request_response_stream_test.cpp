@@ -15,7 +15,8 @@ namespace {
 class MockClientConnection {
 public:
     MockClientConnection(
-        const std::shared_ptr<QpackEncoder>& qpack_encoder, std::shared_ptr<IQuicBidirectionStream> stream) {
+        const std::shared_ptr<QpackEncoder>& qpack_encoder, std::shared_ptr<IQuicBidirectionStream> stream)
+        : error_code_(0) {
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
         auto response_handler =
             std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2);
@@ -58,6 +59,7 @@ class MockServerConnection {
 public:
     MockServerConnection(
         const std::shared_ptr<QpackEncoder>& qpack_encoder, std::shared_ptr<IQuicBidirectionStream> stream):
+        error_code_(0),
         http_handler_(nullptr) {
         // Create a mock http processor
         class MockHttpProcessor: public IHttpProcessor {

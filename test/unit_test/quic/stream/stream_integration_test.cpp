@@ -281,7 +281,7 @@ TEST_F(StreamIntegrationTest, BidirectionalRequestResponseFlow) {
     ASSERT_TRUE(event_loop->Init());
 
     auto stream = std::make_shared<BidirectionStream>(
-        event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        event_loop, 10000, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
     stream->SetStreamReadCallBack([&](std::shared_ptr<IBufferRead> buf, bool last, uint32_t err) {
         if (buf) {
@@ -512,7 +512,7 @@ TEST_F(StreamIntegrationTest, StreamMultiplexing) {
     for (int i = 0; i < 5; i++) {
         uint64_t stream_id = 4 * i;  // 0, 4, 8, 12, 16
         auto stream = std::make_shared<BidirectionStream>(
-            event_loop, 10000, stream_id, active_send_cb_, stream_close_cb_, connection_close_cb_);
+            event_loop, 10000, 10000, stream_id, active_send_cb_, stream_close_cb_, connection_close_cb_);
         streams.push_back(stream);
         mock_conn_->streams_[stream_id] = stream;
     }
@@ -953,7 +953,7 @@ TEST_F(StreamIntegrationTest, StreamReusePrevention) {
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        event_loop, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        event_loop, 10000, 10000, 7, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
     // Complete stream lifecycle
     stream->Send((uint8_t*)"Data", 4);

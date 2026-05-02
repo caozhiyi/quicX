@@ -330,6 +330,362 @@ TEST(QlogEventTest, AllFrameTypes) {
     EXPECT_TRUE(json.find("\"frame_type\":\"connection_close\"") != std::string::npos);
 }
 
+// ====================================================================
+// Extended: Complete field coverage for all event types
+// ====================================================================
+
+// Helper to verify a JSON string contains a key
+static bool JsonHasKey(const std::string& json, const std::string& key) {
+    return json.find("\"" + key + "\"") != std::string::npos;
+}
+
+// Test: PacketSentData full field coverage
+TEST(QlogEventTest, PacketSentDataFullFields) {
+    PacketSentData data;
+    data.packet_number = 42;
+    data.packet_type = quic::PacketType::kInitialPacketType;
+    data.packet_size = 1350;
+    data.frames.push_back(quic::FrameType::kCrypto);
+    data.frames.push_back(quic::FrameType::kPadding);
+    data.raw.enabled = true;
+    data.raw.payload_hex = "deadbeef";
+
+    std::string json = data.ToJson();
+
+    // Required fields
+    EXPECT_TRUE(JsonHasKey(json, "packet_type")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "packet_number")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "packet_size")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "frames")) << json;
+
+    // Optional raw field
+    EXPECT_TRUE(JsonHasKey(json, "raw")) << json;
+    EXPECT_TRUE(json.find("deadbeef") != std::string::npos) << json;
+
+    // Nested header structure
+    EXPECT_TRUE(JsonHasKey(json, "header")) << json;
+}
+
+// Test: PacketReceivedData full field coverage
+TEST(QlogEventTest, PacketReceivedDataFullFields) {
+    PacketReceivedData data;
+    data.packet_number = 99;
+    data.packet_type = quic::PacketType::kHandshakePacketType;
+    data.packet_size = 600;
+    data.frames.push_back(quic::FrameType::kAck);
+    data.frames.push_back(quic::FrameType::kCrypto);
+
+    std::string json = data.ToJson();
+
+    EXPECT_TRUE(JsonHasKey(json, "packet_type")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "packet_number")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "packet_size")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "frames")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "header")) << json;
+}
+
+// Test: PacketsAckedData field coverage
+TEST(QlogEventTest, PacketsAckedDataFullFields) {
+    PacketsAckedData data;
+    data.ack_ranges.push_back({0, 10});
+    data.ack_ranges.push_back({20, 30});
+    data.ack_ranges.push_back({50, 100});
+    data.ack_delay_us = 15000;
+
+    std::string json = data.ToJson();
+
+    EXPECT_TRUE(JsonHasKey(json, "acked_ranges")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "ack_delay")) << json;
+
+    // Verify multiple ranges
+    EXPECT_TRUE(json.find("[0,10]") != std::string::npos) << json;
+    EXPECT_TRUE(json.find("[20,30]") != std::string::npos) << json;
+    EXPECT_TRUE(json.find("[50,100]") != std::string::npos) << json;
+}
+
+// Test: PacketLostData field coverage with all trigger types
+TEST(QlogEventTest, PacketLostDataAllTriggers) {
+    std::vector<std::string> triggers = {
+        "time_threshold", "packet_threshold", "pto_expired"
+    };
+
+    for (const auto& trigger : triggers) {
+        PacketLostData data;
+        data.packet_number = 42;
+        data.packet_type = quic::PacketType::k1RttPacketType;
+        data.trigger = trigger;
+
+        std::string json = data.ToJson();
+
+        EXPECT_TRUE(JsonHasKey(json, "packet_number")) << "trigger=" << trigger << " json=" << json;
+        EXPECT_TRUE(JsonHasKey(json, "packet_type")) << "trigger=" << trigger << " json=" << json;
+        EXPECT_TRUE(JsonHasKey(json, "trigger")) << "trigger=" << trigger << " json=" << json;
+        EXPECT_TRUE(json.find("\"trigger\":\"" + trigger + "\"") != std::string::npos)
+            << "trigger=" << trigger << " json=" << json;
+    }
+}
+
+// Test: RecoveryMetricsData full fields (all optional fields present)
+TEST(QlogEventTest, RecoveryMetricsDataFullFields) {
+    RecoveryMetricsData data;
+    data.min_rtt_us = 5000;
+    data.smoothed_rtt_us = 6000;
+    data.latest_rtt_us = 5500;
+    data.rtt_variance_us = 500;
+    data.cwnd_bytes = 65535;
+    data.bytes_in_flight = 32000;
+    data.ssthresh = 40000;
+    data.pacing_rate_bps = 2000000;
+
+    std::string json = data.ToJson();
+
+    // All RTT fields
+    EXPECT_TRUE(JsonHasKey(json, "min_rtt")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "smoothed_rtt")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "latest_rtt")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "rtt_variance")) << json;
+
+    // Congestion fields
+    EXPECT_TRUE(JsonHasKey(json, "cwnd")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "bytes_in_flight")) << json;
+
+    // Optional fields (present when non-default)
+    EXPECT_TRUE(JsonHasKey(json, "ssthresh")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "pacing_rate")) << json;
+}
+
+// Test: RecoveryMetricsData minimal fields (optional fields absent)
+TEST(QlogEventTest, RecoveryMetricsDataMinimalFields) {
+    RecoveryMetricsData data;
+    data.min_rtt_us = 5000;
+    data.smoothed_rtt_us = 6000;
+    data.latest_rtt_us = 5500;
+    data.rtt_variance_us = 500;
+    data.cwnd_bytes = 14520;
+    data.bytes_in_flight = 0;
+    // ssthresh defaults to UINT64_MAX (should be omitted)
+    // pacing_rate defaults to 0 (should be omitted)
+
+    std::string json = data.ToJson();
+
+    EXPECT_TRUE(JsonHasKey(json, "min_rtt")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "cwnd")) << json;
+
+    // Optional fields should be absent
+    EXPECT_FALSE(JsonHasKey(json, "ssthresh"))
+        << "ssthresh should be omitted when UINT64_MAX: " << json;
+    EXPECT_FALSE(JsonHasKey(json, "pacing_rate"))
+        << "pacing_rate should be omitted when 0: " << json;
+}
+
+// Test: CongestionStateUpdatedData field coverage
+TEST(QlogEventTest, CongestionStateUpdatedDataFullFields) {
+    std::vector<std::pair<std::string, std::string>> transitions = {
+        {"slow_start", "congestion_avoidance"},
+        {"congestion_avoidance", "recovery"},
+        {"recovery", "slow_start"},
+        {"slow_start", "application_limited"},
+    };
+
+    for (const auto& [from, to] : transitions) {
+        CongestionStateUpdatedData data;
+        data.old_state = from;
+        data.new_state = to;
+
+        std::string json = data.ToJson();
+
+        EXPECT_TRUE(JsonHasKey(json, "old")) << "from=" << from << " json=" << json;
+        EXPECT_TRUE(JsonHasKey(json, "new")) << "to=" << to << " json=" << json;
+        EXPECT_TRUE(json.find("\"old\":\"" + from + "\"") != std::string::npos) << json;
+        EXPECT_TRUE(json.find("\"new\":\"" + to + "\"") != std::string::npos) << json;
+    }
+}
+
+// Test: ConnectionStartedData full field coverage
+TEST(QlogEventTest, ConnectionStartedDataFullFields) {
+    ConnectionStartedData data;
+    data.src_ip = "2001:db8::1";
+    data.src_port = 12345;
+    data.dst_ip = "2001:db8::2";
+    data.dst_port = 443;
+    data.src_cid = "a1b2c3d4e5f6";
+    data.dst_cid = "f6e5d4c3b2a1";
+    data.protocol = "QUIC";
+    data.ip_version = "ipv6";
+
+    std::string json = data.ToJson();
+
+    EXPECT_TRUE(JsonHasKey(json, "ip_version")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "src_ip")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "dst_ip")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "protocol")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "src_port")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "dst_port")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "src_cid")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "dst_cid")) << json;
+
+    // Verify IPv6 address is preserved
+    EXPECT_TRUE(json.find("2001:db8::1") != std::string::npos) << json;
+}
+
+// Test: ConnectionClosedData full field coverage with all triggers
+TEST(QlogEventTest, ConnectionClosedDataAllTriggers) {
+    std::vector<std::string> triggers = {
+        "clean", "application", "error", "stateless_reset"
+    };
+
+    for (const auto& trigger : triggers) {
+        ConnectionClosedData data;
+        data.error_code = 0x42;
+        data.reason = "Test reason for " + trigger;
+        data.trigger = trigger;
+
+        std::string json = data.ToJson();
+
+        EXPECT_TRUE(JsonHasKey(json, "error_code")) << "trigger=" << trigger << " json=" << json;
+        EXPECT_TRUE(JsonHasKey(json, "reason")) << "trigger=" << trigger << " json=" << json;
+        EXPECT_TRUE(JsonHasKey(json, "trigger")) << "trigger=" << trigger << " json=" << json;
+    }
+}
+
+// Test: ConnectionStateUpdatedData field coverage with all state transitions
+TEST(QlogEventTest, ConnectionStateUpdatedDataAllStates) {
+    std::vector<std::string> states = {
+        "initial", "handshake", "connected", "closing", "draining", "closed"
+    };
+
+    for (size_t i = 0; i + 1 < states.size(); i++) {
+        ConnectionStateUpdatedData data;
+        data.old_state = states[i];
+        data.new_state = states[i + 1];
+
+        std::string json = data.ToJson();
+
+        EXPECT_TRUE(JsonHasKey(json, "old")) << json;
+        EXPECT_TRUE(JsonHasKey(json, "new")) << json;
+    }
+}
+
+// Test: StreamStateUpdatedData field coverage
+TEST(QlogEventTest, StreamStateUpdatedDataFullFields) {
+    StreamStateUpdatedData data;
+    data.stream_id = 16;  // Bidirectional stream
+    data.old_state = "idle";
+    data.new_state = "open";
+
+    std::string json = data.ToJson();
+
+    EXPECT_TRUE(JsonHasKey(json, "stream_id")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "old")) << json;
+    EXPECT_TRUE(JsonHasKey(json, "new")) << json;
+    EXPECT_TRUE(json.find("\"stream_id\":16") != std::string::npos) << json;
+}
+
+// Test: All event data classes produce valid JSON (balanced braces)
+TEST(QlogEventTest, AllEventDataProduceBalancedJson) {
+    auto IsBalanced = [](const std::string& json) -> bool {
+        int braces = 0;
+        int brackets = 0;
+        bool in_string = false;
+        bool escaped = false;
+        for (char c : json) {
+            if (escaped) { escaped = false; continue; }
+            if (c == '\\' && in_string) { escaped = true; continue; }
+            if (c == '"') { in_string = !in_string; continue; }
+            if (!in_string) {
+                if (c == '{') braces++;
+                else if (c == '}') braces--;
+                else if (c == '[') brackets++;
+                else if (c == ']') brackets--;
+            }
+        }
+        return braces == 0 && brackets == 0 && !in_string;
+    };
+
+    // PacketSentData
+    {
+        PacketSentData data;
+        data.packet_number = 1;
+        data.packet_type = quic::PacketType::k1RttPacketType;
+        data.packet_size = 1200;
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "PacketSentData: " << data.ToJson();
+    }
+
+    // PacketReceivedData
+    {
+        PacketReceivedData data;
+        data.packet_number = 1;
+        data.packet_type = quic::PacketType::k1RttPacketType;
+        data.packet_size = 800;
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "PacketReceivedData: " << data.ToJson();
+    }
+
+    // PacketsAckedData
+    {
+        PacketsAckedData data;
+        data.ack_ranges.push_back({1, 10});
+        data.ack_delay_us = 5000;
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "PacketsAckedData: " << data.ToJson();
+    }
+
+    // PacketLostData
+    {
+        PacketLostData data;
+        data.packet_number = 5;
+        data.packet_type = quic::PacketType::k1RttPacketType;
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "PacketLostData: " << data.ToJson();
+    }
+
+    // StreamStateUpdatedData
+    {
+        StreamStateUpdatedData data;
+        data.stream_id = 4;
+        data.old_state = "idle";
+        data.new_state = "open";
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "StreamStateUpdatedData: " << data.ToJson();
+    }
+
+    // RecoveryMetricsData
+    {
+        RecoveryMetricsData data;
+        data.min_rtt_us = 5000;
+        data.cwnd_bytes = 14520;
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "RecoveryMetricsData: " << data.ToJson();
+    }
+
+    // CongestionStateUpdatedData
+    {
+        CongestionStateUpdatedData data;
+        data.old_state = "slow_start";
+        data.new_state = "recovery";
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "CongestionStateUpdatedData: " << data.ToJson();
+    }
+
+    // ConnectionStartedData
+    {
+        ConnectionStartedData data;
+        data.src_ip = "127.0.0.1";
+        data.dst_ip = "127.0.0.1";
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "ConnectionStartedData: " << data.ToJson();
+    }
+
+    // ConnectionClosedData
+    {
+        ConnectionClosedData data;
+        data.error_code = 0;
+        data.reason = "Normal";
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "ConnectionClosedData: " << data.ToJson();
+    }
+
+    // ConnectionStateUpdatedData
+    {
+        ConnectionStateUpdatedData data;
+        data.old_state = "handshake";
+        data.new_state = "connected";
+        EXPECT_TRUE(IsBalanced(data.ToJson())) << "ConnectionStateUpdatedData: " << data.ToJson();
+    }
+}
+
 }  // namespace
 }  // namespace common
 }  // namespace quicx
