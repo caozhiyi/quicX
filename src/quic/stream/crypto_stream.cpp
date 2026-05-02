@@ -195,7 +195,14 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
         crypto_frame->GetOffset(), crypto_frame->GetLength(), next_read_offset_[level]);
 
     if (crypto_frame->GetOffset() == next_read_offset_[level]) {
-        read_buffers_[level]->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+        // IMPORTANT: Copy the bytes into read_buffers_ (do NOT push the shared
+        // chunk). CRYPTO frames from a received packet share the packet's
+        // decode buffer; that buffer is recycled once the packet is fully
+        // processed, so holding a shared pointer is not enough to guarantee
+        // the bytes remain stable. Copy into a fresh chunk owned by
+        // read_buffers_[level] to avoid later corruption.
+        auto data_span = crypto_frame->GetData();
+        read_buffers_[level]->Write(data_span.GetStart(), crypto_frame->GetLength());
         next_read_offset_[level] += crypto_frame->GetLength();
 
         // Check for out-of-order frames that can now be processed
@@ -207,7 +214,8 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
             }
 
             crypto_frame = std::dynamic_pointer_cast<CryptoFrame>(iter->second);
-            read_buffers_[level]->Write(crypto_frame->GetData(), crypto_frame->GetLength());
+            auto queued_span = crypto_frame->GetData();
+            read_buffers_[level]->Write(queued_span.GetStart(), crypto_frame->GetLength());
             next_read_offset_[level] += crypto_frame->GetLength();
             out_order.erase(iter);
         }
@@ -216,9 +224,26 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
         if (recv_cb_) {
             recv_cb_(read_buffers_[level], 0, level);
         }
-    } else {
-        out_order_frame_[level][crypto_frame->GetOffset()] = crypto_frame;
+    } else if (crypto_frame->GetOffset() > next_read_offset_[level]) {
+        // Cache out-of-order frame only if not already cached; ignore duplicates
+        // at same offset to avoid overwriting already-buffered frames.
+        if (out_order_frame_[level].find(crypto_frame->GetOffset()) == out_order_frame_[level].end()) {
+            // Must also detach from packet buffer: copy into a standalone frame.
+            auto data_span = crypto_frame->GetData();
+            auto new_frame = std::make_shared<CryptoFrame>();
+            new_frame->SetOffset(crypto_frame->GetOffset());
+            new_frame->SetEncryptionLevel(level);
+            // Allocate a dedicated buffer and copy bytes so the span stays valid
+            // after the source packet buffer is recycled.
+            auto standalone = std::make_shared<common::MultiBlockBuffer>(
+                GlobalResource::Instance().GetThreadLocalBlockPool());
+            standalone->Write(data_span.GetStart(), crypto_frame->GetLength());
+            auto owned_span = standalone->GetSharedReadableSpan(crypto_frame->GetLength());
+            new_frame->SetData(owned_span);
+            out_order_frame_[level][crypto_frame->GetOffset()] = new_frame;
+        }
     }
+    // else: offset < next_read_offset_ -> already processed / retransmit, ignore
 }
 
 }  // namespace quic

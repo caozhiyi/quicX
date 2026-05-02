@@ -251,16 +251,19 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // 9. Set connection IDs
     SetConnectionIDs(packet, ctx.local_cid_manager, ctx.remote_cid_manager);
 
-    // 10. Set version for long headers (use context version, or default if not specified)
+    // 10. Set version for long headers, key_phase for short headers
     auto header = packet->GetHeader();
     if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
         uint32_t version = ctx.quic_version != 0 ? ctx.quic_version : kQuicVersions[0];
         ((LongHeader*)header)->SetVersion(version);
+    } else if (header->GetHeaderType() == PacketHeaderType::kShortHeader) {
+        // RFC 9001 §6: Set Key Phase bit for 1-RTT packets
+        header->GetShortHeaderFlag().SetKeyPhase(ctx.key_phase);
     }
 
     // 11. Assign packet number
     PacketNumberSpace ns = CryptoLevel2PacketNumberSpace(ctx.level);
-    uint64_t pn = packet_number.NextPakcetNumber(ns);
+    uint64_t pn = packet_number.NextPacketNumber(ns);
     packet->SetPacketNumber(pn);
     header->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(pn));
     common::LOG_DEBUG("PacketBuilder::BuildDataPacket: assigned packet number %llu", pn);
@@ -291,6 +294,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     result.packet = packet;
     result.packet_number = pn;
     result.packet_size = encoded_size;
+    result.stream_data_size = static_cast<uint32_t>(visitor.GetStreamDataSize());
 
     common::LOG_DEBUG("PacketBuilder::BuildDataPacket: successfully built packet at level=%d, pn=%llu, size=%u",
         ctx.level, pn, encoded_size);
@@ -301,7 +305,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
     std::shared_ptr<ICryptographer> cryptographer, std::shared_ptr<IFrame> ack_frame,
     ConnectionIDManager* local_cid_mgr, ConnectionIDManager* remote_cid_mgr,
     std::shared_ptr<common::IBuffer> output_buffer, PacketNumber& packet_number, SendControl& send_control,
-    uint32_t quic_version) {
+    uint32_t quic_version, uint8_t key_phase) {
     // Simplified: use DataPacketContext with only ACK frame
     DataPacketContext ctx;
     ctx.level = level;
@@ -309,6 +313,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
     ctx.local_cid_manager = local_cid_mgr;
     ctx.remote_cid_manager = remote_cid_mgr;
     ctx.quic_version = quic_version;
+    ctx.key_phase = key_phase;
     ctx.frames.push_back(ack_frame);
     ctx.include_stream_data = false;        // ACK packets don't include stream data
     ctx.add_padding = (level == kInitial);  // Initial packets need padding
@@ -321,7 +326,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
 PacketBuilder::BuildResult PacketBuilder::BuildImmediatePacket(std::shared_ptr<IFrame> frame, EncryptionLevel level,
     std::shared_ptr<ICryptographer> cryptographer, ConnectionIDManager* local_cid_mgr,
     ConnectionIDManager* remote_cid_mgr, std::shared_ptr<common::IBuffer> output_buffer, PacketNumber& packet_number,
-    SendControl& send_control, uint32_t quic_version) {
+    SendControl& send_control, uint32_t quic_version, uint8_t key_phase) {
     // Simplified: use DataPacketContext with single frame
     DataPacketContext ctx;
     ctx.level = level;
@@ -329,6 +334,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildImmediatePacket(std::shared_ptr<I
     ctx.local_cid_manager = local_cid_mgr;
     ctx.remote_cid_manager = remote_cid_mgr;
     ctx.quic_version = quic_version;
+    ctx.key_phase = key_phase;
     ctx.frames.push_back(frame);
     ctx.include_stream_data = false;  // Immediate packets don't include stream data
     ctx.add_padding = false;          // No padding for immediate packets (except Initial)

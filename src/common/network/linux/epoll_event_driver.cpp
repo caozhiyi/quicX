@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <cstring>
+#include <vector>
 
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
@@ -47,8 +48,8 @@ bool EpollEventDriver::Init() {
     
     // Set both ends of the pipe to non-blocking mode
     auto noblock_ret1 = common::SocketNoblocking(wakeup_fd_[0]);
-    if (noblock_ret1.errno_ != 0) {
-        common::LOG_ERROR("Failed to set wakeup pipe read end non-blocking: %s", strerror(noblock_ret1.errno_));
+    if (noblock_ret1.error_code_ != 0) {
+        common::LOG_ERROR("Failed to set wakeup pipe read end non-blocking: %s", strerror(noblock_ret1.error_code_));
         common::Close(wakeup_fd_[1]);
         common::Close(wakeup_fd_[0]);
         close(epoll_fd_);
@@ -59,8 +60,8 @@ bool EpollEventDriver::Init() {
     }
     
     auto noblock_ret2 = common::SocketNoblocking(wakeup_fd_[1]);
-    if (noblock_ret2.errno_ != 0) {
-        common::LOG_ERROR("Failed to set wakeup pipe write end non-blocking: %s", strerror(noblock_ret2.errno_));
+    if (noblock_ret2.error_code_ != 0) {
+        common::LOG_ERROR("Failed to set wakeup pipe write end non-blocking: %s", strerror(noblock_ret2.error_code_));
         common::Close(wakeup_fd_[1]);
         common::Close(wakeup_fd_[0]);
         close(epoll_fd_);
@@ -145,9 +146,9 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         return -1;
     }
 
-    struct epoll_event epoll_events[max_events_];
+    std::vector<struct epoll_event> epoll_events(max_events_);
 
-    int nfds = epoll_wait(epoll_fd_, epoll_events, max_events_, timeout_ms);
+    int nfds = epoll_wait(epoll_fd_, epoll_events.data(), max_events_, timeout_ms);
     
     if (nfds < 0) {
         if (errno == EINTR) {

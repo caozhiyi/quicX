@@ -106,9 +106,18 @@ bool Rtt0Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
 
     // decode length
     cur_pos = common::DecodeVarint(cur_pos, end, length_);
+    if (cur_pos == nullptr) {
+        common::LOG_ERROR("Rtt0Packet: failed to decode length field");
+        return false;
+    }
 
     // decode cipher data
     packet_num_offset_ = cur_pos - span.GetStart();
+    if (cur_pos + length_ > end) {
+        common::LOG_ERROR("Rtt0Packet: length field exceeds buffer boundary. length:%u, remaining:%td",
+            (uint32_t)length_, end - cur_pos);
+        return false;
+    }
     cur_pos += length_;
 
     // set src data
@@ -125,9 +134,11 @@ bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t* end = span.GetEnd();
 
     if (!crypto_grapher_) {
-        // decrypt packet number
+        // RFC 9000 Appendix A: Two-step packet number recovery
         cur_pos += packet_num_offset_;
-        cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), packet_number_);
+        uint64_t truncated_pn = 0;
+        cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), truncated_pn);
+        packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, header_.GetPacketNumberLength() * 8);
 
         // decode payload frames
         payload_ = common::SharedBufferSpan(
@@ -169,7 +180,10 @@ bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 
     header_.SetPacketNumberLength(packet_num_len);
     cur_pos += packet_num_offset_;
-    cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, packet_number_);
+    // RFC 9000 Appendix A: Two-step packet number recovery
+    uint64_t truncated_pn = 0;
+    cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, truncated_pn);
+    packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, packet_num_len * 8);
 
     // RFC 9001 §5.3: AD includes header (from first byte) up to and including the unprotected PN
     auto ad_span = common::BufferSpan(buffer_header_pos, cur_pos);
@@ -192,7 +206,7 @@ bool Rtt0Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 
     // Set frame_type_bit based on decoded frames for ACK tracking
     for (const auto& frame : frames_list_) {
-        frame_type_bit_ |= (1 << frame->GetType());
+        frame_type_bit_ |= (1u << frame->GetType());
     }
 
     return true;

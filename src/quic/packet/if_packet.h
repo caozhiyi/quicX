@@ -23,7 +23,7 @@ namespace quic {
  */
 class IPacket {
 public:
-    IPacket(): frame_type_bit_(0), packet_number_(0) {}
+    IPacket(): frame_type_bit_(0), packet_number_(0), largest_received_pn_(0) {}
     virtual ~IPacket() {}
 
     /**
@@ -122,15 +122,40 @@ public:
     virtual void SetPayload(const common::SharedBufferSpan& payload) {}
 
     /**
+     * @brief Set the largest received packet number for PN recovery
+     *
+     * RFC 9000 Appendix A: The full packet number is recovered from the
+     * truncated encoding using the largest successfully received packet number.
+     *
+     * @param largest_pn Largest packet number successfully received so far
+     */
+    void SetLargestReceivedPn(uint64_t largest_pn) { largest_received_pn_ = largest_pn; }
+
+    /**
+     * @brief Get the largest received packet number
+     *
+     * @return Largest PN set via SetLargestReceivedPn
+     */
+    uint64_t GetLargestReceivedPn() const { return largest_received_pn_; }
+
+    /**
      * @brief Set the cryptographer for encryption/decryption
      *
      * @param crypto_grapher Cryptographer instance
      */
     void SetCryptographer(std::shared_ptr<ICryptographer> crypto_grapher) { crypto_grapher_ = crypto_grapher; }
-    
+
+    /**
+     * @brief RFC 9001 §6: Key Phase tracking for Key Update
+     */
+    void SetKeyPhaseChanged(bool changed) { key_phase_changed_ = changed; }
+    bool IsKeyPhaseChanged() const { return key_phase_changed_; }
+
 protected:
     uint32_t frame_type_bit_;
     uint64_t packet_number_;
+    uint64_t largest_received_pn_;  // RFC 9000 Appendix A: for PN recovery
+    bool key_phase_changed_ = false;  // RFC 9001 §6: set when key phase differs from expected
     common::SharedBufferSpan packet_src_data_;
 
     std::shared_ptr<ICryptographer> crypto_grapher_;

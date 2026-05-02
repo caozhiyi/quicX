@@ -156,7 +156,7 @@ bool QlogManager::ShouldSampleConnection(const std::string& connection_id) {
         return false;
     }
 
-    // base on connetion to sample
+    // base on connection to sample
     std::hash<std::string> hasher;
     size_t hash_value = hasher(connection_id);
     double normalized = (hash_value % 10000) / 10000.0;

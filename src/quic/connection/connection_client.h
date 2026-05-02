@@ -15,12 +15,7 @@ namespace quic {
 class ClientConnection: public BaseConnection {
 public:
     ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
-        std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
-        std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-        std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(ConnectionID&)> retire_conn_id_cb,
-        std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)>
-            connection_close_cb);
+        const ConnectionCallbacks& callbacks = {});
     ~ClientConnection();
 
     bool Dial(const common::Address& addr, const std::string& alpn, const QuicTransportParams& tp_config,
@@ -42,6 +37,13 @@ protected:
     bool HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame);
 
 private:
+    // Common TLS setup for both Dial() overloads (ALPN, SNI, transport params)
+    bool DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_conn,
+        const common::Address& addr, const std::string& alpn,
+        const QuicTransportParams& tp_config, const std::string& server_name);
+    // Common finalization for both Dial() overloads (CID generation, secrets, handshake, qlog)
+    bool DialFinalize(std::shared_ptr<TLSClientConnection> tls_conn, const common::Address& addr);
+
     // Original Destination Connection ID (for Retry handling per RFC 9000)
     ConnectionID original_dcid_;
     bool retry_received_{false};

@@ -37,7 +37,7 @@ void SendControl::OnPacketSend(
     common::Metrics::CounterInc(common::MetricsStd::QuicPacketsTx);
 
     if (pkt_num_largest_sent_[ns] > packet->GetPacketNumber()) {
-        common::LOG_ERROR("invalid packet number. number:%d", packet->GetPacketNumber());
+        common::LOG_ERROR("invalid packet number. number:%llu", packet->GetPacketNumber());
         return;
     }
     pkt_num_largest_sent_[ns] = packet->GetPacketNumber();
@@ -54,6 +54,22 @@ void SendControl::OnPacketSend(
     // Count this packet in congestion control (bytes_in_flight)
     congestion_control_->OnPacketSent(SentPacketEvent{packet->GetPacketNumber(), pkt_len, now, false});
 
+    // Log packet_sent event to qlog
+    if (qlog_trace_) {
+        common::PacketSentData qlog_data;
+        qlog_data.packet_number = packet->GetPacketNumber();
+        qlog_data.packet_type = packet->GetHeader()->GetPacketType();
+        qlog_data.packet_size = pkt_len;
+
+        // Populate frame types from packet's frame type bits
+        auto& frames = packet->GetFrames();
+        for (const auto& frame : frames) {
+            qlog_data.frames.push_back(static_cast<quic::FrameType>(frame->GetType()));
+        }
+
+        QLOG_PACKET_SENT(qlog_trace_, qlog_data);
+    }
+
     // Track when we last sent ack-eliciting data for PTO timer
     last_ack_eliciting_sent_time_ = now;
 
@@ -63,12 +79,17 @@ void SendControl::OnPacketSend(
         // exponential over-counting when multiple packets time out together
         // (e.g., packets 2-7 all lost → 6 callbacks → pto_count_ jumps to 6).
 
-        lost_packets_.push_back(packet);
-        // Mark packet as lost in unacked_packets to prevent double subtraction if acked later
+        // BUGFIX P0-1: Guard against double loss declaration.
+        // If DetectLostPackets() already processed this packet (removed from
+        // unacked_packets_ or marked is_lost), skip all operations to prevent
+        // double-counting in congestion control (bytes_in_flight underflow).
         auto it = unacked_packets_[ns].find(packet->GetPacketNumber());
-        if (it != unacked_packets_[ns].end()) {
-            it->second.is_lost = true;
+        if (it == unacked_packets_[ns].end() || it->second.is_lost) {
+            return;  // Already handled by DetectLostPackets or a previous timer
         }
+
+        it->second.is_lost = true;
+        lost_packets_.push_back(packet);
         congestion_control_->OnPacketLost(LossEvent{packet->GetPacketNumber(), pkt_len, common::UTCTimeMsec()});
 
         // Metrics: Packet lost
@@ -290,7 +311,12 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_pt
                 // Remove from unacked_packets
                 unacked_packets_[ns].erase(task);
             }
-            pkt_num--;
+            // BUGFIX P2-1: Only decrement pkt_num within the range, not after the last packet.
+            // The extra decrement caused off-by-one for subsequent additional ranges:
+            // next range would start at (lowest-1) instead of lowest.
+            if (i < iter->GetAckRangeLength()) {
+                pkt_num--;
+            }
         }
     }
 
@@ -323,8 +349,8 @@ void SendControl::CanSend(uint64_t now, uint64_t& can_send_bytes) {
 }
 
 void SendControl::UpdateConfig(const TransportParam& tp) {
-    max_ack_delay_ = tp.GetMaxAckDelay();
-    ack_delay_exponent_ = tp.GetackDelayExponent();
+    max_ack_delay_ = static_cast<uint32_t>(tp.GetMaxAckDelay());
+    ack_delay_exponent_ = static_cast<uint32_t>(tp.GetackDelayExponent());
 }
 
 void SendControl::ClearRetransmissionData() {
@@ -460,6 +486,14 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
 
             common::LOG_WARN("DetectLostPackets: declared packet %llu lost, triggering retransmission", pkt_num);
 
+            // Log marked_for_retransmit event
+            if (qlog_trace_) {
+                common::MarkedForRetransmitData retransmit_data;
+                retransmit_data.packet_number = pkt_num;
+                retransmit_data.trigger = "loss_detected";
+                QLOG_MARKED_FOR_RETRANSMIT(qlog_trace_, retransmit_data);
+            }
+
             // Log packet_lost event to qlog
             if (qlog_trace_ && it->second.packet) {
                 common::PacketLostData data;
@@ -516,6 +550,15 @@ void SendControl::OnPTOTimer() {
                     lost_packets_.push_back(it->second.packet);
                     congestion_control_->OnPacketLost(LossEvent{it->first, it->second.pkt_len_, common::UTCTimeMsec()});
                     timer_->RemoveTimer(it->second.timer_task_);
+
+                    // Log marked_for_retransmit event (PTO-triggered)
+                    if (qlog_trace_) {
+                        common::MarkedForRetransmitData retransmit_data;
+                        retransmit_data.packet_number = it->first;
+                        retransmit_data.trigger = "pto_expired";
+                        QLOG_MARKED_FOR_RETRANSMIT(qlog_trace_, retransmit_data);
+                    }
+
                     packet_lost_cb_(it->second.packet);
                     found_retransmit = true;
                     break;

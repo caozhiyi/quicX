@@ -1,5 +1,6 @@
 #include <cstring> //for memset
 #include <cstdlib>
+#include <new>
 #include "common/alloter/normal_alloter.h"
 
 namespace quicx {
@@ -16,8 +17,7 @@ NormalAlloter::~NormalAlloter() {
 void* NormalAlloter::Malloc(uint32_t size) {
     void* ret = malloc((size_t)size);
     if (!ret) {
-        throw "not enough memory";
-        return nullptr;
+        throw std::bad_alloc();
     }
 
     return ret;

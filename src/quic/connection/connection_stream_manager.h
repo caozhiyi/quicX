@@ -16,6 +16,7 @@ namespace quicx {
 // Forward declarations from common namespace
 namespace common {
 class IEventLoop;
+class QlogTrace;
 }
 
 namespace quic {
@@ -80,12 +81,13 @@ public:
 
     /**
      * @brief Create and register stream (internal, called after flow control checks)
-     * @param init_size Initial flow control window size
+     * @param send_size Send flow control window size (peer_data_limit for SendStream)
      * @param stream_id Stream ID
      * @param type Stream direction
+     * @param recv_size Recv flow control window size (local_data_limit for RecvStream), 0 means same as send_size
      * @return Stream instance or nullptr on error
      */
-    std::shared_ptr<IStream> MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection type);
+    std::shared_ptr<IStream> MakeStream(uint32_t send_size, uint64_t stream_id, StreamDirection type, uint32_t recv_size = 0);
 
     // ==================== Stream Closure ====================
 
@@ -108,12 +110,13 @@ public:
 
     /**
      * @brief Create stream initiated by remote peer
-     * @param init_size Initial flow control window size
+     * @param send_size Send flow control window size (peer_data_limit)
      * @param stream_id Stream ID from remote
      * @param direction Stream direction
+     * @param recv_size Recv flow control window size (local_data_limit), 0 means same as send_size
      * @return Stream instance or nullptr on error
      */
-    std::shared_ptr<IStream> CreateRemoteStream(uint32_t init_size, uint64_t stream_id, StreamDirection direction);
+    std::shared_ptr<IStream> CreateRemoteStream(uint32_t send_size, uint64_t stream_id, StreamDirection direction, uint32_t recv_size = 0);
 
     // ==================== Stream ACK Notification ====================
 
@@ -176,6 +179,22 @@ public:
         return !active_streams_.IsEmpty();
     }
 
+    /**
+     * @brief Check if there are active streams that can send at the given encryption level
+     *
+     * RFC 9000 Section 12.4: STREAM frames are only valid in 0-RTT and 1-RTT packets.
+     * For Initial/Handshake levels, only the crypto stream (id == 0) is allowed.
+     *
+     * @param level Encryption level
+     * @return true if there are sendable streams at this level
+     */
+    bool HasActiveStreamsForLevel(uint8_t level) const;
+
+    /**
+     * @brief Set qlog trace for stream state change tracking
+     */
+    void SetQlogTrace(std::shared_ptr<::quicx::common::QlogTrace> trace) { qlog_trace_ = trace; }
+
 private:
     // Stream map
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_map_;
@@ -200,6 +219,9 @@ private:
 
     // External callback (for application notification)
     StreamStateCallback stream_state_cb_;
+
+    // Qlog trace for stream state change tracking
+    std::shared_ptr<::quicx::common::QlogTrace> qlog_trace_;
 };
 
 }  // namespace quic

@@ -41,6 +41,7 @@ enum class TransportParamType : uint32_t {
     kActiveConnectionIdLimit           = 0x0e, // This is an integer value specifying the maximum number of connection IDs from the peer that an endpoint is willing to store
     kInitialSourceConnectionId         = 0x0f, // This is the value that the endpoint included in the Source Connection ID field of the first Initial packet it sends for the connection
     kRetrySourceConnectionId           = 0x10, // This is the value that the server included in the Source Connection ID field of a Retry packet
+    kVersionInformation                = 0x11, // RFC 9368 Compatible Version Negotiation: Chosen Version (32) + Available Versions (32) *
 };
 
 }

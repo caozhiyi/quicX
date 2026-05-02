@@ -163,12 +163,28 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     uint64_t largest_ack_in_frame = runs[0].first;
     frame->SetLargestAck(largest_ack_in_frame);
 
-    // encode ACK Delay in units of 2^ack_delay_exponent per RFC 9000
-    // Use the time of the largest acknowledged packet in this frame
-    // Note: We use largest_recv_time_[ns] which corresponds to pkt_num_largest_recvd_[ns]
-    // If the largest in frame is less than the overall largest, we approximate the delay
+    // BUGFIX P1-3: ACK Delay should reflect the time since receiving the
+    // largest acknowledged packet *in this frame*, not the global largest.
+    // When ACK ranges are truncated (kMaxAckRanges limit), largest_ack_in_frame
+    // may differ from pkt_num_largest_recvd_[ns].
+    // Since we only track time for the overall largest, use it when they match.
+    // When they differ, use 0 delay to avoid reporting a misleadingly small value
+    // that would cause the peer to underestimate RTT.
     {
-        uint64_t delay_ms = now - largest_recv_time_[ns];
+        uint64_t delay_ms = 0;
+        if (largest_ack_in_frame == pkt_num_largest_recvd_[ns]) {
+            // Exact: largest in frame IS the global largest, use tracked time
+            delay_ms = now - largest_recv_time_[ns];
+        } else {
+            // Approximate: We don't track per-packet receive time.
+            // Report 0 delay so peer doesn't subtract an incorrect value from RTT.
+            // RFC 9000 §13.2: "An endpoint MIGHT intentionally delay sending
+            // an ACK frame... The ACK Delay field... indicates the time the
+            // largest acknowledged packet was received."
+            // Reporting 0 is safe — peer will slightly overestimate RTT, which
+            // is conservative and better than underestimation.
+            delay_ms = 0;
+        }
         uint64_t encoded = delay_ms >> ack_delay_exponent_;
         frame->SetAckDelay(static_cast<uint32_t>(encoded));
     }
@@ -206,8 +222,8 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
 }
 
 void RecvControl::UpdateConfig(const TransportParam& tp) {
-    max_ack_delay_ = tp.GetMaxAckDelay();
-    ack_delay_exponent_ = tp.GetackDelayExponent();
+    max_ack_delay_ = static_cast<uint32_t>(tp.GetMaxAckDelay());
+    ack_delay_exponent_ = static_cast<uint32_t>(tp.GetackDelayExponent());
 }
 
 // RFC 9000 Section 13.2.1: Determine if immediate ACK is required

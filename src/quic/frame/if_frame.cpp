@@ -18,7 +18,7 @@ uint16_t IFrame::GetType() {
 }
 
 bool IFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    uint16_t need_size = EncodeSize();
+    uint32_t need_size = EncodeSize();
 
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR(
@@ -51,7 +51,12 @@ uint32_t IFrame::GetFrameTypeBit() {
         return FrameTypeBit::kStreamBit;
     }
 
-    return (uint32_t)1 << frame_type_;
+    // Guard against shift UB: frame_type_ must be < 32 for uint32_t bit field
+    if (frame_type_ >= 32) {
+        common::LOG_WARN("frame type %u exceeds bit field width, returning 0", frame_type_);
+        return 0;
+    }
+    return 1u << frame_type_;
 }
 
 }  // namespace quic

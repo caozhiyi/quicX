@@ -55,27 +55,28 @@ ClientConnection::ClientConnection(const std::string& unique_id, const Http3Sett
     // even if the dynamic table capacity is 0.
 
     // Create QPACK streams
+    // - Encoder sender: client sends QPACK encoder instructions to server
+    // - Decoder sender: client sends QPACK decoder feedback (section ack, etc.) to server
+    // NOTE: The QPACK decoder RECEIVER stream is NOT created here. It will be created
+    // reactively via HandleStream() -> OnStreamTypeIdentified() when the server opens
+    // its QPACK encoder unidirectional stream toward us.
     auto qpack_enc_stream = quic_connection_->MakeStream(StreamDirection::kSend);
-    auto qpack_dec_stream = quic_connection_->MakeStream(StreamDirection::kRecv);
     auto qpack_dec_sender_stream = quic_connection_->MakeStream(StreamDirection::kSend);
 
     // Wire QPACK instruction sender to QPACK encoder stream
     auto encoder_sender =
         std::make_shared<QpackEncoderSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream),
             std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
-    // create decoder receiver stream to apply inserts
-    auto decoder_receiver = std::make_shared<quicx::http3::QpackDecoderReceiverStream>(
-        std::dynamic_pointer_cast<IQuicRecvStream>(qpack_dec_stream), blocked_registry_,
-        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
     streams_[encoder_sender->GetStreamID()] = encoder_sender;
-    streams_[decoder_receiver->GetStreamID()] = decoder_receiver;
 
-    auto weak_enc = encoder_sender;
+    // Use weak_ptr to avoid circular reference (encoder lambda -> shared_ptr -> connection -> encoder)
+    std::weak_ptr<QpackEncoderSenderStream> weak_enc = encoder_sender;
     qpack_encoder_->SetInstructionSender([weak_enc](const std::vector<std::pair<std::string, std::string>>& inserts) {
-        if (!weak_enc) {
+        auto enc = weak_enc.lock();
+        if (!enc) {
             return;
         }
-        weak_enc->SendInstructions(inserts);
+        enc->SendInstructions(inserts);
     });
 
     // Wire decoder feedback sender to QPACK decoder sender stream
@@ -114,6 +115,13 @@ void ClientConnection::CreateAndSendRequestStream(
         std::bind(&ClientConnection::HandlePushPromise, std::static_pointer_cast<ClientConnection>(shared_from_this()),
             std::placeholders::_1, std::placeholders::_2));
     request_stream->Init();  // Must be called after construction to set up callbacks
+
+    // Propagate qlog trace from QUIC connection to HTTP/3 stream
+    auto qlog_trace = quic_connection_->GetQlogTrace();
+    if (qlog_trace) {
+        request_stream->SetQlogTrace(qlog_trace);
+    }
+
     streams_[stream->GetStreamID()] = request_stream;
 
     // Metrics: HTTP/3 request started
@@ -135,6 +143,13 @@ void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> requ
         std::bind(&ClientConnection::HandlePushPromise, std::static_pointer_cast<ClientConnection>(shared_from_this()),
             std::placeholders::_1, std::placeholders::_2));
     request_stream->Init();  // Must be called after construction to set up callbacks
+
+    // Propagate qlog trace from QUIC connection to HTTP/3 stream
+    auto qlog_trace = quic_connection_->GetQlogTrace();
+    if (qlog_trace) {
+        request_stream->SetQlogTrace(qlog_trace);
+    }
+
     streams_[stream->GetStreamID()] = request_stream;
 
     // Metrics: HTTP/3 request started
@@ -276,7 +291,7 @@ void ClientConnection::OnStreamTypeIdentified(
         case static_cast<uint64_t>(StreamType::kQpackEncoder):  // QPACK Encoder Stream (RFC 9204 Section 4.2)
             common::LOG_DEBUG(
                 "ClientConnection: creating QPACK Encoder Receiver Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<QpackEncoderReceiverStream>(stream, blocked_registry_,
+            typed_stream = std::make_shared<QpackEncoderReceiverStream>(stream, qpack_encoder_, blocked_registry_,
                 std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
             break;
 
@@ -316,9 +331,10 @@ void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {
         request_start_times_.erase(it);
     }
 
-    if (error_code == 0) {
-        // Stream completed normally - schedule removal to avoid use-after-free
-        // The stream object may still be in use on the call stack
+    if (error_code == 0 || error_code == static_cast<uint32_t>(Http3ErrorCode::kNoError)) {
+        // Stream completed normally or closed gracefully (H3_NO_ERROR from STOP_SENDING)
+        // In HTTP/3, server sends STOP_SENDING + H3_NO_ERROR after receiving the full request.
+        // This is not an error - just schedule stream removal.
 
         // Metrics: HTTP/3 request completed successfully
         common::Metrics::GaugeDec(common::MetricsStd::Http3RequestsActive);

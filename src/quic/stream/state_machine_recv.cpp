@@ -17,11 +17,13 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
     if (frame_type == FrameType::kResetStream) {
         is_reset_received_ = true;
     }
+    StreamState old_state = state_;
     switch (state_) {
         case StreamState::kRecv:
             if (StreamFrame::IsStreamFrame(frame_type)) {
                 if (frame_type & StreamFrameFlag::kFinFlag) {
                     state_ = StreamState::kSizeKnown;
+                    NotifyStateChange(old_state, state_);
                 }
                 return true;
             }
@@ -30,6 +32,7 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
             }
             if (frame_type == FrameType::kResetStream) {
                 state_ = StreamState::kResetRecvd;
+                NotifyStateChange(old_state, state_);
                 return true;
             }
             break;
@@ -43,6 +46,7 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
             }
             if (frame_type == FrameType::kResetStream) {
                 state_ = StreamState::kResetRecvd;
+                NotifyStateChange(old_state, state_);
                 return true;
             }
             break;
@@ -87,6 +91,7 @@ bool StreamStateMachineRecv::CanAppReadAllData() {
 }
 
 bool StreamStateMachineRecv::RecvAllData() {
+    StreamState old_state = state_;
     switch (state_) {
         case StreamState::kSizeKnown:
             if (is_reset_received_) {
@@ -94,6 +99,7 @@ bool StreamStateMachineRecv::RecvAllData() {
             } else {
                 state_ = StreamState::kDataRecvd;
             }
+            NotifyStateChange(old_state, state_);
             return true;
         case StreamState::kResetRecvd:
             // RFC 9000 Section 3.2: Optional transition from Reset Recvd to Data Recvd
@@ -108,12 +114,15 @@ bool StreamStateMachineRecv::RecvAllData() {
 }
 
 bool StreamStateMachineRecv::AppReadAllData() {
+    StreamState old_state = state_;
     switch (state_) {
         case StreamState::kDataRecvd:
             state_ = StreamState::kDataRead;
+            NotifyStateChange(old_state, state_);
             break;
         case StreamState::kResetRecvd:
             state_ = StreamState::kResetRead;
+            NotifyStateChange(old_state, state_);
             break;
         default:
             common::LOG_ERROR("current status not allow read all data. status:%d", state_);

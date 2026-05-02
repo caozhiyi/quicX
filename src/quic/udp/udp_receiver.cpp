@@ -35,7 +35,10 @@ bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver
 
     if (!event_loop_->IsInLoopThread()) {
         common::LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", socket_fd);
-        event_loop_->RunInLoop([this, socket_fd, receiver]() { this->AddReceiver(socket_fd, receiver); });
+        auto self = shared_from_this();
+        event_loop_->RunInLoop([self, socket_fd, receiver]() {
+            static_cast<UdpReceiver*>(self.get())->AddReceiver(socket_fd, receiver);
+        });
         return true;
     }
 
@@ -49,12 +52,15 @@ bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver
 
 bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) {
     if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([this, ip, port, receiver]() { this->AddReceiver(ip, port, receiver); });
+        auto self = shared_from_this();
+        event_loop_->RunInLoop([self, ip, port, receiver]() {
+            static_cast<UdpReceiver*>(self.get())->AddReceiver(ip, port, receiver);
+        });
         return true;
     }
     auto ret = common::UdpSocket();
-    if (ret.errno_ != 0) {
-        common::LOG_ERROR("create udp socket failed. err:%d", ret.errno_);
+    if (ret.error_code_ != 0) {
+        common::LOG_ERROR("create udp socket failed. err:%d", ret.error_code_);
         return false;
     }
 
@@ -62,8 +68,8 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
 
     // set noblocking
     auto opt_ret = common::SocketNoblocking(socket_fd);
-    if (opt_ret.errno_ != 0) {
-        common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.errno_);
+    if (opt_ret.error_code_ != 0) {
+        common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.error_code_);
         common::Close(socket_fd);
         return false;
     }
@@ -76,8 +82,8 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
     }
 
     opt_ret = Bind(socket_fd, addr);
-    if (opt_ret.errno_ != 0) {
-        common::LOG_ERROR("bind address failed. err:%d", opt_ret.errno_);
+    if (opt_ret.error_code_ != 0) {
+        common::LOG_ERROR("bind address failed. err:%d", opt_ret.error_code_);
         common::Close(socket_fd);
         return false;
     }
@@ -97,7 +103,10 @@ bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
 
     if (!event_loop_->IsInLoopThread()) {
         common::LOG_DEBUG("UdpReceiver::RemoveReceiver: posting to EventLoop thread, fd=%d", socket_fd);
-        event_loop_->RunInLoop([this, socket_fd]() { this->RemoveReceiver(socket_fd); });
+        auto self = shared_from_this();
+        event_loop_->RunInLoop([self, socket_fd]() {
+            static_cast<UdpReceiver*>(self.get())->RemoveReceiver(socket_fd);
+        });
         return true;
     }
 
@@ -124,11 +133,11 @@ void UdpReceiver::OnRead(uint32_t fd) {
     common::Address peer_addr;
     uint8_t ecn = 0;
     auto ret = common::RecvFromWithEcn(fd, (char*)span.GetStart(), kMaxV4PacketSize, 0, peer_addr, ecn);
-    if (ret.errno_ != 0) {
-        if (ret.errno_ == EAGAIN) {
+    if (ret.error_code_ != 0) {
+        if (ret.error_code_ == EAGAIN) {
             return;
         }
-        common::LOG_ERROR("recv from failed. err:%d", ret.errno_);
+        common::LOG_ERROR("recv from failed. err:%d", ret.error_code_);
         return;
     }
 
@@ -167,7 +176,10 @@ void UdpReceiver::OnError(uint32_t fd) {
 
 void UdpReceiver::OnClose(uint32_t fd) {
     if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([this, fd]() { this->OnClose(fd); });
+        auto self = shared_from_this();
+        event_loop_->RunInLoop([self, fd]() {
+            static_cast<UdpReceiver*>(self.get())->OnClose(fd);
+        });
         return;
     }
     receiver_map_.erase(fd);

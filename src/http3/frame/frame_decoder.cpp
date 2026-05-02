@@ -3,6 +3,7 @@
 
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/log/log.h"
+#include "common/qlog/qlog.h"
 
 #include "http3/frame/cancel_push_frame.h"
 #include "http3/frame/data_frame.h"
@@ -137,6 +138,15 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
             uint32_t consumed = length_before - length_after;
             common::LOG_DEBUG("FrameDecoder: successfully decoded frame type=0x%llx, consumed=%u bytes, remaining=%u",
                 (unsigned long long)current_frame_type_, consumed, buffer->GetDataLength());
+
+            // Log http3:frame_parsed event
+            if (qlog_trace_) {
+                common::Http3FrameParsedData parsed_data;
+                parsed_data.frame_type = static_cast<uint16_t>(current_frame_type_);
+                parsed_data.stream_id = stream_id_;
+                parsed_data.length = consumed;
+                QLOG_HTTP3_FRAME_PARSED(qlog_trace_, parsed_data);
+            }
 
             frames.push_back(current_frame_);
 

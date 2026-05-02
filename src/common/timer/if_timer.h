@@ -10,7 +10,7 @@ namespace common {
 class ITimer {
 public:
     ITimer() {}
-    ~ITimer() {}
+    virtual ~ITimer() = default;
 
     virtual uint64_t AddTimer(TimerTask& task, uint32_t time, uint64_t now = 0) = 0;
     virtual bool RemoveTimer(TimerTask& task) = 0;

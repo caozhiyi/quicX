@@ -29,11 +29,11 @@ static constexpr uint32_t kMaxFramePayload = 1420;
 // Bytes remaining before sending DATA_BLOCKED to peer (RFC 9000 Section 4.1)
 // 16KB (~11 MTU packets) provides sufficient advance warning
 // Optimized from original 8912 to align with standard buffer sizes
-// Used in: send_flow_controller.h, connection_flow_control.cpp
+// Used in: send_flow_controller.h
 static constexpr uint64_t kDataBlockedThreshold = 16384;
 
 // Streams remaining before sending STREAMS_BLOCKED to peer
-// Used in: send_flow_controller.h, connection_flow_control.cpp
+// Used in: send_flow_controller.h
 static constexpr uint64_t kStreamsBlockedThreshold = 4;
 
 // Bytes remaining before sending MAX_DATA to increase peer's send limit
@@ -42,20 +42,16 @@ static constexpr uint64_t kDataIncreaseThreshold = 512 * 1024;  // 512KB
 
 // Amount to increase connection-level data limit in MAX_DATA frame (RFC 9000 Section 4.2)
 // 2MB provides ample headroom for high-throughput transfers
-// Used in: recv_flow_controller.h, connection_flow_control.cpp
+// Used in: recv_flow_controller.h
 static constexpr uint64_t kDataIncreaseAmount = 2 * 1024 * 1024;  // 2MB
 
 // Streams remaining before proactively sending MAX_STREAMS
-// Used in: recv_flow_controller.h, connection_flow_control.cpp
+// Used in: recv_flow_controller.h
 static constexpr uint64_t kStreamsIncreaseThreshold = 4;
 
 // Amount to increase MAX_STREAMS limit per frame
 // Used in: recv_flow_controller.h
 static constexpr uint64_t kStreamsIncreaseAmount = 10;
-
-// Amount to increase internal stream limit tracking
-// Used in: connection_flow_control.cpp
-static constexpr uint64_t kStreamsLimitIncreaseAmount = 8;
 
 // Maximum ACK delay in milliseconds (RFC 9000 Section 18.2, default 25ms)
 // Balances ACK frequency with protocol overhead
@@ -76,6 +72,21 @@ static constexpr uint64_t kStreamDataBlockedThreshold = 4096;
 // 2MB aligns with connection-level window increment
 // Used in: recv_stream.cpp
 static constexpr uint64_t kStreamWindowIncrement = 2 * 1024 * 1024;  // 2MB
+
+// Amount to increase stream window when peer sends STREAM_DATA_BLOCKED
+// 4MB provides burst capacity for large file transfers
+// Used in: recv_stream.cpp
+static constexpr uint64_t kBlockedWindowIncrement = 4 * 1024 * 1024;  // 4MB
+
+// Maximum stream-level receive window size (hard upper limit)
+// Prevents malicious peers from inflating window indefinitely via BLOCKED frames
+// Used in: recv_stream.cpp
+static constexpr uint64_t kMaxStreamWindowSize = 64 * 1024 * 1024;  // 64MB
+
+// Maximum number of out-of-order frames buffered per stream
+// Prevents OOM from malicious peers sending many different-offset frames
+// Used in: recv_stream.cpp
+static constexpr size_t kMaxOutOfOrderFrames = 1024;
 
 // ============================================================================
 // TLS/Crypto Configuration

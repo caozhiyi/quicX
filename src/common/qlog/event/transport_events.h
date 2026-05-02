@@ -153,6 +153,48 @@ public:
     }
 };
 
+/**
+ * @brief packet_dropped event data
+ */
+class PacketDroppedData: public EventData {
+public:
+    quic::PacketType packet_type = quic::PacketType::kUnknownPacketType;
+    uint32_t packet_size = 0;
+    std::string trigger;  // "header_decrypt_error", "payload_decrypt_error", "key_unavailable",
+                          // "unexpected_packet_type", "initial_too_small", "unsupported_version",
+                          // "draining_state", "closing_state_decrypt_failure"
+
+    std::string ToJson() const override {
+        std::ostringstream oss;
+        oss << "{";
+        oss << "\"packet_type\":\"" << PacketTypeToQlogString(packet_type) << "\",";
+        oss << "\"packet_size\":" << packet_size << ",";
+        oss << "\"trigger\":\"" << trigger << "\"";
+        oss << "}";
+        return oss.str();
+    }
+};
+
+/**
+ * @brief packet_buffered event data
+ */
+class PacketBufferedData: public EventData {
+public:
+    quic::PacketType packet_type = quic::PacketType::kUnknownPacketType;
+    uint32_t packet_size = 0;
+    std::string trigger;  // "out_of_order", "coalesced"
+
+    std::string ToJson() const override {
+        std::ostringstream oss;
+        oss << "{";
+        oss << "\"packet_type\":\"" << PacketTypeToQlogString(packet_type) << "\",";
+        oss << "\"packet_size\":" << packet_size << ",";
+        oss << "\"trigger\":\"" << trigger << "\"";
+        oss << "}";
+        return oss.str();
+    }
+};
+
 }  // namespace common
 }  // namespace quicx
 

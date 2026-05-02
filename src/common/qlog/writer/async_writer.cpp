@@ -24,10 +24,10 @@ AsyncWriter::~AsyncWriter() {
 
 void AsyncWriter::Start() {
     if (running_.exchange(true)) {
-        return;  // 已经启动
+        return;  // already started
     }
 
-    // 创建输出目录
+    // Create output directory
     try {
         std::filesystem::create_directories(config_.output_dir);
     } catch (const std::exception& e) {
@@ -37,7 +37,7 @@ void AsyncWriter::Start() {
         return;
     }
 
-    // 启动写入线程
+    // Start writer thread
     writer_thread_ = std::thread(&AsyncWriter::WriterLoop, this);
 
     LOG_INFO("qlog AsyncWriter started, output_dir=%s", config_.output_dir.c_str());
@@ -45,15 +45,15 @@ void AsyncWriter::Start() {
 
 void AsyncWriter::Stop() {
     if (!running_.exchange(false)) {
-        return;  // 已经停止
+        return;  // already stopped
     }
 
-    // 等待线程退出
+    // Wait for thread to exit
     if (writer_thread_.joinable()) {
         writer_thread_.join();
     }
 
-    // 关闭所有文件
+    // Close all files
     CloseAllFiles();
 
     LOG_INFO("qlog AsyncWriter stopped, total_events=%llu, total_bytes=%llu",
@@ -80,23 +80,23 @@ void AsyncWriter::WriteEvent(const std::string& connection_id, const std::string
 
 void AsyncWriter::WriterLoop() {
     std::vector<WriteTask> batch;
-    batch.reserve(1000);  // 预分配
+    batch.reserve(1000);  // pre-allocate
 
     uint64_t last_flush_time = UTCTimeMsec();
 
     while (running_.load()) {
-        // 批量取出任务
+        // Batch dequeue tasks
         WriteTask task;
         while (write_queue_.Pop(task)) {
             batch.push_back(std::move(task));
 
-            // 批量大小限制
+            // Batch size limit
             if (batch.size() >= 1000) {
                 break;
             }
         }
 
-        // 时间触发刷新或队列为空
+        // Time-triggered flush or empty queue
         uint64_t now = UTCTimeMsec();
         bool should_flush = false;
 
@@ -116,13 +116,23 @@ void AsyncWriter::WriterLoop() {
             last_flush_time = now;
         }
 
-        // 没有任务时短暂休眠
+        // Brief sleep when no tasks available
         if (batch.empty() && write_queue_.Empty()) {
             Sleep(10);  // 10ms
         }
     }
 
-    // 退出前刷新剩余任务
+    // Flush remaining tasks from the local batch before exit
+    if (!batch.empty()) {
+        FlushBatch(batch);
+        batch.clear();
+    }
+
+    // Drain any tasks that were enqueued after the loop exited
+    WriteTask remaining_task;
+    while (write_queue_.Pop(remaining_task)) {
+        batch.push_back(std::move(remaining_task));
+    }
     if (!batch.empty()) {
         FlushBatch(batch);
     }
@@ -150,7 +160,7 @@ void AsyncWriter::FlushBatch(std::vector<WriteTask>& batch) {
         }
     }
 
-    // 刷新文件缓冲
+    // Flush file buffers
     if (config_.batch_write) {
         for (auto& pair : file_streams_) {
             if (pair.second && pair.second->is_open()) {
@@ -161,13 +171,13 @@ void AsyncWriter::FlushBatch(std::vector<WriteTask>& batch) {
 }
 
 std::ofstream& AsyncWriter::GetOrCreateFile(const std::string& connection_id) {
-    // 文件已存在
+    // File already exists
     auto it = file_streams_.find(connection_id);
     if (it != file_streams_.end() && it->second && it->second->is_open()) {
         return *(it->second);
     }
 
-    // 创建新文件
+    // Create new file
     std::string filename = GenerateFilename(connection_id);
     auto file = std::make_unique<std::ofstream>(filename,
                                                 std::ios::out | std::ios::trunc);
@@ -208,13 +218,13 @@ void AsyncWriter::CloseAllFiles() {
 }
 
 std::string AsyncWriter::GenerateFilename(const std::string& connection_id) {
-    // 格式: {output_dir}/{timestamp}_{cid_prefix}.qlog
+    // Format: {output_dir}/{timestamp}_{cid_prefix}.qlog
     std::string timestamp = GetFormatTime(FormatTimeUnit::kSecondFormat);
 
-    // 替换时间格式中的 ':' 为 '-'（文件名不能包含 ':'）
+    // Replace ':' with '-' in timestamp (filenames cannot contain ':')
     std::replace(timestamp.begin(), timestamp.end(), ':', '-');
 
-    // 连接 ID 前缀（最多 8 个字符）
+    // Connection ID prefix (up to 8 characters)
     std::string cid_prefix = connection_id.substr(0, std::min<size_t>(8, connection_id.size()));
 
     std::string filename = config_.output_dir + "/" + timestamp + "_" + cid_prefix + ".qlog";
@@ -240,7 +250,7 @@ void AsyncWriter::SetOutputDirectory(const std::string& dir) {
     std::lock_guard<std::mutex> lock(config_mutex_);
     config_.output_dir = dir;
 
-    // 创建新目录
+    // Create new directory
     try {
         std::filesystem::create_directories(dir);
     } catch (const std::exception& e) {

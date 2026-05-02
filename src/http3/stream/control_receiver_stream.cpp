@@ -61,8 +61,11 @@ void ControlReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_la
         }
 
     } else {
-        common::LOG_DEBUG("ControlReceiverStream::OnData: DecodeFrames failed, treating as raw QPACK instructions");
-        HandleRawData(data);
+        // RFC 9114 Section 7: Frame decoding failure on control stream is a connection error
+        // Do NOT fall through to QPACK instruction handling with corrupted data
+        common::LOG_ERROR("ControlReceiverStream::OnData: DecodeFrames failed on control stream, "
+            "closing connection with H3_FRAME_ERROR");
+        error_handler_(stream_->GetStreamID(), Http3ErrorCode::kFrameError);
     }
 }
 
@@ -94,8 +97,9 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
             break;
         }
         default:
-            common::LOG_ERROR("IStream::OnData unknown frame type: %d", frame->GetType());
-            error_handler_(stream_->GetStreamID(), Http3ErrorCode::kFrameUnexpected);
+            // RFC 9114 Section 9: Unknown frame types on the control stream MUST be ignored
+            // This includes CANCEL_PUSH and any future extension frame types
+            common::LOG_WARN("ControlReceiverStream: unknown frame type %d on control stream, ignoring", frame->GetType());
             break;
     }
 }

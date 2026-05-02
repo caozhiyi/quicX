@@ -228,7 +228,9 @@ bool ParseRemoteAddress(uint16_t fd, Address& addr) {
         return false;
     }
 
-    addr.SetIp(inet_ntoa(addr_in.sin_addr));
+    char ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &addr_in.sin_addr, ip_str, sizeof(ip_str));
+    addr.SetIp(ip_str);
     addr.SetPort(ntohs(addr_in.sin_port));
     return true;
 }
@@ -241,7 +243,9 @@ bool ParseLocalAddress(int32_t fd, Address& addr) {
         return false;
     }
 
-    addr.SetIp(inet_ntoa(addr_in.sin_addr));
+    char ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &addr_in.sin_addr, ip_str, sizeof(ip_str));
+    addr.SetIp(ip_str);
     addr.SetPort(ntohs(addr_in.sin_port));
     return true;
 }

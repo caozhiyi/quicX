@@ -18,12 +18,12 @@ namespace quicx {
 namespace common {
 
 /**
- * @brief 异步写入任务
+ * @brief Async write task
  */
 struct WriteTask {
     std::string connection_id;
     std::string data;
-    bool is_header = false;  // true: 头部; false: 事件
+    bool is_header = false;  // true: header; false: event
 
     WriteTask() = default;
     WriteTask(const std::string& cid, const std::string& d, bool header = false)
@@ -31,67 +31,67 @@ struct WriteTask {
 };
 
 /**
- * @brief 异步 qlog 写入器
+ * @brief Async qlog writer
  *
- * 职责：
- * - 维护写入线程
- * - 管理每个连接的文件句柄
- * - 批量写入优化
- * - 文件刷新控制
+ * Responsibilities:
+ * - Maintain writer thread
+ * - Manage per-connection file handles
+ * - Batch write optimization
+ * - File flush control
  */
 class AsyncWriter {
 public:
     explicit AsyncWriter(const QlogConfig& config);
     ~AsyncWriter();
 
-    // 启动/停止
+    // Start/Stop
     void Start();
     void Stop();
 
-    // 写入接口
+    // Write interface
     void WriteHeader(const std::string& connection_id, const std::string& header);
     void WriteEvent(const std::string& connection_id, const std::string& event);
 
-    // 刷新
+    // Flush
     void Flush();
 
-    // 配置更新
+    // Configuration update
     void UpdateConfig(const QlogConfig& config);
     void SetOutputDirectory(const std::string& dir);
 
-    // 统计信息
+    // Statistics
     uint64_t GetTotalEventsWritten() const { return total_events_written_.load(); }
     uint64_t GetTotalBytesWritten() const { return total_bytes_written_.load(); }
 
 private:
-    // 写入线程主循环
+    // Writer thread main loop
     void WriterLoop();
 
-    // 批量刷新
+    // Batch flush
     void FlushBatch(std::vector<WriteTask>& batch);
 
-    // 文件管理
+    // File management
     std::ofstream& GetOrCreateFile(const std::string& connection_id);
     void CloseFile(const std::string& connection_id);
     void CloseAllFiles();
     std::string GenerateFilename(const std::string& connection_id);
 
-    // 配置
+    // Configuration
     QlogConfig config_;
     std::mutex config_mutex_;
 
-    // 写入队列
+    // Write queue
     ThreadSafeQueue<WriteTask> write_queue_;
 
-    // 写入线程
+    // Writer thread
     std::thread writer_thread_;
     std::atomic<bool> running_;
 
-    // 文件句柄映射 (connection_id -> ofstream)
+    // File handle map (connection_id -> ofstream)
     std::map<std::string, std::unique_ptr<std::ofstream>> file_streams_;
     std::mutex files_mutex_;
 
-    // 统计
+    // Statistics
     std::atomic<uint64_t> total_events_written_;
     std::atomic<uint64_t> total_bytes_written_;
 };

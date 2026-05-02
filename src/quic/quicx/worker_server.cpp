@@ -124,7 +124,11 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // datagram_size_ is saved by MsgParser::ParsePacket() before DecodePackets consumes the buffer
     if (!InitPacketCheck(packet_info.packets_[0], packet_info.datagram_size_)) {
         common::LOG_ERROR("init packet check failed");
-        SendVersionNegotiatePacket(packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetSocket());
+        // Extract DCID/SCID from the received packet for the VN response
+        auto* hdr = static_cast<LongHeader*>(packet_info.packets_[0]->GetHeader());
+        SendVersionNegotiatePacket(packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetSocket(),
+            hdr->GetDestinationConnectionId(), hdr->GetDestinationConnectionIdLength(),
+            hdr->GetSourceConnectionId(), hdr->GetSourceConnectionIdLength());
         return false;
     }
 
@@ -148,6 +152,8 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     }
 
     // Check if Retry is needed based on policy
+    bool retry_was_used = false;
+    ConnectionID original_dcid;  // The DCID from the client's very first Initial (before Retry)
     if (retry_policy_ != RetryPolicy::NEVER) {
         // Check if this Initial packet contains a valid Retry token
         auto init_pkt = std::dynamic_pointer_cast<InitPacket>(init_packet);
@@ -165,7 +171,14 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                 if (has_valid_token) {
                     common::LOG_DEBUG("Valid Retry token received. ODCID extracted: %llu", odcid.Hash());
                     common::Metrics::CounterInc(common::MetricsStd::QuicRetryTokensValidated);
-                    // TODO: Set ODCID on connection context for transport parameters
+                    // RFC 9000 §7.3: After Retry, the server MUST set
+                    // original_destination_connection_id to the DCID from the
+                    // client's very first Initial (extracted from the token),
+                    // and retry_source_connection_id to the SCID chosen by the
+                    // server in its Retry packet (which is now the DCID in the
+                    // post-Retry Initial from the client, i.e., dst_cid).
+                    retry_was_used = true;
+                    original_dcid = odcid;
                 } else {
                     common::LOG_WARN("Invalid Retry token received");
                     common::Metrics::CounterInc(common::MetricsStd::QuicRetryTokensInvalid);
@@ -188,21 +201,46 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     }
 
     // create new connection
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_, server_alpn_,
-        std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1),
-        std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1),
-        std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&ServerWorker::HandleRetireConnectionId, this, std::placeholders::_1),
-        std::bind(&ServerWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3));
+    ConnectionCallbacks callbacks;
+    callbacks.active_connection_cb = std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1);
+    callbacks.handshake_done_cb = std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1);
+    callbacks.add_conn_id_cb = std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2);
+    callbacks.retire_conn_id_cb = std::bind(&ServerWorker::HandleRetireConnectionId, this, std::placeholders::_1);
+    callbacks.connection_close_cb = std::bind(&ServerWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
+            std::placeholders::_3);
+
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_, server_alpn_, callbacks);
 
     // Inject Sender for direct packet transmission
     new_conn->SetSender(sender_);
 
-    // Set QUIC version from configuration
-    new_conn->SetVersion(quic_version_);
+    // RFC 9368 Compatible Version Negotiation: on the server side, the on-wire
+    // |quic_version_| is determined by the client's Initial packet (set in
+    // BaseConnection::OnInitialPacket). The configured |quic_version_| here
+    // expresses the server operator's *preferred* version: if the client's
+    // available_versions list includes it (and it differs from the client's
+    // chosen_version) we will compatibly upgrade during TP processing.
+    new_conn->SetPreferredVersion(quic_version_);
 
-    new_conn->AddTransportParam(params_);
+    // RFC 9000 §18.2: Server MUST include original_destination_connection_id
+    // in transport parameters, set to the DCID from the client's first Initial packet.
+    QuicTransportParams server_params = params_;
+    if (retry_was_used) {
+        // After Retry: ODCID comes from the validated token (the client's very first DCID),
+        // and retry_source_connection_id is the SCID the server chose in its Retry packet
+        // (which the client now uses as DCID in post-Retry Initial, i.e., dst_cid).
+        server_params.original_destination_connection_id_ =
+            std::string(reinterpret_cast<const char*>(original_dcid.GetID()), original_dcid.GetLength());
+        server_params.retry_source_connection_id_ =
+            std::string(reinterpret_cast<const char*>(dst_cid.GetID()), dst_cid.GetLength());
+        common::LOG_INFO("Retry was used: ODCID from token (hash=%llu), retry_scid=dst_cid (hash=%llu)",
+            original_dcid.Hash(), dst_cid.Hash());
+    } else {
+        // No Retry: ODCID is the DCID from the client's Initial packet
+        server_params.original_destination_connection_id_ =
+            std::string(reinterpret_cast<const char*>(dst_cid.GetID()), dst_cid.GetLength());
+    }
+    new_conn->AddTransportParam(server_params);
     connecting_set_.insert(new_conn);
 
     // Register Initial DCID to connection map so subsequent packets can be routed
@@ -321,8 +359,16 @@ bool ServerWorker::ValidateRetryToken(
     return retry_token_manager_->ValidateToken(token, addr, out_original_dcid, retry_token_lifetime_);
 }
 
-void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32_t socket) {
+void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32_t socket,
+    const uint8_t* client_dcid, uint8_t client_dcid_len,
+    const uint8_t* client_scid, uint8_t client_scid_len) {
     VersionNegotiationPacket version_negotiation_packet;
+
+    // RFC 9000 §17.2.1: echo client's SCID as VN's DCID, client's DCID as VN's SCID
+    auto* header = static_cast<LongHeader*>(version_negotiation_packet.GetHeader());
+    header->SetDestinationConnectionId(client_scid, client_scid_len);
+    header->SetSourceConnectionId(client_dcid, client_dcid_len);
+
     for (auto version : kQuicVersions) {
         version_negotiation_packet.AddSupportVersion(version);
     }

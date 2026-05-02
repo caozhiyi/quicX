@@ -163,7 +163,7 @@ void ConnectionCloser::InvokeConnectionCloseCallback(
 uint32_t ConnectionCloser::GetCloseWaitTime() {
     // RFC 9000: Use PTO (Probe Timeout) for connection close timing
     // PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay
-    uint32_t max_ack_delay = transport_param_.GetMaxAckDelay();
+    uint32_t max_ack_delay = static_cast<uint32_t>(transport_param_.GetMaxAckDelay());
     uint32_t pto = send_manager_.GetPTO(max_ack_delay);
 
     // Ensure minimum timeout of 500ms for close timing

@@ -54,7 +54,13 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
 
     // ECN-CE: treat as early congestion signal, exit slow start and reduce cwnd
     if (ev.ecn_ce) {
-        if (in_slow_start_) in_slow_start_ = false;
+        if (in_slow_start_) {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "slow_start";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+            in_slow_start_ = false;
+        }
         if (!in_recovery_) {
             // Fast Convergence: check if cwnd decreased since last congestion event
             double curr_w_max_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
@@ -69,6 +75,12 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
             uint64_t new_cwnd = static_cast<uint64_t>(cwnd_bytes_ * kBetaCubic);
             cwnd_bytes_ = std::max<uint64_t>(new_cwnd, cfg_.min_cwnd_bytes);
             ssthresh_bytes_ = cwnd_bytes_;
+            {
+                common::CongestionStateUpdatedData qlog_ecn_data;
+                qlog_ecn_data.old_state = in_slow_start_ ? "slow_start" : "congestion_avoidance";
+                qlog_ecn_data.new_state = "recovery";
+                QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_ecn_data);
+            }
             in_recovery_ = true;
             recovery_start_time_us_ = ev.ack_time;
             epoch_start_us_ = 0;  // force cubic epoch reset
@@ -86,12 +98,20 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
 
         // Check traditional ssthresh exit
         if (cwnd_bytes_ >= ssthresh_bytes_) {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "slow_start";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
             in_slow_start_ = false;
             ResetEpoch(ev.ack_time);
         }
         // Check HyStart early exit (using srtt_us_ as latest RTT proxy)
         else if (hystart_enabled_ && srtt_us_ > 0 && CheckHyStartExit(srtt_us_, ev.ack_time)) {
             // Exit slow start early via HyStart
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "slow_start";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
             ssthresh_bytes_ = cwnd_bytes_;
             in_slow_start_ = false;
             hystart_found_exit_ = true;
@@ -104,6 +124,10 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
 
     if (in_recovery_) {
         if (ev.ack_time > recovery_start_time_us_) {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "recovery";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
             in_recovery_ = false;
             ResetEpoch(ev.ack_time);
         } else {
@@ -117,6 +141,12 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
 
 void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
+
+    // Skip duplicate cwnd reduction if already in recovery
+    if (in_recovery_) {
+        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+        return;
+    }
 
     // Fast Convergence: if cwnd decreased since last loss, further reduce W_max
     double curr_w_max_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
@@ -132,6 +162,12 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     cwnd_bytes_ = std::max<uint64_t>(new_cwnd, cfg_.min_cwnd_bytes);
     ssthresh_bytes_ = cwnd_bytes_;
 
+    {
+        common::CongestionStateUpdatedData qlog_data;
+        qlog_data.old_state = in_slow_start_ ? "slow_start" : "congestion_avoidance";
+        qlog_data.new_state = "recovery";
+        QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+    }
     in_recovery_ = true;
     in_slow_start_ = false;
     recovery_start_time_us_ = ev.lost_time;

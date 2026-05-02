@@ -377,6 +377,11 @@ uint32_t MultiBlockBuffer::Write(std::shared_ptr<IBuffer> buffer) {
         return true;
     });
 
+    // Advance source buffer's read pointer by the amount written
+    if (written > 0) {
+        buffer->MoveReadPt(written);
+    }
+
     return written;
 }
 

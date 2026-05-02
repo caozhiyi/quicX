@@ -30,7 +30,7 @@ static constexpr uint32_t kConnectionCloseDestroyTimeoutMs = 1000;
 // Maximum server push wait time (milliseconds)
 // Timeout for waiting on promised push streams
 // Note: Server push is optional in HTTP/3; this controls client-side timeout
-static constexpr uint32_t kServerPushWaitTimeMs = 30000;  // 30 seconds
+static constexpr uint32_t kServerPushWaitTimeMs = 10;  // 10 milliseconds
 
 // Client connection idle timeout (milliseconds)
 // Connection closed if no activity for this duration

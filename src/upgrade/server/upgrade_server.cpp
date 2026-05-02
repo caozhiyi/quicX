@@ -63,16 +63,16 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
 int UpgradeServer::CreateListenSocket(const std::string& addr, uint16_t port) {
     // Create socket
     auto result = common::TcpSocket();
-    if (result.errno_ != 0) {
-        common::LOG_ERROR("Failed to create socket. errno: %d", result.errno_);
+    if (result.error_code_ != 0) {
+        common::LOG_ERROR("Failed to create socket. errno: %d", result.error_code_);
         return -1;
     }
     uint64_t listen_fd = result.return_value_;
 
     // Set non-blocking
     auto ret = common::SocketNoblocking(listen_fd);
-    if (ret.errno_ != 0) {
-        common::LOG_ERROR("Failed to get socket flags. errno: %d", ret.errno_);
+    if (ret.error_code_ != 0) {
+        common::LOG_ERROR("Failed to get socket flags. errno: %d", ret.error_code_);
         common::Close(listen_fd);
         return -1;
     }
@@ -80,15 +80,15 @@ int UpgradeServer::CreateListenSocket(const std::string& addr, uint16_t port) {
     // Bind socket
     common::Address address(addr, port);
     ret = common::Bind(listen_fd, address);
-    if (ret.errno_ != 0) {
-        common::LOG_ERROR("Failed to bind socket. errno: %d", ret.errno_);
+    if (ret.error_code_ != 0) {
+        common::LOG_ERROR("Failed to bind socket. errno: %d", ret.error_code_);
         common::Close(listen_fd);
         return -1;
     }
 
     ret = common::Listen(listen_fd, 1024);
-    if (ret.errno_ != 0) {
-        common::LOG_ERROR("Failed to listen on socket. errno: %d", ret.errno_);
+    if (ret.error_code_ != 0) {
+        common::LOG_ERROR("Failed to listen on socket. errno: %d", ret.error_code_);
         common::Close(listen_fd);
         return -1;
     }

@@ -13,7 +13,7 @@ DataBlockedFrame::DataBlockedFrame():
 DataBlockedFrame::~DataBlockedFrame() {}
 
 bool DataBlockedFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    uint16_t need_size = EncodeSize();
+    uint32_t need_size = EncodeSize();
 
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR(

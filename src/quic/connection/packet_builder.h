@@ -94,12 +94,14 @@ public:
         std::shared_ptr<IPacket> packet;  // The built packet (nullptr if failed)
         uint64_t packet_number;           // Packet number (if success)
         uint32_t packet_size;             // Packet size in bytes (if success)
+        uint32_t stream_data_size;        // Stream data bytes included in this packet (for flow control)
         std::string error_message;        // Error message (if failed)
 
         BuildResult():
             success(false),
             packet_number(0),
-            packet_size(0) {}
+            packet_size(0),
+            stream_data_size(0) {}
     };
 
     PacketBuilder() = default;
@@ -142,6 +144,9 @@ public:
         // QUIC version for Long Header packets (0 = use default version)
         uint32_t quic_version;
 
+        // RFC 9001 §6: Key Phase bit for Short Header (1-RTT) packets
+        uint8_t key_phase;
+
         // Optional: Control frames to send
         std::vector<std::shared_ptr<IFrame>> frames;  // Non-stream frames (ACK, PING, etc.)
 
@@ -160,6 +165,7 @@ public:
             local_cid_manager(nullptr),
             remote_cid_manager(nullptr),
             quic_version(0),
+            key_phase(0),
             stream_manager(nullptr),
             include_stream_data(true),
             max_stream_data_size(1300),  // Default to reasonable packet size
@@ -207,7 +213,7 @@ public:
     BuildResult BuildAckPacket(EncryptionLevel level, std::shared_ptr<ICryptographer> cryptographer,
         std::shared_ptr<IFrame> ack_frame, ConnectionIDManager* local_cid_mgr, ConnectionIDManager* remote_cid_mgr,
         std::shared_ptr<common::IBuffer> output_buffer, PacketNumber& packet_number, SendControl& send_control,
-        uint32_t quic_version = 0);
+        uint32_t quic_version = 0, uint8_t key_phase = 0);
 
     /**
      * @brief Build a single-frame packet for immediate sending
@@ -228,7 +234,7 @@ public:
     BuildResult BuildImmediatePacket(std::shared_ptr<IFrame> frame, EncryptionLevel level,
         std::shared_ptr<ICryptographer> cryptographer, ConnectionIDManager* local_cid_mgr,
         ConnectionIDManager* remote_cid_mgr, std::shared_ptr<common::IBuffer> output_buffer,
-        PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0);
+        PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0, uint8_t key_phase = 0);
 
 private:
     /**

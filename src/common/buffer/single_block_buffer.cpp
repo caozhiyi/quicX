@@ -63,7 +63,7 @@ uint32_t SingleBlockBuffer::ReadNotMovePt(uint8_t* data, uint32_t len) {
     return InnerRead(data, len, false);
 }
 
-// Move the read pointer forward (positive len) or backward (negative len).
+// Move the read pointer forward by len bytes.
 uint32_t SingleBlockBuffer::MoveReadPt(uint32_t len) {
     if (!Valid()) {
         LOG_ERROR("buffer is invalid");
@@ -71,13 +71,13 @@ uint32_t SingleBlockBuffer::MoveReadPt(uint32_t len) {
     }
 
     if (read_pos_ <= write_pos_) {
-        size_t size = write_pos_ - read_pos_;
-        if (static_cast<int32_t>(size) <= len) {
+        uint32_t size = static_cast<uint32_t>(write_pos_ - read_pos_);
+        if (size <= len) {
             Clear();
-            return static_cast<uint32_t>(size);
+            return size;
         } else {
             read_pos_ += len;
-            return static_cast<uint32_t>(len);
+            return len;
         }
     }
 
@@ -278,7 +278,7 @@ BufferSpan SingleBlockBuffer::GetWritableSpan(uint32_t expected_length) {
     return BufferSpan(write_pos_, write_pos_ + expected_length);
 }
 
-// Move the write pointer forward (positive len) or backward (negative len).
+// Move the write pointer forward by len bytes.
 uint32_t SingleBlockBuffer::MoveWritePt(uint32_t len) {
     if (!Valid()) {
         LOG_ERROR("buffer is invalid");
@@ -286,13 +286,13 @@ uint32_t SingleBlockBuffer::MoveWritePt(uint32_t len) {
     }
 
     if (write_pos_ <= buffer_end_) {
-        size_t size = buffer_end_ - write_pos_;
-        if (static_cast<int32_t>(size) <= len) {
+        uint32_t size = static_cast<uint32_t>(buffer_end_ - write_pos_);
+        if (size <= len) {
             write_pos_ += size;
-            return static_cast<uint32_t>(size);
+            return size;
         } else {
             write_pos_ += len;
-            return static_cast<uint32_t>(len);
+            return len;
         }
     }
     LOG_ERROR("write_pos_ <= buffer_end_ is false");

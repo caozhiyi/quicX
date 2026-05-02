@@ -1,6 +1,3 @@
-#include <limits>
-
-#include "common/log/log.h"
 #include "common/timer/treemap_timer.h"
 #include "common/util/time.h"
 
@@ -8,7 +5,7 @@ namespace quicx {
 namespace common {
 
 TreeMapTimer::TreeMapTimer():
-    random_(0, (int32_t)std::numeric_limits<int32_t>::max()) {}
+    next_id_(0) {}
 
 TreeMapTimer::~TreeMapTimer() {}
 
@@ -18,7 +15,7 @@ uint64_t TreeMapTimer::AddTimer(TimerTask& task, uint32_t time_ms, uint64_t now)
     }
 
     task.time_ = now + time_ms;
-    task.id_ = random_.Random();
+    task.id_ = ++next_id_;
     timer_map_[task.time_][task.id_] = task;
 
     return task.id_;

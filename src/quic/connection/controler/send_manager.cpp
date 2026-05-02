@@ -13,7 +13,7 @@ namespace quic {
 SendManager::SendManager(std::shared_ptr<common::ITimer> timer):
     send_control_(timer),
     send_flow_controller_(nullptr),
-    pakcet_number_() {
+    packet_number_() {
     pacing_timer_task_ = common::TimerTask();
     pacing_timer_task_.SetTimeoutCallback([this]() {
         if (send_retry_cb_) {
@@ -338,8 +338,11 @@ bool SendManager::HasStreamData(EncryptionLevel level) {
         return false;
     }
 
-    // Check if StreamManager has active streams
-    bool has_data = stream_manager_->HasActiveStreams();
+    // Delegate to StreamManager which knows how to filter by encryption level.
+    // RFC 9000 Section 12.4: STREAM frames are only valid in 0-RTT and 1-RTT packets.
+    // For Initial/Handshake levels, only the crypto stream (id == 0) can send
+    // CRYPTO frames. Application streams must NOT send at these levels.
+    bool has_data = stream_manager_->HasActiveStreamsForLevel(level);
 
     common::LOG_DEBUG("SendManager::HasStreamData: level=%d, has_data=%d", level, has_data);
     return has_data;

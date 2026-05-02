@@ -72,7 +72,11 @@ bool ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
     // Encode pseudo-headers (including :status)
     PseudoHeader::Instance().EncodeResponse(response);
 
-    // Add content-length if body exists
+    // RFC 9110 Section 9.3.2: HEAD responses MUST NOT contain a body
+    // But MAY include Content-Length header (representing what GET would return)
+    bool is_head_request = (request_ && request_->GetMethod() == HttpMethod::kHead);
+
+    // Add content-length if body exists (even for HEAD, to indicate GET body size)
     if (body && body_size > 0) {
         response->AddHeader("content-length", std::to_string(body_size));
     }
@@ -84,7 +88,18 @@ bool ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
     }
     common::LOG_DEBUG("ResponseStream::SendResponse: headers sent successfully");
 
-    // Send body
+    // For HEAD requests, never send body regardless of response content
+    if (is_head_request) {
+        stream_->Close();
+        common::LOG_DEBUG("ResponseStream::SendResponse: HEAD request, no body sent, stream closed with FIN");
+        // Signal stream completion to the connection
+        if (error_handler_) {
+            error_handler_(GetStreamID(), 0);
+        }
+        return true;
+    }
+
+    // Send body (for non-HEAD requests)
     auto provider = response->GetResponseBodyProvider();
     if (provider) {
         // Streaming mode: use body provider
@@ -116,13 +131,15 @@ bool ResponseStream::SendResponse(std::shared_ptr<IResponse> response) {
 }
 
 void ResponseStream::HandleHeaders() {
-    // RFC 9114 Section 4.1: Reject request if SETTINGS not received yet
+    // Note: We do NOT reject requests when peer SETTINGS hasn't been received yet.
+    // In HTTP/3, the control stream (carrying SETTINGS) and request streams are
+    // independent QUIC streams. Due to QUIC's stream multiplexing, a request may
+    // arrive before the control stream's SETTINGS frame is processed. This is a
+    // normal race condition, not a protocol violation. The H3_MISSING_SETTINGS
+    // error (0x010a) should only be used when the control stream's first frame
+    // is not SETTINGS, not when requests arrive before SETTINGS on another stream.
     if (settings_received_cb_ && !settings_received_cb_()) {
-        common::LOG_ERROR("ResponseStream: Request received before SETTINGS frame");
-        if (error_handler_) {
-            error_handler_(GetStreamID(), Http3ErrorCode::kMissingSettings);
-        }
-        return;
+        common::LOG_WARN("ResponseStream: Request received before peer SETTINGS frame, proceeding with defaults");
     }
 
     // Create request and response objects FIRST (before calling base class)
@@ -136,8 +153,17 @@ void ResponseStream::HandleHeaders() {
 
     bool has_content_length = false;
     if (headers_.find("content-length") != headers_.end()) {
-        has_content_length = true;
-        body_length_ = std::stoul(headers_["content-length"]);
+        try {
+            body_length_ = std::stoul(headers_["content-length"]);
+            has_content_length = true;
+        } catch (const std::exception& e) {
+            common::LOG_ERROR("ResponseStream::HandleHeaders: invalid content-length value '%s': %s",
+                headers_["content-length"].c_str(), e.what());
+            if (error_handler_) {
+                error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+            }
+            return;
+        }
     }
 
     route_config_ = http_processor_->MatchRoute(request_->GetMethod(), request_->GetPath(), request_);
@@ -224,9 +250,8 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
         if (is_last) {
             HandleResponse();
 
-            // CRITICAL: Notify connection that stream is complete and can be removed
-            // error_code=0 means normal completion (not an actual error)
-            error_handler_(GetStreamID(), 0);
+            // Defer stream completion notification to parent class (after all frames processed)
+            should_notify_completion_ = true;
         }
         return;
     }
@@ -254,10 +279,9 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
         HandleHttp(route_config_.GetCompleteHandler());
         HandleResponse();
 
-        // CRITICAL: Notify connection that stream is complete and can be removed
-        // error_code=0 means normal completion (not an actual error)
-        if (is_last) {
-            error_handler_(GetStreamID(), 0);
+        // Defer stream completion notification to parent class (after all frames processed)
+        if (is_last || (body_length_ == body_->GetDataLength() && is_last_data_)) {
+            should_notify_completion_ = true;
         }
         return;
     }
@@ -302,7 +326,8 @@ void ResponseStream::HandleFinWithoutData() {
         async_handler->OnBodyChunk(nullptr, 0, true);
         // Send response and complete
         HandleResponse();
-        error_handler_(GetStreamID(), 0);
+        // Defer stream completion notification to avoid double-call to error_handler_
+        should_notify_completion_ = true;
 
     } else {
         // Complete mode: call handler and send response
@@ -310,7 +335,8 @@ void ResponseStream::HandleFinWithoutData() {
             is_response_sent_ = true;
             HandleHttp(route_config_.GetCompleteHandler());
             HandleResponse();
-            error_handler_(GetStreamID(), 0);
+            // Defer stream completion notification to avoid double-call to error_handler_
+            should_notify_completion_ = true;
         }
     }
 }

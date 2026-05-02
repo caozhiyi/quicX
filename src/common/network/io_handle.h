@@ -37,6 +37,9 @@ SysCallInt32Result TcpSocket();
 
 SysCallInt32Result UdpSocket();
 
+// Create an IPv4-only UDP socket (AF_INET)
+SysCallInt32Result UdpSocket4();
+
 SysCallInt32Result Close(int32_t sockfd);
 
 SysCallInt32Result Bind(int32_t sockfd, Address& addr);

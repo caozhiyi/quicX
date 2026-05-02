@@ -30,11 +30,15 @@ public:
     virtual void HandlePacket(PacketParseResult& packet_info) override;
 
     // process inner packets
-    virtual void Process();
+    virtual void Process() override;
 
     // Send packet immediately (bypasses normal flow)
     // Used for immediate ACK sending when encryption level differs from current level
     bool SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr, int32_t socket = -1);
+
+    // Set callback for registering new sockets with the receiver (for connection migration)
+    using RegisterSocketCallback = std::function<bool(int32_t sockfd)>;
+    void SetRegisterSocketCallback(RegisterSocketCallback cb) { register_socket_cb_ = cb; }
 
 protected:
     void ProcessSend();
@@ -72,6 +76,7 @@ protected:
 
     connection_state_callback connection_handler_;
     std::shared_ptr<common::IEventLoop> event_loop_;  // Saved EventLoop for cross-thread access
+    RegisterSocketCallback register_socket_cb_;  // Register socket with receiver for migration
 };
 
 }  // namespace quic

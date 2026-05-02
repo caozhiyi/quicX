@@ -5,6 +5,7 @@
 #include <functional>
 #include "http3/stream/if_recv_stream.h"
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_encoder.h"
 #include "quic/include/if_quic_recv_stream.h"
 
 namespace quicx {
@@ -27,6 +28,7 @@ class QpackEncoderReceiverStream:
 public:
     QpackEncoderReceiverStream(
         const std::shared_ptr<IQuicRecvStream>& stream,
+        const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackEncoderReceiverStream();
@@ -34,6 +36,7 @@ public:
     virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) override;
 
 private:
+    std::shared_ptr<QpackEncoder> qpack_encoder_;  // Connection-level shared QPACK encoder instance
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     // Parse encoder stream instructions
     void ParseEncoderInstructions(std::shared_ptr<IBufferRead> data);

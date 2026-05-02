@@ -42,22 +42,30 @@ MetricID Metrics::RegisterHistogram(const std::string& name, const std::string& 
 
 void Metrics::CounterInc(MetricID id, uint64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
-    GetThreadStorage().GetCounter(id).fetch_add(val, std::memory_order_relaxed);
+    auto& storage = GetThreadStorage();
+    if (!storage.IsValid()) return;  // Thread is shutting down
+    storage.GetCounter(id).fetch_add(val, std::memory_order_relaxed);
 }
 
 void Metrics::GaugeInc(MetricID id, int64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
-    GetThreadStorage().GetGauge(id).fetch_add(val, std::memory_order_relaxed);
+    auto& storage = GetThreadStorage();
+    if (!storage.IsValid()) return;  // Thread is shutting down
+    storage.GetGauge(id).fetch_add(val, std::memory_order_relaxed);
 }
 
 void Metrics::GaugeDec(MetricID id, int64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
-    GetThreadStorage().GetGauge(id).fetch_sub(val, std::memory_order_relaxed);
+    auto& storage = GetThreadStorage();
+    if (!storage.IsValid()) return;  // Thread is shutting down
+    storage.GetGauge(id).fetch_sub(val, std::memory_order_relaxed);
 }
 
 void Metrics::GaugeSet(MetricID id, int64_t val) {
     if (!g_metrics_enabled || id == kInvalidMetricID) return;
-    GetThreadStorage().GetGauge(id).store(val, std::memory_order_relaxed);
+    auto& storage = GetThreadStorage();
+    if (!storage.IsValid()) return;  // Thread is shutting down
+    storage.GetGauge(id).store(val, std::memory_order_relaxed);
 }
 
 void Metrics::HistogramObserve(MetricID id, uint64_t val) {
@@ -66,7 +74,9 @@ void Metrics::HistogramObserve(MetricID id, uint64_t val) {
     auto* meta = GlobalRegistry::Instance().GetMeta(id);
     if (!meta || meta->type != MetricType::kHistogram) return;
 
-    auto& storage = GetThreadStorage().GetHistogram(id, meta->buckets);
+    auto& storage_ref = GetThreadStorage();
+    if (!storage_ref.IsValid()) return;  // Thread is shutting down
+    auto& storage = storage_ref.GetHistogram(id, meta->buckets);
 
     storage.sum.fetch_add(val, std::memory_order_relaxed);
     storage.count.fetch_add(1, std::memory_order_relaxed);

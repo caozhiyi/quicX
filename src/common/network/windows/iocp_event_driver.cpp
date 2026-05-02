@@ -109,6 +109,9 @@ int IOCPEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         int32_t fd = ctx->fd;
         EventType type = ctx->type;
 
+        // Free the completed overlapped context
+        delete ctx;
+
         // map bytes==0 for TCP read as close
         if (type == EventType::ET_READ && bytes == 0) {
             events.push_back(Event{fd, EventType::ET_CLOSE});

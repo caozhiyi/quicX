@@ -47,6 +47,10 @@ void ConnectionID::SetID(uint8_t* id, uint8_t len) {
         len = kMaxCidLength;
     }
     memcpy(id_, id, len);
+    // Clear trailing bytes to avoid stale data affecting comparisons
+    if (len < kMaxCidLength) {
+        memset(id_ + len, 0, kMaxCidLength - len);
+    }
     length_ = len;
     hash_ = 0;
 }
@@ -59,11 +63,14 @@ void ConnectionID::operator=(const ConnectionID& other) {
 }
 
 bool ConnectionID::operator==(const ConnectionID& other) const {
-    return memcmp(id_, other.id_, kMaxCidLength) == 0;
+    if (length_ != other.length_) {
+        return false;
+    }
+    return memcmp(id_, other.id_, length_) == 0;
 }
 
 bool ConnectionID::operator!=(const ConnectionID& other) const {
-    return memcmp(id_, other.id_, kMaxCidLength) != 0;
+    return !(*this == other);
 }
 
 }

@@ -34,6 +34,21 @@ public:
     // Insert count increment — try to resume all
     void NotifyAll();
 
+    // RFC 9204 §4.4.1 / §4.4.2: Section Ack and Stream Cancellation carry only
+    // the Stream ID on the wire. When a receiver parses such frames it only
+    // knows the stream id and must match the earliest outstanding header
+    // section on that stream (keys are stored as (stream_id<<32)|section_no,
+    // so the earliest one has the smallest value among keys sharing the same
+    // high 32 bits).
+    //
+    // AckByStreamId: finds the earliest pending section for stream_id,
+    //                invokes its retry callback, and erases it.
+    // RemoveByStreamId: finds the earliest pending section for stream_id and
+    //                   erases it WITHOUT invoking the retry callback.
+    // Returns true when an entry was found and processed.
+    bool AckByStreamId(uint64_t stream_id);
+    bool RemoveByStreamId(uint64_t stream_id);
+
 private:
     uint64_t max_blocked_streams_{0}; // 0 means unlimited (for testing/simple cases)
     std::unordered_map<uint64_t, std::function<void()>> pending_;

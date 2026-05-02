@@ -3,7 +3,6 @@
 
 #include <map>
 #include <unordered_map>
-#include "common/util/random.h"
 #include "common/timer/if_timer.h"
 
 namespace quicx {
@@ -31,7 +30,7 @@ public:
 
     virtual bool Empty();
 private:
-    RangeRandom random_;
+    uint64_t next_id_ = 0;  // monotonically increasing timer ID
     // time => id => task
     std::map<uint64_t, std::unordered_map<uint64_t, TimerTask>> timer_map_;
 };

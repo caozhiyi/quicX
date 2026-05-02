@@ -23,6 +23,11 @@ struct QuicClientConfig {
     /** List of supported QUIC versions. */
     std::vector<uint32_t> supported_versions_ = {0x00000001};
 
+    /** Enable TLS peer certificate verification (default: true for security). */
+    bool verify_peer_ = true;
+    /** CA certificate file path for TLS verification, empty uses system defaults. */
+    std::string ca_file_;
+
     /** Embedded QUIC transport/runtime configuration. */
     QuicConfig config_;
 };

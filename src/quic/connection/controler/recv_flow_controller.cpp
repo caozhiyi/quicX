@@ -1,3 +1,5 @@
+#include <climits>
+
 #include "common/log/log.h"
 
 #include "quic/config.h"
@@ -55,8 +57,13 @@ bool RecvFlowController::ShouldSendMaxData(std::shared_ptr<IFrame>& max_data_fra
 
     if (remaining <= threshold) {
         // Increase the limit by doubling the window
+        // BUGFIX P2-3: Guard against uint64_t overflow when doubling
         uint64_t increase_amount = max_data_;
-        max_data_ += increase_amount;
+        if (max_data_ > UINT64_MAX - increase_amount) {
+            max_data_ = UINT64_MAX;  // Cap at max value instead of wrapping
+        } else {
+            max_data_ += increase_amount;
+        }
 
         auto frame = std::make_shared<MaxDataFrame>();
         frame->SetMaximumData(max_data_);

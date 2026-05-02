@@ -45,26 +45,23 @@ QpackSectionAckFrame::QpackSectionAckFrame():
 }
 
 bool QpackSectionAckFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    // 1xxxxxxx with 7-bit prefix
-    return QpackEncodePrefixedInteger(buffer, kQpackDecSectionAckPrefixBits, kQpackDecSectionAckFirstByteMask, stream_id_)
-        && QpackEncodePrefixedInteger(buffer, kQpackDecoderVarintPrefixBits, kQpackDecoderVarintFirstByteMask, section_number_);
+    // RFC 9204 Section 4.4.1 - Section Acknowledgment carries only Stream ID
+    // as a 7-bit-prefix varint with pattern 1xxxxxxx.
+    return QpackEncodePrefixedInteger(buffer, kQpackDecSectionAckPrefixBits, kQpackDecSectionAckFirstByteMask, stream_id_);
 }
 
 bool QpackSectionAckFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
+    // RFC 9204 Section 4.4.1 - only Stream ID is present on the wire.
     uint8_t fb1 = 0;
     if (!QpackDecodePrefixedInteger(buffer, kQpackDecSectionAckPrefixBits, fb1, stream_id_)) {
         return false;
     }
-    // Next field is a full-varint (8-bit prefix)
-    uint8_t fb2 = 0;
-    if (!QpackDecodePrefixedInteger(buffer, kQpackDecoderVarintPrefixBits, fb2, section_number_)) {
-        return false;
-    }
+    section_number_ = 0;
     return true;
 }
 
-uint32_t QpackSectionAckFrame::EvaluateEncodeSize() { 
-    return 1 + 2;
+uint32_t QpackSectionAckFrame::EvaluateEncodeSize() {
+    return 1;
 }
 
 uint64_t QpackSectionAckFrame::GetStreamId() const { 
@@ -87,20 +84,18 @@ QpackStreamCancellationFrame::QpackStreamCancellationFrame():
 }
 
 bool QpackStreamCancellationFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    // 01xxxxxx with 6-bit prefix for stream_id
-    return QpackEncodePrefixedInteger(buffer, kQpackDecStreamCancelPrefixBits, kQpackDecStreamCancelFirstByteMask, stream_id_)
-        && QpackEncodePrefixedInteger(buffer, kQpackDecoderVarintPrefixBits, kQpackDecoderVarintFirstByteMask, section_number_);
+    // RFC 9204 Section 4.4.2 - Stream Cancellation carries only Stream ID
+    // as a 6-bit-prefix varint with pattern 01xxxxxx.
+    return QpackEncodePrefixedInteger(buffer, kQpackDecStreamCancelPrefixBits, kQpackDecStreamCancelFirstByteMask, stream_id_);
 }
 
 bool QpackStreamCancellationFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
+    // RFC 9204 Section 4.4.2 - only Stream ID is present on the wire.
     uint8_t fb1 = 0;
     if (!QpackDecodePrefixedInteger(buffer, kQpackDecStreamCancelPrefixBits, fb1, stream_id_)) {
         return false;
     }
-    uint8_t fb2 = 0;
-    if (!QpackDecodePrefixedInteger(buffer, kQpackDecoderVarintPrefixBits, fb2, section_number_)) {
-        return false;
-    }
+    section_number_ = 0;
     return true;
 }
 

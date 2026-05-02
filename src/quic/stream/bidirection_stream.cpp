@@ -8,13 +8,14 @@
 namespace quicx {
 namespace quic {
 
-BidirectionStream::BidirectionStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
+BidirectionStream::BidirectionStream(std::shared_ptr<common::IEventLoop> loop, uint64_t send_data_limit,
+    uint64_t recv_data_limit, uint64_t id,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
     IStream(loop, id, active_send_cb, stream_close_cb, connection_close_cb),
-    SendStream(loop, init_data_limit, id, active_send_cb, stream_close_cb, connection_close_cb),
-    RecvStream(loop, init_data_limit, id, active_send_cb, stream_close_cb, connection_close_cb) {}
+    SendStream(loop, send_data_limit, id, active_send_cb, stream_close_cb, connection_close_cb),
+    RecvStream(loop, recv_data_limit, id, active_send_cb, stream_close_cb, connection_close_cb) {}
 
 BidirectionStream::~BidirectionStream() {}
 
@@ -65,7 +66,7 @@ int32_t BidirectionStream::Send(uint8_t* data, uint32_t len) {
 }
 
 int32_t BidirectionStream::Send(std::shared_ptr<IBufferRead> buffer) {
-    return SendStream::Send(buffer) > 0;
+    return SendStream::Send(buffer);
 }
 
 std::shared_ptr<IBufferWrite> BidirectionStream::GetSendBuffer() {
@@ -114,7 +115,7 @@ uint32_t BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
                 CheckStreamClose();
                 return result;
             } else {
-                common::LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
+                common::LOG_ERROR("unexpected frame on recv stream. frame type:%d", frame_type);
             }
     }
     return result;

@@ -25,6 +25,8 @@ public:
     virtual std::string GetWorkerId() = 0;
     // Handle packets
     virtual void HandlePacket(PacketParseResult& packet_info) = 0;
+    // Process pending internal tasks (e.g. sending queued data)
+    virtual void Process() {}
     // add a connection id notify
     virtual void SetConnectionIDNotify(std::shared_ptr<IConnectionIDNotify> connection_id_notify) {
         connection_id_notify_ = connection_id_notify;

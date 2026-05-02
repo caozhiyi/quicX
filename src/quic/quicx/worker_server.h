@@ -26,7 +26,9 @@ public:
     virtual bool InnerHandlePacket(PacketParseResult& packet_info) override;
 
 protected:
-    void SendVersionNegotiatePacket(const common::Address& addr, int32_t socket);
+    void SendVersionNegotiatePacket(const common::Address& addr, int32_t socket,
+        const uint8_t* client_dcid, uint8_t client_dcid_len,
+        const uint8_t* client_scid, uint8_t client_scid_len);
 
     /**
      * @brief Send a Retry packet to the client for address validation

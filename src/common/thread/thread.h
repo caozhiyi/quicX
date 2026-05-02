@@ -12,7 +12,12 @@ namespace common {
 class Thread {
 public:
     Thread(): stop_(true) {}
-    virtual ~Thread() {}
+    virtual ~Thread() {
+        Stop();
+        if (pthread_ && pthread_->joinable()) {
+            pthread_->join();
+        }
+    }
 
     //base option
     virtual void Start() {

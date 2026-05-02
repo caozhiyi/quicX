@@ -12,7 +12,7 @@ public:
     PacketNumber();
     ~PacketNumber() {};
 
-    uint64_t NextPakcetNumber(PacketNumberSpace space);
+    uint64_t NextPacketNumber(PacketNumberSpace space);
     void Reset(PacketNumberSpace space);
 
     // encode packet number to buffer

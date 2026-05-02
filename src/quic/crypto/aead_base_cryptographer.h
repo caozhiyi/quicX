@@ -27,11 +27,18 @@ public:
     virtual Result DecryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data,
         common::BufferSpan& ciphertext, std::shared_ptr<common::IBuffer> out_plaintext) override;
 
+    // RFC 9001 §6: Decrypt using previous read key (for reordered packets after Key Update)
+    virtual Result DecryptPacketWithPrevKey(uint64_t pkt_number, common::BufferSpan& associated_data,
+        common::BufferSpan& ciphertext, std::shared_ptr<common::IBuffer> out_plaintext) override;
+
     virtual Result EncryptPacket(uint64_t pkt_number, common::BufferSpan& associated_data,
         common::BufferSpan& plaintext, std::shared_ptr<common::IBuffer> out_ciphertext) override;
 
     virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
         uint8_t& out_packet_num_len, bool is_short) override;
+
+    // RFC 9001 §6: Check if previous read key is available
+    virtual bool HasPrevReadKey() const override { return !prev_read_secret_.key_.empty(); }
 
     virtual Result EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint8_t pn_offset,
         size_t pkt_number_len, bool is_short) override;
@@ -71,6 +78,14 @@ protected:
 
     Secret read_secret_;
     Secret write_secret_;
+    // RFC 9001 §6: Previous read key for reordered packets after Key Update
+    Secret prev_read_secret_;
+
+    // RFC 9001 §6: Raw TLS traffic secrets needed for Key Update derivation
+    // Key Update computes: next_secret = HKDF-Expand-Label(current_secret, "quic ku", "", Hash.length)
+    // These store the original traffic secret, not the derived key/iv/hp
+    std::vector<uint8_t> raw_read_secret_;
+    std::vector<uint8_t> raw_write_secret_;
 
     size_t aead_key_length_;
     size_t aead_iv_length_;
@@ -86,6 +101,8 @@ protected:
     // Cached contexts for performance
     EVPAEADCTXPtr read_aead_ctx_;
     EVPAEADCTXPtr write_aead_ctx_;
+    // RFC 9001 §6: Previous read AEAD context for Key Update fallback
+    EVPAEADCTXPtr prev_read_aead_ctx_;
     EVPCIPHERCTXPtr hp_read_ctx_;
     EVPCIPHERCTXPtr hp_write_ctx_;
 

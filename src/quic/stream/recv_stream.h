@@ -47,7 +47,7 @@ protected:
 protected:
     uint64_t final_offset_;
     // peer send data limit
-    uint32_t local_data_limit_;
+    uint64_t local_data_limit_;
     // next except data offset
     uint64_t except_offset_;
     std::shared_ptr<common::MultiBlockBuffer> buffer_;

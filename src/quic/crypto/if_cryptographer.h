@@ -46,11 +46,18 @@ public:
     virtual Result DecryptPacket(uint64_t pn, common::BufferSpan& associated_data, common::BufferSpan& ciphertext,
                              std::shared_ptr<common::IBuffer> out_plaintext) = 0;
 
+    // RFC 9001 §6: Decrypt packet using the previous read key (for reordered packets after Key Update)
+    virtual Result DecryptPacketWithPrevKey(uint64_t pn, common::BufferSpan& associated_data, common::BufferSpan& ciphertext,
+                             std::shared_ptr<common::IBuffer> out_plaintext) = 0;
+
     virtual Result EncryptPacket(uint64_t pn, common::BufferSpan& associated_data, common::BufferSpan& plaintext,
                              std::shared_ptr<common::IBuffer> out_ciphertext) = 0;
 
     virtual Result DecryptHeader(common::BufferSpan& ciphertext, common::BufferSpan& sample, uint8_t pn_offset,
                              uint8_t& out_packet_num_len, bool is_short) = 0;
+
+    // RFC 9001 §6: Check if previous read key is available (for Key Update fallback)
+    virtual bool HasPrevReadKey() const = 0;
 
     virtual Result EncryptHeader(common::BufferSpan& plaintext, common::BufferSpan& sample, uint8_t pn_offset,
                              size_t pkt_number_len, bool is_short) = 0;

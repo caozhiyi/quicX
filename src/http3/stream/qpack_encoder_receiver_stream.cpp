@@ -8,9 +8,11 @@ namespace http3 {
 
 QpackEncoderReceiverStream::QpackEncoderReceiverStream(
     const std::shared_ptr<IQuicRecvStream>& stream,
+    const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IRecvStream(StreamType::kQpackEncoder, stream, error_handler),
+    qpack_encoder_(qpack_encoder),
     blocked_registry_(blocked_registry) {
     stream_->SetStreamReadCallBack(
         std::bind(&QpackEncoderReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
@@ -50,10 +52,10 @@ void QpackEncoderReceiverStream::ParseEncoderInstructions(std::shared_ptr<IBuffe
     // - Insert Without Name Reference
     // - Duplicate
     
-    // For now, we use QpackEncoder's DecodeEncoderInstructions to parse and update dynamic table
+    // Use the connection-level shared QpackEncoder to decode encoder instructions
+    // This ensures dynamic table updates persist across invocations (RFC 9204 §4.2)
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(data);
-    QpackEncoder encoder;
-    if (!encoder.DecodeEncoderInstructions(buffer)) {
+    if (!qpack_encoder_->DecodeEncoderInstructions(buffer)) {
         common::LOG_ERROR("QpackEncoderReceiverStream: failed to decode encoder instructions on stream %llu", 
                          stream_->GetStreamID());
         return;

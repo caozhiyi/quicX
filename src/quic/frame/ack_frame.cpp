@@ -65,6 +65,15 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(ack_delay_), "failed to decode ack delay");
         uint64_t ack_range_count = 0;
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(ack_range_count), "failed to decode ack range count");
+
+        // RFC 9000: Limit ack_range_count to prevent memory exhaustion from malicious packets.
+        // A reasonable upper bound: no more than 256 ACK ranges in a single frame.
+        static constexpr uint64_t kMaxAckRangeCount = 256;
+        if (ack_range_count > kMaxAckRangeCount) {
+            common::LOG_ERROR("ack range count too large. count:%llu, max:%llu", ack_range_count, kMaxAckRangeCount);
+            return false;
+        }
+
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(first_ack_range_), "failed to decode first ack range");
 
         uint64_t gap;

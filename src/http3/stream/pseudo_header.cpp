@@ -1,4 +1,5 @@
 #include <string>
+#include "common/http/url.h"
 #include "common/log/log.h"
 #include "http3/stream/pseudo_header.h"
 
@@ -37,7 +38,17 @@ void PseudoHeader::DecodeRequest(std::shared_ptr<IRequest> request) {
     }
 
     if (headers.find(PSEUDO_HEADER_PATH) != headers.end()) {
-        request->SetPath(headers[PSEUDO_HEADER_PATH]);
+        const std::string& path_with_query = headers[PSEUDO_HEADER_PATH];
+        std::string path;
+        std::unordered_map<std::string, std::string> query_params;
+        if (common::ParsePathWithQuery(path_with_query, path, query_params)) {
+            request->SetPath(path);
+            if (!query_params.empty()) {
+                request->SetQueryParams(query_params);
+            }
+        } else {
+            request->SetPath(path_with_query);
+        }
         headers.erase(PSEUDO_HEADER_PATH);
     }
 
@@ -89,6 +100,7 @@ HttpMethod PseudoHeader::StringToMethod(const std::string& method) {
 
 const std::unordered_map<std::string, HttpMethod> PseudoHeader::kStringToMethodMap = {
     {"GET", HttpMethod::kGet},
+    {"HEAD", HttpMethod::kHead},
     {"POST", HttpMethod::kPost},
     {"PUT", HttpMethod::kPut},
     {"DELETE", HttpMethod::kDelete},
@@ -101,6 +113,7 @@ const std::unordered_map<std::string, HttpMethod> PseudoHeader::kStringToMethodM
 
 const std::unordered_map<HttpMethod, std::string> PseudoHeader::kMethodToStringMap = {
     {HttpMethod::kGet, "GET"},
+    {HttpMethod::kHead, "HEAD"},
     {HttpMethod::kPost, "POST"},
     {HttpMethod::kPut, "PUT"},
     {HttpMethod::kDelete, "DELETE"},

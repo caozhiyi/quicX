@@ -35,7 +35,7 @@ public:
     Rtt0Packet(uint8_t flag);
     virtual ~Rtt0Packet();
 
-    virtual uint16_t GetCryptoLevel() const { return PakcetCryptoLevel::kEarlyDataCryptoLevel; }
+    virtual uint16_t GetCryptoLevel() const { return PacketCryptoLevel::kEarlyDataCryptoLevel; }
     virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag = false);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer);

@@ -13,16 +13,16 @@ void ConnectionHandler::OnRead(uint32_t fd) {
         auto ret = common::Accept(fd, client_addr);
 
         // No more pending connections (EAGAIN/EWOULDBLOCK/ECONNABORTED mapped to errno_ == 0 and return_value_ == -1)
-        if (ret.return_value_ < 0 && ret.errno_ == 0) {
+        if (ret.return_value_ < 0 && ret.error_code_ == 0) {
             break;
         }
 
         // Real error
         if (ret.return_value_ < 0) {
-            if (ret.errno_ == EINTR) {
+            if (ret.error_code_ == EINTR) {
                 continue;
             }
-            common::LOG_ERROR("Failed to accept connection. errno: %d", ret.errno_);
+            common::LOG_ERROR("Failed to accept connection. errno: %d", ret.error_code_);
             break;
         }
 
@@ -30,8 +30,8 @@ void ConnectionHandler::OnRead(uint32_t fd) {
 
         // Set non-blocking
         auto noblock_ret = common::SocketNoblocking(client_fd);
-        if (noblock_ret.errno_ != 0) {
-            common::LOG_ERROR("Failed to set socket non-blocking: %d", noblock_ret.errno_);
+        if (noblock_ret.error_code_ != 0) {
+            common::LOG_ERROR("Failed to set socket non-blocking: %d", noblock_ret.error_code_);
             common::Close(client_fd);
             continue;
         }

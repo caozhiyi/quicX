@@ -17,7 +17,7 @@ public:
     VersionNegotiationPacket(uint8_t flag);
     virtual ~VersionNegotiationPacket();
 
-    virtual uint16_t GetCryptoLevel() const { return PakcetCryptoLevel::kUnknownCryptoLevel; }
+    virtual uint16_t GetCryptoLevel() const { return PacketCryptoLevel::kUnknownCryptoLevel; }
     virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag = false);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) { return true; }

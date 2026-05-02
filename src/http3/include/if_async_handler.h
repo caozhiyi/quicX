@@ -127,6 +127,56 @@ public:
      *
      */
     virtual void OnBodyChunk(const uint8_t* data, size_t length, bool is_last) = 0;
+
+    /**
+     * @brief Called when a protocol or network error occurs
+     *
+     * **IMPORTANT**: This callback is ONLY invoked for **protocol/network errors**
+     * during request processing, such as connection reset, stream abort, or frame
+     * decode errors. It is **NOT** used for application-level error responses.
+     *
+     * **When this callback IS invoked:**
+     * - Client abruptly closed the connection
+     * - QUIC stream was reset by peer
+     * - HTTP/3 frame decoding failed (malformed request data)
+     * - Connection lost during request processing
+     *
+     * **When this callback is NOT invoked:**
+     * - Application decides to return an error response (400, 500, etc.)
+     *   → Set status code in OnHeaders() using response->SetStatusCode()
+     * - Request validation fails (missing required headers, etc.)
+     *   → Set appropriate status code (400, 422, etc.) in response
+     * - Business logic error (resource not found, permission denied, etc.)
+     *   → Return corresponding HTTP status (404, 403, etc.)
+     *
+     * **After OnError() is called:**
+     * - The request processing has permanently failed at protocol level
+     * - No further callbacks will be invoked
+     * - Clean up any resources (close files, cancel operations, etc.)
+     *
+     * @param error_code Error code indicating the type of protocol/network error
+     *
+     * @example Correct error handling:
+     * @code
+     * class UploadHandler : public IAsyncServerHandler {
+     *     void OnHeaders(std::shared_ptr<IRequest> req,
+     *                   std::shared_ptr<IResponse> resp) override {
+     *         // Application-level validation
+     *         if (!req->GetHeader("content-type").starts_with("image/")) {
+     *             resp->SetStatusCode(400);  // Use HTTP status, NOT OnError
+     *             resp->SetBody("Invalid content type");
+     *             return;
+     *         }
+     *         // Start processing...
+     *     }
+     *     void OnError(uint32_t error) override {
+     *         // Protocol error - client disconnected
+     *         CleanupPartialUpload();
+     *     }
+     * };
+     * @endcode
+     */
+    virtual void OnError(uint32_t error_code) = 0;
 };
 
 /**
@@ -242,6 +292,57 @@ public:
      *
      */
     virtual void OnBodyChunk(const uint8_t* data, size_t length, bool is_last) = 0;
+
+    /**
+     * @brief Called when a protocol or network error occurs
+     *
+     * **IMPORTANT**: This callback is ONLY invoked for **protocol/network errors**,
+     * such as connection timeout, TLS handshake failure, stream reset, or frame
+     * decode errors. It is **NOT** called for HTTP status errors (400, 404, 500, etc.).
+     *
+     * **HTTP status errors (4xx, 5xx) are NOT protocol errors:**
+     * - A server returning 404 or 500 is a successful HTTP transaction
+     * - These status codes are delivered via OnHeaders() where you check GetStatusCode()
+     * - OnError() will NOT be called for HTTP status errors
+     *
+     * **When this callback IS invoked:**
+     * - Connection failed to establish (timeout, network unreachable, etc.)
+     * - TLS handshake failed (certificate error, protocol version mismatch, etc.)
+     * - QUIC stream was reset by peer
+     * - HTTP/3 frame decoding failed (malformed data)
+     * - Connection was closed unexpectedly
+     *
+     * **When this callback is NOT invoked:**
+     * - Server returned 4xx client error (400, 404, etc.) → Use OnHeaders() + GetStatusCode()
+     * - Server returned 5xx server error (500, 503, etc.) → Use OnHeaders() + GetStatusCode()
+     * - Response completed normally with any HTTP status → OnHeaders() + OnBodyChunk() called
+     *
+     * **After OnError() is called:**
+     * - No OnHeaders() or OnBodyChunk() callbacks will be invoked
+     * - The request has permanently failed
+     * - Clean up any resources (close files, free memory, etc.)
+     *
+     * @param error_code Error code indicating the type of protocol/network error
+     *                   Examples: connection timeout, TLS error, stream reset, etc.
+     *
+     * @example Correct error handling:
+     * @code
+     * class MyHandler : public IAsyncClientHandler {
+     *     void OnHeaders(std::shared_ptr<IResponse> resp) override {
+     *         int status = resp->GetStatusCode();
+     *         if (status >= 400) {
+     *             // HTTP error - handle here, NOT in OnError()
+     *             LOG("HTTP error: %d", status);
+     *         }
+     *     }
+     *     void OnError(uint32_t error) override {
+     *         // Protocol/network error - connection failed
+     *         LOG("Protocol error: %u", error);
+     *     }
+     * };
+     * @endcode
+     */
+    virtual void OnError(uint32_t error_code) = 0;
 };
 
 }  // namespace quicx

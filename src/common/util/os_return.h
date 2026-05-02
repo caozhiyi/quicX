@@ -9,7 +9,7 @@ namespace common {
 template <typename T>
 struct SysCallResult {
   T return_value_;
-  int32_t errno_;
+  int32_t error_code_;  // Renamed from errno_ to avoid conflict with POSIX errno macro
 };
 
 using SysCallInt32Result = SysCallResult<int32_t>;

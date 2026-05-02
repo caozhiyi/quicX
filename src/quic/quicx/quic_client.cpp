@@ -43,8 +43,9 @@ bool QuicClient::Init(const QuicClientConfig& config) {
     }
 
     auto tls_ctx = std::make_shared<TLSClientCtx>();
-    if (!tls_ctx->Init(config.config_.enable_0rtt_, config.config_.cipher_suites_)) {
-        common::LOG_ERROR("tls ctx init faliled.");
+    if (!tls_ctx->Init(config.config_.enable_0rtt_, config.config_.cipher_suites_,
+                       config.verify_peer_, config.ca_file_)) {
+        common::LOG_ERROR("tls ctx init failed.");
         return false;
     }
 
@@ -68,15 +69,15 @@ bool QuicClient::Init(const QuicClientConfig& config) {
 
     // client need a socket to send packet
     auto sock_ret = common::UdpSocket();
-    if (sock_ret.errno_ != 0) {
-        common::LOG_ERROR("create udp socket failed. err:%d", sock_ret.errno_);
+    if (sock_ret.error_code_ != 0) {
+        common::LOG_ERROR("create udp socket failed. err:%d", sock_ret.error_code_);
         return false;
     }
     int32_t sockfd = sock_ret.return_value_;
 
     auto nonblock_ret = common::SocketNoblocking(sockfd);
-    if (nonblock_ret.errno_ != 0) {
-        common::LOG_ERROR("set non block failed. err:%d", nonblock_ret.errno_);
+    if (nonblock_ret.error_code_ != 0) {
+        common::LOG_ERROR("set non block failed. err:%d", nonblock_ret.error_code_);
         return false;
     }
 
@@ -87,6 +88,15 @@ bool QuicClient::Init(const QuicClientConfig& config) {
     if (thread_mode_ == ThreadMode::kSingleThread) {
         auto worker = std::make_shared<ClientWorker>(
             config.config_, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
+        // Set register socket callback for connection migration
+        auto master_weak = std::weak_ptr<MasterWithThread>(master_);
+        worker->SetRegisterSocketCallback([master_weak](int32_t sockfd) -> bool {
+            auto master = master_weak.lock();
+            if (master) {
+                return master->AddListener(sockfd);
+            }
+            return false;
+        });
         master_event_loop_->RunInLoop(
             [worker, this]() { master_event_loop_->AddFixedProcess(std::bind(&ClientWorker::Process, worker)); });
 
@@ -104,6 +114,15 @@ bool QuicClient::Init(const QuicClientConfig& config) {
 
             auto worker_ptr = std::make_shared<ClientWorker>(
                 config.config_, tls_ctx, sender, params_, connection_state_cb_, worker_loop);
+            // Set register socket callback for connection migration
+            auto master_weak2 = std::weak_ptr<MasterWithThread>(master_);
+            worker_ptr->SetRegisterSocketCallback([master_weak2](int32_t sockfd) -> bool {
+                auto master = master_weak2.lock();
+                if (master) {
+                    return master->AddListener(sockfd);
+                }
+                return false;
+            });
             worker_ptr->SetConnectionIDNotify(master_);
 
             auto worker = std::make_shared<WorkerWithThread>(worker_loop, worker_ptr);

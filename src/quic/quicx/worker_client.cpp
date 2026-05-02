@@ -18,16 +18,23 @@ ClientWorker::~ClientWorker() {}
 
 void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
     const std::string& resumption_session_der, const std::string& server_name) {
-    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_,
-        std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3));
+    ConnectionCallbacks callbacks;
+    callbacks.active_connection_cb = std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1);
+    callbacks.handshake_done_cb = std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1);
+    callbacks.add_conn_id_cb = std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2);
+    callbacks.retire_conn_id_cb = std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1);
+    callbacks.connection_close_cb = std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
+            std::placeholders::_3);
+
+    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_, callbacks);
 
     // Inject Sender for direct packet transmission
     conn->SetSender(sender_);
+
+    // Set register socket callback for connection migration
+    if (register_socket_cb_) {
+        conn->SetRegisterSocketCallback(register_socket_cb_);
+    }
 
     // Set QUIC version from configuration
     conn->SetVersion(quic_version_);
@@ -79,6 +86,8 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     auto conn = conn_map_.find(cid_code);
     if (conn != conn_map_.end()) {
         common::LogTagGuard guard("conn:" + std::to_string(cid_code));
+        // update socket fd so GetLocalAddr() works for connection migration
+        conn->second->SetSocket(packet_info.net_packet_->GetSocket());
         // report observed address for path change detection
         auto& observed_addr = packet_info.net_packet_->GetAddress();
         conn->second->OnObservedPeerAddress(observed_addr);
@@ -146,13 +155,15 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     common::LOG_INFO("Reconnecting with negotiated version 0x%08x...", negotiated_version);
 
     // Create new connection with negotiated version
-    auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_,
-        std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1),
-        std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3));
+    ConnectionCallbacks vn_callbacks;
+    vn_callbacks.active_connection_cb = std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1);
+    vn_callbacks.handshake_done_cb = std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1);
+    vn_callbacks.add_conn_id_cb = std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2);
+    vn_callbacks.retire_conn_id_cb = std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1);
+    vn_callbacks.connection_close_cb = std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
+            std::placeholders::_3);
+
+    auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_, vn_callbacks);
 
     // CRITICAL: Set the negotiated version BEFORE dialing
     new_conn->SetVersion(negotiated_version);
@@ -163,6 +174,11 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
 
     // Inject Sender
     new_conn->SetSender(sender_);
+
+    // Set register socket callback for connection migration
+    if (register_socket_cb_) {
+        new_conn->SetRegisterSocketCallback(register_socket_cb_);
+    }
 
     // Enable Key Update if configured
     if (enable_key_update_) {

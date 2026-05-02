@@ -102,6 +102,7 @@ inline constexpr size_t kPacketNonceLength = 12;  // RFC 9001 §5.3: QUIC uses 1
 inline constexpr size_t kCryptoLevelCount = 4;
 
 enum CryptographerId : uint16_t {
+    kCipherIdUnknown = 0,
     kCipherIdAes128GcmSha256,
     kCipherIdAes256GcmSha384,
     kCipherIdChaCha20Poly1305Sha256,

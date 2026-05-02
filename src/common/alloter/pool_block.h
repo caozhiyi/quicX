@@ -11,7 +11,8 @@ namespace common {
 class IEventLoop;  // Forward declaration
 
 // all memory must return memory pool before destroy.
-class BlockMemoryPool {
+class BlockMemoryPool:
+    public std::enable_shared_from_this<BlockMemoryPool> {
 public:
     // bulk memory size.
     // every time add nodes num

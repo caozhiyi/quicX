@@ -11,6 +11,28 @@ namespace quicx {
 namespace common {
 
 /**
+ * @brief server_listening event data
+ *
+ * Logged when a QUIC server starts listening on a local address
+ */
+class ServerListeningData: public EventData {
+public:
+    std::string ip;
+    uint16_t port = 0;
+    std::string ip_version = "ipv4";  // "ipv4" or "ipv6"
+
+    std::string ToJson() const override {
+        std::ostringstream oss;
+        oss << "{";
+        oss << "\"ip_version\":\"" << ip_version << "\",";
+        oss << "\"ip\":\"" << ip << "\",";
+        oss << "\"port\":" << port;
+        oss << "}";
+        return oss.str();
+    }
+};
+
+/**
  * @brief connection_started event data
  */
 class ConnectionStartedData: public EventData {
@@ -75,6 +97,33 @@ public:
         oss << "{";
         oss << "\"old\":\"" << old_state << "\",";
         oss << "\"new\":\"" << new_state << "\"";
+        oss << "}";
+        return oss.str();
+    }
+};
+
+/**
+ * @brief connection_id_updated event data
+ */
+class ConnectionIdUpdatedData: public EventData {
+public:
+    std::string owner;      // "local" or "remote"
+    std::string old_id;     // Old connection ID (hex string, may be empty)
+    std::string new_id;     // New connection ID (hex string, may be empty for retire)
+    std::string trigger;    // "new_connection_id", "retire_connection_id", "retire_prior_to",
+                            // "cid_rotation", "pool_replenish"
+
+    std::string ToJson() const override {
+        std::ostringstream oss;
+        oss << "{";
+        oss << "\"owner\":\"" << owner << "\",";
+        if (!old_id.empty()) {
+            oss << "\"old\":\"" << old_id << "\",";
+        }
+        if (!new_id.empty()) {
+            oss << "\"new\":\"" << new_id << "\",";
+        }
+        oss << "\"trigger\":\"" << trigger << "\"";
         oss << "}";
         return oss.str();
     }

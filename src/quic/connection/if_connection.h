@@ -15,16 +15,22 @@
 namespace quicx {
 namespace quic {
 
-// Forward declaration
+// Forward declarations
 class ISender;
+class IConnection;
+
+// Aggregates all connection-level callbacks to reduce constructor parameter count
+struct ConnectionCallbacks {
+    std::function<void(std::shared_ptr<IConnection>)> active_connection_cb;
+    std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb;
+    std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb;
+    std::function<void(ConnectionID&)> retire_conn_id_cb;
+    std::function<void(std::shared_ptr<IConnection>, uint64_t, const std::string&)> connection_close_cb;
+};
 
 class IConnection: public IQuicConnection {
 public:
-    IConnection(std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
-        std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-        std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(ConnectionID&)> retire_conn_id_cb,
-        std::function<void(std::shared_ptr<IConnection>, uint64_t, const std::string&)> connection_close_cb);
+    IConnection(const ConnectionCallbacks& callbacks);
     virtual ~IConnection();
 
     //*************** outside interface ***************//
@@ -116,6 +122,10 @@ public:
     void SetSocket(int32_t sockfd) { sockfd_ = sockfd; }
     int32_t GetSocket() const { return sockfd_; }
 
+    // Set callback to register a new socket with the receiver (for connection migration)
+    using RegisterSocketCallback = std::function<bool(int32_t sockfd)>;
+    void SetRegisterSocketCallback(RegisterSocketCallback cb) { register_socket_cb_ = cb; }
+
 protected:
     void* user_data_;
     int32_t sockfd_;
@@ -129,6 +139,7 @@ protected:
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb_;
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb_;
     migration_callback migration_cb_;  // Migration event callback
+    RegisterSocketCallback register_socket_cb_;  // Register socket with receiver for migration
 
     stream_state_callback stream_state_cb_;
 };

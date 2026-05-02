@@ -35,6 +35,14 @@ SysCallInt32Result UdpSocket() {
     return {sock, 0};
 }
 
+SysCallInt32Result UdpSocket4() {
+    // Create an IPv4-only UDP socket (AF_INET)
+    // Used for connection migration when peer is IPv4, to avoid IPv6 dual-stack
+    // routing issues in certain network environments (e.g., Docker bridge networks)
+    int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    return {sock, sock != -1 ? 0 : errno};
+}
+
 SysCallInt32Result Close(int32_t sockfd) {
     const int32_t rc = close(sockfd);
     return {rc, rc != -1 ? 0 : errno};
@@ -146,6 +154,26 @@ SysCallInt32Result Writev(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
 }
 
 SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
+    // Determine socket address family
+    int domain = 0;
+    socklen_t domain_len = sizeof(domain);
+    if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, &domain, &domain_len) != 0) {
+        // Fallback: assume IPv6 dual-stack (original behavior)
+        domain = AF_INET6;
+    }
+
+    if (domain == AF_INET) {
+        // Pure IPv4 socket: use sockaddr_in directly
+        struct sockaddr_in addr_in;
+        memset(&addr_in, 0, sizeof(addr_in));
+        addr_in.sin_family = AF_INET;
+        addr_in.sin_port = htons(addr.GetPort());
+        inet_pton(AF_INET, addr.GetIp().c_str(), &addr_in.sin_addr);
+        const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_in, sizeof(addr_in));
+        return {rc, rc != -1 ? 0 : errno};
+    }
+
+    // AF_INET6 (dual-stack) socket
     struct sockaddr_in6 addr_in6;
     memset(&addr_in6, 0, sizeof(addr_in6));
     addr_in6.sin6_family = AF_INET6;

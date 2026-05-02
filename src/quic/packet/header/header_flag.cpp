@@ -27,7 +27,7 @@ bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBuffer> buffer) {
     // Clear buffer before encoding to ensure we write from the beginning
     buffer->Clear();
 
-    uint16_t need_size = EncodeFlagSize();
+    uint32_t need_size = EncodeFlagSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -71,7 +71,7 @@ PacketType HeaderFlag::GetPacketType() {
         case 0x03:
             return PacketType::kRetryPacketType;
         default:
-            common::LOG_ERROR("unknow packet type. type:%d", GetLongHeaderFlag().packet_type_);
+            common::LOG_ERROR("unknown packet type. type:%d", GetLongHeaderFlag().packet_type_);
             break;
     }
     return PacketType::kUnknownPacketType;

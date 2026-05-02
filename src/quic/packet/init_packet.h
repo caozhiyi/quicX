@@ -37,7 +37,7 @@ public:
     InitPacket(uint8_t flag);
     virtual ~InitPacket();
 
-    virtual uint16_t GetCryptoLevel() const { return PakcetCryptoLevel::kInitialCryptoLevel; }
+    virtual uint16_t GetCryptoLevel() const { return PacketCryptoLevel::kInitialCryptoLevel; }
     virtual bool Encode(std::shared_ptr<common::IBuffer> buffer);
     virtual bool DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag = false);
     virtual bool DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer);
@@ -47,8 +47,9 @@ public:
     virtual std::vector<std::shared_ptr<IFrame>>& GetFrames() { return frames_list_; }
 
     void SetToken(uint8_t* token, uint32_t len);
+    void SetToken(const common::SharedBufferSpan& token);
     uint32_t GetTokenLength() { return token_length_; }
-    uint8_t* GetToken() { return token_; }
+    uint8_t* GetToken() { return token_span_.Valid() ? token_span_.GetStart() : token_raw_; }
 
     void SetPayload(const common::SharedBufferSpan& payload);
     common::SharedBufferSpan GetPayload() { return payload_; }
@@ -57,7 +58,8 @@ public:
 private:
     LongHeader header_;
     uint32_t token_length_;
-    uint8_t* token_;
+    uint8_t* token_raw_;                    // Non-owning pointer (used during decode, lifetime tied to packet buffer)
+    common::SharedBufferSpan token_span_;   // Owning span (used when token is explicitly set with ownership)
 
     uint32_t length_;
     common::SharedBufferSpan payload_;

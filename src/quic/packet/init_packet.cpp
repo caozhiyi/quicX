@@ -16,7 +16,8 @@ namespace quic {
 InitPacket::InitPacket():
     payload_offset_(0),
     packet_num_offset_(0),
-    token_length_(0) {
+    token_length_(0),
+    token_raw_(nullptr) {
     header_.GetLongHeaderFlag().SetPacketType(PacketType::kInitialPacketType);
 }
 
@@ -24,7 +25,8 @@ InitPacket::InitPacket(uint8_t flag):
     header_(flag),
     payload_offset_(0),
     packet_num_offset_(0),
-    token_length_(0) {}
+    token_length_(0),
+    token_raw_(nullptr) {}
 
 InitPacket::~InitPacket() {}
 
@@ -42,7 +44,8 @@ bool InitPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // encode token
     cur_pos = common::EncodeVarint(cur_pos, end, token_length_);
     if (token_length_ > 0) {
-        std::memcpy(cur_pos, token_, token_length_);
+        uint8_t* token_ptr = token_span_.Valid() ? token_span_.GetStart() : token_raw_;
+        std::memcpy(cur_pos, token_ptr, token_length_);
         cur_pos += token_length_;
     }
 
@@ -117,7 +120,12 @@ bool InitPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
         common::LOG_ERROR("InitPacket: failed to decode token length");
         return false;
     }
-    token_ = cur_pos;
+    token_raw_ = cur_pos;
+    if (cur_pos + token_length_ > end) {
+        common::LOG_ERROR("InitPacket: token length exceeds buffer boundary. token_length:%u, remaining:%td",
+            token_length_, end - cur_pos);
+        return false;
+    }
     cur_pos += token_length_;
 
     // decode length
@@ -129,6 +137,11 @@ bool InitPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
 
     // decode cipher data
     packet_num_offset_ = cur_pos - span.GetStart();
+    if (cur_pos + length_ > end) {
+        common::LOG_ERROR("InitPacket: length field exceeds buffer boundary. length:%u, remaining:%td",
+            (uint32_t)length_, end - cur_pos);
+        return false;
+    }
     cur_pos += length_;
 
     // set src data
@@ -145,9 +158,11 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t* end = span.GetEnd();
 
     if (!crypto_grapher_) {
-        // decrypt packet number
+        // RFC 9000 Appendix A: Two-step packet number recovery
         cur_pos += packet_num_offset_;
-        cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), packet_number_);
+        uint64_t truncated_pn = 0;
+        cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), truncated_pn);
+        packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, header_.GetPacketNumberLength() * 8);
 
         // decode payload frames
         payload_ = common::SharedBufferSpan(
@@ -189,7 +204,10 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 
     header_.SetPacketNumberLength(packet_num_len);
     cur_pos += packet_num_offset_;
-    cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, packet_number_);
+    // RFC 9000 Appendix A: Two-step packet number recovery
+    uint64_t truncated_pn = 0;
+    cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, truncated_pn);
+    packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, packet_num_len * 8);
 
     // RFC 9001 §5.3: AD includes header (from first byte) up to and including the unprotected PN
     auto ad_span = common::BufferSpan(buffer_header_pos, cur_pos);
@@ -214,15 +232,21 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 
     // Set frame_type_bit based on decoded frames for ACK tracking
     for (const auto& frame : frames_list_) {
-        frame_type_bit_ |= (1 << frame->GetType());
+        frame_type_bit_ |= (1u << frame->GetType());
     }
 
     return true;
 }
 
 void InitPacket::SetToken(uint8_t* token, uint32_t len) {
-    token_ = token;
+    token_raw_ = token;
     token_length_ = len;
+}
+
+void InitPacket::SetToken(const common::SharedBufferSpan& token) {
+    token_span_ = token;
+    token_raw_ = nullptr;
+    token_length_ = token.Valid() ? token.GetLength() : 0;
 }
 
 void InitPacket::SetPayload(const common::SharedBufferSpan& payload) {

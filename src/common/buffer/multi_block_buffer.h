@@ -83,10 +83,6 @@ private:
     std::shared_ptr<BlockMemoryPool> pool_;
     std::deque<ChunkState> chunks_;  // ordered list of readable spans
     uint64_t total_data_length_ = 0;
-
-    // Wait data trigger support
-    uint32_t wait_data_required_length_{0};
-    std::function<void(std::shared_ptr<IBuffer>)> wait_data_callback_;
 };
 
 }  // namespace common

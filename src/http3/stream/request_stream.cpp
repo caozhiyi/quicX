@@ -65,6 +65,16 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     } else if (body_buffer && body_buffer->GetDataLength() > 0) {
         return SendBodyDirectly(std::dynamic_pointer_cast<common::IBuffer>(body_buffer));
     }
+
+    // No body to send (e.g. GET request): we must close the sending direction
+    // so the peer sees FIN and treats the request as complete. Without this
+    // the server (e.g. ngtcp2) will wait forever for more data on the
+    // request stream and never produce a response.
+    if (stream_) {
+        stream_->Close();
+        common::LOG_DEBUG("SendRequest: no body, sent FIN on request stream id=%llu",
+            static_cast<unsigned long long>(GetStreamID()));
+    }
     return true;
 }
 
@@ -90,9 +100,16 @@ void RequestStream::HandleHeaders() {
 
     bool has_content_length = false;
     if (headers_.find("content-length") != headers_.end()) {
-        body_length_ = std::stoul(headers_["content-length"]);
-        has_content_length = true;
-        common::LOG_DEBUG("RequestStream::HandleHeaders: content-length found: %u", body_length_);
+        try {
+            body_length_ = std::stoul(headers_["content-length"]);
+            has_content_length = true;
+            common::LOG_DEBUG("RequestStream::HandleHeaders: content-length found: %u", body_length_);
+        } catch (const std::exception& e) {
+            common::LOG_ERROR("RequestStream::HandleHeaders: invalid content-length value '%s': %s",
+                headers_["content-length"].c_str(), e.what());
+            error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+            return;
+        }
     } else {
         common::LOG_DEBUG("RequestStream::HandleHeaders: content-length NOT found");
     }
@@ -164,10 +181,9 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
             data->MoveReadPt(data_length);
         }
 
-        // CRITICAL: Notify connection that stream is complete and can be removed
-        // error_code=0 means normal completion (not an actual error)
-        if (is_last) {
-            error_handler_(GetStreamID(), 0);
+        // CRITICAL: Defer stream completion notification to avoid double-call
+        if (is_last || is_last_data_) {
+            should_notify_completion_ = true;
         }
         return;
     }
@@ -189,17 +205,26 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
         common::LOG_DEBUG("RequestStream::HandleData: calling response handler (complete)");
         response_handler_(response_, 0);
 
-        // CRITICAL: Notify connection that stream is complete and can be removed
-        // error_code=0 means normal completion (not an actual error)
-        if (is_last) {
-            error_handler_(GetStreamID(), 0);
+        // CRITICAL: Defer stream completion notification until after all frames in current batch
+        // are processed. This ensures PUSH_PROMISE frames (which come after DATA) are not ignored.
+        // The parent class will call error_handler_ after processing all frames in OnData().
+        // We need to delay notification when:
+        // 1. We received all expected data (body_length_ == received_body_length_), OR
+        // 2. We received FIN (is_last), OR
+        // 3. The stream received FIN in the batch (is_last_data_)
+        // This handles the case where DATA frame is not the last frame in the batch.
+        if (is_last || body_length_ == received_body_length_ || is_last_data_) {
+            should_notify_completion_ = true;
         }
     }
 }
 
 void RequestStream::HandleFrame(std::shared_ptr<IFrame> frame) {
+    common::LOG_DEBUG("RequestStream::HandleFrame: processing frame type=0x%x", 
+        static_cast<uint32_t>(frame->GetType()));
     switch (frame->GetType()) {
         case FrameType::kPushPromise:
+            common::LOG_DEBUG("RequestStream::HandleFrame: dispatching to HandlePushPromise");
             HandlePushPromise(frame);
             break;
         default:
@@ -228,12 +253,13 @@ void RequestStream::HandleFinWithoutData() {
     if (async_handler_) {
         // Notify the async handler that the stream has ended
         async_handler_->OnBodyChunk(nullptr, 0, true);
-        // Signal stream completion
-        error_handler_(GetStreamID(), 0);
+        // Defer stream completion notification to avoid double-call to error_handler_
+        should_notify_completion_ = true;
     } else if (response_handler_) {
         // For complete mode, call the response handler
         response_handler_(response_, 0);
-        error_handler_(GetStreamID(), 0);
+        // Defer stream completion notification to avoid double-call to error_handler_
+        should_notify_completion_ = true;
     }
 }
 

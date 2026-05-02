@@ -19,7 +19,7 @@ StreamFrame::StreamFrame(uint16_t frame_type):
 StreamFrame::~StreamFrame() {}
 
 bool StreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    uint16_t need_size = EncodeSize();
+    uint32_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_DEBUG(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -80,17 +80,22 @@ bool StreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
 }
 
 uint32_t StreamFrame::EncodeSize() {
+    // Pre-calculate frame_type with flags that Encode() will set
+    uint16_t effective_type = frame_type_;
+    if (length_ > 0) {
+        effective_type |= kLenFlag;
+    }
+
     // frame type encoded as varint
-    uint32_t size = common::GetEncodeVarintLength(frame_type_);
+    uint32_t size = common::GetEncodeVarintLength(effective_type);
     // Stream ID (always present)
     size += common::GetEncodeVarintLength(stream_id_);
     // Offset (if present) - check actual value, not flag, since flag may not be set yet
-    if (HasOffset() || offset_ > 0) {
+    if ((effective_type & kOffFlag) || offset_ > 0) {
         size += common::GetEncodeVarintLength(offset_);
     }
-    // Length (if present) - check actual value, not flag, since flag may not be set yet
-    // RFC 9000: Length field is included if length > 0
-    if (HasLength() || length_ > 0) {
+    // Length (if present) - use effective_type which has kLenFlag pre-set
+    if (effective_type & kLenFlag) {
         size += common::GetEncodeVarintLength(length_);
     }
     // Data payload

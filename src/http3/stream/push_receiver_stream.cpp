@@ -73,16 +73,19 @@ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
             common::LOG_DEBUG(
                 "PushReceiverStream: DecodeFrames returned %d, decoded %zu frames", decode_ok, frames.size());
 
-            // If no frames were decoded and buffer still has data, wait for more
-            if (!decode_ok && frames.empty()) {
-                // Could be incomplete frame, wait for more data
-                common::LOG_DEBUG("PushReceiverStream: waiting for more data to complete frame");
-                return;
-            }
-
-            // If decoding failed after getting some frames, it's an error
-            if (!decode_ok && !frames.empty()) {
-                common::LOG_ERROR("PushReceiverStream: DecodeFrames partial failure");
+            // Distinguish between incomplete frame (need more data) and actual decode error
+            if (!decode_ok) {
+                if (frames.empty() && buffer->GetDataLength() > 0) {
+                    // No frames decoded but buffer has data: could be incomplete frame header.
+                    // Only treat as "need more data" if the buffer is small enough to be a partial header.
+                    // A reasonable max frame header size is 16 bytes (type varint + length varint).
+                    if (buffer->GetDataLength() <= 16) {
+                        common::LOG_DEBUG("PushReceiverStream: waiting for more data to complete frame");
+                        return;
+                    }
+                }
+                // Decode truly failed: either partial failure or corrupt data
+                common::LOG_ERROR("PushReceiverStream: DecodeFrames failure (decoded %zu frames before error)", frames.size());
                 error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
                 return;
             }
@@ -129,8 +132,15 @@ void PushReceiverStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     common::LOG_DEBUG("decoded %zu headers", headers_.size());
 
     if (headers_.find("content-length") != headers_.end()) {
-        body_length_ = std::stoul(headers_["content-length"]);
-        common::LOG_DEBUG("found content-length=%u", body_length_);
+        try {
+            body_length_ = std::stoul(headers_["content-length"]);
+            common::LOG_DEBUG("found content-length=%u", body_length_);
+        } catch (const std::exception& e) {
+            common::LOG_ERROR("PushReceiverStream: invalid content-length value '%s': %s",
+                headers_["content-length"].c_str(), e.what());
+            error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
+            return;
+        }
     } else {
         body_length_ = 0;
         common::LOG_DEBUG("no content-length, setting to 0");

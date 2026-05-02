@@ -262,11 +262,20 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
         return MigrationResult::kFailedProbeInProgress;
     }
 
-    // 3. Pre-rotate DCID before starting migration
-    if (!cid_coordinator_.RotateRemoteConnectionID()) {
-        common::LOG_WARN("PathManager: failed to rotate DCID (no available CID from peer)");
+    // 3. Pre-rotate DCID per RFC 9000 §9.5 ("An endpoint SHOULD use a new
+    //    connection ID when it [...] initiates connection migration").
+    //    The official QUIC interop "connectionmigration" scenario validates that
+    //    the first packet after migration uses a new DCID. We rotate BEFORE sending
+    //    PATH_CHALLENGE so the new DCID is used from the first migrated packet.
+    //    Note: the server must have provided additional CIDs via NEW_CONNECTION_ID
+    //    frames (typically done at handshake completion); all such CIDs are already
+    //    registered in the server's conn_map_, so routing is not an issue.
+    bool dcid_rotated = cid_coordinator_.RotateRemoteConnectionID();
+    if (!dcid_rotated) {
+        common::LOG_WARN("PathManager: no available remote CID for migration, aborting");
         return MigrationResult::kFailedNoAvailableCID;
     }
+    common::LOG_DEBUG("PathManager: pre-rotated DCID for client-initiated migration");
 
     // 4. Create new socket bound to the specified local address
     int32_t new_socket = CreateBoundSocket(local_addr);
@@ -303,7 +312,7 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
         old_local_addr_.GetIp().c_str(), old_local_addr_.GetPort(), new_local_addr_.GetIp().c_str(),
         new_local_addr_.GetPort(), peer_addr_.GetIp().c_str(), peer_addr_.GetPort());
 
-    StartPathValidationProbeInternal(true);  // DCID already pre-rotated
+    StartPathValidationProbeInternal(dcid_rotated);  // Only skip CID rotation in OnPathResponse if actually pre-rotated
 
     return MigrationResult::kSuccess;
 }
@@ -495,24 +504,43 @@ void PathManager::CleanupMigrationState() {
 }
 
 int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_addr) {
-    // Create UDP socket
-    auto sock_ret = common::UdpSocket();
-    if (sock_ret.errno_ != 0) {
-        common::LOG_ERROR("PathManager: failed to create UDP socket: errno=%d", sock_ret.errno_);
-        return -1;
-    }
+    // Determine if peer is IPv4 or IPv6 to create matching socket type
+    bool peer_is_ipv4 = (peer_addr_.GetIp().find(':') == std::string::npos);
 
-    int32_t sockfd = sock_ret.return_value_;
+    int32_t sockfd = -1;
+    if (peer_is_ipv4) {
+        // Create IPv4-only socket to avoid IPv6 dual-stack routing issues
+        // (e.g., in Docker bridge networks that are IPv4-only)
+        auto sock_ret = common::UdpSocket4();
+        if (sock_ret.error_code_ != 0) {
+            common::LOG_ERROR("PathManager: failed to create IPv4 UDP socket: errno=%d", sock_ret.error_code_);
+            return -1;
+        }
+        sockfd = sock_ret.return_value_;
+    } else {
+        // Create IPv6 dual-stack socket for IPv6 peers
+        auto sock_ret = common::UdpSocket();
+        if (sock_ret.error_code_ != 0) {
+            common::LOG_ERROR("PathManager: failed to create UDP socket: errno=%d", sock_ret.error_code_);
+            return -1;
+        }
+        sockfd = sock_ret.return_value_;
+    }
 
     // Set non-blocking
     common::SocketNoblocking(sockfd);
 
-    // Bind to specified address
+    // Bind to specified address (for IPv4 socket, use 0.0.0.0 if address is :: or empty)
     common::Address bind_addr = local_addr;
+    if (peer_is_ipv4 && (bind_addr.GetIp() == "::" || bind_addr.GetIp().empty())) {
+        bind_addr.SetIp("0.0.0.0");
+        bind_addr.SetAddressType(common::AddressType::kIpv4);
+    }
+
     auto bind_ret = common::Bind(sockfd, bind_addr);
-        if (bind_ret.errno_ != 0) {
-        common::LOG_ERROR("PathManager: failed to bind socket to %s:%d: errno=%d", local_addr.GetIp().c_str(),
-            local_addr.GetPort(), bind_ret.errno_);
+        if (bind_ret.error_code_ != 0) {
+        common::LOG_ERROR("PathManager: failed to bind socket to %s:%d: errno=%d", bind_addr.GetIp().c_str(),
+            bind_addr.GetPort(), bind_ret.error_code_);
         common::Close(sockfd);
         return -1;
     }
@@ -522,8 +550,8 @@ int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_add
         new_local_addr_ = bind_addr;
     }
 
-    common::LOG_INFO("PathManager: created migration socket %d bound to %s:%d", sockfd, new_local_addr_.GetIp().c_str(),
-        new_local_addr_.GetPort());
+    common::LOG_INFO("PathManager: created migration socket %d bound to %s:%d (peer_is_ipv4=%d)", sockfd,
+        new_local_addr_.GetIp().c_str(), new_local_addr_.GetPort(), peer_is_ipv4);
 
     return sockfd;
 }

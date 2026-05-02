@@ -23,9 +23,9 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
         return false;
     }
     auto ret = common::SendTo(sock, (const char*)span.GetStart(), span.GetLength(), 0, pkt->GetAddress());
-    if (ret.errno_ != 0) {
+    if (ret.error_code_ != 0) {
         common::LOG_ERROR(
-            "send packet to: %s, len: %d, err: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(), ret.errno_);
+            "send packet to: %s, len: %d, err: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(), ret.error_code_);
         common::Metrics::CounterInc(common::MetricsStd::UdpSendErrors);
         return false;
     }
