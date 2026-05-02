@@ -190,6 +190,20 @@ public:
         }
     }
 
+    void OnError(uint32_t error_code) {
+        std::cerr << "[Download] Protocol/network error: " << error_code << std::endl;
+        if (file_) {
+            fclose(file_);
+            file_ = nullptr;
+        }
+        // Notify completion on error
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            completed_ = true;
+        }
+        cv_.notify_one();
+    }
+
     ~FileDownloadHandler() {
         if (file_) {
             fclose(file_);
@@ -348,7 +362,12 @@ void GetStatus(IClient* client, const std::string& url) {
 
     auto request = IRequest::Create();
 
-    client->DoRequest(url, HttpMethod::kGet, request, [](std::shared_ptr<IResponse> response, uint32_t error) {
+    // Synchronization for status request
+    std::mutex status_mutex;
+    std::condition_variable status_cv;
+    bool completed = false;
+
+    client->DoRequest(url, HttpMethod::kGet, request, [&status_mutex, &status_cv, &completed](std::shared_ptr<IResponse> response, uint32_t error) {
         if (error == 0) {
             std::cout << "[Status] Response:" << std::endl;
             std::cout << "  - Status: " << response->GetStatusCode() << std::endl;
@@ -357,10 +376,18 @@ void GetStatus(IClient* client, const std::string& url) {
         } else {
             std::cerr << "[Status] Request failed with error: " << error << std::endl;
         }
+
+        // Notify completion
+        {
+            std::lock_guard<std::mutex> lock(status_mutex);
+            completed = true;
+        }
+        status_cv.notify_one();
     });
 
     // Wait for response
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::unique_lock<std::mutex> lock(status_mutex);
+    status_cv.wait(lock, [&completed] { return completed; });
 }
 
 void PrintUsage(const char* program) {
@@ -407,7 +434,8 @@ int main(int argc, char* argv[]) {
 
     // Configure client
     Http3ClientConfig config;
-    config.quic_config_.config_.log_level_ = LogLevel::kError;
+    config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
+    config.quic_config_.config_.log_level_ = LogLevel::kDebug;
 
     if (!client->Init(config)) {
         std::cerr << "Failed to initialize client" << std::endl;

@@ -135,6 +135,13 @@ public:
             }
         }
     }
+
+    void OnError(uint32_t error_code) override {
+        std::cerr << "Upload error: protocol/network error code " << error_code << std::endl;
+        if (file_.is_open()) {
+            file_.close();
+        }
+    }
 };
 
 class FileTransferServer {

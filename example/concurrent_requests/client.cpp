@@ -315,6 +315,7 @@ int main(int argc, char* argv[]) {
     auto client = quicx::IClient::Create(settings);
 
     quicx::Http3ClientConfig config;
+    config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
     config.quic_config_.config_.worker_thread_num_ = 4;
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
     config.connection_timeout_ms_ = 0;  // 0 = no timeout, rely on idle timeout (recommended for long-running tests)
