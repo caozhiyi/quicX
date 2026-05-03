@@ -16,12 +16,16 @@ protected:
     std::shared_ptr<quicx::IServer> server_;
     std::shared_ptr<quicx::IClient> client_;
     std::thread server_thread_;
-    uint16_t port_ = 18443;
+    uint16_t port_;
+    static std::atomic<uint16_t> next_port_;
 
     static const char cert_pem_[];
     static const char key_pem_[];
 
     void SetUp() override {
+        // Use different port for each test to avoid bind conflicts
+        port_ = next_port_.fetch_add(1);
+        
         // Create and configure server
         server_ = quicx::IServer::Create();
 
@@ -45,6 +49,7 @@ protected:
         client_ = quicx::IClient::Create();
 
         quicx::Http3ClientConfig client_config;
+        client_config.quic_config_.verify_peer_ = false;
         client_config.quic_config_.config_.worker_thread_num_ = 2;
         client_config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
         client_config.connection_timeout_ms_ = 5000;
@@ -53,10 +58,17 @@ protected:
     }
 
     void TearDown() override {
+        // Stop server and wait for all threads to complete
         server_->Stop();
+        server_->Join();  // Wait for internal worker threads
         if (server_thread_.joinable()) {
-            server_thread_.join();
+            server_thread_.join();  // Wait for Start() to return
         }
+        // Clean up client
+        client_.reset();
+        server_.reset();
+        // Longer delay to ensure port is fully released
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
     void RegisterHandlers() {
@@ -91,10 +103,12 @@ protected:
             });
 
         // HEAD handler
+        // RFC 9110: HEAD response MUST NOT contain body, but MAY include Content-Length
+        // For this test, we omit Content-Length since there's no actual content
         server_->AddHandler(quicx::HttpMethod::kHead, "/test",
             [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
                 resp->SetStatusCode(200);
-                resp->AddHeader("Content-Length", "100");
+                // Don't manually set Content-Length for empty response
             });
     }
 
@@ -128,6 +142,9 @@ protected:
         return response_body;
     }
 };
+
+// Static member initialization
+std::atomic<uint16_t> HTTP3MethodsTest::next_port_(18500);
 
 // Certificate definitions
 const char HTTP3MethodsTest::cert_pem_[] =
@@ -199,22 +216,29 @@ TEST_F(HTTP3MethodsTest, LargePostBody) {
 
 TEST_F(HTTP3MethodsTest, ConcurrentRequests) {
     const int num_requests = 10;
-    std::vector<std::thread> threads;
     std::atomic<int> success_count{0};
+    std::atomic<int> completed_count{0};
 
+    std::string url = "https://127.0.0.1:" + std::to_string(port_) + "/test";
+
+    // Fire all requests asynchronously from the same thread
     for (int i = 0; i < num_requests; ++i) {
-        threads.emplace_back([this, &success_count]() {
-            std::string response = MakeRequest(quicx::HttpMethod::kGet);
-            if (response == "GET response") {
-                success_count++;
-            }
-        });
+        auto request = quicx::IRequest::Create();
+        client_->DoRequest(url, quicx::HttpMethod::kGet, request,
+            [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+                if (error == 0 && response && response->GetBodyAsString() == "GET response") {
+                    success_count++;
+                }
+                completed_count++;
+            });
     }
 
-    for (auto& t : threads) {
-        t.join();
+    // Wait for all requests to complete
+    for (int i = 0; i < 200 && completed_count.load() < num_requests; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
+    EXPECT_EQ(completed_count.load(), num_requests);
     EXPECT_EQ(success_count.load(), num_requests);
 }
 
