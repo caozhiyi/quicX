@@ -161,6 +161,14 @@ public:
     virtual body_provider GetRequestBodyProvider() const = 0;
 
     /**
+     * @brief Set the query parameters
+     *
+     * @param params The query parameters to set
+     * @note This is typically called internally when parsing the :path pseudo-header
+     */
+    virtual void SetQueryParams(const std::unordered_map<std::string, std::string>& params) = 0;
+
+    /**
      * @brief Get the query parameters
      *
      * @return The query parameters

@@ -36,6 +36,12 @@ public:
     uint32_t GetLength() const;
     BufferSpan GetSpan() const;
 
+    // Unchecked fast accessors - skip Valid() check for performance-critical paths.
+    // Caller must ensure the span is valid before using these.
+    uint8_t* GetStartUnchecked() const { return start_; }
+    uint8_t* GetEndUnchecked() const { return end_; }
+    uint32_t GetLengthUnchecked() const { return static_cast<uint32_t>(end_ - start_); }
+
 private:
     std::shared_ptr<IBufferChunk> chunk_;
     uint8_t* start_ = nullptr;

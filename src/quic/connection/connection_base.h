@@ -37,13 +37,8 @@ class BaseConnection:
     public IConnectionEventSink,
     public std::enable_shared_from_this<BaseConnection> {
 public:
-    BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled, std::shared_ptr<common::IEventLoop> loop,
-        std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
-        std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-        std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(ConnectionID&)> retire_conn_id_cb,
-        std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)>
-            connection_close_cb);
+    BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled,
+        std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks);
     // Set sender for direct packet transmission
     void SetSender(std::shared_ptr<ISender> sender) override;
 
@@ -70,6 +65,14 @@ public:
         connection_crypto_.SetVersion(version);
     }
     uint32_t GetVersion() const { return quic_version_; }
+
+    // RFC 9368 Compatible Version Negotiation: the application-preferred version.
+    // This is the version we *want* to end up using for 1-RTT; if different
+    // from |quic_version_| (which is the wire version of our initial Initial
+    // packet) we will advertise willingness to upgrade via version_information.
+    // Defaults to |quic_version_| (no upgrade desired).
+    void SetPreferredVersion(uint32_t version) { preferred_version_ = version; }
+    uint32_t GetPreferredVersion() const { return preferred_version_ ? preferred_version_ : quic_version_; }
 
     // RFC 9000 Section 6: Version Negotiation
     typedef std::function<void(uint32_t new_version)> version_negotiation_callback;
@@ -134,10 +137,23 @@ public:
     // Test-only interface to observe connection state
     ConnectionStateType GetConnectionStateForTest() const { return state_machine_.GetState(); }
 
+    // Test-only helpers for RFC 9368 Compatible Version Negotiation.
+    // Exposes internals so end-to-end CVN behaviour can be unit tested.
+    uint32_t GetQuicVersionForTest() const { return quic_version_; }
+    bool IsServerForTest() const { return is_server_; }
+    bool CompatVnCompletedForTest() const { return compat_vn_completed_; }
+    const TransportParam& GetLocalTransportParamForTest() const { return transport_param_; }
+    // DCID used to derive the currently installed Initial secret.
+    // On the client side, this is the DCID of the client's very first Initial
+    // (same as the server's ODCID). Empty string if no Initial secret installed yet.
+    const std::string& GetInitialSecretDcidForTest() const {
+        return connection_crypto_.GetInitialSecretDcid();
+    }
+
     std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_; }
 
     // Get qlog trace for this connection
-    std::shared_ptr<common::QlogTrace> GetQlogTrace() const { return qlog_trace_; }
+    std::shared_ptr<common::QlogTrace> GetQlogTrace() const override { return qlog_trace_; }
 
     // IConnectionStateListener
     virtual void OnStateToConnecting() override {}
@@ -166,6 +182,28 @@ protected:
     bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level);
 
     void OnTransportParams(TransportParam& remote_tp);
+
+    // RFC 9368 Compatible Version Negotiation helpers.
+    //
+    // BuildLocalVersionInformation:
+    //   Populate |tp| with the local endpoint's version_information TP value.
+    //   chosen_version   = quic_version_ (the version we are currently using in
+    //                      our Initial packets).
+    //   available_versions = kQuicVersions (our preference list).
+    //
+    // ValidateAndMaybeUpgradeByRemoteTP:
+    //   Called during handshake completion after receiving the remote peer's
+    //   transport parameters. Performs:
+    //     1. Consistency check on remote's chosen_version.
+    //     2. Client-side: downgrade-attack detection against server's
+    //        available_versions list.
+    //     3. Server-side: decide whether to upgrade to a compatible preferred
+    //        version based on the client's available_versions list. If so,
+    //        updates quic_version_ and re-derives Initial keys.
+    //   Returns false if a downgrade attack or protocol violation is detected;
+    //   the caller should then close the connection with VERSION_NEGOTIATION_ERROR.
+    void BuildLocalVersionInformation(TransportParam& tp) const;
+    bool ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& remote_tp);
 
 private:
     // Internal helper methods for TrySend()
@@ -295,13 +333,13 @@ protected:
 
     // Remembered remote transport params for 0-RTT session caching (RFC 9000 Section 7.4.1)
     bool has_remote_tp_ = false;
-    uint32_t remote_initial_max_data_ = 0;
-    uint32_t remote_initial_max_streams_bidi_ = 0;
-    uint32_t remote_initial_max_streams_uni_ = 0;
-    uint32_t remote_initial_max_stream_data_bidi_local_ = 0;
-    uint32_t remote_initial_max_stream_data_bidi_remote_ = 0;
-    uint32_t remote_initial_max_stream_data_uni_ = 0;
-    uint32_t remote_active_connection_id_limit_ = 0;
+    uint64_t remote_initial_max_data_ = 0;
+    uint64_t remote_initial_max_streams_bidi_ = 0;
+    uint64_t remote_initial_max_streams_uni_ = 0;
+    uint64_t remote_initial_max_stream_data_bidi_local_ = 0;
+    uint64_t remote_initial_max_stream_data_bidi_remote_ = 0;
+    uint64_t remote_initial_max_stream_data_uni_ = 0;
+    uint64_t remote_active_connection_id_limit_ = 0;
 
     // EventLoop reference for safe cleanup in destructor
     std::shared_ptr<common::IEventLoop> event_loop_;
@@ -309,7 +347,7 @@ protected:
     // Metrics: Handshake timing
     uint64_t handshake_start_time_{0};
 
-    // Sender for direct packet transmission (改动5: Sender down-shift)
+    // Sender for direct packet transmission
     std::shared_ptr<ISender> sender_;
 
     // Key Update trigger (RFC 9001 Section 6)
@@ -323,6 +361,30 @@ protected:
     uint32_t negotiated_version_ = 0;
     bool version_negotiation_needed_ = false;
     bool version_negotiation_done_ = false;  // Prevent infinite version negotiation loops
+
+    // RFC 9368 Compatible Version Negotiation state
+    //   original_version_: the version the client used in its FIRST Initial. Used
+    //                      to re-derive Initial keys if the endpoint later upgrades
+    //                      to a compatible preferred version (same DCID). Also used
+    //                      by the client for the mandatory consistency check that
+    //                      the server's chosen_version matches the version that
+    //                      actually appeared on the wire.
+    //   compat_vn_completed_: set once the local endpoint has executed the
+    //                      compatible version switch (or decided no switch is
+    //                      needed). Used to make the switch idempotent.
+    uint32_t original_version_ = 0;
+    bool compat_vn_completed_ = false;
+
+    // True on server connections (used for RFC 9368 logic that differs by role).
+    bool is_server_ = false;
+
+    // RFC 9368 §3: Application-preferred QUIC version. When this differs from
+    // |quic_version_| (the on-wire version of our current Initial packets) we
+    // advertise willingness to upgrade by including |preferred_version_| at the
+    // head of |available_versions| in the version_information TP.
+    //   0  => "no explicit preference; available_versions advertises only quic_version_".
+    // See |GetPreferredVersion()|.
+    uint32_t preferred_version_ = 0;
 };
 
 }  // namespace quic

@@ -27,6 +27,10 @@ public:
 
     bool Encode(const std::unordered_map<std::string, std::string>& headers, std::shared_ptr<common::IBuffer> buffer);
     bool Decode(const std::shared_ptr<common::IBuffer> buffer, std::unordered_map<std::string, std::string>& headers);
+    // Returns the Required Insert Count of the most recently decoded header block.
+    // RFC 9204 §4.4.1: the decoder MUST NOT emit Section Acknowledgment for header
+    // blocks with a Required Insert Count of zero (no dependency on dynamic table).
+    uint64_t GetLastDecodedRequiredInsertCount() const { return last_decoded_ric_; }
     // Set a callback used to send encoder instructions (Insert entries) on QPACK encoder stream
     void SetInstructionSender(std::function<void(const std::vector<std::pair<std::string,std::string>>&)> cb) { instruction_sender_ = std::move(cb); }
     // Optional: set a function to emit decoder stream frames (Section Ack, Stream Cancel, Insert Count Increment)
@@ -62,6 +66,7 @@ private:
     bool enable_dynamic_table_ {true};
     std::function<void(const std::vector<std::pair<std::string,std::string>>&)> instruction_sender_;
     std::function<void(uint8_t type, uint64_t value)> decoder_feedback_sender_;
+    uint64_t last_decoded_ric_ {0};
 };
 
 }

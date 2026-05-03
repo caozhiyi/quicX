@@ -14,6 +14,7 @@ StreamStateMachineSend::StreamStateMachineSend(StreamState state):
 StreamStateMachineSend::~StreamStateMachineSend() {}
 
 bool StreamStateMachineSend::OnFrame(uint16_t frame_type) {
+    StreamState old_state = state_;
     switch (state_) {
         case StreamState::kReady:
             if (StreamFrame::IsStreamFrame(frame_type)) {
@@ -21,14 +22,17 @@ bool StreamStateMachineSend::OnFrame(uint16_t frame_type) {
                 if (frame_type & StreamFrameFlag::kFinFlag) {
                     state_ = StreamState::kDataSent;
                 }
+                NotifyStateChange(old_state, state_);
                 return true;
             }
             if (frame_type == FrameType::kStreamDataBlocked) {
                 state_ = StreamState::kSend;
+                NotifyStateChange(old_state, state_);
                 return true;
             }
             if (frame_type == FrameType::kResetStream) {
                 state_ = StreamState::kResetSent;
+                NotifyStateChange(old_state, state_);
                 return true;
             }
             break;
@@ -36,17 +40,20 @@ bool StreamStateMachineSend::OnFrame(uint16_t frame_type) {
             if (StreamFrame::IsStreamFrame(frame_type)) {
                 if (frame_type & StreamFrameFlag::kFinFlag) {
                     state_ = StreamState::kDataSent;
+                    NotifyStateChange(old_state, state_);
                 }
                 return true;
             }
             if (frame_type == FrameType::kResetStream) {
                 state_ = StreamState::kResetSent;
+                NotifyStateChange(old_state, state_);
                 return true;
             }
             break;
         case StreamState::kDataSent:
             if (frame_type == FrameType::kResetStream) {
                 state_ = StreamState::kResetSent;
+                NotifyStateChange(old_state, state_);
                 return true;
             }
             break;
@@ -73,12 +80,15 @@ bool StreamStateMachineSend::CheckCanSendFrame(uint16_t frame_type) {
 }
 
 bool StreamStateMachineSend::AllAckDone() {
+    StreamState old_state = state_;
     switch (state_) {
         case StreamState::kDataSent:
             state_ = StreamState::kDataRecvd;
+            NotifyStateChange(old_state, state_);
             break;
         case StreamState::kResetSent:
             state_ = StreamState::kResetRecvd;
+            NotifyStateChange(old_state, state_);
             break;
         default:
             common::LOG_ERROR("current status not allow ack done. status:%d", state_);

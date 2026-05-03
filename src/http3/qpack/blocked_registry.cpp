@@ -42,6 +42,52 @@ void QpackBlockedRegistry::NotifyAll() {
     pending_.clear();
 }
 
+namespace {
+// Return the iterator of the pending entry with the smallest key whose
+// high 32 bits equal stream_id, or pending_.end() if none.
+template <typename Map>
+typename Map::iterator FindEarliestForStream(Map& pending, uint64_t stream_id) {
+    typename Map::iterator found = pending.end();
+    uint64_t best_key = 0;
+    bool has_best = false;
+    uint64_t hi_mask = stream_id << 32;
+    for (auto it = pending.begin(); it != pending.end(); ++it) {
+        if ((it->first >> 32) != stream_id) {
+            continue;
+        }
+        if (!has_best || it->first < best_key) {
+            best_key = it->first;
+            found = it;
+            has_best = true;
+        }
+    }
+    (void)hi_mask;
+    return found;
+}
+}  // namespace
+
+bool QpackBlockedRegistry::AckByStreamId(uint64_t stream_id) {
+    auto it = FindEarliestForStream(pending_, stream_id);
+    if (it == pending_.end()) {
+        return false;
+    }
+    auto fn = it->second;
+    pending_.erase(it);
+    if (fn) {
+        fn();
+    }
+    return true;
+}
+
+bool QpackBlockedRegistry::RemoveByStreamId(uint64_t stream_id) {
+    auto it = FindEarliestForStream(pending_, stream_id);
+    if (it == pending_.end()) {
+        return false;
+    }
+    pending_.erase(it);
+    return true;
+}
+
 }
 }
 

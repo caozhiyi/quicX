@@ -13,7 +13,7 @@ RetireConnectionIDFrame::RetireConnectionIDFrame():
 RetireConnectionIDFrame::~RetireConnectionIDFrame() {}
 
 bool RetireConnectionIDFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    uint16_t need_size = EncodeSize();
+    uint32_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);

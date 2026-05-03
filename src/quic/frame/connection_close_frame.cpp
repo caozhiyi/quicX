@@ -21,7 +21,7 @@ ConnectionCloseFrame::ConnectionCloseFrame(uint16_t frame_type):
 ConnectionCloseFrame::~ConnectionCloseFrame() {}
 
 bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    uint16_t need_size = EncodeSize();
+    uint32_t need_size = EncodeSize();
 
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR(
@@ -68,6 +68,15 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     }
 
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(reason_length), "failed to decode reason length");
+
+    // Limit reason_length to prevent memory exhaustion from malicious packets.
+    // RFC 9000 does not define a limit, but 16KB is a reasonable upper bound.
+    static constexpr uint32_t kMaxReasonLength = 16384;
+    if (reason_length > kMaxReasonLength) {
+        common::LOG_ERROR("reason length too large. length:%u, max:%u", reason_length, kMaxReasonLength);
+        return false;
+    }
+
     wrapper.Flush();
 
     if (reason_length > buffer->GetDataLength()) {

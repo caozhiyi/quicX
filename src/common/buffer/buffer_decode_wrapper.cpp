@@ -138,8 +138,13 @@ bool BufferDecodeWrapper::DecodeBytes(uint8_t*& out, uint32_t len, bool copy) {
         return true;
     }
 
-    // Slow path: always copy (no contiguous memory to point into)
-    out = new uint8_t[len];
+    // Slow path: always copy (no contiguous memory to point into).
+    // NOTE: Caller takes ownership of the allocated memory via 'out' and must delete[] it.
+    // This matches the ownership semantics of DecodeBytesCopy in the contiguous (fast) path.
+    out = new (std::nothrow) uint8_t[len];
+    if (!out) {
+        return false;
+    }
     uint32_t read = reader_.Read(reinterpret_cast<uint8_t*>(out), len);
     if (read < len) {
         delete[] out;

@@ -172,6 +172,7 @@ ThreadMetricStorage::ThreadMetricStorage() {
 }
 
 ThreadMetricStorage::~ThreadMetricStorage() {
+    is_valid_ = false;  // Mark as invalid before unregistering
     GlobalRegistry::Instance().UnregisterThread(this);
 }
 

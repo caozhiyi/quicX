@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <cstdint>
+
 #include "common/log/log.h"
 
 #include "common/metrics/metrics.h"
@@ -44,7 +47,7 @@ void SendStream::Close() {
         return;
     }
 
-    common::LOG_DEBUG("SendStream::Close: stream id:%d", stream_id_);
+    common::LOG_DEBUG("SendStream::Close: stream id:%llu", stream_id_);
     to_fin_ = true;
     if (active_send_cb_) {
         active_send_cb_(shared_from_this());
@@ -66,7 +69,7 @@ void SendStream::Reset(uint32_t error) {
     frame->SetStreamID(stream_id_);
     frame->SetFinalSize(send_data_offset_);
     frame->SetAppErrorCode(error);
-    common::LOG_DEBUG("stream send reset stream. stream id:%d, error:%d", stream_id_, error);
+    common::LOG_DEBUG("stream send reset stream. stream id:%llu, error:%u", stream_id_, error);
     frames_list_.emplace_back(frame);
     ToSend();
 
@@ -94,7 +97,7 @@ int32_t SendStream::Send(uint8_t* data, uint32_t len) {
     }
 
     if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
-        common::LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%d,", stream_id_);
+        common::LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%llu,", stream_id_);
         return -1;
     }
 
@@ -147,13 +150,13 @@ bool SendStream::Flush() {
     }
 
     if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
-        common::LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%d,", stream_id_);
+        common::LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%llu,", stream_id_);
         return false;
     }
 
     if (send_buffer_->GetDataLength() == 0) {
         common::LOG_DEBUG(
-            "stream send flush failed. stream id:%d, buffer length:%d", stream_id_, send_buffer_->GetDataLength());
+            "stream send flush failed. stream id:%llu, buffer length:%u", stream_id_, send_buffer_->GetDataLength());
         return false;
     }
 
@@ -173,7 +176,7 @@ uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
             OnStopSendingFrame(frame);
             break;
         default:
-            common::LOG_ERROR("unexcept frame on send stream. frame type:%d", frame_type);
+            common::LOG_ERROR("unexpected frame on send stream. frame type:%d", frame_type);
     }
     return 0;
 }
@@ -181,8 +184,8 @@ uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
 IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, EncryptionLevel level) {
     IStream::TrySendData(nullptr, level);
 
-    // check peer limit
-    if (peer_data_limit_ - send_data_offset_ < kStreamDataBlockedThreshold) {
+    // check peer limit (guard against unsigned underflow when send_data_offset_ > peer_data_limit_)
+    if (peer_data_limit_ > send_data_offset_ && peer_data_limit_ - send_data_offset_ < kStreamDataBlockedThreshold) {
         // Only send STREAM_DATA_BLOCKED once per limit value
         // When peer sends MAX_STREAM_DATA with new limit, blocked_at_limit_ will be less than new peer_data_limit_
         if (blocked_at_limit_ != peer_data_limit_ && send_machine_->CheckCanSendFrame(FrameType::kStreamDataBlocked)) {
@@ -191,7 +194,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             frame->SetStreamID(stream_id_);
             frame->SetMaximumData(peer_data_limit_);
             common::LOG_DEBUG(
-                "stream send data blocked. stream id:%d, peer data limit:%d", stream_id_, peer_data_limit_);
+                "stream send data blocked. stream id:%llu, peer data limit:%llu", stream_id_, peer_data_limit_);
 
             // Metrics: Stream blocked by flow control
             common::Metrics::CounterInc(common::MetricsStd::QuicStreamDataBlocked);
@@ -207,7 +210,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     }
 
     if (peer_data_limit_ <= send_data_offset_) {
-        common::LOG_DEBUG("stream send data flow control blocked. stream id:%d, peer data limit:%d, send data offset:%d", stream_id_,
+        common::LOG_DEBUG("stream send data flow control blocked. stream id:%llu, peer data limit:%llu, send data offset:%llu", stream_id_,
             peer_data_limit_, send_data_offset_);
         return TrySendResult::kFlowControlBlocked;  // Keep in active list, waiting for MAX_STREAM_DATA
     }
@@ -234,7 +237,10 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     frame->SetOffset(send_data_offset_);
     uint32_t send_size = 0;
     if (send_buffer_->GetDataLength() > 0) {
-        uint32_t stream_send_size = peer_data_limit_ - send_data_offset_;
+        // Guard against unsigned underflow: peer_data_limit_ >= send_data_offset_ is guaranteed
+        // by the check above (line 209), but use safe subtraction with uint64_t to avoid truncation
+        uint64_t stream_send_size_64 = (peer_data_limit_ > send_data_offset_) ? (peer_data_limit_ - send_data_offset_) : 0;
+        uint32_t stream_send_size = static_cast<uint32_t>(std::min(stream_send_size_64, static_cast<uint64_t>(UINT32_MAX)));
         uint32_t conn_send_size = visitor->GetLeftStreamDataSize();
         send_size = stream_send_size > conn_send_size ? conn_send_size : stream_send_size;
         send_size = send_size > 1300 ? 1300 : send_size;  // TODO: 1300 is the max length of a stream frame
@@ -336,35 +342,41 @@ void SendStream::OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     uint64_t new_limit = max_data_frame->GetMaximumData();
 
     if (new_limit <= peer_data_limit_) {
-        common::LOG_WARN("get a invalid max data stream. new limit:%d, current limit:%d", new_limit, peer_data_limit_);
+        common::LOG_WARN("get a invalid max data stream. new limit:%llu, current limit:%llu", new_limit, peer_data_limit_);
         return;
     }
 
-    uint32_t can_write_size = new_limit - peer_data_limit_;
+    // BUGFIX P1-4: Removed unused can_write_size variable that also had
+    // uint64_t → uint32_t truncation (new_limit and peer_data_limit_ are uint64_t)
     peer_data_limit_ = new_limit;
 
     if (send_buffer_->GetDataLength() > 0) {
         ToSend();
     }
-    common::LOG_DEBUG("stream recv max stream data. stream id:%d, new limit:%d", stream_id_, new_limit);
+    common::LOG_DEBUG("stream recv max stream data. stream id:%llu, new limit:%llu", stream_id_, new_limit);
 }
 
 void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
     auto stop_frame = std::dynamic_pointer_cast<StopSendingFrame>(frame);
     uint32_t err = stop_frame->GetAppErrorCode();
 
-    // RFC 9000 Section 3.5: An endpoint that receives a STOP_SENDING frame send a RESET_STREAM frame if the stream is
-    // in the "Ready" or "Send" state.
-    if (send_machine_->CheckCanSendFrame(FrameType::kResetStream)) {
-        // RFC 9000 Section 3.5: An endpoint SHOULD copy the error code from the STOP_SENDING frame to the RESET_STREAM
-        // frame it sends, but it can use any application error code.
-        Reset(err);
-    }
-
-    // TODO RFC 9000 Section 3.5: If the stream is in the "Data Sent" state, the endpoint May defer
+    // RFC 9000 Section 3.5: An endpoint that receives a STOP_SENDING frame MUST send a RESET_STREAM frame
+    // if the stream is in the "Ready" or "Send" state.
+    // RFC 9000 Section 3.5: If the stream is in the "Data Sent" state, the endpoint MAY defer
     // sending the RESET_STREAM frame until the packets containing outstanding data are acknowledged or declared lost.
-    // If any outstanding data is declared lost, the endpoint SHOULD send a RESET_STREAM frame instead of retransmitting
-    // the data.
+    //
+    // For HTTP/3 request streams: when the client has already sent FIN (Data Sent state), sending
+    // RESET_STREAM is harmful because some implementations (e.g., quic-go) interpret it as "request cancelled"
+    // and stop sending the response. We defer RESET_STREAM when in Data Sent state.
+    auto current_state = send_machine_->GetStatus();
+    if (current_state == StreamState::kReady || current_state == StreamState::kSend) {
+        // MUST send RESET_STREAM in Ready or Send state
+        // NOTE: Explicitly call SendStream::Reset (not the virtual Reset) to only reset the send direction.
+        // For BidirectionStream, the virtual Reset() would also reset the recv direction, which is wrong here.
+        SendStream::Reset(err);
+    }
+    // In Data Sent state: defer RESET_STREAM (RFC 9000 allows this)
+    // The data is already sent with FIN; peer already knows the final size.
 
     if (sended_cb_) {
         sended_cb_(0, err);

@@ -1,6 +1,7 @@
 #include "common/log/log.h"
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
+#include "common/qlog/qlog.h"
 
 #include "common/log/log_context.h"
 #include "quic/connection/connection_stream_manager.h"
@@ -11,6 +12,7 @@
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/if_frame.h"
 #include "quic/stream/bidirection_stream.h"
+#include "quic/stream/crypto_stream.h"
 #include "quic/stream/if_frame_visitor.h"
 #include "quic/stream/if_stream.h"
 #include "quic/stream/recv_stream.h"
@@ -18,6 +20,24 @@
 
 namespace quicx {
 namespace quic {
+
+namespace {
+const char* StreamStateToString(StreamState state) {
+    switch (state) {
+        case StreamState::kReady:     return "ready";
+        case StreamState::kSend:      return "send";
+        case StreamState::kDataSent:  return "data_sent";
+        case StreamState::kResetSent: return "reset_sent";
+        case StreamState::kRecv:      return "recv";
+        case StreamState::kSizeKnown: return "size_known";
+        case StreamState::kDataRead:  return "data_read";
+        case StreamState::kResetRead: return "reset_read";
+        case StreamState::kDataRecvd: return "data_recvd";
+        case StreamState::kResetRecvd:return "reset_recvd";
+        default:                      return "unknown";
+    }
+}
+}  // anonymous namespace
 
 StreamManager::StreamManager(IConnectionEventSink& event_sink, std::shared_ptr<::quicx::common::IEventLoop> event_loop,
     TransportParam& transport_param, SendManager& send_manager, StreamStateCallback stream_state_cb,
@@ -59,18 +79,24 @@ std::shared_ptr<IStream> StreamManager::MakeStreamWithFlowControl(StreamDirectio
         return nullptr;
     }
 
-    // Determine initial size
-    uint32_t init_size;
+    // Determine initial flow control limits
+    uint32_t send_size;
+    uint32_t recv_size = 0;  // 0 means same as send_size (for uni streams)
     if (type == StreamDirection::kSend) {
-        init_size = transport_param_.GetInitialMaxStreamDataUni();
-        common::LOG_DEBUG("StreamManager::MakeStreamWithFlowControl: GetInitialMaxStreamDataUni=%u", init_size);
+        send_size = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataUni());
+        common::LOG_DEBUG("StreamManager::MakeStreamWithFlowControl: GetInitialMaxStreamDataUni=%u", send_size);
     } else {
-        init_size = transport_param_.GetInitialMaxStreamDataBidiLocal();
-        common::LOG_DEBUG("StreamManager::MakeStreamWithFlowControl: GetInitialMaxStreamDataBidiLocal=%u", init_size);
+        // Bidi stream: separate send and recv limits
+        // Send limit = peer's bidi_remote (how much peer allows us to send on our-initiated bidi streams)
+        send_size = static_cast<uint32_t>(transport_param_.GetPeerInitialMaxStreamDataBidiRemote());
+        // Recv limit = our bidi_local (how much we allow peer to send on our-initiated bidi streams)
+        recv_size = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataBidiLocal());
+        common::LOG_DEBUG("StreamManager::MakeStreamWithFlowControl: bidi send_size=%u (peer bidi_remote), recv_size=%u (local bidi_local)",
+            send_size, recv_size);
     }
 
     // Create stream
-    auto new_stream = MakeStream(init_size, stream_id, type);
+    auto new_stream = MakeStream(send_size, stream_id, type, recv_size);
 
     // Metrics: Stream created
     common::Metrics::GaugeInc(common::MetricsStd::QuicStreamsActive);
@@ -125,7 +151,12 @@ void StreamManager::RetryPendingStreamRequests() {
     }
 }
 
-std::shared_ptr<IStream> StreamManager::MakeStream(uint32_t init_size, uint64_t stream_id, StreamDirection type) {
+std::shared_ptr<IStream> StreamManager::MakeStream(uint32_t send_size, uint64_t stream_id, StreamDirection type, uint32_t recv_size) {
+    // If recv_size is 0, use send_size for both (backward compatibility for uni-directional streams)
+    if (recv_size == 0) {
+        recv_size = send_size;
+    }
+
     // Create lambda wrappers to bridge stream callbacks to event interface
     // This avoids need to refactor all stream classes immediately
     auto active_send_cb = [this](std::shared_ptr<IStream> stream) { event_sink_.OnStreamDataReady(stream); };
@@ -138,19 +169,40 @@ std::shared_ptr<IStream> StreamManager::MakeStream(uint32_t init_size, uint64_t 
     std::shared_ptr<IStream> stream;
     if (type == StreamDirection::kBidi) {
         stream = std::make_shared<BidirectionStream>(
-            event_loop_, init_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
+            event_loop_, send_size, recv_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
     } else if (type == StreamDirection::kSend) {
         stream = std::make_shared<SendStream>(
-            event_loop_, init_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
+            event_loop_, send_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
     } else {
         stream = std::make_shared<RecvStream>(
-            event_loop_, init_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
+            event_loop_, recv_size, stream_id, active_send_cb, stream_close_cb, connection_close_cb);
     }
 
-    common::LOG_DEBUG("StreamManager::MakeStream: created stream %llu, type %d, init_size %u", stream_id,
-        static_cast<int>(type), init_size);
+    common::LOG_DEBUG("StreamManager::MakeStream: created stream %llu, type %d, send_size %u, recv_size %u", stream_id,
+        static_cast<int>(type), send_size, recv_size);
 
     if (stream) {
+        // Set qlog state change callback on stream state machines
+        if (qlog_trace_) {
+            auto trace = qlog_trace_;
+            auto state_change_cb = [trace](uint64_t sid, StreamState old_s, StreamState new_s) {
+                common::StreamStateUpdatedData data;
+                data.stream_id = sid;
+                data.old_state = StreamStateToString(old_s);
+                data.new_state = StreamStateToString(new_s);
+                QLOG_STREAM_STATE_UPDATED(trace, data);
+            };
+            // For send streams and bidirectional streams
+            auto send = std::dynamic_pointer_cast<SendStream>(stream);
+            if (send && send->GetSendStateMachine()) {
+                send->GetSendStateMachine()->SetStateChangeCB(state_change_cb, stream_id);
+            }
+            // For recv streams and bidirectional streams
+            auto recv = std::dynamic_pointer_cast<RecvStream>(stream);
+            if (recv && recv->GetRecvStateMachine()) {
+                recv->GetRecvStateMachine()->SetStateChangeCB(state_change_cb, stream_id);
+            }
+        }
         streams_map_[stream_id] = stream;
         common::LOG_DEBUG("StreamManager: created stream %llu (type=%d)", stream_id, static_cast<int>(type));
     }
@@ -186,7 +238,7 @@ std::shared_ptr<IStream> StreamManager::FindStream(uint64_t stream_id) {
 // ==================== Remote Stream Creation ====================
 
 std::shared_ptr<IStream> StreamManager::CreateRemoteStream(
-    uint32_t init_size, uint64_t stream_id, StreamDirection direction) {
+    uint32_t send_size, uint64_t stream_id, StreamDirection direction, uint32_t recv_size) {
     // Check if stream already exists
     if (streams_map_.find(stream_id) != streams_map_.end()) {
         common::LOG_WARN("StreamManager::CreateRemoteStream: stream %llu already exists", stream_id);
@@ -194,7 +246,7 @@ std::shared_ptr<IStream> StreamManager::CreateRemoteStream(
     }
 
     // Create the stream (flow control checks are done by caller)
-    auto stream = MakeStream(init_size, stream_id, direction);
+    auto stream = MakeStream(send_size, stream_id, direction, recv_size);
     if (stream) {
         streams_map_[stream_id] = stream;
         common::LOG_DEBUG(
@@ -292,13 +344,18 @@ bool StreamManager::BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_l
         uint64_t sid = stream->GetStreamID();
         common::LogTagGuard guard("|strm:" + std::to_string(sid));
 
-        // Encryption level filtering (from SendManager::MakePacket logic)
-        // Crypto stream (id == 0) can be sent at any level
-        // Application streams (id != 0) can only be sent at 0-RTT or 1-RTT
-        common::LOG_DEBUG("StreamManager loop: stream %llu, level %u", sid, encrypto_level);
-        if (sid != 0 && !(encrypto_level == kEarlyData || encrypto_level == kApplication)) {
-            // Current encryption level doesn't allow this stream
-            // Keep it in the active list for later encryption levels
+        // Encryption level filtering (RFC 9000 §12.4 / §12.5):
+        //  - CRYPTO frames: allowed at Initial/Handshake/Application (handled by CryptoStream per-level buffer)
+        //  - STREAM frames: only allowed at 0-RTT (kEarlyData) or 1-RTT (kApplication)
+        // The CryptoStream uses stream_id == 0, BUT a client-initiated bidi stream can ALSO have id == 0
+        // (RFC 9000 §2.1: client-initiated bidi stream ids = 0, 4, 8, ...), so we MUST differentiate
+        // by actual object type, not by stream_id.
+        bool is_crypto_stream = (std::dynamic_pointer_cast<CryptoStream>(stream) != nullptr);
+        common::LOG_DEBUG("StreamManager loop: stream %llu, level %u, is_crypto=%d", sid, encrypto_level,
+            is_crypto_stream ? 1 : 0);
+        if (!is_crypto_stream && !(encrypto_level == kEarlyData || encrypto_level == kApplication)) {
+            // STREAM frames are not allowed at Initial/Handshake encryption levels.
+            // Keep the stream in the active list so it can be sent at a later level.
             common::LOG_DEBUG("StreamManager: stream %llu deferred (encryption level %u)", sid, encrypto_level);
             has_more_data = true;
             all_flow_control_blocked = false;  // Deferred is not flow control blocked
@@ -354,6 +411,42 @@ bool StreamManager::BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_l
 void StreamManager::ClearActiveStreams() {
     common::LOG_DEBUG("StreamManager: clearing all active streams");
     active_streams_.Clear();
+}
+
+bool StreamManager::HasActiveStreamsForLevel(uint8_t level) const {
+    if (active_streams_.IsEmpty()) {
+        return false;
+    }
+
+    // For Application and EarlyData levels, any active stream qualifies
+    if (level == kApplication || level == kEarlyData) {
+        return true;
+    }
+
+    // For Initial/Handshake levels, only the CryptoStream can produce frames
+    // (CRYPTO frames). Application streams cannot send STREAM frames at these
+    // levels per RFC 9000 §12.4 / §12.5.
+    // NOTE: CryptoStream uses stream_id == 0, but a client-initiated bidi
+    // stream can ALSO have id == 0 (RFC 9000 §2.1: client bidi ids = 0,4,8,...).
+    // So we MUST differentiate by actual object type via dynamic_pointer_cast,
+    // NOT by stream_id value — otherwise a legit bidi stream 0 would cause us
+    // to wrongly schedule STREAM frames at Initial/Handshake level.
+    // Check both buffers since crypto stream may be in either one depending
+    // on timing relative to Swap().
+    const auto& read_buf = active_streams_.GetReadBuffer();
+    for (const auto& stream : read_buf) {
+        if (stream && std::dynamic_pointer_cast<CryptoStream>(stream) != nullptr) {
+            return true;
+        }
+    }
+    const auto& write_buf = active_streams_.GetWriteBuffer();
+    for (const auto& stream : write_buf) {
+        if (stream && std::dynamic_pointer_cast<CryptoStream>(stream) != nullptr) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 }  // namespace quic

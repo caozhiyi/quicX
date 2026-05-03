@@ -8,7 +8,12 @@ namespace quicx {
 namespace common {
 
 /**
- * @brief Thread-safe double buffer for concurrent producer-consumer scenarios
+ * @brief Double buffer for producer-consumer scenarios within a single thread
+ *
+ * NOTE: This class is NOT thread-safe. Both Add() and Swap() must be called
+ * from the same thread (typically the event loop thread). The "double buffer"
+ * pattern here prevents iterator invalidation when callbacks add items
+ * during iteration, not for cross-thread synchronization.
  *
  * This pattern is used to safely manage active sets in event-driven systems where:
  * - Writers add items to the write buffer during processing
@@ -19,11 +24,6 @@ namespace common {
  * - Worker's active connection set
  * - StreamManager's active stream set
  * - Any scenario where callbacks might add items during iteration
- *
- * Thread safety notes:
- * - Add() is safe to call during processing (writes to inactive buffer)
- * - Swap() should only be called from the processing thread
- * - GetReadBuffer() should only be used by the processing thread
  *
  * @tparam T Type of elements (must be hashable if using unordered_set)
  */
@@ -92,6 +92,11 @@ public:
      * @return Reference to the write buffer
      */
     std::unordered_set<T>& GetWriteBuffer() { return current_is_buffer1_ ? buffer2_ : buffer1_; }
+
+    /**
+     * @brief Get the write buffer (const version)
+     */
+    const std::unordered_set<T>& GetWriteBuffer() const { return current_is_buffer1_ ? buffer2_ : buffer1_; }
 
     /**
      * @brief Check if both buffers are empty

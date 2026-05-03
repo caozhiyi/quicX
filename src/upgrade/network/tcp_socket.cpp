@@ -12,8 +12,8 @@ TcpSocket::TcpSocket():
 
     auto result = common::TcpSocket();
 
-    if (result.errno_ != 0) {
-        common::LOG_ERROR("Failed to create socket: %d", result.errno_);
+    if (result.error_code_ != 0) {
+        common::LOG_ERROR("Failed to create socket: %d", result.error_code_);
         fd_ = -1;  // Ensure fd_ is -1 on failure
     } else {
         fd_ = result.return_value_;
@@ -41,8 +41,8 @@ int TcpSocket::Send(const std::vector<uint8_t>& data) {
     }
 
     auto result = common::Write(fd_, reinterpret_cast<const char*>(data.data()), data.size());
-    if (result.errno_ != 0) {
-        common::LOG_ERROR("Send failed: %d", result.errno_);
+    if (result.error_code_ != 0) {
+        common::LOG_ERROR("Send failed: %d", result.error_code_);
     }
     return result.return_value_;
 }
@@ -54,8 +54,8 @@ int TcpSocket::Send(const std::string& data) {
 
     auto result = common::Write(fd_, data.c_str(), data.size());
 
-    if (result.errno_ != 0) {
-        common::LOG_ERROR("Send failed: %d", result.errno_);
+    if (result.error_code_ != 0) {
+        common::LOG_ERROR("Send failed: %d", result.error_code_);
     }
     return result.return_value_;
 }
@@ -69,8 +69,8 @@ int TcpSocket::Recv(std::vector<uint8_t>& data, size_t max_size) {
     
     auto result = common::Recv(fd_, reinterpret_cast<char*>(data.data()), max_size, 0);
 
-    if (result.errno_ != 0) {
-        common::LOG_ERROR("Recv failed: %d", result.errno_);
+    if (result.error_code_ != 0) {
+        common::LOG_ERROR("Recv failed: %d", result.error_code_);
         data.clear();
         return -1;
     }
@@ -88,8 +88,8 @@ int TcpSocket::Recv(std::string& data, size_t max_size) {
     
     auto result = common::Recv(fd_, buffer.data(), max_size, 0);
 
-    if (result.errno_ != 0) {
-        common::LOG_ERROR("Recv failed: %d", result.errno_);
+    if (result.error_code_ != 0) {
+        common::LOG_ERROR("Recv failed: %d", result.error_code_);
         data.clear();
         return -1;
     }
@@ -101,8 +101,8 @@ int TcpSocket::Recv(std::string& data, size_t max_size) {
 void TcpSocket::Close() {
     if (IsValid()) {
         auto result = common::Close(fd_);
-        if (result.errno_ != 0) {
-            common::LOG_ERROR("Close failed: %d", result.errno_);
+        if (result.error_code_ != 0) {
+            common::LOG_ERROR("Close failed: %d", result.error_code_);
         }
         fd_ = -1;
     }

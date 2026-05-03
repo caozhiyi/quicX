@@ -1,5 +1,5 @@
-#ifndef QUIC_QUICX_QUIC_CLIENT
-#define QUIC_QUICX_QUIC_CLIENT
+#ifndef QUIC_QUICX_QUIC_SERVER
+#define QUIC_QUICX_QUIC_SERVER
 
 #include "quic/include/if_quic_server.h"
 #include "quic/quicx/master_with_thread.h"
@@ -20,7 +20,7 @@ public:
     // join io threads
     virtual void Join() override;
 
-    // distroy quic libary, release all resource
+    // destroy quic library, release all resource
     // all connections will be closed
     virtual void Destroy() override;
 

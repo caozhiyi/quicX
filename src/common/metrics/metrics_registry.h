@@ -57,6 +57,9 @@ public:
     std::atomic<int64_t>& GetGauge(MetricID id);
     HistogramStorage& GetHistogram(MetricID id, const std::vector<uint64_t>& buckets);
 
+    // Check if this storage is still valid (not being destructed)
+    bool IsValid() const { return is_valid_; }
+
     friend class GlobalRegistry;
 
 private:
@@ -67,6 +70,7 @@ private:
     std::vector<std::unique_ptr<std::atomic<uint64_t>>> counters_;
     std::vector<std::unique_ptr<std::atomic<int64_t>>> gauges_;
     std::vector<HistogramStorage> histograms_;
+    bool is_valid_{true};  // Set to false during destruction
 };
 
 // Get thread-local storage instance

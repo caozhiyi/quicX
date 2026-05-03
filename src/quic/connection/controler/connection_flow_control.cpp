@@ -175,7 +175,7 @@ bool ConnectionFlowControl::CheckControlPeerBidirectionStreamLimit(std::shared_p
     // This reduces latency by avoiding STREAMS_BLOCKED -> MAX_STREAMS round trip
     if (remaining < kStreamsIncreaseThreshold) {
         uint64_t old_limit = control_peer_bidirectional_stream_limit_;
-        control_peer_bidirectional_stream_limit_ += kStreamsLimitIncreaseAmount;
+        control_peer_bidirectional_stream_limit_ += kStreamsIncreaseAmount;
         auto frame = std::make_shared<MaxStreamsFrame>(FrameType::kMaxStreamsBidirectional);
         frame->SetMaximumStreams(control_peer_bidirectional_stream_limit_);
         send_frame = frame;
@@ -199,7 +199,7 @@ bool ConnectionFlowControl::CheckControlPeerUnidirectionStreamLimit(std::shared_
     // Proactive stream limit increase: when remaining streams < threshold, expand capacity
     if (remaining < kStreamsIncreaseThreshold) {
         uint64_t old_limit = control_peer_unidirectional_stream_limit_;
-        control_peer_unidirectional_stream_limit_ += kStreamsLimitIncreaseAmount;
+        control_peer_unidirectional_stream_limit_ += kStreamsIncreaseAmount;
         auto frame = std::make_shared<MaxStreamsFrame>(FrameType::kMaxStreamsUnidirectional);
         frame->SetMaximumStreams(control_peer_unidirectional_stream_limit_);
         send_frame = frame;

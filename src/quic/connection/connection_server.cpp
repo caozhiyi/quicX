@@ -2,20 +2,17 @@
 #include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_server.h"
+#include "quic/connection/error.h"
 #include "quic/frame/handshake_done_frame.h"
 #include "quic/frame/if_frame.h"
+#include "quic/frame/type.h"
 
 namespace quicx {
 namespace quic {
 
 ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
-    const std::string& alpn, std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
-    std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-    std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(ConnectionID&)> retire_conn_id_cb,
-    std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
-    BaseConnection(StreamIDGenerator::StreamStarter::kServer, false, loop, active_connection_cb, handshake_done_cb,
-        add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
+    const std::string& alpn, const ConnectionCallbacks& callbacks):
+    BaseConnection(StreamIDGenerator::StreamStarter::kServer, false, loop, callbacks),
     server_alpn_(alpn) {
     tls_connection_ = std::make_shared<TLSServerConnection>(ctx, &connection_crypto_, this);
     if (!tls_connection_->Init()) {
@@ -37,7 +34,7 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
 }
 
 ServerConnection::~ServerConnection() {
-    // 清理 qlog trace
+    // Clean up qlog trace
     if (qlog_trace_) {
         // Use connection ID hash as trace identifier
         std::string trace_id = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
@@ -70,21 +67,28 @@ void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
 
         QLOG_CONNECTION_STARTED(qlog_trace_, data);
 
+        connection_crypto_.SetQlogTrace(qlog_trace_);
         send_manager_.SetQlogTrace(qlog_trace_);
+        if (stream_manager_) {
+            stream_manager_->SetQlogTrace(qlog_trace_);
+        }
+        if (frame_processor_) {
+            frame_processor_->SetQlogTrace(qlog_trace_);
+        }
+        if (cid_coordinator_) {
+            cid_coordinator_->SetQlogTrace(qlog_trace_);
+        }
     }
 }
 
 bool ServerConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
-    state_machine_.OnHandshakeDone();
-
-    // RFC 9000 Section 4.10: Discard Initial and Handshake packet number spaces
-    recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
-    recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
-    send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
-    send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
-    common::LOG_INFO("Discarded Initial and Handshake packet number spaces per RFC 9000");
-
-    return true;
+    // RFC 9000 §19.20: "A server MUST treat receipt of a HANDSHAKE_DONE
+    // frame as a connection error of type PROTOCOL_VIOLATION."
+    common::LOG_ERROR("Server received HANDSHAKE_DONE frame from client - PROTOCOL_VIOLATION");
+    InnerConnectionClose(QuicErrorCode::kProtocolViolation,
+        static_cast<uint16_t>(FrameType::kHandshakeDone),
+        "server received HANDSHAKE_DONE frame");
+    return false;
 }
 
 bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
@@ -94,15 +98,31 @@ bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
 
 void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
     if (err != 0) {
-        common::LOG_ERROR("get crypto data failed. err:%s", err);
+        common::LOG_ERROR("get crypto data failed. err:%d", err);
         return;
     }
 
-    // TODO do not copy data
-    uint8_t data[1450] = {0};
-    uint32_t len = buffer->Read(data, 1450);
-    if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {
-        common::LOG_ERROR("process crypto data failed. err:%s", err);
+    // Pass buffer memory to BoringSSL via VisitData, then advance read pointer
+    // to consume the data. This prevents re-processing on subsequent calls.
+    uint32_t total_consumed = 0;
+    bool process_ok = true;
+    buffer->VisitData([&](uint8_t* data, uint32_t len) -> bool {
+        if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {
+            common::LOG_ERROR("process crypto data failed. err:%d", err);
+            process_ok = false;
+            return false;  // stop visiting
+        }
+        total_consumed += len;
+        return true;  // continue to next segment
+    });
+
+    // Advance read pointer to consume processed data, preventing duplicate
+    // processing on subsequent recv_cb_ invocations
+    if (total_consumed > 0) {
+        buffer->MoveReadPt(total_consumed);
+    }
+
+    if (!process_ok) {
         return;
     }
 
@@ -120,6 +140,16 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
         send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
         send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
         common::LOG_INFO("Server: Discarded Initial and Handshake packet number spaces after sending HANDSHAKE_DONE");
+
+        // Log key_discarded events for Initial and Handshake keys
+        if (qlog_trace_) {
+            common::KeyDiscardedData discard_data;
+            discard_data.key_type = "initial";
+            discard_data.trigger = "handshake_done";
+            QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
+            discard_data.key_type = "handshake";
+            QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
+        }
 
         state_machine_.OnHandshakeDone();
         // notify handshake done
@@ -171,6 +201,10 @@ void ServerConnection::SSLAlpnSelect(
             common::LOG_ERROR("client alpn[%d]: 0x%02x", i, (unsigned char)client_proto[i]);
         }
     }
+
+    // No matching ALPN found - signal failure to BoringSSL
+    *out = nullptr;
+    *outlen = 0;
 }
 
 }  // namespace quic

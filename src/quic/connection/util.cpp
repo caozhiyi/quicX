@@ -1,4 +1,3 @@
-#include <cstdlib> // for abort
 #include "common/log/log.h"
 #include "quic/frame/type.h"
 #include "quic/connection/util.h"
@@ -13,12 +12,13 @@ bool IsAckElictingPacket(uint32_t frame_type) {
 
 PacketNumberSpace CryptoLevel2PacketNumberSpace(uint16_t level) {
     switch (level) {
-    case PakcetCryptoLevel::kInitialCryptoLevel: return PacketNumberSpace::kInitialNumberSpace;
-    case PakcetCryptoLevel::kHandshakeCryptoLevel:  return PacketNumberSpace::kHandshakeNumberSpace;
-    case PakcetCryptoLevel::kEarlyDataCryptoLevel:
-    case PakcetCryptoLevel::kApplicationCryptoLevel: return PacketNumberSpace::kApplicationNumberSpace;
+    case PacketCryptoLevel::kInitialCryptoLevel: return PacketNumberSpace::kInitialNumberSpace;
+    case PacketCryptoLevel::kHandshakeCryptoLevel:  return PacketNumberSpace::kHandshakeNumberSpace;
+    case PacketCryptoLevel::kEarlyDataCryptoLevel:
+    case PacketCryptoLevel::kApplicationCryptoLevel: return PacketNumberSpace::kApplicationNumberSpace;
     default:
-        abort(); // TODO
+        common::LOG_ERROR("unknown crypto level: %d", level);
+        return PacketNumberSpace::kInitialNumberSpace;  // safe fallback
     }
 }
 

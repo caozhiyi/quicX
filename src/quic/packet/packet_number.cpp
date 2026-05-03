@@ -8,7 +8,7 @@ PacketNumber::PacketNumber() {
     memset(cur_packet_number_, 0, sizeof(cur_packet_number_));
 }
 
-uint64_t PacketNumber::NextPakcetNumber(PacketNumberSpace space) {
+uint64_t PacketNumber::NextPacketNumber(PacketNumberSpace space) {
     return ++cur_packet_number_[space];
 }
 
@@ -44,9 +44,9 @@ uint8_t* PacketNumber::Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t
     return pos;
 }
 
-uint8_t* PacketNumber::Decode(uint8_t* pos, uint32_t packet_number_len, uint64_t& pakcet_number) {
+uint8_t* PacketNumber::Decode(uint8_t* pos, uint32_t packet_number_len, uint64_t& packet_number) {
     for (int i = 0; i < packet_number_len; i++) {
-        pakcet_number = ((pakcet_number) << 8u) + (*pos);
+        packet_number = ((packet_number) << 8u) + (*pos);
         pos++;
     }
     return pos;
@@ -61,11 +61,13 @@ uint64_t PacketNumber::Decode(uint64_t largest_pn, uint64_t truncated_pn, uint64
     uint64_t candidate_pn = (expected_pn & ~pn_mask) | truncated_pn;
 
     static const uint64_t s_max_number = (uint64_t)1 << 62;
-    if (candidate_pn <= expected_pn - pn_hwin && candidate_pn < (s_max_number - pn_win)) {
+    // Use safe comparisons to avoid unsigned integer underflow
+    // when expected_pn < pn_hwin (RFC 9000 Appendix A uses signed arithmetic)
+    if (candidate_pn + pn_hwin <= expected_pn && candidate_pn < (s_max_number - pn_win)) {
         return candidate_pn + pn_win;
     }
 
-    if (candidate_pn > expected_pn + pn_hwin && candidate_pn > pn_win) {
+    if (candidate_pn > expected_pn + pn_hwin && candidate_pn >= pn_win) {
         return candidate_pn - pn_win;
     }
 

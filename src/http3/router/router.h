@@ -23,7 +23,7 @@ public:
     virtual MatchResult Match(HttpMethod method, const std::string& path);
 
 private:
-    std::unordered_map<HttpMethod, std::shared_ptr<IRouterNode>> router_map_; // mothed type => router node
+    std::unordered_map<HttpMethod, std::shared_ptr<IRouterNode>> router_map_; // method type => router node
 };
 
 

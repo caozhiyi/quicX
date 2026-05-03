@@ -124,7 +124,7 @@ int EventLoop::Wait() {
 
 bool EventLoop::RegisterFd(uint32_t fd, int32_t events, std::shared_ptr<IFdHandler> handler) {
     AssertInLoopThread();
-    fd_to_handler_[fd] = handler;
+    // Validate before storing to avoid residual entries on failure
     if (!handler) {
         LOG_ERROR("Handler is null for fd %d", fd);
         return false;
@@ -133,7 +133,12 @@ bool EventLoop::RegisterFd(uint32_t fd, int32_t events, std::shared_ptr<IFdHandl
         LOG_ERROR("Event loop driver is not initialized for fd %d", fd);
         return false;
     }
-    return driver_->AddFd(fd, events);
+    if (!driver_->AddFd(fd, events)) {
+        LOG_ERROR("Failed to add fd %d to event driver", fd);
+        return false;
+    }
+    fd_to_handler_[fd] = handler;
+    return true;
 }
 
 bool EventLoop::ModifyFd(uint32_t fd, int32_t events) {

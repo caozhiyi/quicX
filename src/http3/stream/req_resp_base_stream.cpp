@@ -1,12 +1,14 @@
 #include "common/buffer/multi_block_buffer.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
+#include "common/qlog/qlog.h"
 
 #include "quic/quicx/global_resource.h"
 
 #include "http3/config.h"
 #include "http3/frame/data_frame.h"
 #include "http3/frame/headers_frame.h"
+#include "http3/frame/type.h"
 #include "http3/http/error.h"
 #include "http3/qpack/blocked_registry.h"
 #include "http3/stream/req_resp_base_stream.h"
@@ -34,6 +36,13 @@ ReqRespBaseStream::~ReqRespBaseStream() {
     // Do NOT call Close() here - it should have been called after sending the
     // last frame Calling Close() in destructor may cause issues if the stream is
     // already closed or if the stream state is not suitable for closing
+}
+
+void ReqRespBaseStream::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
+    qlog_trace_ = trace;
+    // Propagate to frame decoder for http3:frame_parsed events
+    frame_decoder_.SetQlogTrace(trace);
+    frame_decoder_.SetStreamId(GetStreamID());
 }
 
 void ReqRespBaseStream::Init() {
@@ -70,6 +79,14 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
             common::LOG_DEBUG("ReqRespBaseStream::OnData: FIN with empty buffer, notifying end");
             HandleFinWithoutData();
         }
+        // Check if we need to notify completion
+        if (should_notify_completion_) {
+            common::LOG_DEBUG("ReqRespBaseStream::OnData: notifying stream completion after empty data");
+            if (error_handler_) {
+                error_handler_(GetStreamID(), 0);
+            }
+            should_notify_completion_ = false;
+        }
         return;
     }
 
@@ -83,9 +100,13 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
 
     } else {
         // RFC 9114: Only the LAST frame in this batch should be marked is_last
+        common::LOG_DEBUG("ReqRespBaseStream::OnData: processing %zu frames, is_last_data=%d", 
+            frames.size(), is_last_data_);
         for (size_t i = 0; i < frames.size(); i++) {
             // Only mark the last frame as is_last if we received FIN
             current_frame_is_last_ = is_last_data_ && (i == frames.size() - 1);
+            common::LOG_DEBUG("ReqRespBaseStream::OnData: processing frame %zu/%zu, type=0x%x, is_last=%d", 
+                i+1, frames.size(), static_cast<uint32_t>(frames[i]->GetType()), current_frame_is_last_);
             HandleFrame(frames[i]);
         }
 
@@ -94,6 +115,16 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
         if (is_last_data_ && frames.empty()) {
             common::LOG_DEBUG("ReqRespBaseStream::OnData: FIN received but no frames decoded");
             HandleFinWithoutData();
+        }
+
+        // Process all frames first (including PUSH_PROMISE), then notify stream completion
+        // This ensures PUSH_PROMISE frames are not ignored due to early stream cleanup
+        if (should_notify_completion_) {
+            common::LOG_DEBUG("ReqRespBaseStream::OnData: notifying stream completion after processing all frames");
+            if (error_handler_) {
+                error_handler_(GetStreamID(), 0);
+            }
+            should_notify_completion_ = false;
         }
     }
 }
@@ -124,8 +155,10 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         blocked_registry_->Add(header_block_key_, [this, encoded_fields]() {
             std::unordered_map<std::string, std::string> tmp;
             if (qpack_encoder_->Decode(encoded_fields, tmp)) {
-                // emit Section Ack
-                qpack_encoder_->EmitDecoderFeedback(0x00, header_block_key_);
+                // RFC 9204 §4.4.1: Only emit Section Ack when RIC > 0.
+                if (qpack_encoder_->GetLastDecodedRequiredInsertCount() > 0) {
+                    qpack_encoder_->EmitDecoderFeedback(0x00, header_block_key_);
+                }
 
                 HandleHeaders();
             }
@@ -133,8 +166,14 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         common::LOG_DEBUG("blocked header block key: %llu", header_block_key_);
         return;
     }
-    // emit Section Ack
-    qpack_encoder_->EmitDecoderFeedback(0x00, header_block_key_);
+    // RFC 9204 §4.4.1: The decoder MUST NOT emit Section Acknowledgment for
+    // header blocks that were processed without a dependency on the dynamic
+    // table (i.e., with a Required Insert Count of 0). Emitting one causes
+    // the peer to raise QPACK_DECODER_STREAM_ERROR because its encoder does
+    // not track streams that only use static-table references.
+    if (qpack_encoder_->GetLastDecodedRequiredInsertCount() > 0) {
+        qpack_encoder_->EmitDecoderFeedback(0x00, header_block_key_);
+    }
 
     HandleHeaders();
 }
@@ -246,6 +285,15 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
             return false;
         }
 
+        // Log http3:frame_created event for each DATA frame
+        {
+            common::Http3FrameCreatedData created_data;
+            created_data.frame_type = static_cast<uint16_t>(FrameType::kData);
+            created_data.stream_id = GetStreamID();
+            created_data.length = chunk_size;
+            QLOG_HTTP3_FRAME_CREATED(qlog_trace_, created_data);
+        }
+
         total_sent += chunk_size;
     }
 
@@ -291,6 +339,16 @@ bool ReqRespBaseStream::SendHeaders(const std::unordered_map<std::string, std::s
         }
         return false;
     }
+
+    // Log http3:frame_created event
+    {
+        common::Http3FrameCreatedData created_data;
+        created_data.frame_type = static_cast<uint16_t>(FrameType::kHeaders);
+        created_data.stream_id = GetStreamID();
+        created_data.length = frame_buffer->GetDataLength();
+        QLOG_HTTP3_FRAME_CREATED(qlog_trace_, created_data);
+    }
+
     return true;
 }
 
@@ -299,6 +357,23 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
         // H3_NO_ERROR (0x100 = 256) indicates graceful stream closure, not a real error
         if (error == static_cast<uint32_t>(Http3ErrorCode::kNoError)) {
             common::LOG_DEBUG("ReqRespBaseStream::HandleSent: stream closed gracefully (H3_NO_ERROR)");
+            // For request streams (client side), H3_NO_ERROR from STOP_SENDING means
+            // the server received our request and doesn't need more data. This is normal.
+            // We should NOT trigger error_handler_ here because:
+            // 1. The receive direction is still active (waiting for response data)
+            // 2. Calling error_handler_ would trigger ScheduleStreamRemoval, destroying
+            //    the stream while response data is still being received.
+            // The stream will be properly cleaned up when the response is fully received
+            // (HandleData with is_last=true, or HandleFinWithoutData).
+            if (!ShouldSignalCompletionAfterSend()) {
+                // Request stream: ignore H3_NO_ERROR from STOP_SENDING
+                return;
+            }
+            // Response stream: signal completion (server sent response, got STOP_SENDING back)
+            if (error_handler_) {
+                error_handler_(GetStreamID(), error);
+            }
+            return;
         } else {
             common::LOG_ERROR("ReqRespBaseStream::HandleSent error: %d", error);
         }
@@ -425,6 +500,15 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
             return;
         }
         common::LOG_DEBUG("SendBodyWithProvider: flushed batch of %zu bytes", total_bytes_this_batch);
+
+        // Log http3:frame_created event for batch DATA frame
+        {
+            common::Http3FrameCreatedData created_data;
+            created_data.frame_type = static_cast<uint16_t>(FrameType::kData);
+            created_data.stream_id = GetStreamID();
+            created_data.length = total_bytes_this_batch;
+            QLOG_HTTP3_FRAME_CREATED(qlog_trace_, created_data);
+        }
     }
 }
 

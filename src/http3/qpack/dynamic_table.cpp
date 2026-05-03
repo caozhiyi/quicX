@@ -3,7 +3,7 @@
 namespace quicx {
 namespace http3 {
 
-DynamicTable::DynamicTable(uint32_t max_size) : max_size_(max_size), current_size_(0) {
+DynamicTable::DynamicTable(uint32_t max_size) : max_size_(max_size), current_size_(0), total_insert_count_(0) {
 
 }
 
@@ -13,8 +13,6 @@ DynamicTable::~DynamicTable() {
 
 bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& value) {
     // Allow duplicate entries per QPACK (Duplicate instruction). Do not de-duplicate by name/value.
-    auto item_key = std::make_pair(name, value);
-    
     uint32_t entry_size = CalculateEntrySize(name, value);
     
     // Check if new entry would exceed max size
@@ -27,17 +25,19 @@ bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& val
         EvictEntries();
     }
 
-    // Add new entry at front (newest)
+    // Incremental index update: shift all existing indices by +1
+    // since we push_front and indices are relative positions in deque
+    for (auto& kv : headeritem_index_map_) {
+        kv.second += 1;
+    }
+
+    // Add new entry at front (newest) with index 0
     headeritem_deque_.push_front(HeaderItem(name, value));
     current_size_ += entry_size;
+    total_insert_count_++;
 
-    // Update index mapping (maps unique name/value to a representative index).
-    // Note: With duplicates present, the map will point to the most recent index encountered in the loop.
-    headeritem_index_map_.clear();
-    for (uint32_t i = 0; i < headeritem_deque_.size(); i++) {
-        const HeaderItem& item = headeritem_deque_[i];
-        headeritem_index_map_[{item.name_, item.value_}] = i;
-    }
+    // Insert (or update) the new entry's index to 0
+    headeritem_index_map_[{name, value}] = 0;
 
     return true;
 }
@@ -57,6 +57,37 @@ int32_t DynamicTable::FindHeaderItemIndex(const std::string& name, const std::st
     return -1;
 }
 
+HeaderItem* DynamicTable::FindHeaderItemByAbsoluteIndex(uint64_t absolute_index) {
+    // BUGFIX P1-1: Correct absolute-to-deque conversion.
+    // absolute_index = total_insert_count_ - 1 - deque_position  (at insertion time)
+    // But after evictions, the deque shrinks from the back.
+    // evicted_count = total_insert_count_ - deque.size()
+    // deque_position = absolute_index - evicted_count
+    //                = absolute_index - (total_insert_count_ - deque.size())
+    uint64_t evicted_count = total_insert_count_ - headeritem_deque_.size();
+    if (absolute_index < evicted_count) {
+        return nullptr;  // Entry was evicted
+    }
+    // deque_position: newest entry has the highest absolute index and deque position 0
+    // absolute_index of front (newest) = total_insert_count_ - 1
+    // absolute_index of back (oldest)  = evicted_count
+    // deque_position = (total_insert_count_ - 1) - absolute_index
+    uint64_t deque_pos = (total_insert_count_ - 1) - absolute_index;
+    if (deque_pos >= headeritem_deque_.size()) {
+        return nullptr;
+    }
+    return &headeritem_deque_[static_cast<size_t>(deque_pos)];
+}
+
+int64_t DynamicTable::FindAbsoluteIndex(const std::string& name, const std::string& value) {
+    int32_t deque_pos = FindHeaderItemIndex(name, value);
+    if (deque_pos < 0) {
+        return -1;
+    }
+    // absolute_index = total_insert_count_ - 1 - deque_position
+    return static_cast<int64_t>(total_insert_count_) - 1 - deque_pos;
+}
+
 int32_t DynamicTable::FindHeaderNameIndex(const std::string& name) {
     for (uint32_t i = 0; i < headeritem_deque_.size(); ++i) {
         if (headeritem_deque_[i].name_ == name) return static_cast<int32_t>(i);
@@ -64,22 +95,32 @@ int32_t DynamicTable::FindHeaderNameIndex(const std::string& name) {
     return -1;
 }
 
+int64_t DynamicTable::FindAbsoluteNameIndex(const std::string& name) {
+    int32_t deque_pos = FindHeaderNameIndex(name);
+    if (deque_pos < 0) {
+        return -1;
+    }
+    return static_cast<int64_t>(total_insert_count_) - 1 - deque_pos;
+}
+
 void DynamicTable::EvictEntries() {
     if (headeritem_deque_.empty()) {
         return;
     }
 
-    // Remove oldest entry
+    // Remove oldest entry (back of deque)
     const HeaderItem& item = headeritem_deque_.back();
+    uint32_t evicted_index = static_cast<uint32_t>(headeritem_deque_.size() - 1);
+
+    // Incremental index update: only remove the evicted entry from the map
+    // if the map entry points to the evicted index (it could point to a newer duplicate)
+    auto it = headeritem_index_map_.find({item.name_, item.value_});
+    if (it != headeritem_index_map_.end() && it->second == evicted_index) {
+        headeritem_index_map_.erase(it);
+    }
+
     current_size_ -= CalculateEntrySize(item.name_, item.value_);
     headeritem_deque_.pop_back();
-
-    // Update index mapping
-    headeritem_index_map_.clear();
-    for (uint32_t i = 0; i < headeritem_deque_.size(); i++) {
-        const HeaderItem& item2 = headeritem_deque_[i];
-        headeritem_index_map_[{item2.name_, item2.value_}] = i;
-    }
 }
 
 void DynamicTable::UpdateMaxTableSize(uint32_t new_size) {
@@ -107,11 +148,13 @@ bool DynamicTable::DuplicateEntry(uint32_t absolute_index) {
         return false; // Invalid index
     }
     
-    // Get the entry to duplicate
-    const HeaderItem& original = headeritem_deque_[absolute_index];
+    // Copy name and value BEFORE calling AddHeaderItem, because AddHeaderItem
+    // may call EvictEntries which could pop_back the entry we're referencing,
+    // causing a dangling reference.
+    std::string name = headeritem_deque_[absolute_index].name_;
+    std::string value = headeritem_deque_[absolute_index].value_;
     
-    // Add a copy of the entry (uses AddHeaderItem internally)
-    return AddHeaderItem(original.name_, original.value_);
+    return AddHeaderItem(name, value);
 }
 
 uint32_t DynamicTable::CalculateEntrySize(const std::string& name, const std::string& value) {

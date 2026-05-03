@@ -183,8 +183,8 @@ EncryptionLevel TLSConnection::AdapterEncryptionLevel(ssl_encryption_level_t lev
         case ssl_encryption_application:
             return kApplication;
         default:
-            common::LOG_ERROR("unknow encryption level. level:%d", level);
-            abort();
+            common::LOG_ERROR("unknown encryption level. level:%d", level);
+            return kInitial;  // safe fallback
     }
 }
 

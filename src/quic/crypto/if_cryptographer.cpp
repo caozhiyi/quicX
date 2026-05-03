@@ -24,8 +24,8 @@ CryptographerId ICryptographer::AdapterCryptographerType(uint32_t cipher_id) {
     case TLS1_CK_AES_256_GCM_SHA384: return kCipherIdAes256GcmSha384;
     case TLS1_CK_CHACHA20_POLY1305_SHA256: return kCipherIdChaCha20Poly1305Sha256;
     default:
-        common::LOG_ERROR("unknow cipher. id:%d", cipher_id);
-        abort();
+        common::LOG_ERROR("unknown cipher. id:%d", cipher_id);
+        return kCipherIdUnknown;
     }
 }
 

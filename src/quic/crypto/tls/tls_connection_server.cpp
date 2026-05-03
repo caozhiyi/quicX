@@ -1,3 +1,4 @@
+#include <openssl/err.h>
 #include <openssl/ssl.h>
 
 #include "common/log/log.h"
@@ -58,7 +59,13 @@ bool TLSServerConnection::DoHandleShake() {
 
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err = SSL_error_description(ssl_err);
-            common::LOG_ERROR("SSL_do_handshake failed. err:%s", err);
+            common::LOG_ERROR("SSL_do_handshake failed. ssl_err:%d, desc:%s", ssl_err, err ? err : "null");
+            unsigned long err_code;
+            while ((err_code = ERR_get_error()) != 0) {
+                char output[256];
+                ERR_error_string_n(err_code, output, sizeof(output));
+                common::LOG_ERROR("OpenSSL Error: %s", output);
+            }
         }
         return false;
     }
@@ -73,8 +80,13 @@ bool TLSServerConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
     
     if (ctx_->GetEnableEarlyData()) {
         // For BoringSSL QUIC, the server must configure an early data context to allow 0-RTT on future resumptions.
-        // Use a fixed context string. It must remain consistent across resumptions to accept early data.
-        SSL_set_quic_early_data_context(ssl_.get(), tp, len);
+        // IMPORTANT: The context MUST remain identical across connections for BoringSSL to accept 0-RTT.
+        // Previously we passed the full transport parameters (tp, len) here, but those include
+        // original_destination_connection_id_ which is unique per connection, causing BoringSSL
+        // to reject 0-RTT on resumed connections (context mismatch).
+        // Fix: Use a fixed context string that stays consistent across all connections.
+        static const uint8_t kEarlyDataContext[] = "quicx-0rtt-v1";
+        SSL_set_quic_early_data_context(ssl_.get(), kEarlyDataContext, sizeof(kEarlyDataContext) - 1);
     }
     return true;
 }
@@ -83,14 +95,16 @@ int TLSServerConnection::SSLAlpnSelect(SSL* ssl, const unsigned char **out, unsi
     const unsigned char *in, unsigned int inlen, void *arg) {
     TLSServerConnection* conn = (TLSServerConnection*)SSL_get_app_data(ssl);
     
-    // Store original values to detect if handler set them
-    const unsigned char *original_out = *out;
-    unsigned char original_outlen = *outlen;
+    // Initialize to known sentinel values before calling the handler.
+    // The previous code compared against *out/*outlen's original values,
+    // but those are uninitialized from BoringSSL, causing undefined behavior.
+    *out = nullptr;
+    *outlen = 0;
     
     conn->ser_handler_->SSLAlpnSelect(out, outlen, in, inlen, arg);
 
     // Check if the handler successfully selected an ALPN
-    if (*out != original_out || *outlen != original_outlen) {
+    if (*out != nullptr && *outlen > 0) {
         // ALPN was selected
         return SSL_TLSEXT_ERR_OK;
     } else {

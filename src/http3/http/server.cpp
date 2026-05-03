@@ -85,7 +85,7 @@ void Server::AddHandler(HttpMethod method, const std::string& path, std::shared_
     router_->AddRoute(method, path, config);
 }
 
-void Server::AddMiddleware(HttpMethod mothed, MiddlewarePosition mp, const http_handler& handler) {
+void Server::AddMiddleware(HttpMethod method, MiddlewarePosition mp, const http_handler& handler) {
     if (mp == MiddlewarePosition::kBefore) {
         before_middlewares_.push_back(handler);
     } else {

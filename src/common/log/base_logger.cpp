@@ -43,7 +43,15 @@ static uint32_t FormatLog(
     // format level time and file name
     curlen += FormatLog(file, line, level, buf, len);
 
-    curlen += vsnprintf(buf + curlen, len - curlen, content, list);
+    int ret = vsnprintf(buf + curlen, len - curlen, content, list);
+    // vsnprintf returns the number of chars that would have been written (excluding null terminator).
+    // If ret < 0 (encoding error) or ret >= remaining space, clamp to available space.
+    if (ret < 0) {
+        ret = 0;
+    } else if (static_cast<uint32_t>(ret) > len - curlen) {
+        ret = static_cast<int>(len - curlen);
+    }
+    curlen += static_cast<uint32_t>(ret);
 
     return curlen;
 }
@@ -152,27 +160,30 @@ LogStreamParam BaseLogger::GetStreamParam(LogLevel level, const char* file, uint
 
     std::shared_ptr<Log> log = GetLog();
     std::function<void(std::shared_ptr<Log>)> cb;
+    // Capture logger_ shared_ptr instead of raw this to avoid use-after-free
+    // when lambda outlives BaseLogger instance (e.g., during static destruction)
+    auto logger = logger_;
     switch (level) {
         case LogLevel::kNull:
             break;
         case LogLevel::kFatal:
-            cb = [this](std::shared_ptr<Log> l) { logger_->Fatal(l); };
+            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Fatal(l); };
             log->len_ = FormatLog(file, line, "FAT", log->log_, log->len_);
             break;
         case LogLevel::kError:
-            cb = [this](std::shared_ptr<Log> l) { logger_->Error(l); };
+            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Error(l); };
             log->len_ = FormatLog(file, line, "ERR", log->log_, log->len_);
             break;
         case LogLevel::kWarn:
-            cb = [this](std::shared_ptr<Log> l) { logger_->Warn(l); };
+            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Warn(l); };
             log->len_ = FormatLog(file, line, "WAR", log->log_, log->len_);
             break;
         case LogLevel::kInfo:
-            cb = [this](std::shared_ptr<Log> l) { logger_->Info(l); };
+            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Info(l); };
             log->len_ = FormatLog(file, line, "INF", log->log_, log->len_);
             break;
         case LogLevel::kDebug:
-            cb = [this](std::shared_ptr<Log> l) { logger_->Debug(l); };
+            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Debug(l); };
             log->len_ = FormatLog(file, line, "DEB", log->log_, log->len_);
             break;
         default:

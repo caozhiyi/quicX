@@ -10,7 +10,8 @@ namespace quic {
 
 class BidirectionStream: public virtual SendStream, public virtual RecvStream, public virtual IQuicBidirectionStream {
 public:
-    BidirectionStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
+    BidirectionStream(std::shared_ptr<common::IEventLoop> loop, uint64_t send_data_limit, uint64_t recv_data_limit,
+        uint64_t id,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);

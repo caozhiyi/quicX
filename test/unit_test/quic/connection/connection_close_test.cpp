@@ -84,14 +84,14 @@ static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>,
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
+    client_ctx->Init(false, "", false);  // disable early data, default ciphers, skip peer verify (self-signed cert)
 
     auto event_loop = common::MakeEventLoop();
     if (!event_loop->Init()) {
         // Return empty tuple if initialization fails
         return std::make_tuple(nullptr, nullptr, nullptr, nullptr);
     }
-    auto client = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client = std::make_shared<ClientConnection>(client_ctx, event_loop);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -99,7 +99,7 @@ static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>,
 
     client->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-    auto server = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3");
     server->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
     // Attach MockSenders
@@ -468,11 +468,11 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
 // Test 8: Connection close during handshake should not crash
 TEST_F(ConnectionCloseTest, CloseDuringHandshake) {
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
+    client_ctx->Init(false, "", false);  // disable early data, default ciphers, skip peer verify (self-signed cert)
 
     auto event_loop = common::MakeEventLoop();
     EXPECT_TRUE(event_loop->Init());
-    auto client = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client = std::make_shared<ClientConnection>(client_ctx, event_loop);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");

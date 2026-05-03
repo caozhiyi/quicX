@@ -58,7 +58,8 @@ void PoolAlloter::Free(void* &data, uint32_t len) {
         return;
     }
     
-    if (len > kDefaultMaxBytes) {
+    // len=0 would cause FreeListIndex underflow (UINT32_MAX), fallback to normal allocator
+    if (len == 0 || len > kDefaultMaxBytes) {
         alloter_->Free(data);
         data = nullptr;
         return;
@@ -126,10 +127,13 @@ void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
     if (left_bytes > 0) {
         MemNode* my_free = free_list_[FreeListIndex(left_bytes)];
         ((MemNode*)pool_start_)->next_ = my_free;
-        free_list_[FreeListIndex(size)] = (MemNode*)pool_start_;
+        free_list_[FreeListIndex(left_bytes)] = (MemNode*)pool_start_;
     }
 
     pool_start_ = (uint8_t*)alloter_->Malloc(bytes_to_get);
+    if (!pool_start_) {
+        return nullptr; // out of memory, graceful failure
+    }
 
     malloc_vec_.push_back(pool_start_);
     pool_end_ = pool_start_ + bytes_to_get;

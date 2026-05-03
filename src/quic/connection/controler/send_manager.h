@@ -124,12 +124,12 @@ public:
     // RFC 9000 Section 17.2.5.3: PN must NOT be reset after Retry
     void ResetInitialPacketNumber() {
         send_control_.ResetInitialPacketNumber();
-        // Do NOT reset pakcet_number_ — interop tests require PN to be
+        // Do NOT reset packet_number_ — interop tests require PN to be
         // strictly greater than the highest PN sent before Retry
     }
 
     // Accessors for BaseConnection (needed for TrySend)
-    PacketNumber& GetPacketNumber() { return pakcet_number_; }
+    PacketNumber& GetPacketNumber() { return packet_number_; }
     SendControl& GetSendControl() { return send_control_; }
 
 private:
@@ -139,7 +139,7 @@ private:
 private:
     SendControl send_control_;
     // packet number
-    PacketNumber pakcet_number_;
+    PacketNumber packet_number_;
     SendFlowController* send_flow_controller_;  // Send-side flow controller
     StreamManager* stream_manager_{nullptr};    // Stream manager for flow scheduling
     std::list<std::shared_ptr<IFrame>> wait_frame_list_;

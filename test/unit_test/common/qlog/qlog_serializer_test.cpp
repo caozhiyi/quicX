@@ -7,6 +7,7 @@
 #include <string>
 
 #include "common/qlog/event/connectivity_events.h"
+#include "common/qlog/event/recovery_events.h"
 #include "common/qlog/event/transport_events.h"
 #include "common/qlog/serializer/json_seq_serializer.h"
 #include "common/qlog/util/qlog_constants.h"
@@ -336,6 +337,335 @@ TEST(QlogSerializerTest, EmptyFramesList) {
     std::string json = serializer.SerializeEvent(event);
 
     EXPECT_TRUE(json.find("\"frames\":[]") != std::string::npos);
+}
+
+// ====================================================================
+// Extended: JSON validity verification for each serialized line
+// ====================================================================
+
+// Helper: validate a string is valid JSON by checking balanced braces
+// (Lightweight check without external JSON library dependency)
+static bool IsBalancedJson(const std::string& json) {
+    int braces = 0;
+    int brackets = 0;
+    bool in_string = false;
+    bool escaped = false;
+
+    for (char c : json) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (c == '\\' && in_string) {
+            escaped = true;
+            continue;
+        }
+        if (c == '"') {
+            in_string = !in_string;
+            continue;
+        }
+        if (!in_string) {
+            if (c == '{') braces++;
+            else if (c == '}') braces--;
+            else if (c == '[') brackets++;
+            else if (c == ']') brackets--;
+        }
+    }
+    return braces == 0 && brackets == 0 && !in_string;
+}
+
+// Test: Each header line is independently parseable JSON
+TEST(QlogSerializerTest, HeaderLinesAreIndependentJson) {
+    JsonSeqSerializer serializer;
+
+    CommonFields common_fields;
+    common_fields.protocol_type = "QUIC";
+    common_fields.group_id = "test-group";
+
+    QlogConfiguration config;
+    config.time_offset = 0;
+    config.time_units = "ms";
+
+    std::string header = serializer.SerializeTraceHeader(
+        "conn-json-test", VantagePoint::kServer, common_fields, config);
+
+    // Split into lines
+    std::istringstream stream(header);
+    std::string line;
+    int line_num = 0;
+
+    while (std::getline(stream, line)) {
+        if (line.empty()) continue;
+        line_num++;
+
+        // Each line must start with '{' and end with '}'
+        EXPECT_EQ('{', line.front())
+            << "Header line " << line_num << " should start with '{': " << line;
+        EXPECT_EQ('}', line.back())
+            << "Header line " << line_num << " should end with '}': " << line;
+
+        // Each line must be balanced JSON
+        EXPECT_TRUE(IsBalancedJson(line))
+            << "Header line " << line_num << " is not balanced JSON: " << line;
+    }
+
+    // Should have exactly 2 header lines
+    EXPECT_EQ(2, line_num) << "Header should have exactly 2 lines (format + trace metadata)";
+}
+
+// Test: Event line is independently parseable JSON
+TEST(QlogSerializerTest, EventLineIsIndependentJson) {
+    JsonSeqSerializer serializer;
+
+    // Test with various event types
+    struct TestCase {
+        std::string event_name;
+        std::unique_ptr<EventData> data;
+    };
+
+    // PacketSentData
+    {
+        auto data = std::make_unique<PacketSentData>();
+        data->packet_number = 42;
+        data->packet_type = quic::PacketType::k1RttPacketType;
+        data->packet_size = 1200;
+        data->frames.push_back(quic::FrameType::kStream);
+
+        QlogEvent event;
+        event.time_us = 100000;
+        event.name = "quic:packet_sent";
+        event.data = std::move(data);
+
+        std::string json = serializer.SerializeEvent(event);
+        std::string json_trimmed = json.substr(0, json.size() - 1);  // remove trailing \n
+
+        EXPECT_EQ('{', json_trimmed.front());
+        EXPECT_EQ('}', json_trimmed.back());
+        EXPECT_TRUE(IsBalancedJson(json_trimmed))
+            << "PacketSentData event is not balanced JSON: " << json_trimmed;
+    }
+
+    // ConnectionStartedData
+    {
+        auto data = std::make_unique<ConnectionStartedData>();
+        data->src_ip = "192.168.1.1";
+        data->src_port = 443;
+        data->dst_ip = "10.0.0.1";
+        data->dst_port = 8080;
+
+        QlogEvent event;
+        event.time_us = 0;
+        event.name = "quic:connection_started";
+        event.data = std::move(data);
+
+        std::string json = serializer.SerializeEvent(event);
+        std::string json_trimmed = json.substr(0, json.size() - 1);
+
+        EXPECT_TRUE(IsBalancedJson(json_trimmed))
+            << "ConnectionStartedData event is not balanced JSON: " << json_trimmed;
+    }
+
+    // RecoveryMetricsData
+    {
+        auto data = std::make_unique<RecoveryMetricsData>();
+        data->min_rtt_us = 5000;
+        data->cwnd_bytes = 14520;
+        data->ssthresh = 20000;
+        data->pacing_rate_bps = 1000000;
+
+        QlogEvent event;
+        event.time_us = 50000;
+        event.name = "recovery:metrics_updated";
+        event.data = std::move(data);
+
+        std::string json = serializer.SerializeEvent(event);
+        std::string json_trimmed = json.substr(0, json.size() - 1);
+
+        EXPECT_TRUE(IsBalancedJson(json_trimmed))
+            << "RecoveryMetricsData event is not balanced JSON: " << json_trimmed;
+    }
+}
+
+// Test: Header first line contains required qlog_format and qlog_version
+TEST(QlogSerializerTest, HeaderFirstLineRequiredFields) {
+    JsonSeqSerializer serializer;
+
+    CommonFields common_fields;
+    QlogConfiguration config;
+
+    std::string header = serializer.SerializeTraceHeader(
+        "conn-hdr", VantagePoint::kClient, common_fields, config);
+
+    // Extract first line
+    size_t first_newline = header.find('\n');
+    ASSERT_NE(std::string::npos, first_newline);
+    std::string first_line = header.substr(0, first_newline);
+
+    // Required fields per qlog spec
+    EXPECT_TRUE(first_line.find("\"qlog_format\"") != std::string::npos)
+        << "First line must contain qlog_format: " << first_line;
+    EXPECT_TRUE(first_line.find("\"qlog_version\"") != std::string::npos)
+        << "First line must contain qlog_version: " << first_line;
+}
+
+// Test: Header second line contains required vantage_point, common_fields, configuration
+TEST(QlogSerializerTest, HeaderSecondLineRequiredFields) {
+    JsonSeqSerializer serializer;
+
+    CommonFields common_fields;
+    common_fields.protocol_type = "QUIC";
+
+    QlogConfiguration config;
+    config.time_offset = 0;
+    config.time_units = "ms";
+
+    std::string header = serializer.SerializeTraceHeader(
+        "conn-meta", VantagePoint::kServer, common_fields, config);
+
+    // Extract second line
+    size_t first_newline = header.find('\n');
+    ASSERT_NE(std::string::npos, first_newline);
+    std::string second_line = header.substr(first_newline + 1);
+    // Remove trailing newline
+    if (!second_line.empty() && second_line.back() == '\n') {
+        second_line.pop_back();
+    }
+
+    // Required fields in trace metadata
+    EXPECT_TRUE(second_line.find("\"vantage_point\"") != std::string::npos)
+        << "Second line must contain vantage_point: " << second_line;
+    EXPECT_TRUE(second_line.find("\"common_fields\"") != std::string::npos)
+        << "Second line must contain common_fields: " << second_line;
+    EXPECT_TRUE(second_line.find("\"configuration\"") != std::string::npos)
+        << "Second line must contain configuration: " << second_line;
+}
+
+// Test: Event contains required fields: time, name, data
+TEST(QlogSerializerTest, EventContainsRequiredFields) {
+    JsonSeqSerializer serializer;
+
+    QlogEvent event;
+    event.time_us = 5000;
+    event.name = "quic:test_event";
+    event.data = std::make_unique<PacketSentData>();
+
+    std::string json = serializer.SerializeEvent(event);
+
+    EXPECT_TRUE(json.find("\"time\":") != std::string::npos)
+        << "Event must contain time field: " << json;
+    EXPECT_TRUE(json.find("\"name\":") != std::string::npos)
+        << "Event must contain name field: " << json;
+    EXPECT_TRUE(json.find("\"data\":") != std::string::npos)
+        << "Event must contain data field: " << json;
+}
+
+// Test: Timestamp monotonicity across sequential events
+TEST(QlogSerializerTest, TimestampMonotonicity) {
+    JsonSeqSerializer serializer;
+
+    std::vector<double> timestamps;
+
+    for (uint64_t i = 0; i < 10; i++) {
+        QlogEvent event;
+        event.time_us = i * 1000;  // 0, 1000, 2000, ...
+        event.name = "test:event";
+        event.data = std::make_unique<PacketSentData>();
+
+        std::string json = serializer.SerializeEvent(event);
+
+        // Extract time value: find "time": and parse the number
+        size_t time_pos = json.find("\"time\":");
+        ASSERT_NE(std::string::npos, time_pos);
+        size_t value_start = time_pos + 7;  // length of "\"time\":"
+        size_t value_end = json.find(',', value_start);
+        std::string time_str = json.substr(value_start, value_end - value_start);
+        double time_val = std::stod(time_str);
+
+        timestamps.push_back(time_val);
+    }
+
+    // Verify monotonic increase
+    for (size_t i = 1; i < timestamps.size(); i++) {
+        EXPECT_GE(timestamps[i], timestamps[i - 1])
+            << "Timestamps should be monotonically increasing: "
+            << timestamps[i - 1] << " -> " << timestamps[i];
+    }
+}
+
+// Test: Event with group_id includes group_id field
+TEST(QlogSerializerTest, EventWithGroupId) {
+    JsonSeqSerializer serializer;
+
+    QlogEvent event;
+    event.time_us = 1000;
+    event.name = "quic:test";
+    event.data = std::make_unique<PacketSentData>();
+    event.group_id = "connection-group-42";
+
+    std::string json = serializer.SerializeEvent(event);
+
+    EXPECT_TRUE(json.find("\"group_id\":\"connection-group-42\"") != std::string::npos)
+        << "Event with group_id should include group_id field: " << json;
+}
+
+// Test: Event without group_id does NOT include group_id field
+TEST(QlogSerializerTest, EventWithoutGroupId) {
+    JsonSeqSerializer serializer;
+
+    QlogEvent event;
+    event.time_us = 1000;
+    event.name = "quic:test";
+    event.data = std::make_unique<PacketSentData>();
+    // group_id is empty by default
+
+    std::string json = serializer.SerializeEvent(event);
+
+    EXPECT_TRUE(json.find("\"group_id\"") == std::string::npos)
+        << "Event without group_id should not include group_id field: " << json;
+}
+
+// Test: Full qlog output (header + events) forms valid JSON-SEQ
+TEST(QlogSerializerTest, FullQlogOutputIsValidJsonSeq) {
+    JsonSeqSerializer serializer;
+
+    CommonFields common_fields;
+    common_fields.protocol_type = "QUIC";
+    QlogConfiguration config;
+    config.time_offset = 0;
+    config.time_units = "ms";
+
+    // Generate complete output
+    std::string output = serializer.SerializeTraceHeader(
+        "conn-full", VantagePoint::kClient, common_fields, config);
+
+    // Add events
+    for (int i = 0; i < 5; i++) {
+        QlogEvent event;
+        event.time_us = i * 1000;
+        event.name = "quic:packet_sent";
+        auto data = std::make_unique<PacketSentData>();
+        data->packet_number = i;
+        data->packet_type = quic::PacketType::k1RttPacketType;
+        data->packet_size = 1200;
+        event.data = std::move(data);
+        output += serializer.SerializeEvent(event);
+    }
+
+    // Split into lines and validate each
+    std::istringstream stream(output);
+    std::string line;
+    int line_count = 0;
+    while (std::getline(stream, line)) {
+        if (line.empty()) continue;
+        line_count++;
+
+        // Each line must be balanced JSON
+        EXPECT_TRUE(IsBalancedJson(line))
+            << "Line " << line_count << " is not balanced JSON: " << line;
+    }
+
+    // 2 header lines + 5 event lines = 7 total
+    EXPECT_EQ(7, line_count);
 }
 
 }  // namespace

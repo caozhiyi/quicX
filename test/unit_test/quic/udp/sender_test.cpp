@@ -55,7 +55,7 @@ TEST(UdpSenderTest, Send) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
     auto sockfd_ret = common::UdpSocket();
-    ASSERT_EQ(sockfd_ret.errno_, 0);
+    ASSERT_EQ(sockfd_ret.error_code_, 0);
     UdpSender sender(sockfd_ret.return_value_);
 
     char send_buf[20] = {0};

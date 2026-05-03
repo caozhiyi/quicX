@@ -99,7 +99,8 @@ void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& s
             Close(0x109);  // H3_SETTINGS_ERROR
             return;
         }
-        settings_[iter->first] = std::min(settings_[iter->first], iter->second);
+        // RFC 9114 §7.2.4: Store peer's setting value directly (not min).
+        settings_[iter->first] = iter->second;
         common::LOG_DEBUG("settings. key:%d, value:%d", iter->first, settings_[iter->first]);
     }
 }

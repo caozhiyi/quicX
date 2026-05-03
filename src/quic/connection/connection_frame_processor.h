@@ -10,6 +10,9 @@
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
+namespace common {
+class QlogTrace;
+}
 namespace quic {
 
 // Forward declarations
@@ -76,6 +79,11 @@ public:
      */
     void SetHandshakeDoneCallback(HandshakeDoneCallback cb) { handshake_done_cb_ = cb; }
 
+    /**
+     * @brief Set qlog trace for connection ID events
+     */
+    void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) { qlog_trace_ = trace; }
+
 private:
     // ==================== Frame Handlers ====================
 
@@ -111,6 +119,9 @@ private:
     // Application-level callbacks (cannot be replaced by event interface)
     StreamStateCallback stream_state_cb_;
     HandshakeDoneCallback handshake_done_cb_;
+
+    // Qlog trace for connection ID events
+    std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
 }  // namespace quic

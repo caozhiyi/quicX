@@ -33,6 +33,7 @@ protected:
 
         encoder_registry_ = std::make_shared<QpackBlockedRegistry>();
         decoder_registry_ = std::make_shared<QpackBlockedRegistry>();
+        qpack_encoder_ = std::make_shared<QpackEncoder>();
 
         auto encoder_error_cb = [this](uint64_t /*stream_id*/, uint32_t error_code) {
             encoder_error_code_ = error_code;
@@ -42,7 +43,7 @@ protected:
         };
 
         encoder_sender_ = std::make_shared<QpackEncoderSenderStream>(encoder_send_stream_, encoder_error_cb);
-        encoder_receiver_ = std::make_shared<QpackEncoderReceiverStream>(encoder_recv_stream_, encoder_registry_, encoder_error_cb);
+        encoder_receiver_ = std::make_shared<QpackEncoderReceiverStream>(encoder_recv_stream_, qpack_encoder_, encoder_registry_, encoder_error_cb);
 
         decoder_sender_ = std::make_shared<QpackDecoderSenderStream>(decoder_send_stream_, decoder_error_cb);
         decoder_receiver_ = std::make_shared<QpackDecoderReceiverStream>(decoder_recv_stream_, decoder_registry_, decoder_error_cb);
@@ -69,6 +70,7 @@ protected:
 
     std::shared_ptr<QpackBlockedRegistry> encoder_registry_;
     std::shared_ptr<QpackBlockedRegistry> decoder_registry_;
+    std::shared_ptr<QpackEncoder> qpack_encoder_;
 
     std::shared_ptr<QpackEncoderSenderStream> encoder_sender_;
     std::shared_ptr<QpackEncoderReceiverStream> encoder_receiver_;

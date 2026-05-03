@@ -113,7 +113,7 @@ bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shar
         // We need to check if sufficient data for Varint? DecodeVarint does check end.
 
         auto next_pos = common::DecodeVarint(start_pos, end_pos, frame_type_64);
-        if (next_pos == start_pos) {
+        if (next_pos == nullptr) {
             common::LOG_ERROR("decode frame type varint failed.");
             return false;
         }

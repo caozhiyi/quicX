@@ -47,6 +47,10 @@ public:
     // Check if there are packets waiting to be ACKed
     bool HasPendingAck(PacketNumberSpace ns) const { return !wait_ack_packet_numbers_[ns].empty(); }
 
+    // Get largest received packet number for a given packet number space
+    // Used for PN recovery per RFC 9000 Appendix A
+    uint64_t GetLargestReceivedPn(PacketNumberSpace ns) const { return pkt_num_largest_recvd_[ns]; }
+
     // RFC 9000 Section 4.10: Discard packet number space when keys discarded
     void DiscardPacketNumberSpace(PacketNumberSpace ns);
 

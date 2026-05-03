@@ -1,5 +1,3 @@
-#include <cstdlib>  // for abort
-
 #include "common/log/log.h"
 #include "quic/stream/stream_id_generator.h"
 
@@ -23,8 +21,8 @@ uint64_t StreamIDGenerator::NextStreamID(StreamDirection direction) {
             next_stream = cur_unidirectional_id_++;
             break;
         default:
-            common::LOG_ERROR("invalid stream direction");
-            abort();
+            common::LOG_ERROR("invalid stream direction: %d", direction);
+            return 0;
     }
 
     next_stream = next_stream << 2 | (direction | starter_);
@@ -42,8 +40,8 @@ uint64_t StreamIDGenerator::PeekNextStreamID(StreamDirection direction) const {
             next_stream = cur_unidirectional_id_;  // Don't increment
             break;
         default:
-            common::LOG_ERROR("invalid stream direction");
-            abort();
+            common::LOG_ERROR("invalid stream direction: %d", direction);
+            return 0;
     }
 
     next_stream = next_stream << 2 | (direction | starter_);

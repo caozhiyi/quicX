@@ -165,23 +165,20 @@ int SelectEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             continue;
         }
         
-        // Check for events
-        EventType detected_events = EventType::ET_READ;  // Default to read
+        // Check for events - use independent if statements to detect multiple events on same fd
         bool has_event = false;
         
         if (FD_ISSET(static_cast<int>(fd), &readfds)) {
-            detected_events = EventType::ET_READ;
-            has_event = true;
-        } else if (FD_ISSET(static_cast<int>(fd), &writefds)) {
-            detected_events = EventType::ET_WRITE;
-            has_event = true;
-        } else if (FD_ISSET(static_cast<int>(fd), &exceptfds)) {
-            detected_events = EventType::ET_ERROR;
+            events.push_back(Event{fd, EventType::ET_READ});
             has_event = true;
         }
-        
-        if (has_event) {
-            events.push_back(Event{fd, detected_events});
+        if (FD_ISSET(static_cast<int>(fd), &writefds)) {
+            events.push_back(Event{fd, EventType::ET_WRITE});
+            has_event = true;
+        }
+        if (FD_ISSET(static_cast<int>(fd), &exceptfds)) {
+            events.push_back(Event{fd, EventType::ET_ERROR});
+            has_event = true;
         }
     }
     

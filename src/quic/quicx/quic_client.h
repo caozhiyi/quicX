@@ -22,7 +22,7 @@ public:
     // join io threads
     virtual void Join() override;
 
-    // distroy quic libary, release all resource
+    // destroy quic library, release all resource
     // all connections will be closed
     virtual void Destroy() override;
 

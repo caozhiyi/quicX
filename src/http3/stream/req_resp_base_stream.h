@@ -13,6 +13,9 @@
 #include "quic/include/if_quic_bidirection_stream.h"
 
 namespace quicx {
+namespace common {
+class QlogTrace;
+}
 namespace http3 {
 
 /**
@@ -35,6 +38,9 @@ public:
     // Must be called after construction to set up callbacks
     // Cannot be called in constructor because shared_from_this() requires object to be managed by shared_ptr
     void Init();
+
+    // Set qlog trace for HTTP/3 frame events
+    void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace);
 
     virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error);
 
@@ -78,6 +84,7 @@ protected:
     std::shared_ptr<common::IBuffer> body_;
     bool is_last_data_;
     bool current_frame_is_last_;  // Track if current frame is last in OnData batch
+    bool should_notify_completion_{false};  // Defer stream completion notification until all frames processed
 
     bool is_provider_mode_;
     bool all_provider_data_sent_;
@@ -85,6 +92,9 @@ protected:
 
     // Frame decoder for stateful decoding
     FrameDecoder frame_decoder_;
+
+    // Qlog trace for HTTP/3 frame events
+    std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
 }  // namespace http3

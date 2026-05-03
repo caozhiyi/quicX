@@ -2,6 +2,7 @@
 #define QUIC_STREAM_STATE_IF_MACHINE_INTERFACE
 
 #include <cstdint>
+#include <functional>
 
 #include "quic/stream/type.h"
 
@@ -14,6 +15,9 @@ namespace quic {
 */
 class IStreamStateMachine {
 public:
+    // state_change_cb: callback(stream_id, old_state, new_state)
+    using StateChangeCB = std::function<void(uint64_t, StreamState, StreamState)>;
+
     // stream_close_cb: called when stream is going to close
     // state: initial state
     IStreamStateMachine(StreamState state = StreamState::kUnknown):
@@ -31,8 +35,24 @@ public:
     // get current state machine state
     StreamState GetStatus() { return state_; }
 
+    // set state change callback for qlog
+    void SetStateChangeCB(StateChangeCB cb, uint64_t stream_id) {
+        state_change_cb_ = cb;
+        stream_id_ = stream_id;
+    }
+
+protected:
+    // Notify state change (call after state_ is updated)
+    void NotifyStateChange(StreamState old_state, StreamState new_state) {
+        if (state_change_cb_ && old_state != new_state) {
+            state_change_cb_(stream_id_, old_state, new_state);
+        }
+    }
+
 protected:
     StreamState state_;
+    StateChangeCB state_change_cb_;
+    uint64_t stream_id_ = 0;
 };
 
 }  // namespace quic

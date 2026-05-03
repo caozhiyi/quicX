@@ -19,6 +19,11 @@ AeadBaseCryptographer::AeadBaseCryptographer():
 AeadBaseCryptographer::~AeadBaseCryptographer() {
     CleanSecret(read_secret_);
     CleanSecret(write_secret_);
+    CleanSecret(prev_read_secret_);
+    if (!raw_read_secret_.empty()) OPENSSL_cleanse(raw_read_secret_.data(), raw_read_secret_.size());
+    if (!raw_write_secret_.empty()) OPENSSL_cleanse(raw_write_secret_.data(), raw_write_secret_.size());
+    raw_read_secret_.clear();
+    raw_write_secret_.clear();
 }
 
 ICryptographer::Result AeadBaseCryptographer::InstallSecret(const uint8_t* secret, size_t secret_len, bool is_write) {
@@ -29,6 +34,10 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecret(const uint8_t* secre
 ICryptographer::Result AeadBaseCryptographer::InstallSecretWithVersion(
     const uint8_t* secret, size_t secret_len, bool is_write, uint32_t version) {
     Secret& dest_secret = is_write ? write_secret_ : read_secret_;
+
+    // RFC 9001 §6: Save the raw traffic secret for Key Update derivation
+    auto& raw_secret = is_write ? raw_write_secret_ : raw_read_secret_;
+    raw_secret.assign(secret, secret + secret_len);
 
     // Get version-specific labels
     QuicLabels labels = GetQuicLabels(version);
@@ -86,13 +95,17 @@ ICryptographer::Result AeadBaseCryptographer::KeyUpdateWithVersion(
     const uint8_t* new_base_secret, size_t secret_len, bool update_write, uint32_t version) {
     // RFC 9001 §6: next_secret = HKDF-Expand-Label(current_secret, "tls13 quic ku", "", hash_len)
     // RFC 9369: For v2, use "tls13 quicv2 ku" label
-    const Secret& current = update_write ? write_secret_ : read_secret_;
+    // IMPORTANT: current_secret is the raw TLS traffic secret, NOT the derived AEAD key
+    const auto& raw_secret = update_write ? raw_write_secret_ : raw_read_secret_;
     std::vector<uint8_t> base;
     if (new_base_secret && secret_len > 0) {
         base.assign(new_base_secret, new_base_secret + secret_len);
     } else {
-        // Use current key as input secret for ku step (same hash as digest_)
-        base = current.key_;
+        if (raw_secret.empty()) {
+            common::LOG_ERROR("KeyUpdate: no raw traffic secret available");
+            return Result::kNotInitialized;
+        }
+        base = raw_secret;
     }
     
     // Get version-specific labels
@@ -102,10 +115,42 @@ ICryptographer::Result AeadBaseCryptographer::KeyUpdateWithVersion(
     std::vector<uint8_t> next_secret(hash_len);
     if (!Hkdf::HkdfExpand(next_secret.data(), next_secret.size(), base.data(), base.size(),
             labels.ku, labels.ku_len, digest_)) {
+        OPENSSL_cleanse(base.data(), base.size());
         return Result::kDeriveFailed;
     }
-    // Reinstall secrets using next_secret
+
+    // RFC 9001 §6: "The header protection key is not updated."
+    // Save current HP key and context BEFORE any modifications
+    Secret& current_secret = update_write ? write_secret_ : read_secret_;
+    std::vector<uint8_t> saved_hp = current_secret.hp_;
+    EVPCIPHERCTXPtr& hp_ctx_ref = update_write ? hp_write_ctx_ : hp_read_ctx_;
+    EVPCIPHERCTXPtr saved_hp_ctx = std::move(hp_ctx_ref);
+
+    // RFC 9001 §6: Before updating read keys, save current read key as previous
+    // so that reordered packets encrypted with the old key can still be decrypted
+    if (!update_write) {
+        CleanSecret(prev_read_secret_);
+        prev_read_secret_ = read_secret_;
+        // Transfer ownership of read AEAD ctx to prev
+        prev_read_aead_ctx_ = std::move(read_aead_ctx_);
+        // Don't clean read_secret_ here - InstallSecretWithVersion will overwrite it
+        read_secret_ = Secret();  // Reset without cleansing (data moved to prev)
+    }
+
+    // Reinstall secrets using next_secret (this derives new key, iv, AND hp)
     auto r = InstallSecretWithVersion(next_secret.data(), next_secret.size(), update_write, version);
+
+    // Restore the original HP key and context (HP is not updated during Key Update)
+    if (r == Result::kOk && !saved_hp.empty()) {
+        Secret& updated = update_write ? write_secret_ : read_secret_;
+        updated.hp_ = std::move(saved_hp);
+        hp_ctx_ref = std::move(saved_hp_ctx);
+    }
+
+    // Clear temporary key material
+    OPENSSL_cleanse(base.data(), base.size());
+    OPENSSL_cleanse(next_secret.data(), next_secret.size());
+
     if (r == Result::kOk) key_updated_flag_ = true;
     return r;
 }
@@ -149,12 +194,23 @@ ICryptographer::Result AeadBaseCryptographer::InstallInitSecret(
 
     // Use version-aware secret installation (default labels for Initial are same in v1/v2)
     if (InstallSecretWithVersion(init_read_secret, kMaxInitSecretLength, false, quic_version_) != Result::kOk) {
+        OPENSSL_cleanse(init_secret, sizeof(init_secret));
+        OPENSSL_cleanse(init_read_secret, sizeof(init_read_secret));
+        OPENSSL_cleanse(init_write_secret, sizeof(init_write_secret));
         return Result::kDeriveFailed;
     }
 
     if (InstallSecretWithVersion(init_write_secret, kMaxInitSecretLength, true, quic_version_) != Result::kOk) {
+        OPENSSL_cleanse(init_secret, sizeof(init_secret));
+        OPENSSL_cleanse(init_read_secret, sizeof(init_read_secret));
+        OPENSSL_cleanse(init_write_secret, sizeof(init_write_secret));
         return Result::kDeriveFailed;
     }
+
+    // Clear temporary key material from stack
+    OPENSSL_cleanse(init_secret, sizeof(init_secret));
+    OPENSSL_cleanse(init_read_secret, sizeof(init_read_secret));
+    OPENSSL_cleanse(init_write_secret, sizeof(init_write_secret));
 
     return Result::kOk;
 }
@@ -204,6 +260,39 @@ ICryptographer::Result AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number,
             ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(),
             associated_data.GetLength()) != 1) {
         common::LOG_ERROR("EVP_AEAD_CTX_open failed");
+        return Result::kDecryptFailed;
+    }
+    out_plaintext->MoveWritePt(out_length);
+    return Result::kOk;
+}
+
+ICryptographer::Result AeadBaseCryptographer::DecryptPacketWithPrevKey(uint64_t pkt_number, common::BufferSpan& associated_data,
+    common::BufferSpan& ciphertext, std::shared_ptr<common::IBuffer> out_plaintext) {
+    if (prev_read_secret_.key_.empty() || prev_read_secret_.iv_.empty()) {
+        return Result::kNotInitialized;
+    }
+
+    // get nonce using previous IV
+    uint8_t nonce[kPacketNonceLength] = {0};
+    MakePacketNonce(nonce, prev_read_secret_.iv_, pkt_number);
+
+    // use previous read AEAD context
+    EVP_AEAD_CTX* raw = prev_read_aead_ctx_.get();
+    if (!raw) {
+        prev_read_aead_ctx_.reset(
+            EVP_AEAD_CTX_new(aead_, prev_read_secret_.key_.data(), prev_read_secret_.key_.size(), aead_tag_length_));
+        raw = prev_read_aead_ctx_.get();
+    }
+    if (!raw) {
+        return Result::kInternalError;
+    }
+
+    size_t out_length = 0;
+    auto out_span = out_plaintext->GetWritableSpan();
+
+    if (EVP_AEAD_CTX_open(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce, prev_read_secret_.iv_.size(),
+            ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(),
+            associated_data.GetLength()) != 1) {
         return Result::kDecryptFailed;
     }
     out_plaintext->MoveWritePt(out_length);

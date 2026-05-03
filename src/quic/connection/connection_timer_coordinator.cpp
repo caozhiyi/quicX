@@ -35,7 +35,7 @@ void TimerCoordinator::StartIdleTimer(IdleTimeoutCallback callback) {
 
     idle_timeout_callback_ = callback;
 
-    uint32_t timeout_ms = transport_param_.GetMaxIdleTimeout();
+    uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
     if (timeout_ms == 0) {
         common::LOG_WARN("TimerCoordinator::StartIdleTimer: idle timeout is 0, timer not started");
         return;
@@ -61,7 +61,7 @@ void TimerCoordinator::ResetIdleTimer() {
     event_loop_->RemoveTimer(idle_timeout_task_);
 
     // Add new timer
-    uint32_t timeout_ms = transport_param_.GetMaxIdleTimeout();
+    uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
     event_loop_->AddTimer(idle_timeout_task_, timeout_ms, 0);
 
     common::LOG_DEBUG("TimerCoordinator: idle timer reset");
@@ -144,7 +144,7 @@ void TimerCoordinator::OnThreadTransferAfter() {
 
     // Add idle timeout timer to new EventLoop
     if (idle_timer_active_) {
-        uint32_t timeout_ms = transport_param_.GetMaxIdleTimeout();
+        uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
         event_loop_->AddTimer(idle_timeout_task_, timeout_ms, 0);
         common::LOG_DEBUG("TimerCoordinator: re-added idle timer after thread transfer");
     }

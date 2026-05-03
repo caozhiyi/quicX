@@ -66,7 +66,7 @@ std::string JsonSeqSerializer::SerializeEvent(const QlogEvent& event) {
         oss << "{}";
     }
 
-    // 可选字段
+    // Optional fields
     if (!event.group_id.empty()) {
         oss << ",\"group_id\":\"" << event.group_id << "\"";
     }

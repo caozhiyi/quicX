@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "common/log/log.h"
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
@@ -76,7 +78,7 @@ uint32_t RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
             if (StreamFrame::IsStreamFrame(frame_type)) {
                 return OnStreamFrame(frame);
             } else {
-                common::LOG_ERROR("unexcept frame on recv stream. frame type:%d", frame_type);
+                common::LOG_ERROR("unexpected frame on recv stream. frame type:%d", frame_type);
             }
     }
     return 0;
@@ -111,12 +113,24 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
 
     // check flow control
     auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
-    if (stream_frame->GetOffset() + stream_frame->GetLength() > local_data_limit_) {
+    // Guard against integer overflow: offset + length could wrap around uint64_t
+    uint64_t frame_end = stream_frame->GetOffset() + stream_frame->GetLength();
+    if (frame_end < stream_frame->GetOffset()) {
+        // Integer overflow detected
+        if (connection_close_cb_) {
+            connection_close_cb_(
+                QuicErrorCode::kFlowControlError, frame->GetType(), "stream frame offset+length integer overflow.");
+        }
+        common::LOG_ERROR("stream frame offset+length overflow. stream id:%d, offset:%llu, length:%u",
+            stream_id_, stream_frame->GetOffset(), stream_frame->GetLength());
+        return 0;
+    }
+    if (frame_end > local_data_limit_) {
         if (connection_close_cb_) {
             connection_close_cb_(
                 QuicErrorCode::kFlowControlError, frame->GetType(), "stream recv data exceeding flow control limits.");
         }
-        common::LOG_WARN("stream recv data exceeding flow control limits. stream id:%d, offset:%d, length:%d, limit:%d",
+        common::LOG_WARN("stream recv data exceeding flow control limits. stream id:%llu, offset:%llu, length:%u, limit:%llu",
             stream_id_, stream_frame->GetOffset(), stream_frame->GetLength(), local_data_limit_);
         return 0;
     }
@@ -136,11 +150,17 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         final_offset_ = fin_offset;
     }
 
-    common::LOG_DEBUG("stream recv stream frame. stream id:%d, offset:%d, length:%d, final offset:%d", stream_id_,
+    common::LOG_DEBUG("stream recv stream frame. stream id:%llu, offset:%llu, length:%u, final offset:%llu", stream_id_,
         stream_frame->GetOffset(), stream_frame->GetLength(), final_offset_);
 
     if (stream_frame->GetOffset() == except_offset_) {
-        buffer_->Write(stream_frame->GetData(), stream_frame->GetLength());
+        // CRITICAL: Use deep copy (Write(uint8_t*, len)) instead of shallow copy (Write(SharedBufferSpan, len)).
+        // SharedBufferSpan points into the packet buffer chunk, which may be shared by multiple STREAM frames
+        // from the same packet (belonging to different streams). If we shallow-copy (push the chunk directly
+        // into our buffer's chunk list), subsequent Write operations may use the "free" space after our data
+        // in that chunk — but that space may contain another stream's data. This causes cross-stream
+        // data contamination. Deep copy avoids this by copying data into our own exclusive chunks.
+        buffer_->Write(stream_frame->GetData().GetStart(), stream_frame->GetLength());
         except_offset_ += stream_frame->GetLength();
 
         while (true) {
@@ -150,7 +170,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             }
 
             stream_frame = std::dynamic_pointer_cast<StreamFrame>(iter->second);
-            buffer_->Write(stream_frame->GetData(), stream_frame->GetLength());
+            buffer_->Write(stream_frame->GetData().GetStart(), stream_frame->GetLength());
             except_offset_ += stream_frame->GetLength();
             out_order_frame_.erase(iter);
         }
@@ -195,6 +215,16 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             return 0;
         }
 
+        // Limit out-of-order frame buffer to prevent memory exhaustion from malicious peers
+        if (out_order_frame_.size() >= kMaxOutOfOrderFrames) {
+            common::LOG_ERROR("too many out-of-order frames. stream id:%d, count:%d",
+                stream_id_, (int)out_order_frame_.size());
+            if (connection_close_cb_) {
+                connection_close_cb_(QuicErrorCode::kFlowControlError,
+                    frame->GetType(), "too many out-of-order frames");
+            }
+            return 0;
+        }
         out_order_frame_[stream_frame->GetOffset()] = stream_frame;
     }
 
@@ -243,9 +273,14 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     auto block_frame = std::dynamic_pointer_cast<StreamDataBlockedFrame>(frame);
 
     // When peer is blocked, increase window significantly to allow high throughput
-    // Use 1MB increments to support large file transfers without frequent blocking
-    const uint64_t kBlockedWindowIncrement = 4 * 1024 * 1024;  // 1MB increment when blocked
-    local_data_limit_ += kBlockedWindowIncrement;
+    // Use configured increments (see quic/config.h)
+
+    if (local_data_limit_ >= kMaxStreamWindowSize) {
+        common::LOG_WARN("stream recv window already at max. stream id:%d, limit:%llu",
+            stream_id_, local_data_limit_);
+        return;
+    }
+    local_data_limit_ = std::min(local_data_limit_ + kBlockedWindowIncrement, kMaxStreamWindowSize);
 
     auto max_frame = std::make_shared<MaxStreamDataFrame>();
     max_frame->SetStreamID(stream_id_);
@@ -267,7 +302,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
 
     auto reset_frame = std::dynamic_pointer_cast<ResetStreamFrame>(frame);
     uint64_t fin_offset = reset_frame->GetFinalSize();
-    common::LOG_DEBUG("stream recv reset stream. stream id:%d, fin offset:%d, final offset:%d", stream_id_, fin_offset,
+    common::LOG_DEBUG("stream recv reset stream. stream id:%llu, fin offset:%llu, final offset:%llu", stream_id_, fin_offset,
         final_offset_);
 
     if (final_offset_ != 0 && fin_offset != final_offset_) {

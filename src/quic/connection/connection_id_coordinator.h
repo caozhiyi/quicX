@@ -13,6 +13,7 @@ namespace quicx {
 // Forward declaration from common namespace
 namespace common {
 class IEventLoop;
+class QlogTrace;
 }
 
 namespace quic {
@@ -113,6 +114,11 @@ public:
      */
     std::shared_ptr<const ConnectionIDManager> GetRemoteConnectionIDManager() const { return remote_conn_id_manager_; }
 
+    /**
+     * @brief Set qlog trace for connection ID events
+     */
+    void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) { qlog_trace_ = trace; }
+
     // ==================== Test-Only Methods ====================
 
     /**
@@ -137,6 +143,9 @@ private:
     static constexpr size_t kMaxLocalCIDPoolSize = 8;  // Generate up to 8 CIDs
 
     uint64_t peer_active_cid_limit_{2};  // Default to 2 (RFC 9000)
+
+    // Qlog trace for connection ID events
+    std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
 }  // namespace quic

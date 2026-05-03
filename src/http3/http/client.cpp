@@ -146,11 +146,26 @@ void Client::OnConnection(
         auto wait_it = wait_request_map_.find(addr_key);
         if (wait_it != wait_request_map_.end()) {
             // Notify all waiting requests about the connection failure
+            uint32_t error_code = error != 0 ? error : Http3ErrorCode::kInternalError;
             while (!wait_it->second.empty()) {
                 auto& context = wait_it->second.front();
-                // Call error handler if available
+                
+                // Call the user's response callback with error
+                if (context.IsAsync()) {
+                    auto handler = context.GetAsyncHandler();
+                    if (handler) {
+                        handler->OnError(error_code);
+                    }
+                } else {
+                    auto handler = context.GetCompleteHandler();
+                    if (handler) {
+                        handler(nullptr, error_code);
+                    }
+                }
+                
+                // Also call error handler if available
                 if (error_handler_) {
-                    error_handler_(context.host, error != 0 ? error : Http3ErrorCode::kInternalError);
+                    error_handler_(context.host, error_code);
                 }
                 wait_it->second.pop();
             }
@@ -167,7 +182,21 @@ void Client::OnConnection(
         if (wait_it != wait_request_map_.end()) {
             while (!wait_it->second.empty()) {
                 auto& context = wait_it->second.front();
-                // Call error handler if available
+                
+                // Call the user's response callback with error
+                if (context.IsAsync()) {
+                    auto handler = context.GetAsyncHandler();
+                    if (handler) {
+                        handler->OnError(error);
+                    }
+                } else {
+                    auto handler = context.GetCompleteHandler();
+                    if (handler) {
+                        handler(nullptr, error);
+                    }
+                }
+                
+                // Also call error handler if available
                 if (error_handler_) {
                     error_handler_(context.host, error);
                 }
@@ -260,6 +289,14 @@ void Client::SetErrorHandler(const error_handler& error_handler) {
 }
 
 void Client::Close() {
+    // Guard against double-close: if Close() was already called, the Destroy()
+    // timer is already scheduled and calling it again would register a second
+    // Destroy() callback, leading to double-free corruption.
+    if (is_closing_) {
+        return;
+    }
+    is_closing_ = true;
+
     common::LOG_INFO("Client::Close() - gracefully closing all connections (%zu active)", conn_map_.size());
 
     // Close all active HTTP/3 connections

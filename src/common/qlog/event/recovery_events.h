@@ -68,6 +68,24 @@ public:
     }
 };
 
+/**
+ * @brief recovery:marked_for_retransmit event data
+ */
+class MarkedForRetransmitData: public EventData {
+public:
+    uint64_t packet_number = 0;
+    std::string trigger = "loss_detected";  // "loss_detected", "pto_expired"
+
+    std::string ToJson() const override {
+        std::ostringstream oss;
+        oss << "{";
+        oss << "\"packet_number\":" << packet_number << ",";
+        oss << "\"trigger\":\"" << trigger << "\"";
+        oss << "}";
+        return oss.str();
+    }
+};
+
 }  // namespace common
 }  // namespace quicx
 

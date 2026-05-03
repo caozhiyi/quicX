@@ -1,4 +1,5 @@
 #include "http3/qpack/qpack_encoder.h"
+#include <algorithm>
 #include <cstdint>
 #include "common/log/log.h"
 #include "http3/qpack/huffman_encoder.h"
@@ -16,118 +17,181 @@ bool QpackEncoder::Encode(
         return false;
     }
 
-    // Write header block prefix per RFC 9204 Section 4.5.1
-    // Required Insert Count: minimum number of dynamic table insertions required to decode this block
-    // Base: reference point for relative indexing
-
-    uint64_t insert_count = dynamic_table_.GetEntryCount();
-
-    // Optimization opportunity: We could track which dynamic table entries are actually used
-    // in this header block and set Required Insert Count to the minimum needed.
-    // Current simple implementation: assume all current entries might be referenced.
-    uint64_t required_insert_count = insert_count;
-
-    // RFC 9204 Section 4.5.1: Base is the reference point for dynamic table indexing
-    // Base = Required Insert Count means all references are "pre-base" (backward references)
-    // If we wanted to use Post-Base indexing, we would set Base < Required Insert Count
-    // Current implementation: Base = RIC (no Post-Base references in encoding)
-    int64_t base = static_cast<int64_t>(required_insert_count);
-
-    WriteHeaderPrefix(buffer, required_insert_count, base);
-
     // RFC 9114 Section 4.3: Pseudo-headers MUST appear before regular headers
     // and MUST be in a specific order: :method, :scheme, :authority, :path (for requests)
     // or :status (for responses)
     static const std::vector<std::string> pseudo_header_order = {
         ":method", ":scheme", ":authority", ":path", ":status"};
 
-    // Helper lambda to encode a single header
-    auto encode_header = [&](const std::string& name, const std::string& value) -> bool {
-        // Try to find in static table first
-        int32_t index = StaticTable::Instance().FindHeaderItemIndex(name, value);
-        if (index >= 0) {
-            // Indexed Header Field — static table (11xxxxxx)
-            QpackEncodePrefixedInteger(buffer, QpackHeaderPattern::kIndexedStaticPrefix,
-                QpackHeaderPattern::kIndexedStatic, static_cast<uint64_t>(index));
-            return true;
-        }
+    // === Two-pass encoding strategy (RFC 9204) ===
+    // Pass 1: Determine encoding decisions for each header, insert new entries into dynamic table,
+    //         and track the maximum required insert count (RIC).
+    // Pass 2: Write the correct header prefix (RIC/Base) and encode header representations.
 
-        // No match in static table. Use lowercase name for better static table matching (RFC 9114 requires lowercase)
-        std::string lower_name = name;
-        for (auto& c : lower_name) c = std::tolower(static_cast<unsigned char>(c));
-
-        index = StaticTable::Instance().FindHeaderItemIndex(lower_name);
-        if (index >= 0) {
-            // Literal Header Field With Name Reference — static (0101xxxx)
-            QpackEncodePrefixedInteger(buffer, QpackHeaderPattern::kLiteralNameRefStaticPrefix,
-                QpackHeaderPattern::kLiteralNameRefStatic, static_cast<uint64_t>(index));
-            EncodeString(value, buffer);
-            return true;
-        }
-
-        // No match in static table. Try dynamic table if enabled
-        if (enable_dynamic_table_) {
-            int32_t dindex = dynamic_table_.FindHeaderItemIndex(name, value);
-            if (dindex >= 0) {
-                // Indexed Header Field — dynamic (10xxxxxx)
-                // relative_index = base - 1 - absolute_index; base == ric here
-                uint64_t relative = static_cast<uint64_t>(base - 1 - dindex);
-                QpackEncodePrefixedInteger(
-                    buffer, QpackHeaderPattern::kIndexedDynamicPrefix, QpackHeaderPattern::kIndexedDynamic, relative);
-                return true;
-            }
-
-            // Prefer Insert With Name Reference if name exists in static or dynamic table
-            int32_t s_name_idx = StaticTable::Instance().FindHeaderItemIndex(lower_name);
-            int32_t d_name_idx = dynamic_table_.FindHeaderNameIndex(name);
-            bool with_name_ref = (s_name_idx >= 0) || (d_name_idx >= 0);
-            dynamic_table_.AddHeaderItem(name, value);
-            if (instruction_sender_) {
-                instruction_sender_({{name, value}});
-            }
-
-            // Fallback to Literal Header Field Without Name Reference
-        }
-
-        // RFC 9204 Section 4.5.6: Literal Header Field Without Name Reference (001xxxxx)
-        // Format: 001 N H NameLen(3)
-        bool use_huffman = HuffmanEncoder::Instance().ShouldHuffmanEncode(name);
-        uint8_t first_byte = QpackHeaderPattern::kLiteralNoNameRef;
-        if (use_huffman) {
-            first_byte |= 0x08;  // H bit
-        }
-
-        std::string name_to_encode = name;
-        if (use_huffman) {
-            std::vector<uint8_t> encoded = HuffmanEncoder::Instance().Encode(name);
-            name_to_encode.assign(reinterpret_cast<char*>(encoded.data()), encoded.size());
-        }
-
-        QpackEncodePrefixedInteger(buffer, 3, first_byte, static_cast<uint64_t>(name_to_encode.length()));
-        buffer->Write(reinterpret_cast<const uint8_t*>(name_to_encode.data()), name_to_encode.length());
-
-        EncodeString(value, buffer);
-        return true;
+    // Encoding decision for each header
+    enum class EncodeAction {
+        kStaticIndexed,          // Indexed Header Field — static table
+        kStaticNameRef,          // Literal with name reference — static table
+        kDynamicIndexed,         // Indexed Header Field — dynamic table (pre-base)
+        kDynamicPostBaseIndexed, // Indexed Header Field — dynamic table (post-base)
+        kLiteralNoNameRef,       // Literal without name reference
     };
 
-    // First, encode pseudo-headers in the correct order
+    struct HeaderEncoding {
+        std::string name;
+        std::string value;
+        EncodeAction action;
+        int32_t index;           // static or dynamic absolute index
+    };
+
+    // Record the total insert count before we start encoding.
+    // BUGFIX P1-1: Use GetInsertCount() (monotonically increasing) instead of
+    // GetEntryCount() (current deque size). After evictions, GetEntryCount() < GetInsertCount(),
+    // and absolute indices are based on total insert count.
+    uint64_t base_insert_count = dynamic_table_.GetInsertCount();
+
+    // Collect headers in the correct order (pseudo-headers first, then regular)
+    std::vector<std::pair<std::string, std::string>> ordered_headers;
     for (const auto& pseudo : pseudo_header_order) {
         auto it = headers.find(pseudo);
         if (it != headers.end()) {
-            if (!encode_header(it->first, it->second)) {
-                return false;
-            }
+            ordered_headers.push_back({it->first, it->second});
         }
     }
-
-    // Then, encode regular headers (non-pseudo-headers)
+    // Regular headers sorted for deterministic output (fixes P2-3: unordered_map iteration order)
+    std::vector<std::pair<std::string, std::string>> regular_headers;
     for (const auto& header : headers) {
-        // Skip pseudo-headers (already encoded above)
         if (!header.first.empty() && header.first[0] == ':') {
             continue;
         }
-        if (!encode_header(header.first, header.second)) {
-            return false;
+        regular_headers.push_back({header.first, header.second});
+    }
+    std::sort(regular_headers.begin(), regular_headers.end());
+    ordered_headers.insert(ordered_headers.end(), regular_headers.begin(), regular_headers.end());
+
+    // Pass 1: Determine encoding decisions
+    std::vector<HeaderEncoding> encodings;
+    uint64_t max_required_insert_count = 0;  // Track highest dynamic table entry referenced
+
+    for (const auto& h : ordered_headers) {
+        HeaderEncoding enc;
+        enc.name = h.first;
+        enc.value = h.second;
+
+        // Try exact match in static table
+        int32_t index = StaticTable::Instance().FindHeaderItemIndex(h.first, h.second);
+        if (index >= 0) {
+            enc.action = EncodeAction::kStaticIndexed;
+            enc.index = index;
+            encodings.push_back(std::move(enc));
+            continue;
+        }
+
+        // Try name-only match in static table (with lowercase)
+        std::string lower_name = h.first;
+        for (auto& c : lower_name) c = std::tolower(static_cast<unsigned char>(c));
+        index = StaticTable::Instance().FindHeaderItemIndex(lower_name);
+        if (index >= 0) {
+            enc.action = EncodeAction::kStaticNameRef;
+            enc.index = index;
+            encodings.push_back(std::move(enc));
+            continue;
+        }
+
+        // Try dynamic table if enabled
+        if (enable_dynamic_table_) {
+            // BUGFIX P1-1: Use absolute index instead of deque position.
+            // FindAbsoluteIndex returns RFC 9204 absolute index, which is
+            // monotonically increasing and survives evictions.
+            int64_t abs_idx = dynamic_table_.FindAbsoluteIndex(h.first, h.second);
+            if (abs_idx >= 0) {
+                // Existing entry — determine if pre-base or post-base
+                uint64_t abs_idx_u = static_cast<uint64_t>(abs_idx);
+                if (abs_idx_u < base_insert_count) {
+                    enc.action = EncodeAction::kDynamicIndexed;
+                } else {
+                    enc.action = EncodeAction::kDynamicPostBaseIndexed;
+                }
+                enc.index = static_cast<int32_t>(abs_idx);
+                max_required_insert_count = std::max(max_required_insert_count, abs_idx_u + 1);
+                encodings.push_back(std::move(enc));
+                continue;
+            }
+
+            // Insert new entry into dynamic table
+            dynamic_table_.AddHeaderItem(h.first, h.second);
+            if (instruction_sender_) {
+                instruction_sender_({{h.first, h.second}});
+            }
+
+            // The newly inserted entry's absolute index
+            uint64_t new_abs_index = dynamic_table_.GetInsertCount() - 1;
+            enc.action = EncodeAction::kDynamicPostBaseIndexed;
+            enc.index = static_cast<int32_t>(new_abs_index);
+            max_required_insert_count = std::max(max_required_insert_count, new_abs_index + 1);
+            encodings.push_back(std::move(enc));
+            continue;
+        }
+
+        // Fall through to literal without name reference
+        enc.action = EncodeAction::kLiteralNoNameRef;
+        enc.index = -1;
+        encodings.push_back(std::move(enc));
+    }
+
+    // Pass 2: Compute correct RIC/Base and write everything
+    uint64_t required_insert_count = max_required_insert_count;
+    int64_t base = static_cast<int64_t>(base_insert_count);
+
+    WriteHeaderPrefix(buffer, required_insert_count, base);
+
+    for (const auto& enc : encodings) {
+        switch (enc.action) {
+            case EncodeAction::kStaticIndexed: {
+                QpackEncodePrefixedInteger(buffer, QpackHeaderPattern::kIndexedStaticPrefix,
+                    QpackHeaderPattern::kIndexedStatic, static_cast<uint64_t>(enc.index));
+                break;
+            }
+            case EncodeAction::kStaticNameRef: {
+                QpackEncodePrefixedInteger(buffer, QpackHeaderPattern::kLiteralNameRefStaticPrefix,
+                    QpackHeaderPattern::kLiteralNameRefStatic, static_cast<uint64_t>(enc.index));
+                EncodeString(enc.value, buffer);
+                break;
+            }
+            case EncodeAction::kDynamicIndexed: {
+                // Pre-base reference: relative_index = base - 1 - absolute_index
+                uint64_t relative = static_cast<uint64_t>(base - 1 - enc.index);
+                QpackEncodePrefixedInteger(
+                    buffer, QpackHeaderPattern::kIndexedDynamicPrefix, QpackHeaderPattern::kIndexedDynamic, relative);
+                break;
+            }
+            case EncodeAction::kDynamicPostBaseIndexed: {
+                // Post-base reference: post_base_index = absolute_index - base
+                uint64_t post_base_index = static_cast<uint64_t>(enc.index - static_cast<int32_t>(base));
+                QpackEncodePrefixedInteger(
+                    buffer, QpackHeaderPattern::kPostBaseIndexedPrefix, QpackHeaderPattern::kPostBaseIndexed, post_base_index);
+                break;
+            }
+            case EncodeAction::kLiteralNoNameRef: {
+                // RFC 9204 Section 4.5.6: Literal Header Field Without Name Reference (001xxxxx)
+                bool use_huffman = HuffmanEncoder::Instance().ShouldHuffmanEncode(enc.name);
+                uint8_t first_byte = QpackHeaderPattern::kLiteralNoNameRef;
+                if (use_huffman) {
+                    first_byte |= 0x08;  // H bit
+                }
+
+                std::string name_to_encode = enc.name;
+                if (use_huffman) {
+                    std::vector<uint8_t> encoded = HuffmanEncoder::Instance().Encode(enc.name);
+                    name_to_encode.assign(reinterpret_cast<char*>(encoded.data()), encoded.size());
+                }
+
+                QpackEncodePrefixedInteger(buffer, 3, first_byte, static_cast<uint64_t>(name_to_encode.length()));
+                buffer->Write(reinterpret_cast<const uint8_t*>(name_to_encode.data()), name_to_encode.length());
+
+                EncodeString(enc.value, buffer);
+                break;
+            }
         }
     }
 
@@ -148,6 +212,9 @@ bool QpackEncoder::Decode(
         common::LOG_ERROR("QpackEncoder::Decode: read header prefix failed");
         return false;
     }
+    // Remember for callers that need to decide whether to emit Section Ack
+    // (RFC 9204 §4.4.1: MUST NOT emit Section Ack when RIC is zero).
+    last_decoded_ric_ = required_insert_count;
     // If required_insert_count > current inserted count, this header block is blocked
     if (required_insert_count > dynamic_table_.GetEntryCount()) {
         // Signal blocked; in full RFC flow, should queue this header block and return
@@ -178,6 +245,12 @@ bool QpackEncoder::Decode(
             do {
                 if (buffer->Read(&b, 1) != 1) {
                     common::LOG_ERROR("QpackEncoder::Decode: read byte failed. b:%d", b);
+                    return false;
+                }
+                // BUGFIX P1-2: Guard against varint overflow.
+                // Shifting by more than 63 bits is undefined behavior for uint64_t.
+                if (m > 62) {
+                    common::LOG_ERROR("QpackEncoder::Decode: varint too large, shift overflow (m=%llu)", m);
                     return false;
                 }
                 value += static_cast<uint64_t>(b & QpackConst::kVarintValueMask) << m;
@@ -212,7 +285,7 @@ bool QpackEncoder::Decode(
                 common::LOG_ERROR("QpackEncoder::Decode: absolute index is less than 0. abs_index:%lld", abs_index);
                 return false;
             }
-            auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
+            auto item = dynamic_table_.FindHeaderItemByAbsoluteIndex(static_cast<uint64_t>(abs_index));
             if (!item) {
                 common::LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
                 return false;
@@ -253,7 +326,7 @@ bool QpackEncoder::Decode(
                 common::LOG_ERROR("QpackEncoder::Decode: absolute index is less than 0. abs_index:%lld", abs_index);
                 return false;
             }
-            auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
+            auto item = dynamic_table_.FindHeaderItemByAbsoluteIndex(static_cast<uint64_t>(abs_index));
             if (!item) {
                 common::LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
                 return false;
@@ -325,7 +398,7 @@ bool QpackEncoder::Decode(
                 common::LOG_ERROR("QpackEncoder::Decode: absolute index is out of range. abs_index:%lld", abs_index);
                 return false;
             }
-            auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
+            auto item = dynamic_table_.FindHeaderItemByAbsoluteIndex(static_cast<uint64_t>(abs_index));
             if (!item) {
                 common::LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
                 return false;
@@ -349,7 +422,7 @@ bool QpackEncoder::Decode(
                 common::LOG_ERROR("QpackEncoder::Decode: absolute index is out of range. abs_index:%lld", abs_index);
                 return false;
             }
-            auto item = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs_index));
+            auto item = dynamic_table_.FindHeaderItemByAbsoluteIndex(static_cast<uint64_t>(abs_index));
             if (!item) {
                 common::LOG_ERROR("QpackEncoder::Decode: find header item failed. abs_index:%lld", abs_index);
                 return false;
@@ -404,7 +477,7 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
             // Insert With Name Reference (1Sxxxxxx)
             // S=1 static, S=0 dynamic; 6-bit prefix for index
             int32_t s_name_idx = StaticTable::Instance().FindHeaderItemIndex(p.first);
-            int32_t d_name_idx = dynamic_table_.FindHeaderNameIndex(p.first);
+            int64_t d_name_idx = dynamic_table_.FindAbsoluteNameIndex(p.first);
             bool is_static = s_name_idx >= 0;
             uint8_t mask = QpackEncoderInstr::kInsertWithNameRef;
             if (is_static) {
@@ -420,7 +493,8 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
 
             } else {
                 // S=0, dynamic name index relative to current Insert Count (absolute index to relative per RFC 9204)
-                uint64_t ric = dynamic_table_.GetEntryCount();
+                // BUGFIX P1-1: Use GetInsertCount() instead of GetEntryCount()
+                uint64_t ric = dynamic_table_.GetInsertCount();
                 // If name not found, fall back to Insert Without Name Reference
                 if (d_name_idx < 0) {
                     // Insert Without Name Reference (01xxxxxx)
@@ -445,8 +519,9 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                     continue;
                 }
                 // dynamic relative index = ric - 1 - absolute_index
+                // d_name_idx is now an absolute index from FindAbsoluteNameIndex
                 uint64_t relative =
-                    static_cast<uint64_t>(static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(d_name_idx));
+                    static_cast<uint64_t>(static_cast<int64_t>(ric) - 1 - d_name_idx);
                 if (!QpackEncodePrefixedInteger(
                         instr_buf, QpackEncoderInstr::kInsertWithNameRefPrefix, mask, relative)) {
                     common::LOG_ERROR(
@@ -510,6 +585,12 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
                     common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: read byte failed. b:%d", b);
                     return false;
                 }
+                // BUGFIX P1-2: Guard against varint overflow.
+                // Shifting by more than 63 bits is undefined behavior for uint64_t.
+                if (m > 62) {
+                    common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: varint too large, shift overflow (m=%llu)", m);
+                    return false;
+                }
                 value += static_cast<uint64_t>(b & QpackConst::kVarintValueMask) << m;
                 m += 7;
             } while (b & QpackConst::kVarintContinueBit);
@@ -547,15 +628,17 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
                 }
                 name = hi->name_;
             } else {
-                // dynamic: idx is relative; convert to absolute = ric - 1 - idx
-                uint64_t ric = dynamic_table_.GetEntryCount();
-                int64_t abs = static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(idx);
+                // dynamic: idx is relative to current insert count
+                // RFC 9204: relative_index = insert_count - 1 - absolute_index
+                // So: absolute_index = insert_count - 1 - relative_index
+                uint64_t insert_count = dynamic_table_.GetInsertCount();
+                int64_t abs = static_cast<int64_t>(insert_count) - 1 - static_cast<int64_t>(idx);
                 if (abs < 0) {
                     common::LOG_ERROR(
                         "QpackEncoder::DecodeEncoderInstructions: absolute index is less than 0. abs:%lld", abs);
                     return false;
                 }
-                auto hi = dynamic_table_.FindHeaderItem(static_cast<uint32_t>(abs));
+                auto hi = dynamic_table_.FindHeaderItemByAbsoluteIndex(static_cast<uint64_t>(abs));
                 if (!hi) {
                     common::LOG_ERROR(
                         "QpackEncoder::DecodeEncoderInstructions: find header item failed. abs:%lld", abs);
@@ -616,15 +699,22 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
                 common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode duplicate failed. rel:%llu", rel);
                 return false;
             }
-            uint64_t ric = dynamic_table_.GetEntryCount();
-            int64_t abs = static_cast<int64_t>(ric) - 1 - static_cast<int64_t>(rel);
+            uint64_t insert_count = dynamic_table_.GetInsertCount();
+            int64_t abs = static_cast<int64_t>(insert_count) - 1 - static_cast<int64_t>(rel);
             if (abs < 0) {
                 common::LOG_ERROR(
                     "QpackEncoder::DecodeEncoderInstructions: absolute index is less than 0. abs:%lld", abs);
                 return false;
             }
-            // Use DuplicateEntry method which handles the duplication properly
-            if (!dynamic_table_.DuplicateEntry(static_cast<uint32_t>(abs))) {
+            // DuplicateEntry accepts deque position, convert from absolute index
+            uint64_t evicted = dynamic_table_.GetInsertCount() - dynamic_table_.GetEntryCount();
+            if (static_cast<uint64_t>(abs) < evicted) {
+                common::LOG_ERROR(
+                    "QpackEncoder::DecodeEncoderInstructions: entry already evicted. abs:%lld", abs);
+                return false;
+            }
+            uint32_t deque_pos = static_cast<uint32_t>((dynamic_table_.GetInsertCount() - 1) - static_cast<uint64_t>(abs));
+            if (!dynamic_table_.DuplicateEntry(deque_pos)) {
                 common::LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: duplicate entry failed. abs:%lld", abs);
                 return false;
             }
@@ -641,14 +731,17 @@ void QpackEncoder::WriteHeaderPrefix(
     std::shared_ptr<common::IBuffer> buffer, uint64_t required_insert_count, int64_t base) {
     // RFC 9204 Section 4.5.1: Encode Required Insert Count and Delta Base
 
-    // Encode Required Insert Count (8-bit prefix, 0x00 mask)
     // RFC 9204 Section 4.5.1.1: Encoded Required Insert Count
+    // MaxEntries = floor(MaxTableCapacity / 32)
+    // EncodedRIC = (RIC % (2 * MaxEntries)) + 1  (when RIC > 0)
+    // EncodedRIC = 0                               (when RIC == 0)
     uint64_t encoded_ric = 0;
     if (required_insert_count > 0) {
-        // For simplicity, we directly encode the value
-        // Full RFC algorithm: EncodedRIC = (RIC % (2 * MaxEntries)) + 1
-        // Here we assume MaxEntries is large enough that wrapping doesn't occur
-        encoded_ric = required_insert_count;
+        uint64_t max_entries = max_table_capacity_ / 32;
+        if (max_entries == 0) {
+            max_entries = 1;
+        }
+        encoded_ric = (required_insert_count % (2 * max_entries)) + 1;
     }
     QpackEncodePrefixedInteger(buffer, QpackHeaderPrefix::kRequiredInsertCountPrefix, 0x00, encoded_ric);
 
@@ -675,9 +768,45 @@ bool QpackEncoder::ReadHeaderPrefix(
         return false;
     }
 
-    // For simplicity, we directly use the encoded value
-    // Full RFC algorithm would decode: RIC = (EncodedRIC - 1) or handle wrapping
-    required_insert_count = encoded_ric;
+    // RFC 9204 Section 4.5.1.1: Decode Required Insert Count
+    // If EncodedRIC == 0, RIC == 0
+    // Otherwise: MaxEntries = floor(MaxTableCapacity / 32)
+    //   FullRange = 2 * MaxEntries
+    //   if EncodedRIC > FullRange: error
+    //   MaxValue = TotalNumberOfInserts + MaxEntries
+    //   MaxWrapped = floor(MaxValue / FullRange) * FullRange
+    //   RIC = MaxWrapped + EncodedRIC - 1
+    //   if RIC > MaxValue: RIC -= FullRange
+    //   if RIC == 0: error
+    if (encoded_ric == 0) {
+        required_insert_count = 0;
+    } else {
+        uint64_t max_entries = max_table_capacity_ / 32;
+        if (max_entries == 0) {
+            max_entries = 1;
+        }
+        uint64_t full_range = 2 * max_entries;
+        if (encoded_ric > full_range) {
+            common::LOG_ERROR("QpackEncoder::ReadHeaderPrefix: encoded RIC exceeds full range. "
+                "encoded_ric:%llu, full_range:%llu", encoded_ric, full_range);
+            return false;
+        }
+        uint64_t total_inserts = dynamic_table_.GetInsertCount();
+        uint64_t max_value = total_inserts + max_entries;
+        uint64_t max_wrapped = (max_value / full_range) * full_range;
+        required_insert_count = max_wrapped + encoded_ric - 1;
+        if (required_insert_count > max_value) {
+            if (required_insert_count <= full_range) {
+                common::LOG_ERROR("QpackEncoder::ReadHeaderPrefix: RIC decode underflow");
+                return false;
+            }
+            required_insert_count -= full_range;
+        }
+        if (required_insert_count == 0) {
+            common::LOG_ERROR("QpackEncoder::ReadHeaderPrefix: decoded RIC is zero but encoded was non-zero");
+            return false;
+        }
+    }
 
     // Decode Delta Base (7-bit prefix with S bit)
     uint64_t abs_delta_base = 0;

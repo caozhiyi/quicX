@@ -135,7 +135,7 @@ TEST_F(StreamCloseScenarios, BidirectionStreamBothDirectionsRequired) {
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        event_loop, 10000, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
     // send direction completed
     uint8_t data[] = "Request";
@@ -175,7 +175,7 @@ TEST_F(StreamCloseScenarios, BidirectionStreamResetWithError) {
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        event_loop, 10000, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
     // call Reset with error
     stream->Reset(0x456);
@@ -215,7 +215,7 @@ TEST_F(StreamCloseScenarios, BidirectionStreamResetWithZeroWarns) {
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
     auto stream = std::make_shared<BidirectionStream>(
-        event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
+        event_loop, 10000, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
     // call Reset with error=0 (wrong API usage)
     stream->Reset(0);

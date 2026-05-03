@@ -2,6 +2,7 @@
 
 #include "common/buffer/buffer_span.h"
 #include "common/log/log.h"
+#include "common/qlog/qlog.h"
 
 #include "quic/common/version.h"
 #include "quic/connection/connection_crypto.h"
@@ -12,6 +13,19 @@
 
 namespace quicx {
 namespace quic {
+
+namespace {
+// Helper to convert EncryptionLevel to qlog key_type string
+const char* EncryptionLevelToKeyType(EncryptionLevel level) {
+    switch (level) {
+        case kInitial:     return "initial";
+        case kHandshake:   return "handshake";
+        case kApplication: return "1rtt";
+        case kEarlyData:   return "0rtt";
+        default:           return "unknown";
+    }
+}
+}  // anonymous namespace
 
 ConnectionCrypto::ConnectionCrypto():
     cur_encryption_level_(kInitial),
@@ -32,6 +46,15 @@ void ConnectionCrypto::SetReadSecret(
     }
     cur_encryption_level_ = level;
     cryptographer->InstallSecretWithVersion(secret, (uint32_t)secret_len, false, quic_version_);
+
+    // Log key_updated event for read key
+    if (qlog_trace_) {
+        common::KeyUpdatedData key_data;
+        key_data.key_type = EncryptionLevelToKeyType(level);
+        key_data.trigger = "tls";
+        key_data.is_write = false;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+    }
 }
 
 void ConnectionCrypto::SetWriteSecret(
@@ -44,6 +67,15 @@ void ConnectionCrypto::SetWriteSecret(
     }
     cur_encryption_level_ = level;
     cryptographer->InstallSecretWithVersion(secret, (uint32_t)secret_len, true, quic_version_);
+
+    // Log key_updated event for write key
+    if (qlog_trace_) {
+        common::KeyUpdatedData key_data;
+        key_data.key_type = EncryptionLevelToKeyType(level);
+        key_data.trigger = "tls";
+        key_data.is_write = true;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+    }
 
     // When 0-RTT write key is installed, notify the connection that early data can be sent
     if (level == kEarlyData && early_data_ready_cb_) {
@@ -105,6 +137,10 @@ bool ConnectionCrypto::InstallInitSecretWithVersion(const uint8_t* secret, uint3
     // Update stored version
     quic_version_ = version;
 
+    // Remember the DCID used to derive this Initial secret, so that a later
+    // Compatible VN rekey (RFC 9368) can reuse the same DCID value.
+    initial_secret_dcid_.assign(reinterpret_cast<const char*>(secret), len);
+
     // make initial cryptographer
     std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(kCipherIdAes128GcmSha256);
     cryptographer->SetVersion(version);
@@ -114,12 +150,69 @@ bool ConnectionCrypto::InstallInitSecretWithVersion(const uint8_t* secret, uint3
     cryptographers_[kInitial] = cryptographer;
     
     common::LOG_INFO("Installed Initial secret with version %s (0x%08x)", VersionToString(version), version);
+
+    // Log key_updated events for Initial keys (both read and write)
+    if (qlog_trace_) {
+        common::KeyUpdatedData key_data;
+        key_data.key_type = "initial";
+        key_data.trigger = "tls";
+        key_data.is_write = false;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+        key_data.is_write = true;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+    }
+
     return true;
 }
 
 bool ConnectionCrypto::InstallInitSecretForRetry(
     const uint8_t* write_cid, uint32_t write_len, const uint8_t* read_cid, uint32_t read_len) {
     return InstallInitSecretForRetryWithVersion(write_cid, write_len, read_cid, read_len, quic_version_);
+}
+
+bool ConnectionCrypto::RekeyInitialForVersion(
+    uint32_t new_version, const uint8_t* dcid, uint32_t dcid_len, bool is_server) {
+    // RFC 9368 §4: When negotiating a compatible version, endpoints derive new
+    // Initial keys using the new version's salt and labels, with the SAME DCID
+    // that was used for the client's first Initial. The old Initial cryptographer
+    // is discarded (its keys are never used again; any buffered in-flight Initial
+    // packets MUST be retransmitted under the new version).
+    if (dcid == nullptr || dcid_len == 0) {
+        common::LOG_ERROR("RekeyInitialForVersion: invalid DCID");
+        return false;
+    }
+
+    // Update stored version.
+    quic_version_ = new_version;
+
+    // Update cached DCID (used for future rekeys / diagnostics). In RFC 9368
+    // this is the SAME DCID as before, but we re-assign defensively in case
+    // a caller passes a different buffer.
+    initial_secret_dcid_.assign(reinterpret_cast<const char*>(dcid), dcid_len);
+
+    // Drop the existing Initial cryptographer (if any) so that
+    // InstallInitSecretWithVersion's "already installed" guard does not trip.
+    cryptographers_[kInitial] = nullptr;
+
+    std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(kCipherIdAes128GcmSha256);
+    cryptographer->SetVersion(new_version);
+    cryptographer->InstallInitSecretWithVersion(dcid, dcid_len, new_version, is_server);
+    cryptographers_[kInitial] = cryptographer;
+
+    common::LOG_INFO("Re-installed Initial secret for Compatible VN: version=%s (0x%08x), dcid_len=%u, is_server=%d",
+        VersionToString(new_version), new_version, dcid_len, static_cast<int>(is_server));
+
+    if (qlog_trace_) {
+        common::KeyUpdatedData key_data;
+        key_data.key_type = "initial";
+        key_data.trigger = "compat_vn";
+        key_data.is_write = false;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+        key_data.is_write = true;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+    }
+
+    return true;
 }
 
 bool ConnectionCrypto::InstallInitSecretForRetryWithVersion(
@@ -195,15 +288,74 @@ bool ConnectionCrypto::TriggerKeyUpdate() {
     }
 
     // Then update read keys (incoming traffic)
-    // Note: In practice, we might want to delay read key update until we receive
-    // a packet with the new Key Phase bit, but for simplicity we update both here
     result = cryptographer->KeyUpdateWithVersion(nullptr, 0, false, quic_version_);
     if (result != ICryptographer::Result::kOk) {
         common::LOG_ERROR("Key update failed for read keys: %d", static_cast<int>(result));
         return false;
     }
 
-    common::LOG_INFO("Key update completed successfully (version: %s)", VersionToString(quic_version_));
+    // Flip key phase
+    current_key_phase_ ^= 1;
+
+    common::LOG_INFO("Key update completed successfully (version: %s, new key_phase: %u)",
+        VersionToString(quic_version_), current_key_phase_);
+
+    // Log key_updated events for 1-RTT key update
+    if (qlog_trace_) {
+        common::KeyUpdatedData key_data;
+        key_data.key_type = "1rtt";
+        key_data.trigger = "key_update";
+        key_data.is_write = true;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+        key_data.is_write = false;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+    }
+
+    return true;
+}
+
+bool ConnectionCrypto::TriggerReadKeyUpdate() {
+    // RFC 9001 Section 6: Passive Key Update
+    // Called when we receive a packet with a different Key Phase bit
+    // We need to update read keys first, then also update write keys
+    auto cryptographer = cryptographers_[kApplication];
+    if (!cryptographer) {
+        common::LOG_ERROR("Cannot trigger passive key update: Application level cryptographer not ready");
+        return false;
+    }
+
+    // Update read keys first (to decrypt the incoming packet with new key)
+    auto result = cryptographer->KeyUpdateWithVersion(nullptr, 0, false, quic_version_);
+    if (result != ICryptographer::Result::kOk) {
+        common::LOG_ERROR("Passive key update failed for read keys: %d", static_cast<int>(result));
+        return false;
+    }
+
+    // Also update write keys (RFC 9001 §6.2: an endpoint SHOULD update its
+    // send keys in response to a peer's key update)
+    result = cryptographer->KeyUpdateWithVersion(nullptr, 0, true, quic_version_);
+    if (result != ICryptographer::Result::kOk) {
+        common::LOG_ERROR("Passive key update failed for write keys: %d", static_cast<int>(result));
+        return false;
+    }
+
+    // Flip key phase to match the peer's
+    current_key_phase_ ^= 1;
+
+    common::LOG_INFO("Passive key update completed successfully (version: %s, new key_phase: %u)",
+        VersionToString(quic_version_), current_key_phase_);
+
+    // Log key_updated events
+    if (qlog_trace_) {
+        common::KeyUpdatedData key_data;
+        key_data.key_type = "1rtt";
+        key_data.trigger = "remote_update";
+        key_data.is_write = false;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+        key_data.is_write = true;
+        QLOG_KEY_UPDATED(qlog_trace_, key_data);
+    }
+
     return true;
 }
 

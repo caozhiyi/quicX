@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <cstring>
 #include <unistd.h>
+#include <vector>
 #include <sys/event.h>
 #include <sys/types.h>
 
@@ -49,12 +50,12 @@ bool KqueueEventDriver::Init() {
     }
     // Set both ends of the pipe to non-blocking mode
     auto noblock_ret1 = common::SocketNoblocking(wakeup_fd_[0]);
-    if (noblock_ret1.errno_ != 0) {
-        common::LOG_ERROR("Failed to set wakeup pipe read end non-blocking: %s", strerror(noblock_ret1.errno_));
+    if (noblock_ret1.error_code_ != 0) {
+        common::LOG_ERROR("Failed to set wakeup pipe read end non-blocking: %s", strerror(noblock_ret1.error_code_));
         common::Close(wakeup_fd_[1]);
         common::Close(wakeup_fd_[0]);
-        wakeup_fd_[0] = 0;
-        wakeup_fd_[1] = 0;
+        wakeup_fd_[0] = -1;
+        wakeup_fd_[1] = -1;
 
         close(kqueue_fd_);
         kqueue_fd_ = -1;
@@ -62,12 +63,12 @@ bool KqueueEventDriver::Init() {
     }
     
     auto noblock_ret2 = common::SocketNoblocking(wakeup_fd_[1]);
-    if (noblock_ret2.errno_ != 0) {
-        common::LOG_ERROR("Failed to set wakeup pipe read end non-blocking: %s", strerror(noblock_ret2.errno_));
+    if (noblock_ret2.error_code_ != 0) {
+        common::LOG_ERROR("Failed to set wakeup pipe write end non-blocking: %s", strerror(noblock_ret2.error_code_));
         common::Close(wakeup_fd_[1]);
         common::Close(wakeup_fd_[0]);
-        wakeup_fd_[0] = 0;
-        wakeup_fd_[1] = 0;
+        wakeup_fd_[0] = -1;
+        wakeup_fd_[1] = -1;
         
         close(kqueue_fd_);
         kqueue_fd_ = -1;
@@ -82,8 +83,8 @@ bool KqueueEventDriver::Init() {
         common::LOG_ERROR("Failed to add wakeup fd to kqueue: %s", strerror(errno));
         common::Close(wakeup_fd_[1]);
         close(kqueue_fd_);
-        wakeup_fd_[0] = 0;
-        wakeup_fd_[1] = 0;
+        wakeup_fd_[0] = -1;
+        wakeup_fd_[1] = -1;
         kqueue_fd_ = -1;
         return false;
     }
@@ -97,19 +98,23 @@ bool KqueueEventDriver::AddFd(int32_t sockfd, int32_t events) {
         return false;
     }
 
-    struct kevent kev;
+    // Batch submit: collect all changes into a changelist and submit in one kevent call
+    struct kevent changelist[2];
+    int nchanges = 0;
+
     if (events & EventType::ET_READ) {
-        EV_SET(&kev, sockfd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
-        if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
-            common::LOG_ERROR("Failed to add read event for fd %d to kqueue: %s", sockfd, strerror(errno));
-            return false;
-        }
+        EV_SET(&changelist[nchanges], sockfd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
+        nchanges++;
     }
     
     if (events & EventType::ET_WRITE) {
-        EV_SET(&kev, sockfd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, nullptr);
-        if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
-            common::LOG_ERROR("Failed to add write event for fd %d to kqueue: %s", sockfd, strerror(errno));
+        EV_SET(&changelist[nchanges], sockfd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, nullptr);
+        nchanges++;
+    }
+
+    if (nchanges > 0) {
+        if (kevent(kqueue_fd_, changelist, nchanges, nullptr, 0, nullptr) < 0) {
+            common::LOG_ERROR("Failed to add events for fd %d to kqueue: %s", sockfd, strerror(errno));
             return false;
         }
     }
@@ -148,7 +153,7 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         return -1;
     }
 
-    struct kevent kqueue_events[max_events_];
+    std::vector<struct kevent> kqueue_events(max_events_);
     struct timespec timeout;
     
     if (timeout_ms >= 0) {
@@ -156,7 +161,7 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         timeout.tv_nsec = (timeout_ms % 1000) * 1000000;
     }
     
-    int nfds = kevent(kqueue_fd_, nullptr, 0, kqueue_events, max_events_, 
+    int nfds = kevent(kqueue_fd_, nullptr, 0, kqueue_events.data(), max_events_, 
                      timeout_ms >= 0 ? &timeout : nullptr);
     
     if (nfds < 0) {

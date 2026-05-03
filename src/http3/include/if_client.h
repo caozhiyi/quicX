@@ -57,6 +57,11 @@ public:
      * has been received and buffered. Use response->GetBody() to access the
      * complete body content.
      *
+     * **Error Handling:**
+     * - error = 0: Response received successfully (check GetStatusCode() for HTTP status)
+     * - error != 0: Protocol/network error (connection failed, timeout, etc.)
+     * - HTTP errors (400, 404, 500) are delivered with error=0, check GetStatusCode()
+     *
      * @param url Target URL (e.g., "https://example.com/api/data")
      * @param method HTTP method (GET, POST, PUT, DELETE, etc.)
      * @param request Request object containing headers and optionally body
@@ -66,16 +71,26 @@ public:
      * @note For sending large request bodies, use request->SetRequestBodyProvider()
      * @note This is the simplest mode for small-to-medium sized responses
      *
-     * @example Simple request/response:
+     * @example Simple request/response with error handling:
      * @code
      * auto req = IRequest::Create();
      * req->SetBody("request data");
      * client->DoRequest(url, HttpMethod::kPost, req,
      *     [](std::shared_ptr<IResponse> resp, uint32_t error) {
-     *         if (error == 0) {
-     *             std::string body = resp->GetBody();  // Complete response body
-     *             process(body);
+     *         if (error != 0) {
+     *             // Protocol/network error - no response received
+     *             LOG("Connection failed: %u", error);
+     *             return;
      *         }
+     *         // Check HTTP status code
+     *         int status = resp->GetStatusCode();
+     *         if (status >= 400) {
+     *             LOG("HTTP error: %d", status);
+     *             return;
+     *         }
+     *         // Success - process response body
+     *         std::string body = resp->GetBody();
+     *         process(body);
      *     });
      * @endcode
      *
@@ -107,6 +122,12 @@ public:
      * - OnBodyChunk(): called for each chunk of response body
      * - OnError(): called only if a protocol/network error occurs
      *
+     * **Error Handling:**
+     * - OnHeaders() is called for ALL successful responses (including 4xx, 5xx)
+     *   → Check response->GetStatusCode() to distinguish success from HTTP errors
+     * - OnError() is ONLY called for protocol/network errors (connection failed, etc.)
+     *   → NOT called for HTTP status errors (400, 404, 500, etc.)
+     *
      * This is useful for:
      * - Large file downloads
      * - Real-time data streaming
@@ -120,13 +141,18 @@ public:
      *
      * @note For sending large request bodies, use request->SetRequestBodyProvider()
      *
-     * @example File download with streaming:
+     * @example File download with complete error handling:
      * @code
      * class FileDownloadHandler : public IAsyncClientHandler {
      * public:
      *     void OnHeaders(std::shared_ptr<IResponse> resp) override {
-     *         if (resp->GetStatusCode() == 200) {
+     *         int status = resp->GetStatusCode();
+     *         if (status == 200) {
      *             file_ = fopen("download.dat", "wb");
+     *         } else if (status == 404) {
+     *             LOG("File not found");  // HTTP error, not protocol error
+     *         } else if (status >= 500) {
+     *             LOG("Server error: %d", status);  // HTTP error
      *         }
      *     }
      *     void OnBodyChunk(const uint8_t* data, size_t len, bool is_last) override {
@@ -137,7 +163,9 @@ public:
      *         }
      *     }
      *     void OnError(uint32_t error) override {
+     *         // Protocol/network error - connection failed
      *         if (file_) fclose(file_);
+     *         LOG("Connection error: %u", error);
      *     }
      * private:
      *     FILE* file_ = nullptr;

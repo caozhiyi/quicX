@@ -91,11 +91,11 @@ static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>,
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
     std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
-    client_ctx->Init(false);
+    client_ctx->Init(false, "", false);  // disable early data, default ciphers, skip peer verify (self-signed cert)
 
     auto event_loop = common::MakeEventLoop();
     event_loop->Init();
-    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop, nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop);
 
     common::Address addr(common::AddressType::kIpv4);
     addr.SetIp("127.0.0.1");
@@ -103,7 +103,7 @@ static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>,
 
     client_conn->Dial(addr, "h3", client_tp);
 
-    auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3", nullptr, nullptr, nullptr, nullptr, nullptr);
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3");
     server_conn->AddTransportParam(server_tp);
 
     // Attach MockSenders
@@ -333,7 +333,7 @@ TEST(path_migration, preferred_address_mechanism) {
                     bool found_challenge = false;
 
                     for (auto& p : pkts) {
-                        if (p->GetCryptoLevel() != PakcetCryptoLevel::kApplicationCryptoLevel) {
+                        if (p->GetCryptoLevel() != PacketCryptoLevel::kApplicationCryptoLevel) {
                             continue;
                         }
                         auto recv_crypto = server_conn->GetCryptographerForTest(p->GetCryptoLevel());

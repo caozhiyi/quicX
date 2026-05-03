@@ -59,7 +59,7 @@ std::ostream& operator<< (std::ostream &out, Address &addr) {
 }
 
 bool operator==(const Address &addr1, const Address &addr2) {
-    return addr1.ip_ == addr2.ip_ && addr1.port_ == addr2.port_ && addr1.port_ != 0;
+    return addr1.ip_ == addr2.ip_ && addr1.port_ == addr2.port_;
 }
 
 AddressType Address::CheckAddressType(const std::string& ip) {

@@ -136,7 +136,6 @@ private:
     AsyncWriter* writer_;
 
     // Thread safety: Connection is bound to a single thread, no mutex needed
-    // 由于连接与线程绑定，QlogTrace 对象只会被单线程访问，无需加锁
 #ifndef NDEBUG
     // Debug mode: Verify single-thread access assumption
     std::thread::id owner_thread_id_;

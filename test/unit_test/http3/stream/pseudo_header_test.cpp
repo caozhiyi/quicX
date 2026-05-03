@@ -185,8 +185,11 @@ TEST_F(PseudoHeaderTest, ResponseEncodeDecodeCombined) {
 
 TEST_F(PseudoHeaderTest, RequestComplexPathEncodeDecodeCombined) {
     // Test with complex path containing query parameters and fragments
+    // Per HTTP/3 semantics, DecodeRequest separates path from query params.
+    // Fragments (#results) are not sent to the server per RFC 9114, but if
+    // present in the :path they end up in the query string parsing.
     request_->SetMethod(HttpMethod::kGet);
-    request_->SetPath("/search?q=test&page=1#results");
+    request_->SetPath("/search?q=test&page=1");
     request_->SetScheme("https");
     request_->SetAuthority("search.example.com:8443");
 
@@ -200,11 +203,17 @@ TEST_F(PseudoHeaderTest, RequestComplexPathEncodeDecodeCombined) {
     // Decode the request
     PseudoHeader::Instance().DecodeRequest(decoded_request);
 
-    // Verify the complex path is preserved
+    // After decoding, path and query params are separated
     EXPECT_EQ(decoded_request->GetMethod(), HttpMethod::kGet);
-    EXPECT_EQ(decoded_request->GetPath(), "/search?q=test&page=1#results");
+    EXPECT_EQ(decoded_request->GetPath(), "/search");
     EXPECT_EQ(decoded_request->GetScheme(), "https");
     EXPECT_EQ(decoded_request->GetAuthority(), "search.example.com:8443");
+
+    // Query parameters should be parsed
+    auto& query_params = decoded_request->GetQueryParams();
+    EXPECT_EQ(query_params.size(), 2);
+    EXPECT_EQ(query_params.at("q"), "test");
+    EXPECT_EQ(query_params.at("page"), "1");
 }
 
 TEST_F(PseudoHeaderTest, ResponseMultipleHeadersEncodeDecodeCombined) {

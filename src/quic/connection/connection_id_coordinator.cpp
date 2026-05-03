@@ -1,7 +1,9 @@
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
 
 #include "common/log/log.h"
+#include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_id_coordinator.h"
 #include "quic/connection/controler/send_manager.h"
@@ -10,6 +12,21 @@
 
 namespace quicx {
 namespace quic {
+
+namespace {
+// Helper to convert ConnectionID to hex string for qlog
+std::string CIDToHexString(const ConnectionID& cid) {
+    std::ostringstream oss;
+    const uint8_t* id = cid.GetID();
+    uint8_t len = cid.GetLength();
+    for (uint8_t i = 0; i < len; ++i) {
+        char buf[3];
+        snprintf(buf, sizeof(buf), "%02x", id[i]);
+        oss << buf;
+    }
+    return oss.str();
+}
+}  // anonymous namespace
 
 ConnectionIDCoordinator::ConnectionIDCoordinator(std::shared_ptr<common::IEventLoop> event_loop,
     SendManager& send_manager, AddConnectionIDCallback add_cb, RetireConnectionIDCallback retire_cb):
@@ -116,6 +133,15 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
         // Send frame through send manager
         send_manager_.ToSendFrame(frame);
 
+        // Log connection_id_updated event for pool replenishment
+        if (qlog_trace_) {
+            common::ConnectionIdUpdatedData cid_data;
+            cid_data.owner = "local";
+            cid_data.new_id = CIDToHexString(new_cid);
+            cid_data.trigger = "pool_replenish";
+            QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
+        }
+
         common::LOG_DEBUG("ConnectionIDCoordinator: generated NEW_CONNECTION_ID: seq=%llu, len=%d",
             new_cid.GetSequenceNumber(), new_cid.GetLength());
     }
@@ -136,10 +162,22 @@ bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
         return false;
     }
 
+    auto new_cid = remote_conn_id_manager_->GetCurrentID();
+
     // Send RETIRE_CONNECTION_ID for the old CID
     auto retire = std::make_shared<RetireConnectionIDFrame>();
     retire->SetSequenceNumber(old_cid.GetSequenceNumber());
     send_manager_.ToSendFrame(retire);
+
+    // Log connection_id_updated event for CID rotation
+    if (qlog_trace_) {
+        common::ConnectionIdUpdatedData cid_data;
+        cid_data.owner = "remote";
+        cid_data.old_id = CIDToHexString(old_cid);
+        cid_data.new_id = CIDToHexString(new_cid);
+        cid_data.trigger = "cid_rotation";
+        QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
+    }
 
     common::LOG_DEBUG("ConnectionIDCoordinator: rotated remote CID, retired seq=%llu", old_cid.GetSequenceNumber());
 

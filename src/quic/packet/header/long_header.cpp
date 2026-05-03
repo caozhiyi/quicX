@@ -26,11 +26,25 @@ LongHeader::LongHeader(uint8_t flag):
 LongHeader::~LongHeader() {}
 
 bool LongHeader::EncodeHeader(std::shared_ptr<common::IBuffer> buffer) {
-    if (!HeaderFlag::EncodeFlag(buffer)) {
+    // RFC 9369 §3.2: Long Header Packet Type wire bits depend on QUIC version.
+    // Concrete packet type constructors set packet_type_ to the v1 enum value
+    // (Initial=0, 0-RTT=1, Handshake=2, Retry=3). Translate it to the
+    // version-specific wire representation just for writing the flag byte
+    // (which also becomes part of the AEAD AD), then restore the v1 enum in
+    // memory so subsequent encode calls (e.g. retransmissions) stay correct.
+    PacketType logical_type = HeaderFlag::GetPacketType();
+    uint8_t wire_bits = MapPacketTypeToWire(logical_type, version_);
+    uint8_t v1_bits = static_cast<uint8_t>(logical_type) & 0x03;
+    GetLongHeaderFlag().SetPacketType(wire_bits);
+
+    bool flag_ok = HeaderFlag::EncodeFlag(buffer);
+    // Restore the in-memory representation regardless of success.
+    GetLongHeaderFlag().SetPacketType(v1_bits);
+    if (!flag_ok) {
         return false;
     }
 
-    uint16_t need_size = EncodeHeaderSize();
+    uint32_t need_size = EncodeHeaderSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
@@ -70,12 +84,33 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
         return false;
     }
 
+    // Capture the *wire* flag byte before we possibly normalize packet_type_
+    // below: the byte in `buffer` at `header_start` must stay as-is because it
+    // participates in AEAD AD (and header protection already operated on it).
+    uint8_t wire_flag_byte = flag_.header_flag_;
+
     common::BufferDecodeWrapper wrapper(buffer);
     // decode version
     wrapper.DecodeFixedUint32(version_);
 
+    // RFC 9369 §3.2: for QUIC v2 the two packet-type wire bits need to be
+    // translated to the canonical v1 enum representation used by the rest of
+    // the stack. We mutate `flag_.long_header_flag_.packet_type_` in memory
+    // only; the wire byte in the buffer is preserved (see below).
+    if (version_ != 0) {
+        uint8_t wire_bits = GetLongHeaderFlag().GetPacketType();
+        PacketType logical = MapWireToPacketType(wire_bits, version_);
+        uint8_t v1_bits = static_cast<uint8_t>(logical) & 0x03;
+        GetLongHeaderFlag().SetPacketType(v1_bits);
+    }
+
     // decode dcid
     wrapper.DecodeFixedUint8(destination_connection_id_length_);
+    if (destination_connection_id_length_ > kMaxConnectionLength) {
+        common::LOG_ERROR("destination connection id length exceeds maximum. length:%d, max:%d",
+            destination_connection_id_length_, kMaxConnectionLength);
+        return false;
+    }
     if (destination_connection_id_length_ > 0) {
         auto cid = (uint8_t*)destination_connection_id_;
         wrapper.DecodeBytes(cid, destination_connection_id_length_);
@@ -83,17 +118,22 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
 
     // decode scid
     wrapper.DecodeFixedUint8(source_connection_id_length_);
+    if (source_connection_id_length_ > kMaxConnectionLength) {
+        common::LOG_ERROR("source connection id length exceeds maximum. length:%d, max:%d",
+            source_connection_id_length_, kMaxConnectionLength);
+        return false;
+    }
     if (source_connection_id_length_ > 0) {
         auto cid = (uint8_t*)source_connection_id_;
         wrapper.DecodeBytes(cid, source_connection_id_length_);
     }
 
     auto data_span = wrapper.GetDataSpan();
-    // the header src must include header flag for AEAD AD construction
-    // When with_flag=false, the flag was already decoded separately, but we need
-    // to ensure it's in the buffer for AD. Write flag byte before the version field.
+    // the header src must include header flag for AEAD AD construction.
+    // We must restore the ORIGINAL wire flag byte here (not the normalized
+    // in-memory value) because AEAD AD is computed over the wire bytes.
     uint8_t* header_start = data_span.GetStart() - 1;
-    *header_start = flag_.header_flag_;  // Write the flag byte to ensure it's correct
+    *header_start = wire_flag_byte;
 
     header_src_data_ = common::SharedBufferSpan(buffer->GetChunk(), header_start, data_span.GetEnd());
     
@@ -105,6 +145,9 @@ uint32_t LongHeader::EncodeHeaderSize() {
 }
 
 void LongHeader::SetDestinationConnectionId(const uint8_t* id, uint8_t len) {
+    if (len > kMaxConnectionLength) {
+        len = kMaxConnectionLength;
+    }
     destination_connection_id_length_ = len;
     if (id != nullptr) {
         memcpy(destination_connection_id_, id, len);
@@ -112,6 +155,9 @@ void LongHeader::SetDestinationConnectionId(const uint8_t* id, uint8_t len) {
 }
 
 void LongHeader::SetSourceConnectionId(const uint8_t* id, uint8_t len) {
+    if (len > kMaxConnectionLength) {
+        len = kMaxConnectionLength;
+    }
     source_connection_id_length_ = len;
     if (id != nullptr) {
         memcpy(source_connection_id_, id, len);

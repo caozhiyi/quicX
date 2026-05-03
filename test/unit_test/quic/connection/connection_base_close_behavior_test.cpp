@@ -72,16 +72,14 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseSchedulesThreePtoTimer) {
     event_loop->SetTimerForTest(timer);
     bool close_callback_invoked = false;
 
+    ConnectionCallbacks cbs;
+    cbs.connection_close_cb = [&close_callback_invoked](std::shared_ptr<IConnection>, uint64_t, const std::string&) {
+        close_callback_invoked = true;
+    };
     auto conn = std::make_shared<TestClientConnection>(
         MakeTlsContext(),
         event_loop,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        [&close_callback_invoked](std::shared_ptr<IConnection>, uint64_t, const std::string&) {
-            close_callback_invoked = true;
-        });
+        cbs);
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->Close();
@@ -102,12 +100,7 @@ TEST(ConnectionBaseCloseBehaviorTest, ImmediateCloseStoresErrorAndSchedulesTimer
     event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(
         MakeTlsContext(),
-        event_loop,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr);
+        event_loop);
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->TriggerImmediateCloseForTest(0xdead, 0x15, "fatal");
@@ -130,17 +123,15 @@ TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
     uint64_t error_code = 0;
     std::string reason;
 
+    ConnectionCallbacks cbs2;
+    cbs2.connection_close_cb = [&error_code, &reason](std::shared_ptr<IConnection>, uint64_t err, const std::string& r) {
+        error_code = err;
+        reason = r;
+    };
     auto conn = std::make_shared<TestClientConnection>(
         MakeTlsContext(),
         event_loop,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        [&error_code, &reason](std::shared_ptr<IConnection>, uint64_t err, const std::string& r) {
-            error_code = err;
-            reason = r;
-        });
+        cbs2);
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->Close();
@@ -158,12 +149,7 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {
     event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(
         MakeTlsContext(),
-        event_loop,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr,
-        nullptr);
+        event_loop);
 
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
     EXPECT_GE(close_wait, 500u);

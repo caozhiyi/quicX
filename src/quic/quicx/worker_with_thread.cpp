@@ -39,6 +39,9 @@ void WorkerWithThread::Run() {
     while (!Thread::IsStop()) {
         event_loop_->Wait();
         ProcessRecv();
+        if (worker_ptr_) {
+            worker_ptr_->Process();
+        }
     }
 }
 

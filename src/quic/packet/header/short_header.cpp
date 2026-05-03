@@ -25,7 +25,7 @@ bool ShortHeader::EncodeHeader(std::shared_ptr<common::IBuffer> buffer) {
         return false;
     }
 
-    uint16_t need_size = EncodeHeaderSize();
+    uint32_t need_size = EncodeHeaderSize();
     if (need_size > buffer->GetFreeLength()) {
         common::LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);

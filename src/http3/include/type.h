@@ -160,21 +160,40 @@ typedef std::function<void(std::shared_ptr<IRequest> request, std::shared_ptr<IR
  * response body is buffered before the handler is invoked.
  *
  * @param response The HTTP response object with complete body available via GetBody()
- * @param error Error code (0 means success, non-zero indicates network/protocol error)
+ *                 May be nullptr if error is non-zero
+ * @param error Error code indicating protocol/network errors:
+ *              - 0: Success - response received completely (check GetStatusCode() for HTTP status)
+ *              - Non-zero: Protocol/network error (connection failed, timeout, etc.)
+ *
+ * **IMPORTANT**: The error parameter is ONLY for protocol/network errors, NOT HTTP status errors.
+ * - HTTP status errors (400, 404, 500, etc.) are delivered with error=0 and response != nullptr
+ * - Check response->GetStatusCode() to handle HTTP errors
+ * - error != 0 means the request failed at protocol level (no response received)
  *
  * @note This handler is called AFTER the entire response body has been received
  *       and buffered. Use response->GetBody() to access the complete body.
  * @note For streaming large responses, use IAsyncClientHandler instead.
  *
- * @example
+ * @example Correct error handling:
  * @code
  * auto req = IRequest::Create();
  * client->DoRequest(url, HttpMethod::kGet, req,
  *     [](std::shared_ptr<IResponse> resp, uint32_t error) {
- *         if (error == 0) {
- *             std::string body = resp->GetBody();  // Complete body available
- *             process(body);
+ *         if (error != 0) {
+ *             // Protocol/network error - no response received
+ *             LOG("Connection failed: error=%u", error);
+ *             return;
  *         }
+ *         // Check HTTP status code
+ *         int status = resp->GetStatusCode();
+ *         if (status >= 400) {
+ *             // HTTP error - but request succeeded at protocol level
+ *             LOG("HTTP error: status=%d", status);
+ *             return;
+ *         }
+ *         // Success - process response body
+ *         std::string body = resp->GetBody();
+ *         process(body);
  *     });
  * @endcode
  */

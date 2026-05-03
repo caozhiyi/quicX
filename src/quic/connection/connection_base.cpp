@@ -18,6 +18,7 @@
 #include "quic/frame/ping_frame.h"
 #include "quic/frame/type.h"
 #include "quic/packet/packet_number.h"
+#include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/type.h"
 #include "quic/packet/version_negotiation_packet.h"
 #include "quic/quicx/global_resource.h"
@@ -27,12 +28,8 @@ namespace quicx {
 namespace quic {
 
 BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled,
-    std::shared_ptr<common::IEventLoop> loop, std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
-    std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-    std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
-    std::function<void(ConnectionID&)> retire_conn_id_cb,
-    std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb):
-    IConnection(active_connection_cb, handshake_done_cb, add_conn_id_cb, retire_conn_id_cb, connection_close_cb),
+    std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks):
+    IConnection(callbacks),
     ecn_enabled_(ecn_enabled),
     recv_control_(loop->GetTimer()),
     send_manager_(loop->GetTimer()),
@@ -42,6 +39,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     recv_flow_controller_(),
     state_machine_(this),
     packet_builder_(std::make_unique<PacketBuilder>()) {
+    is_server_ = (start == StreamIDGenerator::StreamStarter::kServer);
     // Metrics: Record handshake start time
     handshake_start_time_ = common::UTCTimeMsec();
     connection_crypto_.SetRemoteTransportParamCB(
@@ -115,7 +113,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
 
     // Initialize connection closer (refactored)
     connection_closer_ = std::make_unique<ConnectionCloser>(
-        event_loop_, state_machine_, send_manager_, transport_param_, connection_close_cb);
+        event_loop_, state_machine_, send_manager_, transport_param_, connection_close_cb_);
 
     // Initialize frame processor (refactored) - uses IConnectionEventSink interface (no callbacks!)
     frame_processor_ = std::make_unique<FrameProcessor>(*this, state_machine_, connection_crypto_, send_manager_,
@@ -226,7 +224,24 @@ void BaseConnection::RetryPendingStreamRequests() {
 }
 
 void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
-    transport_param_.Init(tp_config);
+    // RFC 9000 §18.2: Both endpoints MUST include initial_source_connection_id
+    // in their transport parameters, set to the Source Connection ID field of the
+    // first Initial packet they send. Automatically set from local CID if not
+    // already provided by the caller.
+    QuicTransportParams tp = tp_config;
+    if (tp.initial_source_connection_id_.empty() && cid_coordinator_) {
+        auto local_scid = cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID();
+        if (local_scid.GetLength() > 0) {
+            tp.initial_source_connection_id_ =
+                std::string(reinterpret_cast<const char*>(local_scid.GetID()), local_scid.GetLength());
+        }
+    }
+    transport_param_.Init(tp);
+
+    // RFC 9368 §3: Include the version_information (id 0x11) transport parameter.
+    // chosen_version is the version this endpoint is currently using for its Initial
+    // packets; available_versions is our preference-ordered supported list.
+    BuildLocalVersionInformation(transport_param_);
 
     // set transport param. TODO define tp length
     uint8_t tp_buffer[1024];
@@ -240,6 +255,200 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     // RFC9001 4.1.3: Before starting the handshake, QUIC provides TLS with the transport parameters (see Section 8.2)
     // that it wishes to carry.
     tls_connection_->AddTransportParam(tp_buffer, bytes_written);
+}
+
+namespace {
+// Re-encode |tp| and hand the serialized bytes to |tls_conn| via
+// SSL_set_quic_transport_params.  Used when |tp| changes AFTER the first
+// AddTransportParam() but BEFORE TLS has actually serialized EncryptedExtensions
+// / ClientHello — notably on the server side when the first client Initial
+// forces a version change (RFC 9368 §4 consistency check needs the updated
+// chosen_version to reach the peer).
+bool ResetTlsTransportParams(std::shared_ptr<TLSConnection>& tls_conn, TransportParam& tp) {
+    if (!tls_conn) return false;
+    uint8_t tp_buffer[1024];
+    size_t bytes_written = 0;
+    common::BufferSpan buffer_span(tp_buffer, sizeof(tp_buffer));
+    if (!tp.Encode(buffer_span, bytes_written)) {
+        common::LOG_ERROR("re-encode transport param failed");
+        return false;
+    }
+    return tls_conn->AddTransportParam(tp_buffer, static_cast<uint32_t>(bytes_written));
+}
+}  // namespace
+
+bool BaseConnection::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& remote_tp) {
+    // RFC 9368 §4: If the peer did not send version_information, there is nothing
+    // to validate. This is also the case for endpoints speaking a version that
+    // predates RFC 9368 — interop with those must continue to work.
+    if (!remote_tp.HasVersionInformation()) {
+        return true;
+    }
+
+    const uint32_t peer_chosen = remote_tp.GetChosenVersion();
+    const std::vector<uint32_t>& peer_available = remote_tp.GetAvailableVersions();
+
+    // RFC 9368 §4: The peer's chosen_version MUST match the version used on the
+    // wire for the Initial packets that carried these transport parameters.
+    //   - For client-received (server) TP: peer_chosen must equal quic_version_
+    //     (the version of server-sent Initial packets, which by now equals what
+    //     we have been decrypting with).
+    //   - For server-received (client) TP: peer_chosen must equal the version
+    //     the client used for its FIRST Initial (original_version_), which was
+    //     recorded when the server first processed that packet. If the server
+    //     has not yet recorded original_version_, fall back to current.
+    const uint32_t expected_peer_on_wire = is_server_
+        ? (original_version_ != 0 ? original_version_ : quic_version_)
+        : quic_version_;
+
+    if (peer_chosen != expected_peer_on_wire) {
+        common::LOG_ERROR(
+            "RFC 9368: peer chosen_version 0x%08x does not match version used on wire 0x%08x",
+            peer_chosen, expected_peer_on_wire);
+        InnerConnectionClose(QuicErrorCode::kVersionNegotiationError, 0,
+            "version_information chosen_version mismatch");
+        return false;
+    }
+
+    if (!is_server_) {
+        // Client-side downgrade detection (RFC 9368 §4):
+        // If the application explicitly specified a |preferred_version_| that
+        // differs from the version we actually negotiated (quic_version_), and
+        // the server's |available_versions| advertises that preferred version,
+        // then a MITM may have stripped or rewrote our Initial to force a
+        // downgrade.  Close with VERSION_NEGOTIATION_ERROR in that case.
+        //
+        // Without an explicit preference we have no way to know the "expected"
+        // outcome, so we don't invent one.
+        if (preferred_version_ != 0 && preferred_version_ != quic_version_) {
+            for (uint32_t sv : peer_available) {
+                if (sv == preferred_version_) {
+                    common::LOG_ERROR(
+                        "RFC 9368: downgrade detected: server advertises preferred 0x%08x "
+                        "but connection ended up on 0x%08x",
+                        preferred_version_, quic_version_);
+                    InnerConnectionClose(QuicErrorCode::kVersionNegotiationError, 0,
+                        "Compatible Version downgrade detected");
+                    return false;
+                }
+            }
+        }
+        // Client side: no further action. Initial key rekey (if any) has
+        // already happened via OnInitialPacket when the server's v2 Initial
+        // arrived.
+        compat_vn_completed_ = true;
+        return true;
+    }
+
+    // ------- Server side -------
+    // Decide whether to upgrade from the client's chosen_version to a version we
+    // prefer more. We only consider upgrading to |preferred_version_| (if the
+    // application explicitly set one and it differs from |quic_version_|), and
+    // only when the client's available_versions list also contains it. This
+    // keeps the default path (no preference) conservative: a server without an
+    // explicit preference just stays on the client's chosen_version.
+    if (compat_vn_completed_) {
+        return true;  // Already upgraded (or decided not to).
+    }
+
+    uint32_t negotiated = peer_chosen;  // Default: stay on client's chosen version.
+    const uint32_t our_pref = (preferred_version_ != 0) ? preferred_version_ : quic_version_;
+    if (our_pref != peer_chosen) {
+        for (uint32_t cv : peer_available) {
+            if (cv == our_pref) {
+                negotiated = our_pref;
+                break;
+            }
+        }
+    }
+
+    if (negotiated == quic_version_) {
+        // No version change; but still record original_version_ for later
+        // consistency bookkeeping.
+        if (original_version_ == 0) {
+            original_version_ = peer_chosen;
+        }
+        compat_vn_completed_ = true;
+        return true;
+    }
+
+    // Upgrade! Re-derive Initial keys using the new version's salt with the
+    // client's original DCID (same DCID the client used when sending its first
+    // Initial). RFC 9368 §4: the DCID does not change across a compatible VN.
+    common::LOG_INFO("RFC 9368: upgrading connection from 0x%08x to 0x%08x", quic_version_, negotiated);
+
+    // Record the version the client used before we upgrade.
+    if (original_version_ == 0) {
+        original_version_ = peer_chosen;
+    }
+
+    // Obtain the client's original DCID. On the server this is the
+    // original_destination_connection_id we advertised in our own TP, which is
+    // the DCID the client sent in its first Initial.
+    const std::string& odcid = transport_param_.GetOriginalDestinationConnectionId();
+    if (odcid.empty()) {
+        common::LOG_ERROR("RFC 9368: cannot upgrade, original_destination_connection_id missing");
+        // Fall back to client's chosen_version (no upgrade) rather than failing.
+        compat_vn_completed_ = true;
+        return true;
+    }
+
+    if (!connection_crypto_.RekeyInitialForVersion(
+            negotiated,
+            reinterpret_cast<const uint8_t*>(odcid.data()),
+            static_cast<uint32_t>(odcid.size()),
+            true /* is_server */)) {
+        common::LOG_ERROR("RFC 9368: RekeyInitialForVersion failed");
+        InnerConnectionClose(QuicErrorCode::kInternalError, 0, "Compatible VN rekey failed");
+        return false;
+    }
+
+    // Update in-memory version so subsequent outbound Initial packets use the
+    // new version (PacketBuilder reads quic_version_ via connection_crypto_).
+    quic_version_ = negotiated;
+    // Also update our local version_information TP so the TP we send to the
+    // client (in EncryptedExtensions) reports chosen_version = negotiated.
+    BuildLocalVersionInformation(transport_param_);
+    // And hand the re-encoded TP bytes to TLS before it serializes
+    // EncryptedExtensions, otherwise the client will see chosen_version ==
+    // original wire version and correctly reject the connection via the
+    // consistency check.
+    ResetTlsTransportParams(tls_connection_, transport_param_);
+
+    compat_vn_completed_ = true;
+    common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
+    return true;
+}
+
+void BaseConnection::BuildLocalVersionInformation(TransportParam& tp) const {
+    // RFC 9368 §3: Build the local version_information TP value.
+    //   chosen_version     = current |quic_version_| (the version actually on
+    //                        the wire in our Initial packets).
+    //   available_versions = versions we are willing to speak for this
+    //                        connection, in preference order (most preferred
+    //                        first).
+    //
+    // To keep interop with peers that predate RFC 9368 predictable, and to
+    // avoid unsolicited upgrades in "default" scenarios, we only widen the
+    // list beyond |quic_version_| when the application explicitly expressed a
+    // different preferred version via |SetPreferredVersion|.
+    //   - No preference set          => [quic_version_]  (1 entry)
+    //   - Preference == quic_version_ => [quic_version_]  (1 entry)
+    //   - Preference != quic_version_ => [preferred_version_, quic_version_]
+    std::vector<uint32_t> available;
+    const uint32_t pref = (preferred_version_ != 0) ? preferred_version_ : quic_version_;
+    if (pref != quic_version_) {
+        // Sanity-check: we only advertise versions we actually support.
+        bool pref_supported = false;
+        for (size_t i = 0; i < kQuicVersionsCount; i++) {
+            if (kQuicVersions[i] == pref) { pref_supported = true; break; }
+        }
+        if (pref_supported) {
+            available.push_back(pref);
+        }
+    }
+    available.push_back(quic_version_);
+    tp.SetVersionInformation(quic_version_, available);
 }
 
 uint64_t BaseConnection::GetConnectionIDHash() {
@@ -271,7 +480,6 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
                         if (frame->GetType() == FrameType::kConnectionClose ||
                             frame->GetType() == FrameType::kConnectionCloseApp) {
                             has_connection_close = true;
-                            has_connection_close = true;
                             // Enter draining state: peer is also closing
                             state_machine_.OnConnectionCloseFrameReceived();
                             // Clear retransmission data to stop packet loss detection
@@ -285,12 +493,25 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
                     // Decryption failed: likely invalid or delayed old packet, ignore
                     common::LOG_DEBUG(
                         "Failed to decrypt packet in closing state (likely delayed old packet), ignoring");
+                    if (qlog_trace_) {
+                        common::PacketDroppedData drop_data;
+                        drop_data.packet_type = packet->GetHeader()->GetPacketType();
+                        drop_data.packet_size = packet->GetSrcBuffer().GetLength();
+                        drop_data.trigger = "closing_state_decrypt_failure";
+                        QLOG_PACKET_DROPPED(qlog_trace_, drop_data);
+                    }
                 }
             } else {
                 // No cryptographer for this packet level: likely invalid or delayed old packet, ignore
                 common::LOG_DEBUG(
                     "No cryptographer for packet level %d in closing state (likely delayed old packet), ignoring",
                     packet->GetCryptoLevel());
+                if (qlog_trace_) {
+                    common::PacketDroppedData drop_data;
+                    drop_data.packet_type = packet->GetHeader()->GetPacketType();
+                    drop_data.trigger = "key_unavailable";
+                    QLOG_PACKET_DROPPED(qlog_trace_, drop_data);
+                }
             }
             if (has_connection_close) {
                 break;
@@ -325,6 +546,14 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
     // Draining or Closed state: Discard all packets
     if (state_machine_.ShouldIgnorePackets()) {
         common::LOG_DEBUG("Connection in draining/closed state, discard packets");
+        if (qlog_trace_) {
+            for (auto& pkt : packets) {
+                common::PacketDroppedData drop_data;
+                drop_data.packet_type = pkt->GetHeader()->GetPacketType();
+                drop_data.trigger = "draining_state";
+                QLOG_PACKET_DROPPED(qlog_trace_, drop_data);
+            }
+        }
         return;
     }
 
@@ -378,7 +607,7 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
                 }
                 break;
             default:
-                common::LOG_ERROR("unknow packet type. type:%d", packets[i]->GetHeader()->GetPacketType());
+                common::LOG_ERROR("unknown packet type. type:%d", packets[i]->GetHeader()->GetPacketType());
                 break;
         }
 
@@ -394,24 +623,87 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
 }
 
 bool BaseConnection::OnInitialPacket(std::shared_ptr<IPacket> packet) {
-    if (!connection_crypto_.InitIsReady()) {
-        LongHeader* header = (LongHeader*)packet->GetHeader();
+    LongHeader* header = (LongHeader*)packet->GetHeader();
+    uint32_t pkt_version = header->GetVersion();
 
-        // Use the version from the incoming packet for Initial secret derivation.
-        // This is critical: if the peer sends v1 Initial packets, we must use v1 salt,
-        // not our default preferred version (which may be v2).
-        uint32_t pkt_version = header->GetVersion();
+    // RFC 9368: Record the version the peer used in its FIRST Initial. This
+    // is needed on the server side for the mandatory "peer_chosen_version
+    // matches on-wire version" consistency check in
+    // ValidateAndMaybeUpgradeByRemoteTP().
+    if (pkt_version != 0 && original_version_ == 0) {
+        original_version_ = pkt_version;
+    }
+
+    if (!connection_crypto_.InitIsReady()) {
+        // First Initial on this connection (server side first packet, or
+        // client side prior to having installed keys). The DCID in the
+        // packet is the one we use to derive the Initial secret.
         if (pkt_version != 0 && pkt_version != quic_version_) {
             common::LOG_INFO("Updating connection version from packet: 0x%08x -> 0x%08x",
                 quic_version_, pkt_version);
             SetVersion(pkt_version);
+            // RFC 9368 §4: our version_information TP must advertise
+            // chosen_version == current on-wire version. Re-encode and hand
+            // the fresh TP buffer to TLS before it serializes
+            // EncryptedExtensions.
+            if (transport_param_.HasVersionInformation()) {
+                BuildLocalVersionInformation(transport_param_);
+                ResetTlsTransportParams(tls_connection_, transport_param_);
+            }
         }
 
         common::LOG_INFO("Installing Initial Secret for decryption from packet DCID: length=%u, version=0x%08x",
             header->GetDestinationConnectionIdLength(), quic_version_);
         connection_crypto_.InstallInitSecret(
             (uint8_t*)header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(), true);
+
+    } else if (!is_server_ && pkt_version != 0 && pkt_version != quic_version_) {
+        // RFC 9368 Compatible Version Negotiation (client side):
+        // The server decided to upgrade the connection to a different
+        // (compatible) QUIC version. We already have an Initial cryptographer
+        // installed under the old version's salt, so we cannot decrypt this
+        // Initial yet. Re-derive the Initial secret using:
+        //   - the new version's salt / labels, and
+        //   - the SAME DCID we used for our first Initial
+        //     (i.e. the DCID stashed away in ConnectionCrypto on
+        //     InstallInitSecret, which is what the server also used when it
+        //     rekeyed via ValidateAndMaybeUpgradeByRemoteTP).
+        common::LOG_INFO(
+            "RFC 9368: client detected server version upgrade: 0x%08x -> 0x%08x",
+            quic_version_, pkt_version);
+
+        const std::string& dcid = connection_crypto_.GetInitialSecretDcid();
+        if (dcid.empty()) {
+            common::LOG_ERROR(
+                "RFC 9368: cannot rekey client Initial (no cached DCID); dropping packet");
+            return false;
+        }
+
+        if (!connection_crypto_.RekeyInitialForVersion(
+                pkt_version,
+                reinterpret_cast<const uint8_t*>(dcid.data()),
+                static_cast<uint32_t>(dcid.size()),
+                false /* is_server */)) {
+            common::LOG_ERROR("RFC 9368: client-side RekeyInitialForVersion failed");
+            return false;
+        }
+
+        // Sync connection-level version with crypto-level version.
+        SetVersion(pkt_version);
+
+        // Update our version_information TP so that any remaining outbound
+        // TLS messages (rare: should already be serialized on the client) see
+        // chosen_version == on-wire version. Also keep the cached copy fresh
+        // for any future consistency check.
+        if (transport_param_.HasVersionInformation()) {
+            BuildLocalVersionInformation(transport_param_);
+            ResetTlsTransportParams(tls_connection_, transport_param_);
+        }
+
+        compat_vn_completed_ = true;
+        common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
     }
+
     return OnNormalPacket(packet);
 }
 
@@ -423,7 +715,56 @@ bool BaseConnection::On0rttPacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
-    return OnNormalPacket(packet);
+    // RFC 9001 §6: Set expected key phase for Key Update detection
+    auto rtt1_pkt = std::dynamic_pointer_cast<Rtt1Packet>(packet);
+    if (rtt1_pkt) {
+        rtt1_pkt->SetExpectedKeyPhase(connection_crypto_.GetCurrentKeyPhase());
+    }
+
+    // Try normal decrypt path
+    if (OnNormalPacket(packet)) {
+        return true;
+    }
+
+    // Check if decrypt failure was due to Key Phase change (passive Key Update)
+    if (rtt1_pkt && packet->IsKeyPhaseChanged() && connection_crypto_.CanKeyUpdate()) {
+        common::LOG_INFO("Detected peer Key Update, triggering passive key rotation");
+
+        // Trigger read (and write) key update
+        if (!connection_crypto_.TriggerReadKeyUpdate()) {
+            common::LOG_ERROR("Failed to trigger passive key update");
+            return false;
+        }
+
+        // Retry payload decryption only (header already decrypted, PN already recovered)
+        if (!rtt1_pkt->RetryPayloadDecrypt()) {
+            common::LOG_ERROR("decrypt still failed after key update");
+            return false;
+        }
+
+        // Log packet_received event to qlog
+        if (qlog_trace_) {
+            common::PacketReceivedData data;
+            data.packet_number = packet->GetPacketNumber();
+            data.packet_type = packet->GetHeader()->GetPacketType();
+            data.packet_size = packet->GetSrcBuffer().GetLength();
+            auto& frames = packet->GetFrames();
+            for (const auto& frame : frames) {
+                data.frames.push_back(static_cast<FrameType>(frame->GetType()));
+            }
+            QLOG_PACKET_RECEIVED(qlog_trace_, data);
+        }
+
+        if (!OnFrames(packet->GetFrames(), packet->GetCryptoLevel())) {
+            common::LOG_ERROR("process frames failed after key update.");
+            return false;
+        }
+
+        common::LOG_INFO("Successfully decrypted packet after passive Key Update, pn:%llu", packet->GetPacketNumber());
+        return true;
+    }
+
+    return false;
 }
 
 bool BaseConnection::OnVersionNegotiationPacket(std::shared_ptr<IPacket> packet) {
@@ -467,6 +808,12 @@ bool BaseConnection::OnVersionNegotiationPacket(std::shared_ptr<IPacket> packet)
     // If our version is in the list, discard the VN packet (per RFC 9000)
     if (our_version_in_list) {
         common::LOG_WARN("Discarding Version Negotiation packet - our version was listed (possible downgrade attack)");
+        if (qlog_trace_) {
+            common::PacketDroppedData drop_data;
+            drop_data.packet_type = PacketType::kNegotiationPacketType;
+            drop_data.trigger = "version_negotiation_downgrade";
+            QLOG_PACKET_DROPPED(qlog_trace_, drop_data);
+        }
         // Return true to indicate packet was handled (but we're ignoring it)
         return true;
     }
@@ -517,10 +864,23 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
     std::shared_ptr<ICryptographer> cryptographer = connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
     if (!cryptographer) {
         common::LOG_ERROR("decrypt grapher is not ready.");
+        if (qlog_trace_) {
+            common::PacketDroppedData drop_data;
+            drop_data.packet_type = packet->GetHeader()->GetPacketType();
+            drop_data.packet_size = packet->GetSrcBuffer().GetLength();
+            drop_data.trigger = "key_unavailable";
+            QLOG_PACKET_DROPPED(qlog_trace_, drop_data);
+        }
         return false;
     }
 
     packet->SetCryptographer(cryptographer);
+
+    // RFC 9000 Appendix A: Set the largest received PN for packet number recovery
+    // The full PN is recovered from the truncated encoding using the largest PN
+    // successfully received so far in the same packet number space.
+    auto ns = CryptoLevel2PacketNumberSpace(packet->GetCryptoLevel());
+    packet->SetLargestReceivedPn(recv_control_.GetLargestReceivedPn(ns));
 
     auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!chunk || !chunk->Valid()) {
@@ -530,6 +890,13 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
     auto out_plaintext = std::make_shared<common::SingleBlockBuffer>(chunk);
     if (!packet->DecodeWithCrypto(out_plaintext)) {
         common::LOG_ERROR("decode packet after decrypt failed.");
+        if (qlog_trace_) {
+            common::PacketDroppedData drop_data;
+            drop_data.packet_type = packet->GetHeader()->GetPacketType();
+            drop_data.packet_size = packet->GetSrcBuffer().GetLength();
+            drop_data.trigger = "decryption_failed";
+            QLOG_PACKET_DROPPED(qlog_trace_, drop_data);
+        }
         return false;
     }
 
@@ -582,9 +949,25 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
 }
 
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
+    // RFC 9368 §4: Validate remote peer's version_information (if present) and,
+    // on the server, decide whether to compatibly upgrade the connection version.
+    // Must run BEFORE Merge(), because Merge() overwrites our local
+    // version_information fields with the peer's values.
+    if (!ValidateAndMaybeUpgradeByRemoteTP(remote_tp)) {
+        // Downgrade / protocol violation detected; connection has been closed.
+        return;
+    }
+
+    // RecvFlowController was already initialized with local values during Init().
+    // Merge() now does NOT notify listeners, so RecvFlowController retains correct local limits.
     transport_param_.Merge(remote_tp);
-    // send_flow_controller_.UpdateConfig(remote_tp);
+
+    // Explicitly update controllers that need remote transport parameters:
+    // - SendFlowController: uses remote max_data/max_streams (peer's limits on what we can send)
+    // - RecvControl/SendManager: use remote ack_delay_exponent and max_ack_delay
     send_flow_controller_.UpdateConfig(remote_tp);
+    recv_control_.UpdateConfig(remote_tp);
+    send_manager_.UpdateConfig(remote_tp);
 
     // Remember remote transport params for 0-RTT session caching (RFC 9000 Section 7.4.1)
     has_remote_tp_ = true;
@@ -802,13 +1185,15 @@ bool BaseConnection::SendImmediate(std::shared_ptr<common::IBuffer> buffer) {
     if (sender_) {
         auto net_packet = std::make_shared<NetPacket>();
         net_packet->SetData(buffer);
-        net_packet->SetSocket(sockfd_);
-        net_packet->SetAddress(peer_addr_);
+        // During migration, use migration socket for sending
+        int32_t send_sock = (migration_sockfd_ > 0) ? migration_sockfd_ : sockfd_;
+        net_packet->SetSocket(send_sock);
+        net_packet->SetAddress(AcquireSendAddress());
         net_packet->SetTime(common::UTCTimeMsec());
 
         bool result = sender_->Send(net_packet);
         if (result) {
-            common::LOG_DEBUG("SendImmediate: packet sent via sender_, size=%d", buffer->GetDataLength());
+            common::LOG_DEBUG("SendImmediate: packet sent via sender_, size=%d, sock=%d", buffer->GetDataLength(), send_sock);
         } else {
             common::LOG_ERROR("SendImmediate: sender_->Send() failed");
         }
@@ -909,9 +1294,18 @@ bool BaseConnection::InitiateMigration() {
     uint32_t current_port;
     GetLocalAddr(current_ip, current_port);
 
-    if (current_ip.empty()) {
-        common::LOG_WARN("InitiateMigration: failed to get current local address, using 0.0.0.0");
-        current_ip = "0.0.0.0";
+    if (current_ip.empty() || current_ip == "::") {
+        // Dual-stack socket reports "::" as local address. For migration, we need
+        // to match the address family of the peer to ensure the new socket can
+        // communicate with the peer. IPv4 peers need an IPv4 socket.
+        bool peer_is_ipv4 = (peer_addr_.GetIp().find(':') == std::string::npos);
+        if (peer_is_ipv4) {
+            current_ip = "0.0.0.0";
+            common::LOG_INFO("InitiateMigration: peer is IPv4, using 0.0.0.0 for migration");
+        } else {
+            current_ip = "::";
+            common::LOG_INFO("InitiateMigration: peer is IPv6, using :: for migration");
+        }
     }
 
     // Delegate to production API: same IP, but port=0 means system chooses new port
@@ -954,7 +1348,20 @@ MigrationResult BaseConnection::InitiateMigrationTo(const std::string& local_ip,
         return MigrationResult::kFailedInvalidState;
     }
 
-    return path_manager_->InitiateMigrationToAddress(local_addr);
+    auto result = path_manager_->InitiateMigrationToAddress(local_addr);
+
+    // 4. Register migration socket with receiver so PATH_RESPONSE can be received
+    if (result == MigrationResult::kSuccess && migration_sockfd_ > 0 && register_socket_cb_) {
+        if (!register_socket_cb_(migration_sockfd_)) {
+            common::LOG_ERROR("InitiateMigrationTo: failed to register migration socket %d with receiver",
+                migration_sockfd_);
+        } else {
+            common::LOG_INFO("InitiateMigrationTo: registered migration socket %d with receiver",
+                migration_sockfd_);
+        }
+    }
+
+    return result;
 }
 
 void BaseConnection::SetMigrationCallback(migration_callback cb) {
@@ -1112,7 +1519,7 @@ void BaseConnection::OnStateToClosed() {
         }
 
         QLOG_CONNECTION_CLOSED(qlog_trace_, data);
-        qlog_trace_->Flush();  // ensure event is written
+        QLOG_FLUSH(qlog_trace_);  // ensure event is written
     }
 
     // Stop idle timer through coordinator
@@ -1166,7 +1573,7 @@ bool BaseConnection::TrySend() {
 
         // Assign new packet number
         auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
-        uint64_t new_pn = send_manager_.GetPacketNumber().NextPakcetNumber(ns);
+        uint64_t new_pn = send_manager_.GetPacketNumber().NextPacketNumber(ns);
         lost_pkt->SetPacketNumber(new_pn);
         lost_pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(new_pn));
         lost_pkt->SetCryptographer(cryptographer);
@@ -1244,6 +1651,7 @@ bool BaseConnection::TrySend() {
     build_ctx.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
     build_ctx.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
     build_ctx.quic_version = connection_crypto_.GetVersion();
+    build_ctx.key_phase = connection_crypto_.GetCurrentKeyPhase();
     build_ctx.frames = std::move(frames);
     build_ctx.stream_manager = stream_manager_.get();
     build_ctx.include_stream_data = has_stream_data;
@@ -1294,6 +1702,13 @@ bool BaseConnection::TrySend() {
     // 12. Send buffer
     bool send_success = SendBuffer(buffer);
 
+    // 12.5. Update connection-level send flow control tracking
+    // CRITICAL: Without this, sent_bytes_ stays at 0 and flow control is bypassed.
+    // Peers with smaller initial_max_data would see FLOW_CONTROL_ERROR.
+    if (send_success && result.stream_data_size > 0) {
+        send_flow_controller_.OnDataSent(result.stream_data_size);
+    }
+
     // 13. RFC 9001 Section 6: Check if Key Update should be triggered
     if (send_success && send_ctx.level == kApplication && key_update_trigger_.IsEnabled()) {
         if (key_update_trigger_.OnBytesSent(result.packet_size)) {
@@ -1320,14 +1735,16 @@ bool BaseConnection::SendBuffer(std::shared_ptr<common::IBuffer> buffer) {
         auto packet = std::make_shared<NetPacket>();
         packet->SetData(buffer);
         packet->SetAddress(AcquireSendAddress());
-        packet->SetSocket(sockfd_);
+        // During migration, use migration socket for sending
+        int32_t send_sock = (migration_sockfd_ > 0) ? migration_sockfd_ : sockfd_;
+        packet->SetSocket(send_sock);
 
         if (!sender_->Send(packet)) {
             common::LOG_ERROR("BaseConnection::SendBuffer: sender_->Send() failed");
             return false;
         }
 
-        common::LOG_DEBUG("BaseConnection::SendBuffer: sent %u bytes via sender_", buffer->GetDataLength());
+        common::LOG_DEBUG("BaseConnection::SendBuffer: sent %u bytes via sender_, sock=%d", buffer->GetDataLength(), send_sock);
         return true;
     }
 
@@ -1379,7 +1796,8 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
 
     auto result = packet_builder_->BuildAckPacket(target_level, cryptographer, ack_frame,
         cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
-        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion());
+        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion(),
+        connection_crypto_.GetCurrentKeyPhase());
 
     if (!result.success) {
         common::LOG_ERROR("BaseConnection::SendImmediateAck: failed to build packet: %s", result.error_message.c_str());
@@ -1413,7 +1831,8 @@ bool BaseConnection::SendImmediateFrame(std::shared_ptr<IFrame> frame, Encryptio
 
     auto result = packet_builder_->BuildImmediatePacket(frame, level, cryptographer,
         cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
-        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion());
+        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion(),
+        connection_crypto_.GetCurrentKeyPhase());
 
     if (!result.success) {
         common::LOG_ERROR(

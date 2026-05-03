@@ -48,13 +48,15 @@ void QpackDecoderReceiverStream::ParseDecoderFrames(std::shared_ptr<IBufferRead>
     for (const auto& frame : frames) {
         if (frame->GetType() == static_cast<uint8_t>(QpackDecoderInstrType::kSectionAck)) {
             QpackSectionAckFrame* f = dynamic_cast<QpackSectionAckFrame*>(frame.get());
-            uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(f->GetStreamId())) << 32) | static_cast<uint64_t>(static_cast<uint32_t>(f->GetSectionNumber()));
-            blocked_registry_->Ack(key);
+            // RFC 9204 §4.4.1: only Stream ID is on the wire. Ack the earliest
+            // outstanding section for this stream id.
+            blocked_registry_->AckByStreamId(f->GetStreamId());
 
         } else if (frame->GetType() == static_cast<uint8_t>(QpackDecoderInstrType::kStreamCancellation)) {
             QpackStreamCancellationFrame* f = dynamic_cast<QpackStreamCancellationFrame*>(frame.get());
-            uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(f->GetStreamId())) << 32) | static_cast<uint64_t>(static_cast<uint32_t>(f->GetSectionNumber()));
-            blocked_registry_->Remove(key);
+            // RFC 9204 §4.4.2: remove the earliest pending section for this
+            // stream id without invoking retry callback.
+            blocked_registry_->RemoveByStreamId(f->GetStreamId());
             
         } else if (frame->GetType() == static_cast<uint8_t>(QpackDecoderInstrType::kInsertCountInc)) {
             QpackInsertCountIncrementFrame* f = dynamic_cast<QpackInsertCountIncrementFrame*>(frame.get());

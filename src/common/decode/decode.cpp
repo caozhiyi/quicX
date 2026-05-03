@@ -29,6 +29,8 @@
 #include <arpa/inet.h>
 #endif
 
+#include <cstring>
+
 #include "common/log/log.h"
 #include "common/decode/decode.h"
 
@@ -160,10 +162,11 @@ uint8_t* FixedDecodeUint8(uint8_t *start, uint8_t *end, uint8_t& out) {
 }
 
 uint8_t* FixedEncodeUint16(uint8_t *start, uint8_t *end, uint16_t value) {
-    if (start == nullptr || end == nullptr || start >= end) {
+    if (start == nullptr || end == nullptr || start + sizeof(uint16_t) > end) {
         return nullptr;
     }
-    *(uint16_t*)start = htons(value);
+    uint16_t network_value = htons(value);
+    memcpy(start, &network_value, sizeof(uint16_t));
     return start + sizeof(uint16_t);
 }
 
@@ -171,12 +174,9 @@ uint8_t* FixedDecodeUint16(uint8_t *start, uint8_t *end, uint16_t& out) {
     if (start == nullptr || end == nullptr || start + sizeof(uint16_t) > end) {
         return nullptr;
     }
-    uint8_t byte0 = start[0];
-    uint8_t byte1 = start[1];
-    uint16_t raw_value = *(const uint16_t*)start;
+    uint16_t raw_value;
+    memcpy(&raw_value, start, sizeof(uint16_t));
     out = ntohs(raw_value);
-    common::LOG_DEBUG("FixedDecodeUint16: bytes [%02x %02x], raw=0x%04x, ntohs=0x%04x", 
-                     byte0, byte1, raw_value, out);
     return start + sizeof(uint16_t);
 }
 
@@ -184,7 +184,8 @@ uint8_t* FixedEncodeUint32(uint8_t *start, uint8_t *end, uint32_t value) {
     if (start == nullptr || end == nullptr || start + sizeof(uint32_t) > end) {
         return nullptr;
     }
-    *(uint32_t*)start = htonl(value);
+    uint32_t network_value = htonl(value);
+    memcpy(start, &network_value, sizeof(uint32_t));
     return start + sizeof(uint32_t);
 }
 
@@ -192,7 +193,9 @@ uint8_t* FixedDecodeUint32(uint8_t *start, uint8_t *end, uint32_t& out) {
     if (start == nullptr || end == nullptr || start + sizeof(uint32_t) > end) {
         return nullptr;
     }
-    out = ntohl(*(uint32_t*)start);
+    uint32_t raw_value;
+    memcpy(&raw_value, start, sizeof(uint32_t));
+    out = ntohl(raw_value);
     return start + sizeof(uint32_t);
 }
 
@@ -200,7 +203,8 @@ uint8_t* FixedEncodeUint64(uint8_t *start, uint8_t *end, uint64_t value) {
     if (start == nullptr || end == nullptr || start + sizeof(uint64_t) > end) {
         return nullptr;
     }
-    *(uint64_t*)start = htobe64(value);
+    uint64_t network_value = htobe64(value);
+    memcpy(start, &network_value, sizeof(uint64_t));
     return start + sizeof(uint64_t);
 }
 
@@ -208,14 +212,16 @@ uint8_t* FixedDecodeUint64(uint8_t *start, uint8_t *end, uint64_t& out) {
     if (start == nullptr || end == nullptr || start + sizeof(uint64_t) > end) {
         return nullptr;
     }
-    out = be64toh(*(uint64_t*)start);
+    uint64_t raw_value;
+    memcpy(&raw_value, start, sizeof(uint64_t));
+    out = be64toh(raw_value);
     return start + sizeof(uint64_t);
 }
 
 uint8_t* EncodeBytes(uint8_t *start, uint8_t *end, uint8_t* in, uint32_t in_len) {
     if (start == nullptr || end == nullptr || end - start < in_len) {
         LOG_ERROR("too small to encode bytes");
-        return start;
+        return nullptr;
     }
 
     memcpy(start, in, in_len);
@@ -225,7 +231,7 @@ uint8_t* EncodeBytes(uint8_t *start, uint8_t *end, uint8_t* in, uint32_t in_len)
 uint8_t* DecodeBytesCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t out_len) {
     if (start == nullptr || end == nullptr || end - start < out_len) {
         LOG_ERROR("too small to decode bytes");
-        return start;
+        return nullptr;
     }
 
     memcpy(out, start, out_len);
@@ -235,7 +241,7 @@ uint8_t* DecodeBytesCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t o
 uint8_t* DecodeBytesNoCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t out_len) {
     if (start == nullptr || end == nullptr || end - start < out_len) {
         LOG_ERROR("too small to decode bytes");
-        return start;
+        return nullptr;
     }
 
     out = start;

@@ -22,10 +22,14 @@ public:
     void SetVersion(uint32_t version) { version_ = version; }
     uint32_t GetVersion() const { return version_; }
 
-    // Override to correctly identify Version Negotiation packets
-    // RFC 9000 Section 17.2.1: Version Negotiation packets have version=0
-    // and their flag bits (including packet_type) can be arbitrary values,
-    // so we must check the version field to distinguish them
+    // Override to correctly identify Version Negotiation packets.
+    // RFC 9000 §17.2.1: Version Negotiation packets have version=0 and their
+    // flag bits (including packet_type) can be arbitrary values, so we must
+    // check the version field first.
+    // The in-memory packet_type_ bitfield is always normalized to the
+    // canonical v1 representation by EncodeHeader/DecodeHeader, even when the
+    // wire format uses QUIC v2 (RFC 9369 §3.2) remapping, so the base-class
+    // GetPacketType() can be used here directly.
     PacketType GetPacketType() override {
         if (version_ == 0) {
             return PacketType::kNegotiationPacketType;

@@ -1,5 +1,6 @@
 #include "common/log/file_logger.h"
 #include "common/log/log.h"
+#include "common/qlog/qlog.h"
 #include "common/qlog/qlog_manager.h"
 
 #include "quic/crypto/tls/tls_ctx_server.h"
@@ -43,13 +44,13 @@ bool QuicServer::Init(const QuicServerConfig& config) {
     if (config.cert_file_ != "" && config.key_file_ != "") {
         if (!tls_ctx->Init(config.cert_file_, config.key_file_, config.config_.enable_0rtt_,
                 config.session_ticket_timeout_, config.config_.cipher_suites_)) {
-            common::LOG_ERROR("tls ctx init faliled.");
+            common::LOG_ERROR("tls ctx init failed.");
             return false;
         }
     } else if (config.cert_pem_ != nullptr && config.key_pem_ != nullptr) {
         if (!tls_ctx->Init(config.cert_pem_, config.key_pem_, config.config_.enable_0rtt_,
                 config.session_ticket_timeout_, config.config_.cipher_suites_)) {
-            common::LOG_ERROR("tls ctx init faliled.");
+            common::LOG_ERROR("tls ctx init failed.");
             return false;
         }
 
@@ -125,7 +126,16 @@ void QuicServer::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
 
 bool QuicServer::ListenAndAccept(const std::string& ip, uint16_t port) {
     if (master_) {
-        return master_->AddListener(ip, port);
+        bool result = master_->AddListener(ip, port);
+        if (result) {
+            // Log server_listening event
+            common::ServerListeningData listen_data;
+            listen_data.ip = ip;
+            listen_data.port = port;
+            listen_data.ip_version = (ip.find(':') != std::string::npos) ? "ipv6" : "ipv4";
+            QLOG_SERVER_LISTENING(common::QlogManager::Instance(), listen_data);
+        }
+        return result;
     }
     return false;
 }

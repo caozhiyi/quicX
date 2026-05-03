@@ -25,8 +25,7 @@ bool TLSClientConnection::Init() {
 
     // set connect state, this will start the handshake process.
     SSL_set_connect_state(ssl_.get());
-    // TODO: make this configurable
-    SSL_set_verify(ssl_.get(), SSL_VERIFY_NONE, nullptr);
+    // Certificate verification is configured at CTX level via TLSClientCtx::Init()
     return true;
 }
 
@@ -102,6 +101,7 @@ bool TLSClientConnection::AddAlpn(uint8_t* alpn, uint32_t len) {
     buf.reserve(static_cast<size_t>(len) + 1);
     buf.push_back(static_cast<uint8_t>(len));
     buf.insert(buf.end(), alpn, alpn + len);
+    common::LOG_INFO("TLSClientConnection::AddAlpn: '%.*s' (len=%u)", (int)len, (const char*)alpn, len);
     if (SSL_set_alpn_protos(ssl_.get(), buf.data(), static_cast<unsigned int>(buf.size())) != 0) {
         common::LOG_ERROR("SSL_set_alpn_protos failed.");
         return false;

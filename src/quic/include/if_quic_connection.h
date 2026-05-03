@@ -1,10 +1,14 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_CONNECTION
 #define QUIC_INCLUDE_IF_QUIC_CONNECTION
 
+#include <memory>
 #include <string>
 #include "quic/include/type.h"
 
 namespace quicx {
+namespace common {
+class QlogTrace;
+}
 
 /**
  * @brief Represents a live QUIC connection.
@@ -176,6 +180,13 @@ public:
      * @return true if migration is ongoing.
      */
     virtual bool IsMigrationInProgress() const { return false; }
+
+    /**
+     * @brief Get the qlog trace associated with this connection.
+     *
+     * @return Shared pointer to QlogTrace, or nullptr if qlog is not enabled.
+     */
+    virtual std::shared_ptr<common::QlogTrace> GetQlogTrace() const { return nullptr; }
 };
 
 }  // namespace quicx

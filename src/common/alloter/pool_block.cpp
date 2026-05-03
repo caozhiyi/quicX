@@ -1,6 +1,7 @@
 #include <cstdlib>
 
 #include "common/alloter/pool_block.h"
+#include "common/log/log.h"
 #include "common/metrics/metrics.h"
 #include "common/metrics/metrics_std.h"
 #include "common/network/if_event_loop.h"
@@ -43,17 +44,24 @@ void BlockMemoryPool::PoolLargeFree(void*& m) {
     if (loop) {
         // Use RunInLoop to defer free operation to owning thread (lock-free!)
         void* ptr = m;  // Capture by value
-        loop->RunInLoop([this, ptr]() mutable {
-            free_mem_vec_.push_back(ptr);
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, ptr]() mutable {
+            auto self = weak_self.lock();
+            if (!self) {
+                // Pool already destroyed, free the raw memory directly
+                free(ptr);
+                return;
+            }
+            self->free_mem_vec_.push_back(ptr);
 
             // Metrics: Memory deallocated
             common::Metrics::GaugeDec(common::MetricsStd::MemPoolAllocatedBlocks);
             common::Metrics::GaugeInc(common::MetricsStd::MemPoolFreeBlocks);
             common::Metrics::CounterInc(common::MetricsStd::MemPoolDeallocations);
 
-            if (free_mem_vec_.size() > kMaxBlockNum) {
+            if (self->free_mem_vec_.size() > kMaxBlockNum) {
                 // Safe to call ReleaseHalf - we're in the owning thread
-                ReleaseHalf();
+                self->ReleaseHalf();
             }
         });
         m = nullptr;  // Clear caller's pointer
@@ -106,6 +114,10 @@ void BlockMemoryPool::Expansion(uint32_t num) {
 
     for (uint32_t i = 0; i < num; ++i) {
         void* mem = malloc(large_size_);
+        if (mem == nullptr) {
+            common::LOG_ERROR("BlockMemoryPool::Expansion: malloc(%u) failed", large_size_);
+            break;
+        }
         // not memset!
         free_mem_vec_.push_back(mem);
     }

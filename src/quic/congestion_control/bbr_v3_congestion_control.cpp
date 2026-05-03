@@ -80,6 +80,10 @@ void BBRv3CongestionControl::OnPacketAcked(const AckEvent& ev) {
         // ECN handling will be done at round end via AdaptOnEcn()
     }
 
+    // per-round accounting: accumulate BEFORE checking round boundary
+    // so this ACK's data is attributed to the current round
+    round_delivered_bytes_ += ev.bytes_acked;
+
     // Detect round boundary: when ACKs pass end_of_round_pn_
     if (end_of_round_pn_ > 0 && ev.pn >= end_of_round_pn_) {
         // Call loss and ECN adaptation at round end with complete data
@@ -88,9 +92,6 @@ void BBRv3CongestionControl::OnPacketAcked(const AckEvent& ev) {
         UpdateInflightBounds();
         StartNewRound(ev.pn);
     }
-
-    // per-round accounting
-    round_delivered_bytes_ += ev.bytes_acked;
 
     if (srtt_us_ > 0) {
         if (bw_sample_start_us_ == 0) {
@@ -133,6 +134,12 @@ void BBRv3CongestionControl::OnPacketLost(const LossEvent& ev) {
     round_lost_bytes_ += ev.bytes_lost;
     // Don't call AdaptInflightBoundsOnLoss here - it's called at round end for accuracy
     if (mode_ == Mode::kStartup) {
+        {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "slow_start";
+            qlog_data.new_state = "recovery";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+        }
         mode_ = Mode::kDrain;
         pacing_gain_ = 1.0 / 2.885;
         cwnd_gain_ = 2.0;
@@ -193,6 +200,12 @@ void BBRv3CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
     if (mode_ != Mode::kProbeRtt &&
         min_rtt_stamp_us_ > 0 &&
         now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
+        {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "congestion_avoidance";
+            qlog_data.new_state = "application_limited";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+        }
         mode_ = Mode::kProbeRtt;
         pacing_gain_ = 1.0;
         // reduce inflight to 4*MSS to measure RTT
@@ -201,6 +214,12 @@ void BBRv3CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
         probe_rtt_done_stamp_us_ = now_us + kProbeRttTimeUs;
     }
     if (mode_ == Mode::kProbeRtt && now_us >= probe_rtt_done_stamp_us_) {
+        {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "application_limited";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+        }
         mode_ = Mode::kProbeBw;
         pacing_gain_ = 1.0;
         cwnd_gain_ = 2.0;
@@ -263,6 +282,12 @@ void BBRv3CongestionControl::CheckStartupFullBandwidth(uint64_t now_us) {
     } else {
         full_bw_cnt_++;
         if (mode_ == Mode::kStartup && full_bw_cnt_ >= 3) {
+            {
+                common::CongestionStateUpdatedData qlog_data;
+                qlog_data.old_state = "slow_start";
+                qlog_data.new_state = "congestion_avoidance";
+                QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+            }
             mode_ = Mode::kDrain;
             pacing_gain_ = 1.0 / 2.885;
             cwnd_gain_ = 2.0;
@@ -335,6 +360,12 @@ void BBRv3CongestionControl::AdaptOnEcn() {
     
     // Exit Startup if we see ECN marks early
     if (mode_ == Mode::kStartup) {
+        {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "slow_start";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+        }
         mode_ = Mode::kDrain;
         pacing_gain_ = 1.0 / 2.885;
         cwnd_gain_ = 2.0;

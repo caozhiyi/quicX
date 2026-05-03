@@ -13,13 +13,8 @@ namespace quic {
 
 class ServerConnection: public BaseConnection, public TlsServerHandlerInterface {
 public:
-    ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop, const std::string& alpn,
-        std::function<void(std::shared_ptr<IConnection>)> active_connection_cb,
-        std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb,
-        std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb,
-        std::function<void(ConnectionID&)> retire_conn_id_cb,
-        std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)>
-            connection_close_cb);
+    ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
+        const std::string& alpn, const ConnectionCallbacks& callbacks = {});
     virtual ~ServerConnection();
 
     virtual void AddRemoteConnectionId(ConnectionID& id);

@@ -80,11 +80,11 @@ bool BufferEncodeWrapper::EncodeBytes(uint8_t* in, uint32_t len) {
 }
 
 common::BufferSpan BufferEncodeWrapper::GetDataSpan() const {
-    return common::BufferSpan(buffer_->GetWritableSpan().GetStart(), pos_);
+    return common::BufferSpan(start_, pos_);
 }
 
 uint32_t BufferEncodeWrapper::GetDataLength() const {
-    return pos_ - buffer_->GetWritableSpan().GetStart();
+    return pos_ - start_;
 }
 
 }  // namespace common

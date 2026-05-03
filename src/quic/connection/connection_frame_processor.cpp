@@ -1,10 +1,14 @@
 #include "common/log/log.h"
 #include "common/log/log_context.h"
+#include "common/qlog/qlog.h"
+
+#include <sstream>
 
 #include "quic/connection/connection_closer.h"
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_frame_processor.h"
 #include "quic/connection/connection_id_coordinator.h"
+#include "quic/connection/error.h"
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_stream_manager.h"
@@ -29,6 +33,21 @@
 
 namespace quicx {
 namespace quic {
+
+namespace {
+// Helper to convert ConnectionID to hex string for qlog
+std::string CIDToHexString(const ConnectionID& cid) {
+    std::ostringstream oss;
+    const uint8_t* id = cid.GetID();
+    uint8_t len = cid.GetLength();
+    for (uint8_t i = 0; i < len; ++i) {
+        char buf[3];
+        snprintf(buf, sizeof(buf), "%02x", id[i]);
+        oss << buf;
+    }
+    return oss.str();
+}
+}  // anonymous namespace
 
 FrameProcessor::FrameProcessor(IConnectionEventSink& event_sink, ConnectionStateMachine& state_machine,
     ConnectionCrypto& connection_crypto, SendManager& send_manager, StreamManager& stream_manager,
@@ -217,16 +236,21 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
 
     // Create remote stream (delegated to stream manager)
     StreamDirection direction;
-    uint32_t init_size;
+    uint32_t send_size;
+    uint32_t recv_size = 0;
     if (StreamIDGenerator::GetStreamDirection(stream_id) == StreamIDGenerator::StreamDirection::kBidirectional) {
         direction = StreamDirection::kBidi;
-        init_size = transport_param_.GetInitialMaxStreamDataBidiRemote();
+        // For remotely-initiated bidi streams:
+        // Send limit = peer's bidi_local (how much peer allows us to send on their-initiated streams)
+        send_size = static_cast<uint32_t>(transport_param_.GetPeerInitialMaxStreamDataBidiLocal());
+        // Recv limit = our bidi_remote (how much we allow peer to send on their-initiated streams)
+        recv_size = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataBidiRemote());
     } else {
         direction = StreamDirection::kRecv;
-        init_size = transport_param_.GetInitialMaxStreamDataUni();
+        send_size = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataUni());
     }
 
-    auto new_stream = stream_manager_.CreateRemoteStream(init_size, stream_id, direction);
+    auto new_stream = stream_manager_.CreateRemoteStream(send_size, stream_id, direction, recv_size);
     if (!new_stream) {
         common::LOG_ERROR("Failed to create remote stream %llu", stream_id);
         return false;
@@ -282,6 +306,10 @@ bool FrameProcessor::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
     if (send_flow_controller_) {
         send_flow_controller_->OnMaxDataReceived(max_data_size);
     }
+
+    // RFC 9000 §4.1: When the peer raises our send limit, we must resume
+    // sending if streams were blocked on connection-level flow control.
+    event_sink_.OnConnectionActive();
 
     return true;
 }
@@ -355,18 +383,31 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
-    // If Retire Prior To > 0, we need to retire old CIDs and send RETIRE_CONNECTION_ID
+    // RFC 9000 §19.15: "The Retire Prior To field MUST be less than or equal to the Sequence Number field."
+    uint64_t sequence_number = new_cid_frame->GetSequenceNumber();
     uint64_t retire_prior_to = new_cid_frame->GetRetirePriorTo();
+    if (retire_prior_to > sequence_number) {
+        common::LOG_ERROR("NEW_CONNECTION_ID: retire_prior_to (%llu) > sequence_number (%llu)",
+            retire_prior_to, sequence_number);
+        event_sink_.OnConnectionClose(QuicErrorCode::kFrameEncodingError,
+            FrameType::kNewConnectionId, "retire_prior_to > sequence_number");
+        return false;
+    }
+
     if (retire_prior_to > 0) {
-        // Send RETIRE_CONNECTION_ID for all CIDs with sequence < retire_prior_to
-        // We need to iterate from 0 to retire_prior_to-1
-        for (uint64_t seq = 0; seq < retire_prior_to; ++seq) {
+        // Only retire CIDs that haven't been retired yet.
+        // Limit the loop to avoid DoS from large retire_prior_to values.
+        static const uint64_t kMaxRetirePerFrame = 256;
+        uint64_t retire_count = std::min(retire_prior_to, kMaxRetirePerFrame);
+        for (uint64_t seq = 0; seq < retire_count; ++seq) {
             auto retire = std::make_shared<RetireConnectionIDFrame>();
             retire->SetSequenceNumber(seq);
-            // Send frame directly using event interface
             event_sink_.OnFrameReady(retire);
         }
-        // Remove these CIDs from our remote pool
+        if (retire_prior_to > kMaxRetirePerFrame) {
+            common::LOG_WARN("NEW_CONNECTION_ID: retire_prior_to (%llu) capped at %llu to prevent DoS",
+                retire_prior_to, kMaxRetirePerFrame);
+        }
         cid_coordinator_.GetRemoteConnectionIDManager()->RetireIDBySequence(retire_prior_to - 1);
     }
 
@@ -374,6 +415,15 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     ConnectionID id;
     new_cid_frame->GetConnectionID(id);
     cid_coordinator_.GetRemoteConnectionIDManager()->AddID(id);
+
+    // Log connection_id_updated event for new remote CID
+    if (qlog_trace_) {
+        common::ConnectionIdUpdatedData cid_data;
+        cid_data.owner = "remote";
+        cid_data.new_id = CIDToHexString(id);
+        cid_data.trigger = "new_connection_id";
+        QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
+    }
     return true;
 }
 
@@ -385,6 +435,14 @@ bool FrameProcessor::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     }
     // Peer is retiring a CID we provided to them, remove from local pool
     cid_coordinator_.GetLocalConnectionIDManager()->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
+
+    // Log connection_id_updated event for retired local CID
+    if (qlog_trace_) {
+        common::ConnectionIdUpdatedData cid_data;
+        cid_data.owner = "local";
+        cid_data.trigger = "retire_connection_id";
+        QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
+    }
     return true;
 }
 
@@ -395,8 +453,14 @@ bool FrameProcessor::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
         return false;
     }
 
+    // Always log the CONNECTION_CLOSE details for debugging (even before state check)
+    common::LOG_WARN("Received CONNECTION_CLOSE: error_code=0x%llx, frame_type=0x%llx, reason='%s'",
+        close_frame->GetErrorCode(), close_frame->GetErrFrameType(), close_frame->GetReason().c_str());
+
     if (!state_machine_.CanReceiveData()) {
-        return false;
+        // During handshake or early connection states, still process CONNECTION_CLOSE
+        // to properly enter draining state. The peer is telling us to close.
+        common::LOG_WARN("Received CONNECTION_CLOSE in non-receiving state, processing anyway");
     }
 
     // Cancel graceful close if it's pending (peer initiated close)

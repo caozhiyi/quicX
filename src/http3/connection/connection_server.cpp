@@ -77,13 +77,15 @@ ServerConnection::ServerConnection(const std::string& unique_id, const Http3Sett
         streams_[decoder_sender->GetStreamID()] = decoder_sender;
 
         // Wire QPACK encoder to send instructions via encoder stream
-        auto weak_enc = encoder_sender;
+        // Use weak_ptr to avoid circular reference (encoder lambda -> shared_ptr -> connection -> encoder)
+        std::weak_ptr<QpackEncoderSenderStream> weak_enc = encoder_sender;
         qpack_encoder_->SetInstructionSender(
             [weak_enc](const std::vector<std::pair<std::string, std::string>>& inserts) {
-                if (!weak_enc) {
+                auto enc = weak_enc.lock();
+                if (!enc) {
                     return;
                 }
-                weak_enc->SendInstructions(inserts);
+                enc->SendInstructions(inserts);
             });
 
         // Wire QPACK encoder to send decoder feedback (Section Ack, Stream Cancel, Insert Count Increment)
@@ -174,7 +176,14 @@ void ServerConnection::HandlePush(
         // The timer waits kServerPushWaitTimeMs to allow client to send CANCEL_PUSH
         if (!push_timer_active_) {
             push_timer_active_ = true;
-            quic_server_->AddTimer(kServerPushWaitTimeMs, std::bind(&ServerConnection::HandleTimer, this));
+            // Use weak_from_this() to avoid use-after-free when connection is destroyed before timer fires
+            std::weak_ptr<IConnection> weak_self = shared_from_this();
+            quic_server_->AddTimer(kServerPushWaitTimeMs, [weak_self]() {
+                auto self = weak_self.lock();
+                if (!self) return;
+                auto server_conn = std::static_pointer_cast<ServerConnection>(self);
+                server_conn->HandleTimer();
+            });
             common::LOG_DEBUG(
                 "ServerConnection::HandleHttp: started push timer for push_id < %llu", send_limit_push_id_);
         } else {
@@ -213,6 +222,13 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
             std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&ServerConnection::SettingsReceived, this));
         response_stream->Init();  // Must be called after construction to set up callbacks
+
+        // Propagate qlog trace from QUIC connection to HTTP/3 stream
+        auto qlog_trace = quic_connection_->GetQlogTrace();
+        if (qlog_trace) {
+            response_stream->SetQlogTrace(qlog_trace);
+        }
+
         streams_[response_stream->GetStreamID()] = response_stream;
 
     } else if (stream->GetDirection() == StreamDirection::kRecv) {
@@ -262,7 +278,7 @@ void ServerConnection::OnStreamTypeIdentified(
         case static_cast<uint64_t>(StreamType::kQpackEncoder):  // QPACK Encoder Stream (RFC 9204 Section 4.2)
             common::LOG_DEBUG(
                 "ServerConnection: creating QPACK Encoder Receiver Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<QpackEncoderReceiverStream>(stream, blocked_registry_,
+            typed_stream = std::make_shared<QpackEncoderReceiverStream>(stream, qpack_encoder_, blocked_registry_,
                 std::bind(&ServerConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2));
             break;
 
@@ -419,7 +435,14 @@ void ServerConnection::HandleTimer() {
         // Update send_limit_push_id_ to current_next_push_id to include all pending pushes
         send_limit_push_id_ = current_next_push_id;
         push_timer_active_ = true;
-        quic_server_->AddTimer(kServerPushWaitTimeMs, std::bind(&ServerConnection::HandleTimer, this));
+        // Use weak_from_this() to avoid use-after-free when connection is destroyed before timer fires
+        std::weak_ptr<IConnection> weak_self = shared_from_this();
+        quic_server_->AddTimer(kServerPushWaitTimeMs, [weak_self]() {
+            auto self = weak_self.lock();
+            if (!self) return;
+            auto server_conn = std::static_pointer_cast<ServerConnection>(self);
+            server_conn->HandleTimer();
+        });
         common::LOG_DEBUG(
             "ServerConnection::HandleTimer: started new timer for pending push_id (limit=%llu)", send_limit_push_id_);
 
@@ -444,7 +467,8 @@ bool ServerConnection::CanPush() const {
     // RFC 9114 Section 7.2.7: MAX_PUSH_ID specifies the maximum push ID
     // that the server can use. A value of 0 allows push ID 0.
     // The server can use push IDs from 0 to max_push_id_ (inclusive).
-    if (next_push_id_ >= max_push_id_) {
+    // Use > instead of >= so that when MAX_PUSH_ID=0, push ID 0 is allowed.
+    if (next_push_id_ > max_push_id_) {
         common::LOG_DEBUG(
             "ServerConnection::CanPush: next_push_id=%llu > max_push_id=%llu", next_push_id_, max_push_id_);
         return false;

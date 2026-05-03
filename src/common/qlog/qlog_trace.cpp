@@ -81,13 +81,11 @@ void QlogTrace::LogConnectionClosed(uint64_t time_us, const ConnectionClosedData
 
 void QlogTrace::SetCommonFields(const CommonFields& fields) {
     // Lock-free: only called during connection initialization, single-threaded access
-    // 无需加锁：只在连接初始化时调用，单线程访问
     common_fields_ = fields;
 }
 
 void QlogTrace::SetConfiguration(const QlogConfiguration& config) {
     // Lock-free: only called during connection initialization, single-threaded access
-    // 无需加锁：只在连接初始化时调用，单线程访问
     configuration_ = config;
 }
 
@@ -122,7 +120,6 @@ void QlogTrace::WriteEvent(const QlogEvent& event) {
     }
 
     // Lock-free: Connection is bound to a single thread, no mutex needed
-    // 无需加锁：连接与线程绑定，QlogTrace 只会被单线程访问
 
     // first write header
     if (!header_written_) {

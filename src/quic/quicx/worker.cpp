@@ -3,6 +3,7 @@
 
 #include "common/log/log.h"
 #include "common/log/log_context.h"
+#include "common/qlog/qlog.h"
 
 #include "quic/common/version.h"
 #include "quic/packet/init_packet.h"

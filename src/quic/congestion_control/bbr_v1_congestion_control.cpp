@@ -52,6 +52,11 @@ void BBRv1CongestionControl::Configure(const CcConfigV2& cfg) {
 
 void BBRv1CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     bytes_in_flight_ += ev.bytes;
+    // Update round-trip boundary: track the latest sent packet number
+    // so that CheckFullBandwidthReached can detect round boundaries
+    if (end_of_round_pn_ == 0 || ev.pn > end_of_round_pn_) {
+        end_of_round_pn_ = ev.pn;
+    }
     if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
 }
 
@@ -113,6 +118,12 @@ void BBRv1CongestionControl::OnPacketLost(const LossEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
     // In STARTUP, loss exits to DRAIN
     if (mode_ == Mode::kStartup) {
+        {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "slow_start";
+            qlog_data.new_state = "recovery";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+        }
         mode_ = Mode::kDrain;
         pacing_gain_ = 1.0 / 2.885; // drain faster by pacing below bw
         cwnd_gain_ = 2.0;
@@ -180,6 +191,12 @@ void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
     if (mode_ != Mode::kProbeRtt && 
         min_rtt_stamp_us_ > 0 && 
         now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
+        {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "congestion_avoidance";
+            qlog_data.new_state = "application_limited";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+        }
         mode_ = Mode::kProbeRtt;
         SetPacingGain(1.0);
         // BBR standard: reduce cwnd to 4*MSS to drain queue and get accurate RTT
@@ -190,6 +207,12 @@ void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
     
     // Exit ProbeRTT after 200ms
     if (mode_ == Mode::kProbeRtt && now_us >= probe_rtt_done_stamp_us_) {
+        {
+            common::CongestionStateUpdatedData qlog_data;
+            qlog_data.old_state = "application_limited";
+            qlog_data.new_state = "congestion_avoidance";
+            QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+        }
         // min_rtt should have been updated during ProbeRTT
         min_rtt_stamp_us_ = now_us;  // Reset timestamp
         // Return to PROBE_BW after ProbeRTT completes
@@ -234,6 +257,12 @@ void BBRv1CongestionControl::CheckFullBandwidthReached(uint64_t now_us) {
     } else {
         full_bw_cnt_++;
         if (mode_ == Mode::kStartup && full_bw_cnt_ >= 3) {
+            {
+                common::CongestionStateUpdatedData qlog_data;
+                qlog_data.old_state = "slow_start";
+                qlog_data.new_state = "congestion_avoidance";
+                QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
+            }
             // Exit STARTUP to DRAIN
             mode_ = Mode::kDrain;
             SetPacingGain(1.0 / 2.885);
