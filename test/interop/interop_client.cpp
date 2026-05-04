@@ -44,6 +44,10 @@
 #include "quic/include/if_quic_client.h"
 #include "quic/include/if_quic_connection.h"
 #include "quic/include/if_quic_bidirection_stream.h"
+#include "http3/include/if_client.h"
+#include "http3/include/if_async_handler.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 
 using namespace quicx;
 
@@ -115,6 +119,9 @@ public:
 
     bool Init() {
         QuicTransportParams transport_params;
+        // Use a short idle timeout for interop testing so the connection closes
+        // promptly after all streams finish, well within container timeout.
+        transport_params.max_idle_timeout_ms_ = 10000;  // 10 seconds
         quic_ = IQuicClient::Create(transport_params);
         if (!quic_) {
             std::cerr << "Failed to create QUIC client" << std::endl;
@@ -128,6 +135,7 @@ public:
             });
 
         QuicClientConfig config;
+        config.verify_peer_ = false;  // Interop tests use self-signed certificates
         config.config_.worker_thread_num_ = 4;
         config.config_.log_level_ = LogLevel::kDebug;
         config.config_.log_path_ = "./logs";  // Current directory for logs
@@ -339,6 +347,10 @@ public:
             std::cerr << "Failed to flush stream" << std::endl;
         }
 
+        // Close the send direction (sends FIN) to signal end of request.
+        // hq-interop protocol: server waits for client FIN before responding.
+        bidi->Close();
+
         std::cout << "Sent request: GET " << path << std::endl;
 
         // Wait for download to complete
@@ -470,6 +482,8 @@ public:
             bidi->Send(reinterpret_cast<uint8_t*>(request.data()),
                        static_cast<uint32_t>(request.size()));
             bidi->Flush();
+            // Close send direction (FIN) - server waits for FIN before responding
+            bidi->Close();
             std::cout << "Sent request: GET " << path << std::endl;
             initiated++;
         }
@@ -702,6 +716,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Auto-detect HTTP/3 mode from TESTCASE environment variable
+    const char* testcase_detect = std::getenv("TESTCASE");
+    if (!enable_http3 && testcase_detect && strcmp(testcase_detect, "http3") == 0) {
+        enable_http3 = true;
+    }
+
     // Set environment variables from command-line arguments for HqInteropClient::Init()
     if (enable_zerortt) {
         setenv("ZERORTT", "1", 1);
@@ -744,8 +764,147 @@ int main(int argc, char* argv[]) {
         std::cout << "*** Expecting Retry ***" << std::endl;
     }
     if (enable_http3) {
-        std::cerr << "*** HTTP/3 not yet implemented ***" << std::endl;
-        return 1;
+        std::cout << "*** HTTP/3 Mode (ALPN=h3) ***" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << std::endl;
+
+        // Use HTTP/3 client (IClient with h3 ALPN)
+        auto h3_client = IClient::Create();
+
+        Http3ClientConfig h3_config;
+        h3_config.quic_config_.verify_peer_ = false;  // Self-signed certs
+        h3_config.quic_config_.config_.worker_thread_num_ = 4;
+        h3_config.quic_config_.config_.log_level_ = LogLevel::kDebug;
+        h3_config.quic_config_.config_.log_path_ = "./logs";
+        h3_config.connection_timeout_ms_ = 30000;
+        // Use QUIC v1 for interop compatibility (quic-go interop image may not support v2)
+        h3_config.quic_config_.config_.quic_version_ = 0x00000001;
+
+        // QLog
+        if (!qlog_dir.empty()) {
+            h3_config.quic_config_.config_.qlog_config_.enabled = true;
+            h3_config.quic_config_.config_.qlog_config_.output_dir = qlog_dir;
+        }
+        // SSLKEYLOG
+        const char* h3_keylog = std::getenv("SSLKEYLOGFILE");
+        if (h3_keylog) {
+            h3_config.quic_config_.config_.keylog_file_ = h3_keylog;
+        }
+
+        if (!h3_client->Init(h3_config)) {
+            std::cerr << "Failed to initialize HTTP/3 client" << std::endl;
+            return 1;
+        }
+
+        // Download all files using HTTP/3 (complete mode with async handler for streaming)
+        std::atomic<int> completed{0};
+        std::atomic<int> succeeded{0};
+        std::mutex io_mtx;
+        std::condition_variable done_cv;
+        int total = static_cast<int>(urls.size());
+
+        for (const auto& url : urls) {
+            // Extract filename from URL for saving
+            std::string filename = "download.bin";
+            size_t last_slash = url.find_last_of('/');
+            if (last_slash != std::string::npos && last_slash + 1 < url.length()) {
+                filename = url.substr(last_slash + 1);
+            }
+            std::string filepath = downloads_dir + "/" + filename;
+
+            std::cout << "H3 Downloading: " << url << " -> " << filepath << std::endl;
+
+            auto req = IRequest::Create();
+
+            // Create async handler for streaming file download
+            class FileDownloadHandler : public IAsyncClientHandler {
+            public:
+                FileDownloadHandler(const std::string& filepath, const std::string& url,
+                                    std::atomic<int>& completed, std::atomic<int>& succeeded,
+                                    std::mutex& io_mtx, std::condition_variable& done_cv)
+                    : filepath_(filepath), url_(url), completed_(completed), succeeded_(succeeded),
+                      io_mtx_(io_mtx), done_cv_(done_cv) {}
+
+                void OnHeaders(std::shared_ptr<IResponse> response) override {
+                    status_code_ = response->GetStatusCode();
+                    if (status_code_ == 200) {
+                        file_ = fopen(filepath_.c_str(), "wb");
+                        if (!file_) {
+                            std::cerr << "H3 Failed to open file: " << filepath_ << std::endl;
+                        }
+                    } else {
+                        std::cerr << "H3 HTTP error " << status_code_ << " for " << url_ << std::endl;
+                    }
+                }
+
+                void OnBodyChunk(const uint8_t* data, size_t length, bool is_last) override {
+                    if (file_ && length > 0) {
+                        fwrite(data, 1, length, file_);
+                        bytes_received_ += length;
+                    }
+                    if (is_last) {
+                        if (file_) {
+                            fclose(file_);
+                            file_ = nullptr;
+                        }
+                        std::cout << "H3 Downloaded " << bytes_received_ << " bytes -> "
+                                  << filepath_ << " (status=" << status_code_ << ")" << std::endl;
+                        if (status_code_ == 200 && bytes_received_ > 0) {
+                            succeeded_++;
+                        }
+                        completed_++;
+                        done_cv_.notify_all();
+                    }
+                }
+
+                void OnError(uint32_t error_code) override {
+                    std::cerr << "H3 Protocol error " << error_code << " for " << url_ << std::endl;
+                    if (file_) {
+                        fclose(file_);
+                        file_ = nullptr;
+                    }
+                    completed_++;
+                    done_cv_.notify_all();
+                }
+
+            private:
+                std::string filepath_;
+                std::string url_;
+                std::atomic<int>& completed_;
+                std::atomic<int>& succeeded_;
+                std::mutex& io_mtx_;
+                std::condition_variable& done_cv_;
+                FILE* file_ = nullptr;
+                size_t bytes_received_ = 0;
+                uint32_t status_code_ = 0;
+            };
+
+            auto handler = std::make_shared<FileDownloadHandler>(
+                filepath, url, completed, succeeded, io_mtx, done_cv);
+
+            if (!h3_client->DoRequest(url, HttpMethod::kGet, req, handler)) {
+                std::cerr << "H3 Failed to send request for " << url << std::endl;
+                completed++;
+            }
+        }
+
+        // Wait for all downloads to complete
+        {
+            std::unique_lock<std::mutex> lock(io_mtx);
+            done_cv.wait_for(lock, std::chrono::seconds(60),
+                [&] { return completed.load() >= total; });
+        }
+
+        std::cout << "H3 All " << succeeded.load() << "/" << total
+                  << " downloads completed" << std::endl;
+
+        h3_client->Close();
+
+        if (succeeded.load() != total) {
+            return 1;
+        }
+        std::cout << "Client finished successfully (HTTP/3)" << std::endl;
+        return 0;
     }
     std::cout << "========================================" << std::endl;
     std::cout << std::endl;

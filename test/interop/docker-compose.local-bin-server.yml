@@ -1,0 +1,16 @@
+# Docker Compose override: mount locally-built quicX binary for the SERVER
+# container only (the client remains whatever image is configured).
+#
+# Used by interop_runner.py when --use-local-bin is passed AND the server
+# implementation is quicx.  Avoids rebuilding the Docker image after every
+# code change — the host's freshly-built binaries shadow the in-image ones.
+#
+# Required env:
+#   QUICX_BIN_DIR  absolute path of host directory containing
+#                  `interop_server` and `interop_client` (e.g. build/bin).
+
+services:
+  server:
+    volumes:
+      - ${QUICX_BIN_DIR:?QUICX_BIN_DIR must be set}/interop_server:/usr/local/bin/interop_server:ro
+      - ${QUICX_BIN_DIR}/interop_client:/usr/local/bin/interop_client:ro

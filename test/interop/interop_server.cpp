@@ -23,6 +23,7 @@
 #include <signal.h>
 #include <cstdlib>
 #include <cstring>
+#include <dirent.h>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -30,6 +31,9 @@
 #include "quic/include/if_quic_server.h"
 #include "quic/include/if_quic_connection.h"
 #include "quic/include/if_quic_bidirection_stream.h"
+#include "http3/include/if_server.h"
+#include "http3/include/if_request.h"
+#include "http3/include/if_response.h"
 
 using namespace quicx;
 
@@ -50,6 +54,9 @@ public:
 
     bool Init(const std::string& cert_file, const std::string& key_file) {
         QuicTransportParams transport_params;
+        // Use a short idle timeout for interop testing so the connection closes
+        // promptly after all streams are finished, well within container timeout.
+        transport_params.max_idle_timeout_ms_ = 10000;  // 10 seconds
         quic_ = IQuicServer::Create(transport_params);
 
         quic_->SetConnectionStateCallBack(
@@ -299,12 +306,146 @@ private:
     uint16_t port_;
 };
 
+// =============================================================================
+// HTTP/3 Interop Server (ALPN=h3, standard HTTP/3 protocol)
+// =============================================================================
+
+class H3InteropServer {
+public:
+    H3InteropServer(const std::string& root_dir, uint16_t port)
+        : root_dir_(root_dir), port_(port) {}
+
+    bool Init(const std::string& cert_file, const std::string& key_file) {
+        server_ = IServer::Create();
+
+        Http3ServerConfig config;
+        config.quic_config_.cert_file_ = cert_file;
+        config.quic_config_.key_file_ = key_file;
+        config.quic_config_.config_.worker_thread_num_ = 4;
+        config.quic_config_.config_.log_level_ = LogLevel::kDebug;
+        config.quic_config_.config_.log_path_ = "./logs";
+
+        // QLog
+        const char* qlog_dir = std::getenv("QLOGDIR");
+        if (qlog_dir) {
+            config.quic_config_.config_.qlog_config_.enabled = true;
+            config.quic_config_.config_.qlog_config_.output_dir = qlog_dir;
+            std::cout << "QLog enabled, output: " << qlog_dir << std::endl;
+        }
+
+        // SSLKEYLOG
+        const char* keylog = std::getenv("SSLKEYLOGFILE");
+        if (keylog) {
+            config.quic_config_.config_.keylog_file_ = keylog;
+            std::cout << "SSLKEYLOG enabled: " << keylog << std::endl;
+        }
+
+        // QUIC Version
+        const char* quic_version = std::getenv("QUIC_VERSION");
+        if (quic_version) {
+            uint32_t version = static_cast<uint32_t>(std::strtoul(quic_version, nullptr, 0));
+            config.quic_config_.config_.quic_version_ = version;
+            std::cout << "QUIC Version: 0x" << std::hex << version << std::dec << std::endl;
+        } else {
+            // Default to QUIC v1 for interop compatibility
+            config.quic_config_.config_.quic_version_ = 0x00000001;
+        }
+
+        if (!server_->Init(config)) {
+            std::cerr << "Failed to initialize HTTP/3 server" << std::endl;
+            return false;
+        }
+
+        // Register wildcard GET handler to serve any file from www root
+        std::string root = root_dir_;
+        server_->AddHandler(HttpMethod::kGet, "/*filepath",
+            [root](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
+                std::string path = req->GetPath();
+                if (path.empty() || path[0] != '/') {
+                    path = "/" + path;
+                }
+
+                std::string filepath = root + path;
+                std::cout << "H3 Serving: " << filepath << std::endl;
+
+                FILE* file = fopen(filepath.c_str(), "rb");
+                if (!file) {
+                    std::cerr << "H3 File not found: " << filepath << std::endl;
+                    resp->SetStatusCode(404);
+                    resp->AppendBody("Not Found");
+                    return;
+                }
+
+                // Get file size
+                fseek(file, 0, SEEK_END);
+                long file_size = ftell(file);
+                fseek(file, 0, SEEK_SET);
+                std::cout << "H3 File size: " << file_size << " bytes" << std::endl;
+
+                resp->SetStatusCode(200);
+                resp->AddHeader("content-type", "application/octet-stream");
+                resp->AddHeader("content-length", std::to_string(file_size));
+
+                // Use body provider for streaming large files
+                // Wrap FILE* in shared_ptr to safely track closure state
+                struct FileState {
+                    FILE* fp;
+                    FileState(FILE* f) : fp(f) {}
+                    ~FileState() { if (fp) fclose(fp); }
+                };
+                auto state = std::make_shared<FileState>(file);
+                resp->SetResponseBodyProvider([state](uint8_t* buf, size_t size) -> size_t {
+                    if (!state->fp) {
+                        return 0;  // Already closed
+                    }
+                    size_t read = fread(buf, 1, size, state->fp);
+                    if (read == 0) {
+                        fclose(state->fp);
+                        state->fp = nullptr;
+                    }
+                    return read;
+                });
+            });
+
+        std::cout << "HTTP/3 Server initialized on port " << port_ << std::endl;
+        std::cout << "Serving files from: " << root_dir_ << std::endl;
+        std::cout << "ALPN: h3" << std::endl;
+        return true;
+    }
+
+    bool Start() {
+        if (!server_->Start("::", port_)) {
+            std::cerr << "Failed to start HTTP/3 server" << std::endl;
+            return false;
+        }
+        std::cout << "HTTP/3 Server listening on [::]:" << port_ << std::endl;
+        server_->Join();
+        return true;
+    }
+
+    void Stop() {
+        if (server_) {
+            server_->Stop();
+        }
+    }
+
+private:
+    std::shared_ptr<IServer> server_;
+    std::string root_dir_;
+    uint16_t port_;
+};
+
 static HqInteropServer* g_server = nullptr;
+
+static H3InteropServer* g_h3_server = nullptr;
 
 void signal_handler(int signum) {
     std::cout << "\nReceived signal " << signum << ", shutting down..." << std::endl;
     if (g_server) {
         g_server->Stop();
+    }
+    if (g_h3_server) {
+        g_h3_server->Stop();
     }
 }
 
@@ -322,6 +463,7 @@ int main(int argc, char* argv[]) {
     bool enable_resumption = false;
     bool enable_0rtt = false;
     bool enable_keyupdate = false;
+    bool enable_http3 = false;
     std::string cipher_suite;
     uint32_t quic_version = 0;
     bool strict_version = false;
@@ -348,6 +490,8 @@ int main(int argc, char* argv[]) {
             enable_keyupdate = true;
         } else if (arg == "--strict-version") {
             strict_version = true;
+        } else if (arg == "--http3") {
+            enable_http3 = true;
         } else if (arg == "--cipher" && i + 1 < argc) {
             cipher_suite = argv[++i];
         } else if (arg == "--quic-version" && i + 1 < argc) {
@@ -378,6 +522,12 @@ int main(int argc, char* argv[]) {
         qlog_dir = qlog_env;
     }
     
+    // Auto-detect HTTP/3 mode from TESTCASE environment variable
+    const char* testcase_env = std::getenv("TESTCASE");
+    if (!enable_http3 && testcase_env && strcmp(testcase_env, "http3") == 0) {
+        enable_http3 = true;
+    }
+
     // Apply command-line parameters via environment variables for Init()
     if (force_retry) {
         setenv("RETRY", "1", 1);
@@ -404,27 +554,45 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "========================================" << std::endl;
-    std::cout << "quicX hq-interop Server" << std::endl;
+    std::cout << (enable_http3 ? "quicX HTTP/3 Interop Server" : "quicX hq-interop Server") << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << "Port: " << port << std::endl;
     std::cout << "WWW: " << www_dir << std::endl;
+    std::cout << "Mode: " << (enable_http3 ? "HTTP/3 (ALPN=h3)" : "hq-interop") << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "Certificate: " << cert_file << std::endl;
     std::cout << "Private Key: " << key_file << std::endl;
 
-    HqInteropServer server(www_dir, port);
-    g_server = &server;
+    if (enable_http3) {
+        // HTTP/3 mode: use IServer with h3 ALPN
+        H3InteropServer h3_server(www_dir, port);
+        g_h3_server = &h3_server;
 
-    if (!server.Init(cert_file, key_file)) {
-        return 1;
+        if (!h3_server.Init(cert_file, key_file)) {
+            return 1;
+        }
+
+        if (!h3_server.Start()) {
+            return 1;
+        }
+
+        std::cout << "HTTP/3 Server stopped" << std::endl;
+    } else {
+        // hq-interop mode: use HqInteropServer
+        HqInteropServer server(www_dir, port);
+        g_server = &server;
+
+        if (!server.Init(cert_file, key_file)) {
+            return 1;
+        }
+
+        if (!server.Start()) {
+            return 1;
+        }
+
+        std::cout << "Server stopped" << std::endl;
     }
-
-    if (!server.Start()) {
-        return 1;
-    }
-
-    std::cout << "Server stopped" << std::endl;
     return 0;
 }
