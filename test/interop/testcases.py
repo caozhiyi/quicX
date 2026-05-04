@@ -68,6 +68,8 @@ SCENARIOS: dict[str, TestScenario] = {
         name="http3",
         description="HTTP/3 protocol functionality",
         files=["10KB.bin", "100KB.bin", "1MB.bin"],
+        server_env={"TESTCASE": "http3"},
+        client_env={"TESTCASE": "http3"},
     ),
     "multiconnect": TestScenario(
         name="multiconnect",

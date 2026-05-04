@@ -11,6 +11,7 @@ int main() {
     auto client = quicx::IClient::Create();
 
     quicx::Http3ClientConfig config;
+    config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
     config.quic_config_.config_.worker_thread_num_ = 1;
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
     client->Init(config);
@@ -27,7 +28,7 @@ int main() {
     request->AppendBody(std::string("hello world"));
     client->DoRequest("https://127.0.0.1:7001/hello", quicx::HttpMethod::kGet, request,
         [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
-            // 计算请求耗时
+            // Calculate request latency
             auto end_time = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 

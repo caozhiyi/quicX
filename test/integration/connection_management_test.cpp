@@ -14,13 +14,17 @@
 class ConnectionManagementTest: public ::testing::Test {
 protected:
     std::shared_ptr<quicx::IServer> server_;
-    uint16_t port_ = 18444;
+    uint16_t port_;
     std::thread server_thread_;
+    static std::atomic<uint16_t> next_port_;
 
     static const char cert_pem_[];
     static const char key_pem_[];
 
     void SetUp() override {
+        // Use different port for each test to avoid bind conflicts
+        port_ = next_port_.fetch_add(1);
+
         server_ = quicx::IServer::Create();
 
         quicx::Http3ServerConfig config;
@@ -52,10 +56,20 @@ protected:
     }
 
     void TearDown() override {
-        server_->Stop();
-        if (server_thread_.joinable()) {
-            server_thread_.join();
+        // Stop server and wait for all threads to complete
+        if (server_) {
+            server_->Stop();
+            server_->Join();  // Wait for internal worker threads
         }
+
+        if (server_thread_.joinable()) {
+            server_thread_.join();  // Wait for Start() to return
+        }
+
+        server_.reset();
+
+        // Small delay to ensure port is fully released
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 };
 
@@ -93,10 +107,14 @@ const char ConnectionManagementTest::key_pem_[] =
     "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
     "-----END RSA PRIVATE KEY-----\n";
 
+// Static member initialization - start from 18460 to avoid conflicts with other test suites
+std::atomic<uint16_t> ConnectionManagementTest::next_port_(18540);
+
 TEST_F(ConnectionManagementTest, BasicConnection) {
     auto client = quicx::IClient::Create();
 
     quicx::Http3ClientConfig config;
+    config.quic_config_.verify_peer_ = false;  // Accept self-signed cert
     config.quic_config_.config_.worker_thread_num_ = 1;
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
@@ -110,7 +128,7 @@ TEST_F(ConnectionManagementTest, BasicConnection) {
 
     client->DoRequest(
         url, quicx::HttpMethod::kGet, request, [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
-            success = (error == 0 && response->GetStatusCode() == 200);
+            success = (error == 0 && response && response->GetStatusCode() == 200);
             completed = true;
         });
 
@@ -126,6 +144,7 @@ TEST_F(ConnectionManagementTest, ConnectionReuse) {
     auto client = quicx::IClient::Create();
 
     quicx::Http3ClientConfig config;
+    config.quic_config_.verify_peer_ = false;  // Accept self-signed cert
     config.quic_config_.config_.worker_thread_num_ = 1;
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
@@ -156,6 +175,7 @@ TEST_F(ConnectionManagementTest, ConnectionTimeout) {
     auto client = quicx::IClient::Create();
 
     quicx::Http3ClientConfig config;
+    config.quic_config_.verify_peer_ = false;  // Accept self-signed cert
     config.quic_config_.config_.worker_thread_num_ = 1;
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
     config.connection_timeout_ms_ = 2000;  // 2 second timeout
@@ -191,6 +211,7 @@ TEST_F(ConnectionManagementTest, MultipleConnections) {
         auto client = quicx::IClient::Create();
 
         quicx::Http3ClientConfig config;
+        config.quic_config_.verify_peer_ = false;  // Accept self-signed cert
         config.quic_config_.config_.worker_thread_num_ = 1;
         config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
@@ -211,7 +232,10 @@ TEST_F(ConnectionManagementTest, MultipleConnections) {
             });
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Wait for all requests to complete
+    for (int i = 0; i < 100 && success_count.load() < num_clients; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
     EXPECT_EQ(success_count.load(), num_clients);
 }

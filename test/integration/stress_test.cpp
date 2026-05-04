@@ -16,12 +16,16 @@ class StressTest: public ::testing::Test {
 protected:
     std::shared_ptr<quicx::IServer> server_;
     std::thread server_thread_;
-    uint16_t port_ = 18446;
+    uint16_t port_;
+    static std::atomic<uint16_t> next_port_;
 
     static const char cert_pem_[];
     static const char key_pem_[];
 
     void SetUp() override {
+        // Use different port for each test to avoid bind conflicts
+        port_ = next_port_.fetch_add(1);
+
         server_ = quicx::IServer::Create();
 
         quicx::Http3ServerConfig server_config;
@@ -51,10 +55,19 @@ protected:
     }
 
     void TearDown() override {
-        server_->Stop();
-        if (server_thread_.joinable()) {
-            server_thread_.join();
+        if (server_) {
+            server_->Stop();
+            server_->Join();  // Wait for internal worker threads
         }
+
+        if (server_thread_.joinable()) {
+            server_thread_.join();  // Wait for Start() to return
+        }
+
+        server_.reset();
+
+        // Small delay to ensure port is fully released
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 };
 
@@ -92,6 +105,9 @@ const char StressTest::key_pem_[] =
     "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
     "-----END RSA PRIVATE KEY-----\n";
 
+// Static member initialization - start from 18470 to avoid conflicts with other test suites
+std::atomic<uint16_t> StressTest::next_port_(18560);
+
 TEST_F(StressTest, HighConcurrency) {
     const int num_clients = 50;
     const int requests_per_client = 10;
@@ -107,6 +123,7 @@ TEST_F(StressTest, HighConcurrency) {
             auto client = quicx::IClient::Create();
 
             quicx::Http3ClientConfig config;
+            config.quic_config_.verify_peer_ = false;
             config.quic_config_.config_.worker_thread_num_ = 1;
             config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
@@ -173,6 +190,7 @@ TEST_F(StressTest, SustainedLoad) {
             auto client = quicx::IClient::Create();
 
             quicx::Http3ClientConfig config;
+            config.quic_config_.verify_peer_ = false;
             config.quic_config_.config_.worker_thread_num_ = 1;
             config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
@@ -227,6 +245,7 @@ TEST_F(StressTest, LargeDataTransfer) {
     auto client = quicx::IClient::Create();
 
     quicx::Http3ClientConfig config;
+    config.quic_config_.verify_peer_ = false;
     config.quic_config_.config_.worker_thread_num_ = 2;
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 

@@ -16,12 +16,16 @@ protected:
     std::shared_ptr<quicx::IServer> server_;
     std::shared_ptr<quicx::IClient> client_;
     std::thread server_thread_;
-    uint16_t port_ = 18445;
+    uint16_t port_;
+    static std::atomic<uint16_t> next_port_;
 
     static const char cert_pem_[];
     static const char key_pem_[];
 
     void SetUp() override {
+        // Use different port for each test to avoid bind conflicts
+        port_ = next_port_.fetch_add(1);
+        
         server_ = quicx::IServer::Create();
 
         quicx::Http3ServerConfig server_config;
@@ -62,6 +66,7 @@ protected:
         client_ = quicx::IClient::Create();
 
         quicx::Http3ClientConfig client_config;
+        client_config.quic_config_.verify_peer_ = false;  // Accept self-signed cert
         client_config.quic_config_.config_.worker_thread_num_ = 2;
         client_config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
         client_config.connection_timeout_ms_ = 5000;
@@ -70,12 +75,31 @@ protected:
     }
 
     void TearDown() override {
-        server_->Stop();
-        if (server_thread_.joinable()) {
-            server_thread_.join();
+        // Clean up client first
+        if (client_) {
+            client_->Close();
+            client_.reset();
         }
+        
+        // Stop server and wait for all threads to complete
+        if (server_) {
+            server_->Stop();
+            server_->Join();  // Wait for internal worker threads
+        }
+        
+        if (server_thread_.joinable()) {
+            server_thread_.join();  // Wait for Start() to return
+        }
+        
+        server_.reset();
+        
+        // Small delay to ensure port is fully released
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 };
+
+// Static member initialization
+std::atomic<uint16_t> ErrorHandlingTest::next_port_(18520);
 
 const char ErrorHandlingTest::cert_pem_[] =
     "-----BEGIN CERTIFICATE-----\n"

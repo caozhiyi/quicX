@@ -10,7 +10,6 @@
       "retry",
       "resumption",
       "zerortt",
-      "http3",
       "multiconnect",
       "versionnegotiation",
       "chacha20",
@@ -18,7 +17,8 @@
       "v2",
       "rebind-port",
       "rebind-addr",
-      "connectionmigration"
+      "connectionmigration",
+      "http3"
     ],
     "unsupported": []
   },

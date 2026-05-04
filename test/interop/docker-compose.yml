@@ -3,6 +3,20 @@
 # Compatible with official quic-interop-runner framework
 # Reference: https://github.com/quic-interop/quic-interop-runner/blob/master/docker-compose.yml
 #
+# NOTE on subnets:
+#   The official quic-network-simulator topology uses 193.167.0.0/24 + 193.167.100.0/24.
+#   On some hosts (e.g. corporate Tencent Cloud CVMs) 193.167.0.0/16 is hijacked to an
+#   internal gateway via a static route, which makes the sim-mode topology unusable.
+#   To avoid that conflict, we relocate the topology to 172.30.0.0/24 + 172.30.100.0/24,
+#   which are private (RFC1918) and almost never pre-routed.
+#
+# NOTE on interface_name:
+#   The sim container (martenseemann/quic-network-simulator) hard-codes eth0/eth1.
+#   On Docker >= 28.0 the interface assignment based on `priority` is not guaranteed,
+#   so we use `interface_name` (requires Compose v2.36.0+, which this repo already
+#   depends on). If your Compose is older, fall back to `priority` only and hope for
+#   the best.
+#
 # Usage:
 #   # Build the quicX interop image
 #   docker compose build
@@ -10,8 +24,12 @@
 #   # Run basic tests (handshake, transfer, etc.)
 #   docker compose up sim server client
 #
-#   # Run network simulation tests (rebind, migration)
+#   # Run with a specific network scenario
 #   SCENARIO="rebind --delay=15ms --bandwidth=10Mbps --queue=25 --first-rebind=1s --rebind-freq=5s" \
+#     docker compose up sim server client
+#
+#   # Cross-implementation test (quicX server, quiche client)
+#   SERVER=quicx-interop:latest CLIENT=cloudflare/quiche-qns:latest \
 #     docker compose up sim server client
 
 services:
@@ -22,6 +40,7 @@ services:
   sim:
     image: martenseemann/quic-network-simulator:latest
     container_name: sim
+    hostname: sim
     cap_add:
       - NET_ADMIN
       - NET_RAW
@@ -30,14 +49,20 @@ services:
       - SCENARIO=${SCENARIO:-simple-p2p --delay=15ms --bandwidth=10Mbps --queue=25}
     networks:
       leftnet:
-        ipv4_address: 193.167.0.2
+        ipv4_address: 172.30.0.2
+        ipv6_address: fd00:cafe:cafe:0::2
+        interface_name: eth0
+        priority: 1000
       rightnet:
-        ipv4_address: 193.167.100.2
+        ipv4_address: 172.30.100.2
+        ipv6_address: fd00:cafe:cafe:100::2
+        interface_name: eth1
+        priority: 900
     stdin_open: true
     tty: true
 
   # ----------------------------------------------------------------
-  # QUIC Server
+  # QUIC Server (rightnet: 172.30.100.100)
   # ----------------------------------------------------------------
   server:
     build:
@@ -45,6 +70,7 @@ services:
       dockerfile: test/interop/Dockerfile
     image: ${SERVER:-quicx-interop:latest}
     container_name: server
+    hostname: server
     depends_on:
       - sim
     cap_add:
@@ -64,12 +90,14 @@ services:
       - ${SERVER_LOGS:-./logs/server}:/logs
     networks:
       rightnet:
-        ipv4_address: 193.167.100.100
+        ipv4_address: 172.30.100.100
+        ipv6_address: fd00:cafe:cafe:100::100
+        interface_name: eth0
     stdin_open: true
     tty: true
 
   # ----------------------------------------------------------------
-  # QUIC Client
+  # QUIC Client (leftnet: 172.30.0.100)
   # ----------------------------------------------------------------
   client:
     build:
@@ -77,6 +105,7 @@ services:
       dockerfile: test/interop/Dockerfile
     image: ${CLIENT:-quicx-interop:latest}
     container_name: client
+    hostname: client
     depends_on:
       - sim
     cap_add:
@@ -86,7 +115,7 @@ services:
     environment:
       - ROLE=client
       - TESTCASE=${TESTCASE_CLIENT:-handshake}
-      - REQUESTS=${REQUESTS:-https://server:443/1KB.bin}
+      - REQUESTS=${REQUESTS:-https://server4:443/1KB.bin}
       - CLIENT_PARAMS=${CLIENT_PARAMS:-}
       - SSLKEYLOGFILE=/logs/keys.log
       - QLOGDIR=/logs/qlog/
@@ -95,27 +124,44 @@ services:
       - ${DOWNLOADS:-./downloads}:/downloads:delegated
       - ${CERTS:-./certs}:/certs:ro
       - ${CLIENT_LOGS:-./logs/client}:/logs
+    extra_hosts:
+      - "server4:172.30.100.100"
+      - "server6:fd00:cafe:cafe:100::100"
+      - "server46:172.30.100.100"
+      - "server46:fd00:cafe:cafe:100::100"
     networks:
       leftnet:
-        ipv4_address: 193.167.0.100
+        ipv4_address: 172.30.0.100
+        ipv6_address: fd00:cafe:cafe:0::100
+        interface_name: eth0
     stdin_open: true
     tty: true
 
 # ----------------------------------------------------------------
 # Networks (matches official quic-network-simulator topology)
+#
+# Topology:
+#   client (172.30.0.100) ── leftnet ── sim (.0.2 / .100.2) ── rightnet ── server (172.30.100.100)
+#
+# ip_masquerade is disabled so that the ns-3 simulator sees
+# original source IPs (required for correct network simulation).
 # ----------------------------------------------------------------
 networks:
   leftnet:
     driver: bridge
+    enable_ipv6: true
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
     ipam:
       config:
-        - subnet: 193.167.0.0/24
+        - subnet: 172.30.0.0/24
+        - subnet: fd00:cafe:cafe:0::/64
   rightnet:
     driver: bridge
+    enable_ipv6: true
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
     ipam:
       config:
-        - subnet: 193.167.100.0/24
+        - subnet: 172.30.100.0/24
+        - subnet: fd00:cafe:cafe:100::/64

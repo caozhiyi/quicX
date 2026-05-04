@@ -145,6 +145,14 @@ public:
         }
     }
 
+    void OnError(uint32_t error_code) {
+        std::cerr << "[Upload] Protocol/network error: " << error_code << std::endl;
+        if (file_) {
+            fclose(file_);
+            file_ = nullptr;
+        }
+    }
+
     ~FileUploadHandler() {
         if (file_) {
             fclose(file_);
@@ -352,7 +360,7 @@ int main(int argc, char* argv[]) {
     config.quic_config_.config_.worker_thread_num_ = 1;
     config.max_concurrent_streams_ = 100;  // Set max concurrent streams
     // Note: max_header_list_size is now max_field_section_size and is set in settings, not config
-    config.quic_config_.config_.log_level_ = LogLevel::kError;
+    config.quic_config_.config_.log_level_ = LogLevel::kDebug;
 
     if (!g_server->Init(config)) {
         std::cerr << "Failed to initialize server" << std::endl;

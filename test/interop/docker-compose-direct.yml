@@ -1,0 +1,113 @@
+# Docker Compose for quicX QUIC Interop Testing (Direct Mode)
+#
+# Direct mode: server and client on the SAME bridge network.
+# No ns-3 network simulator. This is the most reliable mode for macOS
+# since it avoids TapBridge/NET_ADMIN issues with Docker Desktop VMs.
+#
+# Key differences from sim mode:
+#   - A fake "sim" service listens on :57832 to satisfy wait-for-it.sh
+#   - /setup.sh is overridden with a no-op to prevent route table corruption
+#   - All containers share a single flat bridge network (10.0.0.0/24)
+#
+# Usage:
+#   docker compose -f docker-compose-direct.yml up -d server
+#   docker compose -f docker-compose-direct.yml run --rm client
+
+services:
+  # Fake sim service: provides port 57832 for third-party implementations'
+  # wait-for-it.sh script. In direct mode there's no real ns-3 simulator,
+  # but other QUIC implementations' Docker images expect to reach sim:57832.
+  sim:
+    image: python:3-alpine
+    container_name: sim
+    hostname: sim
+    command: >
+      python3 -c "
+      import socket, time;
+      s=socket.socket();
+      s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1);
+      s.bind(('', 57832));
+      s.listen(5);
+      print('sim ready on :57832', flush=True);
+      time.sleep(86400)
+      "
+    networks:
+      - quicnet
+
+  server:
+    build:
+      context: ../..
+      dockerfile: test/interop/Dockerfile
+    image: ${SERVER:-quicx-interop:latest}
+    container_name: server
+    hostname: server
+    cap_add:
+      - NET_ADMIN
+    ulimits:
+      memlock: 67108864
+    environment:
+      - ROLE=server
+      - TESTCASE=${TESTCASE_SERVER:-handshake}
+      - SERVER_PARAMS=${SERVER_PARAMS:-}
+      - SSLKEYLOGFILE=/logs/keys.log
+      - QLOGDIR=/logs/qlog/
+    volumes:
+      - ${WWW:-./www}:/www:ro
+      - ${CERTS:-./certs}:/certs:ro
+      - ${SERVER_LOGS:-./logs/server}:/logs
+      # Override /setup.sh to prevent route table corruption in direct mode
+      - ./setup_noop.sh:/setup.sh:ro
+    # Some third-party server images (e.g. ngtcp2 for connectionmigration)
+    # resolve "server4"/"server6" as their own preferred-address hostnames.
+    # In direct mode they all map back to the server's own IP.  The
+    # server6 IPv6 entry lets ngtcp2's getaddrinfo() succeed; in no-sim
+    # mode the bind will still fail (no real IPv6 addr on the container),
+    # and the runner treats that scenario as UNSUPPORTED.
+    extra_hosts:
+      - "server4:10.0.0.100"
+      - "server6:fd00::100"
+      - "server46:10.0.0.100"
+    networks:
+      quicnet:
+        ipv4_address: 10.0.0.100
+    stdin_open: true
+    tty: true
+
+  client:
+    build:
+      context: ../..
+      dockerfile: test/interop/Dockerfile
+    image: ${CLIENT:-quicx-interop:latest}
+    hostname: client
+    depends_on:
+      - server
+    cap_add:
+      - NET_ADMIN
+    ulimits:
+      memlock: 67108864
+    environment:
+      - ROLE=client
+      - TESTCASE=${TESTCASE_CLIENT:-handshake}
+      - REQUESTS=${REQUESTS:-https://server:443/1KB.bin}
+      - CLIENT_PARAMS=${CLIENT_PARAMS:-}
+      - SSLKEYLOGFILE=/logs/keys.log
+      - QLOGDIR=/logs/qlog/
+    volumes:
+      - ${DOWNLOADS:-./downloads}:/downloads:delegated
+      - ${CERTS:-./certs}:/certs:ro
+      - ${CLIENT_LOGS:-./logs/client}:/logs
+      # Override /setup.sh to prevent route table corruption in direct mode
+      - ./setup_noop.sh:/setup.sh:ro
+    extra_hosts:
+      - "server4:10.0.0.100"
+      - "server6:10.0.0.100"
+      - "server46:10.0.0.100"
+    networks:
+      - quicnet
+
+networks:
+  quicnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24

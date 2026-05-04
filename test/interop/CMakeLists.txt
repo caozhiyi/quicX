@@ -2,26 +2,26 @@
 
 cmake_minimum_required(VERSION 3.10)
 
-# Interop Server
+# Interop Server (links http3 library for HTTP/3 support)
 add_executable(interop_server
     interop_server.cpp
 )
 
 target_link_libraries(interop_server
-    quicx
+    http3
 )
 
 target_include_directories(interop_server PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
 
-# Interop Client
+# Interop Client (links http3 library for HTTP/3 support)
 add_executable(interop_client
     interop_client.cpp
 )
 
 target_link_libraries(interop_client
-    quicx
+    http3
 )
 
 target_include_directories(interop_client PRIVATE

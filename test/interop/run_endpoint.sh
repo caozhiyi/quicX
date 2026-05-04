@@ -16,11 +16,31 @@
 #   SSLKEYLOGFILE - path for TLS key log
 ################################################################################
 
-set -e
+# NOTE: We do NOT use "set -e" here because /setup.sh (from the base image)
+# runs multiple ip-route commands internally, and in direct-mode those will
+# fail.  We handle errors explicitly where needed.
 
 # Execute network setup (required by quic-network-simulator)
 # /setup.sh is provided by martenseemann/quic-network-simulator-endpoint base image
-/setup.sh
+# It configures routes so that traffic goes through the ns-3 simulator.
+#
+# ONLY run /setup.sh when the container is in the 172.30.x.x simulator
+# topology.  In direct mode (e.g. 10.0.0.x bridge network) the script will
+# try to configure IPv6 routes for addresses that don't exist, producing
+# errors like "inet6 address is expected rather than ':2'" and potentially
+# breaking the container's routing table.
+if ip addr show 2>/dev/null | grep -qE "172\.30\.(0|100)\."; then
+    echo "Network simulator topology detected (172.30.x.x), running /setup.sh ..."
+    if [ -f /setup.sh ]; then
+        /setup.sh || {
+            echo "WARNING: /setup.sh failed (exit $?). Continuing anyway."
+        }
+    fi
+else
+    echo "Direct mode detected (not in 172.30.x.x network), skipping /setup.sh"
+    # Ensure log directories exist (normally created by /setup.sh)
+    mkdir -p /logs/qlog
+fi
 
 # Display version info
 echo "quicX Interop Endpoint"
@@ -30,13 +50,19 @@ echo "Role: ${ROLE:-server}"
 echo "Test case: ${TESTCASE:-handshake}"
 echo ""
 
-# Define supported and unsupported test cases
-# Supported tests: tests that quicX can handle
-SUPPORTED_TESTS="handshake transfer retry resumption zerortt multiplexing versionnegotiation"
+# Show network info for debugging
+echo "Network interfaces:"
+ip -brief addr show 2>/dev/null || ifconfig 2>/dev/null || true
+echo ""
 
-# Explicitly unsupported tests
-# http3 requires HTTP/3 protocol (ALPN=h3), but current binary uses hq-interop protocol.
-UNSUPPORTED_TESTS="http3"
+# Define supported and unsupported test cases
+# Supported tests: must match scenarios in testcases.py that quicX can handle
+# NOTE: "multiplexing" was removed — it is not a valid scenario in testcases.py.
+#       "multiconnect" is the correct name for concurrent client testing.
+SUPPORTED_TESTS="handshake transfer retry resumption zerortt multiconnect versionnegotiation chacha20 keyupdate v2 rebind-port rebind-addr connectionmigration http3"
+
+# Explicitly unsupported tests (none currently)
+UNSUPPORTED_TESTS=""
 
 # Check if test case is supported
 check_testcase_support() {
@@ -82,13 +108,14 @@ run_client() {
     
     # Wait for network simulator to be ready (required by quic-network-simulator)
     # /wait-for-it.sh is provided by the base image
-    # Only wait when running inside the network simulator (check if sim is in custom bridge network)
-    # In host network mode (used by interop_runner.py), skip this wait
-    # Check if we're in a custom Docker network by looking for 193.167.x.x addresses
-    if ip addr show | grep -q "193\.167\."; then
+    # Only wait when running inside the network simulator (check if sim is reachable)
+    if ip addr show 2>/dev/null | grep -q "193\.167\."; then
         echo "Network simulator environment detected (custom bridge network), waiting for sim..."
-        if getent hosts sim > /dev/null 2>&1; then
-            /wait-for-it.sh sim:57832 -s -t 30 || true
+        if [ -f /wait-for-it.sh ]; then
+            # Wait for sim's control port (ns-3 readiness signal)
+            if getent hosts sim > /dev/null 2>&1; then
+                /wait-for-it.sh sim:57832 -s -t 30 || true
+            fi
         fi
     else
         echo "Host network mode detected, skipping network simulator wait."
@@ -122,7 +149,7 @@ run_client() {
             cmd+=" --force-keyupdate"
             ;;
         v2)
-            cmd+=" --quic-version 2"
+            cmd+=" --quic-version 0x6b3343cf"
             ;;
         http3)
             cmd+=" --http3"
@@ -182,7 +209,10 @@ run_server() {
             cmd+=" --strict-version"
             ;;
         v2)
-            cmd+=" --quic-version 2"
+            cmd+=" --quic-version 0x6b3343cf"
+            ;;
+        http3)
+            cmd+=" --http3"
             ;;
     esac
     

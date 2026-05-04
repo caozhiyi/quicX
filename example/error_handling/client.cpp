@@ -22,6 +22,7 @@ public:
 
     bool Init() {
         quicx::Http3ClientConfig config;
+        config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
         config.quic_config_.config_.worker_thread_num_ = 2;
         config.quic_config_.config_.log_level_ = quicx::LogLevel::kWarn;
         config.connection_timeout_ms_ = 5000;  // 5s connection timeout
