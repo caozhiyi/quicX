@@ -35,5 +35,7 @@ add_quicx_benchmark(pto_bench pto_bench.cpp)
 add_quicx_benchmark(http3_e2e_bench http3_e2e_bench.cpp)
 add_quicx_benchmark(qpack_instr_bench qpack_instr_bench.cpp)
 add_quicx_benchmark(quic_ack_maxdata_bench quic_ack_maxdata_bench.cpp)
+add_quicx_benchmark(qlog_overhead_bench qlog_overhead_bench.cpp)
+add_quicx_benchmark(metrics_bench metrics_bench.cpp)
 
 # cmake -S .. -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_BENCHMARKS=ON && cmake --build build -j
