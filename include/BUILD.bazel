@@ -1,0 +1,12 @@
+package(default_visibility = ["//visibility:public"])
+
+# Public C/C++ headers exposed under <quicx/...> include paths. Internal libs
+# (//src/common, //src/quic, //src/http3, //src/upgrade) and downstream
+# consumers (e.g. //example/...) depend on this target so that headers are
+# resolved through `-Iinclude` rather than via per-target include_prefix
+# rewrites.
+cc_library(
+    name = "public_headers",
+    hdrs = glob(["quicx/**/*.h"]),
+    includes = ["."],
+)
