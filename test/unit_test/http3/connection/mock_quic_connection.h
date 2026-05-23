@@ -3,8 +3,8 @@
 
 #include <cstdint>
 #include <cstring>
-#include "quic/include/if_quic_connection.h"
-#include "quic/include/if_quic_stream.h"
+#include <quicx/quic/if_quic_connection.h>
+#include <quicx/quic/if_quic_stream.h>
 
 namespace quicx {
 namespace quic {

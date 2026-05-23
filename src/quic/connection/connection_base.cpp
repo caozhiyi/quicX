@@ -3,8 +3,8 @@
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "common/qlog/qlog.h"
 #include "common/util/time.h"
 #include "common/buffer/buffer_span.h"
@@ -55,7 +55,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     });
 
     // Initialize connection ID coordinator (refactored)
-    cid_coordinator_ = std::make_unique<ConnectionIDCoordinator>(event_loop_, send_manager_,
+    cid_coordinator_ = std::make_unique<ConnectionIDCoordinator>(loop, send_manager_,
         std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
         std::bind(&BaseConnection::RetireConnectionId, this, std::placeholders::_1));
     cid_coordinator_->Initialize();
@@ -69,6 +69,25 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
         common::LOG_INFO("Handshake probe: sending PING frame to elicit ACK");
         auto ping = std::make_shared<PingFrame>();
         ToSendFrame(ping);
+    });
+
+    // RFC 9002 §6.2.4 (Bug-19): post-handshake PTO probe.
+    // When PTO fires after the handshake is complete, queue a PING in 1-RTT
+    // (Application) space *in addition* to retransmitting the oldest unacked
+    // packet. This guarantees the probe round trip is ack-eliciting even
+    // when every retransmitted byte keeps losing on a high-loss path. The
+    // PING frame is tiny (1 byte) and its packet (~22 bytes encrypted) is
+    // not subject to stream flow control, so it works even when both
+    // streams and the connection-level FC window are exhausted — which is
+    // precisely the deadlock that left transfer-5MB stalled until idle
+    // timeout.  Trigger ActiveSend here too so the worker re-enters the
+    // send loop on the same thread (otherwise the queued PING would just
+    // sit in wait_frame_list_ until the next external event).
+    send_manager_.GetSendControl().SetApplicationProbeCallback([this]() {
+        common::LOG_INFO("Post-handshake PTO probe: queueing PING frame to elicit ACK");
+        auto ping = std::make_shared<PingFrame>();
+        ToSendFrame(ping);
+        ActiveSend();
     });
 
     // RFC 9000: Setup immediate ACK callback for Initial/Handshake/out-of-order packets
@@ -87,15 +106,15 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
         std::bind(&RecvFlowController::UpdateConfig, &recv_flow_controller_, std::placeholders::_1));
 
     // Set stream data ACK callback for tracking stream completion
-    send_manager_.send_control_.SetStreamDataAckCallback(std::bind(
-        &BaseConnection::OnStreamDataAcked, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    send_manager_.send_control_.SetStreamDataAckCallback(std::bind(&BaseConnection::OnStreamDataAcked, this,
+        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
 
     // Initialize timer coordinator (refactored)
     timer_coordinator_ =
-        std::make_unique<TimerCoordinator>(event_loop_, transport_param_, send_manager_, state_machine_);
+        std::make_unique<TimerCoordinator>(loop, transport_param_, send_manager_, state_machine_);
 
     // Initialize path manager (refactored)
-    path_manager_ = std::make_unique<PathManager>(event_loop_, send_manager_, *cid_coordinator_, transport_param_,
+    path_manager_ = std::make_unique<PathManager>(loop, send_manager_, *cid_coordinator_, transport_param_,
         peer_addr_, std::bind(&BaseConnection::ToSendFrame, this, std::placeholders::_1),
         std::bind(&BaseConnection::ActiveSend, this),
         [this](const common::Address& addr) { this->SetPeerAddress(addr); });
@@ -106,14 +125,14 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
 
     // Initialize stream manager (refactored) - uses IConnectionEventSink interface (no callbacks!)
     stream_manager_ = std::make_unique<StreamManager>(
-        *this, event_loop_, transport_param_, send_manager_, stream_state_cb_, &send_flow_controller_);
+        *this, loop, transport_param_, send_manager_, stream_state_cb_, &send_flow_controller_);
 
     // Inject stream manager into send manager for stream scheduling
     send_manager_.SetStreamManager(stream_manager_.get());
 
     // Initialize connection closer (refactored)
     connection_closer_ = std::make_unique<ConnectionCloser>(
-        event_loop_, state_machine_, send_manager_, transport_param_, connection_close_cb_);
+        loop, state_machine_, send_manager_, transport_param_, connection_close_cb_);
 
     // Initialize frame processor (refactored) - uses IConnectionEventSink interface (no callbacks!)
     frame_processor_ = std::make_unique<FrameProcessor>(*this, state_machine_, connection_crypto_, send_manager_,
@@ -148,8 +167,15 @@ void BaseConnection::SetSender(std::shared_ptr<ISender> sender) {
 }
 
 void BaseConnection::Close() {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this()]() { self->CloseInternal(); });
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self]() {
+            auto self = weak_self.lock();
+            if (!self) return;
+            self->CloseInternal();
+        });
         return;
     }
     CloseInternal();
@@ -230,6 +256,15 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     // already provided by the caller.
     QuicTransportParams tp = tp_config;
     if (tp.initial_source_connection_id_.empty() && cid_coordinator_) {
+        // RFC 9000 §5.1: If the local CID pool has not been primed yet, generate the
+        // endpoint's first Source Connection ID now. The previous implementation relied
+        // on ConnectionIDManager::GetCurrentID() lazily generating a CID on first read;
+        // that implicit fallback has been removed because it allowed phantom CIDs to be
+        // fabricated on the *remote* manager during connection migration. Generating
+        // explicitly here keeps the local pool primed for both client and server.
+        if (cid_coordinator_->GetLocalConnectionIDManager()->GetAvailableIDCount() == 0) {
+            cid_coordinator_->GetLocalConnectionIDManager()->Generator();
+        }
         auto local_scid = cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID();
         if (local_scid.GetLength() > 0) {
             tp.initial_source_connection_id_ =
@@ -749,8 +784,9 @@ bool BaseConnection::On1rttPacket(std::shared_ptr<IPacket> packet) {
             data.packet_type = packet->GetHeader()->GetPacketType();
             data.packet_size = packet->GetSrcBuffer().GetLength();
             auto& frames = packet->GetFrames();
+            data.frame_objects.reserve(frames.size());
             for (const auto& frame : frames) {
-                data.frames.push_back(static_cast<FrameType>(frame->GetType()));
+                data.frame_objects.push_back(frame);
             }
             QLOG_PACKET_RECEIVED(qlog_trace_, data);
         }
@@ -907,10 +943,13 @@ bool BaseConnection::OnNormalPacket(std::shared_ptr<IPacket> packet) {
         data.packet_type = packet->GetHeader()->GetPacketType();
         data.packet_size = packet->GetSrcBuffer().GetLength();
 
-        // Populate frame types
+        // Pass the full frame objects so the serializer can emit per-frame
+        // qlog fields (stream_id/offset, ack ranges, etc.) instead of just
+        // a "frame_type" enum.
         auto& frames = packet->GetFrames();
+        data.frame_objects.reserve(frames.size());
         for (const auto& frame : frames) {
-            data.frames.push_back(static_cast<FrameType>(frame->GetType()));
+            data.frame_objects.push_back(frame);
         }
 
         QLOG_PACKET_RECEIVED(qlog_trace_, data);
@@ -949,6 +988,15 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
 }
 
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
+    common::LOG_INFO("BaseConnection::OnTransportParams CALLED: remote_max_data=%llu, "
+                     "max_streams_bidi=%llu, remote_bidi_local=%llu, remote_bidi_remote=%llu, "
+                     "remote_uni=%llu, max_idle_timeout=%llu",
+                     (unsigned long long)remote_tp.GetInitialMaxData(),
+                     (unsigned long long)remote_tp.GetInitialMaxStreamsBidi(),
+                     (unsigned long long)remote_tp.GetInitialMaxStreamDataBidiLocal(),
+                     (unsigned long long)remote_tp.GetInitialMaxStreamDataBidiRemote(),
+                     (unsigned long long)remote_tp.GetInitialMaxStreamDataUni(),
+                     (unsigned long long)remote_tp.GetMaxIdleTimeout());
     // RFC 9368 §4: Validate remote peer's version_information (if present) and,
     // on the server, decide whether to compatibly upgrade the connection version.
     // Must run BEFORE Merge(), because Merge() overwrites our local
@@ -1133,12 +1181,16 @@ void BaseConnection::ActiveSend() {
     // Don't trigger send retry if connection is closing, draining, or closed
     // This prevents unnecessary retransmissions when connection is terminating
     if (state_machine_.IsTerminating()) {
-        common::LOG_DEBUG("ActiveSend called but connection is terminating, ignoring");
+        common::LOG_INFO("ActiveSend called but connection is terminating, ignoring, state=%d",
+            static_cast<int>(state_machine_.GetState()));
         return;
     }
 
     if (active_connection_cb_) {
+        common::LOG_INFO("ActiveSend: invoking active_connection_cb_");
         active_connection_cb_(shared_from_this());
+    } else {
+        common::LOG_WARN("ActiveSend: active_connection_cb_ is null!");
     }
 }
 
@@ -1260,9 +1312,9 @@ void BaseConnection::InnerStreamClose(uint64_t stream_id) {
     }
 }
 
-void BaseConnection::OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin) {
+void BaseConnection::OnStreamDataAcked(uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
     // Delegate to stream manager
-    stream_manager_->OnStreamDataAcked(stream_id, max_offset, has_fin);
+    stream_manager_->OnStreamDataAcked(stream_id, offset_start, length, has_fin);
 }
 
 void BaseConnection::AddConnectionId(ConnectionID& id) {
@@ -1449,6 +1501,16 @@ void BaseConnection::OnStateToClosing() {
         QLOG_EVENT(qlog_trace_, common::QlogEvents::kConnectionStateUpdated, std::move(event_data));
     }
 
+    // Pre-emptive idle-timer cleanup. We are guaranteed to be on the loop
+    // thread here (state transitions are driven from packet ingress / the
+    // idle-timer fire itself / loop-thread timers), so RemoveTimer is safe.
+    // Doing it now means ~TimerCoordinator (which may run on a different
+    // thread when the connection is dropped during teardown) finds
+    // idle_timer_active_=false and never touches the EventLoop. This closes
+    // the cross-thread fatal observed ~750 ms after CloseInternal in
+    // interop runs.
+    timer_coordinator_->StopIdleTimer();
+
     send_manager_.ClearRetransmissionData();
     send_manager_.ClearActiveStreams();
     send_manager_.wait_frame_list_.clear();
@@ -1473,8 +1535,34 @@ void BaseConnection::OnStateToClosing() {
     // This ensures we don't retransmit too frequently when receiving packets
     connection_closer_->MarkConnectionCloseRetransmitted(common::UTCTimeMsec());
 
-    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    event_loop_->AddTimer(task, connection_closer_->GetCloseWaitTime() * 3, 0);
+    // Immediately notify application layer when entering Closing state.
+    // The QUIC layer still needs to wait 3×PTO for CONNECTION_CLOSE retransmission
+    // and peer ACKs per RFC 9000, but the application (HTTP/3 client, user code) must
+    // be able to release resources and proceed without waiting that long. The callback
+    // is idempotent (guarded by connection_close_cb_invoked_), so this is safe even
+    // when OnStateToClosed later fires for the same connection.
+    //
+    // IMPORTANT: Grab a temporary shared_from_this() BEFORE InvokeConnectionCloseCallback.
+    // The callback may synchronously drop the last external strong reference
+    // (Worker::HandleConnectionClose erases us from conn_map_), which would
+    // destroy `this` and invalidate event_loop_. The local `self` keeps us
+    // alive through the rest of this method. The timer callback uses weak_ptr
+    // to avoid an EventLoop→Connection cycle.
+    auto self = shared_from_this();
+    connection_closer_->InvokeConnectionCloseCallback(
+        self, connection_closer_->GetClosingErrorCode(), connection_closer_->GetClosingReason());
+
+    uint32_t wait_ms = connection_closer_->GetCloseWaitTime() * 3;
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    auto weak_self = weak_from_this();
+    loop->AddTimer(
+        [weak_self]() {
+            auto self = weak_self.lock();
+            if (!self) return;
+            self->OnClosingTimeout();
+        },
+        wait_ms, false);
 }
 
 void BaseConnection::OnStateToDraining() {
@@ -1488,18 +1576,30 @@ void BaseConnection::OnStateToDraining() {
         QLOG_EVENT(qlog_trace_, common::QlogEvents::kConnectionStateUpdated, std::move(event_data));
     }
 
+    // Pre-emptive idle-timer cleanup (see OnStateToClosing for rationale).
+    timer_coordinator_->StopIdleTimer();
+
     send_manager_.ClearRetransmissionData();
     send_manager_.ClearActiveStreams();
     send_manager_.wait_frame_list_.clear();
 
-    // Immediately notify application layer when entering Draining state
-    // This allows the application to cleanup resources and update UI quickly
-    // while QUIC layer still waits for the draining timeout per RFC 9000
+    // IMPORTANT: Same self-pinning as OnStateToClosing — grab shared_from_this()
+    // BEFORE the callback to keep `this` alive through the timer setup.
+    // Timer callback uses weak_ptr to avoid EventLoop→Connection cycle.
+    auto self = shared_from_this();
     connection_closer_->InvokeConnectionCloseCallback(
-        shared_from_this(), connection_closer_->GetClosingErrorCode(), connection_closer_->GetClosingReason());
+        self, connection_closer_->GetClosingErrorCode(), connection_closer_->GetClosingReason());
 
-    common::TimerTask task(std::bind(&BaseConnection::OnClosingTimeout, this));
-    event_loop_->AddTimer(task, connection_closer_->GetCloseWaitTime() * 3, 0);
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    auto weak_self = weak_from_this();
+    loop->AddTimer(
+        [weak_self]() {
+            auto self = weak_self.lock();
+            if (!self) return;
+            self->OnClosingTimeout();
+        },
+        connection_closer_->GetCloseWaitTime() * 3, false);
 }
 
 void BaseConnection::OnStateToClosed() {
@@ -1519,7 +1619,7 @@ void BaseConnection::OnStateToClosed() {
         }
 
         QLOG_CONNECTION_CLOSED(qlog_trace_, data);
-        QLOG_FLUSH(qlog_trace_);  // ensure event is written
+        qlog_trace_->Flush();  // ensure event is written
     }
 
     // Stop idle timer through coordinator
@@ -1551,8 +1651,9 @@ bool BaseConnection::TrySend() {
     auto& send_control = send_manager_.GetSendControl();
     if (send_control.NeedReSend()) {
         auto& lost_packets = send_control.GetLostPacket();
-        auto lost_pkt = lost_packets.front();
+        auto lost_entry = lost_packets.front();
         lost_packets.pop_front();
+        auto lost_pkt = lost_entry.packet;
 
         // Determine encryption level and get cryptographer
         auto crypto_level = lost_pkt->GetCryptoLevel();
@@ -1566,7 +1667,7 @@ bool BaseConnection::TrySend() {
         uint32_t max_bytes = send_manager_.GetAvailableWindow();
         if (max_bytes == 0) {
             // Put the packet back for later retransmission
-            lost_packets.push_front(lost_pkt);
+            lost_packets.push_front(lost_entry);
             send_manager_.SetCwndLimited();
             return false;
         }
@@ -1577,6 +1678,20 @@ bool BaseConnection::TrySend() {
         lost_pkt->SetPacketNumber(new_pn);
         lost_pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(new_pn));
         lost_pkt->SetCryptographer(cryptographer);
+
+        // RFC 9001 §6.5: A retransmitted packet MUST be re-encoded with the *current*
+        // key phase and *current* cryptographer. Without this synchronization the
+        // retransmission could ship plaintext ciphered under the new key while the
+        // header advertises the old Key Phase bit (or vice versa), causing the
+        // peer's AEAD verification to fail and the packet to be silently dropped.
+        // Observed in cross-implementation interop with quic-go/quiche under the
+        // ns-3 simulated network: client triggers Key Update at PN ~50, but quicX
+        // server keeps replaying lost packets with stale Key Phase bits, peer
+        // drops every retransmission, loss detector keeps firing, PN explodes
+        // (>130k) and the connection eventually idle-times-out.
+        if (lost_pkt->GetHeader()->GetHeaderType() == PacketHeaderType::kShortHeader) {
+            lost_pkt->GetHeader()->GetShortHeaderFlag().SetKeyPhase(connection_crypto_.GetCurrentKeyPhase());
+        }
 
         // Re-encode with new packet number and fresh encryption
         auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
@@ -1593,10 +1708,26 @@ bool BaseConnection::TrySend() {
 
         uint32_t encoded_size = buffer->GetDataLength();
 
-        // Record this retransmission in SendControl so it is tracked for ACK/loss
-        send_control.OnPacketSend(common::UTCTimeMsec(), lost_pkt, encoded_size);
+        // Record this retransmission in SendControl carrying the original
+        // stream_data, otherwise an ACK on the new PN would not flow back to
+        // SendStream::OnDataAcked and the byte-range bookkeeping would be
+        // permanently missing the bytes that the retransmit just delivered.
+        send_control.OnPacketSend(common::UTCTimeMsec(), lost_pkt, encoded_size, lost_entry.stream_data);
 
-        common::LOG_INFO("BaseConnection::TrySend: retransmitted lost packet with new pn=%llu, size=%u", new_pn, encoded_size);
+        // DIAGNOSTIC (H-plan): log the stream_data byte ranges actually carried
+        // by this retransmitted packet so we can correlate with what the peer
+        // observes on the wire. If the peer never sees these byte ranges as
+        // duplicates, the retransmission lost its payload.
+        std::string sd_summary;
+        for (const auto& sd : lost_entry.stream_data) {
+            sd_summary += "{sid=" + std::to_string(sd.stream_id) +
+                          ",off=" + std::to_string(sd.offset_start) +
+                          ",len=" + std::to_string(sd.length) +
+                          ",fin=" + std::to_string(sd.has_fin) + "}";
+        }
+        common::LOG_INFO("BaseConnection::TrySend: retransmitted lost packet with new pn=%llu, size=%u, "
+                        "stream_data count=%zu ranges=%s",
+            new_pn, encoded_size, lost_entry.stream_data.size(), sd_summary.c_str());
 
         return SendBuffer(buffer);
     }
@@ -1615,10 +1746,29 @@ bool BaseConnection::TrySend() {
     // 4. Check congestion window
     uint32_t max_bytes = send_manager_.GetAvailableWindow();
     if (max_bytes == 0) {
-        common::LOG_DEBUG("BaseConnection::TrySend: congestion window full");
-        // Mark as cwnd limited so that when ACK arrives, send_retry_cb_ will be called
-        send_manager_.SetCwndLimited();
-        return false;
+        // RFC 9000 §9.3.3: An endpoint sending a probing packet on a path is exempt from
+        // amplification limits and any congestion limits that would prevent that packet from
+        // being sent. PATH_CHALLENGE / PATH_RESPONSE / NEW_CONNECTION_ID / PADDING are probing
+        // frames. If the wait list contains a PATH_CHALLENGE or PATH_RESPONSE, allow sending
+        // a probing packet up to MTU to validate the path even when cwnd is full.
+        bool has_probing = false;
+        for (const auto& f : send_manager_.wait_frame_list_) {
+            uint16_t t = static_cast<uint16_t>(f->GetType());
+            if (t == FrameType::kPathChallenge || t == FrameType::kPathResponse) {
+                has_probing = true;
+                break;
+            }
+        }
+        if (has_probing) {
+            // Allow up to one MTU's worth of probing data; do not mark cwnd limited.
+            max_bytes = 1200;
+            common::LOG_DEBUG("BaseConnection::TrySend: cwnd full but probing frame pending — bypassing cwnd (RFC 9000 §9.3.3)");
+        } else {
+            common::LOG_DEBUG("BaseConnection::TrySend: congestion window full");
+            // Mark as cwnd limited so that when ACK arrives, send_retry_cb_ will be called
+            send_manager_.SetCwndLimited();
+            return false;
+        }
     }
 
     // 5. Get pending frames
@@ -1662,17 +1812,60 @@ bool BaseConnection::TrySend() {
     // Set connection-level flow control limit for stream data
     uint64_t conn_flow_limit = 0;
     std::shared_ptr<IFrame> blocked_frame;
+    bool fc_blocked_with_data = false;
     if (send_flow_controller_.CanSendData(conn_flow_limit, blocked_frame)) {
         // Use minimum of congestion window and flow control limit
         build_ctx.max_stream_data_size =
             static_cast<uint32_t>(std::min(static_cast<uint64_t>(max_bytes), conn_flow_limit));
+        // DIAGNOSTIC (G2): expose budget components when stream data is queued
+        // and yet we keep producing zero-byte STREAM frames. We want to know
+        // whether cwnd (max_bytes) or conn-FC slack (conn_flow_limit) is the
+        // dominant 0 — and in particular, whether max_stream_data_size is
+        // smaller than the per-STREAM frame header overhead (~10–20 bytes)
+        // even though the stream has data ready.
+        if (has_stream_data && build_ctx.max_stream_data_size < 32) {
+            common::LOG_INFO(
+                "BaseConnection::TrySend budget: max_bytes(cwnd)=%u, conn_flow_limit=%llu, "
+                "max_stream_data_size=%u (<32) — stream frame header may not fit",
+                max_bytes, (unsigned long long)conn_flow_limit, build_ctx.max_stream_data_size);
+        }
+        // RFC 9000 §19.12: near-limit proactive DATA_BLOCKED still needs to
+        // be queued for transmission. CanSendData() returns true (still some
+        // headroom) but may have emitted a DATA_BLOCKED on the side; without
+        // this branch the frame is allocated and silently dropped.
+        if (blocked_frame) {
+            common::LOG_DEBUG(
+                "BaseConnection::TrySend: queueing proactive DATA_BLOCKED frame (near limit)");
+            send_manager_.ToSendFrame(blocked_frame);
+        }
     } else {
         // Flow control blocked, don't send stream data
         build_ctx.max_stream_data_size = 0;
+        common::LOG_DEBUG(
+            "BaseConnection::TrySend: connection-level FC blocked, blocked_frame=%p, has_stream_data=%d",
+            blocked_frame.get(), has_stream_data ? 1 : 0);
         if (blocked_frame) {
             // Queue the DATA_BLOCKED frame
             send_manager_.ToSendFrame(blocked_frame);
         }
+        // Bug #17: when the connection-level flow control wall is reached and
+        // we still have streams asking to send (has_stream_data == true), the
+        // worker would otherwise see TrySend() ultimately return false (the
+        // packet builder will produce "no data to send" because no STREAM
+        // frame can be encoded under max_stream_data_size == 0) and remove
+        // the connection from its active set. Once removed, no event will
+        // re-enter TrySend until the *peer* sends MAX_DATA — but quic-go /
+        // quiche only emit MAX_DATA after the application consumes the data,
+        // which can be far in the future (or never, if the peer is itself
+        // stuck waiting for more bytes from us). Mark the manager as flow-
+        // control-blocked so a recheck timer keeps polling, and so the next
+        // ACK forces a retry.
+        if (has_stream_data) {
+            fc_blocked_with_data = true;
+        }
+    }
+    if (fc_blocked_with_data) {
+        send_manager_.SetFlowControlBlocked();
     }
 
     // 10. Build packet - allocate buffer chunk first
@@ -1687,7 +1880,29 @@ bool BaseConnection::TrySend() {
         build_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
 
     if (!result.success) {
-        common::LOG_ERROR("BaseConnection::TrySend: failed to build packet: %s", result.error_message.c_str());
+        common::LOG_ERROR("BaseConnection::TrySend: failed to build packet: %s "
+                          "[max_bytes(cwnd)=%u, conn_flow_limit=%llu, max_stream_data_size=%u, "
+                          "frames=%zu, has_stream_data=%d]",
+                          result.error_message.c_str(),
+                          max_bytes, (unsigned long long)conn_flow_limit,
+                          build_ctx.max_stream_data_size,
+                          build_ctx.frames.size(), has_stream_data ? 1 : 0);
+        // Bug #20 (companion to #17/#19): "no data to send" while
+        // has_stream_data was true means stream(s) refused to produce a frame
+        // (returned kBreak / kFlowControlBlocked) but no DATA_BLOCKED frame
+        // was queued either — neither cwnd-full (handled at line 1740) nor
+        // explicit conn-FC-blocked (handled at line 1838). This typically
+        // happens when max_bytes (cwnd headroom) is small enough that the
+        // STREAM frame header + offset cannot fit, or after a SendStream
+        // returns kBreak because conn-level slack was 0. Without a wakeup
+        // path the worker erases the connection from active set and we sit
+        // silent until idle timeout. Arm the same recheck timer used by
+        // Bug #17 so we re-enter TrySend periodically; once cwnd grows back
+        // (next ACK) or conn-FC slack widens (next MAX_DATA), the stream
+        // can resume.
+        if (has_stream_data && !fc_blocked_with_data) {
+            send_manager_.SetFlowControlBlocked();
+        }
         return false;
     }
 

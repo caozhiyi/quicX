@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <set>
 #include <unordered_map>
 
 namespace quicx {
@@ -52,6 +53,12 @@ public:
 private:
     uint64_t max_blocked_streams_{0}; // 0 means unlimited (for testing/simple cases)
     std::unordered_map<uint64_t, std::function<void()>> pending_;
+    // Secondary index: stream_id -> ordered set of section keys outstanding
+    // for that stream.  Lets AckByStreamId / RemoveByStreamId locate the
+    // earliest section (smallest key) in O(log K) where K is the number of
+    // pending sections for a single stream — instead of O(N) over the whole
+    // registry.  Kept in sync with pending_ by Add / Ack / Remove.
+    std::unordered_map<uint64_t, std::set<uint64_t>> by_stream_;
 };
 
 }

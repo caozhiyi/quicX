@@ -357,17 +357,26 @@ static void BM_CpuHotspot_PacketProcessingSimulation(benchmark::State& state) {
 // ===========================================================================
 // Scenario 8: Multi-threaded Contention
 // ===========================================================================
+// BlockMemoryPool is single-owner by design (see pool_block.cpp: cross-thread
+// frees go through IEventLoop::RunInLoop). A raw multi-threaded hammer on a
+// shared pool races on the internal free_mem_vec_ and eventually trips glibc
+// "double free or corruption" on teardown. To stay inside the pool's
+// threading contract we give every worker its own pool -- which also mirrors
+// real "one pool per I/O thread" deployments.
 
 static void BM_CpuHotspot_MultiThreadBufferAlloc(benchmark::State& state) {
     const int num_threads = static_cast<int>(state.range(0));
-    auto pool = std::make_shared<common::BlockMemoryPool>(4096, 256);
 
     for (auto _ : state) {
         std::vector<std::thread> threads;
+        threads.reserve(num_threads);
         std::atomic<int> ops{0};
 
         for (int i = 0; i < num_threads; ++i) {
-            threads.emplace_back([&pool, &ops]() {
+            threads.emplace_back([&ops]() {
+                // Per-thread pool avoids data races on the single-owner
+                // free list inside BlockMemoryPool.
+                auto pool = std::make_shared<common::BlockMemoryPool>(4096, 256);
                 for (int j = 0; j < 1000; ++j) {
                     void* ptr = pool->PoolLargeMalloc();
                     benchmark::DoNotOptimize(ptr);

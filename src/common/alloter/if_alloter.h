@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <cstdint>
+#include <utility>
 
 namespace quicx {
 namespace common {
@@ -64,9 +65,56 @@ protected:
 };
 
 /**
+ * @brief Stateless deleter for pool-allocated objects.
+ *
+ * Holds only a raw IAlloter* (one pointer, no atomic refcount). Intended to be
+ * used as the Deleter for std::unique_ptr, producing a zero-overhead RAII
+ * wrapper around pool-allocated objects.
+ *
+ * Lifetime contract: the referenced IAlloter MUST outlive every
+ * PoolUniquePtr<T> it produced. In the "one PoolAlloter per Connection"
+ * model this is naturally true because the alloter is owned by the
+ * connection and destroyed last.
+ */
+template<typename T>
+class PoolDeleter {
+public:
+    PoolDeleter() noexcept : alloter_(nullptr) {}
+    explicit PoolDeleter(IAlloter* a) noexcept : alloter_(a) {}
+
+    void operator()(T* p) const noexcept {
+        if (!p) return;
+        p->~T();
+        void* data = static_cast<void*>(p);
+        alloter_->Free(data, sizeof(T));
+    }
+
+    IAlloter* GetAlloter() const noexcept { return alloter_; }
+
+private:
+    IAlloter* alloter_;
+};
+
+/**
+ * @brief Unique-ownership smart pointer for pool-allocated objects.
+ *
+ * Same cost as a raw pointer + manual PoolDelete, but RAII-safe. Prefer this
+ * over PoolNewSharePtr on any hot path — the latter still allocates the
+ * shared_ptr control block on the default heap and incurs atomic refcount
+ * operations.
+ */
+template<typename T>
+using PoolUniquePtr = std::unique_ptr<T, PoolDeleter<T>>;
+
+/**
  * @brief Wrapper for pool-based object and memory allocation
  *
  * Provides convenient methods for allocating objects and memory from a pool.
+ *
+ * Preferred API for hot paths (in descending order of performance):
+ *   1. PoolNew<T>(...) + PoolDelete<T>(p)   - raw pointer, manual lifetime.
+ *   2. PoolMakeUnique<T>(...)               - RAII via unique_ptr, same perf.
+ *   3. PoolNewSharePtr<T>(...)              - DEPRECATED, see its doc.
  */
 class AlloterWrap {
 public:
@@ -74,7 +122,11 @@ public:
     ~AlloterWrap() {}
 
     /**
-     * @brief Allocate and construct an object from the pool
+     * @brief Allocate and construct an object from the pool (raw pointer).
+     *
+     * The caller is responsible for lifetime and MUST call PoolDelete<T>()
+     * on the returned pointer. For automatic lifetime management prefer
+     * PoolMakeUnique<T>().
      *
      * @tparam T Object type
      * @tparam Args Constructor argument types
@@ -85,14 +137,38 @@ public:
     T* PoolNew(Args&&... args);
 
     /**
-     * @brief Allocate and construct an object, returning a shared_ptr
+     * @brief Allocate and construct an object, returning a PoolUniquePtr<T>.
+     *
+     * Zero-overhead RAII: the deleter is a single raw IAlloter* (no control
+     * block, no atomic refcount, no captured shared_ptr). This is the
+     * preferred replacement for PoolNewSharePtr on hot paths.
      *
      * @tparam T Object type
      * @tparam Args Constructor argument types
      * @param args Constructor arguments
-     * @return shared_ptr to constructed object
+     * @return PoolUniquePtr<T>, empty on failure
+     */
+    template<typename T, typename... Args>
+    PoolUniquePtr<T> PoolMakeUnique(Args&&... args);
+
+    /**
+     * @brief Allocate and construct an object, returning a shared_ptr.
+     *
+     * @deprecated This path is slower than raw new/delete because:
+     *   (1) the shared_ptr control block is allocated by the default
+     *       allocator (NOT the pool), completely bypassing pooling;
+     *   (2) the deleter captures a std::shared_ptr<IAlloter>, adding an
+     *       atomic inc/dec on every shared_ptr copy/destruction;
+     *   (3) the type-erased deleter inflates the control block (~48B).
+     *
+     * Use PoolMakeUnique<T>() (zero overhead, RAII) or PoolNew<T>() + manual
+     * PoolDelete<T>() on hot paths. Keep this API only where shared
+     * ownership across subsystems is genuinely required and performance
+     * is not critical.
      */
     template<typename T, typename... Args >
+    [[deprecated("Slow on hot paths: shared_ptr control block is not pooled. "
+                 "Use PoolMakeUnique<T>() or PoolNew<T>() + PoolDelete<T>() instead.")]]
     std::shared_ptr<T> PoolNewSharePtr(Args&&... args);
 
     /**
@@ -117,11 +193,12 @@ public:
     /**
      * @brief Allocate continuous memory, returning a shared_ptr
      *
-     * @tparam T Element type
-     * @param size Size in bytes
-     * @return shared_ptr to allocated memory
+     * @deprecated Same overhead concerns as PoolNewSharePtr. Prefer
+     * PoolMalloc<T>() + PoolFree<T>() when possible.
      */
     template<typename T>
+    [[deprecated("Slow on hot paths: shared_ptr control block is not pooled. "
+                 "Use PoolMalloc<T>() + PoolFree<T>() instead.")]]
     std::shared_ptr<T> PoolMallocSharePtr(uint32_t size);
 
     /**
@@ -133,6 +210,15 @@ public:
      */
     template<typename T>
     void PoolFree(T* m, uint32_t len);
+
+    /**
+     * @brief Access the underlying allocator (raw pointer).
+     *
+     * Used by zero-overhead APIs such as PoolMakeUnique to build stateless
+     * deleters. The pointer stays valid as long as this AlloterWrap is
+     * alive.
+     */
+    IAlloter* GetAlloter() const noexcept { return alloter_.get(); }
 
 private:
     std::shared_ptr<IAlloter> alloter_;
@@ -149,6 +235,13 @@ T* AlloterWrap::PoolNew(Args&&... args) {
 
     T* res = new(data) T(std::forward<Args>(args)...);
     return res;
+}
+
+template<typename T, typename... Args>
+PoolUniquePtr<T> AlloterWrap::PoolMakeUnique(Args&&... args) {
+    T* p = PoolNew<T>(std::forward<Args>(args)...);
+    // Stateless deleter: only a raw IAlloter*. No atomic refcount, no capture.
+    return PoolUniquePtr<T>(p, PoolDeleter<T>(alloter_.get()));
 }
 
 template<typename T, typename... Args >

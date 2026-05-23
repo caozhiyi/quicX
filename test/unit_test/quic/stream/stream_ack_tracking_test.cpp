@@ -65,12 +65,13 @@ protected:
 TEST_F(StreamAckTrackingTest, StreamDataInfoBasic) {
     StreamDataInfo info1;
     EXPECT_EQ(info1.stream_id, 0);
-    EXPECT_EQ(info1.max_offset, 0);
+    EXPECT_EQ(info1.MaxOffset(), 0);
     EXPECT_FALSE(info1.has_fin);
 
-    StreamDataInfo info2(4, 1000, true);
+    // 4-arg constructor: (stream_id, offset_start, length, has_fin)
+    StreamDataInfo info2(4, /*offset=*/0, /*len=*/1000, /*fin=*/true);
     EXPECT_EQ(info2.stream_id, 4);
-    EXPECT_EQ(info2.max_offset, 1000);
+    EXPECT_EQ(info2.MaxOffset(), 1000);
     EXPECT_TRUE(info2.has_fin);
 }
 
@@ -94,7 +95,7 @@ TEST_F(StreamAckTrackingTest, FrameVisitorTracksStreamFrames) {
     auto stream_data = visitor.GetStreamDataInfo();
     EXPECT_EQ(stream_data.size(), 1);
     EXPECT_EQ(stream_data[0].stream_id, 4);
-    EXPECT_EQ(stream_data[0].max_offset, 5);  // offset + length
+    EXPECT_EQ(stream_data[0].MaxOffset(), 5);  // offset + length
     EXPECT_TRUE(stream_data[0].has_fin);
 }
 
@@ -138,21 +139,33 @@ TEST_F(StreamAckTrackingTest, FrameVisitorTracksMultipleStreams) {
     EXPECT_TRUE(visitor.HandleFrame(frame3));
 
     auto stream_data = visitor.GetStreamDataInfo();
-    EXPECT_EQ(stream_data.size(), 2);
-
-    // Find stream 4
-    auto it4 = std::find_if(
-        stream_data.begin(), stream_data.end(), [](const StreamDataInfo& info) { return info.stream_id == 4; });
-    ASSERT_NE(it4, stream_data.end());
-    EXPECT_EQ(it4->max_offset, 10);  // 5 + 5
-    EXPECT_TRUE(it4->has_fin);
+    // After the visitor switched to one-record-per-frame: stream 4 contributes
+    // 2 records (offset 0 and offset 5) + stream 8 contributes 1 record = 3.
+    EXPECT_EQ(stream_data.size(), 3);
+    bool found_stream4 = false;
+    uint64_t stream4_max = 0;
+    bool stream4_fin = false;
+    for (const auto& info : stream_data) {
+        if (info.stream_id == 4) {
+            found_stream4 = true;
+            if (info.MaxOffset() > stream4_max) stream4_max = info.MaxOffset();
+            if (info.has_fin) stream4_fin = true;
+        }
+    }
+    ASSERT_TRUE(found_stream4);
+    EXPECT_EQ(stream4_max, 10u);  // 5 + 5
+    EXPECT_TRUE(stream4_fin);
 
     // Find stream 8
-    auto it8 = std::find_if(
-        stream_data.begin(), stream_data.end(), [](const StreamDataInfo& info) { return info.stream_id == 8; });
-    ASSERT_NE(it8, stream_data.end());
-    EXPECT_EQ(it8->max_offset, 5);
-    EXPECT_TRUE(it8->has_fin);
+    bool found_stream8 = false;
+    for (const auto& info : stream_data) {
+        if (info.stream_id == 8) {
+            found_stream8 = true;
+            EXPECT_EQ(info.MaxOffset(), 5u);
+            EXPECT_TRUE(info.has_fin);
+        }
+    }
+    ASSERT_TRUE(found_stream8);
 }
 
 // Test 4: SendStream ACK tracking basic
@@ -186,11 +199,12 @@ TEST_F(StreamAckTrackingTest, SendControlCallbackMechanism) {
     ASSERT_TRUE(event_loop->Init());
     SendControl send_control(timer_);
 
-    std::vector<std::tuple<uint64_t, uint64_t, bool>> acked_streams;
+    std::vector<std::tuple<uint64_t, uint64_t, uint64_t, bool>> acked_streams;
 
-    send_control.SetStreamDataAckCallback([&acked_streams](uint64_t stream_id, uint64_t max_offset, bool has_fin) {
-        acked_streams.push_back(std::make_tuple(stream_id, max_offset, has_fin));
-    });
+    send_control.SetStreamDataAckCallback(
+        [&acked_streams](uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
+            acked_streams.push_back(std::make_tuple(stream_id, offset_start, length, has_fin));
+        });
 
     // Create a mock packet with stream data
     auto packet = std::make_shared<Rtt1Packet>();
@@ -198,8 +212,8 @@ TEST_F(StreamAckTrackingTest, SendControlCallbackMechanism) {
     packet->AddFrameTypeBit(FrameTypeBit::kStreamBit);  // Mark as ack-eliciting
 
     std::vector<StreamDataInfo> stream_data;
-    stream_data.push_back(StreamDataInfo(4, 100, false));
-    stream_data.push_back(StreamDataInfo(8, 200, true));
+    stream_data.push_back(StreamDataInfo(4, /*offset=*/0, /*len=*/100, /*fin=*/false));
+    stream_data.push_back(StreamDataInfo(8, /*offset=*/0, /*len=*/200, /*fin=*/true));
 
     // Simulate packet send
     send_control.OnPacketSend(common::UTCTimeMsec(), packet, 1200, stream_data);
@@ -214,13 +228,15 @@ TEST_F(StreamAckTrackingTest, SendControlCallbackMechanism) {
 
     // Callback should have been called for both streams
     ASSERT_GE(acked_streams.size(), 2) << "Expected at least 2 callbacks, got " << acked_streams.size();
-    EXPECT_EQ(std::get<0>(acked_streams[0]), 4);
-    EXPECT_EQ(std::get<1>(acked_streams[0]), 100);
-    EXPECT_FALSE(std::get<2>(acked_streams[0]));
+    EXPECT_EQ(std::get<0>(acked_streams[0]), 4u);
+    EXPECT_EQ(std::get<1>(acked_streams[0]), 0u);    // offset_start
+    EXPECT_EQ(std::get<2>(acked_streams[0]), 100u);  // length
+    EXPECT_FALSE(std::get<3>(acked_streams[0]));
 
-    EXPECT_EQ(std::get<0>(acked_streams[1]), 8);
-    EXPECT_EQ(std::get<1>(acked_streams[1]), 200);
-    EXPECT_TRUE(std::get<2>(acked_streams[1]));
+    EXPECT_EQ(std::get<0>(acked_streams[1]), 8u);
+    EXPECT_EQ(std::get<1>(acked_streams[1]), 0u);
+    EXPECT_EQ(std::get<2>(acked_streams[1]), 200u);
+    EXPECT_TRUE(std::get<3>(acked_streams[1]));
 }
 
 // Test 6: Multiple packets ACKed
@@ -229,18 +245,20 @@ TEST_F(StreamAckTrackingTest, MultiplePacketsAcked) {
     ASSERT_TRUE(event_loop->Init());
     SendControl send_control(timer_);
 
-    std::vector<std::tuple<uint64_t, uint64_t, bool>> acked_data;
+    // (stream_id, offset_start, length, has_fin)
+    std::vector<std::tuple<uint64_t, uint64_t, uint64_t, bool>> acked_data;
 
-    send_control.SetStreamDataAckCallback([&acked_data](uint64_t stream_id, uint64_t max_offset, bool has_fin) {
-        acked_data.push_back(std::make_tuple(stream_id, max_offset, has_fin));
-    });
+    send_control.SetStreamDataAckCallback(
+        [&acked_data](uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
+            acked_data.push_back(std::make_tuple(stream_id, offset_start, length, has_fin));
+        });
 
     // Send packet 1: stream 4, offset 0-100
     auto packet1 = std::make_shared<Rtt1Packet>();
     packet1->SetPacketNumber(1);
     packet1->AddFrameTypeBit(FrameTypeBit::kStreamBit);  // Mark as ack-eliciting
     std::vector<StreamDataInfo> data1;
-    data1.push_back(StreamDataInfo(4, 100, false));
+    data1.push_back(StreamDataInfo(4, /*offset=*/0, /*len=*/100, /*fin=*/false));
     send_control.OnPacketSend(common::UTCTimeMsec(), packet1, 1200, data1);
 
     // Send packet 2: stream 4, offset 100-200 with FIN
@@ -248,7 +266,7 @@ TEST_F(StreamAckTrackingTest, MultiplePacketsAcked) {
     packet2->SetPacketNumber(2);
     packet2->AddFrameTypeBit(FrameTypeBit::kStreamBit);  // Mark as ack-eliciting
     std::vector<StreamDataInfo> data2;
-    data2.push_back(StreamDataInfo(4, 200, true));
+    data2.push_back(StreamDataInfo(4, /*offset=*/100, /*len=*/100, /*fin=*/true));
     send_control.OnPacketSend(common::UTCTimeMsec(), packet2, 1200, data2);
 
     // ACK both packets
@@ -262,14 +280,16 @@ TEST_F(StreamAckTrackingTest, MultiplePacketsAcked) {
     // Should have 2 ACK notifications
     EXPECT_EQ(acked_data.size(), 2);
 
-    // Verify both packets were ACKed
+    // Verify both packets were ACKed.
+    // Packet1: stream 4, offset_start=0, length=100, no FIN
+    // Packet2: stream 4, offset_start=100, length=100, with FIN
     bool found_packet1 = false;
     bool found_packet2 = false;
     for (const auto& ack : acked_data) {
-        if (std::get<0>(ack) == 4 && std::get<1>(ack) == 100 && !std::get<2>(ack)) {
+        if (std::get<0>(ack) == 4 && std::get<1>(ack) == 0 && std::get<2>(ack) == 100 && !std::get<3>(ack)) {
             found_packet1 = true;
         }
-        if (std::get<0>(ack) == 4 && std::get<1>(ack) == 200 && std::get<2>(ack)) {
+        if (std::get<0>(ack) == 4 && std::get<1>(ack) == 100 && std::get<2>(ack) == 100 && std::get<3>(ack)) {
             found_packet2 = true;
         }
     }
@@ -287,11 +307,12 @@ TEST_F(StreamAckTrackingTest, IntegrationSendControlToStream) {
         std::make_shared<SendStream>(event_loop, 10000, 4, active_send_cb_, stream_close_cb_, connection_close_cb_);
 
     // Set up callback from SendControl to Stream
-    send_control.SetStreamDataAckCallback([&stream](uint64_t stream_id, uint64_t max_offset, bool has_fin) {
-        if (stream_id == 4) {
-            stream->OnDataAcked(max_offset, has_fin);
-        }
-    });
+    send_control.SetStreamDataAckCallback(
+        [&stream](uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
+            if (stream_id == 4) {
+                stream->OnDataAcked(offset_start, length, has_fin);
+            }
+        });
 
     // Send data
     uint8_t data[] = "Hello";
@@ -303,7 +324,7 @@ TEST_F(StreamAckTrackingTest, IntegrationSendControlToStream) {
     packet->SetPacketNumber(1);
     packet->AddFrameTypeBit(FrameTypeBit::kStreamBit);  // Mark as ack-eliciting
     std::vector<StreamDataInfo> stream_data;
-    stream_data.push_back(StreamDataInfo(4, 5, true));
+    stream_data.push_back(StreamDataInfo(4, /*offset=*/0, /*len=*/5, /*fin=*/true));
     send_control.OnPacketSend(common::UTCTimeMsec(), packet, 1200, stream_data);
 
     // Simulate ACK
@@ -368,7 +389,7 @@ TEST_F(StreamAckTrackingTest, RealWorldStreamSendThroughVisitor) {
     auto stream_data = visitor.GetStreamDataInfo();
     EXPECT_EQ(stream_data.size(), 1);
     EXPECT_EQ(stream_data[0].stream_id, 4);
-    EXPECT_EQ(stream_data[0].max_offset, 22);
+    EXPECT_EQ(stream_data[0].MaxOffset(), 22);
     EXPECT_TRUE(stream_data[0].has_fin);  // FIN should be set since we called Close()
 
     // Now simulate ACK
@@ -412,12 +433,12 @@ TEST_F(StreamAckTrackingTest, MultipleStreamsInOnePacket) {
     for (const auto& info : stream_data) {
         if (info.stream_id == 4) {
             found_stream4 = true;
-            EXPECT_EQ(info.max_offset, 8);
+            EXPECT_EQ(info.MaxOffset(), 8);
             EXPECT_FALSE(info.has_fin);
         }
         if (info.stream_id == 8) {
             found_stream8 = true;
-            EXPECT_EQ(info.max_offset, 8);
+            EXPECT_EQ(info.MaxOffset(), 8);
             EXPECT_TRUE(info.has_fin);
         }
     }

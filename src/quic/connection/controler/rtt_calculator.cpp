@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <limits>
 
@@ -8,6 +9,31 @@
 
 namespace quicx {
 namespace quic {
+
+namespace {
+// Process-wide initial-RTT override. Defaults to kInitRttDefaultMs; can be
+// lowered by tests/benchmarks via SetDefaultInitialRtt() to avoid the ~1 s
+// first-packet PTO cliff on loopback paths (see docs/internal/perf_e2e_analysis.md §6
+// P3). Stored as std::atomic so calls are safe from any thread, including
+// unit-test setup running concurrently with connection teardown.
+std::atomic<uint32_t> g_initial_rtt_override{kInitRttDefaultMs};
+}  // namespace
+
+uint32_t GetDefaultInitialRtt() {
+    return g_initial_rtt_override.load(std::memory_order_relaxed);
+}
+
+void SetDefaultInitialRtt(uint32_t ms) {
+    // Bound the override: a zero/absurdly-small value would make PTO = 0 which
+    // fires the retransmit timer immediately and causes a livelock of PTO
+    // probes. Anything above the default maps back to the default to prevent
+    // misuse as a *longer* timeout (which is not what the knob is for).
+    if (ms == 0 || ms > kInitRttDefaultMs) {
+        g_initial_rtt_override.store(kInitRttDefaultMs, std::memory_order_relaxed);
+        return;
+    }
+    g_initial_rtt_override.store(ms, std::memory_order_relaxed);
+}
 
 RttCalculator::RttCalculator() {
     Reset();
@@ -55,7 +81,11 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
 
 void RttCalculator::Reset() {
     latest_rtt_ = 0;
-    smoothed_rtt_ = kInitRtt;  // kInitRtt is 250ms, no need to multiply by 1000
+    // Seed SRTT from the process-level override; in production this returns
+    // the RFC-friendly default (kInitRttDefaultMs = 250 ms). Benchmarks that
+    // run exclusively against loopback can opt in to a smaller value via
+    // SetDefaultInitialRtt() to avoid a ~1 s cold-start PTO cliff.
+    smoothed_rtt_ = GetDefaultInitialRtt();
     rtt_var_ = smoothed_rtt_ / 2;
     min_rtt_ = std::numeric_limits<uint32_t>::max();
 

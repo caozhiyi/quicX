@@ -36,6 +36,8 @@ public:
 private:
     enum class State {
         kReadingFrameType,      // Waiting to read frame type
+        kReadingUnknownLength,  // Type was decoded as unknown; waiting for length varint
+                                // (current_frame_type_ holds the already-consumed unknown type)
         kDecodingFrame,         // Currently decoding a frame's payload
         kSkippingUnknownFrame   // Skipping payload of an unknown frame type (RFC 9114 §9)
     };

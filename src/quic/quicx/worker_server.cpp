@@ -1,8 +1,8 @@
 #include "common/buffer/buffer_chunk.h"
 #include "common/log/log.h"
 #include "common/log/log_context.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 #include "quic/common/version.h"
 #include "quic/config.h"
@@ -50,6 +50,32 @@ ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCt
 }
 
 ServerWorker::~ServerWorker() {}
+
+void ServerWorker::Shutdown() {
+    // Cancel pending handshake watchdog timers; each timer's lambda
+    // captures the in-flight ServerConnection shared_ptr by value.
+    auto loop = event_loop_.lock();
+    if (loop) {
+        for (auto& kv : handshake_timers_) {
+            loop->RemoveTimer(kv.second);
+        }
+    }
+    handshake_timers_.clear();
+
+    // Drop retry / rate-monitoring helpers. ConnectionRateMonitor owns a
+    // shared_ptr to the event loop (for its periodic timer), which is one
+    // of the 16 strong references seen in the P4 diagnostic dump. Letting
+    // it hang on across IClient/IServer lifetime would prevent the
+    // event-loop graph from collapsing.
+    if (rate_monitor_) {
+        rate_monitor_->StopTimer();
+    }
+    rate_monitor_.reset();
+    ip_limiter_.reset();
+    retry_token_manager_.reset();
+
+    Worker::Shutdown();
+}
 
 bool ServerWorker::ShouldSendRetry(bool has_valid_token, const common::Address& client_addr) {
     // If client already has a valid token, never send another Retry (RFC 9000 requirement)
@@ -105,17 +131,22 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     auto conn = conn_map_.find(packet_info.cid_.Hash());
     if (conn != conn_map_.end()) {
         common::LogTagGuard guard("conn:" + std::to_string(packet_info.cid_.Hash()));
-        conn->second->SetSocket(packet_info.net_packet_->GetSocket());
+        // Pin the connection with a local shared_ptr copy. OnPackets may
+        // trigger OnStateToDraining → InvokeConnectionCloseCallback which
+        // removes the entry from conn_map_. Without this pin, the iterator
+        // would be the last owner and `this` would be destroyed mid-call.
+        auto connection = conn->second;
+        connection->SetSocket(packet_info.net_packet_->GetSocket());
         // report observed address for path change detection
         auto& observed_addr = packet_info.net_packet_->GetAddress();
-        conn->second->OnObservedPeerAddress(observed_addr);
+        connection->OnObservedPeerAddress(observed_addr);
         // record received bytes on candidate path to unlock anti-amplification budget
         if (packet_info.net_packet_->GetData()) {
-            conn->second->OnCandidatePathDatagramReceived(
+            connection->OnCandidatePathDatagramReceived(
                 observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
         }
-        conn->second->SetPendingEcn(packet_info.net_packet_->GetEcn());
-        conn->second->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
+        connection->SetPendingEcn(packet_info.net_packet_->GetEcn());
+        connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
         return true;
     }
 
@@ -209,7 +240,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     callbacks.connection_close_cb = std::bind(&ServerWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3);
 
-    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_, server_alpn_, callbacks);
+    auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_.lock(), server_alpn_, callbacks);
 
     // Inject Sender for direct packet transmission
     new_conn->SetSender(sender_);
@@ -253,16 +284,46 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     new_conn->SetPendingEcn(packet_info.net_packet_->GetEcn());
     new_conn->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
 
-    event_loop_->AddTimer(
+    // Handshake watchdog timer: if the handshake does not finish within
+    // kHandshakeTimeoutMs we tear the connection down.
+    //
+    // IMPORTANT: the lambda captures |new_conn| by value, so as long as the
+    // timer sits in the event loop it holds a shared_ptr<ServerConnection>
+    // and keeps the connection object alive. We therefore remember the
+    // timer id and cancel it in HandleHandshakeDone() the moment the
+    // handshake succeeds; otherwise every short-lived benchmark cycle would
+    // leak ~120 KB of per-connection state for the full 5 s timeout window,
+    // which is the P4 residue observed in profile_rss_lifecycle.
+    auto hs_loop = event_loop_.lock();
+    if (!hs_loop) return false;
+    uint64_t timer_id = hs_loop->AddTimer(
         [new_conn, this]() {
             if (connecting_set_.find(new_conn) != connecting_set_.end()) {
                 common::LOG_DEBUG("connection timeout during handshake. cid:%llu", new_conn->GetConnectionIDHash());
                 // Properly close the connection to clean up all CIDs
                 HandleConnectionClose(new_conn, QuicErrorCode::kNoError, "handshake timeout");
             }
+            handshake_timers_.erase(new_conn);
         },
         kHandshakeTimeoutMs);
+    handshake_timers_[new_conn] = timer_id;
     return true;
+}
+
+void ServerWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
+    // Cancel the handshake watchdog timer registered in InnerHandlePacket()
+    // so the captured shared_ptr<ServerConnection> is released and the
+    // connection can be destroyed as soon as it is closed, instead of
+    // outliving itself by up to kHandshakeTimeoutMs.
+    auto it = handshake_timers_.find(conn);
+    if (it != handshake_timers_.end()) {
+        auto done_loop = event_loop_.lock();
+        if (done_loop) done_loop->RemoveTimer(it->second);
+        handshake_timers_.erase(it);
+        common::LOG_DEBUG(
+            "ServerWorker: handshake completed, cancelled watchdog timer for cid:%llu", conn->GetConnectionIDHash());
+    }
+    Worker::HandleHandshakeDone(conn);
 }
 
 bool ServerWorker::SendRetryPacket(
@@ -381,6 +442,22 @@ void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32
     net_packet->SetSocket(socket);
     sender_->Send(net_packet);
     common::LOG_DEBUG("send version negotiate packet. packet size:%d", buffer->GetDataLength());
+}
+
+void ServerWorker::HandleConnectionClose(
+    std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
+    // Also purge the handshake watchdog entry: if the connection is closed
+    // before its handshake completes (peer aborted, handshake error, etc.)
+    // there may still be a pending timer whose lambda owns a shared_ptr to
+    // the connection. Removing it releases that last reference so the
+    // connection object can actually be destroyed.
+    auto it = handshake_timers_.find(conn);
+    if (it != handshake_timers_.end()) {
+        auto close_loop = event_loop_.lock();
+        if (close_loop) close_loop->RemoveTimer(it->second);
+        handshake_timers_.erase(it);
+    }
+    Worker::HandleConnectionClose(conn, error, reason);
 }
 
 }  // namespace quic

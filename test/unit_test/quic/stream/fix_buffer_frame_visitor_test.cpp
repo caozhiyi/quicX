@@ -146,7 +146,7 @@ TEST_F(FixBufferFrameVisitorTest, StreamDataInfoSingleStream) {
     auto stream_data = visitor.GetStreamDataInfo();
     EXPECT_EQ(stream_data.size(), 1);
     EXPECT_EQ(stream_data[0].stream_id, 4);
-    EXPECT_EQ(stream_data[0].max_offset, 4);
+    EXPECT_EQ(stream_data[0].MaxOffset(), 4);
     EXPECT_FALSE(stream_data[0].has_fin);
 }
 
@@ -182,17 +182,24 @@ TEST_F(FixBufferFrameVisitorTest, StreamDataInfoMultipleStreams) {
     visitor.HandleFrame(frame3);
     
     auto stream_data = visitor.GetStreamDataInfo();
-    EXPECT_EQ(stream_data.size(), 2);
-    
-    // Find stream 4 and verify max_offset
+    // After the visitor switched to one-record-per-frame (so SendStream can
+    // do selective ACK tracking), we expect three entries here: stream 4
+    // contributed two frames (offsets 0 and 4), stream 8 contributed one.
+    EXPECT_EQ(stream_data.size(), 3);
+
+    // Verify stream 4's high-water mark across its multiple records
+    uint64_t stream4_max_offset = 0;
     bool found_stream4 = false;
     for (const auto& info : stream_data) {
         if (info.stream_id == 4) {
-            EXPECT_EQ(info.max_offset, 7);  // 4 + 3
             found_stream4 = true;
+            if (info.MaxOffset() > stream4_max_offset) {
+                stream4_max_offset = info.MaxOffset();
+            }
         }
     }
     EXPECT_TRUE(found_stream4);
+    EXPECT_EQ(stream4_max_offset, 7u);  // 4 + 3
 }
 
 // Test 2.3: FIN flag tracking
@@ -212,7 +219,7 @@ TEST_F(FixBufferFrameVisitorTest, StreamDataInfoWithFIN) {
     auto stream_data = visitor.GetStreamDataInfo();
     EXPECT_EQ(stream_data.size(), 1);
     EXPECT_EQ(stream_data[0].stream_id, 12);
-    EXPECT_EQ(stream_data[0].max_offset, 5);
+    EXPECT_EQ(stream_data[0].MaxOffset(), 5);
     EXPECT_TRUE(stream_data[0].has_fin);
 }
 

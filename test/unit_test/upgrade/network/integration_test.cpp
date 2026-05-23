@@ -10,9 +10,9 @@
 
 
 #include "upgrade/network/tcp_socket.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "common/network/if_event_driver.h"
-#include "upgrade/include/if_upgrade.h"
+#include <quicx/upgrade/if_upgrade.h>
 
 namespace quicx {
 namespace upgrade {

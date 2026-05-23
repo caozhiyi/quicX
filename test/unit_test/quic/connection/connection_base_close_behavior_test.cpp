@@ -90,7 +90,9 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseSchedulesThreePtoTimer) {
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
     EXPECT_GE(close_wait, 500u);  // Minimum timeout enforced
     EXPECT_EQ(timer->entries().back().timeout_ms, close_wait * 3);
-    EXPECT_FALSE(close_callback_invoked);
+    // After weak_ptr refactoring, OnStateToClosing immediately invokes the
+    // connection close callback so the application can release resources early.
+    EXPECT_TRUE(close_callback_invoked);
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, ImmediateCloseStoresErrorAndSchedulesTimer) {
@@ -139,8 +141,12 @@ TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
     // Simulate timer firing
     conn->TriggerClosingTimeoutForTest();
 
+    // After weak_ptr refactoring, the connection close callback fires immediately
+    // in OnStateToClosing (before the timer). At that point the closing_reason_ is
+    // empty because StartGracefulClose sets it to "". The subsequent OnStateToClosed
+    // does NOT re-invoke the callback (guarded by connection_close_cb_invoked_).
     EXPECT_EQ(error_code, QuicErrorCode::kNoError);
-    EXPECT_EQ(reason, "normal close.");
+    EXPECT_EQ(reason, "");
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {

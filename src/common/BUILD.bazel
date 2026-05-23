@@ -2,86 +2,100 @@ package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])  # MIT-style per project LICENSE
 
+# ---------------------------------------------------------------------------
+# Note on layering
+# ---------------------------------------------------------------------------
+# The CMake build merges `src/common` and `src/quic` into a single static
+# archive (`libquicx.a`). A handful of common source files (qlog event
+# helpers, the cross-thread event loop) intentionally include private
+# headers from src/quic, which makes splitting these directories into two
+# independent Bazel libraries impossible without touching source code.
+#
+# We mirror CMake's behavior by compiling everything under both trees into
+# this single `:common` library. `//src/quic:quic` is exposed as an alias
+# (see //src/quic/BUILD.bazel) for backward-compatible target paths.
+#
+# Header include resolution
+# -------------------------
+# Source files use `#include "common/..."` and `#include "quic/..."`.
+# Adding `..` (= `src/`) to `includes` mirrors what CMake does with
+# `target_include_directories(... PRIVATE ${PROJECT_SOURCE_DIR}/src)`,
+# so every internal header resolves through a single -I flag without
+# requiring per-target prefix rewrites.
+# ---------------------------------------------------------------------------
+
+# Platform-agnostic source files. Platform-specific code (epoll/kqueue/iocp,
+# Win32 vs POSIX helpers) is appended via select() below.
+_COMMON_SRCS = glob(
+    [
+        "alloter/*.cpp",
+        "buffer/*.cpp",
+        "decode/*.cpp",
+        "http/*.cpp",
+        "lock/*.cpp",
+        "log/*.cpp",
+        "metrics/*.cpp",
+        "qlog/**/*.cpp",
+        "structure/*.cpp",
+        "thread/*.cpp",
+        "timer/*.cpp",
+        "util/*.cpp",
+        # Cross-platform network utilities (address parsing, generic
+        # event-loop interfaces). Platform-specific I/O implementations
+        # live under network/<linux|macos|windows>/ and are added below.
+        "network/*.cpp",
+    ],
+)
+
 cc_library(
     name = "common",
-    srcs = [
-        # alloter
-        "alloter/normal_alloter.cpp",
-        "alloter/pool_alloter.cpp",
-        "alloter/pool_block.cpp",
-
-        # buffer
-        "buffer/buffer_chunk.cpp",
-        "buffer/buffer_decode_wrapper.cpp",
-        "buffer/buffer_encode_wrapper.cpp",
-        "buffer/buffer_reader.cpp",
-        "buffer/buffer_span.cpp",
-        "buffer/multi_block_buffer.cpp",
-        "buffer/shared_buffer_span.cpp",
-        "buffer/single_block_buffer.cpp",
-        "buffer/standalone_buffer_chunk.cpp",
-
-        # decode
-        "decode/decode.cpp",
-
-        # http
-        "http/url.cpp",
-
-        # lock
-        "lock/spin_lock.cpp",
-
-        # log
-        "log/base_logger.cpp",
-        "log/file_logger.cpp",
-        "log/log_stream.cpp",
-        "log/log.cpp",
-        "log/stdout_logger.cpp",
-        
-        # metrics
-        "metrics/metrics.cpp",
-        "metrics/metrics_std.cpp",
-        "metrics/metrics_registry.cpp",
-
-        # network (platform-specific impls are selected below)
-        "network/address.cpp",
-
-        # os (platform-specific selected below)
-
-        # timer
-        "timer/timer.cpp",
-        "timer/treemap_timer.cpp",
-
-        # util
-        "util/bitmap.cpp",
-        "util/os_info.cpp",
-        "util/random.cpp",
-        "util/time.cpp",
-    ] + select({
+    srcs = _COMMON_SRCS + select({
         "@platforms//os:macos": [
-            "network/mac/io_handle.cpp",
+            "network/macos/io_handle.cpp",
+            "network/macos/kqueue_event_driver.cpp",
             "os/posix/convert.cpp",
         ],
         "@platforms//os:linux": [
+            "network/linux/epoll_event_driver.cpp",
             "network/linux/io_handle.cpp",
             "os/posix/convert.cpp",
         ],
         "@platforms//os:windows": [
             "network/windows/io_handle.cpp",
+            "network/windows/iocp_event_driver.cpp",
+            "network/windows/select_event_driver.cpp",
             "os/win/convert.cpp",
         ],
         "//conditions:default": [
-            "network/mac/io_handle.cpp",
+            "network/linux/epoll_event_driver.cpp",
+            "network/linux/io_handle.cpp",
             "os/posix/convert.cpp",
         ],
-    }),
-    hdrs = glob([
-        "**/*.h",
-    ]),
-    include_prefix = "common",
+    }) + ["//src/quic:quic_srcs"],
+    hdrs = glob(["**/*.h"]),
+    # quic/ headers live in a sibling Bazel package and are pulled in via
+    # `textual_hdrs`. They participate in include path resolution (through
+    # `includes = [".."]` below) but aren't subject to Bazel's layering
+    # check, which mirrors how the CMake build treats them as part of the
+    # same compilation unit.
+    textual_hdrs = ["//src/quic:quic_hdrs"],
+    # `..` resolves to `src/`, which becomes a -I include root that lets
+    # source files use `common/...` and `quic/...` paths consistently.
+    includes = [".."],
     copts = select({
         "@platforms//os:windows": [],
-        "//conditions:default": ["-std=c++17", "-pthread"],
+        "//conditions:default": [
+            "-std=c++17",
+            "-pthread",
+        ],
     }),
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-pthread"],
+    }),
+    deps = [
+        "//include:public_headers",
+        "//third/boringssl:crypto",
+        "//third/boringssl:ssl",
+    ],
 )
-
-

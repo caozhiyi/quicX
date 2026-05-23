@@ -5,12 +5,12 @@
 #include <functional>
 #include <unordered_map>
 
-#include "http3/include/type.h"
-#include "quic/include/if_quic_stream.h"
-#include "quic/include/if_quic_server.h"
+#include <quicx/http3/type.h>
+#include <quicx/quic/if_quic_stream.h>
+#include <quicx/quic/if_quic_server.h>
 #include "http3/stream/response_stream.h"
 #include "http3/connection/if_connection.h"
-#include "quic/include/if_quic_connection.h"
+#include <quicx/quic/if_quic_connection.h>
 #include "http3/stream/push_sender_stream.h"
 #include "http3/stream/control_sender_stream.h"
 #include "http3/stream/control_server_receiver_stream.h"
@@ -67,7 +67,7 @@ private:
 
     std::shared_ptr<ControlSenderStream> control_sender_stream_;
     std::shared_ptr<ControlServerReceiverStream> control_recv_stream_;
-    std::shared_ptr<IHttpProcessor> http_processor_;
+    std::weak_ptr<IHttpProcessor> http_processor_;
 };
 
 }

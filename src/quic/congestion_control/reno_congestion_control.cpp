@@ -1,8 +1,8 @@
 #include <algorithm>
 
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "common/qlog/qlog.h"
 
 #include "quic/congestion_control/normal_pacer.h"
@@ -65,7 +65,12 @@ void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
         return;
     }
     if (in_recovery_) {
-        if (ev.ack_time > recovery_start_time_) {
+        // RFC 9002 §7.3.2: exit recovery only when an ACK is received for a
+        // packet sent AFTER the start of the recovery period. Compare against
+        // the acked packet's send time (not the ACK arrival time), otherwise
+        // any ACK exits recovery immediately and a subsequent loss triggers
+        // another cwnd halving — leading to repeated cwnd collapse.
+        if (ev.acked_packet_send_time > recovery_start_time_) {
             // Log congestion state transition: recovery -> congestion_avoidance
             if (qlog_trace_) {
                 common::CongestionStateUpdatedData data;
@@ -173,9 +178,11 @@ void RenoCongestionControl::EnterRecovery(uint64_t now) {
 
     ssthresh_bytes_ = static_cast<uint64_t>(cwnd_bytes_ * cfg_.beta);
     cwnd_bytes_ = std::max<uint64_t>(cfg_.min_cwnd_bytes, ssthresh_bytes_);
-    if (cwnd_bytes_ < bytes_in_flight_) {
-        cwnd_bytes_ = bytes_in_flight_;
-    }
+    // RFC 9002 §7.3.2: do NOT raise cwnd back to bytes_in_flight here.
+    // The whole point of recovery is that cwnd shrinks below in_flight so
+    // that CanSend blocks new sends until ACKs drain in_flight. Restoring
+    // cwnd to in_flight nullifies the multiplicative decrease and combined
+    // with a too-eager recovery exit causes cwnd collapse on every loss.
     in_recovery_ = true;
     recovery_start_time_ = now;
     in_slow_start_ = false;

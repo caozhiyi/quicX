@@ -6,11 +6,11 @@
 
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/if_frame.h"
-#include "http3/include/type.h"
+#include <quicx/http3/type.h>
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_stream.h"
-#include "quic/include/if_quic_bidirection_stream.h"
+#include <quicx/quic/if_quic_bidirection_stream.h>
 
 namespace quicx {
 namespace common {

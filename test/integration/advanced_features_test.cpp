@@ -9,11 +9,11 @@
 #include <thread>
 #include <vector>
 
-#include "http3/include/if_async_handler.h"
-#include "http3/include/if_client.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
-#include "http3/include/if_server.h"
+#include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 
 class AdvancedFeaturesTest : public ::testing::Test {
 protected:

@@ -1,8 +1,8 @@
 #ifndef QUIC_QUICX_QUIC_CLIENT
 #define QUIC_QUICX_QUIC_CLIENT
 
-#include "quic/include/type.h"
-#include "quic/include/if_quic_client.h"
+#include <quicx/quic/type.h>
+#include <quicx/quic/if_quic_client.h>
 #include "quic/quicx/master_with_thread.h"
 
 namespace quicx {

@@ -5,7 +5,7 @@
 #include "quic/packet/packet_decode.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
-#include "quic/include/if_quic_send_stream.h"
+#include <quicx/quic/if_quic_send_stream.h>
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
 #include "common/buffer/single_block_buffer.h"

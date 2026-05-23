@@ -11,8 +11,8 @@
 #include <sys/socket.h>
 #endif
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "common/network/if_event_driver.h"
 #include "common/network/io_handle.h"
 #include "common/util/time.h"
@@ -27,16 +27,37 @@ UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
     event_loop_(event_loop),
     ecn_enabled_(false) {}
 
-UdpReceiver::~UdpReceiver() {}
+UdpReceiver::~UdpReceiver() {
+    // Close only those UDP sockets that we created ourselves (via
+    // AddReceiver(ip, port, ...)). Sockets registered via AddReceiver(fd, ...)
+    // are owned by the caller and must not be closed here (double-close would
+    // corrupt fd tables and mis-close a future unrelated fd).
+    //
+    // Rationale for closing at all: the Linux kernel keeps a UDP port bound as
+    // long as any fd referencing it exists, even if the fd is just sitting in
+    // a process's descriptor table. Prior to this fix, every server Init that
+    // bound a port leaked its listen socket forever, so re-Init on the same
+    // port (e.g. repeated benchmark iterations or graceful restart) failed
+    // silently with EADDRINUSE and the new server could not receive packets.
+    for (int32_t fd : owned_fds_) {
+        common::Close(fd);
+    }
+    owned_fds_.clear();
+    receiver_map_.clear();
+}
 
 bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
+    auto loop = event_loop_.lock();
+    if (!loop) return false;
     common::LOG_DEBUG(
-        "UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, event_loop_->IsInLoopThread());
+        "UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
 
-    if (!event_loop_->IsInLoopThread()) {
+    if (!loop->IsInLoopThread()) {
         common::LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", socket_fd);
-        auto self = shared_from_this();
-        event_loop_->RunInLoop([self, socket_fd, receiver]() {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, socket_fd, receiver]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             static_cast<UdpReceiver*>(self.get())->AddReceiver(socket_fd, receiver);
         });
         return true;
@@ -44,16 +65,20 @@ bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver
 
     common::LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", socket_fd);
     receiver_map_[socket_fd] = receiver;
-    bool result = event_loop_->RegisterFd(
+    bool result = loop->RegisterFd(
         socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
     common::LOG_DEBUG("UdpReceiver::AddReceiver: registration result=%d for fd=%d", result, socket_fd);
     return result;
 }
 
 bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_ptr<IPacketReceiver> receiver) {
-    if (!event_loop_->IsInLoopThread()) {
-        auto self = shared_from_this();
-        event_loop_->RunInLoop([self, ip, port, receiver]() {
+    auto loop = event_loop_.lock();
+    if (!loop) return false;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, ip, port, receiver]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             static_cast<UdpReceiver*>(self.get())->AddReceiver(ip, port, receiver);
         });
         return true;
@@ -87,24 +112,30 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
         common::Close(socket_fd);
         return false;
     }
-    if (!event_loop_->RegisterFd(
+    if (!loop->RegisterFd(
             socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this())) {
         common::LOG_ERROR("register fd failed. fd:%d", socket_fd);
+        common::Close(socket_fd);
         return false;
     }
 
     receiver_map_[socket_fd] = receiver;
+    owned_fds_.insert(socket_fd);  // we created this fd; we are responsible for closing it
     return true;
 }
 
 bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
+    auto loop = event_loop_.lock();
+    if (!loop) return false;
     common::LOG_DEBUG(
-        "UdpReceiver::RemoveReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, event_loop_->IsInLoopThread());
+        "UdpReceiver::RemoveReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
 
-    if (!event_loop_->IsInLoopThread()) {
+    if (!loop->IsInLoopThread()) {
         common::LOG_DEBUG("UdpReceiver::RemoveReceiver: posting to EventLoop thread, fd=%d", socket_fd);
-        auto self = shared_from_this();
-        event_loop_->RunInLoop([self, socket_fd]() {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, socket_fd]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             static_cast<UdpReceiver*>(self.get())->RemoveReceiver(socket_fd);
         });
         return true;
@@ -118,7 +149,13 @@ bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
 
     common::LOG_DEBUG("UdpReceiver::RemoveReceiver: removing fd=%d from EventLoop", socket_fd);
     receiver_map_.erase(iter);
-    event_loop_->RemoveFd(socket_fd);
+    loop->RemoveFd(socket_fd);
+    // Only close if we created this fd; caller-owned fds are closed by the caller.
+    auto owned_it = owned_fds_.find(socket_fd);
+    if (owned_it != owned_fds_.end()) {
+        common::Close(socket_fd);
+        owned_fds_.erase(owned_it);
+    }
     common::LOG_INFO("UdpReceiver::RemoveReceiver: removed receiver for fd=%d", socket_fd);
     return true;
 }
@@ -175,15 +212,25 @@ void UdpReceiver::OnError(uint32_t fd) {
 }
 
 void UdpReceiver::OnClose(uint32_t fd) {
-    if (!event_loop_->IsInLoopThread()) {
-        auto self = shared_from_this();
-        event_loop_->RunInLoop([self, fd]() {
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, fd]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             static_cast<UdpReceiver*>(self.get())->OnClose(fd);
         });
         return;
     }
     receiver_map_.erase(fd);
-    event_loop_->RemoveFd(fd);
+    loop->RemoveFd(fd);
+    // Mirror RemoveReceiver(): only close if we own it.
+    auto owned_it = owned_fds_.find(fd);
+    if (owned_it != owned_fds_.end()) {
+        common::Close(fd);
+        owned_fds_.erase(owned_it);
+    }
     common::LOG_INFO("udp receiver closed. fd:%d", fd);
 }
 

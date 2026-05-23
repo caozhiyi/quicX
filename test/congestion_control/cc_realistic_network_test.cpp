@@ -121,9 +121,15 @@ TEST(RealisticNetworkTest, LTE_Reno) {
     printf("Max Cwnd: %.2f KB\n", metrics.max_cwnd_bytes / 1024.0);
     printf("Recovery Count: %lu\n", metrics.recovery_count);
     
-    // With Reno at 1% loss and 50ms RTT, theoretical throughput is often < 5 Mbps.
-    // Use a slightly lower threshold that still indicates reasonable performance.
-    EXPECT_GT(metrics.throughput_mbps, 4.5);
+    // With Reno at 1% loss and 50ms RTT, the Mathis-style upper bound
+    // (MSS / RTT) * sqrt(3/2) / sqrt(p) is well under 5 Mbps. Now that the
+    // CC framework correctly forwards `acked_packet_send_time` so RFC 9002
+    // §7.3.2 recovery-exit semantics actually apply, Reno's cwnd halves on
+    // every loss episode and stabilizes around the Mathis equilibrium —
+    // expect roughly 4 Mbps. Keep the assertion loose enough that small
+    // RNG jitter in the simulator doesn't flake the test, while still
+    // catching gross regressions (e.g. complete cwnd collapse).
+    EXPECT_GT(metrics.throughput_mbps, 3.0);
 }
 
 TEST(RealisticNetworkTest, CrossContinent_BBRv2_ProbeRTT) {

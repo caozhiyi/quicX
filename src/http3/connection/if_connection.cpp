@@ -34,6 +34,16 @@ IConnection::~IConnection() {
     if (quic_connection_ && !quic_connection_->IsTerminating()) {
         Close(0);
     }
+
+    // P4: Drop every stream we still hold before our members destruct. Each
+    // RequestStream captures its error/push_promise callbacks which reference
+    // ClientConnection methods; even though we bind them to |this| (not a
+    // shared_ptr), clearing now makes the ordering obvious and prevents any
+    // deferred quic-layer callback from landing into a half-destroyed
+    // ClientConnection. streams_to_destroy_ holds the same references for
+    // completed streams that were waiting on the next cleanup tick.
+    streams_.clear();
+    streams_to_destroy_.clear();
 }
 
 void IConnection::Close(uint32_t error_code) {

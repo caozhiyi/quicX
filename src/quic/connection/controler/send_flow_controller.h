@@ -154,6 +154,16 @@ private:
 
     // Stream ID generator
     StreamIDGenerator id_generator_;
+
+    // RFC 9000 §19.12: DATA_BLOCKED is informational. Sending one DATA_BLOCKED
+    // per max_data_ value is sufficient. Without this de-dup, every call to
+    // CanSendData() while sent_bytes_ >= max_data_ would manufacture another
+    // DATA_BLOCKED frame, producing an infinite stream of 37-byte packets and
+    // collapsing the connection (observed in cross-impl interop with
+    // quic-go/quiche when the server hits the peer's initial_max_data limit).
+    // Tracks the max_data_ value for which a DATA_BLOCKED was last emitted; a
+    // value of 0 means "not yet sent for any limit".
+    uint64_t last_data_blocked_limit_ = 0;
 };
 
 }  // namespace quic

@@ -23,7 +23,7 @@ void SendFlowController::UpdateConfig(const TransportParam& tp) {
     max_streams_bidi_ = tp.GetInitialMaxStreamsBidi();
     max_streams_uni_ = tp.GetInitialMaxStreamsUni();
 
-    common::LOG_DEBUG("SendFlowController::UpdateConfig: max_data=%llu, max_streams_bidi=%llu, max_streams_uni=%llu",
+    common::LOG_INFO("SendFlowController::UpdateConfig: max_data=%llu, max_streams_bidi=%llu, max_streams_uni=%llu",
         max_data_, max_streams_bidi_, max_streams_uni_);
 }
 
@@ -35,12 +35,15 @@ void SendFlowController::OnDataSent(uint32_t size) {
 
 void SendFlowController::OnMaxDataReceived(uint64_t limit) {
     if (limit > max_data_) {
-        common::LOG_DEBUG(
+        common::LOG_INFO(
             "SendFlowController::OnMaxDataReceived: increasing limit from %llu to %llu", max_data_, limit);
         max_data_ = limit;
+        // Limit increased -> peer might block us at the new limit later; reset
+        // de-dup so a fresh DATA_BLOCKED can be emitted if we hit the new wall.
+        last_data_blocked_limit_ = 0;
     } else {
         // RFC 9000 Section 4.1: Ignore frames that don't increase limits
-        common::LOG_DEBUG("SendFlowController::OnMaxDataReceived: ignoring non-increasing limit %llu (current=%llu)",
+        common::LOG_INFO("SendFlowController::OnMaxDataReceived: ignoring non-increasing limit %llu (current=%llu)",
             limit, max_data_);
     }
 }
@@ -48,12 +51,24 @@ void SendFlowController::OnMaxDataReceived(uint64_t limit) {
 bool SendFlowController::CanSendData(uint64_t& can_send_size, std::shared_ptr<IFrame>& blocked_frame) {
     // Check if we've reached the flow control limit
     if (sent_bytes_ >= max_data_) {
-        // Blocked: cannot send any data
-        auto frame = std::make_shared<DataBlockedFrame>();
-        frame->SetMaximumData(max_data_);
-        blocked_frame = frame;
+        // Blocked: cannot send any data.
+        // RFC 9000 §19.12: DATA_BLOCKED is purely informational ("the sender
+        // wishes to send data, but is unable to due to connection-level flow
+        // control"). Emitting one frame per max_data_ value is enough; the
+        // peer will respond with MAX_DATA when it can. Without de-dup the
+        // server keeps minting DATA_BLOCKEDs every time CanSendData() is
+        // invoked, which under interop with quic-go/quiche caused PN to
+        // explode past 500k while no real data flowed.
+        if (last_data_blocked_limit_ != max_data_) {
+            auto frame = std::make_shared<DataBlockedFrame>();
+            frame->SetMaximumData(max_data_);
+            blocked_frame = frame;
+            last_data_blocked_limit_ = max_data_;
+            common::LOG_DEBUG("SendFlowController::CanSendData: BLOCKED at limit %llu (DATA_BLOCKED emitted)", max_data_);
+        } else {
+            common::LOG_DEBUG("SendFlowController::CanSendData: BLOCKED at limit %llu (suppressed duplicate DATA_BLOCKED)", max_data_);
+        }
         can_send_size = 0;
-        common::LOG_DEBUG("SendFlowController::CanSendData: BLOCKED at limit %llu", max_data_);
         return false;
     }
 
@@ -62,11 +77,15 @@ bool SendFlowController::CanSendData(uint64_t& can_send_size, std::shared_ptr<IF
 
     // Check if we're near the limit (proactive signaling)
     if (can_send_size <= kDataBlockedThreshold) {
-        auto frame = std::make_shared<DataBlockedFrame>();
-        frame->SetMaximumData(max_data_);
-        blocked_frame = frame;
-        common::LOG_DEBUG(
-            "SendFlowController::CanSendData: near limit, can_send=%llu, threshold=%llu", can_send_size, kDataBlockedThreshold);
+        if (last_data_blocked_limit_ != max_data_) {
+            auto frame = std::make_shared<DataBlockedFrame>();
+            frame->SetMaximumData(max_data_);
+            blocked_frame = frame;
+            last_data_blocked_limit_ = max_data_;
+            common::LOG_DEBUG(
+                "SendFlowController::CanSendData: near limit, can_send=%llu, threshold=%llu (DATA_BLOCKED emitted)",
+                can_send_size, kDataBlockedThreshold);
+        }
     }
 
     return true;

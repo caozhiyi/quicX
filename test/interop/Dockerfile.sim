@@ -1,0 +1,18 @@
+# Dockerfile.sim — quicx-sim:latest
+#
+# A thin wrapper around martenseemann/quic-network-simulator:latest that
+# tolerates the wait-for-it-quic startup race that otherwise kills the sim
+# container with exit 1 ("server misbehaving" DNS error) before docker's
+# internal DNS has registered the server hostname.
+#
+# Build:
+#   docker build -t quicx-sim:latest -f test/interop/Dockerfile.sim test/interop
+#
+# This image is referenced from docker-compose.yml as ${SIM:-quicx-sim:latest}.
+
+FROM martenseemann/quic-network-simulator:latest
+
+COPY run-sim.sh /run-sim.sh
+RUN chmod +x /run-sim.sh
+
+ENTRYPOINT ["/run-sim.sh"]

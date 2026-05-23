@@ -6,11 +6,11 @@
 #include <unordered_map>
 
 #include "http3/connection/if_connection.h"
-#include "http3/include/if_async_handler.h"
-#include "http3/include/type.h"
+#include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/type.h>
 #include "http3/stream/control_client_sender_stream.h"
 #include "http3/stream/control_receiver_stream.h"
-#include "quic/include/if_quic_connection.h"
+#include <quicx/quic/if_quic_connection.h>
 
 namespace quicx {
 namespace http3 {

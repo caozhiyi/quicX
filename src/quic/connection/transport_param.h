@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "common/buffer/buffer_span.h"
-#include "quic/include/type.h"
+#include <quicx/quic/type.h>
 
 namespace quicx {
 namespace quic {

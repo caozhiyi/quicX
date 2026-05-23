@@ -1,8 +1,8 @@
 #include <algorithm>
 
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 #include "quic/config.h"
 #include "quic/connection/error.h"
@@ -18,7 +18,7 @@
 namespace quicx {
 namespace quic {
 
-RecvStream::RecvStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
+RecvStream::RecvStream(std::weak_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
@@ -34,8 +34,15 @@ RecvStream::RecvStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_d
 RecvStream::~RecvStream() {}
 
 void RecvStream::Reset(uint32_t error) {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this(), error]() { self->Reset(error); });
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, error]() {
+            auto self = weak_self.lock();
+            if (!self) return;
+            self->Reset(error);
+        });
         return;
     }
 

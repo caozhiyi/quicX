@@ -2,7 +2,7 @@
 #define UPGRADE_HANDLERS_SMART_HANDLER_FACTORY
 
 #include <memory>
-#include "upgrade/include/type.h"
+#include <quicx/upgrade/type.h>
 #include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {

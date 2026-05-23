@@ -22,8 +22,11 @@ ConnectionCloser::ConnectionCloser(std::shared_ptr<::quicx::common::IEventLoop> 
 
 ConnectionCloser::~ConnectionCloser() {
     // Cancel graceful close timer to prevent use-after-free
-    if (graceful_closing_pending_ && event_loop_) {
-        event_loop_->RemoveTimer(graceful_close_timer_);
+    if (graceful_closing_pending_) {
+        auto loop = event_loop_.lock();
+        if (loop) {
+            loop->RemoveTimer(graceful_close_timer_);
+        }
     }
     // Clear callback to prevent dangling references
     connection_close_cb_ = nullptr;
@@ -46,7 +49,10 @@ bool ConnectionCloser::StartGracefulClose(ActiveSendCallback active_send_cb) {
         // Set a timeout to force close if data doesn't complete in time
         // Use 3×PTO as a reasonable timeout (similar to draining period)
         graceful_close_timer_ = ::quicx::common::TimerTask(std::bind(&ConnectionCloser::OnGracefulCloseTimeout, this));
-        event_loop_->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);
+        auto loop = event_loop_.lock();
+        if (loop) {
+            loop->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);
+        }
         common::LOG_DEBUG("Graceful close timeout set to %u ms", GetCloseWaitTime() * 3);
         return true;
     }
@@ -78,7 +84,10 @@ bool ConnectionCloser::CheckGracefulCloseComplete(ActiveSendCallback active_send
     graceful_closing_pending_ = false;
 
     // Cancel the graceful close timeout timer since we're completing normally
-    event_loop_->RemoveTimer(graceful_close_timer_);
+    auto loop = event_loop_.lock();
+    if (loop) {
+        loop->RemoveTimer(graceful_close_timer_);
+    }
 
     // Enter Closing state and send CONNECTION_CLOSE
     closing_error_code_ = QuicErrorCode::kNoError;
@@ -94,7 +103,10 @@ void ConnectionCloser::CancelGracefulClose() {
     if (graceful_closing_pending_) {
         common::LOG_DEBUG("Canceling graceful close");
         graceful_closing_pending_ = false;
-        event_loop_->RemoveTimer(graceful_close_timer_);
+        auto loop = event_loop_.lock();
+        if (loop) {
+            loop->RemoveTimer(graceful_close_timer_);
+        }
     }
 }
 

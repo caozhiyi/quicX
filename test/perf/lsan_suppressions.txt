@@ -1,0 +1,5 @@
+# LSan suppression file for e2e_perf_test
+# BlockMemoryPool is a global/thread-local memory pool that intentionally
+# does not free its allocations at process exit. This is not a memory leak.
+leak:quicx::common::BlockMemoryPool::Expansion
+leak:quicx::common::BlockMemoryPool::PoolLargeMalloc

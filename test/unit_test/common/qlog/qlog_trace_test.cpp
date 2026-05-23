@@ -194,7 +194,7 @@ TEST(QlogTraceTest, SetCommonFields) {
     QlogTrace trace("conn-8", VantagePoint::kServer, config);
 
     CommonFields fields;
-    fields.protocol_type = "QUIC";
+    fields.protocol_types = {"QUIC"};
     fields.group_id = "test-group-1";
 
     trace.SetCommonFields(fields);
@@ -244,7 +244,7 @@ TEST(QlogTraceTest, EventCounterIncrements) {
 TEST(QlogTraceTest, EventWhitelistFilter) {
     std::shared_ptr<AsyncWriter> writer;
     QlogConfig config = CreateTestConfig();
-    config.event_whitelist = {"quic:packet_sent", "quic:packet_received"};
+    config.event_whitelist = {"transport:packet_sent", "transport:packet_received"};
 
     auto trace = std::make_unique<QlogTrace>("conn-11", VantagePoint::kServer, config);
     writer = std::make_shared<AsyncWriter>(config);

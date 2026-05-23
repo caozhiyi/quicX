@@ -32,10 +32,25 @@ uint64_t TimingWheelTimer::AddTimer(TimerTask& task, uint32_t time_ms, uint64_t 
     Insert(task, reference);
     ++total_tasks_;
 
-    // O(1) cache update: new deadline can only shrink the minimum.
-    if (task.time_ < min_deadline_cache_) {
+    // O(1) cache update.
+    //
+    // When the cache is CLEAN, we can shrink the cached minimum directly:
+    // any task already in the wheel has time_ >= min_deadline_cache_, so a
+    // strictly-smaller new deadline becomes the new minimum.
+    //
+    // When the cache is DIRTY (set kInvalidDeadline by RemoveTimer or by a
+    // fired slot), there may be unscanned tasks whose deadlines are smaller
+    // than this newly-inserted one. If we naively wrote
+    //     min_deadline_cache_ = task.time_; cache_dirty_ = false;
+    // we would wrongly advertise this new task as the minimum and skip the
+    // earlier tasks still living in higher-level wheels — MinTime() would
+    // then return a deadline far in the future (e.g. a 10 s idle timer
+    // hiding a pending 100 ms recheck). Empirically observed: a 100 ms
+    // recheck timer scheduled at t0 was reported by MinTime as 10 000 ms
+    // because a subsequent ResetIdleTimer (Remove+Add 10 s) corrupted the
+    // cache here. Keep dirty so the next MinTime() rescans the full wheel.
+    if (!cache_dirty_ && task.time_ < min_deadline_cache_) {
         min_deadline_cache_ = task.time_;
-        cache_dirty_        = false;
     }
 
     return task.id_;

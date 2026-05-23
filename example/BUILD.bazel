@@ -1,44 +1,238 @@
 package(default_visibility = ["//visibility:public"])
 
+# Common compile/link flags for all examples. They depend on //src/http3 (or
+# //src/upgrade) which already pull in BoringSSL and the public headers.
+_EXAMPLE_COPTS = select({
+    "@platforms//os:windows": [],
+    "//conditions:default": [
+        "-std=c++17",
+        "-pthread",
+    ],
+})
+
+# ----------------------------------------------------------------------------
+# hello_world
+# ----------------------------------------------------------------------------
 cc_binary(
     name = "hello_world_client",
     srcs = ["hello_world/client.cpp"],
-    deps = [
-        "//src/http3:http3",
-    ],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
 )
 
 cc_binary(
     name = "hello_world_server",
     srcs = ["hello_world/server.cpp"],
-    deps = [
-        "//src/http3:http3",
-    ],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
 )
 
+# ----------------------------------------------------------------------------
+# server_push
+# ----------------------------------------------------------------------------
 cc_binary(
     name = "server_push_client",
     srcs = ["server_push/client.cpp"],
-    deps = [
-        "//src/http3:http3",
-    ],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
 )
 
 cc_binary(
     name = "server_push_server",
     srcs = ["server_push/server.cpp"],
-    deps = [
-        "//src/http3:http3",
-    ],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
 )
 
+# ----------------------------------------------------------------------------
+# restful_api
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "restful_api_client",
+    srcs = ["restful_api/client.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
 
+cc_binary(
+    name = "restful_api_server",
+    srcs = ["restful_api/server.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# concurrent_requests
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "concurrent_client",
+    srcs = ["concurrent_requests/client.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+cc_binary(
+    name = "concurrent_server",
+    srcs = ["concurrent_requests/server.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# quicx_curl - HTTP/3 command-line tool with multiple sources
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "quicx-curl",
+    srcs = [
+        "quicx_curl/args_parser.cpp",
+        "quicx_curl/http_client.cpp",
+        "quicx_curl/main.cpp",
+        "quicx_curl/output_formatter.cpp",
+    ],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# streaming_api
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "streaming_client",
+    srcs = ["streaming_api/client.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+cc_binary(
+    name = "streaming_server",
+    srcs = ["streaming_api/server.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# file_transfer
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "file_transfer_client",
+    srcs = ["file_transfer/client.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+cc_binary(
+    name = "file_transfer_server",
+    srcs = ["file_transfer/server.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# error_handling
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "error_handling_client",
+    srcs = ["error_handling/client.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+cc_binary(
+    name = "error_handling_server",
+    srcs = ["error_handling/server.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# connection_lifecycle
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "connection_lifecycle_demo",
+    srcs = ["connection_lifecycle/demo.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# performance_benchmark
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "performance_benchmark",
+    srcs = ["performance_benchmark/benchmark.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# bidirectional_comm
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "bidirectional_client",
+    srcs = ["bidirectional_comm/client.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+cc_binary(
+    name = "bidirectional_server",
+    srcs = ["bidirectional_comm/server.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# load_testing
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "load_tester",
+    srcs = ["load_testing/load_tester.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# metrics_monitoring
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "metrics_monitoring_client",
+    srcs = ["metrics_monitoring/client.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+cc_binary(
+    name = "metrics_monitoring_server",
+    srcs = ["metrics_monitoring/server.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# qlog_integration
+# ----------------------------------------------------------------------------
+cc_binary(
+    name = "qlog_client",
+    srcs = ["qlog_integration/client.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+cc_binary(
+    name = "qlog_server",
+    srcs = ["qlog_integration/server.cpp"],
+    copts = _EXAMPLE_COPTS,
+    deps = ["//src/http3:http3"],
+)
+
+# ----------------------------------------------------------------------------
+# upgrade_h3 - depends on the upgrade module (HTTP/HTTPS -> HTTP/3 detection).
+# ----------------------------------------------------------------------------
 cc_binary(
     name = "upgrade_h3_server",
     srcs = ["upgrade_h3/server.cpp"],
+    copts = _EXAMPLE_COPTS,
     deps = [
         "//src/upgrade:upgrade",
     ],
 )
-
-

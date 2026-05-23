@@ -3,7 +3,7 @@
 
 #include "quic/quicx/if_worker.h"
 #include "common/thread/thread.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "common/structure/thread_safe_block_queue.h"
 
 namespace quicx {
@@ -26,7 +26,7 @@ public:
     // get the worker
     std::shared_ptr<IWorker> GetWorker() { return worker_ptr_; }
     // get the worker's event loop
-    std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_; }
+    std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_.lock(); }
 
 private:
     void ProcessRecv();
@@ -34,7 +34,7 @@ private:
 protected:
     std::string worker_id_;
     std::shared_ptr<IWorker> worker_ptr_;
-    std::shared_ptr<common::IEventLoop> event_loop_;  // Saved EventLoop for cross-thread access
+    std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)
     common::ThreadSafeBlockQueue<PacketParseResult> packet_queue_;
 };
 

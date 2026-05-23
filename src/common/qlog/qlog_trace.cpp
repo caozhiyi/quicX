@@ -17,7 +17,11 @@ QlogTrace::QlogTrace(const std::string& connection_id, VantagePoint vantage_poin
     connection_id_(connection_id),
     vantage_point_(vantage_point),
     config_(config),
-    start_time_us_(UTCTimeMsec() * 1000),  // trans to ms
+    // Lazy-initialised on the first event. Using 0 as a sentinel avoids the
+    // uint64 underflow that previously appeared when callers passed a small
+    // `time_us` (e.g. unit-test fixtures using `time_us = 100`) while
+    // `start_time_us_` was already set to wall-clock-now.
+    start_time_us_(0),
     use_relative_time_(config.time_format == "relative"),
     event_count_(0),
     writer_(nullptr),
@@ -44,9 +48,30 @@ void QlogTrace::LogEvent(uint64_t time_us, const std::string& event_name, std::u
         return;
     }
 
+    // Lazy-init the trace start time on the first event so that:
+    //   1. The first event's relative time is exactly 0.
+    //   2. We can record `reference_time` in common_fields (in ms,
+    //      UNIX epoch) so the viewer can recover absolute timing.
+    if (start_time_us_ == 0) {
+        start_time_us_ = time_us;
+        if (common_fields_.reference_time_ms == 0) {
+            common_fields_.reference_time_ms = start_time_us_ / 1000;
+        }
+        if (common_fields_.time_format.empty()) {
+            common_fields_.time_format = use_relative_time_ ? "relative" : "absolute";
+        }
+    }
+
     // construct event
     QlogEvent event;
-    event.time_us = use_relative_time_ ? (time_us - start_time_us_) : time_us;
+    if (use_relative_time_) {
+        // Defensive: if a caller logs an event with a time_us < start_time_us_
+        // (clock skew, replayed test data, etc.), clamp to 0 instead of
+        // underflowing the uint64.
+        event.time_us = (time_us >= start_time_us_) ? (time_us - start_time_us_) : 0;
+    } else {
+        event.time_us = time_us;
+    }
     event.name = event_name;
     event.data = std::move(data);
 

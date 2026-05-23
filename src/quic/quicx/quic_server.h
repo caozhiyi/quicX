@@ -1,9 +1,9 @@
 #ifndef QUIC_QUICX_QUIC_SERVER
 #define QUIC_QUICX_QUIC_SERVER
 
-#include "quic/include/if_quic_server.h"
+#include <quicx/quic/if_quic_server.h>
 #include "quic/quicx/master_with_thread.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 
 namespace quicx {
 namespace quic {

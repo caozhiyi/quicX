@@ -5,12 +5,15 @@
 #include <cstdint>
 #include <vector>
 
+#include <quicx/quic/type.h>  // for kQuicVersion1 / kQuicVersion2
+
+// NOTE: The on-the-wire QUIC protocol version constants
+// (kQuicVersion1 / kQuicVersion2) are now defined in the public header
+// <quicx/quic/type.h>. This internal header keeps the helper functions and
+// the supported-versions table.
+
 namespace quicx {
 namespace quic {
-
-// QUIC Version Constants (RFC 9000, RFC 9369)
-static constexpr uint32_t kQuicVersion1 = 0x00000001;  // QUIC v1 (RFC 9000)
-static constexpr uint32_t kQuicVersion2 = 0x6b3343cf;  // QUIC v2 (RFC 9369)
 
 // Supported versions in preference order (most preferred first)
 static const uint32_t kQuicVersions[] = {

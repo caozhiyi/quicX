@@ -12,6 +12,25 @@ static const uint32_t kDefaultMaxBytes = 256;
 static const uint32_t kDefaultNumberOfFreeLists = kDefaultMaxBytes / kAlign;
 static const uint32_t kDefaultNumberAddNodes = 20;
 
+/**
+ * @brief Slab-style pool allocator for small objects (<= kDefaultMaxBytes).
+ *
+ * Thread-safety contract: **this allocator is intentionally NOT thread-safe.**
+ * It is designed to be owned by a single logical owner (typically one
+ * Connection, which the framework pins to a single I/O thread). All
+ * Malloc/Free/MallocAlign/MallocZero calls must happen on that owning
+ * thread. Cross-thread access is a data race.
+ *
+ * Sizing:
+ *   - size <= kDefaultMaxBytes (default 256B) -> served from free-list / chunk.
+ *   - size >  kDefaultMaxBytes                -> falls through to the backing
+ *                                                 NormalAlloter (plain malloc).
+ *
+ * Lifetime:
+ *   - Chunks are only released in ~PoolAlloter(). The pool is monotonically
+ *     growing during its lifetime, which matches "one pool per connection":
+ *     the whole arena is reclaimed when the connection ends.
+ */
 class PoolAlloter:
     public IAlloter {
 public:

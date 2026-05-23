@@ -25,6 +25,15 @@ Client::Client(const Http3Settings& settings):
 Client::~Client() {
     Close();
     quic_->Join();
+    // P4: by the time Join() returns, the master event loop has stopped, so
+    // any CONNECTION_CLOSE callback that was scheduled via AddTimer/timer
+    // heap will never fire to erase conn_map_ for us. Drop it explicitly so
+    // every ClientConnection — and the shared_ptr<IQuicConnection> /
+    // BaseConnection it transitively owns — is released before our members
+    // are destroyed. Without this, a quick Close()+Destroy() cycle leaves
+    // BaseConnection (~120KB) pinned until process exit.
+    conn_map_.clear();
+    wait_request_map_.clear();
 }
 
 bool Client::Init(const Http3ClientConfig& config) {
@@ -141,6 +150,43 @@ void Client::OnConnection(
 
     if (operation == ConnectionOperation::kConnectionClose) {
         common::LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
+
+        // P4: Release the HTTP/3 ClientConnection that owns this QUIC conn.
+        // Without this erase, conn_map_ (keyed by host) keeps a shared_ptr to
+        // ClientConnection alive, which in turn keeps quic_connection_ alive,
+        // which prevents ~BaseConnection() from running and leaks ~120KB per
+        // connection cycle. We reverse-lookup by comparing the underlying
+        // IQuicConnection pointer because the close callback does not carry
+        // the host key that conn_map_ was indexed with.
+        for (auto it = conn_map_.begin(); it != conn_map_.end(); ++it) {
+            if (it->second && it->second->GetQuicConnection().get() == conn.get()) {
+                conn_map_.erase(it);
+                break;
+            }
+        }
+
+
+
+        // If we are in graceful-shutdown, accelerate Destroy() as soon as all
+        // observed connections have closed — avoids the 1s tax per Close().
+        // We only decrement while is_closing_ so that stray close events from
+        // failed or idle-timeout connections during normal operation don't
+        // underflow the counter or trigger a premature Destroy().
+        //
+        // NOTE: Destroy() is scheduled on the event loop (0ms timer) rather than
+        // invoked synchronously here. We are inside the QUIC connection's close
+        // path (BaseConnection::OnStateToClosing/Draining -> ... -> this callback),
+        // and synchronously tearing down the owning quic client from that frame
+        // would invalidate the event_loop/connection_closer that the caller still
+        // uses after we return (timer registration, log writes, etc.).
+        if (is_closing_ && pending_close_count_ > 0) {
+            --pending_close_count_;
+            if (pending_close_count_ == 0 && !destroy_scheduled_) {
+                destroy_scheduled_ = true;
+                common::LOG_DEBUG("Client: all connections closed, destroying quic client immediately");
+                quic_->AddTimer(0, [this]() { quic_->Destroy(); });
+            }
+        }
 
         // Clear waiting requests for this address (connection failed)
         auto wait_it = wait_request_map_.find(addr_key);
@@ -299,13 +345,39 @@ void Client::Close() {
 
     common::LOG_INFO("Client::Close() - gracefully closing all connections (%zu active)", conn_map_.size());
 
+    // Count how many quic connections we are waiting to observe close for.
+    // We use this to short-circuit the fallback destroy timer when all peers
+    // have acknowledged the CONNECTION_CLOSE (or the idle path has torn them
+    // down), so that short-lived clients (e.g. one request + Close()) do not
+    // pay the full kConnectionCloseDestroyTimeoutMs (1s) tax on destruction.
+    pending_close_count_ = static_cast<uint32_t>(conn_map_.size());
+
     // Close all active HTTP/3 connections
     for (auto& pair : conn_map_) {
         common::LOG_DEBUG("Closing connection to %s", pair.first.c_str());
         pair.second->Close(0);  // error_code=0 means normal close
     }
 
-    quic_->AddTimer(kConnectionCloseDestroyTimeoutMs, [this]() { quic_->Destroy(); });
+    if (pending_close_count_ == 0) {
+        // No live connections at all (e.g. Close() before any DoRequest).
+        // Destroy immediately — nothing to drain.
+        if (!destroy_scheduled_) {
+            destroy_scheduled_ = true;
+            quic_->Destroy();
+        }
+        return;
+    }
+
+    // Safety-net fallback: if CONNECTION_CLOSE cannot be flushed within
+    // kConnectionCloseDestroyTimeoutMs (peer unresponsive, socket blocked,
+    // etc.) we still force-destroy. OnConnection() below will short-circuit
+    // this when all connections have genuinely closed first.
+    quic_->AddTimer(kConnectionCloseDestroyTimeoutMs, [this]() {
+        if (!destroy_scheduled_) {
+            destroy_scheduled_ = true;
+            quic_->Destroy();
+        }
+    });
 }
 
 bool Client::InitiateMigration() {

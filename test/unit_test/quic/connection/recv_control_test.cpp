@@ -7,7 +7,7 @@
 #include "common/timer/timer_task.h"
 #include "quic/packet/rtt_1_packet.h"
 #include "quic/packet/packet_number.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "quic/connection/controler/recv_control.h"
 
 namespace quicx {
@@ -80,7 +80,10 @@ TEST(RecvControlTest, AckFrameGeneratedForAckElicitingPackets) {
 
     const auto& ranges = ack->GetAckRange();
     ASSERT_EQ(ranges.size(), 1u);
-    EXPECT_EQ(ranges[0].GetGap(), 1u);       // gap between 4 and 2 is one packet (packet 3 missing)
+    // RFC 9000 §19.3.1: Gap is encoded as (actual unacked count) - 1.
+    // Between run [4..4] and run [2..2] only packet 3 is unacked,
+    // so actual_unacked_count = 1 and gap_value = 0.
+    EXPECT_EQ(ranges[0].GetGap(), 0u);
     EXPECT_EQ(ranges[0].GetAckRangeLength(), 0u);  // single packet range (packet 2)
 
     EXPECT_EQ(timer->rm_count, 1u);  // Timer cancelled when ACK generated

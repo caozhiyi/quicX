@@ -12,36 +12,73 @@ std::string JsonSeqSerializer::SerializeTraceHeader(const std::string& connectio
     const CommonFields& common_fields, const QlogConfiguration& config) {
     std::ostringstream oss;
 
-    // First line: File header
-    oss << "{\"qlog_format\":\"" << kQlogFormat << "\",\"qlog_version\":\"" << kQlogVersion << "\"}\n";
-
-    // Second line: Trace metadata
+    // Per draft-ietf-quic-qlog-main-schema-02 §6.2 ("JSON-SEQ"), the file
+    // begins with a single "trace" object that carries top-level metadata
+    // (qlog_format / qlog_version / title / description) plus a `trace`
+    // sub-object containing vantage_point / common_fields / configuration.
+    // Each record is preceded by RS (0x1E) and terminated by LF.
+    oss << kJsonSeqRecordSeparator;
     oss << "{";
+    oss << "\"qlog_format\":\"" << kQlogFormat << "\",";
+    oss << "\"qlog_version\":\"" << kQlogVersion << "\",";
     oss << "\"title\":\"QuicX " << VantagePointToString(vantage_point) << "\",";
     oss << "\"description\":\"QUIC connection trace\",";
 
-    // Vantage point
+    oss << "\"trace\":{";
+
+    // vantage_point: type MUST be one of {client, server, network, unknown};
+    // name is descriptive (we use the connection ID when available).
     oss << "\"vantage_point\":{";
-    oss << "\"name\":\"" << VantagePointToString(vantage_point) << "\",";
+    if (!connection_id.empty()) {
+        oss << "\"name\":\"" << connection_id << "\",";
+    } else {
+        oss << "\"name\":\"" << VantagePointToString(vantage_point) << "\",";
+    }
     oss << "\"type\":\"" << VantagePointToString(vantage_point) << "\"";
     oss << "},";
 
-    // Common fields
+    // common_fields
     oss << "\"common_fields\":{";
-    oss << "\"protocol_type\":\"" << common_fields.protocol_type << "\"";
+    bool first = true;
+
+    if (!common_fields.protocol_types.empty()) {
+        oss << "\"protocol_types\":[";
+        for (size_t i = 0; i < common_fields.protocol_types.size(); ++i) {
+            if (i > 0) oss << ",";
+            oss << "\"" << common_fields.protocol_types[i] << "\"";
+        }
+        oss << "]";
+        first = false;
+    }
+
+    if (!common_fields.time_format.empty()) {
+        if (!first) oss << ",";
+        oss << "\"time_format\":\"" << common_fields.time_format << "\"";
+        first = false;
+    }
+
+    // draft-02: numeric high-precision time fields MUST be serialized as
+    // strings to avoid IEEE-754 precision loss for large epoch timestamps.
+    if (common_fields.reference_time_ms != 0) {
+        if (!first) oss << ",";
+        oss << "\"reference_time\":\"" << common_fields.reference_time_ms << "\"";
+        first = false;
+    }
+
     if (!common_fields.group_id.empty()) {
-        oss << ",\"group_id\":\"" << common_fields.group_id << "\"";
+        if (!first) oss << ",";
+        oss << "\"group_id\":\"" << common_fields.group_id << "\"";
+        first = false;
     }
     oss << "},";
 
-    // Configuration
+    // configuration
     oss << "\"configuration\":{";
     oss << "\"time_offset\":" << config.time_offset << ",";
     oss << "\"time_units\":\"" << config.time_units << "\"";
-    oss << "}";  // Close configuration
+    oss << "}";
 
-    // Note: In JSON-SEQ, events are not included in the trace header array.
-    // They follow as separate records.
+    oss << "}";  // close trace
     oss << "}\n";
 
     return oss.str();
@@ -50,10 +87,14 @@ std::string JsonSeqSerializer::SerializeTraceHeader(const std::string& connectio
 std::string JsonSeqSerializer::SerializeEvent(const QlogEvent& event) {
     std::ostringstream oss;
 
+    oss << kJsonSeqRecordSeparator;
     oss << "{";
 
-    // Timestamp (convert to milliseconds, keep decimals)
-    oss << "\"time\":" << std::fixed << std::setprecision(3) << (event.time_us / 1000.0) << ",";
+    // draft-02: `time` is serialized as a string-encoded integer in the
+    // unit declared by `configuration.time_units` (default ms). Storing
+    // it as a string avoids precision loss for absolute epoch timestamps.
+    uint64_t time_ms = event.time_us / 1000;
+    oss << "\"time\":\"" << time_ms << "\",";
 
     // Event name
     oss << "\"name\":\"" << event.name << "\",";

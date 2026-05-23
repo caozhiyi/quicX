@@ -188,6 +188,108 @@ TEST_F(FrameDecodeTest, DecodeIncompleteFrame) {
     EXPECT_EQ(frames.size(), 0);
 }
 
+// ============================================================================
+// Regression tests for TODO #24 — HTTP/3 FrameDecoder unknown frame type
+// state corruption when length varint is incomplete across two OnData calls.
+//
+// Bug:
+//   When an unknown frame's TYPE varint completes a buffer chunk but the
+//   LENGTH varint has not yet arrived, the decoder consumes the type bytes
+//   but does NOT remember that fact. On the next call it re-enters
+//   kReadingFrameType and mis-decodes the LENGTH bytes as a new TYPE.
+//
+// Repro layout (single decoder instance, 2 buffers simulating 2 OnData calls):
+//   Buffer #1: [type=0x21]                       (varint 1B, complete)
+//   Buffer #2: [length=3][payload AA BB CC]      (length varint + payload)
+// Expected: decoder treats the whole sequence as one unknown frame and skips
+// all of it; total frames produced = 0; no error.
+// Buggy behavior: on second call, 0x03 is interpreted as frame_type=CANCEL_PUSH
+// and 0xAA is interpreted as its push_id varint, producing a spurious frame
+// or a decode error.
+// ============================================================================
+
+// Helper: build a fresh 1024-byte buffer and write |bytes| into it.
+static std::shared_ptr<common::SingleBlockBuffer> MakeBuffer(
+        const std::vector<uint8_t>& bytes) {
+    auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
+    auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
+    if (!bytes.empty()) {
+        buf->Write(const_cast<uint8_t*>(bytes.data()), bytes.size());
+    }
+    return buf;
+}
+
+TEST_F(FrameDecodeTest, UnknownFrameType_LengthSplitAcrossTwoBuffers) {
+    // OnData #1: just the type byte (0x21 — single-byte varint, unknown).
+    auto buf1 = MakeBuffer({0x21});
+    // OnData #2: length=3 plus 3 payload bytes.
+    auto buf2 = MakeBuffer({0x03, 0xAA, 0xBB, 0xCC});
+
+    FrameDecoder decoder;
+    std::vector<std::shared_ptr<IFrame>> frames;
+
+    // First call must succeed (need-more-data is fine) and produce no frame.
+    EXPECT_TRUE(decoder.DecodeFrames(buf1, frames));
+    EXPECT_EQ(frames.size(), 0u);
+    // First buffer should be fully consumed (type was read).
+    EXPECT_EQ(buf1->GetDataLength(), 0u);
+
+    // Second call: the decoder must remember it already consumed an unknown
+    // frame type and treat buf2 as [length][payload], NOT as a brand-new frame.
+    EXPECT_TRUE(decoder.DecodeFrames(buf2, frames));
+    EXPECT_EQ(frames.size(), 0u);  // Unknown frame is skipped, no frame produced.
+    EXPECT_EQ(buf2->GetDataLength(), 0u);  // All 4 bytes consumed.
+}
+
+TEST_F(FrameDecodeTest, UnknownFrameType_TwoByteLengthVarintInSecondBuffer) {
+    // OnData #1: only the unknown frame type (single-byte varint = 0x21).
+    auto buf1 = MakeBuffer({0x21});
+    // OnData #2: 2-byte length varint encoding 100 (0x40, 0x64) + 100 payload bytes.
+    // Per RFC 9000 §16: 2-byte varint has high 2 bits = 01.
+    // Value = ((0x40 & 0x3F) << 8) | 0x64 = (0 << 8) | 0x64 = 100.
+    std::vector<uint8_t> second;
+    second.push_back(0x40);
+    second.push_back(0x64);
+    for (int i = 0; i < 100; i++) {
+        second.push_back(0xCD);
+    }
+    auto buf2 = MakeBuffer(second);
+
+    FrameDecoder decoder;
+    std::vector<std::shared_ptr<IFrame>> frames;
+
+    EXPECT_TRUE(decoder.DecodeFrames(buf1, frames));
+    EXPECT_EQ(frames.size(), 0u);
+    EXPECT_EQ(buf1->GetDataLength(), 0u);
+
+    EXPECT_TRUE(decoder.DecodeFrames(buf2, frames));
+    EXPECT_EQ(frames.size(), 0u);
+    EXPECT_EQ(buf2->GetDataLength(), 0u);  // All 102 bytes consumed.
+}
+
+TEST_F(FrameDecodeTest, UnknownFrameType_FollowedByValidFrameInSecondBuffer) {
+    // OnData #1: unknown frame type only.
+    auto buf1 = MakeBuffer({0x21});
+    // OnData #2: [length=2][AA BB]   then a valid DATA frame [type=0x00][len=2][01 02].
+    auto buf2 = MakeBuffer({0x02, 0xAA, 0xBB,
+                            0x00, 0x02, 0x01, 0x02});
+
+    FrameDecoder decoder;
+    std::vector<std::shared_ptr<IFrame>> frames;
+
+    EXPECT_TRUE(decoder.DecodeFrames(buf1, frames));
+    EXPECT_EQ(frames.size(), 0u);
+
+    EXPECT_TRUE(decoder.DecodeFrames(buf2, frames));
+    // Unknown frame skipped; DATA frame decoded → exactly 1 frame produced.
+    ASSERT_EQ(frames.size(), 1u);
+    EXPECT_EQ(frames[0]->GetType(), FrameType::kData);
+    auto data = std::dynamic_pointer_cast<DataFrame>(frames[0]);
+    ASSERT_NE(data, nullptr);
+    EXPECT_EQ(data->GetData()->GetDataLength(), 2u);
+    EXPECT_EQ(buf2->GetDataLength(), 0u);
+}
+
 TEST_F(FrameDecodeTest, DecodeMultipleFrames) {
     DataFrame data_frame;
     std::vector<uint8_t> data = {1, 2, 3};

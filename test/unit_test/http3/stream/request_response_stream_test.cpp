@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "http3/http/request.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/request_stream.h"
@@ -78,6 +80,7 @@ public:
         };
 
         auto processor = std::make_shared<MockHttpProcessor>(this);
+        http_processor_ = processor;  // Keep processor alive for weak_ptr in ResponseStream
         auto push_handler = [](std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>) {};
 
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
@@ -110,6 +113,7 @@ public:
 private:
     uint32_t error_code_;
     http_handler http_handler_;
+    std::shared_ptr<IHttpProcessor> http_processor_;  // Keep processor alive (ResponseStream holds weak_ptr)
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     std::shared_ptr<ResponseStream> response_stream_;
 };
@@ -321,6 +325,114 @@ TEST_F(RequestResponseStreamTest, BinaryDataBuffer) {
     auto response_body = client_connection_->GetResponse()->GetBody();
     ASSERT_NE(response_body, nullptr);
     EXPECT_EQ(response_body->GetDataLength(), binary_data.size());
+}
+
+// ============================================================================
+// Bug #24 regression: GET request delivered as HEADERS-without-FIN followed
+// by an empty STREAM-with-FIN must NOT cause the server's ResponseStream
+// to send the response twice.
+//
+// Background:
+//   quic-go (and any RFC-compliant client) is allowed to put the GET's
+//   HEADERS frame in one STREAM frame and then close the request stream
+//   with a separate empty STREAM(fin=true) frame. quicx ResponseStream
+//   used to handle this incorrectly:
+//
+//     1. OnData(HEADERS, is_last=false) -> HandleHeaders detects there is
+//        no body (no content-length) and immediately invokes HandleHttp +
+//        HandleResponse. HandleResponse sends the response HEADERS frame
+//        and (for a body-provider response) starts a chain of DATA frames.
+//        Crucially this path did NOT set is_response_sent_=true.
+//
+//     2. OnData(empty_buf, is_last=true) -> HandleFinWithoutData. The
+//        guard there only fires on `!is_response_sent_`, but step 1 never
+//        flipped it, so HandleHttp + HandleResponse runs a SECOND time.
+//
+//   The second SendResponse emits a second HEADERS frame on the same
+//   stream, AFTER one or more DATA frames have already gone out. Per
+//   RFC 9114 §4.3.2, an HTTP/3 client interprets a HEADERS frame that
+//   appears after DATA as TRAILERS. Trailers MUST NOT contain pseudo-
+//   headers (`:status`, etc.), so quic-go's HTTP/3 client immediately
+//   aborts with: `http3: received pseudo header in trailer: :status`.
+//
+//   This was the root cause of the http3 interop FAILED in
+//   "quicx server <-> quic-go client" (8.2s, observed as a re-emitted
+//   HEADERS frame in the server qlog around the middle of stream 0).
+//
+// This test deterministically reproduces the two-OnData sequence and
+// asserts that `MatchHandler` (the upstream HTTP handler) is invoked at
+// most once, which in turn means SendResponse is invoked at most once.
+// ============================================================================
+TEST_F(RequestResponseStreamTest, GetHeadersThenSeparateFinDoesNotDoubleSendResponse) {
+    int handler_invocations = 0;
+    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> req,
+                                                std::shared_ptr<IResponse> resp) {
+        ++handler_invocations;
+        resp->SetStatusCode(200);
+        resp->AddHeader("content-type", "application/octet-stream");
+        resp->AppendBody("OK");
+    };
+    server_connection_->SetHttpHandler(http_handler);
+
+    // GET with NO content-length: triggers the "no body expected" branch
+    // in ResponseStream::HandleHeaders (response_stream.cpp:191).
+    std::shared_ptr<IRequest> request = std::make_shared<Request>();
+    request->SetMethod(HttpMethod::kGet);
+    request->SetPath("/1MB.bin");
+    request->SetScheme("https");
+    request->SetAuthority("server4:443");
+
+    // Drive HEADERS to the server. Our mock_quic_stream's Flush()
+    // delivers bytes to the peer with is_last=false (matching
+    // production semantics for a HEADERS-only STREAM frame, no FIN).
+    EXPECT_TRUE(client_connection_->SendRequest(request));
+
+    EXPECT_EQ(handler_invocations, 1)
+        << "handler should run exactly once on HEADERS";
+
+    // Now simulate quic-go's split-FIN behaviour: a second STREAM frame
+    // with zero payload and FIN=true arrives on the same server stream.
+    // We directly invoke the registered read callback to bypass the
+    // mock's Flush() path (which hard-codes is_last=false).
+    auto empty_chunk = std::make_shared<common::StandaloneBufferChunk>(0);
+    auto empty_buf = std::make_shared<common::SingleBlockBuffer>(empty_chunk);
+    mock_stream_2_->SimulateRead(empty_buf, /*is_last=*/true, /*error=*/0);
+
+    // Pre-fix: HandleFinWithoutData re-entered HandleHttp + HandleResponse
+    // because is_response_sent_ was never set on the HEADERS-only path,
+    // producing a second handler invocation and a second HEADERS frame
+    // on the wire (which an RFC-9114 peer rejects as TRAILERS containing
+    // pseudo-headers).
+    EXPECT_EQ(handler_invocations, 1)
+        << "Bug #24: a separate FIN-only STREAM frame must NOT re-trigger "
+           "the upstream HTTP handler / cause a second SendResponse on the "
+           "same stream (would manifest as TRAILERS with :status to peer).";
+}
+
+// Sanity companion: when HEADERS and FIN arrive in the same OnData batch
+// (the common single-packet case), SendResponse must also fire exactly
+// once. Guards against accidentally suppressing the normal path while
+// fixing the split-FIN path.
+TEST_F(RequestResponseStreamTest, GetHeadersWithFinInSameBatchSendsResponseOnce) {
+    int handler_invocations = 0;
+    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> req,
+                                                std::shared_ptr<IResponse> resp) {
+        ++handler_invocations;
+        resp->SetStatusCode(200);
+        resp->AppendBody("OK");
+    };
+    server_connection_->SetHttpHandler(http_handler);
+
+    std::shared_ptr<IRequest> request = std::make_shared<Request>();
+    request->SetMethod(HttpMethod::kGet);
+    request->SetPath("/10KB.bin");
+    request->SetScheme("https");
+    request->SetAuthority("server4:443");
+
+    EXPECT_TRUE(client_connection_->SendRequest(request));
+    EXPECT_EQ(handler_invocations, 1);
+    ASSERT_NE(client_connection_->GetResponse(), nullptr);
+    EXPECT_EQ(client_connection_->GetResponse()->GetStatusCode(), 200);
 }
 
 }  // namespace

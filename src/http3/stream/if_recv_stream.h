@@ -2,8 +2,8 @@
 #define HTTP3_STREAM_IF_RECV_STREAM
 
 #include "http3/stream/if_stream.h"
-#include "common/include/if_buffer_read.h"
-#include "quic/include/if_quic_recv_stream.h"
+#include <quicx/common/if_buffer_read.h>
+#include <quicx/quic/if_quic_recv_stream.h>
 
 namespace quicx {
 namespace http3 {

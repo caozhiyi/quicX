@@ -1,7 +1,7 @@
 #include <iostream>
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
-#include "http3/include/if_server.h"
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 
 int main() {
     static const char cert_pem[] =
@@ -53,6 +53,12 @@ int main() {
     config.quic_config_.key_pem_ = key_pem;
     config.quic_config_.config_.worker_thread_num_ = 1;
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
+
+    // Enable QLog so we can visualize the connection in qvis
+    config.quic_config_.config_.qlog_config_.enabled = true;
+    config.quic_config_.config_.qlog_config_.output_dir = "./qlog_output_server";
+    config.quic_config_.config_.qlog_config_.flush_interval_ms = 100;
+
     server->Init(config);
     if (!server->Start("0.0.0.0", 7001)) {
         std::cout << "start server failed" << std::endl;

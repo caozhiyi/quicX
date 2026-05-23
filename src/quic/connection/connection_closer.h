@@ -6,7 +6,9 @@
 #include <memory>
 #include <string>
 
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
+
+#include "common/timer/timer_task.h"  // TimerTask is held by value below
 
 namespace quicx {
 namespace quic {
@@ -147,7 +149,7 @@ private:
     void OnGracefulCloseTimeout();
 
     // Dependencies (injected)
-    std::shared_ptr<::quicx::common::IEventLoop> event_loop_;
+    std::weak_ptr<::quicx::common::IEventLoop> event_loop_;
     ConnectionStateMachine& state_machine_;
     SendManager& send_manager_;
     TransportParam& transport_param_;

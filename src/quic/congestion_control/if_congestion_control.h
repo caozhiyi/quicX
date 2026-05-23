@@ -34,6 +34,10 @@ struct AckEvent {
     uint64_t ack_time = 0;
     uint64_t ack_delay = 0;
     bool ecn_ce = false;
+    // RFC 9002 §7.3.2: send time of the acknowledged packet (us); used by
+    // recovery-exit checks to compare against recovery_start_time_. Defaults
+    // to 0 for legacy callers (which prevents early/spurious recovery exit).
+    uint64_t acked_packet_send_time = 0;
 };
 
 struct LossEvent {

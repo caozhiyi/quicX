@@ -224,7 +224,12 @@ uint8_t* EncodeBytes(uint8_t *start, uint8_t *end, uint8_t* in, uint32_t in_len)
         return nullptr;
     }
 
-    memcpy(start, in, in_len);
+    // memcpy with a null source is UB even when len == 0 (per C standard);
+    // tolerate the zero-length case explicitly to match common QUIC frames
+    // that legitimately carry empty payloads (e.g. zero-length STREAM frames).
+    if (in_len > 0) {
+        memcpy(start, in, in_len);
+    }
     return start + in_len;
 }
 
@@ -234,7 +239,9 @@ uint8_t* DecodeBytesCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t o
         return nullptr;
     }
 
-    memcpy(out, start, out_len);
+    if (out_len > 0) {
+        memcpy(out, start, out_len);
+    }
     return start + out_len;
 }
 

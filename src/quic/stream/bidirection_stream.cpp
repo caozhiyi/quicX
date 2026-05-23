@@ -8,7 +8,7 @@
 namespace quicx {
 namespace quic {
 
-BidirectionStream::BidirectionStream(std::shared_ptr<common::IEventLoop> loop, uint64_t send_data_limit,
+BidirectionStream::BidirectionStream(std::weak_ptr<common::IEventLoop> loop, uint64_t send_data_limit,
     uint64_t recv_data_limit, uint64_t id,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
@@ -20,8 +20,13 @@ BidirectionStream::BidirectionStream(std::shared_ptr<common::IEventLoop> loop, u
 BidirectionStream::~BidirectionStream() {}
 
 void BidirectionStream::Close() {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this()]() {
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<BidirectionStream>(self);
             if (stream) {
                 stream->Close();
@@ -38,8 +43,13 @@ void BidirectionStream::Close() {
 }
 
 void BidirectionStream::Reset(uint32_t error) {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this(), error]() {
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, error]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<BidirectionStream>(self);
             if (stream) {
                 stream->Reset(error);
@@ -133,9 +143,9 @@ IStream::TrySendResult BidirectionStream::TrySendData(IFrameVisitor* visitor, En
     return SendStream::TrySendData(visitor, level);
 }
 
-void BidirectionStream::OnDataAcked(uint64_t max_offset, bool has_fin) {
+void BidirectionStream::OnDataAcked(uint64_t offset_start, uint64_t length, bool has_fin) {
     // Call parent's implementation
-    SendStream::OnDataAcked(max_offset, has_fin);
+    SendStream::OnDataAcked(offset_start, length, has_fin);
 
     // After updating send-side ACK state, check if both directions are complete
     CheckStreamClose();

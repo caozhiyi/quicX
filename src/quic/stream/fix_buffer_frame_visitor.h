@@ -1,7 +1,7 @@
 #ifndef QUIC_STREAM_FIX_BUFFER_FRAME_VISITOR
 #define QUIC_STREAM_FIX_BUFFER_FRAME_VISITOR
 
-#include <unordered_map>
+#include <vector>
 #include "quic/stream/if_frame_visitor.h"
 #include "quic/connection/controler/send_control.h"
 
@@ -46,8 +46,13 @@ private:
     uint32_t limit_data_offset_;
     std::shared_ptr<common::IBuffer> buffer_;
 
-    // Track stream data for ACK tracking (stream_id -> StreamDataInfo)
-    std::unordered_map<uint64_t, StreamDataInfo> stream_data_map_;
+    // Track stream data for ACK tracking.
+    // Each successfully encoded STREAM frame becomes one entry; we deliberately
+    // do NOT merge per-stream entries because the ACK callback needs the
+    // precise [offset_start, offset_start + length) range for selective
+    // tracking — collapsing into a single max_offset reintroduces the
+    // cumulative-ACK assumption that broke server-side stream completion.
+    std::vector<StreamDataInfo> stream_data_list_;
 
     // Accumulated frame type bit for all frames processed
     uint32_t frame_type_bit_;

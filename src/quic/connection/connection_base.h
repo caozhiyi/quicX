@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 
 #include "quic/connection/connection_closer.h"
 #include "quic/connection/connection_crypto.h"
@@ -25,7 +25,7 @@
 #include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/key_update_trigger.h"
 #include "quic/connection/transport_param.h"
-#include "quic/include/type.h"
+#include <quicx/quic/type.h>
 #include "quic/udp/if_sender.h"
 
 namespace quicx {
@@ -150,7 +150,7 @@ public:
         return connection_crypto_.GetInitialSecretDcid();
     }
 
-    std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_; }
+    std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_.lock(); }
 
     // Get qlog trace for this connection
     std::shared_ptr<common::QlogTrace> GetQlogTrace() const override { return qlog_trace_; }
@@ -234,7 +234,7 @@ protected:
     void InnerStreamClose(uint64_t stream_id);
 
     // Stream data ACK notification callback
-    void OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin);
+    void OnStreamDataAcked(uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin);
 
     // Retry pending stream creation requests after receiving MAX_STREAMS
     void RetryPendingStreamRequests();
@@ -341,8 +341,8 @@ protected:
     uint64_t remote_initial_max_stream_data_uni_ = 0;
     uint64_t remote_active_connection_id_limit_ = 0;
 
-    // EventLoop reference for safe cleanup in destructor
-    std::shared_ptr<common::IEventLoop> event_loop_;
+    // EventLoop reference — observer only (owner is QuicClient/QuicServer)
+    std::weak_ptr<common::IEventLoop> event_loop_;
 
     // Metrics: Handshake timing
     uint64_t handshake_start_time_{0};

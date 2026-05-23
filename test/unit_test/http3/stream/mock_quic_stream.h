@@ -3,9 +3,9 @@
 
 #include <cstdint>
 #include <memory>
-#include "quic/include/if_quic_send_stream.h"
-#include "quic/include/if_quic_recv_stream.h"
-#include "quic/include/if_quic_bidirection_stream.h"
+#include <quicx/quic/if_quic_send_stream.h>
+#include <quicx/quic/if_quic_recv_stream.h>
+#include <quicx/quic/if_quic_bidirection_stream.h>
 
 namespace quicx {
 namespace common {
@@ -38,6 +38,18 @@ public:
     virtual bool Flush() override;
 
     virtual void SetStreamWriteCallBack(stream_write_callback cb) override;
+
+    // Test-only helper: directly invoke the registered read callback to
+    // simulate the QUIC layer delivering a STREAM frame with a specific
+    // is_last (FIN) flag. The production code path (peer->Send / peer->Flush)
+    // always passes is_last=false because the mock doesn't model FIN. Tests
+    // that need to exercise FIN-aware paths (e.g. HEADERS without FIN
+    // followed by an empty STREAM with FIN) should call this directly.
+    void SimulateRead(std::shared_ptr<IBufferRead> buf, bool is_last, uint32_t error = 0) {
+        if (read_cb_) {
+            read_cb_(buf, is_last, error);
+        }
+    }
 
 private:
     void* user_data_;

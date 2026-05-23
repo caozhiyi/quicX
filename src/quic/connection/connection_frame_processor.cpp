@@ -408,7 +408,10 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
             common::LOG_WARN("NEW_CONNECTION_ID: retire_prior_to (%llu) capped at %llu to prevent DoS",
                 retire_prior_to, kMaxRetirePerFrame);
         }
-        cid_coordinator_.GetRemoteConnectionIDManager()->RetireIDBySequence(retire_prior_to - 1);
+        // Apply batch retirement to the *remote* CID pool (these are CIDs the peer
+        // issued for us to use, and the peer is now telling us to retire all CIDs
+        // with sequence_number < retire_prior_to per RFC 9000 §19.15).
+        cid_coordinator_.GetRemoteConnectionIDManager()->RetireIDsUpTo(retire_prior_to);
     }
 
     // Add new CID to pool
@@ -433,8 +436,17 @@ bool FrameProcessor::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
         common::LOG_ERROR("invalid retire connection id frame.");
         return false;
     }
+    common::LOG_DEBUG("OnRetireConnectionIDFrame: peer retiring local CID seq=%llu",
+        retire_cid_frame->GetSequenceNumber());
     // Peer is retiring a CID we provided to them, remove from local pool
     cid_coordinator_.GetLocalConnectionIDManager()->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
+
+    // Replenish local CID pool so the peer always has spare CIDs available for
+    // future migration/rotation. RFC 9000 §5.1.1 lets us issue new CIDs at any
+    // time as long as we stay within active_connection_id_limit. Without this
+    // refill the pool would monotonically shrink to zero across migrations and
+    // routing would later fail when the peer tried to use an unknown DCID.
+    cid_coordinator_.CheckAndReplenishLocalCIDPool();
 
     // Log connection_id_updated event for retired local CID
     if (qlog_trace_) {

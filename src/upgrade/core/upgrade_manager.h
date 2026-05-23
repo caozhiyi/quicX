@@ -1,7 +1,7 @@
 #ifndef UPGRADE_CORE_UPGRADE_MANAGER
 #define UPGRADE_CORE_UPGRADE_MANAGER
 
-#include "upgrade/include/type.h"
+#include <quicx/upgrade/type.h>
 #include "upgrade/core/version_negotiator.h"
 #include "upgrade/handlers/connection_context.h"
 

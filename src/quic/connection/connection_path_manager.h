@@ -8,7 +8,7 @@
 
 #include "common/network/address.h"
 #include "common/timer/timer_task.h"
-#include "quic/include/type.h"
+#include <quicx/quic/type.h>
 
 namespace quicx {
 
@@ -219,7 +219,7 @@ private:
 
 private:
     // Dependencies (injected)
-    std::shared_ptr<::quicx::common::IEventLoop> event_loop_;
+    std::weak_ptr<::quicx::common::IEventLoop> event_loop_;
     SendManager& send_manager_;
     ConnectionIDCoordinator& cid_coordinator_;
     TransportParam& transport_param_;

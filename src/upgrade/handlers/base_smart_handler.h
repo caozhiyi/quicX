@@ -4,8 +4,8 @@
 #include <memory>
 #include <unordered_map>
 
-#include "upgrade/include/type.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/upgrade/type.h>
+#include <quicx/common/if_event_loop.h>
 #include "upgrade/core/upgrade_manager.h"
 #include "upgrade/handlers/if_smart_handler.h"
 #include "upgrade/handlers/connection_context.h"

@@ -1,12 +1,39 @@
 #ifndef QUIC_CONNECTION_CONTROLER_RTT_CALCULATOR
 #define QUIC_CONNECTION_CONTROLER_RTT_CALCULATOR
 
+#include <atomic>
 #include <cstdint>
 
 namespace quicx {
 namespace quic {
 
-const static uint32_t kInitRtt = 250;
+// Built-in default initial RTT (milliseconds).
+//
+// RFC 9002 §6.2.2 recommends 333 ms; we use 250 ms which is aggressive-but-safe
+// for typical Internet RTTs and keeps our initial PTO
+// (= SRTT + 4·RTTVAR + max_ack_delay = 250 + 500 + 25 = 775 ms) within the
+// same order of magnitude as the RFC baseline (~1.1 s).
+//
+// Do **not** hard-code this value at callers — always go through
+// GetDefaultInitialRtt(), which honours the process-level override installed
+// by SetDefaultInitialRtt(). This is the P3 knob from
+// docs/internal/perf_e2e_analysis.md §6.
+static constexpr uint32_t kInitRttDefaultMs = 250;
+
+// Returns the process-wide initial RTT in milliseconds. Used by RttCalculator
+// on construction / Reset() to seed smoothed_rtt_ before any RTT sample is
+// available. Thread-safe.
+uint32_t GetDefaultInitialRtt();
+
+// Override the process-wide initial RTT (in milliseconds). Thread-safe; intended
+// for test harnesses and benchmarks running against loopback or LAN peers where
+// the default 250 ms baseline unnecessarily inflates every fresh handshake's
+// first-sample PTO window. Passing 0 resets to the built-in default.
+//
+// **Do not** lower this for real-network deployments: a too-small initial PTO
+// causes spurious retransmits on the *second* hop of any handshake on a
+// transcontinental RTT.
+void SetDefaultInitialRtt(uint32_t ms);
 
 class RttCalculator {
 public:

@@ -6,8 +6,8 @@
 #include <memory>
 #include <unordered_map>
 #include "common/util/singleton.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
 
 namespace quicx {
 namespace http3 {

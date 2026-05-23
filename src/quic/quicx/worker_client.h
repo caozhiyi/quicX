@@ -20,7 +20,14 @@ public:
 
 protected:
     // Override to cancel handshake timeout timer
-    void HandleHandshakeDone(std::shared_ptr<IConnection> conn);
+    void HandleHandshakeDone(std::shared_ptr<IConnection> conn) override;
+
+public:
+    // Override so handshake watchdog timers (which capture the conn
+    // shared_ptr by value in their lambda) are released at owner
+    // shutdown. Otherwise a connection that was Close()'d while still
+    // in the handshake set would remain pinned by the timer closure.
+    void Shutdown() override;
 
 private:
     virtual bool InnerHandlePacket(PacketParseResult& packet_info) override;

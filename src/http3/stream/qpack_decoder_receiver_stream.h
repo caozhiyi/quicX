@@ -5,7 +5,7 @@
 #include <functional>
 #include "http3/stream/if_recv_stream.h"
 #include "http3/qpack/blocked_registry.h"
-#include "quic/include/if_quic_recv_stream.h"
+#include <quicx/quic/if_quic_recv_stream.h>
 
 namespace quicx {
 namespace http3 {

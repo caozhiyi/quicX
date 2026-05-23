@@ -1,6 +1,6 @@
 #include "http3/metric/metrics_handler.h"
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
+#include <quicx/common/metrics.h>
 
 namespace quicx {
 namespace http3 {

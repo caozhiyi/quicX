@@ -2,8 +2,8 @@
 
 #include "common/log/log.h"
 
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "quic/connection/controler/recv_control.h"
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
@@ -193,11 +193,29 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     uint64_t first_ack_range = runs[0].first - runs[0].second;
     frame->SetFirstAckRange(static_cast<uint32_t>(first_ack_range));
 
-    // Additional ranges: Gap and Range Len (len minus 1)
+    // Additional ranges: Gap and Range Length encoded per RFC 9000 §19.3.1.
+    //
+    // For two adjacent runs runs[i-1] (smallest = prev_low) and runs[i]
+    // (largest = next_high) the actual count of unacked packets between
+    // them is (prev_low - 1) - (next_high + 1) + 1 = prev_low - next_high - 1.
+    // RFC 9000 §19.3.1: "Each Gap field encodes the length of a sequence of
+    // unacknowledged packet numbers ... as one less than its actual length."
+    // Therefore gap_value = (prev_low - next_high - 1) - 1 = prev_low - next_high - 2.
+    //
+    // BUGFIX (G2 / Bug #22, encoder side):
+    //   The previous code emitted gap = prev_low - next_high - 1, encoding one
+    //   too few unacked packets. Combined with the symmetric -1 mistake on the
+    //   decoder side (send_control.cpp ~line 307), peers would see selective-
+    //   ACK PNs shifted by exactly 0 (the two bugs cancelled). After fixing
+    //   the decoder alone, this side started telling RFC-compliant peers
+    //   (e.g. quic-go) that an extra packet was acknowledged — which broke
+    //   transfer in the quicx-client direction (peer reused PNs for fresh
+    //   data, our SendStream tracking went out-of-order, and quic-go's server
+    //   reset the connection).
     for (size_t i = 1; i < runs.size(); ++i) {
         uint64_t prev_low = runs[i - 1].second;
         uint64_t next_high = runs[i].first;
-        uint64_t gap = (prev_low - next_high) - 1;
+        uint64_t gap = (prev_low - next_high) - 2;
         uint64_t range_len = runs[i].first - runs[i].second;
         frame->AddAckRange(gap, range_len);
     }

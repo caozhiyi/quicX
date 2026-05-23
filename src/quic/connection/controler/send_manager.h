@@ -54,6 +54,26 @@ public:
     void SetCwndLimited();
 
     /**
+     * @brief Notify that connection-level flow control is blocking send
+     *
+     * Called by BaseConnection::TrySend when SendFlowController::CanSendData
+     * returns false (sent_bytes_ >= peer's max_data_) and the streams have
+     * data to send but no congestion-window pressure.
+     *
+     * Without this signal the worker would observe TrySend() returning false,
+     * remove the connection from its active set, and the connection would
+     * fall completely idle: no ACKs in flight (peer already acked everything),
+     * no MAX_DATA from the peer (peer hasn't consumed enough to extend the
+     * window), so nothing wakes the connection up until idle timeout fires.
+     *
+     * RFC 9000 Bug #17 fix: schedule a low-frequency recheck timer (default
+     * 100ms) so the connection is re-examined periodically. Concurrently,
+     * any incoming ACK (see OnPacketAck) will also resume sending — covering
+     * the case where the peer happens to send MAX_DATA along with an ACK.
+     */
+    void SetFlowControlBlocked();
+
+    /**
      * @brief Get pending frames for a specific encryption level
      * @param level Encryption level
      * @param max_bytes Maximum bytes allowed (from congestion window)
@@ -168,6 +188,20 @@ private:
     common::TimerTask pacing_timer_task_;
     std::function<void()> send_retry_cb_;
     bool is_cwnd_limited_{false};
+
+    // Bug #17: connection-level flow control coordination.
+    //   - is_flow_control_blocked_:  set by SetFlowControlBlocked() when the
+    //     server has stream data buffered but the peer's connection-level
+    //     max_data has been exhausted.
+    //   - flow_control_recheck_task_: a low-frequency wake-up that fires every
+    //     kFlowControlRecheckIntervalMs (100ms) while the flag is set, so the
+    //     connection re-enters TrySend even if the peer never sends MAX_DATA
+    //     and there are no in-flight packets to trigger an ACK callback.
+    //   - flow_control_recheck_scheduled_: prevents redundant timer additions
+    //     while one is already pending.
+    bool is_flow_control_blocked_{false};
+    bool flow_control_recheck_scheduled_{false};
+    common::TimerTask flow_control_recheck_task_;
 
     // Qlog trace for instrumentation
     std::shared_ptr<common::QlogTrace> qlog_trace_;

@@ -1,6 +1,6 @@
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "common/util/time.h"
 
 #include "http3/connection/connection_client.h"
@@ -17,7 +17,7 @@
 #include "http3/stream/request_stream.h"
 #include "http3/stream/type.h"
 #include "http3/stream/unidentified_stream.h"
-#include "quic/include/if_quic_stream.h"
+#include <quicx/quic/if_quic_stream.h>
 
 namespace quicx {
 namespace http3 {
@@ -108,12 +108,19 @@ ClientConnection::~ClientConnection() {}
 
 void ClientConnection::CreateAndSendRequestStream(
     std::shared_ptr<IRequest> request, std::shared_ptr<IQuicStream> stream, const http_response_handler& handler) {
+    // P4: Bind the RequestStream's error/push_promise callbacks to |this|
+    // rather than shared_from_this(). Capturing a shared_ptr<ClientConnection>
+    // here would form a self-cycle (ClientConnection -> streams_ -> RequestStream
+    // -> error_handler_ -> shared_ptr<ClientConnection>), which prevents
+    // ~ClientConnection from ever running and pins the underlying BaseConnection
+    // (~120KB residue per connection observed in profile_rss_lifecycle).
+    // RequestStream's lifetime is strictly contained by ClientConnection::streams_
+    // / streams_to_destroy_, so the raw |this| pointer is guaranteed to outlive
+    // the RequestStream and its callbacks.
     std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_, blocked_registry_,
         std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), handler,
-        std::bind(&ClientConnection::HandleError, std::static_pointer_cast<ClientConnection>(shared_from_this()),
-            std::placeholders::_1, std::placeholders::_2),
-        std::bind(&ClientConnection::HandlePushPromise, std::static_pointer_cast<ClientConnection>(shared_from_this()),
-            std::placeholders::_1, std::placeholders::_2));
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&ClientConnection::HandlePushPromise, this, std::placeholders::_1, std::placeholders::_2));
     request_stream->Init();  // Must be called after construction to set up callbacks
 
     // Propagate qlog trace from QUIC connection to HTTP/3 stream
@@ -136,12 +143,13 @@ void ClientConnection::CreateAndSendRequestStream(
 
 void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> request,
     std::shared_ptr<IQuicStream> stream, std::shared_ptr<IAsyncClientHandler> handler) {
+    // P4: Same rationale as the sibling overload above — bind to |this|, not
+    // to shared_from_this(), to avoid the ClientConnection self-cycle through
+    // streams_ -> RequestStream -> error/push_promise_handler_.
     std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_, blocked_registry_,
         std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), handler,
-        std::bind(&ClientConnection::HandleError, std::static_pointer_cast<ClientConnection>(shared_from_this()),
-            std::placeholders::_1, std::placeholders::_2),
-        std::bind(&ClientConnection::HandlePushPromise, std::static_pointer_cast<ClientConnection>(shared_from_this()),
-            std::placeholders::_1, std::placeholders::_2));
+        std::bind(&ClientConnection::HandleError, this, std::placeholders::_1, std::placeholders::_2),
+        std::bind(&ClientConnection::HandlePushPromise, this, std::placeholders::_1, std::placeholders::_2));
     request_stream->Init();  // Must be called after construction to set up callbacks
 
     // Propagate qlog trace from QUIC connection to HTTP/3 stream
@@ -168,9 +176,12 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_r
         return false;
     }
 
-    auto self = std::static_pointer_cast<ClientConnection>(shared_from_this());
+    auto weak_self = std::weak_ptr<IConnection>(shared_from_this());
     return quic_connection_->MakeStreamAsync(
-        StreamDirection::kBidi, [self, request, handler](std::shared_ptr<IQuicStream> stream) {
+        StreamDirection::kBidi, [weak_self, request, handler](std::shared_ptr<IQuicStream> stream) {
+            auto self_base = weak_self.lock();
+            if (!self_base) return;
+            auto self = std::static_pointer_cast<ClientConnection>(self_base);
             if (!stream) {
                 common::LOG_ERROR("ClientConnection::DoRequest stream creation failed after retry");
                 return;
@@ -185,9 +196,12 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, std::shared_
         return false;
     }
 
-    auto self = std::static_pointer_cast<ClientConnection>(shared_from_this());
+    auto weak_self = std::weak_ptr<IConnection>(shared_from_this());
     return quic_connection_->MakeStreamAsync(
-        StreamDirection::kBidi, [self, request, handler](std::shared_ptr<IQuicStream> stream) {
+        StreamDirection::kBidi, [weak_self, request, handler](std::shared_ptr<IQuicStream> stream) {
+            auto self_base = weak_self.lock();
+            if (!self_base) return;
+            auto self = std::static_pointer_cast<ClientConnection>(self_base);
             if (!stream) {
                 common::LOG_ERROR("ClientConnection::DoRequest stream creation failed after retry");
                 return;

@@ -8,7 +8,7 @@
 #include "quic/frame/max_data_frame.h"
 #include "quic/frame/max_streams_frame.h"
 #include "quic/frame/streams_blocked_frame.h"
-#include "quic/include/type.h"
+#include <quicx/quic/type.h>
 
 namespace quicx {
 namespace quic {

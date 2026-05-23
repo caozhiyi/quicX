@@ -2,8 +2,8 @@
 #define UPGRADE_SERVER_UPGRADE_SERVER_H
 
 #include <memory>
-#include "common/network/if_event_loop.h"
-#include "upgrade/include/if_upgrade.h"
+#include <quicx/common/if_event_loop.h>
+#include <quicx/upgrade/if_upgrade.h>
 
 namespace quicx {
 namespace upgrade {
@@ -24,7 +24,7 @@ private:
 private:
     std::vector<uint32_t> listen_fds_;
     // Single TCP action that manages all listeners
-    std::shared_ptr<common::IEventLoop> event_loop_;
+    std::weak_ptr<common::IEventLoop> event_loop_;
 
 };
 

@@ -4,8 +4,8 @@
 #include <string>
 #include <variant>
 #include <unordered_map>
-#include "http3/include/type.h"
-#include "http3/include/if_async_handler.h"
+#include <quicx/http3/type.h>
+#include <quicx/http3/if_async_handler.h>
 
 namespace quicx {
 namespace http3 {

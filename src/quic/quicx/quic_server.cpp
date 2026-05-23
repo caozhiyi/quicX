@@ -19,7 +19,34 @@ namespace quic {
 QuicServer::QuicServer(const QuicTransportParams& params):
     params_(params) {}
 
-QuicServer::~QuicServer() {}
+QuicServer::~QuicServer() {
+    // With the Exclusive Ownership + Observer Reference refactoring:
+    //   - Worker/Connection/Stream event_loop_ are now weak_ptr (no upward cycle)
+    //   - Timer callbacks use weak_from_this() (no timer→Connection cycle)
+    //   - AddFixedProcess uses weak_ptr owner (auto-expires when worker dies)
+    // ClearFixedProcesses/ClearAllTimers are no longer needed for cycle-breaking.
+
+    // 0) Stop the master event loop thread so no callbacks can race with
+    //    member destruction. After Join, no loop-thread code is running.
+    if (master_) {
+        master_->Stop();
+        master_->Join();
+    }
+
+    // 1) Drain per-connection bookkeeping held by each worker (conn_map_,
+    //    active_send_connections_, handshake timers). This ensures connections
+    //    are cleanly destroyed while the EventLoop control block is still alive.
+    for (auto& kv : worker_map_) {
+        if (kv.second) {
+            kv.second->Shutdown();
+        }
+    }
+
+    // 2) Drop strong refs. C++ reverse member destruction handles the rest.
+    worker_map_.clear();
+    master_.reset();
+    master_event_loop_.reset();
+}
 
 bool QuicServer::Init(const QuicServerConfig& config) {
     if (config.config_.log_level_ != LogLevel::kNull) {
@@ -79,7 +106,7 @@ bool QuicServer::Init(const QuicServerConfig& config) {
         auto worker =
             std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
         master_event_loop_->RunInLoop(
-            [worker, this]() { master_event_loop_->AddFixedProcess(std::bind(&ServerWorker::Process, worker)); });
+            [worker, this]() { master_event_loop_->AddFixedProcess(worker, std::bind(&ServerWorker::Process, worker)); });
 
         worker->SetConnectionIDNotify(master_);
         worker_map_[worker->GetWorkerId()] = worker;

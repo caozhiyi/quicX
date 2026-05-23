@@ -15,8 +15,9 @@ ConnectionRateMonitor::~ConnectionRateMonitor() {
 
 void ConnectionRateMonitor::RecordNewConnection() {
     // Lazily start the timer on first use (EventLoop is guaranteed to be initialized by now)
-    if (event_loop_ && !timer_active_.load(std::memory_order_relaxed)) {
-        StartTimer(event_loop_);
+    auto loop = event_loop_.lock();
+    if (loop && !timer_active_.load(std::memory_order_relaxed)) {
+        StartTimer(loop);
     }
     current_count_.fetch_add(1, std::memory_order_relaxed);
 }
@@ -60,10 +61,8 @@ void ConnectionRateMonitor::StartTimer(std::shared_ptr<common::IEventLoop> event
         return;
     }
     
-    event_loop_ = event_loop;
-    
     // Schedule repeating timer every 1000ms (1 second)
-    timer_id_ = event_loop_->AddTimer(
+    timer_id_ = event_loop->AddTimer(
         [this]() {
             CalculateRate();
         },
@@ -80,8 +79,9 @@ void ConnectionRateMonitor::StopTimer() {
         return;
     }
     
-    if (event_loop_ && timer_id_ != 0) {
-        event_loop_->RemoveTimer(timer_id_);
+    auto loop = event_loop_.lock();
+    if (loop && timer_id_ != 0) {
+        loop->RemoveTimer(timer_id_);
         common::LOG_DEBUG("ConnectionRateMonitor: stopped rate calculation timer (id=%llu)", timer_id_);
         timer_id_ = 0;
     }

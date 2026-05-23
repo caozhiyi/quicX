@@ -42,23 +42,23 @@ void WaitForFlush(AsyncWriter& writer, uint64_t expected_events, int max_wait_ms
     }
 }
 
-// Helper: count .qlog files in directory
+// Helper: count .sqlog files in directory
 size_t CountQlogFiles(const std::string& dir) {
     size_t count = 0;
     if (!fs::exists(dir)) return 0;
     for (const auto& entry : fs::directory_iterator(dir)) {
-        if (entry.path().extension() == ".qlog") {
+        if (entry.path().extension() == ".sqlog") {
             count++;
         }
     }
     return count;
 }
 
-// Helper: read all content from a .qlog file
+// Helper: read all content from a .sqlog file
 std::string ReadQlogFile(const std::string& dir, const std::string& partial_name = "") {
     if (!fs::exists(dir)) return "";
     for (const auto& entry : fs::directory_iterator(dir)) {
-        if (entry.path().extension() == ".qlog") {
+        if (entry.path().extension() == ".sqlog") {
             if (partial_name.empty() ||
                 entry.path().filename().string().find(partial_name) != std::string::npos) {
                 std::ifstream file(entry.path());
@@ -71,12 +71,12 @@ std::string ReadQlogFile(const std::string& dir, const std::string& partial_name
     return "";
 }
 
-// Helper: get all .qlog file paths
+// Helper: get all .sqlog file paths
 std::vector<std::string> GetQlogFiles(const std::string& dir) {
     std::vector<std::string> files;
     if (!fs::exists(dir)) return files;
     for (const auto& entry : fs::directory_iterator(dir)) {
-        if (entry.path().extension() == ".qlog") {
+        if (entry.path().extension() == ".sqlog") {
             files.push_back(entry.path().string());
         }
     }
@@ -203,8 +203,8 @@ TEST_F(AsyncWriterTest, FileNamingConvention) {
     std::string filename = fs::path(files[0]).filename().string();
     EXPECT_TRUE(filename.find("abcdef12") != std::string::npos)
         << "Filename should contain connection ID prefix: " << filename;
-    EXPECT_TRUE(filename.find(".qlog") != std::string::npos)
-        << "Filename should have .qlog extension: " << filename;
+    EXPECT_TRUE(filename.find(".sqlog") != std::string::npos)
+        << "Filename should have .sqlog extension: " << filename;
 }
 
 // Test: Long connection ID is truncated to 8 characters in filename

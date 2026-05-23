@@ -1,4 +1,7 @@
 #include "quic/quicx/master_with_thread.h"
+
+#include <future>
+
 #include "common/log/log.h"
 
 namespace quicx {
@@ -11,44 +14,53 @@ MasterWithThread::MasterWithThread(bool ecn_enabled, std::shared_ptr<common::IEv
 MasterWithThread::~MasterWithThread() {}
 
 void MasterWithThread::Run() {
-    if (!event_loop_->Init()) {
+    auto loop = event_loop_.lock();
+    if (!loop) {
+        common::LOG_ERROR("event loop expired.");
+        return;
+    }
+
+    if (!loop->Init()) {
         common::LOG_ERROR("init event loop failed.");
         return;
     }
 
     Master::Init();
 
-    event_loop_->AddFixedProcess(std::bind(&MasterWithThread::Process, this));
+    loop->AddFixedProcess(shared_from_this(), std::bind(&MasterWithThread::Process, this));
 
     // Process any tasks that were posted before EventLoop was initialized
     std::function<void()> task;
     while (pending_tasks_.Pop(task)) {
-        event_loop_->PostTask(std::move(task));
+        loop->PostTask(std::move(task));
     }
 
     while (!IsStop()) {
-        event_loop_->Wait();
+        loop->Wait();
     }
 }
 
 void MasterWithThread::Stop() {
     Thread::Stop();
-    if (event_loop_) {
-        event_loop_->Wakeup();
+    auto loop = event_loop_.lock();
+    if (loop) {
+        loop->Wakeup();
     }
 }
 
 void MasterWithThread::AddConnectionID(ConnectionID& cid, const std::string& worker_id) {
     connection_op_queue_.Push({ADD_CONNECTION_ID, cid, worker_id});
-    if (event_loop_) {
-        event_loop_->Wakeup();
+    auto loop = event_loop_.lock();
+    if (loop) {
+        loop->Wakeup();
     }
 }
 
 void MasterWithThread::RetireConnectionID(ConnectionID& cid, const std::string& worker_id) {
     connection_op_queue_.Push({RETIRE_CONNECTION_ID, cid, worker_id});
-    if (event_loop_) {
-        event_loop_->Wakeup();
+    auto loop = event_loop_.lock();
+    if (loop) {
+        loop->Wakeup();
     }
 }
 
@@ -58,8 +70,9 @@ void MasterWithThread::Process() {
 }
 
 void MasterWithThread::PostTask(std::function<void()> task) {
-    if (event_loop_) {
-        event_loop_->PostTask(std::move(task));
+    auto loop = event_loop_.lock();
+    if (loop) {
+        loop->PostTask(std::move(task));
     } else {
         // Queue task if EventLoop is not yet initialized
         pending_tasks_.Push(std::move(task));
@@ -67,17 +80,27 @@ void MasterWithThread::PostTask(std::function<void()> task) {
 }
 
 bool MasterWithThread::AddListener(int32_t listener_sock) {
-    common::LOG_DEBUG("MasterWithThread::AddListener called: fd=%d, event_loop=%p", listener_sock, event_loop_.get());
+    auto loop = event_loop_.lock();
+    common::LOG_DEBUG("MasterWithThread::AddListener called: fd=%d, event_loop=%p", listener_sock, loop.get());
 
-    // If EventLoop is initialized, use RunInLoop to ensure immediate execution if already in loop thread
-    if (event_loop_) {
-        common::LOG_DEBUG("MasterWithThread::AddListener: calling RunInLoop for fd=%d", listener_sock);
-        event_loop_->RunInLoop([this, listener_sock]() {
-            common::LOG_DEBUG("MasterWithThread::AddListener: inside RunInLoop lambda for fd=%d", listener_sock);
-            receiver_->AddReceiver(listener_sock, shared_from_this());
+    // If EventLoop is initialized, synchronously register the listener on the
+    // master-loop thread before returning. This guarantees that by the time
+    // ListenAndAccept() returns to the caller, the UDP socket is already bound
+    // and armed in the event driver, so the very first client packet cannot be
+    // silently dropped while the listener is "in flight".
+    if (loop) {
+        // Fast path: already on loop thread -> register directly and return real result.
+        if (loop->IsInLoopThread()) {
+            return receiver_->AddReceiver(listener_sock, shared_from_this());
+        }
+
+        std::promise<bool> done;
+        std::future<bool> fut = done.get_future();
+        loop->RunInLoop([this, listener_sock, &done]() {
+            bool ok = receiver_->AddReceiver(listener_sock, shared_from_this());
+            done.set_value(ok);
         });
-        common::LOG_DEBUG("MasterWithThread::AddListener: RunInLoop returned for fd=%d", listener_sock);
-        return true;
+        return fut.get();
     }
 
     // If EventLoop is not initialized yet, add directly to pending_listeners_
@@ -91,10 +114,21 @@ bool MasterWithThread::AddListener(int32_t listener_sock) {
 }
 
 bool MasterWithThread::AddListener(const std::string& ip, uint16_t port) {
-    // If EventLoop is initialized, post task to Master thread's EventLoop
-    if (event_loop_) {
-        event_loop_->RunInLoop([this, ip, port]() { receiver_->AddReceiver(ip, port, shared_from_this()); });
-        return true;
+    // If EventLoop is initialized, synchronously register the listener on the
+    // master-loop thread (see AddListener(int32_t) above for rationale).
+    auto loop = event_loop_.lock();
+    if (loop) {
+        if (loop->IsInLoopThread()) {
+            return receiver_->AddReceiver(ip, port, shared_from_this());
+        }
+
+        std::promise<bool> done;
+        std::future<bool> fut = done.get_future();
+        loop->RunInLoop([this, ip, port, &done]() {
+            bool ok = receiver_->AddReceiver(ip, port, shared_from_this());
+            done.set_value(ok);
+        });
+        return fut.get();
     }
 
     // If EventLoop is not initialized yet, add directly to pending_listeners_

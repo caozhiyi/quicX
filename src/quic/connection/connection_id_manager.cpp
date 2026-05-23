@@ -14,31 +14,89 @@ ConnectionID ConnectionIDManager::Generator() {
 }
 
 ConnectionID& ConnectionIDManager::GetCurrentID() {
+    // FIX: Do NOT auto-generate a CID here. The previous behavior of calling Generator()
+    // when the pool is empty was a bug for the *remote* manager: a remote-CID pool empty
+    // condition is a protocol error, never a license to fabricate a peer CID. The local
+    // manager always has at least one entry by the time GetCurrentID is called, since
+    // callers explicitly Generator() during dial/accept setup.
     if (sequence_cid_map_.empty()) {
-        Generator();
+        common::LOG_ERROR("ConnectionIDManager::GetCurrentID called on empty pool, returning stale cur_id_");
     }
     return cur_id_;
 }
 
+void ConnectionIDManager::SetCurrentID(const uint8_t* id, uint16_t len, uint64_t sequence) {
+    // Replace cur_id_ in-place WITHOUT mutating sequence_cid_map_ or cur_sequence_number_.
+    // This is used on the client during handshake to switch the active DCID from the
+    // randomly generated ODCID placeholder to the server-issued SCID (RFC 9000 §7.2).
+    // The replacement does NOT live in the map: the map is reserved for CIDs delivered
+    // via NEW_CONNECTION_ID frames (sequence >= 1) so that frame-driven AddID/RetireID
+    // operations cannot collide with the placeholder.
+    cur_id_ = ConnectionID(const_cast<uint8_t*>(id), len, sequence);
+}
+
 bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
+    // RFC 9000 §19.16: RETIRE_CONNECTION_ID retires *exactly one* CID identified by
+    // sequence_number. Earlier this function eagerly removed every entry with
+    // sequence_number <= sequence which corrupted the local CID pool when the peer
+    // retired CIDs out of order (the typical case during connection migration).
+    // For batch retirement triggered by NEW_CONNECTION_ID.retire_prior_to use
+    // RetireIDsUpTo() instead.
+    auto iter = sequence_cid_map_.find(sequence);
+    if (iter == sequence_cid_map_.end()) {
+        common::LOG_DEBUG("ConnectionIDManager::RetireIDBySequence: seq=%llu not in pool, ignoring", sequence);
+        return false;
+    }
+
+    bool cur_retire = (iter->second == cur_id_);
+    if (retire_connection_id_cb_) {
+        retire_connection_id_cb_(iter->second);
+    }
+    sequence_cid_map_.erase(iter);
+
+    common::LOG_DEBUG("ConnectionIDManager::RetireIDBySequence: retired seq=%llu, map_size=%zu, cur_retire=%d",
+        sequence, sequence_cid_map_.size(), cur_retire ? 1 : 0);
+
+    if (cur_retire && !sequence_cid_map_.empty()) {
+        cur_id_ = sequence_cid_map_.begin()->second;
+    } else if (cur_retire) {
+        // Pool is now empty AND we just retired the active CID. The caller is
+        // responsible for replenishing the pool (peer must have provided a
+        // replacement via NEW_CONNECTION_ID before this point per RFC 9000 §5.1.2).
+        common::LOG_WARN(
+            "ConnectionIDManager::RetireIDBySequence: pool exhausted after retiring active seq=%llu",
+            sequence);
+        return false;
+    }
+    return true;
+}
+
+bool ConnectionIDManager::RetireIDsUpTo(uint64_t prior_to) {
+    // Batch retirement: retire every entry with sequence_number < prior_to.
+    // This is used when applying the retire_prior_to field carried by NEW_CONNECTION_ID.
+    if (prior_to == 0) {
+        return false;
+    }
     bool cur_retire = false;
     for (auto iter = sequence_cid_map_.begin(); iter != sequence_cid_map_.end();) {
-        if (iter->second == cur_id_) {
-            cur_retire = true;
-        }
-        if (iter->second.GetSequenceNumber() <= sequence) {
+        if (iter->second.GetSequenceNumber() < prior_to) {
+            if (iter->second == cur_id_) {
+                cur_retire = true;
+            }
             if (retire_connection_id_cb_) {
                 retire_connection_id_cb_(iter->second);
             }
             iter = sequence_cid_map_.erase(iter);
         } else {
-            break;
+            ++iter;
         }
     }
 
     if (cur_retire && !sequence_cid_map_.empty()) {
         cur_id_ = sequence_cid_map_.begin()->second;
-    } else {
+    } else if (cur_retire) {
+        common::LOG_WARN("ConnectionIDManager::RetireIDsUpTo: pool exhausted after batch retire prior_to=%llu",
+            prior_to);
         return false;
     }
     return true;
@@ -58,6 +116,11 @@ bool ConnectionIDManager::AddID(ConnectionID& id) {
 }
 
 bool ConnectionIDManager::AddID(const uint8_t* id, uint16_t len) {
+    // TODO(D): the auto-incrementing sequence number here is meaningful only for the
+    // *local* manager (where we choose our own sequence numbers). Calling this overload
+    // on the *remote* manager pollutes sequence numbers and can collide with sequences
+    // chosen by the peer in NEW_CONNECTION_ID frames. Long-term, split LocalCIDManager
+    // and RemoteCIDManager so the type system enforces the distinction.
     ConnectionID conn_id((uint8_t*)id, len, ++cur_sequence_number_);
     return AddID(conn_id);
 }
@@ -67,7 +130,7 @@ bool ConnectionIDManager::UseNextID() {
         return false;
     }
 
-    // Remember the current CID's sequence and identity so we can identify which entries to retire.
+    // Remember the current CID's sequence and identity so we can identify which entry to retire.
     uint64_t old_seq = cur_id_.GetSequenceNumber();
     ConnectionID old_cid = cur_id_;
 
@@ -86,25 +149,30 @@ bool ConnectionIDManager::UseNextID() {
         }
     }
 
-    // Switch to next CID first so subsequent packets use the new DCID.
-    if (found_next) {
-        cur_id_ = next_cid;
+    if (!found_next) {
+        // No alternative found despite map_size >= 2 (shouldn't happen, but be defensive).
+        return false;
     }
 
-    // Retire old CID via sequence-based retirement (this also notifies peer via RETIRE_CONNECTION_ID cb).
-    RetireIDBySequence(old_seq);
+    // Switch to next CID first so subsequent packets use the new DCID.
+    cur_id_ = next_cid;
 
-    // If RetireIDBySequence happened to reset cur_id_ to map.begin() (because it found an exact
-    // binary match for old_cid), but we have a better candidate, restore our chosen next.
-    if (found_next && !(cur_id_ == next_cid)) {
-        // Only override if next_cid still exists in the map
-        for (auto& kv : sequence_cid_map_) {
-            if (kv.second == next_cid) {
-                cur_id_ = next_cid;
-                break;
+    // FIX: Retire ONLY the old CID's entry, not "everything <= old_seq". The previous
+    // behavior of RetireIDBySequence(old_seq) accidentally evicted the freshly chosen
+    // next_cid as well whenever the map happened to contain entries with sequence == old_seq
+    // bound to the new CID (which RotateRemoteConnectionID would then trip over by calling
+    // GetCurrentID() on an empty map and previously falling through to Generator()).
+    // Erase the specific entry whose value equals old_cid, then notify peer.
+    for (auto iter = sequence_cid_map_.begin(); iter != sequence_cid_map_.end(); ++iter) {
+        if (iter->second == old_cid) {
+            if (retire_connection_id_cb_) {
+                retire_connection_id_cb_(iter->second);
             }
+            sequence_cid_map_.erase(iter);
+            break;
         }
     }
+    (void)old_seq;  // sequence is implicit in the entry we just erased
 
     return true;
 }

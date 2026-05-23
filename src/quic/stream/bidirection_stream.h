@@ -1,7 +1,7 @@
 #ifndef QUIC_STREAM_BIDIRECTION_STREAM
 #define QUIC_STREAM_BIDIRECTION_STREAM
 
-#include "quic/include/if_quic_bidirection_stream.h"
+#include <quicx/quic/if_quic_bidirection_stream.h>
 #include "quic/stream/recv_stream.h"
 #include "quic/stream/send_stream.h"
 
@@ -10,7 +10,7 @@ namespace quic {
 
 class BidirectionStream: public virtual SendStream, public virtual RecvStream, public virtual IQuicBidirectionStream {
 public:
-    BidirectionStream(std::shared_ptr<common::IEventLoop> loop, uint64_t send_data_limit, uint64_t recv_data_limit,
+    BidirectionStream(std::weak_ptr<common::IEventLoop> loop, uint64_t send_data_limit, uint64_t recv_data_limit,
         uint64_t id,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
@@ -50,7 +50,13 @@ public:
     virtual IStream::TrySendResult TrySendData(IFrameVisitor* visitor, EncryptionLevel level = kApplication) override;
 
     // Override to trigger CheckStreamClose after ACK
-    virtual void OnDataAcked(uint64_t max_offset, bool has_fin) override;
+    virtual void OnDataAcked(uint64_t offset_start, uint64_t length, bool has_fin) override;
+
+    // C++ name hiding: pull the 2-arg compatibility overload from SendStream
+    // back into this scope so existing callers (notably unit tests) that pass
+    // (max_offset, has_fin) keep compiling. Equivalent to calling
+    // OnDataAcked(0, max_offset, has_fin).
+    using SendStream::OnDataAcked;
 
 protected:
     void CheckStreamClose();

@@ -1,7 +1,7 @@
 #include "common/buffer/multi_block_buffer.h"
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 #include "quic/quicx/global_resource.h"
 
@@ -17,7 +17,7 @@ namespace http3 {
 
 ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-    const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IHttpProcessor> http_processor,
+    const std::shared_ptr<IQuicBidirectionStream>& stream, std::weak_ptr<IHttpProcessor> http_processor,
     const std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<bool()>& settings_received_cb):
@@ -166,7 +166,16 @@ void ResponseStream::HandleHeaders() {
         }
     }
 
-    route_config_ = http_processor_->MatchRoute(request_->GetMethod(), request_->GetPath(), request_);
+    route_config_ = RouteConfig();
+    if (auto proc = http_processor_.lock()) {
+        route_config_ = proc->MatchRoute(request_->GetMethod(), request_->GetPath(), request_);
+    } else {
+        common::LOG_WARN("ResponseStream::HandleHeaders: http_processor expired");
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        }
+        return;
+    }
 
     // if async server handler is set, call the handler
     if (route_config_.IsAsyncServer()) {
@@ -180,7 +189,29 @@ void ResponseStream::HandleHeaders() {
         has_content_length);
     // if complete handler is set and there is no body, call the handler and send response
     if (!has_content_length || body_length_ == 0) {
-        // No body expected, handle immediately
+        // No body expected, handle immediately.
+        //
+        // Bug #24 fix: mark is_response_sent_=true BEFORE invoking the
+        // upstream handler / SendResponse. RFC 9114 allows a client to
+        // split its GET request into a HEADERS-only STREAM frame followed
+        // by an empty STREAM(fin=true) frame (this is the wire pattern
+        // that quic-go's HTTP/3 client uses by default). When that
+        // happens, OnData() is called twice on this stream:
+        //
+        //   (1) HEADERS, is_last=false  -> reaches this branch and sends
+        //                                  the full response.
+        //   (2) empty buf, is_last=true -> dispatches to
+        //                                  HandleFinWithoutData(), which
+        //                                  guards on `!is_response_sent_`.
+        //
+        // Without this flag the guard in HandleFinWithoutData() trips a
+        // second HandleHttp + HandleResponse, which emits a SECOND
+        // HEADERS frame on the wire, AFTER zero or more DATA frames. An
+        // RFC 9114 §4.3.2-compliant peer (quic-go, neqo, etc.) interprets
+        // that second HEADERS frame as TRAILERS, sees `:status` in it,
+        // and aborts with `received pseudo header in trailer: :status`.
+        // (This was the http3 interop FAILED at ~8.2s vs. quic-go client.)
+        is_response_sent_ = true;
         HandleHttp(route_config_.GetCompleteHandler());
         HandleResponse();
         common::LOG_DEBUG("HandleHeaders: complete handler called and response sent");
@@ -293,9 +324,14 @@ void ResponseStream::HandleHttp(
     common::Metrics::CounterInc(common::MetricsStd::Http3RequestsTotal);
     common::Metrics::GaugeInc(common::MetricsStd::Http3RequestsActive);
 
-    http_processor_->BeforeHandlerProcess(request_, response_);
+    auto proc = http_processor_.lock();
+    if (proc) {
+        proc->BeforeHandlerProcess(request_, response_);
+    }
     handler(request_, response_);
-    http_processor_->AfterHandlerProcess(request_, response_);
+    if (proc) {
+        proc->AfterHandlerProcess(request_, response_);
+    }
 
     // Metrics: Request completed
     common::Metrics::GaugeDec(common::MetricsStd::Http3RequestsActive);

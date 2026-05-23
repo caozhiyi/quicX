@@ -8,34 +8,55 @@ HuffmanEncoder::HuffmanEncoder() {
 }
 
 bool HuffmanEncoder::ShouldHuffmanEncode(const std::string& input) {
-    size_t encoded_size = 0;
+    size_t encoded_bits = 0;
     for (unsigned char c : input) {
         // Huffman only supports ASCII characters
         if (c > 0x7F) {
             return false;
         }
-        encoded_size += huffman_vector_[c].num_bits;
+        encoded_bits += huffman_vector_[c].num_bits;
     }
     // Convert bits to bytes (rounding up)
-    encoded_size = (encoded_size + 7) / 8;
+    size_t encoded_size = (encoded_bits + 7) / 8;
     return encoded_size < input.length();
 }
 
 std::vector<uint8_t> HuffmanEncoder::Encode(const std::string& input) {
-    std::vector<uint8_t> output;
-    uint32_t current_byte = 0;
-    uint8_t bits_left = 8;
+    // Pre-compute the exact output size in one pass so we can reserve()
+    // upfront — eliminates the per-byte vector reallocation loop.
+    size_t total_bits = 0;
+    for (unsigned char c : input) {
+        total_bits += huffman_vector_[c].num_bits;
+    }
+    // Pad to byte boundary with 1-bits (QPACK / HPACK Huffman EOS pattern).
+    size_t total_bytes = (total_bits + 7) / 8;
 
+    std::vector<uint8_t> output;
+    output.reserve(total_bytes);
+
+    // 64-bit accumulator flushed byte-by-byte once it has >= 8 bits.
+    // All Huffman codes in RFC 7541 Appendix B are <= 30 bits, so a
+    // 64-bit accumulator that is flushed once per symbol can always hold
+    // the incoming bits without overflow (max 30 + 7 pending = 37 bits
+    // before we drain it below).
+    uint64_t buf = 0;
+    int bits_in_buf = 0;
     for (unsigned char c : input) {
         const HuffmanCode& code = huffman_vector_[c];
-        WriteBits(code.code, code.num_bits, current_byte, bits_left, output);
+        buf = (buf << code.num_bits) | code.code;
+        bits_in_buf += code.num_bits;
+        // Drain any full bytes from the top of the accumulator.
+        while (bits_in_buf >= 8) {
+            bits_in_buf -= 8;
+            output.push_back(static_cast<uint8_t>((buf >> bits_in_buf) & 0xFFu));
+        }
     }
-
-    // Pad any remaining bits with 1's
-    if (bits_left < 8) {
-        WriteBits((1 << bits_left) - 1, bits_left, current_byte, bits_left, output);
+    if (bits_in_buf > 0) {
+        // Pad remaining bits with 1's (MSB-aligned).
+        int pad = 8 - bits_in_buf;
+        uint8_t last = static_cast<uint8_t>(((buf << pad) | ((1u << pad) - 1u)) & 0xFFu);
+        output.push_back(last);
     }
-
     return output;
 }
 

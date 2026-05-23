@@ -83,36 +83,67 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
                 // RFC 9114 Section 9: Implementations MUST ignore unknown frame types.
                 // Unknown frames follow the standard type-length-payload format,
                 // so we read the length varint and skip that many bytes.
-                common::BufferDecodeWrapper len_wrapper(buffer);
-                uint64_t payload_length = 0;
-                if (!len_wrapper.DecodeVarint(payload_length)) {
-                    // Can't read length yet — need more data
-                    common::LOG_DEBUG("FrameDecoder: unknown frame type=0x%llx, waiting for length",
-                        (unsigned long long)frame_type);
-                    return true;
-                }
-                len_wrapper.Flush();
+                //
+                // The type bytes have ALREADY been consumed above. From here on,
+                // the next bytes in the stream — whether they arrive in this call
+                // or a later one — MUST be interpreted as the length varint, not
+                // as a new frame type. Remember the consumed type and switch to
+                // kReadingUnknownLength so the next iteration / OnData call
+                // resumes correctly. (Regression: TODO #24)
+                current_frame_type_ = frame_type;
+                state_ = State::kReadingUnknownLength;
+                // Fall through to the kReadingUnknownLength block below.
+            } else {
+                current_frame_ = creator->second();
+                current_frame_type_ = frame_type;
+                state_ = State::kDecodingFrame;
+            }
+        }
 
-                // Skip the payload bytes
-                uint32_t available = buffer->GetDataLength();
-                if (available < payload_length) {
-                    skip_remaining_ = payload_length - available;
-                    buffer->MoveReadPt(available);
-                    state_ = State::kSkippingUnknownFrame;
-                    common::LOG_DEBUG("FrameDecoder: skipping unknown frame type=0x%llx, need %llu more bytes",
-                        (unsigned long long)frame_type, (unsigned long long)skip_remaining_);
-                    return true;
+        if (state_ == State::kReadingUnknownLength) {
+            // Try to read the length varint for an unknown frame whose type
+            // was already consumed (possibly in a previous DecodeFrames call).
+            if (buffer->GetDataLength() == 0) {
+                return true;  // Wait for more data; state preserved.
+            }
+            common::BufferDecodeWrapper len_wrapper(buffer);
+            uint64_t payload_length = 0;
+            if (!len_wrapper.DecodeVarint(payload_length)) {
+                // Either an incomplete multi-byte varint, or genuinely corrupt
+                // data. Distinguish: if the wrapper consumed nothing AND the
+                // buffer still has data, the first byte indicates an N-byte
+                // varint we can't yet complete → keep waiting.
+                if (buffer->GetDataLength() > 0 && len_wrapper.GetReadLength() == 0) {
+                    common::LOG_DEBUG(
+                        "FrameDecoder: unknown frame type=0x%llx, length varint incomplete, waiting",
+                        (unsigned long long)current_frame_type_);
+                    return true;  // Need more data; state preserved.
                 }
+                common::LOG_ERROR(
+                    "FrameDecoder: failed to decode length varint for unknown frame type=0x%llx",
+                    (unsigned long long)current_frame_type_);
+                return false;
+            }
+            len_wrapper.Flush();
 
-                buffer->MoveReadPt(static_cast<uint32_t>(payload_length));
-                common::LOG_DEBUG("FrameDecoder: ignored unknown frame type=0x%llx, length=%llu",
-                    (unsigned long long)frame_type, (unsigned long long)payload_length);
-                continue;
+            // Skip the payload bytes
+            uint32_t available = buffer->GetDataLength();
+            if (available < payload_length) {
+                skip_remaining_ = payload_length - available;
+                buffer->MoveReadPt(available);
+                state_ = State::kSkippingUnknownFrame;
+                common::LOG_DEBUG("FrameDecoder: skipping unknown frame type=0x%llx, need %llu more bytes",
+                    (unsigned long long)current_frame_type_, (unsigned long long)skip_remaining_);
+                return true;
             }
 
-            current_frame_ = creator->second();
-            current_frame_type_ = frame_type;
-            state_ = State::kDecodingFrame;
+            buffer->MoveReadPt(static_cast<uint32_t>(payload_length));
+            common::LOG_DEBUG("FrameDecoder: ignored unknown frame type=0x%llx, length=%llu",
+                (unsigned long long)current_frame_type_, (unsigned long long)payload_length);
+            // Reset for next frame.
+            current_frame_type_ = 0;
+            state_ = State::kReadingFrameType;
+            continue;
         }
 
         if (state_ == State::kDecodingFrame) {

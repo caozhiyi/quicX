@@ -7,10 +7,10 @@
 #include <thread>
 #include <vector>
 
-#include "http3/include/if_client.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
-#include "http3/include/if_server.h"
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 
 class StressTest: public ::testing::Test {
 protected:
@@ -159,17 +159,19 @@ TEST_F(StressTest, HighConcurrency) {
     }
 
     auto end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    double duration_s = duration_ms.count() / 1000.0;
 
     int total = total_count.load();
     int success = success_count.load();
+    double throughput = duration_s > 0.0 ? (success / duration_s) : 0.0;
 
     std::cout << "High Concurrency Test Results:" << std::endl;
     std::cout << "  Clients: " << num_clients << std::endl;
     std::cout << "  Total requests: " << total << std::endl;
     std::cout << "  Successful: " << success << std::endl;
-    std::cout << "  Duration: " << duration.count() << "s" << std::endl;
-    std::cout << "  Throughput: " << (success / duration.count()) << " req/s" << std::endl;
+    std::cout << "  Duration: " << duration_s << "s" << std::endl;
+    std::cout << "  Throughput: " << throughput << " req/s" << std::endl;
 
     // At least 80% success rate
     EXPECT_GT(success, total * 0.8);
@@ -228,14 +230,16 @@ TEST_F(StressTest, SustainedLoad) {
     }
 
     auto end = std::chrono::steady_clock::now();
-    auto actual_duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    auto actual_duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    double actual_duration_s = actual_duration_ms.count() / 1000.0;
 
     int success = success_count.load();
+    double avg_throughput = actual_duration_s > 0.0 ? (success / actual_duration_s) : 0.0;
 
     std::cout << "Sustained Load Test Results:" << std::endl;
-    std::cout << "  Duration: " << actual_duration.count() << "s" << std::endl;
+    std::cout << "  Duration: " << actual_duration_s << "s" << std::endl;
     std::cout << "  Successful requests: " << success << std::endl;
-    std::cout << "  Average throughput: " << (success / actual_duration.count()) << " req/s" << std::endl;
+    std::cout << "  Average throughput: " << avg_throughput << " req/s" << std::endl;
 
     // Should handle sustained load
     EXPECT_GT(success, 100);  // At least 100 requests in 10 seconds
@@ -280,7 +284,9 @@ TEST_F(StressTest, LargeDataTransfer) {
     auto end = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    double throughput_mbps = (total_bytes / 1024.0 / 1024.0) / (duration.count() / 1000.0);
+    double throughput_mbps = duration.count() > 0
+        ? (total_bytes / 1024.0 / 1024.0) / (duration.count() / 1000.0)
+        : 0.0;
 
     std::cout << "Large Data Transfer Test Results:" << std::endl;
     std::cout << "  Requests: " << num_requests << std::endl;

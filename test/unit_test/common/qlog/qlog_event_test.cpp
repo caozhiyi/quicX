@@ -55,10 +55,10 @@ TEST(QlogEventTest, PacketSentDataSerialization) {
 
     std::string json = data.ToJson();
 
-    // Verify JSON structure
+    // Verify JSON structure (qlog quic-events §4.4 PacketHeader + §4.6 RawInfo)
     EXPECT_TRUE(json.find("\"packet_type\":\"1RTT\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"packet_number\":12345") != std::string::npos);
-    EXPECT_TRUE(json.find("\"packet_size\":1200") != std::string::npos);
+    EXPECT_TRUE(json.find("\"raw\":{\"length\":1200") != std::string::npos);
     EXPECT_TRUE(json.find("\"frames\":[") != std::string::npos);
     EXPECT_TRUE(json.find("\"frame_type\":\"stream\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"frame_type\":\"ack\"") != std::string::npos);
@@ -76,7 +76,8 @@ TEST(QlogEventTest, PacketSentDataWithRawPayload) {
     std::string json = data.ToJson();
 
     EXPECT_TRUE(json.find("\"packet_type\":\"initial\"") != std::string::npos);
-    EXPECT_TRUE(json.find("\"raw\":{\"payload\":\"0123456789abcdef\"}") != std::string::npos);
+    // raw.length is always emitted; payload is included when raw.enabled.
+    EXPECT_TRUE(json.find("\"raw\":{\"length\":1200,\"payload\":\"0123456789abcdef\"}") != std::string::npos);
 }
 
 // Test PacketReceivedData
@@ -92,7 +93,7 @@ TEST(QlogEventTest, PacketReceivedDataSerialization) {
 
     EXPECT_TRUE(json.find("\"packet_type\":\"handshake\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"packet_number\":54321") != std::string::npos);
-    EXPECT_TRUE(json.find("\"packet_size\":800") != std::string::npos);
+    EXPECT_TRUE(json.find("\"raw\":{\"length\":800") != std::string::npos);
     EXPECT_TRUE(json.find("\"frame_type\":\"crypto\"") != std::string::npos);
 }
 
@@ -355,7 +356,8 @@ TEST(QlogEventTest, PacketSentDataFullFields) {
     // Required fields
     EXPECT_TRUE(JsonHasKey(json, "packet_type")) << json;
     EXPECT_TRUE(JsonHasKey(json, "packet_number")) << json;
-    EXPECT_TRUE(JsonHasKey(json, "packet_size")) << json;
+    // Spec compliance: packet size lives under raw.length, not a top-level packet_size.
+    EXPECT_TRUE(json.find("\"raw\":{\"length\":1350") != std::string::npos) << json;
     EXPECT_TRUE(JsonHasKey(json, "frames")) << json;
 
     // Optional raw field
@@ -379,7 +381,8 @@ TEST(QlogEventTest, PacketReceivedDataFullFields) {
 
     EXPECT_TRUE(JsonHasKey(json, "packet_type")) << json;
     EXPECT_TRUE(JsonHasKey(json, "packet_number")) << json;
-    EXPECT_TRUE(JsonHasKey(json, "packet_size")) << json;
+    // Spec compliance: packet size lives under raw.length.
+    EXPECT_TRUE(json.find("\"raw\":{\"length\":600") != std::string::npos) << json;
     EXPECT_TRUE(JsonHasKey(json, "frames")) << json;
     EXPECT_TRUE(JsonHasKey(json, "header")) << json;
 }
