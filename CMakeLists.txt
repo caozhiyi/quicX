@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(QuicX)
+# NOTE: keep the VERSION argument below in sync with:
+#   - the root `VERSION.txt` file
+#   - the QUICX_VERSION_MAJOR/MINOR/PATCH macros in src/common/version.h
+project(QuicX VERSION 0.1.0 LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -14,6 +17,19 @@ set(BORINGSSL_ROOT ${PROJECT_SOURCE_DIR}/third/boringssl)
 if(EXISTS ${BORINGSSL_ROOT}/CMakeLists.txt)
     add_subdirectory(${BORINGSSL_ROOT} build_boringssl EXCLUDE_FROM_ALL)
     set(boringssl_SOURCE_DIR ${BORINGSSL_ROOT})
+
+    # BoringSSL is third-party code; we never patch it. Newer GCC (12+) plus
+    # `-fsanitize=address` causes spurious `-Wmaybe-uninitialized` diagnostics
+    # in BoringSSL's fipsmodule, and BoringSSL itself uses `-Werror`. Demote
+    # warnings to non-fatal for BoringSSL targets only, so sanitizer / coverage
+    # builds keep compiling without touching upstream sources.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        foreach(_bssl_tgt crypto ssl decrepit fipsmodule bssl)
+            if(TARGET ${_bssl_tgt})
+                target_compile_options(${_bssl_tgt} PRIVATE -Wno-error)
+            endif()
+        endforeach()
+    endif()
 else()
     message(FATAL_ERROR "third/boringssl submodule missing. Please init submodules or disable build.")
 endif()
@@ -66,11 +82,17 @@ set_target_properties(http3 PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(quicx
     PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
         ${PROJECT_SOURCE_DIR}/src
         ${boringssl_SOURCE_DIR}/include
 )
 target_include_directories(http3
     PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
         ${PROJECT_SOURCE_DIR}/src
         ${boringssl_SOURCE_DIR}/include
 )
@@ -85,33 +107,24 @@ endif()
 
 target_link_libraries(quicx
     PUBLIC
-        crypto
-        ssl
         Threads::Threads
         ${FILESYSTEM_LIBRARY}
+    PRIVATE
+        crypto
+        ssl
 )
 target_link_libraries(http3
     PUBLIC
-        crypto
-        ssl
         Threads::Threads
         ${FILESYSTEM_LIBRARY}
+    PRIVATE
+        crypto
+        ssl
 )
 
-# Install headers
-set(CUSTOM_INCLUDE_DIR ${CMAKE_BINARY_DIR}/include)
-file(MAKE_DIRECTORY ${CUSTOM_INCLUDE_DIR})
-file(GLOB_RECURSE PUBLIC_HEADERS 
-    "${PROJECT_SOURCE_DIR}/src/http3/include/*.h"
-    "${PROJECT_SOURCE_DIR}/src/quic/include/*.h"
-)
-foreach(HEADER ${PUBLIC_HEADERS})
-    file(RELATIVE_PATH REL_PATH "${PROJECT_SOURCE_DIR}/src" ${HEADER})
-    string(REPLACE "include/" "" REL_PATH ${REL_PATH})
-    get_filename_component(DEST_DIR ${CUSTOM_INCLUDE_DIR}/${REL_PATH} DIRECTORY)
-    file(MAKE_DIRECTORY ${DEST_DIR})
-    file(COPY ${HEADER} DESTINATION ${DEST_DIR})
-endforeach()
+# Public headers live under ${PROJECT_SOURCE_DIR}/include/quicx/.
+# They are exposed via target_include_directories(... PUBLIC) above.
+# (Install rules are defined separately, see install/quicxConfig.cmake handling.)
 
 # qlog support
 option(QUICX_ENABLE_QLOG "Enable qlog support" ON)
@@ -164,4 +177,80 @@ endif()
 option(ENABLE_INTEROP "Enable building interop tests" OFF)
 if(ENABLE_INTEROP)
     add_subdirectory(test/interop)
+endif()
+
+# Performance / baseline tests (CPU hotspots, memory baselines, protocol micro-benchmarks)
+option(ENABLE_PERF_TESTS "Enable building perf (test/perf) targets" ON)
+if(ENABLE_PERF_TESTS)
+    add_subdirectory(test/perf)
+endif()
+
+# ---------------------------------------------------------------------------
+# Install rules
+# ---------------------------------------------------------------------------
+# Allow downstream consumers to either:
+#   (a) `find_package(quicx 0.1.0 REQUIRED)` after `cmake --install`, or
+#   (b) `add_subdirectory(quicX)` directly in their build tree.
+#
+# Layout after `cmake --install <build> --prefix <prefix>`:
+#   <prefix>/include/quicx/{common,quic,http3,upgrade}/*.h    -- public headers
+#   <prefix>/lib/libquicx.a                                   -- QUIC transport
+#   <prefix>/lib/libhttp3.a                                   -- QUIC + HTTP/3
+#   <prefix>/lib/cmake/quicx/quicxConfig.cmake                -- find_package entry
+#   <prefix>/lib/cmake/quicx/quicxConfigVersion.cmake         -- version check
+#   <prefix>/lib/cmake/quicx/quicxTargets.cmake               -- imported targets
+#
+# Note: BoringSSL (crypto/ssl) is statically linked into the archives.
+# Downstream consumers do NOT need to install or link BoringSSL separately.
+# ---------------------------------------------------------------------------
+option(QUICX_INSTALL "Generate install rules for quicx" ON)
+
+if(QUICX_INSTALL)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+
+    set(QUICX_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/quicx"
+        CACHE STRING "Install path for quicx CMake package files")
+
+    # Install public headers (the entire <quicx/...> tree).
+    install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/quicx
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h"
+    )
+
+    # Install the two static libraries and record them in the export set.
+    install(TARGETS quicx http3
+        EXPORT quicxTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+
+    # Export the targets file (consumed by quicxConfig.cmake).
+    install(EXPORT quicxTargets
+        FILE quicxTargets.cmake
+        NAMESPACE quicx::
+        DESTINATION ${QUICX_INSTALL_CMAKEDIR}
+    )
+
+    # Generate quicxConfigVersion.cmake from the project version.
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/quicxConfigVersion.cmake"
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMinorVersion
+    )
+
+    # Configure quicxConfig.cmake from the template.
+    configure_package_config_file(
+        "${PROJECT_SOURCE_DIR}/cmake/quicxConfig.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/quicxConfig.cmake"
+        INSTALL_DESTINATION ${QUICX_INSTALL_CMAKEDIR}
+    )
+
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/quicxConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/quicxConfigVersion.cmake"
+        DESTINATION ${QUICX_INSTALL_CMAKEDIR}
+    )
 endif()

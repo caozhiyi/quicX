@@ -1,6 +1,25 @@
 ###############################################################################
-# Bazel now uses Bzlmod by default to manage external dependencies.
-# Please consider migrating your external dependencies from WORKSPACE to MODULE.bazel.
+# Bzlmod module definitions for QuicX.
 #
-# For more details, please check https://github.com/bazelbuild/bazel/issues/18958
+# Bzlmod replaces WORKSPACE-based external dependencies. We keep external
+# dependencies minimal because the project vendors BoringSSL and GoogleTest
+# under //third/.
+#
+# See https://bazel.build/external/migration for details.
 ###############################################################################
+
+module(
+    name = "quicx",
+    version = "0.1.0",
+    compatibility_level = 1,
+)
+
+# Required for the @platforms//os:* constraint values used in select() blocks
+# (linux/macos/windows).
+bazel_dep(name = "platforms", version = "0.0.10")
+
+# BoringSSL's BUILD file uses @rules_license//rules:license.bzl.
+bazel_dep(name = "rules_license", version = "1.0.0")
+
+# Standard C/C++ rules.
+bazel_dep(name = "rules_cc", version = "0.0.17")
