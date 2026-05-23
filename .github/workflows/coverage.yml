@@ -1,0 +1,99 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+jobs:
+  coverage:
+    name: coverage (gcc + lcov)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    env:
+      CC: gcc
+      CXX: g++
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc g++ lcov python3
+
+      - name: Configure (coverage)
+        run: |
+          cmake -S . -B build-cov \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="--coverage -O0 -g" \
+            -DCMAKE_CXX_FLAGS="--coverage -O0 -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+            -DCMAKE_SHARED_LINKER_FLAGS="--coverage" \
+            -DENABLE_TESTING=ON \
+            -DENABLE_INTERGRATION=ON
+
+      - name: Build
+        run: cmake --build build-cov --parallel 4
+
+      - name: Run tests
+        run: |
+          rm -rf build
+          ln -s build-cov build
+          python3 run_tests.py utest || true
+          python3 run_tests.py integration || true
+
+      - name: Collect coverage
+        run: |
+          lcov --capture --directory build-cov \
+               --output-file coverage.info \
+               --ignore-errors mismatch,gcov,source,unused \
+               --rc geninfo_unexecuted_blocks=1
+          lcov --remove coverage.info \
+               '/usr/*' '*/third/*' '*/build*/*' '*/test/*' \
+               --output-file coverage.filtered.info \
+               --ignore-errors unused
+          lcov --list coverage.filtered.info | tail -30
+
+      - name: Generate HTML report
+        run: |
+          genhtml coverage.filtered.info \
+            --output-directory coverage-html \
+            --ignore-errors source,unmapped
+
+      - name: Extract total coverage %
+        id: cov
+        run: |
+          pct=$(lcov --summary coverage.filtered.info 2>&1 | \
+                grep -E 'lines\.+:' | awk '{print $2}' | tr -d '%')
+          echo "percent=${pct:-0}" >> $GITHUB_OUTPUT
+          echo "Line coverage: ${pct:-0}%"
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: coverage-html/
+          if-no-files-found: warn
+
+      - name: Upload lcov info
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage.filtered.info
+
+      - name: Fail if coverage below threshold
+        run: |
+          pct="${{ steps.cov.outputs.percent }}"
+          threshold=60
+          # Compare float with awk to avoid bash limitation
+          if awk -v p="$pct" -v t="$threshold" 'BEGIN{exit !(p+0 < t+0)}'; then
+            echo "::warning::Coverage $pct% below threshold $threshold% (non-blocking pre-v0.1.0)"
+          fi

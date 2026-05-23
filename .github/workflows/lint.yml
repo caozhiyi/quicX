@@ -1,0 +1,107 @@
+name: Lint
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+jobs:
+  clang-format:
+    name: clang-format (changed files)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-14
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 100
+
+      - name: Find changed C/C++ files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+          fi
+          # Fallback if before is empty (initial push)
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            base="$(git rev-parse HEAD~1 || echo HEAD)"
+          fi
+          files=$(git diff --name-only --diff-filter=AM "$base" "$head" -- \
+                    'src/**/*.cpp' 'src/**/*.h' 'src/**/*.hpp' \
+                    'test/**/*.cpp' 'test/**/*.h' | tr '\n' ' ')
+          echo "files=$files" >> $GITHUB_OUTPUT
+          echo "Changed files: $files"
+
+      - name: Run clang-format --dry-run
+        if: steps.changed.outputs.files != ''
+        run: |
+          # --Werror is non-blocking for pre-v0.1.0; warn only
+          for f in ${{ steps.changed.outputs.files }}; do
+            clang-format --dry-run --Werror "$f" || echo "::warning file=$f::clang-format violations"
+          done
+
+  clang-tidy:
+    name: clang-tidy (changed files)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang clang-tidy-14
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 100
+
+      - name: Generate compile_commands.json
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          cmake -S . -B build-tidy \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DENABLE_TESTING=OFF \
+            -DENABLE_INTERGRATION=OFF \
+            -DBUILD_EXAMPLES=OFF
+          # Build headers dependency only to avoid full compile
+          cmake --build build-tidy --target quicx --parallel 4 || true
+
+      - name: Find changed files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+          else
+            base="$(git rev-parse HEAD~1 || echo HEAD)"
+            head="${{ github.sha }}"
+          fi
+          files=$(git diff --name-only --diff-filter=AM "$base" "$head" -- \
+                    'src/**/*.cpp' | tr '\n' ' ')
+          echo "files=$files" >> $GITHUB_OUTPUT
+
+      - name: Run clang-tidy
+        if: steps.changed.outputs.files != ''
+        run: |
+          for f in ${{ steps.changed.outputs.files }}; do
+            clang-tidy -p build-tidy --quiet "$f" \
+              || echo "::warning file=$f::clang-tidy reported issues"
+          done

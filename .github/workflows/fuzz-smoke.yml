@@ -1,0 +1,88 @@
+name: Fuzz Smoke
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    - cron: '0 22 * * *'   # Nightly
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzz duration per target (seconds)'
+        required: true
+        default: '60'
+
+jobs:
+  fuzz:
+    name: libFuzzer smoke (${{ github.event.inputs.duration || '60' }}s per target)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    env:
+      CC: clang
+      CXX: clang++
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang
+
+      - name: Configure with fuzzing
+        run: |
+          cmake -S . -B build-fuzz \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DENABLE_FUZZING=ON \
+            -DENABLE_TESTING=OFF \
+            -DENABLE_INTERGRATION=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build fuzz targets
+        run: cmake --build build-fuzz --parallel 4 || true
+
+      - name: List fuzz binaries
+        id: list
+        run: |
+          fuzz_bins=$(find build-fuzz -type f -executable \
+            \( -name 'fuzz_*' -o -name '*_fuzz' -o -path '*/fuzz/*' \) \
+            -printf '%p\n' | grep -v '\.o$' | sort -u || true)
+          echo "Found fuzz binaries:"
+          echo "$fuzz_bins"
+          # Save to file to avoid shell escaping issues
+          echo "$fuzz_bins" > fuzz_bins.txt
+
+      - name: Run each fuzz target briefly
+        run: |
+          duration="${{ github.event.inputs.duration || '60' }}"
+          mkdir -p fuzz-corpus fuzz-crashes
+          failed=0
+          while IFS= read -r bin; do
+            [ -z "$bin" ] && continue
+            [ ! -x "$bin" ] && continue
+            name=$(basename "$bin")
+            echo "=== Fuzzing $name for ${duration}s ==="
+            mkdir -p "fuzz-corpus/$name" "fuzz-crashes/$name"
+            "$bin" "fuzz-corpus/$name" \
+              -max_total_time="$duration" \
+              -artifact_prefix="fuzz-crashes/$name/" \
+              -print_final_stats=1 \
+              || { echo "::error::Fuzzer $name reported a crash"; failed=1; }
+          done < fuzz_bins.txt
+          exit $failed
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: fuzz-crashes/
+          if-no-files-found: ignore
+          retention-days: 30

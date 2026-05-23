@@ -1,0 +1,79 @@
+name: Sanitizer
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    - cron: '0 18 * * *'  # Daily at 02:00 Asia/Shanghai
+  workflow_dispatch:
+
+concurrency:
+  group: sanitizer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitize:
+    name: sanitize (${{ matrix.sanitizer }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [asan, ubsan, tsan]
+        include:
+          - sanitizer: asan
+            flags: "-fsanitize=address -fno-omit-frame-pointer -O1 -g"
+            env_flag: "ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1"
+          - sanitizer: ubsan
+            flags: "-fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -O1 -g"
+            env_flag: "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"
+          - sanitizer: tsan
+            flags: "-fsanitize=thread -fno-omit-frame-pointer -O1 -g"
+            env_flag: "TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1"
+
+    env:
+      CC: clang
+      CXX: clang++
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang python3
+
+      - name: Configure (${{ matrix.sanitizer }})
+        run: |
+          cmake -S . -B build-${{ matrix.sanitizer }} \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="${{ matrix.flags }}" \
+            -DCMAKE_CXX_FLAGS="${{ matrix.flags }}" \
+            -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.flags }}" \
+            -DCMAKE_SHARED_LINKER_FLAGS="${{ matrix.flags }}" \
+            -DENABLE_TESTING=ON \
+            -DENABLE_INTERGRATION=ON \
+            -DENABLE_INTEROP=OFF \
+            -DENABLE_FUZZING=OFF
+
+      - name: Build
+        run: cmake --build build-${{ matrix.sanitizer }} --parallel 4
+
+      - name: Run unit tests (${{ matrix.sanitizer }})
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          TSAN_OPTIONS: halt_on_error=1
+        run: |
+          set -e
+          ${{ matrix.env_flag }}
+          # Override build dir by placing the sanitizer binary at the default path
+          rm -rf build
+          ln -s build-${{ matrix.sanitizer }} build
+          python3 run_tests.py utest
