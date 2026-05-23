@@ -249,7 +249,7 @@ std::string ExportPrometheus() {
 ### 初始化
 
 ```cpp
-#include "common/metrics/metrics.h"
+#include <quicx/common/metrics.h>
 
 // 1. 配置 Metrics
 quicx::MetricsConfig config;
@@ -279,7 +279,7 @@ file.close();
 ### HTTP/3 Metrics Endpoint
 
 ```cpp
-#include "http3/include/if_server.h"
+#include <quicx/http3/if_server.h>
 
 // 创建 HTTP/3 server
 auto server = quicx::IServer::Create(settings);
