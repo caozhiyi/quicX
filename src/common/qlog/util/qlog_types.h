@@ -4,7 +4,7 @@
 #ifndef COMMON_QLOG_UTIL_QLOG_TYPES
 #define COMMON_QLOG_UTIL_QLOG_TYPES
 
-#include "common/include/type.h"
+#include <quicx/common/type.h>
 #include "quic/frame/type.h"
 #include "quic/packet/type.h"
 

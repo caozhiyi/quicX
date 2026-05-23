@@ -4,13 +4,13 @@
 #include <memory>
 #include <unordered_map>
 
-#include "http3/include/if_async_handler.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
-#include "http3/include/type.h"
+#include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/type.h>
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/req_resp_base_stream.h"
-#include "quic/include/if_quic_bidirection_stream.h"
+#include <quicx/quic/if_quic_bidirection_stream.h>
 
 namespace quicx {
 namespace http3 {

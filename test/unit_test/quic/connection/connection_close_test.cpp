@@ -8,7 +8,7 @@
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/connection/connection_base.h"
-#include "quic/include/if_quic_send_stream.h"
+#include <quicx/quic/if_quic_send_stream.h>
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
 #include "common/buffer/single_block_buffer.h"
@@ -78,8 +78,11 @@ static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr
 }
 
 // Helper function to establish a connection
+// Returns: {client, server, client_sender, server_sender, event_loop}
+// NOTE: event_loop must be kept alive because connections store weak_ptr to it.
 static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>, 
-                  std::shared_ptr<MockSender>, std::shared_ptr<MockSender>> EstablishConnection() {
+                  std::shared_ptr<MockSender>, std::shared_ptr<MockSender>,
+                  std::shared_ptr<common::IEventLoop>> EstablishConnection() {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -89,7 +92,7 @@ static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>,
     auto event_loop = common::MakeEventLoop();
     if (!event_loop->Init()) {
         // Return empty tuple if initialization fails
-        return std::make_tuple(nullptr, nullptr, nullptr, nullptr);
+        return std::make_tuple(nullptr, nullptr, nullptr, nullptr, nullptr);
     }
     auto client = std::make_shared<ClientConnection>(client_ctx, event_loop);
 
@@ -116,7 +119,7 @@ static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>,
     EXPECT_EQ(server->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client->GetCurEncryptionLevel(), kApplication);
 
-    return std::make_tuple(client, server, client_sender, server_sender);
+    return std::make_tuple(client, server, client_sender, server_sender, event_loop);
 }
 
 // Test fixture for connection close tests
@@ -136,6 +139,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
     auto server = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
     
     // Cast to BaseConnection to access test interface
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
@@ -184,6 +188,7 @@ TEST_F(ConnectionCloseTest, ImmediateCloseWithError) {
     auto server = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     ASSERT_NE(client_base, nullptr);
@@ -220,6 +225,7 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
     auto server = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     auto server_base = std::dynamic_pointer_cast<BaseConnection>(server);
@@ -284,6 +290,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
     auto server = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     ASSERT_NE(client_base, nullptr);
@@ -345,6 +352,7 @@ TEST_F(ConnectionCloseTest, DrainingStateDoesNotSendPackets) {
     auto server = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
     
     // Client sends CONNECTION_CLOSE
     client->Close();
@@ -381,6 +389,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByImmediateClose) {
     auto server = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     ASSERT_NE(client_base, nullptr);
@@ -420,6 +429,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
     auto server = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
     
     auto client_base = std::dynamic_pointer_cast<BaseConnection>(client);
     auto server_base = std::dynamic_pointer_cast<BaseConnection>(server);

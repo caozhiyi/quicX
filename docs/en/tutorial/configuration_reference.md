@@ -1,141 +1,144 @@
 # Configuration Reference
 
-In `quicX`, the configuration system is meticulously divided into two layers: **QUIC Basic Transport Layer Configuration** and **HTTP/3 Application Layer Configuration**. This design allows you to exert extremely fine-grained control over network behavior according to your needs.
+In `quicX`, configuration is split into two layers: the **QUIC transport layer** and the **HTTP/3 application layer**. This separation lets you tune network behaviour at a very fine granularity — whether your goal is to squeeze out maximum throughput or to minimise idle resource usage on long-lived connections.
 
-This document completely lists the configuration instructions for both layers, along with their default values and applicable scenarios. Whether you want to squeeze out ultimate throughput or reduce idle resource consumption of long connections, you will find the answers here.
+This document lists every configuration option in both layers, their default values, and when to change them.
 
 ---
 
 ## 1. QUIC Transport Layer Configuration
 
-If you use pure QUIC interfaces, you directly manipulate the following structs. If you use HTTP/3 interfaces, the following structs are nested within `Http3Config::quic_config_` and `Http3Settings`.
+If you use the pure QUIC API you operate directly on the structs below. If you use the HTTP/3 API the same structs are nested inside `Http3Config::quic_config_` and `Http3Settings`.
 
-### 1.1 `QuicConfig`: Global Runtime and Security Mechanisms
+### 1.1 `QuicConfig`: Global Runtime and Security
 
-It primarily determines "global" behaviors such as event loops, encryption/decryption, and logging.
+This struct controls "global" behaviour: event loop, crypto, logging.
 
-| Field Name / Type | Default Value | Global Significance and Tuning Suggestions |
+| Field / Type | Default | Meaning and tuning notes |
 | :--- | :--- | :--- |
-| `thread_mode_`<br>`ThreadMode` | `kSingleThread` | **Core**: Controls the engine's multi-threading architecture.<br/>- `kSingleThread`: Ultimate single-core low latency, void of lock switching overhead.<br/>- `kMultiThread`: Suitable for high-concurrency servers on modern multi-core CPUs. Underlying UDP packets are hash-distributed to different Workers. |
-| `worker_thread_num_`<br>`uint16_t` | `2` | When the mode is `kMultiThread`, how many Worker threads to start. Recommended to set to `CPU Cores - 1`, leaving one core for the OS to schedule network interrupts. |
-| `log_level_`<br>`LogLevel` | `kNull` | Log level control. Silenced by default for maximum performance. Can be set to `kInfo` or `kDebug` for debugging. |
-| `quic_version_`<br>`uint32_t` | `kQuicVersion2` | Preferred protocol version for negotiation. Defaults directly to the latest QUIC v2 (RFC 9369). You can manually downgrade to v1. |
-| `enable_0rtt_`<br>`bool` | `false` | **Performance**: When enabled, if the client has connected to the server before and holds a ticket, it can send the first HTTP request **before the handshake completes**! Saves 1-RTT latency, extremely suitable for connection-unaware APIs (e.g., REST interfaces). |
-| `keylog_file_`<br>`std::string` | `""` | **Extremely Important Debug Feature**: When enabled (by passing a file path), `quicX` will dump the TLS encryption keys for each client into this log file. Can be combined with Wireshark for plaintext decryption and flow tracing. |
+| `thread_mode_`<br>`ThreadMode` | `kSingleThread` | **Core**: Engine threading model.<br/>- `kSingleThread`: Lowest latency on a single core, no lock contention.<br/>- `kMultiThread`: For high-concurrency servers on multi-core CPUs. Incoming UDP packets are hashed across worker threads. |
+| `worker_thread_num_`<br>`uint16_t` | `2` | Number of worker threads in `kMultiThread` mode. Recommended: `CPU cores - 1`, leaving one core for the OS to handle network interrupts. |
+| `log_level_`<br>`LogLevel` | `kNull` | Log level. Silenced by default for maximum performance. Set to `kInfo` or `kDebug` while debugging. |
+| `quic_version_`<br>`uint32_t` | `kQuicVersion2` | Preferred protocol version to negotiate. Defaults to QUIC v2 (RFC 9369). You can manually downgrade to v1. |
+| `enable_0rtt_`<br>`bool` | `false` | **Performance**: When enabled, a returning client that holds a session ticket can send its first HTTP request **before the handshake completes**, saving 1 RTT. Ideal for stateless APIs (e.g. REST). |
+| `keylog_file_`<br>`std::string` | `""` | **Critical debugging knob**: When set to a file path, `quicX` writes the per-connection TLS secrets to that file. Combined with Wireshark this lets you decrypt and inspect the wire traffic. |
 
-### 1.2 `QlogConfig`: Network Tracing and Diagnostic Analysis
-Within `QuicConfig`, `qlog_config_` is an extremely important kernel diagnostic switch. When enabled, the program outputs the data flow of every frame as structured logs according to the RFC 9001 specification (compatible with frontend visual tools like `qvis` and `Wireshark`).
+### 1.2 `QlogConfig`: Network Tracing and Diagnostics
 
-| Field Name / Type | Default Value | Functional Significance and Tuning Suggestions |
+Inside `QuicConfig`, `qlog_config_` controls the in-kernel diagnostic tracer. When enabled, every frame is emitted as a structured log following RFC 9001 (consumable by `qvis` and Wireshark).
+
+| Field / Type | Default | Meaning and tuning notes |
 | :--- | :--- | :--- |
-| `enabled` | `false` | Whether to enable qlog collection. Because this severely impacts ultimate throughput, it is recommended only temporarily when resolving packet loss or algorithm behavior bugs. |
-| `output_dir` | `"./qlogs"` | Root directory where log files output. |
-| `format` | `kSequential` | File syntax formats. Defaults to `kSequential` (JSON Line mode) to support streamed writing and prevent memory exhaust. |
-| `batch_write` | `true` | Disk asynchronous batch. **Must remain ON** under production load testing during diagnostic logging preventing I/O loops blocking Event calls. |
-| `flush_interval_ms` | `100` | Once `batch_write` applies, flushes logs pool down the memory into hard-disk drives across this defined ms threshold. |
-| `max_file_size_mb` | `100` | The single maximum capacity for Qlog dump chunks. After surpassing this boundary auto-rotates split new files (prevents disk explosion). |
-| `max_file_count` | `10` | The historic total file preservation boundaries, automatically dropping rolling data beyond this point. |
+| `enabled` | `false` | Enable qlog collection. Because tracing has a noticeable throughput cost, only turn it on when chasing packet loss or congestion-control bugs. |
+| `output_dir` | `"./qlogs"` | Root directory for log files. |
+| `format` | `kSequential` | File format. Defaults to `kSequential` (JSON-Lines) so logs can be streamed to disk without buffering everything in memory. |
+| `batch_write` | `true` | Asynchronous batched disk writes. **Keep this on** under production load — synchronous I/O would block the event loop. |
+| `flush_interval_ms` | `100` | When `batch_write` is on, the buffered logs are flushed to disk every N milliseconds. |
+| `max_file_size_mb` | `100` | Per-file size cap. Once exceeded, the file is rotated (so a runaway trace cannot fill the disk). |
+| `max_file_count` | `10` | Maximum number of rolled files retained; older files are deleted. |
 
-### 1.3 `QuicServerConfig` Extension: Anti-DDoS and Retry Mechanisms
-If you are instantiating a Server (`IQuicServer` or `quicx::IServer`), you configure `quicX`'s defensive moat through `QuicServerConfig`. Based on the RFC 9000 specification, `Retry` packets are designed to defend against source address spoofing UDP amplification attacks.
+### 1.3 `QuicServerConfig`: Anti-DDoS and Retry
 
-| Field Name | Default Value | Functional Significance and Tuning Suggestions |
+If you instantiate a server (`IQuicServer` or `quicx::IServer`), `QuicServerConfig` lets you configure quicX's defensive moat. Per RFC 9000, `Retry` packets exist to defend against UDP source-address spoofing and amplification attacks.
+
+| Field | Default | Meaning and tuning notes |
 | :--- | :--- | :--- |
-| `retry_policy_` | `SELECTIVE` | **Defense Strategy**:<br/>- `NEVER`: Never send Retries (best performance, suitable for purely trusted internal environments).<br/>- `SELECTIVE`: (Recommended) Dynamically enables anti-spoofing verification when a sudden spike in new connection frequency or frequent requests from a specific IP are detected.<br/>- `ALWAYS`: Always requires any connecting client to undergo an extra round of handshake verification (most secure but adds 1-RTT latency). |
-| `retry_token_lifetime_` | `60` (seconds) | The validity time of the token dispatched to the client to prove "it really is this IP". |
-| `selective_retry_config_.rate_threshold_` | `1000` | (Active only in `SELECTIVE` mode) Global new connection rate threshold (connections/second). If the system receives an excessive number of new connections within a second exceeding this rate, it globally dispatches Retries for scrubbing. |
-| `selective_retry_config_.ip_rate_threshold_` | `100` | (Active only in `SELECTIVE` mode) Single IP rate threshold (connections/minute). IPs exceeding this rate are flagged and forced to verify authenticity individually. |
+| `retry_policy_` | `SELECTIVE` | **Defence policy**:<br/>- `NEVER`: Never send Retry (fastest; only safe in fully trusted internal environments).<br/>- `SELECTIVE` (recommended): Dynamically enables address validation when new-connection rate spikes or a single IP gets noisy.<br/>- `ALWAYS`: Force every connecting client to do an extra round-trip address validation (most secure, costs 1 RTT). |
+| `retry_token_lifetime_` | `60` (seconds) | Validity of the Retry token issued to a client to prove "the source address really is yours". |
+| `selective_retry_config_.rate_threshold_` | `1000` | (Used only in `SELECTIVE` mode) Global new-connection rate threshold (conn/sec). Once exceeded, Retry is enabled globally to scrub spoofed traffic. |
+| `selective_retry_config_.ip_rate_threshold_` | `100` | (Used only in `SELECTIVE` mode) Per-IP rate threshold (conn/min). IPs above this rate are flagged and forced through Retry validation individually. |
 
-### 1.4 `QuicTransportParams`: Transport Parameters Negotiation Dictionary
+### 1.4 `QuicTransportParams`: Negotiated Transport Parameters
 
-These configurations are packaged during the TLS extension phase of the handshake and sent to the peer, primarily used to control **Sliding Windows (Flow Control)**.
+These values are packed into the TLS extension during the handshake and sent to the peer. They primarily control **flow-control sliding windows**.
 
 > [!WARNING]
-> You must understand QUIC's dual current-limiting concept. If you fail to enlarge these flow control settings, despite owning standard generic 10Gbps capacities, endpoints fall back toward kb-level constraints based purely on "Network dictates the Windows full." 
+> Make sure you understand QUIC's two-level flow control. If you do not raise these limits, even a 10 Gbps link will be capped at kilobyte-level throughput because the peer will keep telling you "the window is full".
 
-| Field Name | Default Value | Detailed Mechanism Explanation |
+| Field | Default | Detailed semantics |
 | :--- | :--- | :--- |
-| **`max_idle_timeout_ms_`** | `120000` (2 minutes) | Exceeding this boundary without interactivity (App exchanges / PING) severs the connection abruptly. Useful tuning IoT devices. |
-| **`initial_max_data_`** | `64 MB` | **Connection-level flow control**. Cumulatively, total transmitted volumes from all streams prior to enforcing a pause-lock anticipating the peer broadcasting `Window_Update`. **Crucial Threshold limit 1 on oversized downloads**. |
-| **`initial_max_stream_data_bidi_local_`** | `16 MB` | **Local Originated Dual-Stream limiter**. The maximum chunk allocation isolated specifically onto particular Sub-Streams you fire. **Crucial Threshold limit 2**. |
-| **`initial_max_streams_bidi_`** | `200` | Concurrent permitted parallel pathways originating opposite direction streams (Concurrency limit of API routing bounds over HTTP/3 representations). You likely seek 1000 limits deploying microservice traffic aggregates. |
-| **`ack_delay_exponent_ms_`** | `3` | Multiplier defining RTT ping estimates calculating Delay. Unless engaging purely analytical academic inquiries, don't modify. |
-| **`max_ack_delay_ms_`** | `25` | Dictating forced maximal window intervals postponing pending ACKs toward the opposite endpoint. Expanded limits save package count transfers but could trick sources towards invoking PTO parameters early asserting artificial Packet Loss events. |
+| **`max_idle_timeout_ms_`** | `120000` (2 min) | If no traffic (application packets or PING) is exchanged for this long, the connection is torn down. Increase for IoT devices that only chat occasionally. |
+| **`initial_max_data_`** | `64 MB` | **Connection-level flow control**. Maximum cumulative bytes that can be sent across all streams before the peer must issue a `MAX_DATA` window update. **Bottleneck #1 for large transfers.** |
+| **`initial_max_stream_data_bidi_local_`** | `16 MB` | **Per-stream limit for locally-initiated bidirectional streams**. Maximum bytes you can send on one stream before needing a window update. **Bottleneck #2 for large transfers.** |
+| **`initial_max_streams_bidi_`** | `200` | Maximum number of bidirectional streams the peer is allowed to open concurrently (in HTTP/3 this maps to concurrent requests). High-fan-in microservice gateways may need 1000+. |
+| **`ack_delay_exponent_ms_`** | `3` | ACK-delay multiplier used in RTT calculations. Don't change unless you're doing protocol research. |
+| **`max_ack_delay_ms_`** | `25` | Upper bound on how long a receiver may defer an ACK. Larger values save a few packets but may cause the sender to mistake the delay for loss and trigger PTO prematurely. |
 
-### 1.5 `MigrationConfig`: Advanced Feature - Connection Migration
+### 1.5 `MigrationConfig`: Connection Migration
 
-QUIC's signature feature, employed to achieve true "lossless mobile network switching."
+QUIC's signature feature, used to achieve true "lossless mobile network handover".
 
-| Field Name | Default Value | Functional Significance |
+| Field | Default | Meaning |
 | :--- | :--- | :--- |
-| `enable_active_migration_` | `true` | (Client) Active migration. When the client detects a local network adapter change, it proactively sends packets to the server using the original Connection_ID to validate the new path. |
-| `enable_nat_rebinding_` | `true` | (Server) Passive mapping resurrection. When a client is in an internet cafe or using 4G/5G, and the operator's NAT port suddenly ages and changes, as long as the server verifies the packets are okay, it automatically refreshes the mapping without disconnecting. |
-| `path_validation_timeout_ms_`| `6000` (6 seconds) | If the old path breaks and the new path's handshake probe (Path Challenge / Response) receives no response exceeding this time, it completely terminates. |
+| `enable_active_migration_` | `true` | (Client) Active migration. When the client detects a local NIC change, it actively probes the new path with the existing Connection ID. |
+| `enable_nat_rebinding_` | `true` | (Server) Passive NAT rebinding. When a client's NAT mapping ages out (e.g. on 4G/5G or behind public Wi-Fi), the server transparently refreshes the mapping as long as the packets validate, instead of dropping the connection. |
+| `path_validation_timeout_ms_` | `6000` (6 s) | If the new path's PATH_CHALLENGE / PATH_RESPONSE handshake does not complete within this time after the old path breaks, the connection is closed. |
 
 ---
 
-## 2. HTTP/3 Layer Specific Configuration
+## 2. HTTP/3 Layer Configuration
 
-This section of HTTP/3 configuration resides within `Http3Config`, `Http3ServerConfig` and `Http3ClientConfig`. Because HTTP/3 requests themselves are built upon QUIC streams, its limitations are primarily focused on preventing the server from being overwhelmed by malicious requests.
+HTTP/3 settings live in `Http3Config`, `Http3ServerConfig`, and `Http3ClientConfig`. Because HTTP/3 requests ride on QUIC streams, these knobs are mostly about preventing the server from being overwhelmed by abusive clients.
 
-### 2.1 Concurrency and Rate Limiting
+### 2.1 Concurrency and Limits
 
-| Field Name / Type | Default Value | Application Layer Tuning Suggestions |
+| Field / Type | Default | Application-layer tuning notes |
 | :--- | :--- | :--- |
-| `max_concurrent_streams_`<br>`uint64_t` | `200` | **Extremely Core!** This represents the number of concurrent requests from a single client that an HTTP/3 server can handle simultaneously without having finished them. Once exceeded, newly initiated requests will be blocked. For microservice gateways or high-concurrency internal aggregation nodes, you might need to tune this above 1000. |
-| `connection_timeout_ms_`<br>`uint32_t` | `0` (Forever) | (Client EXCLUSIVE) Asserts timeout restrictions whenever `IClient::DoRequest` triggers sending/establishing tasks spanning across milliseconds boundaries; reporting subsequent failures. Typically tailored bounds hit 3000~5000 parameters depending on generic public net qualities. |
+| `max_concurrent_streams_`<br>`uint64_t` | `200` | **Very important.** The number of in-flight requests a single client may have outstanding against an HTTP/3 server. Once exceeded, additional requests are blocked. For microservice gateways or internal high-fan-in aggregators, push this above 1000. |
+| `connection_timeout_ms_`<br>`uint32_t` | `0` (never) | (Client only) When `IClient::DoRequest` is dialing or sending and gets no response within this many milliseconds, the call fails. Typical public-internet values are 3000–5000. |
 
-### 2.2 HTTP/3 Exclusive Advanced Features
+### 2.2 HTTP/3-Specific Advanced Features
 
-| Field Definition | Default Value | Function Parsing |
+| Field | Default | Meaning |
 | :--- | :--- | :--- |
-| `enable_push_` | `false` | Explores launching HTTP/3 Server Push mechanisms (RFC 9114). Activating grants servers powers via `Response::AppendPush` loading requested assets onto clients forcibly caches (Static contents, css). Generates possible drawbacks congesting active stream loads, strictly maintained as open alpha. |
-| `qpack_max_table_capacity` | `0` (Dynamic table OFF) | Stored dynamically within `Http3Settings`. Dictates HTTP/3 header capacities dictionary volumes limit. Tuning boundaries toward 0 retains rigid System Static dictionaries (Zero Extra RAM Allocation, High Perf); whereas massive custom payload Headers (Traces, UUIDs, heavy localized cookies) greatly demand widening bounds yielding optimal internal allocations mitigating raw network consumption rates at the expense of footprint memories. |
+| `enable_push_` | `false` | Whether to enable HTTP/3 Server Push (RFC 9114). When on, the server can use `Response::AppendPush` to push static assets (e.g. `style.css`, large images) the client did not explicitly request. May cause head-of-line contention under heavy load — currently considered experimental. |
+| `qpack_max_table_capacity` | `0` (dynamic table off) | Lives inside `Http3Settings`. Size of the QPACK header-compression dynamic table. `0` keeps QPACK in pure-static mode (no extra memory, best perf); raise it when your traffic carries large per-request headers (Trace IDs, large cookies) and you want to trade memory for bandwidth. |
 
 ### 2.3 Metrics Endpoint
 
-The QUIC stack gathers very detailed core statistical intelligence (Drop ratios, Retries amounts, Buffering capacities). One might bind innate endpoint routing outputs exposing figures seamlessly.
+The QUIC stack collects detailed counters (loss, retransmissions, buffer occupancy, …). You can expose them via a built-in HTTP/3 endpoint:
 
 ```cpp
 quicx::Http3ServerConfig server_config;
-server_config.metrics_.prometheus_export = true;        // Enables Prometheus format exports
-server_config.metrics_.prometheus_endpoint = "/metrics"; // Launches innate route listening /metrics inside quicX loops
+server_config.metrics_.prometheus_export = true;        // export in Prometheus format
+server_config.metrics_.prometheus_endpoint = "/metrics"; // serve metrics on /metrics inside the quicX server
 ```
-After executing this composition, Operational monitoring software architectures patch into `/metrics` analyzing raw lifecycle health bar situations for the `quicX` module seamlessly.
+
+After this is configured, your monitoring system can scrape `/metrics` directly to observe quicX runtime health.
 
 ---
 
 ## 3. Compile-Time Static Configuration (`config.h`)
 
-Beyond Runtime dynamic parameters insertions modifying systems, prioritizing relentless extreme performance parameters aligning hard memories demands, `quicX` deploys bottom-layer critical limit boundaries strictly via C++ `constexpr` standard formatting logic variables. Those targets remain planted firmly among original Source-code directories.
+In addition to runtime-tunable settings, a small set of low-level limits are baked in as C++ `constexpr` constants for performance and memory-alignment reasons. They live in the source tree and require a recompile to change.
 
-Executing architectures atop highly rigorous restricted Embedded machines environments or massive Multi-10Gbps Server network ports implies requirements rewriting components **Prior to Compilation** actions applying changes:
+If you need to deploy quicX on resource-constrained embedded devices, or on a top-end multi-10 GbE server, you may want to edit them **before building**:
 
-### 3.1 HTTP/3 Compile-Time Parameters (`src/http3/config.h`)
+### 3.1 HTTP/3 Compile-Time Constants (`src/http3/config.h`)
 
-| Constant Variable Title | Default Value | Parsing Significance |
+| Constant | Default | Meaning |
 | :--- | :--- | :--- |
-| `kMaxDataFramePayload` | `1350` | Maximum singular HTTP/3 DATA Frame slicing dimension injected back down inside native lower-layer transmission processes. Precisely targeting Standard 1500 MTU values factoring UDP/IP/QUIC & H3 metadata Tag deductions ensuring perfectly aligned insertions. |
-| `kServerPushWaitTimeMs` | `30000` | Timeouts (30 seconds) bounding client's maximum tolerances upon Server pushed logic delivery arrivals. |
-| `kClientConnectionTimeoutMs` | `60000` | Passive idle disconnection timelines applying Client level HTTP/3 sessions (60 Sec limits). |
+| `kMaxDataFramePayload` | `1350` | Maximum payload size of a single HTTP/3 DATA frame handed to the transport. `1350` is sized to fit a 1500-byte MTU after subtracting IP / UDP / QUIC / AEAD-tag / H3 framing overhead. |
+| `kServerPushWaitTimeMs` | `30000` | How long (ms) the client will wait for a pushed stream from the server (30 s). |
+| `kClientConnectionTimeoutMs` | `60000` | Idle timeout for the client-side HTTP/3 session (60 s). |
 
-### 3.2 QUIC Layer Compile-Time Parameters (`src/quic/config.h`)
+### 3.2 QUIC Compile-Time Constants (`src/quic/config.h`)
 
-Holds innermost protocol control configuration structures mapping thresholds limiting mechanisms:
+The protocol's core control-plane limits.
 
-| Constant Variable Name | Default Value | Mechanism and Geek Tune Definitions |
+| Constant | Default | Meaning and tuning notes |
 | :--- | :--- | :--- |
-| **Sliding Window Congestion Re-fill Limitations** | |
-| `kDataBlockedThreshold` | `16384` (16KB) | Systematizes global sender windows issuing `DATA_BLOCKED` frame claims upon thresholds cascading past these bare margins actively requesting openings counterparts. |
-| `kDataIncreaseThreshold` | `512 * 1024` (512KB) | Target endpoints witnessing their operational capacities sinking under these parameters proactively launches `MAX_DATA` responses alerting dispatchers "Room availability extended; Resume transmitting". Multiplying parameters prevents gigabit network stalling bottlenecks ensuring persistent flow rates. |
-| `kDataIncreaseAmount` | `2 * 1024 * 1024` (2MB) | Exact volume quantities expanded globally across active sliding windows returning prior alert mechanisms. Dedicated bulk raw file server paths frequently mandate limits surpassing basic 10MB intervals. |
-| `kStreamWindowIncrement` | `2 * 1024 * 1024` | Expanded quota bounds singularly mapping individually generated concurrent Streams limits. |
-| **Memory Pools & Package Bound Defaults** | |
-| `kMaxFramePayload` | `1420` | Native basic individual Payload limits enforcing standard Generic QUIC frames. |
-| `kPacketPoolSize` | `256` | Anticipated **Pre-Allocated** Memory Packet sizes bound directly into fundamental Memory Pools. Suggested maintaining power of 2 formulas constraints. Gateway load-balancers heavily demanding runtime stabilizations removing sporadic allocation stutters profit considerably maximizing values reaching 1024/2048 margins. |
-| `kPacketBufferSize` | `1500` | Native limits conforming entirely aligned alongside pure generic typical Ethernet transmission MTUs. Expanding limits invites cataclysmic impacts inflicting aggressive forced fragmentation IP penalties crushing entire architectural load bounds drastically. |
-| **Protocol and Core Handshake Logic** | |
-| `kHandshakeTimeoutMs` | `5000` (5 Seconds) | Absolute maximum threshold limitations capping slow TCP/TLS handshake strikes thwarting potential vulnerability attack exploits seamlessly. |
-| `kDefaultTlsVerifyPeer` | `false` | **Warning**: Strict parameter restricting innate Peer Certificate Authentication Validation logic specifically defaulted bypassed (`false`) enabling rapid un-hindered localhost testbeds. Essential enforcing strict `true` booleans securing productions or over-writing runtime flags. |
+| **Sliding window / congestion replenishment** | |
+| `kDataBlockedThreshold` | `16384` (16 KB) | When the sender's remaining global send-window drops below this, it sends a `DATA_BLOCKED` frame to the peer. |
+| `kDataIncreaseThreshold` | `512 * 1024` (512 KB) | When the receiver's available window falls below this, it sends a `MAX_DATA` frame ("you can keep sending"). On 10 GbE links you should multiply this so the sender never stalls. |
+| `kDataIncreaseAmount` | `2 * 1024 * 1024` (2 MB) | How much window credit a `MAX_DATA` update grants. Bulk file-transfer servers can safely raise this above 10 MB. |
+| `kStreamWindowIncrement` | `2 * 1024 * 1024` | Per-stream window credit granted on a `MAX_STREAM_DATA` update. |
+| **Memory pools and packet defaults** | |
+| `kMaxFramePayload` | `1420` | Maximum payload of a single generic QUIC frame. |
+| `kPacketPoolSize` | `256` | Number of pre-allocated packet buffers in the memory pool. Keep it a power of two. Gateway / load-balancer nodes benefit from raising it to 1024 / 2048 to remove allocation jitter. |
+| `kPacketBufferSize` | `1500` | Packet buffer size; sized to a typical Ethernet MTU. **Do not raise this** — going above MTU will cause IP fragmentation and tank throughput. |
+| **Handshake and protocol** | |
+| `kHandshakeTimeoutMs` | `5000` (5 s) | Hard upper bound on TLS handshake duration; protects against slowloris-style attacks. |
+| `kDefaultTlsVerifyPeer` | `false` | **Heads up**: TLS peer-certificate verification is disabled by default to make local testing painless. **Set this to `true`, or override at runtime, before deploying to production.** |
 
-When modifying above constants upon header files configurations, ALWAYS re-invoke compilation architectures via `cmake --build` implementing baseline engine system re-works!
+After editing any of these constants you must rerun `cmake --build` to rebuild the library — the changes only take effect after a recompile.

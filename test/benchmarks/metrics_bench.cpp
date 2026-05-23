@@ -6,9 +6,9 @@
 #include <atomic>
 #include <mutex>
 
-#include "common/include/type.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/type.h>
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 namespace quicx {
 namespace common {

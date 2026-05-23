@@ -75,8 +75,15 @@ TEST(CubicCongestionControlTest, GrowthAfterRecoveryAck) {
     const uint64_t cwnd_after_loss = cc.GetCongestionWindow();
     EXPECT_TRUE(cc.InRecovery());
 
-    // ACK later timestamp to exit recovery and apply cubic growth
-    cc.OnPacketAcked(AckEvent{3, 1000, 300, 0, false});
+    // ACK with acked_packet_send_time > recovery_start_time_us_ to exit recovery
+    AckEvent post_recovery_ack{};
+    post_recovery_ack.pn = 3;
+    post_recovery_ack.bytes_acked = 1000;
+    post_recovery_ack.ack_time = 300;
+    post_recovery_ack.ack_delay = 0;
+    post_recovery_ack.ecn_ce = false;
+    post_recovery_ack.acked_packet_send_time = 200;  // > recovery_start_time_ (100)
+    cc.OnPacketAcked(post_recovery_ack);
     EXPECT_FALSE(cc.InRecovery());
     EXPECT_GE(cc.GetCongestionWindow(), cwnd_after_loss + 1);
 }

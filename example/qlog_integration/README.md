@@ -17,7 +17,7 @@ To enable QLog, you simply configure it through the `Http3Config` (or `Http3Serv
 ### Server Side
 
 ```cpp
-#include "http3/include/if_server.h"
+#include <quicx/http3/if_server.h>
 
 // ...
 
@@ -35,7 +35,7 @@ server->Init(config);
 ### Client Side
 
 ```cpp
-#include "http3/include/if_client.h"
+#include <quicx/http3/if_client.h>
 
 // ...
 

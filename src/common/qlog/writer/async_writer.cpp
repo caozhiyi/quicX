@@ -218,7 +218,14 @@ void AsyncWriter::CloseAllFiles() {
 }
 
 std::string AsyncWriter::GenerateFilename(const std::string& connection_id) {
-    // Format: {output_dir}/{timestamp}_{cid_prefix}.qlog
+    // Format: {output_dir}/{timestamp}_{cid_prefix}.sqlog
+    //
+    // The `.sqlog` suffix signals that the file uses qlog's JSON Text
+    // Sequences (RFC 7464) serialization — which is what our
+    // JsonSeqSerializer produces. qvis (and most ecosystem tools) use the
+    // file extension to dispatch the correct parser:
+    //   * `.qlog`  → expects a single JSON object with `traces[].events[]`
+    //   * `.sqlog` → expects RS-prefixed, LF-terminated JSON records
     std::string timestamp = GetFormatTime(FormatTimeUnit::kSecondFormat);
 
     // Replace ':' with '-' in timestamp (filenames cannot contain ':')
@@ -227,7 +234,7 @@ std::string AsyncWriter::GenerateFilename(const std::string& connection_id) {
     // Connection ID prefix (up to 8 characters)
     std::string cid_prefix = connection_id.substr(0, std::min<size_t>(8, connection_id.size()));
 
-    std::string filename = config_.output_dir + "/" + timestamp + "_" + cid_prefix + ".qlog";
+    std::string filename = config_.output_dir + "/" + timestamp + "_" + cid_prefix + ".sqlog";
     return filename;
 }
 

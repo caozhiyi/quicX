@@ -6,6 +6,7 @@
 #include "common/buffer/buffer_span.h"
 
 #include "quic/connection/connection_client.h"
+#include "quic/connection/connection_id_generator.h"
 #include "quic/connection/session_cache.h"
 #include "quic/crypto/retry_crypto.h"
 #include "quic/packet/handshake_packet.h"
@@ -79,11 +80,33 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
             remembered_qtp.initial_max_stream_data_uni_ = cached_session_info.initial_max_stream_data_uni;
             remembered_tp.Init(remembered_qtp);
             send_flow_controller_.UpdateConfig(remembered_tp);
+            // Bug #23: 0-RTT zerortt scenario stalled because StreamManager::
+            // MakeStreamWithFlowControl reads transport_param_.GetPeerInitialMax-
+            // StreamDataBidiRemote() to derive the new bidi-stream's send limit
+            // (peer_data_limit_). That field is only populated by Merge() when
+            // the server's transport params arrive — but in 0-RTT we MUST be
+            // able to send STREAM frames in the first flight, before the
+            // ServerHello arrives. Without this pre-merge, the freshly created
+            // stream has peer_data_limit_=0, SendStream::TrySendData immediately
+            // returns kFlowControlBlocked, and the GET request never makes it
+            // onto the wire — server sees only Initial+Handshake CRYPTO and
+            // post-handshake NewConnectionID frames, then idle-times out.
+            // Per RFC 9001 §4.5 / RFC 9000 §7.4.1, the client MUST remember the
+            // peer's stream-level limits (bidi_local + bidi_remote) and use
+            // them on the resumed connection. We extract them via Merge(),
+            // which is the same path the receive side uses post-handshake.
+            // Merge() intentionally does NOT notify listeners, so this only
+            // mutates transport_param_ internal state without re-triggering
+            // SendFlowController/RecvFlowController init paths.
+            transport_param_.Merge(remembered_tp);
             common::LOG_INFO("0-RTT: Pre-initialized flow controller with remembered TP: "
-                "max_data=%u, max_streams_bidi=%u, max_streams_uni=%u",
+                "max_data=%u, max_streams_bidi=%u, max_streams_uni=%u, "
+                "peer_bidi_remote=%u, peer_bidi_local=%u",
                 cached_session_info.initial_max_data,
                 cached_session_info.initial_max_streams_bidi,
-                cached_session_info.initial_max_streams_uni);
+                cached_session_info.initial_max_streams_uni,
+                cached_session_info.initial_max_stream_data_bidi_remote,
+                cached_session_info.initial_max_stream_data_bidi_local);
         }
     }
 
@@ -154,6 +177,14 @@ bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_con
 
     SetPeerAddress(std::move(addr));
 
+    // RFC 9000 §5.1: Generate the client's initial Source Connection ID. Previously this
+    // was implicitly produced by GetCurrentID()'s empty-pool fallback, which has been
+    // removed (see ConnectionIDManager::GetCurrentID). The local CID pool MUST be
+    // primed explicitly before any code reads the current SCID.
+    if (cid_coordinator_->GetLocalConnectionIDManager()->GetAvailableIDCount() == 0) {
+        cid_coordinator_->GetLocalConnectionIDManager()->Generator();
+    }
+
     // RFC 9000: Set initial_source_connection_id in transport parameters
     auto local_scid = cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID();
     QuicTransportParams updated_tp = tp_config;
@@ -166,16 +197,26 @@ bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_con
 
 bool ClientConnection::DialFinalize(std::shared_ptr<TLSClientConnection> tls_conn,
     const common::Address& addr) {
-    // Generate connection id
-    auto dcid = cid_coordinator_->GetRemoteConnectionIDManager()->Generator();
+    // RFC 9000 §7.2: Generate the original DCID. This is a *placeholder* used purely
+    // to derive Initial-packet keys before the server picks its own CID. We deliberately
+    // do NOT push it into the remote CID manager's map: the map is reserved for
+    // NEW_CONNECTION_ID-delivered CIDs whose sequence numbers are assigned by the peer.
+    // Mixing the placeholder into the map collides with peer-chosen sequence numbers,
+    // which previously corrupted CID rotation during connection migration.
+    uint8_t dcid_buf[kMaxCidLength];
+    ConnectionIDGenerator::Instance().Generator(dcid_buf, kMaxCidLength);
+    ConnectionID dcid(dcid_buf, kMaxCidLength, /*sequence_number=*/0);
 
     // RFC 9000: Save original DCID for Retry handling
     original_dcid_ = dcid;
 
-    // Ensure the generated DCID becomes the current ID
-    cid_coordinator_->GetRemoteConnectionIDManager()->UseNextID();
+    // Install the placeholder DCID as the active remote CID (outside the map). It will
+    // be replaced by the server-issued SCID upon receiving the first Initial/Handshake
+    // packet (see OnInitialPacket / OnHandshakePacket).
+    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(
+        dcid.GetID(), dcid.GetLength(), /*sequence=*/0);
 
-    // Install initial secret using the current DCID
+    // Install initial secret using the placeholder DCID
     auto current_dcid = cid_coordinator_->GetRemoteConnectionIDManager()->GetCurrentID();
     connection_crypto_.InstallInitSecret(current_dcid.GetID(), current_dcid.GetLength(), false);
 
@@ -232,11 +273,22 @@ bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
         return false;
     }
 
-    // client side should update remote connection id here
+    // RFC 9000 §7.2 Negotiating Connection IDs: the SCID carried by the server in its
+    // first Initial/Handshake packet IS the server's chosen connection ID for sequence 0.
+    // The client MUST use it as the DCID for all subsequent packets (replacing the random
+    // ODCID placeholder used to derive Initial keys).
+    //
+    // We replace cur_id_ in-place via SetCurrentID() instead of AddID(ptr,len)+UseNextID()
+    // because the legacy code path used the manager's auto-incrementing sequence number,
+    // which collided with sequence numbers later carried by NEW_CONNECTION_ID frames and
+    // ultimately led to an empty pool fallback that fabricated phantom CIDs during
+    // connection migration. SetCurrentID lives outside the map, so subsequent
+    // NEW_CONNECTION_ID frames (sequence >= 1) populate the map cleanly.
     auto long_header = static_cast<LongHeader*>(handshake_packet->GetHeader());
-    cid_coordinator_->GetRemoteConnectionIDManager()->AddID(
-        long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
-    cid_coordinator_->GetRemoteConnectionIDManager()->UseNextID();
+    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(
+        long_header->GetSourceConnectionId(),
+        long_header->GetSourceConnectionIdLength(),
+        /*sequence=*/0);
     return OnNormalPacket(packet);
 }
 
@@ -333,10 +385,13 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     // (reuse long_header and token_span from integrity tag verification above)
     ConnectionID src_cid(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
 
-    // Update remote connection ID (this is the new server CID)
-    cid_coordinator_->GetRemoteConnectionIDManager()->AddID(
-        long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
-    cid_coordinator_->GetRemoteConnectionIDManager()->UseNextID();
+    // Update remote connection ID (this is the new server CID, sequence-0 per RFC).
+    // Use SetCurrentID() instead of AddID(ptr,len)+UseNextID() — see OnHandshakePacket
+    // for the rationale (the legacy path collided with NEW_CONNECTION_ID sequence numbers).
+    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(
+        long_header->GetSourceConnectionId(),
+        long_header->GetSourceConnectionIdLength(),
+        /*sequence=*/0);
 
     // Update token
     token_ = std::string((char*)token_span.GetStart(), token_span.GetLength());

@@ -32,7 +32,11 @@ public:
     }
 
     virtual void Join() {
-        if (pthread_) {
+        // joinable() guard: Join() may be called multiple times across nested
+        // teardown paths (e.g. Http3 Client::~Client calls quic_->Join() and
+        // then ~QuicClient also calls master_->Join()). Without this guard
+        // the second join() throws std::system_error("Invalid argument").
+        if (pthread_ && pthread_->joinable()) {
             pthread_->join();
         }
     }

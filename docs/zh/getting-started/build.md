@@ -114,7 +114,16 @@ cmake --build build --config Release
 
 ## 五、 如何将 quicX 引入你的项目？
 
-### 1. 采用 CMake 集成
+`quicX` 对外暴露两个 CMake imported target，按你需要的层级选择即可：
+
+| Imported target | 包含内容 | 适用场景 |
+| :--- | :--- | :--- |
+| `quicx::quicx` | 仅 QUIC 传输层（RFC 9000 / 9369） | 自定义 RPC、游戏隧道等不走 HTTP/3 的场景 |
+| `quicx::http3` | QUIC + HTTP/3 完整栈（已传递依赖 `quicx::quicx`） | HTTP/3 客户端 / 服务端 |
+
+> **BoringSSL** 已静态链入 `libquicx.a` / `libhttp3.a`，下游通过 `add_subdirectory()` 引入时**无需**额外安装或链接 BoringSSL / OpenSSL。`Threads::Threads`（以及 Linux 下的 `stdc++fs`）通过 `PUBLIC` link 自动传播，下游也不必显式追加。
+
+### 1. CMake 集成方式 A：`add_subdirectory()`（源码内嵌 / 子模块）
 
 最简单的集成方式是借助 CMake 的 `add_subdirectory`：
 
@@ -122,25 +131,62 @@ cmake --build build --config Release
 2. 在你的核心 `CMakeLists.txt` 中添加：
 
 ```cmake
-# 引入 quicX 目录
-add_subdirectory(third_party/quicX)
+# 把 quicX 引入构建树
+# EXCLUDE_FROM_ALL 可以避免 quicX 的 tests/examples 被你的 `all` 目标连带构建
+add_subdirectory(third_party/quicX EXCLUDE_FROM_ALL)
 
-# 假设你的可执行文件叫 my_app
 add_executable(my_app main.cpp)
 
-# 链接 quicX 库以及多线程依赖
-target_link_libraries(my_app PRIVATE quicx Threads::Threads)
+# 按需链接：
+target_link_libraries(my_app PRIVATE quicx::http3)   # HTTP/3 应用栈
+# 或者只用裸 QUIC 传输层：
+# target_link_libraries(my_app PRIVATE quicx::quicx)
 ```
+
+下面这几个开关在内嵌时建议显式关掉，保持你工程的构建产物干净：
+
+| 选项 | 默认值 | 说明 |
+| :--- | :---: | :--- |
+| `BUILD_EXAMPLES` | `ON` | 是否构建 `example/*`（内嵌时建议关 `OFF`） |
+| `ENABLE_TESTING` | `ON` | 是否构建 `quicx_utest`（内嵌时建议关 `OFF`） |
+| `ENABLE_BENCHMARKS` | `ON` | 是否构建 benchmarks（内嵌时建议关 `OFF`） |
+| `QUICX_INSTALL` | `ON` | 是否生成 install / export 规则（保持开启即可） |
+| `QUICX_ENABLE_QLOG` | `ON` | 是否编译入 QLog 跟踪 |
+
+### 2. CMake 集成方式 B：`find_package(quicx)`（先安装、再消费）
+
+只需安装一次 `quicX`，多个下游项目都可以共享：
+
+```bash
+# 构建并安装 quicX
+cmake -S quicX -B build -DCMAKE_BUILD_TYPE=Release \
+                       -DBUILD_EXAMPLES=OFF -DENABLE_TESTING=OFF \
+                       -DCMAKE_INSTALL_PREFIX=/opt/quicx
+cmake --build build --parallel
+cmake --install build
+```
+
+```cmake
+# 你项目的 CMakeLists.txt
+find_package(quicx 0.1.0 REQUIRED)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE quicx::http3)
+```
+
+如果 `quicX` 被安装到非标准前缀，请通过 `-DCMAKE_PREFIX_PATH=/opt/quicx`（或者 `-Dquicx_DIR=/opt/quicx/lib/cmake/quicx`）告诉 CMake 去哪里找。
+
+包配置会安装到 `<prefix>/lib/cmake/quicx/` 下，包含 `quicxConfig.cmake` / `quicxTargets.cmake` / `quicxConfigVersion.cmake`。版本兼容策略：在 `1.0.0` 之前为 `SameMinorVersion`。详情见 [`docs/zh/reference/api_stability.md`](../reference/api_stability.md)。
 
 然后，在你的 C++ 代码中：
 ```cpp
-#include "http3/include/if_server.h" 
-// 或者引入 #include "quic/include/if_quic_server.h" (仅需传输层)
+#include <quicx/http3/if_server.h>
+// 或者 #include <quicx/quic/if_quic_server.h>（仅需传输层）
 
 // 你的逻辑 ...
 ```
 
-### 2. 采用 Bazel 集成
+### 3. 采用 Bazel 集成
 
 如果你的自建项目采用 Bazel 系统，你可以在 `WORKSPACE` 或 `MODULE.bazel` 中将 `quicX` 作为 external repository 引入（例如通过 `local_repository` 或 `git_repository`）。
 

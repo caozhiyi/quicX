@@ -9,7 +9,7 @@
 #include "quic/connection/connection_id.h"
 #include "quic/crypto/if_cryptographer.h"
 #include "quic/crypto/tls/type.h"
-#include "quic/include/if_quic_connection.h"
+#include <quicx/quic/if_quic_connection.h>
 #include "quic/packet/if_packet.h"
 
 namespace quicx {

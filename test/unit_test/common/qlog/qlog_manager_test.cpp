@@ -99,8 +99,8 @@ TEST_F(QlogManagerTest, SetEventWhitelist) {
     auto& manager = QlogManager::Instance();
 
     std::vector<std::string> whitelist = {
-        "quic:packet_sent",
-        "quic:packet_received",
+        "transport:packet_sent",
+        "transport:packet_received",
         "recovery:metrics_updated"
     };
 
@@ -108,8 +108,8 @@ TEST_F(QlogManagerTest, SetEventWhitelist) {
 
     const QlogConfig& config = manager.GetConfig();
     EXPECT_EQ(3u, config.event_whitelist.size());
-    EXPECT_EQ("quic:packet_sent", config.event_whitelist[0]);
-    EXPECT_EQ("quic:packet_received", config.event_whitelist[1]);
+    EXPECT_EQ("transport:packet_sent", config.event_whitelist[0]);
+    EXPECT_EQ("transport:packet_received", config.event_whitelist[1]);
     EXPECT_EQ("recovery:metrics_updated", config.event_whitelist[2]);
 }
 
@@ -388,7 +388,7 @@ TEST_F(QlogManagerTest, EventWhitelistAppliedToTrace) {
     config.enabled = true;
     config.output_dir = "./test_qlogs";
     config.sampling_rate = 1.0f;
-    config.event_whitelist = {"quic:packet_sent"};
+    config.event_whitelist = {"transport:packet_sent"};
     manager.SetConfig(config);
 
     auto trace = manager.CreateTrace("conn-10", VantagePoint::kServer);

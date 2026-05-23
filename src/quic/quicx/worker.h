@@ -5,12 +5,12 @@
 #include <memory>
 #include <unordered_set>
 
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "common/structure/double_buffer.h"
 
 #include "quic/connection/if_connection.h"
 #include "quic/crypto/tls/tls_ctx.h"
-#include "quic/include/type.h"
+#include <quicx/quic/type.h>
 #include "quic/quicx/if_worker.h"
 #include "quic/udp/if_sender.h"
 
@@ -40,6 +40,12 @@ public:
     using RegisterSocketCallback = std::function<bool(int32_t sockfd)>;
     void SetRegisterSocketCallback(RegisterSocketCallback cb) { register_socket_cb_ = cb; }
 
+    // See IWorker::Shutdown(). Clears all per-connection state so that the
+    // refcount cycle between EventLoop and Worker (via fixed-process /
+    // BaseConnection::event_loop_ / Stream::event_loop_) can be broken at
+    // owner-dictated shutdown time.
+    void Shutdown() override;
+
 protected:
     void ProcessSend();
 
@@ -48,9 +54,9 @@ protected:
 
     void HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnection> conn);
     void HandleRetireConnectionId(ConnectionID& cid);
-    void HandleHandshakeDone(std::shared_ptr<IConnection> conn);
+    virtual void HandleHandshakeDone(std::shared_ptr<IConnection> conn);
     void HandleActiveSendConnection(std::shared_ptr<IConnection> conn);
-    void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason);
+    virtual void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason);
 
 protected:
     bool do_send_;
@@ -75,7 +81,7 @@ protected:
     std::unordered_map<uint64_t, std::shared_ptr<IConnection>> conn_map_;  // all connections
 
     connection_state_callback connection_handler_;
-    std::shared_ptr<common::IEventLoop> event_loop_;  // Saved EventLoop for cross-thread access
+    std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)
     RegisterSocketCallback register_socket_cb_;  // Register socket with receiver for migration
 };
 

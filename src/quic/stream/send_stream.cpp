@@ -3,8 +3,8 @@
 
 #include "common/log/log.h"
 
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 #include "quic/config.h"
 #include "quic/frame/max_stream_data_frame.h"
@@ -19,7 +19,7 @@
 namespace quicx {
 namespace quic {
 
-SendStream::SendStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
+SendStream::SendStream(std::weak_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
@@ -37,8 +37,13 @@ SendStream::SendStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_d
 SendStream::~SendStream() {}
 
 void SendStream::Close() {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this()]() {
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<SendStream>(self);
             if (stream) {
                 stream->Close();
@@ -55,8 +60,15 @@ void SendStream::Close() {
 }
 
 void SendStream::Reset(uint32_t error) {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this(), error]() { self->Reset(error); });
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, error]() {
+            auto self = weak_self.lock();
+            if (!self) return;
+            self->Reset(error);
+        });
         return;
     }
 
@@ -78,14 +90,19 @@ void SendStream::Reset(uint32_t error) {
 }
 
 int32_t SendStream::Send(uint8_t* data, uint32_t len) {
+    auto loop = event_loop_.lock();
+    if (!loop) return -1;
     common::LOG_DEBUG("SendStream::Send called: stream_id=%llu, len=%u, IsInLoopThread=%d", GetStreamID(), len,
-        event_loop_->IsInLoopThread());
+        loop->IsInLoopThread());
 
-    if (!event_loop_->IsInLoopThread()) {
+    if (!loop->IsInLoopThread()) {
         common::LOG_WARN("SendStream::Send called from wrong thread, posting to EventLoop: stream_id=%llu, len=%u",
             GetStreamID(), len);
         std::vector<uint8_t> vec(data, data + len);
-        event_loop_->RunInLoop([self = shared_from_this(), vec = std::move(vec)]() {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, vec = std::move(vec)]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<SendStream>(self);
             if (stream) {
                 common::LOG_DEBUG("SendStream::Send async execution in EventLoop: stream_id=%llu, len=%zu",
@@ -113,8 +130,13 @@ int32_t SendStream::Send(uint8_t* data, uint32_t len) {
 }
 
 int32_t SendStream::Send(std::shared_ptr<IBufferRead> buffer) {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this(), buffer]() {
+    auto loop = event_loop_.lock();
+    if (!loop) return -1;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, buffer]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<SendStream>(self);
             if (stream) {
                 stream->Send(buffer);
@@ -139,8 +161,13 @@ std::shared_ptr<IBufferWrite> SendStream::GetSendBuffer() {
 }
 
 bool SendStream::Flush() {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this()]() {
+    auto loop = event_loop_.lock();
+    if (!loop) return false;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<SendStream>(self);
             if (stream) {
                 stream->Flush();
@@ -269,19 +296,64 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     if (frame->GetData().GetLength() == 0 && !has_fin) {
         // Check if we have data in buffer but couldn't send due to flow control
         if (send_buffer_->GetDataLength() > 0) {
-            // We have data but flow control is blocking us
-            common::LOG_DEBUG("stream send data: flow control blocked. stream id:%d, buffer_len:%d, peer_limit:%llu, send_offset:%llu",
-                stream_id_, send_buffer_->GetDataLength(), peer_data_limit_, send_data_offset_);
-            
-            // Send STREAM_DATA_BLOCKED frame to notify peer
-            auto blocked_frame = std::make_shared<StreamDataBlockedFrame>();
-            blocked_frame->SetStreamID(stream_id_);
-            blocked_frame->SetMaximumData(peer_data_limit_);
-            visitor->HandleFrame(blocked_frame);
-            common::LOG_DEBUG("stream send: sent STREAM_DATA_BLOCKED frame. stream id:%d, limit:%llu",
-                stream_id_, peer_data_limit_);
-            
-            return TrySendResult::kFlowControlBlocked;
+            // We hit one of three causes:
+            //   (a) STREAM-LEVEL flow control: peer_data_limit_ - send_data_offset_
+            //       is small (or zero) -> stream_send_size dominates the min().
+            //   (b) CONNECTION-LEVEL flow control: visitor->GetLeftStreamDataSize()
+            //       is 0 because BaseConnection::TrySend computed
+            //       max_stream_data_size = min(max_bytes /*cwnd*/, conn_flow_limit) = 0.
+            //   (c) CWND exhaustion: same path as (b), max_bytes=0.
+            //
+            // The previous code unconditionally treated all three as (a)
+            // and emitted a STREAM_DATA_BLOCKED at peer_data_limit_, which
+            // (i) is incorrect — the peer's stream-level limit is usually
+            //     far above the offset; quic-go logs the bogus blocked
+            //     frame at limit=524288 while we're only at offset=388276.
+            // (ii) returns kFlowControlBlocked, which makes
+            //     StreamManager::BuildStreamFrames flag every active stream
+            //     as flow-control-blocked, masking the real cause from the
+            //     connection-level recovery path (cwnd-limited / conn-FC
+            //     blocked).
+            //
+            // Correct attribution:
+            //   - Only emit STREAM_DATA_BLOCKED when the *stream-level*
+            //     slack genuinely is below kStreamDataBlockedThreshold.
+            //   - Otherwise the cause is connection-level (cwnd or conn-FC);
+            //     return kBreak so the stream stays in the active set, and
+            //     let BaseConnection::TrySend's existing cwnd-limited /
+            //     conn-FC-blocked recovery (DATA_BLOCKED + recheck timer +
+            //     ACK-driven send_retry_cb_) bring us back.
+            uint64_t stream_slack =
+                (peer_data_limit_ > send_data_offset_) ? (peer_data_limit_ - send_data_offset_) : 0;
+            bool stream_level_blocked = stream_slack < kStreamDataBlockedThreshold;
+
+            common::LOG_DEBUG("stream send data: zero-data frame. stream id:%d, buffer_len:%d, "
+                              "peer_limit:%llu, send_offset:%llu, stream_slack:%llu, stream_level_blocked:%d",
+                stream_id_, send_buffer_->GetDataLength(), peer_data_limit_, send_data_offset_,
+                stream_slack, stream_level_blocked ? 1 : 0);
+
+            if (stream_level_blocked) {
+                // Genuine stream-level FC. RFC 9000 §19.13: STREAM_DATA_BLOCKED
+                // is informational; de-dup with blocked_at_limit_ so we never
+                // emit twice at the same limit.
+                if (blocked_at_limit_ != peer_data_limit_ &&
+                    send_machine_->CheckCanSendFrame(FrameType::kStreamDataBlocked)) {
+                    auto blocked_frame = std::make_shared<StreamDataBlockedFrame>();
+                    blocked_frame->SetStreamID(stream_id_);
+                    blocked_frame->SetMaximumData(peer_data_limit_);
+                    visitor->HandleFrame(blocked_frame);
+                    blocked_at_limit_ = peer_data_limit_;
+                    common::LOG_DEBUG("stream send: sent STREAM_DATA_BLOCKED frame. stream id:%d, limit:%llu",
+                        stream_id_, peer_data_limit_);
+                }
+                return TrySendResult::kFlowControlBlocked;
+            }
+
+            // Connection-level back-pressure (cwnd or conn-FC). Stay in the
+            // active set; do NOT emit STREAM_DATA_BLOCKED. The connection
+            // layer is responsible for emitting DATA_BLOCKED and arming
+            // its recheck timer (see connection_base.cpp Bug #17 path).
+            return TrySendResult::kBreak;
         }
         // No data in buffer, truly nothing to send
         common::LOG_DEBUG("stream send data: no data to send. stream id:%d", stream_id_);
@@ -384,31 +456,72 @@ void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
     common::LOG_DEBUG("stream recv stop sending. stream id:%d, error:%d", stream_id_, err);
 }
 
-void SendStream::OnDataAcked(uint64_t max_offset, bool has_fin) {
-    common::LOG_DEBUG("SendStream::OnDataAcked: stream_id=%d, max_offset=%llu, has_fin=%d, current acked_offset=%llu",
-        stream_id_, max_offset, has_fin, acked_offset_);
+void SendStream::OnDataAcked(uint64_t offset_start, uint64_t length, bool has_fin) {
+    common::LOG_DEBUG(
+        "SendStream::OnDataAcked: stream_id=%d, range=[%llu,%llu), has_fin=%d, current acked_offset=%llu, "
+        "send_data_offset=%llu",
+        stream_id_, offset_start, offset_start + length, has_fin, acked_offset_, send_data_offset_);
 
-    // Update to maximum acked offset
-    if (max_offset > acked_offset_) {
-        acked_offset_ = max_offset;
+    // 1. Insert [offset_start, offset_start + length) into the disjoint
+    //    interval set, merging any neighbours we touch. A length of 0 is
+    //    legal (e.g. a FIN-only frame) — we just skip the range insert.
+    if (length > 0) {
+        uint64_t new_start = offset_start;
+        uint64_t new_end = offset_start + length;
+
+        // Find the first range whose start > new_start, then step back if the
+        // preceding range overlaps/abuts. This collapses any chain of ranges
+        // that the new interval bridges in one pass.
+        auto it = acked_ranges_.upper_bound(new_start);
+        if (it != acked_ranges_.begin()) {
+            auto prev = std::prev(it);
+            if (prev->second >= new_start) {
+                new_start = prev->first;
+                if (prev->second > new_end) new_end = prev->second;
+                it = prev;
+            }
+        }
+        while (it != acked_ranges_.end() && it->first <= new_end) {
+            if (it->second > new_end) new_end = it->second;
+            it = acked_ranges_.erase(it);
+        }
+        acked_ranges_.emplace(new_start, new_end);
     }
 
-    // If FIN was acked, mark it
+    // 2. Recompute the contiguous ACKed prefix length. acked_offset_ is the
+    //    largest N such that [0, N) is fully covered. With a sorted map this
+    //    is just the end of the first range, *iff* it starts at 0.
+    if (!acked_ranges_.empty()) {
+        auto first = acked_ranges_.begin();
+        if (first->first == 0 && first->second > acked_offset_) {
+            acked_offset_ = first->second;
+        }
+    }
+
+    // 3. Track FIN ACK separately. The flag is also set in TrySendData when
+    //    we *put* a FIN onto the wire — keep both writers idempotent. Tagging
+    //    on the ACK path is still important because retransmission may
+    //    eventually be the only path to deliver the FIN, and we want
+    //    AllAckDone to fire on the ACK rather than the original send.
     if (has_fin) {
-        fin_sent_ = true;  // Ensure fin_sent_ is set
+        fin_sent_ = true;
     }
 
-    // Check if all data has been ACKed
+    // 4. Stream completion: every sent byte must be inside acked_ranges_ AND
+    //    FIN must have been ACKed. The first condition collapses to
+    //    acked_offset_ >= send_data_offset_ because acked_ranges_ is disjoint
+    //    and the contiguous prefix anchored at 0 is exactly acked_offset_.
     CheckAllDataAcked();
 }
 
 void SendStream::CheckAllDataAcked() {
-    // Check if all data (including FIN) has been ACKed
-    // Condition: fin_sent_ && acked_offset_ >= send_data_offset_
+    // All bytes [0, send_data_offset_) must be covered by the contiguous
+    // ACKed prefix, AND the FIN we wrote on the wire must have been ACKed.
     if (fin_sent_ && acked_offset_ >= send_data_offset_) {
         common::LOG_DEBUG(
-            "SendStream::CheckAllDataAcked: all data acked for stream %d, transitioning to Data Recvd state",
-            stream_id_);
+            "SendStream::CheckAllDataAcked: all data acked for stream %d, transitioning to Data Recvd state "
+            "(acked=%llu, sent=%llu, ranges=%zu)",
+            stream_id_, acked_offset_, send_data_offset_, acked_ranges_.size());
 
         // Transition to terminal state (Data Recvd)
         if (send_machine_->AllAckDone()) {

@@ -1,6 +1,6 @@
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "common/qlog/qlog.h"
 
 #include "common/log/log_context.h"
@@ -111,7 +111,8 @@ bool StreamManager::MakeStreamAsync(StreamDirection type, stream_creation_callba
     if (stream) {
         // Success: invoke callback immediately
         if (callback) {
-            event_loop_->PostTask([callback, stream]() { callback(stream); });
+            auto loop = event_loop_.lock();
+            if (loop) loop->PostTask([callback, stream]() { callback(stream); });
         }
         return true;
     }
@@ -144,7 +145,8 @@ void StreamManager::RetryPendingStreamRequests() {
 
         if (req.callback) {
             auto callback = req.callback;
-            event_loop_->PostTask([callback, stream]() { callback(stream); });
+            auto loop2 = event_loop_.lock();
+            if (loop2) loop2->PostTask([callback, stream]() { callback(stream); });
         }
 
         pending_stream_requests_.pop();
@@ -258,7 +260,7 @@ std::shared_ptr<IStream> StreamManager::CreateRemoteStream(
 
 // ==================== Stream ACK Notification ====================
 
-void StreamManager::OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin) {
+void StreamManager::OnStreamDataAcked(uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
     common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
     auto stream = FindStream(stream_id);
     if (!stream) {
@@ -274,7 +276,7 @@ void StreamManager::OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, b
     }
 
     // Notify stream about ACK - the stream will handle closing itself if needed
-    send_stream->OnDataAcked(max_offset, has_fin);
+    send_stream->OnDataAcked(offset_start, length, has_fin);
 }
 
 // ==================== Stream Reset ====================
@@ -402,6 +404,20 @@ bool StreamManager::BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_l
     // The streams remain in active list and will be retried when MAX_STREAM_DATA arrives
     if (has_more_data && all_flow_control_blocked) {
         common::LOG_DEBUG("StreamManager: all streams flow control blocked, stopping send loop");
+
+        // Bug #19 (companion to #17): the worker drops a connection from its
+        // active set as soon as TrySend() reports "no data". Connection-level
+        // flow-control already gets a recheck timer via SendManager::
+        // SetFlowControlBlocked() (see connection_base.cpp::TrySend, Bug #17).
+        // Stream-level STREAM_DATA_BLOCKED has the same hazard but no
+        // equivalent rescue path: with all in-flight packets already ACKed
+        // and the peer waiting for application read before sending
+        // MAX_STREAM_DATA, no PTO/ACK callback ever wakes us up — observed
+        // as a flat 10s idle-timeout silence in quic-go interop transfer.
+        // Reuse the same recheck timer; it is benign when peer eventually
+        // sends MAX_STREAM_DATA (the next OnPacketAck/MarkStreamActive clears
+        // the flag) and disarmed in CloseInternal/ClearRetransmissionData.
+        send_manager_.SetFlowControlBlocked();
         return false;  // Stop send loop, wait for MAX_STREAM_DATA
     }
 

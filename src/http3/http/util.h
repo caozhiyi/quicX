@@ -2,7 +2,7 @@
 #define HTTP3_HTTP_UTIL
 
 #include <string>
-#include "http3/include/type.h"
+#include <quicx/http3/type.h>
 
 namespace quicx {
 namespace http3 {

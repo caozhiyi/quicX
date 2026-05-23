@@ -1,10 +1,18 @@
 #include <chrono>
 #include <iostream>
 
-#include "common/util/time.h"
-#include "http3/include/if_client.h"
-#include "http3/include/if_response.h"
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_response.h>
 #include "http_client.h"
+
+namespace {
+inline uint64_t NowMsec() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+}  // namespace
+
 
 HttpClient::HttpClient():
     verbose_(false) {}
@@ -45,7 +53,7 @@ bool HttpClient::DoRequest(const std::string& url, const std::string& method, co
     }
 
     // Record start time
-    response.start_time_ms = quicx::common::UTCTimeMsec();
+    response.start_time_ms = NowMsec();
 
     if (verbose_) {
         std::cerr << "* Preparing request to " << url << std::endl;
@@ -101,7 +109,7 @@ bool HttpClient::DoRequest(const std::string& url, const std::string& method, co
             [this, &response, &request_completed](std::shared_ptr<quicx::IResponse> resp, uint32_t error) {
                 std::unique_lock<std::mutex> lock(mutex_);
 
-                response.end_time_ms = quicx::common::UTCTimeMsec();
+                response.end_time_ms = NowMsec();
                 response.error = error;
 
                 if (error == 0 && resp) {

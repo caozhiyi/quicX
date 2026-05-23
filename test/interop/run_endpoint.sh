@@ -29,15 +29,15 @@
 # try to configure IPv6 routes for addresses that don't exist, producing
 # errors like "inet6 address is expected rather than ':2'" and potentially
 # breaking the container's routing table.
-if ip addr show 2>/dev/null | grep -qE "172\.30\.(0|100)\."; then
-    echo "Network simulator topology detected (172.30.x.x), running /setup.sh ..."
+if ip addr show 2>/dev/null | grep -qE "193\.167\.(0|100)\."; then
+    echo "Network simulator topology detected (193.167.x.x), running /setup.sh ..."
     if [ -f /setup.sh ]; then
         /setup.sh || {
             echo "WARNING: /setup.sh failed (exit $?). Continuing anyway."
         }
     fi
 else
-    echo "Direct mode detected (not in 172.30.x.x network), skipping /setup.sh"
+    echo "Direct mode detected (not in 193.167.x.x network), skipping /setup.sh"
     # Ensure log directories exist (normally created by /setup.sh)
     mkdir -p /logs/qlog
 fi
@@ -109,7 +109,7 @@ run_client() {
     # Wait for network simulator to be ready (required by quic-network-simulator)
     # /wait-for-it.sh is provided by the base image
     # Only wait when running inside the network simulator (check if sim is reachable)
-    if ip addr show 2>/dev/null | grep -q "193\.167\."; then
+    if ip addr show 2>/dev/null | grep -qE "193\.167\.(0|100)\."; then
         echo "Network simulator environment detected (custom bridge network), waiting for sim..."
         if [ -f /wait-for-it.sh ]; then
             # Wait for sim's control port (ns-3 readiness signal)
@@ -135,11 +135,11 @@ run_client() {
             cmd+=" --expect-retry"
             ;;
         resumption)
-            cmd+=" --session-cache /tmp/session"
+            cmd+=" --session-cache ${SESSION_CACHE_PATH:-/session}/quicx_session.bin"
             cmd+=" --resumption"
             ;;
         zerortt)
-            cmd+=" --session-cache /tmp/session"
+            cmd+=" --session-cache ${SESSION_CACHE_PATH:-/session}/quicx_session.bin"
             cmd+=" --zerortt"
             ;;
         chacha20)

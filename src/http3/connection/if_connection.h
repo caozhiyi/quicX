@@ -7,11 +7,11 @@
 #include <unordered_map>
 #include <vector>
 
-#include "http3/include/type.h"
+#include <quicx/http3/type.h>
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_stream.h"
-#include "quic/include/if_quic_connection.h"
+#include <quicx/quic/if_quic_connection.h>
 
 namespace quicx {
 namespace http3 {
@@ -43,6 +43,17 @@ public:
      * @return The unique id of the connection
      */
     const std::string& GetUniqueId() const { return unique_id_; }
+
+    /**
+     * @brief Get the underlying QUIC connection (for owner-side identity checks
+     *        such as reverse-lookup in Http3 Client/Server connection maps when
+     *        a kConnectionClose notification arrives without a routable key).
+     *        The returned shared_ptr aliases the same IQuicConnection that was
+     *        passed at construction time and MUST NOT be retained beyond the
+     *        immediate check — holding it would extend the per-connection
+     *        memory footprint that P4 is trying to reclaim.
+     */
+    const std::shared_ptr<IQuicConnection>& GetQuicConnection() const { return quic_connection_; }
 
     /**
      * @brief Close the connection

@@ -2,11 +2,11 @@
 #include <memory>
 #include <string>
 
-#include "upgrade/include/type.h"
+#include <quicx/upgrade/type.h>
 #include "upgrade/handlers/http_smart_handler.h"
 #include "upgrade/handlers/https_smart_handler.h"
 #include "upgrade/handlers/smart_handler_factory.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 
 namespace quicx {
 namespace upgrade {
@@ -24,10 +24,13 @@ public:
     }
     bool RemoveFd(uint32_t) override { return true; }
     void AddFixedProcess(std::function<void()>) override { return; }
+    void AddFixedProcess(std::weak_ptr<void>, std::function<void()>) override { return; }
+    void ClearFixedProcesses() override {}
     uint64_t AddTimer(std::function<void()>, uint32_t, bool = false) override { return 1; }
     uint64_t AddTimer(common::TimerTask& task, uint32_t, bool = false) override { return 1; }
     bool RemoveTimer(uint64_t) override { return true; }
     bool RemoveTimer(common::TimerTask& task) override { return true; }
+    void ClearAllTimers() override {}
     void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override { return; }
     void PostTask(std::function<void()>) override {}
     void Wakeup() override {}

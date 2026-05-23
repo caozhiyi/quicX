@@ -7,11 +7,11 @@
 
 #include "http3/http/request.h"
 #include "http3/http/response.h"
-#include "http3/include/type.h"
+#include <quicx/http3/type.h>
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/router/if_router.h"
 #include "http3/stream/req_resp_base_stream.h"
-#include "quic/include/if_quic_bidirection_stream.h"
+#include <quicx/quic/if_quic_bidirection_stream.h>
 
 namespace quicx {
 namespace http3 {
@@ -40,7 +40,7 @@ class ResponseStream: public ReqRespBaseStream {
 public:
     ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
-        const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IHttpProcessor> http_processor,
+        const std::shared_ptr<IQuicBidirectionStream>& stream, std::weak_ptr<IHttpProcessor> http_processor,
         const std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const std::function<bool()>& settings_received_cb);
@@ -70,7 +70,7 @@ private:
     RouteConfig route_config_;
     std::shared_ptr<Request> request_;    // Request object (created in HandleHeaders)
     std::shared_ptr<Response> response_;  // Response object (created in HandleHeaders, used in HandleData)
-    std::shared_ptr<IHttpProcessor> http_processor_;
+    std::weak_ptr<IHttpProcessor> http_processor_;
     std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler_;
     std::function<bool()> settings_received_cb_;  // RFC 9114: Check if peer SETTINGS received
 };

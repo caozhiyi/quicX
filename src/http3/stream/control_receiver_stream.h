@@ -9,7 +9,7 @@
 #include "http3/frame/frame_decoder.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_recv_stream.h"
-#include "quic/include/if_quic_recv_stream.h"
+#include <quicx/quic/if_quic_recv_stream.h>
 
 namespace quicx {
 namespace http3 {

@@ -100,6 +100,10 @@ private:
     struct SentPacketInfo {
         uint64_t bytes;
         uint64_t sent_time;
+        bool declared_lost = false;  // set by CheckForLostPackets; if the
+                                     // simulator later delivers the packet
+                                     // this is a spurious loss and we undo
+                                     // the bookkeeping in ProcessAcks.
     };
     
     std::unique_ptr<ICongestionControl> cc_;

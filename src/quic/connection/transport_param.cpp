@@ -248,6 +248,7 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
     uint64_t type = 0;
     uint8_t* pos = buffer.GetStart();
     uint8_t* end = buffer.GetEnd();
+    common::LOG_INFO("TransportParam::Decode: BEGIN, total_len=%ld", (long)(end - pos));
     while (pos != nullptr && pos < end) {
         pos = common::DecodeVarint(pos, end, type);
         if (pos == nullptr) {
@@ -376,6 +377,16 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
             }
         }
     }
+    common::LOG_INFO("TransportParam::Decode: DONE — initial_max_data=%llu, "
+                     "bidi_local=%llu, bidi_remote=%llu, uni=%llu, "
+                     "streams_bidi=%llu, streams_uni=%llu, max_idle_timeout=%llu",
+                     (unsigned long long)initial_max_data_,
+                     (unsigned long long)initial_max_stream_data_bidi_local_,
+                     (unsigned long long)initial_max_stream_data_bidi_remote_,
+                     (unsigned long long)initial_max_stream_data_uni_,
+                     (unsigned long long)initial_max_streams_bidi_,
+                     (unsigned long long)initial_max_streams_uni_,
+                     (unsigned long long)max_idle_timeout_);
     return true;
 }
 

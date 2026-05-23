@@ -37,6 +37,7 @@
 #include "quic/crypto/if_cryptographer.h"
 #include "quic/crypto/type.h"
 
+#include "quic/common/version.h"
 #include "quic/packet/handshake_packet.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/packet_decode.h"
@@ -178,6 +179,7 @@ static void BM_Packet_InitPacket_DecodeNoCrypto(benchmark::State& state) {
 
     // Encode one packet to serve as the test input.
     quic::InitPacket tx_packet;
+    static_cast<quic::LongHeader*>(tx_packet.GetHeader())->SetVersion(quic::GetDefaultVersion());
     tx_packet.GetHeader()->SetPacketNumberLength(2);
     tx_packet.SetPacketNumber(42);
     tx_packet.SetPayload(payload);
@@ -219,6 +221,7 @@ static void BM_Packet_InitPacket_DecodeWithCrypto(benchmark::State& state) {
     common::SharedBufferSpan payload(frame_buf->GetSharedReadableSpan());
 
     quic::InitPacket tx_packet;
+    static_cast<quic::LongHeader*>(tx_packet.GetHeader())->SetVersion(quic::GetDefaultVersion());
     tx_packet.GetHeader()->SetPacketNumberLength(2);
     tx_packet.SetPacketNumber(42);
     tx_packet.SetPayload(payload);
@@ -362,6 +365,7 @@ static void BM_Packet_Coalesced_Decode(benchmark::State& state) {
     auto encoded = MakeSingleBlock(8192);
     for (int i = 0; i < 2; ++i) {
         quic::InitPacket pkt;
+        static_cast<quic::LongHeader*>(pkt.GetHeader())->SetVersion(quic::GetDefaultVersion());
         pkt.GetHeader()->SetPacketNumberLength(2);
         pkt.SetPacketNumber(100 + i);
         pkt.SetPayload(payload);
@@ -399,6 +403,7 @@ static void BM_Packet_SinglePacket_DecodeViaDispatch(benchmark::State& state) {
     common::SharedBufferSpan payload(frame_buf->GetSharedReadableSpan());
 
     quic::InitPacket tx;
+    static_cast<quic::LongHeader*>(tx.GetHeader())->SetVersion(quic::GetDefaultVersion());
     tx.GetHeader()->SetPacketNumberLength(2);
     tx.SetPacketNumber(42);
     tx.SetPayload(payload);
@@ -422,10 +427,12 @@ static void BM_Packet_SinglePacket_DecodeViaDispatch(benchmark::State& state) {
 }
 
 // Narrower A/B probe: only charge the *dispatch* work (HeaderFlag + version
-// parse + make_shared<InitPacket> + InitPacket::DecodeWithoutCrypto). The
-// outer buffer is reset with MoveReadPt instead of being rebuilt, so this
-// isolates DecodePackets() overhead from buffer allocation churn.
-
+// parse + make_shared<InitPacket> + InitPacket::DecodeWithoutCrypto). We
+// pre-build an immutable "wire" vector once and re-wrap it into a fresh
+// SingleBlockBuffer every iteration inside the timed section; the per-iter
+// buffer construction is unavoidable (DecodePackets consumes the buffer
+// non-destructively via MoveReadPt and cannot be "rewound"), but we avoid
+// the Pause/ResumeTiming hammer which itself costs hundreds of ns.
 static void BM_Packet_SinglePacket_DecodeViaDispatch_NoAlloc(benchmark::State& state) {
     const size_t payload_bytes = 256;
     auto frame = MakeCryptoFrame(payload_bytes);
@@ -434,6 +441,7 @@ static void BM_Packet_SinglePacket_DecodeViaDispatch_NoAlloc(benchmark::State& s
     common::SharedBufferSpan payload(frame_buf->GetSharedReadableSpan());
 
     quic::InitPacket tx;
+    static_cast<quic::LongHeader*>(tx.GetHeader())->SetVersion(quic::GetDefaultVersion());
     tx.GetHeader()->SetPacketNumberLength(2);
     tx.SetPacketNumber(42);
     tx.SetPayload(payload);
@@ -444,17 +452,16 @@ static void BM_Packet_SinglePacket_DecodeViaDispatch_NoAlloc(benchmark::State& s
     std::vector<uint8_t> wire(encoded->GetDataLength());
     encoded->ReadNotMovePt(wire.data(), static_cast<uint32_t>(wire.size()));
 
-    auto in = MakeSingleBlock(wire.size() + 16);
     uint32_t wsz = static_cast<uint32_t>(wire.size());
+    // Pre-size the packets vector so push_back/emplace_back does not
+    // reallocate on the hot path.
+    std::vector<std::shared_ptr<quic::IPacket>> packets;
+    packets.reserve(4);
 
     for (auto _ : state) {
-        // Rewind the buffer to the start each iteration without re-allocating.
-        state.PauseTiming();
-        in = MakeSingleBlock(wire.size() + 16);
+        auto in = MakeSingleBlock(wsz + 16);
         in->Write(wire.data(), wsz);
-        state.ResumeTiming();
-
-        std::vector<std::shared_ptr<quic::IPacket>> packets;
+        packets.clear();
         bool ok = quic::DecodePackets(in, packets);
         benchmark::DoNotOptimize(ok);
         benchmark::DoNotOptimize(packets.size());

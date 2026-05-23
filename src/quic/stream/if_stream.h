@@ -7,10 +7,10 @@
 #include <memory>
 #include <string>
 
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/if_frame.h"
-#include "quic/include/if_quic_stream.h"
+#include <quicx/quic/if_quic_stream.h>
 #include "quic/stream/if_frame_visitor.h"
 
 namespace quicx {
@@ -18,7 +18,7 @@ namespace quic {
 
 class IStream: public virtual IQuicStream, public std::enable_shared_from_this<IStream> {
 public:
-    IStream(std::shared_ptr<common::IEventLoop> loop, uint64_t stream_id,
+    IStream(std::weak_ptr<common::IEventLoop> loop, uint64_t stream_id,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
@@ -47,11 +47,11 @@ protected:
     void ToSend();
 
 protected:
-    void* user_data_;
+    void* user_data_ = nullptr;
 
     uint64_t stream_id_;
     // is already active to send?
-    bool is_active_send_;
+    bool is_active_send_ = false;
     // frames that wait for sending
     std::list<std::shared_ptr<IFrame>> frames_list_;
 
@@ -62,7 +62,7 @@ protected:
     // inner connection close callback
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb_;
 
-    std::shared_ptr<common::IEventLoop> event_loop_;
+    std::weak_ptr<common::IEventLoop> event_loop_;
 };
 
 }  // namespace quic

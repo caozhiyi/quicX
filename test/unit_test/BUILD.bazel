@@ -1,63 +1,79 @@
 package(default_visibility = ["//visibility:public"])
 
-# Centralized test support libs (moved from subpackages)
+# Test-support libraries provide shared mocks/utilities consumed by
+# test sources. Headers are exposed so tests can include them via
+# `#include "test/unit_test/<...>"` (matching the path used in source files).
+
 cc_library(
     name = "common_support",
-    srcs = [
-        "common/time_consuming.cpp",
+    testonly = True,
+    srcs = ["common/time_consuming.cpp"],
+    hdrs = ["common/time_consuming.h"],
+    include_prefix = "test/unit_test",
+    copts = ["-std=c++17"],
+    deps = [
+        "//src/common:common",
     ],
-    hdrs = [
-        "common/time_consuming.h",
-    ],
-    include_prefix = "unit_test/common",
 )
 
 cc_library(
     name = "http3_support",
+    testonly = True,
     srcs = [
         "http3/connection/mock_quic_connection.cpp",
+        # Note: filename has an upstream typo ("tream" vs. "stream"); keep
+        # both the existing file name and its header reference in sync.
         "http3/stream/mock_quic_tream.cpp",
     ],
     hdrs = [
         "http3/connection/mock_quic_connection.h",
         "http3/stream/mock_quic_stream.h",
     ],
-    include_prefix = "unit_test/http3",
+    include_prefix = "test/unit_test",
+    copts = ["-std=c++17"],
     deps = [
         "//src/common:common",
-        "//src/quic:quic",
         "//src/http3:http3",
+        "//src/quic:quic",
     ],
 )
 
 cc_library(
     name = "quic_support",
-    srcs = [
-        "quic/packet/common_test_frame.cpp",
-    ],
-    hdrs = glob([
-        "quic/**/*.h",
-    ]),
-    include_prefix = "unit_test/quic",
+    testonly = True,
+    srcs = ["quic/packet/common_test_frame.cpp"],
+    hdrs = glob(["quic/**/*.h"]),
+    include_prefix = "test/unit_test",
+    copts = ["-std=c++17"],
     deps = [
         "//src/common:common",
         "//src/quic:quic",
     ],
 )
 
+# Single executable that runs every *_test.cpp under test/unit_test.
+# Mock implementation files (handled via *_support libs) are excluded so
+# they aren't compiled twice.
 cc_test(
     name = "all_tests",
-    srcs = glob([
-        "**/*_test.cpp",
-    ]),
+    srcs = glob(
+        ["**/*_test.cpp"],
+    ) + ["test.cpp"],
+    copts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "-std=c++17",
+            "-pthread",
+        ],
+    }),
     deps = [
         ":common_support",
         ":http3_support",
         ":quic_support",
-        "//third/googletest:gtest_main",
         "//src/common:common",
-        "//src/quic:quic",
         "//src/http3:http3",
+        "//src/quic:quic",
         "//src/upgrade:upgrade",
+        "//third/googletest:gtest",
     ],
 )

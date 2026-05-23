@@ -68,7 +68,7 @@ curl -k https://localhost:8443/dashboard > dashboard.html
 ### 1. Initialize Metrics System
 
 ```cpp
-#include "common/metrics/metrics.h"
+#include <quicx/common/metrics.h>
 
 // Initialize configuration
 quicx::MetricsConfig config;

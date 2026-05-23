@@ -123,7 +123,11 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
     }
 
     if (in_recovery_) {
-        if (ev.ack_time > recovery_start_time_us_) {
+        // RFC 9002 §7.3.2: only exit recovery when ACK is for a packet sent
+        // AFTER recovery_start_time_. Comparing ack_time (arrival) instead of
+        // the acked packet's send time lets a single in-flight ACK exit
+        // recovery prematurely and amplify cwnd collapse on subsequent loss.
+        if (ev.acked_packet_send_time > recovery_start_time_us_) {
             common::CongestionStateUpdatedData qlog_data;
             qlog_data.old_state = "recovery";
             qlog_data.new_state = "congestion_avoidance";

@@ -5,13 +5,23 @@
 #
 # NOTE on subnets:
 #   The official quic-network-simulator topology uses 193.167.0.0/24 + 193.167.100.0/24.
-#   On some hosts (e.g. corporate Tencent Cloud CVMs) 193.167.0.0/16 is hijacked to an
-#   internal gateway via a static route, which makes the sim-mode topology unusable.
-#   To avoid that conflict, we relocate the topology to 172.30.0.0/24 + 172.30.100.0/24,
-#   which are private (RFC1918) and almost never pre-routed.
+#   These subnets are NOT freely changeable: the ns-3 helper inside the sim image
+#   (quic-network-simulator-helper.cc) hard-codes 193.167.0.2 / 193.167.100.2 as the
+#   internal IPv4 addresses of the simulated left/right nodes.  If you relocate the
+#   topology to another subnet (e.g. 172.30.0.0/24), packets reach the sim container's
+#   eth0/eth1 but the ns-3 protocol stack treats them as "destination unreachable" and
+#   silently drops them, so handshakes time out with no clear error.  Always keep the
+#   193.167.x.x topology unless you are also rebuilding the sim binary with new IPs.
+#
+#   On some hosts (e.g. corporate Tencent Cloud CVMs) 193.167.0.0/16 used to be
+#   hijacked to an internal gateway via a static route, which would have made this
+#   topology unusable.  As of 2026-05-20 the route on this CVM is no longer present
+#   (default route covers 193.167.x.x) and the bridges create cleanly.  If you hit a
+#   "Pool overlaps with other one on this address space" error from Docker, run
+#   `ip route show | grep 193.167` and remove the conflicting static route.
 #
 # NOTE on interface_name:
-#   The sim container (martenseemann/quic-network-simulator) hard-codes eth0/eth1.
+#   The sim container (quic-network-simulator) hard-codes eth0/eth1 names.
 #   On Docker >= 28.0 the interface assignment based on `priority` is not guaranteed,
 #   so we use `interface_name` (requires Compose v2.36.0+, which this repo already
 #   depends on). If your Compose is older, fall back to `priority` only and hope for
@@ -38,7 +48,11 @@ services:
   # Official: https://github.com/quic-interop/quic-network-simulator
   # ----------------------------------------------------------------
   sim:
-    image: martenseemann/quic-network-simulator:latest
+    # quicx-sim:latest is a thin wrapper over martenseemann/quic-network-simulator:latest
+    # built locally (see scripts/build_sim_image.sh).  The wrapper tolerates transient
+    # DNS errors from wait-for-it-quic during compose startup race, otherwise the sim
+    # exits 1 before the server's hostname is registered in Dockers internal DNS.
+    image: ${SIM:-quicx-sim:latest}
     container_name: sim
     hostname: sim
     cap_add:
@@ -49,20 +63,22 @@ services:
       - SCENARIO=${SCENARIO:-simple-p2p --delay=15ms --bandwidth=10Mbps --queue=25}
     networks:
       leftnet:
-        ipv4_address: 172.30.0.2
+        ipv4_address: 193.167.0.2
         ipv6_address: fd00:cafe:cafe:0::2
         interface_name: eth0
         priority: 1000
       rightnet:
-        ipv4_address: 172.30.100.2
+        ipv4_address: 193.167.100.2
         ipv6_address: fd00:cafe:cafe:100::2
         interface_name: eth1
         priority: 900
+    volumes:
+      - ${SIM_LOGS:-./logs/sim}:/logs
     stdin_open: true
     tty: true
 
   # ----------------------------------------------------------------
-  # QUIC Server (rightnet: 172.30.100.100)
+  # QUIC Server (rightnet: 193.167.100.100)
   # ----------------------------------------------------------------
   server:
     build:
@@ -84,20 +100,21 @@ services:
       - SSLKEYLOGFILE=/logs/keys.log
       - QLOGDIR=/logs/qlog/
       - CRON=${CRON:-}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - ${WWW:-./www}:/www:ro
       - ${CERTS:-./certs}:/certs:ro
       - ${SERVER_LOGS:-./logs/server}:/logs
     networks:
       rightnet:
-        ipv4_address: 172.30.100.100
+        ipv4_address: 193.167.100.100
         ipv6_address: fd00:cafe:cafe:100::100
         interface_name: eth0
     stdin_open: true
     tty: true
 
   # ----------------------------------------------------------------
-  # QUIC Client (leftnet: 172.30.0.100)
+  # QUIC Client (leftnet: 193.167.0.100)
   # ----------------------------------------------------------------
   client:
     build:
@@ -120,18 +137,32 @@ services:
       - SSLKEYLOGFILE=/logs/keys.log
       - QLOGDIR=/logs/qlog/
       - CRON=${CRON:-}
+      - LOG_LEVEL=${LOG_LEVEL:-}
+      # Path inside the container where session-cache files live. The runner
+      # bind-mounts a host tempdir to /session for resumption / 0-RTT tests
+      # so the TLS session ticket persists across the two `docker compose run`
+      # invocations of the client. Defaults to /session, matching the volume
+      # mount below; non-resumption tests don't write to it.
+      - SESSION_CACHE_PATH=${SESSION_CACHE_PATH:-/session}
     volumes:
       - ${DOWNLOADS:-./downloads}:/downloads:delegated
       - ${CERTS:-./certs}:/certs:ro
       - ${CLIENT_LOGS:-./logs/client}:/logs
+      # Resumption / 0-RTT sessions: mount a host directory so the ticket
+      # written by the first `docker compose run --rm client` invocation is
+      # visible to the second one. SESSION_CACHE_HOST_DIR is set per-test by
+      # interop_runner.py (a fresh tempdir for each two-connection test);
+      # when unset the placeholder ./logs/session is used (effectively a
+      # no-op for non-resumption scenarios).
+      - ${SESSION_CACHE_HOST_DIR:-./logs/session}:/session:rw
     extra_hosts:
-      - "server4:172.30.100.100"
+      - "server4:193.167.100.100"
       - "server6:fd00:cafe:cafe:100::100"
-      - "server46:172.30.100.100"
+      - "server46:193.167.100.100"
       - "server46:fd00:cafe:cafe:100::100"
     networks:
       leftnet:
-        ipv4_address: 172.30.0.100
+        ipv4_address: 193.167.0.100
         ipv6_address: fd00:cafe:cafe:0::100
         interface_name: eth0
     stdin_open: true
@@ -141,7 +172,7 @@ services:
 # Networks (matches official quic-network-simulator topology)
 #
 # Topology:
-#   client (172.30.0.100) ── leftnet ── sim (.0.2 / .100.2) ── rightnet ── server (172.30.100.100)
+#   client (193.167.0.100) ── leftnet ── sim (.0.2 / .100.2) ── rightnet ── server (193.167.100.100)
 #
 # ip_masquerade is disabled so that the ns-3 simulator sees
 # original source IPs (required for correct network simulation).
@@ -154,7 +185,7 @@ networks:
       com.docker.network.bridge.enable_ip_masquerade: "false"
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        - subnet: 193.167.0.0/24
         - subnet: fd00:cafe:cafe:0::/64
   rightnet:
     driver: bridge
@@ -163,5 +194,5 @@ networks:
       com.docker.network.bridge.enable_ip_masquerade: "false"
     ipam:
       config:
-        - subnet: 172.30.100.0/24
+        - subnet: 193.167.100.0/24
         - subnet: fd00:cafe:cafe:100::/64

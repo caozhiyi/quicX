@@ -97,17 +97,22 @@ TEST(QlogConfigTest, CustomValues) {
 TEST(QlogConfigTest, CommonFieldsDefaults) {
     CommonFields fields;
 
-    EXPECT_EQ("QUIC", fields.protocol_type);
+    // Default protocol_types is the standardized identifier pair per
+    // qlog draft-02.
+    ASSERT_EQ(2u, fields.protocol_types.size());
+    EXPECT_EQ("QUIC", fields.protocol_types[0]);
+    EXPECT_EQ("HTTP3", fields.protocol_types[1]);
     EXPECT_TRUE(fields.group_id.empty());
 }
 
 // Test CommonFields custom values
 TEST(QlogConfigTest, CommonFieldsCustom) {
     CommonFields fields;
-    fields.protocol_type = "HTTP/3";
+    fields.protocol_types = {"HTTP/3"};
     fields.group_id = "test-group-1";
 
-    EXPECT_EQ("HTTP/3", fields.protocol_type);
+    ASSERT_EQ(1u, fields.protocol_types.size());
+    EXPECT_EQ("HTTP/3", fields.protocol_types.front());
     EXPECT_EQ("test-group-1", fields.group_id);
 }
 
@@ -116,7 +121,8 @@ TEST(QlogConfigTest, QlogConfigurationDefaults) {
     QlogConfiguration config;
 
     EXPECT_EQ(0u, config.time_offset);
-    EXPECT_EQ("us", config.time_units);
+    // Default is "ms" because the serializer emits time in milliseconds.
+    EXPECT_EQ("ms", config.time_units);
 }
 
 // Test QlogConfiguration custom values

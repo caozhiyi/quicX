@@ -3,10 +3,10 @@
 
 #include <memory>
 
-#include "http3/include/if_response.h"
+#include <quicx/http3/if_response.h>
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_send_stream.h"
-#include "quic/include/if_quic_send_stream.h"
+#include <quicx/quic/if_quic_send_stream.h>
 
 namespace quicx {
 namespace http3 {

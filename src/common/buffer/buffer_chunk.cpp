@@ -1,3 +1,5 @@
+#include <cstdlib>
+
 #include "common/log/log.h"
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_chunk.h"
@@ -67,6 +69,13 @@ std::shared_ptr<BlockMemoryPool> BufferChunk::GetPool() const {
 
 // Return the block to the original pool (if the pool is still alive) and clear
 // state. This helper is invoked from both the destructor and move assignment.
+//
+// IMPORTANT: If the originating pool has already been destroyed (pool_.lock()
+// returns nullptr), we MUST free the raw block directly. Otherwise the memory
+// leaks, because BlockMemoryPool::Expansion() uses malloc() to acquire blocks
+// and only frees blocks that are currently residing in its free list at
+// destruction time. Any block that was "checked out" into a BufferChunk when
+// the pool died would be lost unless the chunk cleans it up here.
 void BufferChunk::Release() {
     if (data_ != nullptr) {
         auto pool = pool_.lock();
@@ -76,6 +85,11 @@ void BufferChunk::Release() {
             pool->PoolLargeFree(ptr);
             // Update data_ after PoolLargeFree (which may modify ptr)
             data_ = static_cast<uint8_t*>(ptr);
+        } else {
+            // Pool already destroyed - free the raw memory ourselves to avoid leak.
+            // BlockMemoryPool::Expansion uses malloc(), so free() is the correct
+            // deallocator here.
+            free(data_);
         }
 
         // Ensure data_ is cleared even if pool is gone

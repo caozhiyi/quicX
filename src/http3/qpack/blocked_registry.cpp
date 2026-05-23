@@ -17,6 +17,7 @@ bool QpackBlockedRegistry::Add(uint64_t key, const std::function<void()>& retry_
         return false;
     }
     pending_[key] = retry_fn;
+    by_stream_[key >> 32].insert(key);
     return true;
 }
 
@@ -25,6 +26,13 @@ void QpackBlockedRegistry::Ack(uint64_t key) {
     if (it != pending_.end()) {
         auto fn = it->second;
         pending_.erase(it);
+        auto sit = by_stream_.find(key >> 32);
+        if (sit != by_stream_.end()) {
+            sit->second.erase(key);
+            if (sit->second.empty()) {
+                by_stream_.erase(sit);
+            }
+        }
         if (fn) {
             fn();
         }
@@ -32,7 +40,18 @@ void QpackBlockedRegistry::Ack(uint64_t key) {
 }
 
 void QpackBlockedRegistry::Remove(uint64_t key) {
-    pending_.erase(key);
+    auto it = pending_.find(key);
+    if (it == pending_.end()) {
+        return;
+    }
+    pending_.erase(it);
+    auto sit = by_stream_.find(key >> 32);
+    if (sit != by_stream_.end()) {
+        sit->second.erase(key);
+        if (sit->second.empty()) {
+            by_stream_.erase(sit);
+        }
+    }
 }
 
 void QpackBlockedRegistry::NotifyAll() {
@@ -40,39 +59,28 @@ void QpackBlockedRegistry::NotifyAll() {
         kv.second();
     }
     pending_.clear();
+    by_stream_.clear();
 }
-
-namespace {
-// Return the iterator of the pending entry with the smallest key whose
-// high 32 bits equal stream_id, or pending_.end() if none.
-template <typename Map>
-typename Map::iterator FindEarliestForStream(Map& pending, uint64_t stream_id) {
-    typename Map::iterator found = pending.end();
-    uint64_t best_key = 0;
-    bool has_best = false;
-    uint64_t hi_mask = stream_id << 32;
-    for (auto it = pending.begin(); it != pending.end(); ++it) {
-        if ((it->first >> 32) != stream_id) {
-            continue;
-        }
-        if (!has_best || it->first < best_key) {
-            best_key = it->first;
-            found = it;
-            has_best = true;
-        }
-    }
-    (void)hi_mask;
-    return found;
-}
-}  // namespace
 
 bool QpackBlockedRegistry::AckByStreamId(uint64_t stream_id) {
-    auto it = FindEarliestForStream(pending_, stream_id);
-    if (it == pending_.end()) {
+    auto sit = by_stream_.find(stream_id);
+    if (sit == by_stream_.end() || sit->second.empty()) {
         return false;
     }
-    auto fn = it->second;
-    pending_.erase(it);
+    // Earliest outstanding section == smallest key in the per-stream set.
+    uint64_t key = *sit->second.begin();
+    sit->second.erase(sit->second.begin());
+    if (sit->second.empty()) {
+        by_stream_.erase(sit);
+    }
+
+    auto pit = pending_.find(key);
+    if (pit == pending_.end()) {
+        // Should not happen when indices are in sync, but stay defensive.
+        return false;
+    }
+    auto fn = pit->second;
+    pending_.erase(pit);
     if (fn) {
         fn();
     }
@@ -80,14 +88,18 @@ bool QpackBlockedRegistry::AckByStreamId(uint64_t stream_id) {
 }
 
 bool QpackBlockedRegistry::RemoveByStreamId(uint64_t stream_id) {
-    auto it = FindEarliestForStream(pending_, stream_id);
-    if (it == pending_.end()) {
+    auto sit = by_stream_.find(stream_id);
+    if (sit == by_stream_.end() || sit->second.empty()) {
         return false;
     }
-    pending_.erase(it);
+    uint64_t key = *sit->second.begin();
+    sit->second.erase(sit->second.begin());
+    if (sit->second.empty()) {
+        by_stream_.erase(sit);
+    }
+    pending_.erase(key);
     return true;
 }
 
 }
 }
-

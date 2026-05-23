@@ -1,0 +1,129 @@
+name: Interop
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    - cron: '0 20 * * *'   # Daily full matrix
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode (local / matrix)'
+        required: true
+        default: 'local'
+        type: choice
+        options: [local, matrix]
+
+concurrency:
+  group: interop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-selftest:
+    name: local self-test (14 scenarios)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    if: ${{ github.event_name != 'schedule' && (github.event.inputs.mode || 'local') == 'local' }}
+
+    env:
+      CC: gcc
+      CXX: g++
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build python3 python3-pip
+          pip3 install -r test/interop/requirements.txt || true
+
+      - name: Configure & Build interop binaries
+        run: |
+          cmake -S . -B build_interop \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_INTEROP=ON \
+            -DENABLE_TESTING=OFF \
+            -DENABLE_INTERGRATION=OFF \
+            -DBUILD_EXAMPLES=OFF
+          cmake --build build_interop --target interop_server interop_client --parallel 4
+
+      - name: Run local interop self-test
+        run: python3 run_tests.py interop
+        timeout-minutes: 20
+
+      - name: Upload interop logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-local-logs
+          path: |
+            test/interop/logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  cross-matrix:
+    name: cross-matrix (scheduled)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    if: ${{ github.event_name == 'schedule' || github.event.inputs.mode == 'matrix' }}
+    env:
+      CC: gcc
+      CXX: g++
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps (+ docker)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build python3 python3-pip docker-compose
+          pip3 install -r test/interop/requirements.txt || true
+
+      - name: Build interop binaries
+        run: |
+          cmake -S . -B build_interop \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_INTEROP=ON \
+            -DENABLE_TESTING=OFF \
+            -DENABLE_INTERGRATION=OFF \
+            -DBUILD_EXAMPLES=OFF
+          cmake --build build_interop --target interop_server interop_client --parallel 4
+
+      - name: Pull peer implementation images
+        run: |
+          # Pull commonly available peers. Missing ones will be skipped by the runner.
+          docker pull martenseemann/quic-go-interop:latest || true
+          docker pull cloudflare/quiche-qns:latest || true
+          docker pull ngtcp2/ngtcp2-interop:latest || true
+          docker pull aiortc/aioquic-qns:latest || true
+
+      - name: Run cross matrix (quicX ↔ quiche / ngtcp2 / quic-go / aioquic)
+        run: |
+          cd test/interop
+          python3 interop_runner.py --matrix \
+            --client quicx --client quiche --client ngtcp2 --client quic-go --client aioquic \
+            --server quicx --server quiche --server ngtcp2 --server quic-go --server aioquic \
+            --test handshake --test transfer --test retry --test resumption --test multiconnect \
+            --output json --output-file matrix.json \
+            --timeout 60 || true
+
+      - name: Upload matrix report
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-matrix-report
+          path: |
+            test/interop/matrix.json
+            test/interop/logs/matrix_*/
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "http3/include/type.h"
+#include <quicx/http3/type.h>
 #include "http3/http/request.h"
-#include "http3/include/if_response.h"
+#include <quicx/http3/if_response.h>
 #include "http3/connection/connection_client.h"
 #include "http3/connection/connection_server.h"
 #include "test/unit_test/http3/connection/mock_quic_connection.h"

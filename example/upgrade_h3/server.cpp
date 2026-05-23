@@ -3,8 +3,8 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "upgrade/include/if_upgrade.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/upgrade/if_upgrade.h>
+#include <quicx/common/if_event_loop.h>
 
 using quicx::upgrade::IUpgrade;
 using quicx::upgrade::UpgradeSettings;

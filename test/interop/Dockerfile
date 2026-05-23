@@ -18,11 +18,20 @@ WORKDIR /src
 
 # Copy only necessary files for build
 COPY CMakeLists.txt ./
+COPY cmake ./cmake
+COPY include ./include
 COPY src ./src
 COPY third ./third
 COPY test/interop ./test/interop
 
 # Build quicX interop binaries
+#
+# NOTE: We explicitly disable every optional sub-project so the build only
+# needs the sources we COPY above (src/, third/, test/interop/).
+# If CMakeLists.txt adds a new `option(ENABLE_XXX ... ON)` whose sources
+# live outside the copied paths, add `-DENABLE_XXX=OFF` here too, otherwise
+# cmake will fail with "add_subdirectory given source ... not an existing
+# directory" during docker build.
 RUN rm -rf build && mkdir -p build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
              -DBUILD_EXAMPLES=OFF \
@@ -31,6 +40,7 @@ RUN rm -rf build && mkdir -p build && cd build && \
              -DENABLE_FUZZING=OFF \
              -DENABLE_CC_SIMULATOR=OFF \
              -DENABLE_INTERGRATION=OFF \
+             -DENABLE_PERF_TESTS=OFF \
              -DENABLE_INTEROP=ON && \
     cmake --build . --target interop_server interop_client -j$(nproc)
 

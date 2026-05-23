@@ -50,9 +50,10 @@ public:
         send_control_ = std::make_shared<SendControl>(timer_);
 
         // Register stream ACK callback
-        send_control_->SetStreamDataAckCallback([this](uint64_t stream_id, uint64_t max_offset, bool has_fin) {
-            OnStreamDataAcked(stream_id, max_offset, has_fin);
-        });
+        send_control_->SetStreamDataAckCallback(
+            [this](uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
+                OnStreamDataAcked(stream_id, offset_start, length, has_fin);
+            });
     }
 
     // Track sent frames
@@ -103,7 +104,7 @@ public:
 
         const auto& pkt = sent_packets_[packet_number - 1];
         for (const auto& stream_info : pkt.stream_data) {
-            OnStreamDataAcked(stream_info.stream_id, stream_info.max_offset, stream_info.has_fin);
+            OnStreamDataAcked(stream_info.stream_id, stream_info.offset_start, stream_info.length, stream_info.has_fin);
         }
     }
 
@@ -116,12 +117,12 @@ public:
     }
 
 private:
-    void OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin) {
+    void OnStreamDataAcked(uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin) {
         auto it = streams_.find(stream_id);
         if (it != streams_.end()) {
             auto send_stream = std::dynamic_pointer_cast<SendStream>(it->second);
             if (send_stream) {
-                send_stream->OnDataAcked(max_offset, has_fin);
+                send_stream->OnDataAcked(offset_start, length, has_fin);
             }
         }
     }

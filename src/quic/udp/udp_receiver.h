@@ -4,9 +4,11 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "quic/udp/if_receiver.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 
 namespace quicx {
 namespace quic {
@@ -39,8 +41,13 @@ private:
 
 private:
     bool ecn_enabled_;
-    std::shared_ptr<common::IEventLoop> event_loop_;
+    std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)
     std::unordered_map<int32_t, std::weak_ptr<IPacketReceiver>> receiver_map_;
+    // fds that were created internally by AddReceiver(ip, port, ...); the
+    // receiver owns their lifecycle and must close them on teardown. fds that
+    // were registered via AddReceiver(fd, ...) are owned by the caller and are
+    // NOT tracked here (to avoid double-close).
+    std::unordered_set<int32_t> owned_fds_;
 };
 
 }  // namespace quic

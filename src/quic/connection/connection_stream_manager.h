@@ -9,7 +9,7 @@
 #include <unordered_map>
 
 #include "common/structure/double_buffer.h"
-#include "quic/include/type.h"
+#include <quicx/quic/type.h>
 
 namespace quicx {
 
@@ -123,10 +123,11 @@ public:
     /**
      * @brief Notify stream that data has been ACKed
      * @param stream_id Stream ID
-     * @param max_offset Maximum offset ACKed
-     * @param has_fin Whether FIN bit was ACKed
+     * @param offset_start Start offset of the ACKed range (inclusive)
+     * @param length Length of the ACKed range (bytes)
+     * @param has_fin Whether the ACKed packet carried the FIN bit for this stream
      */
-    void OnStreamDataAcked(uint64_t stream_id, uint64_t max_offset, bool has_fin);
+    void OnStreamDataAcked(uint64_t stream_id, uint64_t offset_start, uint64_t length, bool has_fin);
 
     // ==================== Stream Reset ====================
 
@@ -212,7 +213,7 @@ private:
 
     // Dependencies (injected)
     IConnectionEventSink& event_sink_;  // Event interface (replaces callbacks)
-    std::shared_ptr<::quicx::common::IEventLoop> event_loop_;
+    std::weak_ptr<::quicx::common::IEventLoop> event_loop_;
     SendFlowController* send_flow_controller_;  // Send-side flow controller
     TransportParam& transport_param_;
     SendManager& send_manager_;

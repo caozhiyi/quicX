@@ -10,11 +10,11 @@
 #include <thread>
 #include <vector>
 
-#include "http3/include/if_async_handler.h"
-#include "http3/include/if_client.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
-#include "http3/include/if_server.h"
+#include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 
 // ==================== Async Server Handler for streaming upload ====================
 
@@ -476,6 +476,224 @@ TEST_F(StreamingAndPushTest, ServerPushCancelled) {
     EXPECT_EQ(main_body, "main only");
     // Push promise should have been received but rejected
     EXPECT_TRUE(push_promise_received.load());
+
+    client->Close();
+}
+
+// ==================== Large Body Streaming Tests ====================
+//
+// These tests exercise the post-Bug #16 / #17 / #20 send path with bodies
+// larger than the peer's default initial_max_data (typically 1 MiB) so that
+// connection-level flow control, congestion-control recovery, and the
+// SendManager flow-control recheck timer must all cooperate to drive the
+// transfer to completion. A plain 8 KB body never hits these code paths.
+//
+// Sizing rationale:
+//   * 1 MiB  – at or just past the peer's connection-level FC window in many
+//              configurations; verifies one round-trip of MAX_DATA expansion.
+//   * 5 MiB  – multiple FC window refreshes plus enough in-flight data to
+//              trigger congestion-control growth & at least one ACK-driven
+//              recovery exit. Matches the size used in interop transfer test.
+//
+// We use SetRequestBodyProvider on upload and SetResponseBodyProvider on
+// download to avoid materialising the whole payload in a std::string twice
+// (provider buffers are MTU-sized, so memory stays bounded).
+
+namespace {
+
+constexpr size_t kOneMegabyte = 1u * 1024u * 1024u;
+constexpr size_t kFiveMegabyte = 5u * 1024u * 1024u;
+
+// Fill a buffer with a deterministic pattern so the receiver can verify
+// data integrity without storing the whole expected payload in memory.
+inline uint8_t LargeBodyByteAt(size_t index) {
+    return static_cast<uint8_t>(index & 0xFF);
+}
+
+// Server handler that consumes a streaming upload and reports total bytes
+// received, also asserting the deterministic byte pattern matches.
+class LargeUploadHandler : public quicx::IAsyncServerHandler {
+public:
+    void OnHeaders(std::shared_ptr<quicx::IRequest> request,
+                   std::shared_ptr<quicx::IResponse> response) override {
+        response_ = response;
+        received_bytes_ = 0;
+        pattern_ok_ = true;
+    }
+
+    void OnBodyChunk(const uint8_t* data, size_t length, bool is_last) override {
+        if (data && length > 0) {
+            for (size_t i = 0; i < length; ++i) {
+                if (data[i] != LargeBodyByteAt(received_bytes_ + i)) {
+                    pattern_ok_ = false;
+                    break;
+                }
+            }
+            received_bytes_ += length;
+        }
+        if (is_last && response_) {
+            response_->SetStatusCode(200);
+            response_->AddHeader("content-type", "application/json");
+            std::string body = "{\"size\":" + std::to_string(received_bytes_) +
+                               ",\"ok\":" + (pattern_ok_ ? "true" : "false") + "}";
+            response_->AppendBody(body);
+        }
+    }
+
+    void OnError(uint32_t /*error_code*/) override {}
+
+    size_t received_bytes() const { return received_bytes_; }
+    bool pattern_ok() const { return pattern_ok_; }
+
+private:
+    std::shared_ptr<quicx::IResponse> response_;
+    size_t received_bytes_{0};
+    bool pattern_ok_{true};
+};
+
+}  // namespace
+
+TEST_F(StreamingAndPushTest, LargeBodyUpload1MB) {
+    StartServer();
+
+    auto handler = std::make_shared<LargeUploadHandler>();
+    server_->AddHandler(quicx::HttpMethod::kPost, "/upload-large",
+                        handler);
+
+    StartServerThread();
+
+    auto client = CreateClient();
+    ASSERT_NE(client, nullptr);
+
+    auto request = quicx::IRequest::Create();
+    auto bytes_sent = std::make_shared<size_t>(0);
+    const size_t total_size = kOneMegabyte;
+
+    request->SetRequestBodyProvider([bytes_sent, total_size](uint8_t* buffer,
+                                                              size_t buffer_size) -> size_t {
+        if (*bytes_sent >= total_size) {
+            return 0;
+        }
+        size_t remaining = total_size - *bytes_sent;
+        size_t to_write = std::min(remaining, buffer_size);
+        for (size_t i = 0; i < to_write; ++i) {
+            buffer[i] = LargeBodyByteAt(*bytes_sent + i);
+        }
+        *bytes_sent += to_write;
+        return to_write;
+    });
+    request->AddHeader("content-length", std::to_string(total_size));
+
+    std::atomic<bool> completed{false};
+    int status_code = 0;
+    std::string response_body;
+    std::string url = "https://127.0.0.1:" + std::to_string(port_) + "/upload-large";
+
+    client->DoRequest(url, quicx::HttpMethod::kPost, request,
+        [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+            EXPECT_EQ(error, 0u);
+            if (error == 0 && response) {
+                status_code = response->GetStatusCode();
+                response_body = response->GetBodyAsString();
+            }
+            completed = true;
+        });
+
+    // Allow up to 30s for 1MB transfer (covers slow CI / sanitizer builds).
+    for (int i = 0; i < 600 && !completed; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    EXPECT_TRUE(completed.load());
+    EXPECT_EQ(status_code, 200);
+    EXPECT_NE(response_body.find("\"size\":" + std::to_string(total_size)),
+              std::string::npos);
+    EXPECT_NE(response_body.find("\"ok\":true"), std::string::npos);
+
+    client->Close();
+}
+
+TEST_F(StreamingAndPushTest, LargeBodyDownload5MB) {
+    StartServer();
+
+    server_->AddHandler(quicx::HttpMethod::kGet, "/download-large",
+        [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
+            resp->SetStatusCode(200);
+            auto sent = std::make_shared<size_t>(0);
+            const size_t total = kFiveMegabyte;
+            resp->AddHeader("content-length", std::to_string(total));
+            resp->SetResponseBodyProvider([sent, total](uint8_t* buf,
+                                                        size_t buf_size) -> size_t {
+                if (*sent >= total) {
+                    return 0;
+                }
+                size_t remaining = total - *sent;
+                size_t to_write = std::min(remaining, buf_size);
+                for (size_t i = 0; i < to_write; ++i) {
+                    buf[i] = LargeBodyByteAt(*sent + i);
+                }
+                *sent += to_write;
+                return to_write;
+            });
+        });
+
+    StartServerThread();
+
+    auto client = CreateClient();
+    ASSERT_NE(client, nullptr);
+
+    // Track received bytes incrementally so we don't materialise 5 MiB twice
+    // and so we can verify the byte pattern progressively.
+    class StreamingDownloadHandler : public quicx::IAsyncClientHandler {
+    public:
+        void OnHeaders(std::shared_ptr<quicx::IResponse> response) override {
+            status_code = response->GetStatusCode();
+            headers_received = true;
+        }
+        void OnBodyChunk(const uint8_t* data, size_t length, bool is_last) override {
+            if (data && length > 0) {
+                for (size_t i = 0; i < length; ++i) {
+                    if (data[i] != LargeBodyByteAt(received + i)) {
+                        pattern_ok = false;
+                        break;
+                    }
+                }
+                received += length;
+            }
+            if (is_last) {
+                completed = true;
+            }
+        }
+        void OnError(uint32_t error_code) override {
+            error = error_code;
+            completed = true;
+        }
+        std::atomic<bool> headers_received{false};
+        std::atomic<bool> completed{false};
+        std::atomic<bool> pattern_ok{true};
+        std::atomic<size_t> received{0};
+        int status_code = 0;
+        uint32_t error = 0;
+    };
+    auto handler = std::make_shared<StreamingDownloadHandler>();
+
+    auto request = quicx::IRequest::Create();
+    std::string url = "https://127.0.0.1:" + std::to_string(port_) + "/download-large";
+
+    client->DoRequest(url, quicx::HttpMethod::kGet, request, handler);
+
+    // 5 MiB at typical loopback throughput finishes in seconds; allow 60s
+    // headroom for sanitizer / debug builds.
+    for (int i = 0; i < 1200 && !handler->completed; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    EXPECT_TRUE(handler->completed.load());
+    EXPECT_TRUE(handler->headers_received.load());
+    EXPECT_EQ(handler->status_code, 200);
+    EXPECT_EQ(handler->error, 0u);
+    EXPECT_EQ(handler->received.load(), kFiveMegabyte);
+    EXPECT_TRUE(handler->pattern_ok.load());
 
     client->Close();
 }

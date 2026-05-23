@@ -5,8 +5,8 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
-#include "http3/include/type.h"
-#include "http3/include/if_response.h"
+#include <quicx/http3/type.h>
+#include <quicx/http3/if_response.h>
 #include "common/buffer/if_buffer.h"
 
 namespace quicx {

@@ -394,7 +394,10 @@ class DockerManager:
             return False
 
         self._server_running = True
-        logger.info("Server is running on rightnet (172.30.100.100)")
+        if self._no_sim:
+            logger.info("Server is running on quicnet (10.0.0.100)")
+        else:
+            logger.info("Server is running on rightnet (193.167.100.100)")
         return True
 
     def run_client(
@@ -574,6 +577,11 @@ class LocalProcessManager:
     ) -> bool:
         self.stop_server()
 
+        # Wait for the previous server's listening socket to be fully released.
+        # Even though SO_REUSEADDR is set, back-to-back scenarios can otherwise
+        # hit TIME_WAIT / bind races that make the next connect attempt hang.
+        self._wait_port_free(port, timeout_s=5.0)
+
         env = os.environ.copy()
         env.update({
             "PORT": str(port),
@@ -584,18 +592,21 @@ class LocalProcessManager:
         if extra_env:
             env.update(extra_env)
 
+        # Discard server stdout/stderr: otherwise a chatty server can fill the
+        # pipe buffer (64KB on Linux) and block its own writes, which in turn
+        # stalls data transfer and makes large-file scenarios (e.g. 5MB.bin)
+        # randomly time out at the 30s download deadline.
         self._server_proc = subprocess.Popen(
             [str(self.server_bin)],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
         time.sleep(SERVER_STARTUP_WAIT)
 
         if self._server_proc.poll() is not None:
-            _, stderr = self._server_proc.communicate()
-            logger.error("Server failed to start: %s", stderr.decode())
+            logger.error("Server failed to start (exit=%d)", self._server_proc.returncode)
             self._server_proc = None
             return False
 
@@ -642,7 +653,32 @@ class LocalProcessManager:
                 self._server_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self._server_proc.kill()
+                try:
+                    self._server_proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
         self._server_proc = None
+
+    @staticmethod
+    def _wait_port_free(port: int, timeout_s: float = 5.0) -> None:
+        """Block until UDP port `port` is free on 127.0.0.1 or timeout elapses.
+
+        We try to bind a short-lived UDP socket; if bind succeeds the port is
+        free. Only used between scenarios to avoid TIME_WAIT / bind races.
+        """
+        import socket as _socket
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+            try:
+                s.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+                s.bind(("127.0.0.1", port))
+                s.close()
+                return
+            except OSError:
+                s.close()
+                time.sleep(0.1)
+        logger.warning("Port %d still busy after %.1fs; proceeding anyway", port, timeout_s)
 
     def cleanup(self) -> None:
         self.stop_server()
@@ -803,7 +839,10 @@ class InteropTestRunner:
                         "-out", str(cert_dir / "cert.pem"),
                         "-days", "30",
                         "-subj", "/CN=server",
-                        "-addext", "subjectAltName=DNS:server,DNS:server4,DNS:server6,DNS:server46,DNS:localhost,IP:172.30.100.100,IP:10.0.0.100,IP:127.0.0.1",
+                        # SAN must cover both sim mode (193.167.100.100) and direct/no-sim mode (10.0.0.100).
+                        # NOTE: 172.30.100.100 was the older sim subnet, removed after the network was
+                        # restored to 193.167.x.x (the ns-3 binary hard-codes 193.167.0.2/100.2 internally).
+                        "-addext", "subjectAltName=DNS:server,DNS:server4,DNS:server6,DNS:server46,DNS:localhost,IP:193.167.100.100,IP:10.0.0.100,IP:127.0.0.1",
                     ],
                     capture_output=True, check=False,
                 )
@@ -1124,15 +1163,40 @@ class InteropTestRunner:
                 result=TestResult.FAILED, error_message="Server failed to start",
             )
 
+        # Make the host session dir visible to docker-compose's variable
+        # substitution so the client container bind-mounts it at /session
+        # for both invocations. This is what allows the TLS session ticket
+        # written by the first run to be visible to the second run; without
+        # the persistent mount each `docker compose run --rm client` got a
+        # fresh /tmp/session inside an ephemeral container, breaking
+        # resumption / 0-RTT against any peer (Bug #21 fingerprint).
+        prev_session_host_dir = os.environ.get("SESSION_CACHE_HOST_DIR")
+        os.environ["SESSION_CACHE_HOST_DIR"] = str(session_dir)
+
         try:
             client_env = dict(scenario.client_env or {})
-            client_env["SESSION_CACHE"] = str(session_dir)
+            # SESSION_CACHE_PATH points at the in-container mount (default
+            # /session, see docker-compose.yml). run_endpoint.sh uses it to
+            # derive --session-cache for resumption / zerortt. Override via
+            # client_env in case the scenario wants a different layout.
+            client_env.setdefault("SESSION_CACHE_PATH", "/session")
 
             if client_name == "quicx":
-                # quicX client: two separate invocations
-                return self._run_two_connection_quicx(
+                # quicX client supports two-connection tests inside a single
+                # invocation via interop_client.cpp's enable_resumption /
+                # enable_zerortt path (urls.size() >= 2 triggers two
+                # sequential connections sharing the same SessionCache).
+                # We use the same "doubled URLs, single container" approach
+                # as third-party clients, because launching two separate
+                # `docker compose run --rm client` containers makes the
+                # ns-3 sim drop the second client's packets (sim caches
+                # routing per active container; on container teardown the
+                # link goes idle and the second client's Initials can take
+                # 20+ seconds to reach the server).
+                doubled_urls = urls + " " + urls
+                return self._run_two_connection_thirdparty(
                     scenario, server_name, client_name, client_image,
-                    urls, client_log_dir, client_env,
+                    doubled_urls, client_log_dir, client_env,
                 )
             else:
                 # Third-party client: single invocation with doubled URLs
@@ -1144,6 +1208,10 @@ class InteropTestRunner:
         finally:
             self._docker_stop_server(server_name, server_log_dir)
             shutil.rmtree(session_dir, ignore_errors=True)
+            if prev_session_host_dir is None:
+                os.environ.pop("SESSION_CACHE_HOST_DIR", None)
+            else:
+                os.environ["SESSION_CACHE_HOST_DIR"] = prev_session_host_dir
 
     def _run_two_connection_quicx(
         self,
@@ -1275,13 +1343,13 @@ class InteropTestRunner:
                     ]
                 else:
                     network = f"{project}_leftnet"
-                    client_ip = f"172.30.0.{150 + idx}"
+                    client_ip = f"193.167.0.{150 + idx}"
                     server_host = "server4"
-                    server_ip = "172.30.100.100"
+                    server_ip = "193.167.100.100"
                     extra_hosts = [
                         "--add-host", f"server4:{server_ip}",
                         "--add-host", f"server:{server_ip}",
-                        "--add-host", "sim:172.30.0.2",
+                        "--add-host", "sim:193.167.0.2",
                     ]
 
                 # Rewrite URLs to use correct server hostname
@@ -1978,7 +2046,8 @@ Examples:
     # Scenario selection
     parser.add_argument(
         "--scenario", type=str, default=None,
-        help="Run only a specific scenario",
+        help="Run only a specific scenario, or a comma-separated list "
+             "(e.g. 'handshake,transfer'). When omitted, all scenarios run.",
     )
 
     # Output options
@@ -2031,7 +2100,10 @@ def main() -> int:
     )
 
     # Determine scenario list
-    scenarios = [args.scenario] if args.scenario else None
+    if args.scenario:
+        scenarios = [s.strip() for s in args.scenario.split(",") if s.strip()]
+    else:
+        scenarios = None
 
     # Create runner
     build_dir = Path(args.build_dir) if args.build_dir else None

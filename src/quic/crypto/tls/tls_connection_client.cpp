@@ -13,7 +13,16 @@ namespace quic {
 TLSClientConnection::TLSClientConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler):
     TLSConnection(ctx, handler) {}
 
-TLSClientConnection::~TLSClientConnection() {}
+TLSClientConnection::~TLSClientConnection() {
+    // Release any NST-captured session that was not consumed via StealSavedSession().
+    // OnNewSession() takes ownership of one reference (via SSL_SESSION_up_ref); we
+    // must drop it here or the SSL_SESSION (along with its peer-certificate chain
+    // parsed during the handshake) leaks per-connection.
+    if (saved_session_) {
+        SSL_SESSION_free(saved_session_);
+        saved_session_ = nullptr;
+    }
+}
 
 bool TLSClientConnection::Init() {
     if (!TLSConnection::Init()) {

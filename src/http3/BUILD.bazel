@@ -1,25 +1,30 @@
 package(default_visibility = ["//visibility:public"])
 
+# Header include resolution: this library inherits the `-Isrc/` -I path from
+# //src/common (via `includes = [".."]` there), so all source files can use
+# `#include "common/..."`, `#include "quic/..."` and `#include "http3/..."`
+# transparently. We expose our own headers at the same prefix by listing
+# them through a transitive filegroup-style hdrs glob.
+
 cc_library(
     name = "http3",
-    srcs = glob([
-        "**/*.cpp",
-    ]),
-    hdrs = glob([
-        "**/*.h",
-    ]),
-    include_prefix = "http3",
+    srcs = glob(["**/*.cpp"]),
+    hdrs = glob(["**/*.h"]),
     copts = select({
         "@platforms//os:windows": [],
-        "//conditions:default": ["-std=c++17", "-pthread"],
+        "//conditions:default": [
+            "-std=c++17",
+            "-pthread",
+        ],
+    }),
+    linkopts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-pthread"],
     }),
     deps = [
+        "//include:public_headers",
         "//src/common:common",
-        "//src/quic:quic",
-        "//src/upgrade:upgrade",
         "//third/boringssl:crypto",
         "//third/boringssl:ssl",
     ],
 )
-
-

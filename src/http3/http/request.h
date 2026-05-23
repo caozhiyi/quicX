@@ -6,8 +6,8 @@
 #include <unordered_map>
 
 #include "common/buffer/if_buffer.h"
-#include "http3/include/if_request.h"
-#include "http3/include/type.h"
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/type.h>
 
 namespace quicx {
 namespace http3 {

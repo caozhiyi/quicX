@@ -6,7 +6,7 @@
 #include <memory>
 
 #include "common/buffer/buffer_span.h"
-#include "common/include/if_buffer_read.h"
+#include <quicx/common/if_buffer_read.h>
 
 namespace quicx {
 namespace common {

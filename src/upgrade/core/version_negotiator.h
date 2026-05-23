@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-#include "upgrade/include/type.h"
+#include <quicx/upgrade/type.h>
 #include "upgrade/handlers/connection_context.h"
 
 namespace quicx {

@@ -13,9 +13,28 @@ namespace quic {
 SendManager::SendManager(std::shared_ptr<common::ITimer> timer):
     send_control_(timer),
     send_flow_controller_(nullptr),
-    packet_number_() {
+    packet_number_(),
+    timer_(timer) {
     pacing_timer_task_ = common::TimerTask();
     pacing_timer_task_.SetTimeoutCallback([this]() {
+        if (send_retry_cb_) {
+            send_retry_cb_();
+        }
+    });
+
+    // Bug #17: low-frequency wake-up while the connection is held back by the
+    // peer's connection-level flow control limit. Without this fallback, a
+    // connection that has buffered stream data but cannot send (peer's
+    // max_data exhausted, all in-flight packets already acked, peer not
+    // forthcoming with MAX_DATA) gets removed from the worker's active set
+    // and never re-examined until idle timeout fires.
+    flow_control_recheck_task_ = common::TimerTask();
+    flow_control_recheck_task_.SetTimeoutCallback([this]() {
+        flow_control_recheck_scheduled_ = false;
+        if (!is_flow_control_blocked_) {
+            return;  // already unblocked via ACK / MAX_DATA
+        }
+        common::LOG_INFO("SendManager: flow-control recheck timer fired, retrying send");
         if (send_retry_cb_) {
             send_retry_cb_();
         }
@@ -74,6 +93,8 @@ SendOperation SendManager::GetSendOperation() {
 }
 
 void SendManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
+    common::LOG_DEBUG("SendManager::ToSendFrame: enqueue frame type=%d, list_size_after=%zu",
+        frame ? static_cast<int>(frame->GetType()) : -1, wait_frame_list_.size() + 1);
     wait_frame_list_.emplace_front(frame);
 }
 
@@ -82,14 +103,31 @@ void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> fram
     send_control_.OnPacketAck(common::UTCTimeMsec(), ns, frame);
 
     common::LOG_DEBUG(
-        "SendManager::OnPacketAck: is_cwnd_limited_=%d, send_retry_cb_=%p", is_cwnd_limited_, (void*)&send_retry_cb_);
+        "SendManager::OnPacketAck: is_cwnd_limited_=%d, is_flow_control_blocked_=%d, send_retry_cb_=%p",
+        is_cwnd_limited_, is_flow_control_blocked_, (void*)&send_retry_cb_);
 
+    // Bug #17: an incoming ACK is also a wake-up signal for a flow-control-
+    // blocked connection. The peer might bundle MAX_DATA with the ACK, and
+    // even if it doesn't, the ACK can free congestion-window room or expose
+    // newly-lost packets that need retransmission. In all cases we must let
+    // BaseConnection::TrySend re-evaluate; without this hook the connection
+    // would stay parked outside the worker's active set until idle timeout.
+    bool need_resume = is_cwnd_limited_ || is_flow_control_blocked_;
     if (is_cwnd_limited_) {
         is_cwnd_limited_ = false;
-        common::LOG_DEBUG("SendManager::OnPacketAck: clearing is_cwnd_limited_, calling send_retry_cb_");
+        common::LOG_INFO("SendManager::OnPacketAck: clearing is_cwnd_limited_");
+    }
+    if (is_flow_control_blocked_) {
+        // Don't clear unconditionally — TrySend will re-set the flag (and the
+        // recheck timer) if flow control is still active. But we must give it
+        // a chance to retry by issuing the retry callback below.
+        is_flow_control_blocked_ = false;
+        common::LOG_INFO("SendManager::OnPacketAck: clearing is_flow_control_blocked_, will let TrySend re-evaluate");
+    }
+    if (need_resume) {
         if (send_retry_cb_) {
             send_retry_cb_();
-            common::LOG_DEBUG("SendManager::OnPacketAck: send_retry_cb_ executed");
+            common::LOG_INFO("SendManager::OnPacketAck: send_retry_cb_ executed");
         } else {
             common::LOG_WARN("SendManager::OnPacketAck: send_retry_cb_ is null!");
         }
@@ -104,26 +142,31 @@ void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> fram
             uint64_t probe = mtu_probe_packet_number_;
             if (probe <= largest) {
                 // Walk ack ranges to see if probe is acked
-                uint64_t cursor = largest;
                 uint32_t first_range = ack->GetFirstAckRange();
                 // First contiguous range [largest-first_range, largest]
                 if (probe >= largest - first_range && probe <= largest) {
                     OnMtuProbeResult(true);
                     return;
                 }
-                // Iterate additional ranges
+                // Iterate additional ranges, starting the cursor at the
+                // smallest PN of the first range so we can walk backwards
+                // through (gap, length) pairs. Per RFC 9000 §19.3.1, gap_value
+                // is the unacked-count minus one, so the next range's largest
+                // PN is cursor - gap_value - 2 (skip gap_value+1 unacked plus
+                // one separator). G2/Bug #22: previous code used
+                // "cursor - gap - 1" which mirrored the symmetric encoder bug;
+                // see send_control.cpp / recv_control.cpp for matching fixes.
+                uint64_t cursor = largest - first_range;
                 auto ranges = ack->GetAckRange();
                 for (auto it = ranges.begin(); it != ranges.end(); ++it) {
-                    // move cursor backward across gap and range
-                    cursor = cursor - it->GetGap() - 1;  // skip the gap including one unacked
-                    uint64_t range_high = cursor;
+                    uint64_t range_high = cursor - it->GetGap() - 2;
                     uint64_t range_low =
                         (range_high >= it->GetAckRangeLength()) ? (range_high - it->GetAckRangeLength()) : 0;
                     if (probe >= range_low && probe <= range_high) {
                         OnMtuProbeResult(true);
                         return;
                     }
-                    cursor = range_low - 1;
+                    cursor = range_low;
                 }
             }
         }
@@ -153,6 +196,13 @@ void SendManager::ClearActiveStreams() {
     }
     wait_frame_list_.clear();
     send_control_.ClearRetransmissionData();
+    // Bug #17: connection is closing — disarm the flow-control recheck so the
+    // timer wheel's pending callback does not fire on a teardowning connection.
+    is_flow_control_blocked_ = false;
+    if (flow_control_recheck_scheduled_ && timer_) {
+        timer_->RemoveTimer(flow_control_recheck_task_);
+        flow_control_recheck_scheduled_ = false;
+    }
 }
 
 void SendManager::ClearRetransmissionData() {
@@ -287,6 +337,26 @@ uint32_t SendManager::GetAvailableWindow() {
 void SendManager::SetCwndLimited() {
     is_cwnd_limited_ = true;
     common::LOG_DEBUG("SendManager::SetCwndLimited: marked as cwnd limited, will resume on ACK");
+}
+
+void SendManager::SetFlowControlBlocked() {
+    is_flow_control_blocked_ = true;
+    // Schedule (or refresh) the recheck timer so the connection is brought
+    // back into TrySend periodically even when no ACK / MAX_DATA arrives.
+    // RFC 9000 §10.1 idle timeout is at least 30s by default, but we want
+    // the connection to react quickly the moment the peer enlarges the
+    // window — 100ms is a reasonable balance: low enough to feel responsive,
+    // high enough to avoid worker-loop pressure.
+    static constexpr uint32_t kFlowControlRecheckIntervalMs = 100;
+    if (!flow_control_recheck_scheduled_ && timer_) {
+        flow_control_recheck_scheduled_ = true;
+        timer_->AddTimer(flow_control_recheck_task_, kFlowControlRecheckIntervalMs);
+        int32_t min_now = timer_->MinTime();
+        common::LOG_INFO("SendManager::SetFlowControlBlocked: scheduled %u ms recheck timer, MinTime=%d ms",
+            kFlowControlRecheckIntervalMs, min_now);
+    } else {
+        common::LOG_DEBUG("SendManager::SetFlowControlBlocked: timer already scheduled, flag refreshed");
+    }
 }
 
 std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLevel level, uint32_t max_bytes) {

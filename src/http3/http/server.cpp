@@ -1,13 +1,13 @@
 #include "common/log/log.h"
-#include "common/metrics/metrics.h"
+#include <quicx/common/metrics.h>
 
-#include "quic/include/if_quic_server.h"
+#include <quicx/quic/if_quic_server.h>
 
 #include "http3/config.h"
 #include "http3/http/server.h"
-#include "http3/include/if_async_handler.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
+#include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
 #include "http3/metric/metrics_handler.h"
 
 namespace quicx {
@@ -26,7 +26,19 @@ Server::Server(const Http3Settings& settings):
 }
 
 Server::~Server() {
+    // Synchronously wait for the underlying quic server's master thread
+    // to finish before dropping any http-level state. Otherwise the master
+    // thread may still be executing an event-loop callback (e.g. a close/
+    // draining timer fired for a server connection) that transitively
+    // touches conn_map_ / router_ / ServerConnection objects while we are
+    // already in the middle of destroying them.
     Stop();
+    Join();
+    // With the master thread joined we know no more callbacks will run on
+    // our ServerConnection entries. Explicitly drop them so the
+    // shared_ptr<IQuicConnection> chain collapses here, before ~QuicServer
+    // runs and releases the last strong references on the worker side.
+    conn_map_.clear();
 }
 
 bool Server::Init(const Http3ServerConfig& config) {

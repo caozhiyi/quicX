@@ -4,7 +4,7 @@
 #include <memory>
 #include <functional>
 #include "http3/stream/if_stream.h"
-#include "quic/include/if_quic_send_stream.h"
+#include <quicx/quic/if_quic_send_stream.h>
 
 namespace quicx {
 namespace http3 {

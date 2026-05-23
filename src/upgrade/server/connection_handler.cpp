@@ -8,6 +8,8 @@ namespace upgrade {
 
 
 void ConnectionHandler::OnRead(uint32_t fd) {
+    auto loop = event_loop_.lock();
+    if (!loop) return;
     while (true) {
         common::Address client_addr;
         auto ret = common::Accept(fd, client_addr);
@@ -37,7 +39,7 @@ void ConnectionHandler::OnRead(uint32_t fd) {
         }
 
         // Add to event driver
-        if (!event_loop_->RegisterFd(client_fd, common::EventType::ET_READ, handler_)) {
+        if (!loop->RegisterFd(client_fd, common::EventType::ET_READ, handler_)) {
             common::LOG_ERROR("Failed to add client socket to event driver");
             common::Close(client_fd);
             continue;
@@ -57,12 +59,16 @@ void ConnectionHandler::OnWrite(uint32_t fd) {
 void ConnectionHandler::OnError(uint32_t fd) {
     common::LOG_ERROR("OnError for fd %d", fd);
     common::Close(fd);
-    event_loop_->RemoveFd(fd);
+    if (auto loop = event_loop_.lock()) {
+        loop->RemoveFd(fd);
+    }
 }
 
 void ConnectionHandler::OnClose(uint32_t fd) {
     common::Close(fd);
-    event_loop_->RemoveFd(fd);
+    if (auto loop = event_loop_.lock()) {
+        loop->RemoveFd(fd);
+    }
 }
 
 

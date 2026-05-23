@@ -60,12 +60,29 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
                     packet = std::make_shared<VersionNegotiationPacket>(flag.GetFlag());
 
                 } else if (!VersionCheck(version)) {
-                    // Unknown version: we cannot parse the packet body because
-                    // future versions may change the packet format.
-                    // Parse only the Long Header (Version + DCID + SCID) so the
-                    // upper layer can respond with a Version Negotiation packet.
-                    // RFC 9000 Section 6.1: "If the version is not acceptable,
-                    // the server responds with a Version Negotiation packet."
+                    // RFC 9000 §12.2: Coalesced packets in a single datagram
+                    // are encrypted independently. After successfully decoding
+                    // one or more long-header packets, the trailing bytes are
+                    // typically the ciphertext of the next coalesced packet
+                    // (e.g. a Handshake or 0-RTT packet sharing the same
+                    // datagram with the leading Initial). Their *plaintext*
+                    // header byte was protected by Header Protection, so the
+                    // bytes we read here are still encrypted and the apparent
+                    // "version" field is just random ciphertext. Treat this
+                    // exactly like a coalesced packet that we cannot decode
+                    // yet: keep the previously decoded packets and stop.
+                    if (!packets.empty()) {
+                        common::LOG_DEBUG("ignoring trailing %d bytes (apparent version 0x%08x is "
+                            "ciphertext of a coalesced packet) after %zu decoded packet(s)",
+                            buffer->GetDataLength(), version, packets.size());
+                        buffer->MoveReadPt(buffer->GetDataLength());
+                        return true;
+                    }
+                    // No previously decoded packet: this really is a leading
+                    // long-header packet whose version we don't support.
+                    // Parse only the Long Header (Version + DCID + SCID) so
+                    // the upper layer can respond with a Version Negotiation
+                    // packet. RFC 9000 §6.1.
                     common::LOG_WARN("unsupported QUIC version 0x%08x, will send Version Negotiation", version);
                     auto init_pkt = std::make_shared<InitPacket>(flag.GetFlag());
                     // Decode only the Long Header (version, DCID, SCID)

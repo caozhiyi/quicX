@@ -7,7 +7,7 @@
 namespace quicx {
 namespace quic {
 
-CryptoStream::CryptoStream(std::shared_ptr<common::IEventLoop> loop,
+CryptoStream::CryptoStream(std::weak_ptr<common::IEventLoop> loop,
     std::function<void(std::shared_ptr<IStream>)> active_send_cb,
     std::function<void(uint64_t stream_id)> stream_close_cb,
     std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb):
@@ -115,9 +115,14 @@ uint32_t CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
 }
 
 int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level) {
-    if (!event_loop_->IsInLoopThread()) {
+    auto loop = event_loop_.lock();
+    if (!loop) return -1;
+    if (!loop->IsInLoopThread()) {
         std::vector<uint8_t> vec(data, data + len);
-        event_loop_->RunInLoop([self = shared_from_this(), vec = std::move(vec), encryption_level]() {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, vec = std::move(vec), encryption_level]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<CryptoStream>(self);
             if (stream) stream->Send(const_cast<uint8_t*>(vec.data()), vec.size(), encryption_level);
         });
@@ -136,9 +141,14 @@ int32_t CryptoStream::Send(uint8_t* data, uint32_t len, uint8_t encryption_level
 }
 
 int32_t CryptoStream::Send(uint8_t* data, uint32_t len) {
-    if (!event_loop_->IsInLoopThread()) {
+    auto loop = event_loop_.lock();
+    if (!loop) return -1;
+    if (!loop->IsInLoopThread()) {
         std::vector<uint8_t> vec(data, data + len);
-        event_loop_->RunInLoop([self = shared_from_this(), vec = std::move(vec)]() {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, vec = std::move(vec)]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<CryptoStream>(self);
             if (stream) stream->Send(const_cast<uint8_t*>(vec.data()), vec.size());
         });
@@ -149,8 +159,13 @@ int32_t CryptoStream::Send(uint8_t* data, uint32_t len) {
 }
 
 int32_t CryptoStream::Send(std::shared_ptr<IBufferRead> data) {
-    if (!event_loop_->IsInLoopThread()) {
-        event_loop_->RunInLoop([self = shared_from_this(), data]() {
+    auto loop = event_loop_.lock();
+    if (!loop) return -1;
+    if (!loop->IsInLoopThread()) {
+        auto weak_self = weak_from_this();
+        loop->RunInLoop([weak_self, data]() {
+            auto self = weak_self.lock();
+            if (!self) return;
             auto stream = std::dynamic_pointer_cast<CryptoStream>(self);
             if (stream) stream->Send(data);
         });

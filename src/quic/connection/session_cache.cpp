@@ -193,29 +193,82 @@ bool SessionCache::StoreSession(const std::string& session_der, const SessionInf
     
     // Check lazy cleanup
     CheckLazyCleanup();
-    
-    // Create serialized data
+
+    // Bug #23 fix: merge remembered transport params from any prior entry.
+    //
+    // There are two production callsites that StoreSession() the same
+    // server_name in close succession:
+    //
+    //   (a) ClientConnection::HandleHandshakeDoneFrame() — fills SessionInfo
+    //       with full RFC 9000 §7.4.1 remembered transport parameters
+    //       (has_transport_params=true + 8 TP fields) but may carry the
+    //       handshake-time SSL_SESSION DER (no NST yet).
+    //
+    //   (b) TLSClientConnection::OnNewSession() — BoringSSL's NST callback.
+    //       This path carries the *real* NST DER (the only one usable for
+    //       0-RTT resumption) but has no access to connection-level TP
+    //       state, so it always writes has_transport_params=false.
+    //
+    // The two callbacks fire in either order depending on whether the peer
+    // packs NEW_SESSION_TICKET + HANDSHAKE_DONE in the same 1-RTT packet
+    // and the parser order. If (b) wins last, naively overwriting
+    // sessions_cache_[server] would discard the remembered TP — and conn
+    // 2's GetSessionWithInfo() would return has_transport_params=false,
+    // skipping the 0-RTT pre-merge in ClientConnection::Dial(). The
+    // resulting SendStream is created with peer_data_limit_=0 and its
+    // first STREAM frame is permanently kFlowControlBlocked (the
+    // ~50%-rate "First connection failed" 0-RTT interop FAIL).
+    //
+    // The fix: when the incoming info lacks TP but a prior entry has
+    // them, preserve the previously-known TP. Symmetric for active_
+    // connection_id_limit. The session_der and timeout/early_data_capable
+    // bits always come from the latest write (the NST DER must win to
+    // make the resumption usable for 0-RTT).
+    SessionInfo merged_info = session_info;
+    auto prev = sessions_cache_.find(session_info.server_name);
+    if (prev != sessions_cache_.end()) {
+        if (!merged_info.has_transport_params && prev->second.has_transport_params) {
+            merged_info.has_transport_params = true;
+            merged_info.initial_max_data = prev->second.initial_max_data;
+            merged_info.initial_max_streams_bidi = prev->second.initial_max_streams_bidi;
+            merged_info.initial_max_streams_uni = prev->second.initial_max_streams_uni;
+            merged_info.initial_max_stream_data_bidi_local =
+                prev->second.initial_max_stream_data_bidi_local;
+            merged_info.initial_max_stream_data_bidi_remote =
+                prev->second.initial_max_stream_data_bidi_remote;
+            merged_info.initial_max_stream_data_uni =
+                prev->second.initial_max_stream_data_uni;
+            merged_info.active_connection_id_limit =
+                prev->second.active_connection_id_limit;
+            common::LOG_DEBUG("StoreSession: preserved remembered TP from prior entry "
+                              "for %s (incoming had no TP)", session_info.server_name.c_str());
+        }
+    }
+
+    // Create serialized data with the merged info.
     SerializedSessionData data;
-    data.info = session_info;
+    data.info = merged_info;
     data.session_der = session_der;
     
     // Save to disk
-    if (!SaveSessionToFile(session_info.server_name, data)) {
-        common::LOG_ERROR("Failed to save session to disk for %s", session_info.server_name.c_str());
+    if (!SaveSessionToFile(merged_info.server_name, data)) {
+        common::LOG_ERROR("Failed to save session to disk for %s", merged_info.server_name.c_str());
         return false;
     }
     
     // Store in memory (only SessionInfo, session_der is on disk)
-    sessions_cache_[session_info.server_name] = session_info;
+    sessions_cache_[merged_info.server_name] = merged_info;
     
     // Update LRU order (move to front as most recently used)
-    UpdateLRUOrder(session_info.server_name);
+    UpdateLRUOrder(merged_info.server_name);
     
     // Check if we need to evict entries due to cache size limit (after adding new session)
     EvictLRUEntries();
     
-    common::LOG_DEBUG("Stored session for %s, timeout: %u, early_data_capable: %d, cache size: %zu", 
-                     session_info.server_name.c_str(), session_info.timeout, session_info.early_data_capable, sessions_cache_.size());
+    common::LOG_DEBUG("Stored session for %s, timeout: %u, early_data_capable: %d, has_tp: %d, cache size: %zu",
+                     merged_info.server_name.c_str(), merged_info.timeout,
+                     merged_info.early_data_capable, merged_info.has_transport_params,
+                     sessions_cache_.size());
     
     return true;
 }
@@ -285,7 +338,16 @@ bool SessionCache::GetSessionWithInfo(const std::string& server_name, std::strin
         return false;
     }
     
-    // Load session_der from disk (which also has full info including TP)
+    // Load session_der from disk (data blob can be large — only the DER is
+    // read from disk; SessionInfo (incl. remembered TP) is sourced from the
+    // in-memory cache populated atomically by StoreSession() to avoid a
+    // disk read race in 0-RTT scenarios where conn2's GetSessionWithInfo()
+    // can fire before conn1's ofstream destructor has fully flushed the
+    // version-2 trailer (has_transport_params + TP fields). Reading the
+    // info from disk here intermittently observed has_transport_params=0
+    // and forced 0-RTT to fall back to default-zero peer stream FC limits,
+    // permanently flow-control-blocking the second connection's first
+    // STREAM frame (Bug #23 / 0-RTT zerortt failure).
     SerializedSessionData data;
     std::string filepath = data.GetFilePath(session_cache_path_, server_name);
     std::ifstream file(filepath, std::ios::binary);
@@ -300,14 +362,25 @@ bool SessionCache::GetSessionWithInfo(const std::string& server_name, std::strin
         RemoveLRUEntry(server_name);
         return false;
     }
-    
+
     out_session_der = data.session_der;
-    out_info = data.info;
-    
+    // Prefer the in-memory SessionInfo over the on-disk copy: StoreSession
+    // populates sessions_cache_[server_name] under the same mutex that
+    // guards us here, so it is guaranteed to be complete and consistent.
+    // Falling back to disk only if (defensively) the in-memory info appears
+    // empty (e.g. only loaded by LoadSessionsFromCache on startup).
+    if (it->second.has_transport_params || it->second.early_data_capable) {
+        out_info = it->second;
+    } else {
+        out_info = data.info;
+    }
+
     UpdateLRUOrder(server_name);
-    
-    common::LOG_DEBUG("Retrieved session with info for %s, has_tp=%d, remaining: %u seconds",
-                     server_name.c_str(), out_info.has_transport_params, GetSessionRemainingLifetime(info));
+
+    common::LOG_DEBUG("Retrieved session with info for %s, has_tp=%d (mem=%d, disk=%d), remaining: %u seconds",
+                     server_name.c_str(), out_info.has_transport_params,
+                     it->second.has_transport_params, data.info.has_transport_params,
+                     GetSessionRemainingLifetime(info));
     return true;
 }
 

@@ -2,19 +2,51 @@
 
 <p align="left">
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/version-0.1.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/status-pre--1.0%20preview-yellow.svg" alt="Status">
+  <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
+  <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
 </p>
 
 [简体中文](./README_cn.md)
 
 **QuicX** is a C++17 HTTP/3 library built on the QUIC protocol (RFC 9000 / RFC 9369). It provides a self-contained transport and application stack — from UDP sockets and TLS 1.3 (via BoringSSL) through QUIC streams all the way to HTTP/3 routing, QPACK header compression, and server push — without depending on any external HTTP framework.
 
+> **Documentation:**
+> [English docs index](./docs/en/README.md) ·
+> [中文文档索引](./docs/zh/README.md) ·
+> [`CHANGELOG`](./CHANGELOG.md) ·
+> [`SECURITY`](./SECURITY.md) ·
+> [`CONTRIBUTING`](./CONTRIBUTING.md)
+
+---
+
+## Project Maturity
+
+QuicX **v0.1.x is a pre-1.0 preview release.** The protocol stack is feature-complete for QUIC v1 / v2 and HTTP/3, has a sizeable unit-test corpus (1196+ tests, all green), passes ASan / UBSan / TSan clean, and runs in interoperability simulations against the major QUIC implementations. It is suitable for:
+
+- Internal services and prototypes
+- Research, education, and protocol experimentation
+- Greenfield products willing to track minor releases
+
+It is **not yet recommended** for mission-critical production traffic without your own additional protocol / fuzz / stress validation. Specifically:
+
+- **API stability**: the public C++ API may change between `0.x` minor versions. SemVer guarantees take effect from `1.0.0`. See [`docs/en/reference/api_stability.md`](./docs/en/reference/api_stability.md).
+- **Feature scope**: see [`docs/en/reference/support_matrix.md`](./docs/en/reference/support_matrix.md) for a precise list of what is implemented, partially implemented, and explicitly not implemented (e.g. CID rotation during connection migration, Multipath QUIC, DATAGRAM frames).
+- **Known issues** and breaking-change history: see [`CHANGELOG.md`](./CHANGELOG.md).
+- **Security disclosures**: please follow [`SECURITY.md`](./SECURITY.md) — do **not** open public GitHub issues for vulnerabilities.
+
+If you find QuicX useful, contributions are very welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
 ---
 
 ## Table of Contents
 
+- [Project Maturity](#project-maturity)
 - [Features](#features)
 - [Architecture](#architecture)
-- [Documentation & Tutorials](#documentation--tutorials)
+- [Interop Matrix](#interop-matrix)
+- [Documentation](#documentation)
 - [Examples](#examples)
 - [Observability](#observability)
 - [Testing](#testing)
@@ -23,6 +55,11 @@
 ---
 
 ## Features
+
+> **In one line:** a self-contained C++17 HTTP/3 + QUIC v1 / v2 stack — TLS 1.3
+> via BoringSSL, BBR / CUBIC / Reno congestion control, QPACK + server push,
+> connection migration, key update, optional QLog tracing — and a rich
+> built-in metrics registry, all behind two CMake imported targets.
 
 ### QUIC Protocol (RFC 9000 / RFC 9369)
 
@@ -90,18 +127,73 @@
 
 ---
 
-## Documentation & Tutorials
+## Interop Matrix
 
-We provide comprehensive guides to help you integrate and master `quicX`. For detailed integrations, code snippets, and fine-tuning, please refer to the following documents:
+QuicX is continuously tested against the major QUIC implementations using the
+[`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner)
+test suite — **14 scenarios × 12 peers × 2 directions = 322 test cells per run**.
 
-### Getting Started
-* [Build & Compilation Guide](./docs/en/getting-started/build.md) - Learn how to build `quicX` via CMake or Bazel and integrate it into your cross-platform projects.
-* [Running Your First Program](./docs/en/getting-started/quick_start.md) - Run and understand the native HTTP/3 Server and Client `Hello World` example.
+Latest snapshot (from most recent test run):
 
-### Core API & Configuration
-* [HTTP/3 Application Layer API Guide](./docs/en/tutorial/http3_api_guide.md) - The out-of-the-box guide covering Route dispatching, Middlewares, Async Data Streaming (for large files), and Server Push.
-* [Core QUIC Transport Layer API Guide](./docs/en/tutorial/quic_api_guide.md) - Deep dive into customizing private RPCs or game tunnels using raw QUIC Engine, Connection, and Stream abstractions.
-* [Configuration Reference](./docs/en/tutorial/configuration_reference.md) - Detailed dictionary of all core structs (`QuicConfig`, `Http3Config`) including limits, flow control windows, connection migration, Qlog, and anti-DDoS mechanisms.
+| Metric | Value |
+|---|---|
+| Total tests | **322** |
+| ✅ PASS | **148** |
+| ❌ FAIL | **83** |
+| - Unsupported | **91** |
+| **Pass rate** (excluding Unsupported) | **64.1%** |
+
+Per-implementation breakdown across 14 scenarios (format: Server results / Client results):
+
+| Peer | Server (peer ⇐ QuicX-client) | Client (peer ⇒ QuicX-server) |
+|---|:--:|:--:|
+| **quicx** (self) | 13/14 | 13/14 |
+| **ngtcp2** | 12/14 | 10/14 |
+| **picoquic** | 12/14 | 10/14 |
+| **msquic** | 9/14 | 9/14 |
+| **aioquic** | 8/14 | 9/14 |
+| **quic-go** | 7/14 | 10/14 |
+| **quiche** | 5/14 | 6/14 |
+| **neqo** | 5/14 | 0/14 |
+| **mvfst** | 3/14 | 5/14 |
+| **lsquic** | 0/14 | 8/14 |
+| **quinn** | 0/14 | 0/14 |
+| **s2n-quic** | 0/14 | 0/14 |
+
+> Each cell shows PASS count out of 14 scenarios in that direction.
+> See the full reports for detailed per-scenario analysis, failure root causes,
+> and breakdown of upstream/environment issues vs. QuicX defects.
+
+Scenarios covered: `handshake` · `transfer` · `retry` · `resumption` ·
+`zerortt` · `http3` · `multiconnect` · `versionnegotiation` · `chacha20` ·
+`keyupdate` · `v2` · `rebind-port` · `rebind-addr` · `connectionmigration`.
+
+Full reports (per-scenario matrix, known issues, detailed analysis):
+[English](./docs/en/reports/interop_status.md) ·
+[中文 (more complete)](./docs/zh/reports/interop_status.md) ·
+How to reproduce locally:
+[`docs/en/guide/interop_runbook.md`](./docs/en/guide/interop_runbook.md)
+/ [`docs/zh/guide/interop_runbook.md`](./docs/zh/guide/interop_runbook.md).
+
+---
+
+## Documentation
+
+QuicX ships parallel English and Chinese documentation trees under
+[`docs/`](./docs). Pick your language and use that as the entry point — the
+language-local README is the canonical index, this top-level README does not
+duplicate it:
+
+- **English** → [`docs/en/README.md`](./docs/en/README.md)
+- **中文** → [`docs/zh/README.md`](./docs/zh/README.md)
+
+Each tree is organized as: `getting-started/` · `tutorial/` · `guide/` ·
+`reference/` (release contract) · `reports/` (point-in-time results) ·
+`design/` (current code invariants).
+
+Repo-root contracts: [`CHANGELOG.md`](./CHANGELOG.md) ·
+[`SECURITY.md`](./SECURITY.md) ·
+[`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ---
 

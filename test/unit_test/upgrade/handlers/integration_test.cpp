@@ -4,9 +4,9 @@
 #include <string>
 #include <atomic>
 
-#include "upgrade/include/type.h"
+#include <quicx/upgrade/type.h>
 #include "upgrade/network/tcp_socket.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "upgrade/handlers/connection_context.h"
 #include "upgrade/handlers/http_smart_handler.h"
 #include "upgrade/handlers/https_smart_handler.h"
@@ -39,6 +39,9 @@ public:
     virtual void AddFixedProcess(std::function<void()>) override {
         return;
     }
+    virtual void AddFixedProcess(std::weak_ptr<void>, std::function<void()>) override {
+        return;
+    }
 
     virtual uint64_t AddTimer(std::function<void()> callback, uint32_t, bool = false) override {
         timer_callbacks_.push_back(callback);
@@ -55,6 +58,9 @@ public:
     virtual bool RemoveTimer(common::TimerTask& task) override {
         return true;
     }
+
+    virtual void ClearFixedProcesses() override {}
+    virtual void ClearAllTimers() override {}
     
     virtual void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override {
         return;

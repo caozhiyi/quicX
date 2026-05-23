@@ -21,6 +21,7 @@
  */
 
 #include <signal.h>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -28,12 +29,12 @@
 #include <memory>
 #include <string>
 
-#include "quic/include/if_quic_server.h"
-#include "quic/include/if_quic_connection.h"
-#include "quic/include/if_quic_bidirection_stream.h"
-#include "http3/include/if_server.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
+#include <quicx/quic/if_quic_server.h>
+#include <quicx/quic/if_quic_connection.h>
+#include <quicx/quic/if_quic_bidirection_stream.h>
+#include <quicx/http3/if_server.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
 
 using namespace quicx;
 
@@ -70,7 +71,21 @@ public:
         config.key_file_ = key_file;
         config.alpn_ = kHqInteropAlpn;
         config.config_.worker_thread_num_ = 4;
-        config.config_.log_level_ = LogLevel::kDebug;
+        // Default to kError to avoid gigabyte-sized debug logs across repeated
+        // interop runs (which also slow large-file scenarios enough to hit the
+        // per-download 30s timeout). LOG_LEVEL env var overrides (debug/info/
+        // warn/error/fatal/null).
+        config.config_.log_level_ = LogLevel::kError;
+        if (const char* lvl = std::getenv("LOG_LEVEL")) {
+            std::string s = lvl;
+            for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (s == "debug") config.config_.log_level_ = LogLevel::kDebug;
+            else if (s == "info") config.config_.log_level_ = LogLevel::kInfo;
+            else if (s == "warn" || s == "warning") config.config_.log_level_ = LogLevel::kWarn;
+            else if (s == "error") config.config_.log_level_ = LogLevel::kError;
+            else if (s == "fatal") config.config_.log_level_ = LogLevel::kFatal;
+            else if (s == "null" || s == "off" || s == "none") config.config_.log_level_ = LogLevel::kNull;
+        }
         config.config_.log_path_ = "./logs";  // Current directory for logs
 
         // QLog

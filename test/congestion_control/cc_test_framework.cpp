@@ -145,20 +145,43 @@ CCTestFramework::CCTestFramework(CCFactory cc_factory, const TestScenario& scena
 }
 
 void CCTestFramework::Run() {
+    bool prev_in_recovery = false;
+    auto poll_recovery_edge = [&]() {
+        bool now_in_recovery = cc_->InRecovery();
+        if (now_in_recovery && !prev_in_recovery) {
+            metrics_.recovery_count++;
+            last_recovery_time_ = current_time_us_;
+        }
+        prev_in_recovery = now_in_recovery;
+    };
+
     while (current_time_us_ < scenario_.test_duration_us) {
         network_sim_.ApplyScheduledChanges(current_time_us_);
-        
-        // Process ACKs first to update cwnd
+
+        // Process ACKs first to update cwnd. This step may exit recovery
+        // (if an ACK arrives for a packet sent after recovery_start_time_).
         ProcessAcks();
-        
-        // Then try to send packets based on updated cwnd
+        poll_recovery_edge();
+
+        // Detect spurious-loss candidates (packets past a dynamic RTO) so the
+        // CC implementation sees loss events when the pipe actually stalls,
+        // without double-counting: CheckForLostPackets now leaves the packet
+        // in sent_packets_ so ProcessAcks can still match & un-count it if
+        // the simulator ultimately delivers it (spurious loss recovery).
+        // This step may (re-)enter recovery.
+        CheckForLostPackets();
+        poll_recovery_edge();
+
+        // Then try to send packets based on updated cwnd. Sending alone
+        // does not change recovery state, but loss-on-send below can.
         TrySendPackets();
-        
+        poll_recovery_edge();
+
         // Record state every 10ms
         if (current_time_us_ % 10000 == 0) {
             RecordStateSnapshot();
         }
-        
+
         current_time_us_ += 100;  // 0.1ms time step
     }
     
@@ -192,24 +215,29 @@ void CCTestFramework::SendPacket(uint64_t bytes) {
     ev.sent_time = current_time_us_;
     ev.is_retransmit = false;
     cc_->OnPacketSent(ev);
-    
+
+    // We always count OnPacketSent bytes as "sent" for metrics purposes
+    // (they left the application); random-loss drops from the simulator are
+    // reported as losses but must still appear in the denominator to keep
+    // loss_rate in [0, 1].
+    metrics_.total_bytes_sent += bytes;
+    metrics_.total_packets_sent++;
+
     bool sent = network_sim_.SendPacket(current_time_us_, pn, bytes);
-    
+
     if (sent) {
         SentPacketInfo info;
         info.bytes = bytes;
         info.sent_time = current_time_us_;
+        info.declared_lost = false;
         sent_packets_[pn] = info;
-        
-        metrics_.total_bytes_sent += bytes;
-        metrics_.total_packets_sent++;
     } else {
         LossEvent loss_ev;
         loss_ev.pn = pn;
         loss_ev.bytes_lost = bytes;
         loss_ev.lost_time = current_time_us_;
         cc_->OnPacketLost(loss_ev);
-        
+
         metrics_.total_packets_lost++;
     }
 }
@@ -222,6 +250,16 @@ void CCTestFramework::ProcessAcks() {
         if (it == sent_packets_.end()) {
             continue;
         }
+
+        // Spurious-loss recovery: if we previously declared this packet lost
+        // (RTO fired before the simulator got around to delivering it) but
+        // it actually arrived, undo the loss counter so the reported
+        // loss_rate reflects reality. The CC impl already "saw" the loss
+        // and reacted; that's fine -- real stacks do exactly the same and
+        // then grow cwnd back via the subsequent ACK.
+        if (it->second.declared_lost && metrics_.total_packets_lost > 0) {
+            metrics_.total_packets_lost--;
+        }
         
         uint64_t rtt = current_time_us_ - it->second.sent_time;
         cc_->OnRoundTripSample(rtt, 0);
@@ -232,37 +270,48 @@ void CCTestFramework::ProcessAcks() {
         ack_ev.ack_time = current_time_us_;
         ack_ev.ack_delay = 0;
         ack_ev.ecn_ce = false;
+        // RFC 9002 §7.3.2: CC implementations rely on this field to decide
+        // when to exit recovery (only when an ACK arrives for a packet sent
+        // AFTER recovery start). Without it, every ACK has send_time==0 and
+        // recovery is never exited, so loss events stop being counted as
+        // separate "recovery periods". The test framework must populate it.
+        ack_ev.acked_packet_send_time = it->second.sent_time;
         cc_->OnPacketAcked(ack_ev);
         
         metrics_.total_bytes_acked += packet.bytes;
         sent_packets_.erase(it);
     }
-    
-    CheckForLostPackets();
 }
 
 void CCTestFramework::CheckForLostPackets() {
-    uint64_t timeout_threshold = 3 * 100000;
-    
-    std::vector<uint64_t> lost_packets;
-    for (const auto& pair : sent_packets_) {
-        if (current_time_us_ - pair.second.sent_time > timeout_threshold) {
-            lost_packets.push_back(pair.first);
-        }
-    }
-    
-    for (uint64_t pn : lost_packets) {
-        auto it = sent_packets_.find(pn);
-        if (it != sent_packets_.end()) {
-            LossEvent loss_ev;
-            loss_ev.pn = pn;
-            loss_ev.bytes_lost = it->second.bytes;
-            loss_ev.lost_time = current_time_us_;
-            cc_->OnPacketLost(loss_ev);
-            
-            metrics_.total_packets_lost++;
-            sent_packets_.erase(it);
-        }
+    // Use a dynamic RTO tied to the simulator's current RTT (which includes
+    // queuing delay), not a hard-coded 300ms. Under fat pipes the queue
+    // delay alone can be >1s, so a fixed threshold would mass-declare every
+    // in-flight packet "lost" and drive CUBIC/Reno into permanent stall /
+    // cwnd-collapse loops. RFC 6298 suggests RTO >= max(1s, 2*SRTT); we mimic
+    // it with the simulator's (base_rtt + queue) estimate and a floor.
+    const uint64_t sim_rtt = network_sim_.GetCurrentRtt(current_time_us_);
+    const uint64_t rto_threshold = std::max<uint64_t>(sim_rtt * 3, 300000);
+
+    for (auto& kv : sent_packets_) {
+        auto& info = kv.second;
+        if (info.declared_lost) continue;  // already reported
+        if (current_time_us_ - info.sent_time <= rto_threshold) continue;
+
+        LossEvent loss_ev;
+        loss_ev.pn = kv.first;
+        loss_ev.bytes_lost = info.bytes;
+        loss_ev.lost_time = current_time_us_;
+        cc_->OnPacketLost(loss_ev);
+
+        metrics_.total_packets_lost++;
+        info.declared_lost = true;
+        // NOTE: we intentionally keep the entry in sent_packets_. If the
+        // simulator later delivers the packet, ProcessAcks will credit it
+        // and rewind total_packets_lost. If it never arrives (genuine loss
+        // in SendPacket), the entry just lingers; it has no cwnd impact
+        // because cc_->OnPacketLost already removed it from bytes_in_flight
+        // on the CC side.
     }
 }
 
@@ -282,14 +331,12 @@ void CCTestFramework::RecordStateSnapshot() {
     if (!snapshot.in_slow_start && slow_start_exit_time_ == 0) {
         slow_start_exit_time_ = current_time_us_;
     }
-    
-    // Track recovery periods
-    if (snapshot.in_recovery) {
-        if (last_recovery_time_ == 0 || (current_time_us_ - last_recovery_time_) > 100000) {
-            metrics_.recovery_count++;
-        }
-        last_recovery_time_ = current_time_us_;
-    }
+
+    // NOTE: recovery_count is now incremented in Run() via edge detection
+    // on cc_->InRecovery() (every 100us), so RecordStateSnapshot no longer
+    // updates it — sampling at 10ms granularity would otherwise miss
+    // short-lived recovery episodes that BBR/CUBIC can exit on the very
+    // next ACK after recovery_start_time_.
 }
 
 void CCTestFramework::CalculateMetrics() {

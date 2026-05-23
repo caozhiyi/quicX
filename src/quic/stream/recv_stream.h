@@ -7,7 +7,7 @@
 
 #include "common/buffer/multi_block_buffer.h"
 
-#include "quic/include/if_quic_recv_stream.h"
+#include <quicx/quic/if_quic_recv_stream.h>
 #include "quic/stream/if_frame_visitor.h"
 #include "quic/stream/if_stream.h"
 #include "quic/stream/state_machine_recv.h"
@@ -17,7 +17,7 @@ namespace quic {
 
 class RecvStream: public virtual IStream, public virtual IQuicRecvStream {
 public:
-    RecvStream(std::shared_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
+    RecvStream(std::weak_ptr<common::IEventLoop> loop, uint64_t init_data_limit, uint64_t id,
         std::function<void(std::shared_ptr<IStream>)> active_send_cb,
         std::function<void(uint64_t stream_id)> stream_close_cb,
         std::function<void(uint64_t error, uint16_t frame_type, const std::string& resion)> connection_close_cb);

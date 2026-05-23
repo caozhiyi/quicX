@@ -1,34 +1,34 @@
 package(default_visibility = ["//visibility:public"])
 
-# Aggregate test target for a quick smoke test
+# Convenience aggregate of all unit tests. Run with:
+#   bazel test //:all_unit_tests
 test_suite(
-    name = "unit_tests_common",
+    name = "all_unit_tests",
     tests = [
-        "//unit_test/common:common_tests",
+        "//test/unit_test:all_tests",
     ],
 )
 
+# Aggregate static library matching the CMake `quicx` target: QUIC transport
+# only (no HTTP/3 layer). Note: //src/quic:quic is itself an alias of
+# //src/common:common (see //src/quic/BUILD.bazel), so a single dep is
+# enough.
 cc_library(
     name = "libquicx",
-    srcs = [],
     deps = [
         "//src/common:common",
-        "//src/quic:quic",
     ],
     linkstatic = True,
 )
 
+# Aggregate static library matching the CMake `http3` target: full QUIC +
+# HTTP/3 + protocol-upgrade stack.
 cc_library(
     name = "libhttp3",
-    srcs = [],
     deps = [
         "//src/common:common",
-        "//src/quic:quic",
-        "//src/upgrade:upgrade",
         "//src/http3:http3",
+        "//src/upgrade:upgrade",
     ],
     linkstatic = True,
 )
-
-
-

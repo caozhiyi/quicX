@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 
 namespace quicx {
 namespace quic {
@@ -97,7 +97,7 @@ private:
     std::atomic<uint32_t> last_rate_{0};
     
     /** Event loop for timer scheduling. */
-    std::shared_ptr<common::IEventLoop> event_loop_;
+    std::weak_ptr<common::IEventLoop> event_loop_;
     
     /** Timer ID for the periodic rate calculation. */
     uint64_t timer_id_{0};

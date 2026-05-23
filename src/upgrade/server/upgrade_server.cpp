@@ -14,7 +14,7 @@ std::unique_ptr<IUpgrade> IUpgrade::MakeUpgrade(std::shared_ptr<common::IEventLo
 }
 
 UpgradeServer::UpgradeServer(std::shared_ptr<common::IEventLoop> event_loop)
-    : event_loop_(std::move(event_loop)) {
+    : event_loop_(event_loop) {
 
 }
 
@@ -26,9 +26,11 @@ UpgradeServer::~UpgradeServer() {
 }
 
 bool UpgradeServer::AddListener(UpgradeSettings& settings) {
+    auto loop = event_loop_.lock();
+    if (!loop) return false;
     // Create appropriate smart handler based on settings
-    auto handler = SmartHandlerFactory::CreateHandler(settings, event_loop_);
-    auto connection_handler = std::make_shared<ConnectionHandler>(event_loop_, handler);
+    auto handler = SmartHandlerFactory::CreateHandler(settings, loop);
+    auto connection_handler = std::make_shared<ConnectionHandler>(loop, handler);
     
     // Determine which port to use based on HTTPS configuration
     uint16_t port = settings.IsHTTPSEnabled() ? settings.https_port : settings.http_port;
@@ -45,7 +47,7 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
     }
 
     // Add listener to the single event loop
-    if (event_loop_->RegisterFd(listen_fd, common::EventType::ET_READ, connection_handler)) {
+    if (loop->RegisterFd(listen_fd, common::EventType::ET_READ, connection_handler)) {
         common::LOG_INFO("%s listener added on %s:%d", 
                         handler->GetType().c_str(), 
                         settings.listen_addr.c_str(), port);

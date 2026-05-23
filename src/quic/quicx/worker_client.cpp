@@ -26,7 +26,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     callbacks.connection_close_cb = std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3);
 
-    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_, callbacks);
+    auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), callbacks);
 
     // Inject Sender for direct packet transmission
     conn->SetSender(sender_);
@@ -46,9 +46,21 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     }
 
     // RFC 9000 Section 6: Version Negotiation
-    // Set callback to handle version negotiation from server
-    conn->SetVersionNegotiationCallback(std::bind(&ClientWorker::HandleVersionNegotiation, this, conn, ip, port, alpn,
-        timeout_ms, resumption_session_der, server_name, std::placeholders::_1));
+    // Set callback to handle version negotiation from server.
+    // IMPORTANT: capture |conn| as weak_ptr. Capturing by value would create a
+    // self-cycle (BaseConnection -> version_negotiation_cb_ -> shared_ptr to
+    // self) that keeps the connection alive forever after teardown.
+    std::weak_ptr<ClientConnection> weak_conn = conn;
+    conn->SetVersionNegotiationCallback(
+        [this, weak_conn, ip, port, alpn, timeout_ms, resumption_session_der, server_name]
+        (uint32_t negotiated_version) {
+            auto c = weak_conn.lock();
+            if (!c) {
+                return;
+            }
+            HandleVersionNegotiation(c, ip, port, alpn, timeout_ms,
+                resumption_session_der, server_name, negotiated_version);
+        });
 
     connecting_set_.insert(conn);
 
@@ -61,7 +73,9 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     // Only set timeout for handshake phase (0 means no timeout - rely on idle timeout)
     // Skip if connection was already promoted by early connection callback during Dial()
     if (timeout_ms > 0 && connecting_set_.find(conn) != connecting_set_.end()) {
-        auto timer_id = event_loop_->AddTimer(
+        auto loop = event_loop_.lock();
+        if (!loop) return;
+        auto timer_id = loop->AddTimer(
             [conn, timeout_ms, this]() {
                 // Only timeout if still in connecting state (handshake not completed)
                 if (connecting_set_.find(conn) != connecting_set_.end()) {
@@ -86,18 +100,20 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     auto conn = conn_map_.find(cid_code);
     if (conn != conn_map_.end()) {
         common::LogTagGuard guard("conn:" + std::to_string(cid_code));
+        // Pin the connection with a local shared_ptr copy (see worker_server.cpp).
+        auto connection = conn->second;
         // update socket fd so GetLocalAddr() works for connection migration
-        conn->second->SetSocket(packet_info.net_packet_->GetSocket());
+        connection->SetSocket(packet_info.net_packet_->GetSocket());
         // report observed address for path change detection
         auto& observed_addr = packet_info.net_packet_->GetAddress();
-        conn->second->OnObservedPeerAddress(observed_addr);
+        connection->OnObservedPeerAddress(observed_addr);
         // record received bytes on candidate path to unlock anti-amplification budget
         if (packet_info.net_packet_->GetData()) {
-            conn->second->OnCandidatePathDatagramReceived(
+            connection->OnCandidatePathDatagramReceived(
                 observed_addr, packet_info.net_packet_->GetData()->GetDataLength());
         }
-        conn->second->SetPendingEcn(packet_info.net_packet_->GetEcn());
-        conn->second->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
+        connection->SetPendingEcn(packet_info.net_packet_->GetEcn());
+        connection->OnPackets(packet_info.net_packet_->GetTime(), packet_info.packets_);
         return true;
     }
 
@@ -109,7 +125,8 @@ void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     // Cancel handshake timeout timer if it exists
     auto timer_it = handshake_timers_.find(conn);
     if (timer_it != handshake_timers_.end()) {
-        event_loop_->RemoveTimer(timer_it->second);
+        auto loop = event_loop_.lock();
+        if (loop) loop->RemoveTimer(timer_it->second);
         handshake_timers_.erase(timer_it);
         common::LOG_DEBUG(
             "handshake completed, cancelled timeout timer for connection. cid:%llu", conn->GetConnectionIDHash());
@@ -117,6 +134,22 @@ void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 
     // Call base class implementation
     Worker::HandleHandshakeDone(conn);
+}
+
+void ClientWorker::Shutdown() {
+    // Cancel & drop all pending handshake-timeout timers. Each timer's
+    // lambda captures the in-flight connection shared_ptr by value, so if
+    // we leave the map populated the connection stays alive even after
+    // conn_map_ / connecting_set_ have been cleared by Worker::Shutdown().
+    auto loop = event_loop_.lock();
+    if (loop) {
+        for (auto& kv : handshake_timers_) {
+            loop->RemoveTimer(kv.second);
+        }
+    }
+    handshake_timers_.clear();
+
+    Worker::Shutdown();
 }
 
 void ClientWorker::HandleConnectionTimeout(std::shared_ptr<IConnection> conn) {
@@ -144,7 +177,8 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     // Cancel handshake timer if exists
     auto timer_it = handshake_timers_.find(conn);
     if (timer_it != handshake_timers_.end()) {
-        event_loop_->RemoveTimer(timer_it->second);
+        auto vn_loop = event_loop_.lock();
+        if (vn_loop) vn_loop->RemoveTimer(timer_it->second);
         handshake_timers_.erase(timer_it);
     }
 
@@ -163,7 +197,7 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     vn_callbacks.connection_close_cb = std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
             std::placeholders::_3);
 
-    auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_, vn_callbacks);
+    auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), vn_callbacks);
 
     // CRITICAL: Set the negotiated version BEFORE dialing
     new_conn->SetVersion(negotiated_version);
@@ -185,10 +219,20 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
         new_conn->SetKeyUpdateEnabled(true);
     }
 
-    // Set version negotiation callback for the new connection
-    // If server sends another VN packet, the connection will be closed (see BaseConnection::OnVersionNegotiationPacket)
-    new_conn->SetVersionNegotiationCallback(std::bind(&ClientWorker::HandleVersionNegotiation, this, new_conn, ip, port,
-        alpn, timeout_ms, resumption_session_der, server_name, std::placeholders::_1));
+    // Set version negotiation callback for the new connection.
+    // If server sends another VN packet, the connection will be closed (see BaseConnection::OnVersionNegotiationPacket).
+    // Capture as weak_ptr to avoid self-cycle (see notes in Connect()).
+    std::weak_ptr<ClientConnection> weak_new_conn = new_conn;
+    new_conn->SetVersionNegotiationCallback(
+        [this, weak_new_conn, ip, port, alpn, timeout_ms, resumption_session_der, server_name]
+        (uint32_t negotiated_version) {
+            auto c = weak_new_conn.lock();
+            if (!c) {
+                return;
+            }
+            HandleVersionNegotiation(c, ip, port, alpn, timeout_ms,
+                resumption_session_der, server_name, negotiated_version);
+        });
 
     connecting_set_.insert(new_conn);
 
@@ -201,7 +245,9 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
 
     // Set timeout for new connection
     if (timeout_ms > 0) {
-        auto timer_id = event_loop_->AddTimer(
+        auto vn_loop2 = event_loop_.lock();
+        if (!vn_loop2) return;
+        auto timer_id = vn_loop2->AddTimer(
             [new_conn, timeout_ms, this]() {
                 if (connecting_set_.find(new_conn) != connecting_set_.end()) {
                     common::LOG_WARN("handshake timeout for reconnected connection. cid:%llu, timeout_ms:%d",

@@ -2,7 +2,7 @@
 #define UPGRADE_SERVER_CONNECTION_HANDLER
 
 #include <memory>
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
@@ -23,7 +23,7 @@ public:
 
  private:
     std::shared_ptr<ISmartHandler> handler_;
-    std::shared_ptr<common::IEventLoop> event_loop_;
+    std::weak_ptr<common::IEventLoop> event_loop_;
 };
 
 } // namespace upgrade

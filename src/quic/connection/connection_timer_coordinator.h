@@ -5,7 +5,7 @@
 #include <functional>
 #include <memory>
 
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "common/timer/timer_task.h"
 
 namespace quicx {
@@ -104,7 +104,7 @@ private:
 
 private:
     // Dependencies (injected)
-    std::shared_ptr<::quicx::common::IEventLoop> event_loop_;
+    std::weak_ptr<::quicx::common::IEventLoop> event_loop_;
     TransportParam& transport_param_;
     SendManager& send_manager_;
     ConnectionStateMachine& state_machine_;

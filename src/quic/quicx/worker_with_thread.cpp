@@ -1,6 +1,6 @@
 #include <sstream>
 #include "common/log/log.h"
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "quic/quicx/worker_with_thread.h"
 
 
@@ -25,19 +25,20 @@ std::string WorkerWithThread::GetWorkerId() {
 // Handle packets
 void WorkerWithThread::HandlePacket(PacketParseResult& packet_info) {
     packet_queue_.Emplace(std::move(packet_info));
-    if (event_loop_) {
-        event_loop_->Wakeup();
+    if (auto loop = event_loop_.lock()) {
+        loop->Wakeup();
     }
 }
 
 void WorkerWithThread::Run() {
-    if (!event_loop_->Init()) {
+    auto loop = event_loop_.lock();
+    if (!loop || !loop->Init()) {
         common::LOG_ERROR("init event loop failed.");
         return;
     }
 
     while (!Thread::IsStop()) {
-        event_loop_->Wait();
+        loop->Wait();
         ProcessRecv();
         if (worker_ptr_) {
             worker_ptr_->Process();
@@ -47,14 +48,14 @@ void WorkerWithThread::Run() {
 
 void WorkerWithThread::Stop() {
     Thread::Stop();
-    if (event_loop_) {
-        event_loop_->Wakeup();
+    if (auto loop = event_loop_.lock()) {
+        loop->Wakeup();
     }
 }
 
 void WorkerWithThread::PostTask(std::function<void()> task) {
-    if (event_loop_) {
-        event_loop_->PostTask(std::move(task));
+    if (auto loop = event_loop_.lock()) {
+        loop->PostTask(std::move(task));
     }
 }
 

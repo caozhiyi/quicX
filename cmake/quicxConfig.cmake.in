@@ -1,0 +1,69 @@
+@PACKAGE_INIT@
+
+# quicxConfig.cmake -- package config for downstream `find_package(quicx)`.
+#
+# Provides imported targets:
+#   quicx::quicx   (static library, QUIC transport only)
+#   quicx::http3   (static library, QUIC + HTTP/3)
+#
+# Public headers are installed under <prefix>/include/quicx/.
+#
+# ============================================================================
+# IMPORTANT -- BoringSSL / crypto+ssl dependency
+# ============================================================================
+# QuicX is built against BoringSSL (vendored under third/boringssl). The
+# installed archives libquicx.a / libhttp3.a contain *unresolved* references
+# to SSL / crypto symbols (BIO_*, SSL_*, EVP_*, ...).
+#
+# At find_package time we resolve this dependency in the following order:
+#
+#   1. If the downstream consumer has already created OpenSSL::Crypto and
+#      OpenSSL::SSL (e.g. by calling find_package(OpenSSL) earlier, or by
+#      add_subdirectory()'ing BoringSSL first) -- we use those directly.
+#
+#   2. Otherwise we call find_dependency(OpenSSL). This works against:
+#        - a system OpenSSL install (best-effort: there may be ABI drift
+#          between BoringSSL and OpenSSL APIs we depend on);
+#        - a BoringSSL build that exposes the OpenSSL::Crypto / OpenSSL::SSL
+#          aliases (e.g. via add_subdirectory before find_package).
+#
+#   3. If find_dependency fails, we set quicx_FOUND = FALSE with a message
+#      that points the user at the documented options.
+#
+# Recommended downstream setups:
+#
+#   # Option A -- vendor BoringSSL (recommended, guaranteed ABI match):
+#   add_subdirectory(third_party/boringssl)
+#   find_package(quicx 0.1.0 REQUIRED)
+#   target_link_libraries(myapp PRIVATE quicx::http3)
+#
+#   # Option B -- system OpenSSL (best-effort):
+#   find_package(OpenSSL REQUIRED)
+#   find_package(quicx 0.1.0 REQUIRED)
+#   target_link_libraries(myapp PRIVATE quicx::http3)
+#
+# Public header usage:
+#   #include <quicx/http3/if_client.h>
+
+include(CMakeFindDependencyMacro)
+
+find_dependency(Threads)
+
+if(NOT TARGET OpenSSL::Crypto OR NOT TARGET OpenSSL::SSL)
+    # Try to locate something that provides the OpenSSL::Crypto / OpenSSL::SSL
+    # imported targets. find_dependency() forwards REQUIRED / QUIET correctly.
+    find_dependency(OpenSSL)
+endif()
+
+if(NOT TARGET OpenSSL::Crypto OR NOT TARGET OpenSSL::SSL)
+    set(quicx_FOUND FALSE)
+    set(quicx_NOT_FOUND_MESSAGE
+        "quicx requires OpenSSL::Crypto and OpenSSL::SSL imported targets. "
+        "Either add_subdirectory() the bundled BoringSSL before find_package(quicx), "
+        "or call find_package(OpenSSL REQUIRED) first.")
+    return()
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/quicxTargets.cmake")
+
+check_required_components(quicx)

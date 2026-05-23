@@ -114,7 +114,16 @@ cmake --build build --config Release
 
 ## 5. How to Integrate quicX into Your Project?
 
-### 5.1 Integration via CMake
+`quicX` exposes two CMake imported targets — pick whichever matches the layer you need:
+
+| Imported target | What it contains | When to use |
+| :--- | :--- | :--- |
+| `quicx::quicx` | QUIC transport only (RFC 9000 / 9369) | Custom RPC, game tunnels, anything that does **not** speak HTTP/3 |
+| `quicx::http3` | QUIC + HTTP/3 stack (transitively links `quicx::quicx`) | Building HTTP/3 clients / servers |
+
+> **BoringSSL** is statically linked into `libquicx.a` / `libhttp3.a`. Downstream consumers **do not** need to install or link BoringSSL/OpenSSL separately when using `add_subdirectory()`. `Threads::Threads` and (on Linux) `stdc++fs` are propagated through `PUBLIC` link, so you don't have to add them yourself either.
+
+### 5.1 Integration via CMake — Option A: `add_subdirectory()` (vendored / submodule)
 
 The simplest way is leveraging CMake's `add_subdirectory`:
 
@@ -122,25 +131,65 @@ The simplest way is leveraging CMake's `add_subdirectory`:
 2. Add the following to your core `CMakeLists.txt`:
 
 ```cmake
-# Add the quicX directory
-add_subdirectory(third_party/quicX)
+# Bring quicX into the build tree.
+# EXCLUDE_FROM_ALL keeps quicX's tests/examples out of your `all` target.
+add_subdirectory(third_party/quicX EXCLUDE_FROM_ALL)
 
-# Assume your executable is named my_app
 add_executable(my_app main.cpp)
 
-# Link the quicX library and threading dependencies
-target_link_libraries(my_app PRIVATE quicx Threads::Threads)
+# Link only what you need:
+target_link_libraries(my_app PRIVATE quicx::http3)   # HTTP/3 application stack
+# or, for raw QUIC transport only:
+# target_link_libraries(my_app PRIVATE quicx::quicx)
 ```
+
+Useful options to forward when you embed:
+
+| Option | Default | Effect |
+| :--- | :---: | :--- |
+| `BUILD_EXAMPLES` | `ON` | Build `example/*` binaries (turn `OFF` for embedding) |
+| `ENABLE_TESTING` | `ON` | Build the `quicx_utest` GoogleTest binary (turn `OFF` for embedding) |
+| `ENABLE_BENCHMARKS` | `ON` | Build benchmarks (turn `OFF` for embedding) |
+| `QUICX_INSTALL` | `ON` | Generate install / export rules (safe to leave on) |
+| `QUICX_ENABLE_QLOG` | `ON` | Compile in QLog tracing |
+
+### 5.2 Integration via CMake — Option B: `find_package(quicx)` (system / staged install)
+
+Install `quicX` once, then any number of downstream projects can consume it:
+
+```bash
+# Build & install quicX itself
+cmake -S quicX -B build -DCMAKE_BUILD_TYPE=Release \
+                       -DBUILD_EXAMPLES=OFF -DENABLE_TESTING=OFF \
+                       -DCMAKE_INSTALL_PREFIX=/opt/quicx
+cmake --build build --parallel
+cmake --install build
+```
+
+```cmake
+# CMakeLists.txt of your project
+find_package(quicx 0.1.0 REQUIRED)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE quicx::http3)
+```
+
+If `quicX` is installed to a non-standard prefix, point CMake at it via
+`-DCMAKE_PREFIX_PATH=/opt/quicx` (or `-Dquicx_DIR=/opt/quicx/lib/cmake/quicx`).
+
+The package config exports `quicxConfig.cmake` / `quicxTargets.cmake` /
+`quicxConfigVersion.cmake` under `<prefix>/lib/cmake/quicx/`. Versioning policy:
+`SameMinorVersion` until `1.0.0`. See [`docs/en/reference/api_stability.md`](../reference/api_stability.md).
 
 Then, in your C++ code:
 ```cpp
-#include "http3/include/if_server.h" 
-// Or #include "quic/include/if_quic_server.h" (if you only need the transport layer)
+#include <quicx/http3/if_server.h>
+// Or #include <quicx/quic/if_quic_server.h> (if you only need the transport layer)
 
 // Your logic ...
 ```
 
-### 5.2 Integration via Bazel
+### 5.3 Integration via Bazel
 
 If your custom project uses the Bazel system, you can introduce `quicX` as an external repository in `WORKSPACE` or `MODULE.bazel` (e.g., via `local_repository` or `git_repository`).
 

@@ -129,7 +129,7 @@ public:
 
 private:
     // Dependencies (injected)
-    std::shared_ptr<::quicx::common::IEventLoop> event_loop_;
+    std::weak_ptr<::quicx::common::IEventLoop> event_loop_;
     SendManager& send_manager_;
     AddConnectionIDCallback add_conn_id_cb_;
     RetireConnectionIDCallback retire_conn_id_cb_;

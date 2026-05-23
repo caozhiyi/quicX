@@ -11,22 +11,6 @@
 #ifndef COMMON_QLOG_QLOG
 #define COMMON_QLOG_QLOG
 
-#include "common/qlog/event/connectivity_events.h"
-#include "common/qlog/event/http3_events.h"
-#include "common/qlog/event/qlog_event.h"
-#include "common/qlog/event/recovery_events.h"
-#include "common/qlog/event/security_events.h"
-#include "common/qlog/event/transport_events.h"
-
-#include "common/qlog/qlog_config.h"
-#include "common/qlog/qlog_manager.h"
-#include "common/qlog/qlog_trace.h"
-#include "common/qlog/util/qlog_constants.h"
-#include "common/util/time.h"
-
-namespace quicx {
-namespace common {
-
 // ========== Convenience macro definitions ==========
 
 /**
@@ -42,6 +26,21 @@ namespace common {
 #endif
 
 #if QLOG_ENABLED
+
+#include "common/qlog/event/connectivity_events.h"
+#include "common/qlog/event/http3_events.h"
+#include "common/qlog/event/qlog_event.h"
+#include "common/qlog/event/recovery_events.h"
+#include "common/qlog/event/security_events.h"
+#include "common/qlog/event/transport_events.h"
+#include "common/qlog/qlog_config.h"
+#include "common/qlog/qlog_manager.h"
+#include "common/qlog/qlog_trace.h"
+#include "common/qlog/util/qlog_constants.h"
+#include "common/util/time.h"
+
+namespace quicx {
+namespace common {
 
 /**
  * @brief Get current timestamp (microseconds)
@@ -251,6 +250,15 @@ namespace common {
 
 /**
  * @brief Log server_listening event
+ *
+ * Usage example:
+ * common::ServerListeningData data;
+ * data.ip = "0.0.0.0";
+ * data.port = 443;
+ * QLOG_SERVER_LISTENING(manager, data);
+ *
+ * Note: This event is logged at the server level (not per-connection),
+ * so it uses QlogManager directly to create a temporary trace.
  */
 #define QLOG_SERVER_LISTENING(manager, data)                                                                  \
     do {                                                                                                      \
@@ -264,36 +272,28 @@ namespace common {
         }                                                                                                     \
     } while (0)
 
-#define QLOG_FLUSH(trace)                                                     \
-    do {                                                                      \
-        if (trace) {                                                          \
-            (trace)->Flush();                                                 \
-        }                                                                     \
-    } while (0)
-
 #else  // QLOG_ENABLED == 0
 
 // When qlog is disabled, macros expand to no-ops (zero overhead)
 #define QLOG_TIME_US() 0
 #define QLOG_EVENT(trace, event_name, event_data) ((void)0)
-#define QLOG_PACKET_SENT(trace, data) ((void)(data))
-#define QLOG_PACKET_RECEIVED(trace, data) ((void)(data))
-#define QLOG_METRICS_UPDATED(trace, data) ((void)(data))
-#define QLOG_CONNECTION_STARTED(trace, data) ((void)(data))
-#define QLOG_CONNECTION_CLOSED(trace, data) ((void)(data))
-#define QLOG_PACKET_LOST(trace, data) ((void)(data))
-#define QLOG_CONGESTION_STATE_UPDATED(trace, data) ((void)(data))
-#define QLOG_STREAM_STATE_UPDATED(trace, data) ((void)(data))
-#define QLOG_PACKET_DROPPED(trace, data) ((void)(data))
-#define QLOG_PACKET_BUFFERED(trace, data) ((void)(data))
-#define QLOG_CONNECTION_ID_UPDATED(trace, data) ((void)(data))
-#define QLOG_KEY_UPDATED(trace, data) ((void)(data))
-#define QLOG_KEY_DISCARDED(trace, data) ((void)(data))
-#define QLOG_MARKED_FOR_RETRANSMIT(trace, data) ((void)(data))
-#define QLOG_HTTP3_FRAME_CREATED(trace, data) ((void)(data))
-#define QLOG_HTTP3_FRAME_PARSED(trace, data) ((void)(data))
-#define QLOG_SERVER_LISTENING(manager, data) ((void)(data))
-#define QLOG_FLUSH(trace) ((void)0)
+#define QLOG_PACKET_SENT(trace, data) ((void)0)
+#define QLOG_PACKET_RECEIVED(trace, data) ((void)0)
+#define QLOG_METRICS_UPDATED(trace, data) ((void)0)
+#define QLOG_CONNECTION_STARTED(trace, data) ((void)0)
+#define QLOG_CONNECTION_CLOSED(trace, data) ((void)0)
+#define QLOG_PACKET_LOST(trace, data) ((void)0)
+#define QLOG_CONGESTION_STATE_UPDATED(trace, data) ((void)0)
+#define QLOG_STREAM_STATE_UPDATED(trace, data) ((void)0)
+#define QLOG_PACKET_DROPPED(trace, data) ((void)0)
+#define QLOG_PACKET_BUFFERED(trace, data) ((void)0)
+#define QLOG_CONNECTION_ID_UPDATED(trace, data) ((void)0)
+#define QLOG_KEY_UPDATED(trace, data) ((void)0)
+#define QLOG_KEY_DISCARDED(trace, data) ((void)0)
+#define QLOG_MARKED_FOR_RETRANSMIT(trace, data) ((void)0)
+#define QLOG_HTTP3_FRAME_CREATED(trace, data) ((void)0)
+#define QLOG_HTTP3_FRAME_PARSED(trace, data) ((void)0)
+#define QLOG_SERVER_LISTENING(manager, data) ((void)0)
 
 #endif  // QLOG_ENABLED
 

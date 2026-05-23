@@ -8,9 +8,9 @@
 #include <variant>
 
 #include "http3/connection/connection_client.h"
-#include "http3/include/if_client.h"
-#include "quic/include/if_quic_client.h"
-#include "quic/include/if_quic_connection.h"
+#include <quicx/http3/if_client.h>
+#include <quicx/quic/if_quic_client.h>
+#include <quicx/quic/if_quic_connection.h>
 
 namespace quicx {
 namespace http3 {
@@ -64,6 +64,12 @@ private:
 
     // Track connections that are in closing state
     bool is_closing_ = false;
+    // Number of quic-connections still pending kConnectionClose callback while
+    // the client is in graceful-shutdown. When this reaches 0 we can Destroy()
+    // the underlying quic client immediately instead of waiting for the
+    // kConnectionCloseDestroyTimeoutMs fallback timer.
+    uint32_t pending_close_count_ = 0;
+    bool destroy_scheduled_ = false;
 
     // Migration callback to forward to all connections
     migration_callback migration_cb_;

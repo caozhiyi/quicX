@@ -6,7 +6,7 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
 
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "common/network/io_handle.h"
 #include "quic/connection/connection_id_coordinator.h"
 #include "quic/connection/connection_path_manager.h"
@@ -84,14 +84,17 @@ void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
 
     // For client-initiated migration, also set a global timeout
     if (is_client_initiated_migration_) {
-        event_loop_->RemoveTimer(migration_timeout_task_);
-        migration_timeout_task_.SetTimeoutCallback([this]() {
-            if (path_probe_inflight_ && is_client_initiated_migration_) {
-                common::LOG_WARN("PathManager: migration timeout after %u ms", path_validation_timeout_ms_);
-                HandleMigrationFailure(MigrationResult::kFailedTimeout);
-            }
-        });
-        event_loop_->AddTimer(migration_timeout_task_, path_validation_timeout_ms_, 0);
+        auto loop = event_loop_.lock();
+        if (loop) {
+            loop->RemoveTimer(migration_timeout_task_);
+            migration_timeout_task_.SetTimeoutCallback([this]() {
+                if (path_probe_inflight_ && is_client_initiated_migration_) {
+                    common::LOG_WARN("PathManager: migration timeout after %u ms", path_validation_timeout_ms_);
+                    HandleMigrationFailure(MigrationResult::kFailedTimeout);
+                }
+            });
+            loop->AddTimer(migration_timeout_task_, path_validation_timeout_ms_, 0);
+        }
     }
 }
 
@@ -117,14 +120,17 @@ void PathManager::OnPathResponse(const uint8_t* data) {
     }
 
     if (memcmp(data, pending_path_challenge_data_, 8) != 0) {
-        common::LOG_WARN("PathManager: PATH_RESPONSE token mismatch, ignoring");
+        common::LOG_DEBUG("PathManager::OnPathResponse: token mismatch, ignoring");
         return;
     }
 
     // Token matched: path validated -> promote candidate to active
     path_probe_inflight_ = false;
-    event_loop_->RemoveTimer(path_probe_task_);         // Cancel retry timer
-    event_loop_->RemoveTimer(migration_timeout_task_);  // Cancel migration timeout
+    auto loop2 = event_loop_.lock();
+    if (loop2) {
+        loop2->RemoveTimer(path_probe_task_);         // Cancel retry timer
+        loop2->RemoveTimer(migration_timeout_task_);  // Cancel migration timeout
+    }
     memset(pending_path_challenge_data_, 0, sizeof(pending_path_challenge_data_));
 
     bool peer_addr_changed = !(candidate_peer_addr_ == peer_addr_);
@@ -182,9 +188,6 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
     if (addr == peer_addr_) {
         return;
     }
-
-    common::LOG_INFO("PathManager: observed new peer address: %s:%d (current: %s:%d)", addr.GetIp().c_str(),
-        addr.GetPort(), peer_addr_.GetIp().c_str(), peer_addr_.GetPort());
 
     // Respect disable_active_migration: ignore proactive migration but allow NAT rebinding
     // Heuristic: if we have received any packet from the new address (workers call
@@ -350,7 +353,9 @@ int32_t PathManager::GetSendSocket() const {
 // ==================== Private Methods ====================
 
 void PathManager::ScheduleProbeRetry() {
-    event_loop_->RemoveTimer(path_probe_task_);
+    auto loop = event_loop_.lock();
+    if (!loop) return;
+    loop->RemoveTimer(path_probe_task_);
     if (!path_probe_inflight_) {
         return;
     }
@@ -394,7 +399,7 @@ void PathManager::ScheduleProbeRetry() {
         ScheduleProbeRetry();
     });
 
-    event_loop_->AddTimer(path_probe_task_, probe_retry_delay_ms_, 0);
+    loop->AddTimer(path_probe_task_, probe_retry_delay_ms_, 0);
 }
 
 void PathManager::CompleteMigration() {
@@ -480,7 +485,10 @@ void PathManager::HandleMigrationFailure(MigrationResult result) {
 
 void PathManager::CleanupMigrationState() {
     // Cancel timers
-    event_loop_->RemoveTimer(migration_timeout_task_);
+    auto loop = event_loop_.lock();
+    if (loop) {
+        loop->RemoveTimer(migration_timeout_task_);
+    }
 
     // Close and cleanup migration socket if migration failed
         if (migration_socket_ > 0) {

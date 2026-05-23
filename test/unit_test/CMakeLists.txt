@@ -24,6 +24,7 @@ add_executable(quicx_utest ${test_files})
 target_include_directories(quicx_utest PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}
+    ${boringssl_SOURCE_DIR}/include
 )
 
 # Link gtest, gmock, and gtest_main libraries

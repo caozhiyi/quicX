@@ -2,8 +2,8 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
 
-#include "common/metrics/metrics.h"
-#include "common/metrics/metrics_std.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "quic/connection/util.h"
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/crypto_frame.h"
@@ -48,6 +48,12 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
     uint16_t ftype = frame->GetType();
     bool is_stream = StreamFrame::IsStreamFrame(ftype);
 
+    // Remember pre-encode size; if the frame fails to encode below, the
+    // stream-data record we are about to push must be rolled back so that
+    // unacked_packets_[ns][pn].stream_data does not advertise bytes that
+    // never made it onto the wire.
+    size_t pre_encode_stream_data_count = stream_data_list_.size();
+
     if (is_stream) {
         auto stream_frame = std::dynamic_pointer_cast<StreamFrame>(frame);
         if (stream_frame) {
@@ -56,20 +62,13 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
             uint32_t length = stream_frame->GetLength();
             bool has_fin = stream_frame->IsFin();
 
-            // Update or insert stream data info (keep maximum offset per stream)
-            auto it = stream_data_map_.find(stream_id);
-            if (it == stream_data_map_.end()) {
-                stream_data_map_[stream_id] = StreamDataInfo(stream_id, offset + length, has_fin);
-            } else {
-                // Update to maximum offset
-                if (offset + length > it->second.max_offset) {
-                    it->second.max_offset = offset + length;
-                }
-                // If any frame has FIN, mark it
-                if (has_fin) {
-                    it->second.has_fin = true;
-                }
-            }
+            // One record per STREAM frame — never merge. The previous
+            // implementation collapsed into a single (max_offset) entry per
+            // stream and silently lost the offset_start/length, which made
+            // SendStream::OnDataAcked treat selective ACKs as cumulative and
+            // declared streams "Data Recvd" while early gaps were still
+            // outstanding. See docs/release_plan_v0.1.0.md §2.B.3.
+            stream_data_list_.emplace_back(stream_id, offset, length, has_fin);
         }
     }
 
@@ -87,6 +86,12 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
             last_error_ = FrameEncodeError::kOtherError;
             common::LOG_ERROR("failed to encode frame. type:%s", FrameType2String(frame->GetType()).c_str());
         }
+        // Roll back any tentative stream-data record we appended above so the
+        // unacked_packets bookkeeping never claims bytes that the wire didn't
+        // actually carry.
+        if (is_stream && stream_data_list_.size() > pre_encode_stream_data_count) {
+            stream_data_list_.resize(pre_encode_stream_data_count);
+        }
         return false;
     }
     common::LOG_DEBUG(
@@ -99,12 +104,7 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
 }
 
 std::vector<StreamDataInfo> FixBufferFrameVisitor::GetStreamDataInfo() const {
-    std::vector<StreamDataInfo> result;
-    result.reserve(stream_data_map_.size());
-    for (const auto& pair : stream_data_map_) {
-        result.push_back(pair.second);
-    }
-    return result;
+    return stream_data_list_;
 }
 
 }  // namespace quic

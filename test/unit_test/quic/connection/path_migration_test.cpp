@@ -2,7 +2,7 @@
 #include <thread>
 #include <chrono>
 
-#include "common/network/if_event_loop.h"
+#include <quicx/common/if_event_loop.h>
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
@@ -12,7 +12,7 @@
 #include "quic/packet/packet_decode.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/crypto/tls/tls_ctx_server.h"
-#include "quic/include/if_quic_send_stream.h"
+#include <quicx/quic/if_quic_send_stream.h>
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_server.h"
 
@@ -84,8 +84,11 @@ static QuicTransportParams TEST_TRANSPORT_PARAMS = {
 // Note: ConnectionProcess is now defined in connection_test_util.h
 // This local definition is removed to avoid ambiguity
 
+// Returns: {client, server, client_sender, server_sender, event_loop}
+// NOTE: event_loop must be kept alive because connections store weak_ptr to it.
 static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>,
-                  std::shared_ptr<MockSender>, std::shared_ptr<MockSender>> GenerateHandshakeDoneConnections(
+                  std::shared_ptr<MockSender>, std::shared_ptr<MockSender>,
+                  std::shared_ptr<common::IEventLoop>> GenerateHandshakeDoneConnections(
     const QuicTransportParams& client_tp = TEST_TRANSPORT_PARAMS, const QuicTransportParams& server_tp = TEST_TRANSPORT_PARAMS) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
@@ -128,7 +131,7 @@ static std::tuple<std::shared_ptr<IConnection>, std::shared_ptr<IConnection>,
         << "Client connection should be in application encryption level, but got "
         << client_conn->GetCurEncryptionLevel();
 
-    return std::make_tuple(client_conn, server_conn, client_sender, server_sender);
+    return std::make_tuple(client_conn, server_conn, client_sender, server_sender, event_loop);
 }
 
 TEST(path_migration, validation_failure_recovery) {
@@ -137,6 +140,7 @@ TEST(path_migration, validation_failure_recovery) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
     // Verify connection works normally
     auto stream_before = std::dynamic_pointer_cast<IQuicSendStream>(
         client_conn->MakeStream(StreamDirection::kSend));
@@ -176,6 +180,7 @@ TEST(path_migration, concurrent_path_probing) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Rapidly trigger multiple address changes
     common::Address addr1("127.0.0.1", 10001);
@@ -241,6 +246,7 @@ TEST(path_migration, cid_pool_replenishment) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Trigger path migration to consume CIDs
     common::Address new_addr("127.0.0.1", 9999);
@@ -318,6 +324,7 @@ TEST(path_migration, preferred_address_mechanism) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // After handshake, client should automatically start probing preferred_address
     // (This will be triggered in OnTransportParams)
@@ -365,6 +372,7 @@ TEST(path_migration, duplicate_path_response) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Trigger migration
     common::Address new_addr("127.0.0.1", 9999);
@@ -412,6 +420,7 @@ TEST(path_migration, path_token_validation_and_promotion) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Simulate observed new address on client side
     common::Address new_addr("127.0.0.1", 9543);
@@ -467,6 +476,7 @@ TEST(path_migration, nat_rebinding_integration) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // NAT rebinding: server observes new source address from client
     common::Address nat_addr("127.0.0.1", 9654);
@@ -512,6 +522,7 @@ TEST(path_migration, path_challenge_retry_backoff) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Trigger migration on client but drop all probe-related traffic to force retries
     common::Address new_addr("127.0.0.1", 9991);
@@ -532,6 +543,7 @@ TEST(path_migration, amp_gating_blocks_streams_before_validation) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Trigger client-side migration; while unvalidated, streams should be gated
     common::Address new_addr("127.0.0.1", 9555);
@@ -569,6 +581,7 @@ TEST(path_migration, pmtu_probe_success_raises_mtu) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Trigger migration to start PMTU probing after validation
     common::Address new_addr("127.0.0.1", 9666);
@@ -637,6 +650,7 @@ TEST(path_migration, pmtu_probe_loss_fallback) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Trigger migration to start PMTU probing after validation
     common::Address new_addr("127.0.0.1", 9777);
@@ -691,6 +705,7 @@ TEST(path_migration, disable_active_migration_semantics) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Client proactively observes a new address; first observation should not start probe
     common::Address new_addr("127.0.0.1", 9888);
@@ -772,6 +787,7 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Verify that client has received NEW_CONNECTION_ID frames from server during handshake
     // According to RFC 9000, NEW_CONNECTION_ID frames are sent during or immediately after handshake
@@ -882,6 +898,7 @@ TEST(path_migration, path_challenge_retry_backoff_limits) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Trigger migration but drop all server responses to force retries
     common::Address new_addr("127.0.0.1", 10001);
@@ -936,6 +953,7 @@ TEST(path_migration, initiate_migration_pre_rotates_dcid) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     // Get client as ClientConnection to access test methods
     auto client_base = std::dynamic_pointer_cast<ClientConnection>(client_conn);
@@ -1007,6 +1025,7 @@ TEST(path_migration, initiate_migration_fails_without_available_cid) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     auto client_base = std::dynamic_pointer_cast<ClientConnection>(client_conn);
     ASSERT_NE(client_base, nullptr);
@@ -1068,6 +1087,7 @@ TEST(path_migration, initiate_migration_skips_cid_rotation_on_response) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     auto client_base = std::dynamic_pointer_cast<ClientConnection>(client_conn);
     ASSERT_NE(client_base, nullptr);
@@ -1143,6 +1163,7 @@ TEST(path_migration, initiate_migration_to_address_success) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     auto client_base = std::dynamic_pointer_cast<ClientConnection>(client_conn);
     ASSERT_NE(client_base, nullptr);
@@ -1203,6 +1224,7 @@ TEST(path_migration, migration_callback_invoked_on_success) {
     auto server_conn = std::get<1>(connections);
     auto client_sender = std::get<2>(connections);
     auto server_sender = std::get<3>(connections);
+    auto event_loop = std::get<4>(connections);  // Keep event_loop alive for weak_ptr
 
     bool callback_invoked = false;
     MigrationInfo received_info;

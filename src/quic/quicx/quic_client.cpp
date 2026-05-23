@@ -3,6 +3,7 @@
 #include "common/network/io_handle.h"
 #include "common/qlog/qlog_manager.h"
 
+#include "quic/connection/connection_base.h"
 #include "quic/connection/session_cache.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 #include "quic/quicx/quic_client.h"
@@ -21,7 +22,35 @@ namespace quic {
 QuicClient::QuicClient(const QuicTransportParams& params):
     params_(params) {}
 
-QuicClient::~QuicClient() {}
+QuicClient::~QuicClient() {
+    // With the Exclusive Ownership + Observer Reference refactoring:
+    //   - Worker/Connection/Stream event_loop_ are now weak_ptr (no upward cycle)
+    //   - Timer callbacks use weak_from_this() (no timer→Connection cycle)
+    //   - AddFixedProcess uses weak_ptr owner (auto-expires when worker dies)
+    // ClearFixedProcesses/ClearAllTimers are no longer needed for cycle-breaking.
+
+    // 0) Stop the master event loop thread so no callbacks can race with
+    //    member destruction. After Join, no loop-thread code is running.
+    if (master_) {
+        master_->Stop();
+        master_->Join();
+    }
+
+    // 1) Drain per-connection bookkeeping held by each worker (conn_map_,
+    //    active_send_connections_, handshake timers). This ensures connections
+    //    are cleanly destroyed while the EventLoop control block is still alive
+    //    (so that weak_ptr::lock() returns nullptr instead of use-after-free).
+    for (auto& kv : worker_map_) {
+        if (kv.second) {
+            kv.second->Shutdown();
+        }
+    }
+
+    // 2) Drop strong refs. C++ reverse member destruction handles the rest.
+    worker_map_.clear();
+    master_.reset();
+    master_event_loop_.reset();
+}
 
 bool QuicClient::Init(const QuicClientConfig& config) {
     if (config.config_.log_level_ != LogLevel::kNull) {
@@ -98,7 +127,7 @@ bool QuicClient::Init(const QuicClientConfig& config) {
             return false;
         });
         master_event_loop_->RunInLoop(
-            [worker, this]() { master_event_loop_->AddFixedProcess(std::bind(&ClientWorker::Process, worker)); });
+            [worker, this]() { master_event_loop_->AddFixedProcess(worker, std::bind(&ClientWorker::Process, worker)); });
 
         worker->SetConnectionIDNotify(master_);
         worker_map_[worker->GetWorkerId()] = worker;

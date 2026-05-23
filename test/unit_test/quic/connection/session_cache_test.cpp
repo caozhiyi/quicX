@@ -467,5 +467,393 @@ TEST_F(SessionCacheTest, SessionInfoValidation) {
     EXPECT_TRUE(cache.HasValidSessionFor0RTT(server_name2));
 }
 
+// =============================================================================
+// Bug #23 regression: GetSessionWithInfo must faithfully return remembered
+// transport params (RFC 9000 §7.4.1) for 0-RTT, including when the on-disk
+// session file race-conditions with a same-process retrieval.
+//
+// Background:
+//   ClientConnection::Dial() loads cached_session_info via GetSessionWithInfo()
+//   and pre-initializes SendFlowController + transport_param_ so MakeStream()
+//   can produce a STREAM frame in the 0-RTT first flight before the server's
+//   real transport params arrive. If has_transport_params/peer_initial_max_
+//   stream_data_bidi_remote_ come back as 0, the new SendStream is created
+//   with peer_data_limit_=0, TrySendData() returns kFlowControlBlocked
+//   forever, and the GET request never makes it onto the wire. The server
+//   sees only Initial CRYPTO + post-handshake NewConnectionID, then idle-
+//   times out at 30s (interop "First connection failed (exit 1)").
+// =============================================================================
+
+// Helper: build a fully-populated SessionInfo (all 8 TP fields non-zero)
+// matching what TLSClientConnection::OnNewSession + ConnectionClient set
+// in production after a successful handshake.
+static SessionInfo CreateFullTPSession(const std::string& server_name,
+                                       uint64_t creation_time,
+                                       uint32_t timeout) {
+    SessionInfo info;
+    info.server_name = server_name;
+    info.creation_time = creation_time;
+    info.timeout = timeout;
+    info.early_data_capable = true;
+    info.has_transport_params = true;
+    info.initial_max_data = 786432;
+    info.initial_max_streams_bidi = 100;
+    info.initial_max_streams_uni = 100;
+    info.initial_max_stream_data_bidi_local = 524288;
+    info.initial_max_stream_data_bidi_remote = 524288;
+    info.initial_max_stream_data_uni = 524288;
+    info.active_connection_id_limit = 4;
+    return info;
+}
+
+// Bug #23: GetSessionWithInfo must round-trip every remembered TP field.
+// Before the fix, GetSessionWithInfo synthesized out_info from a fresh
+// disk Deserialize(); a corrupt/short on-disk file (or any field-zeroed
+// SessionInfo on disk) would silently produce has_transport_params=false
+// and zeroed peer_initial_max_stream_data_*, which would break 0-RTT.
+TEST_F(SessionCacheTest, GetSessionWithInfoReturnsAllRememberedTransportParams) {
+    SessionCache& cache = SessionCache::Instance();
+    ASSERT_TRUE(cache.Init(test_cache_dir_.string()));
+
+    const std::string server_name = "server4";
+    const std::string session_der = CreateTestSessionDER(server_name);
+    SessionInfo stored = CreateFullTPSession(server_name,
+                                             common::UTCTimeMsec() / 1000, 3600);
+    ASSERT_TRUE(cache.StoreSession(session_der, stored));
+
+    std::string got_der;
+    SessionInfo got;
+    ASSERT_TRUE(cache.GetSessionWithInfo(server_name, got_der, got));
+
+    EXPECT_EQ(got_der, session_der);
+    EXPECT_EQ(got.server_name, stored.server_name);
+    EXPECT_TRUE(got.early_data_capable);
+    // Critical: every TP field that 0-RTT pre-merge depends on.
+    EXPECT_TRUE(got.has_transport_params);
+    EXPECT_EQ(got.initial_max_data, stored.initial_max_data);
+    EXPECT_EQ(got.initial_max_streams_bidi, stored.initial_max_streams_bidi);
+    EXPECT_EQ(got.initial_max_streams_uni, stored.initial_max_streams_uni);
+    EXPECT_EQ(got.initial_max_stream_data_bidi_local,
+              stored.initial_max_stream_data_bidi_local);
+    EXPECT_EQ(got.initial_max_stream_data_bidi_remote,
+              stored.initial_max_stream_data_bidi_remote);
+    EXPECT_EQ(got.initial_max_stream_data_uni, stored.initial_max_stream_data_uni);
+    EXPECT_EQ(got.active_connection_id_limit, stored.active_connection_id_limit);
+}
+
+// Bug #23 (race fallback): even if the on-disk SessionInfo trailer is
+// corrupted/truncated (which models the observed disk-read race in
+// interop tests where conn2's GetSessionWithInfo() fires before conn1's
+// ofstream destructor has fully flushed the version-2 trailer), the
+// in-memory SessionInfo populated atomically by StoreSession() must be
+// preferred. Concretely: we corrupt the trailer to set has_transport_
+// params=false on disk, then verify GetSessionWithInfo() still returns
+// the correct (non-zero) TP fields from memory.
+TEST_F(SessionCacheTest,
+       GetSessionWithInfoPrefersMemoryWhenDiskTrailerIsCorrupt) {
+    SessionCache& cache = SessionCache::Instance();
+    ASSERT_TRUE(cache.Init(test_cache_dir_.string()));
+
+    const std::string server_name = "server4";
+    const std::string session_der = CreateTestSessionDER(server_name);
+    SessionInfo stored = CreateFullTPSession(server_name,
+                                             common::UTCTimeMsec() / 1000, 3600);
+    ASSERT_TRUE(cache.StoreSession(session_der, stored));
+
+    // Locate the on-disk session file and overwrite its v2 trailer with
+    // zeroes (simulating a partial flush where everything through
+    // session_der has hit disk but the TP trailer is still in the kernel
+    // buffer / page cache). The exact layout (matches Serialize()):
+    //   [0..3]   magic     "SESS"
+    //   [4..7]   version   = 2
+    //   [8..15]  creation_time
+    //   [16..19] timeout
+    //   [20]     early_data_capable
+    //   [21..24] server_name_len
+    //   [...]    server_name
+    //   [...]    session_der_len (4 bytes)
+    //   [...]    session_der
+    //   <-- v2 trailer (33 bytes total: 1 byte bool + 8x uint32_t)
+    SerializedSessionData fp_helper;
+    std::string filepath = fp_helper.GetFilePath(test_cache_dir_.string(), server_name);
+    ASSERT_TRUE(std::filesystem::exists(filepath));
+    auto file_size = std::filesystem::file_size(filepath);
+    constexpr size_t kV2TrailerSize = sizeof(bool) + 7 * sizeof(uint32_t);
+    ASSERT_GT(file_size, kV2TrailerSize);
+
+    // Truncate the file to exactly drop the v2 trailer, then re-Deserialize
+    // would observe partial data. We instead overwrite the trailer with
+    // zeroes (a stronger model: file is fully readable but stale/incoherent).
+    {
+        std::fstream f(filepath, std::ios::in | std::ios::out | std::ios::binary);
+        ASSERT_TRUE(f.is_open());
+        f.seekp(static_cast<std::streamoff>(file_size - kV2TrailerSize), std::ios::beg);
+        std::vector<char> zeros(kV2TrailerSize, 0);
+        f.write(zeros.data(), zeros.size());
+        ASSERT_TRUE(f.good());
+    }
+
+    // Now GetSessionWithInfo must still produce the correct TP fields,
+    // because the in-memory SessionInfo from StoreSession() is the
+    // source of truth. (Pre-fix this would have returned has_transport_
+    // params=false and zeroed TP fields.)
+    std::string got_der;
+    SessionInfo got;
+    ASSERT_TRUE(cache.GetSessionWithInfo(server_name, got_der, got));
+    EXPECT_EQ(got_der, session_der);
+    EXPECT_TRUE(got.has_transport_params)
+        << "GetSessionWithInfo should fall back to in-memory SessionInfo "
+           "when the on-disk trailer is incoherent (Bug #23 race).";
+    EXPECT_EQ(got.initial_max_stream_data_bidi_remote,
+              stored.initial_max_stream_data_bidi_remote)
+        << "peer_initial_max_stream_data_bidi_remote_ MUST be non-zero in "
+           "0-RTT pre-merge or SendStream::TrySendData would block forever.";
+    EXPECT_EQ(got.initial_max_stream_data_bidi_local,
+              stored.initial_max_stream_data_bidi_local);
+    EXPECT_EQ(got.initial_max_data, stored.initial_max_data);
+}
+
+// Bug #23 (cross-process restart path): when SessionCache is reinitialized
+// from disk only (no prior StoreSession in this process — i.e. the in-memory
+// info comes from LoadSessionsFromCache), GetSessionWithInfo must still
+// return the full TP set. This guards the "real" cross-process resumption
+// flow (e.g. quicX client restart) and proves the disk format itself is
+// lossless for v2 sessions.
+//
+// We deliberately DO NOT use Reset() between phases (Reset() also removes
+// session files from disk, which would defeat the purpose of testing
+// cross-restart loading). Instead we use a second test directory and
+// hand-serialize a v2 session file via SerializedSessionData to mimic what
+// a previous process left on disk, then Init() picks it up via
+// LoadSessionsFromCache().
+TEST_F(SessionCacheTest, GetSessionWithInfoAfterRestartPreservesAllTP) {
+    const std::string server_name = "server4";
+    const std::string session_der = CreateTestSessionDER(server_name);
+    SessionInfo stored = CreateFullTPSession(server_name,
+                                             common::UTCTimeMsec() / 1000, 3600);
+
+    // Phase 1 (simulates a previous process): write a real session file
+    // to disk via SerializedSessionData::Serialize so the on-disk layout
+    // is exactly what production writes.
+    {
+        SerializedSessionData data;
+        data.info = stored;
+        data.session_der = session_der;
+        std::string filepath = data.GetFilePath(test_cache_dir_.string(), server_name);
+        std::ofstream file(filepath, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(file.is_open());
+        ASSERT_TRUE(data.Serialize(file));
+        file.flush();
+        file.close();
+        ASSERT_TRUE(std::filesystem::exists(filepath));
+        ASSERT_GT(std::filesystem::file_size(filepath), 0u);
+    }
+
+    // Phase 2 (new process boot): Init() the cache and verify
+    // GetSessionWithInfo returns full TP from disk.
+    SessionCache& cache = SessionCache::Instance();
+    ASSERT_TRUE(cache.Init(test_cache_dir_.string()));
+    ASSERT_EQ(cache.GetCacheSize(), 1u)
+        << "LoadSessionsFromCache should pick up the on-disk v2 session.";
+
+    std::string got_der;
+    SessionInfo got;
+    ASSERT_TRUE(cache.GetSessionWithInfo(server_name, got_der, got));
+    EXPECT_EQ(got_der, session_der);
+    EXPECT_TRUE(got.has_transport_params);
+    EXPECT_EQ(got.initial_max_data, stored.initial_max_data);
+    EXPECT_EQ(got.initial_max_streams_bidi, stored.initial_max_streams_bidi);
+    EXPECT_EQ(got.initial_max_streams_uni, stored.initial_max_streams_uni);
+    EXPECT_EQ(got.initial_max_stream_data_bidi_local,
+              stored.initial_max_stream_data_bidi_local);
+    EXPECT_EQ(got.initial_max_stream_data_bidi_remote,
+              stored.initial_max_stream_data_bidi_remote);
+    EXPECT_EQ(got.initial_max_stream_data_uni,
+              stored.initial_max_stream_data_uni);
+    EXPECT_EQ(got.active_connection_id_limit,
+              stored.active_connection_id_limit);
+}
+
+// Bug #23 (in-process two-connection sequence): conn1 stores a session via
+// StoreSession; immediately afterwards conn2 calls GetSessionWithInfo. This
+// is the exact production sequence in interop_client (HqInteropClient
+// client; client.Init(); ... client.Shutdown(); HqInteropClient client2;
+// client2.Init();). Hammer this round-trip many times to catch any
+// remaining flakiness in TP propagation.
+TEST_F(SessionCacheTest, RepeatedStoreThenGetSessionWithInfoIsStable) {
+    SessionCache& cache = SessionCache::Instance();
+    ASSERT_TRUE(cache.Init(test_cache_dir_.string()));
+
+    const std::string server_name = "server4";
+    const std::string session_der = CreateTestSessionDER(server_name);
+
+    constexpr int kIterations = 50;
+    for (int i = 0; i < kIterations; ++i) {
+        SessionInfo stored = CreateFullTPSession(server_name,
+                                                 common::UTCTimeMsec() / 1000, 3600);
+        // Vary fields to ensure each iteration's data is observable.
+        stored.initial_max_data = 786432 + i;
+        stored.initial_max_stream_data_bidi_remote = 524288 + i;
+        ASSERT_TRUE(cache.StoreSession(session_der, stored));
+
+        std::string got_der;
+        SessionInfo got;
+        ASSERT_TRUE(cache.GetSessionWithInfo(server_name, got_der, got))
+            << "iteration " << i;
+        ASSERT_TRUE(got.has_transport_params) << "iteration " << i;
+        EXPECT_EQ(got.initial_max_data, stored.initial_max_data) << "iteration " << i;
+        EXPECT_EQ(got.initial_max_stream_data_bidi_remote,
+                  stored.initial_max_stream_data_bidi_remote)
+            << "iteration " << i;
+        EXPECT_EQ(got.initial_max_stream_data_bidi_local,
+                  stored.initial_max_stream_data_bidi_local)
+            << "iteration " << i;
+    }
+}
+
+// Bug #23 (defense-in-depth): even with early_data_capable=false (no
+// 0-RTT), if has_transport_params=true the caller still gets correct TP
+// values. Guards against accidentally tying TP retrieval to
+// early_data_capable.
+TEST_F(SessionCacheTest, GetSessionWithInfoReturnsTPEvenWithoutEarlyData) {
+    SessionCache& cache = SessionCache::Instance();
+    ASSERT_TRUE(cache.Init(test_cache_dir_.string()));
+
+    const std::string server_name = "server4";
+    SessionInfo stored = CreateFullTPSession(server_name,
+                                             common::UTCTimeMsec() / 1000, 3600);
+    stored.early_data_capable = false; // pure 1-RTT resumption, but still has TP
+
+    ASSERT_TRUE(cache.StoreSession(CreateTestSessionDER(server_name), stored));
+
+    std::string got_der;
+    SessionInfo got;
+    ASSERT_TRUE(cache.GetSessionWithInfo(server_name, got_der, got));
+    EXPECT_FALSE(got.early_data_capable);
+    EXPECT_TRUE(got.has_transport_params);
+    EXPECT_EQ(got.initial_max_stream_data_bidi_remote,
+              stored.initial_max_stream_data_bidi_remote);
+}
+
+// =============================================================================
+// Bug #23 (canonical reproducer): two-callback overwrite race.
+//
+// In production the client receives a NewSessionTicket (NST) post-handshake
+// via BoringSSL's NewSessionCallback (-> TLSClientConnection::OnNewSession).
+// That hook does NOT have access to the connection's remembered transport
+// parameters, so it writes a SessionInfo with has_transport_params=false.
+// Concurrently / earlier, ClientConnection::HandleHandshakeDoneFrame() fills
+// a *full* SessionInfo (has_transport_params=true + 8 TP fields) via
+// ExportSession() and StoreSession()s that.
+//
+// If OnNewSession fires AFTER HandleHandshakeDoneFrame (the common case
+// observed in interop), it OVERWRITES sessions_cache_[server] with a stale,
+// TP-less SessionInfo. Conn 2's GetSessionWithInfo() then returns
+// has_transport_params=false, the 0-RTT pre-merge in
+// ClientConnection::Dial() is skipped, peer_initial_max_stream_data_bidi_
+// remote_ stays 0, and the freshly-created SendStream's first STREAM frame
+// is permanently kFlowControlBlocked. The server sees only Initial+ACK,
+// then idle-times out (the 41.7s "First connection failed" interop FAIL).
+//
+// This test models that race deterministically: store full TP first, then
+// store again with the same server_name but TP-less SessionInfo (mimicking
+// OnNewSession), and verify the cache no longer leaks the previously
+// known TP. Once StoreSession is fixed (e.g., merge-instead-of-replace
+// when the new info has no TP and the old entry does), this test will
+// document the contract.
+// =============================================================================
+TEST_F(SessionCacheTest, NSTOverwriteMustNotClobberRememberedTP) {
+    SessionCache& cache = SessionCache::Instance();
+    ASSERT_TRUE(cache.Init(test_cache_dir_.string()));
+
+    const std::string server_name = "server4";
+
+    // Phase 1: HandleHandshakeDoneFrame writes full info (with TP).
+    SessionInfo full = CreateFullTPSession(server_name,
+                                           common::UTCTimeMsec() / 1000, 3600);
+    const std::string der1 = "handshake_done_session_der_for_" + server_name;
+    ASSERT_TRUE(cache.StoreSession(der1, full));
+
+    // Phase 2: NewSessionCallback -> OnNewSession writes TP-less info.
+    // It carries the NST DER (the only one usable for 0-RTT) but does NOT
+    // know the remembered transport params.
+    SessionInfo nst_only;
+    nst_only.server_name = server_name;
+    nst_only.creation_time = common::UTCTimeMsec() / 1000;
+    nst_only.timeout = 3600;
+    nst_only.early_data_capable = true;     // BoringSSL's NST advertises 0-RTT
+    nst_only.has_transport_params = false;  // <-- the bug: TP-less
+    const std::string nst_der = "nst_session_der_for_" + server_name;
+    ASSERT_TRUE(cache.StoreSession(nst_der, nst_only));
+
+    // Phase 3: conn2 reads back. With the bug the cached info is the TP-less
+    // one and 0-RTT pre-merge would be skipped. The contract this test
+    // enforces: after the second StoreSession, the cache MUST still expose
+    // the previously-known TP fields. (The fix may either be: (a) merge
+    // info on Store when new info has no TP and old has, or (b) push the
+    // burden to GetSessionWithInfo to retain the last known good TP.)
+    std::string got_der;
+    SessionInfo got;
+    ASSERT_TRUE(cache.GetSessionWithInfo(server_name, got_der, got));
+
+    // The DER must come from the second store (NST is required for 0-RTT).
+    EXPECT_EQ(got_der, nst_der);
+    EXPECT_TRUE(got.early_data_capable);
+
+    // The TP must still be the ones we learned from the prior handshake.
+    // (Pre-fix: this fails — has_transport_params=false, all TP fields=0.)
+    EXPECT_TRUE(got.has_transport_params)
+        << "OnNewSession's TP-less StoreSession must NOT clobber the "
+           "previously stored remembered transport parameters (Bug #23).";
+    EXPECT_EQ(got.initial_max_data, full.initial_max_data);
+    EXPECT_EQ(got.initial_max_streams_bidi, full.initial_max_streams_bidi);
+    EXPECT_EQ(got.initial_max_streams_uni, full.initial_max_streams_uni);
+    EXPECT_EQ(got.initial_max_stream_data_bidi_local,
+              full.initial_max_stream_data_bidi_local);
+    EXPECT_EQ(got.initial_max_stream_data_bidi_remote,
+              full.initial_max_stream_data_bidi_remote);
+    EXPECT_EQ(got.initial_max_stream_data_uni,
+              full.initial_max_stream_data_uni);
+    EXPECT_EQ(got.active_connection_id_limit,
+              full.active_connection_id_limit);
+}
+
+// Bug #23 (reverse order): NST may also arrive BEFORE HandleHandshakeDone-
+// Frame is processed (if quic-go packs NST + HANDSHAKE_DONE in the same
+// 1-RTT packet and the parser order varies). In that case the second
+// store carries full TP and the cache should converge to the full info.
+// This test asserts the symmetric behavior to NSTOverwriteMustNotClobberRememberedTP.
+TEST_F(SessionCacheTest, HandshakeDoneAfterNSTYieldsFullTP) {
+    SessionCache& cache = SessionCache::Instance();
+    ASSERT_TRUE(cache.Init(test_cache_dir_.string()));
+
+    const std::string server_name = "server4";
+
+    // Phase 1: OnNewSession arrives first (TP-less, NST DER).
+    SessionInfo nst_only;
+    nst_only.server_name = server_name;
+    nst_only.creation_time = common::UTCTimeMsec() / 1000;
+    nst_only.timeout = 3600;
+    nst_only.early_data_capable = true;
+    nst_only.has_transport_params = false;
+    const std::string nst_der = "nst_session_der_for_" + server_name;
+    ASSERT_TRUE(cache.StoreSession(nst_der, nst_only));
+
+    // Phase 2: HandleHandshakeDoneFrame fills full TP. ExportSession at
+    // this point returns the NST DER (because OnNewSession already ran),
+    // so the second store carries identical DER + full TP.
+    SessionInfo full = CreateFullTPSession(server_name,
+                                           common::UTCTimeMsec() / 1000, 3600);
+    ASSERT_TRUE(cache.StoreSession(nst_der, full));
+
+    std::string got_der;
+    SessionInfo got;
+    ASSERT_TRUE(cache.GetSessionWithInfo(server_name, got_der, got));
+    EXPECT_EQ(got_der, nst_der);
+    EXPECT_TRUE(got.has_transport_params);
+    EXPECT_EQ(got.initial_max_stream_data_bidi_remote,
+              full.initial_max_stream_data_bidi_remote);
+}
+
 } // namespace quic
 } // namespace quicx

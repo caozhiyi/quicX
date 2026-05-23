@@ -1,23 +1,28 @@
 package(default_visibility = ["//visibility:public"])
 
-cc_library(
-    name = "quic",
-    srcs = glob([
-        "**/*.cpp",
-    ]),
-    hdrs = glob([
-        "**/*.h",
-    ]),
-    include_prefix = "quic",
-    copts = select({
-        "@platforms//os:windows": [],
-        "//conditions:default": ["-std=c++17", "-pthread"],
-    }),
-    deps = [
-        "//src/common:common",
-        "//third/boringssl:crypto",
-        "//third/boringssl:ssl",
-    ],
+# `:quic` is intentionally an alias of `//src/common:common`. The QUIC
+# sources have a small but real dependency on `common` while a handful of
+# common files (qlog helpers, EventLoop registration) reach back into QUIC
+# private headers. The CMake build sidesteps this by compiling both
+# directories into a single archive (`libquicx.a`); we mirror that here.
+#
+# All sources and headers under this directory are exported via the
+# filegroups below so the merged target in //src/common can pull them in.
+
+filegroup(
+    name = "quic_srcs",
+    srcs = glob(["**/*.cpp"]),
 )
 
+filegroup(
+    name = "quic_hdrs",
+    srcs = glob(["**/*.h"]),
+)
 
+# Build-graph alias: existing rules and external consumers depend on
+# `//src/quic:quic`. Forwarding to //src/common:common preserves that
+# entry point without duplicating compilation.
+alias(
+    name = "quic",
+    actual = "//src/common:common",
+)

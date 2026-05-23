@@ -30,6 +30,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <condition_variable>
@@ -41,13 +42,13 @@
 #include <thread>
 #include <vector>
 
-#include "quic/include/if_quic_client.h"
-#include "quic/include/if_quic_connection.h"
-#include "quic/include/if_quic_bidirection_stream.h"
-#include "http3/include/if_client.h"
-#include "http3/include/if_async_handler.h"
-#include "http3/include/if_request.h"
-#include "http3/include/if_response.h"
+#include <quicx/quic/if_quic_client.h>
+#include <quicx/quic/if_quic_connection.h>
+#include <quicx/quic/if_quic_bidirection_stream.h>
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
 
 using namespace quicx;
 
@@ -137,7 +138,20 @@ public:
         QuicClientConfig config;
         config.verify_peer_ = false;  // Interop tests use self-signed certificates
         config.config_.worker_thread_num_ = 4;
-        config.config_.log_level_ = LogLevel::kDebug;
+        // Default to kError to avoid gigabyte-sized debug logs across repeated
+        // interop runs (which also slow large-file scenarios enough to hit the
+        // per-download 30s timeout). LOG_LEVEL env var overrides.
+        config.config_.log_level_ = LogLevel::kError;
+        if (const char* lvl = std::getenv("LOG_LEVEL")) {
+            std::string s = lvl;
+            for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (s == "debug") config.config_.log_level_ = LogLevel::kDebug;
+            else if (s == "info") config.config_.log_level_ = LogLevel::kInfo;
+            else if (s == "warn" || s == "warning") config.config_.log_level_ = LogLevel::kWarn;
+            else if (s == "error") config.config_.log_level_ = LogLevel::kError;
+            else if (s == "fatal") config.config_.log_level_ = LogLevel::kFatal;
+            else if (s == "null" || s == "off" || s == "none") config.config_.log_level_ = LogLevel::kNull;
+        }
         config.config_.log_path_ = "./logs";  // Current directory for logs
 
         // QLog
@@ -774,7 +788,18 @@ int main(int argc, char* argv[]) {
         Http3ClientConfig h3_config;
         h3_config.quic_config_.verify_peer_ = false;  // Self-signed certs
         h3_config.quic_config_.config_.worker_thread_num_ = 4;
-        h3_config.quic_config_.config_.log_level_ = LogLevel::kDebug;
+        // Default to kError; LOG_LEVEL env var overrides.
+        h3_config.quic_config_.config_.log_level_ = LogLevel::kError;
+        if (const char* lvl = std::getenv("LOG_LEVEL")) {
+            std::string s = lvl;
+            for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (s == "debug") h3_config.quic_config_.config_.log_level_ = LogLevel::kDebug;
+            else if (s == "info") h3_config.quic_config_.config_.log_level_ = LogLevel::kInfo;
+            else if (s == "warn" || s == "warning") h3_config.quic_config_.config_.log_level_ = LogLevel::kWarn;
+            else if (s == "error") h3_config.quic_config_.config_.log_level_ = LogLevel::kError;
+            else if (s == "fatal") h3_config.quic_config_.config_.log_level_ = LogLevel::kFatal;
+            else if (s == "null" || s == "off" || s == "none") h3_config.quic_config_.config_.log_level_ = LogLevel::kNull;
+        }
         h3_config.quic_config_.config_.log_path_ = "./logs";
         h3_config.connection_timeout_ms_ = 30000;
         // Use QUIC v1 for interop compatibility (quic-go interop image may not support v2)
