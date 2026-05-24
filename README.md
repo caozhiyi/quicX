@@ -56,7 +56,7 @@ If you find QuicX useful, contributions are very welcome — see [`CONTRIBUTING.
 
 ## Features
 
-> **In one line:** a self-contained C++17 HTTP/3 + QUIC v1 / v2 stack — TLS 1.3
+> a self-contained C++17 HTTP/3 + QUIC v1 / v2 stack — TLS 1.3
 > via BoringSSL, BBR / CUBIC / Reno congestion control, QPACK + server push,
 > connection migration, key update, optional QLog tracing — and a rich
 > built-in metrics registry, all behind two CMake imported targets.
@@ -137,28 +137,27 @@ Latest snapshot (from most recent test run):
 
 | Metric | Value |
 |---|---|
-| Total tests | **322** |
-| ✅ PASS | **148** |
-| ❌ FAIL | **83** |
-| - Unsupported | **91** |
-| **Pass rate** (excluding Unsupported) | **64.1%** |
+| PASS | **222** |
+| FAIL | **20** |
+| - Unsupported | **94** |
+| **Pass rate**（excluding Unsupported） | **91.7%** |
 
 Per-implementation breakdown across 14 scenarios (format: Server results / Client results):
 
 | Peer | Server (peer ⇐ QuicX-client) | Client (peer ⇒ QuicX-server) |
 |---|:--:|:--:|
-| **quicx** (self) | 13/14 | 13/14 |
-| **ngtcp2** | 12/14 | 10/14 |
-| **picoquic** | 12/14 | 10/14 |
-| **msquic** | 9/14 | 9/14 |
-| **aioquic** | 8/14 | 9/14 |
-| **quic-go** | 7/14 | 10/14 |
-| **quiche** | 5/14 | 6/14 |
-| **neqo** | 5/14 | 0/14 |
-| **mvfst** | 3/14 | 5/14 |
-| **lsquic** | 0/14 | 8/14 |
-| **quinn** | 0/14 | 0/14 |
-| **s2n-quic** | 0/14 | 0/14 |
+| **quicx**(self)   | 14/14 | 14/14 | **100%** |
+| **picoquic**      | 13/14 | 12/13 | **96.2%** |
+| **ngtcp2**        | 12/12 | 11/11 | **100%** |
+| **quic-go**       | 10/10 |  9/9  | **100%** |
+| **neqo**          | 10/10 |  9/10 | **95.0%** |
+| **lsquic**        | 10/10 |  9/10 | **95.0%** |
+| **aioquic**       | 10/10 |  9/10 | **95.0%** |
+| **quiche**        |  7/7  |  8/8  | **100%** |
+| **msquic**        |  8/10 | 10/10 | **90.0%** |
+| **mvfst**         |  4/6  |  1/6  | **41.7%** |
+| **quinn**         | 14/14 |  9/9  | **100%** |
+| **s2n-quic**      |  0/6  |  9/10 | **56.3%** |
 
 > Each cell shows PASS count out of 14 scenarios in that direction.
 > See the full reports for detailed per-scenario analysis, failure root causes,
