@@ -37,6 +37,14 @@ SysCallInt32Result UdpSocket() {
     return {sock, sock != INVALID_SOCKET ? 0 : WSAGetLastError()};
 }
 
+SysCallInt32Result UdpSocket4() {
+    // Create an IPv4-only UDP socket (AF_INET)
+    // Used for connection migration when peer is IPv4, to avoid IPv6 dual-stack
+    // routing issues in certain network environments.
+    int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    return {sock, sock != INVALID_SOCKET ? 0 : WSAGetLastError()};
+}
+
 SysCallInt32Result Close(int32_t sockfd) {
     const int32_t rc = closesocket(sockfd);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
