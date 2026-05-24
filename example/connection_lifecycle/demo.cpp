@@ -142,7 +142,9 @@ public:
 
         std::cout << "\nCleaning up idle connections..." << std::endl;
 
-        for (auto& [host, connections] : pool_) {
+        for (auto& kv : pool_) {
+            const auto& host = kv.first;
+            auto& connections = kv.second;
             auto now = std::chrono::steady_clock::now();
 
             connections.erase(
