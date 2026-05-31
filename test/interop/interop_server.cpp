@@ -24,7 +24,9 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
-#include <dirent.h>
+#ifdef _WIN32
+#define setenv(name, value, overwrite) _putenv_s(name, value)
+#endif
 #include <iostream>
 #include <memory>
 #include <string>

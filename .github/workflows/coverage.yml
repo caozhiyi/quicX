@@ -63,7 +63,7 @@ jobs:
         run: |
           lcov --capture --directory build-cov \
                --output-file coverage.info \
-               --ignore-errors mismatch,gcov,source,unused,negative \
+               --ignore-errors mismatch,gcov,source,unused,negative,inconsistent \
                --rc geninfo_unexecuted_blocks=1
           lcov --remove coverage.info \
                '/usr/*' '*/third/*' '*/build*/*' '*/test/*' \

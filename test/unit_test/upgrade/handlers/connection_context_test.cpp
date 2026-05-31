@@ -187,10 +187,14 @@ TEST_F(ConnectionContextTest, MultipleContexts) {
     EXPECT_NE(context1.socket, context2.socket);
     EXPECT_EQ(context1.socket, socket1);
     EXPECT_EQ(context2.socket, socket2);
-    
-    // Different creation times
-    EXPECT_NE(context1.created_time, context2.created_time);
-    
+
+    // context2 must have been created no earlier than context1.
+    // We cannot assert strict inequality (NE) because on macOS (and other
+    // platforms) steady_clock resolution may be coarser than the time
+    // between two consecutive object constructions, causing both to have
+    // the same timestamp.
+    EXPECT_LE(context1.created_time, context2.created_time);
+
     // Different file descriptors
     EXPECT_NE(context1.socket->GetFd(), context2.socket->GetFd());
 }
