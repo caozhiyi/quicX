@@ -42,7 +42,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     // RFC 9001: Enable Key Update if configured
     if (enable_key_update_) {
         conn->SetKeyUpdateEnabled(true);
-        common::LOG_INFO("Key Update enabled for connection");
+        LOG_INFO("Key Update enabled for connection");
     }
 
     // RFC 9000 Section 6: Version Negotiation
@@ -79,7 +79,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
             [conn, timeout_ms, this]() {
                 // Only timeout if still in connecting state (handshake not completed)
                 if (connecting_set_.find(conn) != connecting_set_.end()) {
-                    common::LOG_WARN("handshake timeout for connection. cid:%llu, timeout_ms:%d",
+                    LOG_WARN("handshake timeout for connection. cid:%llu, timeout_ms:%d",
                         conn->GetConnectionIDHash(), timeout_ms);
                     HandleConnectionTimeout(conn);
                 }
@@ -92,11 +92,11 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
 }
 
 bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
-    common::LOG_DEBUG("get packet. peer addr:%s", packet_info.net_packet_->GetAddress().AsString().c_str());
+    LOG_DEBUG("get packet. peer addr:%s", packet_info.net_packet_->GetAddress().AsString().c_str());
 
     // dispatch packet
     auto cid_code = packet_info.cid_.Hash();
-    common::LOG_DEBUG("get packet. dcid:%llu", cid_code);
+    LOG_DEBUG("get packet. dcid:%llu", cid_code);
     auto conn = conn_map_.find(cid_code);
     if (conn != conn_map_.end()) {
         common::LogTagGuard guard("conn:" + std::to_string(cid_code));
@@ -117,7 +117,7 @@ bool ClientWorker::InnerHandlePacket(PacketParseResult& packet_info) {
         return true;
     }
 
-    common::LOG_ERROR("get a packet with unknown connection id. id:%llu", cid_code);
+    LOG_ERROR("get a packet with unknown connection id. id:%llu", cid_code);
     return false;
 }
 
@@ -128,7 +128,7 @@ void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
         auto loop = event_loop_.lock();
         if (loop) loop->RemoveTimer(timer_it->second);
         handshake_timers_.erase(timer_it);
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "handshake completed, cancelled timeout timer for connection. cid:%llu", conn->GetConnectionIDHash());
     }
 
@@ -137,16 +137,16 @@ void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 }
 
 void ClientWorker::Shutdown() {
-    // Cancel & drop all pending handshake-timeout timers. Each timer's
-    // lambda captures the in-flight connection shared_ptr by value, so if
-    // we leave the map populated the connection stays alive even after
-    // conn_map_ / connecting_set_ have been cleared by Worker::Shutdown().
-    auto loop = event_loop_.lock();
-    if (loop) {
-        for (auto& kv : handshake_timers_) {
-            loop->RemoveTimer(kv.second);
-        }
-    }
+    // Precondition (enforced by QuicClient::~QuicClient): the worker's
+    // event-loop thread has already been Stop()+Join()'d. We therefore
+    // can — and *must* — avoid touching event_loop_ here:
+    //   * It is not running, so no timer will fire.
+    //   * Calling EventLoop::RemoveTimer from this owner thread would
+    //     trigger AssertInLoopThread()'s abort().
+    //
+    // Dropping handshake_timers_ releases each timer-lambda's captured
+    // shared_ptr<IConnection>; the timer-wheel entry inside EventLoop is
+    // cleaned up when the EventLoop itself is destroyed.
     handshake_timers_.clear();
 
     Worker::Shutdown();
@@ -167,7 +167,7 @@ void ClientWorker::HandleConnectionTimeout(std::shared_ptr<IConnection> conn) {
 void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, const std::string& ip, uint16_t port,
     const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der,
     const std::string& server_name, uint32_t negotiated_version) {
-    common::LOG_INFO("Version negotiation: server selected version 0x%08x, will reconnect", negotiated_version);
+    LOG_INFO("Version negotiation: server selected version 0x%08x, will reconnect", negotiated_version);
 
     // Clean up the current connection
     auto cid_hash = conn->GetConnectionIDHash();
@@ -186,7 +186,7 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     conn->Close();
 
     // Schedule reconnection with negotiated version
-    common::LOG_INFO("Reconnecting with negotiated version 0x%08x...", negotiated_version);
+    LOG_INFO("Reconnecting with negotiated version 0x%08x...", negotiated_version);
 
     // Create new connection with negotiated version
     ConnectionCallbacks vn_callbacks;
@@ -250,7 +250,7 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
         auto timer_id = vn_loop2->AddTimer(
             [new_conn, timeout_ms, this]() {
                 if (connecting_set_.find(new_conn) != connecting_set_.end()) {
-                    common::LOG_WARN("handshake timeout for reconnected connection. cid:%llu, timeout_ms:%d",
+                    LOG_WARN("handshake timeout for reconnected connection. cid:%llu, timeout_ms:%d",
                         new_conn->GetConnectionIDHash(), timeout_ms);
                     HandleConnectionTimeout(new_conn);
                 }

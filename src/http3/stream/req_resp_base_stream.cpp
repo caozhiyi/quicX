@@ -17,6 +17,7 @@ namespace quicx {
 namespace http3 {
 
 ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<QpackEncoder>& qpack_decoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
@@ -24,6 +25,7 @@ ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_
     is_last_data_(false),
     current_frame_is_last_(false),
     qpack_encoder_(qpack_encoder),
+    qpack_decoder_(qpack_decoder),
     blocked_registry_(blocked_registry),
     is_provider_mode_(false),
     all_provider_data_sent_(false),
@@ -62,7 +64,7 @@ void ReqRespBaseStream::Init() {
 
 void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("ReqRespBaseStream::OnData error: %d", error);
+        LOG_ERROR("ReqRespBaseStream::OnData error: %d", error);
         if (error_handler_) {
             error_handler_(GetStreamID(), error);
         }
@@ -76,12 +78,12 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
     if (data->GetDataLength() == 0) {
         if (is_last) {
             // FIN with no data: notify subclass to handle stream completion
-            common::LOG_DEBUG("ReqRespBaseStream::OnData: FIN with empty buffer, notifying end");
+            LOG_DEBUG("ReqRespBaseStream::OnData: FIN with empty buffer, notifying end");
             HandleFinWithoutData();
         }
         // Check if we need to notify completion
         if (should_notify_completion_) {
-            common::LOG_DEBUG("ReqRespBaseStream::OnData: notifying stream completion after empty data");
+            LOG_DEBUG("ReqRespBaseStream::OnData: notifying stream completion after empty data");
             if (error_handler_) {
                 error_handler_(GetStreamID(), 0);
             }
@@ -92,7 +94,7 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
 
     std::vector<std::shared_ptr<IFrame>> frames;
     if (!frame_decoder_.DecodeFrames(buffer, frames)) {
-        common::LOG_ERROR("ReqRespBaseStream::OnData decode frames error");
+        LOG_ERROR("ReqRespBaseStream::OnData decode frames error");
         if (error_handler_) {
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         }
@@ -100,12 +102,12 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
 
     } else {
         // RFC 9114: Only the LAST frame in this batch should be marked is_last
-        common::LOG_DEBUG("ReqRespBaseStream::OnData: processing %zu frames, is_last_data=%d", 
+        LOG_DEBUG("ReqRespBaseStream::OnData: processing %zu frames, is_last_data=%d", 
             frames.size(), is_last_data_);
         for (size_t i = 0; i < frames.size(); i++) {
             // Only mark the last frame as is_last if we received FIN
             current_frame_is_last_ = is_last_data_ && (i == frames.size() - 1);
-            common::LOG_DEBUG("ReqRespBaseStream::OnData: processing frame %zu/%zu, type=0x%x, is_last=%d", 
+            LOG_DEBUG("ReqRespBaseStream::OnData: processing frame %zu/%zu, type=0x%x, is_last=%d", 
                 i+1, frames.size(), static_cast<uint32_t>(frames[i]->GetType()), current_frame_is_last_);
             HandleFrame(frames[i]);
         }
@@ -113,14 +115,14 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
         // CRITICAL FIX: If we got FIN but no frames were decoded,
         // we need to notify via HandleFinWithoutData (implemented in subclass)
         if (is_last_data_ && frames.empty()) {
-            common::LOG_DEBUG("ReqRespBaseStream::OnData: FIN received but no frames decoded");
+            LOG_DEBUG("ReqRespBaseStream::OnData: FIN received but no frames decoded");
             HandleFinWithoutData();
         }
 
         // Process all frames first (including PUSH_PROMISE), then notify stream completion
         // This ensures PUSH_PROMISE frames are not ignored due to early stream cleanup
         if (should_notify_completion_) {
-            common::LOG_DEBUG("ReqRespBaseStream::OnData: notifying stream completion after processing all frames");
+            LOG_DEBUG("ReqRespBaseStream::OnData: notifying stream completion after processing all frames");
             if (error_handler_) {
                 error_handler_(GetStreamID(), 0);
             }
@@ -132,7 +134,7 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
 void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     auto headers_frame = std::dynamic_pointer_cast<HeadersFrame>(frame);
     if (!headers_frame) {
-        common::LOG_ERROR("ReqRespBaseStream::HandleHeaders error");
+        LOG_ERROR("ReqRespBaseStream::HandleHeaders error");
         if (error_handler_) {
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         }
@@ -147,23 +149,45 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         uint64_t secno = static_cast<uint64_t>(++next_section_number_);
         header_block_key_ = (sid << 32) | secno;
     }
-    // Decode headers using QPACK
+    // Decode headers using QPACK decoder (separate from encoder per RFC 9204 dual-table)
     auto encoded_fields = headers_frame->GetEncodedFields();
-    if (!qpack_encoder_->Decode(encoded_fields, headers_)) {
+    if (!qpack_decoder_->Decode(encoded_fields, headers_)) {
         // If blocked (RIC not satisfied), enqueue a retry once insert count
-        // increases
-        blocked_registry_->Add(header_block_key_, [this, encoded_fields]() {
-            std::unordered_map<std::string, std::string> tmp;
-            if (qpack_encoder_->Decode(encoded_fields, tmp)) {
+        // increases.  Three correctness concerns:
+        //   1. The retry must populate THIS stream's headers_ member —
+        //      not a local temporary — so HandleHeaders() actually sees
+        //      the decoded fields.  Previously the callback decoded into
+        //      a throw-away `tmp` map, leaving headers_ empty on retry
+        //      success and causing the application handler to receive a
+        //      header-less request/response.
+        //   2. NotifyAll() invokes EVERY pending retry callback whenever
+        //      ANY new inserts arrive.  If our RIC still isn't met, the
+        //      decode will fail again — and without re-Add, the entry
+        //      would be silently dropped from the registry, causing the
+        //      header block to be lost forever once the next IIC happens
+        //      to land before our specific dependency is satisfied.  We
+        //      re-Add ourselves with the same retry on persistent block.
+        //   3. The retry must remain pinned by reference so it can call
+        //      itself recursively (re-Add) without dangling — std::function
+        //      copies are owned by the registry across moves, so a plain
+        //      lambda capturing `this`, `encoded_fields` and a shared_ptr
+        //      to itself works.
+        auto retry = std::make_shared<std::function<void()>>();
+        *retry = [this, encoded_fields, retry]() {
+            if (qpack_decoder_->Decode(encoded_fields, headers_)) {
                 // RFC 9204 §4.4.1: Only emit Section Ack when RIC > 0.
-                if (qpack_encoder_->GetLastDecodedRequiredInsertCount() > 0) {
-                    qpack_encoder_->EmitDecoderFeedback(0x00, header_block_key_);
+                if (qpack_decoder_->GetLastDecodedRequiredInsertCount() > 0) {
+                    qpack_decoder_->EmitDecoderFeedback(0x00, header_block_key_);
                 }
-
                 HandleHeaders();
+            } else {
+                // Still blocked — re-enqueue with the same retry so the
+                // next NotifyAll() picks us up again.
+                blocked_registry_->Add(header_block_key_, *retry);
             }
-        });
-        common::LOG_DEBUG("blocked header block key: %llu", header_block_key_);
+        };
+        blocked_registry_->Add(header_block_key_, *retry);
+        LOG_DEBUG("blocked header block key: %llu", header_block_key_);
         return;
     }
     // RFC 9204 §4.4.1: The decoder MUST NOT emit Section Acknowledgment for
@@ -171,8 +195,8 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     // table (i.e., with a Required Insert Count of 0). Emitting one causes
     // the peer to raise QPACK_DECODER_STREAM_ERROR because its encoder does
     // not track streams that only use static-table references.
-    if (qpack_encoder_->GetLastDecodedRequiredInsertCount() > 0) {
-        qpack_encoder_->EmitDecoderFeedback(0x00, header_block_key_);
+    if (qpack_decoder_->GetLastDecodedRequiredInsertCount() > 0) {
+        qpack_decoder_->EmitDecoderFeedback(0x00, header_block_key_);
     }
 
     HandleHeaders();
@@ -181,7 +205,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
     auto data_frame = std::dynamic_pointer_cast<DataFrame>(frame);
     if (!data_frame) {
-        common::LOG_ERROR("ReqRespBaseStream::HandleData error");
+        LOG_ERROR("ReqRespBaseStream::HandleData error");
         if (error_handler_) {
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         }
@@ -196,7 +220,7 @@ void ReqRespBaseStream::HandleData(std::shared_ptr<IFrame> frame) {
 }
 
 void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    common::LOG_DEBUG("HandleFrame: frame type: %d", frame->GetType());
+    LOG_DEBUG("HandleFrame: frame type: %d", frame->GetType());
     switch (frame->GetType()) {
         case FrameType::kHeaders:
             HandleHeaders(frame);
@@ -207,7 +231,7 @@ void ReqRespBaseStream::HandleFrame(std::shared_ptr<IFrame> frame) {
             break;
 
         default:
-            common::LOG_ERROR("ReqRespBaseStream::HandleFrame error");
+            LOG_ERROR("ReqRespBaseStream::HandleFrame error");
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kFrameUnexpected);
             }
@@ -225,13 +249,13 @@ bool ReqRespBaseStream::SendBodyWithProvider(const body_provider& provider) {
 bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>& body) {
     if (!body || body->GetDataLength() == 0) {
         stream_->Close();
-        common::LOG_DEBUG("SendBodyDirectly: empty body, closing stream with FIN");
+        LOG_DEBUG("SendBodyDirectly: empty body, closing stream with FIN");
         return true;
     }
 
     size_t total_sent = 0;
 
-    common::LOG_DEBUG("SendBodyDirectly: body size: %zu", body->GetDataLength());
+    LOG_DEBUG("SendBodyDirectly: body size: %zu", body->GetDataLength());
 
     while (body->GetDataLength() > 0) {
         // Get the actual remaining data length (this decreases as we consume data)
@@ -242,7 +266,7 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
         // pointer
         auto chunk_buffer = body->CloneReadable(chunk_size);
         if (!chunk_buffer) {
-            common::LOG_ERROR(
+            LOG_ERROR(
                 "SendBodyDirectly CloneReadable failed. chunk "
                 "size:%zu, total_sent:%zu, remaining:%zu",
                 chunk_size, total_sent, remaining);
@@ -257,12 +281,12 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
         data_frame.SetLength(chunk_size);  // Explicitly set length
 
         auto data_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "SendBodyDirectly before encode frame. type:DataFrame, "
             "buffer_length:%u, chunk_size:%zu",
             data_buffer->GetDataLength(), chunk_size);
         if (!data_frame.Encode(data_buffer)) {
-            common::LOG_ERROR(
+            LOG_ERROR(
                 "SendBodyDirectly encode error. chunk size:%zu, "
                 "total_sent:%zu, remaining:%zu",
                 chunk_size, total_sent, remaining);
@@ -271,11 +295,11 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
             }
             return false;
         }
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "SendBodyDirectly after encode frame. type:DataFrame, buffer_length:%u", data_buffer->GetDataLength());
 
         if (!stream_->Flush()) {
-            common::LOG_ERROR(
+            LOG_ERROR(
                 "SendBodyDirectly send error. chunk size:%zu, "
                 "total_sent:%zu, remaining:%zu",
                 chunk_size, total_sent, remaining);
@@ -298,7 +322,7 @@ bool ReqRespBaseStream::SendBodyDirectly(const std::shared_ptr<common::IBuffer>&
     }
 
     stream_->Close();
-    common::LOG_DEBUG("SendBodyDirectly: sent %zu bytes, stream send direction closed (FIN)", total_sent);
+    LOG_DEBUG("SendBodyDirectly: sent %zu bytes, stream send direction closed (FIN)", total_sent);
 
     // Signal stream completion to the connection ONLY for response streams
     // Request streams need to wait for the response before being removed
@@ -312,7 +336,7 @@ bool ReqRespBaseStream::SendHeaders(const std::unordered_map<std::string, std::s
     auto headers_buffer =
         std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!qpack_encoder_->Encode(headers, headers_buffer)) {
-        common::LOG_ERROR("SendHeaders error");
+        LOG_ERROR("SendHeaders error");
         if (error_handler_) {
             error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         }
@@ -323,17 +347,17 @@ bool ReqRespBaseStream::SendHeaders(const std::unordered_map<std::string, std::s
     HeadersFrame headers_frame;
     headers_frame.SetEncodedFields(headers_buffer);
     auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    common::LOG_DEBUG("SendHeaders before encode frame. type:HeadersFrame, length:%u", frame_buffer->GetDataLength());
+    LOG_DEBUG("SendHeaders before encode frame. type:HeadersFrame, length:%u", frame_buffer->GetDataLength());
     if (!headers_frame.Encode(frame_buffer)) {
-        common::LOG_ERROR("SendHeaders headers frame encode error");
+        LOG_ERROR("SendHeaders headers frame encode error");
         if (error_handler_) {
             error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         }
         return false;
     }
-    common::LOG_DEBUG("SendHeaders after encode frame. type:HeadersFrame, length:%u", frame_buffer->GetDataLength());
+    LOG_DEBUG("SendHeaders after encode frame. type:HeadersFrame, length:%u", frame_buffer->GetDataLength());
     if (!stream_->Flush()) {
-        common::LOG_ERROR("SendHeaders send headers error");
+        LOG_ERROR("SendHeaders send headers error");
         if (error_handler_) {
             error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
         }
@@ -356,7 +380,7 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
     if (error != 0) {
         // H3_NO_ERROR (0x100 = 256) indicates graceful stream closure, not a real error
         if (error == static_cast<uint32_t>(Http3ErrorCode::kNoError)) {
-            common::LOG_DEBUG("ReqRespBaseStream::HandleSent: stream closed gracefully (H3_NO_ERROR)");
+            LOG_DEBUG("ReqRespBaseStream::HandleSent: stream closed gracefully (H3_NO_ERROR)");
             // For request streams (client side), H3_NO_ERROR from STOP_SENDING means
             // the server received our request and doesn't need more data. This is normal.
             // We should NOT trigger error_handler_ here because:
@@ -375,14 +399,14 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
             }
             return;
         } else {
-            common::LOG_ERROR("ReqRespBaseStream::HandleSent error: %d", error);
+            LOG_ERROR("ReqRespBaseStream::HandleSent error: %d", error);
         }
         if (error_handler_) {
             error_handler_(GetStreamID(), error);
         }
         return;
     }
-    common::LOG_DEBUG("ReqRespBaseStream::HandleSent: sent %u bytes", length);
+    LOG_DEBUG("ReqRespBaseStream::HandleSent: sent %u bytes", length);
 
     // If not in provider mode and all data sent, return early
     if (!is_provider_mode_) {
@@ -393,6 +417,48 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
     // This prevents calling provider again after it has returned 0
     if (all_provider_data_sent_) {
         return;
+    }
+
+    // ---------------------------------------------------------------------
+    // Streaming-body backpressure.
+    //
+    // Without this guard the provider loop below will be called every time
+    // a STREAM frame leaves the wire (sended_cb_ → HandleSent), and each
+    // call eagerly pulls up to 64KB more bytes from the application body
+    // provider into the QUIC send buffer. Because SendStream::Flush() does
+    // not bound the buffer, the application ends up funneling its entire
+    // payload (e.g. a 500 MB upload) into the QUIC send buffer in seconds,
+    // long before the bytes are actually transmitted. That breaks two
+    // things:
+    //   (1) memory: O(file_size) instead of O(cwnd) buffered in-process;
+    //   (2) progress reporting: bytes pulled from the provider no longer
+    //       correspond to bytes the network has accepted, so a caller that
+    //       updates a progress bar from inside the provider sees 100%
+    //       almost immediately while the wire-level transfer is still in
+    //       progress.
+    //
+    // The fix is application-level backpressure: do not call the provider
+    // again while the per-stream send buffer is already deeper than a
+    // small threshold (a few times the typical cwnd). When more bytes
+    // drain to the wire, sended_cb_ will fire HandleSent() again and the
+    // loop resumes naturally — no extra event/wakeup is needed.
+    //
+    // The threshold should be large enough to avoid stalling the network
+    // (must comfortably exceed BDP for the path) but small enough that
+    // the application's "bytes handed to QUIC" counter tracks "bytes on
+    // the wire" within a window of order kBackpressureHighWatermark.
+    // 256 KB is ~2× a typical loopback cwnd in our perf runs while still
+    // being negligible against multi-MB / multi-GB payloads.
+    constexpr uint64_t kBackpressureHighWatermark = 16 * 1024 * 1024; // EXPERIMENT: was 256KB
+    if (stream_) {
+        uint64_t pending = stream_->GetPendingSendBytes();
+        if (pending >= kBackpressureHighWatermark) {
+            LOG_DEBUG(
+                "SendBodyWithProvider: backpressure, pending=%llu >= hwm=%llu, defer provider pull",
+                static_cast<unsigned long long>(pending),
+                static_cast<unsigned long long>(kBackpressureHighWatermark));
+            return;
+        }
     }
 
     // Optimized batching: Read multiple chunks from provider and send as single DataFrame
@@ -412,7 +478,7 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
             // MultiBlockBuffer will automatically allocate new chunks as needed
             auto span = batch_buffer->GetWritableSpan();
             if (!span.Valid()) {
-                common::LOG_ERROR("SendBodyWithProvider: failed to get writable span (buffer allocation failed)");
+                LOG_ERROR("SendBodyWithProvider: failed to get writable span (buffer allocation failed)");
                 if (error_handler_) {
                     error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
                 }
@@ -423,11 +489,11 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
             size_t request_size =
                 std::min(span.GetLength(), static_cast<uint32_t>(kMaxBatchSize - total_bytes_this_batch));
             size_t bytes_provided = provider_(span.GetStart(), request_size);
-            common::LOG_DEBUG(
+            LOG_DEBUG(
                 "SendBodyWithProvider: bytes provided: %zu (requested %zu)", bytes_provided, request_size);
 
             if (bytes_provided > request_size) {
-                common::LOG_ERROR("body provider returned invalid size %zu > %zu", bytes_provided, request_size);
+                LOG_ERROR("body provider returned invalid size %zu > %zu", bytes_provided, request_size);
                 if (error_handler_) {
                     error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
                 }
@@ -444,7 +510,7 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
                 // No data accumulated and provider done - close stream
                 stream_->Close();
                 all_provider_data_sent_ = true;
-                common::LOG_DEBUG(
+                LOG_DEBUG(
                     "SendBodyWithProvider: provider returned 0, stream send "
                     "direction closed (FIN), total_bytes_this_batch=%zu",
                     total_bytes_this_batch);
@@ -461,14 +527,14 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
             total_bytes_this_batch += bytes_provided;
 
         } catch (const std::exception& e) {
-            common::LOG_ERROR("body provider exception: %s", e.what());
+            LOG_ERROR("body provider exception: %s", e.what());
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             }
             return;
 
         } catch (...) {
-            common::LOG_ERROR("body provider unknown exception");
+            LOG_ERROR("body provider unknown exception");
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             }
@@ -481,11 +547,11 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
         DataFrame data_frame;
         data_frame.SetData(batch_buffer);
 
-        common::LOG_DEBUG("SendBodyWithProvider: sending batch DataFrame, size=%zu", batch_buffer->GetDataLength());
+        LOG_DEBUG("SendBodyWithProvider: sending batch DataFrame, size=%zu", batch_buffer->GetDataLength());
 
         auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
         if (!data_frame.Encode(frame_buffer)) {
-            common::LOG_ERROR("encode error");
+            LOG_ERROR("encode error");
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             }
@@ -493,13 +559,13 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
         }
 
         if (!stream_->Flush()) {
-            common::LOG_ERROR("send error after batching %zu bytes", total_bytes_this_batch);
+            LOG_ERROR("send error after batching %zu bytes", total_bytes_this_batch);
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
             }
             return;
         }
-        common::LOG_DEBUG("SendBodyWithProvider: flushed batch of %zu bytes", total_bytes_this_batch);
+        LOG_DEBUG("SendBodyWithProvider: flushed batch of %zu bytes", total_bytes_this_batch);
 
         // Log http3:frame_created event for batch DATA frame
         {

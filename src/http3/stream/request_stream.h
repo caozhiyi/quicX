@@ -24,6 +24,7 @@ namespace http3 {
 class RequestStream: public ReqRespBaseStream {
 public:
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<QpackEncoder>& qpack_decoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
@@ -31,6 +32,7 @@ public:
             push_promise_handler);
 
     RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<QpackEncoder>& qpack_decoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,

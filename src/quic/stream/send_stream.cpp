@@ -52,7 +52,7 @@ void SendStream::Close() {
         return;
     }
 
-    common::LOG_DEBUG("SendStream::Close: stream id:%llu", stream_id_);
+    LOG_DEBUG("SendStream::Close: stream id:%llu", stream_id_);
     to_fin_ = true;
     if (active_send_cb_) {
         active_send_cb_(shared_from_this());
@@ -81,7 +81,7 @@ void SendStream::Reset(uint32_t error) {
     frame->SetStreamID(stream_id_);
     frame->SetFinalSize(send_data_offset_);
     frame->SetAppErrorCode(error);
-    common::LOG_DEBUG("stream send reset stream. stream id:%llu, error:%u", stream_id_, error);
+    LOG_DEBUG("stream send reset stream. stream id:%llu, error:%u", stream_id_, error);
     frames_list_.emplace_back(frame);
     ToSend();
 
@@ -92,11 +92,11 @@ void SendStream::Reset(uint32_t error) {
 int32_t SendStream::Send(uint8_t* data, uint32_t len) {
     auto loop = event_loop_.lock();
     if (!loop) return -1;
-    common::LOG_DEBUG("SendStream::Send called: stream_id=%llu, len=%u, IsInLoopThread=%d", GetStreamID(), len,
+    LOG_DEBUG("SendStream::Send called: stream_id=%llu, len=%u, IsInLoopThread=%d", GetStreamID(), len,
         loop->IsInLoopThread());
 
     if (!loop->IsInLoopThread()) {
-        common::LOG_WARN("SendStream::Send called from wrong thread, posting to EventLoop: stream_id=%llu, len=%u",
+        LOG_WARN("SendStream::Send called from wrong thread, posting to EventLoop: stream_id=%llu, len=%u",
             GetStreamID(), len);
         std::vector<uint8_t> vec(data, data + len);
         auto weak_self = weak_from_this();
@@ -105,7 +105,7 @@ int32_t SendStream::Send(uint8_t* data, uint32_t len) {
             if (!self) return;
             auto stream = std::dynamic_pointer_cast<SendStream>(self);
             if (stream) {
-                common::LOG_DEBUG("SendStream::Send async execution in EventLoop: stream_id=%llu, len=%zu",
+                LOG_DEBUG("SendStream::Send async execution in EventLoop: stream_id=%llu, len=%zu",
                     stream->GetStreamID(), vec.size());
                 stream->Send(const_cast<uint8_t*>(vec.data()), vec.size());
             }
@@ -114,12 +114,12 @@ int32_t SendStream::Send(uint8_t* data, uint32_t len) {
     }
 
     if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
-        common::LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%llu,", stream_id_);
+        LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%llu,", stream_id_);
         return -1;
     }
 
     int32_t ret = send_buffer_->Write(data, len);
-    common::LOG_DEBUG("SendStream::Send: wrote to buffer, stream_id=%llu, requested=%u, written=%d, buffer_size=%u",
+    LOG_DEBUG("SendStream::Send: wrote to buffer, stream_id=%llu, requested=%u, written=%d, buffer_size=%u",
         GetStreamID(), len, ret, send_buffer_->GetDataLength());
 
     if (active_send_cb_) {
@@ -177,12 +177,12 @@ bool SendStream::Flush() {
     }
 
     if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
-        common::LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%llu,", stream_id_);
+        LOG_DEBUG("stream send flush failed, the state can't send stream frame. stream id:%llu,", stream_id_);
         return false;
     }
 
     if (send_buffer_->GetDataLength() == 0) {
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "stream send flush failed. stream id:%llu, buffer length:%u", stream_id_, send_buffer_->GetDataLength());
         return false;
     }
@@ -203,7 +203,7 @@ uint32_t SendStream::OnFrame(std::shared_ptr<IFrame> frame) {
             OnStopSendingFrame(frame);
             break;
         default:
-            common::LOG_ERROR("unexpected frame on send stream. frame type:%d", frame_type);
+            LOG_ERROR("unexpected frame on send stream. frame type:%d", frame_type);
     }
     return 0;
 }
@@ -220,14 +220,14 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             std::shared_ptr<StreamDataBlockedFrame> frame = std::make_shared<StreamDataBlockedFrame>();
             frame->SetStreamID(stream_id_);
             frame->SetMaximumData(peer_data_limit_);
-            common::LOG_DEBUG(
+            LOG_DEBUG(
                 "stream send data blocked. stream id:%llu, peer data limit:%llu", stream_id_, peer_data_limit_);
 
             // Metrics: Stream blocked by flow control
             common::Metrics::CounterInc(common::MetricsStd::QuicStreamDataBlocked);
 
             if (!visitor->HandleFrame(frame)) {
-                common::LOG_DEBUG(
+                LOG_DEBUG(
                     "stream send data blocked failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
                 return TrySendResult::kFailed;
             }
@@ -237,7 +237,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     }
 
     if (peer_data_limit_ <= send_data_offset_) {
-        common::LOG_DEBUG("stream send data flow control blocked. stream id:%llu, peer data limit:%llu, send data offset:%llu", stream_id_,
+        LOG_DEBUG("stream send data flow control blocked. stream id:%llu, peer data limit:%llu, send data offset:%llu", stream_id_,
             peer_data_limit_, send_data_offset_);
         return TrySendResult::kFlowControlBlocked;  // Keep in active list, waiting for MAX_STREAM_DATA
     }
@@ -247,13 +247,13 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             iter = frames_list_.erase(iter);
 
         } else {
-            common::LOG_DEBUG("stream send data failed. stream id:%d, frame type:%d", stream_id_, (*iter)->GetType());
+            LOG_DEBUG("stream send data failed. stream id:%d, frame type:%d", stream_id_, (*iter)->GetType());
             return TrySendResult::kFailed;
         }
     }
 
     if (!send_machine_->CheckCanSendFrame(FrameType::kStream)) {
-        common::LOG_DEBUG("stream send data success. stream id:%d, can send stream frame:%d", stream_id_,
+        LOG_DEBUG("stream send data success. stream id:%d, can send stream frame:%d", stream_id_,
             send_machine_->CheckCanSendFrame(FrameType::kStream));
         return TrySendResult::kSuccess;
     }
@@ -270,16 +270,61 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
         uint32_t stream_send_size = static_cast<uint32_t>(std::min(stream_send_size_64, static_cast<uint64_t>(UINT32_MAX)));
         uint32_t conn_send_size = visitor->GetLeftStreamDataSize();
         send_size = stream_send_size > conn_send_size ? conn_send_size : stream_send_size;
-        send_size = send_size > 1300 ? 1300 : send_size;  // TODO: 1300 is the max length of a stream frame
 
-        common::LOG_DEBUG("stream send calc: stream_id:%d, peer_limit:%llu, send_offset:%llu, stream_send_size:%u, conn_send_size:%u, final_send_size:%u",
+        // Per-datagram cap: the STREAM frame must fit into whatever space
+        // the current packet buffer still has. Reserve a small budget for
+        // the STREAM header (worst case: type<=2B + stream_id<=8B + offset
+        // <=8B + length<=2B = 20B; round to 24B for safety). This replaces
+        // the historical hardcoded 1300 cap which was ~120B smaller than
+        // the visitor's real budget (kVisitorBudget=1420), causing each
+        // 1500B send_buffer chunk to be split into 1300+200 fragments and
+        // halving steady-state datagram payload.
+        constexpr uint32_t kStreamHeaderReserve = 24;
+        uint32_t pkt_left = visitor->GetPacketLeftSize();
+        uint32_t pkt_cap = pkt_left > kStreamHeaderReserve ? pkt_left - kStreamHeaderReserve : 0;
+        if (send_size > pkt_cap) {
+            send_size = pkt_cap;
+        }
+
+        // Diagnostic (datagram fill): record the four budget components
+        common::Metrics::CounterInc(common::MetricsStd::DiagStreamSlackSum, stream_send_size);
+        common::Metrics::CounterInc(common::MetricsStd::DiagVisitorLeftSum, conn_send_size);
+        common::Metrics::HistogramObserve(common::MetricsStd::DiagSendSizeHist, send_size);
+
+        // Diagnostic (send_buffer state): chunk fragmentation snapshot.
+        common::Metrics::CounterInc(common::MetricsStd::DiagSendBufTotalSum, send_buffer_->GetDataLength());
+        common::Metrics::CounterInc(common::MetricsStd::DiagSendBufChunksSum, send_buffer_->GetChunkCount());
+        common::Metrics::CounterInc(common::MetricsStd::DiagSendBufProbeCount);
+
+        LOG_DEBUG("stream send calc: stream_id:%d, peer_limit:%llu, send_offset:%llu, stream_send_size:%u, conn_send_size:%u, final_send_size:%u",
             stream_id_, peer_data_limit_, send_data_offset_, stream_send_size, conn_send_size, send_size);
 
         // Only try to get data if we have space to send
         if (send_size > 0) {
-            common::SharedBufferSpan data = send_buffer_->GetSharedReadableSpan(send_size);
+            // Coalesce-on-demand: prefer a single contiguous span up to
+            // send_size bytes. If the first chunk is partially drained
+            // (typical: 1500B chunk with 1234B already consumed leaves
+            // 266B), GetCoalescedReadable will stitch the tail with the
+            // head of the next chunk via a single bounded memcpy. This
+            // breaks the (1500B chunk size) vs (~1396B per-packet payload)
+            // mismatch that otherwise produces the steady-state bimodal
+            // pkt_payload distribution (half packets ≥1024B, half <256B).
+            //
+            // Fast path (zero-copy) still applies when the first chunk
+            // alone has enough bytes — equivalent to the old
+            // GetFirstChunkReadable behaviour.
+            //
+            // The downstream encoder (StreamFrame::Encode → EncodeBytes)
+            // already memcpy's the payload into the packet buffer, so the
+            // extra coalesce memcpy at most doubles a constant-size copy
+            // on a minority of iterations; it never adds an O(N) pass.
+            common::SharedBufferSpan data = send_buffer_->GetCoalescedReadable(send_size);
             if (data.Valid()) {
                 frame->SetData(data);
+                common::Metrics::CounterInc(common::MetricsStd::DiagFirstChunkSum, data.GetLength());
+                common::Metrics::CounterInc(common::MetricsStd::DiagStreamSendSizeSum, data.GetLength());
+                common::Metrics::CounterInc(common::MetricsStd::DiagStreamSendCount);
+                common::Metrics::HistogramObserve(common::MetricsStd::DiagFirstChunkHist, data.GetLength());
             }
         }
     }
@@ -327,7 +372,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
                 (peer_data_limit_ > send_data_offset_) ? (peer_data_limit_ - send_data_offset_) : 0;
             bool stream_level_blocked = stream_slack < kStreamDataBlockedThreshold;
 
-            common::LOG_DEBUG("stream send data: zero-data frame. stream id:%d, buffer_len:%d, "
+            LOG_DEBUG("stream send data: zero-data frame. stream id:%d, buffer_len:%d, "
                               "peer_limit:%llu, send_offset:%llu, stream_slack:%llu, stream_level_blocked:%d",
                 stream_id_, send_buffer_->GetDataLength(), peer_data_limit_, send_data_offset_,
                 stream_slack, stream_level_blocked ? 1 : 0);
@@ -343,7 +388,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
                     blocked_frame->SetMaximumData(peer_data_limit_);
                     visitor->HandleFrame(blocked_frame);
                     blocked_at_limit_ = peer_data_limit_;
-                    common::LOG_DEBUG("stream send: sent STREAM_DATA_BLOCKED frame. stream id:%d, limit:%llu",
+                    LOG_DEBUG("stream send: sent STREAM_DATA_BLOCKED frame. stream id:%d, limit:%llu",
                         stream_id_, peer_data_limit_);
                 }
                 return TrySendResult::kFlowControlBlocked;
@@ -356,7 +401,7 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             return TrySendResult::kBreak;
         }
         // No data in buffer, truly nothing to send
-        common::LOG_DEBUG("stream send data: no data to send. stream id:%d", stream_id_);
+        LOG_DEBUG("stream send data: no data to send. stream id:%d", stream_id_);
         return TrySendResult::kSuccess;
     }
 
@@ -364,17 +409,17 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     if (!visitor->HandleFrame(frame)) {
         // Check if the failure was due to insufficient packet space
         if (visitor->GetLastError() == FrameEncodeError::kInsufficientSpace) {
-            common::LOG_INFO(
+            LOG_INFO(
                 "stream send data: packet full, need retry. stream id:%d, frame type:%d", stream_id_, frame->GetType());
             return TrySendResult::kBreak;  // Packet is full, stream needs to retry in next packet
         }
-        common::LOG_ERROR("stream send data failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
+        LOG_ERROR("stream send data failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
         return TrySendResult::kFailed;
     }
 
     // Update state machine only after successful send
     if (!send_machine_->OnFrame(frame->GetType())) {
-        common::LOG_WARN("stream state transition rejected. stream id:%d, frame type:%d, state=%d", stream_id_,
+        LOG_WARN("stream state transition rejected. stream id:%d, frame type:%d, state=%d", stream_id_,
             frame->GetType(), static_cast<int>(send_machine_->GetStatus()));
     }
 
@@ -383,16 +428,16 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
         fin_sent_ = true;
     }
     visitor->AddStreamDataSize(frame->GetData().GetLength());
-    common::LOG_DEBUG("stream send data. stream id:%d, send size:%d,is fin:%d, left data size:%d", stream_id_,
+    LOG_DEBUG("stream send data. stream id:%d, send size:%d,is fin:%d, left data size:%d", stream_id_,
         frame->GetData().GetLength(), frame->IsFin(), send_buffer_->GetDataLength());
 
     send_buffer_->MoveReadPt(frame->GetData().GetLength());
     send_data_offset_ += frame->GetData().GetLength();
 
-    common::LOG_DEBUG("stream send data callback. stream id:%d, send size:%d,is fin:%d", stream_id_,
+    LOG_DEBUG("stream send data callback. stream id:%d, send size:%d,is fin:%d", stream_id_,
         frame->GetData().GetLength(), frame->IsFin());
     if (sended_cb_) {
-        common::LOG_DEBUG("stream send data callback. stream id:%d, send size:%d,is fin:%d", stream_id_,
+        LOG_DEBUG("stream send data callback. stream id:%d, send size:%d,is fin:%d", stream_id_,
             frame->GetData().GetLength(), frame->IsFin());
         sended_cb_(frame->GetData().GetLength(), 0);
     }
@@ -414,7 +459,7 @@ void SendStream::OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     uint64_t new_limit = max_data_frame->GetMaximumData();
 
     if (new_limit <= peer_data_limit_) {
-        common::LOG_WARN("get a invalid max data stream. new limit:%llu, current limit:%llu", new_limit, peer_data_limit_);
+        LOG_WARN("get a invalid max data stream. new limit:%llu, current limit:%llu", new_limit, peer_data_limit_);
         return;
     }
 
@@ -425,7 +470,7 @@ void SendStream::OnMaxStreamDataFrame(std::shared_ptr<IFrame> frame) {
     if (send_buffer_->GetDataLength() > 0) {
         ToSend();
     }
-    common::LOG_DEBUG("stream recv max stream data. stream id:%llu, new limit:%llu", stream_id_, new_limit);
+    LOG_DEBUG("stream recv max stream data. stream id:%llu, new limit:%llu", stream_id_, new_limit);
 }
 
 void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
@@ -453,11 +498,11 @@ void SendStream::OnStopSendingFrame(std::shared_ptr<IFrame> frame) {
     if (sended_cb_) {
         sended_cb_(0, err);
     }
-    common::LOG_DEBUG("stream recv stop sending. stream id:%d, error:%d", stream_id_, err);
+    LOG_DEBUG("stream recv stop sending. stream id:%d, error:%d", stream_id_, err);
 }
 
 void SendStream::OnDataAcked(uint64_t offset_start, uint64_t length, bool has_fin) {
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "SendStream::OnDataAcked: stream_id=%d, range=[%llu,%llu), has_fin=%d, current acked_offset=%llu, "
         "send_data_offset=%llu",
         stream_id_, offset_start, offset_start + length, has_fin, acked_offset_, send_data_offset_);
@@ -518,7 +563,7 @@ void SendStream::CheckAllDataAcked() {
     // All bytes [0, send_data_offset_) must be covered by the contiguous
     // ACKed prefix, AND the FIN we wrote on the wire must have been ACKed.
     if (fin_sent_ && acked_offset_ >= send_data_offset_) {
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "SendStream::CheckAllDataAcked: all data acked for stream %d, transitioning to Data Recvd state "
             "(acked=%llu, sent=%llu, ranges=%zu)",
             stream_id_, acked_offset_, send_data_offset_, acked_ranges_.size());
@@ -527,7 +572,7 @@ void SendStream::CheckAllDataAcked() {
         if (send_machine_->AllAckDone()) {
             // For bidirectional streams, this will be handled by CheckStreamClose
             // For unidirectional send streams, the stream can be closed now
-            common::LOG_DEBUG("SendStream: stream %d reached Data Recvd state", stream_id_);
+            LOG_DEBUG("SendStream: stream %d reached Data Recvd state", stream_id_);
         }
     }
 }

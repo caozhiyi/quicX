@@ -6,6 +6,7 @@
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
 #include "quic/connection/connection_client.h"
+#include "quic/connection/connection_closer.h"
 #include "quic/connection/error.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
 

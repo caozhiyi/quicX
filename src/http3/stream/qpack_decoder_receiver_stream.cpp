@@ -22,14 +22,14 @@ QpackDecoderReceiverStream::~QpackDecoderReceiverStream() {
 
 void QpackDecoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("QpackDecoderReceiverStream::OnData error: %d", error);
+        LOG_ERROR("QpackDecoderReceiverStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);
         return;
     }
     
     // If buffer is empty (e.g., stream closed with FIN), nothing to do
     if (data->GetDataLength() == 0) {
-        common::LOG_DEBUG("QpackDecoderReceiverStream::OnData: empty buffer, stream likely closed");
+        LOG_DEBUG("QpackDecoderReceiverStream::OnData: empty buffer, stream likely closed");
         return;
     }
     
@@ -42,7 +42,7 @@ void QpackDecoderReceiverStream::ParseDecoderFrames(std::shared_ptr<IBufferRead>
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(data);
     std::vector<std::shared_ptr<IQpackDecoderFrame>> frames;
     if (!DecodeQpackDecoderFrames(buffer, frames)) {
-        common::LOG_ERROR("QpackDecoderReceiverStream::ParseDecoderFrames error: %d", data->GetDataLength());
+        LOG_ERROR("QpackDecoderReceiverStream::ParseDecoderFrames error: %d", data->GetDataLength());
         return;
     }
     for (const auto& frame : frames) {
@@ -61,7 +61,21 @@ void QpackDecoderReceiverStream::ParseDecoderFrames(std::shared_ptr<IBufferRead>
         } else if (frame->GetType() == static_cast<uint8_t>(QpackDecoderInstrType::kInsertCountInc)) {
             QpackInsertCountIncrementFrame* f = dynamic_cast<QpackInsertCountIncrementFrame*>(frame.get());
             insert_count_ += f->GetDelta();
-            blocked_registry_->NotifyAll();
+            // RFC 9204 §4.4.3: Insert Count Increment is sent by the *peer's
+            // decoder* to inform our *encoder* that the peer has applied N
+            // additional inserts (i.e. its Known Received Count grew by N).
+            // It is purely advisory state for our encoder's bookkeeping —
+            // it does NOT mean our local decoder gained any new entries,
+            // so we MUST NOT call blocked_registry_->NotifyAll() here.
+            // The blocked_registry_ tracks *our local decoder's* pending
+            // header-block sections waiting for *our local decoder's*
+            // dynamic table to grow (which only happens when the peer
+            // delivers more Insert instructions on the encoder stream;
+            // those are handled in QpackEncoderReceiverStream).
+            // The previous spurious NotifyAll() here would invoke every
+            // pending retry callback even though our decoder hadn't
+            // actually grown, fail the re-decode, and silently drop the
+            // section — losing the corresponding header block forever.
         }
     }
 }

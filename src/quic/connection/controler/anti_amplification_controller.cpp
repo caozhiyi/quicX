@@ -15,7 +15,7 @@ void AntiAmplificationController::EnterUnvalidatedState(uint64_t initial_credit)
     sent_bytes_ = 0;
     received_bytes_ = initial_credit;
 
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "AntiAmplificationController::EnterUnvalidatedState: initial_credit=%llu, max_send=%llu",
         initial_credit, initial_credit * kAmplificationFactor);
 }
@@ -25,7 +25,7 @@ void AntiAmplificationController::ExitUnvalidatedState() {
         return;
     }
 
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "AntiAmplificationController::ExitUnvalidatedState: sent=%llu, received=%llu",
         sent_bytes_, received_bytes_);
 
@@ -40,7 +40,7 @@ void AntiAmplificationController::OnBytesReceived(uint64_t bytes) {
     }
 
     received_bytes_ += bytes;
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "AntiAmplificationController::OnBytesReceived: received %llu bytes, total=%llu, max_send=%llu",
         bytes, received_bytes_, received_bytes_ * kAmplificationFactor);
 }
@@ -51,7 +51,7 @@ void AntiAmplificationController::OnBytesSent(uint64_t bytes) {
     }
 
     sent_bytes_ += bytes;
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "AntiAmplificationController::OnBytesSent: sent %llu bytes, total=%llu, limit=%llu, remaining=%llu",
         bytes, sent_bytes_, received_bytes_ * kAmplificationFactor, GetRemainingBudget());
 }
@@ -67,7 +67,7 @@ bool AntiAmplificationController::CanSend(uint64_t bytes) const {
     bool can_send = (sent_bytes_ + bytes) <= max_allowed;
 
     if (!can_send) {
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "AntiAmplificationController::CanSend: BLOCKED - would exceed limit. "
             "sent=%llu, received=%llu, requested=%llu, limit=%llu",
             sent_bytes_, received_bytes_, bytes, max_allowed);
@@ -104,7 +104,7 @@ bool AntiAmplificationController::IsNearLimit() const {
     bool near_limit = sent_bytes_ >= threshold;
 
     if (near_limit) {
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "AntiAmplificationController::IsNearLimit: approaching limit. "
             "sent=%llu, threshold=%llu (%.0f%%), limit=%llu",
             sent_bytes_, threshold, kNearLimitThreshold * 100, max_allowed);
@@ -117,7 +117,7 @@ void AntiAmplificationController::Reset() {
     sent_bytes_ = 0;
     received_bytes_ = 0;
 
-    common::LOG_DEBUG("AntiAmplificationController::Reset: counters reset (state=%s)",
+    LOG_DEBUG("AntiAmplificationController::Reset: counters reset (state=%s)",
         is_unvalidated_ ? "unvalidated" : "validated");
 }
 

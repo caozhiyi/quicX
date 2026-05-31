@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #ifdef _WIN32
 #include <winsock2.h>
@@ -22,6 +23,37 @@
 
 namespace quicx {
 namespace quic {
+
+namespace {
+
+// Read the socket-drain batch ceiling once at first call. Tunable via
+// env var QUICX_RECV_BATCH; legal range 1..256 (matches the
+// kMaxBatch hard cap inside RecvFromBatch). 0 / unset / out-of-range
+// → fall back to the historical default of 64. The value is captured
+// into a static so we never re-read the env on the hot path.
+//
+// Why expose it as a knob: the batch size trades latency-per-wakeup
+// against ACK aggregation. Too small → ACK aggregation defeated (the
+// bug we fixed — see comment in OnRead). Too large → starves
+// co-resident timers/write events that share this loop iteration. The
+// right number depends on cwnd, traffic burstiness and event-loop
+// pressure; we keep the default conservative and let the benchmark
+// sweep it without recompiling.
+int GetMaxRecvBatch() {
+    static const int cached = []() {
+        const char* env = std::getenv("QUICX_RECV_BATCH");
+        if (!env || !*env) return 64;
+        char* end = nullptr;
+        long v = std::strtol(env, &end, 10);
+        if (!end || *end != '\0') return 64;
+        if (v < 1) return 64;
+        if (v > 256) return 256;
+        return static_cast<int>(v);
+    }();
+    return cached;
+}
+
+}  // namespace
 
 UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
     event_loop_(event_loop),
@@ -49,11 +81,11 @@ UdpReceiver::~UdpReceiver() {
 bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
     auto loop = event_loop_.lock();
     if (!loop) return false;
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
 
     if (!loop->IsInLoopThread()) {
-        common::LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", socket_fd);
+        LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", socket_fd);
         auto weak_self = weak_from_this();
         loop->RunInLoop([weak_self, socket_fd, receiver]() {
             auto self = weak_self.lock();
@@ -63,11 +95,11 @@ bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver
         return true;
     }
 
-    common::LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", socket_fd);
+    LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", socket_fd);
     receiver_map_[socket_fd] = receiver;
     bool result = loop->RegisterFd(
         socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
-    common::LOG_DEBUG("UdpReceiver::AddReceiver: registration result=%d for fd=%d", result, socket_fd);
+    LOG_DEBUG("UdpReceiver::AddReceiver: registration result=%d for fd=%d", result, socket_fd);
     return result;
 }
 
@@ -85,7 +117,7 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
     }
     auto ret = common::UdpSocket();
     if (ret.error_code_ != 0) {
-        common::LOG_ERROR("create udp socket failed. err:%d", ret.error_code_);
+        LOG_ERROR("create udp socket failed. err:%d", ret.error_code_);
         return false;
     }
 
@@ -94,7 +126,7 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
     // set noblocking
     auto opt_ret = common::SocketNoblocking(socket_fd);
     if (opt_ret.error_code_ != 0) {
-        common::LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.error_code_);
+        LOG_ERROR("udp socket noblocking failed. err:%d", opt_ret.error_code_);
         common::Close(socket_fd);
         return false;
     }
@@ -108,13 +140,13 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
 
     opt_ret = Bind(socket_fd, addr);
     if (opt_ret.error_code_ != 0) {
-        common::LOG_ERROR("bind address failed. err:%d", opt_ret.error_code_);
+        LOG_ERROR("bind address failed. err:%d", opt_ret.error_code_);
         common::Close(socket_fd);
         return false;
     }
     if (!loop->RegisterFd(
             socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this())) {
-        common::LOG_ERROR("register fd failed. fd:%d", socket_fd);
+        LOG_ERROR("register fd failed. fd:%d", socket_fd);
         common::Close(socket_fd);
         return false;
     }
@@ -127,11 +159,11 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
 bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
     auto loop = event_loop_.lock();
     if (!loop) return false;
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "UdpReceiver::RemoveReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
 
     if (!loop->IsInLoopThread()) {
-        common::LOG_DEBUG("UdpReceiver::RemoveReceiver: posting to EventLoop thread, fd=%d", socket_fd);
+        LOG_DEBUG("UdpReceiver::RemoveReceiver: posting to EventLoop thread, fd=%d", socket_fd);
         auto weak_self = weak_from_this();
         loop->RunInLoop([weak_self, socket_fd]() {
             auto self = weak_self.lock();
@@ -143,11 +175,11 @@ bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
 
     auto iter = receiver_map_.find(socket_fd);
     if (iter == receiver_map_.end()) {
-        common::LOG_DEBUG("UdpReceiver::RemoveReceiver: receiver not found for fd=%d", socket_fd);
+        LOG_DEBUG("UdpReceiver::RemoveReceiver: receiver not found for fd=%d", socket_fd);
         return false;
     }
 
-    common::LOG_DEBUG("UdpReceiver::RemoveReceiver: removing fd=%d from EventLoop", socket_fd);
+    LOG_DEBUG("UdpReceiver::RemoveReceiver: removing fd=%d from EventLoop", socket_fd);
     receiver_map_.erase(iter);
     loop->RemoveFd(socket_fd);
     // Only close if we created this fd; caller-owned fds are closed by the caller.
@@ -156,59 +188,184 @@ bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
         common::Close(socket_fd);
         owned_fds_.erase(owned_it);
     }
-    common::LOG_INFO("UdpReceiver::RemoveReceiver: removed receiver for fd=%d", socket_fd);
+    LOG_INFO("UdpReceiver::RemoveReceiver: removed receiver for fd=%d", socket_fd);
     return true;
 }
 
 void UdpReceiver::OnRead(uint32_t fd) {
-    std::shared_ptr<NetPacket> pkt = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    common::Metrics::CounterInc(common::MetricsStd::DiagUdpOnRead);
 
-    auto buffer = pkt->GetData();
-    auto span = buffer->GetWritableSpan();
+    // PERF FIX (loopback throughput on file_transfer):
+    //
+    // Previously this method recvfrom'd exactly one UDP datagram per call.
+    // Combined with the EventLoop loop which runs all fixed_processes_
+    // (including Worker::ProcessSend) on every Wait() return, the result
+    // was that every incoming data packet caused a full wakeup → recv 1
+    // pkt → ProcessSend → emit ACK cycle. wait_ack_packet_numbers_ never
+    // got a chance to accumulate beyond 1 entry, so the kAckThreshold=10
+    // branch in RecvControl::ShouldSendImmediateAck was almost never hit;
+    // ACKs flowed at ~1:1 with data packets, defeating ACK aggregation
+    // entirely. Probed numbers (100 MB upload on loopback):
+    //
+    //   udp_onread ≈ pkts_tx ≈ 22 000 / sec
+    //   try_send_iter ≈ 40 000 / sec, active_send ≈ 6 / sec
+    //
+    // The fix: drain the socket non-blockingly via a single
+    // common::RecvFromBatch() call, dispatching each datagram before
+    // continuing. This lets ack-eliciting packets pile up in
+    // wait_ack_packet_numbers_ within a single wakeup; the very next
+    // ProcessSend invocation can then emit one ACK frame covering the
+    // whole batch.
+    //
+    // RecvFromBatch encapsulates the platform-specific syscall:
+    //   - Linux: a single recvmmsg(MSG_DONTWAIT) collapses up to N
+    //            datagrams into one syscall.
+    //   - macOS / Windows: a recvmsg / WSARecvMsg loop with EAGAIN
+    //                      early-exit (functional parity, no syscall
+    //                      savings).
+    // Either way, this method has zero `#ifdef <platform>` and the
+    // batching ceiling (GetMaxRecvBatch, env QUICX_RECV_BATCH) is the
+    // only knob. 64 was chosen to mirror the send-side
+    // kMaxPacketsPerRound and is comfortably above 1 BDP at our cwnd.
+    const int max_batch = GetMaxRecvBatch();
 
-    // Use platform abstraction to capture ECN and peer address
-    common::Address peer_addr;
-    uint8_t ecn = 0;
-    auto ret = common::RecvFromWithEcn(fd, (char*)span.GetStart(), kMaxV4PacketSize, 0, peer_addr, ecn);
-    if (ret.error_code_ != 0) {
-        if (ret.error_code_ == EAGAIN) {
-            return;
+    // Stack-allocate one entry per slot so we do zero heap traffic on
+    // the hot path. kMaxBatch (256) matches the upper bound enforced
+    // inside RecvFromBatch; GetMaxRecvBatch() is already clamped to
+    // [1, 256] so `batch` here is always a safe array index.
+    constexpr int kMaxBatch = 256;
+    const int batch_cap = max_batch < kMaxBatch ? max_batch : kMaxBatch;
+    int batch = batch_cap;  // may shrink below if buffer prep can't fill all slots
+
+    std::shared_ptr<NetPacket> pkts[kMaxBatch];
+    common::RecvBatchEntry entries[kMaxBatch];
+
+    // Wire one freshly-allocated NetPacket into each entry. Buffers come
+    // from the thread-local packet allocator so the cost amortizes; on
+    // a "0 datagrams" wakeup the unused packets are simply released
+    // back to the pool when `pkts[]` goes out of scope.
+    //
+    // Pool-reuse hazard: a NetPacket returned by Malloc() may have been
+    // recycled with its underlying chunk's "floor" still pinned by an
+    // outstanding SharedBufferSpan reference. In that case
+    // GetWritableSpan() can return far less than kMaxV4PacketSize. If we
+    // hand the kernel a `buf_len_` larger than the real free area, a
+    // full-MTU datagram will silently overflow into the next chunk in
+    // the BlockMemoryPool arena (the chunks are physically contiguous),
+    // and the leftover bytes the buffer's own write-pointer is willing
+    // to commit (clamped by MoveWritePt) get dispatched as a malformed
+    // short-header packet -- this is what produced the "payload too
+    // short for header protection sample. payload_len:19" storms.
+    //
+    // Two-part defense:
+    //   (a) Skip / replace any pool-recycled NetPacket whose writable
+    //       span cannot hold a full UDP-over-IPv4 datagram. Drop the
+    //       reference so the floor can finally retire and grab a fresh
+    //       one for this slot.
+    //   (b) Always pass the *real* writable length to the kernel, never
+    //       a hard-coded MTU constant.
+    for (int i = 0; i < batch_cap; ++i) {
+        // Cap retries so a permanently-leaking floor in the pool can't
+        // wedge OnRead in an infinite loop; if we still don't have a
+        // clean buffer after a few tries we surrender this slot. batch
+        // will be re-driven on the next readable event anyway.
+        constexpr int kMaxRecycleRetries = 8;
+        int retries = 0;
+        std::shared_ptr<NetPacket> pkt;
+        common::BufferSpan span;
+        while (retries < kMaxRecycleRetries) {
+            pkt = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+            span = pkt->GetData()->GetWritableSpan();
+            if (span.GetLength() >= kMaxV4PacketSize) {
+                break;
+            }
+            // Recycled NetPacket whose chunk floor is still pinned by
+            // an external SharedBufferSpan -- release it (drops one
+            // chunk reference, may let the floor retire) and retry.
+            pkt.reset();
+            ++retries;
         }
-        common::LOG_ERROR("recv from failed. err:%d", ret.error_code_);
+        if (!pkt || span.GetLength() < kMaxV4PacketSize) {
+            // Could not obtain a clean buffer; shrink the batch to
+            // however many slots we have already filled. The remaining
+            // datagrams stay queued in the kernel and we'll drain them
+            // on the next readable event.
+            LOG_WARN("udp recv: pool exhausted after %d retries, batch shrunk from %d to %d",
+                     retries, batch_cap, i);
+            batch = i;
+            break;
+        }
+        pkts[i] = std::move(pkt);
+        entries[i].buf_     = (char*)span.GetStart();
+        entries[i].buf_len_ = span.GetLength();
+        entries[i].bytes_   = 0;
+        entries[i].ecn_     = 0;
+    }
+
+    if (batch == 0) {
+        // Nothing to receive into; bail before issuing a 0-batch syscall.
         return;
     }
 
-    common::LOG_DEBUG("recv from data from peer. addr: %s, size:%d", peer_addr.AsString().c_str(), ret.return_value_);
-    buffer->MoveWritePt(ret.return_value_);
-    pkt->SetAddress(std::move(peer_addr));
-    pkt->SetSocket(fd);
-    pkt->SetTime(common::UTCTimeMsec());
-    pkt->SetEcn(ecn_enabled_ ? ecn : 0);
-
-    // Metrics: UDP packet received successfully
-    common::Metrics::CounterInc(common::MetricsStd::UdpPacketsRx);
-    common::Metrics::CounterInc(common::MetricsStd::UdpBytesRx, ret.return_value_);
-
-    auto iter = receiver_map_.find(fd);
-    if (iter == receiver_map_.end()) {
-        common::LOG_ERROR("receiver not found. fd:%d", fd);
-        common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
+    auto rc = common::RecvFromBatch(fd, entries, batch, ecn_enabled_);
+    if (rc.return_value_ <= 0) {
+        // 0 datagrams + no error → spurious wakeup / socket already
+        // drained; just wait for the next read event. <0 with EAGAIN
+        // is already translated to {0,0} inside RecvFromBatch, so any
+        // non-zero error_code_ here is a real failure worth logging.
+        if (rc.error_code_ != 0
+#if !defined(_WIN32)
+            && rc.error_code_ != EAGAIN && rc.error_code_ != EWOULDBLOCK
+#endif
+        ) {
+            LOG_ERROR("recv batch failed. err:%d", rc.error_code_);
+        }
         return;
     }
 
-    if (auto receiver = iter->second.lock()) {
-        receiver->OnPacket(pkt);
-    } else {
-        common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
+    auto recv_iter = receiver_map_.find(fd);
+    const bool have_receiver = (recv_iter != receiver_map_.end());
+    if (!have_receiver) {
+        // Receiver has been removed between event registration and
+        // dispatch (e.g. RemoveReceiver raced with this OnRead). Drop
+        // every datagram we just pulled off the socket and account for
+        // them in metrics; we cannot deliver them anywhere.
+        LOG_ERROR("receiver not found. fd:%d", fd);
+        for (int i = 0; i < rc.return_value_; ++i) {
+            common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
+        }
+        return;
+    }
+    auto receiver_strong = recv_iter->second.lock();
+
+    for (int i = 0; i < rc.return_value_; ++i) {
+        auto& pkt = pkts[i];
+        const uint32_t bytes = entries[i].bytes_;
+
+        auto buffer = pkt->GetData();
+        buffer->MoveWritePt(bytes);
+        pkt->SetAddress(std::move(entries[i].peer_addr_));
+        pkt->SetSocket(fd);
+        pkt->SetTime(common::UTCTimeMsec());
+        pkt->SetEcn(ecn_enabled_ ? entries[i].ecn_ : 0);
+
+        common::Metrics::CounterInc(common::MetricsStd::UdpPacketsRx);
+        common::Metrics::CounterInc(common::MetricsStd::UdpBytesRx, bytes);
+
+        if (receiver_strong) {
+            receiver_strong->OnPacket(pkt);
+        } else {
+            common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
+        }
     }
 }
 
 void UdpReceiver::OnWrite(uint32_t fd) {
-    common::LOG_ERROR("write should not be called. fd:%d", fd);
+    LOG_ERROR("write should not be called. fd:%d", fd);
 }
 
 void UdpReceiver::OnError(uint32_t fd) {
-    common::LOG_ERROR("something wrong happened. fd:%d", fd);
+    LOG_ERROR("something wrong happened. fd:%d", fd);
 }
 
 void UdpReceiver::OnClose(uint32_t fd) {
@@ -231,7 +388,7 @@ void UdpReceiver::OnClose(uint32_t fd) {
         common::Close(fd);
         owned_fds_.erase(owned_it);
     }
-    common::LOG_INFO("udp receiver closed. fd:%d", fd);
+    LOG_INFO("udp receiver closed. fd:%d", fd);
 }
 
 }  // namespace quic

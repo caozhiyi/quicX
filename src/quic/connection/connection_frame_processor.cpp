@@ -168,7 +168,7 @@ bool FrameProcessor::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
                         return false;
                     }
                 } else {
-                    common::LOG_ERROR("invalid frame type. type:%s", type);
+                    LOG_ERROR("invalid frame type. type:%s", type);
                     return false;
                 }
         }
@@ -181,7 +181,7 @@ bool FrameProcessor::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
 bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     auto stream_frame = std::dynamic_pointer_cast<IStreamFrame>(frame);
     if (!stream_frame) {
-        common::LOG_ERROR("invalid stream frame.");
+        LOG_ERROR("invalid stream frame.");
         return false;
     }
 
@@ -230,7 +230,7 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // stream ID exceeding the limit it has sent treat this as a connection error of type STREAM_LIMIT_ERROR
         // Close connection using event interface
         event_sink_.OnConnectionClose(QuicErrorCode::kStreamLimitError, frame->GetType(), "stream limit error.");
-        common::LOG_ERROR("stream limit error. stream id:%d", stream_id);
+        LOG_ERROR("stream limit error. stream id:%d", stream_id);
         return false;
     }
 
@@ -252,7 +252,7 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
 
     auto new_stream = stream_manager_.CreateRemoteStream(send_size, stream_id, direction, recv_size);
     if (!new_stream) {
-        common::LOG_ERROR("Failed to create remote stream %llu", stream_id);
+        LOG_ERROR("Failed to create remote stream %llu", stream_id);
         return false;
     }
 
@@ -286,7 +286,7 @@ bool FrameProcessor::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 bool FrameProcessor::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
     auto token_frame = std::dynamic_pointer_cast<NewTokenFrame>(frame);
     if (!token_frame) {
-        common::LOG_ERROR("invalid new token frame.");
+        LOG_ERROR("invalid new token frame.");
         return false;
     }
     auto data = token_frame->GetToken();
@@ -297,7 +297,7 @@ bool FrameProcessor::OnNewTokenFrame(std::shared_ptr<IFrame> frame) {
 bool FrameProcessor::OnMaxDataFrame(std::shared_ptr<IFrame> frame) {
     auto max_data_frame = std::dynamic_pointer_cast<MaxDataFrame>(frame);
     if (!max_data_frame) {
-        common::LOG_ERROR("invalid max data frame.");
+        LOG_ERROR("invalid max data frame.");
         return false;
     }
     uint64_t max_data_size = max_data_frame->GetMaximumData();
@@ -335,7 +335,7 @@ bool FrameProcessor::OnStreamBlockFrame(std::shared_ptr<IFrame> frame) {
             event_sink_.OnFrameReady(send_frame);
             // Immediately send using event interface
             event_sink_.OnConnectionActive();
-            common::LOG_INFO("Received STREAMS_BLOCKED, sending MAX_STREAMS immediately");
+            LOG_INFO("Received STREAMS_BLOCKED, sending MAX_STREAMS immediately");
         }
     }
 
@@ -355,7 +355,7 @@ bool FrameProcessor::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
             send_flow_controller_->OnMaxStreamsBidiReceived(new_limit);
         }
 
-        common::LOG_INFO(
+        LOG_INFO(
             "Received MAX_STREAMS_BIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     } else {
         uint64_t old_limit = send_flow_controller_ ? send_flow_controller_->GetUniStreamLimit() : 0;
@@ -365,7 +365,7 @@ bool FrameProcessor::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
             send_flow_controller_->OnMaxStreamsUniReceived(new_limit);
         }
 
-        common::LOG_INFO(
+        LOG_INFO(
             "Received MAX_STREAMS_UNIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     }
 
@@ -379,7 +379,7 @@ bool FrameProcessor::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
 bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     auto new_cid_frame = std::dynamic_pointer_cast<NewConnectionIDFrame>(frame);
     if (!new_cid_frame) {
-        common::LOG_ERROR("invalid new connection id frame.");
+        LOG_ERROR("invalid new connection id frame.");
         return false;
     }
 
@@ -387,7 +387,7 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     uint64_t sequence_number = new_cid_frame->GetSequenceNumber();
     uint64_t retire_prior_to = new_cid_frame->GetRetirePriorTo();
     if (retire_prior_to > sequence_number) {
-        common::LOG_ERROR("NEW_CONNECTION_ID: retire_prior_to (%llu) > sequence_number (%llu)",
+        LOG_ERROR("NEW_CONNECTION_ID: retire_prior_to (%llu) > sequence_number (%llu)",
             retire_prior_to, sequence_number);
         event_sink_.OnConnectionClose(QuicErrorCode::kFrameEncodingError,
             FrameType::kNewConnectionId, "retire_prior_to > sequence_number");
@@ -405,7 +405,7 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
             event_sink_.OnFrameReady(retire);
         }
         if (retire_prior_to > kMaxRetirePerFrame) {
-            common::LOG_WARN("NEW_CONNECTION_ID: retire_prior_to (%llu) capped at %llu to prevent DoS",
+            LOG_WARN("NEW_CONNECTION_ID: retire_prior_to (%llu) capped at %llu to prevent DoS",
                 retire_prior_to, kMaxRetirePerFrame);
         }
         // Apply batch retirement to the *remote* CID pool (these are CIDs the peer
@@ -433,10 +433,10 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
 bool FrameProcessor::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     auto retire_cid_frame = std::dynamic_pointer_cast<RetireConnectionIDFrame>(frame);
     if (!retire_cid_frame) {
-        common::LOG_ERROR("invalid retire connection id frame.");
+        LOG_ERROR("invalid retire connection id frame.");
         return false;
     }
-    common::LOG_DEBUG("OnRetireConnectionIDFrame: peer retiring local CID seq=%llu",
+    LOG_DEBUG("OnRetireConnectionIDFrame: peer retiring local CID seq=%llu",
         retire_cid_frame->GetSequenceNumber());
     // Peer is retiring a CID we provided to them, remove from local pool
     cid_coordinator_.GetLocalConnectionIDManager()->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
@@ -461,18 +461,18 @@ bool FrameProcessor::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
 bool FrameProcessor::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
     auto close_frame = std::dynamic_pointer_cast<ConnectionCloseFrame>(frame);
     if (!close_frame) {
-        common::LOG_ERROR("invalid connection close frame.");
+        LOG_ERROR("invalid connection close frame.");
         return false;
     }
 
     // Always log the CONNECTION_CLOSE details for debugging (even before state check)
-    common::LOG_WARN("Received CONNECTION_CLOSE: error_code=0x%llx, frame_type=0x%llx, reason='%s'",
+    LOG_WARN("Received CONNECTION_CLOSE: error_code=0x%llx, frame_type=0x%llx, reason='%s'",
         close_frame->GetErrorCode(), close_frame->GetErrFrameType(), close_frame->GetReason().c_str());
 
     if (!state_machine_.CanReceiveData()) {
         // During handshake or early connection states, still process CONNECTION_CLOSE
         // to properly enter draining state. The peer is telling us to close.
-        common::LOG_WARN("Received CONNECTION_CLOSE in non-receiving state, processing anyway");
+        LOG_WARN("Received CONNECTION_CLOSE in non-receiving state, processing anyway");
     }
 
     // Cancel graceful close if it's pending (peer initiated close)
@@ -486,7 +486,7 @@ bool FrameProcessor::OnConnectionCloseFrame(std::shared_ptr<IFrame> frame) {
     // RFC 9000: In draining state, endpoint MUST NOT send any packets
     state_machine_.OnConnectionCloseFrameReceived();
 
-    common::LOG_INFO("Connection entering draining state. error_code:%u, reason:%s", close_frame->GetErrorCode(),
+    LOG_INFO("Connection entering draining state. error_code:%u, reason:%s", close_frame->GetErrorCode(),
         close_frame->GetReason().c_str());
 
     return true;
@@ -499,7 +499,7 @@ bool FrameProcessor::OnConnectionCloseAppFrame(std::shared_ptr<IFrame> frame) {
 bool FrameProcessor::OnPathChallengeFrame(std::shared_ptr<IFrame> frame) {
     auto challenge_frame = std::dynamic_pointer_cast<PathChallengeFrame>(frame);
     if (!challenge_frame) {
-        common::LOG_ERROR("invalid path challenge frame.");
+        LOG_ERROR("invalid path challenge frame.");
         return false;
     }
     auto data = challenge_frame->GetData();
@@ -514,7 +514,7 @@ bool FrameProcessor::OnPathChallengeFrame(std::shared_ptr<IFrame> frame) {
 bool FrameProcessor::OnPathResponseFrame(std::shared_ptr<IFrame> frame) {
     auto response_frame = std::dynamic_pointer_cast<PathResponseFrame>(frame);
     if (!response_frame) {
-        common::LOG_ERROR("invalid path response frame.");
+        LOG_ERROR("invalid path response frame.");
         return false;
     }
     auto data = response_frame->GetData();

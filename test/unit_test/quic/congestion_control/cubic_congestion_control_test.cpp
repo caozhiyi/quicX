@@ -102,8 +102,9 @@ TEST(CubicCongestionControlTest, CanSendAndPacingRateBasics) {
 
     // Set SRTT and verify pacing rate formula cwnd/srtt * 1.25 (CUBIC uses 1.25x gain)
     cc.OnRoundTripSample(100000, 0); // 100ms
-    const uint64_t expected_bps = (cfg.initial_cwnd_bytes * 8ull * 1000000ull * 5) / (100000ull * 4);
-    EXPECT_EQ(cc.GetPacingRateBps(), expected_bps);
+    // bytes/sec = cwnd_bytes * 1.25 / rtt_seconds = cwnd_bytes * 1e6 * 5 / (rtt_us * 4)
+    const uint64_t expected_bytes_per_sec = (cfg.initial_cwnd_bytes * 1000000ull * 5) / (100000ull * 4);
+    EXPECT_EQ(cc.GetPacingRateBytesPerSec(), expected_bytes_per_sec);
 
     // Fill in-flight up to cwnd
     cc.OnPacketSent(SentPacketEvent{10, cfg.initial_cwnd_bytes, 10, false});

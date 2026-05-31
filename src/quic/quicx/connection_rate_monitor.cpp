@@ -10,7 +10,16 @@ ConnectionRateMonitor::ConnectionRateMonitor(std::shared_ptr<common::IEventLoop>
 }
 
 ConnectionRateMonitor::~ConnectionRateMonitor() {
-    StopTimer();
+    // Intentionally do NOT call StopTimer() here:
+    //   * StopTimer() invokes IEventLoop::RemoveTimer(), which is guarded
+    //     by AssertInLoopThread() and aborts when called from anywhere
+    //     other than the worker's event-loop thread.
+    //   * This destructor runs from ServerWorker::Shutdown() on the
+    //     QuicServer-owner thread (after the worker thread has been
+    //     Stop()+Join()'d — see QuicServer::~QuicServer comments).
+    //   * Since the event loop is no longer running, the periodic timer
+    //     cannot fire, and its bookkeeping inside the timer wheel is
+    //     released when the EventLoop itself is destroyed.
 }
 
 void ConnectionRateMonitor::RecordNewConnection() {
@@ -46,13 +55,13 @@ void ConnectionRateMonitor::CalculateRate() {
     last_rate_.store(count, std::memory_order_relaxed);
     
     if (count > 0) {
-        common::LOG_DEBUG("ConnectionRateMonitor: rate=%u connections/sec", count);
+        LOG_DEBUG("ConnectionRateMonitor: rate=%u connections/sec", count);
     }
 }
 
 void ConnectionRateMonitor::StartTimer(std::shared_ptr<common::IEventLoop> event_loop) {
     if (!event_loop) {
-        common::LOG_WARN("ConnectionRateMonitor: cannot start timer without event loop");
+        LOG_WARN("ConnectionRateMonitor: cannot start timer without event loop");
         return;
     }
     
@@ -70,7 +79,7 @@ void ConnectionRateMonitor::StartTimer(std::shared_ptr<common::IEventLoop> event
         true    // repeat
     );
     
-    common::LOG_DEBUG("ConnectionRateMonitor: started rate calculation timer (id=%llu)", timer_id_);
+    LOG_DEBUG("ConnectionRateMonitor: started rate calculation timer (id=%llu)", timer_id_);
 }
 
 void ConnectionRateMonitor::StopTimer() {
@@ -82,7 +91,7 @@ void ConnectionRateMonitor::StopTimer() {
     auto loop = event_loop_.lock();
     if (loop && timer_id_ != 0) {
         loop->RemoveTimer(timer_id_);
-        common::LOG_DEBUG("ConnectionRateMonitor: stopped rate calculation timer (id=%llu)", timer_id_);
+        LOG_DEBUG("ConnectionRateMonitor: stopped rate calculation timer (id=%llu)", timer_id_);
         timer_id_ = 0;
     }
 }

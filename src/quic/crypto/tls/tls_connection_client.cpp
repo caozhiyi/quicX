@@ -45,14 +45,14 @@ bool TLSClientConnection::DoHandleShake() {
         int32_t ssl_err = SSL_get_error(ssl_.get(), ret);
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err_str = SSL_error_description(ssl_err);
-            common::LOG_ERROR("SSL_do_handshake failed. ret:%d, ssl_err:%d, desc:%s", ret, ssl_err, err_str);
+            LOG_ERROR("SSL_do_handshake failed. ret:%d, ssl_err:%d, desc:%s", ret, ssl_err, err_str);
 
             // Print OpenSSL error queue
             unsigned long err_code;
             while ((err_code = ERR_get_error()) != 0) {
                 char output[256];
                 ERR_error_string_n(err_code, output, sizeof(output));
-                common::LOG_ERROR("OpenSSL Error: %s", output);
+                LOG_ERROR("OpenSSL Error: %s", output);
             }
         }
         return false;
@@ -64,7 +64,7 @@ bool TLSClientConnection::DoHandleShake() {
 bool TLSClientConnection::Reset(const std::string& alpn) {
     // RFC 9000: When receiving a Retry packet, client must restart TLS handshake
     // from scratch with updated transport parameters
-    common::LOG_DEBUG("Resetting TLS connection for Retry");
+    LOG_DEBUG("Resetting TLS connection for Retry");
 
     // Save current SNI if set
     const char* sni = SSL_get_servername(ssl_.get(), TLSEXT_NAMETYPE_host_name);
@@ -75,7 +75,7 @@ bool TLSClientConnection::Reset(const std::string& alpn) {
 
     // Recreate SSL object
     if (!Init()) {
-        common::LOG_ERROR("Failed to reinitialize SSL after Retry");
+        LOG_ERROR("Failed to reinitialize SSL after Retry");
         return false;
     }
 
@@ -83,7 +83,7 @@ bool TLSClientConnection::Reset(const std::string& alpn) {
     if (!alpn.empty()) {
         uint8_t* alpn_data = (uint8_t*)alpn.c_str();
         if (!AddAlpn(alpn_data, alpn.size())) {
-            common::LOG_ERROR("Failed to restore ALPN after Retry reset");
+            LOG_ERROR("Failed to restore ALPN after Retry reset");
             return false;
         }
     }
@@ -91,18 +91,18 @@ bool TLSClientConnection::Reset(const std::string& alpn) {
     // Restore SNI if it was set
     if (!saved_sni.empty()) {
         if (!SetServerName(saved_sni)) {
-            common::LOG_ERROR("Failed to restore SNI after Retry reset");
+            LOG_ERROR("Failed to restore SNI after Retry reset");
             return false;
         }
     }
 
-    common::LOG_DEBUG("Successfully reset TLS connection");
+    LOG_DEBUG("Successfully reset TLS connection");
     return true;
 }
 
 bool TLSClientConnection::AddAlpn(uint8_t* alpn, uint32_t len) {
     if (len == 0 || alpn == nullptr) {
-        common::LOG_ERROR("invalid ALPN input");
+        LOG_ERROR("invalid ALPN input");
         return false;
     }
     // Proper ALPN wire format: length-prefixed vector (no NUL terminator)
@@ -110,9 +110,9 @@ bool TLSClientConnection::AddAlpn(uint8_t* alpn, uint32_t len) {
     buf.reserve(static_cast<size_t>(len) + 1);
     buf.push_back(static_cast<uint8_t>(len));
     buf.insert(buf.end(), alpn, alpn + len);
-    common::LOG_INFO("TLSClientConnection::AddAlpn: '%.*s' (len=%u)", (int)len, (const char*)alpn, len);
+    LOG_INFO("TLSClientConnection::AddAlpn: '%.*s' (len=%u)", (int)len, (const char*)alpn, len);
     if (SSL_set_alpn_protos(ssl_.get(), buf.data(), static_cast<unsigned int>(buf.size())) != 0) {
-        common::LOG_ERROR("SSL_set_alpn_protos failed.");
+        LOG_ERROR("SSL_set_alpn_protos failed.");
         return false;
     }
     return true;
@@ -120,14 +120,14 @@ bool TLSClientConnection::AddAlpn(uint8_t* alpn, uint32_t len) {
 
 bool TLSClientConnection::SetServerName(const std::string& server_name) {
     if (server_name.empty()) {
-        common::LOG_ERROR("server name is empty");
+        LOG_ERROR("server name is empty");
         return false;
     }
     if (SSL_set_tlsext_host_name(ssl_.get(), server_name.c_str()) == 0) {
-        common::LOG_ERROR("SSL_set_tlsext_host_name failed. server_name:%s", server_name.c_str());
+        LOG_ERROR("SSL_set_tlsext_host_name failed. server_name:%s", server_name.c_str());
         return false;
     }
-    common::LOG_DEBUG("Set SNI: %s", server_name.c_str());
+    LOG_DEBUG("Set SNI: %s", server_name.c_str());
     return true;
 }
 
@@ -140,7 +140,7 @@ bool TLSClientConnection::SetSession(const uint8_t* session_der, size_t session_
 
     // Debug: Check session 0-RTT capabilities
     int early_data_capable = SSL_SESSION_early_data_capable(sess);
-    common::LOG_DEBUG("Session early_data_capable: %d", early_data_capable);
+    LOG_DEBUG("Session early_data_capable: %d", early_data_capable);
 
     bool ok = SSL_set_session(ssl_.get(), sess) == 1;
     SSL_SESSION_free(sess);
@@ -149,7 +149,7 @@ bool TLSClientConnection::SetSession(const uint8_t* session_der, size_t session_
     // This is required in addition to SSL_CTX_set_early_data_enabled
     if (ok && early_data_capable) {
         SSL_set_early_data_enabled(ssl_.get(), 1);
-        common::LOG_INFO("0-RTT early data enabled on SSL object");
+        LOG_INFO("0-RTT early data enabled on SSL object");
     }
 
     return ok;
@@ -181,7 +181,7 @@ bool TLSClientConnection::ExportSession(std::string& out_session_der, SessionInf
 int TLSClientConnection::NewSessionCallback(SSL* ssl, SSL_SESSION* session) {
     TLSClientConnection* conn = (TLSClientConnection*)SSL_get_app_data(ssl);
     if (!conn) {
-        common::LOG_ERROR("new session callback failed. ssl:%p", ssl);
+        LOG_ERROR("new session callback failed. ssl:%p", ssl);
         return 0;
     }
     conn->OnNewSession(session);
@@ -210,7 +210,7 @@ void TLSClientConnection::OnNewSession(SSL_SESSION* session) {
                 unsigned char* p = reinterpret_cast<unsigned char*>(&der[0]);
                 i2d_SSL_SESSION(session, &p);
                 SessionCache::Instance().StoreSession(der, info);
-                common::LOG_INFO("NewSessionTicket saved to cache for %s", info.server_name.c_str());
+                LOG_INFO("NewSessionTicket saved to cache for %s", info.server_name.c_str());
             }
         }
     }
@@ -234,7 +234,7 @@ bool TLSClientConnection::ExtractSessionInfo(SSL_SESSION* session, SessionInfo& 
 
     // Note: SSL_SESSION doesn't store server name directly
     // Server name needs to be obtained from SSL object during handshake
-    common::LOG_DEBUG("Extracted session info: creation_time=%llu, timeout=%u, early_data_capable=%d",
+    LOG_DEBUG("Extracted session info: creation_time=%llu, timeout=%u, early_data_capable=%d",
         (unsigned long long)info.creation_time, info.timeout, info.early_data_capable);
 
     return true;

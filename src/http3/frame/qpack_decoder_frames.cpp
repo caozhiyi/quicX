@@ -27,7 +27,7 @@ bool DecodeQpackDecoderFrames(std::shared_ptr<common::IBuffer> buffer, std::vect
             // 00xxxxxx -> Insert Count Increment
             frame = std::make_shared<QpackInsertCountIncrementFrame>();
         } else {
-            common::LOG_ERROR("DecodeQpackDecoderFrames: unknown frame type: %02x", first);
+            LOG_ERROR("DecodeQpackDecoderFrames: unknown frame type: %02x", first);
             return false;
         }
 

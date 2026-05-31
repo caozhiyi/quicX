@@ -84,7 +84,7 @@ std::string PseudoHeader::MethodToString(HttpMethod method) {
         return iter->second;
     }
 
-    common::LOG_FATAL("Invalid method: %d", method);
+    LOG_FATAL("Invalid method: %d", method);
     return "";
 }
 
@@ -94,7 +94,7 @@ HttpMethod PseudoHeader::StringToMethod(const std::string& method) {
         return iter->second;
     }
 
-    common::LOG_FATAL("Invalid method: %s", method.c_str());
+    LOG_FATAL("Invalid method: %s", method.c_str());
     return HttpMethod::kGet;
 }
 

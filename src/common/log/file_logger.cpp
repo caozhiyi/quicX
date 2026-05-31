@@ -1,5 +1,7 @@
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <system_error>
 
 #include "common/log/file_logger.h"
 
@@ -113,8 +115,27 @@ void FileLogger::CheckTime(char* log) {
     history_file_names_.push(file_name);
     CheckExpireFiles();
 
+    // Ensure parent directory exists. std::ofstream::open does not create
+    // missing directories, so without this every write would silently fail
+    // when the configured log path (e.g. "./logs") has not been created yet.
+    std::filesystem::path log_path(file_name);
+    if (log_path.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(log_path.parent_path(), ec);
+        if (ec) {
+            // Fall back to stderr — we cannot log via ourselves here.
+            std::fprintf(stderr,
+                "[FileLogger] failed to create log directory \"%s\": %s\n",
+                log_path.parent_path().string().c_str(), ec.message().c_str());
+        }
+    }
+
     // open new log file
     stream_.open(file_name.c_str(), std::ios::app | std::ios::out);
+    if (!stream_.is_open()) {
+        std::fprintf(stderr,
+            "[FileLogger] failed to open log file \"%s\"\n", file_name.c_str());
+    }
 }
 
 void FileLogger::CheckExpireFiles() {

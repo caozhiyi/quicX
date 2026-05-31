@@ -1,3 +1,4 @@
+#include <chrono>
 #include <sstream>
 
 #include <quicx/common/metrics.h>
@@ -181,6 +182,13 @@ std::string Metrics::ExportPrometheus() {
     }
 
     return ss.str();
+}
+
+uint64_t Metrics::NowUs() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
 }
 
 }  // namespace common

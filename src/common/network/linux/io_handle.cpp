@@ -1,6 +1,7 @@
 #ifdef __linux__
 #include <netdb.h>
 #include <fcntl.h>
+#include <atomic>
 #include <cstring>
 #include <unistd.h>       // for close
 #include <ifaddrs.h>
@@ -11,85 +12,103 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
+#include "common/log/log.h"
 #include "common/network/io_handle.h"
+#include "common/network/socket_family_cache.h"
 
 namespace quicx {
 namespace common {
+
+namespace {
+// Resolve the address family of `sockfd`. Cache hit is the common case
+// (we created the fd and recorded its family). For caller-provided fds
+// (e.g. TCP fds in the upgrade path, test fixtures) we fall back to
+// SO_DOMAIN, which is Linux-specific but reliable.
+int32_t ResolveSocketFamily(int32_t sockfd) {
+    int32_t fam = GetSocketFamily(sockfd);
+    if (fam != 0) return fam;
+
+    int domain = 0;
+    socklen_t domain_len = sizeof(domain);
+    if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, &domain, &domain_len) == 0) {
+        return domain;
+    }
+    return AF_INET;  // best-effort default
+}
+}  // namespace
 
 SysCallInt32Result TcpSocket() {
     int32_t sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     return {sock, sock != -1 ? 0 : errno};
 }
 
-SysCallInt32Result UdpSocket() {
-    // Use AF_INET6 dual-stack socket to support both IPv4 and IPv6
+UdpSocketResult UdpSocket() {
+    // Use AF_INET6 dual-stack socket to support both IPv4 and IPv6.
     int32_t sock = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock == -1) {
-        // Fallback to IPv4-only if IPv6 not available
-        sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        return {sock, sock != -1 ? 0 : errno};
+    if (sock != -1) {
+        int off = 0;
+        setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+        RememberSocketFamily(sock, AF_INET6);
+        SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
+        return {sock, 0, AF_INET6};
     }
-    // Enable dual-stack: accept both IPv4 and IPv6
-    int off = 0;
-    setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
-    return {sock, 0};
+    // Fallback to IPv4-only if IPv6 not available.
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock != -1) {
+        RememberSocketFamily(sock, AF_INET);
+        SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
+        return {sock, 0, AF_INET};
+    }
+    return {-1, errno, 0};
 }
 
-SysCallInt32Result UdpSocket4() {
-    // Create an IPv4-only UDP socket (AF_INET)
+UdpSocketResult UdpSocket4() {
+    // Create an IPv4-only UDP socket (AF_INET).
     // Used for connection migration when peer is IPv4, to avoid IPv6 dual-stack
-    // routing issues in certain network environments (e.g., Docker bridge networks)
+    // routing issues in certain network environments (e.g., Docker bridge networks).
     int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    return {sock, sock != -1 ? 0 : errno};
+    if (sock != -1) {
+        RememberSocketFamily(sock, AF_INET);
+        SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
+        return {sock, 0, AF_INET};
+    }
+    return {-1, errno, 0};
 }
 
 SysCallInt32Result Close(int32_t sockfd) {
+    ForgetSocketFamily(sockfd);
     const int32_t rc = close(sockfd);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
-    // Get the socket's address family
-    struct sockaddr_storage ss;
-    socklen_t len = sizeof(ss);
-    if (getsockname(sockfd, (struct sockaddr*)&ss, &len) == 0) {
-        // Socket already bound or we can determine its family
-        // Use the socket family if available
-    }
-    
-    // Determine socket family by attempting to get socket option
-    int domain = 0;
-    socklen_t domain_len = sizeof(domain);
-    if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, &domain, &domain_len) == 0) {
-        if (domain == AF_INET6) {
-            // IPv6 socket
-            if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp() == "::") {
-                struct sockaddr_in6 addr_in6;
-                memset(&addr_in6, 0, sizeof(addr_in6));
-                addr_in6.sin6_family = AF_INET6;
-                addr_in6.sin6_port = htons(addr.GetPort());
+SysCallInt32Result Bind(int32_t sockfd, int32_t sock_family, Address& addr) {
+    if (sock_family == AF_INET6) {
+        struct sockaddr_in6 addr_in6;
+        memset(&addr_in6, 0, sizeof(addr_in6));
+        addr_in6.sin6_family = AF_INET6;
+        addr_in6.sin6_port = htons(addr.GetPort());
+
+        if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp() == "::") {
+            // Pure IPv6 address (or wildcard).
+            if (addr.GetIp() == "::" || addr.GetIp().empty()) {
+                addr_in6.sin6_addr = in6addr_any;
+            } else {
                 inet_pton(AF_INET6, addr.GetIp().c_str(), &addr_in6.sin6_addr);
-                const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
-                return {rc, rc != -1 ? 0 : errno};
             }
-            // For IPv4 addresses on a dual-stack socket, use IPv4-mapped IPv6 address
-            struct sockaddr_in6 addr_in6;
-            memset(&addr_in6, 0, sizeof(addr_in6));
-            addr_in6.sin6_family = AF_INET6;
-            addr_in6.sin6_port = htons(addr.GetPort());
+        } else {
+            // IPv4 address on a dual-stack socket: use IPv4-mapped IPv6 address.
             if (addr.GetIp() == "0.0.0.0" || addr.GetIp().empty()) {
                 addr_in6.sin6_addr = in6addr_any;
             } else {
-                // Convert IPv4 to IPv4-mapped IPv6: ::ffff:x.x.x.x
                 std::string mapped = "::ffff:" + addr.GetIp();
                 inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
             }
-            const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
-            return {rc, rc != -1 ? 0 : errno};
         }
+        const int32_t rc = bind(sockfd, (sockaddr*)&addr_in6, sizeof(addr_in6));
+        return {rc, rc != -1 ? 0 : errno};
     }
-    
-    // Default to IPv4 for AF_INET sockets
+
+    // AF_INET (default for TCP and IPv4-only UDP sockets).
     struct sockaddr_in addr_in;
     memset(&addr_in, 0, sizeof(addr_in));
     addr_in.sin_family = AF_INET;
@@ -101,6 +120,10 @@ SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
     }
     const int32_t rc = bind(sockfd, (sockaddr*)&addr_in, sizeof(addr_in));
     return {rc, rc != -1 ? 0 : errno};
+}
+
+SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
+    return Bind(sockfd, ResolveSocketFamily(sockfd), addr);
 }
 
 SysCallInt32Result Accept(int32_t sockfd, Address& addr) {
@@ -154,12 +177,18 @@ SysCallInt32Result Writev(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
 }
 
 SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
-    // Determine socket address family
-    int domain = 0;
-    socklen_t domain_len = sizeof(domain);
-    if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, &domain, &domain_len) != 0) {
-        // Fallback: assume IPv6 dual-stack (original behavior)
-        domain = AF_INET6;
+    // O(1) cache hit on the hot path; falls back to a single SO_DOMAIN
+    // syscall for fds we don't own (e.g. test fixtures).
+    const int32_t domain = ResolveSocketFamily(sockfd);
+
+    // PERF (P1): consult Address-side cache, indexed by socket family. The
+    // same Address typically talks to one peer for its lifetime, so the
+    // sockaddr only needs to be parsed once.
+    const int cache_family = (domain == AF_INET6) ? AF_INET6 : AF_INET;
+    socklen_t cached_len = 0;
+    if (const struct sockaddr* cached = addr.GetCachedSockaddr(cache_family, cached_len)) {
+        const int32_t rc = sendto(sockfd, msg, len, flag, cached, cached_len);
+        return {rc, rc != -1 ? 0 : errno};
     }
 
     if (domain == AF_INET) {
@@ -169,6 +198,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_
         addr_in.sin_family = AF_INET;
         addr_in.sin_port = htons(addr.GetPort());
         inet_pton(AF_INET, addr.GetIp().c_str(), &addr_in.sin_addr);
+        addr.StoreCachedSockaddr(AF_INET, (struct sockaddr*)&addr_in, sizeof(addr_in));
         const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_in, sizeof(addr_in));
         return {rc, rc != -1 ? 0 : errno};
     }
@@ -185,6 +215,7 @@ SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_
         std::string mapped = "::ffff:" + addr.GetIp();
         inet_pton(AF_INET6, mapped.c_str(), &addr_in6.sin6_addr);
     }
+    addr.StoreCachedSockaddr(AF_INET6, (struct sockaddr*)&addr_in6, sizeof(addr_in6));
     const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_in6, sizeof(addr_in6));
     return {rc, rc != -1 ? 0 : errno};
 }
@@ -196,6 +227,96 @@ SysCallInt32Result SendMsg(int32_t sockfd, const Msghdr* msg, int16_t flag) {
 
 SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag) {
     const int32_t rc = sendmmsg(sockfd, (mmsghdr*)msgvec, vlen, flag);
+    return {rc, rc != -1 ? 0 : errno};
+}
+
+// UDP_SEGMENT cmsg type (defined in <netinet/udp.h> on kernel 4.18+).
+// Guarded so the file still compiles against ancient libc headers even
+// though we already verified the runtime kernel supports it.
+#ifndef UDP_SEGMENT
+#define UDP_SEGMENT 103
+#endif
+
+SysCallInt32Result SendMsgGso(int32_t sockfd,
+                              const char* payload, uint32_t total_len,
+                              uint16_t segment_size,
+                              const Address& addr) {
+    if (payload == nullptr || total_len == 0 || segment_size == 0) {
+        return {-1, EINVAL};
+    }
+
+    // Reuse the same address-family resolution + sockaddr cache as the
+    // single-packet sendto() path so a GSO send doesn't pay the
+    // inet_pton/family-detection cost on every hot-path call.
+    const int32_t domain = ResolveSocketFamily(sockfd);
+    const int cache_family = (domain == AF_INET6) ? AF_INET6 : AF_INET;
+
+    // Stack scratch used only on cache miss; on the steady-state hot path
+    // GetCachedSockaddr returns a pointer into Address's internal storage
+    // and these locals stay untouched.
+    struct sockaddr_in  scratch4{};
+    struct sockaddr_in6 scratch6{};
+    const struct sockaddr* dst = nullptr;
+    socklen_t dst_len = 0;
+
+    socklen_t cached_len = 0;
+    if (const struct sockaddr* cached = addr.GetCachedSockaddr(cache_family, cached_len)) {
+        dst = cached;
+        dst_len = cached_len;
+    } else if (domain == AF_INET) {
+        scratch4.sin_family = AF_INET;
+        scratch4.sin_port = htons(addr.GetPort());
+        inet_pton(AF_INET, addr.GetIp().c_str(), &scratch4.sin_addr);
+        addr.StoreCachedSockaddr(AF_INET, (struct sockaddr*)&scratch4, sizeof(scratch4));
+        dst = (struct sockaddr*)&scratch4;
+        dst_len = sizeof(scratch4);
+    } else {
+        scratch6.sin6_family = AF_INET6;
+        scratch6.sin6_port = htons(addr.GetPort());
+        if (addr.GetAddressType() == AddressType::kIpv6 ||
+            addr.GetIp().find(':') != std::string::npos) {
+            inet_pton(AF_INET6, addr.GetIp().c_str(), &scratch6.sin6_addr);
+        } else {
+            std::string mapped = "::ffff:" + addr.GetIp();
+            inet_pton(AF_INET6, mapped.c_str(), &scratch6.sin6_addr);
+        }
+        addr.StoreCachedSockaddr(AF_INET6, (struct sockaddr*)&scratch6, sizeof(scratch6));
+        dst = (struct sockaddr*)&scratch6;
+        dst_len = sizeof(scratch6);
+    }
+
+    struct iovec iov;
+    iov.iov_base = const_cast<char*>(payload);
+    iov.iov_len  = total_len;
+
+    // CMSG_SPACE(sizeof(uint16_t)) is 24 bytes on x86_64; round up to 32 to
+    // be safe across architectures and avoid any chance of cmsg padding
+    // tripping the kernel parser.
+    char cbuf[CMSG_SPACE(sizeof(uint16_t))];
+    memset(cbuf, 0, sizeof(cbuf));
+
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name       = const_cast<struct sockaddr*>(dst);
+    msg.msg_namelen    = dst_len;
+    msg.msg_iov        = &iov;
+    msg.msg_iovlen     = 1;
+    msg.msg_control    = cbuf;
+    msg.msg_controllen = sizeof(cbuf);
+
+    struct cmsghdr* cm = CMSG_FIRSTHDR(&msg);
+    // SOL_UDP isn't in <sys/socket.h>; <netinet/in.h> defines IPPROTO_UDP
+    // which is the same value (17) and is the portable way to pass UDP
+    // socket options through cmsg.
+    cm->cmsg_level = IPPROTO_UDP;
+    cm->cmsg_type  = UDP_SEGMENT;
+    cm->cmsg_len   = CMSG_LEN(sizeof(uint16_t));
+    // Use memcpy rather than a direct uint16_t* store to avoid any
+    // theoretical alignment issue on stricter architectures.
+    uint16_t seg = segment_size;
+    memcpy(CMSG_DATA(cm), &seg, sizeof(seg));
+
+    const int32_t rc = sendmsg(sockfd, &msg, 0);
     return {rc, rc != -1 ? 0 : errno};
 }
 
@@ -252,16 +373,74 @@ SysCallInt32Result RecvMsg(int32_t sockfd, Msghdr* msg, int16_t flag) {
 }
 
 SysCallInt32Result RecvmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out) {
+    // recvmmsg(2) returns the number of datagrams it managed to read; it
+    // only returns -1 when *zero* datagrams were read (otherwise it
+    // shortens the result). For a non-blocking drain (caller passes
+    // MSG_DONTWAIT in `flag`) that "0 datagrams + EAGAIN" case means
+    // "socket momentarily empty" which is not an error from our point
+    // of view — translate it to {0, 0} so RecvFromBatch can present a
+    // unified semantics across platforms.
+    //
+    // `time_out` is ignored on the non-blocking drain path; passing
+    // nullptr is the documented way to skip the kernel-side timed wait.
     timespec time;
     time.tv_sec = time_out / 1000;
+    time.tv_nsec = (time_out % 1000) * 1000000;
+    timespec* tp = (time_out == 0) ? nullptr : &time;
 
-    const int32_t rc = recvmmsg(sockfd, (mmsghdr*)msgvec, vlen, flag, &time);
-    return {rc, rc != -1 ? 0 : errno};
+    const int32_t rc = recvmmsg(sockfd, (mmsghdr*)msgvec, vlen, flag, tp);
+    if (rc == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return {0, 0};
+        }
+        return {-1, errno};
+    }
+    return {rc, 0};
 }
 
 SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void *optval, uint32_t optlen) {
     const int32_t rc = setsockopt(sockfd, level, optname, optval, optlen);
     return {rc, rc != -1 ? 0 : errno};
+}
+
+SysCallInt32Result SetUdpSocketBuffer(int32_t sockfd, int32_t size_bytes) {
+    // We track "have we already warned the user" globally so 500 client
+    // sockets don't print 500 identical warnings on a stock-config box.
+    static std::atomic<bool> warned_rcvbuf{false};
+    static std::atomic<bool> warned_sndbuf{false};
+
+    // On Linux, setsockopt(SO_RCVBUF, n) sets internal sk->sk_rcvbuf to
+    // min(2*n, net.core.rmem_max). Same shape for SO_SNDBUF / wmem_max.
+    // We pass `size_bytes` directly — getsockopt() then returns the
+    // doubled value (or rmem_max, if clamped). The "70% of expected"
+    // threshold below uses `2*size_bytes` as the expected post-doubling
+    // value, so the warning fires precisely when we got truncated by
+    // rmem_max/wmem_max.
+    const int32_t expected_after_doubling = size_bytes * 2;
+    const int32_t warn_threshold = (expected_after_doubling * 7) / 10;
+
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size_bytes, sizeof(size_bytes));
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &size_bytes, sizeof(size_bytes));
+
+    int actual_rcv = 0, actual_snd = 0;
+    socklen_t len = sizeof(actual_rcv);
+    getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &actual_rcv, &len);
+    len = sizeof(actual_snd);
+    getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &actual_snd, &len);
+
+    if (actual_rcv < warn_threshold && !warned_rcvbuf.exchange(true)) {
+        LOG_WARN("UDP SO_RCVBUF clamped to %d bytes (requested %d, expected ~%d "
+                 "after kernel doubling). Packets may be dropped under load. "
+                 "Run as root: sysctl -w net.core.rmem_max=%d",
+                 actual_rcv, size_bytes, expected_after_doubling, expected_after_doubling);
+    }
+    if (actual_snd < warn_threshold && !warned_sndbuf.exchange(true)) {
+        LOG_WARN("UDP SO_SNDBUF clamped to %d bytes (requested %d, expected ~%d "
+                 "after kernel doubling). Sends may stall under load. "
+                 "Run as root: sysctl -w net.core.wmem_max=%d",
+                 actual_snd, size_bytes, expected_after_doubling, expected_after_doubling);
+    }
+    return {actual_rcv, 0};
 }
 
 SysCallInt32Result SocketNoblocking(int32_t sockfd) {

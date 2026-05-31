@@ -58,6 +58,21 @@ public:
      * The callback runs on a send-thread context; avoid blocking operations.
      */
     virtual void SetStreamWriteCallBack(stream_write_callback cb) = 0;
+
+    /**
+     * @brief Number of bytes currently buffered inside the stream awaiting
+     * transmission to the wire (i.e. queued in the send buffer but not yet
+     * packed into an outgoing STREAM frame).
+     *
+     * Streaming producers (e.g. HTTP/3 body providers) can consult this to
+     * implement application-level backpressure: stop pulling more bytes from
+     * the upstream source while the in-stream queue exceeds a threshold, so
+     * that quicX does not eagerly buffer the entire payload in memory.
+     *
+     * Returns 0 if the stream has nothing pending (or is not in a sendable
+     * state).
+     */
+    virtual uint64_t GetPendingSendBytes() = 0;
 };
 
 }

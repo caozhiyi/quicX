@@ -386,7 +386,7 @@ void CCTestFramework::PrintStats(bool detailed) const {
     printf("\n=== %s Test Results ===\n", scenario_.name.c_str());
     printf("Duration: %.2f seconds\n", scenario_.test_duration_us / 1000000.0);
     printf("Throughput: %.2f Mbps\n", metrics_.throughput_mbps);
-    printf("Bytes Sent: %lu, Acked: %lu\n", metrics_.total_bytes_sent, metrics_.total_bytes_acked);
+    printf("Bytes Sent: %llu, Acked: %llu\n", metrics_.total_bytes_sent, metrics_.total_bytes_acked);
     printf("Loss Rate: %.2f%%\n", metrics_.packet_loss_rate * 100);
     printf("Avg RTT: %.2f ms\n", metrics_.avg_rtt_ms);
     
@@ -396,7 +396,7 @@ void CCTestFramework::PrintStats(bool detailed) const {
         printf("Max Cwnd: %.2f KB\n", metrics_.max_cwnd_bytes / 1024.0);
         printf("Min Cwnd: %.2f KB\n", metrics_.min_cwnd_bytes / 1024.0);
         printf("Slow Start Duration: %.2f s\n", metrics_.slow_start_duration_us / 1000000.0);
-        printf("Recovery Count: %lu\n", metrics_.recovery_count);
+        printf("Recovery Count: %llu\n", metrics_.recovery_count);
         printf("Cwnd Growth Rate: %.2f bytes/RTT\n", metrics_.cwnd_growth_rate);
     }
     

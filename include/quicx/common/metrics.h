@@ -40,6 +40,10 @@ public:
 
     // --- 4. Export ---
     static std::string ExportPrometheus();
+
+    // --- 5. Utility ---
+    // Convenience: microsecond timestamp from steady_clock for latency measurement.
+    static uint64_t NowUs();
 };
 
 }  // namespace common

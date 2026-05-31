@@ -39,6 +39,10 @@ public:
 
     virtual void SetStreamWriteCallBack(stream_write_callback cb) override { sended_cb_ = cb; }
 
+    virtual uint64_t GetPendingSendBytes() override {
+        return send_buffer_ ? send_buffer_->GetDataLength() : 0;
+    }
+
     // *************** inside interface ***************//
     // process recv frames
     virtual uint32_t OnFrame(std::shared_ptr<IFrame> frame) override;

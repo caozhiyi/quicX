@@ -77,6 +77,18 @@ public:
     void Reset(std::shared_ptr<IBufferChunk> chunk);
     // Pointer to the readable region.
     uint8_t* GetData() const;
+
+    // Zero-copy invariant 2: install a per-buffer cap on the writable region.
+    //
+    // The cap is a property of *this* buffer view, never of the underlying
+    // chunk. After SetCapacityLimit(N), GetFreeLength() reports at most
+    // (N - already_written) bytes and Write() refuses to spill past N. Setting
+    // a value greater than the chunk's physical size silently clamps to the
+    // physical size; setting 0 is treated as "no limit beyond the chunk".
+    //
+    // Replaces the legacy IBufferChunk::SetLimitSize() entry point: the
+    // capacity policy belongs to the buffer, not the chunk.
+    void SetCapacityLimit(uint32_t limit) override;
     // Return a non-owning span describing the writable data (const version).
     BufferSpan GetWritableSpan() const;
 
@@ -93,6 +105,14 @@ private:
     uint8_t* write_pos_ = nullptr;
     uint8_t* buffer_start_ = nullptr;
     uint8_t* buffer_end_ = nullptr;
+
+    // Zero-copy invariant 2: per-buffer cap on the writable region.
+    //   0  => no cap beyond the chunk's physical size (default).
+    //   N  => buffer_end_ is clamped to buffer_start_ + min(N, chunk->GetLength()).
+    // capacity_limit_ is preserved across Reset(chunk) so a buffer view
+    // configured to cap one MTU keeps capping after re-binding to a fresh
+    // chunk; pass 0 explicitly to clear it.
+    uint32_t capacity_limit_ = 0;
 };
 
 }  // namespace common

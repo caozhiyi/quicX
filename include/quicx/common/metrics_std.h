@@ -134,6 +134,71 @@ struct MetricsStd {
     static MetricID QuicRetryByPolicy;          // Retry triggered by ALWAYS policy
     static MetricID QuicRetryTokensValidated;   // Valid Retry tokens received
     static MetricID QuicRetryTokensInvalid;     // Invalid Retry tokens received
+
+    // ==================== Diagnostic (formerly PerfProbe) ====================
+    // Send-path latency decomposition (Histogram, μs)
+    static MetricID DiagBuildLatencyUs;         // BuildDataPacket time
+    static MetricID DiagSendLatencyUs;          // SendBuffer time
+    static MetricID DiagSendtoLatencyUs;        // sendto() syscall time
+    static MetricID DiagAckGapUs;              // Inter-ACK arrival gap
+
+    // TrySend path outcomes (Counter)
+    static MetricID DiagTrySendNoData;         // No data to send
+    static MetricID DiagTrySendCwndBlocked;    // Cwnd blocked
+    static MetricID DiagTrySendBuildFail;      // Build packet failed
+    static MetricID DiagSendBufferFail;        // SendBuffer failed
+
+    // Send loop wakeup (Counter)
+    static MetricID DiagActiveSendCalls;       // ActiveSend() entries
+    static MetricID DiagTrySendIters;          // TrySend() entries
+    static MetricID DiagUdpOnRead;             // UdpReceiver::OnRead entries
+
+    // SendManager outcomes (Counter)
+    static MetricID DiagSendImmediateOk;       // CC allowed send
+    static MetricID DiagSendBlockedCwnd;       // CC blocked (pacing/cwnd)
+    static MetricID DiagSendAllDone;           // No data ready
+
+    // Flow control (Counter)
+    static MetricID DiagFlowControlBlocked;    // Connection/stream FC blocked
+
+    // ACK aggregation (Counter)
+    static MetricID DiagRecvAckThreshold;      // Queue hit threshold → immediate ACK
+    static MetricID DiagRecvAckGap;            // Gap detected → immediate ACK
+    static MetricID DiagRecvAckOoo;            // Out-of-order → immediate ACK
+    static MetricID DiagRecvAckEcn;            // ECN CE → immediate ACK
+    static MetricID DiagRecvAckInitial;        // Initial/Handshake → immediate ACK
+    static MetricID DiagRecvAckDelayed;        // Delayed ACK
+
+    // ACK receive path (Counter)
+    static MetricID DiagAcksReceived;          // ACK frames received at SendControl
+
+    // ACK generation (Counter)
+    static MetricID DiagAckGenCalls;           // MayGenerateAckFrame entries
+    static MetricID DiagAckGenEmitted;         // ACK frames actually emitted
+    static MetricID DiagAckQueueDepth;         // Sum of queue depths at flush
+
+    // UDP sender path (Counter)
+    static MetricID DiagUdpSendCalls;          // UdpSender::Send entries
+    static MetricID DiagUdpSendBatchCalls;     // UdpSender::SendBatch entries
+    static MetricID DiagUdpSendOk;             // Send() succeeded
+    static MetricID DiagUdpSendBatchOk;        // SendBatch() succeeded
+
+    // Datagram fill diagnostics (Counter, sum-based for mean calculation)
+    static MetricID DiagStreamSendSizeSum;     // Sum of STREAM frame data sizes
+    static MetricID DiagStreamSendCount;       // Number of STREAM frames
+    static MetricID DiagStreamSlackSum;        // Sum of stream FC slack
+    static MetricID DiagVisitorLeftSum;        // Sum of visitor left size
+    static MetricID DiagFirstChunkSum;         // Sum of first-chunk readable
+    static MetricID DiagSendBufTotalSum;       // Sum of send_buffer total bytes
+    static MetricID DiagSendBufChunksSum;      // Sum of send_buffer chunk count
+    static MetricID DiagSendBufProbeCount;     // Number of buffer probes
+
+    // Datagram fill distribution (Histogram, bytes)
+    static MetricID DiagFirstChunkHist;        // First chunk size distribution
+    static MetricID DiagSendSizeHist;          // STREAM frame send_size distribution
+    static MetricID DiagPktPayloadHist;        // Packet payload size distribution
+    static MetricID DiagPktPerIterHist;        // Packets per worker iteration
+    static MetricID DiagSpanWriteHist;         // Write(span) data_len distribution
 };
 
 // Initialize all standard metrics

@@ -10,7 +10,7 @@ IPRateLimiter::IPRateLimiter(uint32_t max_cache_size,
     : max_cache_size_(max_cache_size),
       rate_threshold_(rate_threshold),
       window_duration_(window_seconds) {
-    common::LOG_DEBUG("IPRateLimiter: initialized with cache_size=%u, threshold=%u, window=%us",
+    LOG_DEBUG("IPRateLimiter: initialized with cache_size=%u, threshold=%u, window=%us",
                       max_cache_size, rate_threshold, window_seconds);
 }
 
@@ -30,7 +30,7 @@ void IPRateLimiter::RecordConnection(const std::string& ip) {
     entry.count++;
     
     if (entry.count == rate_threshold_) {
-        common::LOG_WARN("IPRateLimiter: IP %s reached threshold (%u connections in window)",
+        LOG_WARN("IPRateLimiter: IP %s reached threshold (%u connections in window)",
                          ip.c_str(), rate_threshold_);
     }
 }
@@ -87,7 +87,7 @@ void IPRateLimiter::Clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     lru_list_.clear();
     ip_map_.clear();
-    common::LOG_DEBUG("IPRateLimiter: cache cleared");
+    LOG_DEBUG("IPRateLimiter: cache cleared");
 }
 
 void IPRateLimiter::CleanupExpired() {
@@ -112,7 +112,7 @@ void IPRateLimiter::CleanupExpired() {
     }
     
     if (removed > 0) {
-        common::LOG_DEBUG("IPRateLimiter: cleaned up %zu expired entries", removed);
+        LOG_DEBUG("IPRateLimiter: cleaned up %zu expired entries", removed);
     }
 }
 
@@ -120,7 +120,7 @@ void IPRateLimiter::UpdateConfig(uint32_t rate_threshold, uint32_t window_second
     std::lock_guard<std::mutex> lock(mutex_);
     rate_threshold_ = rate_threshold;
     window_duration_ = std::chrono::seconds(window_seconds);
-    common::LOG_DEBUG("IPRateLimiter: config updated threshold=%u, window=%us",
+    LOG_DEBUG("IPRateLimiter: config updated threshold=%u, window=%us",
                       rate_threshold, window_seconds);
 }
 
@@ -153,7 +153,7 @@ void IPRateLimiter::EvictIfNeeded() {
     while (lru_list_.size() >= max_cache_size_) {
         // Remove from back (least recently used)
         auto& entry = lru_list_.back();
-        common::LOG_DEBUG("IPRateLimiter: evicting IP %s (LRU)", entry.ip.c_str());
+        LOG_DEBUG("IPRateLimiter: evicting IP %s (LRU)", entry.ip.c_str());
         ip_map_.erase(entry.ip);
         lru_list_.pop_back();
     }

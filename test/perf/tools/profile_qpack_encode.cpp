@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--keep-log")) mute_log = false;
     }
     if (mute_log) {
-        common::LOG_SET_LEVEL(common::LogLevel::kNull);
+        LOG_SET_LEVEL(common::LogLevel::kNull);
     }
 
     auto headers = MakeLargeRequestHeaders(n_cookies);

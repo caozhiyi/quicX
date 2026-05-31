@@ -114,7 +114,7 @@ bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shar
 
         auto next_pos = common::DecodeVarint(start_pos, end_pos, frame_type_64);
         if (next_pos == nullptr) {
-            common::LOG_ERROR("decode frame type varint failed.");
+            LOG_ERROR("decode frame type varint failed.");
             return false;
         }
 
@@ -129,21 +129,21 @@ bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shar
             frame = creator->second(frame_type);
 
         } else {
-            common::LOG_ERROR("invalid frame type. type:%d", frame_type);
+            LOG_ERROR("invalid frame type. type:%d", frame_type);
             return false;
         }
 
         // decode frame
         if (!frame->Decode(buffer)) {
-            common::LOG_ERROR("decode frame failed. frame type:%d", frame_type);
+            LOG_ERROR("decode frame failed. frame type:%d", frame_type);
             return false;
         }
-        common::LOG_DEBUG("decode frame from packet. type:%s", FrameType2String(frame->GetType()).c_str());
+        LOG_DEBUG("decode frame from packet. type:%s", FrameType2String(frame->GetType()).c_str());
         frames.push_back(frame);
 
         // Defensive: validate progress
         if (buffer->GetDataLength() >= length_before) {
-            common::LOG_ERROR(
+            LOG_ERROR(
                 "decode made no progress. frame type:%d, remaining:%u", frame_type, buffer->GetDataLength());
             return false;
         }

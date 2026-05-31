@@ -38,7 +38,21 @@ constexpr uint32_t kRecheckIntervalMs = 100;  // mirrors send_manager.cpp
 
 // Slack for the "should NOT have fired yet" check. Must be small enough
 // that 100ms - kSlackMs is still meaningfully before 100ms.
-constexpr uint32_t kSlackMs = 25;
+//
+// macOS GitHub Actions runners are nested VMs whose `sleep_for(50)` can
+// take 80–120 ms in practice, so anything below ~30 ms is too tight.
+constexpr uint32_t kSlackMs = 30;
+
+// Helper: read elapsed wall-clock since a marker. Tests use this to detect
+// when the host has overslept past the "should not have fired yet" boundary
+// and gracefully skip that particular assertion (the timer's deadline is in
+// real wall-clock time, so once the wall clock crosses the deadline the
+// assertion's precondition no longer holds — failing it would only be
+// reporting CI scheduler latency, not a real bug).
+inline uint64_t ElapsedSince(uint64_t start_ms) {
+    uint64_t now = common::UTCTimeMsec();
+    return (now > start_ms) ? (now - start_ms) : 0;
+}
 
 class SendManagerRecheckTimerTest: public ::testing::Test {
 protected:
@@ -69,17 +83,24 @@ protected:
 //    MUST fire by/near 100 ms.
 // ---------------------------------------------------------------------------
 TEST_F(SendManagerRecheckTimerTest, FiresExactlyAfter100Ms) {
+    uint64_t start = common::UTCTimeMsec();
     send_manager_->SetFlowControlBlocked();
 
-    // ~50ms after schedule – well below the 100ms boundary.
+    // ~50ms after schedule – well below the 100ms boundary, but only assert
+    // when the host actually slept little enough that the deadline is still
+    // in the future. CI VMs can oversleep significantly.
     SleepAndTick(50);
-    EXPECT_EQ(retry_count_.load(), 0)
-        << "recheck timer fired too early (before ~75 ms)";
+    if (ElapsedSince(start) < kRecheckIntervalMs) {
+        EXPECT_EQ(retry_count_.load(), 0)
+            << "recheck timer fired too early (before deadline)";
+    }
 
     // ~75 ms total – still below the boundary minus slack.
     SleepAndTick(kRecheckIntervalMs - 50 - kSlackMs);
-    EXPECT_EQ(retry_count_.load(), 0)
-        << "recheck timer fired before 100ms - " << kSlackMs << " ms";
+    if (ElapsedSince(start) < kRecheckIntervalMs - kSlackMs) {
+        EXPECT_EQ(retry_count_.load(), 0)
+            << "recheck timer fired before 100ms - " << kSlackMs << " ms";
+    }
 
     // Push past 100 ms total. Use generous extra (50 ms) to absorb scheduler
     // latency on busy CI hosts. The timer MUST have fired exactly once.
@@ -111,12 +132,15 @@ TEST_F(SendManagerRecheckTimerTest, OneShotDoesNotKeepFiring) {
 //    one callback.
 // ---------------------------------------------------------------------------
 TEST_F(SendManagerRecheckTimerTest, ReentrantSetDoesNotDoubleSchedule) {
+    uint64_t start = common::UTCTimeMsec();
     send_manager_->SetFlowControlBlocked();
 
     // Half-way through the interval, call again — must be a no-op for the
     // timer wheel (the existing pending task stays).
     SleepAndTick(50);
-    EXPECT_EQ(retry_count_.load(), 0);
+    if (ElapsedSince(start) < kRecheckIntervalMs) {
+        EXPECT_EQ(retry_count_.load(), 0);
+    }
     send_manager_->SetFlowControlBlocked();
 
     // Wait until well past the original 100 ms deadline.
@@ -140,12 +164,16 @@ TEST_F(SendManagerRecheckTimerTest, RescheduleAfterFireWorks) {
     EXPECT_EQ(retry_count_.load(), 1);
 
     // Re-arm. A second fire must occur ~100 ms later.
+    uint64_t rearm_start = common::UTCTimeMsec();
     send_manager_->SetFlowControlBlocked();
 
-    // Just before 100 ms post-rearm, must not have fired again.
+    // Just before 100 ms post-rearm, must not have fired again — but only
+    // if the host hasn't already overslept past the deadline.
     SleepAndTick(kRecheckIntervalMs - kSlackMs);
-    EXPECT_EQ(retry_count_.load(), 1)
-        << "second fire happened too early after re-arm";
+    if (ElapsedSince(rearm_start) < kRecheckIntervalMs) {
+        EXPECT_EQ(retry_count_.load(), 1)
+            << "second fire happened too early after re-arm";
+    }
 
     // After the boundary plus margin, must have fired the second time.
     SleepAndTick(kSlackMs + 50);
@@ -158,19 +186,26 @@ TEST_F(SendManagerRecheckTimerTest, RescheduleAfterFireWorks) {
 //    does not fire on a connection that is being torn down.
 // ---------------------------------------------------------------------------
 TEST_F(SendManagerRecheckTimerTest, ClearActiveStreamsDisarmsRecheckTimer) {
+    uint64_t start = common::UTCTimeMsec();
     send_manager_->SetFlowControlBlocked();
     SleepAndTick(50);
-    EXPECT_EQ(retry_count_.load(), 0);
+    if (ElapsedSince(start) < kRecheckIntervalMs) {
+        EXPECT_EQ(retry_count_.load(), 0);
+    }
 
     // Connection close path. With null stream_manager_ this exercises the
     // wait_frame_list_ + ClearRetransmissionData() + recheck-timer-disarm
     // path that Bug #17 specifically defends.
     send_manager_->ClearActiveStreams();
+    int count_after_clear = retry_count_.load();
 
     // Run well past the original 100 ms deadline. The recheck callback
-    // must NOT fire.
+    // must NOT fire after ClearActiveStreams() — i.e. the count must not
+    // increase. (We compare against the post-clear baseline rather than 0
+    // so the assertion remains correct even if the host overslept and the
+    // timer fired before ClearActiveStreams() got a chance to disarm it.)
     SleepAndTick(kRecheckIntervalMs * 3);
-    EXPECT_EQ(retry_count_.load(), 0)
+    EXPECT_EQ(retry_count_.load(), count_after_clear)
         << "recheck timer fired after ClearActiveStreams() — disarm failed";
 }
 
@@ -189,12 +224,16 @@ TEST_F(SendManagerRecheckTimerTest, RearmAfterFireUsesFreshInterval) {
     SleepAndTick(200);
     EXPECT_EQ(retry_count_.load(), 1) << "stale timer fired during quiet period";
 
+    uint64_t rearm_start = common::UTCTimeMsec();
     send_manager_->SetFlowControlBlocked();
 
-    // Below 100 ms post-rearm — must not fire yet.
+    // Below 100 ms post-rearm — must not fire yet (only assert when the
+    // host actually hasn't crossed the 100 ms deadline).
     SleepAndTick(kRecheckIntervalMs - kSlackMs);
-    EXPECT_EQ(retry_count_.load(), 1)
-        << "re-armed timer fired immediately — stale bookkeeping suspected";
+    if (ElapsedSince(rearm_start) < kRecheckIntervalMs) {
+        EXPECT_EQ(retry_count_.load(), 1)
+            << "re-armed timer fired immediately — stale bookkeeping suspected";
+    }
 
     // Past 100 ms post-rearm — fires on schedule.
     SleepAndTick(kSlackMs + 50);

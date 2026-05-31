@@ -248,7 +248,7 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
     uint64_t type = 0;
     uint8_t* pos = buffer.GetStart();
     uint8_t* end = buffer.GetEnd();
-    common::LOG_INFO("TransportParam::Decode: BEGIN, total_len=%ld", (long)(end - pos));
+    LOG_INFO("TransportParam::Decode: BEGIN, total_len=%ld", (long)(end - pos));
     while (pos != nullptr && pos < end) {
         pos = common::DecodeVarint(pos, end, type);
         if (pos == nullptr) {
@@ -332,18 +332,18 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
                 uint64_t tp_len = 0;
                 pos = common::DecodeVarint(pos, end, tp_len);
                 if (pos == nullptr) {
-                    common::LOG_ERROR("TransportParam: failed to decode version_information length");
+                    LOG_ERROR("TransportParam: failed to decode version_information length");
                     return false;
                 }
                 // tp_len must be >= 4 (at least Chosen Version) and multiple of 4.
                 if (tp_len < 4 || (tp_len % 4) != 0) {
-                    common::LOG_ERROR("TransportParam: invalid version_information length %llu",
+                    LOG_ERROR("TransportParam: invalid version_information length %llu",
                         static_cast<unsigned long long>(tp_len));
                     return false;
                 }
                 uint8_t* value_end = pos + tp_len;
                 if (value_end > end) {
-                    common::LOG_ERROR("TransportParam: version_information length exceeds buffer");
+                    LOG_ERROR("TransportParam: version_information length exceeds buffer");
                     return false;
                 }
                 uint32_t chosen = 0;
@@ -368,16 +368,16 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
                 uint64_t param_len = 0;
                 pos = common::DecodeVarint(pos, end, param_len);
                 if (pos == nullptr || pos + param_len > end) {
-                    common::LOG_ERROR("failed to skip unknown transport param. type:%d", type);
+                    LOG_ERROR("failed to skip unknown transport param. type:%d", type);
                     return false;
                 }
                 pos += param_len;  // skip unknown param value
-                common::LOG_WARN("skipping unknown transport param. type:%d, len:%d", type, param_len);
+                LOG_WARN("skipping unknown transport param. type:%d, len:%d", type, param_len);
                 break;
             }
         }
     }
-    common::LOG_INFO("TransportParam::Decode: DONE — initial_max_data=%llu, "
+    LOG_INFO("TransportParam::Decode: DONE — initial_max_data=%llu, "
                      "bidi_local=%llu, bidi_remote=%llu, uni=%llu, "
                      "streams_bidi=%llu, streams_uni=%llu, max_idle_timeout=%llu",
                      (unsigned long long)initial_max_data_,
@@ -527,7 +527,7 @@ uint8_t* TransportParam::DecodeUint(uint8_t* start, uint8_t* end, uint64_t& valu
     // Validate length against remaining buffer (RFC 9000 §18)
     uint8_t* value_end = start + length;
     if (value_end > end) {
-        common::LOG_ERROR("TransportParam::DecodeUint: length exceeds buffer. length:%llu", length);
+        LOG_ERROR("TransportParam::DecodeUint: length exceeds buffer. length:%llu", length);
         return nullptr;
     }
 

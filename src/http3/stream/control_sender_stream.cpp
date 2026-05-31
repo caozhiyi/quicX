@@ -31,7 +31,7 @@ bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64
 
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
     if (!frame.Encode(buffer)) {
-        common::LOG_ERROR("ControlSenderStream::SendSettings: Failed to encode SettingsFrame");
+        LOG_ERROR("ControlSenderStream::SendSettings: Failed to encode SettingsFrame");
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kMessageError);
         return false;
     }
@@ -49,7 +49,7 @@ bool ControlSenderStream::SendGoaway(uint64_t id) {
     
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
     if (!frame.Encode(buffer)) {
-        common::LOG_ERROR("ControlSenderStream::SendGoaway: Failed to encode GoAwayFrame");
+        LOG_ERROR("ControlSenderStream::SendGoaway: Failed to encode GoAwayFrame");
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kInternalError);
         return false;
     }

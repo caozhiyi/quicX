@@ -5,11 +5,31 @@
 #include <ws2tcpip.h>
 #include <mswsock.h>
 
+#include <atomic>
 #include <string>
+#include "common/log/log.h"
 #include "common/network/io_handle.h"
+#include "common/network/socket_family_cache.h"
 
 namespace quicx {
 namespace common {
+
+namespace {
+// Resolve the address family of `sockfd`. Cache hit covers all UDP fds
+// we created; falls back to getsockname() (the only portable Windows
+// path — there is no SO_DOMAIN on winsock).
+int32_t ResolveSocketFamily(int32_t sockfd) {
+    int32_t fam = GetSocketFamily(sockfd);
+    if (fam != 0) return fam;
+
+    sockaddr_storage ss;
+    int ss_len = sizeof(ss);
+    if (getsockname(sockfd, reinterpret_cast<sockaddr*>(&ss), &ss_len) == 0) {
+        return ss.ss_family;
+    }
+    return AF_INET;
+}
+}  // namespace
 
 // Retrieve WSARecvMsg function pointer at runtime (not always declared by headers)
 static LPFN_WSARECVMSG ResolveWSARecvMsg(SOCKET sockfd) {
@@ -32,35 +52,40 @@ SysCallInt32Result TcpSocket() {
     return {sock, sock != INVALID_SOCKET ? 0 : WSAGetLastError()};
 }
 
-SysCallInt32Result UdpSocket() {
+UdpSocketResult UdpSocket() {
+    // NOTE: the Windows path historically created a v4-only socket here.
+    // We preserve that behavior to keep WSARecvMsg/Send paths working
+    // unchanged; SendTo() below also formats sockaddr_in directly. If
+    // dual-stack support is added later, this is the place to switch
+    // to AF_INET6 + IPV6_V6ONLY=0.
     int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    return {sock, sock != INVALID_SOCKET ? 0 : WSAGetLastError()};
+    if (sock != INVALID_SOCKET) {
+        RememberSocketFamily(sock, AF_INET);
+        SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
+        return {sock, 0, AF_INET};
+    }
+    return {-1, WSAGetLastError(), 0};
 }
 
-SysCallInt32Result UdpSocket4() {
-    // Create an IPv4-only UDP socket (AF_INET)
-    // Used for connection migration when peer is IPv4, to avoid IPv6 dual-stack
-    // routing issues in certain network environments.
+UdpSocketResult UdpSocket4() {
+    // Create an IPv4-only UDP socket (AF_INET).
     int32_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    return {sock, sock != INVALID_SOCKET ? 0 : WSAGetLastError()};
+    if (sock != INVALID_SOCKET) {
+        RememberSocketFamily(sock, AF_INET);
+        SetUdpSocketBuffer(sock, kDefaultUdpBufferSize);
+        return {sock, 0, AF_INET};
+    }
+    return {-1, WSAGetLastError(), 0};
 }
 
 SysCallInt32Result Close(int32_t sockfd) {
+    ForgetSocketFamily(sockfd);
     const int32_t rc = closesocket(sockfd);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
 }
 
-SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
-    // Determine socket address family using getsockname (Windows does not support SO_DOMAIN)
-    sockaddr_storage ss;
-    int ss_len = sizeof(ss);
-    int family = AF_INET;
-
-    if (getsockname(sockfd, reinterpret_cast<sockaddr*>(&ss), &ss_len) == 0) {
-        family = ss.ss_family;
-    }
-
-    if (family == AF_INET6) {
+SysCallInt32Result Bind(int32_t sockfd, int32_t sock_family, Address& addr) {
+    if (sock_family == AF_INET6) {
         // IPv6 / dual-stack socket
         struct sockaddr_in6 addr_in6;
         memset(&addr_in6, 0, sizeof(addr_in6));
@@ -88,7 +113,7 @@ SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
         return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
     }
 
-    // Fallback / default: IPv4 socket
+    // AF_INET (default for TCP and IPv4 UDP sockets)
     struct sockaddr_in addr_in;
     memset(&addr_in, 0, sizeof(addr_in));
     addr_in.sin_family = AF_INET;
@@ -100,6 +125,10 @@ SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
     }
     const int32_t rc = bind(sockfd, (sockaddr*)&addr_in, sizeof(addr_in));
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
+}
+
+SysCallInt32Result Bind(int32_t sockfd, Address& addr) {
+    return Bind(sockfd, ResolveSocketFamily(sockfd), addr);
 }
 
 SysCallInt32Result Accept(int32_t sockfd, Address& addr) {
@@ -138,10 +167,21 @@ SysCallInt32Result Writev(int32_t sockfd, Iovec* vec, uint32_t vec_len) {
 }
 
 SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
+    // PERF (P1): cached sockaddr fast path. Windows path historically only
+    // creates AF_INET UDP sockets (see UdpSocket()), so we always cache
+    // under AF_INET here.
+    socklen_t cached_len = 0;
+    if (const struct sockaddr* cached = addr.GetCachedSockaddr(AF_INET, cached_len)) {
+        const int32_t rc = sendto(sockfd, msg, len, flag, cached, cached_len);
+        return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
+    }
+
     struct sockaddr_in addr_cli;
+    memset(&addr_cli, 0, sizeof(addr_cli));
     addr_cli.sin_family = AF_INET;
     addr_cli.sin_port = htons(addr.GetPort());
     inet_pton(AF_INET, addr.GetIp().c_str(), &addr_cli.sin_addr);
+    addr.StoreCachedSockaddr(AF_INET, (struct sockaddr*)&addr_cli, sizeof(addr_cli));
 
     const int32_t rc = sendto(sockfd, msg, len, flag, (sockaddr*)&addr_cli, sizeof(addr_cli));
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
@@ -164,6 +204,17 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
         msgvec[i].msg_len_ = bytes_sent;
     }
     return {rc, 0};
+}
+
+// Windows has its own UDP segmentation offload (URO/USO via WSASendMsg
+// + WSAUDP_SEND_MSG_SIZE). For now we don't wire it up — return EIO so
+// the caller (UdpSender::SendBatch) permanently disables GSO and falls
+// back to the sendmmsg-emulation path above.
+SysCallInt32Result SendMsgGso(int32_t /*sockfd*/,
+                              const char* /*payload*/, uint32_t /*total_len*/,
+                              uint16_t /*segment_size*/,
+                              const Address& /*addr*/) {
+    return {-1, EIO};
 }
 
 SysCallInt32Result Recv(int32_t sockfd, char* data, uint32_t len, uint16_t flag) {
@@ -201,25 +252,65 @@ SysCallInt32Result RecvMsg(int32_t sockfd, Msghdr* msg, int16_t flag) {
 }
 
 SysCallInt32Result RecvmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out) {
-    DWORD bytes_received;
-    int32_t rc = 0;
+    // Windows has no recvmmsg; we emulate it with a WSARecvMsg loop and
+    // mirror Linux's "count" semantics: the result is the number of
+    // datagrams successfully read (NOT a byte total), so the
+    // cross-platform RecvFromBatch wrapper can consume it uniformly.
+    //
+    // WSAEWOULDBLOCK is the loop's natural stop when the socket is
+    // non-blocking and momentarily drained: return {i, 0} so the caller
+    // gets the count it has already collected. Any other error is real
+    // and is propagated alongside the partial count.
     LPFN_WSARECVMSG fn = ResolveWSARecvMsg((SOCKET)sockfd);
     if (!fn) {
-        return {SOCKET_ERROR, WSAEOPNOTSUPP};
+        return {0, WSAEOPNOTSUPP};
     }
+    DWORD bytes_received;
     for (uint32_t i = 0; i < vlen; ++i) {
-        rc = fn((SOCKET)sockfd, (LPWSAMSG)&msgvec[i].msg_hdr_, &bytes_received, NULL, NULL);
+        int32_t rc = fn((SOCKET)sockfd, (LPWSAMSG)&msgvec[i].msg_hdr_, &bytes_received, NULL, NULL);
         if (rc == SOCKET_ERROR) {
-            return {rc, WSAGetLastError()};
+            int wsa_err = WSAGetLastError();
+            if (wsa_err == WSAEWOULDBLOCK) {
+                return {static_cast<int32_t>(i), 0};
+            }
+            return {static_cast<int32_t>(i), wsa_err};
         }
         msgvec[i].msg_len_ = bytes_received;
     }
-    return {rc, 0};
+    return {static_cast<int32_t>(vlen), 0};
 }
 
 SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void* optval, uint32_t optlen) {
     const int32_t rc = setsockopt(sockfd, level, optname, (const char*)optval, optlen);
     return {rc, rc != SOCKET_ERROR ? 0 : WSAGetLastError()};
+}
+
+SysCallInt32Result SetUdpSocketBuffer(int32_t sockfd, int32_t size_bytes) {
+    static std::atomic<bool> warned_rcvbuf{false};
+    static std::atomic<bool> warned_sndbuf{false};
+
+    // Winsock honors SO_RCVBUF/SO_SNDBUF as set without doubling, capped
+    // by per-process / per-system limits (which are typically generous).
+    const int32_t warn_threshold = (size_bytes * 7) / 10;
+
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char*)&size_bytes, sizeof(size_bytes));
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (const char*)&size_bytes, sizeof(size_bytes));
+
+    int actual_rcv = 0, actual_snd = 0;
+    int len = sizeof(actual_rcv);
+    getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (char*)&actual_rcv, &len);
+    len = sizeof(actual_snd);
+    getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (char*)&actual_snd, &len);
+
+    if (actual_rcv < warn_threshold && !warned_rcvbuf.exchange(true)) {
+        LOG_WARN("UDP SO_RCVBUF clamped to %d bytes (requested %d). "
+                 "Packets may be dropped under load.", actual_rcv, size_bytes);
+    }
+    if (actual_snd < warn_threshold && !warned_sndbuf.exchange(true)) {
+        LOG_WARN("UDP SO_SNDBUF clamped to %d bytes (requested %d). "
+                 "Sends may stall under load.", actual_snd, size_bytes);
+    }
+    return {actual_rcv, 0};
 }
 
 SysCallInt32Result SocketNoblocking(int32_t sockfd) {

@@ -109,6 +109,42 @@ protected:
      */
     bool SettingsReceived() const { return settings_received_; }
 
+    // ------------------------------------------------------------------
+    // Weak-self helpers for stream/timer callbacks.
+    //
+    // Per docs/zh/design/ownership_and_memory.md (§2.2, §3.1, §5):
+    // upward references from streams to connection MUST be weak_ptr, and
+    // short-lived event callbacks MUST do weak_from_this() + lock().
+    //
+    // Streams are owned by IConnection::streams_, but their handler closures
+    // can outlive the immediate call frame (queued via QUIC layer / timers).
+    // Capturing raw |this| in std::bind led to __cxa_pure_virtual / SIGABRT
+    // when a callback fired against a half-destroyed connection. Capturing
+    // shared_from_this() instead is also wrong: it would form a self-cycle
+    // (Connection -> streams_ -> Stream -> handler -> shared_ptr<Connection>),
+    // pinning the connection forever. weak_ptr breaks both problems.
+    // ------------------------------------------------------------------
+
+    // Get a weak_ptr to *this* downcast to the concrete subclass type T.
+    // Use inside subclass callsites that need to forward to subclass-private
+    // methods, e.g.:
+    //   auto weak_self = WeakSelfAs<ClientConnection>();
+    //   stream_cb = [weak_self](uint64_t id) {
+    //       if (auto self = weak_self.lock()) self->HandlePushPromise(id);
+    //   };
+    template <typename T>
+    std::weak_ptr<T> WeakSelfAs() {
+        return std::weak_ptr<T>(std::static_pointer_cast<T>(shared_from_this()));
+    }
+
+    // Build a stream-error handler that forwards to IConnection::HandleError
+    // through a weak_ptr<IConnection>. Safe to bind into stream callbacks.
+    std::function<void(uint64_t, uint32_t)> MakeErrorHandler();
+
+    // Build a settings handler that forwards to IConnection::HandleSettings
+    // through a weak_ptr<IConnection>.
+    std::function<void(const std::unordered_map<uint16_t, uint64_t>&)> MakeSettingsHandler();
+
 protected:
     // Schedule stream removal - moves stream to holding area to delay destruction
     void ScheduleStreamRemoval(uint64_t stream_id);
@@ -127,7 +163,17 @@ protected:
     std::unordered_map<uint16_t, uint64_t> settings_;
     std::unordered_map<uint64_t, std::shared_ptr<IStream>> streams_;
 
+    // RFC 9204: Two independent QPACK contexts are required per connection.
+    // qpack_encoder_ holds the local encoder dynamic table: used when encoding
+    // outgoing headers (Encode) and receives Section Ack / Insert Count Increment
+    // feedback from the peer's decoder.
     std::shared_ptr<QpackEncoder> qpack_encoder_;
+
+    // qpack_decoder_ holds the local decoder dynamic table: populated by the
+    // peer's encoder instructions (Insert With Name Ref, Insert Without Name Ref,
+    // Duplicate, Set Capacity) received on the QPACK encoder receiver stream,
+    // and used when decoding incoming HEADERS blocks (Decode).
+    std::shared_ptr<QpackEncoder> qpack_decoder_;
 
     std::shared_ptr<IQuicConnection> quic_connection_;
 

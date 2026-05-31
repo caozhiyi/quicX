@@ -1,9 +1,12 @@
+#include <cstdlib>
 #include <sstream>
 #include <thread>
 
 #include "common/log/log.h"
 #include "common/log/log_context.h"
 #include "common/qlog/qlog.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 #include "quic/common/version.h"
 #include "quic/packet/init_packet.h"
@@ -59,6 +62,18 @@ void Worker::ProcessSend() {
         return;
     }
 
+    // PERF (sendmmsg batch path): per-thread reusable buffer of NetPackets
+    // collected during one drain round. We push packets here instead of
+    // calling sender_->Send() per packet, then issue a single
+    // sender_->SendBatch() (one sendmmsg(2) syscall on Linux) at the end of
+    // each connection's drain. Capacity matches kMaxPacketsPerRound below;
+    // because the vector is thread_local and we only clear() (never shrink),
+    // steady state is zero allocation.
+    thread_local std::vector<std::shared_ptr<NetPacket>> tx_batch;
+    if (tx_batch.capacity() < 128) {
+        tx_batch.reserve(128);
+    }
+
     // Iterate through active connections and try to send data
     for (auto iter = active_connections.begin(); iter != active_connections.end();) {
         bool has_more_data = false;
@@ -69,14 +84,95 @@ void Worker::ProcessSend() {
         // TrySend() handles all packet building and sending internally
         // Limit packets per round to allow event loop to process incoming data
         // This is critical for flow control: we need to receive MAX_STREAM_DATA
-        // frames from the peer to unblock flow control
-        constexpr int kMaxPacketsPerRound = 100;
+        // frames from the peer to unblock flow control.
+        //
+        // PERF NOTE: tuning history on 50 MB loopback file_transfer:
+        //   100  -> 6.3 MB/s (baseline before this PR)
+        //   256  -> 5.4 MB/s (worse: ACKs/MAX_STREAM_DATA starved)
+        //   128  -> see below
+        // The sweet spot is roughly enough packets to fill ~1 RTT of pipe but
+        // not so many that the receiver-side flow-control / ACK feedback gets
+        // stalled inside this drain loop. 128 is the chosen middle ground:
+        // ~186 KB per drain (~1.5x the original) keeping wakeup cost down
+        // without starving the receive path.
+        // Try to send data using the new high-level interface
+        // TrySend() handles all packet building and sending internally
+        // Limit packets per round to allow event loop to process incoming data
+        // This is critical for flow control: we need to receive MAX_STREAM_DATA
+        // frames from the peer to unblock flow control.
+        //
+        // PERF tuning history (200 MB loopback file_transfer, macOS arm64):
+        // -- Pre recv-batching (single recvfrom per wakeup) --
+        //     32   -> ~6.6 MB/s (yields too often, RTT inflation)
+        //     64   -> ~8.1 MB/s
+        //    100   -> ~5.0 MB/s (ack-feedback starved)
+        //    128   -> ~6.6 MB/s (still starves)
+        //    256   -> ~5.4 MB/s (worst)
+        // -- Post recv-batching (recvmmsg/drain up to 64 per wakeup) --
+        //     64   -> ~34.0 MB/s (old default)
+        //    128   -> ~36.6 MB/s (chosen — +7.6%, ack feedback keeps up)
+        //    256   -> ~30.4 MB/s (-10.6%; ack-feedback re-starves)
+        //   1024   -> ~31.5 MB/s (-7.4%)
+        // 128 is the new sweet spot now that recv-side drains in batches
+        // — ack feedback can match a doubled send window per round, but
+        // 256+ pushes ack processing past its budget per loop iteration.
+        // Tunable at runtime via env QUICX_SEND_BATCH (legal 1..1024) to
+        // keep perf experiments cheap. 0 / unset / out-of-range -> 128.
+        static const int kMaxPacketsPerRound = []() {
+            const char* env = std::getenv("QUICX_SEND_BATCH");
+            if (!env || !*env) return 128;
+            char* end = nullptr;
+            long v = std::strtol(env, &end, 10);
+            if (end == env || *end != '\0') return 128;
+            if (v < 1 || v > 1024) return 128;
+            return static_cast<int>(v);
+        }();
         int packets_sent = 0;
         
+        // Install the per-round batch sink so SendBuffer() inside TrySend()
+        // appends NetPackets here instead of calling sender_->Send() per
+        // packet. We always clear the sink first so a previous iteration's
+        // residue (cleared after flush below, but defensive) cannot leak.
+        tx_batch.clear();
+        conn->SetSendSink(&tx_batch);
+
         while (packets_sent < kMaxPacketsPerRound && conn->TrySend()) {
             has_more_data = true;
             packets_sent++;
         }
+
+        // Detach the sink BEFORE flushing so any sender_->Send() fallback
+        // inside SendBatch (e.g. cache miss on first round) doesn't
+        // re-enter SendBuffer's sink branch.
+        conn->SetSendSink(nullptr);
+
+        // Single sendmmsg(2) over the whole drain. The fast path is one
+        // syscall total; the cache-miss / fault-injection / mixed-socket
+        // fallbacks inside UdpSender::SendBatch degrade gracefully to N
+        // sendto()s with no semantic change.
+        if (!tx_batch.empty()) {
+            const uint32_t sent = sender_->SendBatch(tx_batch);
+            if (sent < tx_batch.size()) {
+                // Already logged inside SendBatch with detail; this is a
+                // cheap counter-side signal so a steady stream of short-
+                // writes shows up in conn-level logs too.
+                LOG_DEBUG("ProcessSend: SendBatch sent %u/%zu",
+                          sent, tx_batch.size());
+            }
+            // Drop refs immediately so the underlying buffers can be
+            // recycled by their pool before the next connection's drain.
+            tx_batch.clear();
+        }
+
+        // PERF DIAG: distribution of "packets emitted in a single per-conn
+        // ProcessSend pass". If this is heavily biased toward 1, the worker
+        // is being woken once per packet (= sendto-bound). If it's saturating
+        // at kMaxPacketsPerRound, the cap *is* the bottleneck and raising
+        // QUICX_SEND_BATCH would help. We sample whether we sent zero packets
+        // too — that means we entered ProcessSend without anything to do.
+        common::Metrics::HistogramObserve(
+            common::MetricsStd::DiagPktPerIterHist,
+            static_cast<uint64_t>(packets_sent));
         
         // If we hit the limit, keep connection in active set for next round
         if (packets_sent >= kMaxPacketsPerRound) {
@@ -85,7 +181,7 @@ void Worker::ProcessSend() {
 
         // If connection has no more data to send, remove from active set
         if (!has_more_data) {
-            common::LOG_DEBUG("Worker::ProcessSend: connection has no more data, removing from active set");
+            LOG_DEBUG("Worker::ProcessSend: connection has no more data, removing from active set");
             iter = active_connections.erase(iter);
         } else {
             ++iter;
@@ -95,7 +191,7 @@ void Worker::ProcessSend() {
 
 bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common::Address& addr, int32_t socket) {
     if (!buffer || buffer->GetDataLength() == 0) {
-        common::LOG_WARN("SendImmediate: invalid buffer or empty data");
+        LOG_WARN("SendImmediate: invalid buffer or empty data");
         return false;
     }
 
@@ -105,17 +201,17 @@ bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common
     packet->SetSocket(socket);
 
     if (!sender_->Send(packet)) {
-        common::LOG_ERROR("SendImmediate: udp send failed");
+        LOG_ERROR("SendImmediate: udp send failed");
         return false;
     }
 
-    common::LOG_DEBUG("SendImmediate: sent %zu bytes to %s", buffer->GetDataLength(), addr.AsString().c_str());
+    LOG_DEBUG("SendImmediate: sent %zu bytes to %s", buffer->GetDataLength(), addr.AsString().c_str());
     return true;
 }
 
 bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet, uint32_t datagram_size) {
     if (packet->GetHeader()->GetPacketType() != PacketType::kInitialPacketType) {
-        common::LOG_ERROR("recv packet whitout connection.");
+        LOG_ERROR("recv packet whitout connection.");
         return false;
     }
 
@@ -124,7 +220,7 @@ bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet, uint32_t datagram_
     // maximum datagram size of 1200 bytes.
     // NOTE: We check the original UDP datagram size, not the decoded packet body size.
     if (datagram_size < 1200) {
-        common::LOG_ERROR("init packet datagram too small. datagram_size:%d", datagram_size);
+        LOG_ERROR("init packet datagram too small. datagram_size:%d", datagram_size);
         return false;
     }
 
@@ -138,27 +234,41 @@ bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet, uint32_t datagram_
 }
 
 void Worker::HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnection> conn) {
+    bool was_present = conn_map_.count(cid.Hash()) > 0;
+    void* prev_ptr = nullptr;
+    if (was_present) {
+        prev_ptr = (void*)conn_map_[cid.Hash()].get();
+    }
     conn_map_[cid.Hash()] = conn;
-    common::LOG_DEBUG("add connection id to client worker. cid:%llu", cid.Hash());
+    LOG_INFO("[DISPATCH-TRACE] add_cid cid_hash=%llu conn=%p was_present=%d prev=%p conn_map=%zu",
+        cid.Hash(), (void*)conn.get(), was_present ? 1 : 0, prev_ptr, conn_map_.size());
+    LOG_DEBUG("add connection id to client worker. cid:%llu", cid.Hash());
     if (auto notify = connection_id_notify_.lock()) {
         notify->AddConnectionID(cid, GetWorkerId());
     }
 }
 
 void Worker::HandleRetireConnectionId(ConnectionID& cid) {
-    conn_map_.erase(cid.Hash());
+    size_t erased = conn_map_.erase(cid.Hash());
+    LOG_INFO("[DISPATCH-TRACE] retire_cid cid_hash=%llu erased=%zu conn_map=%zu",
+        cid.Hash(), erased, conn_map_.size());
     if (auto notify = connection_id_notify_.lock()) {
         notify->RetireConnectionID(cid, GetWorkerId());
     }
 }
 
 void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
-    common::LOG_DEBUG("Worker::HandleHandshakeDone called, connecting_set size=%zu", connecting_set_.size());
-    if (connecting_set_.find(conn) != connecting_set_.end()) {
-        common::LOG_DEBUG("Connection found in connecting_set, moving to conn_map");
+    LOG_DEBUG("Worker::HandleHandshakeDone called, connecting_set size=%zu", connecting_set_.size());
+    bool in_connecting = connecting_set_.find(conn) != connecting_set_.end();
+    LOG_INFO("[DISPATCH-TRACE] handshake_done conn=%p scid_hash=%llu in_connecting=%d "
+             "conn_map=%zu connecting_set=%zu",
+        (void*)conn.get(), conn->GetConnectionIDHash(), in_connecting ? 1 : 0,
+        conn_map_.size(), connecting_set_.size());
+    if (in_connecting) {
+        LOG_DEBUG("Connection found in connecting_set, moving to conn_map");
         connecting_set_.erase(conn);
         conn_map_[conn->GetConnectionIDHash()] = conn;
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "Added to conn_map with hash=%llu, conn_map size=%zu", conn->GetConnectionIDHash(), conn_map_.size());
 
         // Check if 0-RTT early data write key is available: if so, this is an early connection
@@ -170,10 +280,10 @@ void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
         // Connection already moved out of connecting_set (e.g. early connection triggered earlier).
         // If this is the full handshake completion after an early connection, notify kConnectionCreate.
         if (conn_map_.count(conn->GetConnectionIDHash())) {
-            common::LOG_DEBUG("Post-early-connection handshake done, notifying kConnectionCreate");
+            LOG_DEBUG("Post-early-connection handshake done, notifying kConnectionCreate");
             connection_handler_(conn, ConnectionOperation::kConnectionCreate, 0, "");
         } else {
-            common::LOG_WARN("Connection NOT found in connecting_set or conn_map! Cannot handle handshake done");
+            LOG_WARN("Connection NOT found in connecting_set or conn_map! Cannot handle handshake done");
         }
     }
 }
@@ -181,7 +291,7 @@ void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
     // Add to write buffer (safe during ProcessSend execution)
     active_send_connections_.Add(conn);
-    common::LOG_DEBUG("HandleActiveSendConnection: added connection to write buffer");
+    LOG_DEBUG("HandleActiveSendConnection: added connection to write buffer");
     do_send_ = true;
     // Use saved event_loop_ if available, otherwise fallback to thread-local EventLoop
     auto loop = event_loop_.lock();
@@ -191,15 +301,17 @@ void Worker::HandleActiveSendConnection(std::shared_ptr<IConnection> conn) {
 }
 
 void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) {
-    common::LOG_DEBUG("HandleConnectionClose. cid:%llu", conn->GetConnectionIDHash());
+    LOG_DEBUG("HandleConnectionClose. cid:%llu", conn->GetConnectionIDHash());
     // Remove all CIDs associated with this connection
     // A connection may have multiple CIDs: Initial DCID + NEW_CONNECTION_IDs
     auto cid_hashes = conn->GetAllLocalCIDHashes();
+    size_t local_removed = 0;
     for (uint64_t hash : cid_hashes) {
         auto it = conn_map_.find(hash);
         if (it != conn_map_.end()) {
-            common::LOG_DEBUG("Removing CID %llu from conn_map during connection close", hash);
+            LOG_DEBUG("Removing CID %llu from conn_map during connection close", hash);
             conn_map_.erase(it);
+            ++local_removed;
         }
     }
 
@@ -211,17 +323,26 @@ void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t e
     // reference to the connection forever, preventing ~BaseConnection() from
     // ever running. This is the root cause of the P4 per-connection RSS
     // residue (~120 KB) observed in profile_rss_lifecycle.
+    size_t orphan_removed = 0;
     for (auto it = conn_map_.begin(); it != conn_map_.end();) {
         if (it->second.get() == conn.get()) {
-            common::LOG_DEBUG("Removing orphan CID %llu (not in local CID manager) from conn_map", it->first);
+            LOG_DEBUG("Removing orphan CID %llu (not in local CID manager) from conn_map", it->first);
             it = conn_map_.erase(it);
+            ++orphan_removed;
         } else {
             ++it;
         }
     }
 
     // Also remove from connecting_set if still there
-    connecting_set_.erase(conn);
+    bool was_connecting = connecting_set_.erase(conn) > 0;
+
+    LOG_INFO("[DISPATCH-TRACE] conn_close conn=%p scid_hash=%llu err=%llu reason=\"%s\" "
+             "local_removed=%zu orphan_removed=%zu was_connecting=%d "
+             "conn_map=%zu connecting_set=%zu",
+        (void*)conn.get(), conn->GetConnectionIDHash(), (unsigned long long)error, reason.c_str(),
+        local_removed, orphan_removed, was_connecting ? 1 : 0,
+        conn_map_.size(), connecting_set_.size());
 
     connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
 }

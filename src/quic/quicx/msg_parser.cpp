@@ -7,33 +7,18 @@
 namespace quicx {
 namespace quic {
 
-PacketParseResult::PacketParseResult(const PacketParseResult& other) {
-    cid_ = other.cid_;
-    packets_ = other.packets_;
-    net_packet_ = other.net_packet_;
-    datagram_size_ = other.datagram_size_;
-}
-
-PacketParseResult& PacketParseResult::operator=(const PacketParseResult& other) {
-    cid_ = other.cid_;
-    packets_ = other.packets_;
-    net_packet_ = other.net_packet_;
-    datagram_size_ = other.datagram_size_;
-    return *this;
-}
-
 bool MsgParser::ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketParseResult& packet_info) {
     // Save original UDP datagram size before DecodePackets consumes the buffer.
     // This is needed for RFC 9000 §14.1 minimum datagram size check.
     packet_info.datagram_size_ = net_packet->GetData()->GetDataLength();
 
     if(!DecodePackets(net_packet->GetData(), packet_info.packets_)) {
-        common::LOG_ERROR("decode packet failed");
+        LOG_ERROR("decode packet failed");
         return false;
     }
 
     if (packet_info.packets_.empty()) {
-        common::LOG_ERROR("parse packet list is empty.");
+        LOG_ERROR("parse packet list is empty.");
         return false;
     }
     

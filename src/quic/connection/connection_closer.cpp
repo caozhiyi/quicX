@@ -36,14 +36,14 @@ ConnectionCloser::~ConnectionCloser() {
 
 bool ConnectionCloser::StartGracefulClose(ActiveSendCallback active_send_cb) {
     if (graceful_closing_pending_) {
-        common::LOG_DEBUG("Graceful close already pending");
+        LOG_DEBUG("Graceful close already pending");
         return false;
     }
 
     // Check if there's pending data to send
     if (send_manager_.GetSendOperation() != SendOperation::kAllSendDone) {
         // Mark for graceful closing, will enter Closing state when data send completes
-        common::LOG_DEBUG("Graceful close pending, waiting for data to be sent");
+        LOG_DEBUG("Graceful close pending, waiting for data to be sent");
         graceful_closing_pending_ = true;
 
         // Set a timeout to force close if data doesn't complete in time
@@ -53,12 +53,12 @@ bool ConnectionCloser::StartGracefulClose(ActiveSendCallback active_send_cb) {
         if (loop) {
             loop->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);
         }
-        common::LOG_DEBUG("Graceful close timeout set to %u ms", GetCloseWaitTime() * 3);
+        LOG_DEBUG("Graceful close timeout set to %u ms", GetCloseWaitTime() * 3);
         return true;
     }
 
     // No pending data, can proceed immediately
-    common::LOG_DEBUG("No pending data, proceeding with immediate close");
+    LOG_DEBUG("No pending data, proceeding with immediate close");
 
     // Store error info for retransmission
     closing_error_code_ = QuicErrorCode::kNoError;
@@ -80,7 +80,7 @@ bool ConnectionCloser::CheckGracefulCloseComplete(ActiveSendCallback active_send
         return false;
     }
 
-    common::LOG_DEBUG("All data sent, proceeding with graceful close");
+    LOG_DEBUG("All data sent, proceeding with graceful close");
     graceful_closing_pending_ = false;
 
     // Cancel the graceful close timeout timer since we're completing normally
@@ -101,7 +101,7 @@ bool ConnectionCloser::CheckGracefulCloseComplete(ActiveSendCallback active_send
 
 void ConnectionCloser::CancelGracefulClose() {
     if (graceful_closing_pending_) {
-        common::LOG_DEBUG("Canceling graceful close");
+        LOG_DEBUG("Canceling graceful close");
         graceful_closing_pending_ = false;
         auto loop = event_loop_.lock();
         if (loop) {
@@ -114,7 +114,7 @@ void ConnectionCloser::StorePeerCloseInfo(uint64_t error, uint16_t trigger_frame
     closing_error_code_ = error;
     closing_trigger_frame_ = trigger_frame;
     closing_reason_ = reason;
-    common::LOG_INFO(
+    LOG_INFO(
         "Stored peer close info: error=%llu, trigger_frame=%u, reason=%s", error, trigger_frame, reason.c_str());
 }
 
@@ -122,7 +122,7 @@ void ConnectionCloser::StorePeerCloseInfo(uint64_t error, uint16_t trigger_frame
 
 void ConnectionCloser::StartImmediateClose(
     uint64_t error, uint16_t trigger_frame, const std::string& reason, ActiveSendCallback active_send_cb) {
-    common::LOG_INFO("ConnectionCloser::StartImmediateClose called. error=%llu, reason=%s", error, reason.c_str());
+    LOG_INFO("ConnectionCloser::StartImmediateClose called. error=%llu, reason=%s", error, reason.c_str());
 
     // Cancel graceful close if it's pending
     CancelGracefulClose();
@@ -165,7 +165,7 @@ void ConnectionCloser::InvokeConnectionCloseCallback(
     std::shared_ptr<IConnection> connection, uint64_t error, const std::string& reason) {
     if (connection_close_cb_ && !connection_close_cb_invoked_) {
         connection_close_cb_invoked_ = true;
-        common::LOG_INFO("Invoking connection close callback: error=%llu, reason=%s", error, reason.c_str());
+        LOG_INFO("Invoking connection close callback: error=%llu, reason=%s", error, reason.c_str());
         connection_close_cb_(connection, error, reason);
     }
 }
@@ -189,7 +189,7 @@ uint32_t ConnectionCloser::GetCloseWaitTime() {
 void ConnectionCloser::OnGracefulCloseTimeout() {
     // Graceful close timeout: force entering Closing state even if data hasn't finished sending
     if (graceful_closing_pending_ && state_machine_.CanSendData()) {
-        common::LOG_WARN("Graceful close timeout, forcing connection close");
+        LOG_WARN("Graceful close timeout, forcing connection close");
         graceful_closing_pending_ = false;
 
         // Force enter Closing state

@@ -9,7 +9,7 @@ namespace quic {
 std::shared_ptr<NetPacket> NormalPacketAllotor::Malloc() {
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(1500);
     if (!chunk || !chunk->Valid()) {
-        common::LOG_ERROR("failed to allocate buffer chunk");
+        LOG_ERROR("failed to allocate buffer chunk");
         return std::make_shared<NetPacket>();
     }
 

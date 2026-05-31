@@ -57,9 +57,10 @@ static uint32_t FormatLog(
 }
 
 BaseLogger::BaseLogger(uint16_t cache_size, uint16_t block_size):
-    level_(LogLevel::kInfo),
+    level_(static_cast<uint16_t>(LogLevel::kInfo)),
     cache_size_(cache_size),
-    block_size_(block_size) {
+    block_size_(block_size),
+    logger_(nullptr) {
     allocter_ = MakeNormalAlloterPtr();
 }
 
@@ -67,14 +68,40 @@ BaseLogger::~BaseLogger() {
     SetLevel(LogLevel::kNull);
 }
 
+bool BaseLogger::SetLogger(std::shared_ptr<Logger> log) {
+    // Write-once: only the first call installs the logger. Subsequent
+    // calls (e.g. additional QuicClient::Init() invocations from the
+    // load_tester) are deliberate no-ops -- this avoids the
+    // use-after-free that arose from concurrent replacement of the
+    // singleton's logger while other threads were still dispatching
+    // into the previous one.
+    Logger* expected = nullptr;
+    if (!logger_.compare_exchange_strong(expected, log.get(),
+                                         std::memory_order_release,
+                                         std::memory_order_relaxed)) {
+        return false;
+    }
+    // The CAS winner takes ownership for the rest of this BaseLogger's
+    // lifetime. From this point on logger_ is read-only, so the hot path
+    // can dereference it without any synchronization beyond the acquire
+    // load in GetLoggerRaw().
+    logger_owner_ = std::move(log);
+    return true;
+}
+
 void BaseLogger::SetLevel(LogLevel level) {
-    level_ = level;
-    if (level_ > LogLevel::kNull && cache_queue_.Empty()) {
+    // Snapshot the previous level under release ordering so any LOG_* call
+    // that observes the new value with acquire (level_.load below) also
+    // observes a fully-constructed cache_queue_ on the kNull -> active
+    // transition. The cache_queue_ ops below are themselves thread-safe.
+    const uint16_t new_level = static_cast<uint16_t>(level);
+    level_.store(new_level, std::memory_order_release);
+    if (new_level > static_cast<uint16_t>(LogLevel::kNull) && cache_queue_.Empty()) {
         for (uint16_t i = 0; i < cache_size_; i++) {
             cache_queue_.Push(NewLog());
         }
 
-    } else if (level_ == LogLevel::kNull) {
+    } else if (new_level == static_cast<uint16_t>(LogLevel::kNull)) {
         size_t size = cache_queue_.Size();
         Log* log = nullptr;
         void* del = nullptr;
@@ -88,81 +115,85 @@ void BaseLogger::SetLevel(LogLevel level) {
 }
 
 void BaseLogger::Debug(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & kDebugMask)) {
+    if (!(level_.load(std::memory_order_acquire) & kDebugMask)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
     log->len_ = FormatLog(file, line, "DEB", content, list, log->log_, log->len_);
 
-    if (logger_) {
-        logger_->Debug(log);
+    // Lock-free read; logger_ is write-once and its target is kept alive
+    // by logger_owner_ for our entire lifetime.
+    if (Logger* logger = GetLoggerRaw()) {
+        logger->Debug(log);
     }
 }
 
 void BaseLogger::Info(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & kInfoMask)) {
+    if (!(level_.load(std::memory_order_acquire) & kInfoMask)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
     log->len_ = FormatLog(file, line, "INF", content, list, log->log_, log->len_);
 
-    if (logger_) {
-        logger_->Info(log);
+    if (Logger* logger = GetLoggerRaw()) {
+        logger->Info(log);
     }
 }
 
 void BaseLogger::Warn(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & kWarnMask)) {
+    if (!(level_.load(std::memory_order_acquire) & kWarnMask)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
     log->len_ = FormatLog(file, line, "WAR", content, list, log->log_, log->len_);
 
-    if (logger_) {
-        logger_->Warn(log);
+    if (Logger* logger = GetLoggerRaw()) {
+        logger->Warn(log);
     }
 }
 
 void BaseLogger::Error(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & kErrorMask)) {
+    if (!(level_.load(std::memory_order_acquire) & kErrorMask)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
     log->len_ = FormatLog(file, line, "ERR", content, list, log->log_, log->len_);
 
-    if (logger_) {
-        logger_->Error(log);
+    if (Logger* logger = GetLoggerRaw()) {
+        logger->Error(log);
     }
 }
 
 void BaseLogger::Fatal(const char* file, uint32_t line, const char* content, va_list list) {
-    if (!(level_ & kFatalMask)) {
+    if (!(level_.load(std::memory_order_acquire) & kFatalMask)) {
         return;
     }
 
     std::shared_ptr<Log> log = GetLog();
     log->len_ = FormatLog(file, line, "FAT", content, list, log->log_, log->len_);
 
-    if (logger_) {
-        logger_->Fatal(log);
+    if (Logger* logger = GetLoggerRaw()) {
+        logger->Fatal(log);
     }
 }
 
 LogStreamParam BaseLogger::GetStreamParam(LogLevel level, const char* file, uint32_t line) {
     // check log level can print
-    if (level > level_) {
+    if (static_cast<uint16_t>(level) > level_.load(std::memory_order_acquire)) {
         return std::make_pair(nullptr, nullptr);
     }
 
     std::shared_ptr<Log> log = GetLog();
     std::function<void(std::shared_ptr<Log>)> cb;
-    // Capture logger_ shared_ptr instead of raw this to avoid use-after-free
-    // when lambda outlives BaseLogger instance (e.g., during static destruction)
-    auto logger = logger_;
+    // Capture the raw pointer; logger_ is write-once and kept alive by
+    // logger_owner_ for the lifetime of this BaseLogger, so the lambda's
+    // dereference is safe as long as the singleton is alive (which is the
+    // entire process under common::Singleton).
+    Logger* logger = GetLoggerRaw();
     switch (level) {
         case LogLevel::kNull:
             break;

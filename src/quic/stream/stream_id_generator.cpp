@@ -21,12 +21,12 @@ uint64_t StreamIDGenerator::NextStreamID(StreamDirection direction) {
             next_stream = cur_unidirectional_id_++;
             break;
         default:
-            common::LOG_ERROR("invalid stream direction: %d", direction);
+            LOG_ERROR("invalid stream direction: %d", direction);
             return 0;
     }
 
     next_stream = next_stream << 2 | (direction | starter_);
-    common::LOG_DEBUG("next stream id: %llu, direction: %d, starter: %d", next_stream, direction, starter_);
+    LOG_DEBUG("next stream id: %llu, direction: %d, starter: %d", next_stream, direction, starter_);
     return next_stream;
 }
 
@@ -40,7 +40,7 @@ uint64_t StreamIDGenerator::PeekNextStreamID(StreamDirection direction) const {
             next_stream = cur_unidirectional_id_;  // Don't increment
             break;
         default:
-            common::LOG_ERROR("invalid stream direction: %d", direction);
+            LOG_ERROR("invalid stream direction: %d", direction);
             return 0;
     }
 

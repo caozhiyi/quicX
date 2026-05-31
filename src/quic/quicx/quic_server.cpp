@@ -33,36 +33,68 @@ QuicServer::~QuicServer() {
         master_->Join();
     }
 
-    // 1) Drain per-connection bookkeeping held by each worker (conn_map_,
-    //    active_send_connections_, handshake timers). This ensures connections
-    //    are cleanly destroyed while the EventLoop control block is still alive.
+    // 1) In multi-thread mode each worker owns its own event-loop thread
+    //    (WorkerWithThread inherits common::Thread). We MUST stop and join
+    //    those threads BEFORE letting worker_map_.clear() destroy the
+    //    WorkerWithThread objects: otherwise the thread is still running
+    //    inside Run() -> worker_ptr_->Process() while our destructor frees
+    //    worker_ptr_, the event_loop_, etc. (heap-use-after-free, vptr
+    //    invalidation, dozens of TSan races — all confirmed by sanitizers).
+    //
+    //    NOTE: this MUST happen before step 2 (Shutdown). Shutdown clears
+    //    per-worker bookkeeping (timers, conn_map_, ...) which is owned by
+    //    the worker's event loop. If we ran Shutdown first, the worker
+    //    thread would still be executing inside Wait()/Process() and any
+    //    AssertInLoopThread()-protected mutation (e.g.
+    //    EventLoop::RemoveTimer) would abort because Shutdown runs on the
+    //    QuicServer-owner thread, not on the worker loop thread.
+    //
+    //    Note: relying on Thread::~Thread() to do this is unsafe. The base
+    //    destructor only runs *after* the derived members (worker_ptr_,
+    //    packet_queue_, ...) have already been destroyed, and Thread::Stop()
+    //    on its own does not wake up the worker's epoll loop, so the join
+    //    would block on loop->Wait() until the next packet arrives.
+    for (auto& kv : worker_map_) {
+        if (auto wwt = std::dynamic_pointer_cast<WorkerWithThread>(kv.second)) {
+            wwt->Stop();   // sets stop_ AND wakes up the worker event loop
+            wwt->Join();   // wait for Run() to actually exit
+        }
+    }
+
+    // 2) Drain per-connection bookkeeping held by each worker (conn_map_,
+    //    active_send_connections_, handshake timers). Safe to run on the
+    //    owner thread now that every worker's event-loop thread has been
+    //    Stop()+Join()'d above — there is no concurrent access to mutate
+    //    against, and no timer will fire after this point.
     for (auto& kv : worker_map_) {
         if (kv.second) {
             kv.second->Shutdown();
         }
     }
 
-    // 2) Drop strong refs. C++ reverse member destruction handles the rest.
+    // 3) Drop strong refs. C++ reverse member destruction handles the rest.
     worker_map_.clear();
     master_.reset();
     master_event_loop_.reset();
 }
 
 bool QuicServer::Init(const QuicServerConfig& config) {
+    // Always sync the configured level to the logger so that LOG_xxx macros
+    // can short-circuit argument evaluation when level is kNull.
+    LOG_SET_LEVEL(common::LogLevel(config.config_.log_level_));
     if (config.config_.log_level_ != LogLevel::kNull) {
         // std::shared_ptr<common::Logger> log = std::make_shared<common::StdoutLogger>();
         std::shared_ptr<common::FileLogger> file_log =
             std::make_shared<common::FileLogger>(config.config_.log_path_ + "/server.log");
         // file_log->SetLogger(log);
-        common::LOG_SET(file_log);
-        common::LOG_SET_LEVEL(common::LogLevel(config.config_.log_level_));
+        LOG_SET(file_log);
     }
 
     // Initialize QLog if enabled
     if (config.config_.qlog_config_.enabled) {
         common::QlogManager::Instance().SetConfig(config.config_.qlog_config_);
         common::QlogManager::Instance().Enable(true);
-        common::LOG_INFO("QLog enabled. Output dir: %s", config.config_.qlog_config_.output_dir.c_str());
+        LOG_INFO("QLog enabled. Output dir: %s", config.config_.qlog_config_.output_dir.c_str());
     } else {
         common::QlogManager::Instance().Enable(false);
     }
@@ -71,18 +103,18 @@ bool QuicServer::Init(const QuicServerConfig& config) {
     if (config.cert_file_ != "" && config.key_file_ != "") {
         if (!tls_ctx->Init(config.cert_file_, config.key_file_, config.config_.enable_0rtt_,
                 config.session_ticket_timeout_, config.config_.cipher_suites_)) {
-            common::LOG_ERROR("tls ctx init failed.");
+            LOG_ERROR("tls ctx init failed.");
             return false;
         }
     } else if (config.cert_pem_ != nullptr && config.key_pem_ != nullptr) {
         if (!tls_ctx->Init(config.cert_pem_, config.key_pem_, config.config_.enable_0rtt_,
                 config.session_ticket_timeout_, config.config_.cipher_suites_)) {
-            common::LOG_ERROR("tls ctx init failed.");
+            LOG_ERROR("tls ctx init failed.");
             return false;
         }
 
     } else {
-        common::LOG_ERROR("cert file or key file is not set.");
+        LOG_ERROR("cert file or key file is not set.");
         return false;
     }
 
@@ -93,12 +125,17 @@ bool QuicServer::Init(const QuicServerConfig& config) {
 
     master_event_loop_ = common::MakeEventLoop();
     if (!master_event_loop_) {
-        common::LOG_ERROR("create event loop failed.");
+        LOG_ERROR("create event loop failed.");
         return false;
     }
 
     master_ = std::make_shared<MasterWithThread>(config.config_.enable_ecn_, master_event_loop_);
     master_->Start();
+
+    if (!master_->WaitUntilReady()) {
+        LOG_ERROR("master event loop init failed.");
+        return false;
+    }
 
     auto sender = ISender::MakeSender();
     worker_map_.reserve(config.config_.worker_thread_num_);
@@ -116,7 +153,7 @@ bool QuicServer::Init(const QuicServerConfig& config) {
         for (size_t i = 0; i < config.config_.worker_thread_num_; i++) {
             auto worker_loop = common::MakeEventLoop();
             if (!worker_loop) {
-                common::LOG_ERROR("create event loop failed.");
+                LOG_ERROR("create event loop failed.");
                 return false;
             }
 
@@ -126,6 +163,11 @@ bool QuicServer::Init(const QuicServerConfig& config) {
 
             auto worker = std::make_shared<WorkerWithThread>(worker_loop, worker_ptr);
             worker->Start();
+
+            if (!worker->WaitUntilReady()) {
+                LOG_ERROR("worker event loop init failed.");
+                return false;
+            }
 
             worker_map_[worker->GetWorkerId()] = worker;
             master_->AddWorker(worker);

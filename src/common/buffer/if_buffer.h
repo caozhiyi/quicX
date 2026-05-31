@@ -75,6 +75,15 @@ public:
     virtual std::shared_ptr<IBufferChunk> GetChunk() const = 0;
     // return the count of buffer chunks
     virtual uint32_t GetChunkCount() const = 0;
+
+    // Zero-copy invariant 2: install a per-buffer cap on the writable region.
+    // The cap belongs on the buffer view, never the chunk: setting it must
+    // not change chunk->GetLength() observed by any other consumer.
+    //
+    // Default no-op so multi-chunk buffers (where the cap concept maps less
+    // cleanly) need not implement it; SingleBlockBuffer overrides with the
+    // real semantics.
+    virtual void SetCapacityLimit(uint32_t /*limit*/) {}
 };
 
 }  // namespace common

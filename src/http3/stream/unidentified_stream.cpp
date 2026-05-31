@@ -16,28 +16,28 @@ UnidentifiedStream::UnidentifiedStream(
     stream_->SetStreamReadCallBack(
         std::bind(&UnidentifiedStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     
-    common::LOG_DEBUG("UnidentifiedStream created for stream %llu", stream_->GetStreamID());
+    LOG_DEBUG("UnidentifiedStream created for stream %llu", stream_->GetStreamID());
 }
 
 void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("UnidentifiedStream::OnData error: %d on stream %llu", error, stream_->GetStreamID());
+        LOG_ERROR("UnidentifiedStream::OnData error: %d on stream %llu", error, stream_->GetStreamID());
         error_handler_(stream_->GetStreamID(), error);
         return;
     }
 
     if (type_identified_) {
         // Stream type already identified, shouldn't receive more data
-        common::LOG_WARN("UnidentifiedStream: received data after type identified on stream %llu", 
+        LOG_WARN("UnidentifiedStream: received data after type identified on stream %llu", 
                         stream_->GetStreamID());
         return;
     }
 
-    common::LOG_DEBUG("UnidentifiedStream: received %zu bytes, buffer size now = %zu on stream %llu", 
+    LOG_DEBUG("UnidentifiedStream: received %zu bytes, buffer size now = %zu on stream %llu", 
                      data->GetDataLength(), stream_->GetStreamID());
 
     if (data->GetDataLength() < 1) {
-        common::LOG_ERROR("UnidentifiedStream: not enough data to read stream type on stream %llu", 
+        LOG_ERROR("UnidentifiedStream: not enough data to read stream type on stream %llu", 
                           stream_->GetStreamID());
         return;
     }
@@ -49,7 +49,7 @@ void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
         common::BufferDecodeWrapper wrapper(buffer);
         if (!wrapper.DecodeVarint(stream_type)) {
             // Not enough data yet, wait for more
-            common::LOG_DEBUG("UnidentifiedStream: not enough data to read stream type on stream %llu (buffer size=%zu)", 
+            LOG_DEBUG("UnidentifiedStream: not enough data to read stream type on stream %llu (buffer size=%zu)", 
                                 stream_->GetStreamID(), data->GetDataLength());
             return;
         }

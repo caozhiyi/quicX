@@ -6,6 +6,10 @@
 namespace quicx {
 namespace common {
 
+// Global log level mirror used by macros for short-circuit.
+// Default to kInfo so warnings/errors are visible before SetLevel is called.
+std::atomic<uint8_t> g_log_level{static_cast<uint8_t>(LogLevel::kInfo)};
+
 SingletonLogger::SingletonLogger() {
     logger_ = std::make_shared<BaseLogger>(kLogCacheSize, kLogBlockSize);
 }
@@ -20,6 +24,7 @@ void SingletonLogger::SetLogger(std::shared_ptr<Logger> log) {
 
 void SingletonLogger::SetLevel(LogLevel level){
     logger_->SetLevel(level);
+    g_log_level.store(static_cast<uint8_t>(level), std::memory_order_relaxed);
 }
 
 void SingletonLogger::Debug(const char* file, uint32_t line, const char* log...) const {

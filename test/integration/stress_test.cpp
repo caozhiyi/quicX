@@ -12,6 +12,8 @@
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
 
+#include "test_server_helper.h"
+
 class StressTest: public ::testing::Test {
 protected:
     std::shared_ptr<quicx::IServer> server_;
@@ -23,8 +25,9 @@ protected:
     static const char key_pem_[];
 
     void SetUp() override {
-        // Use different port for each test to avoid bind conflicts
-        port_ = next_port_.fetch_add(1);
+        // Probe for a kernel-confirmed free UDP port (see test_server_helper.h).
+        port_ = quicx::test::ProbeFreeUdpPort(next_port_);
+        ASSERT_NE(port_, 0u) << "failed to find a free UDP port for test server";
 
         server_ = quicx::IServer::Create();
 
@@ -49,9 +52,9 @@ protected:
                 resp->AppendBody(data);
             });
 
-        server_thread_ = std::thread([this]() { server_->Start("127.0.0.1", port_); });
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // Synchronously bind on the main thread; bind failures now surface
+        // as fixture ASSERTs instead of opaque request timeouts.
+        ASSERT_TRUE(server_->Start("127.0.0.1", port_));
     }
 
     void TearDown() override {

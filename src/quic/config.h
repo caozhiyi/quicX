@@ -89,6 +89,22 @@ static constexpr uint64_t kMaxStreamWindowSize = 64 * 1024 * 1024;  // 64MB
 static constexpr size_t kMaxOutOfOrderFrames = 1024;
 
 // ============================================================================
+// Congestion Control Configuration
+// ============================================================================
+
+// Congestion control algorithm selection.
+// Available options:
+//   "reno"   - NewReno (default, conservative, good baseline)
+//   "cubic"  - CUBIC (Linux default, better throughput on high-BDP paths)
+//   "bbrv1"  - BBR v1 (Google's bandwidth-based CC)
+//   "bbrv2"  - BBR v2 (improved fairness and loss handling)
+//   "bbrv3"  - BBR v3 (latest, improved ProbeRTT and loss tolerance)
+//
+// Change this value and rebuild to quickly switch CC algorithm for benchmarking.
+// No environment variable needed — just modify, make, and run.
+static constexpr const char* kDefaultCongestionControl = "cubic";
+
+// ============================================================================
 // TLS/Crypto Configuration
 // ============================================================================
 

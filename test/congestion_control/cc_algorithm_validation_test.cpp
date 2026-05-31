@@ -304,7 +304,7 @@ TEST(CCAlgorithmValidation, MultipleRecoveryPeriods) {
     
     auto metrics = test.GetMetrics();
     
-    printf("Total recovery periods: %lu\n", metrics.recovery_count);
+    printf("Total recovery periods: %llu\n", metrics.recovery_count);
     
     // With 5% loss over 10 seconds, should have multiple recoveries
     EXPECT_GT(metrics.recovery_count, 5UL);
@@ -398,7 +398,7 @@ TEST(CubicOptimizationTest, HyStartEarlyExitFromSlowStart) {
     printf("\n--- HyStart Validation ---\n");
     printf("Slow Start Duration: %.3f s\n", metrics.slow_start_duration_us / 1e6);
     printf("Max Cwnd: %.2f KB\n", metrics.max_cwnd_bytes / 1024.0);
-    printf("Recovery Count: %lu\n", metrics.recovery_count);
+    printf("Recovery Count: %llu\n", metrics.recovery_count);
     
     // HyStart should exit before hitting major losses
     // In buffer bloat scenario without HyStart, we'd see more recoveries
@@ -430,7 +430,7 @@ TEST(CubicOptimizationTest, FastConvergenceOnRepeatedLoss) {
     auto metrics = test.GetMetrics();
     
     printf("\n--- Fast Convergence Validation ---\n");
-    printf("Total Recovery Count: %lu\n", metrics.recovery_count);
+    printf("Total Recovery Count: %llu\n", metrics.recovery_count);
     printf("Avg Throughput: %.2f Mbps\n", metrics.throughput_mbps);
     
     // Fast Convergence should help adapt to bandwidth decrease
@@ -481,7 +481,7 @@ TEST(CubicOptimizationTest, PacingRateWithInitialRTT) {
     auto metrics = test.GetMetrics();
     
     printf("\n--- Pacing Rate Validation ---\n");
-    printf("Total Bytes Sent: %lu\n", metrics.total_bytes_sent);
+    printf("Total Bytes Sent: %llu\n", metrics.total_bytes_sent);
     printf("Throughput: %.2f Mbps\n", metrics.throughput_mbps);
     
     // With proper pacing initialization, we should achieve good throughput

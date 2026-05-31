@@ -39,6 +39,7 @@ public:
 class ResponseStream: public ReqRespBaseStream {
 public:
     ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<QpackEncoder>& qpack_decoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream, std::weak_ptr<IHttpProcessor> http_processor,
         const std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler,

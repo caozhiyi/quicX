@@ -58,7 +58,7 @@ bool StreamStateMachineSend::OnFrame(uint16_t frame_type) {
             }
             break;
         default:
-            common::LOG_ERROR("current status not allow send this frame. status:%d, frame type:%d", state_, frame_type);
+            LOG_ERROR("current status not allow send this frame. status:%d, frame type:%d", state_, frame_type);
             break;
     }
     return false;
@@ -91,7 +91,7 @@ bool StreamStateMachineSend::AllAckDone() {
             NotifyStateChange(old_state, state_);
             break;
         default:
-            common::LOG_ERROR("current status not allow ack done. status:%d", state_);
+            LOG_ERROR("current status not allow ack done. status:%d", state_);
             return false;
     }
     return true;

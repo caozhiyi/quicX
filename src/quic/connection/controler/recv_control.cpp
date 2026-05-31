@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <cstring>
 
 #include "common/log/log.h"
@@ -20,9 +21,18 @@ RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
     memset(ect0_count_, 0, sizeof(ect0_count_));
     memset(ect1_count_, 0, sizeof(ect1_count_));
     memset(ce_count_, 0, sizeof(ce_count_));
+    for (int i = 0; i < PacketNumberSpace::kNumberSpaceCount; ++i) {
+        ack_due_[i] = false;
+    }
 
     timer_task_ = common::TimerTask([this] {
         set_timer_ = false;
+        // PERF FIX (P0): The max_ack_delay_ timer only ever fires for
+        // Application-space packets (Initial/Handshake go through the
+        // immediate-ACK path in OnPacketRecv and never schedule this timer).
+        // Mark the Application space as ack-due so the next TrySend() will
+        // actually flush the aggregated ACK frame.
+        ack_due_[kApplicationNumberSpace] = true;
         if (active_send_cb_) {
             active_send_cb_();
         }
@@ -30,11 +40,11 @@ RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
 }
 
 void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
-    common::LOG_DEBUG("RecvControl::OnPacketRecv: packet_number=%llu, frame_type_bit=%u, is_ack_eliciting=%d",
+    LOG_DEBUG("RecvControl::OnPacketRecv: packet_number=%llu, frame_type_bit=%u, is_ack_eliciting=%d",
         packet->GetPacketNumber(), packet->GetFrameTypeBit(), IsAckElictingPacket(packet->GetFrameTypeBit()) ? 1 : 0);
 
     if (!IsAckElictingPacket(packet->GetFrameTypeBit())) {
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "RecvControl::OnPacketRecv: packet %llu is not ack-eliciting, skipping", packet->GetPacketNumber());
         return;
     }
@@ -53,7 +63,7 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
 
     // Add to ACK queue
     wait_ack_packet_numbers_[ns].insert(pkt_num);
-    common::LOG_DEBUG("RecvControl::OnPacketRecv: added packet %llu to ACK queue, ns=%d, queue size=%zu", pkt_num, ns,
+    LOG_DEBUG("RecvControl::OnPacketRecv: added packet %llu to ACK queue, ns=%d, queue size=%zu", pkt_num, ns,
         wait_ack_packet_numbers_[ns].size());
 
     // RFC 9000: Determine if immediate ACK is required
@@ -61,9 +71,33 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     bool need_immediate_ack = ShouldSendImmediateAck(ns, pkt_num, ecn);
 
     if (need_immediate_ack) {
-        common::LOG_DEBUG("RecvControl::OnPacketRecv: triggering immediate ACK for ns=%d", ns);
-        if (immediate_ack_cb_) {
-            immediate_ack_cb_(ns);
+        LOG_DEBUG("RecvControl::OnPacketRecv: triggering immediate ACK for ns=%d", ns);
+        // PERF FIX (P0): mark this space as ack-due so the scheduler's
+        // ShouldSendAckNow(ns) returns true on the next TrySend(). Before
+        // this fix, any non-empty wait queue caused the next outgoing
+        // datagram to carry an ACK, which short-circuited the threshold
+        // and timer logic and produced a 1:1 packet/ACK ratio.
+        ack_due_[ns] = true;
+
+        // PERF FIX (P0 follow-up): Initial / Handshake spaces still need
+        // the synchronous out-of-band immediate-ACK path, because the
+        // worker may not yet be processing 1-RTT data and missing those
+        // ACKs delays handshake completion. For Application data we route
+        // the ACK through the regular TrySend() loop instead — high-rate
+        // synchronous SendImmediateAck() from inside the recv stack
+        // raced with the worker's own send loop and produced a
+        // tail-of-transfer deadlock under sustained upload.
+        if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace) {
+            if (immediate_ack_cb_) {
+                immediate_ack_cb_(ns);
+            }
+        } else {
+            // Application: just kick the send loop; it will pick up the
+            // ack_due_ flag via ShouldSendAckNow() and emit the ACK
+            // attached to the next outgoing datagram (or on its own).
+            if (active_send_cb_) {
+                active_send_cb_();
+            }
         }
     } else {
         // For Application packets, use timer-based ACK
@@ -71,6 +105,7 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
             set_timer_ = true;
             timer_->AddTimer(timer_task_, max_ack_delay_);
         }
+        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckDelayed);
     }
 }
 
@@ -92,10 +127,17 @@ void RecvControl::OnEcnCounters(uint8_t ecn, PacketNumberSpace ns) {
 }
 
 std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled) {
+    common::Metrics::CounterInc(common::MetricsStd::DiagAckGenCalls);
     if (set_timer_) {
         timer_->RemoveTimer(timer_task_);
         set_timer_ = false;
     }
+
+    // PERF FIX (P0): clear the ack-due flag now; any remaining packets in
+    // the wait queue (e.g. after kMaxAckRanges truncation) will re-arm the
+    // flag via the threshold check in ShouldSendImmediateAck(), the
+    // max_ack_delay_ timer, or an OoO/gap trigger from a new arrival.
+    ack_due_[ns] = false;
 
     // Build ACK ranges from contiguous runs (descending by packet number)
     auto& nums = wait_ack_packet_numbers_[ns];
@@ -109,6 +151,8 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
     if (nums.empty()) {
         return nullptr;
     }
+    common::Metrics::CounterInc(common::MetricsStd::DiagAckGenEmitted);
+    common::Metrics::CounterInc(common::MetricsStd::DiagAckQueueDepth, nums.size());
 
     // Collect runs as [high, low]
     std::vector<std::pair<uint64_t, uint64_t>> runs;
@@ -131,7 +175,7 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
             if (runs.size() >= kMaxAckRanges) {
                 // Stop collecting ranges if we hit the limit
                 // The remaining packets will be ACKed in the next frame
-                common::LOG_WARN(
+                LOG_WARN(
                     "RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%zu), deferring remaining ACKs",
                     kMaxAckRanges);
                 break;
@@ -225,8 +269,15 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
         wait_ack_packet_numbers_[ns].erase(pn);
     }
 
-    common::LOG_DEBUG("RecvControl::MayGenerateAckFrame: generated ACK for %zu packets, remaining in queue: %zu",
+    LOG_DEBUG("RecvControl::MayGenerateAckFrame: generated ACK for %zu packets, remaining in queue: %zu",
         acked_packets.size(), wait_ack_packet_numbers_[ns].size());
+
+    // PERF FIX (P0): If kMaxAckRanges truncated us and packets remain
+    // unacked, re-mark the space as ack-due so the next TrySend() can
+    // continue draining the queue without waiting for a fresh trigger.
+    if (!wait_ack_packet_numbers_[ns].empty()) {
+        ack_due_[ns] = true;
+    }
 
     // Metrics: Track ACK frequency
     ack_count_++;
@@ -248,13 +299,15 @@ void RecvControl::UpdateConfig(const TransportParam& tp) {
 bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num, uint8_t ecn) {
     // RFC 9000: Initial and Handshake packets MUST be ACKed immediately
     if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace) {
-        common::LOG_DEBUG("ShouldSendImmediateAck: Initial/Handshake packet, immediate ACK required");
+        LOG_DEBUG("ShouldSendImmediateAck: Initial/Handshake packet, immediate ACK required");
+        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckInitial);
         return true;
     }
 
     // RFC 9000 Section 13.2.1: ECN CE packets SHOULD be ACKed immediately
     if ((ecn & 0x03) == 0x03) {  // CE codepoint = 0b11
-        common::LOG_DEBUG("ShouldSendImmediateAck: ECN CE packet, immediate ACK");
+        LOG_DEBUG("ShouldSendImmediateAck: ECN CE packet, immediate ACK");
+        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckEcn);
         return true;
     }
 
@@ -262,21 +315,44 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
 
     // RFC 9000: Immediate ACK if packet number < previously received packet (out of order)
     if (pkt_num < pkt_num_largest_recvd_[ns]) {
-        common::LOG_DEBUG("ShouldSendImmediateAck: Out-of-order (pkt=%llu < largest=%llu), immediate ACK", pkt_num,
+        LOG_DEBUG("ShouldSendImmediateAck: Out-of-order (pkt=%llu < largest=%llu), immediate ACK", pkt_num,
             pkt_num_largest_recvd_[ns]);
+        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckOoo);
         return true;
     }
 
     // RFC 9000: Immediate ACK if packet number > largest but there are gaps
     if (pkt_num > pkt_num_largest_recvd_[ns] + 1) {
-        common::LOG_DEBUG("ShouldSendImmediateAck: Gap detected (expected=%llu, got=%llu), immediate ACK",
+        LOG_DEBUG("ShouldSendImmediateAck: Gap detected (expected=%llu, got=%llu), immediate ACK",
             pkt_num_largest_recvd_[ns] + 1, pkt_num);
+        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckGap);
         return true;
     }
 
-    // RFC 9000 Section 13.2.2: Send ACK after at least 2 ack-eliciting packets
-    if (acked_packets.size() >= 2) {
-        common::LOG_DEBUG("ShouldSendImmediateAck: 2+ packets in queue, sending ACK");
+    // RFC 9000 Section 13.2.2: Send ACK after at least 2 ack-eliciting packets.
+    // NOTE: RFC says "at least 2" as a *lower bound* against unbounded delay,
+    // not a hard upper bound. Flushing at exactly 2 packets defeats ACK
+    // aggregation (peer sees ~1 packet/ACK ratio), which on fast paths
+    // (e.g. loopback) chains cwnd growth to per-packet RTT and starves
+    // throughput. Use a larger threshold so we keep aggregating when packets
+    // arrive faster than max_ack_delay; the timer (max_ack_delay_) still
+    // bounds worst-case delay if traffic is sparse.
+    // EXPERIMENT (PERF): runtime-tunable via QUICX_ACK_THRESHOLD env var so
+    // we can A/B test without rebuilding. Defaults to 10.
+    static const size_t kAckThreshold = []() -> size_t {
+        const char* env = std::getenv("QUICX_ACK_THRESHOLD");
+        if (env && *env) {
+            char* end = nullptr;
+            long v = std::strtol(env, &end, 10);
+            if (end != env && v >= 1 && v <= 1024) {
+                return static_cast<size_t>(v);
+            }
+        }
+        return 10;
+    }();
+    if (acked_packets.size() >= kAckThreshold) {
+        LOG_DEBUG("ShouldSendImmediateAck: %zu+ packets in queue, sending ACK", kAckThreshold);
+        common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckThreshold);
         return true;
     }
 
@@ -291,7 +367,28 @@ void RecvControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {
     ect0_count_[ns] = 0;
     ect1_count_[ns] = 0;
     ce_count_[ns] = 0;
-    common::LOG_INFO("RecvControl: Discarded packet number space %d per RFC 9000", ns);
+    ack_due_[ns] = false;
+    LOG_INFO("RecvControl: Discarded packet number space %d per RFC 9000", ns);
+}
+
+// PERF FIX (P0): see header for rationale.
+// An ACK is only "due" if it has packets to ACK AND a trigger has fired:
+//   - Initial / Handshake spaces (RFC 9000 §13.2.1: MUST ACK immediately).
+//     These never go through the delayed timer in OnPacketRecv, but we
+//     still gate on `ack_due_` (which is set the moment a packet arrives
+//     in those spaces) to keep the contract uniform.
+//   - Application space: ack_due_ is set by an immediate-ACK trigger
+//     (threshold / OoO / gap / ECN-CE) or by the max_ack_delay_ timer.
+bool RecvControl::ShouldSendAckNow(PacketNumberSpace ns) const {
+    if (wait_ack_packet_numbers_[ns].empty()) {
+        return false;
+    }
+    // RFC 9000 §13.2.1: Initial and Handshake packets MUST be ACKed
+    // immediately. We don't defer them under any circumstance.
+    if (ns == kInitialNumberSpace || ns == kHandshakeNumberSpace) {
+        return true;
+    }
+    return ack_due_[ns];
 }
 
 }  // namespace quic

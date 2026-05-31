@@ -20,7 +20,7 @@ TEST(rtt_1_packet_utest, codec) {
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
     Rtt1Packet packet;
-    packet.SetPayload(frame_buffer->GetSharedReadableSpan());
+    common::SharedBufferSpan payload(frame_buffer->GetSharedReadableSpan()); packet.SetPayload(payload);
     packet.SetPacketNumber(10);
     packet.GetHeader()->SetPacketNumberLength(2);
 
@@ -52,7 +52,7 @@ TEST(rtt_1_packet_utest, crypto_codec) {
     EXPECT_TRUE(frame->Encode(frame_buffer));
 
     Rtt1Packet packet;
-    packet.SetPayload(frame_buffer->GetSharedReadableSpan());
+    common::SharedBufferSpan payload(frame_buffer->GetSharedReadableSpan()); packet.SetPayload(payload);
     packet.SetPacketNumber(10);
     packet.GetHeader()->SetPacketNumberLength(2);
     packet.SetCryptographer(PacketTest::Instance().GetTestClientCryptographer());

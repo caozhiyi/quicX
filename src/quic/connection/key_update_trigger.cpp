@@ -29,7 +29,7 @@ bool KeyUpdateTrigger::OnBytesSent(uint64_t bytes_sent) {
     total_bytes_sent_ += bytes_sent;
     
     if (!triggered_ && total_bytes_sent_ >= bytes_threshold_) {
-        common::LOG_INFO("Key update triggered: bytes sent (%llu) >= threshold (%llu)",
+        LOG_INFO("Key update triggered: bytes sent (%llu) >= threshold (%llu)",
             total_bytes_sent_, bytes_threshold_);
         return true;
     }
@@ -47,7 +47,7 @@ bool KeyUpdateTrigger::OnPacketSent(uint64_t packet_number) {
     if (!triggered_ && pn_threshold_ > 0) {
         uint64_t packets_since_update = current_pn_ - last_pn_at_update_;
         if (packets_since_update >= pn_threshold_) {
-            common::LOG_INFO("Key update triggered: packets since update (%llu) >= threshold (%llu)",
+            LOG_INFO("Key update triggered: packets since update (%llu) >= threshold (%llu)",
                 packets_since_update, pn_threshold_);
             return true;
         }
@@ -81,7 +81,7 @@ void KeyUpdateTrigger::MarkTriggered() {
     triggered_ = true;
     key_update_count_++;
     last_pn_at_update_ = current_pn_;
-    common::LOG_INFO("Key update #%u completed at packet number %llu", key_update_count_, current_pn_);
+    LOG_INFO("Key update #%u completed at packet number %llu", key_update_count_, current_pn_);
 }
 
 void KeyUpdateTrigger::Reset() {

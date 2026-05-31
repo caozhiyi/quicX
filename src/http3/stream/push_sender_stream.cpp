@@ -53,7 +53,7 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
     auto headers_buffer =
         std::make_shared<common::MultiBlockBuffer>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!qpack_encoder_->Encode(response->GetHeaders(), headers_buffer)) {
-        common::LOG_ERROR("qpack encode error");
+        LOG_ERROR("qpack encode error");
         return false;
     }
 
@@ -61,12 +61,12 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
     headers_frame.SetEncodedFields(headers_buffer);
     auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
     if (!headers_frame.Encode(frame_buffer)) {
-        common::LOG_ERROR("encode headers frame error");
+        LOG_ERROR("encode headers frame error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return false;
     }
     if (!stream_->Flush()) {
-        common::LOG_ERROR("send headers error");
+        LOG_ERROR("send headers error");
         error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
         return false;
     }
@@ -79,13 +79,13 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
 
         auto data_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
         if (!data_frame.Encode(data_buffer)) {
-            common::LOG_ERROR("encode data frame error");
+            LOG_ERROR("encode data frame error");
             error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
             return false;
         }
 
         if (!stream_->Flush()) {
-            common::LOG_ERROR("send data error");
+            LOG_ERROR("send data error");
             error_handler_(GetStreamID(), Http3ErrorCode::kClosedCriticalStream);
             return false;
         }
@@ -96,7 +96,7 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
 
 void PushSenderStream::Reset(uint32_t error_code) {
     if (stream_) {
-        common::LOG_DEBUG("resetting stream %llu with error code %u", GetStreamID(), error_code);
+        LOG_DEBUG("resetting stream %llu with error code %u", GetStreamID(), error_code);
         stream_->Reset(error_code);
     }
 }

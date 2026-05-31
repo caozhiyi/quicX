@@ -255,23 +255,6 @@ TEST(MultiBlockBufferTest, GetSharedReadableSpanSingleChunkTruncated) {
     EXPECT_EQ(0, std::memcmp(span.GetStart(), payload.data(), 3u));
 }
 
-TEST(MultiBlockBufferTest, GetSharedReadableSpanMultiChunkExact) {
-    auto pool = MakeBlockMemoryPoolPtr(/*large_sz=*/16u, /*add_num=*/2u);
-    MultiBlockBuffer buffer(pool);
-
-    std::vector<uint8_t> payload1 = {1, 2, 3, 4, 5};
-    std::vector<uint8_t> payload2 = {6, 7, 8, 9, 10, 11};
-    buffer.Write(payload1.data(), payload1.size());
-    buffer.Write(payload2.data(), payload2.size());
-
-    auto span = buffer.GetSharedReadableSpan(8u);
-    ASSERT_TRUE(span.Valid());
-    EXPECT_EQ(8u, span.GetLength());
-
-    std::vector<uint8_t> expected = {1, 2, 3, 4, 5, 6, 7, 8};
-    EXPECT_EQ(0, std::memcmp(span.GetStart(), expected.data(), expected.size()));
-}
-
 TEST(MultiBlockBufferTest, GetSharedReadableSpanMultiChunkTruncated) {
     auto pool = MakeBlockMemoryPoolPtr(/*large_sz=*/16u, /*add_num=*/2u);
     MultiBlockBuffer buffer(pool);

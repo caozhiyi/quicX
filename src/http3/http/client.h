@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <queue>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -52,8 +53,23 @@ private:
     bool HandlePushPromise(std::unordered_map<std::string, std::string>& headers);
     void HandlePush(std::shared_ptr<IResponse> response, uint32_t error);
 
+    // Shared body for the two DoRequest overloads. Templated on the handler
+    // type so the const-callback and IAsyncClientHandler variants share a
+    // single implementation (and a single fast-path/slow-path split).
+    template <typename Handler>
+    bool DoRequestImpl(const std::string& url, HttpMethod method,
+        std::shared_ptr<IRequest> request, Handler handler);
+
 private:
     std::shared_ptr<IQuicClient> quic_;
+
+    // conn_map_ is read on the user (caller) thread for the DoRequest()
+    // fast-path (an existing connection to `host` is reused without hopping
+    // onto the QUIC event loop) and written exclusively on the event-loop
+    // thread (OnConnection). The shared_mutex lets the hot read path scale
+    // across many concurrent caller threads while still serialising the
+    // rare insert/erase against rehash.
+    mutable std::shared_mutex conn_map_mu_;
     std::unordered_map<std::string, std::shared_ptr<ClientConnection>> conn_map_;
 
     http_response_handler push_handler_;

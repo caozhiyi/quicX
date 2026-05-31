@@ -52,10 +52,7 @@ public:
         TransportParam& transport_param, SendManager& send_manager, StreamStateCallback stream_state_cb,
         SendFlowController* send_flow_controller);
 
-    ~StreamManager() {
-        // Clear callback to prevent use-after-free
-        stream_state_cb_ = nullptr;
-    }
+    ~StreamManager();
 
     // ==================== Stream Creation ====================
 
@@ -209,7 +206,6 @@ private:
         stream_creation_callback callback;
     };
     std::queue<PendingStreamRequest> pending_stream_requests_;
-    std::mutex pending_streams_mutex_;
 
     // Dependencies (injected)
     IConnectionEventSink& event_sink_;  // Event interface (replaces callbacks)

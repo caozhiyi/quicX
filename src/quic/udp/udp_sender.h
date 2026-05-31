@@ -16,9 +16,19 @@ public:
     UdpSender(int32_t sockfd);
     ~UdpSender() {}
 
-    bool Send(std::shared_ptr<NetPacket>& pkt);
+    bool Send(std::shared_ptr<NetPacket>& pkt) override;
 
-    int32_t GetSocket() const { return sock_; }
+    // sendmmsg-based batch send. See ISender::SendBatch for full contract.
+    // Fast path: every packet's destination Address has a cached sockaddr
+    // (filled in by a prior Send/SendTo on that Address) and they all share
+    // the same socket fd -> a single sendmmsg(2) syscall. When any precondition
+    // is not met (cache miss, mixed sockets, fault injection on, batch size
+    // exceeds kMaxBatchSize), the implementation transparently falls back to
+    // per-packet Send(); cached state established by those Send() calls
+    // makes subsequent rounds eligible for the fast path again.
+    uint32_t SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) override;
+
+    int32_t GetSocket() const override { return sock_; }
 
     // ============================================================
     // Test-only fault injection
@@ -92,6 +102,15 @@ private:
     static std::atomic<uint32_t> drop_per_million_;
     static std::atomic<uint64_t> rate_limit_bps_;
     static std::atomic<uint32_t> egress_delay_ms_;
+
+    // PERF: single combined flag flipped non-zero whenever ANY of the three
+    // knobs above is enabled. The hot path reads this once with relaxed
+    // ordering and short-circuits all the per-knob loads + the token-bucket
+    // mutex when fault injection is off (the production case). Using a
+    // separate variable rather than (a|b|c) avoids 3 dependent loads on
+    // the cache line; we accept a tiny race during enable/disable transitions
+    // because the knobs are only ever toggled at test setup/teardown.
+    static std::atomic<uint32_t> any_fault_enabled_;
 };
 
 }

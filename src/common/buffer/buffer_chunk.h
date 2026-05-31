@@ -38,11 +38,14 @@ public:
     bool Valid() const override { return data_ != nullptr; }
     // Raw pointer to the beginning of the owned block. nullptr if invalid.
     uint8_t* GetData() const override { return data_; }
-    // Number of bytes in the owned block. Zero if invalid.
-    uint32_t GetLength() const override { return std::min(length_, limit_size_); }
+    // Physical block size; immutable for the chunk's lifetime (invariant 2).
+    uint32_t GetLength() const override { return length_; }
     std::shared_ptr<BlockMemoryPool> GetPool() const override;
 
-    void SetLimitSize(uint32_t size) override { limit_size_ = size; }
+    // ----- Zero-copy invariant 1 (write-floor / freeze) --------------------
+    void FreezeUpTo(uint8_t* end) override;
+    void Unfreeze(uint8_t* end) override;
+    uint8_t* GetWriteFloor() const override;
 
 private:
     // Return the memory block to the pool (if any) and reset state.
@@ -51,7 +54,13 @@ private:
     std::weak_ptr<BlockMemoryPool> pool_;
     uint8_t* data_ = nullptr;
     uint32_t length_ = 0;
-    uint32_t limit_size_ = 0;
+
+    // Highest byte offset that has been frozen by an outstanding
+    // SharedBufferSpan. While freeze_count_ > 0, writes that would land below
+    // (data_ + write_floor_offset_) MUST be silently clamped or rejected.
+    // Once freeze_count_ drops to zero, write_floor_offset_ resets to 0.
+    uint32_t write_floor_offset_ = 0;
+    uint32_t freeze_count_ = 0;
 };
 
 }

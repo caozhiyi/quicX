@@ -89,7 +89,7 @@ void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
             loop->RemoveTimer(migration_timeout_task_);
             migration_timeout_task_.SetTimeoutCallback([this]() {
                 if (path_probe_inflight_ && is_client_initiated_migration_) {
-                    common::LOG_WARN("PathManager: migration timeout after %u ms", path_validation_timeout_ms_);
+                    LOG_WARN("PathManager: migration timeout after %u ms", path_validation_timeout_ms_);
                     HandleMigrationFailure(MigrationResult::kFailedTimeout);
                 }
             });
@@ -108,7 +108,7 @@ void PathManager::StartNextPathProbe() {
     candidate_peer_addr_ = pending_candidate_addrs_.front();
     pending_candidate_addrs_.erase(pending_candidate_addrs_.begin());
 
-    common::LOG_INFO("PathManager: starting next path probe from queue to %s:%d (remaining in queue: %zu)",
+    LOG_INFO("PathManager: starting next path probe from queue to %s:%d (remaining in queue: %zu)",
         candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort(), pending_candidate_addrs_.size());
 
     StartPathValidationProbe();
@@ -120,7 +120,7 @@ void PathManager::OnPathResponse(const uint8_t* data) {
     }
 
     if (memcmp(data, pending_path_challenge_data_, 8) != 0) {
-        common::LOG_DEBUG("PathManager::OnPathResponse: token mismatch, ignoring");
+        LOG_DEBUG("PathManager::OnPathResponse: token mismatch, ignoring");
         return;
     }
 
@@ -136,7 +136,7 @@ void PathManager::OnPathResponse(const uint8_t* data) {
     bool peer_addr_changed = !(candidate_peer_addr_ == peer_addr_);
 
     if (peer_addr_changed) {
-        common::LOG_INFO("PathManager: path validated successfully, switching from %s:%d to %s:%d",
+        LOG_INFO("PathManager: path validated successfully, switching from %s:%d to %s:%d",
             peer_addr_.GetIp().c_str(), peer_addr_.GetPort(), candidate_peer_addr_.GetIp().c_str(),
             candidate_peer_addr_.GetPort());
 
@@ -147,7 +147,7 @@ void PathManager::OnPathResponse(const uint8_t* data) {
         if (!dcid_pre_rotated_) {
             cid_coordinator_.RotateRemoteConnectionID();
         } else {
-            common::LOG_DEBUG("PathManager: skipping CID rotation (already pre-rotated)");
+            LOG_DEBUG("PathManager: skipping CID rotation (already pre-rotated)");
         }
 
         // Reset cwnd/RTT and PMTU for new path
@@ -196,25 +196,25 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
         // Only consider as NAT rebinding if we see repeated observations; otherwise ignore
         if (!(addr == candidate_peer_addr_)) {
             // First observation: store candidate but do not start probe yet
-            common::LOG_DEBUG(
+            LOG_DEBUG(
                 "PathManager: first observation of new address (migration disabled), waiting for confirmation");
             candidate_peer_addr_ = addr;
             return;
         }
         // Second consecutive observation of same new address: treat as rebinding and probe
-        common::LOG_INFO("PathManager: second observation confirmed, treating as NAT rebinding");
+        LOG_INFO("PathManager: second observation confirmed, treating as NAT rebinding");
     }
 
     // Check if this address is already in the queue or currently being probed
     if (path_probe_inflight_ && addr == candidate_peer_addr_) {
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "PathManager: address %s:%d is already being probed, ignoring", addr.GetIp().c_str(), addr.GetPort());
         return;
     }
 
     for (const auto& pending : pending_candidate_addrs_) {
         if (addr == pending) {
-            common::LOG_DEBUG(
+            LOG_DEBUG(
                 "PathManager: address %s:%d already in probe queue, ignoring", addr.GetIp().c_str(), addr.GetPort());
             return;
         }
@@ -223,7 +223,7 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
     // If probe is in progress, add to queue; otherwise start immediately
     if (path_probe_inflight_) {
         pending_candidate_addrs_.push_back(addr);
-        common::LOG_INFO("PathManager: added %s:%d to probe queue (queue size: %zu)", addr.GetIp().c_str(),
+        LOG_INFO("PathManager: added %s:%d to probe queue (queue size: %zu)", addr.GetIp().c_str(),
             addr.GetPort(), pending_candidate_addrs_.size());
     } else {
         candidate_peer_addr_ = addr;
@@ -232,10 +232,10 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
         // If probe didn't start (e.g., Application keys not ready), queue the address for later
         if (!path_probe_inflight_) {
             pending_candidate_addrs_.push_back(addr);
-            common::LOG_INFO("PathManager: path probe deferred, added %s:%d to queue (queue size: %zu)",
+            LOG_INFO("PathManager: path probe deferred, added %s:%d to queue (queue size: %zu)",
                 addr.GetIp().c_str(), addr.GetPort(), pending_candidate_addrs_.size());
         } else {
-            common::LOG_INFO(
+            LOG_INFO(
                 "PathManager: started path validation probe to %s:%d", addr.GetIp().c_str(), addr.GetPort());
         }
     }
@@ -250,18 +250,18 @@ void PathManager::OnCandidatePathBytesReceived(uint32_t bytes) {
 // ==================== Client-Initiated Migration ====================
 
 MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::Address& local_addr) {
-    common::LOG_INFO("PathManager::InitiateMigrationToAddress: starting migration to local %s:%d",
+    LOG_INFO("PathManager::InitiateMigrationToAddress: starting migration to local %s:%d",
         local_addr.GetIp().c_str(), local_addr.GetPort());
 
     // 1. Check if migration is disabled by peer
     if (transport_param_.GetDisableActiveMigration()) {
-        common::LOG_WARN("PathManager: migration disabled by peer");
+        LOG_WARN("PathManager: migration disabled by peer");
         return MigrationResult::kFailedMigrationDisabled;
     }
 
     // 2. Check if probe is already in progress
     if (path_probe_inflight_) {
-        common::LOG_WARN("PathManager: probe already in progress");
+        LOG_WARN("PathManager: probe already in progress");
         return MigrationResult::kFailedProbeInProgress;
     }
 
@@ -275,16 +275,16 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
     //    registered in the server's conn_map_, so routing is not an issue.
     bool dcid_rotated = cid_coordinator_.RotateRemoteConnectionID();
     if (!dcid_rotated) {
-        common::LOG_WARN("PathManager: no available remote CID for migration, aborting");
+        LOG_WARN("PathManager: no available remote CID for migration, aborting");
         return MigrationResult::kFailedNoAvailableCID;
     }
-    common::LOG_DEBUG("PathManager: pre-rotated DCID for client-initiated migration");
+    LOG_DEBUG("PathManager: pre-rotated DCID for client-initiated migration");
 
     // 4. Create new socket bound to the specified local address
     int32_t new_socket = CreateBoundSocket(local_addr);
     if (new_socket < 0) {
         // Rotation already happened, but we failed. This is bad but we continue with old socket.
-        common::LOG_ERROR("PathManager: failed to create socket for migration");
+        LOG_ERROR("PathManager: failed to create socket for migration");
         return MigrationResult::kFailedSocketCreation;
     }
 
@@ -311,7 +311,7 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
     // Note: peer_addr_ is unchanged, we're just changing our local address
     candidate_peer_addr_ = peer_addr_;  // Same peer, new local path
 
-    common::LOG_INFO("PathManager: migration initiated, old local: %s:%d, new local: %s:%d, peer: %s:%d",
+    LOG_INFO("PathManager: migration initiated, old local: %s:%d, new local: %s:%d, peer: %s:%d",
         old_local_addr_.GetIp().c_str(), old_local_addr_.GetPort(), new_local_addr_.GetIp().c_str(),
         new_local_addr_.GetPort(), peer_addr_.GetIp().c_str(), peer_addr_.GetPort());
 
@@ -362,7 +362,7 @@ void PathManager::ScheduleProbeRetry() {
 
     if (probe_retry_count_ >= kMaxProbeRetries) {
         // Give up probing after max retries; revert to old path
-        common::LOG_WARN(
+        LOG_WARN(
             "PathManager: path validation failed after %d attempts, reverting to old path. candidate: %s:%d",
             probe_retry_count_, candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
 
@@ -392,7 +392,7 @@ void PathManager::ScheduleProbeRetry() {
         }
         auto challenge = std::make_shared<PathChallengeFrame>();
         challenge->MakeData();
-        common::LOG_DEBUG("PathManager: retrying path validation (attempt %d/%d) to %s:%d", probe_retry_count_ + 1,
+        LOG_DEBUG("PathManager: retrying path validation (attempt %d/%d) to %s:%d", probe_retry_count_ + 1,
             kMaxProbeRetries, candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
         memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
         to_send_frame_cb_(challenge);
@@ -403,7 +403,7 @@ void PathManager::ScheduleProbeRetry() {
 }
 
 void PathManager::CompleteMigration() {
-    common::LOG_INFO("PathManager::CompleteMigration: migration successful, switching to new socket");
+    LOG_INFO("PathManager::CompleteMigration: migration successful, switching to new socket");
 
     // Migration successful: the new socket becomes the main socket
     // The connection should now use migration_socket_ as the primary socket
@@ -439,12 +439,12 @@ void PathManager::CompleteMigration() {
     // 2. Closing the old socket
     // 3. Clearing migration_socket_ after the switch
 
-    common::LOG_INFO("PathManager: migration completed successfully in %lu ms",
+    LOG_INFO("PathManager: migration completed successfully in %lu ms",
         info.migration_end_time_ - info.migration_start_time_);
 }
 
 void PathManager::HandleMigrationFailure(MigrationResult result) {
-    common::LOG_WARN("PathManager::HandleMigrationFailure: migration failed with result %d", static_cast<int>(result));
+    LOG_WARN("PathManager::HandleMigrationFailure: migration failed with result %d", static_cast<int>(result));
 
     // Build migration info for callback
     MigrationInfo info;
@@ -484,10 +484,28 @@ void PathManager::HandleMigrationFailure(MigrationResult result) {
 }
 
 void PathManager::CleanupMigrationState() {
-    // Cancel timers
+    // Cancel timers.
+    //
+    // Cross-thread safety: this method is called both from the owning worker's
+    // EventLoop (e.g. during HandleMigrationFailure) AND from ~PathManager,
+    // which runs on whatever thread releases the last shared_ptr to the
+    // ServerConnection. In long-running perf scenarios the http3 ServerConnection
+    // map is cleared from a foreign thread, so we cannot assume we are in the
+    // loop thread. Direct RemoveTimer would trip EventLoop::AssertInLoopThread()
+    // and (now that the assert aborts) crash the process. See
+    // connection_timer_coordinator.cpp::ResetIdleTimer for the same pattern.
     auto loop = event_loop_.lock();
     if (loop) {
-        loop->RemoveTimer(migration_timeout_task_);
+        if (loop->IsInLoopThread()) {
+            loop->RemoveTimer(migration_timeout_task_);
+        } else {
+            uint64_t task_id = migration_timeout_task_.GetId();
+            loop->RunInLoop([loop, task_id]() {
+                common::TimerTask probe;
+                probe.SetIdForTest(task_id);
+                loop->RemoveTimer(probe);
+            });
+        }
     }
 
     // Close and cleanup migration socket if migration failed
@@ -515,25 +533,28 @@ int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_add
     // Determine if peer is IPv4 or IPv6 to create matching socket type
     bool peer_is_ipv4 = (peer_addr_.GetIp().find(':') == std::string::npos);
 
-    int32_t sockfd = -1;
+    // Create the right kind of UDP socket. UdpSocket*() returns the actual
+    // address family of the resulting fd, which we forward to Bind() so that
+    // no probing (getsockname / SO_DOMAIN / IPV6_V6ONLY) is needed.
+    common::UdpSocketResult sock_ret;
     if (peer_is_ipv4) {
-        // Create IPv4-only socket to avoid IPv6 dual-stack routing issues
-        // (e.g., in Docker bridge networks that are IPv4-only)
-        auto sock_ret = common::UdpSocket4();
+        // IPv4-only socket: avoids IPv6 dual-stack routing issues
+        // (e.g., in Docker bridge networks that are IPv4-only).
+        sock_ret = common::UdpSocket4();
         if (sock_ret.error_code_ != 0) {
-            common::LOG_ERROR("PathManager: failed to create IPv4 UDP socket: errno=%d", sock_ret.error_code_);
+            LOG_ERROR("PathManager: failed to create IPv4 UDP socket: errno=%d", sock_ret.error_code_);
             return -1;
         }
-        sockfd = sock_ret.return_value_;
     } else {
-        // Create IPv6 dual-stack socket for IPv6 peers
-        auto sock_ret = common::UdpSocket();
+        // IPv6 dual-stack socket for IPv6 peers.
+        sock_ret = common::UdpSocket();
         if (sock_ret.error_code_ != 0) {
-            common::LOG_ERROR("PathManager: failed to create UDP socket: errno=%d", sock_ret.error_code_);
+            LOG_ERROR("PathManager: failed to create UDP socket: errno=%d", sock_ret.error_code_);
             return -1;
         }
-        sockfd = sock_ret.return_value_;
     }
+    const int32_t sockfd = sock_ret.return_value_;
+    const int32_t sock_family = sock_ret.family_;
 
     // Set non-blocking
     common::SocketNoblocking(sockfd);
@@ -545,9 +566,9 @@ int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_add
         bind_addr.SetAddressType(common::AddressType::kIpv4);
     }
 
-    auto bind_ret = common::Bind(sockfd, bind_addr);
-        if (bind_ret.error_code_ != 0) {
-        common::LOG_ERROR("PathManager: failed to bind socket to %s:%d: errno=%d", bind_addr.GetIp().c_str(),
+    auto bind_ret = common::Bind(sockfd, sock_family, bind_addr);
+    if (bind_ret.error_code_ != 0) {
+        LOG_ERROR("PathManager: failed to bind socket to %s:%d: errno=%d", bind_addr.GetIp().c_str(),
             bind_addr.GetPort(), bind_ret.error_code_);
         common::Close(sockfd);
         return -1;
@@ -558,7 +579,7 @@ int32_t PathManager::CreateBoundSocket(const ::quicx::common::Address& local_add
         new_local_addr_ = bind_addr;
     }
 
-    common::LOG_INFO("PathManager: created migration socket %d bound to %s:%d (peer_is_ipv4=%d)", sockfd,
+    LOG_INFO("PathManager: created migration socket %d bound to %s:%d (peer_is_ipv4=%d)", sockfd,
         new_local_addr_.GetIp().c_str(), new_local_addr_.GetPort(), peer_is_ipv4);
 
     return sockfd;

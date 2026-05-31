@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <vector>
 #include <quicx/quic/if_quic_connection.h>
 #include <quicx/quic/if_quic_stream.h>
 
@@ -14,7 +15,8 @@ public:
     MockQuicConnection():
         user_data_(nullptr),
         stream_state_cb_(nullptr),
-        next_timer_id_(1) {}
+        next_timer_id_(1),
+        next_stream_id_(0) {}
 
     void SetPeer(std::shared_ptr<MockQuicConnection> peer) { peer_ = peer; }
 
@@ -59,6 +61,24 @@ private:
 
     // Timer management
     uint64_t next_timer_id_;
+    // Local-side stream-id counter. Production code keys IConnection::streams_
+    // by stream id, so two streams sharing an id silently overwrite each
+    // other and break unidirectional-stream demultiplexing (e.g. control vs
+    // QPACK encoder vs QPACK decoder receiver streams). The original mock
+    // hard-coded id 0 — we now hand out monotonically increasing ids per
+    // local connection, matching real QUIC behavior closely enough for the
+    // HTTP/3 stream registry.
+    uint64_t next_stream_id_;
+
+    // Streams created by the peer that arrived before *this* side had
+    // installed a stream_state_cb_. Without this buffer, any stream the
+    // peer opens during its own constructor / Init() (e.g. control stream,
+    // QPACK encoder/decoder streams) is silently dropped on our side,
+    // because IConnection::Init() — which is what installs the callback —
+    // hasn't run yet. Real QUIC is event-loop driven and naturally defers
+    // delivery, so we mirror that ordering with a queue that drains the
+    // moment SetStreamStateCallBack() is wired up.
+    std::vector<std::shared_ptr<IQuicStream>> pending_inbound_streams_;
 
     // State
     bool is_terminating_ = false;

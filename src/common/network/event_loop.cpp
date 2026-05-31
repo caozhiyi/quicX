@@ -1,3 +1,6 @@
+#include <cstdlib>
+#include <functional>
+#include <thread>
 #include <vector>
 
 #include "common/log/log.h"
@@ -59,7 +62,17 @@ void EventLoop::RunInLoop(std::function<void()> task) {
 
 void EventLoop::AssertInLoopThread() {
     if (!IsInLoopThread()) {
-        LOG_FATAL("EventLoop accessed from wrong thread!");
+        // CRITICAL: previously this only emitted LOG_FATAL (which is non-fatal
+        // in our logger — see common/log/base_logger.cpp). That left thread
+        // safety bugs silent and caused cascading CONNECTION_CLOSE storms in
+        // long perf runs (root cause for the 5s/10s stalls observed on
+        // 2026-05-29). We now log AND abort so any cross-thread access is
+        // surfaced immediately with a stack trace from the crashed thread.
+        LOG_FATAL("EventLoop accessed from wrong thread! expected_tid_hash=%zu actual_tid_hash=%zu",
+                  std::hash<std::thread::id>{}(thread_id_),
+                  std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        // Flush pending log records so the FATAL line is on disk before abort.
+        std::abort();
     }
 }
 
@@ -405,14 +418,20 @@ void EventLoop::SetTimerForTest(std::shared_ptr<ITimer> timer) {
 }
 
 void EventLoop::DrainPostedTasks() {
-    std::deque<std::function<void()>> q;
+    // DrainPostedTasks is called from the loop thread only, so we can safely
+    // reuse a single scratch deque across iterations to avoid per-iteration
+    // allocation/free of the deque control nodes and the std::function moves.
     {
         std::lock_guard<std::mutex> lk(tasks_mu_);
-        q.swap(tasks_);
+        if (tasks_.empty()) {
+            return;
+        }
+        tasks_.swap(tasks_drain_scratch_);
     }
-    for (auto& fn : q) {
+    for (auto& fn : tasks_drain_scratch_) {
         if (fn) fn();
     }
+    tasks_drain_scratch_.clear();
 }
 
 }  // namespace common

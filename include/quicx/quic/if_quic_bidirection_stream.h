@@ -48,6 +48,18 @@ public:
      * heavy lifting to other threads if necessary.
      */
     virtual void SetStreamReadCallBack(stream_read_callback cb) = 0;
+
+    /**
+     * @brief Number of bytes currently buffered inside the stream awaiting
+     * transmission to the wire (i.e. queued in the send buffer but not yet
+     * packed into an outgoing STREAM frame).
+     *
+     * Streaming producers can consult this to apply application-level
+     * backpressure: stop pushing more bytes from the upstream source while
+     * the in-stream queue exceeds a threshold, so quicX does not eagerly
+     * buffer the entire payload in memory. See ReqRespBaseStream::HandleSent.
+     */
+    virtual uint64_t GetPendingSendBytes() = 0;
 };
 
 }

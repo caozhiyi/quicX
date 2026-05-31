@@ -12,13 +12,14 @@ public:
     ChaCha20Poly1305Cryptographer();
     virtual ~ChaCha20Poly1305Cryptographer();
 
-    virtual const char* GetName();
+    const char* GetName() override;
 
-    virtual CryptographerId GetCipherId();
+    CryptographerId GetCipherId() override;
 
 protected:
     virtual bool MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
-                            uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length);
+                            uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length,
+                            EVP_CIPHER_CTX* cached_hp_ctx = nullptr) override;
 };
 
 }

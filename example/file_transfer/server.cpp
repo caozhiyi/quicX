@@ -1,15 +1,25 @@
+#include <csignal>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
 
+// PERF VALIDATION (loopback): see comment in client.cpp. The override has to
+// be installed on *both* peers because each peer runs an independent
+// RttCalculator and seeds its own pre-handshake PTO from the override.
+#include "quic/connection/controler/rtt_calculator.h"
+
 namespace fs = std::filesystem;
+
+static volatile sig_atomic_t g_shutdown = 0;
 
 static const char cert_pem[] =
     "-----BEGIN CERTIFICATE-----\n"
@@ -45,16 +55,32 @@ static const char key_pem[] =
     "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
     "-----END RSA PRIVATE KEY-----\n";
 
-// Calculate simple checksum of a file
+// Calculate simple checksum of a file.
+// PERF: Previously this used `std::istreambuf_iterator<char>` to slurp the
+// entire file into a std::string before hashing. Under debug builds (-O0),
+// the unoptimized iterator made ~5 function calls per byte, costing ~25s
+// for a 500MB file — and because this is invoked from OnBodyChunk on the
+// server worker thread, the worker stopped reading UDP for that whole
+// window, causing the client to PTO-retransmit into a kernel buffer that
+// was silently dropping packets (the 25s tail-stall observed in benches).
+// Use a fixed-size read buffer + incremental hash_combine to keep the
+// workload bounded and cache-friendly regardless of optimization level.
 std::string CalculateChecksum(const std::string& filepath) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file) {
         return "";
     }
 
-    std::hash<std::string> hasher;
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    return std::to_string(hasher(content));
+    std::hash<std::string_view> hasher;
+    size_t combined = 0;
+    char buf[64 * 1024];
+    while (file.read(buf, sizeof(buf)) || file.gcount() > 0) {
+        std::string_view chunk(buf, static_cast<size_t>(file.gcount()));
+        size_t h = hasher(chunk);
+        // boost-style hash_combine
+        combined ^= h + 0x9e3779b9 + (combined << 6) + (combined >> 2);
+    }
+    return std::to_string(combined);
 }
 
 // Streaming file upload handler
@@ -158,7 +184,12 @@ public:
     bool Init() {
         quicx::Http3ServerConfig config;
         config.quic_config_.config_.worker_thread_num_ = 4;
-        config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kNull;
+
+        // Enable Metrics HTTP endpoint for diagnostics
+        config.metrics_.enable = true;
+        config.metrics_.http_enable = true;
+        config.metrics_.http_path = "/metrics";
 
         // Load certificates
         config.quic_config_.cert_pem_ = cert_pem;
@@ -319,14 +350,26 @@ public:
 
         std::cout << "Press Ctrl+C to stop..." << std::endl;
 
-        // Keep running
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+        // Keep running until shutdown signal
+        while (!g_shutdown) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
+
+        std::cout << "Shutting down gracefully..." << std::endl;
     }
 };
 
 int main(int argc, char* argv[]) {
+    // PERF VALIDATION: install signal handlers so that SIGINT/SIGTERM trigger
+    // graceful shutdown. Using a flag instead of std::exit() to avoid calling
+    // async-signal-unsafe functions (delete/free) inside the signal handler.
+    std::signal(SIGINT,  [](int){ g_shutdown = 1; });
+    std::signal(SIGTERM, [](int){ g_shutdown = 1; });
+
+    // PERF VALIDATION: collapse cold-start PTO on loopback. Mirrors
+    // test/perf/e2e_perf_test.cpp.
+    quicx::quic::SetDefaultInitialRtt(100);
+
     std::string root_dir = "./files";
 
     if (argc > 1) {

@@ -13,14 +13,33 @@ IConnection::IConnection(const std::string& unique_id, const std::shared_ptr<IQu
     quic_connection_(quic_connection),
     cleanup_timer_id_(0),
     is_destroying_(std::make_shared<std::atomic<bool>>(false)) {
-    quic_connection_->SetStreamStateCallBack(
-        std::bind(&IConnection::HandleStream, this, std::placeholders::_1, std::placeholders::_2));
-
     qpack_encoder_ = std::make_shared<QpackEncoder>();
+    qpack_decoder_ = std::make_shared<QpackEncoder>();
     blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
+
+    // NOTE: SetStreamStateCallBack is wired in Init() (not here) because
+    // shared_from_this() / weak_from_this() are not available inside the
+    // constructor — std::enable_shared_from_this is only initialised once
+    // make_shared<T>() finishes constructing the object. Using weak_from_this()
+    // here would silently capture an empty weak_ptr and every stream callback
+    // would be a no-op.
 }
 
 void IConnection::Init() {
+    // Wire QUIC stream-state notifications into HandleStream() via weak_self,
+    // so a queued/late callback after ~IConnection() doesn't dispatch a
+    // pure virtual on a half-destroyed object (was the cause of the
+    // __cxa_pure_virtual SIGABRT). Per ownership_and_memory.md §3.1.
+    std::weak_ptr<IConnection> weak_self = weak_from_this();
+    quic_connection_->SetStreamStateCallBack(
+        [weak_self](std::shared_ptr<IQuicStream> stream, uint32_t error_code) {
+            auto self = weak_self.lock();
+            if (!self) {
+                return;
+            }
+            self->HandleStream(stream, error_code);
+        });
+
     // Start periodic cleanup timer for completed streams (runs every 100ms)
     StartCleanupTimer();
 }
@@ -35,13 +54,11 @@ IConnection::~IConnection() {
         Close(0);
     }
 
-    // P4: Drop every stream we still hold before our members destruct. Each
-    // RequestStream captures its error/push_promise callbacks which reference
-    // ClientConnection methods; even though we bind them to |this| (not a
-    // shared_ptr), clearing now makes the ordering obvious and prevents any
-    // deferred quic-layer callback from landing into a half-destroyed
-    // ClientConnection. streams_to_destroy_ holds the same references for
-    // completed streams that were waiting on the next cleanup tick.
+    // Drop owned streams before the rest of our members destruct. Stream
+    // callbacks now capture weak_ptr<IConnection> (no self-cycle), but
+    // explicit early-clear here keeps destruction order obvious: a stream
+    // that fires a deferred QUIC-layer callback during teardown will see
+    // weak_self.lock() == nullptr and bail out cleanly.
     streams_.clear();
     streams_to_destroy_.clear();
 }
@@ -61,7 +78,7 @@ void IConnection::Close(uint32_t error_code) {
 
 bool IConnection::InitiateMigration() {
     if (!quic_connection_) {
-        common::LOG_WARN("IConnection::InitiateMigration: no QUIC connection");
+        LOG_WARN("IConnection::InitiateMigration: no QUIC connection");
         return false;
     }
     return quic_connection_->InitiateMigration();
@@ -69,7 +86,7 @@ bool IConnection::InitiateMigration() {
 
 MigrationResult IConnection::InitiateMigrationTo(const std::string& local_ip, uint16_t local_port) {
     if (!quic_connection_) {
-        common::LOG_WARN("IConnection::InitiateMigrationTo: no QUIC connection");
+        LOG_WARN("IConnection::InitiateMigrationTo: no QUIC connection");
         return MigrationResult::kFailedInvalidState;
     }
     return quic_connection_->InitiateMigrationTo(local_ip, local_port);
@@ -105,14 +122,54 @@ void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& s
         // Receipt of these MUST be treated as a connection error of type H3_SETTINGS_ERROR.
         uint16_t id = iter->first;
         if (id == 0x02 || id == 0x03 || id == 0x04 || id == 0x05) {
-            common::LOG_ERROR("received forbidden HTTP/2 settings id: 0x%02x", id);
+            LOG_ERROR("received forbidden HTTP/2 settings id: 0x%02x", id);
             Close(0x109);  // H3_SETTINGS_ERROR
             return;
         }
         // RFC 9114 §7.2.4: Store peer's setting value directly (not min).
         settings_[iter->first] = iter->second;
-        common::LOG_DEBUG("settings. key:%d, value:%d", iter->first, settings_[iter->first]);
+        LOG_DEBUG("settings. key:%d, value:%d", iter->first, settings_[iter->first]);
     }
+
+    // RFC 9204 §3.2.3: After receiving peer's SETTINGS, cap our encoder's dynamic
+    // table capacity to peer's advertised QPACK_MAX_TABLE_CAPACITY.
+    // Our encoder MUST NOT use a capacity larger than what the peer allows.
+    //
+    // NOTE: SETTINGS may arrive *before* the local Init() finishes wiring its
+    // own configured cap (the peer's control SETTINGS frame is delivered to
+    // us synchronously inside our outbound SendSettings call in some test
+    // harnesses). The encoder maintains separate local/peer cap fields and
+    // recomputes min(local, peer) on each setter, so the order of arrival
+    // does not matter — both sides converge on the same cap.
+    auto it = settings_.find(0x01);  // SETTINGS_QPACK_MAX_TABLE_CAPACITY = 0x01
+    if (it != settings_.end()) {
+        uint32_t peer_cap = static_cast<uint32_t>(it->second);
+        qpack_encoder_->SetPeerMaxTableCapacity(peer_cap);
+        LOG_DEBUG("HandleSettings: peer qpack_max_table_capacity=%u, encoder cap set to %u",
+            peer_cap, qpack_encoder_->GetMaxTableCapacity());
+    }
+}
+
+std::function<void(uint64_t, uint32_t)> IConnection::MakeErrorHandler() {
+    std::weak_ptr<IConnection> weak_self = weak_from_this();
+    return [weak_self](uint64_t stream_id, uint32_t error_code) {
+        auto self = weak_self.lock();
+        if (!self) {
+            return;
+        }
+        self->HandleError(stream_id, error_code);
+    };
+}
+
+std::function<void(const std::unordered_map<uint16_t, uint64_t>&)> IConnection::MakeSettingsHandler() {
+    std::weak_ptr<IConnection> weak_self = weak_from_this();
+    return [weak_self](const std::unordered_map<uint16_t, uint64_t>& settings) {
+        auto self = weak_self.lock();
+        if (!self) {
+            return;
+        }
+        self->HandleSettings(settings);
+    };
 }
 
 const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Http3Settings& settings) {
@@ -154,7 +211,7 @@ void IConnection::StartCleanupTimer() {
 
 void IConnection::CleanupDestroyedStreams() {
     if (!streams_to_destroy_.empty()) {
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "IConnection::CleanupDestroyedStreams: cleaning up %zu completed streams", streams_to_destroy_.size());
         streams_to_destroy_.clear();
     }
@@ -166,7 +223,7 @@ void IConnection::ScheduleStreamRemoval(uint64_t stream_id) {
     // but keeps the shared_ptr alive temporarily to prevent use-after-free
     auto iter = streams_.find(stream_id);
     if (iter != streams_.end()) {
-        common::LOG_DEBUG("IConnection::ScheduleStreamRemoval: moving stream %llu to holding area", stream_id);
+        LOG_DEBUG("IConnection::ScheduleStreamRemoval: moving stream %llu to holding area", stream_id);
 
         // Move to holding area - this keeps the object alive until next cleanup cycle
         streams_to_destroy_.push_back(iter->second);

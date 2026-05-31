@@ -67,7 +67,7 @@ bool StreamStateMachineRecv::OnFrame(uint16_t frame_type) {
             break;
 
         default:
-            common::LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", state_, frame_type);
+            LOG_ERROR("current status not allow recv this frame. status:%d, frame type:%d", state_, frame_type);
             break;
     }
     return false;
@@ -107,7 +107,7 @@ bool StreamStateMachineRecv::RecvAllData() {
             // State remains kResetRecvd, ready for AppReadAllData()
             return true;
         default:
-            common::LOG_ERROR("current status not allow recv all data. status:%d", state_);
+            LOG_ERROR("current status not allow recv all data. status:%d", state_);
             break;
     }
     return false;
@@ -125,7 +125,7 @@ bool StreamStateMachineRecv::AppReadAllData() {
             NotifyStateChange(old_state, state_);
             break;
         default:
-            common::LOG_ERROR("current status not allow read all data. status:%d", state_);
+            LOG_ERROR("current status not allow read all data. status:%d", state_);
             return false;
     }
     return true;

@@ -38,6 +38,13 @@ public:
     virtual void AddStreamDataSize(uint32_t size) {}
     virtual uint64_t GetStreamDataSize()  = 0;
 
+    // Remaining writable bytes in the visitor's underlying packet buffer.
+    // Used by stream/crypto producers to size each frame's payload so the
+    // STREAM/CRYPTO frame *always* fits in the current datagram. Default
+    // returns UINT32_MAX (i.e. "no packet-level cap"); FixBufferFrameVisitor
+    // overrides this to expose buffer_->GetFreeLength().
+    virtual uint32_t GetPacketLeftSize() { return UINT32_MAX; }
+
     // Get stream data info for ACK tracking
     virtual std::vector<StreamDataInfo> GetStreamDataInfo() const { return {}; }
 

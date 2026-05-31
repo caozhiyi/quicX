@@ -6,6 +6,7 @@
 
 #include "quic/connection/transport_param.h"
 #include "quic/frame/if_frame.h"
+#include "quic/stream/stream_id_generator.h"
 
 namespace quicx {
 namespace quic {
@@ -20,13 +21,28 @@ namespace quic {
 // 4. Enforce our MAX_STREAMS limits (bidirectional and unidirectional)
 // 5. Generate MAX_DATA and MAX_STREAMS frames to grant more capacity
 // 6. Validate peer doesn't exceed limits (connection close if violated)
+//
+// IMPORTANT: per RFC 9000 §4.6, MAX_STREAMS bounds the streams the *peer* may
+// open, not the streams we open ourselves. To honor that distinction this
+// controller is constructed with the *local* endpoint role; OnStreamCreated
+// uses it to skip locally-initiated stream IDs (see implementation).
+//
 // This is the "receive" half of the symmetric flow control design, complementing
 // SendFlowController which manages outgoing data.
 // Thread safety: Not thread-safe. Caller must provide synchronization.
 class RecvFlowController {
 public:
-    // Constructor
-    RecvFlowController();
+    // Construct a receive-side flow controller bound to the local endpoint role.
+    //
+    // @param local_starter  Whether this endpoint is the client or the server.
+    //                       Required (no default): RecvFlowController must be
+    //                       able to distinguish locally-initiated streams from
+    //                       peer-initiated ones, otherwise it would wrongly
+    //                       count our own streams against the MAX_STREAMS
+    //                       budget we advertised to the peer (RFC 9000 §4.6),
+    //                       which under load surfaces as STREAM_LIMIT_ERROR
+    //                       connection closes.
+    explicit RecvFlowController(StreamIDGenerator::StreamStarter local_starter);
 
     ~RecvFlowController() = default;
 
@@ -95,6 +111,11 @@ private:
     // Stream ID tracking
     uint64_t max_bidi_stream_id_;  // Highest bidirectional stream ID seen from peer
     uint64_t max_uni_stream_id_;   // Highest unidirectional stream ID seen from peer
+
+    // Local endpoint role. Used to distinguish peer-initiated streams from
+    // streams we opened ourselves (only the former should consume the
+    // MAX_STREAMS budget we advertised). See OnStreamCreated().
+    StreamIDGenerator::StreamStarter local_starter_;
 };
 
 }  // namespace quic

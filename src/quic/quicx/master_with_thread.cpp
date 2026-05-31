@@ -9,19 +9,26 @@ namespace quic {
 
 MasterWithThread::MasterWithThread(bool ecn_enabled, std::shared_ptr<common::IEventLoop> event_loop):
     Master(ecn_enabled, event_loop),
-    event_loop_(event_loop) {}
+    event_loop_(event_loop),
+    ready_future_(ready_promise_.get_future().share()) {}
 
 MasterWithThread::~MasterWithThread() {}
+
+bool MasterWithThread::WaitUntilReady() {
+    return ready_future_.get();
+}
 
 void MasterWithThread::Run() {
     auto loop = event_loop_.lock();
     if (!loop) {
-        common::LOG_ERROR("event loop expired.");
+        LOG_ERROR("event loop expired.");
+        ready_promise_.set_value(false);
         return;
     }
 
     if (!loop->Init()) {
-        common::LOG_ERROR("init event loop failed.");
+        LOG_ERROR("init event loop failed.");
+        ready_promise_.set_value(false);
         return;
     }
 
@@ -34,6 +41,9 @@ void MasterWithThread::Run() {
     while (pending_tasks_.Pop(task)) {
         loop->PostTask(std::move(task));
     }
+
+    // Notify the main thread that initialization is complete
+    ready_promise_.set_value(true);
 
     while (!IsStop()) {
         loop->Wait();
@@ -81,7 +91,7 @@ void MasterWithThread::PostTask(std::function<void()> task) {
 
 bool MasterWithThread::AddListener(int32_t listener_sock) {
     auto loop = event_loop_.lock();
-    common::LOG_DEBUG("MasterWithThread::AddListener called: fd=%d, event_loop=%p", listener_sock, loop.get());
+    LOG_DEBUG("MasterWithThread::AddListener called: fd=%d, event_loop=%p", listener_sock, loop.get());
 
     // If EventLoop is initialized, synchronously register the listener on the
     // master-loop thread before returning. This guarantees that by the time
@@ -105,7 +115,7 @@ bool MasterWithThread::AddListener(int32_t listener_sock) {
 
     // If EventLoop is not initialized yet, add directly to pending_listeners_
     // This will be processed in Master::Init() when Run() starts
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "MasterWithThread::AddListener: EventLoop not initialized, adding to pending list for fd=%d", listener_sock);
     ListenerInfo info;
     info.sock = listener_sock;

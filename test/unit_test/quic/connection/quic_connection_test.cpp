@@ -133,7 +133,7 @@ TEST(quic_connection_utest, handshake) {
     std::string session_der;
     ASSERT_TRUE(client_conn->ExportResumptionSession(session_der));
     ASSERT_FALSE(session_der.empty());
-    common::LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
+    LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
 }
 
 TEST(quic_connection_utest, resume_0rtt_basic) {
@@ -178,7 +178,7 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     std::string session_der;
     ASSERT_TRUE(client_conn->ExportResumptionSession(session_der));
     ASSERT_FALSE(session_der.empty());
-    common::LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
+    LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
 
     // 2) Second connection: provide session to enable 0-RTT and send early data
     auto event_loop2 = common::MakeEventLoop();
@@ -317,7 +317,7 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     std::string session_der;
     ASSERT_TRUE(client_conn->ExportResumptionSession(session_der));
     ASSERT_FALSE(session_der.empty());
-    common::LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
+    LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
 
     // 2) Second connection: provide session to enable 0-RTT and send early data
     auto event_loop2 = common::MakeEventLoop();

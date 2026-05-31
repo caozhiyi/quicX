@@ -20,7 +20,7 @@ public:
     virtual void AddRemoteConnectionId(ConnectionID& id);
 
 protected:
-    virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) override;
+    virtual bool OnRetryPacket(const std::shared_ptr<IPacket>& packet) override;
     virtual void WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) override;
 
     // HANDSHAKE_DONE frame handler (set as callback to frame processor)

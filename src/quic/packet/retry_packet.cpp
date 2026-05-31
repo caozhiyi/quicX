@@ -21,7 +21,7 @@ RetryPacket::~RetryPacket() {
 
 bool RetryPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (!header_.EncodeHeader(buffer)) {
-        common::LOG_ERROR("encode header failed");
+        LOG_ERROR("encode header failed");
         return false;
     }
 
@@ -44,14 +44,14 @@ bool RetryPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
 
 bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
     if (!header_.DecodeHeader(buffer, with_flag)) {
-        common::LOG_ERROR("decode header failed");
+        LOG_ERROR("decode header failed");
         return false;
     }
 
     auto span = buffer->GetReadableSpan();
     auto shared_span = buffer->GetSharedReadableSpan();
     if (!shared_span.Valid()) {
-        common::LOG_ERROR("readable span is invalid");
+        LOG_ERROR("readable span is invalid");
         return false;
     }
     auto chunk = shared_span.GetChunk();

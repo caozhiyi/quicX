@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "common/log/log.h"
 #include "common/qlog/qlog.h"
 #include "quic/congestion_control/util.h"
 #include "quic/congestion_control/normal_pacer.h"
@@ -57,7 +58,7 @@ void BBRv1CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     if (end_of_round_pn_ == 0 || ev.pn > end_of_round_pn_) {
         end_of_round_pn_ = ev.pn;
     }
-    if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
+    if (pacer_) pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));
 }
 
 void BBRv1CongestionControl::OnPacketAcked(const AckEvent& ev) {
@@ -133,8 +134,13 @@ void BBRv1CongestionControl::OnPacketLost(const LossEvent& ev) {
 
 void BBRv1CongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
     (void)ack_delay;
+    // Guarantee a minimum RTT of 1us to prevent division by zero and
+    // to ensure bandwidth sampling progresses on loopback paths where
+    // send_time_ms == ack_time_ms (millisecond clock granularity).
+    if (latest_rtt == 0) latest_rtt = 1;
     if (srtt_us_ == 0) srtt_us_ = latest_rtt;
     srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
+    if (srtt_us_ == 0) srtt_us_ = 1;  // guard against EWMA rounding to zero
     // Note: min_rtt timestamp is updated in OnPacketAcked where ack_time is available
     if (min_rtt_us_ == 0 || latest_rtt < min_rtt_us_) {
         min_rtt_us_ = latest_rtt;
@@ -144,13 +150,21 @@ void BBRv1CongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack
 ICongestionControl::SendState BBRv1CongestionControl::CanSend(uint64_t now, uint64_t& can_send_bytes) const {
     (void)now;
     uint64_t target = BdpBytes(static_cast<uint64_t>(cwnd_gain_ * 1000), 1000);
+    // Ensure target is at least cwnd_bytes_ to prevent BDP underestimation
+    // from throttling the sender when the real bottleneck is elsewhere.
+    // On low-RTT paths (loopback, LAN), BDP × gain can be much smaller than
+    // the actual achievable window; using cwnd_bytes_ as a floor keeps the
+    // sender making progress at the rate that bandwidth sampling measured.
+    target = std::max<uint64_t>(target, cwnd_bytes_);
     uint64_t left = (target > bytes_in_flight_) ? (target - bytes_in_flight_) : 0;
     can_send_bytes = left;
-    if (left == 0) return SendState::kBlockedByCwnd;
+    if (left == 0) {
+        return SendState::kBlockedByCwnd;
+    }
     return SendState::kOk;
 }
 
-uint64_t BBRv1CongestionControl::GetPacingRateBps() const {
+uint64_t BBRv1CongestionControl::GetPacingRateBytesPerSec() const {
     if (max_bw_bps_ == 0) {
         // Use QUIC default initial RTT (333ms) if no RTT sample yet
         uint64_t rtt_us = (srtt_us_ > 0) ? srtt_us_ : 333000;
@@ -161,9 +175,9 @@ uint64_t BBRv1CongestionControl::GetPacingRateBps() const {
 }
 
 uint64_t BBRv1CongestionControl::NextSendTime(uint64_t now) const {
-    if (!pacer_) return 0;
-    (void)now;
-    return pacer_->TimeUntilSend();
+    if (!pacer_) return now;
+    // pacer returns delta_ms until next send opportunity; convert to absolute time.
+    return now + pacer_->TimeUntilSend();
 }
 
 uint64_t BBRv1CongestionControl::BdpBytes(uint64_t gain_num, uint64_t gain_den) const {
@@ -182,7 +196,7 @@ void BBRv1CongestionControl::SetPacingGain(double gain) { pacing_gain_ = gain; }
 void BBRv1CongestionControl::SetCwndGain(double gain) { cwnd_gain_ = gain; }
 void BBRv1CongestionControl::UpdatePacingRate() {
     if (!pacer_) return;
-    pacer_->OnPacingRateUpdated(GetPacingRateBps());
+    pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
 void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {

@@ -27,7 +27,7 @@ bool ShortHeader::EncodeHeader(std::shared_ptr<common::IBuffer> buffer) {
 
     uint32_t need_size = EncodeHeaderSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -51,7 +51,7 @@ bool ShortHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool wit
 
     // check flag fixed bit
     if (!HeaderFlag::GetShortHeaderFlag().fix_bit_) {
-        common::LOG_ERROR("quic fixed bit is not set");
+        LOG_ERROR("quic fixed bit is not set");
         return false;
     }
 

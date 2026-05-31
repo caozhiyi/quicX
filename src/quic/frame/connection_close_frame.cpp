@@ -24,7 +24,7 @@ bool ConnectionCloseFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint32_t need_size = EncodeSize();
 
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -52,7 +52,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
         frame_type_ = static_cast<uint16_t>(type);
         if (frame_type_ != FrameType::kConnectionClose && frame_type_ != FrameType::kConnectionCloseApp) {
-            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
+            LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
@@ -73,7 +73,7 @@ bool ConnectionCloseFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     // RFC 9000 does not define a limit, but 16KB is a reasonable upper bound.
     static constexpr uint32_t kMaxReasonLength = 16384;
     if (reason_length > kMaxReasonLength) {
-        common::LOG_ERROR("reason length too large. length:%u, max:%u", reason_length, kMaxReasonLength);
+        LOG_ERROR("reason length too large. length:%u, max:%u", reason_length, kMaxReasonLength);
         return false;
     }
 

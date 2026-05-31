@@ -16,7 +16,7 @@ CryptoFrame::~CryptoFrame() {}
 bool CryptoFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint32_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -38,14 +38,14 @@ bool CryptoFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
         frame_type_ = (uint16_t)type;
 
         if (frame_type_ != FrameType::kCrypto) {
-            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
+            LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(offset_), "failed to decode offset");
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(length_), "failed to decode length");
     if (length_ > buffer->GetDataLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
         return false;
     }

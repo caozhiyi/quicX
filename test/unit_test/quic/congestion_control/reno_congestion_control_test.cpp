@@ -131,8 +131,9 @@ TEST(RenoCongestionControlTest, PacingRateComputesFromSrtt) {
 
     // SRTT = 100000us (100ms)
     cc.OnRoundTripSample(100000, 0);
-    uint64_t expected_bps = (cfg.initial_cwnd_bytes * 8ull * 1000000ull) / 100000ull;
-    EXPECT_EQ(cc.GetPacingRateBps(), expected_bps);
+    // pacing rate (bytes/sec) = cwnd_bytes * 1e6 / rtt_us
+    uint64_t expected_bytes_per_sec = (cfg.initial_cwnd_bytes * 1000000ull) / 100000ull;
+    EXPECT_EQ(cc.GetPacingRateBytesPerSec(), expected_bytes_per_sec);
 }
 
 TEST(RenoCongestionControlTest, RecoveryShrinksCwndAndAcksRestoreSendCapacity) {

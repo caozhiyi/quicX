@@ -118,10 +118,17 @@ TEST_F(QpackStreamTest, DecoderSenderReceiverRoundTrip) {
     EXPECT_EQ(decoder_ack_count_, 1u);
     EXPECT_EQ(decoder_registry_->GetBlockedCount(), 0u);
 
+    // RFC 9204 §4.4.3: Insert Count Increment is purely advisory state for
+    // our encoder.  When received on the *decoder receiver* stream it MUST
+    // NOT touch the local blocked registry — that registry tracks our
+    // local decoder's pending sections waiting for our local decoder's
+    // table to grow.  See bug fix in
+    // QpackDecoderReceiverStream::ParseDecoderFrames.
     decoder_registry_->Add(0xABCDULL, [this]() { decoder_notify_count_++; });
     EXPECT_TRUE(decoder_sender_->SendInsertCountIncrement(4));
     EXPECT_EQ(decoder_error_code_, 0u);
-    EXPECT_EQ(decoder_notify_count_, 1u);
+    EXPECT_EQ(decoder_notify_count_, 0u);
+    EXPECT_EQ(decoder_registry_->GetBlockedCount(), 1u);
 }
 
 }  // namespace

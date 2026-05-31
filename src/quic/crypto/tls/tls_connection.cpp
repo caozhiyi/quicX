@@ -25,17 +25,17 @@ TLSConnection::~TLSConnection() {}
 bool TLSConnection::Init() {
     ssl_ = SSL_new(ctx_->GetSSLCtx());
     if (!ssl_) {
-        common::LOG_ERROR("create ssl failed.");
+        LOG_ERROR("create ssl failed.");
         return false;
     }
 
     if (SSL_set_app_data(ssl_.get(), this) == 0) {
-        common::LOG_ERROR("SSL_set_app_data failed.");
+        LOG_ERROR("SSL_set_app_data failed.");
         return false;
     }
 
     if (SSL_set_quic_method(ssl_.get(), &gQuicMethod) == 0) {
-        common::LOG_ERROR("SSL_set_quic_method failed.");
+        LOG_ERROR("SSL_set_quic_method failed.");
         return false;
     }
 
@@ -50,7 +50,7 @@ bool TLSConnection::DoHandleShake() {
 
         // Handle 0-RTT rejection according to RFC 9001
         if (ssl_err == SSL_ERROR_EARLY_DATA_REJECTED) {
-            common::LOG_INFO("0-RTT data was rejected by server, resetting and continuing with full handshake");
+            LOG_INFO("0-RTT data was rejected by server, resetting and continuing with full handshake");
 
             // Reset early data state and continue with full handshake
             SSL_reset_early_data_reject(ssl_.get());
@@ -61,7 +61,7 @@ bool TLSConnection::DoHandleShake() {
                 ssl_err = SSL_get_error(ssl_.get(), ret);
                 if (ssl_err != SSL_ERROR_WANT_READ) {
                     const char* err = SSL_error_description(ssl_err);
-                    common::LOG_ERROR("SSL_do_handshake failed after 0-RTT reset. err:%s", err);
+                    LOG_ERROR("SSL_do_handshake failed after 0-RTT reset. err:%s", err);
                 }
                 return false;
             }
@@ -70,7 +70,7 @@ bool TLSConnection::DoHandleShake() {
 
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err = SSL_error_description(ssl_err);
-            common::LOG_ERROR("SSL_do_handshake failed. err:%s", err);
+            LOG_ERROR("SSL_do_handshake failed. err:%s", err);
         }
         return false;
     }
@@ -96,9 +96,9 @@ const char* TLSConnection::GetEarlyDataReasonString() const {
 
 bool TLSConnection::ProcessCryptoData(uint8_t* data, uint32_t len, uint16_t encryption_level) {
     auto level = (ssl_encryption_level_t)encryption_level;
-    common::LOG_DEBUG("process crypto data level: %d, len: %d", level, len);
+    LOG_DEBUG("process crypto data level: %d, len: %d", level, len);
     if (!SSL_provide_quic_data(ssl_.get(), level, data, len)) {
-        common::LOG_ERROR("SSL_provide_quic_data failed.");
+        LOG_ERROR("SSL_provide_quic_data failed.");
         return false;
     }
     // In QUIC/TLS 1.3, NewSessionTicket and other post-handshake messages arrive at application level.
@@ -111,7 +111,7 @@ bool TLSConnection::ProcessCryptoData(uint8_t* data, uint32_t len, uint16_t encr
 
 bool TLSConnection::AddTransportParam(uint8_t* tp, uint32_t len) {
     if (SSL_set_quic_transport_params(ssl_.get(), tp, len) == 0) {
-        common::LOG_ERROR("SSL_set_quic_transport_params failed.");
+        LOG_ERROR("SSL_set_quic_transport_params failed.");
         return false;
     }
 
@@ -183,7 +183,7 @@ EncryptionLevel TLSConnection::AdapterEncryptionLevel(ssl_encryption_level_t lev
         case ssl_encryption_application:
             return kApplication;
         default:
-            common::LOG_ERROR("unknown encryption level. level:%d", level);
+            LOG_ERROR("unknown encryption level. level:%d", level);
             return kInitial;  // safe fallback
     }
 }

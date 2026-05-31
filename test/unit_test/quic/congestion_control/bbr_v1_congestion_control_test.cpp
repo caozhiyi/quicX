@@ -66,7 +66,7 @@ TEST(BBRv1CongestionControlTest, PacingRateAndCanSend) {
     }
     
     // After proper sampling, should have valid pacing rate
-    uint64_t pacing_rate = cc.GetPacingRateBps();
+    uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
 
     // CanSend when no in-flight
@@ -98,7 +98,7 @@ TEST(BBRv1CongestionControlTest, ProbeRttTransitionTiming) {
     }
     
     // Should have valid pacing rate after bandwidth sampling
-    uint64_t pacing_rate = cc.GetPacingRateBps();
+    uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
 }
 
@@ -119,7 +119,7 @@ TEST(BBRv1CongestionControlTest, ProbeBwGainCycleTiming) {
     }
     
     // Should have valid pacing rate and be in a stable state
-    uint64_t pacing_rate = cc.GetPacingRateBps();
+    uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
 }
 
@@ -140,7 +140,7 @@ TEST(BBRv1CongestionControlTest, ProbeBwFullEightSegmentCycle) {
     }
     
     // Should have valid pacing rate
-    uint64_t pacing_rate = cc.GetPacingRateBps();
+    uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
 }
 

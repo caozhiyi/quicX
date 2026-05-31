@@ -64,8 +64,14 @@ public:
 
 protected:
     // Derive header protection mask into out_mask. Chooses cipher context based on key.
+    // PERF: For AES-ECB, prefer the cached EVP_CIPHER_CTX* path (cached_hp_ctx).
+    // The base implementation uses cached_hp_ctx when non-null and AEAD is AES-GCM
+    // (which uses AES-ECB for HP) — this avoids per-packet EVP_CIPHER_CTX_new()
+    // and AES key schedule. The legacy `key`-based slow path is preserved for
+    // ChaCha20 (overridden in subclass) and for callers that don't have a ctx
+    // available.
     virtual bool MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key, uint8_t* out_mask,
-        size_t mask_cap, size_t& out_mask_length);
+        size_t mask_cap, size_t& out_mask_length, EVP_CIPHER_CTX* cached_hp_ctx = nullptr);
     void MakePacketNonce(uint8_t* nonce, std::vector<uint8_t>& iv, uint64_t pkt_number);
 
 protected:

@@ -13,8 +13,12 @@ class ConnectionID {
 public:
     ConnectionID();
     ConnectionID(const uint8_t* id, uint8_t len, uint64_t sequence_number = 0);
-    ConnectionID(const ConnectionID& other);
-    ~ConnectionID();
+
+    // Rule of Zero: copy/move/dtor compiler-generated.
+    // (Previously declared user-defined copy ctor + copy assign + dtor with
+    // bodies equivalent to the defaults. That suppressed implicit move ops
+    // and rippled into PacketParseResult, contributing to the 132MB heaptrack
+    // leak via std::move silently degrading to deep copy.)
 
     uint64_t Hash();
 
@@ -25,7 +29,6 @@ public:
     uint64_t GetSequenceNumber() const;
     void SetSequenceNumber(uint64_t sequence_number) { sequence_number_ = sequence_number; }
 
-    void operator=(const ConnectionID& other);
     bool operator==(const ConnectionID& other) const;
     bool operator!=(const ConnectionID& other) const;
 

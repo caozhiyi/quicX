@@ -135,10 +135,11 @@ TEST_F(NetworkIntegrationTest, MultipleListenersAndTimers) {
 
 // Test error handling basics
 TEST_F(NetworkIntegrationTest, ErrorHandling) {
-    // Invalid timer removal without init event loop
-    if (event_loop_) {
-        EXPECT_FALSE(event_loop_->RemoveTimer(999));
-    }
+    // RemoveTimer requires an initialized event loop (Init() sets thread_id_).
+    // Without Init(), AssertInLoopThread() aborts because thread_id_ is default.
+    ASSERT_TRUE(event_loop_->Init());
+    // Removing a non-existent timer ID should return false, not crash.
+    EXPECT_FALSE(event_loop_->RemoveTimer(999));
     
     // Test TCP socket with invalid FD (create a socket and then close it)
     auto socket = std::make_unique<TcpSocket>();

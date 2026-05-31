@@ -190,7 +190,9 @@ static void BM_Qpack_BlockedRegistry_AddAck(benchmark::State& state) {
 
     for (auto _ : state) {
         http3::QpackBlockedRegistry reg;
-        reg.SetMaxBlockedStreams(/*unlimited for the test*/ 0);
+        // Default-constructed registry is unlimited; calling
+        // SetMaxBlockedStreams(0) would now mean "no blocking allowed"
+        // (RFC 9204 §5), which is not what the benchmark wants.
 
         // Add N pending sections on distinct streams, with a retry closure.
         for (int i = 0; i < n_pending; ++i) {

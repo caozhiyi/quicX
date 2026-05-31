@@ -11,6 +11,9 @@
 #include "common/timer/if_timer.h"
 #include "common/util/random.h"
 
+// __builtin_ctzll is a GCC/Clang intrinsic. Both compilers we support (gcc,
+// clang) provide it. MSVC is not a target for this codebase.
+
 namespace quicx {
 namespace common {
 
@@ -87,14 +90,54 @@ private:
     // Advance current_ms_ up to (and including) `now`, firing expired slots.
     void Tick(uint64_t now);
 
-    // Scan all slots for the minimum absolute deadline.
+    // Compute the earliest absolute deadline using the per-level occupancy
+    // bitmaps and per-slot min caches. O(levels) — no full slot scan.
     uint64_t EarliestDeadline() const;
+
+    // ---- bitmap helpers ----
+    // Find the lowest set bit in a 256-bit bitmap, starting from `from`
+    // (inclusive). Returns 256 if no bit is set in [from, 256).
+    static uint32_t Wheel0NextSetFrom(const std::array<uint64_t, 4>& bm, uint32_t from);
+    // Find the lowest set bit in a 64-bit bitmap starting from `from`.
+    // Returns 64 if no bit is set in [from, 64).
+    static uint32_t Wheel64NextSetFrom(uint64_t bm, uint32_t from);
+
+    // Slot occupancy bit set / clear helpers (also keep total bitcount fresh).
+    void SetWheel0Bit(uint32_t s)  { wheel0_occ_[s >> 6] |=  (1ull << (s & 63)); }
+    void ClrWheel0Bit(uint32_t s)  { wheel0_occ_[s >> 6] &= ~(1ull << (s & 63)); }
+    void SetWheel1Bit(uint32_t s)  { wheel1_occ_ |=  (1ull << s); }
+    void ClrWheel1Bit(uint32_t s)  { wheel1_occ_ &= ~(1ull << s); }
+    void SetWheel2Bit(uint32_t s)  { wheel2_occ_ |=  (1ull << s); }
+    void ClrWheel2Bit(uint32_t s)  { wheel2_occ_ &= ~(1ull << s); }
+
+    // Recompute the min deadline for a single L1/L2/overflow slot by
+    // scanning the slot's list once. L0 slots all share one deadline so no
+    // per-slot min is needed.
+    static uint64_t ScanSlotMin(const Slot& slot);
 
     // ---- wheel storage ----
     std::array<Slot, kL0Size> wheel0_;
     std::array<Slot, kL1Size> wheel1_;
     std::array<Slot, kL2Size> wheel2_;
     Slot                      overflow_;
+
+    // Per-level occupancy bitmaps. Bit s == 1 iff wheelX_[s] is non-empty.
+    // These let EarliestDeadline() skip over empty slots in O(words) using
+    // ctz, replacing the previous O(W) full scan that consumed ~20% CPU
+    // under load.
+    std::array<uint64_t, 4> wheel0_occ_ = {0, 0, 0, 0};   // 4 * 64 = 256 bits
+    uint64_t                wheel1_occ_ = 0;              // 64 bits
+    uint64_t                wheel2_occ_ = 0;              // 64 bits
+    bool                    overflow_nonempty_ = false;
+
+    // Per-slot minimum-deadline cache for L1/L2/overflow. Tasks within one
+    // L1/L2 slot can have different deadlines (sub-slot ms), so we cache
+    // the minimum to avoid scanning the slot's list when computing
+    // EarliestDeadline(). L0 slots all share a single ms so no cache.
+    // UINT64_MAX means "no task in this slot".
+    std::array<uint64_t, kL1Size> wheel1_slot_min_;
+    std::array<uint64_t, kL2Size> wheel2_slot_min_;
+    uint64_t                      overflow_slot_min_ = std::numeric_limits<uint64_t>::max();
 
     uint64_t current_ms_  = 0;
     bool     initialized_ = false;

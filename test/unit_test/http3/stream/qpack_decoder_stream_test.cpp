@@ -155,7 +155,15 @@ TEST(QpackDecoderStreamTest, StreamCancelTest) {
     EXPECT_EQ(receiver->GetRetryCount(), 0);  // Retry callback NOT called for cancellation
 }
 
-// Test sending and receiving Insert Count Increment frame
+// Test sending and receiving Insert Count Increment frame.
+//
+// RFC 9204 §4.4.3: Insert Count Increment is sent by the *peer's decoder*
+// to inform our *encoder* that the peer has applied N additional inserts.
+// On the receiver side (this side, our local decoder receiver), receiving
+// IIC must be advisory only — it MUST NOT touch the local blocked
+// registry, because that registry tracks header-block sections waiting
+// for *our* dynamic table to grow (via the encoder stream), not the
+// peer's.  See bug fix in QpackDecoderReceiverStream::ParseDecoderFrames.
 TEST(QpackDecoderStreamTest, InsertCountIncrementTest) {
     auto mock_send_stream = std::make_shared<quic::MockQuicStream>();
     auto mock_recv_stream = std::make_shared<quic::MockQuicStream>();
@@ -176,15 +184,16 @@ TEST(QpackDecoderStreamTest, InsertCountIncrementTest) {
         std::bind(&MockReceiverConnection::RetryCallback, receiver.get())));
     EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 2);
     
-    // Send Insert Count Increment - should trigger NotifyAll which retries and clears all
+    // Send Insert Count Increment.  This frame is purely advisory state
+    // for our encoder bookkeeping; it MUST NOT clear our local decoder's
+    // blocked registry nor invoke any retry callbacks.
     uint64_t delta = 5;
     EXPECT_TRUE(sender->SendInsertCountIncrement(delta));
     EXPECT_EQ(sender->GetErrorCode(), 0);
     
-    // After Insert Count Increment, NotifyAll should be called
-    // which triggers all retry callbacks and clears the registry
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
-    EXPECT_EQ(receiver->GetRetryCount(), 2);  // Both callbacks called
+    // After Insert Count Increment, the blocked registry must be untouched.
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 2);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
     EXPECT_EQ(receiver->GetErrorCode(), 0);
 }
 
@@ -215,31 +224,31 @@ TEST(QpackDecoderStreamTest, MultipleFramesTest) {
         std::bind(&MockReceiverConnection::RetryCallback, receiver.get())));
     EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 4);
     
-    // Send multiple frames
-    EXPECT_TRUE(sender->SendInsertCountIncrement(10));  // Clears all and calls callbacks
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
-    EXPECT_EQ(receiver->GetRetryCount(), 4);
+    // IIC MUST NOT touch the local blocked registry.
+    EXPECT_TRUE(sender->SendInsertCountIncrement(10));
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 4);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
     
-    // Add back and send specific acks/cancels
-    EXPECT_TRUE(receiver->GetBlockedRegistry()->Add(header_block_id_1, 
-        std::bind(&MockReceiverConnection::RetryCallback, receiver.get())));
-    EXPECT_TRUE(receiver->GetBlockedRegistry()->Add(header_block_id_2, 
-        std::bind(&MockReceiverConnection::RetryCallback, receiver.get())));
-    EXPECT_TRUE(receiver->GetBlockedRegistry()->Add(header_block_id_3, 
-        std::bind(&MockReceiverConnection::RetryCallback, receiver.get())));
+    // Each Section Ack acks the earliest outstanding section for the given
+    // stream id (RFC 9204 §4.4.1) — so it removes exactly one entry and
+    // invokes exactly one callback.
+    EXPECT_TRUE(sender->SendSectionAck(header_block_id_1));
     EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 3);
+    EXPECT_EQ(receiver->GetRetryCount(), 1);
     
-    EXPECT_TRUE(sender->SendSectionAck(header_block_id_1));  // Acks and calls callback
+    // Stream Cancellation removes one entry without calling its callback
+    // (RFC 9204 §4.4.2).
+    EXPECT_TRUE(sender->SendStreamCancel(header_block_id_2));
     EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 2);
-    EXPECT_EQ(receiver->GetRetryCount(), 5);
-    
-    EXPECT_TRUE(sender->SendStreamCancel(header_block_id_2));  // Removes without callback
-    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);
-    EXPECT_EQ(receiver->GetRetryCount(), 5);
+    EXPECT_EQ(receiver->GetRetryCount(), 1);
     
     EXPECT_TRUE(sender->SendSectionAck(header_block_id_3));
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);
+    EXPECT_EQ(receiver->GetRetryCount(), 2);
+    
+    EXPECT_TRUE(sender->SendSectionAck(header_block_id_4));
     EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
-    EXPECT_EQ(receiver->GetRetryCount(), 6);
+    EXPECT_EQ(receiver->GetRetryCount(), 3);
     
     EXPECT_EQ(sender->GetErrorCode(), 0);
     EXPECT_EQ(receiver->GetErrorCode(), 0);
@@ -274,6 +283,74 @@ TEST(QpackDecoderStreamTest, LargeValuesTest) {
     uint64_t large_delta = 100000;
     EXPECT_TRUE(sender->SendInsertCountIncrement(large_delta));
     EXPECT_EQ(sender->GetErrorCode(), 0);
+}
+
+// PROBE: Insert Count Increment with delta=0 — RFC 9204 §4.4.3 encodes the
+// delta as a 6-prefix integer; technically zero is a no-op but legal on the
+// wire.  Our parser must not error and must not touch the blocked registry.
+TEST(QpackDecoderStreamTest, InsertCountIncrementZeroDeltaTest) {
+    auto mock_send_stream = std::make_shared<quic::MockQuicStream>();
+    auto mock_recv_stream = std::make_shared<quic::MockQuicStream>();
+    mock_recv_stream->SetPeer(mock_send_stream);
+    mock_send_stream->SetPeer(mock_recv_stream);
+
+    auto sender = std::make_shared<MockSenderConnection>(mock_send_stream);
+    auto receiver = std::make_shared<MockReceiverConnection>(mock_recv_stream);
+
+    uint64_t key = (1ULL << 32) | 1;
+    EXPECT_TRUE(receiver->GetBlockedRegistry()->Add(key,
+        std::bind(&MockReceiverConnection::RetryCallback, receiver.get())));
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);
+
+    EXPECT_TRUE(sender->SendInsertCountIncrement(0));
+    EXPECT_EQ(sender->GetErrorCode(), 0);
+
+    // delta=0 still must not invoke retry callbacks nor clear the registry.
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 1);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
+    EXPECT_EQ(receiver->GetErrorCode(), 0);
+}
+
+// PROBE: Section Ack on a stream id with NO outstanding section is a
+// peer-side bookkeeping error per RFC 9204 §4.4.1.  Our receiver must not
+// crash; it currently silently ignores it (logs internally).
+TEST(QpackDecoderStreamTest, SectionAckUnknownStreamTest) {
+    auto mock_send_stream = std::make_shared<quic::MockQuicStream>();
+    auto mock_recv_stream = std::make_shared<quic::MockQuicStream>();
+    mock_recv_stream->SetPeer(mock_send_stream);
+    mock_send_stream->SetPeer(mock_recv_stream);
+
+    auto sender = std::make_shared<MockSenderConnection>(mock_send_stream);
+    auto receiver = std::make_shared<MockReceiverConnection>(mock_recv_stream);
+
+    // No prior Add — registry is empty.
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
+
+    uint64_t bogus = (99ULL << 32) | 1;
+    EXPECT_TRUE(sender->SendSectionAck(bogus));
+    EXPECT_EQ(sender->GetErrorCode(), 0);
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
+}
+
+// PROBE: Stream Cancellation on a stream id with NO outstanding section
+// must also be a no-op without crashing.
+TEST(QpackDecoderStreamTest, StreamCancelUnknownStreamTest) {
+    auto mock_send_stream = std::make_shared<quic::MockQuicStream>();
+    auto mock_recv_stream = std::make_shared<quic::MockQuicStream>();
+    mock_recv_stream->SetPeer(mock_send_stream);
+    mock_send_stream->SetPeer(mock_recv_stream);
+
+    auto sender = std::make_shared<MockSenderConnection>(mock_send_stream);
+    auto receiver = std::make_shared<MockReceiverConnection>(mock_recv_stream);
+
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
+
+    uint64_t bogus = (99ULL << 32) | 1;
+    EXPECT_TRUE(sender->SendStreamCancel(bogus));
+    EXPECT_EQ(sender->GetErrorCode(), 0);
+    EXPECT_EQ(receiver->GetBlockedRegistry()->GetBlockedCount(), 0);
+    EXPECT_EQ(receiver->GetRetryCount(), 0);
 }
 
 }  // namespace

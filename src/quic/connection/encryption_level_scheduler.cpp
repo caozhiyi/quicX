@@ -27,7 +27,7 @@ EncryptionLevelScheduler::SendContext EncryptionLevelScheduler::GetNextSendConte
     // These ACKs must be sent at the correct encryption level to avoid delaying
     // the peer's loss detection and congestion control.
     if (HasCrossLevelPendingAck(ctx)) {
-        common::LOG_INFO(
+        LOG_INFO(
             "EncryptionLevelScheduler: Cross-level ACK pending for space %d at level %d", ctx.ack_space, ctx.level);
         return ctx;
     }
@@ -41,7 +41,7 @@ EncryptionLevelScheduler::SendContext EncryptionLevelScheduler::GetNextSendConte
             ctx.level = kApplication;
             ctx.is_path_probe = true;
             ctx.has_pending_ack = false;
-            common::LOG_DEBUG("EncryptionLevelScheduler: Path probe active, using Application level");
+            LOG_DEBUG("EncryptionLevelScheduler: Path probe active, using Application level");
             return ctx;
         }
     }
@@ -49,7 +49,7 @@ EncryptionLevelScheduler::SendContext EncryptionLevelScheduler::GetNextSendConte
     // Priority 3: 0-RTT early data (if conditions met)
     // Must send Initial packet first (with ClientHello), then can send 0-RTT.
     if (has_early_data_pending_ && TryGet0RttLevel(ctx)) {
-        common::LOG_INFO("EncryptionLevelScheduler: Using 0-RTT level for early data");
+        LOG_INFO("EncryptionLevelScheduler: Using 0-RTT level for early data");
         return ctx;
     }
 
@@ -60,10 +60,16 @@ EncryptionLevelScheduler::SendContext EncryptionLevelScheduler::GetNextSendConte
 
     // Check if there's a pending ACK at the current level
     auto ns = CryptoLevel2PacketNumberSpace(ctx.level);
-    if (recv_control_.HasPendingAck(ns)) {
+    // PERF FIX (P0): only attach an ACK when RecvControl says one is
+    // actually due (threshold / OoO / gap / ECN / timer). Previously this
+    // checked HasPendingAck(), which is true after every received packet
+    // and caused the next outgoing datagram to drag along an ACK frame —
+    // collapsing both kAckThreshold and max_ack_delay aggregation and
+    // producing a 1:1 packet/ACK ratio.
+    if (recv_control_.ShouldSendAckNow(ns)) {
         ctx.has_pending_ack = true;
         ctx.ack_space = ns;
-        common::LOG_DEBUG("EncryptionLevelScheduler: Pending ACK at current level %d space %d", ctx.level, ns);
+        LOG_DEBUG("EncryptionLevelScheduler: Pending ACK at current level %d space %d", ctx.level, ns);
     }
 
     return ctx;
@@ -74,7 +80,7 @@ bool EncryptionLevelScheduler::HasCrossLevelPendingAck(SendContext& ctx) {
 
     // If we're at Handshake or Application level, check for pending Initial ACKs
     if (current_level >= kHandshake) {
-        if (recv_control_.HasPendingAck(kInitialNumberSpace)) {
+        if (recv_control_.ShouldSendAckNow(kInitialNumberSpace)) {
             // There's a pending Initial ACK, check if we have Initial keys
             auto init_crypto = crypto_.GetCryptographer(kInitial);
             if (init_crypto) {
@@ -82,13 +88,13 @@ bool EncryptionLevelScheduler::HasCrossLevelPendingAck(SendContext& ctx) {
                 ctx.has_pending_ack = true;
                 ctx.ack_space = kInitialNumberSpace;
                 ctx.is_path_probe = false;
-                common::LOG_DEBUG(
+                LOG_DEBUG(
                     "EncryptionLevelScheduler: Cross-level Initial ACK needed (current level=%d)", current_level);
                 return true;
             } else {
                 // Keys discarded, cannot send ACK
                 // This is expected after key update - the ACK will be dropped by RecvControl
-                common::LOG_DEBUG("EncryptionLevelScheduler: Initial ACK pending but keys discarded (current level=%d)",
+                LOG_DEBUG("EncryptionLevelScheduler: Initial ACK pending but keys discarded (current level=%d)",
                     current_level);
             }
         }
@@ -96,18 +102,18 @@ bool EncryptionLevelScheduler::HasCrossLevelPendingAck(SendContext& ctx) {
 
     // If we're at Application level, check for pending Handshake ACKs
     if (current_level >= kApplication) {
-        if (recv_control_.HasPendingAck(kHandshakeNumberSpace)) {
+        if (recv_control_.ShouldSendAckNow(kHandshakeNumberSpace)) {
             auto hs_crypto = crypto_.GetCryptographer(kHandshake);
             if (hs_crypto) {
                 ctx.level = kHandshake;
                 ctx.has_pending_ack = true;
                 ctx.ack_space = kHandshakeNumberSpace;
                 ctx.is_path_probe = false;
-                common::LOG_DEBUG(
+                LOG_DEBUG(
                     "EncryptionLevelScheduler: Cross-level Handshake ACK needed (current level=%d)", current_level);
                 return true;
             } else {
-                common::LOG_DEBUG(
+                LOG_DEBUG(
                     "EncryptionLevelScheduler: Handshake ACK pending but keys discarded (current level=%d)",
                     current_level);
             }
@@ -134,7 +140,7 @@ bool EncryptionLevelScheduler::TryGet0RttLevel(SendContext& ctx) {
     // Must send Initial packet first (with ClientHello)
     // This ensures proper handshake ordering per RFC 9001
     if (!initial_packet_sent_) {
-        common::LOG_DEBUG("EncryptionLevelScheduler: 0-RTT keys available but Initial packet not sent yet");
+        LOG_DEBUG("EncryptionLevelScheduler: 0-RTT keys available but Initial packet not sent yet");
         return false;
     }
 

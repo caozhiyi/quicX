@@ -1,4 +1,5 @@
 #include "common/log/log.h"
+#include "http3/frame/qpack_decoder_frames.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/blocked_registry.h"
 #include "http3/stream/qpack_encoder_receiver_stream.h"
@@ -17,7 +18,7 @@ QpackEncoderReceiverStream::QpackEncoderReceiverStream(
     stream_->SetStreamReadCallBack(
         std::bind(&QpackEncoderReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     
-    common::LOG_DEBUG("QpackEncoderReceiverStream created for stream %llu", stream_->GetStreamID());
+    LOG_DEBUG("QpackEncoderReceiverStream created for stream %llu", stream_->GetStreamID());
 }
 
 QpackEncoderReceiverStream::~QpackEncoderReceiverStream() {
@@ -28,7 +29,7 @@ QpackEncoderReceiverStream::~QpackEncoderReceiverStream() {
 
 void QpackEncoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("QpackEncoderReceiverStream::OnData error: %d on stream %llu", 
+        LOG_ERROR("QpackEncoderReceiverStream::OnData error: %d on stream %llu", 
                          error, stream_->GetStreamID());
         error_handler_(stream_->GetStreamID(), error);
         return;
@@ -38,7 +39,7 @@ void QpackEncoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool 
         return;
     }
 
-    common::LOG_DEBUG("QpackEncoderReceiverStream: received %u bytes on stream %llu", 
+    LOG_DEBUG("QpackEncoderReceiverStream: received %u bytes on stream %llu", 
                      data->GetDataLength(), stream_->GetStreamID());
 
     // Parse QPACK encoder instructions
@@ -52,21 +53,33 @@ void QpackEncoderReceiverStream::ParseEncoderInstructions(std::shared_ptr<IBuffe
     // - Insert Without Name Reference
     // - Duplicate
     
-    // Use the connection-level shared QpackEncoder to decode encoder instructions
-    // This ensures dynamic table updates persist across invocations (RFC 9204 §4.2)
+    // Track insert count before processing to determine delta
+    uint64_t insert_count_before = qpack_encoder_->GetInsertCount();
+
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(data);
     if (!qpack_encoder_->DecodeEncoderInstructions(buffer)) {
-        common::LOG_ERROR("QpackEncoderReceiverStream: failed to decode encoder instructions on stream %llu", 
+        LOG_ERROR("QpackEncoderReceiverStream: failed to decode encoder instructions on stream %llu", 
                          stream_->GetStreamID());
         return;
     }
+
+    uint64_t insert_count_after = qpack_encoder_->GetInsertCount();
+    uint64_t delta = insert_count_after - insert_count_before;
     
-    common::LOG_DEBUG("QpackEncoderReceiverStream: successfully parsed encoder instructions on stream %llu", 
-                     stream_->GetStreamID());
+    LOG_DEBUG("QpackEncoderReceiverStream: successfully parsed encoder instructions on stream %llu (delta=%llu)", 
+                     stream_->GetStreamID(), delta);
     
     // Notify any blocked streams that new table entries are available
     if (blocked_registry_) {
         blocked_registry_->NotifyAll();
+    }
+
+    // RFC 9204 §4.4.3: After processing encoder instructions that add new entries,
+    // the decoder SHOULD emit Insert Count Increment to inform the peer's encoder
+    // that these entries are now available for reference in header blocks.
+    if (delta > 0) {
+        qpack_encoder_->EmitDecoderFeedback(
+            static_cast<uint8_t>(QpackDecoderInstrType::kInsertCountInc), delta);
     }
 }
 

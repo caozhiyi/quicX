@@ -2,34 +2,40 @@
 #define QUIC_CONNECTION_CONNECTION_BASE
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
 #include <quicx/common/if_event_loop.h>
 
-#include "quic/connection/connection_closer.h"
 #include "quic/connection/connection_crypto.h"
-#include "quic/connection/connection_frame_processor.h"
 #include "quic/connection/connection_id_coordinator.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/connection_state_machine.h"
-#include "quic/connection/connection_stream_manager.h"
-#include "quic/connection/connection_timer_coordinator.h"
 #include "quic/connection/controler/recv_control.h"
 #include "quic/connection/controler/recv_flow_controller.h"
 #include "quic/connection/controler/send_flow_controller.h"
 #include "quic/connection/controler/send_manager.h"
-#include "quic/connection/encryption_level_scheduler.h"
 #include "quic/connection/if_connection.h"
 #include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/key_update_trigger.h"
+#include "quic/connection/remote_transport_param_snapshot.h"
 #include "quic/connection/transport_param.h"
+#include "quic/connection/version_context.h"
 #include <quicx/quic/type.h>
 #include "quic/udp/if_sender.h"
 
 namespace quicx {
 namespace quic {
+
+// Forward declarations for unique_ptr members not dereferenced in this header
+class ConnectionCloser;
+class FrameProcessor;
+class StreamManager;
+class TimerCoordinator;
+class EncryptionLevelScheduler;
+class PacketBuilder;
 
 class BaseConnection:
     public IConnection,
@@ -61,25 +67,25 @@ public:
 
     // RFC 9369: QUIC Version management
     void SetVersion(uint32_t version) {
-        quic_version_ = version;
+        version_ctx_.quic_version = version;
         connection_crypto_.SetVersion(version);
     }
-    uint32_t GetVersion() const { return quic_version_; }
+    uint32_t GetVersion() const { return version_ctx_.quic_version; }
 
     // RFC 9368 Compatible Version Negotiation: the application-preferred version.
     // This is the version we *want* to end up using for 1-RTT; if different
-    // from |quic_version_| (which is the wire version of our initial Initial
+    // from |quic_version| (which is the wire version of our initial Initial
     // packet) we will advertise willingness to upgrade via version_information.
-    // Defaults to |quic_version_| (no upgrade desired).
-    void SetPreferredVersion(uint32_t version) { preferred_version_ = version; }
-    uint32_t GetPreferredVersion() const { return preferred_version_ ? preferred_version_ : quic_version_; }
+    // Defaults to |quic_version| (no upgrade desired).
+    void SetPreferredVersion(uint32_t version) { version_ctx_.preferred_version = version; }
+    uint32_t GetPreferredVersion() const { return version_ctx_.GetEffectivePreferredVersion(); }
 
     // RFC 9000 Section 6: Version Negotiation
     typedef std::function<void(uint32_t new_version)> version_negotiation_callback;
     void SetVersionNegotiationCallback(version_negotiation_callback cb) { version_negotiation_cb_ = cb; }
-    void SetVersionNegotiationDone() { version_negotiation_done_ = true; }
-    bool IsVersionNegotiationNeeded() const { return version_negotiation_needed_; }
-    uint32_t GetNegotiatedVersion() const { return negotiated_version_; }
+    void SetVersionNegotiationDone() { version_ctx_.version_negotiation_done = true; }
+    bool IsVersionNegotiationNeeded() const { return version_ctx_.version_negotiation_needed; }
+    uint32_t GetNegotiatedVersion() const { return version_ctx_.negotiated_version; }
 
     // *************** inner interface ***************//
     // set transport param
@@ -117,16 +123,6 @@ public:
     // observed peer address from network; store as candidate if different
     virtual void OnObservedPeerAddress(const common::Address& addr) override;
 
-    // Test-only helper to expose cryptographer for decoding in unit tests
-    virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t level) override {
-        return connection_crypto_.GetCryptographer(level);
-    }
-
-    // Test-only helper to check remote CID manager state
-    std::shared_ptr<ConnectionIDManager> GetRemoteConnectionIDManagerForTest() {
-        return cid_coordinator_->GetRemoteConnectionIDManagerForTest();
-    }
-
     // Get all local CID hashes for this connection (for cleanup on close)
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() override { return cid_coordinator_->GetAllLocalCIDHashes(); }
 
@@ -134,26 +130,30 @@ public:
     SendFlowController& GetSendFlowController() { return send_flow_controller_; }
     RecvFlowController& GetRecvFlowController() { return recv_flow_controller_; }
 
-    // Test-only interface to observe connection state
-    ConnectionStateType GetConnectionStateForTest() const { return state_machine_.GetState(); }
-
-    // Test-only helpers for RFC 9368 Compatible Version Negotiation.
-    // Exposes internals so end-to-end CVN behaviour can be unit tested.
-    uint32_t GetQuicVersionForTest() const { return quic_version_; }
-    bool IsServerForTest() const { return is_server_; }
-    bool CompatVnCompletedForTest() const { return compat_vn_completed_; }
-    const TransportParam& GetLocalTransportParamForTest() const { return transport_param_; }
-    // DCID used to derive the currently installed Initial secret.
-    // On the client side, this is the DCID of the client's very first Initial
-    // (same as the server's ODCID). Empty string if no Initial secret installed yet.
-    const std::string& GetInitialSecretDcidForTest() const {
-        return connection_crypto_.GetInitialSecretDcid();
-    }
-
     std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_.lock(); }
 
     // Get qlog trace for this connection
     std::shared_ptr<common::QlogTrace> GetQlogTrace() const override { return qlog_trace_; }
+
+    // ==================== Test-Only Accessors ====================
+    // These methods exist solely for unit testing. Production code MUST NOT call them.
+    // They are grouped here to make the test-production boundary explicit.
+    // TODO: Move to a friend-class test accessor when IConnection virtual interface is refactored.
+    virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t level) override {
+        return connection_crypto_.GetCryptographer(level);
+    }
+    std::shared_ptr<ConnectionIDManager> GetRemoteConnectionIDManagerForTest() {
+        return cid_coordinator_->GetRemoteConnectionIDManagerForTest();
+    }
+    ConnectionStateType GetConnectionStateForTest() const { return state_machine_.GetState(); }
+    uint32_t GetQuicVersionForTest() const { return version_ctx_.quic_version; }
+    bool IsServerForTest() const { return version_ctx_.is_server; }
+    bool CompatVnCompletedForTest() const { return version_ctx_.compat_vn_completed; }
+    const TransportParam& GetLocalTransportParamForTest() const { return transport_param_; }
+    const std::string& GetInitialSecretDcidForTest() const {
+        return connection_crypto_.GetInitialSecretDcid();
+    }
+    // ==================== End Test-Only Accessors ====================
 
     // IConnectionStateListener
     virtual void OnStateToConnecting() override {}
@@ -170,13 +170,22 @@ public:
     virtual void OnConnectionClose(uint64_t error, uint16_t frame_type, const std::string& reason) override;
 
 protected:
-    bool OnInitialPacket(std::shared_ptr<IPacket> packet);
-    bool On0rttPacket(std::shared_ptr<IPacket> packet);
-    bool On1rttPacket(std::shared_ptr<IPacket> packet);
-    bool OnNormalPacket(std::shared_ptr<IPacket> packet);
-    bool OnVersionNegotiationPacket(std::shared_ptr<IPacket> packet);
-    virtual bool OnHandshakePacket(std::shared_ptr<IPacket> packet);
-    virtual bool OnRetryPacket(std::shared_ptr<IPacket> packet) = 0;
+    // OnPackets helpers (split from monolithic OnPackets for readability)
+    void HandlePacketsInClosingState(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets);
+    void DropPacketsInDrainingState(std::vector<std::shared_ptr<IPacket>>& packets);
+    bool DispatchByType(const std::shared_ptr<IPacket>& packet);
+
+    bool OnInitialPacket(const std::shared_ptr<IPacket>& packet);
+    bool On0rttPacket(const std::shared_ptr<IPacket>& packet);
+    bool On1rttPacket(const std::shared_ptr<IPacket>& packet);
+    bool OnNormalPacket(const std::shared_ptr<IPacket>& packet);
+    bool OnVersionNegotiationPacket(const std::shared_ptr<IPacket>& packet);
+    virtual bool OnHandshakePacket(const std::shared_ptr<IPacket>& packet);
+    virtual bool OnRetryPacket(const std::shared_ptr<IPacket>& packet) = 0;
+
+    // OnVersionNegotiationPacket helpers
+    bool IsVnDowngradeAttack(const std::vector<uint32_t>& supported_versions);
+    void HandleCompatibleVersionFound(uint32_t compatible_version);
 
     // handle frames (delegated to frame processor)
     bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level);
@@ -213,6 +222,23 @@ private:
 // @return true if successfully sent
     bool SendBuffer(std::shared_ptr<common::IBuffer> buffer);
 
+public:
+    // PERF (sendmmsg batch path): when set non-null, SendBuffer() appends the
+    // built NetPacket to *send_sink_ instead of immediately calling
+    // sender_->Send(). The owner (Worker::ProcessSend) then issues a single
+    // sender_->SendBatch() over all collected packets, replacing N sendto()
+    // syscalls with one sendmmsg(2). Set to nullptr (the default) to keep
+    // the legacy synchronous-Send-per-buffer behavior — used by paths that
+    // don't go through ProcessSend (e.g. handshake bring-up before the
+    // connection is in the active set).
+    //
+    // The pointer is owned by the caller and must outlive every SendBuffer
+    // call between Set/clear. Worker installs and clears it inside a single
+    // ProcessSend iteration so lifetime is trivially correct.
+    void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* sink) override {
+        send_sink_ = sink;
+    }
+
 protected:
     virtual void ThreadTransferBefore() override;
     virtual void ThreadTransferAfter() override;
@@ -229,8 +255,8 @@ protected:
     // Bypasses normal send path and uses sender_ directly
     bool SendImmediate(std::shared_ptr<common::IBuffer> buffer);
 
-    void InnerConnectionClose(uint64_t error, uint16_t tigger_frame, std::string reason);
-    void ImmediateClose(uint64_t error, uint16_t tigger_frame, std::string reason);
+    void InnerConnectionClose(uint64_t error, uint16_t trigger_frame, std::string reason);
+    void ImmediateClose(uint64_t error, uint16_t trigger_frame, std::string reason);
     void InnerStreamClose(uint64_t stream_id);
 
     // Stream data ACK notification callback
@@ -332,14 +358,7 @@ protected:
     bool initial_packet_sent_ = false;
 
     // Remembered remote transport params for 0-RTT session caching (RFC 9000 Section 7.4.1)
-    bool has_remote_tp_ = false;
-    uint64_t remote_initial_max_data_ = 0;
-    uint64_t remote_initial_max_streams_bidi_ = 0;
-    uint64_t remote_initial_max_streams_uni_ = 0;
-    uint64_t remote_initial_max_stream_data_bidi_local_ = 0;
-    uint64_t remote_initial_max_stream_data_bidi_remote_ = 0;
-    uint64_t remote_initial_max_stream_data_uni_ = 0;
-    uint64_t remote_active_connection_id_limit_ = 0;
+    RemoteTransportParamSnapshot remote_tp_snapshot_;
 
     // EventLoop reference — observer only (owner is QuicClient/QuicServer)
     std::weak_ptr<common::IEventLoop> event_loop_;
@@ -350,41 +369,19 @@ protected:
     // Sender for direct packet transmission
     std::shared_ptr<ISender> sender_;
 
+    // Optional batch sink for SendBuffer (see SetSendSink). Non-owning.
+    // Worker::ProcessSend installs this for the duration of a single drain
+    // round and clears it before returning, so liveness is always correct.
+    std::vector<std::shared_ptr<NetPacket>>* send_sink_ = nullptr;
+
     // Key Update trigger (RFC 9001 Section 6)
     KeyUpdateTrigger key_update_trigger_;
 
-    // QUIC version for this connection (RFC 9369: default to v2)
-    uint32_t quic_version_ = kQuicVersion2;
+    // QUIC version context (RFC 9000 §6, RFC 9368, RFC 9369)
+    VersionContext version_ctx_;
 
-    // Version negotiation (RFC 9000 Section 6)
+    // Version negotiation callback (RFC 9000 Section 6)
     version_negotiation_callback version_negotiation_cb_;
-    uint32_t negotiated_version_ = 0;
-    bool version_negotiation_needed_ = false;
-    bool version_negotiation_done_ = false;  // Prevent infinite version negotiation loops
-
-    // RFC 9368 Compatible Version Negotiation state
-    //   original_version_: the version the client used in its FIRST Initial. Used
-    //                      to re-derive Initial keys if the endpoint later upgrades
-    //                      to a compatible preferred version (same DCID). Also used
-    //                      by the client for the mandatory consistency check that
-    //                      the server's chosen_version matches the version that
-    //                      actually appeared on the wire.
-    //   compat_vn_completed_: set once the local endpoint has executed the
-    //                      compatible version switch (or decided no switch is
-    //                      needed). Used to make the switch idempotent.
-    uint32_t original_version_ = 0;
-    bool compat_vn_completed_ = false;
-
-    // True on server connections (used for RFC 9368 logic that differs by role).
-    bool is_server_ = false;
-
-    // RFC 9368 §3: Application-preferred QUIC version. When this differs from
-    // |quic_version_| (the on-wire version of our current Initial packets) we
-    // advertise willingness to upgrade by including |preferred_version_| at the
-    // head of |available_versions| in the version_information TP.
-    //   0  => "no explicit preference; available_versions advertises only quic_version_".
-    // See |GetPreferredVersion()|.
-    uint32_t preferred_version_ = 0;
 };
 
 }  // namespace quic

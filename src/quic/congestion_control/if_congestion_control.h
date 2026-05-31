@@ -62,7 +62,8 @@ public:
 
     virtual uint64_t GetCongestionWindow() const = 0;
     virtual uint64_t GetBytesInFlight() const = 0;
-    virtual uint64_t GetPacingRateBps() const = 0;
+    // Pacing rate in bytes/sec (matches IPacer::OnPacingRateUpdated unit).
+    virtual uint64_t GetPacingRateBytesPerSec() const = 0;
     virtual uint64_t NextSendTime(uint64_t now) const = 0;
 
     // Observability helpers

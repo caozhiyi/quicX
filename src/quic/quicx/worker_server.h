@@ -42,7 +42,7 @@ public:
      * closed before its handshake finishes would leave an orphan entry in
      * handshake_timers_ that still owns a shared_ptr reference.
      */
-    void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason);
+    void HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t error, const std::string& reason) override;
 
     // See IWorker::Shutdown(). Purges handshake watchdog timers plus
     // retry/rate-limiter dependencies that hold shared_ptrs to the event

@@ -74,6 +74,11 @@ private:
 
     std::mutex tasks_mu_;
     std::deque<std::function<void()>> tasks_;
+    // Reusable scratch deque used by DrainPostedTasks() to swap-out the
+    // pending tasks under lock. Keeping it as a member avoids constructing
+    // and destructing a fresh std::deque (and the std::function moves it
+    // contains) on every event loop iteration.
+    std::deque<std::function<void()>> tasks_drain_scratch_;
 
     // Legacy un-guarded callbacks (deprecated path, kept during migration)
     std::vector<std::function<void()>> fixed_processes_;

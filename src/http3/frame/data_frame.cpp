@@ -10,7 +10,7 @@ namespace http3 {
 
 bool DataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint32_t data_length = EvaluatePayloadSize();
-    common::LOG_DEBUG("DataFrame::Encode: data_length:%u, buffer_length:%u", data_length, buffer->GetDataLength());
+    LOG_DEBUG("DataFrame::Encode: data_length:%u, buffer_length:%u", data_length, buffer->GetDataLength());
     // Check if we have enough data
     if (data_->GetDataLength() < data_length) {
         return false;
@@ -21,28 +21,28 @@ bool DataFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 
     // Encode frame type (varint per RFC 9114)
     if (!wrapper.EncodeVarint(type_)) {
-        common::LOG_ERROR("DataFrame::Encode: failed to encode frame type");
+        LOG_ERROR("DataFrame::Encode: failed to encode frame type");
         return false;
     }
 
     // Encode length
     if (!wrapper.EncodeVarint(data_length)) {
-        common::LOG_ERROR("DataFrame::Encode: failed to encode length");
+        LOG_ERROR("DataFrame::Encode: failed to encode length");
         return false;
     }
 
     // Flush will commit the encoded header to buffer
     wrapper.Flush();
-    common::LOG_DEBUG("DataFrame::Encode: buffer_length:%u", data_length, buffer->GetDataLength());
+    LOG_DEBUG("DataFrame::Encode: buffer_length:%u", data_length, buffer->GetDataLength());
 
     // Now write the data payload
     auto write_buffer = data_->CloneReadable(data_length);
     if (!write_buffer) {
-        common::LOG_ERROR("DataFrame::Encode: failed to clone readable");
+        LOG_ERROR("DataFrame::Encode: failed to clone readable");
         return false;
     }
     buffer->Write(write_buffer);
-    common::LOG_DEBUG("DataFrame::Encode: buffer_length:%u", data_length, buffer->GetDataLength());
+    LOG_DEBUG("DataFrame::Encode: buffer_length:%u", data_length, buffer->GetDataLength());
     return true;
 }
 
@@ -52,7 +52,7 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
     if (with_type) {
         uint64_t frame_type;
         if (!wrapper.DecodeVarint(frame_type)) {
-            common::LOG_DEBUG("DataFrame::Decode: insufficient data for frame type");
+            LOG_DEBUG("DataFrame::Decode: insufficient data for frame type");
             return DecodeResult::kNeedMoreData;
         }
         type_ = static_cast<uint16_t>(frame_type);
@@ -61,7 +61,7 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
     // Read length
     uint64_t length_64 = 0;
     if (!wrapper.DecodeVarint(length_64)) {
-        common::LOG_DEBUG("DataFrame::Decode: failed to decode length varint");
+        LOG_DEBUG("DataFrame::Decode: failed to decode length varint");
         return DecodeResult::kNeedMoreData;
     }
 
@@ -70,7 +70,7 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
     // Check if we have enough data for the complete frame
     if (wrapper.GetDataLength() < length_) {
         wrapper.CancelDecode();
-        common::LOG_DEBUG("DataFrame::Decode: insufficient data for complete frame (need %u, have %u)", length_,
+        LOG_DEBUG("DataFrame::Decode: insufficient data for complete frame (need %u, have %u)", length_,
             wrapper.GetDataLength());
         return DecodeResult::kNeedMoreData;
     }
@@ -80,7 +80,7 @@ DecodeResult DataFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wit
     // CloneReadable creates a shallow copy and advances the read pointer
     data_ = wrapper.GetBuffer()->CloneReadable(length_);
     if (!data_) {
-        common::LOG_ERROR("DataFrame::Decode: CloneReadable failed for length %u (buffer has %u)", length_,
+        LOG_ERROR("DataFrame::Decode: CloneReadable failed for length %u (buffer has %u)", length_,
             wrapper.GetBuffer()->GetDataLength());
         return DecodeResult::kError;
     }

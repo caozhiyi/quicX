@@ -10,6 +10,8 @@
 #include "common/timer/if_timer.h"
 
 #include "quic/connection/connection_id_manager.h"
+#include "quic/connection/controler/anti_amplification_controller.h"
+#include "quic/connection/controler/pmtu_prober.h"
 #include "quic/connection/controler/send_control.h"
 #include "quic/connection/controler/send_flow_controller.h"
 #include "quic/connection/packet_builder.h"
@@ -173,16 +175,12 @@ private:
     friend class BaseConnection;
 
     bool streams_allowed_{true};
-    uint16_t mtu_limit_bytes_{1450};
 
-    // Anti-amplification counters for unvalidated path
-    uint64_t amp_sent_bytes_{0};
-    uint64_t amp_recv_bytes_{0};
+    // PMTU prober (encapsulates MTU discovery logic)
+    PmtuProber pmtu_prober_;
 
-    // Minimal PMTU probe state (skeleton)
-    bool mtu_probe_inflight_{false};
-    uint16_t mtu_probe_target_bytes_{1450};
-    uint64_t mtu_probe_packet_number_{0};
+    // Anti-amplification controller for unvalidated path
+    AntiAmplificationController amp_controller_;
 
     std::shared_ptr<common::ITimer> timer_;
     common::TimerTask pacing_timer_task_;

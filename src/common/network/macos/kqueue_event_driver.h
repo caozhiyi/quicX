@@ -3,6 +3,9 @@
 #ifndef COMMON_NETWORK_MACOS_KQUEUE_EVENT_DRIVER
 #define COMMON_NETWORK_MACOS_KQUEUE_EVENT_DRIVER
 
+#include <sys/event.h>
+#include <vector>
+
 #include "common/network/if_event_driver.h"
 
 namespace quicx {
@@ -43,6 +46,10 @@ private:
     int kqueue_fd_ = -1;
     int32_t wakeup_fd_[2];  // Pipe for wakeup
     int max_events_ = 1024;
+    // Reusable scratch buffer for kevent() output to avoid per-Wait
+    // allocation/zero-init of max_events_ struct kevent objects (this was a
+    // hot allocation path observed in profiling).
+    std::vector<struct kevent> kqueue_events_scratch_;
 };
 
 } // namespace common

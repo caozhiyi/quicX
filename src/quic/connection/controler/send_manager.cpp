@@ -1,5 +1,7 @@
 #include "common/log/log.h"
 #include "common/util/time.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 #include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/controler/send_manager.h"
@@ -34,14 +36,14 @@ SendManager::SendManager(std::shared_ptr<common::ITimer> timer):
         if (!is_flow_control_blocked_) {
             return;  // already unblocked via ACK / MAX_DATA
         }
-        common::LOG_INFO("SendManager: flow-control recheck timer fired, retrying send");
+        LOG_INFO("SendManager: flow-control recheck timer fired, retrying send");
         if (send_retry_cb_) {
             send_retry_cb_();
         }
     });
 
     send_control_.SetPacketLostCallback([this](std::shared_ptr<IPacket> packet) {
-        common::LOG_WARN("SendManager: packet %llu lost, triggering retransmission", packet->GetPacketNumber());
+        LOG_WARN("SendManager: packet %llu lost, triggering retransmission", packet->GetPacketNumber());
         // Note: send_retry_cb_ (which calls BaseConnection::ActiveSend) will check connection state
         // and ignore the callback if connection is closing/draining/closed
         if (send_retry_cb_) {
@@ -64,6 +66,11 @@ SendOperation SendManager::GetSendOperation() {
     }
 
     if (!has_active_data) {
+        // PERF VALIDATION: record yields. A high steady-state rate here while
+        // we still expect bulk transfer means the send loop is repeatedly
+        // emptying the queue faster than the application is feeding it —
+        // i.e. application-limited rather than network-limited.
+        common::Metrics::CounterInc(common::MetricsStd::DiagSendAllDone);
         return SendOperation::kAllSendDone;
 
     } else {
@@ -77,34 +84,35 @@ SendOperation SendManager::GetSendOperation() {
                 if (next_time > now) {
                     uint64_t delay = next_time - now;
                     timer_->AddTimer(pacing_timer_task_, delay);
-                    common::LOG_DEBUG("pacing limited. delay:%llu", delay);
                 } else {
                     is_cwnd_limited_ = true;
-                    common::LOG_WARN("congestion control send data limited.");
+                    LOG_WARN("congestion control send data limited.");
                 }
+                // PERF VALIDATION: this branch covers both pacing-throttled
+                // and cwnd-exhausted yields. Distinguishing them in the dump
+                // would require a second counter; in practice on loopback
+                // pacing rarely fires so this is effectively cwnd_blocked.
+                common::Metrics::CounterInc(common::MetricsStd::DiagSendBlockedCwnd);
                 return SendOperation::kNextPeriod;
             }
-            // Have ACK-only frames, allow sending
-            common::LOG_DEBUG("GetSendOperation: bypassing congestion for ACK-only frames");
         }
     }
     is_cwnd_limited_ = false;
+    // PERF VALIDATION: success path. Per-second rate roughly equals "packets
+    // per second the worker is allowed to attempt"; cross-check against
+    // pkts_tx in the same dump line — a large gap means TrySend itself is
+    // failing later (e.g. PacketBuilder produced an empty payload).
+    common::Metrics::CounterInc(common::MetricsStd::DiagSendImmediateOk);
     return SendOperation::kSendAgainImmediately;
 }
 
 void SendManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
-    common::LOG_DEBUG("SendManager::ToSendFrame: enqueue frame type=%d, list_size_after=%zu",
-        frame ? static_cast<int>(frame->GetType()) : -1, wait_frame_list_.size() + 1);
     wait_frame_list_.emplace_front(frame);
 }
 
 void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
     // Pass to send control for RTT/loss/cc updates
     send_control_.OnPacketAck(common::UTCTimeMsec(), ns, frame);
-
-    common::LOG_DEBUG(
-        "SendManager::OnPacketAck: is_cwnd_limited_=%d, is_flow_control_blocked_=%d, send_retry_cb_=%p",
-        is_cwnd_limited_, is_flow_control_blocked_, (void*)&send_retry_cb_);
 
     // Bug #17: an incoming ACK is also a wake-up signal for a flow-control-
     // blocked connection. The peer might bundle MAX_DATA with the ACK, and
@@ -115,61 +123,27 @@ void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> fram
     bool need_resume = is_cwnd_limited_ || is_flow_control_blocked_;
     if (is_cwnd_limited_) {
         is_cwnd_limited_ = false;
-        common::LOG_INFO("SendManager::OnPacketAck: clearing is_cwnd_limited_");
+        LOG_INFO("SendManager::OnPacketAck: clearing is_cwnd_limited_");
     }
     if (is_flow_control_blocked_) {
         // Don't clear unconditionally — TrySend will re-set the flag (and the
         // recheck timer) if flow control is still active. But we must give it
         // a chance to retry by issuing the retry callback below.
         is_flow_control_blocked_ = false;
-        common::LOG_INFO("SendManager::OnPacketAck: clearing is_flow_control_blocked_, will let TrySend re-evaluate");
+        LOG_INFO("SendManager::OnPacketAck: clearing is_flow_control_blocked_, will let TrySend re-evaluate");
     }
     if (need_resume) {
         if (send_retry_cb_) {
             send_retry_cb_();
-            common::LOG_INFO("SendManager::OnPacketAck: send_retry_cb_ executed");
+            LOG_INFO("SendManager::OnPacketAck: send_retry_cb_ executed");
         } else {
-            common::LOG_WARN("SendManager::OnPacketAck: send_retry_cb_ is null!");
+            LOG_WARN("SendManager::OnPacketAck: send_retry_cb_ is null!");
         }
     }
 
-    // PMTU probe success detection: check if ack covers the probe packet number
-    if (mtu_probe_inflight_ && mtu_probe_packet_number_ != 0 &&
-        (frame->GetType() == FrameType::kAck || frame->GetType() == FrameType::kAckEcn)) {
-        auto ack = std::dynamic_pointer_cast<AckFrame>(frame);
-        if (ack) {
-            uint64_t largest = ack->GetLargestAck();
-            uint64_t probe = mtu_probe_packet_number_;
-            if (probe <= largest) {
-                // Walk ack ranges to see if probe is acked
-                uint32_t first_range = ack->GetFirstAckRange();
-                // First contiguous range [largest-first_range, largest]
-                if (probe >= largest - first_range && probe <= largest) {
-                    OnMtuProbeResult(true);
-                    return;
-                }
-                // Iterate additional ranges, starting the cursor at the
-                // smallest PN of the first range so we can walk backwards
-                // through (gap, length) pairs. Per RFC 9000 §19.3.1, gap_value
-                // is the unacked-count minus one, so the next range's largest
-                // PN is cursor - gap_value - 2 (skip gap_value+1 unacked plus
-                // one separator). G2/Bug #22: previous code used
-                // "cursor - gap - 1" which mirrored the symmetric encoder bug;
-                // see send_control.cpp / recv_control.cpp for matching fixes.
-                uint64_t cursor = largest - first_range;
-                auto ranges = ack->GetAckRange();
-                for (auto it = ranges.begin(); it != ranges.end(); ++it) {
-                    uint64_t range_high = cursor - it->GetGap() - 2;
-                    uint64_t range_low =
-                        (range_high >= it->GetAckRangeLength()) ? (range_high - it->GetAckRangeLength()) : 0;
-                    if (probe >= range_low && probe <= range_high) {
-                        OnMtuProbeResult(true);
-                        return;
-                    }
-                    cursor = range_low;
-                }
-            }
-        }
+    // PMTU probe success detection: delegate to PmtuProber
+    if (pmtu_prober_.CheckAckCoversProbe(frame)) {
+        return;
     }
 }
 
@@ -184,10 +158,7 @@ void SendManager::ResetPathSignals() {
 }
 
 void SendManager::ResetMtuForNewPath() {
-    mtu_probe_inflight_ = false;
-    mtu_probe_packet_number_ = 0;
-    // Conservative start
-    mtu_limit_bytes_ = 1200;  // RFC 9000 min
+    pmtu_prober_.ResetForNewPath();
 }
 
 void SendManager::ClearActiveStreams() {
@@ -210,14 +181,11 @@ void SendManager::ClearRetransmissionData() {
 }
 
 bool SendManager::CheckAndChargeAmpBudget(uint32_t bytes) {
-    // allow up to 3x of received bytes on unvalidated path
     if (!streams_allowed_) {
-        if (amp_sent_bytes_ + bytes > 3 * amp_recv_bytes_) {
-            common::LOG_DEBUG("anti-amplification: budget exceeded. sent:%llu recv:%llu req:%u", amp_sent_bytes_,
-                amp_recv_bytes_, bytes);
+        if (!amp_controller_.CanSend(bytes)) {
             return false;
         }
-        amp_sent_bytes_ += bytes;
+        amp_controller_.OnBytesSent(bytes);
         return true;
     }
     // When streams are allowed, path is validated; disable amp limit
@@ -247,49 +215,28 @@ bool SendManager::IsAllowedOnUnvalidated(uint16_t type) const {
 }
 
 void SendManager::ResetAmpBudget() {
-    // Provide small initial credit so a single PATH_CHALLENGE can be sent
-    amp_recv_bytes_ = 400;  // ~ allows up to 1200 bytes under 3x rule
-    amp_sent_bytes_ = 0;
+    amp_controller_.EnterUnvalidatedState();
 }
 
 void SendManager::OnCandidatePathBytesReceived(uint32_t bytes) {
     if (!streams_allowed_) {
-        amp_recv_bytes_ += bytes;
+        amp_controller_.OnBytesReceived(bytes);
     }
 }
 
 bool SendManager::ShouldSendRetry() const {
-    // Only consider Retry if path is unvalidated
     if (streams_allowed_) {
         return false;
     }
-
-    // No bytes received yet, can't send Retry
-    if (amp_recv_bytes_ == 0) {
-        return false;
-    }
-
-    // RFC 9000: Trigger Retry when approaching 3x limit
-    // Send Retry at 2x to have room for the Retry packet itself
-    return amp_sent_bytes_ >= 2 * amp_recv_bytes_;
+    return amp_controller_.IsNearLimit();
 }
 
 void SendManager::StartMtuProbe() {
-    // Minimal skeleton: attempt to raise MTU target slightly
-    if (mtu_limit_bytes_ < 1450) {
-        mtu_probe_target_bytes_ = 1450;
-    } else {
-        mtu_probe_target_bytes_ = static_cast<uint16_t>(std::min<int>(mtu_limit_bytes_ + 50, 1500));
-    }
-    mtu_probe_inflight_ = true;
+    pmtu_prober_.StartProbe();
 }
 
 void SendManager::OnMtuProbeResult(bool success) {
-    if (!mtu_probe_inflight_) return;
-    if (success) {
-        mtu_limit_bytes_ = mtu_probe_target_bytes_;
-    }
-    mtu_probe_inflight_ = false;
+    pmtu_prober_.OnProbeResult(success);
 }
 
 // RFC 9002: Check if frames are exempt from congestion control (ACKs, CONNECTION_CLOSE)
@@ -298,25 +245,20 @@ bool SendManager::IsCongestionControlExempt() const {
     // Only check the wait_frame_list_ for what's immediately pending
 
     if (wait_frame_list_.empty()) {
-        common::LOG_DEBUG("IsCongestionControlExempt: no pending frames, returning false");
         return false;
     }
 
     // Check if all pending frames are exempt (ACKs or CONNECTION_CLOSE)
-    size_t total_frames = wait_frame_list_.size();
-    size_t exempt_frames = 0;
     for (const auto& frame : wait_frame_list_) {
         auto frame_type = frame->GetType();
         if (frame_type == FrameType::kAck || frame_type == FrameType::kAckEcn ||
             frame_type == FrameType::kConnectionClose || frame_type == FrameType::kConnectionCloseApp) {
-            exempt_frames++;
+            continue;
         } else {
-            common::LOG_DEBUG("IsCongestionControlExempt: found non-exempt frame type=%d, returning false", frame_type);
             return false;
         }
     }
 
-    common::LOG_DEBUG("IsCongestionControlExempt: all %zu pending frames are exempt, returning true", exempt_frames);
     return true;
 }
 
@@ -326,36 +268,30 @@ void SendManager::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
 }
 
 uint32_t SendManager::GetAvailableWindow() {
-    uint64_t can_send_size = mtu_limit_bytes_;
+    uint64_t can_send_size = pmtu_prober_.GetMtuLimit();
     uint64_t now = common::UTCTimeMsec();
     send_control_.CanSend(now, can_send_size);
 
-    common::LOG_DEBUG("SendManager::GetAvailableWindow: can_send=%llu bytes", can_send_size);
     return static_cast<uint32_t>(can_send_size);
 }
 
 void SendManager::SetCwndLimited() {
     is_cwnd_limited_ = true;
-    common::LOG_DEBUG("SendManager::SetCwndLimited: marked as cwnd limited, will resume on ACK");
 }
 
 void SendManager::SetFlowControlBlocked() {
     is_flow_control_blocked_ = true;
-    // Schedule (or refresh) the recheck timer so the connection is brought
-    // back into TrySend periodically even when no ACK / MAX_DATA arrives.
-    // RFC 9000 §10.1 idle timeout is at least 30s by default, but we want
-    // the connection to react quickly the moment the peer enlarges the
-    // window — 100ms is a reasonable balance: low enough to feel responsive,
-    // high enough to avoid worker-loop pressure.
+    // PERF VALIDATION: this fires from BaseConnection::TrySend (conn-level
+    // FC) and StreamManager (every active stream blocked on STREAM_DATA).
+    // A non-zero rate here during stable transfer is the smoking gun for
+    // "throughput is governed by peer's flow-control window-extension cadence
+    // rather than CPU or network". We deliberately collapse both call sites
+    // into one counter for dashboard simplicity.
+    common::Metrics::CounterInc(common::MetricsStd::DiagFlowControlBlocked);
     static constexpr uint32_t kFlowControlRecheckIntervalMs = 100;
     if (!flow_control_recheck_scheduled_ && timer_) {
         flow_control_recheck_scheduled_ = true;
         timer_->AddTimer(flow_control_recheck_task_, kFlowControlRecheckIntervalMs);
-        int32_t min_now = timer_->MinTime();
-        common::LOG_INFO("SendManager::SetFlowControlBlocked: scheduled %u ms recheck timer, MinTime=%d ms",
-            kFlowControlRecheckIntervalMs, min_now);
-    } else {
-        common::LOG_DEBUG("SendManager::SetFlowControlBlocked: timer already scheduled, flag refreshed");
     }
 }
 
@@ -370,7 +306,6 @@ std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLev
 
         // Check if adding this frame would exceed max_bytes
         if (total_bytes + frame_size > max_bytes) {
-            common::LOG_DEBUG("SendManager::GetPendingFrames: reached max_bytes limit (%u), stopping", max_bytes);
             break;
         }
 
@@ -386,8 +321,6 @@ std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLev
             }
 
             if (!allowed) {
-                // usage of other frames is forbidden in Initial/Handshake packets
-                common::LOG_DEBUG("SendManager::GetPendingFrames: skipping frame type %d for level %d", type, level);
                 ++iter;
                 continue;
             }
@@ -398,8 +331,6 @@ std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLev
         iter = wait_frame_list_.erase(iter);  // Remove from pending list
     }
 
-    common::LOG_DEBUG("SendManager::GetPendingFrames: level=%d, collected %zu frames, total=%u bytes", level,
-        result.size(), total_bytes);
     return result;
 }
 
@@ -407,15 +338,7 @@ bool SendManager::HasStreamData(EncryptionLevel level) {
     if (!stream_manager_) {
         return false;
     }
-
-    // Delegate to StreamManager which knows how to filter by encryption level.
-    // RFC 9000 Section 12.4: STREAM frames are only valid in 0-RTT and 1-RTT packets.
-    // For Initial/Handshake levels, only the crypto stream (id == 0) can send
-    // CRYPTO frames. Application streams must NOT send at these levels.
-    bool has_data = stream_manager_->HasActiveStreamsForLevel(level);
-
-    common::LOG_DEBUG("SendManager::HasStreamData: level=%d, has_data=%d", level, has_data);
-    return has_data;
+    return stream_manager_->HasActiveStreamsForLevel(level);
 }
 
 }  // namespace quic

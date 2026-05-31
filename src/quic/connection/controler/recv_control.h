@@ -47,6 +47,26 @@ public:
     // Check if there are packets waiting to be ACKed
     bool HasPendingAck(PacketNumberSpace ns) const { return !wait_ack_packet_numbers_[ns].empty(); }
 
+    // Check whether an ACK frame should be emitted *right now* for `ns`.
+    //
+    // PERF FIX (P0): The previous send path treated any non-empty
+    // `wait_ack_packet_numbers_` as a reason to attach an ACK frame to the
+    // very next outgoing packet. On fast paths that effectively defeated
+    // both `kAckThreshold` (RFC 9000 §13.2.2) and `max_ack_delay_` — a
+    // single inbound packet would be ACKed immediately by the next
+    // app-level TrySend(), giving a 1:1 packet/ACK ratio and starving
+    // throughput.
+    //
+    // The new contract: an ACK is "due now" only when one of the
+    // explicit triggers fired:
+    //   - Initial / Handshake space (RFC 9000 §13.2.1: MUST ACK immediately).
+    //   - `ack_immediately_pending_` was set by ShouldSendImmediateAck()
+    //     (threshold / OoO / gap / ECN-CE).
+    //   - The max_ack_delay_ timer expired (active_send_cb_ marks the
+    //     space as due before re-running the send loop).
+    // Otherwise the ACK keeps aggregating in `wait_ack_packet_numbers_`.
+    bool ShouldSendAckNow(PacketNumberSpace ns) const;
+
     // Get largest received packet number for a given packet number space
     // Used for PN recovery per RFC 9000 Appendix A
     uint64_t GetLargestReceivedPn(PacketNumberSpace ns) const { return pkt_num_largest_recvd_[ns]; }
@@ -74,6 +94,12 @@ private:
     uint64_t ce_count_[PacketNumberSpace::kNumberSpaceCount]{0};
 
     bool set_timer_;
+    // PERF FIX (P0): A space is "ack-due" iff it has packets waiting AND one
+    // of the immediate-ACK triggers fired (RFC 9000 §13.2.1/§13.2.2) or the
+    // max_ack_delay_ timer expired. Set by OnPacketRecv (when
+    // ShouldSendImmediateAck() returns true) and by the timer task; cleared
+    // inside MayGenerateAckFrame() once the ACK is emitted.
+    bool ack_due_[PacketNumberSpace::kNumberSpaceCount]{false, false, false};
     std::shared_ptr<common::ITimer> timer_;
     common::TimerTask timer_task_;
     std::function<void(PacketNumberSpace)> immediate_ack_cb_;  // Immediate ACK callback

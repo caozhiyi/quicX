@@ -4,8 +4,13 @@
 namespace quicx {
 namespace common {
 
-std::random_device RangeRandom::random_;
-std::mt19937 RangeRandom::engine_(random_());
+// Per-thread Mersenne-Twister engine. Each thread gets its own state seeded
+// once from std::random_device on first call, eliminating the cross-thread
+// data race TSan reported on the previous shared static engine.
+std::mt19937& RangeRandom::Engine() {
+    thread_local std::mt19937 engine{std::random_device{}()};
+    return engine;
+}
 
 RangeRandom::RangeRandom(int32_t min, int32_t max):
     uniform_(min, max) {
@@ -17,7 +22,7 @@ RangeRandom::~RangeRandom() {
 }
 
 int32_t RangeRandom::Random() {
-    return uniform_(engine_);
+    return uniform_(Engine());
 }
 
 }

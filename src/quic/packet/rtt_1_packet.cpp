@@ -1,6 +1,7 @@
 #include <cstring>
 
 #include "common/buffer/buffer_chunk.h"
+#include "common/buffer/buffer_chunk_pool.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
 
@@ -22,7 +23,7 @@ Rtt1Packet::~Rtt1Packet() {}
 
 bool Rtt1Packet::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (!header_.EncodeHeader(buffer)) {
-        common::LOG_ERROR("encode header failed");
+        LOG_ERROR("encode header failed");
         return false;
     }
 
@@ -53,7 +54,7 @@ bool Rtt1Packet::Encode(std::shared_ptr<common::IBuffer> buffer) {
     auto payload_span = payload_.GetSpan();
     auto result = crypto_grapher_->EncryptPacket(packet_number_, ad_span, payload_span, buffer);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("encrypt payload failed. result:%d", result);
+        LOG_ERROR("encrypt payload failed. result:%d", result);
         return false;
     }
 
@@ -62,7 +63,7 @@ bool Rtt1Packet::Encode(std::shared_ptr<common::IBuffer> buffer) {
     result = crypto_grapher_->EncryptHeader(header_span, sample, header_span.GetLength(),
         header_.GetPacketNumberLength(), header_.GetHeaderType() == PacketHeaderType::kShortHeader);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("encrypt header failed. result:%d", result);
+        LOG_ERROR("encrypt header failed. result:%d", result);
         return false;
     }
 
@@ -71,7 +72,7 @@ bool Rtt1Packet::Encode(std::shared_ptr<common::IBuffer> buffer) {
 
 bool Rtt1Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
     if (!header_.DecodeHeader(buffer, with_flag)) {
-        common::LOG_ERROR("decode header failed");
+        LOG_ERROR("decode header failed");
         return false;
     }
 
@@ -79,7 +80,7 @@ bool Rtt1Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
     auto span = buffer->GetReadableSpan();
     auto shared_span = buffer->GetSharedReadableSpan();
     if (!shared_span.Valid()) {
-        common::LOG_ERROR("readable span is invalid");
+        LOG_ERROR("readable span is invalid");
         return false;
     }
     packet_src_data_ = common::SharedBufferSpan(shared_span.GetChunk(), span.GetStart(), span.GetEnd());
@@ -106,12 +107,12 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
         // Create a SingleBlockBuffer from the payload span
         auto payload_buffer = common::SingleBlockBuffer::FromSpan(payload_);
         if (!payload_buffer) {
-            common::LOG_ERROR("failed to create buffer from payload span.");
+            LOG_ERROR("failed to create buffer from payload span.");
             return false;
         }
 
         if (!DecodeFrames(payload_buffer, frames_list_)) {
-            common::LOG_ERROR("decode frame failed.");
+            LOG_ERROR("decode frame failed.");
             return false;
         }
         return true;
@@ -125,7 +126,7 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     // Sample needs 16 bytes, starting at offset 4 from payload start
     size_t payload_len = span.GetEnd() - span.GetStart();
     if (payload_len < 4 + kHeaderProtectSampleLength) {
-        common::LOG_ERROR("payload too short for header protection sample. payload_len:%zu, required:%zu",
+        LOG_ERROR("payload too short for header protection sample. payload_len:%zu, required:%zu",
             payload_len, 4 + kHeaderProtectSampleLength);
         return false;
     }
@@ -134,7 +135,7 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     auto result = crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength(), packet_num_len,
         header_.GetHeaderType() == PacketHeaderType::kShortHeader);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("decrypt header failed. result:%d, payload_len:%zu, header_len:%zu", 
+        LOG_ERROR("decrypt header failed. result:%d, payload_len:%zu, header_len:%zu", 
             result, payload_len, header_span.GetLength());
         return false;
     }
@@ -167,8 +168,9 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 
     // decrypt packet payload
     auto payload = common::BufferSpan(cur_pos, span.GetEnd());
-    // Use pooled BufferChunk instead of StandaloneBufferChunk for memory reuse
-    auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    // PERF: BufferChunkPool recycles the BufferChunk wrapper across packets so
+    // we don't pay one ctor + control-block alloc per datagram.
+    auto chunk = common::BufferChunkPool::Acquire(GlobalResource::Instance().GetThreadLocalBlockPool());
     auto plaintext_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
     if (!key_phase_changed) {
@@ -178,17 +180,17 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
             // Current key failed, maybe this is a reordered packet from previous key phase
             if (crypto_grapher_->HasPrevReadKey()) {
                 // Reset plaintext buffer for retry
-                chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+                chunk = common::BufferChunkPool::Acquire(GlobalResource::Instance().GetThreadLocalBlockPool());
                 plaintext_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
                 result = crypto_grapher_->DecryptPacketWithPrevKey(packet_number_, ad_span, payload, plaintext_buffer);
                 if (result != ICryptographer::Result::kOk) {
-                    common::LOG_ERROR("decrypt packet failed with both current and prev key. result:%d, pn:%llu",
+                    LOG_ERROR("decrypt packet failed with both current and prev key. result:%d, pn:%llu",
                         result, packet_number_);
                     return false;
                 }
                 // Decrypted with previous key - this is a reordered old packet, no key update needed
             } else {
-                common::LOG_ERROR("decrypt packet failed. result:%d, pn:%llu, truncated_pn:%llu, pn_len:%u, largest_recv_pn:%llu, "
+                LOG_ERROR("decrypt packet failed. result:%d, pn:%llu, truncated_pn:%llu, pn_len:%u, largest_recv_pn:%llu, "
                     "payload_len:%zu, ad_len:%zu, header_len:%zu",
                     result, packet_number_, truncated_pn, packet_num_len, largest_received_pn_,
                     (size_t)(span.GetEnd() - cur_pos), (size_t)(cur_pos - buffer_header_pos), header_len);
@@ -204,13 +206,13 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
         saved_header_len_ = header_len;
         saved_truncated_pn_ = truncated_pn;
         key_phase_changed_ = true;
-        common::LOG_INFO("Key Phase changed (expected:%u, received:%u) at pn:%llu, signaling key update",
+        LOG_INFO("Key Phase changed (expected:%u, received:%u) at pn:%llu, signaling key update",
             expected_key_phase_, received_key_phase, packet_number_);
         return false;
     }
 
     if (!DecodeFrames(plaintext_buffer, frames_list_)) {
-        common::LOG_ERROR("decode frame failed.");
+        LOG_ERROR("decode frame failed.");
         return false;
     }
 
@@ -228,7 +230,7 @@ void Rtt1Packet::SetPayload(const common::SharedBufferSpan& payload) {
 
 bool Rtt1Packet::RetryPayloadDecrypt() {
     if (!crypto_grapher_ || !saved_payload_start_ || !saved_ad_start_) {
-        common::LOG_ERROR("RetryPayloadDecrypt called without saved state");
+        LOG_ERROR("RetryPayloadDecrypt called without saved state");
         return false;
     }
 
@@ -236,19 +238,19 @@ bool Rtt1Packet::RetryPayloadDecrypt() {
     auto ad_span = common::BufferSpan(saved_ad_start_, saved_payload_start_);
     auto payload = common::BufferSpan(saved_payload_start_, saved_payload_end_);
 
-    // Allocate new plaintext buffer
-    auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    // Allocate new plaintext buffer (recycled via BufferChunkPool).
+    auto chunk = common::BufferChunkPool::Acquire(GlobalResource::Instance().GetThreadLocalBlockPool());
     auto plaintext_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
     auto result = crypto_grapher_->DecryptPacket(packet_number_, ad_span, payload, plaintext_buffer);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("RetryPayloadDecrypt: decrypt still failed after key update. result:%d, pn:%llu",
+        LOG_ERROR("RetryPayloadDecrypt: decrypt still failed after key update. result:%d, pn:%llu",
             result, packet_number_);
         return false;
     }
 
     if (!DecodeFrames(plaintext_buffer, frames_list_)) {
-        common::LOG_ERROR("RetryPayloadDecrypt: decode frame failed.");
+        LOG_ERROR("RetryPayloadDecrypt: decode frame failed.");
         return false;
     }
 

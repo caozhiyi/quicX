@@ -9,9 +9,14 @@ namespace quic {
 
 WorkerWithThread::WorkerWithThread(std::shared_ptr<common::IEventLoop> event_loop, std::shared_ptr<IWorker> worker_ptr):
     event_loop_(event_loop),
-    worker_ptr_(worker_ptr) {}
+    worker_ptr_(worker_ptr),
+    ready_future_(ready_promise_.get_future().share()) {}
 
 WorkerWithThread::~WorkerWithThread() {}
+
+bool WorkerWithThread::WaitUntilReady() {
+    return ready_future_.get();
+}
 
 std::string WorkerWithThread::GetWorkerId() {
     if (worker_id_.empty() && pthread_) {
@@ -33,9 +38,13 @@ void WorkerWithThread::HandlePacket(PacketParseResult& packet_info) {
 void WorkerWithThread::Run() {
     auto loop = event_loop_.lock();
     if (!loop || !loop->Init()) {
-        common::LOG_ERROR("init event loop failed.");
+        LOG_ERROR("init event loop failed.");
+        ready_promise_.set_value(false);
         return;
     }
+
+    // Notify the main thread that initialization is complete
+    ready_promise_.set_value(true);
 
     while (!Thread::IsStop()) {
         loop->Wait();
@@ -65,7 +74,7 @@ void WorkerWithThread::ProcessRecv() {
         if (worker_ptr_) {
             worker_ptr_->HandlePacket(packet_info);
         } else {
-            common::LOG_ERROR("worker_ptr_ is not set.");
+            LOG_ERROR("worker_ptr_ is not set.");
         }
     }
 }
