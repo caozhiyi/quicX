@@ -168,9 +168,16 @@ TEST_F(RetryTokenManagerTest, ConcurrentAccess) {
             local_addr.SetIp("192.168.1." + std::to_string(i));
             local_addr.SetPort(10000 + i);
 
+            // Each thread gets its own copy of dcid_ to avoid sharing a mutable
+            // object across threads: GenerateToken reads it (inside manager mutex)
+            // while ValidateToken writes out_original_dcid (before the mutex),
+            // which caused the TSan data race when both pointed to the same dcid_.
+            ConnectionID local_dcid = dcid_;
+
             for (int j = 0; j < tokens_per_thread; ++j) {
-                std::string token = manager_->GenerateToken(local_addr, dcid_);
-                if (manager_->ValidateToken(token, local_addr, dcid_)) {
+                std::string token = manager_->GenerateToken(local_addr, local_dcid);
+                ConnectionID extracted_dcid;  // separate output, never shared
+                if (manager_->ValidateToken(token, local_addr, extracted_dcid)) {
                     success_count++;
                 }
             }

@@ -27,8 +27,23 @@
  */
 
 #include <signal.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#define setenv(name, value, overwrite) _putenv_s(name, value)
+struct WinsockInit {
+    WinsockInit() {
+        WSADATA wsaData;
+        WSAStartup(MAKEWORD(2, 2), &wsaData);
+    }
+    ~WinsockInit() {
+        WSACleanup();
+    }
+};
+#else
 #include <netdb.h>
 #include <arpa/inet.h>
+#endif
 #include <atomic>
 #include <cctype>
 #include <cstdlib>
@@ -621,6 +636,9 @@ std::vector<std::string> ParseUrls(const std::string& requests) {
 }
 
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+    WinsockInit wsInit;
+#endif
     // Support both environment variables and command-line arguments
     std::string server;
     uint16_t port = 443;
