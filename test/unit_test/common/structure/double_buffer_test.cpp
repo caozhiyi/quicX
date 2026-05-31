@@ -1,6 +1,7 @@
 #include "common/structure/double_buffer.h"
 
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -212,19 +213,29 @@ TEST(DoubleBufferTest, SwapWithEmptyWriteBuffer) {
 }
 
 // Concurrency safety test (basic)
-// Note: This is a basic sanity check. Full thread safety requires
-// external synchronization in the actual usage.
-// std::unordered_set::insert is not thread-safe, so some items may be lost
+// IMPORTANT: DoubleBuffer is documented as NOT thread-safe (see double_buffer.h).
+// Both Add() and Swap() must be externally synchronised by the caller. We
+// therefore guard Add() here with our own std::mutex — without it, concurrent
+// std::unordered_set::insert calls trigger undefined behaviour: under libc++
+// (macOS) two threads can race inside the same rehash and corrupt the bucket
+// chain, sending later insert() calls into an infinite loop (the test then
+// appears to "hang" forever — exactly what we observed before this fix).
+// With external synchronisation the workload is well-defined: every unique
+// integer is inserted exactly once, so the final size MUST be 50.
 TEST(DoubleBufferTest, ConcurrentAdd) {
     DoubleBuffer<int> buffer;
+    std::mutex add_mu;
 
-    // Simulate: processing thread swaps and reads, while callbacks add items
+    // Simulate: callbacks on multiple threads all push into the write buffer
+    // while sharing a mutex (the same contract real users like Worker /
+    // StreamManager follow when they post via RunInLoop or hold a per-loop
+    // lock).
     std::vector<std::thread> threads;
-
-    // Add items from multiple threads (simulating callbacks)
+    threads.reserve(5);
     for (int i = 0; i < 5; ++i) {
-        threads.emplace_back([&buffer, i]() {
+        threads.emplace_back([&buffer, &add_mu, i]() {
             for (int j = 0; j < 10; ++j) {
+                std::lock_guard<std::mutex> lk(add_mu);
                 buffer.Add(i * 10 + j);
             }
         });
@@ -234,10 +245,9 @@ TEST(DoubleBufferTest, ConcurrentAdd) {
         t.join();
     }
 
-    // Most items should be added (some may be lost due to race conditions)
-    // In production, external synchronization (e.g., mutex) should be used
-    EXPECT_GE(buffer.Size(), 40u);  // At least 80% success rate
-    EXPECT_LE(buffer.Size(), 50u);  // No more than 50 unique items
+    // Each (i, j) pair produces a unique integer in [0, 50), so with proper
+    // synchronisation we expect exactly 50 unique entries — no losses.
+    EXPECT_EQ(buffer.Size(), 50u);
 }
 
 }  // namespace common

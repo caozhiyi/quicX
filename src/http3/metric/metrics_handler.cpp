@@ -16,7 +16,7 @@ void MetricsHandler::Handle(std::shared_ptr<IRequest> request, std::shared_ptr<I
     // Set response body
     response->AppendBody(metrics_data);
 
-    common::LOG_DEBUG("Metrics endpoint accessed, exported %zu bytes", metrics_data.size());
+    LOG_DEBUG("Metrics endpoint accessed, exported %zu bytes", metrics_data.size());
 }
 
 }  // namespace http3

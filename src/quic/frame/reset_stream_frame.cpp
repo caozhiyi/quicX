@@ -16,7 +16,7 @@ ResetStreamFrame::~ResetStreamFrame() {}
 bool ResetStreamFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint32_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -38,7 +38,7 @@ bool ResetStreamFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
         frame_type_ = static_cast<uint16_t>(type);
         if (frame_type_ != FrameType::kResetStream) {
-            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
+            LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }

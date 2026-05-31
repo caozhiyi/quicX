@@ -39,7 +39,7 @@ bool TLSServerConnection::DoHandleShake() {
         
         // Handle 0-RTT rejection according to RFC 9001
         if (ssl_err == SSL_ERROR_EARLY_DATA_REJECTED) {
-            common::LOG_INFO("0-RTT data was rejected by server, resetting and continuing with full handshake");
+            LOG_INFO("0-RTT data was rejected by server, resetting and continuing with full handshake");
             
             // Reset early data state and continue with full handshake
             SSL_reset_early_data_reject(ssl_.get());
@@ -50,7 +50,7 @@ bool TLSServerConnection::DoHandleShake() {
                 ssl_err = SSL_get_error(ssl_.get(), ret);
                 if (ssl_err != SSL_ERROR_WANT_READ) {
                     const char* err = SSL_error_description(ssl_err);
-                    common::LOG_ERROR("SSL_do_handshake failed after 0-RTT reset. err:%s", err);
+                    LOG_ERROR("SSL_do_handshake failed after 0-RTT reset. err:%s", err);
                 }
                 return false;
             }
@@ -59,12 +59,12 @@ bool TLSServerConnection::DoHandleShake() {
 
         if (ssl_err != SSL_ERROR_WANT_READ) {
             const char* err = SSL_error_description(ssl_err);
-            common::LOG_ERROR("SSL_do_handshake failed. ssl_err:%d, desc:%s", ssl_err, err ? err : "null");
+            LOG_ERROR("SSL_do_handshake failed. ssl_err:%d, desc:%s", ssl_err, err ? err : "null");
             unsigned long err_code;
             while ((err_code = ERR_get_error()) != 0) {
                 char output[256];
                 ERR_error_string_n(err_code, output, sizeof(output));
-                common::LOG_ERROR("OpenSSL Error: %s", output);
+                LOG_ERROR("OpenSSL Error: %s", output);
             }
         }
         return false;

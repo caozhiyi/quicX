@@ -26,8 +26,8 @@ int main(int argc, char** argv) {
     std::shared_ptr<quicx::common::Logger> file_log = std::make_shared<quicx::common::FileLogger>("test.log");
     std::shared_ptr<quicx::common::Logger> std_log = std::make_shared<quicx::common::StdoutLogger>();
     file_log->SetLogger(std_log);
-    quicx::common::LOG_SET(file_log);
-    quicx::common::LOG_SET_LEVEL(quicx::common::LogLevel::kDebug);
+    LOG_SET(file_log);
+    LOG_SET_LEVEL(quicx::common::LogLevel::kDebug);
 
     int ret = RUN_ALL_TESTS();
 

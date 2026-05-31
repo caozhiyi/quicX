@@ -42,7 +42,7 @@ RttCalculator::RttCalculator() {
 RttCalculator::~RttCalculator() {}
 
 bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_delay) {
-    common::LOG_DEBUG("update rtt. send time:%lld, now:%lld, ack delay:%d", send_time, now, ack_delay);
+    LOG_DEBUG("update rtt. send time:%lld, now:%lld, ack delay:%d", send_time, now, ack_delay);
 
     latest_rtt_ = now - send_time;
     // first update rtt
@@ -113,13 +113,13 @@ void RttCalculator::OnPTOExpired() {
     pto_count_ = std::min(pto_count_ + 1, kMaxPTOBackoff);
     consecutive_pto_count_++;
 
-    common::LOG_DEBUG("PTO expired: pto_count=%u, consecutive_pto_count=%u", pto_count_, consecutive_pto_count_);
+    LOG_DEBUG("PTO expired: pto_count=%u, consecutive_pto_count=%u", pto_count_, consecutive_pto_count_);
 }
 
 void RttCalculator::OnPacketAcked() {
     // Reset backoff when we receive an ACK
     if (pto_count_ > 0 || consecutive_pto_count_ > 0) {
-        common::LOG_DEBUG("Packet ACKed: resetting PTO backoff (was pto_count=%u, consecutive=%u)", pto_count_,
+        LOG_DEBUG("Packet ACKed: resetting PTO backoff (was pto_count=%u, consecutive=%u)", pto_count_,
             consecutive_pto_count_);
     }
     pto_count_ = 0;

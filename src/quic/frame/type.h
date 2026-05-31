@@ -10,7 +10,7 @@ namespace quic {
 #define CHECK_ENCODE_ERROR(expr, error_msg) \
     do { \
         if (!(expr)) { \
-            common::LOG_ERROR(error_msg); \
+            LOG_ERROR(error_msg); \
             return false; \
         } \
     } while (0);
@@ -18,7 +18,7 @@ namespace quic {
 #define CHECK_DECODE_ERROR(expr, error_msg) \
     do { \
         if (!(expr)) { \
-            common::LOG_ERROR(error_msg); \
+            LOG_ERROR(error_msg); \
             return false; \
         } \
     } while (0);

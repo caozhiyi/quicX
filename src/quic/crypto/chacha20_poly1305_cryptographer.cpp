@@ -31,7 +31,7 @@ CryptographerId ChaCha20Poly1305Cryptographer::GetCipherId() {
 }
 
 bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
-    uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length) {
+    uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length, EVP_CIPHER_CTX* /*cached_hp_ctx*/) {
 
     const uint8_t* sample_pos = sample.GetStart();
     uint32_t *counter = (uint32_t *)(sample_pos);

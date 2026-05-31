@@ -119,7 +119,7 @@ TEST(RealisticNetworkTest, LTE_Reno) {
     printf("\n--- LTE Performance ---\n");
     printf("Throughput: %.2f Mbps\n", metrics.throughput_mbps);
     printf("Max Cwnd: %.2f KB\n", metrics.max_cwnd_bytes / 1024.0);
-    printf("Recovery Count: %lu\n", metrics.recovery_count);
+    printf("Recovery Count: %llu\n", metrics.recovery_count);
     
     // With Reno at 1% loss and 50ms RTT, the Mathis-style upper bound
     // (MSS / RTT) * sqrt(3/2) / sqrt(p) is well under 5 Mbps. Now that the

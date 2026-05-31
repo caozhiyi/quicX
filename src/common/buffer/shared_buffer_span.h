@@ -14,6 +14,13 @@ namespace common {
 // underlying BufferChunk. It is ideal for handing buffer slices across threads
 // or asynchronous boundaries where lifetime guarantees are harder to reason
 // about. As long as the span is alive the underlying chunk remains allocated.
+//
+// Zero-copy invariant 1 (immutability): every live span pins the chunk's
+// write floor at or above span.end(), preventing the owning buffer from
+// rewinding write_pos and overwriting the bytes the span still references.
+// The pin is established by the constructor and released by the destructor;
+// copy/move operations preserve the invariant by adjusting the freeze count
+// on the chunk accordingly.
 class SharedBufferSpan {
 public:
     SharedBufferSpan() = default;
@@ -23,6 +30,15 @@ public:
     SharedBufferSpan(std::shared_ptr<IBufferChunk> chunk, uint8_t* start, uint8_t* end);
     // Convenience overload that accepts a length in bytes.
     SharedBufferSpan(std::shared_ptr<IBufferChunk> chunk, uint8_t* start, uint32_t len);
+
+    ~SharedBufferSpan();
+
+    // Copy/move keep the freeze invariant intact: copies install a new freeze,
+    // moves transfer the existing one without touching the count.
+    SharedBufferSpan(const SharedBufferSpan& other);
+    SharedBufferSpan& operator=(const SharedBufferSpan& other);
+    SharedBufferSpan(SharedBufferSpan&& other) noexcept;
+    SharedBufferSpan& operator=(SharedBufferSpan&& other) noexcept;
 
     // Returns true when the span owns a valid chunk and the range is inside the
     // chunk's boundaries.

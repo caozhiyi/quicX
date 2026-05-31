@@ -79,7 +79,7 @@ void ConnectionCrypto::SetWriteSecret(
 
     // When 0-RTT write key is installed, notify the connection that early data can be sent
     if (level == kEarlyData && early_data_ready_cb_) {
-        common::LOG_INFO("0-RTT write key installed, triggering early data ready callback");
+        LOG_INFO("0-RTT write key installed, triggering early data ready callback");
         early_data_ready_cb_();
     }
 }
@@ -103,7 +103,7 @@ void ConnectionCrypto::OnTransportParams(EncryptionLevel level, const uint8_t* t
     TransportParam remote_tp;
     common::BufferSpan buffer((uint8_t*)tp, (uint32_t)tp_len);
     if (!remote_tp.Decode(buffer)) {
-        common::LOG_ERROR("decode remote transport failed.");
+        LOG_ERROR("decode remote transport failed.");
         return;
     }
     if (transport_param_cb_) {
@@ -149,7 +149,7 @@ bool ConnectionCrypto::InstallInitSecretWithVersion(const uint8_t* secret, uint3
     cryptographer->InstallInitSecretWithVersion(secret, len, version, is_server);
     cryptographers_[kInitial] = cryptographer;
     
-    common::LOG_INFO("Installed Initial secret with version %s (0x%08x)", VersionToString(version), version);
+    LOG_INFO("Installed Initial secret with version %s (0x%08x)", VersionToString(version), version);
 
     // Log key_updated events for Initial keys (both read and write)
     if (qlog_trace_) {
@@ -178,7 +178,7 @@ bool ConnectionCrypto::RekeyInitialForVersion(
     // is discarded (its keys are never used again; any buffered in-flight Initial
     // packets MUST be retransmitted under the new version).
     if (dcid == nullptr || dcid_len == 0) {
-        common::LOG_ERROR("RekeyInitialForVersion: invalid DCID");
+        LOG_ERROR("RekeyInitialForVersion: invalid DCID");
         return false;
     }
 
@@ -199,7 +199,7 @@ bool ConnectionCrypto::RekeyInitialForVersion(
     cryptographer->InstallInitSecretWithVersion(dcid, dcid_len, new_version, is_server);
     cryptographers_[kInitial] = cryptographer;
 
-    common::LOG_INFO("Re-installed Initial secret for Compatible VN: version=%s (0x%08x), dcid_len=%u, is_server=%d",
+    LOG_INFO("Re-installed Initial secret for Compatible VN: version=%s (0x%08x), dcid_len=%u, is_server=%d",
         VersionToString(new_version), new_version, dcid_len, static_cast<int>(is_server));
 
     if (qlog_trace_) {
@@ -266,7 +266,7 @@ bool ConnectionCrypto::InstallInitSecretForRetryWithVersion(
     }
 
     cryptographers_[kInitial] = cryptographer;
-    common::LOG_INFO("Installed Initial secret for Retry with version %s (0x%08x)", VersionToString(version), version);
+    LOG_INFO("Installed Initial secret for Retry with version %s (0x%08x)", VersionToString(version), version);
     return true;
 }
 
@@ -275,7 +275,7 @@ bool ConnectionCrypto::TriggerKeyUpdate() {
     // Key updates can only be performed on Application level keys
     auto cryptographer = cryptographers_[kApplication];
     if (!cryptographer) {
-        common::LOG_ERROR("Cannot trigger key update: Application level cryptographer not ready");
+        LOG_ERROR("Cannot trigger key update: Application level cryptographer not ready");
         return false;
     }
 
@@ -283,21 +283,21 @@ bool ConnectionCrypto::TriggerKeyUpdate() {
     // First update write keys (our outgoing traffic)
     auto result = cryptographer->KeyUpdateWithVersion(nullptr, 0, true, quic_version_);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("Key update failed for write keys: %d", static_cast<int>(result));
+        LOG_ERROR("Key update failed for write keys: %d", static_cast<int>(result));
         return false;
     }
 
     // Then update read keys (incoming traffic)
     result = cryptographer->KeyUpdateWithVersion(nullptr, 0, false, quic_version_);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("Key update failed for read keys: %d", static_cast<int>(result));
+        LOG_ERROR("Key update failed for read keys: %d", static_cast<int>(result));
         return false;
     }
 
     // Flip key phase
     current_key_phase_ ^= 1;
 
-    common::LOG_INFO("Key update completed successfully (version: %s, new key_phase: %u)",
+    LOG_INFO("Key update completed successfully (version: %s, new key_phase: %u)",
         VersionToString(quic_version_), current_key_phase_);
 
     // Log key_updated events for 1-RTT key update
@@ -320,14 +320,14 @@ bool ConnectionCrypto::TriggerReadKeyUpdate() {
     // We need to update read keys first, then also update write keys
     auto cryptographer = cryptographers_[kApplication];
     if (!cryptographer) {
-        common::LOG_ERROR("Cannot trigger passive key update: Application level cryptographer not ready");
+        LOG_ERROR("Cannot trigger passive key update: Application level cryptographer not ready");
         return false;
     }
 
     // Update read keys first (to decrypt the incoming packet with new key)
     auto result = cryptographer->KeyUpdateWithVersion(nullptr, 0, false, quic_version_);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("Passive key update failed for read keys: %d", static_cast<int>(result));
+        LOG_ERROR("Passive key update failed for read keys: %d", static_cast<int>(result));
         return false;
     }
 
@@ -335,14 +335,14 @@ bool ConnectionCrypto::TriggerReadKeyUpdate() {
     // send keys in response to a peer's key update)
     result = cryptographer->KeyUpdateWithVersion(nullptr, 0, true, quic_version_);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("Passive key update failed for write keys: %d", static_cast<int>(result));
+        LOG_ERROR("Passive key update failed for write keys: %d", static_cast<int>(result));
         return false;
     }
 
     // Flip key phase to match the peer's
     current_key_phase_ ^= 1;
 
-    common::LOG_INFO("Passive key update completed successfully (version: %s, new key_phase: %u)",
+    LOG_INFO("Passive key update completed successfully (version: %s, new key_phase: %u)",
         VersionToString(quic_version_), current_key_phase_);
 
     // Log key_updated events

@@ -69,8 +69,10 @@ static std::shared_ptr<common::IBuffer> MakeBuffer(size_t cap = 64 * 1024) {
 static std::vector<uint8_t> RandomData(size_t size) {
     std::vector<uint8_t> data(size);
     std::mt19937 gen(42);
-    std::uniform_int_distribution<uint8_t> dist(0, 255);
-    for (auto& b : data) b = dist(gen);
+    // MSVC strictly enforces N4950 [rand.req.genl]/1.5: uniform_int_distribution
+    // does NOT accept char / int8_t / uint8_t. Use unsigned int and narrow.
+    std::uniform_int_distribution<unsigned int> dist(0, 255);
+    for (auto& b : data) b = static_cast<uint8_t>(dist(gen));
     return data;
 }
 

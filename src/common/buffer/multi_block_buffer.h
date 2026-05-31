@@ -5,6 +5,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "common/alloter/pool_block.h"
 #include "common/buffer/if_buffer.h"
@@ -45,6 +46,58 @@ public:
     SharedBufferSpan GetSharedReadableSpan(uint32_t length = 0, bool must_fill_length = false) const override;
     std::string GetDataAsString() override;
     void VisitDataSpans(const std::function<bool(SharedBufferSpan&)>& visitor) override;
+
+    // Zero-copy invariant 3 (cross-segment must be explicit) ------------------
+    //
+    // GetFirstChunkReadable: hand back a SharedBufferSpan covering the
+    // *first* chunk's currently readable bytes, capped at `max_length`. The
+    // span is always confined to a single chunk and is therefore guaranteed
+    // zero-copy. Returns an invalid span if the buffer has no readable data.
+    //
+    // Use this when emitting a single contiguous frame (e.g. one STREAM frame
+    // per call) and the caller is happy to let later iterations drain
+    // subsequent chunks.
+    SharedBufferSpan GetFirstChunkReadable(uint32_t max_length) const;
+
+    // GetCoalescedReadable: like GetFirstChunkReadable, but if the first
+    // chunk's readable region is shorter than max_length AND there is
+    // additional readable data in subsequent chunks, allocate a single
+    // StandaloneBufferChunk and memcpy the prefix of the readable bytes
+    // (up to max_length) into it, returning a span that covers exactly that
+    // contiguous region. This trades one bounded memcpy (≤max_length bytes)
+    // for the ability to fill a single STREAM frame to its packet-level cap
+    // even when the first chunk is partially drained.
+    //
+    // Why this exists:
+    //   MultiBlockBuffer fragments steady-state when the consumer reads a
+    //   non-multiple of the underlying chunk size each iteration: a 1500B
+    //   chunk yields a 1234B span, leaving 266B in the first chunk. New
+    //   producer writes go to a fresh chunk (because the first one has
+    //   Writable()==0). The next read therefore sees only 266B in the
+    //   first chunk. Asking for "up to max_length contiguous bytes"
+    //   collapses this fragmentation by stitching the 266B tail with the
+    //   head of the next chunk.
+    //
+    // Cost vs zero-copy invariant 3:
+    //   StreamFrame::Encode already memcpy's the payload into the packet
+    //   buffer (BufferEncodeWrapper::EncodeBytes), so adding a small
+    //   coalesce memcpy here only changes constants, not big-O. It is
+    //   strictly cheaper than the alternative (sending a tiny 266B STREAM
+    //   frame plus a full-size one in a follow-up packet, which doubles
+    //   the per-byte UDP send overhead).
+    //
+    // Returns an invalid span if the buffer has no readable data.
+    SharedBufferSpan GetCoalescedReadable(uint32_t max_length) const;
+
+    // GetSharedReadableSpans: hand back one SharedBufferSpan *per chunk* the
+    // requested prefix touches, in read order, totalling
+    //   min(length, GetDataLength())
+    // bytes. Each span is zero-copy (no chunk allocation, no memcpy). The
+    // caller is responsible for stitching them together, e.g. by writing them
+    // sequentially into a fresh buffer or feeding them to scatter-gather IO.
+    //
+    // length == 0 means "all currently readable bytes".
+    std::vector<SharedBufferSpan> GetSharedReadableSpans(uint32_t length = 0) const;
 
     // Write helpers enqueue externally managed spans. The overload with
     // data_len allows callers to cap the exposed readable portion (useful when

@@ -5,6 +5,10 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
+
+#include <sys/epoll.h>
+
 #include "common/network/if_event_driver.h"
 
 namespace quicx {
@@ -48,6 +52,12 @@ private:
     int epoll_fd_ = -1;
     int32_t wakeup_fd_[2];  // Pipe for wakeup
     int max_events_ = 1024;
+
+    // Reusable scratch buffer for epoll_wait() output. Allocating a fresh
+    // 1024-entry vector on every Wait() call shows up as the dominant CPU
+    // hotspot in profiling (memset + malloc/free of ~24KB per loop iter),
+    // so we keep one as a member and resize lazily.
+    std::vector<struct epoll_event> epoll_events_scratch_;
 };
 
 } // namespace common

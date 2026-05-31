@@ -27,7 +27,7 @@ bool HeadersFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
         uint32_t encoded_length = encoded_fields_->GetDataLength();
 
         if (encoded_length < payload_size) {
-            common::LOG_ERROR(
+            LOG_ERROR(
                 "HeadersFrame::Encode: encoded_fields length (%u) < payload_size (%u)", encoded_length, payload_size);
             return false;
         }
@@ -35,7 +35,7 @@ bool HeadersFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
         // Use CloneReadable to get the exact payload and advance read pointer
         auto payload = encoded_fields_->CloneReadable(payload_size);
         if (!payload) {
-            common::LOG_ERROR("HeadersFrame::Encode: CloneReadable failed for length %u", payload_size);
+            LOG_ERROR("HeadersFrame::Encode: CloneReadable failed for length %u", payload_size);
             return false;
         }
         buffer->Write(payload);
@@ -62,7 +62,7 @@ DecodeResult HeadersFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     // Check if we have enough data
     if (wrapper.GetDataLength() < length_) {
         wrapper.CancelDecode();
-        common::LOG_DEBUG("HeadersFrame::Decode: insufficient data (need %u, have %u), waiting for more", length_,
+        LOG_DEBUG("HeadersFrame::Decode: insufficient data (need %u, have %u), waiting for more", length_,
             wrapper.GetDataLength());
         return DecodeResult::kNeedMoreData;  // Not an error, just need more data
     }
@@ -72,7 +72,7 @@ DecodeResult HeadersFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
     // CloneReadable creates a shallow copy and advances the read pointer
     encoded_fields_ = wrapper.GetBuffer()->CloneReadable(length_);
     if (!encoded_fields_) {
-        common::LOG_ERROR("HeadersFrame::Decode: CloneReadable failed for length %u", length_);
+        LOG_ERROR("HeadersFrame::Decode: CloneReadable failed for length %u", length_);
         return DecodeResult::kError;
     }
 

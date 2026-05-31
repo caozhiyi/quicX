@@ -29,6 +29,19 @@ public:
         return true;
     }
 
+    virtual uint32_t SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) override {
+        // Mirror the production path semantics: append every packet in order
+        // to the captured list. Tests treat batch send identically to
+        // per-packet send for assertion purposes.
+        uint32_t ok = 0;
+        for (auto& p : batch) {
+            if (Send(p)) {
+                ok++;
+            }
+        }
+        return ok;
+    }
+
     virtual int32_t GetSocket() const override {
         return socket_fd_;
     }

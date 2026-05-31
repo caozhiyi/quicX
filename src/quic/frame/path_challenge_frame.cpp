@@ -21,7 +21,7 @@ PathChallengeFrame::~PathChallengeFrame() {}
 bool PathChallengeFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint32_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -39,13 +39,13 @@ bool PathChallengeFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool wi
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
         frame_type_ = static_cast<uint16_t>(type);
         if (frame_type_ != FrameType::kPathChallenge) {
-            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
+            LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
     wrapper.Flush();
     if (kPathDataLength > buffer->GetDataLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), kPathDataLength);
         return false;
     }

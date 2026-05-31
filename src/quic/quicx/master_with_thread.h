@@ -1,6 +1,8 @@
 #ifndef QUIC_QUICX_MSG_RECEIVER_WITH_THREAD
 #define QUIC_QUICX_MSG_RECEIVER_WITH_THREAD
 
+#include <future>
+
 #include <quicx/common/if_event_loop.h>
 #include "common/structure/thread_safe_queue.h"
 #include "common/thread/thread.h"
@@ -17,6 +19,10 @@ public:
     void Run() override;
 
     void Stop() override;
+
+    // Block until the event loop thread has finished Init().
+    // Returns true if Init() succeeded, false otherwise.
+    bool WaitUntilReady();
 
     // add a new connection id
     virtual void AddConnectionID(ConnectionID& cid, const std::string& worker_id) override;
@@ -43,6 +49,9 @@ private:
     };
     common::ThreadSafeQueue<ConnectionOpInfo> connection_op_queue_;
     common::ThreadSafeQueue<std::function<void()>> pending_tasks_;  // Tasks posted before EventLoop is initialized
+
+    std::promise<bool> ready_promise_;
+    std::shared_future<bool> ready_future_;
 };
 
 }  // namespace quic

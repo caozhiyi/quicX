@@ -24,7 +24,7 @@ CryptographerId ICryptographer::AdapterCryptographerType(uint32_t cipher_id) {
     case TLS1_CK_AES_256_GCM_SHA384: return kCipherIdAes256GcmSha384;
     case TLS1_CK_CHACHA20_POLY1305_SHA256: return kCipherIdChaCha20Poly1305Sha256;
     default:
-        common::LOG_ERROR("unknown cipher. id:%d", cipher_id);
+        LOG_ERROR("unknown cipher. id:%d", cipher_id);
         return kCipherIdUnknown;
     }
 }
@@ -43,7 +43,7 @@ std::shared_ptr<ICryptographer> MakeCryptographer(CryptographerId cipher) {
     case kCipherIdChaCha20Poly1305Sha256:
         return std::make_shared<ChaCha20Poly1305Cryptographer>();
     default:
-        common::LOG_ERROR("unsupport cipher id. id:%d", cipher);
+        LOG_ERROR("unsupport cipher id. id:%d", cipher);
         break;
     }
     return nullptr;

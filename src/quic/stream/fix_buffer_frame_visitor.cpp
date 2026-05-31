@@ -22,11 +22,14 @@ FixBufferFrameVisitor::FixBufferFrameVisitor(uint32_t limit_size):
     last_error_(FrameEncodeError::kNone) {
     auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!chunk || !chunk->Valid()) {
-        common::LOG_ERROR("failed to allocate buffer chunk");
+        LOG_ERROR("failed to allocate buffer chunk");
         return;
     }
-    chunk->SetLimitSize(limit_size);
     buffer_ = std::make_shared<common::SingleBlockBuffer>(chunk);
+    // Zero-copy invariant 2: the per-packet size cap is a property of the
+    // *buffer view*, not of the chunk. Setting it on the SingleBlockBuffer
+    // shrinks the writable region without ever mutating chunk->GetLength().
+    buffer_->SetCapacityLimit(limit_size);
 }
 
 FixBufferFrameVisitor::~FixBufferFrameVisitor() {}
@@ -80,11 +83,11 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
         // Encoding failed - determine the reason
         if (required_size > free_space) {
             last_error_ = FrameEncodeError::kInsufficientSpace;
-            common::LOG_DEBUG("failed to encode frame due to insufficient space. type:%s, required:%u, available:%u",
+            LOG_DEBUG("failed to encode frame due to insufficient space. type:%s, required:%u, available:%u",
                 FrameType2String(frame->GetType()).c_str(), required_size, free_space);
         } else {
             last_error_ = FrameEncodeError::kOtherError;
-            common::LOG_ERROR("failed to encode frame. type:%s", FrameType2String(frame->GetType()).c_str());
+            LOG_ERROR("failed to encode frame. type:%s", FrameType2String(frame->GetType()).c_str());
         }
         // Roll back any tentative stream-data record we appended above so the
         // unacked_packets bookkeeping never claims bytes that the wire didn't
@@ -94,7 +97,7 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
         }
         return false;
     }
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "encoded frame. type:%s, length:%u", FrameType2String(frame->GetType()).c_str(), buffer_->GetDataLength());
 
     // Metrics: Frame transmitted

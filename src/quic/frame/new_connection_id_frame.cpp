@@ -22,7 +22,7 @@ NewConnectionIDFrame::~NewConnectionIDFrame() {}
 bool NewConnectionIDFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint32_t need_size = EncodeSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -47,7 +47,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
         frame_type_ = static_cast<uint16_t>(type);
         if (frame_type_ != FrameType::kNewConnectionId) {
-            common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
+            LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
             return false;
         }
     }
@@ -57,13 +57,13 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     // Validate connection ID length
     if (length_ > kMaxCidLength) {
-        common::LOG_ERROR("connection ID length too large. length:%d, max:%d", length_, kMaxCidLength);
+        LOG_ERROR("connection ID length too large. length:%d, max:%d", length_, kMaxCidLength);
         return false;
     }
 
     // Check if we have enough data for connection ID
     if (length_ > buffer->GetDataLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient data for connection ID. need:%d, available:%d", length_, buffer->GetDataLength());
         return false;
     }
@@ -75,7 +75,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     // Check if we have enough data for stateless reset token
     if (kStatelessResetTokenLength > buffer->GetDataLength()) {
-        common::LOG_ERROR("insufficient data for stateless reset token. need:%d, available:%d",
+        LOG_ERROR("insufficient data for stateless reset token. need:%d, available:%d",
             kStatelessResetTokenLength, buffer->GetDataLength());
         return false;
     }
@@ -100,7 +100,7 @@ uint32_t NewConnectionIDFrame::EncodeSize() {
 
 void NewConnectionIDFrame::SetConnectionID(uint8_t* id, uint8_t len) {
     if (len > kMaxCidLength) {
-        common::LOG_ERROR("too max connection id length. len:%d, max:%d", len, kMaxCidLength);
+        LOG_ERROR("too max connection id length. len:%d, max:%d", len, kMaxCidLength);
         return;
     }
     memcpy(connection_id_, id, len);

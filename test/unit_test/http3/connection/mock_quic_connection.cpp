@@ -13,16 +13,48 @@ void MockQuicConnection::Reset(uint32_t error_code) {
 }
 
 std::shared_ptr<IQuicStream> MockQuicConnection::MakeStream(StreamDirection type) {
-    auto stream1 = std::make_shared<MockQuicStream>();
-    auto stream2 = std::make_shared<MockQuicStream>();
+    // Hand out a unique stream id per (local connection, peer connection)
+    // pair. We use the local side's counter for the local-facing stream
+    // and the peer's counter for the peer-facing stream so each side's
+    // streams_ map keys are stable; production code never assumes that
+    // both endpoints see the same id for the same logical stream
+    // (and our HTTP/3 layer here keys purely on local stream id).
+    auto peer = peer_.lock();
+    uint64_t local_id = next_stream_id_++;
+    uint64_t peer_id = peer ? peer->next_stream_id_++ : local_id;
+
+    // Mirror direction onto the peer side: kSend → peer sees kRecv,
+    // kRecv → peer sees kSend, kBidi → both bidi. The HTTP/3 stack uses
+    // GetDirection() to filter streams (for example,
+    // ClientConnection::HandleStream rejects an incoming bidi stream
+    // from the server with H3_FRAME_UNEXPECTED) so reporting the wrong
+    // direction here cascades into protocol violations on the receiver
+    // side and the entire control / QPACK plane never gets wired up.
+    StreamDirection peer_direction = type;
+    if (type == StreamDirection::kSend) {
+        peer_direction = StreamDirection::kRecv;
+    } else if (type == StreamDirection::kRecv) {
+        peer_direction = StreamDirection::kSend;
+    }
+
+    auto stream1 = std::make_shared<MockQuicStream>(local_id, type);
+    auto stream2 = std::make_shared<MockQuicStream>(peer_id, peer_direction);
     stream1->SetPeer(stream2);
     stream2->SetPeer(stream1);
-    
-    auto peer = peer_.lock();
-    if (peer && peer->stream_state_cb_) {
-        peer->stream_state_cb_(stream2, 0);
+
+    if (peer) {
+        if (peer->stream_state_cb_) {
+            peer->stream_state_cb_(stream2, 0);
+        } else {
+            // Peer hasn't installed its stream-state callback yet (typical
+            // during the cross-init window when one side runs Init() before
+            // the other). Defer delivery until SetStreamStateCallBack() is
+            // wired up, mirroring how a real QUIC event loop would defer
+            // until the peer is ready to read.
+            peer->pending_inbound_streams_.push_back(stream2);
+        }
     }
-    
+
     return stream1;
 }
 
@@ -38,6 +70,16 @@ bool MockQuicConnection::MakeStreamAsync(StreamDirection type, stream_creation_c
 
 void MockQuicConnection::SetStreamStateCallBack(stream_state_callback cb) {
     stream_state_cb_ = cb;
+    // Drain any inbound streams that arrived before the callback was
+    // installed. Without this, every stream that the peer opened during
+    // its own Init() (before *we* called Init()) would be silently lost.
+    if (stream_state_cb_) {
+        std::vector<std::shared_ptr<IQuicStream>> drain;
+        drain.swap(pending_inbound_streams_);
+        for (auto& s : drain) {
+            stream_state_cb_(s, 0);
+        }
+    }
 }
 
 bool MockQuicConnection::ExportResumptionSession(std::string& out_session_der) {

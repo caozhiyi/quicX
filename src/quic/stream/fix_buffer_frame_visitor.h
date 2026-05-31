@@ -30,6 +30,13 @@ public:
     virtual void AddStreamDataSize(uint32_t size) override { cur_data_offset_ += size; }
 
     virtual uint64_t GetStreamDataSize() override { return cur_data_offset_; }
+
+    // Expose remaining bytes in the underlying packet buffer so STREAM/
+    // CRYPTO frame producers can size payload to the *current* datagram's
+    // real free space (replaces the historical hardcoded 1300 cap).
+    virtual uint32_t GetPacketLeftSize() override {
+        return buffer_ ? buffer_->GetFreeLength() : 0;
+    }
     
     virtual std::vector<StreamDataInfo> GetStreamDataInfo() const override;
 

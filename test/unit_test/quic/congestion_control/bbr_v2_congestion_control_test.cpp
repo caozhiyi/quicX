@@ -75,7 +75,7 @@ TEST(BBRv2CongestionControlTest, ProbeRttAndProbeBwCycle) {
     }
     
     // Should have valid pacing rate
-    uint64_t pacing_rate = cc.GetPacingRateBps();
+    uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
 }
 
@@ -96,7 +96,7 @@ TEST(BBRv2CongestionControlTest, ProbeBwFullEightSegmentCycle) {
     }
     
     // Should have valid pacing rate
-    uint64_t pacing_rate = cc.GetPacingRateBps();
+    uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
 }
 

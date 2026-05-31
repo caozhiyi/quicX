@@ -20,7 +20,7 @@ ConnectionID& ConnectionIDManager::GetCurrentID() {
     // manager always has at least one entry by the time GetCurrentID is called, since
     // callers explicitly Generator() during dial/accept setup.
     if (sequence_cid_map_.empty()) {
-        common::LOG_ERROR("ConnectionIDManager::GetCurrentID called on empty pool, returning stale cur_id_");
+        LOG_ERROR("ConnectionIDManager::GetCurrentID called on empty pool, returning stale cur_id_");
     }
     return cur_id_;
 }
@@ -44,7 +44,7 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
     // RetireIDsUpTo() instead.
     auto iter = sequence_cid_map_.find(sequence);
     if (iter == sequence_cid_map_.end()) {
-        common::LOG_DEBUG("ConnectionIDManager::RetireIDBySequence: seq=%llu not in pool, ignoring", sequence);
+        LOG_DEBUG("ConnectionIDManager::RetireIDBySequence: seq=%llu not in pool, ignoring", sequence);
         return false;
     }
 
@@ -54,7 +54,7 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
     }
     sequence_cid_map_.erase(iter);
 
-    common::LOG_DEBUG("ConnectionIDManager::RetireIDBySequence: retired seq=%llu, map_size=%zu, cur_retire=%d",
+    LOG_DEBUG("ConnectionIDManager::RetireIDBySequence: retired seq=%llu, map_size=%zu, cur_retire=%d",
         sequence, sequence_cid_map_.size(), cur_retire ? 1 : 0);
 
     if (cur_retire && !sequence_cid_map_.empty()) {
@@ -63,7 +63,7 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
         // Pool is now empty AND we just retired the active CID. The caller is
         // responsible for replenishing the pool (peer must have provided a
         // replacement via NEW_CONNECTION_ID before this point per RFC 9000 §5.1.2).
-        common::LOG_WARN(
+        LOG_WARN(
             "ConnectionIDManager::RetireIDBySequence: pool exhausted after retiring active seq=%llu",
             sequence);
         return false;
@@ -95,7 +95,7 @@ bool ConnectionIDManager::RetireIDsUpTo(uint64_t prior_to) {
     if (cur_retire && !sequence_cid_map_.empty()) {
         cur_id_ = sequence_cid_map_.begin()->second;
     } else if (cur_retire) {
-        common::LOG_WARN("ConnectionIDManager::RetireIDsUpTo: pool exhausted after batch retire prior_to=%llu",
+        LOG_WARN("ConnectionIDManager::RetireIDsUpTo: pool exhausted after batch retire prior_to=%llu",
             prior_to);
         return false;
     }
@@ -107,7 +107,7 @@ bool ConnectionIDManager::AddID(ConnectionID& id) {
     if (sequence_cid_map_.size() == 1) {
         cur_id_ = id;
     }
-    common::LOG_DEBUG("ConnectionIDManager::AddID: seq=%llu, hash=%llu, map_size=%zu", id.GetSequenceNumber(),
+    LOG_DEBUG("ConnectionIDManager::AddID: seq=%llu, hash=%llu, map_size=%zu", id.GetSequenceNumber(),
         id.Hash(), sequence_cid_map_.size());
     if (add_connection_id_cb_) {
         add_connection_id_cb_(id);

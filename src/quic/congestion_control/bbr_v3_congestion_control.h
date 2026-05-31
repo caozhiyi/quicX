@@ -28,7 +28,7 @@ public:
 
     uint64_t GetCongestionWindow() const override { return cwnd_bytes_; }
     uint64_t GetBytesInFlight() const override { return bytes_in_flight_; }
-    uint64_t GetPacingRateBps() const override;
+    uint64_t GetPacingRateBytesPerSec() const override;
     uint64_t NextSendTime(uint64_t now) const override;
 
     bool InSlowStart() const override { return mode_ == Mode::kStartup; }

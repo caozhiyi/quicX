@@ -27,12 +27,12 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
             // datagram, treat remaining unparseable bytes as trailing garbage and
             // return success.
             if (!packets.empty()) {
-                common::LOG_DEBUG("ignoring %zu trailing bytes after %zu successfully decoded packet(s)",
+                LOG_DEBUG("ignoring %zu trailing bytes after %zu successfully decoded packet(s)",
                     len, packets.size());
                 buffer->MoveReadPt(buffer->GetDataLength());
                 return true;
             }
-            common::LOG_ERROR("decode header flag failed.");
+            LOG_ERROR("decode header flag failed.");
             return false;
         }
 
@@ -56,7 +56,7 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
 
                 if (version == 0) {
                     // Version Negotiation packet (RFC 9000 Section 17.2.1)
-                    common::LOG_DEBUG("get packet type:version_negotiation (version=0)");
+                    LOG_DEBUG("get packet type:version_negotiation (version=0)");
                     packet = std::make_shared<VersionNegotiationPacket>(flag.GetFlag());
 
                 } else if (!VersionCheck(version)) {
@@ -72,7 +72,7 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
                     // exactly like a coalesced packet that we cannot decode
                     // yet: keep the previously decoded packets and stop.
                     if (!packets.empty()) {
-                        common::LOG_DEBUG("ignoring trailing %d bytes (apparent version 0x%08x is "
+                        LOG_DEBUG("ignoring trailing %d bytes (apparent version 0x%08x is "
                             "ciphertext of a coalesced packet) after %zu decoded packet(s)",
                             buffer->GetDataLength(), version, packets.size());
                         buffer->MoveReadPt(buffer->GetDataLength());
@@ -83,11 +83,11 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
                     // Parse only the Long Header (Version + DCID + SCID) so
                     // the upper layer can respond with a Version Negotiation
                     // packet. RFC 9000 §6.1.
-                    common::LOG_WARN("unsupported QUIC version 0x%08x, will send Version Negotiation", version);
+                    LOG_WARN("unsupported QUIC version 0x%08x, will send Version Negotiation", version);
                     auto init_pkt = std::make_shared<InitPacket>(flag.GetFlag());
                     // Decode only the Long Header (version, DCID, SCID)
                     if (!init_pkt->GetHeader()->DecodeHeader(buffer, false)) {
-                        common::LOG_ERROR("failed to decode header for unsupported version");
+                        LOG_ERROR("failed to decode header for unsupported version");
                         return false;
                     }
                     // Consume the entire remaining buffer since we can't parse
@@ -105,7 +105,7 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
                     // values as the canonical PacketType representation).
                     uint8_t wire_type_bits = flag.GetLongHeaderFlag().GetPacketType();
                     PacketType logical_type = MapWireToPacketType(wire_type_bits, version);
-                    common::LOG_DEBUG("get packet type:%s (wire_bits=%u, version=0x%08x)",
+                    LOG_DEBUG("get packet type:%s (wire_bits=%u, version=0x%08x)",
                         PacketTypeToString(logical_type), wire_type_bits, version);
                     // Pass the original wire flag byte to the packet subclass.
                     // The in-memory packet_type_ bitfield therefore carries the
@@ -126,7 +126,7 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
                             packet = std::make_shared<RetryPacket>(wire_flag);
                             break;
                         default:
-                            common::LOG_ERROR("unknown packet type. wire_bits:%u", wire_type_bits);
+                            LOG_ERROR("unknown packet type. wire_bits:%u", wire_type_bits);
                             if (!packets.empty()) {
                                 buffer->MoveReadPt(buffer->GetDataLength());
                                 return true;
@@ -137,12 +137,12 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
             } else {
                 // Not enough data for a version field
                 if (!packets.empty()) {
-                    common::LOG_DEBUG("ignoring %d trailing bytes (insufficient for version field) "
+                    LOG_DEBUG("ignoring %d trailing bytes (insufficient for version field) "
                         "after %zu decoded packet(s)", buffer->GetDataLength(), packets.size());
                     buffer->MoveReadPt(buffer->GetDataLength());
                     return true;
                 }
-                common::LOG_ERROR("insufficient data for version field. remaining:%d", buffer->GetDataLength());
+                LOG_ERROR("insufficient data for version field. remaining:%d", buffer->GetDataLength());
                 return false;
             }
         }
@@ -154,13 +154,13 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
             // or the packet is from a different encryption level), we keep the
             // packets that were successfully decoded and discard the rest.
             if (!packets.empty()) {
-                common::LOG_DEBUG("failed to decode coalesced packet #%zu (remaining %zu bytes), "
+                LOG_DEBUG("failed to decode coalesced packet #%zu (remaining %zu bytes), "
                     "keeping %zu previously decoded packet(s)",
                     packets.size() + 1, buffer->GetDataLength(), packets.size());
                 buffer->MoveReadPt(buffer->GetDataLength());
                 return true;
             }
-            common::LOG_ERROR("decode header packet failed.");
+            LOG_ERROR("decode header packet failed.");
             return false;
         }
         packets.emplace_back(packet);

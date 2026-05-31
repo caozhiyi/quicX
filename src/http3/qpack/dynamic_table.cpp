@@ -143,16 +143,18 @@ void DynamicTable::UpdateMaxTableSize(uint32_t new_size) {
 bool DynamicTable::DuplicateEntry(uint32_t absolute_index) {
     // RFC 9204 Section 4.3.4: Duplicate instruction
     // Duplicates an existing dynamic table entry by its absolute index
+    // Uses FindHeaderItemByAbsoluteIndex for correct absolute→deque conversion
     
-    if (absolute_index >= headeritem_deque_.size()) {
-        return false; // Invalid index
+    HeaderItem* item = FindHeaderItemByAbsoluteIndex(static_cast<uint64_t>(absolute_index));
+    if (!item) {
+        return false; // Invalid or evicted entry
     }
     
     // Copy name and value BEFORE calling AddHeaderItem, because AddHeaderItem
     // may call EvictEntries which could pop_back the entry we're referencing,
     // causing a dangling reference.
-    std::string name = headeritem_deque_[absolute_index].name_;
-    std::string value = headeritem_deque_[absolute_index].value_;
+    std::string name = item->name_;
+    std::string value = item->value_;
     
     return AddHeaderItem(name, value);
 }

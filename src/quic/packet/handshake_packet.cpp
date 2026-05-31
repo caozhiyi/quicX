@@ -1,6 +1,7 @@
 #include <cstring>
 
 #include "common/buffer/buffer_chunk.h"
+#include "common/buffer/buffer_chunk_pool.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/decode/decode.h"
 #include "common/log/log.h"
@@ -25,7 +26,7 @@ HandshakePacket::~HandshakePacket() {}
 
 bool HandshakePacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (!header_.EncodeHeader(buffer)) {
-        common::LOG_ERROR("encode header failed");
+        LOG_ERROR("encode header failed");
         return false;
     }
 
@@ -60,7 +61,7 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     auto payload_span = payload_.GetSpan();
     auto result = crypto_grapher_->EncryptPacket(packet_number_, ad_span, payload_span, buffer);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("encrypt payload failed. result:%d", result);
+        LOG_ERROR("encrypt payload failed. result:%d", result);
         return false;
     }
 
@@ -70,7 +71,7 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     result = crypto_grapher_->EncryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_,
         header_.GetPacketNumberLength(), header_.GetHeaderType() == PacketHeaderType::kShortHeader);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("encrypt header failed. result:%d", result);
+        LOG_ERROR("encrypt header failed. result:%d", result);
         return false;
     }
 
@@ -79,14 +80,14 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
 
 bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
     if (!header_.DecodeHeader(buffer, with_flag)) {
-        common::LOG_ERROR("decode header failed");
+        LOG_ERROR("decode header failed");
         return false;
     }
 
     auto span = buffer->GetReadableSpan();
     auto shared_span = buffer->GetSharedReadableSpan();
     if (!shared_span.Valid()) {
-        common::LOG_ERROR("readable span is invalid");
+        LOG_ERROR("readable span is invalid");
         return false;
     }
     auto chunk = shared_span.GetChunk();
@@ -96,14 +97,14 @@ bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffe
     // decode length
     cur_pos = common::DecodeVarint(cur_pos, end, length_);
     if (cur_pos == nullptr) {
-        common::LOG_ERROR("HandshakePacket: failed to decode length field");
+        LOG_ERROR("HandshakePacket: failed to decode length field");
         return false;
     }
 
     // decode cipher data
     packet_num_offset_ = cur_pos - span.GetStart();
     if (cur_pos + length_ > end) {
-        common::LOG_ERROR("HandshakePacket: length field exceeds buffer boundary. length:%u, remaining:%td",
+        LOG_ERROR("HandshakePacket: length field exceeds buffer boundary. length:%u, remaining:%td",
             (uint32_t)length_, end - cur_pos);
         return false;
     }
@@ -136,12 +137,12 @@ bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) 
         // Create a SingleBlockBuffer from the payload span
         auto payload_buffer = common::SingleBlockBuffer::FromSpan(payload_);
         if (!payload_buffer) {
-            common::LOG_ERROR("failed to create buffer from payload span.");
+            LOG_ERROR("failed to create buffer from payload span.");
             return false;
         }
 
         if (!DecodeFrames(payload_buffer, frames_list_)) {
-            common::LOG_ERROR("decode frame failed.");
+            LOG_ERROR("decode frame failed.");
             return false;
         }
         return true;
@@ -156,7 +157,7 @@ bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) 
     auto result = crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength() + packet_num_offset_,
         packet_num_len, header_.GetHeaderType() == PacketHeaderType::kShortHeader);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("decrypt header failed. result:%d", result);
+        LOG_ERROR("decrypt header failed. result:%d", result);
         return false;
     }
 
@@ -179,18 +180,19 @@ bool HandshakePacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) 
 
     // decrypt packet payload
     auto payload = common::BufferSpan(cur_pos, cur_pos + length_ - packet_num_len);
-    // Use pooled BufferChunk instead of StandaloneBufferChunk for memory reuse
-    auto chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
+    // PERF: BufferChunkPool recycles the BufferChunk wrapper across packets so
+    // we don't pay one ctor + control-block alloc per datagram.
+    auto chunk = common::BufferChunkPool::Acquire(GlobalResource::Instance().GetThreadLocalBlockPool());
     auto plaintext_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
     result = crypto_grapher_->DecryptPacket(packet_number_, ad_span, payload, plaintext_buffer);
     if (result != ICryptographer::Result::kOk) {
-        common::LOG_ERROR("decrypt packet failed. result:%d", result);
+        LOG_ERROR("decrypt packet failed. result:%d", result);
         return false;
     }
 
     if (!DecodeFrames(plaintext_buffer, frames_list_)) {
-        common::LOG_ERROR("decode frame failed.");
+        LOG_ERROR("decode frame failed.");
         return false;
     }
 

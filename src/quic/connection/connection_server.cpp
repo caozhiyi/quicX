@@ -2,6 +2,8 @@
 #include "common/qlog/qlog.h"
 
 #include "quic/connection/connection_server.h"
+#include "quic/connection/connection_frame_processor.h"
+#include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/error.h"
 #include "quic/frame/handshake_done_frame.h"
 #include "quic/frame/if_frame.h"
@@ -16,7 +18,7 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
     server_alpn_(alpn) {
     tls_connection_ = std::make_shared<TLSServerConnection>(ctx, &connection_crypto_, this);
     if (!tls_connection_->Init()) {
-        common::LOG_ERROR("tls connection init failed.");
+        LOG_ERROR("tls connection init failed.");
     }
     auto crypto_stream = std::make_shared<CryptoStream>(event_loop_,
         std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1),
@@ -84,21 +86,21 @@ void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
 bool ServerConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
     // RFC 9000 §19.20: "A server MUST treat receipt of a HANDSHAKE_DONE
     // frame as a connection error of type PROTOCOL_VIOLATION."
-    common::LOG_ERROR("Server received HANDSHAKE_DONE frame from client - PROTOCOL_VIOLATION");
+    LOG_ERROR("Server received HANDSHAKE_DONE frame from client - PROTOCOL_VIOLATION");
     InnerConnectionClose(QuicErrorCode::kProtocolViolation,
         static_cast<uint16_t>(FrameType::kHandshakeDone),
         "server received HANDSHAKE_DONE frame");
     return false;
 }
 
-bool ServerConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
+bool ServerConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
     // TODO: implement server retry packet
     return true;
 }
 
 void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
     if (err != 0) {
-        common::LOG_ERROR("get crypto data failed. err:%d", err);
+        LOG_ERROR("get crypto data failed. err:%d", err);
         return;
     }
 
@@ -108,7 +110,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     bool process_ok = true;
     buffer->VisitData([&](uint8_t* data, uint32_t len) -> bool {
         if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {
-            common::LOG_ERROR("process crypto data failed. err:%d", err);
+            LOG_ERROR("process crypto data failed. err:%d", err);
             process_ok = false;
             return false;  // stop visiting
         }
@@ -127,7 +129,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     }
 
     if (tls_connection_->DoHandleShake()) {
-        common::LOG_DEBUG("handshake done.");
+        LOG_DEBUG("handshake done.");
         std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
         ToSendFrame(frame);  // TODO, The server MUST send a HANDSHAKE_DONE frame as soon as the handshake is complete
 
@@ -139,7 +141,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
         recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
         send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
         send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
-        common::LOG_INFO("Server: Discarded Initial and Handshake packet number spaces after sending HANDSHAKE_DONE");
+        LOG_INFO("Server: Discarded Initial and Handshake packet number spaces after sending HANDSHAKE_DONE");
 
         // Log key_discarded events for Initial and Handshake keys
         if (qlog_trace_) {
@@ -170,35 +172,35 @@ void ServerConnection::SSLAlpnSelect(
         }
         unsigned char len = in[i++];
         if (i + len > inlen) {
-            common::LOG_ERROR("invalid ALPN format: length %d exceeds remaining data", len);
+            LOG_ERROR("invalid ALPN format: length %d exceeds remaining data", len);
             break;
         }
         std::string proto((const char*)&in[i], len);
         client_protos.push_back(proto);
-        common::LOG_DEBUG("client alpn:%s", proto.c_str());
+        LOG_DEBUG("client alpn:%s", proto.c_str());
         i += len;
     }
-    common::LOG_DEBUG("server alpn:%s", server_alpn_.c_str());
+    LOG_DEBUG("server alpn:%s", server_alpn_.c_str());
 
     // find a matching alpn
     for (auto const& client_proto : client_protos) {
         if (client_proto == server_alpn_) {
             *out = (unsigned char*)server_alpn_.c_str();
             *outlen = server_alpn_.length();
-            common::LOG_DEBUG("ALPN selected: %s", server_alpn_.c_str());
+            LOG_DEBUG("ALPN selected: %s", server_alpn_.c_str());
             return;
         }
     }
 
-    common::LOG_ERROR("no alpn found. server alpn:%s (len:%d)", server_alpn_.c_str(), server_alpn_.length());
+    LOG_ERROR("no alpn found. server alpn:%s (len:%d)", server_alpn_.c_str(), server_alpn_.length());
     for (size_t i = 0; i < server_alpn_.length(); ++i) {
-        common::LOG_ERROR("server alpn[%d]: 0x%02x", i, (unsigned char)server_alpn_[i]);
+        LOG_ERROR("server alpn[%d]: 0x%02x", i, (unsigned char)server_alpn_[i]);
     }
 
     for (auto const& client_proto : client_protos) {
-        common::LOG_ERROR("client alpn:%s (len:%d)", client_proto.c_str(), client_proto.length());
+        LOG_ERROR("client alpn:%s (len:%d)", client_proto.c_str(), client_proto.length());
         for (size_t i = 0; i < client_proto.length(); ++i) {
-            common::LOG_ERROR("client alpn[%d]: 0x%02x", i, (unsigned char)client_proto[i]);
+            LOG_ERROR("client alpn[%d]: 0x%02x", i, (unsigned char)client_proto[i]);
         }
     }
 

@@ -38,38 +38,38 @@ ServerWorker::ServerWorker(const QuicServerConfig& config, std::shared_ptr<TLSCt
             rate_monitor_ = std::make_shared<ConnectionRateMonitor>(event_loop);
             ip_limiter_ = std::make_shared<IPRateLimiter>(selective_config_.ip_cache_size_,
                 selective_config_.ip_rate_threshold_, selective_config_.ip_window_seconds_);
-            common::LOG_INFO(
+            LOG_INFO(
                 "Retry mechanism enabled (SELECTIVE mode). rate_threshold=%u, ip_threshold=%u, token_lifetime=%u",
                 selective_config_.rate_threshold_, selective_config_.ip_rate_threshold_, retry_token_lifetime_);
         } else {
-            common::LOG_INFO("Retry mechanism enabled (ALWAYS mode). token_lifetime=%u", retry_token_lifetime_);
+            LOG_INFO("Retry mechanism enabled (ALWAYS mode). token_lifetime=%u", retry_token_lifetime_);
         }
     } else {
-        common::LOG_INFO("Retry mechanism disabled (NEVER mode)");
+        LOG_INFO("Retry mechanism disabled (NEVER mode)");
     }
 }
 
 ServerWorker::~ServerWorker() {}
 
 void ServerWorker::Shutdown() {
-    // Cancel pending handshake watchdog timers; each timer's lambda
-    // captures the in-flight ServerConnection shared_ptr by value.
-    auto loop = event_loop_.lock();
-    if (loop) {
-        for (auto& kv : handshake_timers_) {
-            loop->RemoveTimer(kv.second);
-        }
-    }
+    // Precondition (enforced by QuicServer::~QuicServer): the worker's
+    // event-loop thread has already been Stop()+Join()'d. The loop is
+    // therefore guaranteed not to fire any pending timer — and it is *not*
+    // safe to invoke EventLoop::RemoveTimer / AddTimer from this thread
+    // because AssertInLoopThread() would abort.
+    //
+    // We just drop the bookkeeping containers; each handshake timer's
+    // captured shared_ptr<ServerConnection> is released via ~unordered_map,
+    // and ConnectionRateMonitor's owned timer-id becomes irrelevant once
+    // the EventLoop tears down its timer wheel during destruction.
     handshake_timers_.clear();
 
     // Drop retry / rate-monitoring helpers. ConnectionRateMonitor owns a
-    // shared_ptr to the event loop (for its periodic timer), which is one
-    // of the 16 strong references seen in the P4 diagnostic dump. Letting
-    // it hang on across IClient/IServer lifetime would prevent the
-    // event-loop graph from collapsing.
-    if (rate_monitor_) {
-        rate_monitor_->StopTimer();
-    }
+    // weak_ptr to the event loop; ~ConnectionRateMonitor will attempt to
+    // StopTimer() but lock() will fail once master_event_loop_ is gone, so
+    // it is a no-op in the worst case. We deliberately do *not* call
+    // StopTimer() here (it would call EventLoop::RemoveTimer from the
+    // wrong thread → AssertInLoopThread() abort).
     rate_monitor_.reset();
     ip_limiter_.reset();
     retry_token_manager_.reset();
@@ -98,14 +98,14 @@ bool ServerWorker::ShouldSendRetry(bool has_valid_token, const common::Address& 
 
             // Check 1: High connection rate (server under load)
             if (rate_monitor_ && rate_monitor_->IsHighRate(selective_config_.rate_threshold_)) {
-                common::LOG_DEBUG("ShouldSendRetry: high connection rate detected, sending Retry");
+                LOG_DEBUG("ShouldSendRetry: high connection rate detected, sending Retry");
                 common::Metrics::CounterInc(common::MetricsStd::QuicRetryByHighRate);
                 return true;
             }
 
             // Check 2: Suspicious IP (potential attack)
             if (ip_limiter_ && ip_limiter_->IsSuspicious(client_addr)) {
-                common::LOG_DEBUG("ShouldSendRetry: suspicious IP %s, sending Retry", client_addr.GetIp().c_str());
+                LOG_DEBUG("ShouldSendRetry: suspicious IP %s, sending Retry", client_addr.GetIp().c_str());
                 common::Metrics::CounterInc(common::MetricsStd::QuicRetryBySuspiciousIP);
                 return true;
             }
@@ -115,20 +115,28 @@ bool ServerWorker::ShouldSendRetry(bool has_valid_token, const common::Address& 
         }
 
         default:
-            common::LOG_WARN("ShouldSendRetry: unknown retry policy, defaulting to no Retry");
+            LOG_WARN("ShouldSendRetry: unknown retry policy, defaulting to no Retry");
             return false;
     }
 }
 
 bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     if (packet_info.packets_.empty()) {
-        common::LOG_ERROR("get a netpacket, but data packets is empty");
+        LOG_ERROR("get a netpacket, but data packets is empty");
         return false;
     }
 
     // dispatch packet
-    common::LOG_DEBUG("get packet. dcid:%llu", packet_info.cid_.Hash());
+    LOG_DEBUG("get packet. dcid:%llu", packet_info.cid_.Hash());
     auto conn = conn_map_.find(packet_info.cid_.Hash());
+    // Per-datagram trace: keep at DEBUG. Under load this fires once per
+    // received packet (millions of times in a benchmark) and at INFO it
+    // synchronously stalls the worker on log-flush IO -- which presents
+    // as a sudden ~9s "stall" mid-test even though no real progress is
+    // being lost. See note in connection_base.cpp::ActiveSend.
+    LOG_DEBUG("[DISPATCH-TRACE] dispatch dcid_hash=%llu hit=%d conn_map=%zu connecting_set=%zu hs_timers=%zu",
+        packet_info.cid_.Hash(), conn != conn_map_.end() ? 1 : 0,
+        conn_map_.size(), connecting_set_.size(), handshake_timers_.size());
     if (conn != conn_map_.end()) {
         common::LogTagGuard guard("conn:" + std::to_string(packet_info.cid_.Hash()));
         // Pin the connection with a local shared_ptr copy. OnPackets may
@@ -154,7 +162,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // Pass the original UDP datagram size for RFC 9000 §14.1 minimum size check
     // datagram_size_ is saved by MsgParser::ParsePacket() before DecodePackets consumes the buffer
     if (!InitPacketCheck(packet_info.packets_[0], packet_info.datagram_size_)) {
-        common::LOG_ERROR("init packet check failed");
+        LOG_ERROR("init packet check failed");
         // Extract DCID/SCID from the received packet for the VN response
         auto* hdr = static_cast<LongHeader*>(packet_info.packets_[0]->GetHeader());
         SendVersionNegotiatePacket(packet_info.net_packet_->GetAddress(), packet_info.net_packet_->GetSocket(),
@@ -166,7 +174,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     auto init_packet = packet_info.packets_[0];
     auto long_header = static_cast<LongHeader*>(init_packet->GetHeader());
     if (long_header == nullptr) {
-        common::LOG_ERROR("long header is nullptr");
+        LOG_ERROR("long header is nullptr");
         return false;
     }
     ConnectionID src_cid(long_header->GetSourceConnectionId(), long_header->GetSourceConnectionIdLength());
@@ -200,7 +208,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                 has_valid_token = ValidateRetryToken(token, client_addr, odcid);
 
                 if (has_valid_token) {
-                    common::LOG_DEBUG("Valid Retry token received. ODCID extracted: %llu", odcid.Hash());
+                    LOG_DEBUG("Valid Retry token received. ODCID extracted: %llu", odcid.Hash());
                     common::Metrics::CounterInc(common::MetricsStd::QuicRetryTokensValidated);
                     // RFC 9000 §7.3: After Retry, the server MUST set
                     // original_destination_connection_id to the DCID from the
@@ -211,20 +219,20 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                     retry_was_used = true;
                     original_dcid = odcid;
                 } else {
-                    common::LOG_WARN("Invalid Retry token received");
+                    LOG_WARN("Invalid Retry token received");
                     common::Metrics::CounterInc(common::MetricsStd::QuicRetryTokensInvalid);
                 }
             }
 
             // Use policy-based decision for Retry
             if (ShouldSendRetry(has_valid_token, client_addr)) {
-                common::LOG_INFO("Sending Retry packet to client (policy=%d)", static_cast<int>(retry_policy_));
+                LOG_INFO("Sending Retry packet to client (policy=%d)", static_cast<int>(retry_policy_));
                 uint32_t client_version = long_header->GetVersion();
                 if (SendRetryPacket(client_addr, packet_info.net_packet_->GetSocket(), dst_cid, src_cid, client_version)) {
                     common::Metrics::CounterInc(common::MetricsStd::QuicRetryPacketsSent);
                     return true;  // Retry sent, don't create connection yet
                 } else {
-                    common::LOG_ERROR("Failed to send Retry packet");
+                    LOG_ERROR("Failed to send Retry packet");
                     // Fall through to create connection anyway
                 }
             }
@@ -264,7 +272,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
             std::string(reinterpret_cast<const char*>(original_dcid.GetID()), original_dcid.GetLength());
         server_params.retry_source_connection_id_ =
             std::string(reinterpret_cast<const char*>(dst_cid.GetID()), dst_cid.GetLength());
-        common::LOG_INFO("Retry was used: ODCID from token (hash=%llu), retry_scid=dst_cid (hash=%llu)",
+        LOG_INFO("Retry was used: ODCID from token (hash=%llu), retry_scid=dst_cid (hash=%llu)",
             original_dcid.Hash(), dst_cid.Hash());
     } else {
         // No Retry: ODCID is the DCID from the client's Initial packet
@@ -276,6 +284,12 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
 
     // Register Initial DCID to connection map so subsequent packets can be routed
     conn_map_[dst_cid.Hash()] = new_conn;
+
+    LOG_INFO("[DISPATCH-TRACE] new_conn dcid_hash=%llu scid_hash=%llu conn=%p retry=%d "
+             "conn_map=%zu connecting_set=%zu peer=%s",
+        dst_cid.Hash(), src_cid.Hash(), (void*)new_conn.get(), retry_was_used ? 1 : 0,
+        conn_map_.size(), connecting_set_.size(),
+        packet_info.net_packet_->GetAddress().AsString().c_str());
 
     // add remote connection id
     new_conn->AddRemoteConnectionId(src_cid);
@@ -299,7 +313,11 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     uint64_t timer_id = hs_loop->AddTimer(
         [new_conn, this]() {
             if (connecting_set_.find(new_conn) != connecting_set_.end()) {
-                common::LOG_DEBUG("connection timeout during handshake. cid:%llu", new_conn->GetConnectionIDHash());
+                LOG_INFO("[DISPATCH-TRACE] watchdog_fire conn=%p scid_hash=%llu "
+                         "conn_map=%zu connecting_set=%zu",
+                    (void*)new_conn.get(), new_conn->GetConnectionIDHash(),
+                    conn_map_.size(), connecting_set_.size());
+                LOG_DEBUG("connection timeout during handshake. cid:%llu", new_conn->GetConnectionIDHash());
                 // Properly close the connection to clean up all CIDs
                 HandleConnectionClose(new_conn, QuicErrorCode::kNoError, "handshake timeout");
             }
@@ -320,7 +338,7 @@ void ServerWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
         auto done_loop = event_loop_.lock();
         if (done_loop) done_loop->RemoveTimer(it->second);
         handshake_timers_.erase(it);
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "ServerWorker: handshake completed, cancelled watchdog timer for cid:%llu", conn->GetConnectionIDHash());
     }
     Worker::HandleHandshakeDone(conn);
@@ -330,7 +348,7 @@ bool ServerWorker::SendRetryPacket(
     const common::Address& addr, int32_t socket, const ConnectionID& original_dcid, const ConnectionID& original_scid,
     uint32_t version) {
     if (!retry_token_manager_) {
-        common::LOG_ERROR("Retry token manager not initialized");
+        LOG_ERROR("Retry token manager not initialized");
         return false;
     }
 
@@ -342,7 +360,7 @@ bool ServerWorker::SendRetryPacket(
     // Generate Retry token
     std::string token = retry_token_manager_->GenerateToken(addr, original_dcid);
     if (token.empty()) {
-        common::LOG_ERROR("Failed to generate Retry token");
+        LOG_ERROR("Failed to generate Retry token");
         return false;
     }
 
@@ -358,7 +376,7 @@ bool ServerWorker::SendRetryPacket(
     // Allocate buffer for token and copy data
     auto token_chunk = std::make_shared<common::BufferChunk>(GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!token_chunk || !token_chunk->Valid()) {
-        common::LOG_ERROR("Failed to allocate token buffer");
+        LOG_ERROR("Failed to allocate token buffer");
         return false;
     }
     uint8_t* token_start = token_chunk->GetData();
@@ -375,7 +393,7 @@ bool ServerWorker::SendRetryPacket(
     uint8_t placeholder_tag[kRetryIntegrityTagLength] = {0};
     retry_packet.SetRetryIntegrityTag(placeholder_tag);
     if (!retry_packet.Encode(temp_buffer)) {
-        common::LOG_ERROR("Failed to encode Retry packet for integrity tag");
+        LOG_ERROR("Failed to encode Retry packet for integrity tag");
         return false;
     }
     
@@ -388,7 +406,7 @@ bool ServerWorker::SendRetryPacket(
     uint8_t integrity_tag[kRetryIntegrityTagLength];
     if (!RetryCrypto::ComputeRetryIntegrityTag(
             original_dcid, data_span.GetStart(), retry_body_len, version, integrity_tag)) {
-        common::LOG_ERROR("Failed to compute Retry integrity tag");
+        LOG_ERROR("Failed to compute Retry integrity tag");
         return false;
     }
     
@@ -400,7 +418,7 @@ bool ServerWorker::SendRetryPacket(
     auto buffer = net_packet->GetData();
 
     if (!retry_packet.Encode(buffer)) {
-        common::LOG_ERROR("Failed to encode Retry packet");
+        LOG_ERROR("Failed to encode Retry packet");
         return false;
     }
 
@@ -408,7 +426,7 @@ bool ServerWorker::SendRetryPacket(
     net_packet->SetSocket(socket);
     sender_->Send(net_packet);
 
-    common::LOG_INFO("Sent Retry packet. new_scid:%llu, token_len:%zu", new_scid.Hash(), token.size());
+    LOG_INFO("Sent Retry packet. new_scid:%llu, token_len:%zu", new_scid.Hash(), token.size());
     return true;
 }
 
@@ -441,7 +459,7 @@ void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32
     net_packet->SetAddress(addr);
     net_packet->SetSocket(socket);
     sender_->Send(net_packet);
-    common::LOG_DEBUG("send version negotiate packet. packet size:%d", buffer->GetDataLength());
+    LOG_DEBUG("send version negotiate packet. packet size:%d", buffer->GetDataLength());
 }
 
 void ServerWorker::HandleConnectionClose(

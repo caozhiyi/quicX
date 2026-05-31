@@ -54,6 +54,8 @@ private:
     std::string upload_name_;
 };
 
+#include "test_server_helper.h"
+
 // ==================== Test Fixture ====================
 
 class StreamingAndPushTest : public ::testing::Test {
@@ -67,7 +69,9 @@ protected:
     static const char key_pem_[];
 
     void SetUp() override {
-        port_ = next_port_.fetch_add(1);
+        // Probe for a kernel-confirmed free UDP port (see test_server_helper.h).
+        port_ = quicx::test::ProbeFreeUdpPort(next_port_);
+        ASSERT_NE(port_, 0u) << "failed to find a free UDP port for test server";
     }
 
     void TearDown() override {
@@ -114,8 +118,11 @@ protected:
     }
 
     void StartServerThread() {
-        server_thread_ = std::thread([this]() { server_->Start("127.0.0.1", port_); });
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // Synchronously bind on the main thread (Start() is synchronous and
+        // returns only once the UDP socket is fully armed in the master
+        // event loop). This surfaces bind() failures immediately as a
+        // fixture ASSERT instead of an opaque per-test timeout.
+        ASSERT_TRUE(server_->Start("127.0.0.1", port_));
     }
 };
 

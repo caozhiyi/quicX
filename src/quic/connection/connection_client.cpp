@@ -6,7 +6,9 @@
 #include "common/buffer/buffer_span.h"
 
 #include "quic/connection/connection_client.h"
+#include "quic/connection/connection_frame_processor.h"
 #include "quic/connection/connection_id_generator.h"
+#include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/session_cache.h"
 #include "quic/crypto/retry_crypto.h"
 #include "quic/packet/handshake_packet.h"
@@ -21,7 +23,7 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
     BaseConnection(StreamIDGenerator::StreamStarter::kClient, false, loop, callbacks) {
     tls_connection_ = std::make_shared<TLSClientConnection>(ctx, &connection_crypto_);
     if (!tls_connection_->Init()) {
-        common::LOG_ERROR("tls connection init failed.");
+        LOG_ERROR("tls connection init failed.");
     }
 
     auto crypto_stream = std::make_shared<CryptoStream>(event_loop_,
@@ -63,7 +65,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     SessionInfo cached_session_info;
     if (SessionCache::Instance().GetSessionWithInfo(session_key, session_der, cached_session_info)) {
         if (!tls_conn->SetSession(reinterpret_cast<const uint8_t*>(session_der.data()), session_der.size())) {
-            common::LOG_ERROR("set session failed. session_der:%s", session_der.c_str());
+            LOG_ERROR("set session failed. session_der:%s", session_der.c_str());
             return false;
         }
         // RFC 9000 Section 7.4.1: Pre-initialize send flow controller with remembered
@@ -99,7 +101,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
             // mutates transport_param_ internal state without re-triggering
             // SendFlowController/RecvFlowController init paths.
             transport_param_.Merge(remembered_tp);
-            common::LOG_INFO("0-RTT: Pre-initialized flow controller with remembered TP: "
+            LOG_INFO("0-RTT: Pre-initialized flow controller with remembered TP: "
                 "max_data=%u, max_streams_bidi=%u, max_streams_uni=%u, "
                 "peer_bidi_remote=%u, peer_bidi_local=%u",
                 cached_session_info.initial_max_data,
@@ -126,7 +128,7 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     // Use explicitly provided resumption session
     if (!tls_conn->SetSession(
             reinterpret_cast<const uint8_t*>(resumption_session_der.data()), resumption_session_der.size())) {
-        common::LOG_ERROR("set session failed. session_der:%s", resumption_session_der.c_str());
+        LOG_ERROR("set session failed. session_der:%s", resumption_session_der.c_str());
         return false;
     }
 
@@ -143,23 +145,23 @@ bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_con
     // (the version_information transport parameter, id 0x11) to upgrade the
     // connection.  Pin the *on-the-wire* Initial version to v1 whenever the
     // application preferred something newer than v1.  The application's
-    // preference is preserved in |preferred_version_| (and surfaced to the
+    // preference is preserved in |version_ctx_.preferred_version| (and surfaced to the
     // server via available_versions), and on successful upgrade the connection
-    // will transparently switch to |preferred_version_|.
-    if (quic_version_ != kQuicVersion1) {
-        common::LOG_INFO("RFC 9368: starting client handshake with v1 Initial "
+    // will transparently switch to |version_ctx_.preferred_version|.
+    if (version_ctx_.quic_version != kQuicVersion1) {
+        LOG_INFO("RFC 9368: starting client handshake with v1 Initial "
                          "(preferred=0x%08x, compatible VN will upgrade if peer agrees)",
-                         quic_version_);
-        SetPreferredVersion(quic_version_);
+                         version_ctx_.quic_version);
+        SetPreferredVersion(version_ctx_.quic_version);
         SetVersion(kQuicVersion1);
     }
 
     // Set application protocol
-    common::LOG_INFO("ClientConnection::DialSetupTLS: configuring ALPN='%s' (len=%zu), SNI='%s'",
+    LOG_INFO("ClientConnection::DialSetupTLS: configuring ALPN='%s' (len=%zu), SNI='%s'",
         alpn.c_str(), alpn.size(), server_name.c_str());
     uint8_t* alpn_data = (uint8_t*)alpn.c_str();
     if (!tls_conn->AddAlpn(alpn_data, alpn.size())) {
-        common::LOG_ERROR("add alpn failed. alpn:%s", alpn.c_str());
+        LOG_ERROR("add alpn failed. alpn:%s", alpn.c_str());
         return false;
     }
 
@@ -170,7 +172,7 @@ bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_con
     // Set server name (SNI) for TLS handshake
     if (!server_name.empty()) {
         if (!tls_conn->SetServerName(server_name)) {
-            common::LOG_ERROR("set server name failed. server_name:%s", server_name.c_str());
+            LOG_ERROR("set server name failed. server_name:%s", server_name.c_str());
             return false;
         }
     }
@@ -259,17 +261,17 @@ bool ClientConnection::ExportResumptionSession(std::string& out_session_der) {
     auto client_tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
     SessionInfo session_info;
     if (!client_tls_conn->ExportSession(out_session_der, session_info)) {
-        common::LOG_ERROR("export session failed.");
+        LOG_ERROR("export session failed.");
         return false;
     }
 
     return true;
 }
 
-bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
+bool ClientConnection::OnHandshakePacket(const std::shared_ptr<IPacket>& packet) {
     auto handshake_packet = std::dynamic_pointer_cast<HandshakePacket>(packet);
     if (!handshake_packet) {
-        common::LOG_ERROR("packet type is not handshake packet.");
+        LOG_ERROR("packet type is not handshake packet.");
         return false;
     }
 
@@ -293,7 +295,7 @@ bool ClientConnection::OnHandshakePacket(std::shared_ptr<IPacket> packet) {
 }
 
 bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
-    common::LOG_DEBUG("ClientConnection::HandleHandshakeDoneFrame called");
+    LOG_DEBUG("ClientConnection::HandleHandshakeDoneFrame called");
     state_machine_.OnHandshakeDone();
 
     // Mark handshake complete to stop PTO probing
@@ -304,7 +306,7 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
     recv_control_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
     send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kInitialNumberSpace);
     send_manager_.DiscardPacketNumberSpace(PacketNumberSpace::kHandshakeNumberSpace);
-    common::LOG_INFO("Discarded Initial and Handshake packet number spaces per RFC 9000");
+    LOG_INFO("Discarded Initial and Handshake packet number spaces per RFC 9000");
 
     // Log key_discarded events for Initial and Handshake keys
     if (qlog_trace_) {
@@ -316,11 +318,11 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
         QLOG_KEY_DISCARDED(qlog_trace_, discard_data);
     }
 
-    common::LOG_DEBUG("handshake_done_cb_ is %s", handshake_done_cb_ ? "SET" : "NULL");
+    LOG_DEBUG("handshake_done_cb_ is %s", handshake_done_cb_ ? "SET" : "NULL");
     if (handshake_done_cb_) {
-        common::LOG_DEBUG("Calling handshake_done_cb_");
+        LOG_DEBUG("Calling handshake_done_cb_");
         handshake_done_cb_(shared_from_this());
-        common::LOG_DEBUG("handshake_done_cb_ completed");
+        LOG_DEBUG("handshake_done_cb_ completed");
     }
 
     if (SessionCache::Instance().IsEnableSessionCache()) {
@@ -329,17 +331,18 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
         auto client_tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
         if (client_tls_conn->ExportSession(session_der, session_info)) {
             // RFC 9000 Section 7.4.1: Save remembered transport params for 0-RTT
-            if (has_remote_tp_) {
+            if (remote_tp_snapshot_.has_value) {
                 session_info.has_transport_params = true;
-                session_info.initial_max_data = remote_initial_max_data_;
-                session_info.initial_max_streams_bidi = remote_initial_max_streams_bidi_;
-                session_info.initial_max_streams_uni = remote_initial_max_streams_uni_;
-                session_info.initial_max_stream_data_bidi_local = remote_initial_max_stream_data_bidi_local_;
-                session_info.initial_max_stream_data_bidi_remote = remote_initial_max_stream_data_bidi_remote_;
-                session_info.initial_max_stream_data_uni = remote_initial_max_stream_data_uni_;
-                session_info.active_connection_id_limit = remote_active_connection_id_limit_;
-                common::LOG_INFO("Saving remembered TP: max_data=%u, max_streams_bidi=%u, max_streams_uni=%u",
-                    remote_initial_max_data_, remote_initial_max_streams_bidi_, remote_initial_max_streams_uni_);
+                session_info.initial_max_data = remote_tp_snapshot_.initial_max_data;
+                session_info.initial_max_streams_bidi = remote_tp_snapshot_.initial_max_streams_bidi;
+                session_info.initial_max_streams_uni = remote_tp_snapshot_.initial_max_streams_uni;
+                session_info.initial_max_stream_data_bidi_local = remote_tp_snapshot_.initial_max_stream_data_bidi_local;
+                session_info.initial_max_stream_data_bidi_remote = remote_tp_snapshot_.initial_max_stream_data_bidi_remote;
+                session_info.initial_max_stream_data_uni = remote_tp_snapshot_.initial_max_stream_data_uni;
+                session_info.active_connection_id_limit = remote_tp_snapshot_.active_connection_id_limit;
+                LOG_INFO("Saving remembered TP: max_data=%u, max_streams_bidi=%u, max_streams_uni=%u",
+                    remote_tp_snapshot_.initial_max_data, remote_tp_snapshot_.initial_max_streams_bidi,
+                    remote_tp_snapshot_.initial_max_streams_uni);
             }
             SessionCache::Instance().StoreSession(session_der, session_info);
         }
@@ -347,10 +350,10 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
     return true;
 }
 
-bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
+bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
     auto retry_packet = std::dynamic_pointer_cast<RetryPacket>(packet);
     if (!retry_packet) {
-        common::LOG_ERROR("Invalid Retry packet cast");
+        LOG_ERROR("Invalid Retry packet cast");
         return false;
     }
 
@@ -372,12 +375,12 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
         if (!RetryCrypto::VerifyRetryIntegrityTag(original_dcid_,
                 retry_without_tag.data(), retry_without_tag.size(),
                 version, retry_packet->GetRetryIntegrityTag())) {
-            common::LOG_WARN("Retry Integrity Tag verification failed, discarding Retry packet");
+            LOG_WARN("Retry Integrity Tag verification failed, discarding Retry packet");
             return false;
         }
-        common::LOG_DEBUG("Retry Integrity Tag verified successfully");
+        LOG_DEBUG("Retry Integrity Tag verified successfully");
     } else {
-        common::LOG_ERROR("Invalid Retry packet: missing header or token data");
+        LOG_ERROR("Invalid Retry packet: missing header or token data");
         return false;
     }
 
@@ -396,7 +399,7 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     // Update token
     token_ = std::string((char*)token_span.GetStart(), token_span.GetLength());
 
-    common::LOG_INFO("Received Retry packet. New DCID: %llu, Token length: %zu, Original DCID: %llu", src_cid.Hash(),
+    LOG_INFO("Received Retry packet. New DCID: %llu, Token length: %zu, Original DCID: %llu", src_cid.Hash(),
         token_.length(), original_dcid_.Hash());
 
     // Pass token to SendManager for subsequent Initial packets
@@ -408,10 +411,10 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     // Step 1: Reset TLS connection (recreate SSL object to restart handshake from scratch)
     auto tls_conn = std::dynamic_pointer_cast<TLSClientConnection>(tls_connection_);
     if (!tls_conn->Reset(saved_alpn_)) {
-        common::LOG_ERROR("Failed to reset TLS connection for Retry");
+        LOG_ERROR("Failed to reset TLS connection for Retry");
         return false;
     }
-    common::LOG_DEBUG("TLS connection reset successfully");
+    LOG_DEBUG("TLS connection reset successfully");
 
     // Step 2: Re-encode transport parameters for the new ClientHello
     // NOTE: The client MUST NOT include original_destination_connection_id in its
@@ -437,7 +440,7 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
 
     // Do NOT set original_destination_connection_id_ — it's server-only (RFC 9000 §18.2)
 
-    common::LOG_DEBUG("Re-encoding transport parameters for Retry (without original_destination_connection_id)");
+    LOG_DEBUG("Re-encoding transport parameters for Retry (without original_destination_connection_id)");
 
     // Re-initialize transport parameters with updated config
     transport_param_.Init(updated_tp);
@@ -447,17 +450,17 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     size_t bytes_written = 0;
     common::BufferSpan buffer_span(tp_buffer, sizeof(tp_buffer));
     if (!transport_param_.Encode(buffer_span, bytes_written)) {
-        common::LOG_ERROR("Failed to encode updated transport param for Retry");
+        LOG_ERROR("Failed to encode updated transport param for Retry");
         return false;
     }
 
     // Update TLS with new transport parameters (this will be used in the new ClientHello)
     if (!tls_conn->AddTransportParam(tp_buffer, bytes_written)) {
-        common::LOG_ERROR("Failed to update TLS transport param for Retry");
+        LOG_ERROR("Failed to update TLS transport param for Retry");
         return false;
     }
 
-    common::LOG_DEBUG("Updated TLS transport parameters for Retry (client-side only params)");
+    LOG_DEBUG("Updated TLS transport parameters for Retry (client-side only params)");
 
     // Step 3: Reset QUIC crypto state BEFORE calling DoHandleShake
     // This must be done before DoHandleShake because BoringSSL needs crypto keys to generate ClientHello
@@ -476,20 +479,20 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
 
     // RFC 9000 Section 5.2: The Initial secret is derived from the new Destination Connection ID (Retry's Source CID)
     if (!connection_crypto_.InstallInitSecret(src_cid.GetID(), src_cid.GetLength(), false)) {
-        common::LOG_ERROR("Failed to install Initial Secrets for Retry");
+        LOG_ERROR("Failed to install Initial Secrets for Retry");
         return false;
     }
-    common::LOG_INFO("Installed Initial Secrets for Retry using new DCID (hash: %llu)", src_cid.Hash());
+    LOG_INFO("Installed Initial Secrets for Retry using new DCID (hash: %llu)", src_cid.Hash());
 
     // Step 4: NOW restart TLS handshake - crypto keys are ready, will generate new ClientHello
     if (!tls_conn->DoHandleShake()) {
         // DoHandleShake returns false for WANT_READ which is expected, so don't fail here
-        common::LOG_DEBUG("TLS handshake pending (WANT_READ), will continue when socket ready");
+        LOG_DEBUG("TLS handshake pending (WANT_READ), will continue when socket ready");
     } else {
-        common::LOG_DEBUG("TLS handshake initiated successfully");
+        LOG_DEBUG("TLS handshake initiated successfully");
     }
 
-    common::LOG_INFO("Successfully processed Retry packet and restarted TLS handshake");
+    LOG_INFO("Successfully processed Retry packet and restarted TLS handshake");
 
     // Mark that we've received a Retry (prevent duplicate Retry processing)
     retry_received_ = true;
@@ -500,7 +503,7 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
     if (crypto_stream) {
         ActiveSendStream(crypto_stream);
     } else {
-        common::LOG_ERROR("Crypto stream not found during Retry handling");
+        LOG_ERROR("Crypto stream not found during Retry handling");
         return false;
     }
 
@@ -508,10 +511,10 @@ bool ClientConnection::OnRetryPacket(std::shared_ptr<IPacket> packet) {
 }
 
 void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
-    common::LOG_INFO("ClientConnection::WriteCryptoData called. buffer_len=%d, err=%d, level=%d",
+    LOG_INFO("ClientConnection::WriteCryptoData called. buffer_len=%d, err=%d, level=%d",
         buffer->GetDataLength(), err, encryption_level);
     if (err != 0) {
-        common::LOG_ERROR("get crypto data failed. err:%d", err);
+        LOG_ERROR("get crypto data failed. err:%d", err);
         return;
     }
 
@@ -521,7 +524,7 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     bool process_ok = true;
     buffer->VisitData([&](uint8_t* data, uint32_t len) -> bool {
         if (!tls_connection_->ProcessCryptoData(data, len, encryption_level)) {
-            common::LOG_ERROR("process crypto data failed. err:%d", err);
+            LOG_ERROR("process crypto data failed. err:%d", err);
             process_ok = false;
             return false;  // stop visiting
         }
@@ -540,7 +543,7 @@ void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
     }
 
     if (tls_connection_->DoHandleShake()) {
-        common::LOG_DEBUG("handshake done.");
+        LOG_DEBUG("handshake done.");
     }
 }
 

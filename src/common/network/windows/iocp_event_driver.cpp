@@ -21,7 +21,7 @@ IOCPEventDriver::IOCPEventDriver() {
     if (!ws_initialized_) {
         WSADATA wsa_data;
         if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-            common::LOG_ERROR("WSAStartup failed! error : %d", WSAGetLastError());
+            LOG_ERROR("WSAStartup failed! error : %d", WSAGetLastError());
         }
         ws_initialized_ = true;
     }

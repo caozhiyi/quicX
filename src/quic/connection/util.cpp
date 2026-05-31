@@ -17,7 +17,7 @@ PacketNumberSpace CryptoLevel2PacketNumberSpace(uint16_t level) {
     case PacketCryptoLevel::kEarlyDataCryptoLevel:
     case PacketCryptoLevel::kApplicationCryptoLevel: return PacketNumberSpace::kApplicationNumberSpace;
     default:
-        common::LOG_ERROR("unknown crypto level: %d", level);
+        LOG_ERROR("unknown crypto level: %d", level);
         return PacketNumberSpace::kInitialNumberSpace;  // safe fallback
     }
 }
@@ -51,7 +51,7 @@ const std::string FrameType2String(uint16_t frame_type) {
             if (StreamFrame::IsStreamFrame(frame_type)) {
                 return "STREAM_DATA";
             } else {
-                common::LOG_ERROR("invalid frame type. type:%s", frame_type);
+                LOG_ERROR("invalid frame type. type:%s", frame_type);
             }
     }
     return "UNKNOWN";

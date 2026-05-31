@@ -10,31 +10,32 @@
 namespace quicx {
 namespace quic {
 
-RecvFlowController::RecvFlowController():
+RecvFlowController::RecvFlowController(StreamIDGenerator::StreamStarter local_starter):
     received_bytes_(0),
     max_data_(0),
     max_streams_bidi_(0),
     max_streams_uni_(0),
     max_bidi_stream_id_(0),
-    max_uni_stream_id_(0) {}
+    max_uni_stream_id_(0),
+    local_starter_(local_starter) {}
 
 void RecvFlowController::UpdateConfig(const TransportParam& tp) {
     max_data_ = tp.GetInitialMaxData();
     max_streams_bidi_ = tp.GetInitialMaxStreamsBidi();
     max_streams_uni_ = tp.GetInitialMaxStreamsUni();
 
-    common::LOG_DEBUG("RecvFlowController::UpdateConfig: max_data=%llu, max_streams_bidi=%llu, max_streams_uni=%llu",
+    LOG_DEBUG("RecvFlowController::UpdateConfig: max_data=%llu, max_streams_bidi=%llu, max_streams_uni=%llu",
         max_data_, max_streams_bidi_, max_streams_uni_);
 }
 
 bool RecvFlowController::OnDataReceived(uint32_t size) {
     received_bytes_ += size;
-    common::LOG_DEBUG("RecvFlowController::OnDataReceived: received %u bytes, total=%llu, limit=%llu", size,
+    LOG_DEBUG("RecvFlowController::OnDataReceived: received %u bytes, total=%llu, limit=%llu", size,
         received_bytes_, max_data_);
 
     // Check if peer exceeded our limit (protocol violation)
     if (received_bytes_ > max_data_) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "RecvFlowController::OnDataReceived: peer exceeded MAX_DATA limit (received=%llu, limit=%llu)",
             received_bytes_, max_data_);
         return false;
@@ -46,7 +47,7 @@ bool RecvFlowController::OnDataReceived(uint32_t size) {
 bool RecvFlowController::ShouldSendMaxData(std::shared_ptr<IFrame>& max_data_frame) {
     // Check if peer violated limit
     if (received_bytes_ > max_data_) {
-        common::LOG_ERROR("RecvFlowController::ShouldSendMaxData: peer exceeded limit");
+        LOG_ERROR("RecvFlowController::ShouldSendMaxData: peer exceeded limit");
         return false;
     }
 
@@ -69,7 +70,7 @@ bool RecvFlowController::ShouldSendMaxData(std::shared_ptr<IFrame>& max_data_fra
         frame->SetMaximumData(max_data_);
         max_data_frame = frame;
 
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "RecvFlowController::ShouldSendMaxData: increasing limit to %llu (remaining was %llu, threshold=%llu)",
             max_data_, remaining, threshold);
     }
@@ -78,6 +79,35 @@ bool RecvFlowController::ShouldSendMaxData(std::shared_ptr<IFrame>& max_data_fra
 }
 
 bool RecvFlowController::OnStreamCreated(uint64_t stream_id, std::shared_ptr<IFrame>& max_streams_frame) {
+    // RFC 9000 §4.6: MAX_STREAMS limits the number of streams that the PEER
+    // can open. It must NOT account for streams we opened ourselves.
+    //
+    // Stream ID encoding (RFC 9000 §2.1):
+    //   bit 0: 0 = client-initiated, 1 = server-initiated
+    //   bit 1: 0 = bidirectional,    1 = unidirectional
+    //
+    // OnStreamCreated is invoked from the receive path whenever a frame
+    // arrives that targets a stream the connection has not seen before --
+    // either because the peer just opened it, or because a frame arrived
+    // for a locally-initiated stream after that stream was already torn
+    // down (e.g. an ACK or a reordered/retransmitted response on a bidi
+    // stream we opened, looked up after the stream entry was removed).
+    //
+    // Without distinguishing self- from peer-initiated stream IDs the
+    // latter case would consume our advertised MAX_STREAMS budget,
+    // eventually causing CheckBidiStreamLimit / CheckUniStreamLimit to
+    // return false and triggering a STREAM_LIMIT_ERROR connection close
+    // -- a violation of RFC 9000 §4.6 that only manifests under load.
+    bool stream_is_server_initiated = (stream_id & 0x01) != 0;
+    bool stream_is_local =
+        (local_starter_ == StreamIDGenerator::kServer) == stream_is_server_initiated;
+    if (stream_is_local) {
+        // Locally-initiated: not subject to the MAX_STREAMS budget we
+        // advertised to the peer. Nothing to validate, no MAX_STREAMS to
+        // emit.
+        return true;
+    }
+
     // Determine stream direction from stream ID (bit 1: 0=bidirectional, 1=unidirectional)
     bool is_unidirectional = (stream_id & 0x02) != 0;
 
@@ -103,7 +133,7 @@ bool RecvFlowController::CheckBidiStreamLimit(std::shared_ptr<IFrame>& max_strea
     // Check if peer exceeded our limit (protocol violation)
     // RFC 9000: MAX_STREAMS is the count, so if limit is 10, we can have streams 0-9
     if (current_stream_count >= max_streams_bidi_) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "RecvFlowController::CheckBidiStreamLimit: peer exceeded MAX_STREAMS_BIDI limit (count=%llu, limit=%llu)",
             current_stream_count, max_streams_bidi_);
         return false;
@@ -119,7 +149,7 @@ bool RecvFlowController::CheckBidiStreamLimit(std::shared_ptr<IFrame>& max_strea
         frame->SetMaximumStreams(max_streams_bidi_);
         max_streams_frame = frame;
 
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "RecvFlowController::CheckBidiStreamLimit: increasing limit to %llu (remaining was %llu, "
             "threshold=%llu)",
             max_streams_bidi_, remaining, kStreamsIncreaseThreshold);
@@ -135,7 +165,7 @@ bool RecvFlowController::CheckUniStreamLimit(std::shared_ptr<IFrame>& max_stream
     // Check if peer exceeded our limit (protocol violation)
     // RFC 9000: MAX_STREAMS is the count, so if limit is 10, we can have streams 0-9
     if (current_stream_count >= max_streams_uni_) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "RecvFlowController::CheckUniStreamLimit: peer exceeded MAX_STREAMS_UNI limit (count=%llu, limit=%llu)",
             current_stream_count, max_streams_uni_);
         return false;
@@ -151,7 +181,7 @@ bool RecvFlowController::CheckUniStreamLimit(std::shared_ptr<IFrame>& max_stream
         frame->SetMaximumStreams(max_streams_uni_);
         max_streams_frame = frame;
 
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "RecvFlowController::CheckUniStreamLimit: increasing limit to %llu (remaining was %llu, "
             "threshold=%llu)",
             max_streams_uni_, remaining, kStreamsIncreaseThreshold);

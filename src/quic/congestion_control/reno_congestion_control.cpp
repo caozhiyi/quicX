@@ -31,7 +31,7 @@ void RenoCongestionControl::Configure(const CcConfigV2& cfg) {
 void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     uint64_t old_bytes_in_flight = bytes_in_flight_;
     bytes_in_flight_ += ev.bytes;
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "RenoCongestionControl::OnPacketSent: pn=%llu, bytes=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu", ev.pn,
         ev.bytes, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
 
@@ -39,7 +39,7 @@ void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
     if (pacer_) {
-        pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
+        pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));
     }
 }
 
@@ -52,7 +52,7 @@ void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
     // Metrics: Bytes in flight
     common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
-    common::LOG_DEBUG(
+    LOG_DEBUG(
         "RenoCongestionControl::OnPacketAcked: pn=%llu, bytes_acked=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu",
         ev.pn, ev.bytes_acked, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
 
@@ -85,7 +85,7 @@ void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
     }
     IncreaseOnAck(ev.bytes_acked);
 
-    common::LOG_DEBUG("RenoCongestionControl::OnPacketAcked: cwnd: %llu->%llu, in_slow_start=%d", old_cwnd, cwnd_bytes_,
+    LOG_DEBUG("RenoCongestionControl::OnPacketAcked: cwnd: %llu->%llu, in_slow_start=%d", old_cwnd, cwnd_bytes_,
         in_slow_start_);
 
     UpdatePacingRate();
@@ -98,7 +98,7 @@ void RenoCongestionControl::OnPacketLost(const LossEvent& ev) {
     // Metrics: Bytes in flight
     common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
-    common::LOG_WARN(
+    LOG_WARN(
         "RenoCongestionControl::OnPacketLost: pn=%llu, bytes_lost=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu", ev.pn,
         ev.bytes_lost, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
     if (!in_recovery_) {
@@ -125,19 +125,21 @@ ICongestionControl::SendState RenoCongestionControl::CanSend(uint64_t now, uint6
     return SendState::kOk;
 }
 
-uint64_t RenoCongestionControl::GetPacingRateBps() const {
+uint64_t RenoCongestionControl::GetPacingRateBytesPerSec() const {
     if (srtt_us_ == 0) {
-        return cfg_.min_cwnd_bytes * 8;
+        // No RTT sample yet: use min_cwnd as a coarse rate.
+        return cfg_.min_cwnd_bytes;
     }
-    return (cwnd_bytes_ * 8ull * 1000000ull) / srtt_us_;
+    // rate_bytes_per_sec = cwnd_bytes / RTT_seconds = cwnd_bytes * 1e6 / rtt_us
+    return (cwnd_bytes_ * 1000000ull) / srtt_us_;
 }
 
 uint64_t RenoCongestionControl::NextSendTime(uint64_t now) const {
-    (void)now;
     if (!pacer_) {
-        return 0;
+        return now;
     }
-    return pacer_->TimeUntilSend();
+    // pacer returns delta_ms until next send opportunity; convert to absolute time.
+    return now + pacer_->TimeUntilSend();
 }
 
 void RenoCongestionControl::IncreaseOnAck(uint64_t bytes_acked) {
@@ -187,7 +189,7 @@ void RenoCongestionControl::EnterRecovery(uint64_t now) {
     recovery_start_time_ = now;
     in_slow_start_ = false;
 
-    common::LOG_WARN(
+    LOG_WARN(
         "RenoCongestionControl::EnterRecovery: cwnd: %llu->%llu, ssthresh: %llu->%llu, bytes_in_flight=%llu", old_cwnd,
         cwnd_bytes_, old_ssthresh, ssthresh_bytes_, bytes_in_flight_);
 
@@ -205,11 +207,11 @@ void RenoCongestionControl::UpdatePacingRate() {
     if (!pacer_) {
         return;
     }
-    uint64_t pacing_rate = GetPacingRateBps();
+    uint64_t pacing_rate = GetPacingRateBytesPerSec();
     pacer_->OnPacingRateUpdated(pacing_rate);
 
-    // Metrics: Pacing rate
-    common::Metrics::GaugeSet(common::MetricsStd::PacingRateBytesPerSec, pacing_rate / 8);
+    // Metrics: Pacing rate (already in bytes/sec)
+    common::Metrics::GaugeSet(common::MetricsStd::PacingRateBytesPerSec, pacing_rate);
 }
 
 void RenoCongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {

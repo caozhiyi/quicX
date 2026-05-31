@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "common/log/log.h"
 
 #include "quic/frame/crypto_frame.h"
@@ -37,21 +39,43 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
     frame->SetOffset(send_offset_[level]);
     frame->SetEncryptionLevel(level);
 
-    // TODO: move to common/util
+    // Per-datagram cap: cap CRYPTO frame payload by the current packet
+    // buffer's real free space. CRYPTO frame header worst case:
+    // type(1B) + offset(<=8B) + length(<=2B) = ~11B; reserve 20B for safety.
+    // Replaces the historical hardcoded 1300 cap which left ~120B unused
+    // on each packet (kVisitorBudget is 1420).
+    constexpr uint32_t kCryptoHeaderReserve = 20;
+    uint32_t crypto_pkt_left = visitor->GetPacketLeftSize();
+    uint32_t crypto_pkt_cap = crypto_pkt_left > kCryptoHeaderReserve
+        ? crypto_pkt_left - kCryptoHeaderReserve : 0;
+
     uint32_t write_size = visitor->GetLeftStreamDataSize();
-    if (write_size > 1300) {
-        write_size = 1300;
+    if (write_size > crypto_pkt_cap) {
+        write_size = crypto_pkt_cap;
+    }
+    if (write_size == 0) {
+        // Visitor has not declared a stream-level cap yet (typical when
+        // crypto handshake bytes flow before flow control is fully wired up).
+        // Fall back to "as much as the buffer currently holds" so we still
+        // make progress. Cap by the current packet's free space.
+        write_size = std::min<uint32_t>(send_buffers_[level]->GetDataLength(), crypto_pkt_cap);
     }
 
-    common::SharedBufferSpan data = send_buffers_[level]->GetSharedReadableSpan(write_size);
+    common::SharedBufferSpan data = send_buffers_[level]->GetFirstChunkReadable(write_size);
+    if (!data.Valid()) {
+        // No readable data despite GetDataLength() > 0 should not happen, but
+        // guard defensively: simply report success and try again next round.
+        LOG_DEBUG("CryptoStream::TrySendData: no readable data, level:%d", level);
+        return IStream::TrySendResult::kSuccess;
+    }
     frame->SetData(data);
 
     if (!visitor->HandleFrame(frame)) {
-        common::LOG_WARN("CryptoStream::TrySendData: visitor handle frame failed. level:%d", level);
+        LOG_WARN("CryptoStream::TrySendData: visitor handle frame failed. level:%d", level);
         return IStream::TrySendResult::kFailed;
     }
 
-    common::LOG_DEBUG("CryptoStream::TrySendData: sent frame level:%d, offset:%llu, len:%d", level, send_offset_[level],
+    LOG_DEBUG("CryptoStream::TrySendData: sent frame level:%d, offset:%llu, len:%d", level, send_offset_[level],
         data.GetLength());
 
     send_buffers_[level]->MoveReadPt(data.GetLength());
@@ -83,7 +107,7 @@ void CryptoStream::Reset(uint32_t error) {
 }
 
 void CryptoStream::ResetForRetry() {
-    common::LOG_INFO("Resetting CryptoStream for Retry");
+    LOG_INFO("Resetting CryptoStream for Retry");
 
     // Clear Initial level state to restart handshake from offset 0
     uint8_t level = kInitial;
@@ -110,7 +134,7 @@ uint32_t CryptoStream::OnFrame(std::shared_ptr<IFrame> frame) {
         return 0;
     }
     // shouldn't be here
-    common::LOG_ERROR("crypto stream recv error frame. type:%d", frame_type);
+    LOG_ERROR("crypto stream recv error frame. type:%d", frame_type);
     return 0;
 }
 
@@ -202,11 +226,11 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
 
     // Bounds check
     if (level >= kNumEncryptionLevels) {
-        common::LOG_ERROR("CryptoStream received frame with invalid level %d", level);
+        LOG_ERROR("CryptoStream received frame with invalid level %d", level);
         return;
     }
 
-    common::LOG_INFO("CryptoStream::OnCryptoFrame: level=%d, offset=%llu, len=%u, expected=%llu", level,
+    LOG_INFO("CryptoStream::OnCryptoFrame: level=%d, offset=%llu, len=%u, expected=%llu", level,
         crypto_frame->GetOffset(), crypto_frame->GetLength(), next_read_offset_[level]);
 
     if (crypto_frame->GetOffset() == next_read_offset_[level]) {

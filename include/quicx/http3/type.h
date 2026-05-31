@@ -75,8 +75,14 @@ struct Http3Settings {
     uint64_t max_concurrent_streams = 200;    // max concurrent streams
     uint64_t max_frame_size = 16384;          // max frame size
     uint64_t max_field_section_size = 16384;  // max field section size
-    uint64_t qpack_max_table_capacity = 0;    // qpack max table capacity
-    uint64_t qpack_blocked_streams = 0;       // qpack blocked streams
+    // NOTE: QPACK dynamic table is temporarily disabled by default (capacity=0, blocked_streams=0).
+    // Reason: ReqRespBaseStream::OnData processes a batch of frames sequentially. If a HEADERS frame
+    //   is blocked due to RIC (Required Insert Count) not yet satisfied, response_ is not created,
+    //   yet the next DATA frame in the same batch will still call HandleData() -> response_->AppendBody()
+    //   and crash. A proper fix requires buffering subsequent frames until the blocked HEADERS retry
+    //   completes. Until that is implemented, force literal-only encoding to avoid the crash path.
+    uint64_t qpack_max_table_capacity = 0;     // qpack max table capacity (0 = disable dynamic table)
+    uint64_t qpack_blocked_streams = 0;        // qpack blocked streams (0 = no blocked streams allowed)
 
     QuicTransportParams quic_transport_params_ = DEFAULT_QUIC_TRANSPORT_PARAMS;
 };

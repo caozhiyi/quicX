@@ -21,7 +21,7 @@ TLSCtx::~TLSCtx() {
 bool TLSCtx::Init(bool enable_early_data, const std::string& cipher_suites) {
     ssl_ctx_ = SSLCtxPtr(SSL_CTX_new(TLS_method()));
     if (!ssl_ctx_) {
-        common::LOG_ERROR("create ssl ctx failed");
+        LOG_ERROR("create ssl ctx failed");
         return false;
     }
 
@@ -45,7 +45,7 @@ bool TLSCtx::Init(bool enable_early_data, const std::string& cipher_suites) {
     // For interoperability testing, ChaCha20 can be tested by running on
     // platforms without AES-NI hardware support.
     if (!cipher_suites.empty()) {
-        common::LOG_INFO("TLS cipher suites requested: %s (note: BoringSSL uses automatic TLS 1.3 cipher selection)", 
+        LOG_INFO("TLS cipher suites requested: %s (note: BoringSSL uses automatic TLS 1.3 cipher selection)", 
             cipher_suites.c_str());
     }
 
@@ -65,12 +65,12 @@ bool TLSCtx::EnableKeyLog(const std::string& keylog_file) {
 
     keylog_file_ = fopen(keylog_file.c_str(), "a");
     if (!keylog_file_) {
-        common::LOG_ERROR("failed to open keylog file: %s", keylog_file.c_str());
+        LOG_ERROR("failed to open keylog file: %s", keylog_file.c_str());
         return false;
     }
 
     SSL_CTX_set_keylog_callback(ssl_ctx_.get(), TLSCtx::KeyLogCallback);
-    common::LOG_INFO("TLS key logging enabled: %s", keylog_file.c_str());
+    LOG_INFO("TLS key logging enabled: %s", keylog_file.c_str());
     return true;
 }
 

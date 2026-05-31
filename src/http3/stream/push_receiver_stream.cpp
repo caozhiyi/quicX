@@ -13,12 +13,12 @@
 namespace quicx {
 namespace http3 {
 
-PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_decoder,
     const std::shared_ptr<IQuicRecvStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const http_response_handler& response_handler):
     IRecvStream(StreamType::kPush, stream, error_handler),
-    qpack_encoder_(qpack_encoder),
+    qpack_decoder_(qpack_decoder),
     response_handler_(response_handler),
     parse_state_(ParseState::kReadingPushId),
     push_id_(0),
@@ -36,12 +36,12 @@ PushReceiverStream::~PushReceiverStream() {
 
 void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("PushReceiverStream::OnData error: %d", error);
+        LOG_ERROR("PushReceiverStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);
         return;
     }
 
-    common::LOG_DEBUG("=== PushReceiverStream::OnData: received %u bytes, current state=%d ===", data->GetDataLength(),
+    LOG_DEBUG("=== PushReceiverStream::OnData: received %u bytes, current state=%d ===", data->GetDataLength(),
         static_cast<int>(parse_state_));
 
     // State machine to parse push stream (RFC 9114 Section 4.6)
@@ -55,22 +55,22 @@ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
                 common::BufferDecodeWrapper wrapper(buffer);
                 if (!wrapper.DecodeVarint(push_id_)) {
                     // Not enough data yet, wait for more
-                    common::LOG_DEBUG("PushReceiverStream: not enough data to read push id, waiting for more data");
+                    LOG_DEBUG("PushReceiverStream: not enough data to read push id, waiting for more data");
                     return;
                 }
             }
 
-            common::LOG_DEBUG("PushReceiverStream: push_id=%llu", push_id_);
+            LOG_DEBUG("PushReceiverStream: push_id=%llu", push_id_);
             parse_state_ = ParseState::kReadingFrames;
 
         } else if (parse_state_ == ParseState::kReadingFrames) {
             // Decode HTTP3 frames (HEADERS + DATA)
-            common::LOG_DEBUG("PushReceiverStream: attempting to decode frames from %zu bytes", data->GetDataLength());
+            LOG_DEBUG("PushReceiverStream: attempting to decode frames from %zu bytes", data->GetDataLength());
 
             std::vector<std::shared_ptr<IFrame>> frames;
             bool decode_ok = frame_decoder_.DecodeFrames(buffer, frames);
 
-            common::LOG_DEBUG(
+            LOG_DEBUG(
                 "PushReceiverStream: DecodeFrames returned %d, decoded %zu frames", decode_ok, frames.size());
 
             // Distinguish between incomplete frame (need more data) and actual decode error
@@ -80,12 +80,12 @@ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
                     // Only treat as "need more data" if the buffer is small enough to be a partial header.
                     // A reasonable max frame header size is 16 bytes (type varint + length varint).
                     if (buffer->GetDataLength() <= 16) {
-                        common::LOG_DEBUG("PushReceiverStream: waiting for more data to complete frame");
+                        LOG_DEBUG("PushReceiverStream: waiting for more data to complete frame");
                         return;
                     }
                 }
                 // Decode truly failed: either partial failure or corrupt data
-                common::LOG_ERROR("PushReceiverStream: DecodeFrames failure (decoded %zu frames before error)", frames.size());
+                LOG_ERROR("PushReceiverStream: DecodeFrames failure (decoded %zu frames before error)", frames.size());
                 error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
                 return;
             }
@@ -100,7 +100,7 @@ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
                         HandleData(frame);
                         break;
                     default:
-                        common::LOG_ERROR("PushReceiverStream: unexpected frame type %d", frame->GetType());
+                        LOG_ERROR("PushReceiverStream: unexpected frame type %d", frame->GetType());
                         error_handler_(GetStreamID(), Http3ErrorCode::kFrameUnexpected);
                         return;
                 }
@@ -110,44 +110,44 @@ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
 }
 
 void PushReceiverStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
-    common::LOG_DEBUG("=== PushReceiverStream::HandleHeaders called ===");
+    LOG_DEBUG("=== PushReceiverStream::HandleHeaders called ===");
 
     auto headers_frame = std::dynamic_pointer_cast<HeadersFrame>(frame);
     if (!headers_frame) {
-        common::LOG_ERROR("IStream::HandleHeaders error");
+        LOG_ERROR("IStream::HandleHeaders error");
         error_handler_(GetStreamID(), Http3ErrorCode::kFrameUnexpected);
         return;
     }
 
     // TODO check if headers is complete and headers length is correct
 
-    // Decode headers using QPACK
+    // Decode headers using QPACK (decoder table for incoming headers)
     auto headers_buffer = headers_frame->GetEncodedFields();
-    if (!qpack_encoder_->Decode(headers_buffer, headers_)) {
-        common::LOG_ERROR("IStream::HandleHeaders QPACK decode error");
+    if (!qpack_decoder_->Decode(headers_buffer, headers_)) {
+        LOG_ERROR("IStream::HandleHeaders QPACK decode error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
 
-    common::LOG_DEBUG("decoded %zu headers", headers_.size());
+    LOG_DEBUG("decoded %zu headers", headers_.size());
 
     if (headers_.find("content-length") != headers_.end()) {
         try {
             body_length_ = std::stoul(headers_["content-length"]);
-            common::LOG_DEBUG("found content-length=%u", body_length_);
+            LOG_DEBUG("found content-length=%u", body_length_);
         } catch (const std::exception& e) {
-            common::LOG_ERROR("PushReceiverStream: invalid content-length value '%s': %s",
+            LOG_ERROR("PushReceiverStream: invalid content-length value '%s': %s",
                 headers_["content-length"].c_str(), e.what());
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
             return;
         }
     } else {
         body_length_ = 0;
-        common::LOG_DEBUG("no content-length, setting to 0");
+        LOG_DEBUG("no content-length, setting to 0");
     }
 
     if (body_length_ == 0) {
-        common::LOG_DEBUG("body_length_==0, calling HandleBody()");
+        LOG_DEBUG("body_length_==0, calling HandleBody()");
         HandleBody();
     }
 }
@@ -155,7 +155,7 @@ void PushReceiverStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 void PushReceiverStream::HandleData(std::shared_ptr<IFrame> frame) {
     auto data_frame = std::dynamic_pointer_cast<DataFrame>(frame);
     if (!data_frame) {
-        common::LOG_ERROR("IStream::HandleData error");
+        LOG_ERROR("IStream::HandleData error");
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
     }
@@ -174,7 +174,7 @@ void PushReceiverStream::HandleData(std::shared_ptr<IFrame> frame) {
 
 void PushReceiverStream::HandleBody() {
     uint32_t body_size = body_ ? body_->GetDataLength() : 0;
-    common::LOG_DEBUG("headers count=%zu, body size=%u", headers_.size(), body_size);
+    LOG_DEBUG("headers count=%zu, body size=%u", headers_.size(), body_size);
 
     std::shared_ptr<Response> response = std::make_shared<Response>();
     response->SetHeaders(headers_);

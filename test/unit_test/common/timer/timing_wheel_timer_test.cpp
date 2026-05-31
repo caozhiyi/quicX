@@ -732,6 +732,205 @@ TEST(timing_wheel_timer_utest, reset_idle_timer_does_not_hide_short_timer) {
     }
 }
 
+// ============================================================================
+// Regression suite for the bitmap-indexed EarliestDeadline (perf rewrite).
+//
+// The old implementation walked all 384 slots' std::list contents on every
+// dirty MinTime() call (~20% CPU under load). The new implementation
+// maintains per-level occupancy bitmaps and per-slot min caches. These
+// tests exercise the bitmap maintenance paths (set / clear / cascade) and
+// confirm that earliest-deadline lookups remain correct under sparse slot
+// occupancy patterns that would have masked bugs in the old O(W) scan.
+// ============================================================================
+
+// Sparse L0 occupancy: a single timer planted in the *high* end of the L0
+// wheel must still be discovered by the bitmap scan when MinTime() rebuilds.
+TEST(timing_wheel_timer_utest, bitmap_l0_sparse_high_slot) {
+    TimingWheelTimer tw;
+    // Pick a base aligned to 256 ms so the L0 cursor starts at slot 0.
+    uint64_t base = (Now() & ~static_cast<uint64_t>(0xff)) + 0x1000;
+    tw.TimerRun(base);
+
+    TimerTask filler, target;
+    // Filler in slot 1 — ensures bitmap word 0 has multiple bits.
+    tw.AddTimer(filler, 1,   base);
+    // Target in slot 250 — lives in bitmap word 3 (slots 192..255).
+    tw.AddTimer(target, 250, base);
+
+    EXPECT_EQ(1, tw.MinTime(base));   // filler is the min
+    ASSERT_TRUE(tw.RemoveTimer(filler));  // dirties cache
+    // After rebuild, EarliestDeadline must locate the bit in word 3.
+    EXPECT_EQ(250, tw.MinTime(base));
+}
+
+// L1 slot's per-slot min cache must be refreshed when a non-empty slot
+// loses its current minimum (NOT cleared!).
+TEST(timing_wheel_timer_utest, bitmap_l1_slot_min_refresh_on_partial_remove) {
+    TimingWheelTimer tw;
+    uint64_t now = Now();
+    tw.TimerRun(now);
+
+    // All three land in level 1 (delta in [256, 16384)).
+    // We arrange them so they share the same L1 slot:
+    //   L1 slot index = (deadline >> 8) & 63.
+    // Pick base s.t. (now + 1000) >> 8 == (now + 1100) >> 8 == (now + 1200) >> 8.
+    // Easiest: align `now` to a 256-ms boundary, then offsets 300/400/500
+    // all share L1 slot ((now>>8)+1) & 63.
+    uint64_t base = (now & ~static_cast<uint64_t>(0xff));
+    tw.TimerRun(base);
+
+    TimerTask t_min, t_mid, t_max;
+    tw.AddTimer(t_min, 300, base);   // earliest in this L1 slot
+    tw.AddTimer(t_mid, 400, base);
+    tw.AddTimer(t_max, 500, base);
+
+    EXPECT_EQ(300, tw.MinTime(base));
+
+    // Remove the min of the slot. The slot is still non-empty, so the
+    // bitmap bit should remain set, but the per-slot min cache must
+    // refresh to t_mid's deadline.
+    ASSERT_TRUE(tw.RemoveTimer(t_min));
+    EXPECT_EQ(400, tw.MinTime(base))
+        << "L1 slot_min did not refresh after removing the slot's min task";
+
+    // Remove t_mid; cache should refresh to t_max.
+    ASSERT_TRUE(tw.RemoveTimer(t_mid));
+    EXPECT_EQ(500, tw.MinTime(base));
+
+    // Remove last; slot becomes empty; bitmap bit cleared; MinTime == -1.
+    ASSERT_TRUE(tw.RemoveTimer(t_max));
+    EXPECT_EQ(-1, tw.MinTime(base));
+    EXPECT_TRUE(tw.Empty());
+}
+
+// L2 equivalent of the above.
+TEST(timing_wheel_timer_utest, bitmap_l2_slot_min_refresh_on_partial_remove) {
+    TimingWheelTimer tw;
+    uint64_t now = Now();
+    // L1Range == 16384. Anything in [16384, 1048576) goes to L2.
+    // L2 slot index = (deadline >> 14) & 63. Two offsets in the same
+    // L2 slot: 20000 and 25000, both yield (>>14)=1 once added to a
+    // 16384-aligned base.
+    uint64_t base = (now & ~static_cast<uint64_t>(16384 - 1));
+    tw.TimerRun(base);
+
+    TimerTask t_a, t_b;
+    tw.AddTimer(t_a, 20000, base);
+    tw.AddTimer(t_b, 25000, base);
+    EXPECT_EQ(20000, tw.MinTime(base));
+
+    ASSERT_TRUE(tw.RemoveTimer(t_a));
+    EXPECT_EQ(25000, tw.MinTime(base))
+        << "L2 slot_min did not refresh after removing the slot's min task";
+
+    ASSERT_TRUE(tw.RemoveTimer(t_b));
+    EXPECT_EQ(-1, tw.MinTime(base));
+}
+
+// Overflow per-slot min refresh.
+TEST(timing_wheel_timer_utest, bitmap_overflow_slot_min_refresh) {
+    TimingWheelTimer tw;
+    uint64_t now = Now();
+    tw.TimerRun(now);
+
+    TimerTask t_a, t_b;
+    // Both go to overflow (> 1 048 576 ms ≈ 17.5 min).
+    tw.AddTimer(t_a, 30 * 60 * 1000, now);   // 30 min
+    tw.AddTimer(t_b, 60 * 60 * 1000, now);   // 60 min
+    EXPECT_EQ(30 * 60 * 1000, tw.MinTime(now));
+
+    ASSERT_TRUE(tw.RemoveTimer(t_a));
+    EXPECT_EQ(60 * 60 * 1000, tw.MinTime(now))
+        << "overflow slot_min did not refresh after removing min task";
+    ASSERT_TRUE(tw.RemoveTimer(t_b));
+    EXPECT_EQ(-1, tw.MinTime(now));
+}
+
+// Cascade must clear the bitmap bit of the source slot AND repopulate the
+// destination level's bits. Verifies via a Remove that forces a rescan.
+TEST(timing_wheel_timer_utest, bitmap_cascade_clears_source_and_populates_dest) {
+    TimingWheelTimer tw;
+    constexpr uint64_t kL1 = 16384;
+    uint64_t base = (Now() & ~(kL1 - 1)) + (kL1 * 4);  // L1-aligned
+    tw.TimerRun(base);
+
+    // Two L1 timers in the same L1 slot, just inside the next L1 epoch.
+    TimerTask t1, t2;
+    tw.AddTimer(t1, kL1 + 50,  base);   // fires at base + 16434
+    tw.AddTimer(t2, kL1 + 100, base);   // fires at base + 16484
+
+    // Drive past the L1 boundary but stop before the timers fire.
+    // current_ms_ becomes base + kL1 + 1 (just past cascade point), and
+    // both timers should have cascaded into L0.
+    tw.TimerRun(base + kL1 + 1);
+
+    // Both still pending; min should be t1 (50 ms away from current).
+    EXPECT_EQ(49, tw.MinTime(base + kL1 + 1));
+
+    // Remove t1 — forces dirty + rebuild via bitmap scan.
+    ASSERT_TRUE(tw.RemoveTimer(t1));
+    EXPECT_EQ(99, tw.MinTime(base + kL1 + 1));
+
+    ASSERT_TRUE(tw.RemoveTimer(t2));
+    EXPECT_EQ(-1, tw.MinTime(base + kL1 + 1));
+}
+
+// Stress: many sparsely-scheduled timers across all four levels with
+// frequent removes triggering cache rebuilds. Compares against a brute-
+// force tracker on every iteration. Targets bitmap maintenance bugs.
+TEST(timing_wheel_timer_utest, bitmap_stress_random_remove_forces_rescan) {
+    std::mt19937_64 rng(0xBADCAFEu);
+    std::uniform_int_distribution<uint32_t> to_dist(1, 2'000'000);  // up to ~33 min
+    std::uniform_int_distribution<int>      coin(0, 1);
+
+    TimingWheelTimer tw;
+    Tracker tracker;
+    constexpr int kN = 128;
+    std::vector<TimerTask> pool(kN);
+    std::vector<bool>      alive(kN, false);
+    uint64_t now = Now();
+    tw.TimerRun(now);
+
+    for (int i = 0; i < kN; ++i) {
+        pool[i].SetTimeoutCallback([&, i]{
+            tracker.live.erase(pool[i].GetId());
+            alive[i] = false;
+        });
+    }
+
+    // 1) Insert all N tasks at random offsets across levels.
+    for (int i = 0; i < kN; ++i) {
+        uint32_t timeout = to_dist(rng);
+        ASSERT_NE(0u, tw.AddTimer(pool[i], timeout, now));
+        alive[i] = true;
+        tracker.live[pool[i].GetId()] = now + timeout;
+    }
+    ASSERT_EQ(tracker.Expected(now), tw.MinTime(now));
+
+    // 2) Random remove half of them, each remove dirties cache and forces
+    //    bitmap-driven rebuild on the next MinTime call.
+    for (int i = 0; i < kN; ++i) {
+        if (coin(rng) && alive[i]) {
+            ASSERT_TRUE(tw.RemoveTimer(pool[i]));
+            tracker.live.erase(pool[i].GetId());
+            alive[i] = false;
+            ASSERT_EQ(tracker.Expected(now), tw.MinTime(now))
+                << "post-remove rebuild mismatch at i=" << i;
+        }
+    }
+
+    // 3) Tear everything down.
+    for (int i = 0; i < kN; ++i) {
+        if (alive[i]) {
+            ASSERT_TRUE(tw.RemoveTimer(pool[i]));
+            tracker.live.erase(pool[i].GetId());
+            alive[i] = false;
+        }
+    }
+    EXPECT_TRUE(tw.Empty());
+    EXPECT_EQ(-1, tw.MinTime(now));
+}
+
 }  // namespace
 }  // namespace common
 }  // namespace quicx

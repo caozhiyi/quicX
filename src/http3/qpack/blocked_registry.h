@@ -14,15 +14,32 @@ public:
     QpackBlockedRegistry();
     ~QpackBlockedRegistry();
     
-    // Set maximum number of blocked streams (from SETTINGS_QPACK_BLOCKED_STREAMS)
-    void SetMaxBlockedStreams(uint64_t max_blocked) { max_blocked_streams_ = max_blocked; }
+    // Set maximum number of blocked streams (from SETTINGS_QPACK_BLOCKED_STREAMS).
+    //
+    // RFC 9204 §5: SETTINGS_QPACK_BLOCKED_STREAMS specifies the upper bound
+    // on the number of streams that may be blocked.  A value of 0 means the
+    // peer's encoder MUST NOT cause any stream to become blocked — i.e. it
+    // MUST always emit header blocks with Required Insert Count = 0.
+    // Therefore, here `max_blocked` == 0 means "no blocking allowed" (every
+    // Add() will fail).  To express "unlimited" (e.g. for tests/profiling),
+    // pass UINT64_MAX explicitly.
+    void SetMaxBlockedStreams(uint64_t max_blocked) {
+        max_blocked_streams_ = max_blocked;
+        max_blocked_explicit_ = true;
+    }
     
     // Get current number of blocked streams
     uint64_t GetBlockedCount() const { return pending_.size(); }
     
     // Check if we can add another blocked stream
     bool CanAddBlocked() const {
-        return max_blocked_streams_ == 0 || pending_.size() < max_blocked_streams_;
+        // If SetMaxBlockedStreams was never called, default to unlimited
+        // (preserves prior behaviour for code paths that construct a
+        // registry without configuring SETTINGS).
+        if (!max_blocked_explicit_) {
+            return true;
+        }
+        return pending_.size() < max_blocked_streams_;
     }
     
     // Enqueue a blocked header block by key (e.g., stream_id) with a retry closure
@@ -51,7 +68,10 @@ public:
     bool RemoveByStreamId(uint64_t stream_id);
 
 private:
-    uint64_t max_blocked_streams_{0}; // 0 means unlimited (for testing/simple cases)
+    // SETTINGS_QPACK_BLOCKED_STREAMS configured limit.  Only consulted when
+    // max_blocked_explicit_ is true; otherwise the registry is unlimited.
+    uint64_t max_blocked_streams_{0};
+    bool max_blocked_explicit_{false};
     std::unordered_map<uint64_t, std::function<void()>> pending_;
     // Secondary index: stream_id -> ordered set of section keys outstanding
     // for that stream.  Lets AckByStreamId / RemoveByStreamId locate the

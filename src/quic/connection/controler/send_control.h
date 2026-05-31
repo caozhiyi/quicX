@@ -91,10 +91,10 @@ public:
     // send_control_test.cpp G2 group).
     uint64_t GetCcBytesInFlightForTest() const { return congestion_control_->GetBytesInFlight(); }
     uint64_t GetCcCongestionWindowForTest() const { return congestion_control_->GetCongestionWindow(); }
-    void OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len);
-    void OnPacketSend(uint64_t now, std::shared_ptr<IPacket> packet, uint32_t pkt_len,
+    void OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len);
+    void OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& packet, uint32_t pkt_len,
         const std::vector<StreamDataInfo>& stream_data);
-    void OnPacketAck(uint64_t now, PacketNumberSpace ns, std::shared_ptr<IFrame> ack_frame);
+    void OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::shared_ptr<IFrame>& ack_frame);
     void CanSend(uint64_t now, uint64_t& can_send_bytes);
     bool NeedReSend() { return !lost_packets_.empty(); }
 

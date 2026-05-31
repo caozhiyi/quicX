@@ -46,7 +46,7 @@ void CubicCongestionControl::Configure(const CcConfigV2& cfg) {
 
 void CubicCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     bytes_in_flight_ += ev.bytes;
-    if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
+    if (pacer_) pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));
 }
 
 void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
@@ -88,7 +88,7 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
             // Reset HyStart on congestion signal
             ResetHyStart();
         }
-        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
         return;
     }
 
@@ -118,7 +118,7 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
             ResetEpoch(ev.ack_time);
         }
 
-        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
         return;
     }
 
@@ -140,7 +140,7 @@ void CubicCongestionControl::OnPacketAcked(const AckEvent& ev) {
     }
 
     IncreaseOnAck(ev.bytes_acked, ev.ack_time);
-    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
 void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
@@ -148,7 +148,7 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
 
     // Skip duplicate cwnd reduction if already in recovery
     if (in_recovery_) {
-        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+        if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
         return;
     }
 
@@ -180,7 +180,7 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     // Reset HyStart on loss
     ResetHyStart();
 
-    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
 void CubicCongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
@@ -200,7 +200,7 @@ ICongestionControl::SendState CubicCongestionControl::CanSend(uint64_t now, uint
     return SendState::kOk;
 }
 
-uint64_t CubicCongestionControl::GetPacingRateBps() const {
+uint64_t CubicCongestionControl::GetPacingRateBytesPerSec() const {
     // Pacing optimization: use proper initial RTT and apply pacing gain
     uint64_t rtt_us = srtt_us_;
     if (rtt_us == 0) {
@@ -209,14 +209,15 @@ uint64_t CubicCongestionControl::GetPacingRateBps() const {
     }
 
     // CUBIC pacing: use 1.25x gain for better burst smoothing
-    // rate = (cwnd * 1.25) / RTT
-    return (cwnd_bytes_ * 8ull * 1000000ull * 5) / (rtt_us * 4);
+    // rate_bytes_per_sec = (cwnd_bytes * 1.25) / RTT_seconds
+    //                   = (cwnd_bytes * 1000000 * 5) / (rtt_us * 4)
+    return (cwnd_bytes_ * 1000000ull * 5) / (rtt_us * 4);
 }
 
 uint64_t CubicCongestionControl::NextSendTime(uint64_t now) const {
-    (void)now;
-    if (!pacer_) return 0;
-    return pacer_->TimeUntilSend();
+    if (!pacer_) return now;
+    // pacer returns delta_ms until next send opportunity; convert to absolute time.
+    return now + pacer_->TimeUntilSend();
 }
 
 void CubicCongestionControl::ResetEpoch(uint64_t now) {

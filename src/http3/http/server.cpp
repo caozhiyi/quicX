@@ -38,7 +38,10 @@ Server::~Server() {
     // our ServerConnection entries. Explicitly drop them so the
     // shared_ptr<IQuicConnection> chain collapses here, before ~QuicServer
     // runs and releases the last strong references on the worker side.
-    conn_map_.clear();
+    {
+        std::lock_guard<std::mutex> lock(conn_map_mu_);
+        conn_map_.clear();
+    }
 }
 
 bool Server::Init(const Http3ServerConfig& config) {
@@ -48,7 +51,7 @@ bool Server::Init(const Http3ServerConfig& config) {
     // Basic validation (though QuicServer might handle it)
     if ((config.quic_config_.cert_pem_ == nullptr || config.quic_config_.key_pem_ == nullptr) &&
         (config.quic_config_.cert_file_.empty() || config.quic_config_.key_file_.empty())) {
-        common::LOG_ERROR("cert file or cert pem and key file or key pem must be set.");
+        LOG_ERROR("cert file or cert pem and key file or key pem must be set.");
         return false;
     }
 
@@ -57,7 +60,7 @@ bool Server::Init(const Http3ServerConfig& config) {
     quic_config.alpn_ = kHttp3Alpn;
 
     if (!quic_->Init(quic_config)) {
-        common::LOG_ERROR("init quic server failed.");
+        LOG_ERROR("init quic server failed.");
         return false;
     }
 
@@ -67,7 +70,7 @@ bool Server::Init(const Http3ServerConfig& config) {
     // Auto-register metrics endpoint if enabled
     if (config.metrics_.http_enable) {
         AddHandler(HttpMethod::kGet, config.metrics_.http_path, MetricsHandler::Handle);
-        common::LOG_INFO("Metrics endpoint registered at %s", config.metrics_.http_path.c_str());
+        LOG_INFO("Metrics endpoint registered at %s", config.metrics_.http_path.c_str());
     }
 
     return true;
@@ -110,11 +113,33 @@ void Server::OnConnection(
     std::string addr;
     uint32_t port;
     conn->GetRemoteAddr(addr, port);
+    // unique_id is purely a human-readable label (used by HandleError logging
+    // and the user-facing error_handler_); it MUST NOT be used as the
+    // conn_map_ key because under benchmark workloads many concurrent QUIC
+    // connections legitimately share the same (peer_addr:peer_port) tuple
+    // (loopback ephemeral-port reuse, NAT, multi-stream client). Keying by
+    // the address-string caused two cascading-close bugs in long perf runs
+    // (see analysis 2026-05-29):
+    //   * Insert path: a fresh handshake with the same addr/port silently
+    //     dropped the previous shared_ptr<ServerConnection>.
+    //   * Erase path: a watchdog-fired handshake-timeout close erased the
+    //     wrong, perfectly healthy connection that happened to share the
+    //     same addr/port string, instantly tearing down all in-flight
+    //     business connections on that worker — observable as the 5-10s
+    //     stall + "connection close. error: 0, reason:" storm.
+    // We now key conn_map_ by the underlying IQuicConnection raw pointer,
+    // which is process-uniquely identifying for the lifetime of the QUIC
+    // connection. This mirrors the reverse-lookup-by-pointer fix already in
+    // http3::Client (see client.cpp:230-236).
     std::string unique_id = addr + ":" + std::to_string(port);
+    void* conn_key = conn.get();
 
     if (operation == ConnectionOperation::kConnectionClose) {
-        common::LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
-        conn_map_.erase(unique_id);
+        LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
+        {
+            std::lock_guard<std::mutex> lock(conn_map_mu_);
+            conn_map_.erase(conn_key);
+        }
         return;
     }
 
@@ -126,12 +151,30 @@ void Server::OnConnection(
     // Initialize connection (starts timers)
     server_conn->Init();
 
-    conn_map_[unique_id] = server_conn;
+    {
+        std::lock_guard<std::mutex> lock(conn_map_mu_);
+        conn_map_[conn_key] = server_conn;
+    }
 }
 
 void Server::HandleError(const std::string& unique_id, uint32_t error_code) {
-    common::LOG_ERROR("handle error. unique_id: %s, error_code: %d", unique_id.c_str(), error_code);
-    conn_map_.erase(unique_id);
+    LOG_ERROR("handle error. unique_id: %s, error_code: %d", unique_id.c_str(), error_code);
+    // Reverse-lookup: HandleError still uses the human-readable unique_id
+    // string so the user-supplied error_handler_ keeps a stable identity,
+    // but conn_map_ is now keyed by IQuicConnection pointer (see
+    // OnConnection above for why). Walk the map and erase by matching the
+    // ServerConnection's stored unique_id. We hold the lock for the whole
+    // walk so a concurrent OnConnection insert/erase from another worker
+    // thread cannot invalidate our iterator mid-traversal.
+    {
+        std::lock_guard<std::mutex> lock(conn_map_mu_);
+        for (auto it = conn_map_.begin(); it != conn_map_.end(); ++it) {
+            if (it->second && it->second->GetUniqueId() == unique_id) {
+                conn_map_.erase(it);
+                break;
+            }
+        }
+    }
     if (error_handler_) {
         error_handler_(unique_id, error_code);
     }

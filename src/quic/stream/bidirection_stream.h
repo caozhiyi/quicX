@@ -39,6 +39,11 @@ public:
     // if you don't care about send data detail, you may not set the callback.
     virtual void SetStreamWriteCallBack(stream_write_callback cb) override;
 
+    // Forward to SendStream — reports bytes currently queued in the send
+    // buffer awaiting transmission. Used by HTTP/3 streaming body provider
+    // to apply backpressure (see ReqRespBaseStream::HandleSent).
+    virtual uint64_t GetPendingSendBytes() override { return SendStream::GetPendingSendBytes(); }
+
     // when there are some data received, the callback function will be called.
     // the callback function will be called in the recv thread. so you should not do any blocking operation in the
     // callback function. you should set the callback function firstly, otherwise the data received will be discarded.

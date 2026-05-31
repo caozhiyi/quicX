@@ -67,7 +67,7 @@ void BidirectionStream::Reset(uint32_t error) {
         CheckStreamClose();
     } else {
         // error == 0 is not a valid use of Reset() API (normal close should use Close())
-        common::LOG_WARN("BidirectionStream::Reset called with error=0, use Close() instead. stream id:%d", stream_id_);
+        LOG_WARN("BidirectionStream::Reset called with error=0, use Close() instead. stream id:%d", stream_id_);
     }
 }
 
@@ -125,7 +125,7 @@ uint32_t BidirectionStream::OnFrame(std::shared_ptr<IFrame> frame) {
                 CheckStreamClose();
                 return result;
             } else {
-                common::LOG_ERROR("unexpected frame on recv stream. frame type:%d", frame_type);
+                LOG_ERROR("unexpected frame on recv stream. frame type:%d", frame_type);
             }
     }
     return result;
@@ -165,7 +165,7 @@ void BidirectionStream::CheckStreamClose() {
     // Both directions must be in terminal state (AND not OR)
     if (send_terminal && recv_terminal) {
         if (stream_close_cb_) {
-            common::LOG_DEBUG("bidirection stream fully closed. stream id:%d", stream_id_);
+            LOG_DEBUG("bidirection stream fully closed. stream id:%d", stream_id_);
             stream_close_cb_(stream_id_);
         }
     }

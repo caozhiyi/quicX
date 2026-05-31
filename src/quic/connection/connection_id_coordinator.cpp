@@ -69,7 +69,7 @@ void ConnectionIDCoordinator::RetireConnectionId(ConnectionID& id) {
 
 uint64_t ConnectionIDCoordinator::GetConnectionIDHash() const {
     if (!local_conn_id_manager_) {
-        common::LOG_ERROR("ConnectionIDCoordinator::GetConnectionIDHash: local_conn_id_manager_ is null");
+        LOG_ERROR("ConnectionIDCoordinator::GetConnectionIDHash: local_conn_id_manager_ is null");
         return 0;
     }
     return local_conn_id_manager_->GetCurrentID().Hash();
@@ -77,7 +77,7 @@ uint64_t ConnectionIDCoordinator::GetConnectionIDHash() const {
 
 std::vector<uint64_t> ConnectionIDCoordinator::GetAllLocalCIDHashes() const {
     if (!local_conn_id_manager_) {
-        common::LOG_ERROR("ConnectionIDCoordinator::GetAllLocalCIDHashes: local_conn_id_manager_ is null");
+        LOG_ERROR("ConnectionIDCoordinator::GetAllLocalCIDHashes: local_conn_id_manager_ is null");
         return std::vector<uint64_t>();
     }
     return local_conn_id_manager_->GetAllIDHashes();
@@ -109,7 +109,7 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
     // Also cap by kMaxLocalCIDPoolSize - current_count to avoid over-generating beyond our own max
     to_generate = std::min<size_t>(to_generate, kMaxLocalCIDPoolSize - current_count);
 
-    common::LOG_DEBUG("ConnectionIDCoordinator: replenishing local CID pool: current=%zu, generating=%zu",
+    LOG_DEBUG("ConnectionIDCoordinator: replenishing local CID pool: current=%zu, generating=%zu",
         current_count, to_generate);
 
     for (size_t i = 0; i < to_generate; ++i) {
@@ -142,14 +142,14 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
             QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
         }
 
-        common::LOG_DEBUG("ConnectionIDCoordinator: generated NEW_CONNECTION_ID: seq=%llu, len=%d",
+        LOG_DEBUG("ConnectionIDCoordinator: generated NEW_CONNECTION_ID: seq=%llu, len=%d",
             new_cid.GetSequenceNumber(), new_cid.GetLength());
     }
 }
 
 bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
     if (!remote_conn_id_manager_) {
-        common::LOG_ERROR("ConnectionIDCoordinator::RotateRemoteConnectionID: remote_conn_id_manager_ is null");
+        LOG_ERROR("ConnectionIDCoordinator::RotateRemoteConnectionID: remote_conn_id_manager_ is null");
         return false;
     }
 
@@ -158,7 +158,7 @@ bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
 
     // Switch to next remote CID
     if (!remote_conn_id_manager_->UseNextID()) {
-        common::LOG_WARN("ConnectionIDCoordinator::RotateRemoteConnectionID: no next CID available");
+        LOG_WARN("ConnectionIDCoordinator::RotateRemoteConnectionID: no next CID available");
         return false;
     }
 
@@ -179,7 +179,7 @@ bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
         QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
     }
 
-    common::LOG_DEBUG("ConnectionIDCoordinator: rotated remote CID, retired seq=%llu", old_cid.GetSequenceNumber());
+    LOG_DEBUG("ConnectionIDCoordinator: rotated remote CID, retired seq=%llu", old_cid.GetSequenceNumber());
 
     return true;
 }

@@ -55,11 +55,20 @@ void QpackBlockedRegistry::Remove(uint64_t key) {
 }
 
 void QpackBlockedRegistry::NotifyAll() {
-    for (auto& kv : pending_) {
-        kv.second();
-    }
-    pending_.clear();
+    // Swap out the current pending set so that callbacks may re-Add
+    // themselves (or other entries) without iterator invalidation and,
+    // crucially, without being silently dropped if their decode still
+    // can't proceed.  RFC 9204 §2.1.4: a header block remains blocked
+    // until the decoder's Required Insert Count is met; one IIC may not
+    // be enough to unblock every pending section.
+    std::unordered_map<uint64_t, std::function<void()>> snapshot;
+    snapshot.swap(pending_);
     by_stream_.clear();
+    for (auto& kv : snapshot) {
+        if (kv.second) {
+            kv.second();
+        }
+    }
 }
 
 bool QpackBlockedRegistry::AckByStreamId(uint64_t stream_id) {

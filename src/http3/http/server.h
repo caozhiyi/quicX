@@ -2,6 +2,7 @@
 #define HTTP3_HTTP_SERVER
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
@@ -64,7 +65,31 @@ private:
     std::shared_ptr<IQuicServer> quic_;
 
     std::shared_ptr<Router> router_;
-    std::unordered_map<std::string, std::shared_ptr<ServerConnection>> conn_map_;
+    // conn_map_ is keyed by the underlying IQuicConnection* (raw pointer
+    // identity), NOT by the human-readable "addr:port" unique_id. The
+    // unique_id form is unsafe under benchmark workloads where many
+    // concurrent QUIC connections legitimately share the same addr:port
+    // tuple (loopback ephemeral-port reuse, NAT, multi-stream client) and
+    // would either silently overwrite live entries on insert or erase the
+    // wrong, healthy connection on close — which manifested as a 5-10s
+    // stall + cascading "connection close. error: 0, reason:" storm in
+    // long perf runs (see analysis 2026-05-29). The unique_id string is
+    // still kept on each ServerConnection (GetUniqueId()) and used by
+    // HandleError() / the user-facing error_handler_ for human-readable
+    // reporting.
+    //
+    // Thread-safety: in multi-thread mode QuicServer dispatches connection
+    // state callbacks from per-worker event-loop threads. OnConnection is
+    // therefore invoked from many worker threads concurrently for distinct
+    // connections, all touching this same map (insert on accept, erase on
+    // close). HandleError walks the map from yet another thread context.
+    // TSan confirmed all three call sites racing on the underlying
+    // _Hashtable. We serialise every access through conn_map_mu_; the
+    // critical sections are short (a hash insert/erase/find) so a plain
+    // mutex is plenty — there is no high-frequency read path here that
+    // would benefit from a shared_mutex like the client's hot lookup.
+    mutable std::mutex conn_map_mu_;
+    std::unordered_map<void*, std::shared_ptr<ServerConnection>> conn_map_;
 
     std::vector<http_handler> before_middlewares_;
     std::vector<http_handler> after_middlewares_;

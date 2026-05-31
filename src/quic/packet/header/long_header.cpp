@@ -46,7 +46,7 @@ bool LongHeader::EncodeHeader(std::shared_ptr<common::IBuffer> buffer) {
 
     uint32_t need_size = EncodeHeaderSize();
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -80,7 +80,7 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
 
     // check flag fixed bit
     if (!HeaderFlag::GetLongHeaderFlag().fix_bit_) {
-        common::LOG_ERROR("quic fixed bit is not set");
+        LOG_ERROR("quic fixed bit is not set");
         return false;
     }
 
@@ -107,7 +107,7 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
     // decode dcid
     wrapper.DecodeFixedUint8(destination_connection_id_length_);
     if (destination_connection_id_length_ > kMaxConnectionLength) {
-        common::LOG_ERROR("destination connection id length exceeds maximum. length:%d, max:%d",
+        LOG_ERROR("destination connection id length exceeds maximum. length:%d, max:%d",
             destination_connection_id_length_, kMaxConnectionLength);
         return false;
     }
@@ -119,7 +119,7 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
     // decode scid
     wrapper.DecodeFixedUint8(source_connection_id_length_);
     if (source_connection_id_length_ > kMaxConnectionLength) {
-        common::LOG_ERROR("source connection id length exceeds maximum. length:%d, max:%d",
+        LOG_ERROR("source connection id length exceeds maximum. length:%d, max:%d",
             source_connection_id_length_, kMaxConnectionLength);
         return false;
     }

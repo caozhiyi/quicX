@@ -191,7 +191,7 @@ public:
      * @param send_control Send control (for recording packet send event)
      * @return BuildResult with success status, packet, packet number, and size
      */
-    BuildResult BuildDataPacket(const DataPacketContext& ctx, std::shared_ptr<common::IBuffer> output_buffer,
+    BuildResult BuildDataPacket(const DataPacketContext& ctx, const std::shared_ptr<common::IBuffer>& output_buffer,
         PacketNumber& packet_number, SendControl& send_control);
 
     /**
@@ -210,10 +210,10 @@ public:
      * @param send_control Send control
      * @return BuildResult with success status and packet info
      */
-    BuildResult BuildAckPacket(EncryptionLevel level, std::shared_ptr<ICryptographer> cryptographer,
-        std::shared_ptr<IFrame> ack_frame, ConnectionIDManager* local_cid_mgr, ConnectionIDManager* remote_cid_mgr,
-        std::shared_ptr<common::IBuffer> output_buffer, PacketNumber& packet_number, SendControl& send_control,
-        uint32_t quic_version = 0, uint8_t key_phase = 0);
+    BuildResult BuildAckPacket(EncryptionLevel level, const std::shared_ptr<ICryptographer>& cryptographer,
+        const std::shared_ptr<IFrame>& ack_frame, ConnectionIDManager* local_cid_mgr,
+        ConnectionIDManager* remote_cid_mgr, const std::shared_ptr<common::IBuffer>& output_buffer,
+        PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0, uint8_t key_phase = 0);
 
     /**
      * @brief Build a single-frame packet for immediate sending
@@ -231,9 +231,9 @@ public:
      * @param send_control Send control
      * @return BuildResult with success status and packet info
      */
-    BuildResult BuildImmediatePacket(std::shared_ptr<IFrame> frame, EncryptionLevel level,
-        std::shared_ptr<ICryptographer> cryptographer, ConnectionIDManager* local_cid_mgr,
-        ConnectionIDManager* remote_cid_mgr, std::shared_ptr<common::IBuffer> output_buffer,
+    BuildResult BuildImmediatePacket(const std::shared_ptr<IFrame>& frame, EncryptionLevel level,
+        const std::shared_ptr<ICryptographer>& cryptographer, ConnectionIDManager* local_cid_mgr,
+        ConnectionIDManager* remote_cid_mgr, const std::shared_ptr<common::IBuffer>& output_buffer,
         PacketNumber& packet_number, SendControl& send_control, uint32_t quic_version = 0, uint8_t key_phase = 0);
 
 private:
@@ -258,7 +258,7 @@ private:
      * @param local_cid_manager Local connection ID manager
      * @param remote_cid_manager Remote connection ID manager
      */
-    void SetConnectionIDs(std::shared_ptr<IPacket> packet, ConnectionIDManager* local_cid_manager,
+    void SetConnectionIDs(const std::shared_ptr<IPacket>& packet, ConnectionIDManager* local_cid_manager,
         ConnectionIDManager* remote_cid_manager);
 
     /**
@@ -270,7 +270,7 @@ private:
      * @param packet Initial packet to configure
      * @param ctx Build context with token and padding settings
      */
-    void HandleInitialPacketRequirements(std::shared_ptr<IPacket> packet, const BuildContext& ctx);
+    void HandleInitialPacketRequirements(const std::shared_ptr<IPacket>& packet, const BuildContext& ctx);
 };
 
 }  // namespace quic

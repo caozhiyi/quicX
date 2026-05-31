@@ -20,7 +20,7 @@ bool AckFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint32_t need_size = EncodeSize();
 
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -45,7 +45,7 @@ bool AckFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
 
 bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     uint32_t buffer_len_before = buffer->GetDataLength();
-    common::LOG_DEBUG("AckFrame::Decode START: buffer_len=%u, with_type=%d", buffer_len_before, with_type);
+    LOG_DEBUG("AckFrame::Decode START: buffer_len=%u, with_type=%d", buffer_len_before, with_type);
 
     {
         common::BufferDecodeWrapper wrapper(buffer);
@@ -54,7 +54,7 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
             CHECK_DECODE_ERROR(wrapper.DecodeVarint(type), "failed to decode frame type");
             frame_type_ = static_cast<uint16_t>(type);
             if (frame_type_ != FrameType::kAck && frame_type_ != FrameType::kAckEcn) {
-                common::LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
+                LOG_ERROR("invalid frame type. frame_type:%d", frame_type_);
                 return false;
             }
         }
@@ -70,7 +70,7 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
         // A reasonable upper bound: no more than 256 ACK ranges in a single frame.
         static constexpr uint64_t kMaxAckRangeCount = 256;
         if (ack_range_count > kMaxAckRangeCount) {
-            common::LOG_ERROR("ack range count too large. count:%llu, max:%llu", ack_range_count, kMaxAckRangeCount);
+            LOG_ERROR("ack range count too large. count:%llu, max:%llu", ack_range_count, kMaxAckRangeCount);
             return false;
         }
 
@@ -86,7 +86,7 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
     }  // wrapper destroyed here, Flush() called
 
     uint32_t buffer_len_after = buffer->GetDataLength();
-    common::LOG_DEBUG("AckFrame::Decode END: buffer_len=%u, consumed=%u, ranges=%lu", buffer_len_after,
+    LOG_DEBUG("AckFrame::Decode END: buffer_len=%u, consumed=%u, ranges=%lu", buffer_len_after,
         buffer_len_before - buffer_len_after, ack_ranges_.size());
     return true;
 }
@@ -138,7 +138,7 @@ bool AckEcnFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     auto span = buffer->GetWritableSpan();
     auto remain_size = span.GetLength();
     if (total_ecn_size > remain_size) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, total_ecn_size);
         return false;
     }

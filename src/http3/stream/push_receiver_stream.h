@@ -22,7 +22,7 @@ namespace http3 {
  */
 class PushReceiverStream: public IRecvStream {
 public:
-    PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpack_decoder,
         const std::shared_ptr<IQuicRecvStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
         const http_response_handler& response_handler);
@@ -41,7 +41,7 @@ private:
         kReadingFrames   // Reading HTTP3 frames (HEADERS + DATA)
     };
 
-    std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackEncoder> qpack_decoder_;  // RFC 9204: use decoder table for incoming headers
 
     http_response_handler response_handler_;
 

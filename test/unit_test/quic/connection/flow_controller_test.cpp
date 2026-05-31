@@ -229,7 +229,13 @@ TEST_F(SendFlowControllerTest, CanCreateUniStreamBlocksAtLimit) {
 class RecvFlowControllerTest: public ::testing::Test {
 protected:
     void SetUp() override {
-        controller_ = std::make_unique<RecvFlowController>();
+        // Pretend we are the client; this fixture's tests all send the
+        // controller PEER-initiated stream IDs, which for a client means
+        // the server-initiated half (low bit = 1). RecvFlowController
+        // requires the local role explicitly so that
+        // OnStreamCreated can distinguish self- from peer-initiated
+        // streams (RFC 9000 §4.6, see comment in implementation).
+        controller_ = std::make_unique<RecvFlowController>(StreamIDGenerator::kClient);
 
         // Set up transport parameters with typical values
         QuicTransportParams config;
@@ -405,14 +411,52 @@ TEST_F(RecvFlowControllerTest, OnStreamCreatedHandlesBothTypesIndependently) {
     EXPECT_FALSE(controller_->OnStreamCreated(3 + (uni_limit * 4), max_streams_frame));
 }
 
+// Regression test for RFC 9000 §4.6 / OnStreamCreated self-vs-peer
+// distinction. The fixture's local role is `kClient`, so client-initiated
+// stream IDs (low bit = 0) are *locally-initiated* and must NOT be
+// charged against the MAX_STREAMS budget we advertised to the peer --
+// even when we feed in stream IDs that would otherwise be far past the
+// advertised limit (10).
+TEST_F(RecvFlowControllerTest, OnStreamCreatedSkipsLocallyInitiatedStreams) {
+    std::shared_ptr<IFrame> max_streams_frame;
+
+    // Client-initiated bidi IDs: 0, 4, 8, ... (bit 0 = 0, bit 1 = 0).
+    // Push 50 of them in -- well beyond max_streams_bidi_ = 10.
+    for (uint64_t i = 0; i < 50; ++i) {
+        uint64_t stream_id = i * 4;  // 0, 4, 8, ..., 196
+        EXPECT_TRUE(controller_->OnStreamCreated(stream_id, max_streams_frame))
+            << "locally-initiated bidi stream " << stream_id
+            << " was charged against MAX_STREAMS_BIDI";
+    }
+
+    // Client-initiated uni IDs: 2, 6, 10, ... (bit 0 = 0, bit 1 = 1).
+    for (uint64_t i = 0; i < 50; ++i) {
+        uint64_t stream_id = 2 + i * 4;
+        EXPECT_TRUE(controller_->OnStreamCreated(stream_id, max_streams_frame))
+            << "locally-initiated uni stream " << stream_id
+            << " was charged against MAX_STREAMS_UNI";
+    }
+
+    // The advertised limits must not have moved -- a self-initiated
+    // stream must never trigger a MAX_STREAMS frame either.
+    EXPECT_EQ(controller_->GetMaxStreamsBidi(), 10u);
+    EXPECT_EQ(controller_->GetMaxStreamsUni(), 10u);
+}
+
 // ============================================================================
 // Integration Test: Send and Receive Flow Controllers Working Together
 // ============================================================================
 
 TEST(FlowControllerIntegrationTest, SendAndReceiveWorkTogether) {
-    // Simulate client and server flow control
+    // Simulate client and server flow control. The send_controller plays
+    // the client (it sends), the recv_controller plays the server (it
+    // receives). The recv_controller must therefore be constructed as
+    // the *server* role -- otherwise OnStreamCreated would treat the
+    // incoming client-initiated stream IDs as locally-initiated and skip
+    // their MAX_STREAMS budget, masking exactly the bug this test is
+    // supposed to exercise (RFC 9000 §4.6).
     SendFlowController send_controller(StreamIDGenerator::StreamStarter::kClient);
-    RecvFlowController recv_controller;
+    RecvFlowController recv_controller(StreamIDGenerator::StreamStarter::kServer);
 
     // Client's send limits (from server's transport parameters)
     QuicTransportParams config;

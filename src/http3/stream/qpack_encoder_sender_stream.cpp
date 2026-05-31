@@ -39,7 +39,7 @@ bool QpackEncoderSenderStream::SendInstructions(const std::vector<std::pair<std:
     enc.EncodeEncoderInstructions(inserts, send_buf);
 
     if (!stream_->Flush()) {
-        common::LOG_ERROR("QpackEncoderSenderStream::SendInstructions: flush failed");
+        LOG_ERROR("QpackEncoderSenderStream::SendInstructions: flush failed");
         return false;
     }
     return true;

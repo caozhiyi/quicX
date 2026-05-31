@@ -72,7 +72,7 @@ TimerCoordinator::~TimerCoordinator() {
 void TimerCoordinator::StartIdleTimer(IdleTimeoutCallback callback) {
     auto loop = event_loop_.lock();
     if (!loop) {
-        common::LOG_ERROR("TimerCoordinator::StartIdleTimer: event_loop_ expired");
+        LOG_ERROR("TimerCoordinator::StartIdleTimer: event_loop_ expired");
         return;
     }
 
@@ -80,14 +80,14 @@ void TimerCoordinator::StartIdleTimer(IdleTimeoutCallback callback) {
 
     uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
     if (timeout_ms == 0) {
-        common::LOG_WARN("TimerCoordinator::StartIdleTimer: idle timeout is 0, timer not started");
+        LOG_WARN("TimerCoordinator::StartIdleTimer: idle timeout is 0, timer not started");
         return;
     }
 
     loop->AddTimer(idle_timeout_task_, timeout_ms, 0);
     idle_timer_active_ = true;
 
-    common::LOG_DEBUG("TimerCoordinator: idle timer started with timeout %u ms", timeout_ms);
+    LOG_DEBUG("TimerCoordinator: idle timer started with timeout %u ms", timeout_ms);
 }
 
 void TimerCoordinator::ResetIdleTimer() {
@@ -97,18 +97,40 @@ void TimerCoordinator::ResetIdleTimer() {
 
     auto loop = event_loop_.lock();
     if (!loop) {
-        common::LOG_ERROR("TimerCoordinator::ResetIdleTimer: event_loop_ expired");
+        LOG_ERROR("TimerCoordinator::ResetIdleTimer: event_loop_ expired");
         return;
     }
 
-    // Remove old timer
-    loop->RemoveTimer(idle_timeout_task_);
-
-    // Add new timer
     uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
-    loop->AddTimer(idle_timeout_task_, timeout_ms, 0);
 
-    common::LOG_DEBUG("TimerCoordinator: idle timer reset");
+    // Cross-thread safety (companion to StopIdleTimer / ~TimerCoordinator).
+    // ResetIdleTimer is invoked on every packet processed AND on connection
+    // close paths. While the steady-state caller is OnPackets running on the
+    // owning worker EventLoop, the close paths (e.g. handshake watchdog ->
+    // CloseInternal -> SendConnectionClose -> packet send -> idle reset, or
+    // master-thread teardown) can land here from a foreign thread. Direct
+    // RemoveTimer/AddTimer would trip EventLoop::AssertInLoopThread() and
+    // emit a [FATAL] "EventLoop accessed from wrong thread!" log without
+    // aborting, leaving the timer set in an inconsistent state and causing
+    // cascading CONNECTION_CLOSE storms across all connections of the
+    // affected worker. (See docs analysis 2026-05-29.)
+    if (loop->IsInLoopThread()) {
+        loop->RemoveTimer(idle_timeout_task_);
+        loop->AddTimer(idle_timeout_task_, timeout_ms, 0);
+    } else {
+        uint64_t task_id = idle_timeout_task_.GetId();
+        auto cb = idle_timeout_task_.tcb_;
+        loop->RunInLoop([loop, task_id, cb, timeout_ms]() {
+            common::TimerTask probe;
+            probe.SetIdForTest(task_id);
+            loop->RemoveTimer(probe);
+            common::TimerTask reinstall(cb);
+            reinstall.SetIdForTest(task_id);
+            loop->AddTimer(reinstall, timeout_ms, 0);
+        });
+    }
+
+    LOG_DEBUG("TimerCoordinator: idle timer reset");
 }
 
 void TimerCoordinator::StopIdleTimer() {
@@ -118,7 +140,7 @@ void TimerCoordinator::StopIdleTimer() {
 
     auto loop = event_loop_.lock();
     if (!loop) {
-        common::LOG_ERROR("TimerCoordinator::StopIdleTimer: event_loop_ expired");
+        LOG_ERROR("TimerCoordinator::StopIdleTimer: event_loop_ expired");
         return;
     }
 
@@ -139,7 +161,7 @@ void TimerCoordinator::StopIdleTimer() {
     }
     idle_timer_active_ = false;
 
-    common::LOG_DEBUG("TimerCoordinator: idle timer stopped");
+    LOG_DEBUG("TimerCoordinator: idle timer stopped");
 }
 
 void TimerCoordinator::OnIdleTimeoutInternal() {
@@ -148,7 +170,7 @@ void TimerCoordinator::OnIdleTimeoutInternal() {
     // Metrics: idle timeout counter
     common::Metrics::CounterInc(common::MetricsStd::IdleTimeoutTotal);
 
-    common::LOG_INFO("TimerCoordinator: idle timeout triggered");
+    LOG_INFO("TimerCoordinator: idle timeout triggered");
 
     // Invoke user callback
     if (idle_timeout_callback_) {
@@ -169,7 +191,7 @@ void TimerCoordinator::CheckPTOTimeout() {
 
     // RFC 9002: Close connection after persistent timeout (~3 PTO cycles)
     if (consecutive_ptos >= RttCalculator::kMaxConsecutivePTOs) {
-        common::LOG_WARN(
+        LOG_WARN(
             "TimerCoordinator: persistent timeout detected (%u consecutive PTOs without ACK)", consecutive_ptos);
 
         // Metrics: PTO counter
@@ -193,7 +215,7 @@ void TimerCoordinator::OnThreadTransferBefore() {
     // Remove idle timeout timer from old EventLoop
     if (idle_timer_active_) {
         loop->RemoveTimer(idle_timeout_task_);
-        common::LOG_DEBUG("TimerCoordinator: removed idle timer for thread transfer");
+        LOG_DEBUG("TimerCoordinator: removed idle timer for thread transfer");
     }
 }
 
@@ -207,7 +229,7 @@ void TimerCoordinator::OnThreadTransferAfter() {
     if (idle_timer_active_) {
         uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
         loop->AddTimer(idle_timeout_task_, timeout_ms, 0);
-        common::LOG_DEBUG("TimerCoordinator: re-added idle timer after thread transfer");
+        LOG_DEBUG("TimerCoordinator: re-added idle timer after thread transfer");
     }
 }
 
@@ -216,7 +238,7 @@ void TimerCoordinator::OnThreadTransferAfter() {
 uint64_t TimerCoordinator::AddTimer(TimerCallback callback, uint32_t timeout_ms) {
     auto loop = event_loop_.lock();
     if (!loop) {
-        common::LOG_ERROR("TimerCoordinator::AddTimer: event_loop_ expired");
+        LOG_ERROR("TimerCoordinator::AddTimer: event_loop_ expired");
         return 0;
     }
 
@@ -228,12 +250,12 @@ uint64_t TimerCoordinator::AddTimer(TimerCallback callback, uint32_t timeout_ms)
 void TimerCoordinator::RemoveTimer(uint64_t timer_id) {
     auto loop = event_loop_.lock();
     if (!loop) {
-        common::LOG_ERROR("TimerCoordinator::RemoveTimer: event_loop_ expired");
+        LOG_ERROR("TimerCoordinator::RemoveTimer: event_loop_ expired");
         return;
     }
 
     loop->RemoveTimer(timer_id);
-    common::LOG_DEBUG("TimerCoordinator: removed user timer %llu", timer_id);
+    LOG_DEBUG("TimerCoordinator: removed user timer %llu", timer_id);
 }
 
 }  // namespace quic

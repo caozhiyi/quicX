@@ -11,6 +11,8 @@
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
 
+#include "test_server_helper.h"
+
 class HTTP3MethodsTest: public ::testing::Test {
 protected:
     std::shared_ptr<quicx::IServer> server_;
@@ -23,9 +25,13 @@ protected:
     static const char key_pem_[];
 
     void SetUp() override {
-        // Use different port for each test to avoid bind conflicts
-        port_ = next_port_.fetch_add(1);
-        
+        // Pick a port the kernel is currently willing to bind. Without this
+        // probe, stale processes from previous (crashed) runs may hold a port
+        // in our reserved range; the server would then silently fail to
+        // bind() and every request would hang for connection_timeout_ms_.
+        port_ = quicx::test::ProbeFreeUdpPort(next_port_);
+        ASSERT_NE(port_, 0u) << "failed to find a free UDP port for test server";
+
         // Create and configure server
         server_ = quicx::IServer::Create();
 
@@ -39,11 +45,11 @@ protected:
 
         RegisterHandlers();
 
-        // Start server in background
-        server_thread_ = std::thread([this]() { server_->Start("127.0.0.1", port_); });
-
-        // Wait for server to start
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // Start server synchronously: Start() returns only after the master
+        // event loop has bound the UDP socket and registered it with the
+        // event driver. Doing this on the main thread surfaces any bind
+        // failure as a fixture ASSERT instead of an opaque request timeout.
+        ASSERT_TRUE(server_->Start("127.0.0.1", port_));
 
         // Create and configure client
         client_ = quicx::IClient::Create();
@@ -59,10 +65,14 @@ protected:
 
     void TearDown() override {
         // Stop server and wait for all threads to complete
-        server_->Stop();
-        server_->Join();  // Wait for internal worker threads
+        if (server_) {
+            server_->Stop();
+            server_->Join();  // Wait for internal worker threads
+        }
         if (server_thread_.joinable()) {
-            server_thread_.join();  // Wait for Start() to return
+            // Defensive: kept for backwards compatibility; Start() is now
+            // synchronous so this thread is never spawned in this fixture.
+            server_thread_.join();
         }
         // Clean up client
         client_.reset();

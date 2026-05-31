@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "common/network/address.h"
 
@@ -18,6 +19,7 @@ namespace quic {
 // Forward declarations
 class ISender;
 class IConnection;
+class NetPacket;
 
 // Aggregates all connection-level callbacks to reduce constructor parameter count
 struct ConnectionCallbacks {
@@ -63,6 +65,13 @@ public:
     virtual bool TrySend() = 0;
     // Set sender for direct packet transmission (used by tests)
     virtual void SetSender(std::shared_ptr<ISender> sender) {}
+    // Install (or clear with nullptr) a per-drain-round batch sink. When
+    // installed, TrySend()-driven SendBuffer calls append the built
+    // NetPackets to the sink rather than calling sender_->Send() directly,
+    // so the worker can issue a single sendmmsg(2) over the whole drain
+    // round. Default implementation is a no-op for connection types that
+    // never go through Worker::ProcessSend (e.g. mock/test connections).
+    virtual void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* /*sink*/) {}
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
     // provide ECN value for the next OnPackets call (per received datagram)
     virtual void SetPendingEcn(uint8_t ecn) = 0;

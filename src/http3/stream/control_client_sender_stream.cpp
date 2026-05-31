@@ -28,11 +28,11 @@ bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {
 
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
     if (!frame.Encode(buffer)) {
-        common::LOG_ERROR("ControlClientSenderStream::SendMaxPushId: Failed to encode MaxPushIdFrame");
+        LOG_ERROR("ControlClientSenderStream::SendMaxPushId: Failed to encode MaxPushIdFrame");
         error_handler_(0, Http3ErrorCode::kMessageError);
         return false;
     }
-    common::LOG_DEBUG("ControlClientSenderStream::SendMaxPushId: max_push_id=%llu, buffer length=%llu", push_id,
+    LOG_DEBUG("ControlClientSenderStream::SendMaxPushId: max_push_id=%llu, buffer length=%llu", push_id,
         buffer->GetDataLength());
     return stream_->Flush();
 }
@@ -47,7 +47,7 @@ bool ControlClientSenderStream::SendCancelPush(uint64_t push_id) {
 
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
     if (!frame.Encode(buffer)) {
-        common::LOG_ERROR("ControlClientSenderStream::SendCancelPush: Failed to encode CancelPushFrame");
+        LOG_ERROR("ControlClientSenderStream::SendCancelPush: Failed to encode CancelPushFrame");
         error_handler_(0, Http3ErrorCode::kInternalError);
         return false;
     }

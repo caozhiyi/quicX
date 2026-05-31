@@ -29,16 +29,24 @@ public:
 
     bool Valid() const override { return data_ != nullptr; }
     uint8_t* GetData() const override { return data_; }
-    void SetLimitSize(uint32_t size) override { limit_size_ = size; }
-    uint32_t GetLength() const override { return std::min(length_, limit_size_); }
+    // Physical block size; immutable for the chunk's lifetime (invariant 2).
+    uint32_t GetLength() const override { return length_; }
     std::shared_ptr<BlockMemoryPool> GetPool() const override { return nullptr; }
+
+    // ----- Zero-copy invariant 1 (write-floor / freeze) --------------------
+    void FreezeUpTo(uint8_t* end) override;
+    void Unfreeze(uint8_t* end) override;
+    uint8_t* GetWriteFloor() const override;
 
 private:
     void Release();
 
     uint8_t* data_ = nullptr;
     uint32_t length_ = 0;
-    uint32_t limit_size_ = 0;
+
+    // See BufferChunk for the semantics of write_floor_offset_/freeze_count_.
+    uint32_t write_floor_offset_ = 0;
+    uint32_t freeze_count_ = 0;
 };
 
 }  // namespace common

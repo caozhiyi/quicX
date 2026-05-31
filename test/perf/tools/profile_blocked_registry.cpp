@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--keep-log")) mute_log = false;
     }
     if (mute_log) {
-        common::LOG_SET_LEVEL(common::LogLevel::kNull);
+        LOG_SET_LEVEL(common::LogLevel::kNull);
     }
 
     std::fprintf(stderr, "profile_blocked_registry: N=%d pending streams\n", n_pending);
@@ -68,7 +68,8 @@ int main(int argc, char** argv) {
     const auto deadline = t0 + std::chrono::seconds(seconds);
     while (std::chrono::steady_clock::now() < deadline) {
         http3::QpackBlockedRegistry reg;
-        reg.SetMaxBlockedStreams(0);  // unlimited
+        // Default-constructed registry is unlimited (no SetMaxBlockedStreams
+        // call), which matches what the profiler wants.
         // Fill
         for (int i = 0; i < n_pending; ++i) {
             uint64_t key = (static_cast<uint64_t>(i) << 32);

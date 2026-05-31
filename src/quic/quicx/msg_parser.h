@@ -17,9 +17,15 @@ struct PacketParseResult {
     std::vector<std::shared_ptr<IPacket>> packets_;
     uint32_t datagram_size_ = 0;  // Original UDP datagram size before DecodePackets consumes the buffer
 
-    PacketParseResult() = default;
-    PacketParseResult(const PacketParseResult& other);
-    PacketParseResult& operator=(const PacketParseResult& other);
+    // Rule of Zero: rely on compiler-generated copy/move/dtor.
+    // NOTE: previously this struct declared a user-defined copy ctor / copy assign
+    // (with bodies that were byte-for-byte equivalent to the defaults). Per Rule of
+    // Five, that *suppressed* the implicit move ctor / move assign, which caused
+    // std::move(packet_info) inside ThreadSafeBlockQueue::Emplace to silently
+    // degrade into a deep copy. Each "phantom copy" leaked refcount on
+    // net_packet_ and every shared_ptr in packets_, pinning NetPacket and its
+    // BufferChunk forever. Confirmed by heaptrack: ~92MB out of 132MB total
+    // leak traced to PacketParseResult copy ctor inside deque::emplace_back.
 };
 
 // Msg parser

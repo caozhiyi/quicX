@@ -40,10 +40,24 @@ void* BlockMemoryPool::PoolLargeMalloc() {
 }
 
 void BlockMemoryPool::PoolLargeFree(void*& m) {
+    // Fast path: same-thread free (the common case).
+    //
+    // BlockMemoryPool is held in a thread_local on each QUIC worker, and so
+    // is the worker's IEventLoop. BufferChunk objects are allocated and
+    // released by the same worker that owns the pool, so the vast majority
+    // of PoolLargeFree calls happen on the owning thread. In that case we
+    // skip the RunInLoop wrapper entirely - that wrapper allocates a
+    // std::function (potentially heap), copies a weak_ptr (atomic op), and
+    // re-acquires the shared_ptr inside the lambda (another atomic). All
+    // pure overhead when there is no thread switch.
+    //
+    // Cross-thread fallback (kept for safety): if some unusual teardown
+    // path drops the last BufferChunk reference on a different thread, we
+    // still serialise the free_mem_vec_ mutation back onto the owning
+    // thread via PostTask so the std::vector stays single-threaded.
     auto loop = event_loop_.lock();
-    if (loop) {
-        // Use RunInLoop to defer free operation to owning thread (lock-free!)
-        void* ptr = m;  // Capture by value
+    if (loop && !loop->IsInLoopThread()) {
+        void* ptr = m;
         auto weak_self = weak_from_this();
         loop->RunInLoop([weak_self, ptr]() mutable {
             auto self = weak_self.lock();
@@ -64,11 +78,12 @@ void BlockMemoryPool::PoolLargeFree(void*& m) {
                 self->ReleaseHalf();
             }
         });
-        m = nullptr;  // Clear caller's pointer
+        m = nullptr;
         return;
     }
 
-    // No event loop (testing or thread shutdown) - return to pool directly
+    // Same-thread (or no event loop, e.g. tests / shutdown): mutate the
+    // free list directly. No lambda construction, no atomic ref-count ops.
     free_mem_vec_.push_back(m);
     m = nullptr;
 
@@ -115,7 +130,7 @@ void BlockMemoryPool::Expansion(uint32_t num) {
     for (uint32_t i = 0; i < num; ++i) {
         void* mem = malloc(large_size_);
         if (mem == nullptr) {
-            common::LOG_ERROR("BlockMemoryPool::Expansion: malloc(%u) failed", large_size_);
+            LOG_ERROR("BlockMemoryPool::Expansion: malloc(%u) failed", large_size_);
             break;
         }
         // not memset!

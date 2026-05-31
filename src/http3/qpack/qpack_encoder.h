@@ -14,12 +14,38 @@ namespace http3 {
 
 class QpackEncoder {
 public:
-    QpackEncoder(): dynamic_table_(1024), max_table_capacity_(1024), enable_dynamic_table_(false) {}
+    QpackEncoder(): dynamic_table_(1024), max_table_capacity_(1024),
+        local_max_table_capacity_(1024), peer_max_table_capacity_(0),
+        peer_cap_known_(false), enable_dynamic_table_(false) {}
     ~QpackEncoder() {}
-    
-    // Set the maximum table capacity from SETTINGS_QPACK_MAX_TABLE_CAPACITY
-    void SetMaxTableCapacity(uint32_t max_capacity) { max_table_capacity_ = max_capacity; }
+
+    // RFC 9204 §3.2.3: The encoder's actual table capacity MUST NOT exceed
+    // either side's advertised limit. We therefore split the capacity into:
+    //   - local_max_table_capacity_: the value WE configured locally
+    //   - peer_max_table_capacity_:  the value PEER advertised via SETTINGS
+    //   - max_table_capacity_:       min(local, peer) — only valid once peer
+    //                                SETTINGS have been received.
+    // Init() and SETTINGS handlers can arrive in any order on a real
+    // connection, so both setters recompute the effective cap independently.
+    void SetLocalMaxTableCapacity(uint32_t cap) {
+        local_max_table_capacity_ = cap;
+        RecomputeMaxTableCapacity();
+    }
+    void SetPeerMaxTableCapacity(uint32_t cap) {
+        peer_max_table_capacity_ = cap;
+        peer_cap_known_ = true;
+        RecomputeMaxTableCapacity();
+    }
+    // Backward-compat alias used by older call sites: treat as "configure
+    // local cap" (matches prior single-field semantics). Prefer the
+    // explicit Local/Peer setters above.
+    void SetMaxTableCapacity(uint32_t max_capacity) { SetLocalMaxTableCapacity(max_capacity); }
     uint32_t GetMaxTableCapacity() const { return max_table_capacity_; }
+    uint32_t GetLocalMaxTableCapacity() const { return local_max_table_capacity_; }
+    uint32_t GetPeerMaxTableCapacity() const { return peer_max_table_capacity_; }
+    
+    // Get the current insert count of the dynamic table (monotonically increasing)
+    uint64_t GetInsertCount() const { return dynamic_table_.GetInsertCount(); }
     
     // Enable or disable dynamic table usage (default: enabled for better compression)
     void SetDynamicTableEnabled(bool enabled) { enable_dynamic_table_ = enabled; }
@@ -52,6 +78,28 @@ public:
 
 private:
     void SetEnableDynamicTable(bool enable) { enable_dynamic_table_ = enable; }
+    // Recompute effective max_table_capacity_ from local + peer caps.
+    // Before peer SETTINGS arrive we honour only the local cap so that
+    // outbound encoding can proceed once SETTINGS have been observed; we
+    // still defer actually using the dynamic table until both sides agree
+    // (HandleSettings() flips enable_dynamic_table_).
+    void RecomputeMaxTableCapacity() {
+        if (peer_cap_known_) {
+            max_table_capacity_ = local_max_table_capacity_ < peer_max_table_capacity_
+                ? local_max_table_capacity_ : peer_max_table_capacity_;
+        } else {
+            max_table_capacity_ = local_max_table_capacity_;
+        }
+        // BUGFIX: Keep the underlying DynamicTable's max_size in sync with the
+        // negotiated effective capacity.  Without this, AddHeaderItem rejects
+        // any entry whose size exceeds the *constructor-default* capacity
+        // (1024 bytes) even when SETTINGS negotiated something larger, and
+        // the caller (Encode / DecodeEncoderInstructions) would then emit /
+        // accept a bogus reference to a non-existent entry.  RFC 9204 §3.2.3
+        // requires the encoder/decoder dynamic tables to track the
+        // negotiated cap.
+        dynamic_table_.UpdateMaxTableSize(max_table_capacity_);
+    }
     // Write Required Insert Count and Base per RFC 9204 §4.5; here we set simple values for demo
     void WritePrefix(std::shared_ptr<common::IBuffer> buffer, uint64_t required_insert_count, uint64_t base);
     bool ReadPrefix(const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, uint64_t& base);
@@ -60,7 +108,14 @@ private:
 
 private:
     DynamicTable dynamic_table_;
-    uint32_t max_table_capacity_;  // Maximum table capacity from SETTINGS_QPACK_MAX_TABLE_CAPACITY
+    // Effective cap = min(local, peer). Used by encoding paths.
+    uint32_t max_table_capacity_;
+    // Locally configured cap (set during connection Init from Http3Settings).
+    uint32_t local_max_table_capacity_;
+    // Peer's advertised SETTINGS_QPACK_MAX_TABLE_CAPACITY.
+    uint32_t peer_max_table_capacity_;
+    // True once peer SETTINGS for QPACK cap have been observed.
+    bool peer_cap_known_;
     // Dynamic table enabled by default for better compression (RFC 9204)
     // Can be disabled via SetDynamicTableEnabled() if needed
     bool enable_dynamic_table_ {true};

@@ -7,9 +7,6 @@
 namespace quicx {
 namespace common {
 
-// Attempt to allocate a single block from the provided pool and take ownership
-// of it. This function never throws. Any failure is logged and represented by
-// an invalid chunk (data_ == nullptr, length_ == 0).
 BufferChunk::BufferChunk(const std::shared_ptr<BlockMemoryPool>& pool) {
     if (!pool) {
         LOG_ERROR("pool is nullptr");
@@ -19,11 +16,9 @@ BufferChunk::BufferChunk(const std::shared_ptr<BlockMemoryPool>& pool) {
     pool_ = pool;
     data_ = static_cast<uint8_t*>(pool->PoolLargeMalloc());
     length_ = pool->GetBlockLength();
-    limit_size_ = length_;  // Initialize limit_size_ to full length
 
     if (data_ == nullptr) {
         length_ = 0;
-        limit_size_ = 0;
         LOG_ERROR("failed to allocate memory");
     }
 }
@@ -38,11 +33,13 @@ BufferChunk::BufferChunk(BufferChunk&& other) noexcept {
     pool_ = std::move(other.pool_);
     data_ = other.data_;
     length_ = other.length_;
-    limit_size_ = other.limit_size_;
+    write_floor_offset_ = other.write_floor_offset_;
+    freeze_count_ = other.freeze_count_;
 
     other.data_ = nullptr;
     other.length_ = 0;
-    other.limit_size_ = 0;
+    other.write_floor_offset_ = 0;
+    other.freeze_count_ = 0;
 }
 
 // Move assignment transfers ownership of the block. Any currently owned block
@@ -54,17 +51,62 @@ BufferChunk& BufferChunk::operator=(BufferChunk&& other) noexcept {
         pool_ = std::move(other.pool_);
         data_ = other.data_;
         length_ = other.length_;
-        limit_size_ = other.limit_size_;
+        write_floor_offset_ = other.write_floor_offset_;
+        freeze_count_ = other.freeze_count_;
 
         other.data_ = nullptr;
         other.length_ = 0;
-        other.limit_size_ = 0;
+        other.write_floor_offset_ = 0;
+        other.freeze_count_ = 0;
     }
     return *this;
 }
 
 std::shared_ptr<BlockMemoryPool> BufferChunk::GetPool() const {
     return pool_.lock();
+}
+
+// ----- Zero-copy invariant 1 (write-floor / freeze) ----------------------
+
+// Pin bytes in [data_, end) so subsequent writes cannot touch them. The
+// chunk tracks the highest watermark that any live span has installed,
+// and a reference count of the outstanding spans. When the last span is
+// released the watermark resets, allowing the buffer to be reused fully.
+void BufferChunk::FreezeUpTo(uint8_t* end) {
+    if (!data_ || end == nullptr) {
+        return;
+    }
+    if (end <= data_) {
+        // A span that covers no bytes still increments the ref count so that
+        // Unfreeze() pairs cleanly with the matching ctor.
+        ++freeze_count_;
+        return;
+    }
+    uint32_t offset = static_cast<uint32_t>(end - data_);
+    if (offset > length_) {
+        offset = length_;
+    }
+    if (offset > write_floor_offset_) {
+        write_floor_offset_ = offset;
+    }
+    ++freeze_count_;
+}
+
+void BufferChunk::Unfreeze(uint8_t* /*end*/) {
+    if (freeze_count_ == 0) {
+        return;
+    }
+    --freeze_count_;
+    if (freeze_count_ == 0) {
+        write_floor_offset_ = 0;
+    }
+}
+
+uint8_t* BufferChunk::GetWriteFloor() const {
+    if (!data_) {
+        return nullptr;
+    }
+    return data_ + write_floor_offset_;
 }
 
 // Return the block to the original pool (if the pool is still alive) and clear
@@ -95,7 +137,8 @@ void BufferChunk::Release() {
         // Ensure data_ is cleared even if pool is gone
         data_ = nullptr;
         length_ = 0;
-        limit_size_ = 0;
+        write_floor_offset_ = 0;
+        freeze_count_ = 0;
     }
 
     pool_.reset();

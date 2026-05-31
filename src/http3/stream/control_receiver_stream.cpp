@@ -28,42 +28,42 @@ ControlReceiverStream::~ControlReceiverStream() {
 
 void ControlReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
     if (error != 0) {
-        common::LOG_ERROR("IRecvStream::OnData error: %d", error);
+        LOG_ERROR("IRecvStream::OnData error: %d", error);
         error_handler_(stream_->GetStreamID(), error);
         return;
     }
     size_t total_length = data->GetDataLength();
-    common::LOG_DEBUG("ControlReceiverStream::OnData: data length=%zu, is_last=%d", total_length, is_last);
+    LOG_DEBUG("ControlReceiverStream::OnData: data length=%zu, is_last=%d", total_length, is_last);
 
     // If buffer is empty (e.g., stream closed with FIN), nothing to do
     if (total_length == 0) {
-        common::LOG_DEBUG("ControlReceiverStream::OnData: empty buffer, stream likely closed");
+        LOG_DEBUG("ControlReceiverStream::OnData: empty buffer, stream likely closed");
         return;
     }
 
     // Try parse HTTP/3 frames from unparsed data
     std::vector<std::shared_ptr<IFrame>> frames;
     size_t length_before = data->GetDataLength();
-    common::LOG_DEBUG("ControlReceiverStream::OnData: before DecodeFrames, length_before=%zu", length_before);
+    LOG_DEBUG("ControlReceiverStream::OnData: before DecodeFrames, length_before=%zu", length_before);
     if (frame_decoder_.DecodeFrames(std::dynamic_pointer_cast<common::IBuffer>(data), frames)) {
         size_t length_after = data->GetDataLength();
         // DecodeFrames consumes frame data including the 2-byte frame type for each frame.
         // The consumed length is calculated from buffer length difference.
         size_t consumed = length_before - length_after;
 
-        common::LOG_DEBUG(
+        LOG_DEBUG(
             "ControlReceiverStream::OnData: DecodeFrames succeeded, decoded %zu frames, length_before=%zu, "
             "length_after=%zu, consumed=%zu bytes",
             frames.size(), length_before, length_after, consumed);
         for (const auto& frame : frames) {
-            common::LOG_DEBUG("ControlReceiverStream::OnData: handling frame type=%d", frame->GetType());
+            LOG_DEBUG("ControlReceiverStream::OnData: handling frame type=%d", frame->GetType());
             HandleFrame(frame);
         }
 
     } else {
         // RFC 9114 Section 7: Frame decoding failure on control stream is a connection error
         // Do NOT fall through to QPACK instruction handling with corrupted data
-        common::LOG_ERROR("ControlReceiverStream::OnData: DecodeFrames failed on control stream, "
+        LOG_ERROR("ControlReceiverStream::OnData: DecodeFrames failed on control stream, "
             "closing connection with H3_FRAME_ERROR");
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kFrameError);
     }
@@ -72,7 +72,7 @@ void ControlReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_la
 void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
     // RFC 9114 Section 6.2.1: The first frame on the control stream MUST be a SETTINGS frame
     if (!settings_received_ && frame->GetType() != FrameType::kSettings) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "ControlReceiverStream: First frame on control stream must be SETTINGS, got type: %d", frame->GetType());
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kFrameUnexpected);
         return;
@@ -87,7 +87,7 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
         case FrameType::kSettings: {
             // RFC 9114 Section 7.2.4: SETTINGS frame can only occur once
             if (settings_received_) {
-                common::LOG_ERROR("ControlReceiverStream: Received duplicate SETTINGS frame");
+                LOG_ERROR("ControlReceiverStream: Received duplicate SETTINGS frame");
                 error_handler_(stream_->GetStreamID(), Http3ErrorCode::kSettingsError);
                 return;
             }
@@ -99,7 +99,7 @@ void ControlReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
         default:
             // RFC 9114 Section 9: Unknown frame types on the control stream MUST be ignored
             // This includes CANCEL_PUSH and any future extension frame types
-            common::LOG_WARN("ControlReceiverStream: unknown frame type %d on control stream, ignoring", frame->GetType());
+            LOG_WARN("ControlReceiverStream: unknown frame type %d on control stream, ignoring", frame->GetType());
             break;
     }
 }

@@ -45,6 +45,8 @@ inline uint8_t LargeBodyByteAt(size_t index) {
 
 }  // namespace
 
+#include "test_server_helper.h"
+
 // ==================== Test Fixture ====================
 
 class LossyTransferTest : public ::testing::Test {
@@ -67,7 +69,9 @@ protected:
     };
 
     void SetUp() override {
-        port_ = next_port_.fetch_add(1);
+        // Probe for a kernel-confirmed free UDP port (see test_server_helper.h).
+        port_ = quicx::test::ProbeFreeUdpPort(next_port_);
+        ASSERT_NE(port_, 0u) << "failed to find a free UDP port for test server";
         // Always start with a clean slate even if a previous test in the same
         // binary aborted before TearDown.
         quicx::quic::UdpSender::ResetFaultInjection();
@@ -126,8 +130,10 @@ protected:
     }
 
     void StartServerThread() {
-        server_thread_ = std::thread([this]() { server_->Start("127.0.0.1", port_); });
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // Synchronously bind on the main thread (Start() returns only once
+        // the UDP socket is fully armed in the master event loop). This
+        // surfaces bind() failures immediately as a fixture ASSERT.
+        ASSERT_TRUE(server_->Start("127.0.0.1", port_));
     }
 
     // Streaming download handler that verifies the deterministic byte pattern

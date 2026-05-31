@@ -28,6 +28,7 @@ namespace http3 {
 class ReqRespBaseStream: public IStream, public std::enable_shared_from_this<ReqRespBaseStream> {
 public:
     ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+        const std::shared_ptr<QpackEncoder>& qpack_decoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::shared_ptr<IQuicBidirectionStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
@@ -75,7 +76,8 @@ protected:
 protected:
     uint64_t header_block_key_{0};
     uint32_t next_section_number_{0};
-    std::shared_ptr<QpackEncoder> qpack_encoder_;
+    std::shared_ptr<QpackEncoder> qpack_encoder_;   // For encoding outgoing headers
+    std::shared_ptr<QpackEncoder> qpack_decoder_;   // For decoding incoming headers (RFC 9204 dual-table)
     std::shared_ptr<IQuicBidirectionStream> stream_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
 

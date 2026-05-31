@@ -10,7 +10,7 @@ NormalPacer::NormalPacer() {
     pacing_rate_bytes_per_sec_ = 0;
     next_send_time_ms_ = 0;
     last_update_ms_ = 0;
-    max_burst_bytes_ = 16 * 1024; // 16KB default burst
+    max_burst_bytes_ = 256 * 1024; // 256KB default burst (was 16KB; small burst severely limited LAN throughput)
     burst_budget_bytes_ = max_burst_bytes_;
 }
 

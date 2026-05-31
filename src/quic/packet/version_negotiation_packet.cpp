@@ -23,7 +23,7 @@ VersionNegotiationPacket::~VersionNegotiationPacket() {}
 
 bool VersionNegotiationPacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
     if (!header_.EncodeHeader(buffer)) {
-        common::LOG_ERROR("encode header failed");
+        LOG_ERROR("encode header failed");
         return false;
     }
 
@@ -47,7 +47,7 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
     uint32_t version;
     wrapper.DecodeFixedUint32(version);
     if (version != 0) {
-        common::LOG_ERROR("version negotiation packet must have version 0, got: 0x%08x", version);
+        LOG_ERROR("version negotiation packet must have version 0, got: 0x%08x", version);
         return false;
     }
     header_.SetVersion(version);
@@ -56,7 +56,7 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
     uint8_t dcid_len;
     wrapper.DecodeFixedUint8(dcid_len);
     if (dcid_len > kMaxConnectionLength) {
-        common::LOG_ERROR("DCID length too large: %u", dcid_len);
+        LOG_ERROR("DCID length too large: %u", dcid_len);
         return false;
     }
 
@@ -72,7 +72,7 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
     uint8_t scid_len;
     wrapper.DecodeFixedUint8(scid_len);
     if (scid_len > kMaxConnectionLength) {
-        common::LOG_ERROR("SCID length too large: %u", scid_len);
+        LOG_ERROR("SCID length too large: %u", scid_len);
         return false;
     }
 
@@ -93,7 +93,7 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
     auto span = buffer->GetReadableSpan();
     auto shared_span = buffer->GetSharedReadableSpan();
     if (!shared_span.Valid()) {
-        common::LOG_ERROR("readable span is invalid");
+        LOG_ERROR("readable span is invalid");
         return false;
     }
     auto chunk = shared_span.GetChunk();
@@ -102,14 +102,14 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
     uint32_t version_count = (span.GetEnd() - span.GetStart()) / sizeof(uint32_t);
     support_version_.resize(version_count);
 
-    common::LOG_INFO("Version Negotiation packet: server supports %u versions", version_count);
+    LOG_INFO("Version Negotiation packet: server supports %u versions", version_count);
     for (size_t i = 0; i < version_count; i++) {
         cur_pos = common::FixedDecodeUint32(cur_pos, span.GetEnd(), support_version_[i]);
-        common::LOG_INFO("  Version[%zu]: 0x%08x", i, support_version_[i]);
+        LOG_INFO("  Version[%zu]: 0x%08x", i, support_version_[i]);
     }
 
     if (version_count == 0) {
-        common::LOG_WARN("Version Negotiation packet has no supported versions");
+        LOG_WARN("Version Negotiation packet has no supported versions");
     }
 
     packet_src_data_ = common::SharedBufferSpan(chunk, span.GetStart(), cur_pos);

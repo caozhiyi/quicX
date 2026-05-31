@@ -1,6 +1,8 @@
 #ifndef QUIC_QUICX_WORKER_WITH_THREAD
 #define QUIC_QUICX_WORKER_WITH_THREAD
 
+#include <future>
+
 #include "quic/quicx/if_worker.h"
 #include "common/thread/thread.h"
 #include <quicx/common/if_event_loop.h>
@@ -17,6 +19,11 @@ public:
     void Run() override;
 
     void Stop() override;
+
+    // Block until the event loop thread has finished Init().
+    // Returns true if Init() succeeded, false otherwise.
+    bool WaitUntilReady();
+
     // Get the worker id
     virtual std::string GetWorkerId() override;
     // Handle packets
@@ -36,6 +43,9 @@ protected:
     std::shared_ptr<IWorker> worker_ptr_;
     std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)
     common::ThreadSafeBlockQueue<PacketParseResult> packet_queue_;
+
+    std::promise<bool> ready_promise_;
+    std::shared_future<bool> ready_future_;
 };
 
 }  // namespace quic

@@ -18,14 +18,14 @@ bool TLSClientCtx::Init(bool enable_early_data, const std::string& cipher_suites
         SSL_CTX_set_verify(ssl_ctx_.get(), SSL_VERIFY_PEER, nullptr);
         if (!ca_file.empty()) {
             if (!SSL_CTX_load_verify_locations(ssl_ctx_.get(), ca_file.c_str(), nullptr)) {
-                common::LOG_ERROR("failed to load CA file: %s", ca_file.c_str());
+                LOG_ERROR("failed to load CA file: %s", ca_file.c_str());
                 return false;
             }
         }
-        common::LOG_DEBUG("TLS peer certificate verification enabled");
+        LOG_DEBUG("TLS peer certificate verification enabled");
     } else {
         SSL_CTX_set_verify(ssl_ctx_.get(), SSL_VERIFY_NONE, nullptr);
-        common::LOG_WARN("TLS peer certificate verification DISABLED - not safe for production");
+        LOG_WARN("TLS peer certificate verification DISABLED - not safe for production");
     }
 
     // set session cache mode, enables session caching for both client and server.

@@ -52,7 +52,7 @@ void RecvStream::Reset(uint32_t error) {
     if (error != 0) {
         // Check if we can send STOP_SENDING frame in current state
         if (!recv_machine_->CheckCanSendFrame(FrameType::kStopSending)) {
-            common::LOG_WARN("stream recv cannot send STOP_SENDING in current state. stream id:%d", stream_id_);
+            LOG_WARN("stream recv cannot send STOP_SENDING in current state. stream id:%d", stream_id_);
             return;
         }
 
@@ -66,9 +66,9 @@ void RecvStream::Reset(uint32_t error) {
         recv_machine_->OnFrame(FrameType::kResetStream);
 
         ToSend();
-        common::LOG_DEBUG("stream recv reset due to error. stream id:%d, error:%d", stream_id_, error);
+        LOG_DEBUG("stream recv reset due to error. stream id:%d, error:%d", stream_id_, error);
     } else {
-        common::LOG_DEBUG("stream recv complete normally (received FIN). stream id:%d", stream_id_);
+        LOG_DEBUG("stream recv complete normally (received FIN). stream id:%d", stream_id_);
     }
 }
 
@@ -85,7 +85,7 @@ uint32_t RecvStream::OnFrame(std::shared_ptr<IFrame> frame) {
             if (StreamFrame::IsStreamFrame(frame_type)) {
                 return OnStreamFrame(frame);
             } else {
-                common::LOG_ERROR("unexpected frame on recv stream. frame type:%d", frame_type);
+                LOG_ERROR("unexpected frame on recv stream. frame type:%d", frame_type);
             }
     }
     return 0;
@@ -101,19 +101,19 @@ IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
         } else {
             // Check if the failure was due to insufficient packet space
             if (visitor->GetLastError() == FrameEncodeError::kInsufficientSpace) {
-                common::LOG_INFO("recv stream: packet full, need retry. stream id:%d", stream_id_);
+                LOG_INFO("recv stream: packet full, need retry. stream id:%d", stream_id_);
                 return TrySendResult::kBreak;  // Packet is full, stream needs to retry in next packet
             }
             return TrySendResult::kFailed;
         }
     }
-    common::LOG_DEBUG("stream recv try send data. stream id:%d", stream_id_);
+    LOG_DEBUG("stream recv try send data. stream id:%d", stream_id_);
     return TrySendResult::kSuccess;
 }
 
 uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if (!recv_machine_->OnFrame(frame->GetType())) {
-        common::LOG_WARN(
+        LOG_WARN(
             "stream recv can't process stream frame. stream id:%d, frame type:%d", stream_id_, frame->GetType());
         return 0;
     }
@@ -128,7 +128,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             connection_close_cb_(
                 QuicErrorCode::kFlowControlError, frame->GetType(), "stream frame offset+length integer overflow.");
         }
-        common::LOG_ERROR("stream frame offset+length overflow. stream id:%d, offset:%llu, length:%u",
+        LOG_ERROR("stream frame offset+length overflow. stream id:%d, offset:%llu, length:%u",
             stream_id_, stream_frame->GetOffset(), stream_frame->GetLength());
         return 0;
     }
@@ -137,7 +137,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             connection_close_cb_(
                 QuicErrorCode::kFlowControlError, frame->GetType(), "stream recv data exceeding flow control limits.");
         }
-        common::LOG_WARN("stream recv data exceeding flow control limits. stream id:%llu, offset:%llu, length:%u, limit:%llu",
+        LOG_WARN("stream recv data exceeding flow control limits. stream id:%llu, offset:%llu, length:%u, limit:%llu",
             stream_id_, stream_frame->GetOffset(), stream_frame->GetLength(), local_data_limit_);
         return 0;
     }
@@ -146,18 +146,18 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if (stream_frame->IsFin()) {
         uint64_t fin_offset = stream_frame->GetOffset() + stream_frame->GetLength();
         if (final_offset_ != 0 && fin_offset != final_offset_) {
-            common::LOG_ERROR("invalid final size. size:%d", fin_offset);
+            LOG_ERROR("invalid final size. size:%d", fin_offset);
             if (connection_close_cb_) {
                 connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "final size change.");
             }
-            common::LOG_DEBUG("stream recv invalid final size. stream id:%d, fin offset:%d, final offset:%d",
+            LOG_DEBUG("stream recv invalid final size. stream id:%d, fin offset:%d, final offset:%d",
                 stream_id_, fin_offset, final_offset_);
             return 0;
         }
         final_offset_ = fin_offset;
     }
 
-    common::LOG_DEBUG("stream recv stream frame. stream id:%llu, offset:%llu, length:%u, final offset:%llu", stream_id_,
+    LOG_DEBUG("stream recv stream frame. stream id:%llu, offset:%llu, length:%u, final offset:%llu", stream_id_,
         stream_frame->GetOffset(), stream_frame->GetLength(), final_offset_);
 
     if (stream_frame->GetOffset() == except_offset_) {
@@ -188,7 +188,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             recv_machine_->RecvAllData();
         }
 
-        common::LOG_DEBUG("RecvStream::OnStreamFrame triggering recv_cb_. stream id:%d, has_cb:%d, is_last:%d, "
+        LOG_DEBUG("RecvStream::OnStreamFrame triggering recv_cb_. stream id:%d, has_cb:%d, is_last:%d, "
             "buffer_len:%d, final_offset:%d, except_offset:%d, out_order_size:%d",
             stream_id_, (recv_cb_ ? 1 : 0), is_last, buffer_->GetDataLength(),
             final_offset_, except_offset_, (int)out_order_frame_.size());
@@ -206,7 +206,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // is received indicating a change in the final size for the stream, an endpoint MUST respond with
         // an error of type FINAL_SIZE_ERROR.
         if (final_offset_ != 0 && stream_frame->GetOffset() > final_offset_) {
-            common::LOG_ERROR("stream recv data out of final size. stream id:%d, offset:%d, final offset:%d",
+            LOG_ERROR("stream recv data out of final size. stream id:%d, offset:%d, final offset:%d",
                 stream_id_, stream_frame->GetOffset(), final_offset_);
             if (connection_close_cb_) {
                 connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "data out of final size.");
@@ -217,14 +217,14 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // RFC 9000 Section 2.2: The data at a given offset MUST NOT change if it is sent multiple times.
         if (out_order_frame_.find(stream_frame->GetOffset()) != out_order_frame_.end() ||
             stream_frame->GetOffset() < except_offset_) {
-            common::LOG_DEBUG(
+            LOG_DEBUG(
                 "stream recv repeat packet. stream id:%d, offset:%d", stream_id_, stream_frame->GetOffset());
             return 0;
         }
 
         // Limit out-of-order frame buffer to prevent memory exhaustion from malicious peers
         if (out_order_frame_.size() >= kMaxOutOfOrderFrames) {
-            common::LOG_ERROR("too many out-of-order frames. stream id:%d, count:%d",
+            LOG_ERROR("too many out-of-order frames. stream id:%d, count:%d",
                 stream_id_, (int)out_order_frame_.size());
             if (connection_close_cb_) {
                 connection_close_cb_(QuicErrorCode::kFlowControlError,
@@ -259,7 +259,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             frames_list_.emplace_back(max_frame);
 
             ToSend();
-            common::LOG_DEBUG("Proactive flow control update: stream_id=%llu, new_limit=%llu, consumed=%llu, added=%llu", 
+            LOG_DEBUG("Proactive flow control update: stream_id=%llu, new_limit=%llu, consumed=%llu, added=%llu", 
                 stream_id_, local_data_limit_, except_offset_, needed);
         }
     }
@@ -272,7 +272,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
 
 void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     if (!recv_machine_->OnFrame(frame->GetType())) {
-        common::LOG_WARN("stream recv can't process stream data blocked frame. stream id:%d, frame type:%d", stream_id_,
+        LOG_WARN("stream recv can't process stream data blocked frame. stream id:%d, frame type:%d", stream_id_,
             frame->GetType());
         return;
     }
@@ -283,7 +283,7 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     // Use configured increments (see quic/config.h)
 
     if (local_data_limit_ >= kMaxStreamWindowSize) {
-        common::LOG_WARN("stream recv window already at max. stream id:%d, limit:%llu",
+        LOG_WARN("stream recv window already at max. stream id:%d, limit:%llu",
             stream_id_, local_data_limit_);
         return;
     }
@@ -294,7 +294,7 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     max_frame->SetMaximumData(local_data_limit_);
     frames_list_.emplace_back(max_frame);
 
-    common::LOG_DEBUG("stream recv data blocked, increased window. stream id:%d, blocked_at:%llu, new_limit:%llu",
+    LOG_DEBUG("stream recv data blocked, increased window. stream id:%d, blocked_at:%llu, new_limit:%llu",
         stream_id_, block_frame->GetMaximumData(), local_data_limit_);
 
     ToSend();
@@ -302,18 +302,18 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
 
 void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     if (!recv_machine_->OnFrame(frame->GetType())) {
-        common::LOG_WARN(
+        LOG_WARN(
             "stream recv can't process reset stream frame. stream id:%d, frame type:%d", stream_id_, frame->GetType());
         return;
     }
 
     auto reset_frame = std::dynamic_pointer_cast<ResetStreamFrame>(frame);
     uint64_t fin_offset = reset_frame->GetFinalSize();
-    common::LOG_DEBUG("stream recv reset stream. stream id:%llu, fin offset:%llu, final offset:%llu", stream_id_, fin_offset,
+    LOG_DEBUG("stream recv reset stream. stream id:%llu, fin offset:%llu, final offset:%llu", stream_id_, fin_offset,
         final_offset_);
 
     if (final_offset_ != 0 && fin_offset != final_offset_) {
-        common::LOG_ERROR("stream recv invalid final size. stream id:%d, fin offset:%d, final offset:%d", stream_id_,
+        LOG_ERROR("stream recv invalid final size. stream id:%d, fin offset:%d, final offset:%d", stream_id_,
             fin_offset, final_offset_);
         if (connection_close_cb_) {
             connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "final size change.");

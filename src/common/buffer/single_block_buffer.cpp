@@ -45,11 +45,13 @@ SingleBlockBuffer& SingleBlockBuffer::operator=(SingleBlockBuffer&& other) noexc
         write_pos_ = other.write_pos_;
         buffer_start_ = other.buffer_start_;
         buffer_end_ = other.buffer_end_;
+        capacity_limit_ = other.capacity_limit_;
 
         other.read_pos_ = nullptr;
         other.write_pos_ = nullptr;
         other.buffer_start_ = nullptr;
         other.buffer_end_ = nullptr;
+        other.capacity_limit_ = 0;
     }
     return *this;
 }
@@ -117,13 +119,27 @@ uint32_t SingleBlockBuffer::GetDataLength() {
     return static_cast<uint32_t>(write_pos_ - read_pos_);
 }
 
-// Reset read/write pointers so the entire block becomes writable again.
+// Reset read/write pointers so the writable region is reclaimed, but never
+// rewind below the chunk's write floor. The floor is installed by any live
+// SharedBufferSpan that still references bytes inside this chunk; rewinding
+// below it would silently mutate bytes the consumer is still reading.
+//
+// Concretely: if the floor is at offset F, we move write_pos_ back to
+// buffer_start_ + F (= the lowest byte that may still be written), and read_pos_
+// follows so the buffer reports zero readable bytes. The free space therefore
+// shrinks to (buffer_end_ - buffer_start_ - F). Once every outstanding span is
+// destroyed, the floor drops to 0 and a subsequent Clear() reclaims everything.
 void SingleBlockBuffer::Clear() {
     if (!Valid()) {
         LOG_ERROR("buffer is invalid");
         return;
     }
-    write_pos_ = read_pos_ = buffer_start_;
+    uint8_t* floor = chunk_->GetWriteFloor();
+    uint8_t* target = (floor && floor > buffer_start_) ? floor : buffer_start_;
+    if (target > buffer_end_) {
+        target = buffer_end_;
+    }
+    write_pos_ = read_pos_ = target;
 }
 
 std::shared_ptr<IBuffer> SingleBlockBuffer::CloneReadable(uint32_t length, bool move_write_pt) {
@@ -312,6 +328,36 @@ void SingleBlockBuffer::Reset(std::shared_ptr<IBufferChunk> chunk) {
     InitializePointers();
 }
 
+// SKELETON: real capacity-limit logic lands with B2 GREEN; for now this is a
+// no-op so that B2 tests compile and exercise the legacy path (i.e. the
+// limit is silently ignored, surfacing the missing invariant as failures).
+void SingleBlockBuffer::SetCapacityLimit(uint32_t limit) {
+    capacity_limit_ = limit;
+
+    // Re-derive buffer_end_ against the new cap. We keep the existing
+    // read/write positions intact and merely clamp buffer_end_ down (or back
+    // up to the chunk's physical edge if limit is 0 / oversized). Writes
+    // already committed past the new cap are preserved — see InnerWrite,
+    // which only refuses *future* writes past buffer_end_.
+    if (!Valid()) {
+        return;
+    }
+    uint8_t* physical_end = chunk_->GetData() + chunk_->GetLength();
+    if (limit == 0) {
+        buffer_end_ = physical_end;
+    } else {
+        uint8_t* capped = chunk_->GetData() + limit;
+        buffer_end_ = (capped < physical_end) ? capped : physical_end;
+    }
+    // Don't let write_pos_/read_pos_ stray past the (possibly shrunk) edge.
+    if (write_pos_ > buffer_end_) {
+        write_pos_ = buffer_end_;
+    }
+    if (read_pos_ > write_pos_) {
+        read_pos_ = write_pos_;
+    }
+}
+
 // Return pointer to readable data, or nullptr if the buffer is invalid.
 uint8_t* SingleBlockBuffer::GetData() const {
     return Valid() ? read_pos_ : nullptr;
@@ -378,6 +424,9 @@ uint32_t SingleBlockBuffer::InnerWrite(const uint8_t* data, uint32_t len) {
 }
 
 // Initialize or reset pointer state derived from the current chunk_.
+// The capacity_limit_ value (an invariant-2 view configuration) is preserved
+// across Reset(): if a buffer was already configured to cap one MTU, that
+// behaviour persists when its chunk is swapped out.
 void SingleBlockBuffer::InitializePointers() {
     if (!Valid()) {
         read_pos_ = nullptr;
@@ -388,7 +437,13 @@ void SingleBlockBuffer::InitializePointers() {
     }
 
     buffer_start_ = chunk_->GetData();
-    buffer_end_ = buffer_start_ + chunk_->GetLength();
+    uint8_t* physical_end = buffer_start_ + chunk_->GetLength();
+    if (capacity_limit_ == 0) {
+        buffer_end_ = physical_end;
+    } else {
+        uint8_t* capped = buffer_start_ + capacity_limit_;
+        buffer_end_ = (capped < physical_end) ? capped : physical_end;
+    }
     read_pos_ = buffer_start_;
     write_pos_ = buffer_start_;
 }

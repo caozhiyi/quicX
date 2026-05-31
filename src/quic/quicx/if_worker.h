@@ -44,9 +44,16 @@ public:
     // ~120 KB per connection leaking across connect/disconnect cycles in
     // the profile_rss_lifecycle driver (P4).
     //
-    // Owners (QuicClient / QuicServer dtor) must call this once the
-    // master event-loop thread has been Stop()+Join()'d, so it is safe
-    // to mutate worker internals without synchronisation.
+    // Threading contract (IMPORTANT): Owners (QuicClient / QuicServer
+    // dtor) MUST call this AFTER Stop()+Join()-ing **the worker's own
+    // event-loop thread** (in multi-thread mode that is the
+    // WorkerWithThread; in single-thread mode the master thread is also
+    // the worker thread, so Stop+Join on master is enough). Once the loop
+    // thread has exited, no concurrent timer/IO callback can race with
+    // Shutdown(), so the implementation can mutate worker internals
+    // without synchronisation, and — critically — must NOT invoke
+    // EventLoop::AddTimer/RemoveTimer/RegisterFd/... from this thread:
+    // those are guarded by AssertInLoopThread() and would abort.
     virtual void Shutdown() {}
 
 protected:

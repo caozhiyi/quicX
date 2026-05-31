@@ -41,8 +41,21 @@ std::weak_ptr<common::IEventLoop> GlobalResource::GetThreadEventLoop() {
 }
 
 std::shared_ptr<common::BlockMemoryPool> GlobalResource::MakeDefaultPool() {
-    return common::MakeBlockMemoryPoolPtr(
-        1500, 4);  // Increased from 1024 to 1500 for RFC9000 compliance (min 1200 bytes)
+    // 1500B aligns with typical Ethernet MTU and is required by the
+    // outbound packet build path: BaseConnection::TrySend allocates a
+    // BufferChunk from this same pool to serialize the entire encrypted
+    // QUIC packet (header + STREAM frame payload up to 1300B + AEAD tag).
+    // Shrinking this below ~1350B causes BuildDataPacket to fail once
+    // STREAM payload approaches the 1300B cap. Also satisfies RFC9000
+    // minimum datagram size of 1200B.
+    //
+    // NOTE: The "chunk size 1500 vs STREAM send_size cap 1300" mismatch
+    // observed via PerfProbe is real (causes 1300+200 fragmentation in
+    // send_buffer), but the fix must NOT shrink this shared pool.
+    // Future fix should either (a) use a dedicated smaller pool for
+    // stream send_buffer, or (b) raise the STREAM send_size cap to
+    // match chunk size.
+    return common::MakeBlockMemoryPoolPtr(1500, 4);
 }
 
 std::shared_ptr<IPacketAllotor> GlobalResource::MakeDefaultPacketAllotor() {

@@ -77,7 +77,7 @@ TEST(BBRv3CongestionControlTest, ProbeRttAndProbeBwCycle) {
     
     // By now max_bw_bps should be set
     // Bandwidth ~= total_bytes / total_time = 15000 / 0.014s ≈ 1071428 bytes/s
-    EXPECT_GT(cc.GetPacingRateBps(), 0UL);
+    EXPECT_GT(cc.GetPacingRateBytesPerSec(), 0UL);
     
     // Trigger ProbeRTT by advancing time > 10s and sending more ACKs
     uint64_t probe_rtt_time = base_time + 10500000; // > 10s later
@@ -123,7 +123,7 @@ TEST(BBRv3CongestionControlTest, ProbeBwFullEightSegmentCycle) {
     EXPECT_FALSE(cc.InSlowStart());
     
     // Verify pacing rate is reasonable (not zero, not absurdly high)
-    uint64_t pacing = cc.GetPacingRateBps();
+    uint64_t pacing = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing, 10000UL);   // At least 10KB/s
     EXPECT_LT(pacing, 10000000UL); // Less than 10MB/s
 }

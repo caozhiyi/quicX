@@ -24,7 +24,7 @@ void ConnectionHandler::OnRead(uint32_t fd) {
             if (ret.error_code_ == EINTR) {
                 continue;
             }
-            common::LOG_ERROR("Failed to accept connection. errno: %d", ret.error_code_);
+            LOG_ERROR("Failed to accept connection. errno: %d", ret.error_code_);
             break;
         }
 
@@ -33,31 +33,34 @@ void ConnectionHandler::OnRead(uint32_t fd) {
         // Set non-blocking
         auto noblock_ret = common::SocketNoblocking(client_fd);
         if (noblock_ret.error_code_ != 0) {
-            common::LOG_ERROR("Failed to set socket non-blocking: %d", noblock_ret.error_code_);
+            LOG_ERROR("Failed to set socket non-blocking: %d", noblock_ret.error_code_);
             common::Close(client_fd);
             continue;
         }
 
-        // Add to event driver
+        // Register the client fd with the smart handler so its OnRead /
+        // OnWrite drive TLS handshake (HTTPS) or protocol detection (HTTP).
         if (!loop->RegisterFd(client_fd, common::EventType::ET_READ, handler_)) {
-            common::LOG_ERROR("Failed to add client socket to event driver");
+            LOG_ERROR("Failed to add client socket to event driver");
             common::Close(client_fd);
             continue;
         }
 
-        // Notify handler
+        // Notify smart handler about the new connection so it can allocate
+        // per-connection state (SSL object, ConnectionContext, timer).
         handler_->OnConnect(client_fd);
 
-        common::LOG_INFO("New connection from %s:%d", client_addr.GetIp().c_str(), client_addr.GetPort());
+        LOG_INFO("[TLSDBG] accept ok: client_fd=%lu from %s:%d (registered ET_READ, OnConnect done)",
+                 (unsigned long)client_fd, client_addr.GetIp().c_str(), client_addr.GetPort());
     }
 }
 
 void ConnectionHandler::OnWrite(uint32_t fd) {
-    common::LOG_ERROR("OnWrite should not be called for listener %d", fd);
+    LOG_ERROR("OnWrite should not be called for listener %d", fd);
 }
 
 void ConnectionHandler::OnError(uint32_t fd) {
-    common::LOG_ERROR("OnError for fd %d", fd);
+    LOG_ERROR("OnError for fd %d", fd);
     common::Close(fd);
     if (auto loop = event_loop_.lock()) {
         loop->RemoveFd(fd);

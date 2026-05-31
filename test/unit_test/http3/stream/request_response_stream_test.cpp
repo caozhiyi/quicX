@@ -26,8 +26,9 @@ public:
             std::bind(&MockClientConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2);
         auto push_promise_handler = std::bind(&MockClientConnection::PushPromiseHandler, this, std::placeholders::_1);
 
+        // In self-loop tests, use the same encoder for both encode and decode
         request_stream_ = std::make_shared<RequestStream>(
-            qpack_encoder, blocked_registry_, stream, response_handler, error_handler, push_promise_handler);
+            qpack_encoder, qpack_encoder, blocked_registry_, stream, response_handler, error_handler, push_promise_handler);
         request_stream_->Init();  // CRITICAL: Initialize callbacks
     }
     ~MockClientConnection() {}
@@ -85,7 +86,7 @@ public:
 
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
         response_stream_ =
-            std::make_shared<ResponseStream>(qpack_encoder, blocked_registry_, stream, processor, push_handler,
+            std::make_shared<ResponseStream>(qpack_encoder, qpack_encoder, blocked_registry_, stream, processor, push_handler,
                 std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
                 []() { return true; });  // Mock: always return true for settings_received
         response_stream_->Init();        // CRITICAL: Initialize callbacks

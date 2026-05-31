@@ -4,7 +4,10 @@
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/multi_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "common/log/log.h"
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 
 namespace quicx {
 namespace common {
@@ -226,71 +229,48 @@ SharedBufferSpan MultiBlockBuffer::GetSharedReadableSpan(uint32_t length, bool m
         return SharedBufferSpan();
     }
 
-    // Try to return from first chunk_ if possible
     if (chunks_.empty()) {
         LOG_ERROR("no chunks available");
         return SharedBufferSpan();
     }
 
-    // Single chunk_ case
-    if (chunks_.size() == 1) {
-        const auto& state = chunks_.front();
-        uint32_t readable = state.Readable();
-        if (readable == 0 || !state.chunk_ || !state.chunk_->Valid()) {
-            LOG_ERROR("first chunk is invalid");
-            return SharedBufferSpan();
-        }
-        // Return up to min(length, readable)
-        uint32_t actual_len = std::min(length, readable);
-        return SharedBufferSpan(state.chunk_, state.read_pos_, state.read_pos_ + actual_len);
-    }
-
-    // Multiple chunks case: check if first chunk_ has enough data
-    const auto& first = chunks_.front();
-    if (first.chunk_ && first.chunk_->Valid() && first.Readable() >= length) {
-        return SharedBufferSpan(first.chunk_, first.read_pos_, first.read_pos_ + length);
-    }
-
-    // Fallback: Need to merge multiple chunks into a new chunk_ (deep copy)
-    if (!pool_) {
-        LOG_ERROR("no memory pool available for merging chunks");
-        return SharedBufferSpan();
-    }
-
-    auto new_chunk = std::make_shared<BufferChunk>(pool_);
-    if (!new_chunk || !new_chunk->Valid()) {
-        LOG_ERROR("failed to allocate new chunk_ for merging");
-        return SharedBufferSpan();
-    }
-
-    uint32_t capacity = new_chunk->GetLength();
-    if (capacity == 0 || length > capacity) {
-        LOG_ERROR("new chunk has not enough capacity: have %u need %u", capacity, length);
-        return SharedBufferSpan();
-    }
-
-    // Copy data from multiple chunks
-    uint8_t* dest = new_chunk->GetData();
-    uint32_t remaining = length;
+    // Locate the first chunk that has any readable bytes (skipping any leading
+    // already-drained chunks). All bytes of this span are guaranteed to come
+    // from a single chunk — invariant 3 forbids us from silently merging
+    // across chunks.
+    const ChunkState* first = nullptr;
     for (const auto& state : chunks_) {
         if (!state.chunk_ || !state.chunk_->Valid()) {
             continue;
         }
-        uint32_t readable = state.Readable();
-        if (readable == 0) {
+        if (state.Readable() == 0) {
             continue;
         }
-        uint32_t copy_len = std::min(readable, remaining);
-        std::memcpy(dest, state.read_pos_, copy_len);
-        dest += copy_len;
-        remaining -= copy_len;
-        if (remaining == 0) {
-            break;
-        }
+        first = &state;
+        break;
+    }
+    if (first == nullptr) {
+        LOG_ERROR("no readable chunk available");
+        return SharedBufferSpan();
     }
 
-    uint32_t copied = length - remaining;
-    return SharedBufferSpan(new_chunk, new_chunk->GetData(), new_chunk->GetData() + copied);
+    uint32_t first_readable = first->Readable();
+    if (length > first_readable) {
+        // Cross-chunk request. Strict callers (must_fill_length=true) get an
+        // invalid span; lenient callers get only the first chunk's slice and
+        // are expected to either accept the partial result or use the
+        // explicit GetSharedReadableSpans / GetFirstChunkReadable APIs.
+        if (must_fill_length) {
+            LOG_DEBUG(
+                "GetSharedReadableSpan would require crossing chunks "
+                "(have %u in first chunk, need %u); refusing under invariant 3",
+                first_readable, length);
+            return SharedBufferSpan();
+        }
+        length = first_readable;
+    }
+
+    return SharedBufferSpan(first->chunk_, first->read_pos_, first->read_pos_ + length);
 }
 
 std::string MultiBlockBuffer::GetDataAsString() {
@@ -301,6 +281,128 @@ std::string MultiBlockBuffer::GetDataAsString() {
         return true;
     });
     return data;
+}
+
+// Invariant 3 (cross-segment must be explicit): hand back exactly one
+// chunk's worth of readable bytes — the leading chunk that still holds
+// data — capped at max_length. Always zero-copy: the returned span aliases
+// the chunk in place and pins its write floor via the SharedBufferSpan
+// constructor (invariant 1).
+SharedBufferSpan MultiBlockBuffer::GetFirstChunkReadable(uint32_t max_length) const {
+    if (max_length == 0) {
+        return SharedBufferSpan();
+    }
+    for (const auto& state : chunks_) {
+        if (!state.chunk_ || !state.chunk_->Valid()) {
+            continue;
+        }
+        uint32_t readable = state.Readable();
+        if (readable == 0) {
+            continue;
+        }
+        uint32_t take = std::min(readable, max_length);
+        return SharedBufferSpan(state.chunk_, state.read_pos_, state.read_pos_ + take);
+    }
+    return SharedBufferSpan();
+}
+
+// Coalesce-on-demand variant. Fast path: if the first non-empty chunk has
+// >= max_length readable bytes (or it is the *only* readable chunk), this
+// degenerates to GetFirstChunkReadable's zero-copy span — no allocation,
+// no memcpy. Slow path: only when the first chunk is partially drained
+// AND there is more data behind it, we allocate one StandaloneBufferChunk
+// of size `take` and memcpy bytes into it. The resulting span owns the
+// standalone chunk via shared_ptr so the buffer's MoveReadPt is unaffected.
+SharedBufferSpan MultiBlockBuffer::GetCoalescedReadable(uint32_t max_length) const {
+    if (max_length == 0 || chunks_.empty() || total_data_length_ == 0) {
+        return SharedBufferSpan();
+    }
+
+    // Locate the first chunk with readable bytes.
+    auto it = chunks_.begin();
+    for (; it != chunks_.end(); ++it) {
+        if (it->chunk_ && it->chunk_->Valid() && it->Readable() > 0) {
+            break;
+        }
+    }
+    if (it == chunks_.end()) {
+        return SharedBufferSpan();
+    }
+
+    uint32_t first_readable = it->Readable();
+
+    // Fast path A: first chunk satisfies the request → zero-copy span.
+    if (first_readable >= max_length) {
+        return SharedBufferSpan(it->chunk_, it->read_pos_, it->read_pos_ + max_length);
+    }
+
+    // Fast path B: first chunk is the only chunk with data → there is
+    // nothing to coalesce; return whatever the first chunk has.
+    uint64_t total_readable = total_data_length_;  // already tracked
+    if (first_readable >= total_readable) {
+        return SharedBufferSpan(it->chunk_, it->read_pos_, it->read_pos_ + first_readable);
+    }
+
+    // Slow path: stitch a contiguous prefix of size `take` across chunks.
+    uint32_t take = static_cast<uint32_t>(std::min<uint64_t>(max_length, total_readable));
+    auto standalone = std::make_shared<StandaloneBufferChunk>(take);
+    if (!standalone || !standalone->Valid()) {
+        // Allocation failed → degrade gracefully to the first-chunk-only span.
+        LOG_ERROR("GetCoalescedReadable: failed to allocate standalone chunk size=%u", take);
+        return SharedBufferSpan(it->chunk_, it->read_pos_, it->read_pos_ + first_readable);
+    }
+
+    uint8_t* dst = standalone->GetData();
+    uint32_t copied = 0;
+    for (auto cur = it; cur != chunks_.end() && copied < take; ++cur) {
+        if (!cur->chunk_ || !cur->chunk_->Valid()) {
+            continue;
+        }
+        uint32_t r = cur->Readable();
+        if (r == 0) {
+            continue;
+        }
+        uint32_t to_copy = std::min(r, take - copied);
+        std::memcpy(dst + copied, cur->read_pos_, to_copy);
+        copied += to_copy;
+    }
+    // copied is guaranteed to equal `take` because total_readable >= take.
+    return SharedBufferSpan(standalone, dst, dst + copied);
+}
+
+// Invariant 3: the explicit segmented readout. We walk chunks in read order
+// and emit one SharedBufferSpan per chunk we touch, stopping once we have
+// covered min(length, total_data_length_) bytes. No memcpy, no allocation:
+// the caller is fully informed that the prefix may live in multiple chunks
+// and is responsible for consuming them as a list.
+std::vector<SharedBufferSpan> MultiBlockBuffer::GetSharedReadableSpans(uint32_t length) const {
+    std::vector<SharedBufferSpan> out;
+    if (chunks_.empty() || total_data_length_ == 0) {
+        return out;
+    }
+    // total_data_length_ is uint64_t but per-call cap fits in uint32_t (in
+    // practice it's bounded by chunk-pool capacity and per-frame send size).
+    uint32_t available = (total_data_length_ > UINT32_MAX)
+                             ? UINT32_MAX
+                             : static_cast<uint32_t>(total_data_length_);
+    uint32_t remaining = (length == 0) ? available : std::min(length, available);
+    out.reserve(chunks_.size());
+    for (const auto& state : chunks_) {
+        if (remaining == 0) {
+            break;
+        }
+        if (!state.chunk_ || !state.chunk_->Valid()) {
+            continue;
+        }
+        uint32_t readable = state.Readable();
+        if (readable == 0) {
+            continue;
+        }
+        uint32_t take = std::min(readable, remaining);
+        out.emplace_back(state.chunk_, state.read_pos_, state.read_pos_ + take);
+        remaining -= take;
+    }
+    return out;
 }
 
 void MultiBlockBuffer::VisitDataSpans(const std::function<bool(SharedBufferSpan&)>& visitor) {
@@ -403,6 +505,13 @@ uint32_t MultiBlockBuffer::Write(const SharedBufferSpan& span, uint32_t data_len
     if (data_len > span_len) {
         data_len = span_len;
     }
+
+    // PERF DIAG (datagram fill): distribution of how big each span actually
+    // is. The first_chunk_h bimodal pattern (big-or-tiny) on the read side
+    // can only come from this write side: either the upper layer is feeding
+    // tiny spans interspersed with large ones, or this function is creating
+    // tiny ChunkStates by itself. The histogram disambiguates.
+    Metrics::HistogramObserve(MetricsStd::DiagSpanWriteHist, data_len);
 
     // if the last chunk has enough writable space, write to it
     if (!chunks_.empty()) {

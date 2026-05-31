@@ -79,6 +79,7 @@ HTTP/3 层同样遵循这一结构：
 | `IStream::event_loop_` → `IEventLoop` | `std::weak_ptr<IEventLoop>` | 同上 |
 | `Worker::event_loop_` → `IEventLoop` | `std::weak_ptr<IEventLoop>` | 同上 |
 | `ResponseStream::http_processor_` → `IHttpProcessor` | `std::weak_ptr<IHttpProcessor>` | 应用层处理器，服务器顶层持有 |
+| `http3::IStream` 回调 → `http3::IConnection` | `std::weak_ptr<IConnection>` (lambda 捕获) | 见 §3.5，禁止 stream 反向强引用 connection |
 
 经验法则：**向上/向侧的引用一律使用 `weak_ptr`；只有向下的（所有者→被所有者）才允许 `shared_ptr`。**
 
@@ -164,7 +165,85 @@ conn_sp->OnPackets(now, packets);        // 即使回调中把自己从 conn_map
 
 原因：`OnPackets` 内部可能触发 `CONNECTION_CLOSE` 回调 → 用户 callback → `Destroy()` → 从 `conn_map_` 擦除自己。若直接用 `conn_map_[...]->OnPackets()` 这种"走引用"写法，ASan 会检出 use-after-free。
 
-### 3.5 Sender 的共享
+### 3.5 HTTP/3 Connection：两阶段初始化 + Weak-Self Lambda
+
+`http3::IConnection` 与其子类 `ClientConnection` / `ServerConnection` 在构造期需要创建 control / QPACK encoder / QPACK decoder 等内部 stream，并把若干回调绑定到自身（`HandleError` / `HandleSettings` / `HandlePushPromise` 等）。这里有两个**绝不能踩**的雷点：
+
+1. **构造函数里 `weak_from_this()` 是空的**。`std::enable_shared_from_this<T>` 的内部 weak_ptr 只在 `std::make_shared<T>` 完成后才被填充，构造体内调用 `weak_from_this()` / `shared_from_this()` 都会失败（前者得到永远 expired 的 weak，后者抛 `bad_weak_ptr`）。
+2. **回调若直接 `std::bind(&Xxx::HandleYyy, this, ...)` 或捕获裸 `this`**，当 stream 回调晚于 connection 析构触发时，会调到已销毁对象的虚函数，触发 `__cxa_pure_virtual` → SIGABRT。
+
+因此 `http3::IConnection` 采用**两阶段初始化**：
+
+```cpp
+// 1) 构造函数：仅做不依赖 shared_from_this 的初始化
+IConnection(unique_id, quic_conn, error_handler);   // 仅赋值成员
+
+// 2) 工厂创建后立刻调用 Init()，此时 shared_from_this() 已可用
+auto conn = std::make_shared<ServerConnection>(...);
+conn->Init();   // 内部创建 control / QPACK streams 并绑定 weak-self 回调
+```
+
+#### 三类回调的标准写法
+
+**(a) 父类公共回调** —— 走 `IConnection` 提供的工厂：
+
+```cpp
+// if_connection.h
+std::function<void(uint64_t, uint32_t)> MakeErrorHandler();
+std::function<void(const std::unordered_map<uint16_t, uint64_t>&)> MakeSettingsHandler();
+
+// 子类用法
+control_stream_->SetErrorCallback(MakeErrorHandler());
+control_stream_->SetSettingsCallback(MakeSettingsHandler());
+```
+
+工厂内部用 `weak_ptr<IConnection>` 绑定，回调触发时 `lock()`，连接已销毁则安静放弃。
+
+**(b) 子类私有回调** —— 在 callsite 用 `WeakSelfAs<T>()` 内联 weak-lambda：
+
+```cpp
+// connection_client.cpp
+auto weak_self = WeakSelfAs<ClientConnection>();
+stream->SetPushPromiseCallback([weak_self](uint64_t push_id) {
+    if (auto self = weak_self.lock()) self->HandlePushPromise(push_id);
+});
+```
+
+`WeakSelfAs<T>()` 是 `IConnection` 提供的 protected 模板，本质是 `weak_ptr<T>(static_pointer_cast<T>(shared_from_this()))`。这样**子类私有方法不需要 friend、也不污染父类接口**。
+
+**(c) Stream 状态回调** —— 在 `IConnection::Init()` 里统一注册：
+
+```cpp
+void IConnection::Init() {
+    auto weak_self = weak_from_this();   // 此刻已可用
+    quic_connection_->SetStreamStateCallBack(
+        [weak_self](uint64_t stream_id, StreamState state) {
+            if (auto self = weak_self.lock()) self->OnStreamState(stream_id, state);
+        });
+}
+```
+
+#### 反例
+
+```cpp
+//  bind 裸 this：connection 析构后 stream 回调触发 → __cxa_pure_virtual
+control_stream_->SetErrorCallback(
+    std::bind(&ServerConnection::HandleError, this, _1, _2));
+
+//  捕获 shared_from_this()：形成 Connection → streams_ → Stream → cb → Connection 的环
+control_stream_->SetErrorCallback(
+    [self = shared_from_this()](uint64_t id, uint32_t ec) { self->HandleError(id, ec); });
+
+//  把 stream 创建放在构造函数里再 bind weak：weak_from_this() 此时是空的
+ServerConnection::ServerConnection(...) {
+    control_stream_ = std::make_shared<ControlStream>(...);
+    control_stream_->SetErrorCallback(MakeErrorHandler());  // 绑定的 weak 永远 expired
+}
+```
+
+正确做法：构造函数只保存参数，stream 创建与回调绑定全部下沉到 `Init()`。
+
+### 3.6 Sender 的共享
 
 `ISender`（UDP 发送器）被多方持有是正常的：
 
@@ -259,7 +338,53 @@ std::tuple<Conn, Conn, Sender, Sender, std::shared_ptr<IEventLoop>> Make() {
 }
 ```
 
-### 陷阱 4：`OnStateToClosing` 中触发用户回调
+### 陷阱 4：构造函数里调 `weak_from_this()` / `shared_from_this()`
+
+```cpp
+//  enable_shared_from_this 的内部 weak 在 make_shared 完成后才填充
+//  这里 weak 永远 expired，回调一辈子都 lock 不到
+class Http3Conn : public std::enable_shared_from_this<Http3Conn> {
+public:
+    Http3Conn() {
+        auto weak = weak_from_this();
+        stream_->SetCb([weak]{ if (auto s = weak.lock()) s->Do(); });
+    }
+};
+
+//  两阶段初始化：构造只赋值，Init 里再绑回调
+class Http3Conn : public std::enable_shared_from_this<Http3Conn> {
+public:
+    Http3Conn(...) { /* 仅保存参数 */ }
+    void Init() {
+        auto weak = weak_from_this();   // 此时已可用
+        stream_ = std::make_shared<Stream>(...);
+        stream_->SetCb([weak]{ if (auto s = weak.lock()) s->Do(); });
+    }
+};
+
+// 调用方
+auto c = std::make_shared<Http3Conn>(...);
+c->Init();   // 必须紧跟 make_shared
+```
+
+### 陷阱 5：Stream 回调里 `std::bind(&X::M, this, ...)`
+
+```cpp
+//  stream 回调可能晚于 connection 析构触发 → 调用纯虚函数 → __cxa_pure_virtual
+control_stream_->SetErrorCallback(
+    std::bind(&ServerConnection::HandleError, this, _1, _2));
+
+//  父类公共回调走工厂
+control_stream_->SetErrorCallback(MakeErrorHandler());
+
+//  子类私有回调走 WeakSelfAs<T>() 内联 lambda
+auto weak_self = WeakSelfAs<ServerConnection>();
+push_stream->SetCallback([weak_self](uint64_t id) {
+    if (auto self = weak_self.lock()) self->HandlePush(id);
+});
+```
+
+### 陷阱 6：`OnStateToClosing` 中触发用户回调
 
 ```cpp
 //  若用户回调释放最后一个 shared_ptr，本函数后续代码访问 this 即为 UAF
@@ -301,7 +426,9 @@ void OnStateToClosing() {
 | Self-pinning | 在一段关键代码的入口 `auto self = shared_from_this();` 延长自身生命周期直到函数结束 |
 | Guarded Fixed Process | `AddFixedProcess(weak_ptr<void> owner, cb)`，owner 过期自动跳过 |
 | Connection Pinning | Worker 分发包前先复制一份 `shared_ptr<IConnection>` 到局部，防止分发途中被擦除 |
+| Two-phase Init | 构造函数只赋值成员；`Init()` 在 `make_shared` 之后再被调用，里面才能用 `weak_from_this()` / `shared_from_this()` 绑定回调 |
+| Weak-self Lambda | `auto weak_self = weak_from_this();` + `[weak_self](...){ if (auto s = weak_self.lock()) s->Do(); }`，HTTP/3 Connection 层绑定 stream 回调的标准写法 |
 
 ---
 
-*最后更新：2026-05，对应 Exclusive Ownership 重构完成。*
+*最后更新：2026-05，对应 Exclusive Ownership 重构 + HTTP/3 Connection 两阶段初始化修复完成。*

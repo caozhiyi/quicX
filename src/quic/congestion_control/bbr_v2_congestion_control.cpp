@@ -49,12 +49,12 @@ void BBRv2CongestionControl::Configure(const CcConfigV2& cfg) {
 
     mode_ = Mode::kStartup;
     if (!pacer_) pacer_.reset(new NormalPacer());
-    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
 void BBRv2CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     bytes_in_flight_ += ev.bytes;
-    if (pacer_) pacer_->OnPacketSent(ev.sent_time, static_cast<size_t>(ev.bytes));
+    if (pacer_) pacer_->OnPacketSent(ev.sent_time / 1000, static_cast<size_t>(ev.bytes));
 }
 
 void BBRv2CongestionControl::OnPacketAcked(const AckEvent& ev) {
@@ -113,7 +113,7 @@ void BBRv2CongestionControl::OnPacketAcked(const AckEvent& ev) {
     if (mode_ == Mode::kProbeBw) {
         AdvanceProbeBwCycle(ev.ack_time);
     }
-    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
 void BBRv2CongestionControl::OnPacketLost(const LossEvent& ev) {
@@ -135,13 +135,16 @@ void BBRv2CongestionControl::OnPacketLost(const LossEvent& ev) {
         pacing_gain_ = 1.0 / 2.885;
         cwnd_gain_ = 2.0;
     }
-    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBps());
+    if (pacer_) pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
 }
 
 void BBRv2CongestionControl::OnRoundTripSample(uint64_t latest_rtt, uint64_t ack_delay) {
     (void)ack_delay;
+    // Guarantee minimum 1us to prevent zero-RTT stall on loopback (ms clock granularity)
+    if (latest_rtt == 0) latest_rtt = 1;
     if (srtt_us_ == 0) srtt_us_ = latest_rtt;
     srtt_us_ = (7 * srtt_us_ + latest_rtt) / 8;
+    if (srtt_us_ == 0) srtt_us_ = 1;
     // Note: min_rtt timestamp is updated in OnPacketAcked where ack_time is available
     if (min_rtt_us_ == 0 || latest_rtt < min_rtt_us_) {
         min_rtt_us_ = latest_rtt;
@@ -152,14 +155,16 @@ ICongestionControl::SendState BBRv2CongestionControl::CanSend(uint64_t now, uint
     (void)now;
     uint64_t bdp = BdpBytes(static_cast<uint64_t>(cwnd_gain_ * 1000), 1000);
     uint64_t target = std::min<uint64_t>(bdp, inflight_hi_bytes_);
+    // Floor: don't let BDP underestimation on low-RTT paths throttle below cwnd
+    target = std::max<uint64_t>(target, cwnd_bytes_);
     uint64_t left = (target > bytes_in_flight_) ? (target - bytes_in_flight_) : 0;
     can_send_bytes = left;
     if (left == 0) return SendState::kBlockedByCwnd;
     return SendState::kOk;
 }
 
-uint64_t BBRv2CongestionControl::GetPacingRateBps() const {
-    // max_bw_bps_ is in bytes/sec; return bytes/sec pacing rate
+uint64_t BBRv2CongestionControl::GetPacingRateBytesPerSec() const {
+    // max_bw_bps_ is in bytes/sec (despite the name); return bytes/sec pacing rate.
     if (max_bw_bps_ == 0) {
         uint64_t rtt_us = (srtt_us_ > 0) ? srtt_us_ : 333000;
         uint64_t bw_bytes_per_sec = MulDiv(cwnd_bytes_, 1000000ull, rtt_us);
@@ -169,9 +174,9 @@ uint64_t BBRv2CongestionControl::GetPacingRateBps() const {
 }
 
 uint64_t BBRv2CongestionControl::NextSendTime(uint64_t now) const {
-    (void)now;
-    if (!pacer_) return 0;
-    return pacer_->TimeUntilSend();
+    if (!pacer_) return now;
+    // pacer returns delta_ms until next send opportunity; convert to absolute time.
+    return now + pacer_->TimeUntilSend();
 }
 
 uint64_t BBRv2CongestionControl::BdpBytes(uint64_t gain_num, uint64_t gain_den) const {

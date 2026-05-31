@@ -57,7 +57,7 @@ void ConnectionStateMachine::SetState(ConnectionStateType new_state) {
     }
     ConnectionStateType old_state = state_;
     state_ = new_state;
-    common::LOG_INFO(
+    LOG_INFO(
         "Connection state changed from %s to %s", StateToString(old_state).c_str(), StateToString(new_state).c_str());
 
     if (listener_) {

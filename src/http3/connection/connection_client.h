@@ -26,6 +26,12 @@ public:
         bool enable_push = false);
     virtual ~ClientConnection();
 
+    // Two-phase init: control/qpack stream wiring is deferred to Init() because
+    // weak_from_this() isn't usable inside the constructor (per
+    // ownership_and_memory.md §3.1). Init() must be called immediately after
+    // make_shared<ClientConnection>().
+    void Init() override;
+
     /**
      * @brief Send HTTP request in complete mode (entire response body buffered)
      * @param request Request object
@@ -67,6 +73,9 @@ private:
 private:
     http_response_handler push_handler_;
     std::function<bool(std::unordered_map<std::string, std::string>&)> push_promise_handler_;
+
+    // pending settings captured at construction, applied during Init()
+    Http3Settings pending_settings_;
 
     std::shared_ptr<ControlClientSenderStream> control_sender_stream_;
     std::shared_ptr<ControlReceiverStream> control_recv_stream_;

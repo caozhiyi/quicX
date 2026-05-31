@@ -14,22 +14,24 @@ namespace http3 {
 
 // Constructor for complete mode
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<QpackEncoder>& qpack_decoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
-    ReqRespBaseStream(qpack_encoder, blocked_registry, stream, error_handler),
+    ReqRespBaseStream(qpack_encoder, qpack_decoder, blocked_registry, stream, error_handler),
     async_handler_(async_handler),
     body_length_(0),
     received_body_length_(0),
     push_promise_handler_(push_promise_handler) {}
 
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
+    const std::shared_ptr<QpackEncoder>& qpack_decoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
-    ReqRespBaseStream(qpack_encoder, blocked_registry, stream, error_handler),
+    ReqRespBaseStream(qpack_encoder, qpack_decoder, blocked_registry, stream, error_handler),
     response_handler_(response_handler),
     body_length_(0),
     received_body_length_(0),
@@ -47,13 +49,13 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
 
     auto body_buffer = request->GetBody();
     if (!body_provider && body_buffer && body_buffer->GetDataLength() > 0) {
-        common::LOG_DEBUG("SendRequest: adding content-length: %zu", body_buffer->GetDataLength());
+        LOG_DEBUG("SendRequest: adding content-length: %zu", body_buffer->GetDataLength());
         request->AddHeader("content-length", std::to_string(body_buffer->GetDataLength()));
     }
 
     // send headers
     if (!SendHeaders(request->GetHeaders())) {
-        common::LOG_ERROR("SendHeaders error");
+        LOG_ERROR("SendHeaders error");
         return false;
     }
 
@@ -72,7 +74,7 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     // request stream and never produce a response.
     if (stream_) {
         stream_->Close();
-        common::LOG_DEBUG("SendRequest: no body, sent FIN on request stream id=%llu",
+        LOG_DEBUG("SendRequest: no body, sent FIN on request stream id=%llu",
             static_cast<unsigned long long>(GetStreamID()));
     }
     return true;
@@ -85,7 +87,7 @@ void RequestStream::HandleHeaders() {
 
     PseudoHeader::Instance().DecodeResponse(response_);
 
-    common::LOG_DEBUG("RequestStream::HandleHeaders: headers decoded");
+    LOG_DEBUG("RequestStream::HandleHeaders: headers decoded");
     // Metrics: Track HTTP/3 response status codes
     int status_code = response_->GetStatusCode();
     if (status_code >= 200 && status_code < 300) {
@@ -103,15 +105,15 @@ void RequestStream::HandleHeaders() {
         try {
             body_length_ = std::stoul(headers_["content-length"]);
             has_content_length = true;
-            common::LOG_DEBUG("RequestStream::HandleHeaders: content-length found: %u", body_length_);
+            LOG_DEBUG("RequestStream::HandleHeaders: content-length found: %u", body_length_);
         } catch (const std::exception& e) {
-            common::LOG_ERROR("RequestStream::HandleHeaders: invalid content-length value '%s': %s",
+            LOG_ERROR("RequestStream::HandleHeaders: invalid content-length value '%s': %s",
                 headers_["content-length"].c_str(), e.what());
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
             return;
         }
     } else {
-        common::LOG_DEBUG("RequestStream::HandleHeaders: content-length NOT found");
+        LOG_DEBUG("RequestStream::HandleHeaders: content-length NOT found");
     }
 
     if (async_handler_) {
@@ -122,11 +124,11 @@ void RequestStream::HandleHeaders() {
         // but if there's no body at all, we rely on the FIN handler in HandleData
 
     } else if (response_handler_) {
-        common::LOG_DEBUG("RequestStream::HandleHeaders: checking completion condition. has_cl=%d, body_len=%u",
+        LOG_DEBUG("RequestStream::HandleHeaders: checking completion condition. has_cl=%d, body_len=%u",
             has_content_length, body_length_);
         // Complete mode: only call handler if no body expected
         if (!has_content_length || body_length_ == 0) {
-            common::LOG_DEBUG("RequestStream::HandleHeaders: calling response handler (no body expected)");
+            LOG_DEBUG("RequestStream::HandleHeaders: calling response handler (no body expected)");
             response_handler_(response_, 0);
 
             // CRITICAL: Notify connection that stream is complete and can be removed
@@ -140,7 +142,7 @@ void RequestStream::HandleHeaders() {
 void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) {
     // Validate data size
     if (body_length_ > 0 && received_body_length_ + data->GetDataLength() > body_length_) {
-        common::LOG_ERROR("ReqRespBaseStream::HandleData: received more data than content-length, expected %u, got %zu",
+        LOG_ERROR("ReqRespBaseStream::HandleData: received more data than content-length, expected %u, got %zu",
             body_length_, received_body_length_ + data->GetDataLength());
         error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         return;
@@ -189,7 +191,7 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
     }
 
     // Complete mode: accumulate to body_
-    common::LOG_DEBUG("RequestStream::HandleData: accumulating body. received=%u, expected=%u, is_last=%d",
+    LOG_DEBUG("RequestStream::HandleData: accumulating body. received=%u, expected=%u, is_last=%d",
         received_body_length_, body_length_, is_last);
 
     if (data_length > 0) {
@@ -202,7 +204,7 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
 
     // Only call handler when all data is received
     if (body_length_ == received_body_length_ || is_last) {
-        common::LOG_DEBUG("RequestStream::HandleData: calling response handler (complete)");
+        LOG_DEBUG("RequestStream::HandleData: calling response handler (complete)");
         response_handler_(response_, 0);
 
         // CRITICAL: Defer stream completion notification until after all frames in current batch
@@ -220,11 +222,11 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
 }
 
 void RequestStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    common::LOG_DEBUG("RequestStream::HandleFrame: processing frame type=0x%x", 
+    LOG_DEBUG("RequestStream::HandleFrame: processing frame type=0x%x", 
         static_cast<uint32_t>(frame->GetType()));
     switch (frame->GetType()) {
         case FrameType::kPushPromise:
-            common::LOG_DEBUG("RequestStream::HandleFrame: dispatching to HandlePushPromise");
+            LOG_DEBUG("RequestStream::HandleFrame: dispatching to HandlePushPromise");
             HandlePushPromise(frame);
             break;
         default:
@@ -235,11 +237,11 @@ void RequestStream::HandleFrame(std::shared_ptr<IFrame> frame) {
 
 void RequestStream::HandlePushPromise(std::shared_ptr<IFrame> frame) {
     auto push_promise_frame = std::static_pointer_cast<PushPromiseFrame>(frame);
-    // Decode headers using QPACK
+    // Decode headers using QPACK decoder (incoming headers use decoder table)
     std::unordered_map<std::string, std::string> headers;
     auto encoded_fields = push_promise_frame->GetEncodedFields();
-    if (!qpack_encoder_->Decode(encoded_fields, headers)) {
-        common::LOG_ERROR("RequestStream::HandlePushPromise error");
+    if (!qpack_decoder_->Decode(encoded_fields, headers)) {
+        LOG_ERROR("RequestStream::HandlePushPromise error");
         error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
         return;
     }

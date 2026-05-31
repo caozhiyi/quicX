@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 # NOTE: keep the VERSION argument below in sync with:
-#   - the root `VERSION.txt` file
+#   - the root `QUICX_VERSION` file
 #   - the QUICX_VERSION_MAJOR/MINOR/PATCH macros in src/common/version.h
 project(QuicX VERSION 0.1.0 LANGUAGES C CXX)
 
@@ -126,6 +126,33 @@ target_link_libraries(http3
 # They are exposed via target_include_directories(... PUBLIC) above.
 # (Install rules are defined separately, see install/quicxConfig.cmake handling.)
 
+# ---------------------------------------------------------------------------
+# Sanitizer support
+# Usage: cmake -DSANITIZER=asan|ubsan|tsan ...
+# ---------------------------------------------------------------------------
+set(SANITIZER "" CACHE STRING "Enable a sanitizer: asan, ubsan, tsan, or empty to disable")
+set_property(CACHE SANITIZER PROPERTY STRINGS "" "asan" "ubsan" "tsan")
+
+if(SANITIZER)
+    message(STATUS "Sanitizer: ${SANITIZER}")
+    if(SANITIZER STREQUAL "asan")
+        set(SANITIZER_FLAGS "-fsanitize=address -fno-omit-frame-pointer -O1 -g")
+    elseif(SANITIZER STREQUAL "ubsan")
+        set(SANITIZER_FLAGS "-fsanitize=undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -O1 -g")
+    elseif(SANITIZER STREQUAL "tsan")
+        set(SANITIZER_FLAGS "-fsanitize=thread -fno-omit-frame-pointer -O1 -g")
+    else()
+        message(FATAL_ERROR "Unknown SANITIZER value: ${SANITIZER}. Use asan, ubsan, or tsan.")
+    endif()
+
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SANITIZER_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SANITIZER_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${SANITIZER_FLAGS}")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${SANITIZER_FLAGS}")
+else()
+    message(STATUS "Sanitizer: DISABLED")
+endif()
+
 # qlog support
 option(QUICX_ENABLE_QLOG "Enable qlog support" ON)
 if(QUICX_ENABLE_QLOG)
@@ -174,7 +201,7 @@ if(ENABLE_INTERGRATION)
 endif()
 
 # interop tests
-option(ENABLE_INTEROP "Enable building interop tests" OFF)
+option(ENABLE_INTEROP "Enable building interop tests" ON)
 if(ENABLE_INTEROP)
     add_subdirectory(test/interop)
 endif()

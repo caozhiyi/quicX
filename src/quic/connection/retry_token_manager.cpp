@@ -43,7 +43,7 @@ std::string RetryTokenManager::GenerateToken(const common::Address& client_addr,
     // Compute HMAC over payload using crypto module
     std::string hmac;
     if (!RetryCrypto::ComputeTokenHMAC(payload, current_secret_, hmac)) {
-        common::LOG_ERROR("Failed to compute token HMAC");
+        LOG_ERROR("Failed to compute token HMAC");
         return "";
     }
 
@@ -56,7 +56,7 @@ std::string RetryTokenManager::GenerateToken(const common::Address& client_addr,
     token.append((char*)original_dcid.GetID(), cid_len);
     token.append(hmac);
 
-    common::LOG_DEBUG("Generated Retry token for %s, size=%zu", client_addr.GetIp().c_str(), token.size());
+    LOG_DEBUG("Generated Retry token for %s, size=%zu", client_addr.GetIp().c_str(), token.size());
 
     return token;
 }
@@ -65,7 +65,7 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
     ConnectionID& out_original_dcid, uint64_t max_age_seconds) {
     // Minimum size: timestamp(8) + cid_len(1) + HMAC(32) = 41 bytes
     if (token.size() < sizeof(uint64_t) + 1 + 32) {
-        common::LOG_WARN("Invalid Retry token size: %zu (too short)", token.size());
+        LOG_WARN("Invalid Retry token size: %zu (too short)", token.size());
         return false;
     }
 
@@ -81,7 +81,7 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
 
     // Check size consistency considering CID length
     if (token.size() != offset + cid_len + 32) {
-        common::LOG_WARN("Invalid Retry token size: %zu (expected %zu for CID len %d)", token.size(),
+        LOG_WARN("Invalid Retry token size: %zu (expected %zu for CID len %d)", token.size(),
             offset + cid_len + 32, cid_len);
         return false;
     }
@@ -104,7 +104,7 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
     uint64_t now = static_cast<uint64_t>(now_ms);
 
     if (now < timestamp) {
-        common::LOG_WARN("Retry token timestamp in future: token=%llu, now=%llu", timestamp, now);
+        LOG_WARN("Retry token timestamp in future: token=%llu, now=%llu", timestamp, now);
         return false;
     }
 
@@ -112,7 +112,7 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
     uint64_t max_age_ms = max_age_seconds * 1000;
     uint64_t age = now - timestamp;
     if (age >= max_age_ms) {
-        common::LOG_WARN("Retry token expired: age=%llu ms, max=%llu ms", age, max_age_ms);
+        LOG_WARN("Retry token expired: age=%llu ms, max=%llu ms", age, max_age_ms);
         return false;
     }
 
@@ -130,12 +130,12 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
     // Try current secret using crypto module
     std::string expected_hmac;
     if (!RetryCrypto::ComputeTokenHMAC(payload, current_secret_, expected_hmac)) {
-        common::LOG_ERROR("Failed to compute HMAC for validation");
+        LOG_ERROR("Failed to compute HMAC for validation");
         return false;
     }
 
     if (RetryCrypto::VerifyTokenHMAC(expected_hmac, actual_hmac)) {
-        common::LOG_DEBUG("Retry token validated successfully (current secret)");
+        LOG_DEBUG("Retry token validated successfully (current secret)");
         return true;
     }
 
@@ -144,13 +144,13 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
         std::string prev_hmac;
         if (RetryCrypto::ComputeTokenHMAC(payload, previous_secret_, prev_hmac)) {
             if (RetryCrypto::VerifyTokenHMAC(prev_hmac, actual_hmac)) {
-                common::LOG_DEBUG("Retry token validated successfully (previous secret)");
+                LOG_DEBUG("Retry token validated successfully (previous secret)");
                 return true;
             }
         }
     }
 
-    common::LOG_WARN("Retry token HMAC validation failed for %s", client_addr.GetIp().c_str());
+    LOG_WARN("Retry token HMAC validation failed for %s", client_addr.GetIp().c_str());
     return false;
 }
 
@@ -158,13 +158,13 @@ void RetryTokenManager::RotateSecret() {
     previous_secret_ = current_secret_;
     GenerateRandomSecret();
     last_rotation_time_ = std::time(nullptr);
-    common::LOG_INFO("Retry token secret rotated");
+    LOG_INFO("Retry token secret rotated");
 }
 
 std::string RetryTokenManager::ComputeHMAC(const std::string& data) {
     std::string hmac;
     if (!RetryCrypto::ComputeTokenHMAC(data, current_secret_, hmac)) {
-        common::LOG_ERROR("ComputeHMAC failed");
+        LOG_ERROR("ComputeHMAC failed");
         return "";
     }
     return hmac;
@@ -172,7 +172,7 @@ std::string RetryTokenManager::ComputeHMAC(const std::string& data) {
 
 void RetryTokenManager::GenerateRandomSecret() {
     if (!RetryCrypto::GenerateRandomSecret(SECRET_SIZE, current_secret_)) {
-        common::LOG_ERROR("Failed to generate random secret for Retry tokens");
+        LOG_ERROR("Failed to generate random secret for Retry tokens");
         // Fallback: use empty secret (not secure, but prevents crash)
         current_secret_.clear();
     }

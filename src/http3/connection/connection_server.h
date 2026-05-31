@@ -31,6 +31,12 @@ public:
         bool enable_push = false);
     virtual ~ServerConnection();
 
+    // Two-phase init: control/qpack stream wiring is deferred to Init() because
+    // weak_from_this() isn't usable inside the constructor (per
+    // ownership_and_memory.md §3.1). Init() must be called immediately after
+    // make_shared<ServerConnection>().
+    void Init() override;
+
 private:
     // send push (RFC 9114 Section 4.6)
     bool SendPush(uint64_t push_id, std::shared_ptr<IResponse> response);
@@ -60,6 +66,8 @@ private:
     uint64_t send_limit_push_id_;
     bool push_timer_active_;  // Flag indicating if push timer is active
     std::shared_ptr<IQuicServer> quic_server_;
+    // pending settings captured at construction, applied during Init()
+    Http3Settings pending_settings_;
     // push responses, push id -> response
     std::unordered_map<uint64_t, std::shared_ptr<IResponse>> push_responses_;
     // push streams, push id -> PushSenderStream (for tracking active push streams)

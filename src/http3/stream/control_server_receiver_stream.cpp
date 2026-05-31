@@ -32,7 +32,7 @@ void ControlServerReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
             // RFC 9114 Section 5.2: A server MUST NOT send a GOAWAY with a stream ID
             // that is greater than the stream ID given in an earlier GOAWAY
             if (goaway_received_ && stream_id > last_goaway_id_) {
-                common::LOG_ERROR("ControlServerReceiverStream: GOAWAY stream ID increased from %llu to %llu",
+                LOG_ERROR("ControlServerReceiverStream: GOAWAY stream ID increased from %llu to %llu",
                     last_goaway_id_, stream_id);
                 error_handler_(stream_->GetStreamID(), Http3ErrorCode::kIdError);
                 return;
@@ -51,7 +51,7 @@ void ControlServerReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
 
             // RFC 9114 Section 7.2.7: MAX_PUSH_ID value MUST NOT be reduced
             if (max_push_id_received_ && push_id < last_max_push_id_) {
-                common::LOG_ERROR(
+                LOG_ERROR(
                     "ControlServerReceiverStream: MAX_PUSH_ID decreased from %llu to %llu", last_max_push_id_, push_id);
                 error_handler_(stream_->GetStreamID(), Http3ErrorCode::kIdError);
                 return;

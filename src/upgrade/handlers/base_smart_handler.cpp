@@ -16,7 +16,7 @@ void BaseSmartHandler::OnConnect(uint32_t fd) {
     auto socket = std::make_shared<TcpSocket>(fd);
     // Initialize connection-specific resources
     if (!InitializeConnection(socket)) {
-        common::LOG_ERROR("Failed to initialize %s connection", GetType().c_str());
+        LOG_ERROR("Failed to initialize %s connection", GetType().c_str());
         return;
     }
     
@@ -34,40 +34,56 @@ void BaseSmartHandler::OnConnect(uint32_t fd) {
         );
         
         if (context.negotiation_timer_id > 0) {
-            common::LOG_DEBUG("Negotiation timeout timer added for socket %d", socket->GetFd());
+            LOG_DEBUG("Negotiation timeout timer added for socket %d", socket->GetFd());
         } else {
-            common::LOG_ERROR("Failed to add negotiation timeout timer for socket %d", socket->GetFd());
+            LOG_ERROR("Failed to add negotiation timeout timer for socket %d", socket->GetFd());
         }
     }
     
-    common::LOG_INFO("New %s connection established", GetType().c_str());
+    LOG_INFO("[TLSDBG] New %s connection established, fd=%u", GetType().c_str(), fd);
 }
 
 void BaseSmartHandler::OnRead(uint32_t fd) {
     auto it = connections_.find(fd);
     if (it == connections_.end()) {
-        common::LOG_ERROR("Socket not found in %s contexts", GetType().c_str());
+        LOG_INFO("[TLSDBG] OnRead fd=%u but no ConnectionContext yet (will retry on next epoll wake)", fd);
         return;
     }
     
     ConnectionContext& context = it->second;
-    
-    // Read data from socket using subclass implementation
+    LOG_INFO("[TLSDBG] OnRead fd=%u type=%s state=%d", fd, GetType().c_str(), (int)context.state);
+
+    // Read data from socket using subclass implementation.
+    //
+    // Semantics of bytes_read here (NOT raw recv() semantics):
+    //   < 0  -> hard error (recv error, SSL fatal error). Tear down.
+    //   = 0  -> "no application bytes to deliver right now". This covers BOTH
+    //           - peer half-closed (FIN), and
+    //           - "still in TLS handshake / SSL_ERROR_WANT_READ", because the
+    //             HTTPS path hides handshake bytes from the application layer
+    //             (HttpsSmartHandler::ReadData returns 0 while SSL_accept is
+    //             progressing).
+    //         We MUST NOT treat that as EOF -- doing so used to call OnClose()
+    //         and tear down the connection between ClientHello and ServerHello,
+    //         which the client observed as "TCP Connected, then TLS hangs
+    //         forever". Instead, just return and wait for the next ET_READ.
+    //         If the peer truly closed, the socket will surface ET_CLOSE / a
+    //         later recv error and we'll clean up there.
+    //   > 0  -> application bytes ready, fall through to protocol handling.
     std::vector<uint8_t> data;
     int bytes_read = ReadData(context.socket, data);
-    
-    common::LOG_DEBUG("Read %d bytes from %s socket: %d, read data: %s", bytes_read, GetType().c_str(), context.socket->GetFd(), data.data());
+
+    LOG_DEBUG("Read %d bytes from %s socket: %d", bytes_read, GetType().c_str(), context.socket->GetFd());
 
     if (bytes_read < 0) {
-        common::LOG_ERROR("Failed to read from %s socket: %d", GetType().c_str(), context.socket->GetFd());
+        LOG_ERROR("Failed to read from %s socket: %d", GetType().c_str(), context.socket->GetFd());
         OnClose(fd);
         return;
     }
-    
+
     if (bytes_read == 0) {
-        // Connection closed by peer
-        common::LOG_INFO("%s connection closed by peer, socket: %d", GetType().c_str(), context.socket->GetFd());
-        OnClose(fd);
+        // Either TLS handshake-in-progress (HTTPS) or a transient
+        // EWOULDBLOCK on the plain HTTP path. Wait for more data.
         return;
     }
 
@@ -87,10 +103,10 @@ void BaseSmartHandler::OnRead(uint32_t fd) {
         context.initial_data.insert(context.initial_data.end(), data.begin(), data.end());
     } else if (context.state == ConnectionState::UPGRADED) {
         // Protocol upgraded, data should be handled by the upgraded protocol
-        common::LOG_DEBUG("%s protocol upgraded, received %d bytes", GetType().c_str(), bytes_read);
+        LOG_DEBUG("%s protocol upgraded, received %d bytes", GetType().c_str(), bytes_read);
     } else {
         // Failed state, ignore data
-        common::LOG_WARN("%s connection in failed state, ignoring data", GetType().c_str());
+        LOG_WARN("%s connection in failed state, ignoring data", GetType().c_str());
     }
 }
 
@@ -104,7 +120,7 @@ void BaseSmartHandler::OnWrite(uint32_t fd) {
     
     // Handle write events based on connection state
     if (context.state == ConnectionState::NEGOTIATING) {
-        common::LOG_DEBUG("Continuing to send %s upgrade response", GetType().c_str());
+        LOG_DEBUG("Continuing to send %s upgrade response", GetType().c_str());
         TrySendResponse(context);
         return;
     }
@@ -117,7 +133,7 @@ void BaseSmartHandler::OnError(uint32_t fd) {
     }
 
     ConnectionContext& context = it->second;
-    common::LOG_ERROR("%s connection error on socket: %d", GetType().c_str(), context.socket->GetFd());
+    LOG_ERROR("%s connection error on socket: %d", GetType().c_str(), context.socket->GetFd());
     OnClose(fd);
 }
 
@@ -134,11 +150,11 @@ void BaseSmartHandler::OnClose(uint32_t fd) {
         if (auto event_loop = event_loop_.lock()) {
             event_loop->RemoveTimer(context.negotiation_timer_id);
             context.negotiation_timer_id = 0;
-            common::LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
+            LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
         }
     }
         
-    common::LOG_INFO("%s connection closed, socket: %d", GetType().c_str(), context.socket->GetFd());
+    LOG_INFO("%s connection closed, socket: %d", GetType().c_str(), context.socket->GetFd());
         
     // Clean up connection-specific resources
     CleanupConnection(context.socket);
@@ -159,7 +175,7 @@ void BaseSmartHandler::HandleProtocolDetection(uint32_t fd, const std::vector<ui
     // Check if we have ALPN negotiated protocol (for HTTPS connections)
     std::string alpn_protocol = GetNegotiatedProtocol(context.socket);
     if (!alpn_protocol.empty()) {
-        common::LOG_INFO("ALPN negotiated protocol: %s", alpn_protocol.c_str());
+        LOG_INFO("ALPN negotiated protocol: %s", alpn_protocol.c_str());
         
         // Store ALPN protocols for negotiation
         context.alpn_protocols.push_back(alpn_protocol);
@@ -172,7 +188,7 @@ void BaseSmartHandler::HandleProtocolDetection(uint32_t fd, const std::vector<ui
         } else if (alpn_protocol == "http/1.1") {
             context.detected_protocol = Protocol::HTTP1_1;
         } else {
-            common::LOG_WARN("Unknown ALPN protocol: %s", alpn_protocol.c_str());
+            LOG_WARN("Unknown ALPN protocol: %s", alpn_protocol.c_str());
         }
         
         if (context.detected_protocol != Protocol::UNKNOWN) {
@@ -200,7 +216,7 @@ void BaseSmartHandler::HandleProtocolDetection(uint32_t fd, const std::vector<ui
 void BaseSmartHandler::OnProtocolDetected(ConnectionContext& context) {
     context.state = ConnectionState::NEGOTIATING;
     
-    common::LOG_INFO("%s protocol detected: %d", GetType().c_str(), static_cast<int>(context.detected_protocol));
+    LOG_INFO("%s protocol detected: %d", GetType().c_str(), static_cast<int>(context.detected_protocol));
     
     // Execute upgrade negotiation
     manager_->ProcessUpgrade(context);
@@ -215,11 +231,11 @@ void BaseSmartHandler::OnUpgradeComplete(ConnectionContext& context) {
         if (auto event_loop = event_loop_.lock()) {
             event_loop->RemoveTimer(context.negotiation_timer_id);
             context.negotiation_timer_id = 0;
-            common::LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
+            LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
         }
     }
     
-    common::LOG_INFO("%s upgrade completed successfully", GetType().c_str());
+    LOG_INFO("%s upgrade completed successfully", GetType().c_str());
 }
 
 void BaseSmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::string& error) {
@@ -230,11 +246,11 @@ void BaseSmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::st
         if (auto event_loop = event_loop_.lock()) {
             event_loop->RemoveTimer(context.negotiation_timer_id);
             context.negotiation_timer_id = 0;
-            common::LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
+            LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
         }
     }
     
-    common::LOG_ERROR("%s upgrade failed: %s", GetType().c_str(), error.c_str());
+    LOG_ERROR("%s upgrade failed: %s", GetType().c_str(), error.c_str());
 
     manager_->HandleUpgradeFailure(context, error);
     TrySendResponse(context);
@@ -258,7 +274,7 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
     int bytes_sent = WriteData(context.socket, data_to_send);
 
     if (bytes_sent >= data_to_send.size()) {
-        common::LOG_INFO("Response sent completely (%zu bytes)", context.pending_response.size());
+        LOG_INFO("Response sent completely (%zu bytes)", context.pending_response.size());
         
         context.pending_response.clear();
         context.response_sent = 0;
@@ -275,7 +291,7 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
         
         if (context.response_sent >= context.pending_response.size()) {
             // Response sent completely
-            common::LOG_INFO("Response sent completely (%zu bytes)", context.pending_response.size());
+            LOG_INFO("Response sent completely (%zu bytes)", context.pending_response.size());
             context.pending_response.clear();
             context.response_sent = 0;
             
@@ -290,7 +306,7 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
             }
         } else {
             // Partial send, register WRITE event to continue
-            common::LOG_DEBUG("Partial response sent (%d/%zu bytes), registering WRITE event", bytes_sent, context.pending_response.size());
+            LOG_DEBUG("Partial response sent (%d/%zu bytes), registering WRITE event", bytes_sent, context.pending_response.size());
             if (auto event_driver = event_loop_.lock()) {
                 event_driver->ModifyFd(context.socket->GetFd(), static_cast<common::EventType>(static_cast<int>(common::EventType::ET_READ) | static_cast<int>(common::EventType::ET_WRITE)));
             }
@@ -298,7 +314,7 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
 
     } else if (bytes_sent < 0) {
         // Send error
-        common::LOG_ERROR("Failed to send response");
+        LOG_ERROR("Failed to send response");
         context.pending_response.clear();
         context.response_sent = 0;
         
@@ -309,7 +325,7 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
 
     } else {
         // bytes_sent == 0 means would block, register WRITE event to retry
-        common::LOG_DEBUG("Send would block, registering WRITE event");
+        LOG_DEBUG("Send would block, registering WRITE event");
         if (auto event_driver = event_loop_.lock()) {
             event_driver->ModifyFd(context.socket->GetFd(), static_cast<int32_t>(common::EventType::ET_READ) | static_cast<int32_t>(common::EventType::ET_WRITE));
         }
@@ -319,7 +335,7 @@ void BaseSmartHandler::TrySendResponse(ConnectionContext& context) {
 void BaseSmartHandler::HandleNegotiationTimeout(uint32_t fd) {
     auto it = connections_.find(fd);
     if (it == connections_.end()) {
-        common::LOG_DEBUG("Connection already closed for socket %d", fd);
+        LOG_DEBUG("Connection already closed for socket %d", fd);
         return;
     }
     
@@ -330,7 +346,7 @@ void BaseSmartHandler::HandleNegotiationTimeout(uint32_t fd) {
         context.state == ConnectionState::DETECTING || 
         context.state == ConnectionState::NEGOTIATING) {
         
-        common::LOG_WARN("Negotiation timeout for %s connection, socket: %d", GetType().c_str(), context.socket->GetFd());
+        LOG_WARN("Negotiation timeout for %s connection, socket: %d", GetType().c_str(), context.socket->GetFd());
         
         // Close the connection due to timeout
         context.socket->Close();
@@ -341,7 +357,7 @@ void BaseSmartHandler::HandleNegotiationTimeout(uint32_t fd) {
 
     } else {
         // Negotiation completed or failed, timer is no longer needed
-        common::LOG_DEBUG("Negotiation timeout timer fired but negotiation already completed for socket %d", context.socket->GetFd());
+        LOG_DEBUG("Negotiation timeout timer fired but negotiation already completed for socket %d", context.socket->GetFd());
     }
 }
 

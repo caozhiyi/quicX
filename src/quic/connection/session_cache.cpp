@@ -60,7 +60,7 @@ bool SerializedSessionData::Deserialize(std::ifstream& file) {
     uint32_t magic;
     file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     if (magic != 0x53455353) { // "SESS"
-        common::LOG_ERROR("Invalid session file magic number: 0x%08x", magic);
+        LOG_ERROR("Invalid session file magic number: 0x%08x", magic);
         return false;
     }
     
@@ -68,7 +68,7 @@ bool SerializedSessionData::Deserialize(std::ifstream& file) {
     uint32_t version;
     file.read(reinterpret_cast<char*>(&version), sizeof(version));
     if (version != 1 && version != 2) {
-        common::LOG_ERROR("Unsupported session file version: %u", version);
+        LOG_ERROR("Unsupported session file version: %u", version);
         return false;
     }
     
@@ -81,7 +81,7 @@ bool SerializedSessionData::Deserialize(std::ifstream& file) {
     uint32_t server_name_len;
     file.read(reinterpret_cast<char*>(&server_name_len), sizeof(server_name_len));
     if (server_name_len > 1024) { // Sanity check
-        common::LOG_ERROR("Server name too long: %u", server_name_len);
+        LOG_ERROR("Server name too long: %u", server_name_len);
         return false;
     }
     info.server_name.resize(server_name_len);
@@ -91,7 +91,7 @@ bool SerializedSessionData::Deserialize(std::ifstream& file) {
     uint32_t session_der_len;
     file.read(reinterpret_cast<char*>(&session_der_len), sizeof(session_der_len));
     if (session_der_len > 65536) { // Sanity check
-        common::LOG_ERROR("Session DER too long: %u", session_der_len);
+        LOG_ERROR("Session DER too long: %u", session_der_len);
         return false;
     }
     session_der.resize(session_der_len);
@@ -139,18 +139,18 @@ bool SessionCache::Init(const std::string& session_cache_path) {
 
     // Check if cache path exists and is accessible
     if (!std::filesystem::exists(session_cache_path_)) {
-        common::LOG_ERROR("Session cache path does not exist: %s", session_cache_path_.c_str());
+        LOG_ERROR("Session cache path does not exist: %s", session_cache_path_.c_str());
          // Create cache directory if it doesn't exist
         try {
             std::filesystem::create_directories(session_cache_path_);
         } catch (const std::exception& e) {
-            common::LOG_ERROR("Failed to create session cache directory: %s", e.what());
+            LOG_ERROR("Failed to create session cache directory: %s", e.what());
             return false;
         }
     }
 
     if (!std::filesystem::is_directory(session_cache_path_)) {
-        common::LOG_ERROR("Session cache path is not a directory: %s", session_cache_path_.c_str());
+        LOG_ERROR("Session cache path is not a directory: %s", session_cache_path_.c_str());
         return false;
     }
 
@@ -159,26 +159,26 @@ bool SessionCache::Init(const std::string& session_cache_path) {
         std::filesystem::path test_file = session_cache_path_ + "/.write_test";
         std::ofstream test(test_file);
         if (!test.is_open()) {
-            common::LOG_ERROR("Cannot write to session cache directory: %s", session_cache_path_.c_str());
+            LOG_ERROR("Cannot write to session cache directory: %s", session_cache_path_.c_str());
             return false;
         }
         test.close();
         std::filesystem::remove(test_file);
 
     } catch (const std::exception& e) {
-        common::LOG_ERROR("Failed to verify write permissions on cache directory: %s", e.what());
+        LOG_ERROR("Failed to verify write permissions on cache directory: %s", e.what());
         return false;
     }
    
     // Load existing sessions from disk
     if (!LoadSessionsFromCache()) {
-        common::LOG_WARN("Failed to load sessions from cache, starting with empty cache");
+        LOG_WARN("Failed to load sessions from cache, starting with empty cache");
     }
     
     enable_session_cache_ = true;
     last_cleanup_time_ = common::UTCTimeMsec() / 1000;
     
-    common::LOG_INFO("SessionCache initialized with path: %s, loaded %zu sessions", 
+    LOG_INFO("SessionCache initialized with path: %s, loaded %zu sessions", 
                     session_cache_path_.c_str(), sessions_cache_.size());
     
     return true;
@@ -240,7 +240,7 @@ bool SessionCache::StoreSession(const std::string& session_der, const SessionInf
                 prev->second.initial_max_stream_data_uni;
             merged_info.active_connection_id_limit =
                 prev->second.active_connection_id_limit;
-            common::LOG_DEBUG("StoreSession: preserved remembered TP from prior entry "
+            LOG_DEBUG("StoreSession: preserved remembered TP from prior entry "
                               "for %s (incoming had no TP)", session_info.server_name.c_str());
         }
     }
@@ -252,7 +252,7 @@ bool SessionCache::StoreSession(const std::string& session_der, const SessionInf
     
     // Save to disk
     if (!SaveSessionToFile(merged_info.server_name, data)) {
-        common::LOG_ERROR("Failed to save session to disk for %s", merged_info.server_name.c_str());
+        LOG_ERROR("Failed to save session to disk for %s", merged_info.server_name.c_str());
         return false;
     }
     
@@ -265,7 +265,7 @@ bool SessionCache::StoreSession(const std::string& session_der, const SessionInf
     // Check if we need to evict entries due to cache size limit (after adding new session)
     EvictLRUEntries();
     
-    common::LOG_DEBUG("Stored session for %s, timeout: %u, early_data_capable: %d, has_tp: %d, cache size: %zu",
+    LOG_DEBUG("Stored session for %s, timeout: %u, early_data_capable: %d, has_tp: %d, cache size: %zu",
                      merged_info.server_name.c_str(), merged_info.timeout,
                      merged_info.early_data_capable, merged_info.has_transport_params,
                      sessions_cache_.size());
@@ -294,13 +294,13 @@ bool SessionCache::GetSession(const std::string& server_name, std::string& out_s
         sessions_cache_.erase(it);
         RemoveSessionFile(server_name);
         RemoveLRUEntry(server_name);
-        common::LOG_DEBUG("Session for %s expired, removed from cache", server_name.c_str());
+        LOG_DEBUG("Session for %s expired, removed from cache", server_name.c_str());
         return false;
     }
     
     // Load session_der from disk
     if (!LoadSessionFromFile(server_name, out_session_der)) {
-        common::LOG_ERROR("Failed to load session from disk for %s", server_name.c_str());
+        LOG_ERROR("Failed to load session from disk for %s", server_name.c_str());
         // Remove corrupted entry
         sessions_cache_.erase(it);
         RemoveSessionFile(server_name);
@@ -311,7 +311,7 @@ bool SessionCache::GetSession(const std::string& server_name, std::string& out_s
     // Update LRU order (move to front as most recently used)
     UpdateLRUOrder(server_name);
     
-    common::LOG_DEBUG("Retrieved valid session for %s, remaining lifetime: %u seconds", 
+    LOG_DEBUG("Retrieved valid session for %s, remaining lifetime: %u seconds", 
                      server_name.c_str(), GetSessionRemainingLifetime(info));
     return true;
 }
@@ -377,7 +377,7 @@ bool SessionCache::GetSessionWithInfo(const std::string& server_name, std::strin
 
     UpdateLRUOrder(server_name);
 
-    common::LOG_DEBUG("Retrieved session with info for %s, has_tp=%d (mem=%d, disk=%d), remaining: %u seconds",
+    LOG_DEBUG("Retrieved session with info for %s, has_tp=%d (mem=%d, disk=%d), remaining: %u seconds",
                      server_name.c_str(), out_info.has_transport_params,
                      it->second.has_transport_params, data.info.has_transport_params,
                      GetSessionRemainingLifetime(info));
@@ -403,10 +403,10 @@ bool SessionCache::HasValidSessionFor0RTT(const std::string& server_name) {
     bool can_use = CanUseSessionFor0RTT(info);
     
     if (!can_use) {
-        common::LOG_DEBUG("Session for %s cannot be used for 0-RTT (expired: %d, early_data_capable: %d)", 
+        LOG_DEBUG("Session for %s cannot be used for 0-RTT (expired: %d, early_data_capable: %d)", 
                          server_name.c_str(), !IsSessionValid(info), info.early_data_capable);
     } else {
-        common::LOG_DEBUG("Session for %s can be used for 0-RTT, remaining lifetime: %u seconds", 
+        LOG_DEBUG("Session for %s can be used for 0-RTT, remaining lifetime: %u seconds", 
                          server_name.c_str(), GetSessionRemainingLifetime(info));
     }
     
@@ -426,7 +426,7 @@ void SessionCache::Clear() {
     lru_list_.clear();
     lru_map_.clear();
     
-    common::LOG_INFO("Session cache cleared (memory and disk)");
+    LOG_INFO("Session cache cleared (memory and disk)");
 }
 
 size_t SessionCache::GetCacheSize() const {
@@ -456,13 +456,13 @@ bool SessionCache::LoadSessionsFromCache() {
                 // Try to load session info from file
                 std::ifstream file(entry.path(), std::ios::binary);
                 if (!file.is_open()) {
-                    common::LOG_WARN("Failed to open session file: %s", entry.path().c_str());
+                    LOG_WARN("Failed to open session file: %s", entry.path().c_str());
                     continue;
                 }
                 
                 SerializedSessionData data;
                 if (!data.Deserialize(file)) {
-                    common::LOG_WARN("Failed to deserialize session file: %s", entry.path().c_str());
+                    LOG_WARN("Failed to deserialize session file: %s", entry.path().c_str());
                     continue;
                 }
                 
@@ -471,18 +471,18 @@ bool SessionCache::LoadSessionsFromCache() {
                     sessions_cache_[data.info.server_name] = data.info;
                     // Initialize LRU order for loaded sessions (add to front as most recently used)
                     UpdateLRUOrder(data.info.server_name);
-                    common::LOG_DEBUG("Loaded valid session for %s from disk", data.info.server_name.c_str());
+                    LOG_DEBUG("Loaded valid session for %s from disk", data.info.server_name.c_str());
                 } else {
-                    common::LOG_DEBUG("Session for %s expired, removing file", data.info.server_name.c_str());
+                    LOG_DEBUG("Session for %s expired, removing file", data.info.server_name.c_str());
                     std::filesystem::remove(entry.path());
                 }
             }
         }
         
-        common::LOG_INFO("Loaded %zu valid sessions from disk cache", sessions_cache_.size());
+        LOG_INFO("Loaded %zu valid sessions from disk cache", sessions_cache_.size());
         return true;
     } catch (const std::exception& e) {
-        common::LOG_ERROR("Failed to load sessions from cache: %s", e.what());
+        LOG_ERROR("Failed to load sessions from cache: %s", e.what());
         return false;
     }
 }
@@ -509,12 +509,12 @@ bool SessionCache::SaveSessionToFile(const std::string& server_name, const Seria
     
     std::ofstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
-        common::LOG_ERROR("Failed to create session file: %s", filepath.c_str());
+        LOG_ERROR("Failed to create session file: %s", filepath.c_str());
         return false;
     }
     
     if (!data.Serialize(file)) {
-        common::LOG_ERROR("Failed to serialize session data to file: %s", filepath.c_str());
+        LOG_ERROR("Failed to serialize session data to file: %s", filepath.c_str());
         return false;
     }
     
@@ -527,7 +527,7 @@ void SessionCache::CleanupExpiredSessions() {
     
     while (it != sessions_cache_.end()) {
         if (!IsSessionValid(it->second)) {
-            common::LOG_DEBUG("Removing expired session for %s", it->first.c_str());
+            LOG_DEBUG("Removing expired session for %s", it->first.c_str());
             RemoveSessionFile(it->first);
             RemoveLRUEntry(it->first);
             it = sessions_cache_.erase(it);
@@ -538,7 +538,7 @@ void SessionCache::CleanupExpiredSessions() {
     
     size_t after_size = sessions_cache_.size();
     if (before_size != after_size) {
-        common::LOG_INFO("Cleaned up %zu expired sessions, cache size: %zu", 
+        LOG_INFO("Cleaned up %zu expired sessions, cache size: %zu", 
                         before_size - after_size, after_size);
     }
 }
@@ -549,7 +549,7 @@ bool SessionCache::RemoveSessionFile(const std::string& server_name) {
         std::string filepath = data.GetFilePath(session_cache_path_, server_name);
         return std::filesystem::remove(filepath);
     } catch (const std::exception& e) {
-        common::LOG_ERROR("Failed to remove session file for %s: %s", server_name.c_str(), e.what());
+        LOG_ERROR("Failed to remove session file for %s: %s", server_name.c_str(), e.what());
         return false;
     }
 }
@@ -579,7 +579,7 @@ bool SessionCache::SessionFileExists(const std::string& server_name) const {
         std::string filepath = data.GetFilePath(session_cache_path_, server_name);
         return std::filesystem::exists(filepath);
     } catch (const std::exception& e) {
-        common::LOG_ERROR("Failed to check session file existence for %s: %s", server_name.c_str(), e.what());
+        LOG_ERROR("Failed to check session file existence for %s: %s", server_name.c_str(), e.what());
         return false;
     }
 }
@@ -587,7 +587,7 @@ bool SessionCache::SessionFileExists(const std::string& server_name) const {
 void SessionCache::SetMaxCacheSize(uint32_t max_size) {
     std::lock_guard<std::mutex> lock(mutex_);
     max_cache_size_ = max_size;
-    common::LOG_INFO("Session cache max size set to %u", max_size);
+    LOG_INFO("Session cache max size set to %u", max_size);
     
     // Evict entries if current size exceeds new limit
     EvictLRUEntries();
@@ -609,14 +609,14 @@ void SessionCache::EvictLRUEntries() {
     while (sessions_cache_.size() > max_cache_size_) {
         if (lru_list_.empty()) {
             // This shouldn't happen, but just in case
-            common::LOG_ERROR("LRU list is empty but cache size is %zu", sessions_cache_.size());
+            LOG_ERROR("LRU list is empty but cache size is %zu", sessions_cache_.size());
             break;
         }
         
         // Get least recently used entry (back of list)
         std::string lru_server_name = lru_list_.back();
         
-        common::LOG_DEBUG("Evicting LRU session for %s (cache size: %zu, max: %u)", 
+        LOG_DEBUG("Evicting LRU session for %s (cache size: %zu, max: %u)", 
                          lru_server_name.c_str(), sessions_cache_.size(), max_cache_size_);
         
         // Remove from cache and disk
@@ -679,7 +679,7 @@ void SessionCache::Reset() {
     last_cleanup_time_ = 0;
     session_cache_path_.clear();
     
-    common::LOG_INFO("SessionCache reset to initial state");
+    LOG_INFO("SessionCache reset to initial state");
 }
 
 }

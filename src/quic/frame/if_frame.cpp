@@ -21,7 +21,7 @@ bool IFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     uint32_t need_size = EncodeSize();
 
     if (need_size > buffer->GetFreeLength()) {
-        common::LOG_ERROR(
+        LOG_ERROR(
             "insufficient remaining cache space. remain_size:%d, need_size:%d", buffer->GetFreeLength(), need_size);
         return false;
     }
@@ -53,7 +53,7 @@ uint32_t IFrame::GetFrameTypeBit() {
 
     // Guard against shift UB: frame_type_ must be < 32 for uint32_t bit field
     if (frame_type_ >= 32) {
-        common::LOG_WARN("frame type %u exceeds bit field width, returning 0", frame_type_);
+        LOG_WARN("frame type %u exceeds bit field width, returning 0", frame_type_);
         return 0;
     }
     return 1u << frame_type_;

@@ -15,6 +15,8 @@
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
 
+#include "test_server_helper.h"
+
 class AdvancedFeaturesTest : public ::testing::Test {
 protected:
     std::shared_ptr<quicx::IServer> server_;
@@ -27,7 +29,14 @@ protected:
     static const char key_pem_[];
 
     void SetUp() override {
-        port_ = next_port_.fetch_add(1);
+        // Probe for a kernel-confirmed free UDP port (see test_server_helper.h).
+        // Stale processes from a previous (crashed) run, or any other
+        // process on the box, may already hold ports inside our reserved
+        // range. Without this probe, the server's master loop silently
+        // fails to bind and every subsequent DoRequest hangs for the full
+        // connection_timeout_ms_ window.
+        port_ = quicx::test::ProbeFreeUdpPort(next_port_);
+        ASSERT_NE(port_, 0u) << "failed to find a free UDP port for test server";
 
         server_ = quicx::IServer::Create();
 
@@ -41,8 +50,10 @@ protected:
 
         RegisterHandlers();
 
-        server_thread_ = std::thread([this]() { server_->Start("127.0.0.1", port_); });
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // Synchronously bind on the main thread (Start() returns only after
+        // the UDP socket is fully armed in the master event loop). This
+        // surfaces bind() failures immediately as a fixture ASSERT.
+        ASSERT_TRUE(server_->Start("127.0.0.1", port_));
 
         client_ = quicx::IClient::Create();
 
@@ -65,6 +76,7 @@ protected:
             server_->Join();
         }
         if (server_thread_.joinable()) {
+            // Defensive: in case a future change re-introduces a worker thread.
             server_thread_.join();
         }
         server_.reset();

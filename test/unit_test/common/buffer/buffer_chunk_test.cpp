@@ -147,21 +147,10 @@ TEST(BufferChunkTest, WriteAndReadData) {
     }
 }
 
-TEST(BufferChunkTest, SetLimitSize) {
-    auto pool = MakeBlockMemoryPoolPtr(64u, 1u);
-    BufferChunk chunk(pool);
-    
-    ASSERT_TRUE(chunk.Valid());
-    EXPECT_EQ(64u, chunk.GetLength());
-    
-    // Set limit size
-    chunk.SetLimitSize(32);
-    EXPECT_EQ(32u, chunk.GetLength());
-    
-    // Set limit size larger than actual size
-    chunk.SetLimitSize(100);
-    EXPECT_EQ(64u, chunk.GetLength());  // Should be clamped
-}
+// Note: The legacy BufferChunkTest.SetLimitSize was removed as part of the
+// zero-copy invariant 2 refactor. SetLimitSize() and the entangled
+// GetLength() semantics are gone; capacity policy now lives on the IBuffer
+// view (see BufferInvariant2_Capacity tests).
 
 // ============================================================================
 // Extended StandaloneBufferChunk tests
