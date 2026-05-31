@@ -138,9 +138,19 @@ TEST_F(SendManagerRecheckTimerTest, ReentrantSetDoesNotDoubleSchedule) {
     // Half-way through the interval, call again — must be a no-op for the
     // timer wheel (the existing pending task stays).
     SleepAndTick(50);
-    if (ElapsedSince(start) < kRecheckIntervalMs) {
-        EXPECT_EQ(retry_count_.load(), 0);
+
+    // If the host overslept past the 100 ms deadline, the timer has already
+    // fired and flow_control_recheck_scheduled_ has been cleared. A second
+    // SetFlowControlBlocked() would then schedule a *new* timer — which is
+    // correct production behaviour but violates this test's precondition
+    // (that the second call happens while the first timer is still pending).
+    // Skip the test rather than report a false failure caused by CI latency.
+    if (ElapsedSince(start) >= kRecheckIntervalMs) {
+        GTEST_SKIP() << "host overslept past the 100 ms deadline; "
+                        "reentrant-guard precondition cannot be tested";
     }
+
+    EXPECT_EQ(retry_count_.load(), 0);
     send_manager_->SetFlowControlBlocked();
 
     // Wait until well past the original 100 ms deadline.
