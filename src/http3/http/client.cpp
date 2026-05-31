@@ -124,7 +124,12 @@ bool Client::DoRequestImpl(const std::string& url, HttpMethod method,
     uint16_t port = 0;
     if (!common::ParseURLForPseudoHeaders(url, scheme, host, port, path_with_query)) {
         LOG_ERROR("parse url failed. url: %s", url.c_str());
-        return false;
+        // Notify the caller asynchronously to match the expected asynchronous error path
+        uint32_t error_code = Http3ErrorCode::kInternalError;
+        quic_->AddTimer(0, [handler, error_code]() {
+            ReportRequestError(handler, error_code);
+        });
+        return true;
     }
 
     // Set pseudo-headers (the IRequest is caller-owned; the caller must not
