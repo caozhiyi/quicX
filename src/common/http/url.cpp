@@ -34,7 +34,11 @@ bool ParseURLForPseudoHeaders(const std::string& url_str,
     if (port_pos != std::string::npos) {
         host = host_port.substr(0, port_pos);
         try {
-            port = static_cast<uint16_t>(std::stoi(host_port.substr(port_pos + 1)));
+            int32_t parsed_port = std::stoi(host_port.substr(port_pos + 1));
+            if (parsed_port < 0 || parsed_port > 65535) {
+                return false;
+            }
+            port = static_cast<uint16_t>(parsed_port);
         } catch (...) {
             return false;
         }

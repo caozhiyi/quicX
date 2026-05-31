@@ -3,7 +3,12 @@
 
 #include <string>
 #include <cstdint>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>  // for sockaddr_storage / socklen_t
+#endif
 
 namespace quicx {
 namespace common {
