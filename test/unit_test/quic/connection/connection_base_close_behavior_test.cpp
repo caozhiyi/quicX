@@ -152,6 +152,7 @@ TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
 
 TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {
     auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
     auto timer = std::make_shared<RecordingTimer>();
     event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(
@@ -160,6 +161,11 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {
 
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
     EXPECT_GE(close_wait, 500u);
+
+    // Explicitly reset conn before event_loop goes out of scope so the
+    // PathManager destructor's CleanupMigrationState() RunInLoop lambda
+    // is enqueued and freed while the EventLoop is still alive.
+    conn.reset();
 }
 
 }  // namespace

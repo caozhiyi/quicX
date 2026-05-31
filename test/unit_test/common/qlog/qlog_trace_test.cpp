@@ -321,18 +321,31 @@ TEST(QlogTraceTest, FlushWithoutWriter) {
     EXPECT_EQ(1u, trace->GetEventCount());
 }
 
-// Test thread safety (basic concurrent logging)
+// Test concurrent logging: QlogTrace is per-connection and single-threaded.
+// The real concurrent use-case is *multiple connections* (i.e. multiple
+// independent QlogTrace instances) running concurrently, each on its own
+// thread — NOT sharing a single instance across threads.
+// This test verifies that pattern, which is the documented contract.
 TEST(QlogTraceTest, ConcurrentLogging) {
     QlogConfig config = CreateTestConfig();
-    auto trace = std::make_shared<QlogTrace>("conn-14", VantagePoint::kServer, config);
     auto writer = std::make_shared<AsyncWriter>(config);
-    trace->SetWriter(writer.get());
 
     const int num_threads = 4;
     const int events_per_thread = 25;
 
     std::vector<std::thread> threads;
+    std::vector<std::shared_ptr<QlogTrace>> traces;
+
+    // Create one independent trace per thread (mirrors real per-connection use)
     for (int t = 0; t < num_threads; t++) {
+        auto trace = std::make_shared<QlogTrace>("conn-14-" + std::to_string(t),
+                                                  VantagePoint::kServer, config);
+        trace->SetWriter(writer.get());
+        traces.push_back(trace);
+    }
+
+    for (int t = 0; t < num_threads; t++) {
+        auto trace = traces[t];
         threads.emplace_back([trace, t, events_per_thread]() {
             for (int i = 0; i < events_per_thread; i++) {
                 PacketSentData data;
@@ -348,10 +361,15 @@ TEST(QlogTraceTest, ConcurrentLogging) {
         thread.join();
     }
 
-    EXPECT_EQ(num_threads * events_per_thread, trace->GetEventCount());
+    uint64_t total = 0;
+    for (auto& trace : traces) {
+        EXPECT_EQ(static_cast<uint64_t>(events_per_thread), trace->GetEventCount());
+        total += trace->GetEventCount();
+    }
+    EXPECT_EQ(static_cast<uint64_t>(num_threads * events_per_thread), total);
 
-    // Cleanup: destroy trace before writer
-    trace.reset();
+    // Cleanup: destroy traces before writer
+    traces.clear();
 }
 
 // Test with different packet types

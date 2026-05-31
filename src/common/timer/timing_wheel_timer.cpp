@@ -1,4 +1,22 @@
 #include <limits>
+#ifdef _MSC_VER
+#include <intrin.h>
+inline int __builtin_ctzll(unsigned long long mask) {
+    unsigned long index;
+#if defined(_WIN64)
+    _BitScanForward64(&index, mask);
+#else
+    if ((mask & 0xffffffff) != 0) {
+        _BitScanForward(&index, (unsigned long)(mask & 0xffffffff));
+    } else {
+        _BitScanForward(&index, (unsigned long)(mask >> 32));
+        index += 32;
+    }
+#endif
+    return index;
+}
+#endif
+
 
 #include "common/log/log.h"
 #include "common/timer/timing_wheel_timer.h"
