@@ -1,7 +1,22 @@
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <iostream>
+#include <memory>
+#include <thread>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
+
+// Use an atomic flag instead of calling Stop() directly from the signal
+// handler: Stop() -> Destroy() takes locks and frees memory, neither of which
+// is async-signal-safe. Calling them from the signal context aborts (verified
+// experimentally — server SIGABRTs and heaptrack output is 0 bytes).
+static std::atomic<bool> g_shutdown{false};
+
+static void HandleSignal(int) {
+    g_shutdown.store(true, std::memory_order_release);
+}
 
 int main() {
     static const char cert_pem[] =
@@ -38,30 +53,51 @@ int main() {
         "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
         "-----END RSA PRIVATE KEY-----\n";
 
+    std::signal(SIGINT, HandleSignal);
+    std::signal(SIGTERM, HandleSignal);
+
     auto server = quicx::IServer::Create();
     server->AddHandler(quicx::HttpMethod::kGet, "/hello",
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
-            std::cout << "get request method: " << req->GetMethodString() << std::endl;
-            std::cout << "get request path: " << req->GetPath() << std::endl;
-            std::cout << "get request body: " << req->GetBodyAsString() << std::endl;
-
             resp->AppendBody(std::string("hello world"));
             resp->SetStatusCode(200);
         });
     quicx::Http3ServerConfig config;
     config.quic_config_.cert_pem_ = cert_pem;
     config.quic_config_.key_pem_ = key_pem;
-    config.quic_config_.config_.worker_thread_num_ = 1;
-    config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
+    config.quic_config_.config_.thread_mode_ = quicx::ThreadMode::kMultiThread;
+    config.quic_config_.config_.worker_thread_num_ = 4;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kInfo;
+    config.quic_config_.config_.log_path_ = "/tmp/h3_server_logs";
 
     // Enable QLog so we can visualize the connection in qvis
-    config.quic_config_.config_.qlog_config_.enabled = true;
+    config.quic_config_.config_.qlog_config_.enabled = false;
     config.quic_config_.config_.qlog_config_.output_dir = "./qlog_output_server";
     config.quic_config_.config_.qlog_config_.flush_interval_ms = 100;
+
+    // Expose Prometheus metrics over HTTP/3 at GET /metrics so we can probe
+    // server internal state with: quicx-curl https://localhost:7001/metrics
+    config.metrics_.enable = true;
+    config.metrics_.http_enable = true;
+    config.metrics_.http_path = "/metrics";
 
     server->Init(config);
     if (!server->Start("0.0.0.0", 7001)) {
         std::cout << "start server failed" << std::endl;
+        return 1;
     }
+
+    // Watchdog: when SIGINT/SIGTERM sets g_shutdown, call Stop() from a normal
+    // thread context (NOT signal context) so Destroy()/locks/free are safe.
+    std::thread shutdown_thread([&server]() {
+        while (!g_shutdown.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        std::cout << "shutdown signal received, stopping server" << std::endl;
+        server->Stop();
+    });
+
     server->Join();
+    shutdown_thread.join();
+    return 0;
 }

@@ -1,2 +1,0 @@
-{"qlog_format":"JSON-SEQ","qlog_version":"draft-02","title":"QuicX server","description":"QUIC connection trace","trace":{"vantage_point":{"name":"server","type":"server"},"common_fields":{"protocol_types":["QUIC","HTTP3"],"time_format":"relative","reference_time":"1779518769450"},"configuration":{"time_offset":0,"time_units":"ms"}}}
-{"time":"0","name":"connectivity:server_listening","data":{"ip_version":"ipv4","ip":"0.0.0.0","port":7001}}

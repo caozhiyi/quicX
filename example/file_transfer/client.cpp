@@ -16,6 +16,13 @@
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 
+// PERF VALIDATION (loopback): override the cold-start initial RTT estimate
+// from the RFC-friendly 250 ms default down to 100 ms so the first PTO does
+// not clip the slow-start ramp on a sub-millisecond loopback path. This
+// mirrors what test/perf/e2e_perf_test.cpp does. See
+// docs/internal/perf_e2e_analysis.md §6 P3.
+#include "quic/connection/controler/rtt_calculator.h"
+
 namespace fs = std::filesystem;
 
 class ProgressBar {
@@ -302,7 +309,7 @@ public:
         quicx::Http3ClientConfig config;
         config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
         config.quic_config_.config_.worker_thread_num_ = 4;
-        config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kWarn;
         config.connection_timeout_ms_ = 30000;  // 30s timeout
 
         if (!client_->Init(config)) {
@@ -470,6 +477,11 @@ void PrintUsage(const char* program) {
 }
 
 int main(int argc, char* argv[]) {
+    // PERF VALIDATION: collapse the 250 ms cold-start PTO on loopback. This is
+    // the same value used by test/perf/e2e_perf_test.cpp. Going below 100 ms
+    // is unsafe under multi-stream load (see comment in e2e_perf_test.cpp).
+    quicx::quic::SetDefaultInitialRtt(100);
+
     if (argc < 3) {
         PrintUsage(argv[0]);
         return 1;

@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -17,12 +19,14 @@ struct LoadTestConfig {
     int requests_per_client = 100;
     int rampup_seconds = 0;
     int duration_seconds = 0;  // 0 = use requests_per_client
+    int timeout_ms = 10000;    // per-request timeout in milliseconds
 };
 
 struct LoadTestMetrics {
     std::atomic<int> total_requests{0};
     std::atomic<int> successful_requests{0};
     std::atomic<int> failed_requests{0};
+    std::atomic<int> timeout_requests{0};
     std::vector<double> latencies;
     std::mutex latencies_mutex;
     std::chrono::steady_clock::time_point start_time;
@@ -86,8 +90,22 @@ private:
         quicx::Http3ClientConfig config;
         config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
         config.quic_config_.config_.worker_thread_num_ = 1;
-        config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
-        config.connection_timeout_ms_ = 10000;
+        // Logging note: the QUIC logger is a process-wide singleton
+        // (LOG_SET_LEVEL / LOG_SET inside QuicClient::Init), so only the
+        // *first* client to Init wins; later clients silently overwrite
+        // these fields with no effect. Each log line carries its own
+        // connection id, so interleaved output from many clients in the
+        // same file remains readable.
+        //
+        // We set kInfo by default so that, if a load run misbehaves, the
+        // process log captures handshake / flow-control / loss-recovery
+        // events without flooding the disk the way kDebug would.
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kInfo;
+        // Route client-side QUIC logs to a fixed path so we can inspect them
+        // alongside server logs (default would land in cwd ./logs which gets
+        // polluted by other test runs).
+        config.quic_config_.config_.log_path_ = "/tmp/h3_client_logs";
+        config.connection_timeout_ms_ = config_.timeout_ms;
 
         if (!client->Init(config)) {
             std::cerr << "Client " << client_id << " failed to initialize" << std::endl;
@@ -95,7 +113,6 @@ private:
         }
 
         int requests_to_send = config_.requests_per_client;
-        auto client_start = std::chrono::steady_clock::now();
 
         for (int i = 0; i < requests_to_send && running_; ++i) {
             // Check duration limit
@@ -111,12 +128,20 @@ private:
             auto request = quicx::IRequest::Create();
             request->AppendBody("hello world.");
             auto req_start = std::chrono::high_resolution_clock::now();
-            std::atomic<bool> completed{false};
+
+            // Synchronization: one request at a time per client.
+            // Client::DoRequest and its internal callbacks are NOT thread-safe
+            // for concurrent access, so we must serialize: send one request,
+            // wait for callback, then send the next.
+            auto completed = std::make_shared<std::atomic<bool>>(false);
+            auto mtx = std::make_shared<std::mutex>();
+            auto cv = std::make_shared<std::condition_variable>();
 
             metrics_.total_requests++;
 
             client->DoRequest(config_.url, quicx::HttpMethod::kGet, request,
-                [this, req_start, &completed](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+                [this, req_start, completed, mtx, cv](
+                    std::shared_ptr<quicx::IResponse> response, uint32_t error) {
                     auto req_end = std::chrono::high_resolution_clock::now();
                     double latency_ms = std::chrono::duration<double, std::milli>(req_end - req_start).count();
 
@@ -129,14 +154,26 @@ private:
                         metrics_.failed_requests++;
                     }
 
-                    completed = true;
+                    {
+                        std::lock_guard<std::mutex> lock(*mtx);
+                        *completed = true;
+                    }
+                    cv->notify_one();
                 });
 
-            // Wait for completion
-            for (int j = 0; j < 100 && !completed; ++j) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // Wait for this request to complete with timeout
+            {
+                std::unique_lock<std::mutex> lock(*mtx);
+                if (!cv->wait_for(lock, std::chrono::milliseconds(config_.timeout_ms),
+                        [&completed]() { return completed->load(); })) {
+                    // Timeout - count and move on to next request
+                    metrics_.timeout_requests++;
+                }
             }
         }
+
+        // Gracefully close client connection
+        client->Close();
     }
 
     void MonitorProgress() {
@@ -199,6 +236,8 @@ private:
             std::cout << "  Total requests: " << (config_.num_clients * config_.requests_per_client) << std::endl;
         }
 
+        std::cout << "  Timeout: " << config_.timeout_ms << "ms" << std::endl;
+
         if (config_.rampup_seconds > 0) {
             std::cout << "  Ramp-up: " << config_.rampup_seconds << "s" << std::endl;
         }
@@ -212,6 +251,7 @@ private:
         int total = metrics_.total_requests.load();
         int successful = metrics_.successful_requests.load();
         int failed = metrics_.failed_requests.load();
+        int timeout = metrics_.timeout_requests.load();
 
         std::cout << "\n========================================" << std::endl;
         std::cout << "Test Results" << std::endl;
@@ -220,12 +260,13 @@ private:
         std::cout << "\nRequests:" << std::endl;
         std::cout << "  Total: " << total << std::endl;
         std::cout << "  Successful: " << successful << " (" << std::fixed << std::setprecision(2)
-                  << (100.0 * successful / total) << "%)" << std::endl;
-        std::cout << "  Failed: " << failed << " (" << (100.0 * failed / total) << "%)" << std::endl;
+                  << (total > 0 ? 100.0 * successful / total : 0) << "%)" << std::endl;
+        std::cout << "  Failed: " << failed << " (" << (total > 0 ? 100.0 * failed / total : 0) << "%)" << std::endl;
+        std::cout << "  Timeout: " << timeout << " (" << (total > 0 ? 100.0 * timeout / total : 0) << "%)" << std::endl;
 
         std::cout << "\nPerformance:" << std::endl;
         std::cout << "  Duration: " << std::setprecision(1) << duration_sec << "s" << std::endl;
-        std::cout << "  Throughput: " << std::setprecision(1) << (successful / duration_sec) << " req/s" << std::endl;
+        std::cout << "  Throughput: " << std::setprecision(1) << (duration_sec > 0 ? successful / duration_sec : 0) << " req/s" << std::endl;
 
         // Latency statistics
         std::lock_guard<std::mutex> lock(metrics_.latencies_mutex);
@@ -261,6 +302,8 @@ int main(int argc, char* argv[]) {
         std::cout << "  --requests <N>     Requests per client (default: 100)" << std::endl;
         std::cout << "  --rampup <seconds> Ramp-up time (default: 0)" << std::endl;
         std::cout << "  --duration <seconds> Test duration (default: 0, use requests)" << std::endl;
+        std::cout << "  --timeout <ms>     Per-request timeout in ms (default: 10000)" << std::endl;
+        std::cout << "  --force            Allow --clients greater than CPU core count" << std::endl;
         std::cout << "\nExample:" << std::endl;
         std::cout << "  " << argv[0] << " https://localhost:7001/hello --clients 50 --requests 100" << std::endl;
         return 1;
@@ -268,21 +311,70 @@ int main(int argc, char* argv[]) {
 
     LoadTestConfig config;
     config.url = argv[1];
+    bool force_clients = false;
 
     // Parse options
-    for (int i = 2; i < argc; i += 2) {
+    for (int i = 2; i < argc; ++i) {
         std::string opt = argv[i];
+
+        if (opt == "--force") {
+            force_clients = true;
+            continue;
+        }
+
         if (i + 1 >= argc) break;
 
         if (opt == "--clients") {
             config.num_clients = std::atoi(argv[i + 1]);
+            ++i;
         } else if (opt == "--requests") {
             config.requests_per_client = std::atoi(argv[i + 1]);
+            ++i;
         } else if (opt == "--rampup") {
             config.rampup_seconds = std::atoi(argv[i + 1]);
+            ++i;
         } else if (opt == "--duration") {
             config.duration_seconds = std::atoi(argv[i + 1]);
+            ++i;
+        } else if (opt == "--timeout") {
+            config.timeout_ms = std::atoi(argv[i + 1]);
+            ++i;
         }
+    }
+
+    // Each IClient internally spawns its own master thread (and, in multi-
+    // thread mode, additional worker threads). With N clients we therefore
+    // run at least N library threads, each driving an independent epoll
+    // event loop. When N exceeds the number of hardware cores, those
+    // threads start fighting for CPU: pidstat shows individual loop threads
+    // with 80%+ %wait time, throughput collapses, and the run stops being
+    // a meaningful measurement of server capacity.
+    //
+    // To keep the default invocation honest we cap --clients at the number
+    // of hardware cores. Users who explicitly want to oversubscribe (e.g.
+    // to measure scheduler / queueing behaviour) can pass --force.
+    unsigned int hw_cores = std::thread::hardware_concurrency();
+    if (hw_cores == 0) {
+        hw_cores = 8;  // sensible fallback
+    }
+    int recommended_max = static_cast<int>(hw_cores);
+    if (config.num_clients > recommended_max && !force_clients) {
+        std::cerr << "[warn] --clients=" << config.num_clients
+                  << " exceeds hardware_concurrency=" << hw_cores
+                  << "; capping to " << recommended_max
+                  << " to avoid CPU oversubscription on the load generator."
+                  << "\n        Pass --force to override (each client owns its"
+                     " own master event-loop thread)."
+                  << std::endl;
+        // Preserve total request volume so results stay comparable.
+        long long total = static_cast<long long>(config.num_clients) * config.requests_per_client;
+        config.num_clients = recommended_max;
+        config.requests_per_client = static_cast<int>(
+            (total + config.num_clients - 1) / config.num_clients);
+        std::cerr << "        Adjusted: --clients=" << config.num_clients
+                  << " --requests=" << config.requests_per_client
+                  << " (total ≈ " << (long long)config.num_clients * config.requests_per_client
+                  << ")" << std::endl;
     }
 
     LoadTester tester(config);
