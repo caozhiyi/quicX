@@ -1,5 +1,6 @@
 #include "common/log/log.h"
 
+#include "http3/config.h"
 #include "http3/connection/if_connection.h"
 #include "http3/connection/type.h"
 
@@ -74,6 +75,78 @@ void IConnection::Close(uint32_t error_code) {
     } else {
         quic_connection_->Close();
     }
+}
+
+void IConnection::Shutdown() {
+    // RFC 9114 §5.2: GOAWAY may only be sent once per direction with a
+    // non-increasing id. Repeated calls collapse into a single GOAWAY.
+    if (!quic_connection_ || quic_connection_->IsTerminating()) {
+        return;
+    }
+    if (draining_) {
+        // Already shutting down. Per RFC the id MUST NOT increase, so we
+        // never re-emit even if more requests have been processed since.
+        return;
+    }
+
+    uint64_t goaway_id = ComputeGoawayId();
+    // Best-effort send; if it fails, we still drain — peer will eventually
+    // see CONNECTION_CLOSE when the QUIC connection closes.
+    (void)SendGoawayFrame(goaway_id);
+    goaway_sent_id_ = goaway_id;
+    draining_ = true;
+
+    LOG_INFO("IConnection::Shutdown: GOAWAY sent (id=%llu), entering drain",
+        (unsigned long long)goaway_id);
+
+    // If there's nothing in flight already, close immediately rather than
+    // waiting up to 100ms for the cleanup timer tick.
+    if (!HasInFlightRequests()) {
+        LOG_DEBUG("IConnection::Shutdown: no in-flight requests, closing now");
+        Close(0);
+    }
+}
+
+bool IConnection::IsAcceptingNewRequests() const {
+    // Local-initiated requests are refused as soon as we start draining
+    // OR as soon as the peer told us it is going away (RFC 9114 §5.2:
+    // recipient of GOAWAY SHOULD NOT initiate additional requests).
+    if (draining_) {
+        return false;
+    }
+    if (goaway_received_id_ != kNoGoaway) {
+        return false;
+    }
+    return true;
+}
+
+bool IConnection::IsAcceptingNewPushes() const {
+    // RFC 9114 §5.2 / §7.2.7: server MUST NOT promise pushes with id
+    // greater than what client advertised in its GOAWAY, and MUST NOT
+    // initiate new pushes once it has sent its own GOAWAY.
+    if (draining_) {
+        return false;
+    }
+    if (goaway_received_id_ != kNoGoaway) {
+        return false;
+    }
+    return true;
+}
+
+bool IConnection::HasInFlightRequests() const {
+    // Default policy: any request/response or push stream blocks drain.
+    // Long-lived control/QPACK streams do NOT (they exist for the entire
+    // lifetime of the connection and would deadlock the drain).
+    for (const auto& kv : streams_) {
+        if (!kv.second) {
+            continue;
+        }
+        StreamType t = kv.second->GetType();
+        if (t == StreamType::kReqResp || t == StreamType::kPush) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool IConnection::InitiateMigration() {
@@ -192,7 +265,9 @@ void IConnection::StartCleanupTimer() {
     // Capture weak_ptr to this to safely handle timer callbacks after object destruction
     std::weak_ptr<IConnection> weak_self = weak_from_this();
 
-    // Create a periodic timer that runs every 100ms to cleanup completed streams
+    // Create a periodic timer that runs every kStreamCleanupIntervalMs to
+    // cleanup completed streams and drive the RFC 9114 §5.2 graceful-drain
+    // probe (see CleanupDestroyedStreams).
     cleanup_timer_id_ = quic_connection_->AddTimer(
         [weak_self]() {
             // Check if the connection relies alive
@@ -206,7 +281,7 @@ void IConnection::StartCleanupTimer() {
             // Re-schedule next cleanup
             self->StartCleanupTimer();
         },
-        100);  // 100ms TODO, do not use fix time, loop support defer
+        kStreamCleanupIntervalMs);
 }
 
 void IConnection::CleanupDestroyedStreams() {
@@ -214,6 +289,20 @@ void IConnection::CleanupDestroyedStreams() {
         LOG_DEBUG(
             "IConnection::CleanupDestroyedStreams: cleaning up %zu completed streams", streams_to_destroy_.size());
         streams_to_destroy_.clear();
+    }
+
+    // RFC 9114 §5.2 graceful drain probe: once we've sent GOAWAY and the
+    // last request/push stream has finished, emit CONNECTION_CLOSE
+    // (H3_NO_ERROR=0). Done from the cleanup timer rather than HandleError
+    // to avoid racing with ScheduleStreamRemoval, which keeps the just-
+    // finished stream alive in streams_to_destroy_ for one extra tick;
+    // by the time we land here that holding-area has been cleared above,
+    // so HasInFlightRequests() reflects the real state.
+    if (draining_ && quic_connection_ && !quic_connection_->IsTerminating()
+        && !HasInFlightRequests()) {
+        LOG_INFO(
+            "IConnection::CleanupDestroyedStreams: drain complete, emitting CONNECTION_CLOSE(H3_NO_ERROR)");
+        Close(0);
     }
 }
 

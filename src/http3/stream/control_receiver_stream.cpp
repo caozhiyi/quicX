@@ -15,9 +15,12 @@ ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<IQuicRecvStre
     IRecvStream(StreamType::kControl, stream, error_handler),
     goaway_handler_(goaway_handler),
     settings_handler_(settings_handler) {
-    stream_->SetStreamReadCallBack(std::bind(
-        &ControlReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    // TODO send callback
+    stream_->SetStreamReadCallBack(
+        [this](auto a, auto b, auto c) { OnData(a, b, c); });
+    // No send-side callback: the control stream is split into a sender side
+    // (ControlSenderStream, owns IQuicSendStream) and a receiver side
+    // (this class, owns IQuicRecvStream). Each side handles only its own
+    // direction, so there is no send callback to register here.
 }
 
 ControlReceiverStream::~ControlReceiverStream() {

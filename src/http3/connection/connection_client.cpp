@@ -61,6 +61,7 @@ void ClientConnection::Init() {
     if (enable_push_) {
         // Set a reasonable limit for concurrent pushes (100 is a common default)
         control_sender_stream_->SendMaxPushId(100);
+        advertised_max_push_id_ = 100;
     }
 
     // RFC 9204: QPACK is mandatory for HTTP/3, and encoder/decoder streams MUST be created
@@ -212,6 +213,18 @@ void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> requ
 }
 
 bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler) {
+    // RFC 9114 §5.2: once a GOAWAY has been sent or received, the client
+    // MUST NOT initiate any new requests on this connection. Refuse fast
+    // on the caller's thread — no point in scheduling work on the loop
+    // thread that we already know will be rejected.
+    if (!IsAcceptingNewRequests()) {
+        LOG_INFO("ClientConnection::DoRequest: refusing new request after GOAWAY");
+        if (handler) {
+            handler(nullptr, Http3ErrorCode::kRequestRejected);
+        }
+        return false;
+    }
+
     // NOTE: max-concurrent-streams enforcement is performed inside the
     // MakeStreamAsync callback below, which runs on the QUIC event-loop
     // thread. We deliberately do NOT read streams_.size() here on the
@@ -257,6 +270,15 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, const http_r
 }
 
 bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, std::shared_ptr<IAsyncClientHandler> handler) {
+    // RFC 9114 §5.2 mirror of the const-handler overload above.
+    if (!IsAcceptingNewRequests()) {
+        LOG_INFO("ClientConnection::DoRequest(async): refusing new request after GOAWAY");
+        if (handler) {
+            handler->OnError(Http3ErrorCode::kRequestRejected);
+        }
+        return false;
+    }
+
     // See comment on the const-handler overload above: the streams_.size()
     // gate runs on the loop thread, not on the user thread.
     auto weak_self = std::weak_ptr<IConnection>(shared_from_this());
@@ -290,6 +312,10 @@ bool ClientConnection::DoRequest(std::shared_ptr<IRequest> request, std::shared_
 
 void ClientConnection::SetMaxPushID(uint64_t max_push_id) {
     control_sender_stream_->SendMaxPushId(max_push_id);
+    // Track the high-water mark so a future GOAWAY uses a non-increasing id.
+    if (max_push_id > advertised_max_push_id_) {
+        advertised_max_push_id_ = max_push_id;
+    }
 }
 
 void ClientConnection::CancelPush(uint64_t push_id) {
@@ -422,8 +448,39 @@ void ClientConnection::OnStreamTypeIdentified(
 }
 
 void ClientConnection::HandleGoaway(uint64_t id) {
-    LOG_INFO("ClientConnection::HandleGoaway id: %llu", id);
-    Close(0);
+    // RFC 9114 §5.2: server's GOAWAY carries the largest stream id the
+    // server WILL process. Any in-flight request with stream id < id is
+    // safe to wait on; any future request creation MUST be refused
+    // (IsAcceptingNewRequests() picks this up via goaway_received_id_).
+    // The id MUST NOT increase across multiple GOAWAYs.
+    if (goaway_received_id_ != kNoGoaway && id > goaway_received_id_) {
+        LOG_ERROR(
+            "ClientConnection::HandleGoaway: server GOAWAY id increased (%llu -> %llu), closing with H3_ID_ERROR",
+            (unsigned long long)goaway_received_id_, (unsigned long long)id);
+        Close(static_cast<uint32_t>(Http3ErrorCode::kIdError));
+        return;
+    }
+    LOG_INFO("ClientConnection::HandleGoaway: server GOAWAY received, max_processed_stream_id=%llu",
+        (unsigned long long)id);
+    goaway_received_id_ = id;
+    // Do NOT Close() here: we still want in-flight responses to land.
+    // The cleanup-timer drain probe will fire when the user has called
+    // Shutdown() locally and all req-resp streams are gone.
+}
+
+bool ClientConnection::SendGoawayFrame(uint64_t goaway_id) {
+    if (!control_sender_stream_) {
+        LOG_WARN("ClientConnection::SendGoawayFrame: no control sender stream");
+        return false;
+    }
+    return control_sender_stream_->SendGoaway(goaway_id);
+}
+
+uint64_t ClientConnection::ComputeGoawayId() {
+    // RFC 9114 §5.2: client's GOAWAY id is the largest push id it will
+    // accept. Pin it to the largest value we've already advertised via
+    // MAX_PUSH_ID so the GOAWAY id never increases (§5.2 forbids that).
+    return advertised_max_push_id_;
 }
 
 void ClientConnection::HandleError(uint64_t stream_id, uint32_t error_code) {

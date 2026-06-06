@@ -71,7 +71,17 @@ bool PushSenderStream::SendPushResponse(uint64_t push_id, std::shared_ptr<IRespo
         return false;
     }
 
-    // Send DATA frame if body exists, TODO may send multiple DATA frames if body is large
+    // Send DATA frame if body exists.
+    //
+    // Known limitation: unlike ReqRespBaseStream::SendBodyDirectly, which
+    // chunks the body into kMaxDataFramePayload-sized DATA frames to fit
+    // within path MTU, this push path emits the entire body as a single
+    // DATA frame. That is sufficient for the small response bodies the
+    // current push tests exercise, but is not a complete RFC 9114 §4.5
+    // implementation: bodies larger than ~kMaxDataFramePayload should be
+    // split. Since server push is itself recorded as a learning-only
+    // limitation in learning_project_roadmap.md §2, large-body push
+    // chunking is intentionally deferred rather than implemented.
     if (body && body_len > 0) {
         DataFrame data_frame;
         data_frame.SetData(std::dynamic_pointer_cast<common::IBuffer>(body));

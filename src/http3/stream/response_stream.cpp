@@ -180,8 +180,18 @@ void ResponseStream::HandleHeaders() {
 
     // if async server handler is set, call the handler
     if (route_config_.IsAsyncServer()) {
+        // The original std::bind(&IAsyncServerHandler::OnHeaders, handler, request_, response_)
+        // produced a callable that *ignores* whatever args HandleHttp passes in
+        // and always invokes OnHeaders with the bind-time captured request_/
+        // response_. We preserve that semantics here: the lambda takes the
+        // (req, resp) signature HandleHttp expects but ignores them and uses
+        // the captured shared_ptrs.
         HandleHttp(
-            std::bind(&IAsyncServerHandler::OnHeaders, route_config_.GetAsyncServerHandler(), request_, response_));
+            [handler = route_config_.GetAsyncServerHandler(),
+             req = request_,
+             resp = response_](std::shared_ptr<IRequest>, std::shared_ptr<IResponse>) {
+                handler->OnHeaders(req, resp);
+            });
         LOG_DEBUG("HandleHeaders: async server handler called");
         return;
     }

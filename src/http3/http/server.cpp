@@ -21,8 +21,9 @@ Server::Server(const Http3Settings& settings):
     settings_(settings) {
     quic_ = IQuicServer::Create(settings.quic_transport_params_);
     router_ = std::make_shared<Router>();
-    quic_->SetConnectionStateCallBack(std::bind(&Server::OnConnection, this, std::placeholders::_1,
-        std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+    quic_->SetConnectionStateCallBack([this](auto a, auto b, auto c, auto d) {
+        OnConnection(a, b, c, d);
+    });
 }
 
 Server::~Server() {
@@ -145,7 +146,7 @@ void Server::OnConnection(
 
     // create a new server connection
     auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, shared_from_this(), quic_, conn,
-        std::bind(&Server::HandleError, this, std::placeholders::_1, std::placeholders::_2),
+        [this](auto a, auto b) { HandleError(a, b); },
         config_.max_concurrent_streams_, config_.enable_push_);
 
     // Initialize connection (starts timers)

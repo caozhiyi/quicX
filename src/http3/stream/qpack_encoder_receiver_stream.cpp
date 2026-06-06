@@ -16,7 +16,7 @@ QpackEncoderReceiverStream::QpackEncoderReceiverStream(
     qpack_encoder_(qpack_encoder),
     blocked_registry_(blocked_registry) {
     stream_->SetStreamReadCallBack(
-        std::bind(&QpackEncoderReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        [this](auto a, auto b, auto c) { OnData(a, b, c); });
     
     LOG_DEBUG("QpackEncoderReceiverStream created for stream %llu", stream_->GetStreamID());
 }
