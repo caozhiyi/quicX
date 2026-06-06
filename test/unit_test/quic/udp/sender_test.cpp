@@ -1,5 +1,6 @@
 #include <thread>
 #include <atomic>
+#include <chrono>
 #include <gtest/gtest.h>
 #include <cstring>
 #include "quic/udp/udp_sender.h"
@@ -12,12 +13,17 @@ namespace quicx {
 namespace quic {
 namespace {
 
-int g_send_times = 5;
-int g_recv_times = 0;
+static constexpr int kSendTimes = 5;
+// Maximum time to wait for all packets to arrive before giving up.
+// 5 seconds is generous; on a healthy loopback it completes in < 100ms.
+static constexpr int kTimeoutMs = 5000;
 
 class RecvHandler: public IPacketReceiver {
 public:
-    void OnPacket(std::shared_ptr<NetPacket>& pkt) override { g_recv_times++; }
+    void OnPacket(std::shared_ptr<NetPacket>& pkt) override {
+        recv_times_.fetch_add(1, std::memory_order_relaxed);
+    }
+    std::atomic<int> recv_times_{0};
 };
 
 TEST(UdpSenderTest, Send) {
@@ -43,7 +49,16 @@ TEST(UdpSenderTest, Send) {
         std::shared_ptr<NetPacket> recv_pkt = std::make_shared<NetPacket>();
         recv_pkt->SetData(recv_buffer);
 
-        while (g_recv_times < g_send_times) {
+        // Use a deadline so the receiver thread doesn't hang forever if
+        // packets are lost (e.g. Windows Firewall blocking loopback UDP
+        // on CI runners). Without this, thread.join() on the main thread
+        // blocks indefinitely and the CI job times out.
+        auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(kTimeoutMs);
+        while (recv_handler->recv_times_.load(std::memory_order_relaxed) < kSendTimes) {
+            if (std::chrono::steady_clock::now() >= deadline) {
+                break;  // timed out; let the main thread check the count
+            }
             event_loop->Wait();
         }
     });
@@ -71,7 +86,7 @@ TEST(UdpSenderTest, Send) {
     common::Address addr("127.0.0.1", 1121);
     send_pkt->SetAddress(addr);
 
-    for (int i = 0; i < g_send_times; ++i) {
+    for (int i = 0; i < kSendTimes; ++i) {
         sender.Send(send_pkt);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -80,7 +95,7 @@ TEST(UdpSenderTest, Send) {
         thread.join();
     }
 
-    ASSERT_EQ(g_recv_times, g_send_times);
+    ASSERT_EQ(recv_handler->recv_times_.load(), kSendTimes);
 }
 
 }  // namespace
