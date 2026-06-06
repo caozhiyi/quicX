@@ -27,6 +27,9 @@ public:
 };
 
 TEST(UdpSenderTest, Send) {
+#ifdef _WIN32
+    GTEST_SKIP() << "Skipped on Windows: loopback UDP may be blocked by firewall";
+#endif
     auto event_loop = common::MakeEventLoop();
     
     auto recv_handler = std::make_shared<RecvHandler>();
