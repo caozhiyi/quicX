@@ -2,6 +2,7 @@
 #define HTTP3_STREAM_REQ_RESP_BASE_STREAM
 
 #include <deque>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 
@@ -143,6 +144,7 @@ protected:
     std::deque<std::shared_ptr<IFrame>> pending_blocked_frames_;
     bool pending_blocked_is_last_{false};
     bool is_currently_blocked_{false};
+    std::function<void()> blocked_retry_fn_;
 };
 
 }  // namespace http3

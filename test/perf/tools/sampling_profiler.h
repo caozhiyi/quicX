@@ -39,9 +39,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+
+#if !defined(_WIN32)
 #include <execinfo.h>
 #include <sys/time.h>
 #include <unistd.h>
+#endif
 
 namespace quicx {
 namespace perf {
@@ -53,6 +56,28 @@ struct Sample {
     uint8_t depth;
     void*   frames[kSampMaxDepth];
 };
+
+#if defined(_WIN32)
+
+class SamplingProfiler {
+public:
+    SamplingProfiler(const char* out_path, int hz = 997)
+        : out_path_(out_path), hz_(hz > 0 ? hz : 100), ring_(nullptr) {}
+    ~SamplingProfiler() {}
+
+    void Start() {}
+    void Stop() {}
+    bool Dump() const { return true; }
+    uint32_t SampleCount() const { return 0; }
+
+private:
+    const char*  out_path_;
+    int          hz_;
+    Sample*      ring_ = nullptr;
+    std::atomic<uint32_t> write_pos_{0};
+};
+
+#else
 
 class SamplingProfiler {
 public:
@@ -144,6 +169,8 @@ private:
 };
 
 inline SamplingProfiler* SamplingProfiler::s_instance_ = nullptr;
+
+#endif
 
 }  // namespace perf
 }  // namespace quicx
