@@ -1,4 +1,3 @@
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #ifdef _WIN32
@@ -18,42 +17,12 @@
 #include "common/network/io_handle.h"
 #include "common/util/time.h"
 #include "quic/common/constants.h"
+#include "quic/config.h"
 #include "quic/quicx/global_resource.h"
 #include "quic/udp/udp_receiver.h"
 
 namespace quicx {
 namespace quic {
-
-namespace {
-
-// Read the socket-drain batch ceiling once at first call. Tunable via
-// env var QUICX_RECV_BATCH; legal range 1..256 (matches the
-// kMaxBatch hard cap inside RecvFromBatch). 0 / unset / out-of-range
-// → fall back to the historical default of 64. The value is captured
-// into a static so we never re-read the env on the hot path.
-//
-// Why expose it as a knob: the batch size trades latency-per-wakeup
-// against ACK aggregation. Too small → ACK aggregation defeated (the
-// bug we fixed — see comment in OnRead). Too large → starves
-// co-resident timers/write events that share this loop iteration. The
-// right number depends on cwnd, traffic burstiness and event-loop
-// pressure; we keep the default conservative and let the benchmark
-// sweep it without recompiling.
-int GetMaxRecvBatch() {
-    static const int cached = []() {
-        const char* env = std::getenv("QUICX_RECV_BATCH");
-        if (!env || !*env) return 64;
-        char* end = nullptr;
-        long v = std::strtol(env, &end, 10);
-        if (!end || *end != '\0') return 64;
-        if (v < 1) return 64;
-        if (v > 256) return 256;
-        return static_cast<int>(v);
-    }();
-    return cached;
-}
-
-}  // namespace
 
 UdpReceiver::UdpReceiver(std::shared_ptr<common::IEventLoop> event_loop):
     event_loop_(event_loop),
@@ -224,15 +193,16 @@ void UdpReceiver::OnRead(uint32_t fd) {
     //                      early-exit (functional parity, no syscall
     //                      savings).
     // Either way, this method has zero `#ifdef <platform>` and the
-    // batching ceiling (GetMaxRecvBatch, env QUICX_RECV_BATCH) is the
-    // only knob. 64 was chosen to mirror the send-side
-    // kMaxPacketsPerRound and is comfortably above 1 BDP at our cwnd.
-    const int max_batch = GetMaxRecvBatch();
+    // batching ceiling (kMaxRecvBatch in quic/config.h) is the only
+    // knob. 64 was chosen to mirror the send-side kMaxPacketsPerRound
+    // and is comfortably above 1 BDP at our cwnd.
+    const int max_batch = kMaxRecvBatch;
 
     // Stack-allocate one entry per slot so we do zero heap traffic on
     // the hot path. kMaxBatch (256) matches the upper bound enforced
-    // inside RecvFromBatch; GetMaxRecvBatch() is already clamped to
-    // [1, 256] so `batch` here is always a safe array index.
+    // inside RecvFromBatch. We still clamp `max_batch` defensively in
+    // case kMaxRecvBatch is ever raised above 256 in config.h without
+    // also enlarging the stack arrays below.
     constexpr int kMaxBatch = 256;
     const int batch_cap = max_batch < kMaxBatch ? max_batch : kMaxBatch;
     int batch = batch_cap;  // may shrink below if buffer prep can't fill all slots

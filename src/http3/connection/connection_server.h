@@ -37,6 +37,17 @@ public:
     // make_shared<ServerConnection>().
     void Init() override;
 
+protected:
+    // RFC 9114 §5.2 graceful shutdown hooks (see IConnection):
+    //   - GOAWAY id on the server side is "the largest stream ID we WILL
+    //     process". We use max_seen_bidi_stream_id_ + 4 (next client-bidi
+    //     after the highest one we've already accepted), which is the
+    //     conservative upper bound: any stream-id strictly less than that
+    //     was either accepted or already past, so the client knows it can
+    //     keep retrying anything ≥ goaway_id on a fresh connection.
+    bool SendGoawayFrame(uint64_t goaway_id) override;
+    uint64_t ComputeGoawayId() override;
+
 private:
     // send push (RFC 9114 Section 4.6)
     bool SendPush(uint64_t push_id, std::shared_ptr<IResponse> response);
@@ -65,6 +76,12 @@ private:
     uint64_t next_push_id_;
     uint64_t send_limit_push_id_;
     bool push_timer_active_;  // Flag indicating if push timer is active
+    // Largest client-initiated bidirectional stream id we have accepted so
+    // far; used to compute the GOAWAY id at Shutdown() time. Initialised
+    // to kNoGoaway (sentinel) so that "no requests yet" is distinguishable
+    // from "stream id 0 was processed" — for fresh connections we emit
+    // GOAWAY id 0 to mean "I will process nothing further", per §5.2.
+    uint64_t max_seen_bidi_stream_id_ = static_cast<uint64_t>(-1);
     std::shared_ptr<IQuicServer> quic_server_;
     // pending settings captured at construction, applied during Init()
     Http3Settings pending_settings_;

@@ -21,6 +21,14 @@ private:
     std::queue<std::string> message_queue_;
     std::mutex queue_mutex_;
 
+    // Tracks how many SendMessage callbacks are still pending. Without this
+    // counter Shutdown() races the async DoRequest callbacks: when stdin is
+    // fed a fast script like "Hello\nWorld\nquit\n", the loop can reach quit
+    // and call client_->Close() before the World callback has logged its
+    // "[Server]: Echo: World" line, which makes the run_test.py verifier
+    // intermittently fail on the missing string.
+    std::atomic<int> pending_sends_{0};
+
 public:
     BidirectionalClient(const std::string& server_url):
         server_url_(server_url) {
@@ -88,14 +96,34 @@ public:
         auto request = quicx::IRequest::Create();
         request->AppendBody(message);
 
+        pending_sends_++;
         client_->DoRequest(server_url_ + "/message", quicx::HttpMethod::kPost, request,
-            [message](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+            [this, message](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
                 if (error != 0) {
                     std::cout << "Failed to send: " << message << std::endl;
                 } else {
                     std::cout << "[Server]: " << response->GetBodyAsString() << std::endl;
                 }
+                pending_sends_--;
             });
+    }
+
+    // Block (with bound) until every in-flight SendMessage callback has run.
+    // Used right before Shutdown() so that the "[Server]: Echo: ..." lines we
+    // promised to print actually make it to stdout — the run_test.py verifier
+    // greps for them and a race here was the root cause of the intermittent
+    // "Missing expected output: Echo: World" failure.
+    void WaitForPendingSends(int timeout_ms = 3000) {
+        const int step_ms = 10;
+        int waited = 0;
+        while (pending_sends_.load() > 0 && waited < timeout_ms) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(step_ms));
+            waited += step_ms;
+        }
+        if (pending_sends_.load() > 0) {
+            std::cout << "Warning: " << pending_sends_.load()
+                      << " message(s) still pending after " << timeout_ms << "ms" << std::endl;
+        }
     }
 
     void InteractiveMode() {
@@ -114,6 +142,11 @@ public:
 
             std::cout << "> " << std::flush;
         }
+
+        // Drain any in-flight callbacks before returning. Otherwise Shutdown()
+        // will tear down the client while replies are still arriving and the
+        // last "[Server]: Echo: ..." line(s) get truncated.
+        WaitForPendingSends();
     }
 
     void Shutdown() {

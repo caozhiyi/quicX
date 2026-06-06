@@ -17,9 +17,11 @@ void IStream::ToClose() {
 }
 
 void IStream::ToSend() {
-    if (is_active_send_) {
-        // return; // TODO crypto stream need resend
-    }
+    // Always (re)arm the active-send flag and notify the connection's send
+    // scheduler. We deliberately do not early-return when is_active_send_ is
+    // already true: the crypto stream relies on retriggering ToSend() to
+    // re-emit CRYPTO frames during handshake retransmission, and bidi/uni
+    // streams in active state may also have new bytes since the last notify.
     is_active_send_ = true;
 
     if (active_send_cb_) {

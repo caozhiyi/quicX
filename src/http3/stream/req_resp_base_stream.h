@@ -1,6 +1,7 @@
 #ifndef HTTP3_STREAM_REQ_RESP_BASE_STREAM
 #define HTTP3_STREAM_REQ_RESP_BASE_STREAM
 
+#include <deque>
 #include <memory>
 #include <unordered_map>
 
@@ -73,6 +74,24 @@ protected:
     // Subclasses should implement this to notify handlers of stream completion
     virtual void HandleFinWithoutData() = 0;
 
+private:
+    // Drive the per-frame dispatch loop. Splits |frames| into a sequence of
+    // HandleFrame() calls, but stops as soon as a HEADERS frame fails to
+    // decode (RFC 9204: blocked on Required Insert Count). Any frames that
+    // could not be processed yet are stashed into pending_blocked_frames_
+    // along with the trailing is_last marker so they replay in the original
+    // order once the QPACK decoder unblocks. This is the production fix for
+    // the previous crash path where a DATA frame following a blocked
+    // HEADERS frame would dereference a still-null response_/request_.
+    void ProcessFrames(std::vector<std::shared_ptr<IFrame>>& frames, bool is_last_batch);
+
+    // Resume frame dispatch after the QPACK decoder has caught up enough to
+    // decode the previously-blocked HEADERS frame at the head of
+    // pending_blocked_frames_. Returns true once the head HEADERS decoded
+    // successfully (which then drains as many follow-on frames as possible),
+    // false when it is still blocked. Safe to call repeatedly.
+    void DrainPendingFrames();
+
 protected:
     uint64_t header_block_key_{0};
     uint32_t next_section_number_{0};
@@ -97,6 +116,33 @@ protected:
 
     // Qlog trace for HTTP/3 frame events
     std::shared_ptr<common::QlogTrace> qlog_trace_;
+
+    // ------------------------------------------------------------------
+    // QPACK head-of-line blocking buffer.
+    //
+    // RFC 9204 allows a HEADERS field section to depend on dynamic-table
+    // entries that have not yet arrived on the QPACK encoder stream
+    // (Required Insert Count > current Insert Count). When that happens
+    // the field section is "blocked" and the stream MUST NOT make
+    // forward progress past it: a subsequent DATA frame still belongs to
+    // the same response and cannot be delivered to the application
+    // before its HEADERS have been decoded.
+    //
+    // Without this buffer, the next frame in the same OnData batch (or a
+    // later batch) would call HandleData() against a still-null response_
+    // /request_ object, which is exactly the use-after-construct that
+    // forced QPACK dynamic table to be disabled by default.
+    //
+    // pending_blocked_frames_ holds the in-order tail of frames that are
+    // waiting for the head HEADERS to unblock; pending_blocked_is_last_
+    // remembers the FIN bit of the OnData batch from which those frames
+    // came, so we can replay it accurately when we drain.
+    // is_currently_blocked_ is the gate: once set, every newly-decoded
+    // frame goes straight to the queue rather than to HandleFrame().
+    // ------------------------------------------------------------------
+    std::deque<std::shared_ptr<IFrame>> pending_blocked_frames_;
+    bool pending_blocked_is_last_{false};
+    bool is_currently_blocked_{false};
 };
 
 }  // namespace http3

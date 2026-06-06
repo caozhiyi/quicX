@@ -54,14 +54,15 @@ namespace {
 // ---------------------------------------------------------------------------
 // Local default Http3Settings used by these E2E tests.
 //
-// NOTE: The library-wide kDefaultHttp3Settings has its qpack_max_table_capacity
-// temporarily set to 0 (dynamic table disabled) as a stop-gap for an unrelated
-// integration-side crash. These E2E tests, however, specifically validate the
-// dynamic-table state machine with a mocked QUIC layer (no integration crash
-// path is involved here). So we keep a local copy that re-enables the dynamic
-// table with the historical defaults (cap=4096, blocked_streams=16). When the
-// integration-side issue is fixed and the global defaults are restored, this
-// local constant can be removed in favor of kDefaultHttp3Settings.
+// Historically kDefaultHttp3Settings had qpack_max_table_capacity = 0 as a
+// stop-gap for the "blocked HEADERS followed by DATA in the same OnData
+// batch crashes" hazard, so this file kept its own dynamic-table-enabled
+// copy. That hazard has been fixed in ReqRespBaseStream (see
+// pending_blocked_frames_ + DrainPendingFrames()), and the library-wide
+// defaults now enable the dynamic table (cap=4096, blocked_streams=16).
+// We keep this local constant solely as a *belt-and-suspenders* assertion
+// of the values these tests need, so a future tuning of the global
+// defaults cannot silently weaken what this file is testing.
 // ---------------------------------------------------------------------------
 static const Http3Settings kE2EDefaultSettings = []() {
     Http3Settings s = kDefaultHttp3Settings;

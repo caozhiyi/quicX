@@ -39,7 +39,7 @@ RUN rm -rf build && mkdir -p build && cd build && \
              -DENABLE_BENCHMARKS=OFF \
              -DENABLE_FUZZING=OFF \
              -DENABLE_CC_SIMULATOR=OFF \
-             -DENABLE_INTERGRATION=OFF \
+             -DENABLE_INTEGRATION=OFF \
              -DENABLE_PERF_TESTS=OFF \
              -DENABLE_INTEROP=ON && \
     cmake --build . --target interop_server interop_client -j$(nproc)

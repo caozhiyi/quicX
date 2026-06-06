@@ -5,6 +5,20 @@
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v2_congestion_control.h"
 
+// References for BBRv2 (teaching subset):
+//   [BBRv2-Slides] Cardwell et al., "BBR v2: A Model-based Congestion
+//                  Control", IETF 104 / 105 ICCRG slides — introduces the
+//                  inflight_{hi,lo} bounds, ECN response, and beta=0.7
+//                  multiplicative decrease that distinguish v2 from v1.
+//   [BBR-Draft]    draft-cardwell-iccrg-bbr-congestion-control — the v1
+//                  framing this code still inherits (STARTUP / DRAIN /
+//                  PROBE_BW / PROBE_RTT, pacing_gain cycle).
+//   [RFC9002 §7]   pluggable congestion-control hook in QUIC — see
+//                  bbr_v1_congestion_control.cpp for the full rationale
+//                  on why BBR is not itself an RFC.
+//   [RFC8311 §4.2] explicit-congestion-notification feedback semantics
+//                  used at the ECN-CE site below.
+
 namespace quicx {
 namespace quic {
 
@@ -61,6 +75,10 @@ void BBRv2CongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
 
     // ECN-CE: similar to BBRv3 simple reaction, slightly tighten inflight_hi
+    // [BBRv2-Slides] §"ECN response": ECN-CE is treated as a soft
+    // congestion signal (RFC 8311 §4.2 / RFC 9000 §13.4). v2 reacts more
+    // gently than the loss path (5% trim here vs 30% in OnPacketLost),
+    // because ECN marks fire before any actual queue overflow.
     if (ev.ecn_ce) {
         inflight_hi_bytes_ = std::max<uint64_t>(inflight_lo_bytes_, (inflight_hi_bytes_ * 95) / 100); // -5%
     }
@@ -121,7 +139,13 @@ void BBRv2CongestionControl::OnPacketLost(const LossEvent& ev) {
     loss_event_count_in_round_++;
     
     // BBRv2: reduce hi bound on loss using multiplicative decrease (beta = 0.7)
-    // More conservative than /2, aligns with BBRv2 standard
+    // [BBRv2-Slides] §"Loss response": v2 trims inflight_hi by beta=0.7
+    // on loss instead of v1's binary STARTUP→DRAIN exit. This is the
+    // model-based analogue of Reno's beta=0.5 (RFC 9002 §7.3.2) and
+    // CUBIC's beta=0.7 (RFC 9438 §4.6) — same multiplicative-decrease
+    // shape, but applied to the *probe ceiling* rather than cwnd
+    // directly, so steady-state throughput is bounded by inflight_hi
+    // while cwnd_bytes_ continues to track BDP × gain.
     inflight_hi_bytes_ = std::max<uint64_t>(inflight_lo_bytes_, (inflight_hi_bytes_ * 7) / 10);
     
     if (mode_ == Mode::kStartup) {
@@ -256,6 +280,12 @@ void BBRv2CongestionControl::CheckStartupFullBandwidth(uint64_t now_us) {
     (void)now_us;
     if (max_bw_bps_ == 0) return;
     
+    // [BBR-Draft] §4.1.1.2 / [BBRv2-Slides] keep the v1 STARTUP-fill
+    // detector unchanged: three consecutive rounds with <25% bandwidth
+    // growth → pipe is full, exit STARTUP. v2 keeps this signal-driven
+    // exit even though it also has the inflight_hi loss-driven path
+    // (OnPacketLost above), since on lossless paths the bandwidth-plateau
+    // signal is the only one that fires.
     // Check if bandwidth is still growing (>25% increase)
     if (full_bw_bps_ == 0 || max_bw_bps_ > full_bw_bps_ * 125 / 100) {
         full_bw_bps_ = max_bw_bps_;  // Update full bandwidth

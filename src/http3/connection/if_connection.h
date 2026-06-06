@@ -62,6 +62,36 @@ public:
     virtual void Close(uint32_t error_code);
 
     /**
+     * @brief Initiate a graceful shutdown (RFC 9114 §5.2).
+     *
+     * Sends a GOAWAY frame on the local control stream and enters the
+     * "graceful drain" state. While draining:
+     *   - new requests/pushes initiated locally are refused
+     *     (IsAcceptingNewRequests() / IsAcceptingNewPushes() return false);
+     *   - already in-flight request/response streams are allowed to
+     *     finish — the cleanup timer polls every 100ms and once no
+     *     request/push streams remain, calls Close(0) to emit
+     *     CONNECTION_CLOSE(H3_NO_ERROR).
+     *
+     * Calling Shutdown() twice with a smaller id is a no-op (RFC 9114
+     * §5.2: GOAWAY id MUST NOT increase). Calling it after Close() is a
+     * no-op.
+     */
+    virtual void Shutdown();
+
+    /**
+     * @brief Whether the connection is still accepting locally-initiated
+     *        requests. Returns false once we've sent or received a GOAWAY.
+     */
+    bool IsAcceptingNewRequests() const;
+
+    /**
+     * @brief Whether the connection is still accepting server pushes.
+     *        Returns false once a GOAWAY is in flight in either direction.
+     */
+    bool IsAcceptingNewPushes() const;
+
+    /**
      * @brief Initiate connection migration (simple API for interop tests)
      * @return True if migration was initiated successfully
      */
@@ -100,6 +130,35 @@ protected:
     virtual void HandleError(uint64_t stream_id, uint32_t error_code) = 0;
     // handle settings
     virtual void HandleSettings(const std::unordered_map<uint16_t, uint64_t>& settings);
+
+    /**
+     * @brief Subclass hook: emit a GOAWAY frame on the local control stream.
+     *
+     * Server connections write the largest stream ID they will process
+     * (RFC 9114 §5.2). Client connections write the largest push ID they
+     * will accept. Returning false tells Shutdown() that the GOAWAY could
+     * not be sent (e.g., control sender stream gone) and the drain still
+     * proceeds — peer-side state will catch up via QUIC CONNECTION_CLOSE.
+     *
+     * Implementations MUST be idempotent for repeated calls with the same
+     * id; the base class enforces "id must not increase".
+     */
+    virtual bool SendGoawayFrame(uint64_t goaway_id) = 0;
+
+    /**
+     * @brief Subclass hook: compute the GOAWAY id at the moment Shutdown()
+     *        is invoked. Servers return next-stream-id-they-WON'T-process
+     *        (typically max(seen_request_stream_id) + 4); clients return
+     *        max push_id they have accepted (typically next_push_id_).
+     */
+    virtual uint64_t ComputeGoawayId() = 0;
+
+    /**
+     * @brief Subclass hook: are there still in-flight HTTP/3 request or
+     *        push streams that block a graceful close? Long-lived control
+     *        and QPACK streams MUST NOT count.
+     */
+    virtual bool HasInFlightRequests() const;
 
     static const std::unordered_map<uint16_t, uint64_t> AdaptSettings(const Http3Settings& settings);
 
@@ -194,6 +253,22 @@ protected:
     // Flag to indicate if the connection is being destroyed
     // This is checked by timer callbacks to avoid accessing destroyed objects
     std::shared_ptr<std::atomic<bool>> is_destroying_;
+
+    // ------------------------------------------------------------------
+    // RFC 9114 §5.2 graceful shutdown (GOAWAY) state.
+    //
+    // kNoGoaway sentinel = no GOAWAY observed in that direction yet.
+    // Once a GOAWAY is sent or received, the corresponding id is the
+    // upper bound (inclusive for stream-id semantics on server-side, etc.)
+    // for new resource acceptance.
+    //
+    // draining_ flips true the moment we *send* GOAWAY — it gates new
+    // local request creation and arms the cleanup-timer drain probe.
+    // ------------------------------------------------------------------
+    static constexpr uint64_t kNoGoaway = static_cast<uint64_t>(-1);
+    uint64_t goaway_sent_id_ = kNoGoaway;      // id we advertised in our GOAWAY
+    uint64_t goaway_received_id_ = kNoGoaway;  // id peer advertised to us
+    bool draining_ = false;                    // local-side drain armed
 };
 
 }  // namespace http3

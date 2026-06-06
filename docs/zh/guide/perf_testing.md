@@ -10,8 +10,6 @@
 如需了解**性能基准线**（数值大表）和**E2E 根因分析**的历史结论，请继续参考：
 
 - `docs/zh/reports/performance_baseline.md` — 基于 macOS ARM64 / Release 的数值快照
-- `docs/internal/perf_e2e_analysis.md` — Debug build e2e 场景的根因分析
-- `docs/internal/perf_flamegraph_analysis.md` — 火焰图采样结果
 
 ---
 
@@ -472,6 +470,3 @@ export LSAN_OPTIONS="suppressions=$PWD/test/perf/lsan_suppressions.txt"
 4. 单位：亚毫秒用 `benchmark::kNanosecond`，E2E 用 `kMillisecond`；
 5. 吞吐用 `state.counters["items_per_second"] = ...` 或 `SetBytesProcessed()`。
 
----
-
-*最后更新：2026-05。本文档与 `test/perf/CMakeLists.txt` 注册项一一对应；若新增/删除 benchmark，请同步更新 §1.2。*

@@ -4,6 +4,7 @@
 #ifndef QUIC_CONFIG_H
 #define QUIC_CONFIG_H
 
+#include <cstddef>
 #include <cstdint>
 
 namespace quicx {
@@ -141,6 +142,50 @@ static constexpr uint32_t kPacketBufferSize = 1500;
 // Number of blocks in packet pool allocator
 // 64 blocks balances memory overhead with allocation efficiency
 static constexpr uint32_t kPacketPoolBlockCount = 64;
+
+// ============================================================================
+// UDP Receive Configuration
+// ============================================================================
+
+// Socket-drain batch ceiling for UdpReceiver::OnRead.
+// Trades latency-per-wakeup against ACK aggregation:
+//   - Too small  → ACK aggregation defeated (wait_ack_packet_numbers_ never
+//                  accumulates beyond 1 entry, kAckThreshold branch is rarely
+//                  hit, ACKs flow ~1:1 with data packets).
+//   - Too large  → starves co-resident timers/write events that share this
+//                  loop iteration.
+// 64 mirrors the send-side kMaxPacketsPerRound and is comfortably above 1 BDP
+// at typical cwnd. Must be in [1, 256] (256 is the kMaxBatch hard cap inside
+// RecvFromBatch and the stack array size in OnRead).
+// Used in: udp/udp_receiver.cpp
+static constexpr int kMaxRecvBatch = 64;
+
+// Per-connection drain cap inside Worker::ProcessSend (one drain round).
+// Tuning history (200 MB loopback file_transfer, macOS arm64) — post
+// recv-batching (recvmmsg/drain up to kMaxRecvBatch per wakeup):
+//     64   -> ~34.0 MB/s (old default)
+//    128   -> ~36.6 MB/s (chosen — +7.6%, ack feedback keeps up)
+//    256   -> ~30.4 MB/s (-10.6%; ack-feedback re-starves)
+//   1024   -> ~31.5 MB/s (-7.4%)
+// 128 is the sweet spot now that recv-side drains in batches: ack feedback
+// can match a doubled send window per round, but 256+ pushes ack processing
+// past its budget per loop iteration. Legal range [1, 1024]; the thread-local
+// tx_batch reserves this many slots so changing the value affects steady-
+// state memory by ~16B per slot.
+// Used in: quicx/worker.cpp
+static constexpr int kMaxPacketsPerRound = 128;
+
+// Number of ack-eliciting packets that must accumulate before
+// RecvControl::ShouldSendImmediateAck flushes an ACK. RFC 9000 §13.2.2 only
+// requires ACKing "at least every 2 ack-eliciting packets" as a *lower bound*
+// against unbounded delay, not an upper bound. Flushing at exactly 2 defeats
+// ACK aggregation (~1:1 ACK ratio) and on fast paths chains cwnd growth to
+// per-packet RTT, starving throughput. A larger threshold lets us keep
+// aggregating when packets arrive faster than max_ack_delay; the
+// max_ack_delay_ timer still bounds worst-case ACK latency for sparse
+// traffic. Legal range [1, 1024].
+// Used in: connection/controler/recv_control.cpp
+static constexpr size_t kAckThreshold = 10;
 
 }  // namespace quic
 }  // namespace quicx

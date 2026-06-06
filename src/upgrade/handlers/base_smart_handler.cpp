@@ -24,13 +24,13 @@ void BaseSmartHandler::OnConnect(uint32_t fd) {
     auto insert_result = connections_.emplace(fd, ConnectionContext(socket));
     ConnectionContext& context = insert_result.first->second;
     
-    // Add negotiation timeout timer (30 seconds)
+    // Add negotiation timeout timer (kUpgradeNegotiationTimeoutMs)
     if (auto event_loop = event_loop_.lock()) {
         context.negotiation_timer_id = event_loop->AddTimer(
             [this, fd]() {
                 HandleNegotiationTimeout(fd);
             },
-            30000  // 30 seconds timeout
+            kUpgradeNegotiationTimeoutMs
         );
         
         if (context.negotiation_timer_id > 0) {

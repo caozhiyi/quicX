@@ -58,7 +58,7 @@ server->Start("0.0.0.0", 7001);       // 阻塞当前线程开始接客
 ```
 
 ### 2. 强大的路由分发系统 (Router)
-这是 `quicX` 最具业务生产力的地方。内部实现了基于 Trie 树或高效 Hash 表的路由引擎，支持 **精确匹配** 和 **RESTful 风格匹配**。
+这是 `quicX` 最具业务生产力的地方。内部实现了基于 Trie 树的路由引擎，支持 **精确匹配** 和 **RESTful 风格匹配**。
 
 > [!TIP]
 > **路由匹配优先级**：精确匹配 > 命名参数匹配 > 通配符匹配。
@@ -102,7 +102,7 @@ server->AddMiddleware(quicx::HttpMethod::kPost, quicx::MiddlewarePosition::kBefo
 
 ## 二、 两种处理数据的模式 (Handler / AsyncHandler)
 
-HTTP 世界的 Body 载荷千变万化，有短短几字节的 JSON，也有长达几 GB 的文件上传。为此，`quicX` 贴心地设计了**完整模式** 和 **流式模式**。
+HTTP 世界的 Body 载荷千变万化，有短短几字节的 JSON，也有长达几 GB 的文件上传。为此，`quicX` 设计了**完整模式** 和 **流式模式**。
 
 ### 1. 完整模式（Complete Mode）：针对普通 API / JSON
 **痛点特征：** 请求包很小，你想一次性拿到全部的 Header 和 Body，处理完再回去。
@@ -151,7 +151,7 @@ public:
         }
     }
 
-    // 第 3 步：意外中止。比如客户端突然拔网线了，连接断卡了。
+    // 第 3 步：意外中止。比如客户端突然拔网线了，连接断开了。
     void OnError(uint32_t error) override {
         if (file_) { fclose(file_); file_ = nullptr; }
     }
@@ -171,7 +171,7 @@ server->AddHandler(quicx::HttpMethod::kPost, "/upload", std::make_shared<FileUpl
 ### IRequest: 操作入参的利器
 * **提取查询参数 (Query)**：对于 `/api?page=1&limit=10`，可直接通过 `GetQueryParams()` 获取到以键值对存好的哈希表。
 * **自定义 Provider 控制上传** (主要在 Client 请求层面)：
-  如果客户端想发一个超大文件，切忌 `AppendBody` 把文件读进内存，而是提供一个生成器回调（`body_provider`）。
+  如果客户端想发一个超大文件，切忌 `AppendBody` 把文件读进内存，而是提供一个`body_provider`。
   ```cpp
   FILE* upload = fopen("upload.dat", "rb");
   // 当底层协议栈需要发包而发现没有包可发时，就会跑来问你要
@@ -201,6 +201,6 @@ resp->AppendPush(push_resp);
 
 ## 总结
 
-你不需要成为一个 QUIC 协议专家也能用 `quicX` 写出高性能的内网 Web 接口。这套接口为你隔离了如下残酷真相：
+你不需要成为一个 QUIC 协议专家也能用 `quicX` 写出高性能的内网 Web 接口。这套接口为你隔离了如下复杂机制：
 - **无感知的 QPACK 压缩**：无论你 `GetHeader` 还是 `AddHeader`，底层都是用基于静态字典和动态哈希表的 Huffman 树在全自动编解码。
-- **并发与队头阻塞**：一个客户端不管同时并行向你发起 200 个文件请求，底层的传输通道是一路畅通完全无队头排队的。因为每个请求背后都被隔离在了 QUIC 独立的 Stream 状态机里。你要做的，只是单纯且快刀斩乱麻地处理每一个你的 `Handler` 即可。
+- **并发与队头阻塞**：一个客户端不管同时并行向你发起 200 个文件请求，底层的传输通道是一路畅通完全无队头排队的。因为每个请求背后都被隔离在了 QUIC 独立的 Stream 状态机里。你要做的，只是单纯的处理每一个你的 `Handler` 即可。

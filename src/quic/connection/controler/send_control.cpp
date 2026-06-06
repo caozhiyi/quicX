@@ -146,7 +146,7 @@ void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& pac
     // RFC 9002: Schedule PTO timer to detect persistent timeouts
     // Cancel existing timer and reschedule with current PTO value
     timer_->RemoveTimer(pto_timer_);
-    pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
+    pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
     uint64_t pto_ms_send = rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay());
     timer_->AddTimer(pto_timer_, pto_ms_send);
     LOG_DEBUG(
@@ -434,7 +434,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
     // last-resort retransmission trigger.  Under high-loss `sim` runs this
     // manifested as: server retransmits pkt N, peer's ACK is dropped,
     // pacing/FC keeps stalling Send, no new packet is emitted, and PTO never
-    // fires → 8s idle timeout (TODO Bug #18).
+    // fires → 8s idle timeout (Bug #18, fixed).
     //
     // Correct behaviour: re-arm PTO whenever any ack-eliciting packet remains
     // in flight in any packet number space.  unacked_packets_[] only contains
@@ -451,7 +451,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
     if (has_ack_eliciting_in_flight) {
         // Re-arm with the freshly-reset backoff (OnPacketAcked above zeroed
         // pto_count_, so this is a non-backed-off PTO based on latest RTT).
-        pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
+        pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
         uint64_t pto_ms_ack = rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay());
         timer_->AddTimer(pto_timer_, pto_ms_ack);
         LOG_DEBUG(
@@ -462,7 +462,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
         // there is no ack-eliciting data in flight, so the client sends PING
         // probes if the handshake stalls (e.g. server anti-amplification
         // limited).  probe_needed_cb_ is the PING-injection path.
-        pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
+        pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
         // RFC 9002 §6.2.1: pre-handshake path → GetEffectiveMaxAckDelay() returns 0.
         uint64_t pto_ms_hs = rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay());
         timer_->AddTimer(pto_timer_, pto_ms_hs);
@@ -746,7 +746,7 @@ void SendControl::OnPTOTimer() {
 
     // Reschedule PTO timer with updated backoff for next probe
     timer_->RemoveTimer(pto_timer_);
-    pto_timer_.SetTimeoutCallback(std::bind(&SendControl::OnPTOTimer, this));
+    pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
     // RFC 9002 §6.2.1: route through GetEffectiveMaxAckDelay() so the pre-handshake
     // PTO treats peer max_ack_delay as 0 per spec.
     timer_->AddTimer(pto_timer_, rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay()));

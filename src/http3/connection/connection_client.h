@@ -51,6 +51,16 @@ public:
     virtual void SetMaxPushID(uint64_t max_push_id);
     virtual void CancelPush(uint64_t push_id);
 
+protected:
+    // RFC 9114 §5.2 graceful shutdown hooks (see IConnection):
+    //   - Client GOAWAY id is the largest push ID we will accept; we use
+    //     "current next_push_id high-water" — i.e., refuse anything ≥ it.
+    //     A pre-shutdown client typically has not yet allocated push ids,
+    //     so the value reduces to "max push id we ever allowed via
+    //     SetMaxPushID() / SendMaxPushId()".
+    bool SendGoawayFrame(uint64_t goaway_id) override;
+    uint64_t ComputeGoawayId() override;
+
 private:
     // Helper to create and send RequestStream with http_response_handler
     void CreateAndSendRequestStream(
@@ -82,6 +92,12 @@ private:
 
     // Metrics: Track request start times for duration calculation
     std::unordered_map<uint64_t, uint64_t> request_start_times_;
+
+    // RFC 9114 §5.2: highest push id we've ever advertised to the peer
+    // via SetMaxPushID()/initial SendMaxPushId(); used as the GOAWAY id
+    // payload at Shutdown() time so we never widen the push-id window in
+    // a GOAWAY (the spec requires GOAWAY id to be non-increasing).
+    uint64_t advertised_max_push_id_ = 0;
 };
 
 }  // namespace http3

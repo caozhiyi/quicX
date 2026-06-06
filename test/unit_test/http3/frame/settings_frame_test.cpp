@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/decode/decode.h"
@@ -50,6 +51,54 @@ TEST_F(SettingsFrameTest, EncodeAndDecode) {
     // Create new frame for decoding
     auto decode_frame = std::make_shared<SettingsFrame>();
     EXPECT_EQ(decode_frame->Decode(buffer_, true), DecodeResult::kSuccess);
+}
+
+TEST_F(SettingsFrameTest, RejectsTooManyEntries) {
+    // DoS hardening: SettingsFrame::Decode caps the number of entries at 32.
+    // Encoding 33 entries must therefore fail to decode. We hand-craft the
+    // payload because SettingsFrame::Encode dedups by id (a map), which would
+    // make it hard to actually emit >32 entries.
+    auto big_chunk = std::make_shared<common::StandaloneBufferChunk>(4096);
+    auto big_buffer = std::make_shared<common::SingleBlockBuffer>(big_chunk);
+
+    // Each entry: varint(id) + varint(value); use small ids/values (1 byte each)
+    // so 33 entries = 66 payload bytes, well within varint(1-byte length).
+    static const int kEntries = 33;
+    uint32_t payload_size = kEntries * 2;  // 1 byte id + 1 byte value per entry
+
+    common::BufferEncodeWrapper enc(big_buffer);
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)FrameType::kSettings));
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)payload_size));
+    for (int i = 0; i < kEntries; ++i) {
+        // Use ids in [1, 33] and values equal to id; both fit in a 1-byte varint.
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 1)));
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 1)));
+    }
+    enc.Flush();  // commit staged writes so Decode() sees them
+
+    auto decode_frame = std::make_shared<SettingsFrame>();
+    EXPECT_EQ(decode_frame->Decode(big_buffer, true), DecodeResult::kError);
+}
+
+TEST_F(SettingsFrameTest, AcceptsMaxEntries) {
+    // The 32-entry cap is inclusive: exactly 32 entries must still decode.
+    auto big_chunk = std::make_shared<common::StandaloneBufferChunk>(4096);
+    auto big_buffer = std::make_shared<common::SingleBlockBuffer>(big_chunk);
+
+    static const int kEntries = 32;
+    uint32_t payload_size = kEntries * 2;
+
+    common::BufferEncodeWrapper enc(big_buffer);
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)FrameType::kSettings));
+    EXPECT_TRUE(enc.EncodeVarint((uint64_t)payload_size));
+    for (int i = 0; i < kEntries; ++i) {
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 1)));
+        EXPECT_TRUE(enc.EncodeVarint((uint64_t)(i + 1)));
+    }
+    enc.Flush();  // commit staged writes so Decode() sees them
+
+    auto decode_frame = std::make_shared<SettingsFrame>();
+    EXPECT_EQ(decode_frame->Decode(big_buffer, true), DecodeResult::kSuccess);
 }
 
 TEST_F(SettingsFrameTest, EvaluateSize) {

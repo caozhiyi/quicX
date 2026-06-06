@@ -148,15 +148,3 @@ python3 run_tests.py integration
 
 其余 Phase A 的所有工作都可本地闭环。
 
-## 与 Phase A 里程碑的对应
-
-| Phase A 目标 | 验证命令 |
-|---|---|
-| 8 个 GitHub Actions workflow 上线且绿 | `ci-local.sh all` + `ci-act.sh validate` |
-| 覆盖率 ≥ 75% | `ci-local.sh coverage` 看汇总 |
-| 7 个关键 TODO 清零 | 改完对应 `ci-local.sh build && interop local` |
-| 互通镜像推送 GHCR | ❌ 必须在 GitHub |
-| 官方 interop 榜出现 quicX | ❌ 必须提 PR |
-| 跨实现失败项修复 ≥ 80% | `ci-local.sh interop matrix` 看成功率 |
-| 治理文件齐全 | 纯 markdown，本地 markdownlint |
-| `v0.1.0` Release | 本地 `cmake --build build --target package` dry-run |

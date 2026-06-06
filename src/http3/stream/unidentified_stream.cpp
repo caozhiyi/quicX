@@ -14,7 +14,7 @@ UnidentifiedStream::UnidentifiedStream(
     type_callback_(type_callback) {
     
     stream_->SetStreamReadCallBack(
-        std::bind(&UnidentifiedStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        [this](auto a, auto b, auto c) { OnData(a, b, c); });
     
     LOG_DEBUG("UnidentifiedStream created for stream %llu", stream_->GetStreamID());
 }

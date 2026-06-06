@@ -34,12 +34,12 @@
 #
 #   # Option A -- vendor BoringSSL (recommended, guaranteed ABI match):
 #   add_subdirectory(third_party/boringssl)
-#   find_package(quicx 0.1.0 REQUIRED)
+#   find_package(quicx 1.0.0 REQUIRED)
 #   target_link_libraries(myapp PRIVATE quicx::http3)
 #
 #   # Option B -- system OpenSSL (best-effort):
 #   find_package(OpenSSL REQUIRED)
-#   find_package(quicx 0.1.0 REQUIRED)
+#   find_package(quicx 1.0.0 REQUIRED)
 #   target_link_libraries(myapp PRIVATE quicx::http3)
 #
 # Public header usage:

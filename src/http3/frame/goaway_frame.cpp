@@ -47,9 +47,24 @@ DecodeResult GoAwayFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool w
         return DecodeResult::kError;
     }
 
-    // TODO: check length
-    // Read stream ID
+    // RFC 9114 §7.2.6: GOAWAY payload is a single varint Stream/Push ID.
+    // A varint is at most 8 bytes (RFC 9000 §16). A length of 0, or a length
+    // larger than 8, cannot be a well-formed GOAWAY and MUST be rejected
+    // (treat as H3_FRAME_ERROR at the caller).
+    if (length == 0 || length > 8) {
+        return DecodeResult::kError;
+    }
+
+    // Read stream ID and confirm the consumed bytes match the declared length
+    // exactly. A mismatch means either the encoder lied about the payload
+    // size or there is trailing junk; both are protocol violations and could
+    // otherwise let an attacker desynchronise the frame stream.
+    uint32_t before = wrapper.GetReadLength();
     if (!wrapper.DecodeVarint(stream_id_)) {
+        return DecodeResult::kError;
+    }
+    uint32_t id_bytes = wrapper.GetReadLength() - before;
+    if (id_bytes != length) {
         return DecodeResult::kError;
     }
 

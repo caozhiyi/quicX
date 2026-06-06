@@ -137,6 +137,23 @@ void ServerConnection::Init() {
 ServerConnection::~ServerConnection() {}
 
 bool ServerConnection::SendPush(uint64_t push_id, std::shared_ptr<IResponse> response) {
+    // RFC 9114 §5.2 / §7.2.7: respect both our own drain state and the
+    // client's GOAWAY-advertised max push id. We deliberately check
+    // IsAcceptingNewPushes() first so the log line below is only about
+    // the per-push-id cap.
+    if (!IsAcceptingNewPushes()) {
+        LOG_INFO(
+            "ServerConnection::SendPush: refusing push_id=%llu (draining or peer GOAWAY received)",
+            (unsigned long long)push_id);
+        return false;
+    }
+    if (goaway_received_id_ != kNoGoaway && push_id >= goaway_received_id_) {
+        LOG_INFO(
+            "ServerConnection::SendPush: push_id=%llu >= peer GOAWAY id %llu, refusing",
+            (unsigned long long)push_id, (unsigned long long)goaway_received_id_);
+        return false;
+    }
+
     if (streams_.size() >= max_concurrent_streams_) {
         LOG_ERROR("ServerConnection::SendPush max concurrent streams reached");
         return false;
@@ -233,6 +250,31 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
     }
 
     if (stream->GetDirection() == StreamDirection::kBidi) {
+        // RFC 9114 §5.2: once we've sent GOAWAY (draining_) or received
+        // one from the client (goaway_received_id_), we MUST refuse to
+        // process new request streams whose id is ≥ our advertised
+        // GOAWAY id. The simplest implementation here is to refuse ANY
+        // new bidi stream while draining — clients are expected to retry
+        // on a new connection. We don't slam the QUIC connection shut
+        // (that would also tear in-flight streams); instead we just
+        // STOP_SENDING / RESET the new stream with H3_REQUEST_REJECTED
+        // (RFC 9114 §8.1) so the client can retry idempotent requests.
+        if (draining_) {
+            LOG_INFO(
+                "ServerConnection::HandleStream: refusing new request stream %llu after GOAWAY (draining)",
+                stream->GetStreamID());
+            stream->Reset(Http3ErrorCode::kRequestRejected);
+            return;
+        }
+
+        // Track the largest accepted bidi stream id to compute the GOAWAY
+        // id later. Underflow-safe: max_seen_bidi_stream_id_ is the
+        // sentinel kNoGoaway (== UINT64_MAX) until the first request.
+        uint64_t sid = stream->GetStreamID();
+        if (max_seen_bidi_stream_id_ == kNoGoaway || sid > max_seen_bidi_stream_id_) {
+            max_seen_bidi_stream_id_ = sid;
+        }
+
         // RFC 9114: Bidirectional streams are used for HTTP requests/responses
         // Create ResponseStream with match_handler
         // The handler will match route and return mode + wrapped handler
@@ -362,8 +404,51 @@ void ServerConnection::OnStreamTypeIdentified(
 }
 
 void ServerConnection::HandleGoaway(uint64_t id) {
-    // TODO: implement goaway
-    Close(0);
+    // RFC 9114 §5.2: A client's GOAWAY carries the largest push ID it is
+    // willing to accept. The server MUST NOT initiate new pushes with an
+    // id ≥ that value. The id MUST NOT increase across multiple GOAWAYs;
+    // a peer that violates this MUST be treated as H3_ID_ERROR.
+    if (goaway_received_id_ != kNoGoaway && id > goaway_received_id_) {
+        LOG_ERROR(
+            "ServerConnection::HandleGoaway: peer GOAWAY id increased (%llu -> %llu), closing with H3_ID_ERROR",
+            (unsigned long long)goaway_received_id_, (unsigned long long)id);
+        Close(static_cast<uint32_t>(Http3ErrorCode::kIdError));
+        return;
+    }
+    LOG_INFO("ServerConnection::HandleGoaway: client GOAWAY received, max_accepted_push_id=%llu",
+        (unsigned long long)id);
+    goaway_received_id_ = id;
+
+    // The server still owes the client all in-flight responses. Don't
+    // close here — the client will eventually close the QUIC connection,
+    // or our application code will call Shutdown() to start a symmetric
+    // server-side drain. Just stop emitting new pushes that violate the
+    // cap; the existing CanPush() check picks this up via
+    // IsAcceptingNewPushes() below.
+}
+
+bool ServerConnection::SendGoawayFrame(uint64_t goaway_id) {
+    if (!control_sender_stream_) {
+        LOG_WARN("ServerConnection::SendGoawayFrame: no control sender stream");
+        return false;
+    }
+    return control_sender_stream_->SendGoaway(goaway_id);
+}
+
+uint64_t ServerConnection::ComputeGoawayId() {
+    // RFC 9114 §5.2: server's GOAWAY id is the largest stream id the
+    // server WILL process. Any stream id < goaway_id is either already
+    // accepted or guaranteed-rejected; the client may safely retry any
+    // id >= goaway_id on a new connection.
+    //
+    // We pick max_seen + 4 (the next client-initiated bidi id) so that
+    // every previously-accepted request is "below the line". Client-bidi
+    // ids are 4n (RFC 9000 §2.1), hence the +4 step.
+    if (max_seen_bidi_stream_id_ == kNoGoaway) {
+        // No requests processed yet: tell client we'll accept nothing.
+        return 0;
+    }
+    return max_seen_bidi_stream_id_ + 4;
 }
 
 void ServerConnection::HandleMaxPushId(uint64_t max_push_id) {

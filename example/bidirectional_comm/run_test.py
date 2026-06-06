@@ -5,6 +5,9 @@ import signal
 import sys
 import argparse
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from _test_helpers import start_server, stop_server  # noqa: E402
+
 def run_test(bin_dir):
     server_path = os.path.join(bin_dir, "bidirectional_server")
     client_path = os.path.join(bin_dir, "bidirectional_client")
@@ -17,9 +20,8 @@ def run_test(bin_dir):
         return False
 
     print(f"Starting server: {server_path}")
-    # Start server in background
-    # Use preexec_fn=os.setsid to create a process group so we can kill the whole tree if needed
-    server_process = subprocess.Popen([server_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # Launch in its own process group so cleanup also reaps any children.
+    server_process = start_server([server_path], text=True)
     
     try:
         # Give server time to start
@@ -71,14 +73,9 @@ def run_test(bin_dir):
         # Now verify server detected disconnection
         # Wait a moment for server to process disconnection
         time.sleep(1)
-        
-        # We need to kill the server to read its full output if it's still running
-        if server_process.poll() is None:
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
+
+        # Stop server cleanly so we can read its full output afterwards.
+        stop_server(server_process)
         
         # Read server output
         # server_stdout = server_process.stdout.read()
@@ -94,17 +91,13 @@ def run_test(bin_dir):
         print(f"FAILED: Exception occurred: {e}")
         return False
     finally:
-        # cleanup server
-        if server_process.poll() is None:
-            server_process.terminate()
-            try:
-                stdout, stderr = server_process.communicate(timeout=2)
-            except:
-                server_process.kill()
-                stdout, stderr = server_process.communicate()
-        else:
-            stdout, stderr = server_process.communicate()
-            
+        # cleanup server (kills entire process group)
+        stop_server(server_process)
+        try:
+            stdout, stderr = server_process.communicate(timeout=2)
+        except Exception:
+            stdout, stderr = "", ""
+
         print("Server stdout:\n" + "-"*20 + "\n" + (stdout if stdout else "") + "\n" + "-"*20)
         print("Server stderr:\n" + "-"*20 + "\n" + (stderr if stderr else "") + "\n" + "-"*20)
 

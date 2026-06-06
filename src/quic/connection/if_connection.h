@@ -8,7 +8,6 @@
 #include "common/network/address.h"
 
 #include "quic/connection/connection_id.h"
-#include "quic/crypto/if_cryptographer.h"
 #include "quic/crypto/tls/type.h"
 #include <quicx/quic/if_quic_connection.h>
 #include "quic/packet/if_packet.h"
@@ -76,8 +75,19 @@ public:
     // provide ECN value for the next OnPackets call (per received datagram)
     virtual void SetPendingEcn(uint8_t ecn) = 0;
     virtual EncryptionLevel GetCurEncryptionLevel() = 0;
-    // test-only hook: provide cryptographer for decoding packets in unit tests
-    virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t /*level*/) { return nullptr; }
+
+    // Production-side query: is the 0-RTT (early data) write key currently
+    // installed? Worker uses this to decide whether to deliver a freshly
+    // promoted connection as kEarlyConnection vs kConnectionCreate. Kept on
+    // the IConnection interface (rather than reaching into a concrete type)
+    // because the worker only sees IConnection here.
+    //
+    // Note: this *replaces* the previous GetCryptographerForTest(kEarlyData)
+    // that worker used as a stand-in. The "ForTest" accessor only ever
+    // belonged to test code — it has been moved off the IConnection vtable
+    // into BaseConnection as a non-virtual member; tests reach it through
+    // the concrete ClientConnection/ServerConnection types they already hold.
+    virtual bool HasEarlyDataWriteKey() const = 0;
 
     // connection transfer between threads
     virtual void ThreadTransferBefore() = 0;

@@ -35,6 +35,11 @@ public:
     virtual void SetAddressType(AddressType address_type) { address_type_ = address_type; InvalidateCachedSockaddr(); }
     virtual AddressType GetAddressType() const { return address_type_; }
 
+    // Convenience predicates over GetAddressType().  IsIPv4() and IsIPv6() are
+    // mutually exclusive; together they cover every value of AddressType.
+    bool IsIPv4() const { return address_type_ == AddressType::kIpv4; }
+    bool IsIPv6() const { return address_type_ == AddressType::kIpv6; }
+
     virtual const std::string AsString() const;
 
     friend std::ostream& operator<< (std::ostream &out, Address &addr);

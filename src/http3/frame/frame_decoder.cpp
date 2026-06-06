@@ -89,7 +89,7 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
                 // or a later one — MUST be interpreted as the length varint, not
                 // as a new frame type. Remember the consumed type and switch to
                 // kReadingUnknownLength so the next iteration / OnData call
-                // resumes correctly. (Regression: TODO #24)
+                // resumes correctly. (Fix for Bug #24, fixed.)
                 current_frame_type_ = frame_type;
                 state_ = State::kReadingUnknownLength;
                 // Fall through to the kReadingUnknownLength block below.

@@ -143,6 +143,13 @@ uint64_t RenoCongestionControl::NextSendTime(uint64_t now) const {
 }
 
 void RenoCongestionControl::IncreaseOnAck(uint64_t bytes_acked) {
+    // RFC 9002 §7.3.1 + Appendix B.4 (NewReno for QUIC) — slow start:
+    //   cwnd += bytes_acked  (exponential growth, doubling per RTT)
+    // until cwnd reaches ssthresh, after which we transition to
+    // congestion avoidance: cwnd += MSS² / cwnd per ACK, which yields
+    // ~1 MSS per RTT additive increase. The simplification here folds
+    // RFC 5681's per-ACK update directly; the kBetaCubic-style fast
+    // recovery is intentionally absent — that lives in CUBIC instead.
     if (in_slow_start_) {
         cwnd_bytes_ += bytes_acked;
         if (cwnd_bytes_ >= ssthresh_bytes_) {

@@ -1,6 +1,7 @@
 #include <algorithm>
 
 #include "common/log/log.h"
+#include "quic/common/constants.h"
 #include "quic/connection/controler/pmtu_prober.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/type.h"
@@ -35,7 +36,7 @@ void PmtuProber::OnProbeResult(bool success) {
 void PmtuProber::ResetForNewPath() {
     probe_inflight_ = false;
     probe_packet_number_ = 0;
-    mtu_limit_bytes_ = 1200;  // RFC 9000 minimum
+    mtu_limit_bytes_ = kMinInitialPacketSize;  // RFC 9000 §14.1: 1200-byte floor
 }
 
 bool PmtuProber::CheckAckCoversProbe(std::shared_ptr<IFrame> frame) {

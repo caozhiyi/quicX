@@ -2,261 +2,134 @@
 
 <p align="left">
   <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/license-BSD--3--Clause-orange.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/status-pre--1.0%20preview-yellow.svg" alt="Status">
+  <img src="https://img.shields.io/badge/version-1.0.0-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/status-learning--reference-brightgreen.svg" alt="Status">
   <img src="https://img.shields.io/badge/C%2B%2B-17-blue.svg" alt="C++17">
   <img src="https://img.shields.io/badge/RFC-9000%20%2F%209369%20%2F%209114-informational.svg" alt="RFC">
 </p>
 
 [简体中文](./README_cn.md)
-
-**QuicX** is a C++17 HTTP/3 library built on the QUIC protocol (RFC 9000 / RFC 9369). It provides a self-contained transport and application stack — from UDP sockets and TLS 1.3 (via BoringSSL) through QUIC streams all the way to HTTP/3 routing, QPACK header compression, and server push — without depending on any external HTTP framework.
-
-> **Documentation:**
-> [English docs index](./docs/en/README.md) ·
-> [中文文档索引](./docs/zh/README.md) ·
-> [`CHANGELOG`](./CHANGELOG.md) ·
-> [`SECURITY`](./SECURITY.md) ·
-> [`CONTRIBUTING`](./CONTRIBUTING.md)
-
 ---
 
-## Project Maturity
+**QuicX** is a self-contained C++17 QUIC / HTTP/3 protocol stack: from UDP socket, TLS 1.3 (BoringSSL), QUIC stream, all the way to HTTP/3 routing, QPACK, and server push, all implemented in a single repository without depending on any external HTTP framework.
 
-QuicX **v0.1.x is a pre-1.0 preview release.** The protocol stack is feature-complete for QUIC v1 / v2 and HTTP/3, has a sizeable unit-test corpus (1196+ tests, all green), passes ASan / UBSan / TSan clean, and runs in interoperability simulations against the major QUIC implementations. It is suitable for:
-
-- Internal services and prototypes
-- Research, education, and protocol experimentation
-- Greenfield products willing to track minor releases
-
-It is **not yet recommended** for mission-critical production traffic without your own additional protocol / fuzz / stress validation. Specifically:
-
-- **API stability**: the public C++ API may change between `0.x` minor versions. SemVer guarantees take effect from `1.0.0`. See [`docs/en/reference/api_stability.md`](./docs/en/reference/api_stability.md).
-- **Feature scope**: see [`docs/en/reference/support_matrix.md`](./docs/en/reference/support_matrix.md) for a precise list of what is implemented, partially implemented, and explicitly not implemented (e.g. CID rotation during connection migration, Multipath QUIC, DATAGRAM frames).
-- **Known issues** and breaking-change history: see [`CHANGELOG.md`](./CHANGELOG.md).
-- **Security disclosures**: please follow [`SECURITY.md`](./SECURITY.md) — do **not** open public GitHub issues for vulnerabilities.
-
-If you find QuicX useful, contributions are very welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-
----
-
-## Table of Contents
-
-- [Project Maturity](#project-maturity)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Interop Matrix](#interop-matrix)
-- [Documentation](#documentation)
-- [Examples](#examples)
-- [Observability](#observability)
-- [Testing](#testing)
-- [License](#license)
-
----
-
-## Features
-
-> a self-contained C++17 HTTP/3 + QUIC v1 / v2 stack — TLS 1.3
-> via BoringSSL, BBR / CUBIC / Reno congestion control, QPACK + server push,
-> connection migration, key update, optional QLog tracing — and a rich
-> built-in metrics registry, all behind two CMake imported targets.
-
-### QUIC Protocol (RFC 9000 / RFC 9369)
-
-| Area | Details |
-|---|---|
-| **TLS** | TLS 1.3 via BoringSSL; 0-RTT / 1-RTT handshakes; session ticket caching; SSLKEYLOGFILE support |
-| **Versions** | QUIC v1 (`0x00000001`) and QUIC v2 (`0x6b3343cf`) with version negotiation |
-| **Connection** | Multi-connection management; graceful `CONNECTION_CLOSE`; Retry packet anti-amplification |
-| **Connection Migration** | Active migration (RFC 9000 §9); NAT rebinding detection; path validation via `PATH_CHALLENGE` / `PATH_RESPONSE` |
-| **Streams** | Bidirectional and unidirectional streams; stream-level and connection-level flow control; `STREAM_DATA_BLOCKED` / `DATA_BLOCKED` frames |
-| **Congestion Control** | BBR v1 / v2 / v3, CUBIC, Reno — selectable per connection via factory; packet pacer |
-| **Loss Recovery** | ACK-based loss detection; PTO (Probe Timeout); packet retransmission with encryption-level tracking |
-| **ECN** | Optional ECN marking and handling |
-| **Key Update** | Optional automatic key update |
-
-### HTTP/3
-
-| Area | Details |
-|---|---|
-| **QPACK** | Static table + dynamic table (RFC 9204); Huffman encoding/decoding |
-| **Streams** | Request / response streams; server-push streams (optional); control streams; encoder/decoder streams |
-| **Routing** | Path parameter matching (`:param`); wildcard routes (`*`); per-method handler registration |
-| **Middleware** | Before / After middleware chain per HTTP method |
-| **Handler modes** | **Complete mode** — entire body buffered before handler; **Streaming mode** — `IAsyncServerHandler` / `IAsyncClientHandler` receive body chunks as they arrive |
-| **HTTP Methods** | GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH |
-| **Server Push** | `PUSH_PROMISE` frames; optional push acceptance/rejection callback on the client |
-| **HTTP Upgrade** | HTTP/1.1 → HTTP/3 upgrade path (`src/upgrade`) |
-
-### Core Infrastructure
-
-| Component | Details |
-|---|---|
-| **Memory** | Custom slab allocator (`NormalAlloter`); pooled `BufferChunk` chain; near-zero-copy I/O path |
-| **Networking** | Cross-platform UDP I/O (`linux/`, `macos/`, `windows/`); non-blocking event loop |
-| **Threading** | Single-thread or multi-thread mode; configurable worker thread count |
-| **Timers** | Hierarchical timer wheel for connection idle, PTO, and application timers |
-| **Logging** | Levelled logging (Null / Debug / Info / Warn / Error); configurable output path |
-| **QLog** | RFC 9001-compliant QLog tracing (optional, `-DQUICX_ENABLE_QLOG=ON`) |
-| **Metrics** | Rich built-in metrics registry — UDP, QUIC, HTTP/3, congestion, memory, TLS, migration, retry, etc. |
+Its goal is to be **readable and runnable** — a clear codebase showing you the complete lifecycle of a packet from the network card to the HTTP/3 handler, backed by 1196+ unit tests, clean ASan / UBSan / TSan runs, and a 91.7% interop pass rate with major implementations. The **only thing it hasn't done yet** is carry large-scale production traffic; please treat it as a trusted reference implementation to use, learn, and extend.
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────┐
-│         Application / Example           │
-├─────────────────────────────────────────┤
-│   HTTP/3 Layer  (src/http3)             │
-│   IClient / IServer  ←→  Router         │
-│   QPACK  ·  Frames  ·  Push            │
-├─────────────────────────────────────────┤
-│   HTTP Upgrade  (src/upgrade)           │
-├─────────────────────────────────────────┤
-│   QUIC Layer  (src/quic)               │
-│   Connection  ·  Stream  ·  Crypto      │
-│   Congestion Control  ·  Loss Recovery  │
-│   Packet / Frame codec                  │
-├─────────────────────────────────────────┤
-│   Common  (src/common)                  │
-│   Buffer  ·  Alloter  ·  Network I/O   │
-│   Timer  ·  Log  ·  Metrics  ·  QLog   │
-└─────────────────────────────────────────┘
-```
+QuicX uses a **single-process architecture**: all five source modules — Application, HTTP/3, HTTP Upgrade, QUIC, and Common — are linked into the same address space.
+
+<p align="center">
+  <img src="./docs/image/architecture.svg" alt="QuicX module layout" width="900">
+</p>
+
+Requests flow top-to-bottom along the solid lines: user's `IServer` handler → HTTP/3 Connection / QPACK / Router → QUIC Stream and Congestion Control → Common networking and buffer → UDP out of network card.
+
+**HTTP Upgrade sits at the same level as HTTP/3**: it opens a second listener on TCP 80/443 whose only responsibility is to write back an `Alt-Svc` response header; it **does not depend** on the QUIC layer and does not run HTTP/3 over TCP. The dashed line represents a **client-side hop**, not an in-process call — after receiving the header, the browser reconnects using UDP/QUIC.
+
+> To see the complete path and invariants of a single packet from UDP to the HTTP/3 handler, see [`packet lifecycle`](./docs/en/design/packet_lifecycle.md).
 
 ---
 
-## Interop Matrix
+## Features
 
-QuicX is continuously tested against the major QUIC implementations using the
-[`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner)
-test suite — **14 scenarios × 12 peers × 2 directions = 322 test cells per run**.
+### QUIC (RFC 9000 / RFC 9369)
 
-Latest snapshot (from most recent test run):
+| Feature Area | Description |
+|---|---|
+| **TLS** | TLS 1.3 via BoringSSL; 0-RTT / 1-RTT; session ticket caching; SSLKEYLOGFILE |
+| **Protocol Version** | QUIC v1 (`0x00000001`) and v2 (`0x6b3343cf`), supporting version negotiation |
+| **Connection** | Multi-connection management; graceful `CONNECTION_CLOSE`; Retry packet anti-amplification |
+| **Connection Migration** | Active migration (§9); NAT rebinding detection; `PATH_CHALLENGE` / `PATH_RESPONSE` path validation |
+| **Stream** | Bidirectional / unidirectional streams; stream-level + connection-level flow control |
+| **Congestion Control** | BBR v1/v2/v3, CUBIC, Reno (selectable per connection factory); built-in packet pacer |
+| **Loss Recovery** | ACK-based loss detection; PTO; retransmission tracking per encryption level |
+| **Other** | Optional ECN; optional automatic key update |
+
+### HTTP/3
+
+| Feature Area | Description |
+|---|---|
+| **QPACK** | Static + dynamic tables (RFC 9204); Huffman encoding/decoding |
+| **Stream** | Request / response, control, encoder / decoder, optional server push streams |
+| **Routing** | Path parameter (`:param`), wildcard (`*`), registration by method |
+| **Middleware** | Before / After chain per HTTP method |
+| **Handler Mode** | **Complete mode** (buffers complete body) / **Streaming mode** (`IAsyncServerHandler` / `IAsyncClientHandler` receives in chunks) |
+| **HTTP Methods** | GET, HEAD, POST, PUT, DELETE, CONNECT, OPTIONS, TRACE, PATCH |
+| **Server Push** | `PUSH_PROMISE`; client configurable accept / reject callbacks |
+| **HTTP Upgrade** | HTTP/1.1 → HTTP/3 upgrade path (`src/upgrade`) |
+
+### Core Infrastructure
+
+| Component | Description |
+|---|---|
+| **Memory** | Slab allocator (`NormalAlloter`); pooled `BufferChunk` chain; near-zero-copy I/O |
+| **Network** | Cross-platform UDP I/O (Linux / macOS / Windows); non-blocking event loop |
+| **Thread** | Single-threaded or multi-threaded; configurable worker count |
+| **Timer** | Hierarchical timer wheel (connection idle, PTO, application timers) |
+| **Logging & QLog** | Levelled logging; optional RFC 9001 QLog tracing (`-DQUICX_ENABLE_QLOG=ON`) |
+| **Metrics** | Built-in Metrics registry, covering UDP / QUIC / HTTP/3 / Congestion / Memory / TLS / Migration / Retry |
+
+> For the list of implemented / partially implemented features, see [`support matrix`](./docs/en/reference/support_matrix.md).
+
+---
+
+## Interop Testing
+
+QuicX is continuously tested against major QUIC implementations using [`quic-interop-runner`](https://github.com/quic-interop/quic-interop-runner) — **14 scenarios × 12 peers × 2 directions = 322 test combinations per round**. Most recent run:
 
 | Metric | Value |
 |---|---|
-| PASS | **222** |
-| FAIL | **20** |
-| - Unsupported | **94** |
-| **Pass rate**（excluding Unsupported） | **91.7%** |
+| Pass | **222** |
+| Fail | **20** |
+| Unsupported | 94 |
+| **Pass Rate** (excluding unsupported) | **91.7%** |
 
-Per-implementation breakdown across 14 scenarios (format: Server results / Client results):
+By peer implementation (Pass / Valid runs, less than 14 means certain scenarios were marked unsupported by either end):
 
-| Peer | Server (peer ⇐ QuicX-client) | Client (peer ⇒ QuicX-server) |
-|---|:--:|:--:|
-| **quicx**(self)   | 14/14 | 14/14 | **100%** |
-| **picoquic**      | 13/14 | 12/13 | **96.2%** |
-| **ngtcp2**        | 12/12 | 11/11 | **100%** |
-| **quic-go**       | 10/10 |  9/9  | **100%** |
-| **neqo**          | 10/10 |  9/10 | **95.0%** |
-| **lsquic**        | 10/10 |  9/10 | **95.0%** |
-| **aioquic**       | 10/10 |  9/10 | **95.0%** |
-| **quiche**        |  7/7  |  8/8  | **100%** |
-| **msquic**        |  8/10 | 10/10 | **90.0%** |
-| **mvfst**         |  4/6  |  1/6  | **41.7%** |
-| **quinn**         | 14/14 |  9/9  | **100%** |
-| **s2n-quic**      |  0/6  |  9/10 | **56.3%** |
+| Peer | QuicX as Server | QuicX as Client | Pass Rate |
+|---|:--:|:--:|:--:|
+| **picoquic** | 13/14 | 12/13 | 96.2% |
+| **ngtcp2**   | 12/12 | 11/11 | 100% |
+| **quic-go**  | 10/10 |  9/9  | 100% |
+| **neqo**     | 10/10 |  9/10 | 95.0% |
+| **lsquic**   | 10/10 |  9/10 | 95.0% |
+| **aioquic**  | 10/10 |  9/10 | 95.0% |
+| **quiche**   |  7/7  |  8/8  | 100% |
+| **msquic**   |  8/10 | 10/10 | 90.0% |
+| **quinn**    | 14/14 |  9/9  | 100% |
+| **mvfst**    |  4/6  |  1/6  | 41.7% |
+| **s2n-quic** |  0/6  |  9/10 | 56.3% |
 
-> Each cell shows PASS count out of 14 scenarios in that direction.
-> See the full reports for detailed per-scenario analysis, failure root causes,
-> and breakdown of upstream/environment issues vs. QuicX defects.
+Covered scenarios: `handshake`, `transfer`, `retry`, `resumption`, `zerortt`, `http3`, `multiconnect`, `versionnegotiation`, `chacha20`, `keyupdate`, `v2`, `rebind-port`, `rebind-addr`, `connectionmigration`.
 
-Scenarios covered: `handshake` · `transfer` · `retry` · `resumption` ·
-`zerortt` · `http3` · `multiconnect` · `versionnegotiation` · `chacha20` ·
-`keyupdate` · `v2` · `rebind-port` · `rebind-addr` · `connectionmigration`.
-
-Full reports (per-scenario matrix, known issues, detailed analysis):
-[English](./docs/en/reports/interop_status.md) ·
-[中文 (more complete)](./docs/zh/reports/interop_status.md) ·
-How to reproduce locally:
-[`docs/en/guide/interop_runbook.md`](./docs/en/guide/interop_runbook.md)
-/ [`docs/zh/guide/interop_runbook.md`](./docs/zh/guide/interop_runbook.md).
+Full reports and root cause analysis: [`interop status`](./docs/en/reports/interop_status.md)
+Local reproduction: [`interop runbook`](./docs/en/guide/interop_runbook.md).
 
 ---
 
-## Documentation
+## Getting Started
 
-QuicX ships parallel English and Chinese documentation trees under
-[`docs/`](./docs). Pick your language and use that as the entry point — the
-language-local README is the canonical index, this top-level README does not
-duplicate it:
+All examples are located in `example/`, enable `-DBUILD_EXAMPLES=ON` to compile. We recommend starting with `hello_world`; pick by scenario:
 
-- **English** → [`docs/en/README.md`](./docs/en/README.md)
-- **中文** → [`docs/zh/README.md`](./docs/zh/README.md)
+- **Request / Response Basics**: `hello_world`, `restful_api`, `error_handling`
+- **Streaming & Large Files**: `streaming_api`, `file_transfer`, `bidirectional_comm`
+- **Connection Behavior**: `connection_lifecycle`, `concurrent_requests`, `server_push`
+- **Ops & Observability**: `metrics_monitoring`, `qlog_integration`, `performance_benchmark`, `load_testing`
+- **Protocol Upgrade & Tools**: `upgrade_h3`, `quicx_curl` (a curl-like command-line client)
 
-Each tree is organized as: `getting-started/` · `tutorial/` · `guide/` ·
-`reference/` (release contract) · `reports/` (point-in-time results) ·
-`design/` (current code invariants).
-
-Repo-root contracts: [`CHANGELOG.md`](./CHANGELOG.md) ·
-[`SECURITY.md`](./SECURITY.md) ·
-[`CONTRIBUTING.md`](./CONTRIBUTING.md).
-
----
-
-## Examples
-
-All examples live under `example/` and are built with `-DBUILD_EXAMPLES=ON`. 
-
-| Example | Description |
-|---|---|
-| `hello_world` | Minimal GET request / response |
-| `restful_api` | REST API with path parameters |
-| `file_transfer` | Large-file upload / download with streaming handler |
-| `streaming_api` | Chunked streaming response |
-| `bidirectional_comm` | Bidirectional stream communication |
-| `concurrent_requests` | Multiple parallel requests |
-| `connection_lifecycle` | Connection events and graceful shutdown |
-| `error_handling` | Protocol error handling patterns |
-| `server_push` | HTTP/3 Server Push (`PUSH_PROMISE`) |
-| `load_testing` | Simple load generation |
-| `performance_benchmark` | Throughput / latency benchmark |
-| `metrics_monitoring` | Reading built-in metrics at runtime |
-| `qlog_integration` | Generating QLog traces for Wireshark / qvis |
-| `upgrade_h3` | HTTP/1.1 → HTTP/3 upgrade |
-| `quicx_curl` | curl-like command-line client |
-
----
-
-## Observability
-
-### Metrics
-
-QuicX ships a built-in metrics registry covering:
-
-- **UDP**: packets/bytes rx/tx, drops, send errors
-- **QUIC connections**: active, total, handshake success/failure, duration
-- **QUIC packets**: rx/tx, retransmit, lost, dropped, acked
-- **QUIC streams**: active, created, closed, bytes rx/tx, RESET frames
-- **Flow control**: blocked events
-- **HTTP/3**: requests total/active/failed, duration histogram, push promises, status code buckets (2xx/3xx/4xx/5xx)
-- **Congestion control**: window, events, slow-start exits, bytes in flight, pacing rate
-- **Latency**: smoothed RTT, RTT variance, min RTT, packet processing time, ACK delay
-- **Memory**: pool allocations, free/allocated blocks
-- **TLS**: handshake duration, sessions resumed/cached
-- **Connection migration**: total, failed
-- **Retry**: packets sent, trigger reasons, token validation
-
-Access metrics at runtime via `MetricsRegistry` or expose via the optional metrics HTTP endpoint in `Http3ServerConfig::metrics_` / `Http3ClientConfig::metrics_`.
-
-### QLog
-
-Enable with `-DQUICX_ENABLE_QLOG=ON` and configure the path in `QuicConfig::qlog_config_`. Produced traces are compatible with [qvis](https://qvis.quictools.info/) and Wireshark.
-
----
-
-## Testing
+### Testing
 
 ```bash
 # Unit tests
 ./build/bin/quicx_utest
 
-# Integration tests (requires local server/client pair)
+# Integration tests (requires local server / client)
 python3 run_tests.py
 
-# Congestion-control simulator
+# Congestion control simulator
 ./build/bin/cc_simulator
 
 # Fuzz testing (requires Clang + libFuzzer)
@@ -266,6 +139,23 @@ cmake --build build_fuzz
 
 ---
 
+## Observability
+
+**Metrics** — Built-in `MetricsRegistry`, covering UDP rx/tx and drop, QUIC connection / packet / stream, flow control blocking, HTTP/3 requests and status code buckets, congestion window and pacing, RTT and ACK delay, memory pool, TLS handshake and session resumption, connection migration, Retry and other dimensions. You can read `MetricsRegistry` directly at runtime, or expose an HTTP endpoint via `Http3ServerConfig::metrics_` / `Http3ClientConfig::metrics_`.
+
+**QLog** — Enable by compiling with `-DQUICX_ENABLE_QLOG=ON` and configuring the output path in `QuicConfig::qlog_config_`. The generated trace files are compatible with [qvis](https://qvis.quictools.info/) and Wireshark.
+
+---
+
+## Further Reading
+
+- English documentation entry: [`README`](./docs/en/README.md) (`getting-started/` · `tutorial/` · `guide/` · `reference/` · `reports/` · `design/`)
+- Change history: [`CHANGELOG.md`](./CHANGELOG.md)
+- Security disclosures: [`SECURITY.md`](./SECURITY.md)
+- Contribution guide: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+
+---
+
 ## License
 
-BSD 3-Clause License — see the [LICENSE](LICENSE) file for details.
+BSD 3-Clause License — see [LICENSE](LICENSE) for details.

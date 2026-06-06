@@ -84,9 +84,7 @@ cd /data/workspace/quicX/test/interop
 
 python3 interop_runner.py \
     --matrix \
-    --implementations all \
-    --no-sim \
-    --use-local-bin
+    --implementations all
 ```
 
 参数说明：
@@ -280,8 +278,3 @@ python3 interop_runner.py --scenario v2 \
 
 - [`reports/interop_status.md`](../reports/interop_status.md) — 当前测试进度与连通性矩阵
 - [`guide/interop_overview.md`](./interop_overview.md) — 官方 interop-runner 框架原理
-- [`../../internal/quic_interop_sim_issues.md`](../../internal/quic_interop_sim_issues.md) — 逐对端的排障记录
-- `test/interop/INTEROP_improvement_plan.md` — 改进路线图
-- `test/interop/testcases.py` — 14 个场景定义
-- `test/interop/implementations.json` — 已接入的第三方实现清单
-- `test/interop/run_endpoint.sh` — quicX 容器内启动脚本（场景白名单）

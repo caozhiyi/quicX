@@ -13,7 +13,7 @@ int main() {
     quicx::Http3ClientConfig config;
     config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
     config.quic_config_.config_.worker_thread_num_ = 1;
-    config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
     // Enable QLog so we can visualize the connection in qvis
     config.quic_config_.config_.qlog_config_.enabled = true;

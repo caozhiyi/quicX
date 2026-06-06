@@ -116,11 +116,17 @@ bool ConnectionIDManager::AddID(ConnectionID& id) {
 }
 
 bool ConnectionIDManager::AddID(const uint8_t* id, uint16_t len) {
-    // TODO(D): the auto-incrementing sequence number here is meaningful only for the
-    // *local* manager (where we choose our own sequence numbers). Calling this overload
-    // on the *remote* manager pollutes sequence numbers and can collide with sequences
-    // chosen by the peer in NEW_CONNECTION_ID frames. Long-term, split LocalCIDManager
-    // and RemoteCIDManager so the type system enforces the distinction.
+    // Design note: the auto-incrementing sequence number assigned here is
+    // meaningful only for the *local* manager (where this endpoint chooses
+    // its own sequence numbers). Calling this overload on the *remote*
+    // manager would pollute sequence numbers and could collide with
+    // sequences chosen by the peer in NEW_CONNECTION_ID frames — remote
+    // manager call sites must use the AddID(ConnectionID&) overload with
+    // the peer-supplied sequence number instead. A future refactor that
+    // splits LocalCIDManager and RemoteCIDManager into distinct types
+    // (tracked in learning_project_roadmap.md §2) would let the type
+    // system enforce this distinction; for now it is a documented
+    // call-site contract.
     ConnectionID conn_id((uint8_t*)id, len, ++cur_sequence_number_);
     return AddID(conn_id);
 }

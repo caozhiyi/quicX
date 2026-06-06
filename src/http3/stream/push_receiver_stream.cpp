@@ -23,9 +23,12 @@ PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpac
     parse_state_(ParseState::kReadingPushId),
     push_id_(0),
     body_length_(0) {
-    stream_->SetStreamReadCallBack(std::bind(
-        &PushReceiverStream::OnData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
-    // TODO send callback
+    stream_->SetStreamReadCallBack(
+        [this](auto a, auto b, auto c) { OnData(a, b, c); });
+    // No send-side callback is registered here: a server push stream is, by
+    // RFC 9114 §4.4 / §6.2.2, unidirectional from server to client, and on
+    // the client side stream_ is therefore an IQuicRecvStream — there is no
+    // send direction to wire up.
 }
 
 PushReceiverStream::~PushReceiverStream() {
@@ -119,7 +122,11 @@ void PushReceiverStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         return;
     }
 
-    // TODO check if headers is complete and headers length is correct
+    // See ReqRespBaseStream::HandleHeaders for the rationale: HEADERS-frame
+    // length is enforced by FrameDecoder / HeadersFrame::Decode, and QPACK
+    // well-formedness is enforced by qpack_decoder_->Decode below. Push
+    // streams reuse the same frame and QPACK layers, so no separate length
+    // check is needed here either.
 
     // Decode headers using QPACK (decoder table for incoming headers)
     auto headers_buffer = headers_frame->GetEncodedFields();

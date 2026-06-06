@@ -74,7 +74,12 @@ SendOperation SendManager::GetSendOperation() {
         return SendOperation::kAllSendDone;
 
     } else {
-        uint64_t can_send_size = 1500;  // TODO: set to mtu size
+        // Use the PMTU prober's current effective MTU rather than a hard-coded
+        // 1500: the prober starts at the RFC 9000 §14.1 floor (1200) on a new
+        // path and probes upwards (up to 1500) only after success. This makes
+        // CanSend() honour the discovered path MTU instead of optimistically
+        // assuming wire-MTU on every connection.
+        uint64_t can_send_size = pmtu_prober_.GetMtuLimit();
         uint64_t now = common::UTCTimeMsec();
         send_control_.CanSend(now, can_send_size);
         if (can_send_size == 0) {

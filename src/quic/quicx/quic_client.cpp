@@ -164,7 +164,7 @@ bool QuicClient::Init(const QuicClientConfig& config) {
             return false;
         });
         master_event_loop_->RunInLoop(
-            [worker, this]() { master_event_loop_->AddFixedProcess(worker, std::bind(&ClientWorker::Process, worker)); });
+            [worker, this]() { master_event_loop_->AddFixedProcess(worker, [worker]() { worker->Process(); }); });
 
         worker->SetConnectionIDNotify(master_);
         worker_map_[worker->GetWorkerId()] = worker;

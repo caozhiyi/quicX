@@ -18,7 +18,7 @@ TimerCoordinator::TimerCoordinator(std::shared_ptr<common::IEventLoop> event_loo
     state_machine_(state_machine),
     idle_timer_active_(false) {
     // Initialize idle timeout task
-    idle_timeout_task_.SetTimeoutCallback(std::bind(&TimerCoordinator::OnIdleTimeoutInternal, this));
+    idle_timeout_task_.SetTimeoutCallback([this]() { OnIdleTimeoutInternal(); });
 }
 
 TimerCoordinator::~TimerCoordinator() {

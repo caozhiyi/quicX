@@ -1,4 +1,5 @@
 #include <cstring>
+#include <cstdio>
 
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/single_block_buffer.h"
@@ -9,6 +10,7 @@
 #include "common/util/time.h"
 #include "common/buffer/buffer_span.h"
 #include "common/network/io_handle.h"
+#include "quic/common/constants.h"
 
 #include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
@@ -46,10 +48,12 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     packet_builder_(std::make_unique<PacketBuilder>()) {
     version_ctx_.is_server = (start == StreamIDGenerator::StreamStarter::kServer);
     version_ctx_.quic_version = kQuicVersion2;
-    // Metrics: Record handshake start time
-    handshake_start_time_ = common::UTCTimeMsec();
+    // Metrics: Record handshake start time (wall clock; see field comment in
+    // connection_base.h — this is intentionally NOT the monotonic clock used
+    // for RTT/PTO).
+    handshake_start_wall_time_ms_ = common::UTCTimeMsec();
     connection_crypto_.SetRemoteTransportParamCB(
-        std::bind(&BaseConnection::OnTransportParams, this, std::placeholders::_1));
+        [this](auto& tp) { OnTransportParams(tp); });
 
     // RFC 9000: When 0-RTT write key is installed, trigger early connection callback
     // so the application can start sending data before the handshake completes
@@ -60,13 +64,19 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
         }
     });
 
+    // RFC 9001 §4.8: surface a fatal TLS handshake alert as a CONNECTION_CLOSE so a
+    // failed handshake does not silently hang the connection.
+    connection_crypto_.SetHandshakeErrorCB([this](uint64_t error, const std::string& reason) {
+        InnerConnectionClose(error, 0, reason);
+    });
+
     // Initialize connection ID coordinator (refactored)
     cid_coordinator_ = std::make_unique<ConnectionIDCoordinator>(loop, send_manager_,
-        std::bind(&BaseConnection::AddConnectionId, this, std::placeholders::_1),
-        std::bind(&BaseConnection::RetireConnectionId, this, std::placeholders::_1));
+        [this](auto& cid) { AddConnectionId(cid); },
+        [this](auto& cid) { RetireConnectionId(cid); });
     cid_coordinator_->Initialize();
 
-    send_manager_.SetSendRetryCallBack(std::bind(&BaseConnection::ActiveSend, this));
+    send_manager_.SetSendRetryCallBack([this]() { ActiveSend(); });
     send_manager_.SetSendFlowController(&send_flow_controller_);
 
     // RFC 9002 §6.2.2.1: During handshake, if PTO fires and no ACK-eliciting
@@ -100,30 +110,39 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     recv_control_.SetImmediateAckCB([this](PacketNumberSpace ns) { SendImmediateAck(ns); });
 
     // Setup delayed ACK callback for normal Application packets
-    recv_control_.SetActiveSendCB(std::bind(&BaseConnection::ActiveSend, this));
+    recv_control_.SetActiveSendCB([this]() { ActiveSend(); });
 
     transport_param_.AddTransportParamListener(
-        std::bind(&RecvControl::UpdateConfig, &recv_control_, std::placeholders::_1));
+        [this](const auto& tp) { recv_control_.UpdateConfig(tp); });
     transport_param_.AddTransportParamListener(
-        std::bind(&SendManager::UpdateConfig, &send_manager_, std::placeholders::_1));
+        [this](const auto& tp) { send_manager_.UpdateConfig(tp); });
     transport_param_.AddTransportParamListener(
-        std::bind(&SendFlowController::UpdateConfig, &send_flow_controller_, std::placeholders::_1));
+        [this](const auto& tp) { send_flow_controller_.UpdateConfig(tp); });
     transport_param_.AddTransportParamListener(
-        std::bind(&RecvFlowController::UpdateConfig, &recv_flow_controller_, std::placeholders::_1));
+        [this](const auto& tp) { recv_flow_controller_.UpdateConfig(tp); });
 
     // Set stream data ACK callback for tracking stream completion
-    send_manager_.send_control_.SetStreamDataAckCallback(std::bind(&BaseConnection::OnStreamDataAcked, this,
-        std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+    send_manager_.send_control_.SetStreamDataAckCallback(
+        [this](auto a, auto b, auto c, auto d) { OnStreamDataAcked(a, b, c, d); });
 
     // Initialize timer coordinator (refactored)
     timer_coordinator_ =
         std::make_unique<TimerCoordinator>(loop, transport_param_, send_manager_, state_machine_);
 
     // Initialize path manager (refactored)
-    path_manager_ = std::make_unique<PathManager>(loop, send_manager_, *cid_coordinator_, transport_param_,
-        peer_addr_, std::bind(&BaseConnection::ToSendFrame, this, std::placeholders::_1),
-        std::bind(&BaseConnection::ActiveSend, this),
-        [this](const common::Address& addr) { this->SetPeerAddress(addr); });
+    // Constructor takes a single Deps struct (named-field init) instead of
+    // an 8-positional-argument list — see PathManager::Deps in
+    // connection_path_manager.h for the lifetime contract.
+    PathManager::Deps path_deps;
+    path_deps.event_loop       = loop;
+    path_deps.send_manager     = &send_manager_;
+    path_deps.cid_coordinator  = cid_coordinator_.get();
+    path_deps.transport_param  = &transport_param_;
+    path_deps.peer_addr        = &peer_addr_;
+    path_deps.to_send_frame_cb = [this](auto&& f) { ToSendFrame(std::forward<decltype(f)>(f)); };
+    path_deps.active_send_cb   = [this]() { ActiveSend(); };
+    path_deps.set_peer_addr_cb = [this](const common::Address& addr) { this->SetPeerAddress(addr); };
+    path_manager_ = std::make_unique<PathManager>(std::move(path_deps));
 
     // Initialize encryption level scheduler (refactored) - centralizes encryption level selection
     encryption_scheduler_ =
@@ -202,7 +221,7 @@ void BaseConnection::CloseInternal() {
     send_manager_.ClearRetransmissionData();
 
     // Delegate to connection closer
-    connection_closer_->StartGracefulClose(std::bind(&BaseConnection::ActiveSend, this));
+    connection_closer_->StartGracefulClose([this]() { ActiveSend(); });
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
@@ -336,39 +355,43 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     // packets; available_versions is our preference-ordered supported list.
     BuildLocalVersionInformation(transport_param_);
 
-    // set transport param. TODO define tp length
-    uint8_t tp_buffer[1024];
-    size_t bytes_written = 0;
-    common::BufferSpan buffer_span(tp_buffer, sizeof(tp_buffer));
-    if (!transport_param_.Encode(buffer_span, bytes_written)) {
-        LOG_ERROR("encode transport param failed");
+    // Encode local transport parameters and hand them to TLS.  See
+    // EncodeAndPushTpToTls() for the 1024-byte sizing rationale.
+    //
+    // RFC 9001 §4.1.3: Before starting the handshake, QUIC provides TLS with
+    // the transport parameters (see Section 8.2) that it wishes to carry.
+    if (!EncodeAndPushTpToTls(transport_param_)) {
         return;
     }
-
-    // RFC9001 4.1.3: Before starting the handshake, QUIC provides TLS with the transport parameters (see Section 8.2)
-    // that it wishes to carry.
-    tls_connection_->AddTransportParam(tp_buffer, bytes_written);
 }
 
-namespace {
-// Re-encode |tp| and hand the serialized bytes to |tls_conn| via
-// SSL_set_quic_transport_params.  Used when |tp| changes AFTER the first
-// AddTransportParam() but BEFORE TLS has actually serialized EncryptedExtensions
-// / ClientHello — notably on the server side when the first client Initial
-// forces a version change (RFC 9368 §4 consistency check needs the updated
-// chosen_version to reach the peer).
-bool ResetTlsTransportParams(std::shared_ptr<TLSConnection>& tls_conn, TransportParam& tp) {
-    if (!tls_conn) return false;
+bool BaseConnection::EncodeAndPushTpToTls(TransportParam& tp) {
+    if (!tls_connection_) return false;
+    // Sizing rationale (1024 bytes): the QUIC v1 standard transport
+    // parameters (RFC 9000 §18.2) plus version_information (RFC 9368 §3) add
+    // up to well under 256 bytes in the worst case (~17 parameters × {varint
+    // id + varint len + payload}, with the largest payloads being two 20-byte
+    // connection-id strings, a few <=8-byte varints and a small fixed-size
+    // preferred_address). 1024 leaves a 4× headroom for any future parameters
+    // and for transport_param_.Encode's own bounds checking; the encoder will
+    // fail closed via the BufferSpan overflow path if we ever exceed it.
     uint8_t tp_buffer[1024];
     size_t bytes_written = 0;
     common::BufferSpan buffer_span(tp_buffer, sizeof(tp_buffer));
     if (!tp.Encode(buffer_span, bytes_written)) {
-        LOG_ERROR("re-encode transport param failed");
+        LOG_ERROR("encode transport param failed");
         return false;
     }
-    return tls_conn->AddTransportParam(tp_buffer, static_cast<uint32_t>(bytes_written));
+    return tls_connection_->AddTransportParam(tp_buffer, static_cast<uint32_t>(bytes_written));
 }
-}  // namespace
+
+bool BaseConnection::RebuildAndPushVersionInformation() {
+    if (!transport_param_.HasVersionInformation()) {
+        return false;
+    }
+    BuildLocalVersionInformation(transport_param_);
+    return EncodeAndPushTpToTls(transport_param_);
+}
 
 bool BaseConnection::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& remote_tp) {
     // RFC 9368 §4: If the peer did not send version_information, there is nothing
@@ -500,13 +523,12 @@ bool BaseConnection::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& rem
     // new version (PacketBuilder reads version_ctx_.quic_version via connection_crypto_).
     version_ctx_.quic_version = negotiated;
     // Also update our local version_information TP so the TP we send to the
-    // client (in EncryptedExtensions) reports chosen_version = negotiated.
-    BuildLocalVersionInformation(transport_param_);
-    // And hand the re-encoded TP bytes to TLS before it serializes
-    // EncryptedExtensions, otherwise the client will see chosen_version ==
+    // client (in EncryptedExtensions) reports chosen_version = negotiated, and
+    // hand the re-encoded TP bytes to TLS before it serializes
+    // EncryptedExtensions — otherwise the client will see chosen_version ==
     // original wire version and correctly reject the connection via the
-    // consistency check.
-    ResetTlsTransportParams(tls_connection_, transport_param_);
+    // RFC 9368 §4 consistency check.
+    RebuildAndPushVersionInformation();
 
     version_ctx_.compat_vn_completed = true;
     common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
@@ -698,10 +720,7 @@ bool BaseConnection::OnInitialPacket(const std::shared_ptr<IPacket>& packet) {
             // chosen_version == current on-wire version. Re-encode and hand
             // the fresh TP buffer to TLS before it serializes
             // EncryptedExtensions.
-            if (transport_param_.HasVersionInformation()) {
-                BuildLocalVersionInformation(transport_param_);
-                ResetTlsTransportParams(tls_connection_, transport_param_);
-            }
+            RebuildAndPushVersionInformation();
         }
 
         LOG_INFO("Installing Initial Secret for decryption from packet DCID: length=%u, version=0x%08x",
@@ -747,10 +766,7 @@ bool BaseConnection::OnInitialPacket(const std::shared_ptr<IPacket>& packet) {
         // TLS messages (rare: should already be serialized on the client) see
         // chosen_version == on-wire version. Also keep the cached copy fresh
         // for any future consistency check.
-        if (transport_param_.HasVersionInformation()) {
-            BuildLocalVersionInformation(transport_param_);
-            ResetTlsTransportParams(tls_connection_, transport_param_);
-        }
+        RebuildAndPushVersionInformation();
 
         version_ctx_.compat_vn_completed = true;
         common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
@@ -1010,7 +1026,7 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     // Update peer's active connection ID limit in coordinator
     cid_coordinator_->SetPeerActiveConnectionIDLimit(remote_tp.GetActiveConnectionIdLimit());
     // Start idle timeout timer through coordinator
-    timer_coordinator_->StartIdleTimer(std::bind(&BaseConnection::OnIdleTimeout, this));
+    timer_coordinator_->StartIdleTimer([this]() { OnIdleTimeout(); });
 
     // Preferred Address Migration (RFC 9000 Section 9.6)
     //
@@ -1283,7 +1299,7 @@ void BaseConnection::ImmediateClose(uint64_t error, uint16_t trigger_frame, std:
     stream_manager_->ResetAllStreams(error);
 
     // Delegate to connection closer
-    connection_closer_->StartImmediateClose(error, trigger_frame, reason, std::bind(&BaseConnection::ActiveSend, this));
+    connection_closer_->StartImmediateClose(error, trigger_frame, reason, [this]() { ActiveSend(); });
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {
@@ -1469,11 +1485,19 @@ void BaseConnection::OnStateToConnected() {
         QLOG_EVENT(qlog_trace_, common::QlogEvents::kConnectionStateUpdated, std::move(event_data));
     }
 
-    // Metrics: Calculate and record handshake duration
-    if (handshake_start_time_ > 0) {
-        uint64_t duration_us = (common::UTCTimeMsec() - handshake_start_time_) * 1000;
-        common::Metrics::GaugeSet(common::MetricsStd::QuicHandshakeDurationUs, duration_us);
-        LOG_DEBUG("Handshake completed in %llu microseconds", duration_us);
+    // Metrics: Calculate and record handshake duration.
+    // Both endpoints are wall-clock (UTCTimeMsec); the subtraction is expressed
+    // in microseconds for the gauge. A backwards wall-clock jump between start
+    // and now would underflow the unsigned subtraction, so we guard it.
+    if (handshake_start_wall_time_ms_ > 0) {
+        const uint64_t now_ms = common::UTCTimeMsec();
+        if (now_ms >= handshake_start_wall_time_ms_) {
+            uint64_t duration_us = (now_ms - handshake_start_wall_time_ms_) * 1000;
+            common::Metrics::GaugeSet(common::MetricsStd::QuicHandshakeDurationUs, duration_us);
+            LOG_DEBUG("Handshake completed in %llu microseconds", duration_us);
+        } else {
+            LOG_DEBUG("Skipping handshake duration metric: wall clock moved backwards");
+        }
     }
 }
 
@@ -1632,93 +1656,131 @@ bool BaseConnection::TrySend() {
         return false;
     }
 
-    // 1.5 RFC 9000 §13.3: Retransmit lost packets first
+    // 2. Dispatch: retransmit lost packets first (RFC 9000 §13.3), then
+    // fall through to the normal-send path. Both helpers preserve the
+    // original return-value contract used by Worker::ProcessSend (true ⇒
+    // re-enter TrySend, false ⇒ stop this round).
+    if (send_manager_.GetSendControl().NeedReSend()) {
+        return TrySendRetransmit();
+    }
+    return TrySendNew();
+}
+
+bool BaseConnection::TrySendRetransmit() {
+    // RFC 9000 §13.3: Retransmit lost packets first.
     // QUIC does not retransmit lost packets directly. Instead, the lost packet
     // (which still holds its original payload/frames) is re-encoded with a new
     // packet number and re-encrypted, then sent as a brand-new packet.
     auto& send_control = send_manager_.GetSendControl();
-    if (send_control.NeedReSend()) {
-        auto& lost_packets = send_control.GetLostPacket();
-        auto lost_entry = lost_packets.front();
-        lost_packets.pop_front();
-        auto lost_pkt = lost_entry.packet;
+    auto& lost_packets = send_control.GetLostPacket();
+    auto lost_entry = lost_packets.front();
+    lost_packets.pop_front();
+    auto lost_pkt = lost_entry.packet;
 
-        // Determine encryption level and get cryptographer
-        auto crypto_level = lost_pkt->GetCryptoLevel();
-        auto cryptographer = connection_crypto_.GetCryptographer(crypto_level);
-        if (!cryptographer) {
-            LOG_WARN("BaseConnection::TrySend: no cryptographer for lost packet level=%d, dropping", crypto_level);
-            return !lost_packets.empty();  // try next lost packet
-        }
-
-        // Check congestion window before retransmitting
-        uint32_t max_bytes = send_manager_.GetAvailableWindow();
-        if (max_bytes == 0) {
-            // Put the packet back for later retransmission
-            lost_packets.push_front(lost_entry);
-            send_manager_.SetCwndLimited();
-            return false;
-        }
-
-        // Assign new packet number
-        auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
-        uint64_t new_pn = send_manager_.GetPacketNumber().NextPacketNumber(ns);
-        lost_pkt->SetPacketNumber(new_pn);
-        lost_pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(new_pn));
-        lost_pkt->SetCryptographer(cryptographer);
-
-        // RFC 9001 §6.5: A retransmitted packet MUST be re-encoded with the *current*
-        // key phase and *current* cryptographer. Without this synchronization the
-        // retransmission could ship plaintext ciphered under the new key while the
-        // header advertises the old Key Phase bit (or vice versa), causing the
-        // peer's AEAD verification to fail and the packet to be silently dropped.
-        // Observed in cross-implementation interop with quic-go/quiche under the
-        // ns-3 simulated network: client triggers Key Update at PN ~50, but quicX
-        // server keeps replaying lost packets with stale Key Phase bits, peer
-        // drops every retransmission, loss detector keeps firing, PN explodes
-        // (>130k) and the connection eventually idle-times-out.
-        if (lost_pkt->GetHeader()->GetHeaderType() == PacketHeaderType::kShortHeader) {
-            lost_pkt->GetHeader()->GetShortHeaderFlag().SetKeyPhase(connection_crypto_.GetCurrentKeyPhase());
-        }
-
-        // Re-encode with new packet number and fresh encryption
-        auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-        if (!chunk || !chunk->Valid()) {
-            LOG_ERROR("BaseConnection::TrySend: failed to allocate buffer for retransmission");
-            return false;
-        }
-        auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-
-        if (!lost_pkt->Encode(buffer)) {
-            LOG_ERROR("BaseConnection::TrySend: failed to re-encode lost packet pn=%llu", new_pn);
-            return false;
-        }
-
-        uint32_t encoded_size = buffer->GetDataLength();
-
-        // Record this retransmission in SendControl carrying the original
-        // stream_data, otherwise an ACK on the new PN would not flow back to
-        // SendStream::OnDataAcked and the byte-range bookkeeping would be
-        // permanently missing the bytes that the retransmit just delivered.
-        send_control.OnPacketSend(common::UTCTimeMsec(), lost_pkt, encoded_size, lost_entry.stream_data);
-
-        // DIAGNOSTIC (H-plan): log the stream_data byte ranges actually carried
-        // by this retransmitted packet so we can correlate with what the peer
-        // observes on the wire. If the peer never sees these byte ranges as
-        // duplicates, the retransmission lost its payload.
-        std::string sd_summary;
-        for (const auto& sd : lost_entry.stream_data) {
-            sd_summary += "{sid=" + std::to_string(sd.stream_id) +
-                          ",off=" + std::to_string(sd.offset_start) +
-                          ",len=" + std::to_string(sd.length) +
-                          ",fin=" + std::to_string(sd.has_fin) + "}";
-        }
-        LOG_INFO("BaseConnection::TrySend: retransmitted lost packet with new pn=%llu, size=%u, "
-                        "stream_data count=%zu ranges=%s",
-            new_pn, encoded_size, lost_entry.stream_data.size(), sd_summary.c_str());
-
-        return SendBuffer(buffer);
+    // Determine encryption level and get cryptographer
+    auto crypto_level = lost_pkt->GetCryptoLevel();
+    auto cryptographer = connection_crypto_.GetCryptographer(crypto_level);
+    if (!cryptographer) {
+        LOG_WARN("BaseConnection::TrySendRetransmit: no cryptographer for lost packet level=%d, dropping",
+            crypto_level);
+        return !lost_packets.empty();  // try next lost packet
     }
+
+    // Check congestion window before retransmitting
+    uint32_t max_bytes = send_manager_.GetAvailableWindow();
+    if (max_bytes == 0) {
+        // Put the packet back for later retransmission
+        lost_packets.push_front(lost_entry);
+        send_manager_.SetCwndLimited();
+        return false;
+    }
+
+    // Assign new packet number
+    auto ns = CryptoLevel2PacketNumberSpace(crypto_level);
+    uint64_t new_pn = send_manager_.GetPacketNumber().NextPacketNumber(ns);
+    // [DIAG-RTX] Capture the *original* PN before we overwrite it, so the
+    // first-send log line can be correlated with this retransmission.
+    uint64_t orig_pn = lost_pkt->GetPacketNumber();
+    lost_pkt->SetPacketNumber(new_pn);
+    lost_pkt->GetHeader()->SetPacketNumberLength(PacketNumber::GetPacketNumberLength(new_pn));
+    lost_pkt->SetCryptographer(cryptographer);
+
+    // RFC 9001 §6.5: A retransmitted packet MUST be re-encoded with the *current*
+    // key phase and *current* cryptographer. Without this synchronization the
+    // retransmission could ship plaintext ciphered under the new key while the
+    // header advertises the old Key Phase bit (or vice versa), causing the
+    // peer's AEAD verification to fail and the packet to be silently dropped.
+    // Observed in cross-implementation interop with quic-go/quiche under the
+    // ns-3 simulated network: client triggers Key Update at PN ~50, but quicX
+    // server keeps replaying lost packets with stale Key Phase bits, peer
+    // drops every retransmission, loss detector keeps firing, PN explodes
+    // (>130k) and the connection eventually idle-times-out.
+    if (lost_pkt->GetHeader()->GetHeaderType() == PacketHeaderType::kShortHeader) {
+        lost_pkt->GetHeader()->GetShortHeaderFlag().SetKeyPhase(connection_crypto_.GetCurrentKeyPhase());
+    }
+
+    // Re-encode with new packet number and fresh encryption
+    auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        LOG_ERROR("BaseConnection::TrySendRetransmit: failed to allocate buffer for retransmission");
+        return false;
+    }
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+
+    // [DIAG-RTX] Snapshot the payload bytes that lost_pkt is about to re-encode.
+    // Compare with the matching "first-send pn=<old_pn>" log to determine
+    // whether the SharedBufferSpan still points to the original plaintext or
+    // whether the underlying chunk has been overwritten / freed by some
+    // intermediate path.
+    if (auto rtt1 = std::dynamic_pointer_cast<Rtt1Packet>(lost_pkt)) {
+        auto pl = rtt1->GetPayload();
+        char head[64] = {0};
+        uint32_t dump_len = pl.GetLength() < 16 ? pl.GetLength() : 16;
+        for (uint32_t i = 0; i < dump_len; ++i) {
+            std::snprintf(head + i * 3, sizeof(head) - i * 3, "%02x ",
+                pl.Valid() ? pl.GetStart()[i] : 0);
+        }
+        LOG_INFO("[DIAG-RTX] retransmit-pre orig_pn=%llu new_pn=%llu payload_len=%u "
+                 "payload_valid=%d chunk=%p head=%s",
+            (unsigned long long)orig_pn, (unsigned long long)new_pn, pl.GetLength(),
+            (int)pl.Valid(), (void*)pl.GetChunk().get(), head);
+    }
+
+    if (!lost_pkt->Encode(buffer)) {
+        LOG_ERROR("BaseConnection::TrySendRetransmit: failed to re-encode lost packet pn=%llu", new_pn);
+        return false;
+    }
+
+    uint32_t encoded_size = buffer->GetDataLength();
+
+    // Record this retransmission in SendControl carrying the original
+    // stream_data, otherwise an ACK on the new PN would not flow back to
+    // SendStream::OnDataAcked and the byte-range bookkeeping would be
+    // permanently missing the bytes that the retransmit just delivered.
+    send_control.OnPacketSend(common::UTCTimeMsec(), lost_pkt, encoded_size, lost_entry.stream_data);
+
+    // DIAGNOSTIC (H-plan): log the stream_data byte ranges actually carried
+    // by this retransmitted packet so we can correlate with what the peer
+    // observes on the wire. If the peer never sees these byte ranges as
+    // duplicates, the retransmission lost its payload.
+    std::string sd_summary;
+    for (const auto& sd : lost_entry.stream_data) {
+        sd_summary += "{sid=" + std::to_string(sd.stream_id) +
+                      ",off=" + std::to_string(sd.offset_start) +
+                      ",len=" + std::to_string(sd.length) +
+                      ",fin=" + std::to_string(sd.has_fin) + "}";
+    }
+    LOG_INFO("BaseConnection::TrySendRetransmit: retransmitted lost packet with new pn=%llu, size=%u, "
+                    "stream_data count=%zu ranges=%s",
+        new_pn, encoded_size, lost_entry.stream_data.size(), sd_summary.c_str());
+
+    return SendBuffer(buffer);
+}
+
+bool BaseConnection::TrySendNew() {
+    // Normal-send branch of TrySend (factored out from the original 363-line
+    // monolith). All references to "TrySend" in log strings below were kept as
+    // "BaseConnection::TrySend" to avoid noisy log-search churn for ops/tests.
 
     // 2. Get send context (determine encryption level)
     auto send_ctx = encryption_scheduler_->GetNextSendContext();
@@ -1749,7 +1811,8 @@ bool BaseConnection::TrySend() {
         }
         if (has_probing) {
             // Allow up to one MTU's worth of probing data; do not mark cwnd limited.
-            max_bytes = 1200;
+            // RFC 9000 §14.1 + §8.2.1 floor.
+            max_bytes = kMinInitialPacketSize;
             LOG_DEBUG("BaseConnection::TrySend: cwnd full but probing frame pending — bypassing cwnd (RFC 9000 §9.3.3)");
         } else {
             LOG_DEBUG("BaseConnection::TrySend: congestion window full");
@@ -1796,7 +1859,7 @@ bool BaseConnection::TrySend() {
     build_ctx.stream_manager = stream_manager_.get();
     build_ctx.include_stream_data = has_stream_data;
     build_ctx.add_padding = (send_ctx.level == kInitial);
-    build_ctx.min_size = 1200;
+    build_ctx.min_size = kMinInitialPacketSize;  // RFC 9000 §14.1
     build_ctx.token = send_manager_.GetToken();
 
     // Set connection-level flow control limit for stream data

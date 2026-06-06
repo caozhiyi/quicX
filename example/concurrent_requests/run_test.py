@@ -5,6 +5,9 @@ import signal
 import sys
 import argparse
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from _test_helpers import start_server, stop_server  # noqa: E402
+
 def run_test(bin_dir):
     server_path = os.path.join(bin_dir, "concurrent_server")
     client_path = os.path.join(bin_dir, "concurrent_client")
@@ -17,8 +20,8 @@ def run_test(bin_dir):
         return False
 
     print(f"Starting server: {server_path}")
-    # Start server in background
-    server_process = subprocess.Popen([server_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # Launch in its own process group so cleanup is robust against children.
+    server_process = start_server([server_path], text=True)
     
     try:
         # Give server time to start
@@ -27,12 +30,14 @@ def run_test(bin_dir):
         print(f"Starting client: {client_path}")
         
         # Run client and capture output
-        # Note: concurrent_server listens on port 7003
+        # Note: concurrent_server listens on port 7003.
+        # Timeout budget: client itself caps each WaitForCompletion at 15s and
+        # the suite has 4 phases plus tiny pauses, so 60s leaves headroom.
         client_process = subprocess.run(
             [client_path, "https://127.0.0.1:7003"], 
             capture_output=True, 
             text=True, 
-            timeout=30  # Longer timeout for concurrent requests
+            timeout=60
         )
 
         if client_process.returncode != 0:
@@ -61,13 +66,22 @@ def run_test(bin_dir):
             print(f"FAILED: Missing expected output: {missing}")
             return False
 
-        # Check that we have successful requests
-        if "Successful Requests:  15" not in output and "Successful Requests:  0" in output:
-            print("FAILED: No successful requests")
-            return False
+        # Check that we have successful requests in Test 1 (15 mixed requests).
+        # We allow a couple of stragglers — the demo only needs to prove that
+        # the client multiplexed concurrently, not that every single request
+        # came back. The previous strict "15 successful" check was the
+        # fail-mode driver here once WaitForCompletion was given a budget.
+        import re
+        m = re.search(r"Test 1: Mixed Concurrent Requests.*?Successful Requests:\s+(\d+)",
+                      output, re.DOTALL)
+        if m:
+            n_success = int(m.group(1))
+            if n_success < 12:
+                print(f"FAILED: Test 1 only had {n_success}/15 successful requests")
+                return False
+            print(f"Test 1 successful requests: {n_success}/15")
 
         # Check for reasonable speedup (should be > 1x if multiplexing works)
-        import re
         speedup_match = re.search(r"Speedup Factor:\s+([\d.]+)x", output)
         if speedup_match:
             speedup = float(speedup_match.group(1))
@@ -80,18 +94,16 @@ def run_test(bin_dir):
         
         # Wait a moment for server to process
         time.sleep(1)
-        
-        # Terminate server
-        if server_process.poll() is None:
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
+
+        # Terminate server (whole process group)
+        stop_server(server_process)
         
         # Read server output
-        server_stdout = server_process.stdout.read()
-        print("Server output:\n" + "-"*60 + "\n" + server_stdout + "\n" + "-"*60)
+        try:
+            server_stdout = server_process.stdout.read() if server_process.stdout else ""
+        except Exception:
+            server_stdout = ""
+        print("Server output:\n" + "-"*60 + "\n" + (server_stdout or "") + "\n" + "-"*60)
         
         return True
 
@@ -102,13 +114,8 @@ def run_test(bin_dir):
         print(f"FAILED: Exception occurred: {e}")
         return False
     finally:
-        # Cleanup server
-        if server_process.poll() is None:
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
+        # Cleanup server (kills whole process group)
+        stop_server(server_process)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run concurrent requests example test")

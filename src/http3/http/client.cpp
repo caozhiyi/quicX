@@ -22,8 +22,9 @@ namespace http3 {
 Client::Client(const Http3Settings& settings):
     settings_(settings) {
     quic_ = IQuicClient::Create(settings.quic_transport_params_);
-    quic_->SetConnectionStateCallBack(std::bind(&Client::OnConnection, this, std::placeholders::_1,
-        std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+    quic_->SetConnectionStateCallBack([this](auto a, auto b, auto c, auto d) {
+        OnConnection(a, b, c, d);
+    });
 }
 
 Client::~Client() {
@@ -343,9 +344,9 @@ void Client::OnConnection(
 
     // Create client connection
     auto client_conn = std::make_shared<ClientConnection>(host_name, settings_, conn,
-        std::bind(&Client::HandleError, this, std::placeholders::_1, std::placeholders::_2),
-        std::bind(&Client::HandlePushPromise, this, std::placeholders::_1),
-        std::bind(&Client::HandlePush, this, std::placeholders::_1, std::placeholders::_2),
+        [this](auto a, auto b) { HandleError(a, b); },
+        [this](auto a) { return HandlePushPromise(a); },
+        [this](auto a, auto b) { HandlePush(a, b); },
         config_.max_concurrent_streams_, config_.enable_push_);
 
     // Initialize connection (starts timers)

@@ -54,11 +54,10 @@ bool RttCalculator::UpdateRtt(uint64_t send_time, uint64_t now, uint64_t ack_del
     } else {
         min_rtt_ = std::min(min_rtt_, latest_rtt_);
 
-        // TODO:
-        // SHOULD ignore the peer's max_ack_delay until the handshake is confirmed
-        // MUST use the smaller of the acknowledgment delay and the peer's max_ack_delay after the handshake is
-        // confirmed
-
+        // RFC 9002 §5.3: SHOULD ignore the peer's max_ack_delay until the
+        // handshake is confirmed; MUST use min(ack_delay, peer's max_ack_delay)
+        // afterwards. (Not yet enforced here — handshake_confirmed plumbing is
+        // tracked in §2 of the roadmap.)
         uint32_t adjusted_rtt = latest_rtt_;
         if (latest_rtt_ >= (min_rtt_ + ack_delay)) {
             adjusted_rtt -= ack_delay;

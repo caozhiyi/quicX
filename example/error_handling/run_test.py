@@ -10,6 +10,9 @@ import os
 import sys
 import argparse
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from _test_helpers import start_server, stop_server  # noqa: E402
+
 def run_test(bin_dir):
     server_path = os.path.join(bin_dir, "error_handling_server")
     client_path = os.path.join(bin_dir, "error_handling_client")
@@ -22,12 +25,10 @@ def run_test(bin_dir):
         return False
 
     print(f"Starting server: {server_path}")
-    # Start server in background
-    server_process = subprocess.Popen(
-        [server_path], 
-        stdout=subprocess.PIPE, 
-        stderr=subprocess.PIPE, 
-        text=True
+    # Launch in its own process group so cleanup is robust.
+    server_process = start_server(
+        [server_path],
+        text=True,
     )
     
     try:
@@ -116,20 +117,15 @@ def run_test(bin_dir):
         print(f"FAILED: Exception occurred: {e}")
         return False
     finally:
-        # Cleanup server
-        if server_process.poll() is None:
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
+        # Cleanup server (kills whole process group)
+        stop_server(server_process)
 
         # Show server output for debugging
         try:
             server_stdout, server_stderr = server_process.communicate(timeout=1)
             if server_stdout:
                 print("Server output:\n" + "-"*60 + "\n" + server_stdout[:2000] + "\n" + "-"*60)
-        except:
+        except Exception:
             pass
 
 if __name__ == "__main__":

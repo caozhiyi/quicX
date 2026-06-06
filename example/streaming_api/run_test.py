@@ -7,6 +7,9 @@ import argparse
 import random
 import hashlib
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from _test_helpers import start_server, stop_server  # noqa: E402
+
 def run_test(bin_dir):
     server_path = os.path.join(bin_dir, "streaming_server")
     client_path = os.path.join(bin_dir, "streaming_client")
@@ -33,9 +36,9 @@ def run_test(bin_dir):
     print(f"Original file hash: {file_hash}")
 
     print(f"Starting server: {server_path}")
-    # Start server in background
+    # Launch in its own process group so cleanup reliably reaps the tree.
     # Default port is 7009
-    server_process = subprocess.Popen([server_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    server_process = start_server([server_path])
     
     try:
         # Give server time to start
@@ -126,18 +129,15 @@ def run_test(bin_dir):
         print(f"FAILED: Exception occurred: {e}")
         return False
     finally:
-        # cleanup server
+        # cleanup server (kills whole process group)
         print("\nKilling server...")
-        if server_process.poll() is None:
-            server_process.terminate()
-        
+        stop_server(server_process)
+
         try:
             # Wait briefly for termination
             stdout, stderr = server_process.communicate(timeout=2)
         except Exception as e:
             print(f"Error reading server output: {e}")
-
-        server_process.wait()
         
         # Cleanup files
         if os.path.exists(test_filename):

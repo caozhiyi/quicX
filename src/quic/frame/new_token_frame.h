@@ -28,7 +28,13 @@ public:
 
 private:
     uint32_t token_length_;  // the length of the token in bytes.
-    uint8_t* token_;   // An opaque blob that the client may use with a future Initial packet. TODO: use shared buffer span
+    // Token bytes. We hold a raw, non-owning pointer here matching the rest of
+    // the frame layer (see e.g. CryptoFrame, StreamFrame) — the buffer's
+    // lifetime is tied to the receive buffer that produced the frame, and the
+    // frame itself is consumed before that buffer is recycled. Migrating the
+    // whole frame layer to a span / shared_buffer abstraction is tracked as a
+    // post-1.0 cleanup in learning_project_roadmap.md §2.
+    uint8_t* token_;
 };
 
 }

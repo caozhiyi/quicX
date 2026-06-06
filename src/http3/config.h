@@ -49,6 +49,22 @@ static constexpr uint32_t kClientConnectionTimeoutMs = 60000;  // 60 seconds
 // Used in: req_resp_base_stream.cpp
 static constexpr uint32_t kMaxDataFramePayload = 1350;
 
+// ============================================================================
+// HTTP/3 Stream Lifecycle
+// ============================================================================
+
+// Period of the per-IConnection cleanup timer that drains
+// streams_to_destroy_ and runs the RFC 9114 §5.2 graceful-drain probe.
+// 100 ms is a working default: it bounds the worst-case latency between
+// "last in-flight stream finishes" and "CONNECTION_CLOSE goes out", but
+// does not poll so often as to show up in CPU profiles. This is a
+// per-connection tick — total cost scales with the active connection
+// count, not request rate.
+// Note (roadmap): make this configurable via Http3Config once the
+// connection-config plumbing lands; the loop already supports defer.
+// Tracked in learning_project_roadmap.md §2.
+static constexpr uint32_t kStreamCleanupIntervalMs = 100;
+
 }  // namespace http3
 }  // namespace quicx
 

@@ -77,7 +77,17 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
     // If buffer is empty (e.g., FIN without data, or RESET_STREAM)
     if (data->GetDataLength() == 0) {
         if (is_last) {
-            // FIN with no data: notify subclass to handle stream completion
+            // FIN with no data: notify subclass to handle stream completion.
+            // BUT: if the stream is currently QPACK-blocked, we must defer the
+            // FIN as well, otherwise the subclass would observe end-of-stream
+            // before the blocked HEADERS has been decoded and the application
+            // would never see the headers/body that arrived behind them.
+            if (is_currently_blocked_) {
+                LOG_DEBUG(
+                    "ReqRespBaseStream::OnData: FIN received while blocked, deferring until QPACK unblocks");
+                pending_blocked_is_last_ = true;
+                return;
+            }
             LOG_DEBUG("ReqRespBaseStream::OnData: FIN with empty buffer, notifying end");
             HandleFinWithoutData();
         }
@@ -99,35 +109,137 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
         }
         return;
+    }
 
-    } else {
-        // RFC 9114: Only the LAST frame in this batch should be marked is_last
-        LOG_DEBUG("ReqRespBaseStream::OnData: processing %zu frames, is_last_data=%d", 
-            frames.size(), is_last_data_);
-        for (size_t i = 0; i < frames.size(); i++) {
-            // Only mark the last frame as is_last if we received FIN
-            current_frame_is_last_ = is_last_data_ && (i == frames.size() - 1);
-            LOG_DEBUG("ReqRespBaseStream::OnData: processing frame %zu/%zu, type=0x%x, is_last=%d", 
-                i+1, frames.size(), static_cast<uint32_t>(frames[i]->GetType()), current_frame_is_last_);
-            HandleFrame(frames[i]);
+    LOG_DEBUG("ReqRespBaseStream::OnData: processing %zu frames, is_last_data=%d, currently_blocked=%d",
+        frames.size(), is_last_data_, is_currently_blocked_);
+
+    if (is_currently_blocked_) {
+        // The stream is parked behind a still-blocked HEADERS frame at the
+        // head of pending_blocked_frames_. Newly-arrived frames must be
+        // queued in order — replaying out of order would deliver DATA
+        // frames to the application before their owning header section
+        // has been decoded. The FIN bit (if any) attaches to the new tail
+        // because, by the time we drain, the ordered concatenation of
+        // (already-queued frames) + (frames in this batch) is what was
+        // logically on the wire.
+        for (auto& f : frames) {
+            pending_blocked_frames_.push_back(f);
         }
+        pending_blocked_is_last_ = pending_blocked_is_last_ || is_last_data_;
+        return;
+    }
 
-        // CRITICAL FIX: If we got FIN but no frames were decoded,
-        // we need to notify via HandleFinWithoutData (implemented in subclass)
-        if (is_last_data_ && frames.empty()) {
-            LOG_DEBUG("ReqRespBaseStream::OnData: FIN received but no frames decoded");
-            HandleFinWithoutData();
+    ProcessFrames(frames, is_last_data_);
+
+    // CRITICAL FIX: If we got FIN but no frames were decoded,
+    // we need to notify via HandleFinWithoutData (implemented in subclass)
+    if (is_last_data_ && frames.empty() && !is_currently_blocked_) {
+        LOG_DEBUG("ReqRespBaseStream::OnData: FIN received but no frames decoded");
+        HandleFinWithoutData();
+    }
+
+    // Process all frames first (including PUSH_PROMISE), then notify stream completion
+    // This ensures PUSH_PROMISE frames are not ignored due to early stream cleanup.
+    // Skip notification while we are still QPACK-blocked: the stream is not
+    // actually done yet, and signalling completion here would tear down the
+    // stream before the blocked HEADERS retry has a chance to fire.
+    if (should_notify_completion_ && !is_currently_blocked_) {
+        LOG_DEBUG("ReqRespBaseStream::OnData: notifying stream completion after processing all frames");
+        if (error_handler_) {
+            error_handler_(GetStreamID(), 0);
         }
+        should_notify_completion_ = false;
+    }
+}
 
-        // Process all frames first (including PUSH_PROMISE), then notify stream completion
-        // This ensures PUSH_PROMISE frames are not ignored due to early stream cleanup
-        if (should_notify_completion_) {
-            LOG_DEBUG("ReqRespBaseStream::OnData: notifying stream completion after processing all frames");
-            if (error_handler_) {
-                error_handler_(GetStreamID(), 0);
+void ReqRespBaseStream::ProcessFrames(std::vector<std::shared_ptr<IFrame>>& frames, bool is_last_batch) {
+    // Walk the frames in order. The trailing-frame is_last flag is only
+    // meaningful for the very last frame we successfully dispatch in this
+    // batch — earlier frames are not the end of the stream. If we trip
+    // QPACK head-of-line blocking on a HEADERS frame somewhere in the
+    // middle, the rest of this batch (along with that batch's FIN bit)
+    // gets parked into pending_blocked_frames_ and replayed verbatim once
+    // DrainPendingFrames() unblocks.
+    for (size_t i = 0; i < frames.size(); ++i) {
+        bool last_in_batch = is_last_batch && (i == frames.size() - 1);
+        current_frame_is_last_ = last_in_batch;
+        is_last_data_ = last_in_batch;
+        LOG_DEBUG("ReqRespBaseStream::ProcessFrames: frame %zu/%zu, type=0x%x, is_last=%d",
+            i + 1, frames.size(), static_cast<uint32_t>(frames[i]->GetType()), current_frame_is_last_);
+
+        HandleFrame(frames[i]);
+
+        // If HandleHeaders blocked on QPACK, stop dispatching here. The
+        // remaining frames in this batch are stashed (in order) so the
+        // retry callback can drain them. We also remember whether the
+        // batch carried FIN, so the replay sees the same end-of-stream
+        // signalling that the wire actually carried.
+        if (is_currently_blocked_) {
+            for (size_t j = i + 1; j < frames.size(); ++j) {
+                pending_blocked_frames_.push_back(frames[j]);
             }
-            should_notify_completion_ = false;
+            pending_blocked_is_last_ = is_last_batch;
+            LOG_DEBUG(
+                "ReqRespBaseStream::ProcessFrames: QPACK blocked at frame %zu, parked %zu trailing frames (is_last=%d)",
+                i, frames.size() - i - 1, pending_blocked_is_last_);
+            return;
         }
+    }
+}
+
+void ReqRespBaseStream::DrainPendingFrames() {
+    // Called from the QPACK retry callback after the head HEADERS has
+    // successfully decoded. The flag must already have been cleared by
+    // HandleHeaders() before we get here.
+    if (is_currently_blocked_) {
+        // Defensive: should not happen, but if the head retry decoded one
+        // section yet more inserts are still required by an intervening
+        // queued HEADERS, we'll re-block during the loop below and leave
+        // the remainder in place for the next IIC.
+        return;
+    }
+
+    while (!pending_blocked_frames_.empty()) {
+        auto frame = pending_blocked_frames_.front();
+        pending_blocked_frames_.pop_front();
+
+        // Determine is_last for this replayed frame:
+        //   - true only when this is the very last queued frame AND the
+        //     batch from which they came carried FIN.
+        bool last_in_replay = pending_blocked_frames_.empty() && pending_blocked_is_last_;
+        current_frame_is_last_ = last_in_replay;
+        is_last_data_ = last_in_replay;
+
+        HandleFrame(frame);
+
+        if (is_currently_blocked_) {
+            // Hit another blocked HEADERS during replay — the frame we
+            // just dispatched was a HEADERS; HandleHeaders has already
+            // re-pushed it to the head of the queue via the retry path
+            // (see HandleHeaders). Stop here and wait for the next
+            // unblock.
+            return;
+        }
+    }
+
+    // Everything drained. If the original batch carried FIN and there were
+    // no DATA/HEADERS frames behind which to attach it (which would have
+    // already taken care of the end-of-stream notification), surface FIN
+    // now so the subclass can finish cleanly.
+    bool was_fin = pending_blocked_is_last_;
+    pending_blocked_is_last_ = false;
+    if (was_fin && !should_notify_completion_) {
+        // Mirror the empty-buffer FIN path in OnData(): if the subclass
+        // hasn't already armed should_notify_completion_ in HandleData(),
+        // we need to surface the end-of-stream now.
+        HandleFinWithoutData();
+    }
+    if (should_notify_completion_) {
+        if (error_handler_) {
+            error_handler_(GetStreamID(), 0);
+        }
+        should_notify_completion_ = false;
     }
 }
 
@@ -141,7 +253,13 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         return;
     }
 
-    // TODO check if headers is complete and headers length is correct
+    // Frame-level completeness is already guaranteed by FrameDecoder /
+    // HeadersFrame::Decode: a HEADERS frame is only emitted to us once the
+    // full Length-bytes payload is in hand and confined to the declared
+    // length. The remaining "is this header block well-formed?" question is
+    // a QPACK-layer property, and is enforced below by qpack_decoder_->Decode
+    // (which fails closed on truncated/blocked field sections). So no
+    // separate length check is needed here.
 
     // Assign a real header-block-id = (stream_id << 32) | section_number
     if (header_block_key_ == 0) {
@@ -149,11 +267,44 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         uint64_t secno = static_cast<uint64_t>(++next_section_number_);
         header_block_key_ = (sid << 32) | secno;
     }
-    // Decode headers using QPACK decoder (separate from encoder per RFC 9204 dual-table)
+
     auto encoded_fields = headers_frame->GetEncodedFields();
-    if (!qpack_decoder_->Decode(encoded_fields, headers_)) {
-        // If blocked (RIC not satisfied), enqueue a retry once insert count
-        // increases.  Three correctness concerns:
+
+    // RFC 9204 retry hazard: SingleBlockBuffer::CloneReadable advances the
+    // *source* read pointer when it succeeds, but Decode also advances the
+    // buffer's read pointer as it walks the prefix.  Once Decode returns
+    // false partway through (RIC > InsertCount, or any other parse error),
+    // the buffer's read pointer is already past the start of the field
+    // section, and a naive retry would resume from that wrong offset and
+    // either parse garbage or fail again with a misleading error.
+    //
+    // The fix is to take a non-consuming snapshot before the first attempt
+    // (CloneReadable with move_write_pt=false) and feed that snapshot to
+    // Decode/retry.  The snapshot shares the underlying chunk via
+    // shared_ptr so it stays alive even after the original frame object is
+    // dropped; each retry invocation can then itself re-snapshot from the
+    // same template buffer.  We capture |encoded_fields_template| (a
+    // shallow copy with its own read_pos_ aligned at the start of the
+    // field section) by value into the retry lambda.
+    auto encoded_fields_template = encoded_fields
+        ? encoded_fields->CloneReadable(encoded_fields->GetDataLength(), /*move_write_pt=*/false)
+        : nullptr;
+
+    if (!encoded_fields_template) {
+        LOG_ERROR("ReqRespBaseStream::HandleHeaders: encoded fields snapshot failed");
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        }
+        return;
+    }
+
+    // First decode attempt. We feed a freshly-cloned view so the template
+    // remains pristine for retries.
+    auto first_attempt = encoded_fields_template->CloneReadable(
+        encoded_fields_template->GetDataLength(), /*move_write_pt=*/false);
+    if (!qpack_decoder_->Decode(first_attempt, headers_)) {
+        // RFC 9204 §2.1.4: header section blocked on Required Insert Count.
+        // Three correctness concerns:
         //   1. The retry must populate THIS stream's headers_ member —
         //      not a local temporary — so HandleHeaders() actually sees
         //      the decoded fields.  Previously the callback decoded into
@@ -167,26 +318,67 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         //      header block to be lost forever once the next IIC happens
         //      to land before our specific dependency is satisfied.  We
         //      re-Add ourselves with the same retry on persistent block.
-        //   3. The retry must remain pinned by reference so it can call
-        //      itself recursively (re-Add) without dangling — std::function
-        //      copies are owned by the registry across moves, so a plain
-        //      lambda capturing `this`, `encoded_fields` and a shared_ptr
-        //      to itself works.
+        //   3. Set is_currently_blocked_ so the OnData/ProcessFrames
+        //      caller stops pushing follow-on frames at us. Frames that
+        //      arrive while blocked land in pending_blocked_frames_ and
+        //      are replayed by DrainPendingFrames() once the head HEADERS
+        //      finally decodes.
+        is_currently_blocked_ = true;
+
+        auto self_weak = std::weak_ptr<ReqRespBaseStream>(shared_from_this());
         auto retry = std::make_shared<std::function<void()>>();
-        *retry = [this, encoded_fields, retry]() {
-            if (qpack_decoder_->Decode(encoded_fields, headers_)) {
+        *retry = [self_weak, encoded_fields_template, retry]() {
+            auto self = self_weak.lock();
+            if (!self) {
+                // Stream destroyed before unblock — nothing to do.
+                return;
+            }
+            // Re-clone so each attempt sees a fresh read pointer at the
+            // start of the field section (Decode will advance it).
+            auto attempt = encoded_fields_template->CloneReadable(
+                encoded_fields_template->GetDataLength(), /*move_write_pt=*/false);
+            if (attempt && self->qpack_decoder_->Decode(attempt, self->headers_)) {
+                // Success: clear the gate before invoking the application
+                // hook and replaying any frames that were parked behind us.
+                self->is_currently_blocked_ = false;
+
                 // RFC 9204 §4.4.1: Only emit Section Ack when RIC > 0.
-                if (qpack_decoder_->GetLastDecodedRequiredInsertCount() > 0) {
-                    qpack_decoder_->EmitDecoderFeedback(0x00, header_block_key_);
+                if (self->qpack_decoder_->GetLastDecodedRequiredInsertCount() > 0) {
+                    self->qpack_decoder_->EmitDecoderFeedback(
+                        0x00, self->header_block_key_);
                 }
-                HandleHeaders();
+                self->HandleHeaders();
+
+                // Now drain any DATA / further HEADERS that arrived behind
+                // this section. DrainPendingFrames may itself re-block on a
+                // later HEADERS in the queue (e.g., trailers that depend
+                // on entries not yet inserted); in that case
+                // is_currently_blocked_ flips back to true and we leave
+                // the rest in the queue for the next IIC.
+                self->DrainPendingFrames();
+
             } else {
                 // Still blocked — re-enqueue with the same retry so the
-                // next NotifyAll() picks us up again.
-                blocked_registry_->Add(header_block_key_, *retry);
+                // next NotifyAll() picks us up again. Keep the gate set
+                // so any frames arriving in the meantime continue to
+                // queue rather than racing past us.
+                self->blocked_registry_->Add(self->header_block_key_, *retry);
             }
         };
-        blocked_registry_->Add(header_block_key_, *retry);
+        if (!blocked_registry_->Add(header_block_key_, *retry)) {
+            // RFC 9204 §5: peer exceeded its declared blocked-streams
+            // capacity. Treat as a connection-level error per §2.1.2.
+            LOG_ERROR(
+                "ReqRespBaseStream::HandleHeaders: blocked_registry full (max blocked streams exceeded), "
+                "stream=%llu key=%llu",
+                static_cast<unsigned long long>(GetStreamID()),
+                static_cast<unsigned long long>(header_block_key_));
+            is_currently_blocked_ = false;
+            if (error_handler_) {
+                error_handler_(GetStreamID(), Http3ErrorCode::kQpackDecompressionFailed);
+            }
+            return;
+        }
         LOG_DEBUG("blocked header block key: %llu", header_block_key_);
         return;
     }

@@ -27,18 +27,17 @@ ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
     }
 
     auto crypto_stream = std::make_shared<CryptoStream>(event_loop_,
-        std::bind(&ClientConnection::ActiveSendStream, this, std::placeholders::_1),
-        std::bind(&ClientConnection::InnerStreamClose, this, std::placeholders::_1),
-        std::bind(&ClientConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3));
-    crypto_stream->SetCryptoStreamReadCallBack(std::bind(
-        &ClientConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        [this](auto a) { ActiveSendStream(a); },
+        [this](auto a) { InnerStreamClose(a); },
+        [this](auto a, auto b, auto c) { InnerConnectionClose(a, b, c); });
+    crypto_stream->SetCryptoStreamReadCallBack(
+        [this](auto a, auto b, auto c) { WriteCryptoData(a, b, c); });
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 
     // Set HANDSHAKE_DONE frame handler callback
     frame_processor_->SetHandshakeDoneCallback(
-        std::bind(&ClientConnection::HandleHandshakeDoneFrame, this, std::placeholders::_1));
+        [this](auto a) { return HandleHandshakeDoneFrame(a); });
 }
 
 ClientConnection::~ClientConnection() {
@@ -237,7 +236,7 @@ bool ClientConnection::DialFinalize(std::shared_ptr<TLSClientConnection> tls_con
         data.src_cid = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
         data.dst_cid = std::to_string(dcid.Hash());
         data.protocol = "QUIC";
-        data.ip_version = "ipv4";  // TODO: Add IsIPv6() method to Address class
+        data.ip_version = addr.IsIPv6() ? "ipv6" : "ipv4";
 
         QLOG_CONNECTION_STARTED(qlog_trace_, data);
 

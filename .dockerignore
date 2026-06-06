@@ -1,0 +1,127 @@
+# .dockerignore — Controls the build context size sent by `docker build` to the daemon
+#
+# Dockerfile currently only requires the following paths:
+#   - CMakeLists.txt
+#   - src/
+#   - third/           (source code only, no .git)
+#   - test/interop/
+#
+# The repository contains a large amount of build artifacts, backups, logs, and git metadata, totaling > 5 GB, which must be excluded.
+# This file takes effect every time `docker compose build` is run; please add a line here when adding new build directories or large files.
+
+# ------------------------------------------------------------
+# Version control metadata (top-level repository + all submodules/vendored libraries)
+# Note that third/boringssl/.git alone takes ~320 MB
+# ------------------------------------------------------------
+**/.git
+**/.gitignore
+**/.gitattributes
+**/.gitmodules
+.github/
+
+# ------------------------------------------------------------
+# Local build directories / backups / temporary artifacts
+# These make up the largest portion of the context, ranging from hundreds of MBs to 2.5 GB per item
+# ------------------------------------------------------------
+build
+build/
+build-*/
+build_*/
+cmake-build-*/
+out/
+*.bak.*/
+*.bak
+
+# Build artifact files
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.lib
+*.pdb
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# ------------------------------------------------------------
+# Test / runtime outputs (logs, downloaded files, qlog, etc., single files can be tens of MBs)
+# ------------------------------------------------------------
+test/interop/logs/
+test/interop/downloads/
+test/interop/www/
+test/interop/certs/*.bak.*
+test/perf/results/
+test/perf/logs/
+**/*.qlog
+**/*.pcap
+**/*.pcapng
+**/*.keys
+**/*.keylog
+
+# ------------------------------------------------------------
+# Archives / Large objects
+# ------------------------------------------------------------
+*.tar
+*.tar.gz
+*.tgz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.7z
+*.rar
+
+# ------------------------------------------------------------
+# IDE / Editors / OS
+# ------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------
+# Python cache (common in the same directory as interop_runner.py)
+# ------------------------------------------------------------
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ------------------------------------------------------------
+# Documentation / Non-build inputs (optional, to reduce context size)
+# Note: If the Dockerfile needs documentation in the future, remember to uncomment this section
+# ------------------------------------------------------------
+docs/
+*.md
+!README.md
+
+# ------------------------------------------------------------
+# Top-level directories not in the Dockerfile COPY list (to avoid accidentally entering the context)
+# ------------------------------------------------------------
+aiokafka_pkgs/
+official-interop/
+
+# ------------------------------------------------------------
+# Pruning of third-party subdirectories
+#
+# Note: boringssl's CMakeLists.txt unconditionally invokes add_executable(bssl ...)
+# and add_executable(test_fips ...), which correspond to source files under tool/
+# and util/fipstools/. Even if we do not build these targets, the cmake configure
+# phase will scan whether the source files exist, and will fail if they are missing.
+# Therefore, tool/, util/fipstools/, and crypto/*/test/ CANNOT be excluded
+# and must enter the context along with the source code.
+#
+# fuzz/ does not seem to be unconditionally referenced by add_executable currently,
+# so it can be safely excluded; if a future boringssl upgrade makes fuzz an
+# unconditional target, simply comment out the line below.
+# ------------------------------------------------------------
+third/boringssl/fuzz/
+third/googletest/docs/

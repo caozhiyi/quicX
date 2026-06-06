@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 800" width="960" height="800" role="img" aria-labelledby="title desc">
+  <title id="title">QuicX module layout</title>
+  <desc id="desc">Five source-code modules of the QuicX HTTP/3 stack — Application, HTTP/3, HTTP Upgrade, QUIC, Common — all linked into the same process. Solid arrows show in-process code dependencies; the dashed arrow marks the client-side Alt-Svc redirect that brings traffic from TCP back over QUIC.</desc>
+
+  <!-- ===================== defs: gradients, shadow, arrow markers, fonts ===================== -->
+  <defs>
+    <!-- subtle background -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fbfbfd"/>
+      <stop offset="100%" stop-color="#f1f3f8"/>
+    </linearGradient>
+
+    <!-- per-layer gradients, all flowing top-left -> bottom-right -->
+    <linearGradient id="appGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fff8de"/>
+      <stop offset="100%" stop-color="#ffe9a8"/>
+    </linearGradient>
+    <linearGradient id="h3Grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8f0ff"/>
+      <stop offset="100%" stop-color="#bcd4ff"/>
+    </linearGradient>
+    <linearGradient id="upgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffeaf2"/>
+      <stop offset="100%" stop-color="#fbc4dc"/>
+    </linearGradient>
+    <linearGradient id="quicGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e3f8e6"/>
+      <stop offset="100%" stop-color="#a8e6b3"/>
+    </linearGradient>
+    <linearGradient id="cmnGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f1e8ff"/>
+      <stop offset="100%" stop-color="#d3bdf5"/>
+    </linearGradient>
+
+    <!-- inner component card -->
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.65"/>
+    </linearGradient>
+
+    <!-- soft drop shadow -->
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2.5"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.18"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- arrow markers -->
+    <marker id="arrowSolid" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrowDashed" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#be185d"/>
+    </marker>
+
+    <style>
+      .layer-title { font: 700 16px "Inter","Segoe UI",Roboto,system-ui,sans-serif; fill: #1f2937; }
+      .layer-sub   { font: 400 11.5px "Inter","Segoe UI",Roboto,system-ui,sans-serif; fill: #6b7280; }
+      .card-title  { font: 600 13px "Inter","Segoe UI",Roboto,system-ui,sans-serif; fill: #111827; }
+      .card-sub    { font: 400 10.5px "Inter","Segoe UI",Roboto,system-ui,sans-serif; fill: #4b5563; }
+      .edge-label  { font: 500 11px "Inter","Segoe UI",Roboto,system-ui,sans-serif; fill: #be185d; }
+      .axis-label  { font: 600 10.5px "Inter","Segoe UI",Roboto,system-ui,sans-serif; fill: #475569; letter-spacing: 0.4px; }
+      .proc-label  { font: 600 11.5px "Inter","Segoe UI",Roboto,system-ui,sans-serif; fill: #64748b; letter-spacing: 1px; }
+      .legend-title{ font: 700 12px "Inter","Segoe UI",Roboto,system-ui,sans-serif; fill: #111827; }
+    </style>
+  </defs>
+
+  <!-- background -->
+  <rect width="960" height="800" fill="url(#bgGrad)"/>
+
+  <!-- ===================== Process boundary (single process — all 5 modules live here) ===================== -->
+  <rect x="32" y="48" width="896" height="652" rx="20" ry="20"
+        fill="none" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.9"/>
+  <text x="50" y="40" class="proc-label">SINGLE PROCESS — one binary, one address space</text>
+
+  <!-- ===================== Layer 1 :: Application ===================== -->
+  <g filter="url(#softShadow)">
+    <rect x="60" y="78" width="840" height="100" rx="14" ry="14" fill="url(#appGrad)" stroke="#b08800" stroke-width="1.5"/>
+  </g>
+  <text x="84" y="108" class="layer-title">Application / Example</text>
+  <text x="84" y="126" class="layer-sub">example/ — your handlers, middleware, business code</text>
+  <g>
+    <rect x="84" y="136" width="220" height="32" rx="8" ry="8" fill="url(#cardGrad)" stroke="#b08800" stroke-width="1"/>
+    <text x="98" y="156" class="card-title">IClient / IServer users</text>
+    <rect x="320" y="136" width="260" height="32" rx="8" ry="8" fill="url(#cardGrad)" stroke="#b08800" stroke-width="1"/>
+    <text x="334" y="156" class="card-sub">routes · handlers · middleware</text>
+    <rect x="596" y="136" width="284" height="32" rx="8" ry="8" fill="url(#cardGrad)" stroke="#b08800" stroke-width="1"/>
+    <text x="610" y="156" class="card-sub">bootstraps both listeners (QUIC + TCP)</text>
+  </g>
+
+  <!-- ===================== Layer 2 :: HTTP/3  +  HTTP Upgrade (same row, sibling modules) ===================== -->
+  <!-- HTTP/3 (left, main) -->
+  <g filter="url(#softShadow)">
+    <rect x="60" y="218" width="540" height="120" rx="14" ry="14" fill="url(#h3Grad)" stroke="#1d4ed8" stroke-width="1.5"/>
+  </g>
+  <text x="84" y="248" class="layer-title">HTTP/3 Layer</text>
+  <text x="84" y="266" class="layer-sub">src/http3 — request / response semantics, QPACK, push</text>
+  <g>
+    <rect x="84" y="280" width="160" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#1d4ed8" stroke-width="1"/>
+    <text x="98" y="300" class="card-title">Connection</text>
+    <text x="98" y="315" class="card-sub">stream lifecycle</text>
+
+    <rect x="254" y="280" width="160" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#1d4ed8" stroke-width="1"/>
+    <text x="268" y="300" class="card-title">QPACK · Frames</text>
+    <text x="268" y="315" class="card-sub">RFC 9204 · push</text>
+
+    <rect x="424" y="280" width="156" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#1d4ed8" stroke-width="1"/>
+    <text x="438" y="300" class="card-title">Router · Middleware</text>
+    <text x="438" y="315" class="card-sub">:param · wildcard</text>
+  </g>
+
+  <!-- HTTP Upgrade (right, sibling — NOT a side-car, same process, just a different listener) -->
+  <g filter="url(#softShadow)">
+    <rect x="624" y="218" width="276" height="120" rx="14" ry="14" fill="url(#upgGrad)" stroke="#be185d" stroke-width="1.5"/>
+  </g>
+  <text x="648" y="248" class="layer-title">HTTP Upgrade Layer</text>
+  <text x="648" y="266" class="layer-sub">src/upgrade — TCP 80/443 listener</text>
+  <g>
+    <rect x="648" y="280" width="228" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#be185d" stroke-width="1"/>
+    <text x="662" y="300" class="card-title">Alt-Svc advertiser</text>
+    <text x="662" y="315" class="card-sub">writes header only — no h3 over TCP</text>
+  </g>
+
+  <!-- ===================== Layer 3 :: QUIC ===================== -->
+  <g filter="url(#softShadow)">
+    <rect x="60" y="378" width="840" height="160" rx="14" ry="14" fill="url(#quicGrad)" stroke="#15803d" stroke-width="1.5"/>
+  </g>
+  <text x="84" y="408" class="layer-title">QUIC Layer</text>
+  <text x="84" y="426" class="layer-sub">src/quic — RFC 9000 / 9369 transport</text>
+  <g>
+    <rect x="84" y="440" width="240" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#15803d" stroke-width="1"/>
+    <text x="98" y="460" class="card-title">Connection · Stream</text>
+    <text x="98" y="475" class="card-sub">crypto · path · migration</text>
+
+    <rect x="334" y="440" width="240" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#15803d" stroke-width="1"/>
+    <text x="348" y="460" class="card-title">Congestion · Recovery</text>
+    <text x="348" y="475" class="card-sub">BBR · CUBIC · Reno · PTO</text>
+
+    <rect x="584" y="440" width="292" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#15803d" stroke-width="1"/>
+    <text x="598" y="460" class="card-title">Packet · Frame codec</text>
+    <text x="598" y="475" class="card-sub">parse · HP · AEAD · pacing</text>
+
+    <rect x="84" y="490" width="792" height="32" rx="8" ry="8" fill="url(#cardGrad)" stroke="#15803d" stroke-width="1"/>
+    <text x="98" y="510" class="card-sub">UDP I/O  ·  Receiver / Master / Worker  ·  CID routing  ·  EventLoop affinity</text>
+  </g>
+
+  <!-- ===================== Layer 4 :: Common ===================== -->
+  <g filter="url(#softShadow)">
+    <rect x="60" y="558" width="840" height="120" rx="14" ry="14" fill="url(#cmnGrad)" stroke="#7e22ce" stroke-width="1.5"/>
+  </g>
+  <text x="84" y="588" class="layer-title">Common Infrastructure</text>
+  <text x="84" y="606" class="layer-sub">src/common — building blocks shared by every layer above</text>
+  <g>
+    <rect x="84" y="620" width="240" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#7e22ce" stroke-width="1"/>
+    <text x="98" y="640" class="card-title">Buffer · Alloter</text>
+    <text x="98" y="655" class="card-sub">slab pool · zero-copy chain</text>
+
+    <rect x="334" y="620" width="240" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#7e22ce" stroke-width="1"/>
+    <text x="348" y="640" class="card-title">Network I/O · EventLoop</text>
+    <text x="348" y="655" class="card-sub">epoll · kqueue · IOCP</text>
+
+    <rect x="584" y="620" width="292" height="42" rx="8" ry="8" fill="url(#cardGrad)" stroke="#7e22ce" stroke-width="1"/>
+    <text x="598" y="640" class="card-title">Timer · Log · Metrics · QLog</text>
+    <text x="598" y="655" class="card-sub">timer wheel · structured observability</text>
+  </g>
+
+  <!-- ===================== Edges (in-process: App owns / starts both) ===================== -->
+  <!-- App -> H3 -->
+  <line x1="330" y1="178" x2="330" y2="216" stroke="#475569" stroke-width="1.7" marker-end="url(#arrowSolid)"/>
+  <text x="338" y="201" class="axis-label">uses</text>
+
+  <!-- App -> Upgrade (same-process: App owns / starts both) -->
+  <line x1="762" y1="178" x2="762" y2="216" stroke="#475569" stroke-width="1.7" marker-end="url(#arrowSolid)"/>
+  <text x="770" y="201" class="axis-label">also starts</text>
+
+  <!-- H3 -> QUIC -->
+  <line x1="330" y1="338" x2="330" y2="376" stroke="#475569" stroke-width="1.7" marker-end="url(#arrowSolid)"/>
+  <text x="338" y="361" class="axis-label">uses</text>
+
+  <!-- Upgrade does NOT use QUIC — make that explicit with a faint blocked line -->
+  <line x1="762" y1="338" x2="762" y2="376" stroke="#cbd5e1" stroke-width="1.4" stroke-dasharray="3 3"/>
+  <text x="770" y="361" class="card-sub" style="fill:#94a3b8">no QUIC dep</text>
+
+  <!-- QUIC -> Common -->
+  <line x1="330" y1="538" x2="330" y2="556" stroke="#475569" stroke-width="1.7" marker-end="url(#arrowSolid)"/>
+  <text x="338" y="551" class="axis-label">uses</text>
+
+  <!-- Common is also used by H3 / Upgrade (thin connector for completeness) -->
+  <line x1="600" y1="538" x2="600" y2="556" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#arrowSolid)" opacity="0.7"/>
+  <text x="608" y="551" class="card-sub" style="fill:#64748b">log / timer</text>
+
+  <!-- ===================== Client-side Alt-Svc redirect (dashed; happens off-process, on the wire) ===================== -->
+  <!-- from Upgrade box, curve up over the top, end at App's left side — but label clearly: this is a CLIENT hop -->
+  <path d="M 762,218 C 762,60 762,60 540,60"
+        fill="none" stroke="#be185d" stroke-width="1.7" stroke-dasharray="6 4" marker-end="url(#arrowDashed)"/>
+  <text x="372" y="54" class="edge-label">Alt-Svc response → client reconnects over QUIC (off-process hop)</text>
+
+  <!-- ===================== Legend (below process box, full-width strip) ===================== -->
+  <g transform="translate(60,718)">
+    <rect x="0" y="0" width="840" height="64" rx="10" ry="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" opacity="0.95"/>
+    <text x="16" y="22" class="legend-title">Legend</text>
+
+    <line x1="16" y1="44" x2="46" y2="44" stroke="#475569" stroke-width="1.7" marker-end="url(#arrowSolid)"/>
+    <text x="54" y="48" class="card-sub">solid · in-process code dependency</text>
+
+    <line x1="290" y1="44" x2="320" y2="44" stroke="#be185d" stroke-width="1.7" stroke-dasharray="6 4" marker-end="url(#arrowDashed)"/>
+    <text x="328" y="48" class="card-sub">dashed · client-side Alt-Svc redirect</text>
+
+    <rect x="600" y="36" width="14" height="14" rx="3" fill="url(#upgGrad)" stroke="#be185d"/>
+    <text x="622" y="48" class="card-sub">Upgrade module — same process</text>
+  </g>
+</svg>

@@ -5,6 +5,20 @@
 #include "quic/congestion_control/cubic_congestion_control.h"
 #include "quic/congestion_control/normal_pacer.h"
 
+// References for the CUBIC controller:
+//   [RFC9438]      "CUBIC for Fast and Long-Distance Networks" — the
+//                  authoritative spec; we cite specific sections at the
+//                  decision points (W_cubic / Fast Convergence / Reno
+//                  friendliness / multiplicative decrease).
+//   [HyStart++]    RFC 9406 — the slow-start exit heuristic implemented
+//                  by CheckHyStartExit(); used to leave slow-start
+//                  *before* the first loss instead of waiting for it.
+//   [RFC9002 §7]   QUIC pluggable congestion control + recovery period
+//                  semantics consumed by the in_recovery_ branch in
+//                  OnPacketAcked / OnPacketLost.
+//   [RFC8311 §4.2] ECN-CE feedback semantics; we treat CE as an early
+//                  congestion signal in the OnPacketAcked ECN branch.
+
 namespace quicx {
 namespace quic {
 
@@ -153,6 +167,12 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     }
 
     // Fast Convergence: if cwnd decreased since last loss, further reduce W_max
+    // RFC 9438 §4.7 "Fast convergence": when consecutive congestion
+    // events show cwnd shrinking (network getting more contended), pull
+    // W_max down by an extra factor of (2-β)/2 = 0.85 with β=0.7. This
+    // gives competing flows a faster path to fairness — without it, a
+    // newly-arriving CUBIC flow would see W_max anchored at the old
+    // (less-contended) value and ramp up too slowly.
     double curr_w_max_pkts = BytesToPkts(cwnd_bytes_, cfg_.mss_bytes);
     if (curr_w_max_pkts < w_max_pkts_) {
         // Fast convergence: reduce W_max more aggressively
@@ -162,6 +182,10 @@ void CubicCongestionControl::OnPacketLost(const LossEvent& ev) {
     }
 
     // Multiplicative decrease
+    // RFC 9438 §4.6: cwnd *= β_cubic (=0.7 by default). This is gentler
+    // than NewReno's β=0.5 (RFC 9002 §7.3.2) — CUBIC's namesake cubic
+    // probe replaces some of NewReno's window-halving conservatism with
+    // explicit exploration above W_max in IncreaseOnAck below.
     uint64_t new_cwnd = static_cast<uint64_t>(cwnd_bytes_ * kBetaCubic);
     cwnd_bytes_ = std::max<uint64_t>(new_cwnd, cfg_.min_cwnd_bytes);
     ssthresh_bytes_ = cwnd_bytes_;
@@ -234,6 +258,12 @@ void CubicCongestionControl::ResetEpoch(uint64_t now) {
 void CubicCongestionControl::IncreaseOnAck(uint64_t bytes_acked, uint64_t now) {
     if (epoch_start_us_ == 0) ResetEpoch(now);
 
+    // RFC 9438 §4.2: W_cubic(t) = C * (t - K)^3 + W_max where K is the
+    // time it takes to ramp from cwnd back to W_max under the cubic
+    // curve. Below K the function is concave (slow growth around the
+    // recent congestion point), above K convex (aggressive probing into
+    // unexplored territory). |t - K| is used because t < K and t > K
+    // share the same |t-K|^3 magnitude — the curve is symmetric.
     // t = (now - epoch_start)/1e6
     double t_sec = static_cast<double>(now - epoch_start_us_) / 1e6;
     double t_k = t_sec - k_time_sec_;
@@ -242,7 +272,11 @@ void CubicCongestionControl::IncreaseOnAck(uint64_t bytes_acked, uint64_t now) {
     // CUBIC window in packets: W_cubic(t) = C*(t - K)^3 + Wmax
     double w_cubic_pkts = kCubicC * t_k * t_k * t_k + w_max_pkts_;
 
-    // TCP-friendly Reno variant for fairness: W_reno = W_last + (3*bytes_acked)/(2*W_last) in packets
+    // RFC 9438 §4.3 "Reno-friendly region": on short-RTT / non-BDP-
+    // limited paths, W_cubic can grow slower than what plain Reno would
+    // achieve. To not lose to a competing Reno flow on those paths, we
+    // also compute W_reno = W_last + 1.5 * bytes_acked / W_last
+    // (per-ACK additive increase) and take the max.
     double w_last = w_last_pkts_;
     if (w_last < 1.0) w_last = 1.0;
     double w_reno_pkts = w_last + (3.0 * BytesToPkts(bytes_acked, cfg_.mss_bytes)) / (2.0 * w_last);
@@ -270,6 +304,14 @@ void CubicCongestionControl::ResetHyStart() {
 }
 
 bool CubicCongestionControl::CheckHyStartExit(uint64_t latest_rtt, uint64_t now) {
+    // RFC 9406 (HyStart++): exit slow-start *before* the first loss by
+    // looking for two signals — (1) per-round min-RTT inflated by more
+    // than kHyStartRttThreshUs above the global min (queue is starting
+    // to build), or (2) ACKs spaced too widely apart (delivery rate
+    // already plateaued). This lets CUBIC avoid the classic Reno "first
+    // loss = halve cwnd from way above ssthresh" overshoot — particularly
+    // costly on long-fat paths. ssthresh is set to current cwnd at the
+    // exit so congestion-avoidance starts smoothly.
     if (hystart_found_exit_) {
         return false;
     }

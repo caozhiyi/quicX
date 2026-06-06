@@ -48,7 +48,7 @@ bool ConnectionCloser::StartGracefulClose(ActiveSendCallback active_send_cb) {
 
         // Set a timeout to force close if data doesn't complete in time
         // Use 3×PTO as a reasonable timeout (similar to draining period)
-        graceful_close_timer_ = ::quicx::common::TimerTask(std::bind(&ConnectionCloser::OnGracefulCloseTimeout, this));
+        graceful_close_timer_ = ::quicx::common::TimerTask([this]() { OnGracefulCloseTimeout(); });
         auto loop = event_loop_.lock();
         if (loop) {
             loop->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);

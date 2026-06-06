@@ -1,10 +1,10 @@
-#include <cstdlib>
 #include <cstring>
 
 #include "common/log/log.h"
 
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "quic/config.h"
 #include "quic/connection/controler/recv_control.h"
 #include "quic/connection/util.h"
 #include "quic/frame/ack_frame.h"
@@ -66,8 +66,20 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
     LOG_DEBUG("RecvControl::OnPacketRecv: added packet %llu to ACK queue, ns=%d, queue size=%zu", pkt_num, ns,
         wait_ack_packet_numbers_[ns].size());
 
-    // RFC 9000: Determine if immediate ACK is required
-    uint8_t ecn = 0;  // TODO: Get from packet header when ECN is implemented
+    // RFC 9000: Determine if immediate ACK is required.
+    //
+    // ECN is intentionally hard-wired to 0 here (Not-ECT). End-to-end ECN
+    // would require plumbing the per-packet codepoint through NetPacket →
+    // IPacket all the way into RecvControl: udp_receiver.cpp already pulls
+    // it via RecvFromWithEcn() / IP_TOS cmsg on Linux, but the packet-level
+    // hand-off does not yet carry it. Since ECN-CE only changes ACK
+    // *timing* (one of several immediate-ACK triggers in
+    // ShouldSendImmediateAck), and the threshold / OoO / gap / handshake
+    // triggers already cover the correctness-relevant cases, treating
+    // every received packet as Not-ECT here is safe — at worst we lose
+    // ECN-driven congestion-response responsiveness. Tracked as a
+    // learning-only limitation in learning_project_roadmap.md §2.
+    uint8_t ecn = 0;
     bool need_immediate_ack = ShouldSendImmediateAck(ns, pkt_num, ecn);
 
     if (need_immediate_ack) {
@@ -337,19 +349,8 @@ bool RecvControl::ShouldSendImmediateAck(PacketNumberSpace ns, uint64_t pkt_num,
     // throughput. Use a larger threshold so we keep aggregating when packets
     // arrive faster than max_ack_delay; the timer (max_ack_delay_) still
     // bounds worst-case delay if traffic is sparse.
-    // EXPERIMENT (PERF): runtime-tunable via QUICX_ACK_THRESHOLD env var so
-    // we can A/B test without rebuilding. Defaults to 10.
-    static const size_t kAckThreshold = []() -> size_t {
-        const char* env = std::getenv("QUICX_ACK_THRESHOLD");
-        if (env && *env) {
-            char* end = nullptr;
-            long v = std::strtol(env, &end, 10);
-            if (end != env && v >= 1 && v <= 1024) {
-                return static_cast<size_t>(v);
-            }
-        }
-        return 10;
-    }();
+    // The threshold is centralized in quic/config.h::kAckThreshold so it can
+    // be tuned in one place without recompiling individual call sites.
     if (acked_packets.size() >= kAckThreshold) {
         LOG_DEBUG("ShouldSendImmediateAck: %zu+ packets in queue, sending ACK", kAckThreshold);
         common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckThreshold);

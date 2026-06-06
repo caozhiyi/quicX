@@ -226,15 +226,15 @@ Use the macros from `<common/version.h>`:
 ```cpp
 #include <quicx/common/version.h>
 
-#if QUICX_VERSION_MAJOR == 0 && QUICX_VERSION_MINOR < 2
-    // 0.1.x specific code path
+#if QUICX_VERSION_MAJOR == 1 && QUICX_VERSION_MINOR < 1
+    // 1.0.x specific code path
 #endif
 ```
 
 A runtime helper is also available:
 
 ```cpp
-const char* v = quicx::GetVersionString();   // "0.1.0"
+const char* v = quicx::GetVersionString();   // "1.0.0"
 ```
 
 ---

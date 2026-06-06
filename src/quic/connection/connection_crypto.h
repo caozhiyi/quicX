@@ -35,7 +35,7 @@ public:
 
     EncryptionLevel GetCurEncryptionLevel();
 
-    std::shared_ptr<ICryptographer> GetCryptographer(uint8_t level) { return cryptographers_[level]; }
+    std::shared_ptr<ICryptographer> GetCryptographer(uint8_t level) const { return cryptographers_[level]; }
 
     void SetCryptoStream(std::shared_ptr<CryptoStream> crypto_stream);
     std::shared_ptr<CryptoStream> GetCryptoStream() { return crypto_stream_; }
@@ -87,6 +87,13 @@ public:
     typedef std::function<void()> EarlyDataReadyCB;
     void SetEarlyDataReadyCB(EarlyDataReadyCB cb) { early_data_ready_cb_ = cb; }
 
+    // RFC 9001 §4.8: a fatal TLS alert during the handshake must be surfaced to the
+    // peer as a QUIC CONNECTION_CLOSE carrying a CRYPTO_ERROR (0x0100 + alert). This
+    // callback lets the owning connection drive that close so a failed handshake is
+    // not silently dropped.
+    typedef std::function<void(uint64_t error, const std::string& reason)> HandshakeErrorCB;
+    void SetHandshakeErrorCB(HandshakeErrorCB cb) { handshake_error_cb_ = cb; }
+
     // RFC 9001 Section 6: Key Update
     // Trigger a key update on the Application level cryptographer
     // Returns true if key update was successful
@@ -116,6 +123,7 @@ private:
     bool transport_param_done_;
     RemoteTransportParamCB transport_param_cb_;
     EarlyDataReadyCB early_data_ready_cb_;
+    HandshakeErrorCB handshake_error_cb_;
 
     EncryptionLevel cur_encryption_level_;
     std::shared_ptr<CryptoStream> crypto_stream_;

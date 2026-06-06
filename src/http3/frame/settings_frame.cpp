@@ -67,7 +67,15 @@ DecodeResult SettingsFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool
     }
 
     int32_t len = (int32_t)length_;
-    while (len > 0) {  // TODO: check max loop times
+    // RFC 9114 §7.2.4: a SETTINGS frame carries only a small, fixed set of
+    // parameters. Bound the number of entries so a malicious peer cannot pin CPU
+    // here by sending an arbitrarily long SETTINGS frame (DoS hardening).
+    static const int32_t kMaxSettingsEntries = 32;
+    int32_t entry_count = 0;
+    while (len > 0) {
+        if (++entry_count > kMaxSettingsEntries) {
+            return DecodeResult::kError;
+        }
         uint64_t id, value;
         if (!wrapper.DecodeVarint(id, len) || !wrapper.DecodeVarint(value, len)) {
             // If we can't decode, check if it's because we need more data
