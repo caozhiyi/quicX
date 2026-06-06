@@ -6,6 +6,23 @@
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v1_congestion_control.h"
 
+// References for BBRv1 (this implementation is a teaching subset, not a
+// drop-in BBR):
+//   [BBR-Queue]    Cardwell et al., "BBR: Congestion-Based Congestion
+//                  Control", ACM Queue Vol.14 No.5 (Sept-Oct 2016) — the
+//                  original paper introducing the four-state machine
+//                  (STARTUP / DRAIN / PROBE_BW / PROBE_RTT) and the
+//                  pacing_gain / cwnd_gain factors used below.
+//   [BBR-Draft-02] draft-cardwell-iccrg-bbr-congestion-control-02 — the
+//                  most-cited IETF expression of the same algorithm; we
+//                  cite specific sections inline at the decision points.
+//   [RFC9002 §7]   QUIC pluggable congestion control: BBR is permitted as
+//                  an alternative to the RFC 9002 NewReno baseline; it is
+//                  *not* itself an RFC. Loss / ACK plumbing into this
+//                  controller obeys RFC 9002 §6 (recovery period) /
+//                  §A.4 (OnPacketSent / OnPacketAcked / OnPacketsLost),
+//                  see send_control.cpp for the host side.
+
 namespace quicx {
 namespace quic {
 
@@ -36,6 +53,11 @@ void BBRv1CongestionControl::Configure(const CcConfigV2& cfg) {
     end_of_round_pn_ = 0;
 
     mode_ = Mode::kStartup;
+    // BBR-Draft-02 §4.1.1 / [BBR-Queue] Fig. 5: STARTUP uses pacing_gain =
+    // 2/ln(2) ≈ 2.885 to grow the bottleneck-bandwidth estimate
+    // exponentially in O(log BDP) rounds, then drops to its inverse during
+    // DRAIN. cwnd_gain stays at 2.0 throughout startup/drain to absorb the
+    // BDP plus its STARTUP overshoot before PROBE_BW sets gain=1.0.
     pacing_gain_ = 2.885; // STARTUP gain ~ 2/ln(2)
     cwnd_gain_ = 2.0;
 
@@ -117,7 +139,13 @@ void BBRv1CongestionControl::OnPacketAcked(const AckEvent& ev) {
 
 void BBRv1CongestionControl::OnPacketLost(const LossEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
-    // In STARTUP, loss exits to DRAIN
+    // BBR-Draft-02 §4.1.2: STARTUP exits to DRAIN on any of {bandwidth
+    // plateau (handled in CheckFullBandwidthReached), high in-flight, or
+    // packet loss}. We use the loss signal as the secondary trigger so
+    // that pathological loss in STARTUP doesn't keep blasting at gain
+    // 2.885 forever. Unlike Reno/CUBIC (cf. RFC 9002 §7.3.2 / RFC 9438
+    // §4.6) we do *not* halve cwnd here — BBR is rate-based and its cwnd
+    // is recomputed each ACK from BDP × cwnd_gain.
     if (mode_ == Mode::kStartup) {
         {
             common::CongestionStateUpdatedData qlog_data;
@@ -200,8 +228,13 @@ void BBRv1CongestionControl::UpdatePacingRate() {
 }
 
 void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
-    // Enter ProbeRTT if min_rtt hasn't been updated in 10 seconds
-    // BBR standard: probe RTT when min_rtt is stale (> 10s old)
+    // BBR-Draft-02 §4.3.1 / [BBR-Queue] §3.4: enter PROBE_RTT when the
+    // min_rtt sample is older than 10s (kProbeRttIntervalUs). Holding
+    // cwnd at 4*MSS for kProbeRttTimeUs (200ms by spec) drains the
+    // bottleneck queue so a fresh propagation-delay sample can be taken;
+    // without this BBR would gradually inflate its min_rtt estimate and
+    // bufferbloat. Same idea as RFC 9438 §5.2 HyStart's RTT inflation
+    // exit, but applied periodically instead of one-shot in slow-start.
     if (mode_ != Mode::kProbeRtt && 
         min_rtt_stamp_us_ > 0 && 
         now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
@@ -240,6 +273,11 @@ void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
 }
 
 void BBRv1CongestionControl::AdvanceProbeBwCycle(uint64_t now_us) {
+    // BBR-Draft-02 §4.2 / [BBR-Queue] Fig. 4: the PROBE_BW pacing-gain
+    // cycle is 8 RTTs long. Phase 0 sends at 1.25× to probe for more
+    // bandwidth; phase 1 drains at 0.75× to give the queue back; phases
+    // 2-7 cruise at 1.0×. This is the steady-state rate-search loop —
+    // distinct from CUBIC's window-based probing (RFC 9438 §4.2).
     static const double kGainCycle[8] = {1.25, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
     uint64_t cycle_len_us = std::max<uint64_t>(min_rtt_us_, 1000); // at least 1ms
     if (now_us - cycle_start_us_ >= cycle_len_us) {
@@ -265,6 +303,13 @@ void BBRv1CongestionControl::UpdateMaxBandwidth(uint64_t sample_bps, uint64_t no
 void BBRv1CongestionControl::CheckFullBandwidthReached(uint64_t now_us) {
     (void)now_us;
     if (max_bw_bps_ == 0) return;
+    // BBR-Draft-02 §4.1.1.2 "Estimating when Startup has filled the pipe":
+    // declare the pipe full once delivery rate has stopped growing — i.e.
+    // three rounds in a row where the new max-bandwidth sample is not at
+    // least 25% above the previous full_bw estimate. This is BBR's
+    // analogue of CUBIC's slow-start exit (RFC 9438 §4.6 ssthresh hit) /
+    // Reno's first loss (RFC 9002 §7.3.1), but signal-driven instead of
+    // event-driven so it works on lossless paths too.
     if (full_bw_bps_ == 0 || max_bw_bps_ > full_bw_bps_ * 125 / 100) {
         full_bw_bps_ = max_bw_bps_;
         full_bw_cnt_ = 0;

@@ -4,7 +4,7 @@
 #ifndef COMMON_QLOG_SERIALIZER_JSON_SEQ_SERIALIZER
 #define COMMON_QLOG_SERIALIZER_JSON_SEQ_SERIALIZER
 
-#include "common/qlog/serializer/qlog_serializer.h"
+#include "common/qlog/serializer/if_qlog_serializer.h"
 
 namespace quicx {
 namespace common {

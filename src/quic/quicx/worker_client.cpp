@@ -19,12 +19,13 @@ ClientWorker::~ClientWorker() {}
 void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
     const std::string& resumption_session_der, const std::string& server_name) {
     ConnectionCallbacks callbacks;
-    callbacks.active_connection_cb = std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1);
-    callbacks.handshake_done_cb = std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1);
-    callbacks.add_conn_id_cb = std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2);
-    callbacks.retire_conn_id_cb = std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1);
-    callbacks.connection_close_cb = std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3);
+    callbacks.active_connection_cb = [this](auto a) { HandleActiveSendConnection(a); };
+    callbacks.handshake_done_cb = [this](auto a) { HandleHandshakeDone(a); };
+    callbacks.add_conn_id_cb = [this](auto a, auto b) { HandleAddConnectionId(a, b); };
+    callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
+    callbacks.connection_close_cb = [this](auto a, auto b, auto c) {
+        HandleConnectionClose(a, b, c);
+    };
 
     auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), callbacks);
 
@@ -190,12 +191,13 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
 
     // Create new connection with negotiated version
     ConnectionCallbacks vn_callbacks;
-    vn_callbacks.active_connection_cb = std::bind(&ClientWorker::HandleActiveSendConnection, this, std::placeholders::_1);
-    vn_callbacks.handshake_done_cb = std::bind(&ClientWorker::HandleHandshakeDone, this, std::placeholders::_1);
-    vn_callbacks.add_conn_id_cb = std::bind(&ClientWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2);
-    vn_callbacks.retire_conn_id_cb = std::bind(&ClientWorker::HandleRetireConnectionId, this, std::placeholders::_1);
-    vn_callbacks.connection_close_cb = std::bind(&ClientWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3);
+    vn_callbacks.active_connection_cb = [this](auto a) { HandleActiveSendConnection(a); };
+    vn_callbacks.handshake_done_cb = [this](auto a) { HandleHandshakeDone(a); };
+    vn_callbacks.add_conn_id_cb = [this](auto a, auto b) { HandleAddConnectionId(a, b); };
+    vn_callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
+    vn_callbacks.connection_close_cb = [this](auto a, auto b, auto c) {
+        HandleConnectionClose(a, b, c);
+    };
 
     auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), vn_callbacks);
 

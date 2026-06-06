@@ -135,11 +135,25 @@ public:
     // Get qlog trace for this connection
     std::shared_ptr<common::QlogTrace> GetQlogTrace() const override { return qlog_trace_; }
 
+    // Production accessor used by Worker to gate early-connection delivery
+    // (see IConnection::HasEarlyDataWriteKey doc). Implemented as a thin
+    // wrapper over connection_crypto_; cheap, non-allocating.
+    bool HasEarlyDataWriteKey() const override {
+        return connection_crypto_.GetCryptographer(kEarlyData) != nullptr;
+    }
+
     // ==================== Test-Only Accessors ====================
     // These methods exist solely for unit testing. Production code MUST NOT call them.
-    // They are grouped here to make the test-production boundary explicit.
-    // TODO: Move to a friend-class test accessor when IConnection virtual interface is refactored.
-    virtual std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t level) override {
+    // They are deliberately non-virtual so they do not appear on the IConnection
+    // vtable — tests get to them by holding a concrete BaseConnection-derived
+    // type (ClientConnection / ServerConnection), which is already how the
+    // existing tests are written.
+    //
+    // Long-term: collapse this group behind a `friend class TestAccessor`
+    // so the production API surface is fully clean. Tracked in
+    // learning_project_roadmap.md §2 — interface hardening is post-1.0
+    // since it would churn many test files for no teaching benefit.
+    std::shared_ptr<ICryptographer> GetCryptographerForTest(uint16_t level) {
         return connection_crypto_.GetCryptographer(level);
     }
     std::shared_ptr<ConnectionIDManager> GetRemoteConnectionIDManagerForTest() {
@@ -215,7 +229,37 @@ protected:
     bool ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& remote_tp);
 
 private:
+    // Encode the local TransportParam |tp| into a 1024-byte stack buffer and
+    // hand the bytes to TLS via SSL_set_quic_transport_params.  Centralizes the
+    // serialize-and-push idiom that previously appeared in 4 sites
+    // (AddTransportParam, OnInitialPacket × 2 version-change branches,
+    // ValidateAndMaybeUpgradeByRemoteTP).  Returns false on encode error.
+    bool EncodeAndPushTpToTls(TransportParam& tp);
+
+    // Compound helper: rebuild the version_information TP entry to reflect the
+    // currently selected on-wire version, then re-encode + push the full TP
+    // blob to TLS.  Used after a version change (server upgrade decision,
+    // client detecting upgrade, or first server Initial when the requested
+    // version differs from default).  Returns false if encode/push fails.
+    bool RebuildAndPushVersionInformation();
+
     // Internal helper methods for TrySend()
+
+    // Retransmit-side branch of TrySend: re-encode the next lost packet (with
+    // a fresh packet number, current key phase, current cryptographer) and
+    // hand it to the sender.  Caller (TrySend) MUST have already verified
+    // SendControl::NeedReSend() returns true.
+    // Returns true if the worker should re-enter TrySend immediately
+    // (more lost packets queued, or transient drop), false otherwise.
+    // RFC 9000 §13.3 / RFC 9001 §6.5.
+    bool TrySendRetransmit();
+
+    // Normal-send branch of TrySend: pick encryption level via the encryption
+    // scheduler, gather pending frames + queued ACKs + stream data, build one
+    // outbound packet under cwnd / per-packet MTU / connection-level FC
+    // budgets, hand it to SendBuffer, and update post-send bookkeeping
+    // (FC accounting, key-update trigger).  Returns the SendBuffer outcome.
+    bool TrySendNew();
 
     // Send buffer using sender_ (internal helper)
 // @param buffer Buffer to send
@@ -363,8 +407,19 @@ protected:
     // EventLoop reference — observer only (owner is QuicClient/QuicServer)
     std::weak_ptr<common::IEventLoop> event_loop_;
 
-    // Metrics: Handshake timing
-    uint64_t handshake_start_time_{0};
+    // Metrics: Handshake timing.
+    //
+    // NOTE: this is a WALL-CLOCK timestamp (UTCTimeMsec, std::chrono::system_clock)
+    // expressed in milliseconds since the Unix epoch. It is used only to compute
+    // a one-shot, externally observable handshake-duration metric and is therefore
+    // wall-clock on purpose so the value lines up with operator dashboards and qlog
+    // timestamps.
+    //
+    // It is deliberately separate from the monotonic clocks used by the loss /
+    // RTT / PTO machinery (see RttSampler, LossDetector). Do NOT use this field
+    // for protocol timing decisions: a wall-clock jump backwards would silently
+    // produce negative durations.
+    uint64_t handshake_start_wall_time_ms_{0};
 
     // Sender for direct packet transmission
     std::shared_ptr<ISender> sender_;

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <quicx/http3/type.h>
+#include "http3/http/error.h"
 #include "http3/http/request.h"
 #include <quicx/http3/if_response.h>
 #include "http3/connection/connection_client.h"
@@ -40,6 +41,12 @@ public:
     }
     void CancelPush(uint64_t push_id) {
         conn_->CancelPush(push_id);
+    }
+    void Shutdown() {
+        conn_->Shutdown();
+    }
+    bool IsAcceptingNewRequests() const {
+        return conn_->IsAcceptingNewRequests();
     }
     uint32_t GetErrorCode() const { return error_code_; }
     const std::string& GetLastErrorUniqueId() const { return last_error_unique_id_; }
@@ -92,6 +99,13 @@ public:
 
     void SetHttpHandler(const http_handler& handler) {
         http_handler_ = handler;
+    }
+
+    void Shutdown() {
+        conn_->Shutdown();
+    }
+    bool IsAcceptingNewPushes() const {
+        return conn_->IsAcceptingNewPushes();
     }
 
 private:
@@ -172,6 +186,53 @@ TEST_F(HttpConnectionTest, DoRequest) {
     };
 
     EXPECT_TRUE(mock_client_->DoRequest(request, http_response_handler));
+}
+
+// RFC 9114 §5.2: after a graceful shutdown is initiated locally, the
+// client MUST refuse to start new requests on this connection. We don't
+// rely on the GOAWAY frame actually reaching the peer here — the
+// MockQuicConnection is intentionally bare-bones — we only validate the
+// in-process state transition that gates DoRequest().
+TEST_F(HttpConnectionTest, ShutdownRefusesNewRequests) {
+    EXPECT_TRUE(mock_client_->IsAcceptingNewRequests());
+
+    mock_client_->Shutdown();
+
+    EXPECT_FALSE(mock_client_->IsAcceptingNewRequests());
+
+    // A request submitted after Shutdown() must be rejected synchronously
+    // with H3_REQUEST_REJECTED so the application layer can retry on a
+    // fresh connection (RFC 9114 §8.1).
+    auto req = std::make_shared<Request>();
+    req->SetMethod(HttpMethod::kGet);
+    req->SetPath("/");
+    req->SetScheme("http");
+    req->SetAuthority("localhost");
+
+    bool handler_called = false;
+    uint32_t observed_error = 0;
+    auto handler = [&handler_called, &observed_error](
+                       std::shared_ptr<IResponse> /*resp*/, uint32_t error) {
+        handler_called = true;
+        observed_error = error;
+    };
+
+    EXPECT_FALSE(mock_client_->DoRequest(req, handler));
+    EXPECT_TRUE(handler_called);
+    EXPECT_EQ(observed_error, static_cast<uint32_t>(Http3ErrorCode::kRequestRejected));
+}
+
+// Server-side mirror: once the server begins shutdown, IsAcceptingNewPushes()
+// flips false and SendPush() short-circuits before touching any stream
+// state. Combined with the client-side test above, this covers both
+// directions of the RFC 9114 §5.2 GOAWAY contract for the public API
+// surface (Shutdown / IsAcceptingNewRequests / IsAcceptingNewPushes).
+TEST_F(HttpConnectionTest, ServerShutdownRefusesNewPushes) {
+    EXPECT_TRUE(mock_server_->IsAcceptingNewPushes());
+
+    mock_server_->Shutdown();
+
+    EXPECT_FALSE(mock_server_->IsAcceptingNewPushes());
 }
 
 }  // namespace

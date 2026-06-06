@@ -241,12 +241,13 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
 
     // create new connection
     ConnectionCallbacks callbacks;
-    callbacks.active_connection_cb = std::bind(&ServerWorker::HandleActiveSendConnection, this, std::placeholders::_1);
-    callbacks.handshake_done_cb = std::bind(&ServerWorker::HandleHandshakeDone, this, std::placeholders::_1);
-    callbacks.add_conn_id_cb = std::bind(&ServerWorker::HandleAddConnectionId, this, std::placeholders::_1, std::placeholders::_2);
-    callbacks.retire_conn_id_cb = std::bind(&ServerWorker::HandleRetireConnectionId, this, std::placeholders::_1);
-    callbacks.connection_close_cb = std::bind(&ServerWorker::HandleConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3);
+    callbacks.active_connection_cb = [this](auto a) { HandleActiveSendConnection(a); };
+    callbacks.handshake_done_cb = [this](auto a) { HandleHandshakeDone(a); };
+    callbacks.add_conn_id_cb = [this](auto a, auto b) { HandleAddConnectionId(a, b); };
+    callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
+    callbacks.connection_close_cb = [this](auto a, auto b, auto c) {
+        HandleConnectionClose(a, b, c);
+    };
 
     auto new_conn = std::make_shared<ServerConnection>(ctx_, event_loop_.lock(), server_alpn_, callbacks);
 

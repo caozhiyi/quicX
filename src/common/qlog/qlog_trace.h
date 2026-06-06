@@ -16,7 +16,7 @@
 #include "common/qlog/event/recovery_events.h"
 #include "common/qlog/event/transport_events.h"
 #include "common/qlog/qlog_config.h"
-#include "common/qlog/serializer/qlog_serializer.h"
+#include "common/qlog/serializer/if_qlog_serializer.h"
 
 namespace quicx {
 namespace common {

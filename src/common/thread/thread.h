@@ -23,7 +23,7 @@ public:
     virtual void Start() {
         stop_ = false;
         if (!pthread_) {
-            pthread_ = std::make_shared<std::thread>(std::bind(&Thread::Run, this));
+            pthread_ = std::make_shared<std::thread>([this]() { Run(); });
         }
     }
 

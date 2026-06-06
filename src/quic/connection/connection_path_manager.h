@@ -8,6 +8,7 @@
 
 #include "common/network/address.h"
 #include "common/timer/timer_task.h"
+#include "quic/common/constants.h"
 #include <quicx/quic/type.h>
 
 namespace quicx {
@@ -46,14 +47,34 @@ public:
     using GetSocketCallback = std::function<int32_t()>;
     using SetMigrationSocketCallback = std::function<void(int32_t)>;
 
-    PathManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop,
-                SendManager& send_manager,
-                ConnectionIDCoordinator& cid_coordinator,
-                TransportParam& transport_param,
-                ::quicx::common::Address& peer_addr,
-                ToSendFrameCallback to_send_frame_cb,
-                ActiveSendCallback active_send_cb,
-                SetPeerAddressCallback set_peer_addr_cb);
+    /**
+     * @brief Construction-time dependencies for PathManager.
+     *
+     * Bundled into a single struct (instead of an 8-argument constructor)
+     * so that callers initialize fields by name. This makes the wiring at
+     * the construction site self-documenting and removes the silent
+     * positional-argument hazard when adding/removing dependencies.
+     *
+     * Lifetime contract:
+     *  - `event_loop` is held as `weak_ptr` (no lifetime bump).
+     *  - `send_manager`, `cid_coordinator`, `transport_param`, `peer_addr`
+     *    are stored as references and MUST outlive the PathManager.
+     *  - The three callbacks are copied (std::function); they capture
+     *    `BaseConnection*` via `this`, so the connection must outlive the
+     *    PathManager (it does — PathManager is a member of BaseConnection).
+     */
+    struct Deps {
+        std::shared_ptr<::quicx::common::IEventLoop> event_loop;
+        SendManager*                                 send_manager{nullptr};
+        ConnectionIDCoordinator*                     cid_coordinator{nullptr};
+        TransportParam*                              transport_param{nullptr};
+        ::quicx::common::Address*                    peer_addr{nullptr};
+        ToSendFrameCallback                          to_send_frame_cb;
+        ActiveSendCallback                           active_send_cb;
+        SetPeerAddressCallback                       set_peer_addr_cb;
+    };
+
+    explicit PathManager(Deps deps);
 
     ~PathManager();
 
@@ -271,8 +292,10 @@ private:
     // Migration timeout timer
     ::quicx::common::TimerTask migration_timeout_task_;
     
-    // Path validation timeout (configurable)
-    uint32_t path_validation_timeout_ms_{6000};
+    // Path validation timeout (configurable; default per RFC 9000 §8.2.4
+    // — at least 3×PTO, see kDefaultPathValidationTimeoutMs in
+    // quic/common/constants.h).
+    uint32_t path_validation_timeout_ms_{kDefaultPathValidationTimeoutMs};
 };
 
 }  // namespace quic

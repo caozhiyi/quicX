@@ -1,10 +1,13 @@
 #include "quic/connection/packet_builder.h"
 
+#include <cstdio>
+
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
 #include "common/util/time.h"
 
 #include "quic/common/version.h"
+#include "quic/common/constants.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/controler/send_control.h"
@@ -142,10 +145,11 @@ void PacketBuilder::HandleInitialPacketRequirements(const std::shared_ptr<IPacke
     }
 
     // Add padding if requested
-    // RFC 9000 Section 14.1: Initial packets MUST be at least 1200 bytes
+    // RFC 9000 §14.1: Initial packets MUST be at least kMinInitialPacketSize
+    // bytes (=1200) so anti-amplification budget covers PATH_CHALLENGE.
     if (ctx.add_padding) {
         uint32_t current_size = ctx.frame_visitor->GetBuffer()->GetDataLength();
-        uint32_t target_size = 1200;
+        uint32_t target_size = kMinInitialPacketSize;
 
         if (current_size < target_size) {
             auto padding_frame = std::make_shared<PaddingFrame>();
@@ -329,6 +333,23 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // 13. Set frame type bit for ACK-eliciting detection
     packet->AddFrameTypeBit(static_cast<FrameTypeBit>(visitor.GetFrameTypeBit()));
 
+    // [DIAG-RTX] Snapshot payload bytes BEFORE first-send Encode.
+    // Helps confirm whether the SharedBufferSpan held by `packet->payload_`
+    // still points to the same plaintext bytes when this packet is later
+    // retransmitted (cf. TrySendRetransmit). Format:
+    //   "first-send pn=<pn> level=<lvl> payload_len=<n> chunk=<ptr> head=<hex16>"
+    {
+        auto pl = payload_buffer->GetSharedReadableSpan();
+        char head[64] = {0};
+        uint32_t dump_len = pl.GetLength() < 16 ? pl.GetLength() : 16;
+        for (uint32_t i = 0; i < dump_len; ++i) {
+            std::snprintf(head + i * 3, sizeof(head) - i * 3, "%02x ", pl.GetStart()[i]);
+        }
+        LOG_INFO("[DIAG-RTX] first-send pn=%llu level=%d payload_len=%u chunk=%p head=%s",
+            (unsigned long long)pn, ctx.level, pl.GetLength(),
+            (void*)pl.GetChunk().get(), head);
+    }
+
     // 14. Encode packet to output buffer
     if (!packet->Encode(output_buffer)) {
         result.error_message = "failed to encode packet";
@@ -371,7 +392,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
     ctx.frames.push_back(ack_frame);
     ctx.include_stream_data = false;        // ACK packets don't include stream data
     ctx.add_padding = (level == kInitial);  // Initial packets need padding
-    ctx.min_size = 1200;
+    ctx.min_size = kMinInitialPacketSize;    // RFC 9000 §14.1
 
     LOG_DEBUG("PacketBuilder::BuildAckPacket: building ACK packet at level=%d", level);
     return BuildDataPacket(ctx, output_buffer, packet_number, send_control);

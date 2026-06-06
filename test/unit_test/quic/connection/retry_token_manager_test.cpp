@@ -64,6 +64,18 @@ TEST_F(RetryTokenManagerTest, ValidateWrongAddress) {
     EXPECT_FALSE(manager_->ValidateToken(token, wrong_addr, dcid_));
 }
 
+TEST_F(RetryTokenManagerTest, ValidateWrongPortSameIp) {
+    // Token must be bound to (ip, port), not just ip — protects against
+    // multiple clients behind the same NAT IP from spoofing each other's tokens.
+    std::string token = manager_->GenerateToken(addr_, dcid_);
+
+    Address same_ip_diff_port;
+    same_ip_diff_port.SetIp(addr_.GetIp());
+    same_ip_diff_port.SetPort(addr_.GetPort() + 1);
+
+    EXPECT_FALSE(manager_->ValidateToken(token, same_ip_diff_port, dcid_));
+}
+
 TEST_F(RetryTokenManagerTest, ValidateAndExtractConnectionID) {
     // Generate token for dcid_
     std::string token = manager_->GenerateToken(addr_, dcid_);

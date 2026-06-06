@@ -13,6 +13,17 @@
 namespace quicx {
 namespace upgrade {
 
+// Maximum time we allow a TCP-accepted but not-yet-classified connection to
+// remain in the "negotiation" phase (waiting for the first bytes that will
+// disambiguate HTTP/1.1 vs HTTP/2 vs TLS / HTTP/3 upgrade). After this the
+// fd is closed to free resources and cap exposure to slow-loris-style
+// connections that never send a request line.
+//
+// This is an engineering default, not a protocol value: it is much larger
+// than typical HTTP idle timeouts because some clients legitimately defer
+// the first byte for several seconds (e.g. proxies, mobile networks).
+constexpr uint64_t kUpgradeNegotiationTimeoutMs = 30000;  // 30 s
+
 // Base smart handler containing common logic
 class BaseSmartHandler:
     public ISmartHandler {

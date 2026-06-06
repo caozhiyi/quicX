@@ -13,7 +13,10 @@ FetchContent_MakeAvailable(googlebenchmark)
 
 function(add_quicx_benchmark target src)
     add_executable(${target} ${src})
-    target_link_libraries(${target} PRIVATE benchmark::benchmark http3 quicx ssl crypto Threads::Threads)
+    # http3 PUBLIC-links quicx, which itself transitively brings in
+    # Threads / filesystem / BoringSSL crypto+ssl. Listing them again here
+    # is redundant; just link http3.
+    target_link_libraries(${target} PRIVATE benchmark::benchmark http3)
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/src)
     target_compile_definitions(${target} PRIVATE NDEBUG QUICX_ENABLE_BENCHMARKS)
     target_compile_options(${target} PRIVATE -O3)
@@ -37,5 +40,6 @@ add_quicx_benchmark(qpack_instr_bench qpack_instr_bench.cpp)
 add_quicx_benchmark(quic_ack_maxdata_bench quic_ack_maxdata_bench.cpp)
 add_quicx_benchmark(qlog_overhead_bench qlog_overhead_bench.cpp)
 add_quicx_benchmark(metrics_bench metrics_bench.cpp)
+add_quicx_benchmark(alloter_smartptr_bench alloter_smartptr_bench.cpp)
 
 # cmake -S .. -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_BENCHMARKS=ON && cmake --build build -j

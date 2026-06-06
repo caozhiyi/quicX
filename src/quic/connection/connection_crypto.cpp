@@ -89,10 +89,24 @@ void ConnectionCrypto::WriteMessage(EncryptionLevel level, const uint8_t* data, 
 }
 
 void ConnectionCrypto::FlushFlight() {
-    // TODO close connectoin whit error
+    // No-op: handshake bytes are handed to the crypto stream immediately in
+    // WriteMessage(), so there is no buffered flight to flush here. Handshake
+    // failures are reported by the TLS stack via SendAlert(), not this hook.
 }
 
-void ConnectionCrypto::SendAlert(EncryptionLevel level, uint8_t alert) {}
+void ConnectionCrypto::SendAlert(EncryptionLevel level, uint8_t alert) {
+    // RFC 9001 §4.8 / RFC 9000 §20.1: a TLS alert raised during the handshake is
+    // carried to the peer as a CONNECTION_CLOSE with a CRYPTO_ERROR code, where the
+    // code is 0x0100 + the TLS AlertDescription. Propagate it instead of silently
+    // dropping the alert, which would otherwise leave the connection hanging.
+    static const uint64_t kCryptoErrorBase = 0x0100;
+    uint64_t error_code = kCryptoErrorBase + alert;
+    LOG_ERROR("TLS alert %u at encryption level %d, closing with CRYPTO_ERROR 0x%llx",
+              alert, (int)level, (unsigned long long)error_code);
+    if (handshake_error_cb_) {
+        handshake_error_cb_(error_code, "tls handshake alert");
+    }
+}
 
 void ConnectionCrypto::OnTransportParams(EncryptionLevel level, const uint8_t* tp, size_t tp_len) {
     if (transport_param_done_) {

@@ -430,13 +430,20 @@ bool Pipe(int32_t& pipe1, int32_t& pipe2) {
 
 SysCallInt32Result EnableUdpEcn(int32_t sockfd) {
     (void)sockfd;
-    // TODO: Implement via WSARecvMsg ancillary data options if needed
+    // Known limitation: ECN reception on Windows would require WSARecvMsg
+    // with ancillary data (IP_ECN / IPV6_ECN control messages). The
+    // single-threaded Linux path is the educational main line for quicX
+    // 1.0 (see learning_project_roadmap.md §2 — Windows is intentionally
+    // best-effort), so the Windows backend reports "no ECN support" by
+    // returning success-with-no-effect rather than dragging in a separate
+    // overlapped-IO recv path just for ECN.
     return {0, 0};
 }
 
 SysCallInt32Result RecvFromWithEcn(
     int32_t sockfd, char* buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
-    // Fallback to RecvFrom without ECN on Windows for now
+    // See EnableUdpEcn above: Windows backend does not surface ECN. Fall
+    // back to plain RecvFrom and report Not-ECT for every datagram.
     auto ret = RecvFrom(sockfd, buf, len, flag, addr);
     ecn = 0;
     return ret;
@@ -445,7 +452,11 @@ SysCallInt32Result RecvFromWithEcn(
 SysCallInt32Result EnableUdpEcnMarking(int32_t sockfd, uint8_t ecn_codepoint) {
     (void)sockfd;
     (void)ecn_codepoint;
-    // TODO: implement IP_TOS/TrafficClass on Windows if required
+    // Known limitation: setting outbound ECN codepoints on Windows would
+    // require IP_TOS / IPV6_TCLASS via setsockopt with platform-specific
+    // quirks (admin privilege requirements, varying kernel support).
+    // Same rationale as EnableUdpEcn — Windows is best-effort for 1.0,
+    // tracked in learning_project_roadmap.md §2.
     return {0, 0};
 }
 

@@ -1,4 +1,3 @@
-#include <cstdlib>
 #include <sstream>
 #include <thread>
 
@@ -9,6 +8,8 @@
 #include <quicx/common/metrics_std.h>
 
 #include "quic/common/version.h"
+#include "quic/common/constants.h"
+#include "quic/config.h"
 #include "quic/packet/init_packet.h"
 #include "quic/quicx/global_resource.h"
 #include "quic/quicx/worker.h"
@@ -70,8 +71,8 @@ void Worker::ProcessSend() {
     // because the vector is thread_local and we only clear() (never shrink),
     // steady state is zero allocation.
     thread_local std::vector<std::shared_ptr<NetPacket>> tx_batch;
-    if (tx_batch.capacity() < 128) {
-        tx_batch.reserve(128);
+    if (tx_batch.capacity() < static_cast<size_t>(kMaxPacketsPerRound)) {
+        tx_batch.reserve(kMaxPacketsPerRound);
     }
 
     // Iterate through active connections and try to send data
@@ -80,24 +81,9 @@ void Worker::ProcessSend() {
         auto conn = *iter;
         common::LogTagGuard guard("conn:" + std::to_string(conn->GetConnectionIDHash()));
 
-        // Try to send data using the new high-level interface
-        // TrySend() handles all packet building and sending internally
-        // Limit packets per round to allow event loop to process incoming data
-        // This is critical for flow control: we need to receive MAX_STREAM_DATA
-        // frames from the peer to unblock flow control.
-        //
-        // PERF NOTE: tuning history on 50 MB loopback file_transfer:
-        //   100  -> 6.3 MB/s (baseline before this PR)
-        //   256  -> 5.4 MB/s (worse: ACKs/MAX_STREAM_DATA starved)
-        //   128  -> see below
-        // The sweet spot is roughly enough packets to fill ~1 RTT of pipe but
-        // not so many that the receiver-side flow-control / ACK feedback gets
-        // stalled inside this drain loop. 128 is the chosen middle ground:
-        // ~186 KB per drain (~1.5x the original) keeping wakeup cost down
-        // without starving the receive path.
-        // Try to send data using the new high-level interface
-        // TrySend() handles all packet building and sending internally
-        // Limit packets per round to allow event loop to process incoming data
+        // Try to send data using the new high-level interface.
+        // TrySend() handles all packet building and sending internally.
+        // Limit packets per round to allow event loop to process incoming data.
         // This is critical for flow control: we need to receive MAX_STREAM_DATA
         // frames from the peer to unblock flow control.
         //
@@ -116,17 +102,8 @@ void Worker::ProcessSend() {
         // 128 is the new sweet spot now that recv-side drains in batches
         // — ack feedback can match a doubled send window per round, but
         // 256+ pushes ack processing past its budget per loop iteration.
-        // Tunable at runtime via env QUICX_SEND_BATCH (legal 1..1024) to
-        // keep perf experiments cheap. 0 / unset / out-of-range -> 128.
-        static const int kMaxPacketsPerRound = []() {
-            const char* env = std::getenv("QUICX_SEND_BATCH");
-            if (!env || !*env) return 128;
-            char* end = nullptr;
-            long v = std::strtol(env, &end, 10);
-            if (end == env || *end != '\0') return 128;
-            if (v < 1 || v > 1024) return 128;
-            return static_cast<int>(v);
-        }();
+        // The cap is centralized in quic/config.h::kMaxPacketsPerRound so
+        // benchmark sweeps only touch one place.
         int packets_sent = 0;
         
         // Install the per-round batch sink so SendBuffer() inside TrySend()
@@ -168,8 +145,9 @@ void Worker::ProcessSend() {
         // ProcessSend pass". If this is heavily biased toward 1, the worker
         // is being woken once per packet (= sendto-bound). If it's saturating
         // at kMaxPacketsPerRound, the cap *is* the bottleneck and raising
-        // QUICX_SEND_BATCH would help. We sample whether we sent zero packets
-        // too — that means we entered ProcessSend without anything to do.
+        // kMaxPacketsPerRound (in quic/config.h) would help. We sample
+        // whether we sent zero packets too — that means we entered
+        // ProcessSend without anything to do.
         common::Metrics::HistogramObserve(
             common::MetricsStd::DiagPktPerIterHist,
             static_cast<uint64_t>(packets_sent));
@@ -217,9 +195,9 @@ bool Worker::InitPacketCheck(std::shared_ptr<IPacket> packet, uint32_t datagram_
 
     // RFC 9000 §14.1: A server MUST discard an Initial packet that is carried
     // in a UDP datagram with a payload that is smaller than the smallest
-    // maximum datagram size of 1200 bytes.
+    // maximum datagram size of kMinInitialPacketSize (=1200) bytes.
     // NOTE: We check the original UDP datagram size, not the decoded packet body size.
-    if (datagram_size < 1200) {
+    if (datagram_size < kMinInitialPacketSize) {
         LOG_ERROR("init packet datagram too small. datagram_size:%d", datagram_size);
         return false;
     }
@@ -272,9 +250,9 @@ void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
             "Added to conn_map with hash=%llu, conn_map size=%zu", conn->GetConnectionIDHash(), conn_map_.size());
 
         // Check if 0-RTT early data write key is available: if so, this is an early connection
-        auto early_crypto = conn->GetCryptographerForTest(kEarlyData);
-        ConnectionOperation op = early_crypto ? ConnectionOperation::kEarlyConnection
-                                              : ConnectionOperation::kConnectionCreate;
+        const bool early = conn->HasEarlyDataWriteKey();
+        ConnectionOperation op = early ? ConnectionOperation::kEarlyConnection
+                                       : ConnectionOperation::kConnectionCreate;
         connection_handler_(conn, op, 0, "");
     } else {
         // Connection already moved out of connecting_set (e.g. early connection triggered earlier).

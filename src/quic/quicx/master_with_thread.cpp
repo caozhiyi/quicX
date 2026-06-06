@@ -34,7 +34,7 @@ void MasterWithThread::Run() {
 
     Master::Init();
 
-    loop->AddFixedProcess(shared_from_this(), std::bind(&MasterWithThread::Process, this));
+    loop->AddFixedProcess(shared_from_this(), [this]() { Process(); });
 
     // Process any tasks that were posted before EventLoop was initialized
     std::function<void()> task;

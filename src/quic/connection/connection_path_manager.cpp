@@ -18,24 +18,22 @@
 namespace quicx {
 namespace quic {
 
-PathManager::PathManager(std::shared_ptr<::quicx::common::IEventLoop> event_loop, SendManager& send_manager,
-    ConnectionIDCoordinator& cid_coordinator, TransportParam& transport_param, ::quicx::common::Address& peer_addr,
-    ToSendFrameCallback to_send_frame_cb, ActiveSendCallback active_send_cb, SetPeerAddressCallback set_peer_addr_cb):
-    event_loop_(event_loop),
-    send_manager_(send_manager),
-    cid_coordinator_(cid_coordinator),
-    transport_param_(transport_param),
-    peer_addr_(peer_addr),
-    to_send_frame_cb_(to_send_frame_cb),
-    active_send_cb_(active_send_cb),
-    set_peer_addr_cb_(set_peer_addr_cb),
+PathManager::PathManager(Deps deps):
+    event_loop_(deps.event_loop),
+    send_manager_(*deps.send_manager),
+    cid_coordinator_(*deps.cid_coordinator),
+    transport_param_(*deps.transport_param),
+    peer_addr_(*deps.peer_addr),
+    to_send_frame_cb_(std::move(deps.to_send_frame_cb)),
+    active_send_cb_(std::move(deps.active_send_cb)),
+    set_peer_addr_cb_(std::move(deps.set_peer_addr_cb)),
     path_probe_inflight_(false),
     probe_retry_count_(0),
     probe_retry_delay_ms_(0),
     is_client_initiated_migration_(false),
     migration_socket_(-1),
     migration_start_time_(0),
-    path_validation_timeout_ms_(6000) {
+    path_validation_timeout_ms_(kDefaultPathValidationTimeoutMs) {
     memset(pending_path_challenge_data_, 0, sizeof(pending_path_challenge_data_));
 }
 

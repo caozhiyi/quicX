@@ -26,6 +26,14 @@ namespace {
 using quicx::quic::ConnectionProcess;
 using quicx::quic::AttachMockSender;
 
+// Helper: downcast to BaseConnection so tests can use the non-virtual
+// *ForTest accessors that were intentionally removed from IConnection's vtable.
+// Tests always construct ClientConnection/ServerConnection (BaseConnection
+// subclasses), so this is a static (compile-time-checkable) downcast — no RTTI.
+static inline quicx::quic::BaseConnection* AsBase(const std::shared_ptr<quicx::quic::IConnection>& c) {
+    return static_cast<quicx::quic::BaseConnection*>(c.get());
+}
+
 // Test certificate
 static const char kCertPem[] =
       "-----BEGIN CERTIFICATE-----\n"
@@ -214,7 +222,7 @@ TEST(path_migration, concurrent_path_probing) {
         ASSERT_TRUE(DecodePackets(sb, rsp));
         bool found_path_response = false;
         // Decrypt server's 1-RTT packets using client's cryptographer
-        auto cli_crypto = client_conn->GetCryptographerForTest(kApplication);
+        auto cli_crypto = AsBase(client_conn)->GetCryptographerForTest(kApplication);
         ASSERT_NE(cli_crypto, nullptr);
         for (auto& p : rsp) {
             p->SetCryptographer(cli_crypto);
@@ -274,7 +282,7 @@ TEST(path_migration, cid_pool_replenishment) {
         std::vector<std::shared_ptr<IPacket>> pkts;
         ASSERT_TRUE(DecodePackets(sb, pkts));
         
-        auto cli_crypto = client_conn->GetCryptographerForTest(kApplication);
+        auto cli_crypto = AsBase(client_conn)->GetCryptographerForTest(kApplication);
         ASSERT_NE(cli_crypto, nullptr);
         // Check if NEW_CONNECTION_ID frame is sent (CID pool replenishment)
         bool found_new_cid = false;
@@ -343,7 +351,7 @@ TEST(path_migration, preferred_address_mechanism) {
                         if (p->GetCryptoLevel() != PacketCryptoLevel::kApplicationCryptoLevel) {
                             continue;
                         }
-                        auto recv_crypto = server_conn->GetCryptographerForTest(p->GetCryptoLevel());
+                        auto recv_crypto = AsBase(server_conn)->GetCryptographerForTest(p->GetCryptoLevel());
                         ASSERT_NE(recv_crypto, nullptr);
                         p->SetCryptographer(recv_crypto);
                         auto tmp_buf = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
@@ -722,7 +730,7 @@ TEST(path_migration, disable_active_migration_semantics) {
             std::vector<std::shared_ptr<IPacket>> pkts;
             ASSERT_TRUE(DecodePackets(b, pkts));
             // Decrypt client->server packets with server cryptographer
-            auto srv_crypto = server_conn->GetCryptographerForTest(kApplication);
+            auto srv_crypto = AsBase(server_conn)->GetCryptographerForTest(kApplication);
             ASSERT_NE(srv_crypto, nullptr);
             for (auto& p : pkts) {
                 p->SetCryptographer(srv_crypto);
@@ -765,7 +773,7 @@ TEST(path_migration, disable_active_migration_semantics) {
         std::vector<std::shared_ptr<IPacket>> rsp;
         ASSERT_TRUE(DecodePackets(sb, rsp));
 
-        auto cli_crypto = client_conn->GetCryptographerForTest(kApplication);
+        auto cli_crypto = AsBase(client_conn)->GetCryptographerForTest(kApplication);
         ASSERT_NE(cli_crypto, nullptr);
         bool found_path_response = false;
         for (auto& p : rsp) {
@@ -841,7 +849,7 @@ TEST(path_migration, cid_rotation_and_retirement_on_path_switch) {
     ASSERT_FALSE(post_pkts.empty());
 
     // Also ensure that a RETIRE_CONNECTION_ID frame is eventually sent from client
-    auto ser_crypto = server_conn->GetCryptographerForTest(kApplication);
+    auto ser_crypto = AsBase(server_conn)->GetCryptographerForTest(kApplication);
     ASSERT_NE(ser_crypto, nullptr);
     bool saw_retire = false;
     for (auto& p : post_pkts) {
@@ -919,7 +927,7 @@ TEST(path_migration, path_challenge_retry_backoff_limits) {
         if (!DecodePackets(cb, pkts)) {
             continue;
         }
-        auto ser_crypto = server_conn->GetCryptographerForTest(kApplication);
+        auto ser_crypto = AsBase(server_conn)->GetCryptographerForTest(kApplication);
         ASSERT_NE(ser_crypto, nullptr);
         for (auto& p : pkts) {
             p->SetCryptographer(ser_crypto);
@@ -998,7 +1006,7 @@ TEST(path_migration, initiate_migration_pre_rotates_dcid) {
 
     // Verify PATH_CHALLENGE frame is present
     bool found_path_challenge = false;
-    auto srv_crypto = server_conn->GetCryptographerForTest(kApplication);
+    auto srv_crypto = AsBase(server_conn)->GetCryptographerForTest(kApplication);
     ASSERT_NE(srv_crypto, nullptr);
 
     for (auto& p : pkts) {

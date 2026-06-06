@@ -5,6 +5,21 @@
 #include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v3_congestion_control.h"
 
+// References for BBRv3 (teaching subset):
+//   [BBRv3-Draft]  draft-cardwell-iccrg-bbr-congestion-control-02 §4.2,
+//                  evolved by the Google BBR-dev list and IETF 113-115
+//                  ICCRG slides — refines PROBE_BW into the four-phase
+//                  DOWN / CRUISE / REFILL / UP cycle implemented below
+//                  (see EnterProbeBwState) and adds round-end loss/ECN
+//                  adaptation (AdaptInflightBoundsOnLoss / AdaptOnEcn).
+//   [RFC9002 §6]   loss detection + recovery semantics consumed via
+//                  OnPacketLost / round-boundary accounting.
+//   [RFC8311 §4.2] ECN feedback semantics (also RFC 9000 §13.4 for the
+//                  QUIC-specific carrying of ECN counts in ACK frames).
+//   See bbr_v1_congestion_control.cpp for the common preamble explaining
+//   why BBR is a pluggable alternative to RFC 9002 NewReno, not its own
+//   RFC.
+
 namespace quicx {
 namespace quic {
 
@@ -85,6 +100,14 @@ void BBRv3CongestionControl::OnPacketAcked(const AckEvent& ev) {
     round_delivered_bytes_ += ev.bytes_acked;
 
     // Detect round boundary: when ACKs pass end_of_round_pn_
+    // [BBRv3-Draft] §4.2: round-trip boundaries are the natural beat at
+    // which v3 evaluates congestion signals. Accumulating
+    // round_delivered_bytes_ / round_lost_bytes_ over a full round and
+    // applying loss/ECN adaptation here (rather than per-ACK as v2 does)
+    // smooths reactive behavior and keeps inflight_hi from oscillating
+    // on bursty single-packet losses. This mirrors the round-based
+    // accounting PRR uses in TCP (RFC 6937), but applied to v3's
+    // model-based bounds instead of cwnd.
     if (end_of_round_pn_ > 0 && ev.pn >= end_of_round_pn_) {
         // Call loss and ECN adaptation at round end with complete data
         AdaptInflightBoundsOnLoss(ev.ack_time);
@@ -332,6 +355,15 @@ void BBRv3CongestionControl::StartNewRound(uint64_t pn) {
 
 void BBRv3CongestionControl::AdaptInflightBoundsOnLoss(uint64_t now_us) {
     (void)now_us;
+    // [BBRv3-Draft] §4.2 "Loss adaptation": v3 is loss-rate driven, not
+    // event-driven. We compare round-aggregated loss_rate against
+    // loss_thresh_ (default 2%) and only trim inflight_hi by beta_loss_
+    // (default 0.9) when the threshold is crossed. This is intentionally
+    // milder than RFC 9002 §7.3.2 NewReno's binary cwnd /= 2 on first
+    // loss — BBR aims to tolerate the 1-2% background loss typical of
+    // modern best-effort paths without giving up throughput. ECN gets a
+    // separate, more aggressive beta_ecn_=0.85 in AdaptOnEcn() because
+    // ECN-CE marks fire before queue overflow.
     // Only calculate loss rate if we have meaningful data
     if (round_delivered_bytes_ == 0 && round_lost_bytes_ == 0) return;
     
@@ -404,6 +436,16 @@ void BBRv3CongestionControl::EnterProbeBwState(ProbeBwState state, uint64_t now_
     probe_bw_state_ = state;
     probe_bw_state_start_us_ = now_us;
     
+    // [BBRv3-Draft] §4.2 four-phase ProbeBW state machine. v1's 8-RTT
+    // gain cycle (1.25, 0.75, 1.0×6) is replaced by an explicit
+    // DOWN→CRUISE→REFILL→UP loop with state-dependent durations
+    // (ShouldAdvanceProbeBwState). The shape of each phase:
+    //   DOWN    : pacing_gain 0.75 — drain queue built up by previous UP
+    //   CRUISE  : 1.0 — hold steady for several RTTs (smaller probing
+    //             frequency = lower bufferbloat than v1's per-cycle
+    //             probe)
+    //   REFILL  : 1.0 — top up inflight back to full BDP before probing
+    //   UP      : 1.25 — actually probe for more bandwidth
     // Set pacing gain based on state
     switch (state) {
         case ProbeBwState::kDown:

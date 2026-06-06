@@ -21,18 +21,17 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
         LOG_ERROR("tls connection init failed.");
     }
     auto crypto_stream = std::make_shared<CryptoStream>(event_loop_,
-        std::bind(&ServerConnection::ActiveSendStream, this, std::placeholders::_1),
-        std::bind(&ServerConnection::InnerStreamClose, this, std::placeholders::_1),
-        std::bind(&ServerConnection::InnerConnectionClose, this, std::placeholders::_1, std::placeholders::_2,
-            std::placeholders::_3));
-    crypto_stream->SetCryptoStreamReadCallBack(std::bind(
-        &ServerConnection::WriteCryptoData, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+        [this](auto a) { ActiveSendStream(a); },
+        [this](auto a) { InnerStreamClose(a); },
+        [this](auto a, auto b, auto c) { InnerConnectionClose(a, b, c); });
+    crypto_stream->SetCryptoStreamReadCallBack(
+        [this](auto a, auto b, auto c) { WriteCryptoData(a, b, c); });
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 
-    // Set HANDSHAKE_DONE frame handler callback
+    // Set HANDSHAKE_DONE frame handler callback (returns bool)
     frame_processor_->SetHandshakeDoneCallback(
-        std::bind(&ServerConnection::HandleHandshakeDoneFrame, this, std::placeholders::_1));
+        [this](auto a) { return HandleHandshakeDoneFrame(a); });
 }
 
 ServerConnection::~ServerConnection() {
@@ -59,13 +58,20 @@ void ServerConnection::AddRemoteConnectionId(ConnectionID& id) {
         auto peer_addr = GetPeerAddress();
         data.src_ip = peer_addr.GetIp();
         data.src_port = peer_addr.GetPort();
-        data.dst_ip = "0.0.0.0";  // Server listening address (TODO: get from socket)
-        data.dst_port = 0;        // TODO: get from socket
+        // dst_* is the local (listening) endpoint of this connection. Pull it
+        // from the bound socket via IConnection::GetLocalAddr, which caches
+        // the result in local_addr_ on first lookup so the qlog path is not
+        // a hot-path syscall hit.
+        std::string local_ip;
+        uint32_t local_port = 0;
+        GetLocalAddr(local_ip, local_port);
+        data.dst_ip = local_ip;
+        data.dst_port = local_port;
         // Use hash values for connection IDs
         data.src_cid = std::to_string(id.Hash());
         data.dst_cid = std::to_string(cid_coordinator_->GetLocalConnectionIDManager()->GetCurrentID().Hash());
         data.protocol = "QUIC";
-        data.ip_version = "ipv4";  // TODO: Add IsIPv6() method to Address class
+        data.ip_version = peer_addr.IsIPv6() ? "ipv6" : "ipv4";
 
         QLOG_CONNECTION_STARTED(qlog_trace_, data);
 
@@ -94,7 +100,19 @@ bool ServerConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
 }
 
 bool ServerConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
-    // TODO: implement server retry packet
+    // Server-initiated Retry (RFC 9000 §17.2.5) is intentionally not
+    // implemented: it is an anti-DoS / address-validation feature whose value
+    // shows up only at scale, and a complete implementation would pull in a
+    // stateless Retry-token signing/verification path plus token replay
+    // tracking. Tracked as a learning-only limitation in
+    // learning_project_roadmap.md §2.
+    //
+    // For the same reason, a server here MUST never *receive* a Retry — only
+    // the client does — so this codepath should be unreachable in practice.
+    // We swallow the packet rather than tear down the connection, mirroring
+    // RFC 9000 §17.2.5.2's "If a server receives a client packet that is not
+    // expected, it can simply discard it." stance.
+    (void)packet;
     return true;
 }
 
@@ -130,8 +148,15 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
 
     if (tls_connection_->DoHandleShake()) {
         LOG_DEBUG("handshake done.");
+        // RFC 9000 §19.20 / §4.1.1: "The server MUST send a HANDSHAKE_DONE
+        // frame as soon as the handshake is complete." DoHandleShake() above
+        // returns true exactly on the BoringSSL state where the server has
+        // just consumed the client's Finished — i.e. the handshake is
+        // complete from the server's point of view — so emitting the frame
+        // here, before any other post-handshake bookkeeping, satisfies "as
+        // soon as".
         std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
-        ToSendFrame(frame);  // TODO, The server MUST send a HANDSHAKE_DONE frame as soon as the handshake is complete
+        ToSendFrame(frame);
 
         // Mark handshake complete to stop PTO probing
         send_manager_.GetSendControl().SetHandshakeComplete();

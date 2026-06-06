@@ -143,7 +143,7 @@ bool QuicServer::Init(const QuicServerConfig& config) {
         auto worker =
             std::make_shared<ServerWorker>(config, tls_ctx, sender, params_, connection_state_cb_, master_event_loop_);
         master_event_loop_->RunInLoop(
-            [worker, this]() { master_event_loop_->AddFixedProcess(worker, std::bind(&ServerWorker::Process, worker)); });
+            [worker, this]() { master_event_loop_->AddFixedProcess(worker, [worker]() { worker->Process(); }); });
 
         worker->SetConnectionIDNotify(master_);
         worker_map_[worker->GetWorkerId()] = worker;
