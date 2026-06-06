@@ -31,7 +31,11 @@ function(add_perf_test target src)
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/src)
     target_compile_definitions(${target} PRIVATE QUICX_ENABLE_BENCHMARKS)
     # Use -O2 for perf tests (enough optimization for realistic profiling)
-    target_compile_options(${target} PRIVATE -O2 -g -fno-omit-frame-pointer)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /O2 /Zi /Oy-)
+    else()
+        target_compile_options(${target} PRIVATE -O2 -g -fno-omit-frame-pointer)
+    endif()
     set_target_properties(${target}
         PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/perf
     )
@@ -62,6 +66,9 @@ add_perf_test(e2e_perf_test e2e_perf_test.cpp)
 # to produce flamegraph-ready collapsed output.
 # -----------------------------------------------------------------------------
 function(add_profiler target src)
+    if(WIN32)
+        return()
+    endif()
     add_executable(${target} ${src})
     target_link_libraries(${target}
         PRIVATE

@@ -326,8 +326,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
         is_currently_blocked_ = true;
 
         auto self_weak = std::weak_ptr<ReqRespBaseStream>(shared_from_this());
-        auto retry = std::make_shared<std::function<void()>>();
-        *retry = [self_weak, encoded_fields_template, retry]() {
+        blocked_retry_fn_ = [self_weak, encoded_fields_template]() {
             auto self = self_weak.lock();
             if (!self) {
                 // Stream destroyed before unblock — nothing to do.
@@ -349,6 +348,9 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
                 }
                 self->HandleHeaders();
 
+                // Clear the retry callback to break any captures and free resources
+                self->blocked_retry_fn_ = nullptr;
+
                 // Now drain any DATA / further HEADERS that arrived behind
                 // this section. DrainPendingFrames may itself re-block on a
                 // later HEADERS in the queue (e.g., trailers that depend
@@ -362,10 +364,10 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
                 // next NotifyAll() picks us up again. Keep the gate set
                 // so any frames arriving in the meantime continue to
                 // queue rather than racing past us.
-                self->blocked_registry_->Add(self->header_block_key_, *retry);
+                self->blocked_registry_->Add(self->header_block_key_, self->blocked_retry_fn_);
             }
         };
-        if (!blocked_registry_->Add(header_block_key_, *retry)) {
+        if (!blocked_registry_->Add(header_block_key_, blocked_retry_fn_)) {
             // RFC 9204 §5: peer exceeded its declared blocked-streams
             // capacity. Treat as a connection-level error per §2.1.2.
             LOG_ERROR(
