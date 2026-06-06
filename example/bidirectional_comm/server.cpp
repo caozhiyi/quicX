@@ -58,7 +58,7 @@ public:
         config.quic_config_.cert_pem_ = cert_pem;
         config.quic_config_.key_pem_ = key_pem;
         config.quic_config_.config_.worker_thread_num_ = 4;
-        config.quic_config_.config_.log_level_ = quicx::LogLevel::kDebug;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
         if (!server_->Init(config)) {
             std::cerr << "Failed to initialize server" << std::endl;

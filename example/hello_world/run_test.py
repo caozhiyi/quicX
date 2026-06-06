@@ -6,6 +6,9 @@ import sys
 import argparse
 import socket
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from _test_helpers import start_server, stop_server  # noqa: E402
+
 def wait_for_port(port, host='127.0.0.1', timeout=5.0):
     """Wait until a port is open."""
     start_time = time.time()
@@ -29,8 +32,9 @@ def run_test(bin_dir):
         return False
 
     print(f"Starting server: {server_path}")
-    # Start server in background
-    server_process = subprocess.Popen([server_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Launch server in its own process group so the outer test runner can
+    # reliably kill the entire tree on timeout (see _test_helpers.py).
+    server_process = start_server([server_path])
     
     try:
         # Give server time to start
@@ -82,19 +86,16 @@ def run_test(bin_dir):
         print(f"FAILED: Exception occurred: {e}")
         return False
     finally:
-        # cleanup server
+        # cleanup server (kills entire process group, escalates to SIGKILL)
         print("Killing server...")
-        if server_process.poll() is None:
-            server_process.terminate()
-        
+        stop_server(server_process)
+
         try:
             stdout, stderr = server_process.communicate(timeout=2)
             print("Server stdout:\n" + "-"*20 + "\n" + (stdout.decode(errors='replace') if stdout else "") + "\n" + "-"*20)
             print("Server stderr:\n" + "-"*20 + "\n" + (stderr.decode(errors='replace') if stderr else "") + "\n" + "-"*20)
         except Exception as e:
             print(f"Error reading server output: {e}")
-
-        server_process.wait()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run hello_world example test")

@@ -12,6 +12,9 @@ import argparse
 import tempfile
 import hashlib
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from _test_helpers import start_server, stop_server  # noqa: E402
+
 def generate_test_file(filepath, size_mb):
     """Generate a test file with deterministic content."""
     print(f"Generating {size_mb}MB test file: {filepath}")
@@ -52,8 +55,8 @@ def main():
 
         # Start server
         print(f"Starting server with root: {tmpdir}")
-        server = subprocess.Popen([server_bin, tmpdir], 
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Launch in its own process group so cleanup reaps all children.
+        server = start_server([server_bin, tmpdir])
         time.sleep(2)
 
         try:
@@ -132,8 +135,7 @@ def main():
             print("Test timed out!")
             return 1
         finally:
-            server.terminate()
-            server.wait()
+            stop_server(server)
 
 if __name__ == '__main__':
     sys.exit(main())

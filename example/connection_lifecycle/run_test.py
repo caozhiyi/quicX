@@ -4,6 +4,9 @@ import os
 import sys
 import argparse
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from _test_helpers import start_server, stop_server  # noqa: E402
+
 def run_test(bin_dir):
     # Use hello_world server as the test server (simplest)
     server_path = os.path.join(bin_dir, "hello_world_server")
@@ -21,20 +24,31 @@ def run_test(bin_dir):
         print(f"Error: Demo binary not found at {demo_path}")
         return False
 
-    # Determine server port based on which server we're using
+    # Determine server port based on which server we're using.
+    #
+    # IMPORTANT: avoid clashing with the hello_world example test, which is
+    # run concurrently by run_tests.py and binds 7001 by default. We pick a
+    # disjoint port (7011 -- not used by any other example as of writing)
+    # and tell hello_world_server to listen on it via argv. Same idea for
+    # the concurrent_server fallback (default 7003 collides with the
+    # concurrent_requests example test).
+    extra_argv = []
     if "hello_world" in server_path:
-        server_port = 7001
+        server_port = 7011
+        extra_argv = [str(server_port)]
     elif "concurrent" in server_path:
+        # concurrent_server doesn't currently accept a port arg; use its
+        # default and hope concurrent_requests isn't also running. This
+        # branch is only hit if hello_world_server is missing from the
+        # build, which is rare.
         server_port = 7003
     else:
         server_port = 8443
-    
+
     print(f"Starting server: {server_path} (port {server_port})")
-    server_process = subprocess.Popen(
-        [server_path], 
-        stdout=subprocess.PIPE, 
-        stderr=subprocess.PIPE, 
-        text=True
+    server_process = start_server(
+        [server_path, *extra_argv],
+        text=True,
     )
     
     try:
@@ -100,13 +114,8 @@ def run_test(bin_dir):
         print(f"FAILED: Exception occurred: {e}")
         return False
     finally:
-        # Cleanup server
-        if server_process.poll() is None:
-            server_process.terminate()
-            try:
-                server_process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                server_process.kill()
+        # Cleanup server (kills whole process group)
+        stop_server(server_process)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run connection lifecycle demo test")

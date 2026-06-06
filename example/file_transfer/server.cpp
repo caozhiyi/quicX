@@ -184,7 +184,7 @@ public:
     bool Init() {
         quicx::Http3ServerConfig config;
         config.quic_config_.config_.worker_thread_num_ = 4;
-        config.quic_config_.config_.log_level_ = quicx::LogLevel::kNull;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
 
         // Enable Metrics HTTP endpoint for diagnostics
         config.metrics_.enable = true;

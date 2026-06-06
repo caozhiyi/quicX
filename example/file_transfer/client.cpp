@@ -286,15 +286,28 @@ private:
         cv_.notify_all();
     }
 
+    // Must match server.cpp::CalculateChecksum exactly: fixed-size buffered read
+    // + boost-style hash_combine over std::hash<std::string_view>(chunk).
+    // Previously this used a one-shot std::hash<std::string> over the whole file,
+    // which is a different algorithm from the server's chunked hash_combine and
+    // therefore reported MISMATCH even when the bytes transferred were identical
+    // (verified by matching MD5 on both ends).
     std::string CalculateChecksum(const std::string& filepath) {
         std::ifstream file(filepath, std::ios::binary);
         if (!file) {
             return "";
         }
 
-        std::hash<std::string> hasher;
-        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        return std::to_string(hasher(content));
+        std::hash<std::string_view> hasher;
+        size_t combined = 0;
+        char buf[64 * 1024];
+        while (file.read(buf, sizeof(buf)) || file.gcount() > 0) {
+            std::string_view chunk(buf, static_cast<size_t>(file.gcount()));
+            size_t h = hasher(chunk);
+            // boost-style hash_combine
+            combined ^= h + 0x9e3779b9 + (combined << 6) + (combined >> 2);
+        }
+        return std::to_string(combined);
     }
 };
 
@@ -309,7 +322,7 @@ public:
         quicx::Http3ClientConfig config;
         config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
         config.quic_config_.config_.worker_thread_num_ = 4;
-        config.quic_config_.config_.log_level_ = quicx::LogLevel::kWarn;
+        config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
         config.connection_timeout_ms_ = 30000;  // 30s timeout
 
         if (!client_->Init(config)) {

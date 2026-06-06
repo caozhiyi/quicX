@@ -1,8 +1,11 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <thread>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
@@ -18,7 +21,36 @@ static void HandleSignal(int) {
     g_shutdown.store(true, std::memory_order_release);
 }
 
-int main() {
+int main(int argc, char** argv) {
+    // Allow overriding the listen port so tooling (e.g. run_tests.py running
+    // multiple example tests concurrently) can avoid binding the same UDP
+    // port from two different processes. Resolution order:
+    //   1. argv[1]                    -> ./hello_world_server 7011
+    //   2. env QUICX_HELLO_WORLD_PORT -> QUICX_HELLO_WORLD_PORT=7011 ./hello_world_server
+    //   3. default 7001
+    uint16_t listen_port = 7001;
+    auto parse_port = [](const std::string& s, uint16_t& out) -> bool {
+        try {
+            unsigned long v = std::stoul(s);
+            if (v == 0 || v > 65535) return false;
+            out = static_cast<uint16_t>(v);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    };
+    if (argc > 1) {
+        if (!parse_port(argv[1], listen_port)) {
+            std::cerr << "invalid port argument: " << argv[1] << std::endl;
+            return 2;
+        }
+    } else if (const char* env_port = std::getenv("QUICX_HELLO_WORLD_PORT")) {
+        if (env_port[0] != '\0' && !parse_port(env_port, listen_port)) {
+            std::cerr << "invalid QUICX_HELLO_WORLD_PORT value: " << env_port << std::endl;
+            return 2;
+        }
+    }
+
     static const char cert_pem[] =
         "-----BEGIN CERTIFICATE-----\n"
         "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
@@ -67,7 +99,7 @@ int main() {
     config.quic_config_.key_pem_ = key_pem;
     config.quic_config_.config_.thread_mode_ = quicx::ThreadMode::kMultiThread;
     config.quic_config_.config_.worker_thread_num_ = 4;
-    config.quic_config_.config_.log_level_ = quicx::LogLevel::kInfo;
+    config.quic_config_.config_.log_level_ = quicx::LogLevel::kError;
     config.quic_config_.config_.log_path_ = "/tmp/h3_server_logs";
 
     // Enable QLog so we can visualize the connection in qvis
@@ -82,10 +114,11 @@ int main() {
     config.metrics_.http_path = "/metrics";
 
     server->Init(config);
-    if (!server->Start("0.0.0.0", 7001)) {
-        std::cout << "start server failed" << std::endl;
+    if (!server->Start("0.0.0.0", listen_port)) {
+        std::cout << "start server failed (port " << listen_port << ")" << std::endl;
         return 1;
     }
+    std::cout << "hello_world_server listening on 0.0.0.0:" << listen_port << std::endl;
 
     // Watchdog: when SIGINT/SIGTERM sets g_shutdown, call Stop() from a normal
     // thread context (NOT signal context) so Destroy()/locks/free are safe.
