@@ -259,10 +259,9 @@
 ## 已知限制汇总（采纳前请通读）
 
 1. **不支持 Multipath / DATAGRAM / ACK Frequency** —— 需要这些的应用不应采纳 v0.1.x。
-2. **缺跨平台 CI** —— Windows 与 macOS 仅由开发者本地验证，没有持续覆盖。
-3. **公有 API 在任何 `0.x` minor 之间都可能调整** —— 详见 [`api_stability.md`](./api_stability.md)。
-4. **安全响应 SLA 仅"尽力而为"** —— 具体口径见 [`../../../SECURITY.md`](../../../SECURITY.md)。
-5. **mTLS / Trailers / 连接池** 有可工作的代码，但端到端验证有限。
+2. **公有 API 在任何 `0.x` minor 之间都可能调整** —— 详见 [`api_stability.md`](./api_stability.md)。
+3. **安全响应 SLA 仅"尽力而为"** —— 具体口径见 [`../../../SECURITY.md`](../../../SECURITY.md)。
+4. **mTLS / Trailers / 连接池** 有可工作的代码，但端到端验证有限。
 
 ---
 
@@ -271,5 +270,3 @@
 - **v0.2.0** —— Linux/macOS/Windows CI；DATAGRAM 帧（计划中）
 - **v0.3.0** —— Multipath QUIC 调研；ACK Frequency
 - **v1.0.0** —— API 冻结，SemVer 正式生效
-
-更长期的视角见 [`../../internal/maturity_roadmap.md`](../../internal/maturity_roadmap.md)。

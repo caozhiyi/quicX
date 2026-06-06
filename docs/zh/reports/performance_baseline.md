@@ -1,6 +1,6 @@
 # quicX 性能基准线文档
 
-> **日期**: 2026-03-20
+> **日期**: 2026-03-22
 > **平台**: macOS ARM64 (Apple Silicon M3 Pro, 14 cores)
 > **编译**: CMake RelWithDebInfo, Clang, -O2 -g
 > **框架**: Google Benchmark v1.8.3

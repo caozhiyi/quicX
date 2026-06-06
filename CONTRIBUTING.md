@@ -123,7 +123,7 @@ Useful options (default in parentheses):
 | `ENABLE_BENCHMARKS`           | `ON`    | Build Google Benchmark micro-benchmarks       |
 | `ENABLE_FUZZING`              | `OFF`   | Build libFuzzer targets (requires Clang)     |
 | `ENABLE_CC_SIMULATOR`         | `ON`    | Build `cc_simulator`                         |
-| `ENABLE_INTERGRATION` *(sic)* | `ON`    | Build integration tests under `test/integration` |
+| `ENABLE_INTEGRATION`          | `ON`    | Build integration tests under `test/integration` |
 | `ENABLE_INTEROP`              | `OFF`   | Build the public quic-interop runner harness |
 | `ENABLE_PERF_TESTS`           | `ON`    | Build `test/perf/` baselines                 |
 | `QUICX_ENABLE_QLOG`           | `ON`    | Compile in QLog support                      |
@@ -327,14 +327,19 @@ there as well.
 
 When bumping the version:
 
-1. Update `VERSION` (root file).
-2. Update `QUICX_VERSION_MAJOR/MINOR/PATCH` in `src/common/version.h`.
+1. Update the root `QUICX_VERSION` and `VERSION.txt` files.
+2. Update `QUICX_VERSION_MAJOR/MINOR/PATCH` in
+   `include/quicx/common/version.h`.
 3. Update `project(QuicX VERSION X.Y.Z ...)` in the top-level
    `CMakeLists.txt`.
-4. Move the `## [Unreleased]` section in `CHANGELOG.md` to a new dated
-   section.
-5. Run `python3 run_tests.py` clean.
-6. Snapshot via `bash scripts/snapshot.sh vX.Y.Z`.
+4. Update `version = "X.Y.Z"` in `MODULE.bazel`.
+5. Update the version badges in `README.md` / `README_cn.md` and the
+   `find_package(quicx X.Y.Z REQUIRED)` examples in
+   `cmake/quicxConfig.cmake.in` and `CMakeLists.txt`.
+6. Move the `## [Unreleased]` section in `CHANGELOG.md` to a new dated
+   section, and update the link references at the bottom of the file.
+7. Run `python3 run_tests.py` clean.
+8. Snapshot via `bash scripts/snapshot.sh vX.Y.Z`.
 
 ---
 

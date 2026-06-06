@@ -74,7 +74,7 @@ When executing `cmake -B build ...`, you can customize your compilation process 
 | `ENABLE_TESTING` | `ON` | Whether to build unit tests. Will automatically download GTest via FetchContent. |
 | `ENABLE_BENCHMARKS` | `ON` | Whether to build performance benchmark tests. |
 | `ENABLE_CC_SIMULATOR` | `ON` | Whether to build the built-in **Congestion Control Simulator**, very helpful for studying BBR/CUBIC algorithms. |
-| `ENABLE_INTERGRATION` | `ON` | Whether to build local integration testing tools. |
+| `ENABLE_INTEGRATION` | `ON` | Whether to build local integration testing tools. |
 | `QUICX_ENABLE_QLOG` | `ON` | **Key Metric:** When enabled, allows recording `qlog` compliant with RFC 9001. These logs can be imported into visual tools like `qvis` to analyze issues caused by congestion and packet loss.<br/>*Note: Enabling this will affect extreme performance limits.* |
 
 *(For fuzz testing/security patching, you can also enable `-DENABLE_FUZZING=ON` along with the `Clang` compiler for libFuzzer tests.)*

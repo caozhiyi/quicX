@@ -1,0 +1,125 @@
+# .dockerignore — 控制 `docker build` 发送给 daemon 的构建上下文大小
+#
+# Dockerfile 目前只需要以下路径：
+#   - CMakeLists.txt
+#   - src/
+#   - third/           (只要源码，不要 .git)
+#   - test/interop/
+#
+# 仓库里有大量构建产物、备份、日志、git 元数据，总计 > 5 GB，必须排除。
+# 本文件每次 `docker compose build` 都会生效；新增构建目录或大文件时请在此补一行。
+
+# ------------------------------------------------------------
+# 版本控制元数据（顶层仓库 + 所有 submodule/vendored 库）
+# 其中 third/boringssl/.git 单独就有 ~320 MB
+# ------------------------------------------------------------
+**/.git
+**/.gitignore
+**/.gitattributes
+**/.gitmodules
+.github/
+
+# ------------------------------------------------------------
+# 本机构建目录 / 备份 / 临时产物
+# 这些是本次最大头，单项几百 MB ~ 2.5 GB
+# ------------------------------------------------------------
+build
+build/
+build-*/
+build_*/
+cmake-build-*/
+out/
+*.bak.*/
+*.bak
+
+# 构建产物文件
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.lib
+*.pdb
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# ------------------------------------------------------------
+# 测试 / 运行时产出（日志、下载文件、qlog 等，可达数十 MB 单文件）
+# ------------------------------------------------------------
+test/interop/logs/
+test/interop/downloads/
+test/interop/www/
+test/interop/certs/*.bak.*
+test/perf/results/
+test/perf/logs/
+**/*.qlog
+**/*.pcap
+**/*.pcapng
+**/*.keys
+**/*.keylog
+
+# ------------------------------------------------------------
+# 归档 / 大对象
+# ------------------------------------------------------------
+*.tar
+*.tar.gz
+*.tgz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.7z
+*.rar
+
+# ------------------------------------------------------------
+# IDE / 编辑器 / OS
+# ------------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# ------------------------------------------------------------
+# Python 缓存（interop_runner.py 同目录常见）
+# ------------------------------------------------------------
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ------------------------------------------------------------
+# 文档 / 非构建输入（可选，减少 context 体积）
+# 注意：如果 Dockerfile 以后需要文档，记得取消下面这段
+# ------------------------------------------------------------
+docs/
+*.md
+!README.md
+
+# ------------------------------------------------------------
+# 顶层不在 Dockerfile COPY 列表内的目录（避免误进上下文）
+# ------------------------------------------------------------
+aiokafka_pkgs/
+official-interop/
+
+# ------------------------------------------------------------
+# 第三方子目录裁剪
+#
+# 注意：boringssl 的 CMakeLists.txt 会无条件 add_executable(bssl ...)
+# 和 add_executable(test_fips ...)，对应 tool/ 和 util/fipstools/ 下的源
+# 文件。即使我们不 build 这些 target，cmake configure 阶段也会扫描源文件
+# 是否存在，缺失会直接 fail。所以 tool/、util/fipstools/、crypto/*/test/
+# **不能** 排除，必须随源码一起进上下文。
+#
+# fuzz/ 目前看没有被无条件 add_executable 引用，可以安全排除；如果以后
+# boringssl 升级后 fuzz 也变成无条件 target，把下面那行也注释掉即可。
+# ------------------------------------------------------------
+third/boringssl/fuzz/
+third/googletest/docs/

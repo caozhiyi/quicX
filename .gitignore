@@ -24,6 +24,9 @@ vsbuild
 www/*.bin
 downloads/
 logs/
+test_qlog*
+*qlogs/
+*.sqlog
 
 # Temporary files
 *.pcap
@@ -31,3 +34,4 @@ logs/
 
 # Session cache
 session_cache/
+__pycache__/

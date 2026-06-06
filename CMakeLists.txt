@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 # NOTE: keep the VERSION argument below in sync with:
-#   - the root `QUICX_VERSION` file
-#   - the QUICX_VERSION_MAJOR/MINOR/PATCH macros in src/common/version.h
-project(QuicX VERSION 0.1.0 LANGUAGES C CXX)
+#   - the root `QUICX_VERSION` and `VERSION.txt` files
+#   - the QUICX_VERSION_MAJOR/MINOR/PATCH macros in
+#     include/quicx/common/version.h
+#   - the `version = "..."` field in MODULE.bazel
+#   - the version badges in README.md / README_cn.md
+project(QuicX VERSION 1.0.0 LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -52,8 +55,36 @@ if(WIN32)
     endif()
 endif()
 
+# Source collection
+# -----------------
+# CMake's official guidance discourages plain `file(GLOB_RECURSE ...)` for
+# generating source lists: CMake doesn't re-run when a file is added or
+# removed, so IDE/CI build trees go stale until someone re-runs cmake by
+# hand. Two acceptable fixes:
+#   1. List sources explicitly (most robust, but ~280 files here).
+#   2. Pass CONFIGURE_DEPENDS, which makes the build tool stat the globbed
+#      directories on every build and re-run CMake when the contents change
+#      (CMake 3.12+; we already require 3.16 above).
+#
+# We take option 2 deliberately:
+#   - the Bazel build (BUILD.bazel) is also glob-based, and Bazel re-evaluates
+#     globs on every invocation, so it already has correct staleness behavior
+#     on that side; matching the *shape* of source selection across the two
+#     systems keeps maintenance cost down.
+#   - keeping a parallel hand-maintained source list in CMake would diverge
+#     from Bazel's glob over time with zero compensating benefit.
+#
+# Note on platform-specific files: src/common contains os/{posix,win}/ and
+# network/{linux,macos,windows}/ trees. These are guarded internally by
+# `#ifdef __APPLE__` / `#ifdef _WIN32` / `#ifdef WIN32`, so on the wrong host
+# they compile to empty objects rather than producing build errors. Bazel
+# selects the right subset via `select()`; CMake currently relies on the
+# guards, which costs a small amount of compile time but is functionally
+# correct. Tightening this is tracked separately and is independent of the
+# CONFIGURE_DEPENDS fix.
 function(collect_sources dir output_var)
     file(GLOB_RECURSE new_sources
+        CONFIGURE_DEPENDS
         LIST_DIRECTORIES false
         "${dir}/*.cpp"
         "${dir}/*.c"
@@ -73,9 +104,21 @@ set(quic_source ${quic_files})
 set(http3_source ${http3_files})
 set(upgrade_source ${upgrade_files})
 
-# Only two static libraries per request
+# Two static libraries:
+#   - quicx: QUIC transport (common + quic)
+#   - http3: HTTP/3 + h2-upgrade application stack, layered on top of quicx
+#
+# http3 deliberately does NOT re-compile common/quic sources. It contains
+# only the http3 + upgrade objects, and pulls in quicx via a PUBLIC link
+# dependency. This:
+#   - cuts the second archive's compile time roughly in half;
+#   - keeps each QUIC symbol in exactly one archive (libquicx.a), avoiding
+#     duplicate-symbol surprises if a downstream were to link both.
+# Downstream consumers that previously linked just `http3` keep working
+# unchanged: PUBLIC propagation makes `target_link_libraries(... http3)`
+# transitively pull in quicx (and through it Threads/crypto/ssl/filesystem).
 add_library(quicx STATIC ${common_source} ${quic_source})
-add_library(http3 STATIC ${common_source} ${quic_source} ${upgrade_source} ${http3_source})
+add_library(http3 STATIC ${http3_source} ${upgrade_source})
 
 set_target_properties(quicx PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(http3 PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -84,14 +127,20 @@ target_include_directories(quicx
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+        # BoringSSL headers are exposed through internal headers under src/
+        # (e.g. quic/crypto/type.h uses EVP_AEAD_CTX). Targets that compile
+        # against the in-tree src/ tree (benchmarks, fuzzers, internal tests)
+        # need this on their include path. Only exposed in the BUILD tree;
+        # installed consumers don't see src/ headers, so they don't need it.
+        $<BUILD_INTERFACE:${boringssl_SOURCE_DIR}/include>
     PRIVATE
         ${PROJECT_SOURCE_DIR}/src
         ${boringssl_SOURCE_DIR}/include
 )
+# http3's own translation units need the same private include layout as quicx
+# (src/ root and BoringSSL headers). Public include dirs come transitively
+# from the quicx link below.
 target_include_directories(http3
-    PUBLIC
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
     PRIVATE
         ${PROJECT_SOURCE_DIR}/src
         ${boringssl_SOURCE_DIR}/include
@@ -113,13 +162,14 @@ target_link_libraries(quicx
         crypto
         ssl
 )
+# http3 layers on quicx. PUBLIC so that:
+#   1. http3's own .cpp files see quicx's PUBLIC include dirs at compile time;
+#   2. consumers linking only `http3` (or the exported `quicx::http3`) get
+#      quicx + its transitive deps (Threads, filesystem, BoringSSL crypto/ssl)
+#      pulled in automatically by the linker.
 target_link_libraries(http3
     PUBLIC
-        Threads::Threads
-        ${FILESYSTEM_LIBRARY}
-    PRIVATE
-        crypto
-        ssl
+        quicx
 )
 
 # Public headers live under ${PROJECT_SOURCE_DIR}/include/quicx/.
@@ -195,8 +245,8 @@ if(ENABLE_CC_SIMULATOR)
 endif()
 
 # integration tests
-option(ENABLE_INTERGRATION "Enable building integration tests" ON)
-if(ENABLE_INTERGRATION)
+option(ENABLE_INTEGRATION "Enable building integration tests" ON)
+if(ENABLE_INTEGRATION)
     add_subdirectory(test/integration)
 endif()
 
@@ -216,7 +266,7 @@ endif()
 # Install rules
 # ---------------------------------------------------------------------------
 # Allow downstream consumers to either:
-#   (a) `find_package(quicx 0.1.0 REQUIRED)` after `cmake --install`, or
+#   (a) `find_package(quicx 1.0.0 REQUIRED)` after `cmake --install`, or
 #   (b) `add_subdirectory(quicX)` directly in their build tree.
 #
 # Layout after `cmake --install <build> --prefix <prefix>`:

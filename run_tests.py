@@ -1,6 +1,7 @@
 
 import os
 import sys
+import signal
 import subprocess
 import argparse
 import time
@@ -11,41 +12,121 @@ BUILD_DIR = os.path.abspath("build")
 BIN_DIR = os.path.join(BUILD_DIR, "bin")
 EXAMPLE_DIR = os.path.abspath("example")
 
+# Per-example outer wall-clock timeout, in seconds.
+#
+# The default budget (60s) is generous for the small "demo" examples (hello_world,
+# bidirectional_comm, error_handling, ...) where a client makes a handful of
+# requests against a local server. A few examples intentionally do real work
+# and need a substantially larger envelope; they each manage their *own*
+# inner timeout (subprocess.run timeout=...) for the client and/or server,
+# but the outer runner here must give them headroom or it will SIGKILL the
+# whole process group prematurely.
+#
+# Keep this list small and only override when an example genuinely exceeds the
+# default. If you're tempted to bump every entry, fix the underlying example
+# instead.
+EXAMPLE_DEFAULT_TIMEOUT = 60
+EXAMPLE_TIMEOUTS = {
+    # Generates a 50 MB file, uploads it, downloads it, MD5-verifies both.
+    # The script's own per-direction timeout is 120s (upload) + 120s (download),
+    # plus file I/O and a 2s server-warmup sleep, so we budget 5 minutes.
+    "file_transfer": 300,
+    # Runs four sequential phases of multiplexed requests against a local
+    # server; each phase caps WaitForCompletion at ~15s, and the script's own
+    # client timeout is already 60s. Give the outer runner extra slack so a
+    # slightly-loaded CI box doesn't trip the SIGKILL just as the client is
+    # printing its summary.
+    "concurrent_requests": 120,
+}
+
+def _kill_process_group(proc):
+    """Best-effort: kill the entire process group of `proc`.
+
+    The child was launched with start_new_session=True so it is the leader of
+    its own process group. Killing the group ensures any grandchildren (e.g.
+    C++ servers spawned by the test script) are reaped too — otherwise they
+    keep holding UDP ports and break subsequent runs with "bind: address in
+    use" / "start server failed".
+    """
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+def _run_with_group_timeout(cmd, cwd, timeout, capture):
+    """Run `cmd` in its own process group; on timeout, kill the whole group.
+
+    Returns (returncode, stdout_str, stderr_str). When capture is False, the
+    child's stdout/stderr are inherited (printed directly), and the returned
+    stdout/stderr are empty strings.
+    """
+    stdout_pipe = subprocess.PIPE if capture else None
+    stderr_pipe = subprocess.PIPE if capture else None
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdout=stdout_pipe,
+        stderr=stderr_pipe,
+        text=True if capture else False,
+        start_new_session=True,  # new process group / session
+    )
+
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return proc.returncode, (stdout or "" if capture else ""), (stderr or "" if capture else "")
+    except subprocess.TimeoutExpired:
+        # Kill the whole group so grandchildren (servers) die too.
+        _kill_process_group(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            stdout, stderr = "", ""
+        # Surface a clear marker; callers turn this into a failure result.
+        raise subprocess.TimeoutExpired(cmd, timeout,
+                                        output=(stdout or "") if capture else None,
+                                        stderr=(stderr or "") if capture else None)
+
+
 def run_command(cmd, cwd=None, timeout=None, capture=False):
     """Run a command and return result structure."""
     start_time = time.time()
     try:
-        # If not in capture mode, let output print directly to terminal
         if not capture:
             print(f"Running: {' '.join(cmd)}")
-            result = subprocess.run(cmd, cwd=cwd, timeout=timeout, capture_output=False)
+            rc, _, _ = _run_with_group_timeout(cmd, cwd, timeout, capture=False)
             duration = time.time() - start_time
-            if result.returncode == 0:
+            if rc == 0:
                 print(f"PASS ({duration:.2f}s)")
                 return True
             else:
-                print(f"FAIL (Return code: {result.returncode})")
+                print(f"FAIL (Return code: {rc})")
                 return False
         else:
             # In concurrent mode, we must capture output to prevent interleaving
-            result = subprocess.run(cmd, cwd=cwd, timeout=timeout, capture_output=True, text=True)
+            rc, stdout, stderr = _run_with_group_timeout(cmd, cwd, timeout, capture=True)
             duration = time.time() - start_time
             return {
-                "success": result.returncode == 0,
-                "returncode": result.returncode,
+                "success": rc == 0,
+                "returncode": rc,
                 "duration": duration,
-                "stdout": result.stdout,
-                "stderr": result.stderr
+                "stdout": stdout,
+                "stderr": stderr,
             }
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         duration = time.time() - start_time
         if capture:
             return {
                 "success": False,
                 "returncode": -1,
                 "duration": duration,
-                "stdout": "",
-                "stderr": "Execution timed out"
+                "stdout": getattr(e, "output", "") or "",
+                "stderr": (getattr(e, "stderr", "") or "") + "\nExecution timed out (process group killed)",
             }
         print("FAIL (Timeout)")
         return False
@@ -85,8 +166,9 @@ def run_single_example_test(script_path):
     example_name = os.path.basename(os.path.dirname(script_path))
     cmd = [sys.executable, script_path, "--bin-dir", BIN_DIR]
     cwd = os.path.dirname(script_path)
-    
-    result = run_command(cmd, cwd=cwd, timeout=60, capture=True)
+
+    timeout = EXAMPLE_TIMEOUTS.get(example_name, EXAMPLE_DEFAULT_TIMEOUT)
+    result = run_command(cmd, cwd=cwd, timeout=timeout, capture=True)
     result["name"] = example_name
     return result
 

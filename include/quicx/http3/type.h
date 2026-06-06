@@ -75,14 +75,22 @@ struct Http3Settings {
     uint64_t max_concurrent_streams = 200;    // max concurrent streams
     uint64_t max_frame_size = 16384;          // max frame size
     uint64_t max_field_section_size = 16384;  // max field section size
-    // NOTE: QPACK dynamic table is temporarily disabled by default (capacity=0, blocked_streams=0).
-    // Reason: ReqRespBaseStream::OnData processes a batch of frames sequentially. If a HEADERS frame
-    //   is blocked due to RIC (Required Insert Count) not yet satisfied, response_ is not created,
-    //   yet the next DATA frame in the same batch will still call HandleData() -> response_->AppendBody()
-    //   and crash. A proper fix requires buffering subsequent frames until the blocked HEADERS retry
-    //   completes. Until that is implemented, force literal-only encoding to avoid the crash path.
-    uint64_t qpack_max_table_capacity = 0;     // qpack max table capacity (0 = disable dynamic table)
-    uint64_t qpack_blocked_streams = 0;        // qpack blocked streams (0 = no blocked streams allowed)
+    // QPACK dynamic table (RFC 9204).
+    //
+    // The previous "blocked HEADERS followed by DATA in the same OnData batch
+    // crashes because response_ is still null" hazard has been fixed in
+    // ReqRespBaseStream: when a HEADERS field section is blocked on Required
+    // Insert Count, the rest of the batch (and any subsequently-arriving
+    // frames) is parked in pending_blocked_frames_ and replayed in order
+    // once the QPACK decoder unblocks. So it is now safe to enable a real
+    // dynamic table by default.
+    //
+    // 4096 / 16 are conservative interop-friendly defaults: small enough to
+    // bound peer memory commitment yet large enough that common header
+    // blocks (cookies, user-agent, a handful of custom request headers)
+    // benefit from dynamic-table compression.
+    uint64_t qpack_max_table_capacity = 4096;  // qpack max table capacity in bytes (0 disables dynamic table)
+    uint64_t qpack_blocked_streams = 16;       // qpack max blocked streams (0 disables blocking)
 
     QuicTransportParams quic_transport_params_ = DEFAULT_QUIC_TRANSPORT_PARAMS;
 };
