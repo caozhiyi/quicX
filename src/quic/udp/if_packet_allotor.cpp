@@ -1,6 +1,6 @@
 #include "quic/udp/if_packet_allotor.h"
-#include "quic/udp/pool_pakcet_allotor.h"
 #include "quic/udp/normal_pakcet_allotor.h"
+#include "quic/udp/pool_pakcet_allotor.h"
 
 namespace quicx {
 namespace quic {
@@ -15,5 +15,5 @@ std::shared_ptr<IPacketAllotor> IPacketAllotor::MakePacketAllotor(IPacketAllotor
     return nullptr;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

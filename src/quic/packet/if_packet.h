@@ -8,10 +8,10 @@
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/shared_buffer_span.h"
 
-#include "quic/frame/type.h"
-#include "quic/frame/if_frame.h"
-#include "quic/packet/header/if_header.h"
 #include "quic/crypto/if_cryptographer.h"
+#include "quic/frame/if_frame.h"
+#include "quic/frame/type.h"
+#include "quic/packet/header/if_header.h"
 
 namespace quicx {
 namespace quic {
@@ -23,7 +23,10 @@ namespace quic {
  */
 class IPacket {
 public:
-    IPacket(): frame_type_bit_(0), packet_number_(0), largest_received_pn_(0) {}
+    IPacket():
+        frame_type_bit_(0),
+        packet_number_(0),
+        largest_received_pn_(0) {}
     virtual ~IPacket() {}
 
     /**
@@ -154,14 +157,14 @@ public:
 protected:
     uint32_t frame_type_bit_;
     uint64_t packet_number_;
-    uint64_t largest_received_pn_;  // RFC 9000 Appendix A: for PN recovery
+    uint64_t largest_received_pn_;    // RFC 9000 Appendix A: for PN recovery
     bool key_phase_changed_ = false;  // RFC 9001 §6: set when key phase differs from expected
     common::SharedBufferSpan packet_src_data_;
 
     std::shared_ptr<ICryptographer> crypto_grapher_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

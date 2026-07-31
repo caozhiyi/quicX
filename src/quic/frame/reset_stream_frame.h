@@ -7,8 +7,7 @@
 namespace quicx {
 namespace quic {
 
-class ResetStreamFrame:
-    public IStreamFrame {
+class ResetStreamFrame: public IStreamFrame {
 public:
     ResetStreamFrame();
     ~ResetStreamFrame();
@@ -24,12 +23,11 @@ public:
     uint64_t GetFinalSize() { return final_size_; }
 
 private:
-   uint64_t app_error_code_; // the application protocol error code.
-   uint64_t final_size_;     // the final size of the stream by the RESET_STREAM sender.
-}; 
+    uint64_t app_error_code_;  // the application protocol error code.
+    uint64_t final_size_;      // the final size of the stream by the RESET_STREAM sender.
+};
 
-
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

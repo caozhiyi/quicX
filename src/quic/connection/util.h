@@ -1,8 +1,8 @@
 #ifndef QUIC_CONNECTION_CONTROLER_UTIL
 #define QUIC_CONNECTION_CONTROLER_UTIL
 
-#include <string>
 #include <cstdint>
+#include <string>
 #include "quic/packet/type.h"
 
 namespace quicx {
@@ -14,7 +14,7 @@ PacketNumberSpace CryptoLevel2PacketNumberSpace(uint16_t level);
 
 const std::string FrameType2String(uint16_t frame_type);
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

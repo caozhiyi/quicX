@@ -54,10 +54,10 @@ std::vector<uint8_t> MakePattern(uint32_t n, uint8_t base = 0) {
 // 11 bytes used to trigger an internal memcpy into a freshly allocated chunk
 // and report success. Under invariant 3 the call must return either an
 // invalid span or a span no longer than the first chunk's readable bytes.
-TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpanRefusesCrossChunkMerge) {
+TEST(BufferInvariant3CrossSegmentTest, GetSharedReadableSpanRefusesCrossChunkMerge) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/8u);
-    auto p1 = MakePattern(5, 0x10);   // 5 bytes -> first chunk
-    auto p2 = MakePattern(6, 0x40);   // 6 bytes -> overflows into a 2nd chunk
+    auto p1 = MakePattern(5, 0x10);  // 5 bytes -> first chunk
+    auto p2 = MakePattern(6, 0x40);  // 6 bytes -> overflows into a 2nd chunk
     ASSERT_EQ(5u, buf->Write(p1.data(), p1.size()));
     ASSERT_EQ(6u, buf->Write(p2.data(), p2.size()));
     ASSERT_GE(buf->GetChunkCount(), 2u) << "Test setup failed: expected >=2 chunks";
@@ -66,10 +66,9 @@ TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpanRefusesCrossChunkMerge)
 
     if (span.Valid()) {
         // Permitted shape: a truncated span confined to the first chunk.
-        EXPECT_LE(span.GetLength(), 8u)
-            << "GetSharedReadableSpan must not span past the first chunk's bytes; "
-               "an oversized return implies an internal merge/copy (invariant 3 "
-               "violation).";
+        EXPECT_LE(span.GetLength(), 8u) << "GetSharedReadableSpan must not span past the first chunk's bytes; "
+                                           "an oversized return implies an internal merge/copy (invariant 3 "
+                                           "violation).";
     }
     // If span is invalid that is also fine — it just means the buffer chose
     // the strict-refuse branch instead of the truncate branch.
@@ -81,16 +80,15 @@ TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpanRefusesCrossChunkMerge)
 // Callers who insist "give me exactly N contiguous bytes" must be told no
 // when N would cross chunks; previously this path silently allocated and
 // merged.
-TEST(BufferInvariant3_CrossSegment, MustFillLengthRefusesCrossChunk) {
+TEST(BufferInvariant3CrossSegmentTest, MustFillLengthRefusesCrossChunk) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/8u);
     ASSERT_EQ(5u, buf->Write(MakePattern(5).data(), 5));
     ASSERT_EQ(6u, buf->Write(MakePattern(6, 0x80).data(), 6));
     ASSERT_GE(buf->GetChunkCount(), 2u);
 
     auto span = buf->GetSharedReadableSpan(11u, /*must_fill_length=*/true);
-    EXPECT_FALSE(span.Valid())
-        << "must_fill_length must reject a request that would only succeed by "
-           "merging chunks (invariant 3).";
+    EXPECT_FALSE(span.Valid()) << "must_fill_length must reject a request that would only succeed by "
+                                  "merging chunks (invariant 3).";
 }
 
 // -----------------------------------------------------------------------------
@@ -99,7 +97,7 @@ TEST(BufferInvariant3_CrossSegment, MustFillLengthRefusesCrossChunk) {
 // The explicit happy-path API for "send what you can without copying":
 // the returned span starts at the buffer's current read pointer in the first
 // chunk and contains exactly min(chunk_readable, max_length) bytes.
-TEST(BufferInvariant3_CrossSegment, GetFirstChunkReadableHappyPath) {
+TEST(BufferInvariant3CrossSegmentTest, GetFirstChunkReadableHappyPath) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/8u);
     auto p1 = MakePattern(5, 0x10);
     auto p2 = MakePattern(6, 0x40);
@@ -111,9 +109,8 @@ TEST(BufferInvariant3_CrossSegment, GetFirstChunkReadableHappyPath) {
 
     auto span = buf->GetFirstChunkReadable(/*max_length=*/100u);
     ASSERT_TRUE(span.Valid());
-    EXPECT_EQ(8u, span.GetLength())
-        << "First chunk is full (8/8); GetFirstChunkReadable must surface "
-           "all of it without copying.";
+    EXPECT_EQ(8u, span.GetLength()) << "First chunk is full (8/8); GetFirstChunkReadable must surface "
+                                       "all of it without copying.";
     // Bytes 0..4 are p1, bytes 5..7 are p2[0..2].
     std::vector<uint8_t> expected;
     expected.insert(expected.end(), p1.begin(), p1.end());
@@ -124,7 +121,7 @@ TEST(BufferInvariant3_CrossSegment, GetFirstChunkReadableHappyPath) {
 // -----------------------------------------------------------------------------
 // B3-04: GetFirstChunkReadable honours the max_length cap.
 // -----------------------------------------------------------------------------
-TEST(BufferInvariant3_CrossSegment, GetFirstChunkReadableHonoursMax) {
+TEST(BufferInvariant3CrossSegmentTest, GetFirstChunkReadableHonoursMax) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/16u);
     auto p1 = MakePattern(10, 0x20);
     buf->Write(p1.data(), p1.size());
@@ -148,7 +145,7 @@ TEST(BufferInvariant3_CrossSegment, GetFirstChunkReadableHonoursMax) {
 // chunk boundaries align with payload boundaries and the test reasons about
 // segmentation directly rather than having to mirror Write()'s greedy
 // chunk-filling behaviour.
-TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpansSegmented) {
+TEST(BufferInvariant3CrossSegmentTest, GetSharedReadableSpansSegmented) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/8u);
     auto p1 = MakePattern(8, 0x10);
     auto p2 = MakePattern(8, 0x40);
@@ -161,9 +158,8 @@ TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpansSegmented) {
 
     // Ask for 18 bytes -> spans first chunk (8) + second chunk (8) + 2 of third.
     auto spans = buf->GetSharedReadableSpans(/*length=*/18u);
-    ASSERT_GE(spans.size(), 2u)
-        << "18 bytes straddle at least the first two chunks; expected "
-           "multiple spans, not a merged span.";
+    ASSERT_GE(spans.size(), 2u) << "18 bytes straddle at least the first two chunks; expected "
+                                   "multiple spans, not a merged span.";
 
     // The concatenation of all returned spans must reproduce the requested
     // prefix byte-for-byte and total exactly 18 bytes.
@@ -195,7 +191,7 @@ TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpansSegmented) {
 // Like the existing readable-span APIs, the explicit segmented readout is a
 // view: the buffer's data length is unchanged afterwards, so the caller may
 // inspect, then consume via MoveReadPt explicitly.
-TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpansIsNonConsuming) {
+TEST(BufferInvariant3CrossSegmentTest, GetSharedReadableSpansIsNonConsuming) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/8u);
     buf->Write(MakePattern(8).data(), 8);
     buf->Write(MakePattern(8, 0x40).data(), 8);
@@ -204,14 +200,13 @@ TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpansIsNonConsuming) {
     auto spans = buf->GetSharedReadableSpans(8u);
     ASSERT_FALSE(spans.empty());
 
-    EXPECT_EQ(before, buf->GetDataLength())
-        << "Reading via spans must not advance the read pointer.";
+    EXPECT_EQ(before, buf->GetDataLength()) << "Reading via spans must not advance the read pointer.";
 }
 
 // -----------------------------------------------------------------------------
 // B3-07: GetSharedReadableSpans clamps to available bytes (no fabrication).
 // -----------------------------------------------------------------------------
-TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpansClampsToAvailable) {
+TEST(BufferInvariant3CrossSegmentTest, GetSharedReadableSpansClampsToAvailable) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/8u);
     buf->Write(MakePattern(3).data(), 3);
 
@@ -220,9 +215,8 @@ TEST(BufferInvariant3_CrossSegment, GetSharedReadableSpansClampsToAvailable) {
     for (const auto& s : spans) {
         total += s.GetLength();
     }
-    EXPECT_EQ(3u, total)
-        << "Asking for more than is buffered must yield exactly the available "
-           "bytes (no allocate-and-zero, no fabrication).";
+    EXPECT_EQ(3u, total) << "Asking for more than is buffered must yield exactly the available "
+                            "bytes (no allocate-and-zero, no fabrication).";
 }
 
 }  // namespace

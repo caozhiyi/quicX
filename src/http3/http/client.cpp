@@ -22,9 +22,7 @@ namespace http3 {
 Client::Client(const Http3Settings& settings):
     settings_(settings) {
     quic_ = IQuicClient::Create(settings.quic_transport_params_);
-    quic_->SetConnectionStateCallBack([this](auto a, auto b, auto c, auto d) {
-        OnConnection(a, b, c, d);
-    });
+    quic_->SetConnectionStateCallBack([this](auto a, auto b, auto c, auto d) { OnConnection(a, b, c, d); });
 }
 
 Client::~Client() {
@@ -119,17 +117,15 @@ inline void ReportRequestError(const std::shared_ptr<IAsyncClientHandler>& handl
 }  // namespace
 
 template <typename Handler>
-bool Client::DoRequestImpl(const std::string& url, HttpMethod method,
-    std::shared_ptr<IRequest> request, Handler handler) {
+bool Client::DoRequestImpl(
+    const std::string& url, HttpMethod method, std::shared_ptr<IRequest> request, Handler handler) {
     std::string scheme, host, path_with_query;
     uint16_t port = 0;
     if (!common::ParseURLForPseudoHeaders(url, scheme, host, port, path_with_query)) {
         LOG_ERROR("parse url failed. url: %s", url.c_str());
         // Notify the caller asynchronously to match the expected asynchronous error path
         uint32_t error_code = Http3ErrorCode::kInternalError;
-        quic_->AddTimer(0, [handler, error_code]() {
-            ReportRequestError(handler, error_code);
-        });
+        quic_->AddTimer(0, [handler, error_code]() { ReportRequestError(handler, error_code); });
         return true;
     }
 
@@ -243,8 +239,6 @@ void Client::OnConnection(
             }
         }
 
-
-
         // If we are in graceful-shutdown, accelerate Destroy() as soon as all
         // observed connections have closed — avoids the 1s tax per Close().
         // We only decrement while is_closing_ so that stray close events from
@@ -273,7 +267,7 @@ void Client::OnConnection(
             uint32_t error_code = error != 0 ? error : Http3ErrorCode::kInternalError;
             while (!wait_it->second.empty()) {
                 auto& context = wait_it->second.front();
-                
+
                 // Call the user's response callback with error
                 if (context.IsAsync()) {
                     auto handler = context.GetAsyncHandler();
@@ -286,7 +280,7 @@ void Client::OnConnection(
                         handler(nullptr, error_code);
                     }
                 }
-                
+
                 // Also call error handler if available
                 if (error_handler_) {
                     error_handler_(context.host, error_code);
@@ -306,7 +300,7 @@ void Client::OnConnection(
         if (wait_it != wait_request_map_.end()) {
             while (!wait_it->second.empty()) {
                 auto& context = wait_it->second.front();
-                
+
                 // Call the user's response callback with error
                 if (context.IsAsync()) {
                     auto handler = context.GetAsyncHandler();
@@ -319,7 +313,7 @@ void Client::OnConnection(
                         handler(nullptr, error);
                     }
                 }
-                
+
                 // Also call error handler if available
                 if (error_handler_) {
                     error_handler_(context.host, error);
@@ -343,10 +337,9 @@ void Client::OnConnection(
     std::string host_name = first_context.host;
 
     // Create client connection
-    auto client_conn = std::make_shared<ClientConnection>(host_name, settings_, conn,
-        [this](auto a, auto b) { HandleError(a, b); },
-        [this](auto a) { return HandlePushPromise(a); },
-        [this](auto a, auto b) { HandlePush(a, b); },
+    auto client_conn = std::make_shared<ClientConnection>(
+        host_name, settings_, conn, [this](auto a, auto b) { HandleError(a, b); },
+        [this](auto a) { return HandlePushPromise(a); }, [this](auto a, auto b) { HandlePush(a, b); },
         config_.max_concurrent_streams_, config_.enable_push_);
 
     // Initialize connection (starts timers)
@@ -541,8 +534,8 @@ MigrationResult Client::InitiateMigrationTo(const std::string& local_ip, uint16_
         }
     }
 
-    LOG_INFO("Client::InitiateMigrationTo() - initiating migration to %s:%d on %zu connections",
-        local_ip.c_str(), local_port, snapshot.size());
+    LOG_INFO("Client::InitiateMigrationTo() - initiating migration to %s:%d on %zu connections", local_ip.c_str(),
+        local_port, snapshot.size());
 
     if (snapshot.empty()) {
         LOG_WARN("Client::InitiateMigrationTo: no active connections");

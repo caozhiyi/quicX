@@ -38,15 +38,15 @@
 #include <utility>
 #include <vector>
 
+#include "common/alloter/if_alloter.h"
+#include "common/alloter/normal_alloter.h"
 #include "common/alloter/pool_alloter.h"
 #include "common/alloter/pool_block.h"
-#include "common/alloter/normal_alloter.h"
-#include "common/alloter/if_alloter.h"
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/multi_block_buffer.h"
 
-#include "quic/frame/stream_frame.h"
 #include "quic/frame/ack_frame.h"
+#include "quic/frame/stream_frame.h"
 
 namespace quicx {
 namespace perf {
@@ -71,13 +71,9 @@ static std::mt19937 MakeRng(uint64_t seed = 42) {
 struct LatencyRecorder {
     std::vector<uint64_t> samples_ns;  // pre-reserved, never reallocated in loop
 
-    explicit LatencyRecorder(size_t reserve) {
-        samples_ns.reserve(reserve);
-    }
+    explicit LatencyRecorder(size_t reserve) { samples_ns.reserve(reserve); }
 
-    inline std::chrono::steady_clock::time_point Start() {
-        return std::chrono::steady_clock::now();
-    }
+    inline std::chrono::steady_clock::time_point Start() { return std::chrono::steady_clock::now(); }
 
     inline void Stop(std::chrono::steady_clock::time_point t0) {
         auto t1 = std::chrono::steady_clock::now();
@@ -92,10 +88,10 @@ struct LatencyRecorder {
             size_t idx = static_cast<size_t>(q * (samples_ns.size() - 1));
             return static_cast<double>(samples_ns[idx]);
         };
-        state.counters["p50_ns"]  = pick(0.50);
-        state.counters["p99_ns"]  = pick(0.99);
+        state.counters["p50_ns"] = pick(0.50);
+        state.counters["p99_ns"] = pick(0.99);
         state.counters["p999_ns"] = pick(0.999);
-        state.counters["max_ns"]  = static_cast<double>(samples_ns.back());
+        state.counters["max_ns"] = static_cast<double>(samples_ns.back());
     }
 };
 
@@ -247,7 +243,7 @@ static void BM_PoolEfficiency_MixedWorkload_Malloc(benchmark::State& state) {
 static void BM_PoolEfficiency_BufferPerPacket(benchmark::State& state) {
     const int packets = static_cast<int>(state.range(0));
     auto pool = std::make_shared<common::BlockMemoryPool>(4096, 64);
-    auto buf  = std::make_shared<common::MultiBlockBuffer>(pool);
+    auto buf = std::make_shared<common::MultiBlockBuffer>(pool);
 
     std::vector<uint8_t> data(1200, 0xAB);
     std::vector<uint8_t> header(32);
@@ -256,7 +252,7 @@ static void BM_PoolEfficiency_BufferPerPacket(benchmark::State& state) {
     for (auto _ : state) {
         for (int i = 0; i < packets; ++i) {
             buf->Write(data.data(), static_cast<uint32_t>(data.size()));
-            buf->Read(header.data(),  static_cast<uint32_t>(header.size()));
+            buf->Read(header.data(), static_cast<uint32_t>(header.size()));
             buf->Read(payload.data(), static_cast<uint32_t>(payload.size()));
             benchmark::DoNotOptimize(header.data());
             benchmark::DoNotOptimize(payload.data());
@@ -291,15 +287,13 @@ static void BM_PoolEfficiency_PoolExpansion(benchmark::State& state) {
             ptrs.push_back(pool->PoolLargeMalloc());
         }
 
-        state.counters["final_pool_size"] = benchmark::Counter(
-            static_cast<double>(pool->GetSize()));
+        state.counters["final_pool_size"] = benchmark::Counter(static_cast<double>(pool->GetSize()));
 
         state.PauseTiming();
         for (auto& ptr : ptrs) {
             pool->PoolLargeFree(ptr);
         }
-        state.counters["after_free_pool_size"] = benchmark::Counter(
-            static_cast<double>(pool->GetSize()));
+        state.counters["after_free_pool_size"] = benchmark::Counter(static_cast<double>(pool->GetSize()));
         state.ResumeTiming();
     }
 }
@@ -341,8 +335,7 @@ static void BM_PoolEfficiency_MultiThreadContention(benchmark::State& state) {
 
         for (auto& t : threads) t.join();
 
-        state.counters["total_ops"] = benchmark::Counter(
-            static_cast<double>(total_ops.load()));
+        state.counters["total_ops"] = benchmark::Counter(static_cast<double>(total_ops.load()));
     }
     state.SetItemsProcessed(state.iterations() * num_threads * ops_per_thread);
 }
@@ -360,8 +353,26 @@ static void BM_PoolEfficiency_RealWorldSizeDistribution(benchmark::State& state)
     // - Stream data chunks: 128-256 bytes
     // - Connection state: 200+ bytes
     const std::vector<uint32_t> typical_sizes = {
-        8, 16, 24, 32, 48, 64, 96, 128, 192, 256,
-        8, 16, 24, 32, 16, 24, 32, 48, 64, 128,
+        8,
+        16,
+        24,
+        32,
+        48,
+        64,
+        96,
+        128,
+        192,
+        256,
+        8,
+        16,
+        24,
+        32,
+        16,
+        24,
+        32,
+        48,
+        64,
+        128,
     };
 
     for (auto _ : state) {
@@ -507,12 +518,12 @@ static void BM_PoolEfficiency_StreamFrame_PoolSharePtr(benchmark::State& state) 
 
     for (auto _ : state) {
 #if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
         auto f = wrap.PoolNewSharePtr<quic::StreamFrame>();
 #if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif
         f->SetStreamID(4);
         f->SetOffset(0);
@@ -562,7 +573,9 @@ constexpr size_t kScratchBytes = 1200;  // ~MTU-ish memcpy to pollute cache
 struct RoundScratch {
     std::vector<uint8_t> src;
     std::vector<uint8_t> dst;
-    RoundScratch() : src(kScratchBytes, 0x5A), dst(kScratchBytes, 0) {}
+    RoundScratch():
+        src(kScratchBytes, 0x5A),
+        dst(kScratchBytes, 0) {}
 };
 
 }  // namespace
@@ -610,8 +623,8 @@ static void BM_PoolEfficiency_ConnectionScenario_PerConnPool(benchmark::State& s
 
         for (int i = 0; i < kFramesPerRound; ++i) {
 #if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
             if ((i & 3) == 0) {
                 auto af = wrap.PoolNewSharePtr<quic::AckFrame>();
@@ -627,7 +640,7 @@ static void BM_PoolEfficiency_ConnectionScenario_PerConnPool(benchmark::State& s
                 frames.push_back(sf);
             }
 #if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 
             std::memcpy(scratch.dst.data(), scratch.src.data(), scratch.dst.size());
@@ -698,7 +711,7 @@ static void BM_PoolEfficiency_ConnectionScenario_PerConnPoolUnique(benchmark::St
 
     struct Entry {
         common::PoolUniquePtr<quic::StreamFrame> sf;
-        common::PoolUniquePtr<quic::AckFrame>    af;
+        common::PoolUniquePtr<quic::AckFrame> af;
     };
 
     for (auto _ : state) {
@@ -762,10 +775,9 @@ static void BM_PoolEfficiency_ManyPools_Distributed(benchmark::State& state) {
         }
         pools.clear();  // release chunks
     }
-    state.SetItemsProcessed(state.iterations() *
-                            static_cast<uint64_t>(num_pools) * ops_per_pool);
-    state.counters["pools"]         = benchmark::Counter(static_cast<double>(num_pools));
-    state.counters["ops_per_pool"]  = benchmark::Counter(static_cast<double>(ops_per_pool));
+    state.SetItemsProcessed(state.iterations() * static_cast<uint64_t>(num_pools) * ops_per_pool);
+    state.counters["pools"] = benchmark::Counter(static_cast<double>(num_pools));
+    state.counters["ops_per_pool"] = benchmark::Counter(static_cast<double>(ops_per_pool));
 }
 
 static void BM_PoolEfficiency_ManyPools_SingleBig(benchmark::State& state) {
@@ -782,8 +794,8 @@ static void BM_PoolEfficiency_ManyPools_SingleBig(benchmark::State& state) {
         }
     }
     state.SetItemsProcessed(state.iterations() * total_ops);
-    state.counters["pools"]         = benchmark::Counter(1.0);
-    state.counters["ops_per_pool"]  = benchmark::Counter(static_cast<double>(total_ops));
+    state.counters["pools"] = benchmark::Counter(1.0);
+    state.counters["ops_per_pool"] = benchmark::Counter(static_cast<double>(total_ops));
 }
 
 }  // namespace perf
@@ -794,43 +806,34 @@ static void BM_PoolEfficiency_ManyPools_SingleBig(benchmark::State& state) {
 // ===========================================================================
 
 // 1. PoolAlloter vs std::malloc
-BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolAlloterVsMalloc_Pool)
-    ->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256);
-BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolAlloterVsMalloc_Malloc)
-    ->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolAlloterVsMalloc_Pool)->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolAlloterVsMalloc_Malloc)->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256);
 
 // 2. BlockMemoryPool vs std::malloc
-BENCHMARK(quicx::perf::BM_PoolEfficiency_BlockPoolVsMalloc_Pool)
-    ->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
-BENCHMARK(quicx::perf::BM_PoolEfficiency_BlockPoolVsMalloc_Malloc)
-    ->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_BlockPoolVsMalloc_Pool)->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_BlockPoolVsMalloc_Malloc)->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
 
 // 3. Mixed workload
 BENCHMARK(quicx::perf::BM_PoolEfficiency_MixedWorkload_Pool);
 BENCHMARK(quicx::perf::BM_PoolEfficiency_MixedWorkload_Malloc);
 
 // 4. Buffer per-packet
-BENCHMARK(quicx::perf::BM_PoolEfficiency_BufferPerPacket)
-    ->Arg(10)->Arg(100)->Arg(1000);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_BufferPerPacket)->Arg(10)->Arg(100)->Arg(1000);
 
 // 5. Pool expansion
-BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolExpansion)
-    ->Arg(10)->Arg(50)->Arg(200)->Arg(500);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolExpansion)->Arg(10)->Arg(50)->Arg(200)->Arg(500);
 
 // 6. Multi-threaded contention
-BENCHMARK(quicx::perf::BM_PoolEfficiency_MultiThreadContention)
-    ->Arg(1)->Arg(2)->Arg(4)->Arg(8);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_MultiThreadContention)->Arg(1)->Arg(2)->Arg(4)->Arg(8);
 
 // 7. Real-world size distribution
 BENCHMARK(quicx::perf::BM_PoolEfficiency_RealWorldSizeDistribution);
 
 // 8. NormalAlloter baseline
-BENCHMARK(quicx::perf::BM_PoolEfficiency_NormalAlloter)
-    ->Arg(16)->Arg(64)->Arg(256)->Arg(1024);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_NormalAlloter)->Arg(16)->Arg(64)->Arg(256)->Arg(1024);
 
 // 9. Pool fall-through for sizes > kDefaultMaxBytes (edge case)
-BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolFallthrough_Large)
-    ->Arg(512)->Arg(1024)->Arg(4096);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolFallthrough_Large)->Arg(512)->Arg(1024)->Arg(4096);
 
 // 10. Tail-latency comparison
 BENCHMARK(quicx::perf::BM_PoolEfficiency_Latency_Pool)->Iterations(200000);
@@ -849,10 +852,8 @@ BENCHMARK(quicx::perf::BM_PoolEfficiency_ConnectionScenario_PerConnPoolRaw);
 BENCHMARK(quicx::perf::BM_PoolEfficiency_ConnectionScenario_PerConnPoolUnique);
 
 // 13. Many small pools (per-connection model) vs one big pool
-BENCHMARK(quicx::perf::BM_PoolEfficiency_ManyPools_Distributed)
-    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000);
-BENCHMARK(quicx::perf::BM_PoolEfficiency_ManyPools_SingleBig)
-    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_ManyPools_Distributed)->Arg(10)->Arg(100)->Arg(1000)->Arg(10000);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_ManyPools_SingleBig)->Arg(10)->Arg(100)->Arg(1000)->Arg(10000);
 
 BENCHMARK_MAIN();
 

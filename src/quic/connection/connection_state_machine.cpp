@@ -1,6 +1,6 @@
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 
 #include "quic/connection/connection_state_machine.h"
 

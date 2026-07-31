@@ -5,7 +5,7 @@
 
 using namespace quicx::quic;
 
-class ConnectionRateMonitorTest : public ::testing::Test {
+class ConnectionRateMonitorTest: public ::testing::Test {
 protected:
     void SetUp() override {
         // Create monitor without event loop (manual rate calculation for testing)
@@ -27,10 +27,10 @@ TEST_F(ConnectionRateMonitorTest, RecordConnections) {
     monitor_->RecordNewConnection();
     monitor_->RecordNewConnection();
     monitor_->RecordNewConnection();
-    
+
     // Current count should reflect recorded connections
     EXPECT_EQ(3, monitor_->GetCurrentCount());
-    
+
     // Rate is still 0 until CalculateRate is called
     EXPECT_EQ(0, monitor_->GetConnectionRate());
 }
@@ -42,13 +42,13 @@ TEST_F(ConnectionRateMonitorTest, CalculateRate) {
     monitor_->RecordNewConnection();
     monitor_->RecordNewConnection();
     monitor_->RecordNewConnection();
-    
+
     // Manually trigger rate calculation
     monitor_->CalculateRate();
-    
+
     // Rate should now be 5
     EXPECT_EQ(5, monitor_->GetConnectionRate());
-    
+
     // Current count should be reset to 0
     EXPECT_EQ(0, monitor_->GetCurrentCount());
 }
@@ -59,10 +59,10 @@ TEST_F(ConnectionRateMonitorTest, IsHighRateWithLastRate) {
         monitor_->RecordNewConnection();
     }
     monitor_->CalculateRate();
-    
+
     // Should be high rate for threshold 100
     EXPECT_TRUE(monitor_->IsHighRate(100));
-    
+
     // Should not be high rate for threshold 200
     EXPECT_FALSE(monitor_->IsHighRate(200));
 }
@@ -72,7 +72,7 @@ TEST_F(ConnectionRateMonitorTest, IsHighRateWithCurrentCount) {
     for (int i = 0; i < 150; ++i) {
         monitor_->RecordNewConnection();
     }
-    
+
     // Even without CalculateRate, IsHighRate should detect high current count
     EXPECT_TRUE(monitor_->IsHighRate(100));
 }
@@ -84,13 +84,13 @@ TEST_F(ConnectionRateMonitorTest, RateResetAfterCalculation) {
     }
     monitor_->CalculateRate();
     EXPECT_EQ(100, monitor_->GetConnectionRate());
-    
+
     // Record fewer connections
     for (int i = 0; i < 20; ++i) {
         monitor_->RecordNewConnection();
     }
     monitor_->CalculateRate();
-    
+
     // Rate should reflect new window
     EXPECT_EQ(20, monitor_->GetConnectionRate());
 }
@@ -98,7 +98,7 @@ TEST_F(ConnectionRateMonitorTest, RateResetAfterCalculation) {
 TEST_F(ConnectionRateMonitorTest, ConcurrentAccess) {
     const int kThreads = 4;
     const int kConnectionsPerThread = 1000;
-    
+
     std::vector<std::thread> threads;
     for (int i = 0; i < kThreads; ++i) {
         threads.emplace_back([this, kConnectionsPerThread]() {
@@ -107,11 +107,11 @@ TEST_F(ConnectionRateMonitorTest, ConcurrentAccess) {
             }
         });
     }
-    
+
     for (auto& t : threads) {
         t.join();
     }
-    
+
     // All connections should be recorded
     EXPECT_EQ(kThreads * kConnectionsPerThread, monitor_->GetCurrentCount());
 }

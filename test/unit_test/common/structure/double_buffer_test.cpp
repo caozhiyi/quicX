@@ -107,7 +107,8 @@ TEST(DoubleBufferTest, Clear) {
 TEST(DoubleBufferTest, WithPointers) {
     struct TestObject {
         int id;
-        explicit TestObject(int i) : id(i) {}
+        explicit TestObject(int i):
+            id(i) {}
     };
 
     DoubleBuffer<std::shared_ptr<TestObject>> buffer;

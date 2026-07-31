@@ -1,6 +1,6 @@
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_timer_coordinator.h"
@@ -191,8 +191,7 @@ void TimerCoordinator::CheckPTOTimeout() {
 
     // RFC 9002: Close connection after persistent timeout (~3 PTO cycles)
     if (consecutive_ptos >= RttCalculator::kMaxConsecutivePTOs) {
-        LOG_WARN(
-            "TimerCoordinator: persistent timeout detected (%u consecutive PTOs without ACK)", consecutive_ptos);
+        LOG_WARN("TimerCoordinator: persistent timeout detected (%u consecutive PTOs without ACK)", consecutive_ptos);
 
         // Metrics: PTO counter
         common::Metrics::CounterInc(common::MetricsStd::PtoCountTotal);

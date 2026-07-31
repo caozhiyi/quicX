@@ -1,18 +1,14 @@
-#include <cstring> //for memset
-#include <cstdlib>
-#include <new>
 #include "common/alloter/normal_alloter.h"
+#include <cstdlib>
+#include <cstring>  //for memset
+#include <new>
 
 namespace quicx {
 namespace common {
 
-NormalAlloter::NormalAlloter() {
+NormalAlloter::NormalAlloter() {}
 
-}
-
-NormalAlloter::~NormalAlloter() {
-
-}
+NormalAlloter::~NormalAlloter() {}
 
 void* NormalAlloter::Malloc(uint32_t size) {
     void* ret = malloc((size_t)size);
@@ -35,7 +31,7 @@ void* NormalAlloter::MallocZero(uint32_t size) {
     return ret;
 }
 
-void NormalAlloter::Free(void* &data, uint32_t len) {
+void NormalAlloter::Free(void*& data, uint32_t len) {
     free(data);
     data = nullptr;
 }
@@ -44,5 +40,5 @@ std::shared_ptr<NormalAlloter> MakeNormalAlloterPtr() {
     return std::make_shared<NormalAlloter>();
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

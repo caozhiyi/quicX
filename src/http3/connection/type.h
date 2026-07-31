@@ -17,14 +17,14 @@ namespace http3 {
  * Receipt of these is treated as H3_SETTINGS_ERROR.
  */
 enum SettingsType : uint16_t {
-    kQpackMaxTableCapacity  = 0x01,
+    kQpackMaxTableCapacity = 0x01,
     // 0x02, 0x03, 0x04, 0x05 are RESERVED (RFC 9114 §7.2.4.1) — MUST NOT be sent on the wire
-    kMaxFieldSectionSize    = 0x06,
-    kQpackBlockedStreams    = 0x07,
-    kEnableConnectProtocol  = 0x08,
+    kMaxFieldSectionSize = 0x06,
+    kQpackBlockedStreams = 0x07,
+    kEnableConnectProtocol = 0x08,
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

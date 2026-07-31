@@ -1,7 +1,7 @@
 #include <stdarg.h>
 
-#include "common/log/log.h"
 #include "common/log/base_logger.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace common {
@@ -14,15 +14,13 @@ SingletonLogger::SingletonLogger() {
     logger_ = std::make_shared<BaseLogger>(kLogCacheSize, kLogBlockSize);
 }
 
-SingletonLogger::~SingletonLogger() {
-
-}
+SingletonLogger::~SingletonLogger() {}
 
 void SingletonLogger::SetLogger(std::shared_ptr<Logger> log) {
     logger_->SetLogger(log);
 }
 
-void SingletonLogger::SetLevel(LogLevel level){
+void SingletonLogger::SetLevel(LogLevel level) {
     logger_->SetLevel(level);
     g_log_level.store(static_cast<uint8_t>(level), std::memory_order_relaxed);
 }
@@ -66,5 +64,5 @@ LogStreamParam SingletonLogger::GetStreamParam(LogLevel level, const char* file,
     return logger_->GetStreamParam(level, file, line);
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

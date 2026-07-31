@@ -28,7 +28,8 @@ struct SSLContext {
     std::vector<uint8_t> pending_data;
     std::string negotiated_protocol;  // ALPN negotiated protocol
 
-    SSLContext(std::shared_ptr<ITcpSocket> sock) : socket(sock) {}
+    SSLContext(std::shared_ptr<ITcpSocket> sock):
+        socket(sock) {}
     ~SSLContext();
 
     // Non-copyable: SSL* is an owning, non-shareable handle.
@@ -37,13 +38,13 @@ struct SSLContext {
 
     // Movable: transfer ownership of the SSL* and reset the source so the
     // moved-from object's destructor doesn't double-free the SSL handle.
-    SSLContext(SSLContext&& other) noexcept
-        : socket(std::move(other.socket)),
-          ssl(other.ssl),
-          handshake_completed(other.handshake_completed),
-          handshake_failed(other.handshake_failed),
-          pending_data(std::move(other.pending_data)),
-          negotiated_protocol(std::move(other.negotiated_protocol)) {
+    SSLContext(SSLContext&& other) noexcept:
+        socket(std::move(other.socket)),
+        ssl(other.ssl),
+        handshake_completed(other.handshake_completed),
+        handshake_failed(other.handshake_failed),
+        pending_data(std::move(other.pending_data)),
+        negotiated_protocol(std::move(other.negotiated_protocol)) {
         other.ssl = nullptr;
         other.handshake_completed = false;
         other.handshake_failed = false;
@@ -58,11 +59,11 @@ struct SSLContext {
                 new (this) SSLContext(std::move(other));
                 return *this;
             }
-            socket              = std::move(other.socket);
-            ssl                 = other.ssl;
+            socket = std::move(other.socket);
+            ssl = other.ssl;
             handshake_completed = other.handshake_completed;
-            handshake_failed    = other.handshake_failed;
-            pending_data        = std::move(other.pending_data);
+            handshake_failed = other.handshake_failed;
+            pending_data = std::move(other.pending_data);
             negotiated_protocol = std::move(other.negotiated_protocol);
             other.ssl = nullptr;
             other.handshake_completed = false;
@@ -73,8 +74,7 @@ struct SSLContext {
 };
 
 // HTTPS Smart Handler for SSL/TLS connections
-class HttpsSmartHandler:
-    public BaseSmartHandler {
+class HttpsSmartHandler: public BaseSmartHandler {
 public:
     explicit HttpsSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop);
     ~HttpsSmartHandler() override;
@@ -86,7 +86,7 @@ protected:
     int WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override;
     void CleanupConnection(std::shared_ptr<ITcpSocket> socket) override;
     std::string GetType() const override { return "HTTPS"; }
-    
+
     // Get negotiated ALPN protocol
     std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const override;
 
@@ -94,12 +94,11 @@ private:
     bool InitializeSSL();
     void HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket);
     void CleanupSSL(SSLContext* ssl_ctx);
-    
+
     // ALPN callback function
-    static int ALPNSelectCallback(SSL* ssl, const unsigned char** out, 
-                                 unsigned char* outlen, const unsigned char* in, 
-                                 unsigned int inlen, void* arg);
-    
+    static int ALPNSelectCallback(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in,
+        unsigned int inlen, void* arg);
+
     // Set up ALPN protocols
     bool SetupALPN();
 
@@ -109,7 +108,7 @@ private:
     mutable std::unordered_map<std::shared_ptr<ITcpSocket>, SSLContext> ssl_context_map_;
 };
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx
 
-#endif // UPGRADE_HANDLERS_HTTPS_SMART_HANDLER_H 
+#endif  // UPGRADE_HANDLERS_HTTPS_SMART_HANDLER_H

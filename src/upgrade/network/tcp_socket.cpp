@@ -9,7 +9,6 @@ namespace upgrade {
 
 TcpSocket::TcpSocket():
     fd_(-1) {
-
     auto result = common::TcpSocket();
 
     if (result.error_code_ != 0) {
@@ -25,11 +24,9 @@ TcpSocket::TcpSocket(int fd):
     common::ParseRemoteAddress(fd, remote_address_);
 }
 
-TcpSocket::TcpSocket(int fd, const common::Address& remote_address) :
+TcpSocket::TcpSocket(int fd, const common::Address& remote_address):
     fd_(fd),
-    remote_address_(remote_address) {
-
-}
+    remote_address_(remote_address) {}
 
 TcpSocket::~TcpSocket() {
     Close();
@@ -66,7 +63,7 @@ int TcpSocket::Recv(std::vector<uint8_t>& data, size_t max_size) {
     }
 
     data.resize(max_size);
-    
+
     auto result = common::Recv(fd_, reinterpret_cast<char*>(data.data()), max_size, 0);
 
     if (result.error_code_ != 0) {
@@ -85,7 +82,7 @@ int TcpSocket::Recv(std::string& data, size_t max_size) {
     }
 
     std::vector<char> buffer(max_size);
-    
+
     auto result = common::Recv(fd_, buffer.data(), max_size, 0);
 
     if (result.error_code_ != 0) {
@@ -116,5 +113,5 @@ uint16_t TcpSocket::GetRemotePort() const {
     return remote_address_.GetPort();
 }
 
-} // namespace upgrade
-} // namespace quicx 
+}  // namespace upgrade
+}  // namespace quicx

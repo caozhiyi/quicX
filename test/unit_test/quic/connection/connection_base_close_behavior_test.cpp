@@ -14,7 +14,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-class RecordingTimer : public common::ITimer {
+class RecordingTimer: public common::ITimer {
 public:
     struct Entry {
         common::TimerTask task;
@@ -31,7 +31,9 @@ public:
         return true;
     }
 
-    int32_t MinTime(uint64_t /*now*/ = 0) override { return entries_.empty() ? -1 : static_cast<int32_t>(entries_.front().timeout_ms); }
+    int32_t MinTime(uint64_t /*now*/ = 0) override {
+        return entries_.empty() ? -1 : static_cast<int32_t>(entries_.front().timeout_ms);
+    }
     void TimerRun(uint64_t /*now*/ = 0) override {}
     bool Empty() override { return entries_.empty(); }
 
@@ -41,10 +43,10 @@ public:
 
 private:
     std::vector<Entry> entries_;
-    size_t rm_count_ {0};
+    size_t rm_count_{0};
 };
 
-class TestClientConnection : public ClientConnection {
+class TestClientConnection: public ClientConnection {
 public:
     using ClientConnection::ClientConnection;
 
@@ -77,10 +79,7 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseSchedulesThreePtoTimer) {
     cbs.connection_close_cb = [&close_callback_invoked](std::shared_ptr<IConnection>, uint64_t, const std::string&) {
         close_callback_invoked = true;
     };
-    auto conn = std::make_shared<TestClientConnection>(
-        MakeTlsContext(),
-        event_loop,
-        cbs);
+    auto conn = std::make_shared<TestClientConnection>(MakeTlsContext(), event_loop, cbs);
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->Close();
@@ -101,9 +100,7 @@ TEST(ConnectionBaseCloseBehaviorTest, ImmediateCloseStoresErrorAndSchedulesTimer
     ASSERT_TRUE(event_loop->Init());
     auto timer = std::make_shared<RecordingTimer>();
     event_loop->SetTimerForTest(timer);
-    auto conn = std::make_shared<TestClientConnection>(
-        MakeTlsContext(),
-        event_loop);
+    auto conn = std::make_shared<TestClientConnection>(MakeTlsContext(), event_loop);
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->TriggerImmediateCloseForTest(0xdead, 0x15, "fatal");
@@ -127,14 +124,12 @@ TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
     std::string reason;
 
     ConnectionCallbacks cbs2;
-    cbs2.connection_close_cb = [&error_code, &reason](std::shared_ptr<IConnection>, uint64_t err, const std::string& r) {
+    cbs2.connection_close_cb = [&error_code, &reason](
+                                   std::shared_ptr<IConnection>, uint64_t err, const std::string& r) {
         error_code = err;
         reason = r;
     };
-    auto conn = std::make_shared<TestClientConnection>(
-        MakeTlsContext(),
-        event_loop,
-        cbs2);
+    auto conn = std::make_shared<TestClientConnection>(MakeTlsContext(), event_loop, cbs2);
 
     conn->ForceState(ConnectionStateType::kStateConnected);
     conn->Close();
@@ -155,9 +150,7 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {
     ASSERT_TRUE(event_loop->Init());
     auto timer = std::make_shared<RecordingTimer>();
     event_loop->SetTimerForTest(timer);
-    auto conn = std::make_shared<TestClientConnection>(
-        MakeTlsContext(),
-        event_loop);
+    auto conn = std::make_shared<TestClientConnection>(MakeTlsContext(), event_loop);
 
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
     EXPECT_GE(close_wait, 500u);

@@ -7,8 +7,7 @@
 namespace quicx {
 namespace quic {
 
-class StreamDataBlockedFrame:
-    public IStreamFrame {
+class StreamDataBlockedFrame: public IStreamFrame {
 public:
     StreamDataBlockedFrame();
     ~StreamDataBlockedFrame();
@@ -21,10 +20,10 @@ public:
     uint64_t GetMaximumData() { return maximum_data_; }
 
 private:
-   uint64_t maximum_data_;  // the connection-level limit at which blocking occurred.
+    uint64_t maximum_data_;  // the connection-level limit at which blocking occurred.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

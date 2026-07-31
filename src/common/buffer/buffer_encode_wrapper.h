@@ -1,11 +1,11 @@
 #ifndef COMMON_BUFFER_BUFFER_ENCODE_WRAPPER
 #define COMMON_BUFFER_BUFFER_ENCODE_WRAPPER
 
-#include <memory>
 #include <cstdint>
-#include "common/decode/decode.h"
-#include "common/buffer/if_buffer.h"
+#include <memory>
 #include "common/buffer/buffer_span.h"
+#include "common/buffer/if_buffer.h"
+#include "common/decode/decode.h"
 
 namespace quicx {
 namespace common {

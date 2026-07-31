@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -11,6 +12,7 @@
 #include <string>
 #include <thread>
 
+#include <quicx/common/metrics.h>
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
@@ -141,7 +143,7 @@ private:
 };
 
 // Streaming download handler
-class FileDownloadHandler : public quicx::IAsyncClientHandler {
+class FileDownloadHandler: public quicx::IAsyncClientHandler {
 private:
     std::string output_file_;
     std::ofstream file_;
@@ -236,8 +238,8 @@ public:
                       << "s";
 
             if (resume_from_ > 0) {
-                std::cout << " (resumed from " << std::fixed << std::setprecision(2)
-                          << (resume_from_ / 1024.0 / 1024.0) << " MB)";
+                std::cout << " (resumed from " << std::fixed << std::setprecision(2) << (resume_from_ / 1024.0 / 1024.0)
+                          << " MB)";
             }
             std::cout << std::endl;
 
@@ -319,6 +321,18 @@ public:
     FileTransferClient() { client_ = quicx::IClient::Create(); }
 
     bool Init() {
+        // Metrics: only the HTTP/3 server auto-initializes the global
+        // Metrics registry. The client SDK does not, so all
+        // HistogramObserve / CounterInc calls inside the client send path
+        // would be no-ops (they short-circuit on g_metrics_enabled=false).
+        // For perf runs we want diag_* histograms populated, so opt in
+        // explicitly when QUICX_METRICS_DUMP=1 is set.
+        if (const char* dump = std::getenv("QUICX_METRICS_DUMP"); dump && dump[0] == '1') {
+            quicx::MetricsConfig mcfg;
+            mcfg.enable = true;
+            quicx::common::Metrics::Initialize(mcfg);
+        }
+
         quicx::Http3ClientConfig config;
         config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
         config.quic_config_.config_.worker_thread_num_ = 4;
@@ -433,7 +447,7 @@ public:
                 if (progress) {
                     progress->Stop();
                 }
-                
+
                 if (error != 0) {
                     std::cerr << "\nError: Upload failed with error code " << error << std::endl;
                 } else {
@@ -555,6 +569,15 @@ int main(int argc, char* argv[]) {
         std::cerr << "Unknown command: " << command << std::endl;
         PrintUsage(argv[0]);
         return 1;
+    }
+
+    // Phase-0 throughput probe: dump the Prometheus snapshot of all metrics
+    // to stderr right before exit. Gated by env QUICX_METRICS_DUMP=1 so the
+    // dump only fires during perf runs (production users don't want a 200+
+    // line stderr blob every time the client exits).
+    if (const char* dump = std::getenv("QUICX_METRICS_DUMP"); dump && dump[0] == '1') {
+        std::cerr << "===== METRICS DUMP (client) =====\n"
+                  << quicx::common::Metrics::ExportPrometheus() << "===== END METRICS DUMP =====\n";
     }
 
     return 0;

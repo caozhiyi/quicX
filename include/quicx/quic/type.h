@@ -20,7 +20,6 @@ static constexpr uint32_t kQuicVersion2 = 0x6b3343cf;  // QUIC v2 (RFC 9369)
 
 }  // namespace quic
 
-
 /**
  * @brief Direction of a QUIC stream.
  */
@@ -46,7 +45,7 @@ struct QuicConfig {
     uint16_t worker_thread_num_ = 2;                      //!< Number of worker threads when in multi-thread mode.
     LogLevel log_level_ = LogLevel::kNull;                //!< Minimum log level emitted by the stack.
     std::string log_path_ = "./logs";                     //!< Log path.
-    
+
     bool enable_ecn_ = false;         //!< Toggle ECN handling.
     bool enable_0rtt_ = false;        //!< Allow 0-RTT data when tickets are available.
     bool enable_key_update_ = false;  //!< Enable automatic Key Update during connection.

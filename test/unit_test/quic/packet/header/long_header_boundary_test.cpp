@@ -1,19 +1,18 @@
 #include <gtest/gtest.h>
 
-#include "quic/packet/header/long_header.h"
-#include "quic/common/constants.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/common/constants.h"
+#include "quic/packet/header/long_header.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
 // Test that decoding a Long Header with CID length > kMaxConnectionLength fails
-TEST(long_header_boundary_utest, oversized_dcid_length) {
+TEST(LongHeaderBoundaryTest, oversized_dcid_length) {
     static const uint8_t kBufLen = 128;
-    auto buffer = std::make_shared<common::SingleBlockBuffer>(
-        std::make_shared<common::StandaloneBufferChunk>(kBufLen));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(kBufLen));
 
     // Manually construct a malicious long header packet:
     // Flag(1) + Version(4) + DCID_Len(1) + DCID(N) + SCID_Len(1) + SCID(N)
@@ -21,7 +20,7 @@ TEST(long_header_boundary_utest, oversized_dcid_length) {
     uint8_t pos = 0;
 
     // Header flag: long header form bit set + fixed bit set
-    malicious_packet[pos++] = 0xC0; // 1100_0000
+    malicious_packet[pos++] = 0xC0;  // 1100_0000
 
     // Version: 1
     malicious_packet[pos++] = 0x00;
@@ -39,10 +38,9 @@ TEST(long_header_boundary_utest, oversized_dcid_length) {
     EXPECT_FALSE(header.DecodeHeader(buffer, true));
 }
 
-TEST(long_header_boundary_utest, oversized_scid_length) {
+TEST(LongHeaderBoundaryTest, oversized_scid_length) {
     static const uint8_t kBufLen = 128;
-    auto buffer = std::make_shared<common::SingleBlockBuffer>(
-        std::make_shared<common::StandaloneBufferChunk>(kBufLen));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(kBufLen));
 
     uint8_t malicious_packet[64] = {0};
     uint8_t pos = 0;
@@ -72,10 +70,9 @@ TEST(long_header_boundary_utest, oversized_scid_length) {
     EXPECT_FALSE(header.DecodeHeader(buffer, true));
 }
 
-TEST(long_header_boundary_utest, max_valid_cid_length) {
+TEST(LongHeaderBoundaryTest, max_valid_cid_length) {
     static const uint8_t kBufLen = 128;
-    auto buffer = std::make_shared<common::SingleBlockBuffer>(
-        std::make_shared<common::StandaloneBufferChunk>(kBufLen));
+    auto buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(kBufLen));
 
     uint8_t packet[128] = {0};
     uint8_t pos = 0;

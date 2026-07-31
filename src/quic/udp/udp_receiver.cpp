@@ -10,9 +10,9 @@
 #include <netinet/ip6.h>
 #include <sys/socket.h>
 #endif
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 #include "common/network/if_event_driver.h"
 #include "common/network/io_handle.h"
 #include "common/util/time.h"
@@ -50,8 +50,7 @@ UdpReceiver::~UdpReceiver() {
 bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver> receiver) {
     auto loop = event_loop_.lock();
     if (!loop) return false;
-    LOG_DEBUG(
-        "UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
+    LOG_DEBUG("UdpReceiver::AddReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
 
     if (!loop->IsInLoopThread()) {
         LOG_DEBUG("UdpReceiver::AddReceiver: posting to EventLoop thread, fd=%d", socket_fd);
@@ -66,8 +65,8 @@ bool UdpReceiver::AddReceiver(int32_t socket_fd, std::shared_ptr<IPacketReceiver
 
     LOG_DEBUG("UdpReceiver::AddReceiver: registering fd=%d in EventLoop", socket_fd);
     receiver_map_[socket_fd] = receiver;
-    bool result = loop->RegisterFd(
-        socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
+    bool result =
+        loop->RegisterFd(socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this());
     LOG_DEBUG("UdpReceiver::AddReceiver: registration result=%d for fd=%d", result, socket_fd);
     return result;
 }
@@ -113,8 +112,7 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
         common::Close(socket_fd);
         return false;
     }
-    if (!loop->RegisterFd(
-            socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this())) {
+    if (!loop->RegisterFd(socket_fd, common::EventType::ET_READ | common::EventType::ET_ERROR, shared_from_this())) {
         LOG_ERROR("register fd failed. fd:%d", socket_fd);
         common::Close(socket_fd);
         return false;
@@ -128,8 +126,7 @@ bool UdpReceiver::AddReceiver(const std::string& ip, uint16_t port, std::shared_
 bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
     auto loop = event_loop_.lock();
     if (!loop) return false;
-    LOG_DEBUG(
-        "UdpReceiver::RemoveReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
+    LOG_DEBUG("UdpReceiver::RemoveReceiver called: fd=%d, IsInLoopThread=%d", socket_fd, loop->IsInLoopThread());
 
     if (!loop->IsInLoopThread()) {
         LOG_DEBUG("UdpReceiver::RemoveReceiver: posting to EventLoop thread, fd=%d", socket_fd);
@@ -260,16 +257,15 @@ void UdpReceiver::OnRead(uint32_t fd) {
             // however many slots we have already filled. The remaining
             // datagrams stay queued in the kernel and we'll drain them
             // on the next readable event.
-            LOG_WARN("udp recv: pool exhausted after %d retries, batch shrunk from %d to %d",
-                     retries, batch_cap, i);
+            LOG_WARN("udp recv: pool exhausted after %d retries, batch shrunk from %d to %d", retries, batch_cap, i);
             batch = i;
             break;
         }
         pkts[i] = std::move(pkt);
-        entries[i].buf_     = (char*)span.GetStart();
+        entries[i].buf_ = (char*)span.GetStart();
         entries[i].buf_len_ = span.GetLength();
-        entries[i].bytes_   = 0;
-        entries[i].ecn_     = 0;
+        entries[i].bytes_ = 0;
+        entries[i].ecn_ = 0;
     }
 
     if (batch == 0) {

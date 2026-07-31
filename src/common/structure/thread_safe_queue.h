@@ -7,7 +7,7 @@
 namespace quicx {
 namespace common {
 
-template<typename T>
+template <typename T>
 class ThreadSafeQueue {
 public:
     ThreadSafeQueue() {}
@@ -51,11 +51,11 @@ public:
     }
 
 private:
-    std::queue<T>        queue_;
-    std::mutex           mutex_;
+    std::queue<T> queue_;
+    std::mutex mutex_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

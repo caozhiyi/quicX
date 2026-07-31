@@ -1,6 +1,6 @@
-#include "common/log/log.h"
 #include "http3/stream/if_send_stream.h"
 #include "common/buffer/buffer_encode_wrapper.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace http3 {
@@ -10,12 +10,12 @@ bool ISendStream::EnsureStreamPreamble() {
         LOG_DEBUG("ISendStream::EnsureStreamPreamble: already wrote type, stream_id=%llu", stream_->GetStreamID());
         return true;
     }
-    
+
     // Send stream type for Control Stream (RFC 9114 Section 6.2.1)
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    LOG_DEBUG("ISendStream::EnsureStreamPreamble: before encoding, stream_id=%llu, stream_type=%u, buffer_length=%u", 
-                     stream_->GetStreamID(), stream_type_, buffer ? buffer->GetDataLength() : 0);
-    
+    LOG_DEBUG("ISendStream::EnsureStreamPreamble: before encoding, stream_id=%llu, stream_type=%u, buffer_length=%u",
+        stream_->GetStreamID(), stream_type_, buffer ? buffer->GetDataLength() : 0);
+
     common::BufferEncodeWrapper wrapper(buffer);
     wrapper.EncodeVarint(static_cast<uint64_t>(stream_type_));
 
@@ -29,15 +29,15 @@ bool ISendStream::EnsureStreamPreamble() {
             snprintf(buf, sizeof(buf), "%02x ", static_cast<uint8_t>(span.GetStart()[i]));
             hex += buf;
         }
-        LOG_DEBUG("ISendStream::EnsureStreamPreamble: after encoding stream type, buffer length=%u, hex=[%s], stream_id=%llu", 
-                         buffer->GetDataLength(), hex.c_str(), stream_->GetStreamID());
+        LOG_DEBUG(
+            "ISendStream::EnsureStreamPreamble: after encoding stream type, buffer length=%u, hex=[%s], stream_id=%llu",
+            buffer->GetDataLength(), hex.c_str(), stream_->GetStreamID());
     }
 
-    LOG_DEBUG("ISendStream::EnsureStreamPreamble: sent stream type on stream %llu", 
-                     stream_->GetStreamID());
+    LOG_DEBUG("ISendStream::EnsureStreamPreamble: sent stream type on stream %llu", stream_->GetStreamID());
     wrote_type_ = true;
     return true;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

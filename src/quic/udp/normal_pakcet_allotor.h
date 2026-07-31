@@ -9,8 +9,7 @@ namespace quic {
 /*
  normal packet allotor, alloc packet from normal memory
 */
-class NormalPacketAllotor:
-    public IPacketAllotor {
+class NormalPacketAllotor: public IPacketAllotor {
 public:
     NormalPacketAllotor() {}
     virtual ~NormalPacketAllotor() {}
@@ -18,7 +17,7 @@ public:
     std::shared_ptr<NetPacket> Malloc() override;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

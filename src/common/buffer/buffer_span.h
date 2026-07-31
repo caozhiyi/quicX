@@ -37,8 +37,7 @@ private:
     uint8_t* end_ = nullptr;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif
-

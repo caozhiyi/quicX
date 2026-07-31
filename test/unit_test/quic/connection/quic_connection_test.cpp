@@ -1,64 +1,63 @@
 #include <gtest/gtest.h>
 
-#include "common/log/log.h"
-#include "common/timer/timer.h"
-#include "quic/packet/packet_decode.h"
-#include "quic/crypto/tls/tls_ctx_client.h"
-#include "quic/crypto/tls/tls_ctx_server.h"
 #include <quicx/quic/if_quic_send_stream.h>
-#include "quic/connection/connection_client.h"
-#include "quic/connection/connection_server.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
-#include "quic/quicx/global_resource.h"
-#include "mock_sender.h"
+#include "common/log/log.h"
+#include "common/timer/timer.h"
 #include "connection_test_util.h"
-
+#include "mock_sender.h"
+#include "quic/connection/connection_client.h"
+#include "quic/connection/connection_server.h"
+#include "quic/crypto/tls/tls_ctx_client.h"
+#include "quic/crypto/tls/tls_ctx_server.h"
+#include "quic/packet/packet_decode.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-using quicx::quic::ConnectionProcess;
 using quicx::quic::AttachMockSender;
+using quicx::quic::ConnectionProcess;
 
 static const char kCertPem[] =
-      "-----BEGIN CERTIFICATE-----\n"
-      "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
-      "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
-      "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
-      "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
-      "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
-      "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
-      "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
-      "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
-      "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
-      "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
-      "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
-      "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
-      "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
-      "-----END CERTIFICATE-----\n";
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
+    "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
+    "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
+    "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
+    "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
+    "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
+    "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
+    "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
+    "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
+    "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
+    "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
+    "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
+    "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
+    "-----END CERTIFICATE-----\n";
 
 static const char kKeyPem[] =
-      "-----BEGIN RSA PRIVATE KEY-----\n"
-      "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
-      "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
-      "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
-      "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
-      "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
-      "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
-      "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
-      "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
-      "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
-      "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
-      "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
-      "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
-      "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
-      "-----END RSA PRIVATE KEY-----\n"; 
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
+    "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
+    "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
+    "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
+    "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
+    "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
+    "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
+    "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
+    "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
+    "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
+    "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
+    "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
+    "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
+    "-----END RSA PRIVATE KEY-----\n";
 
 // Note: ConnectionProcess is defined in connection_test_util.h
 
-TEST(quic_connection_utest, handshake) {
+TEST(QuicConnectionTest, handshake) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -113,7 +112,7 @@ TEST(quic_connection_utest, handshake) {
                 }
             }
         }
-        
+
         // Also try client side
         client_sender->Clear();
         if (client_conn->TrySend()) {
@@ -136,7 +135,7 @@ TEST(quic_connection_utest, handshake) {
     LOG_DEBUG("session_der: %s, size: %zu", session_der.c_str(), session_der.size());
 }
 
-TEST(quic_connection_utest, resume_0rtt_basic) {
+TEST(QuicConnectionTest, resume_0rtt_basic) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -210,11 +209,10 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     std::vector<std::shared_ptr<IPacket>> pkts1;
     ASSERT_TRUE(DecodePackets(buffer1, pkts1));
     ASSERT_FALSE(pkts1.empty());
-    
+
     // In 0-RTT scenario, the first packet might be 0-RTT instead of Initial
     auto packet_type = pkts1[0]->GetHeader()->GetPacketType();
-    EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || 
-                packet_type == PacketType::k0RttPacketType);
+    EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || packet_type == PacketType::k0RttPacketType);
 
     // Deliver to server to let it process ClientHello and set up 0-RTT keys
     server_conn2->OnPackets(0, pkts1);
@@ -275,7 +273,7 @@ TEST(quic_connection_utest, resume_0rtt_basic) {
     EXPECT_EQ(server_conn2->GetCurEncryptionLevel(), kApplication);
 }
 
-TEST(quic_connection_utest, reject_0rtt_basic) {
+TEST(QuicConnectionTest, reject_0rtt_basic) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -326,7 +324,6 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
 
     client_conn2->Dial(addr, "h3", session_der, DEFAULT_QUIC_TRANSPORT_PARAMS);
 
-
     std::shared_ptr<TLSServerCtx> server_ctx_2 = std::make_shared<TLSServerCtx>();
     server_ctx_2->Init(kCertPem, kKeyPem, false, 172800);
 
@@ -353,11 +350,10 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     std::vector<std::shared_ptr<IPacket>> pkts1;
     ASSERT_TRUE(DecodePackets(buffer1, pkts1));
     ASSERT_FALSE(pkts1.empty());
-    
+
     // In 0-RTT scenario, the first packet might be 0-RTT instead of Initial
     auto packet_type = pkts1[0]->GetHeader()->GetPacketType();
-    EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || 
-                packet_type == PacketType::k0RttPacketType);
+    EXPECT_TRUE(packet_type == PacketType::kInitialPacketType || packet_type == PacketType::k0RttPacketType);
 
     // Deliver to server to let it process ClientHello and set up 0-RTT keys
     server_conn2->OnPackets(0, pkts1);
@@ -389,6 +385,6 @@ TEST(quic_connection_utest, reject_0rtt_basic) {
     EXPECT_NE(server_conn2->GetCurEncryptionLevel(), kApplication);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

@@ -15,14 +15,22 @@ namespace common {
  */
 inline const char* Http3FrameTypeToString(uint16_t frame_type) {
     switch (frame_type) {
-        case 0x00: return "data";
-        case 0x01: return "headers";
-        case 0x03: return "cancel_push";
-        case 0x04: return "settings";
-        case 0x05: return "push_promise";
-        case 0x07: return "goaway";
-        case 0x0d: return "max_push_id";
-        default:   return "unknown";
+        case 0x00:
+            return "data";
+        case 0x01:
+            return "headers";
+        case 0x03:
+            return "cancel_push";
+        case 0x04:
+            return "settings";
+        case 0x05:
+            return "push_promise";
+        case 0x07:
+            return "goaway";
+        case 0x0d:
+            return "max_push_id";
+        default:
+            return "unknown";
     }
 }
 
@@ -35,7 +43,7 @@ class Http3FrameCreatedData: public EventData {
 public:
     uint16_t frame_type = 0;
     uint64_t stream_id = 0;
-    uint64_t length = 0;     // Frame payload length
+    uint64_t length = 0;  // Frame payload length
 
     std::string ToJson() const override {
         std::ostringstream oss;
@@ -57,7 +65,7 @@ class Http3FrameParsedData: public EventData {
 public:
     uint16_t frame_type = 0;
     uint64_t stream_id = 0;
-    uint64_t length = 0;     // Frame payload length
+    uint64_t length = 0;  // Frame payload length
 
     std::string ToJson() const override {
         std::ostringstream oss;

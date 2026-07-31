@@ -2,15 +2,15 @@
 // that can be found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <thread>
-#include <chrono>
 
-#include "common/qlog/writer/async_writer.h"
 #include "common/qlog/qlog_config.h"
+#include "common/qlog/writer/async_writer.h"
 
 namespace quicx {
 namespace common {
@@ -34,8 +34,8 @@ void WaitForFlush(AsyncWriter& writer, uint64_t expected_events, int max_wait_ms
     auto start = std::chrono::steady_clock::now();
     while (writer.GetTotalEventsWritten() < expected_events) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start).count();
+        auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
         if (elapsed > max_wait_ms) {
             break;
         }
@@ -59,8 +59,7 @@ std::string ReadQlogFile(const std::string& dir, const std::string& partial_name
     if (!fs::exists(dir)) return "";
     for (const auto& entry : fs::directory_iterator(dir)) {
         if (entry.path().extension() == ".sqlog") {
-            if (partial_name.empty() ||
-                entry.path().filename().string().find(partial_name) != std::string::npos) {
+            if (partial_name.empty() || entry.path().filename().string().find(partial_name) != std::string::npos) {
                 std::ifstream file(entry.path());
                 std::stringstream ss;
                 ss << file.rdbuf();
@@ -84,7 +83,7 @@ std::vector<std::string> GetQlogFiles(const std::string& dir) {
 }
 
 // Test fixture for AsyncWriter tests
-class AsyncWriterTest : public ::testing::Test {
+class AsyncWriterTest: public ::testing::Test {
 protected:
     void SetUp() override {}
 
@@ -97,9 +96,7 @@ protected:
         }
     }
 
-    void RegisterCleanup(const std::string& dir) {
-        cleanup_dirs_.push_back(dir);
-    }
+    void RegisterCleanup(const std::string& dir) { cleanup_dirs_.push_back(dir); }
 
 private:
     std::vector<std::string> cleanup_dirs_;
@@ -203,8 +200,7 @@ TEST_F(AsyncWriterTest, FileNamingConvention) {
     std::string filename = fs::path(files[0]).filename().string();
     EXPECT_TRUE(filename.find("abcdef12") != std::string::npos)
         << "Filename should contain connection ID prefix: " << filename;
-    EXPECT_TRUE(filename.find(".sqlog") != std::string::npos)
-        << "Filename should have .sqlog extension: " << filename;
+    EXPECT_TRUE(filename.find(".sqlog") != std::string::npos) << "Filename should have .sqlog extension: " << filename;
 }
 
 // Test: Long connection ID is truncated to 8 characters in filename
@@ -336,8 +332,8 @@ TEST_F(AsyncWriterTest, BatchWriteMultipleEvents) {
     writer.WriteHeader("conn-batch", "{\"header\":true}\n");
 
     for (int i = 0; i < num_events; i++) {
-        std::string event = "{\"time\":" + std::to_string(i) +
-            ".000,\"name\":\"test\",\"data\":{\"seq\":" + std::to_string(i) + "}}\n";
+        std::string event =
+            "{\"time\":" + std::to_string(i) + ".000,\"name\":\"test\",\"data\":{\"seq\":" + std::to_string(i) + "}}\n";
         writer.WriteEvent("conn-batch", event);
     }
 

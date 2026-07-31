@@ -1,19 +1,19 @@
 #if defined(QUICX_ENABLE_BENCHMARKS)
 #include <benchmark/benchmark.h>
 #include <memory>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
-#include "http3/qpack/util.h"
 #include "common/alloter/pool_block.h"
-#include "http3/qpack/qpack_encoder.h"
 #include "common/buffer/multi_block_buffer.h"
+#include "http3/qpack/qpack_encoder.h"
+#include "http3/qpack/util.h"
 
 namespace quicx {
 namespace http3 {
 
 static std::shared_ptr<common::IBuffer> MakeBuffer(size_t cap = 4096) {
-    auto pool = std::make_shared<common::BlockMemoryPool>(cap, /*add_num*/128);
+    auto pool = std::make_shared<common::BlockMemoryPool>(cap, /*add_num*/ 128);
     return std::make_shared<common::MultiBlockBuffer>(pool);
 }
 
@@ -23,7 +23,7 @@ static void BM_Qpack_Insert_And_IndexedDecode(benchmark::State& state) {
 
     // Warm up: send one insert instruction
     auto ctrl = MakeBuffer();
-    std::vector<std::pair<std::string,std::string>> inserts = {{"x-bench", "v"}};
+    std::vector<std::pair<std::string, std::string>> inserts = {{"x-bench", "v"}};
     enc.EncodeEncoderInstructions(inserts, ctrl);
     dec.DecodeEncoderInstructions(ctrl);
 
@@ -38,13 +38,13 @@ static void BM_Qpack_Insert_And_IndexedDecode(benchmark::State& state) {
     }
 }
 
-} // namespace http3
-} // namespace quicx
+}  // namespace http3
+}  // namespace quicx
 
 BENCHMARK(quicx::http3::BM_Qpack_Insert_And_IndexedDecode);
 BENCHMARK_MAIN();
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif
-
-

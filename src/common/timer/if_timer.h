@@ -16,18 +16,18 @@ public:
     virtual bool RemoveTimer(TimerTask& task) = 0;
 
     // get min next time out time
-    // return: 
+    // return:
     // >= 0  : the next time
     //  < 0  : has no timer
     virtual int32_t MinTime(uint64_t now = 0) = 0;
 
-    // timer wheel run time 
+    // timer wheel run time
     virtual void TimerRun(uint64_t now = 0) = 0;
 
     virtual bool Empty() = 0;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

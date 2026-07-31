@@ -4,9 +4,9 @@
 #include <map>
 #include <string>
 
-#include "common/buffer/multi_block_buffer.h"
 #include <quicx/common/if_buffer_read.h>
 #include <quicx/common/if_buffer_write.h>
+#include "common/buffer/multi_block_buffer.h"
 
 #include <quicx/quic/if_quic_send_stream.h>
 #include "quic/stream/if_stream.h"
@@ -39,9 +39,7 @@ public:
 
     virtual void SetStreamWriteCallBack(stream_write_callback cb) override { sended_cb_ = cb; }
 
-    virtual uint64_t GetPendingSendBytes() override {
-        return send_buffer_ ? send_buffer_->GetDataLength() : 0;
-    }
+    virtual uint64_t GetPendingSendBytes() override { return send_buffer_ ? send_buffer_->GetDataLength() : 0; }
 
     // *************** inside interface ***************//
     // process recv frames

@@ -1,11 +1,11 @@
-#include <gtest/gtest.h>
 #include "quic/connection/connection_id_generator.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(connnection_id_generator_utest, generator) {
+TEST(ConnectionIdGeneratorTest, generator) {
     uint8_t cid1[8] = {0};
     uint8_t cid2[8] = {0};
 
@@ -21,7 +21,7 @@ TEST(connnection_id_generator_utest, generator) {
     EXPECT_FALSE(eq);
 }
 
-TEST(connnection_id_generator_utest, hash) {
+TEST(ConnectionIdGeneratorTest, hash) {
     uint8_t cid1[8] = {0};
     uint8_t cid2[8] = {0};
 
@@ -34,6 +34,6 @@ TEST(connnection_id_generator_utest, hash) {
     EXPECT_EQ(h1, h2);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

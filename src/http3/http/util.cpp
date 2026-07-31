@@ -30,6 +30,5 @@ std::string HttpMethodToString(HttpMethod method) {
     }
 }
 
-}
-}
-
+}  // namespace http3
+}  // namespace quicx

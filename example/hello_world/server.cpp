@@ -1,3 +1,6 @@
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -7,9 +10,6 @@
 #include <memory>
 #include <string>
 #include <thread>
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
-#include <quicx/http3/if_server.h>
 
 // Use an atomic flag instead of calling Stop() directly from the signal
 // handler: Stop() -> Destroy() takes locks and frees memory, neither of which
@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
     config.quic_config_.config_.log_path_ = "/tmp/h3_server_logs";
 
     // Enable QLog so we can visualize the connection in qvis
-    config.quic_config_.config_.qlog_config_.enabled = false;
+    config.quic_config_.config_.qlog_config_.enabled = true;
     config.quic_config_.config_.qlog_config_.output_dir = "./qlog_output_server";
     config.quic_config_.config_.qlog_config_.flush_interval_ms = 100;
 

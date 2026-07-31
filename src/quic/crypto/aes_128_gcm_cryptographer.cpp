@@ -1,6 +1,6 @@
+#include "quic/crypto/aes_128_gcm_cryptographer.h"
 #include <openssl/aead.h>
 #include <openssl/evp.h>
-#include "quic/crypto/aes_128_gcm_cryptographer.h"
 
 namespace quicx {
 namespace quic {
@@ -14,13 +14,11 @@ Aes128GcmCryptographer::Aes128GcmCryptographer() {
     aead_iv_length_ = EVP_AEAD_nonce_length(aead_);
     aead_tag_length_ = EVP_AEAD_max_tag_len(aead_);
 
-    cipher_key_length_ = EVP_CIPHER_key_length(cipher_); 
+    cipher_key_length_ = EVP_CIPHER_key_length(cipher_);
     cipher_iv_length_ = EVP_CIPHER_iv_length(cipher_);
 }
 
-Aes128GcmCryptographer::~Aes128GcmCryptographer() {
-
-}
+Aes128GcmCryptographer::~Aes128GcmCryptographer() {}
 
 const char* Aes128GcmCryptographer::GetName() {
     return "aes_128_gcm_cryptographer";
@@ -30,5 +28,5 @@ CryptographerId Aes128GcmCryptographer::GetCipherId() {
     return kCipherIdAes128GcmSha256;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

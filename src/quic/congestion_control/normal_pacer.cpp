@@ -1,7 +1,7 @@
-#include "common/util/time.h"
+#include "quic/congestion_control/normal_pacer.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
-#include "quic/congestion_control/normal_pacer.h"
+#include "common/util/time.h"
 
 namespace quicx {
 namespace quic {
@@ -10,7 +10,7 @@ NormalPacer::NormalPacer() {
     pacing_rate_bytes_per_sec_ = 0;
     next_send_time_ms_ = 0;
     last_update_ms_ = 0;
-    max_burst_bytes_ = 256 * 1024; // 256KB default burst (was 16KB; small burst severely limited LAN throughput)
+    max_burst_bytes_ = 256 * 1024;  // 256KB default burst (was 16KB; small burst severely limited LAN throughput)
     burst_budget_bytes_ = max_burst_bytes_;
 }
 
@@ -39,10 +39,10 @@ uint64_t NormalPacer::TimeUntilSend() const {
         return 0;
     }
     uint64_t delay_ms = next_send_time_ms_ - now_ms;
-    
+
     // Metrics: Record pacing delay in microseconds
     common::Metrics::GaugeSet(common::MetricsStd::PacingDelayUs, delay_ms * 1000);
-    
+
     return delay_ms;
 }
 
@@ -51,7 +51,7 @@ void NormalPacer::OnPacketSent(uint64_t sent_time_ms, uint64_t bytes) {
 
     if (burst_budget_bytes_ >= bytes) {
         burst_budget_bytes_ -= bytes;
-        next_send_time_ms_ = sent_time_ms; // still can send immediately within burst budget
+        next_send_time_ms_ = sent_time_ms;  // still can send immediately within burst budget
         return;
     }
 
@@ -95,5 +95,5 @@ void NormalPacer::RefillBurstBudget(uint64_t now_ms) {
     last_update_ms_ = now_ms;
 }
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx

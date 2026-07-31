@@ -1,14 +1,14 @@
 #if defined(QUICX_ENABLE_BENCHMARKS)
 #include <benchmark/benchmark.h>
-#include <thread>
-#include <vector>
-#include <string>
 #include <atomic>
 #include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
 
-#include <quicx/common/type.h>
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include <quicx/common/type.h>
 
 namespace quicx {
 namespace common {
@@ -124,8 +124,8 @@ static void BM_Metrics_HistogramObserve_FewBuckets(benchmark::State& state) {
 
 static void BM_Metrics_HistogramObserve_ManyBuckets(benchmark::State& state) {
     EnsureMetricsInitialized();
-    std::vector<uint64_t> buckets = {10, 25, 50, 75, 100, 150, 200, 300, 500, 750,
-                                      1000, 2000, 5000, 10000, 25000, 50000, 100000};
+    std::vector<uint64_t> buckets = {
+        10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 2000, 5000, 10000, 25000, 50000, 100000};
     auto id = Metrics::RegisterHistogram("bench_hist_many", "Many buckets histogram", buckets);
 
     uint64_t val = 0;
@@ -320,10 +320,8 @@ BENCHMARK(quicx::common::BM_Metrics_ExportPrometheus);
 BENCHMARK(quicx::common::BM_Metrics_DisabledCounterInc);
 
 // Multi-threaded contention
-BENCHMARK(quicx::common::BM_Metrics_MultiThreadCounter)
-    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16);
-BENCHMARK(quicx::common::BM_Metrics_MultiThreadHistogram)
-    ->Arg(1)->Arg(2)->Arg(4)->Arg(8);
+BENCHMARK(quicx::common::BM_Metrics_MultiThreadCounter)->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16);
+BENCHMARK(quicx::common::BM_Metrics_MultiThreadHistogram)->Arg(1)->Arg(2)->Arg(4)->Arg(8);
 
 // Registration (cold path)
 BENCHMARK(quicx::common::BM_Metrics_RegisterCounter);

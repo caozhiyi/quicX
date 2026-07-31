@@ -6,7 +6,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-TEST(packet_number_utest, codec) {
+TEST(PacketNumberTest, codec) {
     PacketNumber packet_number;
 
     for (size_t i = 0; i < 1000; i++) {
@@ -23,11 +23,11 @@ TEST(packet_number_utest, codec) {
     PacketNumber::Decode(buf, 2, new_pn);
 
     EXPECT_EQ(pn, new_pn);
-    
+
     uint64_t except_pn = PacketNumber::Decode(999, new_pn, 8);
     EXPECT_EQ(except_pn, new_pn);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

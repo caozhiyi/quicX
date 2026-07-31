@@ -24,35 +24,35 @@
 #if defined(QUICX_ENABLE_BENCHMARKS)
 
 #include <benchmark/benchmark.h>
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <memory>
 #include <random>
 #include <string>
 #include <thread>
-#include <vector>
-#include <chrono>
-#include <atomic>
 #include <unordered_map>
+#include <vector>
 
 // Common
 #include "common/alloter/pool_alloter.h"
 #include "common/alloter/pool_block.h"
+#include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/multi_block_buffer.h"
-#include "common/buffer/buffer_encode_wrapper.h"
-#include "common/buffer/buffer_decode_wrapper.h"
 
 // QUIC frames
 #include "quic/frame/ack_frame.h"
-#include "quic/frame/stream_frame.h"
 #include "quic/frame/frame_decode.h"
+#include "quic/frame/stream_frame.h"
 
 // QUIC TLS
 #include "quic/crypto/tls/tls_ctx.h"
 
 // HTTP/3 QPACK
-#include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/huffman_encoder.h"
+#include "http3/qpack/qpack_encoder.h"
 
 namespace quicx {
 namespace perf {
@@ -407,7 +407,11 @@ BENCHMARK(quicx::perf::BM_CpuHotspot_TlsCtxCreation);
 
 // Scenario 2: Buffer operations
 BENCHMARK(quicx::perf::BM_CpuHotspot_BufferWriteRead)
-    ->Arg(64)->Arg(256)->Arg(1200)->Arg(4096)->Arg(16384)
+    ->Arg(64)
+    ->Arg(256)
+    ->Arg(1200)
+    ->Arg(4096)
+    ->Arg(16384)
     ->Unit(benchmark::kMicrosecond);
 BENCHMARK(quicx::perf::BM_CpuHotspot_BufferEncodeVarInt);
 
@@ -425,20 +429,15 @@ BENCHMARK(quicx::perf::BM_CpuHotspot_HuffmanEncode);
 BENCHMARK(quicx::perf::BM_CpuHotspot_HuffmanDecode);
 
 // Scenario 6: Memory allocation comparison
-BENCHMARK(quicx::perf::BM_CpuHotspot_PoolAllocator)
-    ->Arg(16)->Arg(64)->Arg(128)->Arg(256);
-BENCHMARK(quicx::perf::BM_CpuHotspot_BlockPoolAllocator)
-    ->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
-BENCHMARK(quicx::perf::BM_CpuHotspot_StdMalloc)
-    ->Arg(16)->Arg(64)->Arg(128)->Arg(256)->Arg(1024)->Arg(4096);
+BENCHMARK(quicx::perf::BM_CpuHotspot_PoolAllocator)->Arg(16)->Arg(64)->Arg(128)->Arg(256);
+BENCHMARK(quicx::perf::BM_CpuHotspot_BlockPoolAllocator)->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
+BENCHMARK(quicx::perf::BM_CpuHotspot_StdMalloc)->Arg(16)->Arg(64)->Arg(128)->Arg(256)->Arg(1024)->Arg(4096);
 
 // Scenario 7: Full packet processing
-BENCHMARK(quicx::perf::BM_CpuHotspot_PacketProcessingSimulation)
-    ->Unit(benchmark::kMicrosecond);
+BENCHMARK(quicx::perf::BM_CpuHotspot_PacketProcessingSimulation)->Unit(benchmark::kMicrosecond);
 
 // Scenario 8: Multi-threaded contention
-BENCHMARK(quicx::perf::BM_CpuHotspot_MultiThreadBufferAlloc)
-    ->Arg(1)->Arg(2)->Arg(4)->Arg(8);
+BENCHMARK(quicx::perf::BM_CpuHotspot_MultiThreadBufferAlloc)->Arg(1)->Arg(2)->Arg(4)->Arg(8);
 
 BENCHMARK_MAIN();
 

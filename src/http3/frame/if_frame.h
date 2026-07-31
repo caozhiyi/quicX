@@ -1,10 +1,10 @@
 #ifndef HTTP3_FRAME_IF_FRAME
 #define HTTP3_FRAME_IF_FRAME
 
-#include <memory>
 #include <cstdint>
-#include "http3/frame/type.h"
+#include <memory>
 #include "common/buffer/if_buffer.h"
+#include "http3/frame/type.h"
 
 namespace quicx {
 namespace http3 {
@@ -16,7 +16,8 @@ namespace http3 {
  */
 class IFrame {
 public:
-    IFrame(FrameType ft = FrameType::kUnknown): type_(ft) {}
+    IFrame(FrameType ft = FrameType::kUnknown):
+        type_(ft) {}
     virtual ~IFrame() {}
 
     /**

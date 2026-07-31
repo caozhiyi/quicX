@@ -54,8 +54,8 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
     }
     sequence_cid_map_.erase(iter);
 
-    LOG_DEBUG("ConnectionIDManager::RetireIDBySequence: retired seq=%llu, map_size=%zu, cur_retire=%d",
-        sequence, sequence_cid_map_.size(), cur_retire ? 1 : 0);
+    LOG_DEBUG("ConnectionIDManager::RetireIDBySequence: retired seq=%llu, map_size=%zu, cur_retire=%d", sequence,
+        sequence_cid_map_.size(), cur_retire ? 1 : 0);
 
     if (cur_retire && !sequence_cid_map_.empty()) {
         cur_id_ = sequence_cid_map_.begin()->second;
@@ -63,9 +63,7 @@ bool ConnectionIDManager::RetireIDBySequence(uint64_t sequence) {
         // Pool is now empty AND we just retired the active CID. The caller is
         // responsible for replenishing the pool (peer must have provided a
         // replacement via NEW_CONNECTION_ID before this point per RFC 9000 §5.1.2).
-        LOG_WARN(
-            "ConnectionIDManager::RetireIDBySequence: pool exhausted after retiring active seq=%llu",
-            sequence);
+        LOG_WARN("ConnectionIDManager::RetireIDBySequence: pool exhausted after retiring active seq=%llu", sequence);
         return false;
     }
     return true;
@@ -95,8 +93,7 @@ bool ConnectionIDManager::RetireIDsUpTo(uint64_t prior_to) {
     if (cur_retire && !sequence_cid_map_.empty()) {
         cur_id_ = sequence_cid_map_.begin()->second;
     } else if (cur_retire) {
-        LOG_WARN("ConnectionIDManager::RetireIDsUpTo: pool exhausted after batch retire prior_to=%llu",
-            prior_to);
+        LOG_WARN("ConnectionIDManager::RetireIDsUpTo: pool exhausted after batch retire prior_to=%llu", prior_to);
         return false;
     }
     return true;
@@ -107,8 +104,8 @@ bool ConnectionIDManager::AddID(ConnectionID& id) {
     if (sequence_cid_map_.size() == 1) {
         cur_id_ = id;
     }
-    LOG_DEBUG("ConnectionIDManager::AddID: seq=%llu, hash=%llu, map_size=%zu", id.GetSequenceNumber(),
-        id.Hash(), sequence_cid_map_.size());
+    LOG_DEBUG("ConnectionIDManager::AddID: seq=%llu, hash=%llu, map_size=%zu", id.GetSequenceNumber(), id.Hash(),
+        sequence_cid_map_.size());
     if (add_connection_id_cb_) {
         add_connection_id_cb_(id);
     }

@@ -287,9 +287,7 @@ TEST_F(StressTest, LargeDataTransfer) {
     auto end = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    double throughput_mbps = duration.count() > 0
-        ? (total_bytes / 1024.0 / 1024.0) / (duration.count() / 1000.0)
-        : 0.0;
+    double throughput_mbps = duration.count() > 0 ? (total_bytes / 1024.0 / 1024.0) / (duration.count() / 1000.0) : 0.0;
 
     std::cout << "Large Data Transfer Test Results:" << std::endl;
     std::cout << "  Requests: " << num_requests << std::endl;

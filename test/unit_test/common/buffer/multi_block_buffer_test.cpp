@@ -1,8 +1,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <vector>
 #include <cstring>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -45,7 +45,7 @@ TEST(MultiBlockBufferTest, BasicReadAcrossChunks) {
     // Write span1: creates first chunk state
     EXPECT_EQ(10u, buffer.Write(span1, 10u));
     EXPECT_EQ(10u, buffer.GetDataLength());
-    
+
     // Write span2: if last chunk has enough space (32-10=22 >= 6), data is copied to last chunk
     // Otherwise, creates new chunk state. To ensure we get 2 chunks, we need to make sure
     // the last chunk doesn't have enough space. Let's write more data first to fill the chunk.
@@ -56,7 +56,7 @@ TEST(MultiBlockBufferTest, BasicReadAcrossChunks) {
     // Let's write a larger second span that exceeds the remaining space.
     EXPECT_EQ(6u, buffer.Write(span2, 6u));
     EXPECT_EQ(16u, buffer.GetDataLength());
-    
+
     // GetFreeLength returns only the last chunk's writable space
     // After writing span2, if it was copied to last chunk: free space = 32 - 16 = 16
     // If it created new chunk: free space = 32 - 6 = 26
@@ -74,9 +74,9 @@ TEST(MultiBlockBufferTest, BasicReadAcrossChunks) {
     ASSERT_EQ(1u, visited.size());
     ASSERT_GE(visited[0].size(), 16u);
     EXPECT_EQ(16u, visited[0].size());
-    EXPECT_EQ(1u, visited[0][0]);   // First byte from span1
+    EXPECT_EQ(1u, visited[0][0]);  // First byte from span1
     if (visited[0].size() > 10) {
-        EXPECT_EQ(50u, visited[0][10]); // First byte from span2 (at offset 10)
+        EXPECT_EQ(50u, visited[0][10]);  // First byte from span2 (at offset 10)
     }
 
     // Read and verify the data
@@ -115,7 +115,7 @@ TEST(MultiBlockBufferTest, PointerMovementAndClear) {
 
     // MoveWritePt does not support backward movement
     // Instead, verify that forward movement works correctly
-    EXPECT_EQ(4u, buffer.MoveWritePt(4));  // extend write pointer forward
+    EXPECT_EQ(4u, buffer.MoveWritePt(4));    // extend write pointer forward
     EXPECT_EQ(13u, buffer.GetDataLength());  // data length increases
 
     buffer.Clear();
@@ -281,12 +281,12 @@ TEST(MultiBlockBufferTest, ConstructorAndSetPool) {
     MultiBlockBuffer buffer1;
     EXPECT_TRUE(buffer1.Empty());
     EXPECT_EQ(0u, buffer1.GetDataLength());
-    
+
     // Constructor with pool
     auto pool = MakePool(32, 2);
     MultiBlockBuffer buffer2(pool);
     EXPECT_TRUE(buffer2.Empty());
-    
+
     // SetPool
     buffer1.SetPool(pool);
     std::vector<uint8_t> data = {1, 2, 3, 4};
@@ -297,16 +297,16 @@ TEST(MultiBlockBufferTest, ConstructorAndSetPool) {
 TEST(MultiBlockBufferTest, EmptyAndBasicState) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     EXPECT_TRUE(buffer.Empty());
     EXPECT_EQ(0u, buffer.GetDataLength());
-    
+
     // Write data
     std::vector<uint8_t> data = {1, 2, 3};
     buffer.Write(data.data(), data.size());
     EXPECT_FALSE(buffer.Empty());
     EXPECT_EQ(3u, buffer.GetDataLength());
-    
+
     // Read all data
     std::vector<uint8_t> out(3);
     buffer.Read(out.data(), out.size());
@@ -318,21 +318,21 @@ TEST(MultiBlockBufferTest, EmptyAndBasicState) {
 TEST(MultiBlockBufferTest, ResetAndClear) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     // Write data
     std::vector<uint8_t> data = {10, 20, 30, 40};
     buffer.Write(data.data(), data.size());
     EXPECT_FALSE(buffer.Empty());
-    
+
     // Clear
     buffer.Clear();
     EXPECT_TRUE(buffer.Empty());
     EXPECT_EQ(0u, buffer.GetDataLength());
-    
+
     // Write again
     buffer.Write(data.data(), data.size());
     EXPECT_EQ(4u, buffer.GetDataLength());
-    
+
     // Reset
     buffer.Reset();
     EXPECT_TRUE(buffer.Empty());
@@ -343,11 +343,11 @@ TEST(MultiBlockBufferTest, ResetAndClear) {
 TEST(MultiBlockBufferTest, WriteRawDataSingleChunkComprehensive) {
     auto pool = MakePool(64, 1);
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3, 4, 5, 6, 7, 8};
     EXPECT_EQ(8u, buffer.Write(data.data(), data.size()));
     EXPECT_EQ(8u, buffer.GetDataLength());
-    
+
     std::vector<uint8_t> out(8);
     EXPECT_EQ(8u, buffer.Read(out.data(), out.size()));
     EXPECT_TRUE(std::equal(data.begin(), data.end(), out.begin()));
@@ -357,15 +357,15 @@ TEST(MultiBlockBufferTest, WriteRawDataSingleChunkComprehensive) {
 TEST(MultiBlockBufferTest, WriteRawDataMultipleChunks) {
     auto pool = MakePool(8, 4);  // Small chunks to force multiple allocations
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data(25);
     for (size_t i = 0; i < data.size(); ++i) {
         data[i] = static_cast<uint8_t>(i);
     }
-    
+
     EXPECT_EQ(25u, buffer.Write(data.data(), data.size()));
     EXPECT_EQ(25u, buffer.GetDataLength());
-    
+
     std::vector<uint8_t> out(25);
     EXPECT_EQ(25u, buffer.Read(out.data(), out.size()));
     EXPECT_TRUE(std::equal(data.begin(), data.end(), out.begin()));
@@ -375,7 +375,7 @@ TEST(MultiBlockBufferTest, WriteRawDataMultipleChunks) {
 TEST(MultiBlockBufferTest, WriteNullptr) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     EXPECT_EQ(0u, buffer.Write(nullptr, 10));
     EXPECT_TRUE(buffer.Empty());
 }
@@ -384,7 +384,7 @@ TEST(MultiBlockBufferTest, WriteNullptr) {
 TEST(MultiBlockBufferTest, WriteZeroLength) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3};
     EXPECT_EQ(0u, buffer.Write(data.data(), 0));
     EXPECT_TRUE(buffer.Empty());
@@ -393,7 +393,7 @@ TEST(MultiBlockBufferTest, WriteZeroLength) {
 // Test: Write() without pool
 TEST(MultiBlockBufferTest, WriteWithoutPool) {
     MultiBlockBuffer buffer;  // No pool
-    
+
     std::vector<uint8_t> data = {1, 2, 3, 4};
     EXPECT_EQ(0u, buffer.Write(data.data(), data.size()));
     EXPECT_TRUE(buffer.Empty());
@@ -403,19 +403,19 @@ TEST(MultiBlockBufferTest, WriteWithoutPool) {
 TEST(MultiBlockBufferTest, WriteFromSharedBufferSpan) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     auto chunk = std::make_shared<BufferChunk>(pool);
     ASSERT_TRUE(chunk->Valid());
-    
+
     // Fill chunk with data
     for (uint32_t i = 0; i < 10; ++i) {
         chunk->GetData()[i] = static_cast<uint8_t>(i + 1);
     }
-    
+
     SharedBufferSpan span(chunk, chunk->GetData(), chunk->GetLength());
     EXPECT_EQ(10u, buffer.Write(span, 10));
     EXPECT_EQ(10u, buffer.GetDataLength());
-    
+
     std::vector<uint8_t> out(10);
     buffer.Read(out.data(), out.size());
     for (size_t i = 0; i < 10; ++i) {
@@ -427,18 +427,18 @@ TEST(MultiBlockBufferTest, WriteFromSharedBufferSpan) {
 TEST(MultiBlockBufferTest, WriteFromSharedBufferSpanWithLength) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     auto chunk = std::make_shared<BufferChunk>(pool);
     for (uint32_t i = 0; i < 20; ++i) {
         chunk->GetData()[i] = static_cast<uint8_t>(i);
     }
-    
+
     SharedBufferSpan span(chunk, chunk->GetData(), chunk->GetLength());
-    
+
     // Write only first 8 bytes
     EXPECT_EQ(8u, buffer.Write(span, 8));
     EXPECT_EQ(8u, buffer.GetDataLength());
-    
+
     std::vector<uint8_t> out(8);
     buffer.Read(out.data(), out.size());
     for (size_t i = 0; i < 8; ++i) {
@@ -450,24 +450,24 @@ TEST(MultiBlockBufferTest, WriteFromSharedBufferSpanWithLength) {
 TEST(MultiBlockBufferTest, WriteFromIBuffer) {
     auto pool = MakePool();
     MultiBlockBuffer dst(pool);
-    
+
     // Create source buffer
     auto src_chunk = std::make_shared<StandaloneBufferChunk>(32);
     auto src = std::make_shared<SingleBlockBuffer>(src_chunk);
-    
+
     std::vector<uint8_t> data = {10, 20, 30, 40, 50};
     src->Write(data.data(), data.size());
-    
+
     // Write from source to destination using VisitData
     uint32_t written = 0;
     src->VisitData([&](uint8_t* ptr, uint32_t len) {
         written += dst.Write(ptr, len);
         return true;
     });
-    
+
     EXPECT_EQ(5u, written);
     EXPECT_EQ(5u, dst.GetDataLength());
-    
+
     std::vector<uint8_t> out(5);
     dst.Read(out.data(), out.size());
     EXPECT_TRUE(std::equal(data.begin(), data.end(), out.begin()));
@@ -477,16 +477,16 @@ TEST(MultiBlockBufferTest, WriteFromIBuffer) {
 TEST(MultiBlockBufferTest, ReadBasic) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     buffer.Write(data.data(), data.size());
-    
+
     // Read partial
     std::vector<uint8_t> out1(4);
     EXPECT_EQ(4u, buffer.Read(out1.data(), out1.size()));
     EXPECT_TRUE(std::equal(data.begin(), data.begin() + 4, out1.begin()));
     EXPECT_EQ(6u, buffer.GetDataLength());
-    
+
     // Read remaining
     std::vector<uint8_t> out2(10);
     EXPECT_EQ(6u, buffer.Read(out2.data(), out2.size()));
@@ -498,10 +498,10 @@ TEST(MultiBlockBufferTest, ReadBasic) {
 TEST(MultiBlockBufferTest, ReadNullptr) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3};
     buffer.Write(data.data(), data.size());
-    
+
     EXPECT_EQ(0u, buffer.Read(nullptr, 10));
     EXPECT_EQ(3u, buffer.GetDataLength());  // Data should still be there
 }
@@ -510,10 +510,10 @@ TEST(MultiBlockBufferTest, ReadNullptr) {
 TEST(MultiBlockBufferTest, ReadZeroLength) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3};
     buffer.Write(data.data(), data.size());
-    
+
     std::vector<uint8_t> out(3);
     EXPECT_EQ(0u, buffer.Read(out.data(), 0));
     EXPECT_EQ(3u, buffer.GetDataLength());
@@ -523,14 +523,14 @@ TEST(MultiBlockBufferTest, ReadZeroLength) {
 TEST(MultiBlockBufferTest, ReadAcrossMultipleChunks) {
     auto pool = MakePool(8, 4);
     MultiBlockBuffer buffer(pool);
-    
+
     // Write data that spans multiple chunks
     std::vector<uint8_t> data(30);
     for (size_t i = 0; i < data.size(); ++i) {
         data[i] = static_cast<uint8_t>(i);
     }
     buffer.Write(data.data(), data.size());
-    
+
     // Read all at once
     std::vector<uint8_t> out(30);
     EXPECT_EQ(30u, buffer.Read(out.data(), out.size()));
@@ -542,21 +542,21 @@ TEST(MultiBlockBufferTest, ReadAcrossMultipleChunks) {
 TEST(MultiBlockBufferTest, ReadNotMovePt) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {10, 20, 30, 40, 50};
     buffer.Write(data.data(), data.size());
-    
+
     // Read without moving pointer
     std::vector<uint8_t> out1(3);
     EXPECT_EQ(3u, buffer.ReadNotMovePt(out1.data(), out1.size()));
     EXPECT_TRUE(std::equal(data.begin(), data.begin() + 3, out1.begin()));
     EXPECT_EQ(5u, buffer.GetDataLength());  // Data length unchanged
-    
+
     // Read again - should get same data
     std::vector<uint8_t> out2(3);
     EXPECT_EQ(3u, buffer.ReadNotMovePt(out2.data(), out2.size()));
     EXPECT_TRUE(std::equal(out1.begin(), out1.end(), out2.begin()));
-    
+
     // Now actually read
     std::vector<uint8_t> out3(5);
     EXPECT_EQ(5u, buffer.Read(out3.data(), out3.size()));
@@ -567,10 +567,10 @@ TEST(MultiBlockBufferTest, ReadNotMovePt) {
 TEST(MultiBlockBufferTest, ReadNotMovePtNullptr) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3};
     buffer.Write(data.data(), data.size());
-    
+
     EXPECT_EQ(0u, buffer.ReadNotMovePt(nullptr, 10));
     EXPECT_EQ(3u, buffer.GetDataLength());
 }
@@ -579,13 +579,13 @@ TEST(MultiBlockBufferTest, ReadNotMovePtNullptr) {
 TEST(MultiBlockBufferTest, ReadNotMovePtAcrossChunks) {
     auto pool = MakePool(8, 4);
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data(25);
     for (size_t i = 0; i < data.size(); ++i) {
         data[i] = static_cast<uint8_t>(i);
     }
     buffer.Write(data.data(), data.size());
-    
+
     // Peek at data across chunks
     std::vector<uint8_t> out(25);
     EXPECT_EQ(25u, buffer.ReadNotMovePt(out.data(), out.size()));
@@ -597,14 +597,14 @@ TEST(MultiBlockBufferTest, ReadNotMovePtAcrossChunks) {
 TEST(MultiBlockBufferTest, MoveReadPtForward) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3, 4, 5, 6, 7, 8};
     buffer.Write(data.data(), data.size());
-    
+
     // Move forward 3 bytes
     EXPECT_EQ(3u, buffer.MoveReadPt(3));
     EXPECT_EQ(5u, buffer.GetDataLength());
-    
+
     // Read remaining
     std::vector<uint8_t> out(5);
     buffer.Read(out.data(), out.size());
@@ -615,10 +615,10 @@ TEST(MultiBlockBufferTest, MoveReadPtForward) {
 TEST(MultiBlockBufferTest, MoveReadPtForwardBeyond) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3, 4, 5};
     buffer.Write(data.data(), data.size());
-    
+
     // Try to move 100 bytes forward
     EXPECT_EQ(5u, buffer.MoveReadPt(100));
     EXPECT_TRUE(buffer.Empty());
@@ -629,15 +629,15 @@ TEST(MultiBlockBufferTest, MoveReadPtForwardBeyond) {
 TEST(MultiBlockBufferTest, MoveReadPtBackward) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {10, 20, 30, 40, 50};
     buffer.Write(data.data(), data.size());
-    
+
     // Read 3 bytes
     std::vector<uint8_t> temp(3);
     buffer.Read(temp.data(), temp.size());
     EXPECT_EQ(2u, buffer.GetDataLength());
-    
+
     // MoveReadPt does not support backward movement, so we can't rewind
     // Instead, verify that forward movement works correctly
     EXPECT_EQ(2u, buffer.MoveReadPt(2));
@@ -649,17 +649,17 @@ TEST(MultiBlockBufferTest, MoveReadPtBackward) {
 TEST(MultiBlockBufferTest, MoveReadPtAcrossChunks) {
     auto pool = MakePool(8, 4);
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data(25);
     for (size_t i = 0; i < data.size(); ++i) {
         data[i] = static_cast<uint8_t>(i);
     }
     buffer.Write(data.data(), data.size());
-    
+
     // Move forward across chunks
     EXPECT_EQ(15u, buffer.MoveReadPt(15));
     EXPECT_EQ(10u, buffer.GetDataLength());
-    
+
     // Read remaining
     std::vector<uint8_t> out(10);
     buffer.Read(out.data(), out.size());
@@ -670,10 +670,10 @@ TEST(MultiBlockBufferTest, MoveReadPtAcrossChunks) {
 TEST(MultiBlockBufferTest, MoveWritePtForward) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3, 4, 5};
     buffer.Write(data.data(), data.size());
-    
+
     // Extend write pointer
     EXPECT_EQ(3, buffer.MoveWritePt(3));
     EXPECT_EQ(8u, buffer.GetDataLength());
@@ -683,10 +683,10 @@ TEST(MultiBlockBufferTest, MoveWritePtForward) {
 TEST(MultiBlockBufferTest, VisitDataSingleChunk) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {10, 20, 30, 40};
     buffer.Write(data.data(), data.size());
-    
+
     size_t visit_count = 0;
     buffer.VisitData([&](uint8_t* ptr, uint32_t len) {
         EXPECT_EQ(4u, len);
@@ -701,19 +701,19 @@ TEST(MultiBlockBufferTest, VisitDataSingleChunk) {
 TEST(MultiBlockBufferTest, VisitDataMultipleChunks) {
     auto pool = MakePool(8, 4);
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data(25);
     for (size_t i = 0; i < data.size(); ++i) {
         data[i] = static_cast<uint8_t>(i);
     }
     buffer.Write(data.data(), data.size());
-    
+
     std::vector<uint8_t> collected;
     buffer.VisitData([&](uint8_t* ptr, uint32_t len) {
         collected.insert(collected.end(), ptr, ptr + len);
         return true;
     });
-    
+
     EXPECT_EQ(25u, collected.size());
     EXPECT_TRUE(std::equal(data.begin(), data.end(), collected.begin()));
 }
@@ -722,10 +722,10 @@ TEST(MultiBlockBufferTest, VisitDataMultipleChunks) {
 TEST(MultiBlockBufferTest, VisitDataNullVisitor) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3};
     buffer.Write(data.data(), data.size());
-    
+
     // Should not crash
     buffer.VisitData(nullptr);
 }
@@ -734,9 +734,12 @@ TEST(MultiBlockBufferTest, VisitDataNullVisitor) {
 TEST(MultiBlockBufferTest, VisitDataEmpty) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     size_t visit_count = 0;
-    buffer.VisitData([&](uint8_t*, uint32_t) { visit_count++; return true; });
+    buffer.VisitData([&](uint8_t*, uint32_t) {
+        visit_count++;
+        return true;
+    });
     EXPECT_EQ(0u, visit_count);
 }
 
@@ -744,20 +747,20 @@ TEST(MultiBlockBufferTest, VisitDataEmpty) {
 TEST(MultiBlockBufferTest, VisitDataSpans) {
     auto pool = MakePool(8, 4);
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data(20);
     for (size_t i = 0; i < data.size(); ++i) {
         data[i] = static_cast<uint8_t>(i);
     }
     buffer.Write(data.data(), data.size());
-    
+
     std::vector<uint8_t> collected;
     buffer.VisitDataSpans([&](SharedBufferSpan& span) {
         EXPECT_TRUE(span.Valid());
         collected.insert(collected.end(), span.GetStart(), span.GetStart() + span.GetLength());
         return true;
     });
-    
+
     EXPECT_EQ(20u, collected.size());
     EXPECT_TRUE(std::equal(data.begin(), data.end(), collected.begin()));
 }
@@ -766,17 +769,17 @@ TEST(MultiBlockBufferTest, VisitDataSpans) {
 TEST(MultiBlockBufferTest, GetDataLength) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     EXPECT_EQ(0u, buffer.GetDataLength());
-    
+
     std::vector<uint8_t> data1 = {1, 2, 3, 4, 5};
     buffer.Write(data1.data(), data1.size());
     EXPECT_EQ(5u, buffer.GetDataLength());
-    
+
     std::vector<uint8_t> data2 = {6, 7, 8};
     buffer.Write(data2.data(), data2.size());
     EXPECT_EQ(8u, buffer.GetDataLength());
-    
+
     std::vector<uint8_t> temp(3);
     buffer.Read(temp.data(), temp.size());
     EXPECT_EQ(5u, buffer.GetDataLength());
@@ -786,18 +789,18 @@ TEST(MultiBlockBufferTest, GetDataLength) {
 TEST(MultiBlockBufferTest, GetFreeLength) {
     auto pool = MakePool(32, 2);
     MultiBlockBuffer buffer(pool);
-    
+
     // Write some data first to allocate a chunk
     std::vector<uint8_t> data = {1, 2, 3, 4, 5};
     buffer.Write(data.data(), data.size());
-    
+
     uint32_t after_write = buffer.GetFreeLength();
     EXPECT_GT(after_write, 0u);  // Should have free space
-    
+
     // Write more data
     std::vector<uint8_t> data2 = {6, 7, 8, 9, 10};
     buffer.Write(data2.data(), data2.size());
-    
+
     uint32_t after_more_write = buffer.GetFreeLength();
     EXPECT_LE(after_more_write, after_write);  // Free space should decrease or stay same
 }
@@ -806,10 +809,10 @@ TEST(MultiBlockBufferTest, GetFreeLength) {
 TEST(MultiBlockBufferTest, GetDataAsString) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::string text = "Hello, World!";
     buffer.Write(reinterpret_cast<const uint8_t*>(text.data()), text.size());
-    
+
     std::string result = buffer.GetDataAsString();
     EXPECT_EQ(text, result);
 }
@@ -818,10 +821,10 @@ TEST(MultiBlockBufferTest, GetDataAsString) {
 TEST(MultiBlockBufferTest, GetDataAsStringAcrossChunks) {
     auto pool = MakePool(8, 4);
     MultiBlockBuffer buffer(pool);
-    
+
     std::string text = "This is a longer text";
     buffer.Write(reinterpret_cast<const uint8_t*>(text.data()), text.size());
-    
+
     std::string result = buffer.GetDataAsString();
     EXPECT_EQ(text, result);
 }
@@ -830,10 +833,10 @@ TEST(MultiBlockBufferTest, GetDataAsStringAcrossChunks) {
 TEST(MultiBlockBufferTest, GetReadableSpanAsView) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3, 4, 5};
     buffer.Write(data.data(), data.size());
-    
+
     auto span = buffer.GetReadableSpan();
     EXPECT_TRUE(span.Valid());
     EXPECT_GT(span.GetLength(), 0u);
@@ -843,10 +846,10 @@ TEST(MultiBlockBufferTest, GetReadableSpanAsView) {
 TEST(MultiBlockBufferTest, GetReadableSpan) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {10, 20, 30};
     buffer.Write(data.data(), data.size());
-    
+
     auto span = buffer.GetReadableSpan();
     EXPECT_GT(span.GetLength(), 0u);
 }
@@ -855,25 +858,25 @@ TEST(MultiBlockBufferTest, GetReadableSpan) {
 TEST(MultiBlockBufferTest, GetSharedReadableSpan) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> data = {1, 2, 3, 4, 5, 6, 7, 8};
     buffer.Write(data.data(), data.size());
-    
+
     // Get all data
     auto span1 = buffer.GetSharedReadableSpan();
     EXPECT_TRUE(span1.Valid());
     EXPECT_EQ(8u, span1.GetLength());
-    
+
     // Get specific length
     auto span2 = buffer.GetSharedReadableSpan(5);
     EXPECT_TRUE(span2.Valid());
     EXPECT_EQ(5u, span2.GetLength());
-    
+
     // Get with must_fill_length = true
     auto span3 = buffer.GetSharedReadableSpan(6, true);
     EXPECT_TRUE(span3.Valid());
     EXPECT_EQ(6u, span3.GetLength());
-    
+
     // Get with must_fill_length = true but insufficient data
     auto span4 = buffer.GetSharedReadableSpan(20, true);
     EXPECT_FALSE(span4.Valid());
@@ -883,14 +886,14 @@ TEST(MultiBlockBufferTest, GetSharedReadableSpan) {
 TEST(MultiBlockBufferTest, GetWritableSpan) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     auto span1 = buffer.GetWritableSpan();
     EXPECT_GT(span1.GetLength(), 0u);
-    
+
     // Write some data
     std::vector<uint8_t> data = {1, 2, 3, 4, 5};
     buffer.Write(data.data(), data.size());
-    
+
     auto span2 = buffer.GetWritableSpan();
     EXPECT_GT(span2.GetLength(), 0u);
 }
@@ -899,10 +902,10 @@ TEST(MultiBlockBufferTest, GetWritableSpan) {
 TEST(MultiBlockBufferTest, GetWritableSpanWithLength) {
     auto pool = MakePool(32, 2);
     MultiBlockBuffer buffer(pool);
-    
+
     auto span1 = buffer.GetWritableSpan(10);
     EXPECT_GE(span1.GetLength(), 10u);
-    
+
     // Request more than available
     auto span2 = buffer.GetWritableSpan(1000);
     // May return 0 or available space depending on implementation
@@ -912,7 +915,7 @@ TEST(MultiBlockBufferTest, GetWritableSpanWithLength) {
 TEST(MultiBlockBufferTest, GetChunk) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     // MultiBlockBuffer may return nullptr or a chunk
     auto chunk = buffer.GetChunk();
     // Just verify it doesn't crash
@@ -922,16 +925,16 @@ TEST(MultiBlockBufferTest, GetChunk) {
 TEST(MultiBlockBufferTest, LargeDataOperations) {
     auto pool = MakePool(64, 100);
     MultiBlockBuffer buffer(pool);
-    
+
     // Write large data
     std::vector<uint8_t> large_data(4096);
     for (size_t i = 0; i < large_data.size(); ++i) {
         large_data[i] = static_cast<uint8_t>(i % 256);
     }
-    
+
     EXPECT_EQ(4096u, buffer.Write(large_data.data(), large_data.size()));
     EXPECT_EQ(4096u, buffer.GetDataLength());
-    
+
     // Read in chunks
     std::vector<uint8_t> read_data(4096);
     size_t offset = 0;
@@ -941,7 +944,7 @@ TEST(MultiBlockBufferTest, LargeDataOperations) {
         offset += read;
         if (read == 0) break;
     }
-    
+
     EXPECT_EQ(4096u, offset);
     EXPECT_TRUE(std::equal(large_data.begin(), large_data.end(), read_data.begin()));
 }
@@ -950,21 +953,21 @@ TEST(MultiBlockBufferTest, LargeDataOperations) {
 TEST(MultiBlockBufferTest, SequentialReadWriteCycles) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     // Cycle 1
     std::vector<uint8_t> data1 = {1, 2, 3, 4, 5};
     buffer.Write(data1.data(), data1.size());
     std::vector<uint8_t> out1(5);
     buffer.Read(out1.data(), out1.size());
     EXPECT_TRUE(std::equal(data1.begin(), data1.end(), out1.begin()));
-    
+
     // Cycle 2
     std::vector<uint8_t> data2 = {10, 20, 30, 40, 50, 60};
     buffer.Write(data2.data(), data2.size());
     std::vector<uint8_t> out2(6);
     buffer.Read(out2.data(), out2.size());
     EXPECT_TRUE(std::equal(data2.begin(), data2.end(), out2.begin()));
-    
+
     // Cycle 3
     std::vector<uint8_t> data3 = {100, 101, 102};
     buffer.Write(data3.data(), data3.size());
@@ -975,21 +978,21 @@ TEST(MultiBlockBufferTest, SequentialReadWriteCycles) {
 TEST(MultiBlockBufferTest, InterleavedReadWrite) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     // Write some data
     std::vector<uint8_t> data1 = {1, 2, 3, 4, 5};
     buffer.Write(data1.data(), data1.size());
-    
+
     // Read partial
     std::vector<uint8_t> out1(2);
     buffer.Read(out1.data(), out1.size());
     EXPECT_EQ(3u, buffer.GetDataLength());
-    
+
     // Write more
     std::vector<uint8_t> data2 = {6, 7, 8};
     buffer.Write(data2.data(), data2.size());
     EXPECT_EQ(6u, buffer.GetDataLength());
-    
+
     // Read all
     std::vector<uint8_t> out2(6);
     buffer.Read(out2.data(), out2.size());
@@ -1001,12 +1004,12 @@ TEST(MultiBlockBufferTest, InterleavedReadWrite) {
 TEST(MultiBlockBufferTest, BoundaryConditions) {
     auto pool = MakePool(16, 2);
     MultiBlockBuffer buffer(pool);
-    
+
     // Write exactly one chunk size
     std::vector<uint8_t> data(16);
     std::fill(data.begin(), data.end(), 0x55);
     EXPECT_EQ(16u, buffer.Write(data.data(), data.size()));
-    
+
     // Read exactly one chunk size
     std::vector<uint8_t> out(16);
     EXPECT_EQ(16u, buffer.Read(out.data(), out.size()));
@@ -1018,25 +1021,25 @@ TEST(MultiBlockBufferTest, BoundaryConditions) {
 TEST(MultiBlockBufferTest, EmptyBufferOperations) {
     auto pool = MakePool();
     MultiBlockBuffer buffer(pool);
-    
+
     std::vector<uint8_t> out(10);
-    
+
     EXPECT_EQ(0u, buffer.Read(out.data(), out.size()));
     EXPECT_EQ(0u, buffer.ReadNotMovePt(out.data(), out.size()));
     EXPECT_EQ(0u, buffer.MoveReadPt(5));
     EXPECT_EQ(0u, buffer.GetDataLength());
     EXPECT_EQ("", buffer.GetDataAsString());
-    
+
     size_t visit_count = 0;
-    buffer.VisitData([&](uint8_t*, uint32_t) { visit_count++; return true; });
+    buffer.VisitData([&](uint8_t*, uint32_t) {
+        visit_count++;
+        return true;
+    });
     EXPECT_EQ(0u, visit_count);
-    
+
     buffer.Clear();  // Should not crash
 }
 
-}
-}
-}
-
-
-
+}  // namespace
+}  // namespace common
+}  // namespace quicx

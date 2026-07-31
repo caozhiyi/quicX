@@ -7,8 +7,7 @@
 namespace quicx {
 namespace quic {
 
-class ConnectionIDGenerator:
-    public common::Singleton<ConnectionIDGenerator> {
+class ConnectionIDGenerator: public common::Singleton<ConnectionIDGenerator> {
 public:
     ConnectionIDGenerator();
     ~ConnectionIDGenerator();
@@ -16,11 +15,11 @@ public:
     void Generator(uint8_t* cid, uint32_t len);
     uint64_t Hash(uint8_t* cid, uint32_t len);
 
-private: 
-    uint64_t sip_hash_key_[2];    
+private:
+    uint64_t sip_hash_key_[2];
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

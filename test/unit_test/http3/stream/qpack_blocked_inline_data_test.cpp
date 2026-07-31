@@ -69,9 +69,7 @@ namespace {
 // that insert to the receiver-side decoder yet — that's what makes the
 // header block QPACK-blocked on arrival.
 std::shared_ptr<common::IBuffer> BuildBlockedHeadersFrame(
-    QpackEncoder& driver,
-    const std::string& name,
-    const std::string& value) {
+    QpackEncoder& driver, const std::string& name, const std::string& value) {
     // Drive the encoder so its internal dynamic table has 1 entry, which
     // makes WriteHeaderPrefix(ric=1, base=0) produce a valid wire prefix.
     {
@@ -104,17 +102,14 @@ std::shared_ptr<common::IBuffer> BuildBlockedHeadersFrame(
 
 // Serialise a DATA frame carrying |body| into a fresh wire buffer.
 std::shared_ptr<common::IBuffer> BuildDataFrame(const std::string& body) {
-    auto data_chunk = std::make_shared<common::StandaloneBufferChunk>(
-        static_cast<uint32_t>(body.size() + 16));
+    auto data_chunk = std::make_shared<common::StandaloneBufferChunk>(static_cast<uint32_t>(body.size() + 16));
     auto data_buf = std::make_shared<common::SingleBlockBuffer>(data_chunk);
-    data_buf->Write(reinterpret_cast<const uint8_t*>(body.data()),
-                    static_cast<uint32_t>(body.size()));
+    data_buf->Write(reinterpret_cast<const uint8_t*>(body.data()), static_cast<uint32_t>(body.size()));
 
     DataFrame data_frame;
     data_frame.SetData(data_buf);
 
-    auto frame_chunk = std::make_shared<common::StandaloneBufferChunk>(
-        static_cast<uint32_t>(body.size() + 32));
+    auto frame_chunk = std::make_shared<common::StandaloneBufferChunk>(static_cast<uint32_t>(body.size() + 32));
     auto frame_buf = std::make_shared<common::SingleBlockBuffer>(frame_chunk);
     EXPECT_TRUE(data_frame.Encode(frame_buf));
     return frame_buf;
@@ -123,14 +118,19 @@ std::shared_ptr<common::IBuffer> BuildDataFrame(const std::string& body) {
 // Concatenate two wire buffers into a single buffer — that's what the QUIC
 // layer would deliver when both frames arrive in the same STREAM packet.
 std::shared_ptr<common::IBuffer> Concat(
-    const std::shared_ptr<common::IBuffer>& a,
-    const std::shared_ptr<common::IBuffer>& b) {
+    const std::shared_ptr<common::IBuffer>& a, const std::shared_ptr<common::IBuffer>& b) {
     uint32_t la = a->GetDataLength();
     uint32_t lb = b->GetDataLength();
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(la + lb);
     auto out = std::make_shared<common::SingleBlockBuffer>(chunk);
-    a->VisitData([&](uint8_t* d, uint32_t l) { out->Write(d, l); return true; });
-    b->VisitData([&](uint8_t* d, uint32_t l) { out->Write(d, l); return true; });
+    a->VisitData([&](uint8_t* d, uint32_t l) {
+        out->Write(d, l);
+        return true;
+    });
+    b->VisitData([&](uint8_t* d, uint32_t l) {
+        out->Write(d, l);
+        return true;
+    });
     return out;
 }
 
@@ -165,16 +165,14 @@ protected:
                 response_error_ = err;
                 ++response_invocations_;
             },
-            [this](uint64_t /*stream_id*/, uint32_t err) {
-                error_code_ = err;
-            },
+            [this](uint64_t /*stream_id*/, uint32_t err) { error_code_ = err; },
             [](std::unordered_map<std::string, std::string>&, uint64_t) {});
         request_stream_->Init();
     }
 
     std::shared_ptr<quic::MockQuicStream> stream_;
-    std::shared_ptr<QpackEncoder> encoder_;   // outgoing; unused by reads
-    std::shared_ptr<QpackEncoder> decoder_;   // incoming; starts empty
+    std::shared_ptr<QpackEncoder> encoder_;  // outgoing; unused by reads
+    std::shared_ptr<QpackEncoder> decoder_;  // incoming; starts empty
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     std::shared_ptr<RequestStream> request_stream_;
 
@@ -210,10 +208,9 @@ TEST_F(QpackBlockedInlineDataTest, BlockedHeadersFollowedByDataInSameBatch) {
     // Hook the driver's instruction sender so we capture the encoder
     // instructions it produces (we'll feed them to decoder_ later).
     std::vector<std::pair<std::string, std::string>> captured_inserts;
-    driver.SetInstructionSender(
-        [&](const std::vector<std::pair<std::string, std::string>>& ins) {
-            for (const auto& p : ins) captured_inserts.push_back(p);
-        });
+    driver.SetInstructionSender([&](const std::vector<std::pair<std::string, std::string>>& ins) {
+        for (const auto& p : ins) captured_inserts.push_back(p);
+    });
 
     auto encoded_chunk = std::make_shared<common::StandaloneBufferChunk>(256);
     auto encoded_payload = std::make_shared<common::SingleBlockBuffer>(encoded_chunk);
@@ -242,12 +239,9 @@ TEST_F(QpackBlockedInlineDataTest, BlockedHeadersFollowedByDataInSameBatch) {
     //   - response handler MUST NOT have fired yet
     //   - registry MUST hold exactly one pending entry
     //   - error_code_ MUST be 0 (no decompression-failed escape hatch)
-    EXPECT_EQ(response_invocations_, 0)
-        << "response handler fired before HEADERS unblocked";
-    EXPECT_EQ(blocked_registry_->GetBlockedCount(), 1u)
-        << "blocked HEADERS not registered for retry";
-    EXPECT_EQ(error_code_, 0u)
-        << "stream errored out instead of parking";
+    EXPECT_EQ(response_invocations_, 0) << "response handler fired before HEADERS unblocked";
+    EXPECT_EQ(blocked_registry_->GetBlockedCount(), 1u) << "blocked HEADERS not registered for retry";
+    EXPECT_EQ(error_code_, 0u) << "stream errored out instead of parking";
 
     // Now feed the missing dynamic-table inserts to decoder_, then notify.
     {
@@ -267,8 +261,7 @@ TEST_F(QpackBlockedInlineDataTest, BlockedHeadersFollowedByDataInSameBatch) {
     //   4. Surface FIN, completing the response
     blocked_registry_->NotifyAll();
 
-    EXPECT_EQ(response_invocations_, 1)
-        << "response handler must fire exactly once after unblocking";
+    EXPECT_EQ(response_invocations_, 1) << "response handler must fire exactly once after unblocking";
     ASSERT_NE(response_, nullptr);
     EXPECT_EQ(response_error_, 0u);
     EXPECT_EQ(response_->GetStatusCode(), 200);
@@ -292,10 +285,9 @@ TEST_F(QpackBlockedInlineDataTest, AdditionalDataWhileBlockedIsAlsoParked) {
     driver.SetMaxTableCapacity(4096);
     driver.SetDynamicTableEnabled(true);
     std::vector<std::pair<std::string, std::string>> captured_inserts;
-    driver.SetInstructionSender(
-        [&](const std::vector<std::pair<std::string, std::string>>& ins) {
-            for (const auto& p : ins) captured_inserts.push_back(p);
-        });
+    driver.SetInstructionSender([&](const std::vector<std::pair<std::string, std::string>>& ins) {
+        for (const auto& p : ins) captured_inserts.push_back(p);
+    });
 
     const std::string body = "second-batch-body";
 
@@ -324,8 +316,7 @@ TEST_F(QpackBlockedInlineDataTest, AdditionalDataWhileBlockedIsAlsoParked) {
     // rather than dispatching.
     auto d_wire = BuildDataFrame(body);
     stream_->SimulateRead(d_wire, /*is_last=*/true);
-    EXPECT_EQ(response_invocations_, 0)
-        << "response handler fired before HEADERS unblocked";
+    EXPECT_EQ(response_invocations_, 0) << "response handler fired before HEADERS unblocked";
     EXPECT_EQ(error_code_, 0u);
 
     // Step 3: feed inserts and notify — replay must include the DATA from

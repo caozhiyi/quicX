@@ -12,14 +12,14 @@ public:
     TlsServerHandlerInterface() {}
     virtual ~TlsServerHandlerInterface() {}
 
-    virtual void SSLAlpnSelect(const unsigned char **out, unsigned char *outlen,
-        const unsigned char *in, unsigned int inlen, void *arg) = 0;
+    virtual void SSLAlpnSelect(
+        const unsigned char** out, unsigned char* outlen, const unsigned char* in, unsigned int inlen, void* arg) = 0;
 };
 
-class TLSServerConnection:
-    public TLSConnection {
+class TLSServerConnection: public TLSConnection {
 public:
-    TLSServerConnection(std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler, TlsServerHandlerInterface* ser_handler);
+    TLSServerConnection(
+        std::shared_ptr<TLSCtx> ctx, TlsHandlerInterface* handler, TlsServerHandlerInterface* ser_handler);
     ~TLSServerConnection();
     // init ssl connection
     virtual bool Init();
@@ -29,15 +29,16 @@ public:
 
     // add transport param
     virtual bool AddTransportParam(uint8_t* tp, uint32_t len);
+
 private:
-    static int SSLAlpnSelect(SSL* ssl, const unsigned char **out, unsigned char *outlen,
-    const unsigned char *in, unsigned int inlen, void *arg);
+    static int SSLAlpnSelect(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in,
+        unsigned int inlen, void* arg);
 
 private:
     TlsServerHandlerInterface* ser_handler_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

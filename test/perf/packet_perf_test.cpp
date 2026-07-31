@@ -39,13 +39,13 @@
 
 #include "quic/common/version.h"
 #include "quic/packet/handshake_packet.h"
+#include "quic/packet/header/header_flag.h"
+#include "quic/packet/header/long_header.h"
+#include "quic/packet/header/short_header.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/packet/packet_number.h"
 #include "quic/packet/rtt_1_packet.h"
-#include "quic/packet/header/header_flag.h"
-#include "quic/packet/header/long_header.h"
-#include "quic/packet/header/short_header.h"
 
 #include "quic/frame/crypto_frame.h"
 #include "quic/frame/if_frame.h"
@@ -63,8 +63,7 @@ static const uint8_t kDcid[] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
 static const uint8_t kScid[] = {0x11, 0x22, 0x33, 0x44};
 
 static std::shared_ptr<common::SingleBlockBuffer> MakeSingleBlock(size_t cap = kScratchBuf) {
-    return std::make_shared<common::SingleBlockBuffer>(
-        std::make_shared<common::StandaloneBufferChunk>(cap));
+    return std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(cap));
 }
 
 static std::vector<uint8_t> RandomBytes(size_t n, uint32_t seed = 0xABCDu) {
@@ -99,12 +98,10 @@ static CryptoPair MakeInitialCryptoPair() {
     CryptoPair p;
     p.client = std::make_shared<quic::Aes128GcmCryptographer>();
     p.server = std::make_shared<quic::Aes128GcmCryptographer>();
-    p.client->InstallInitSecret(kDcid, sizeof(kDcid),
-                                quic::kInitialSaltV1.data(), quic::kInitialSaltV1.size(),
-                                /*is_server=*/false);
-    p.server->InstallInitSecret(kDcid, sizeof(kDcid),
-                                quic::kInitialSaltV1.data(), quic::kInitialSaltV1.size(),
-                                /*is_server=*/true);
+    p.client->InstallInitSecret(kDcid, sizeof(kDcid), quic::kInitialSaltV1.data(), quic::kInitialSaltV1.size(),
+        /*is_server=*/false);
+    p.server->InstallInitSecret(kDcid, sizeof(kDcid), quic::kInitialSaltV1.data(), quic::kInitialSaltV1.size(),
+        /*is_server=*/true);
     return p;
 }
 
@@ -482,25 +479,38 @@ static void BM_Packet_SinglePacket_DecodeViaDispatch_NoAlloc(benchmark::State& s
 //   1200 — near-MTU user data
 //   4096 — jumbo / coalesced payload
 
-BENCHMARK(quicx::perf::BM_Packet_InitPacket_EncodeNoCrypto)
-    ->Arg(64)->Arg(256)->Arg(1200)->Unit(benchmark::kNanosecond);
+BENCHMARK(quicx::perf::BM_Packet_InitPacket_EncodeNoCrypto)->Arg(64)->Arg(256)->Arg(1200)->Unit(benchmark::kNanosecond);
 BENCHMARK(quicx::perf::BM_Packet_InitPacket_EncodeWithCrypto)
-    ->Arg(64)->Arg(256)->Arg(1200)->Unit(benchmark::kNanosecond);
-BENCHMARK(quicx::perf::BM_Packet_InitPacket_DecodeNoCrypto)
-    ->Arg(64)->Arg(256)->Arg(1200)->Unit(benchmark::kNanosecond);
+    ->Arg(64)
+    ->Arg(256)
+    ->Arg(1200)
+    ->Unit(benchmark::kNanosecond);
+BENCHMARK(quicx::perf::BM_Packet_InitPacket_DecodeNoCrypto)->Arg(64)->Arg(256)->Arg(1200)->Unit(benchmark::kNanosecond);
 BENCHMARK(quicx::perf::BM_Packet_InitPacket_DecodeWithCrypto)
-    ->Arg(64)->Arg(256)->Arg(1200)->Unit(benchmark::kNanosecond);
+    ->Arg(64)
+    ->Arg(256)
+    ->Arg(1200)
+    ->Unit(benchmark::kNanosecond);
 
 BENCHMARK(quicx::perf::BM_Packet_HandshakePacket_EncodeNoCrypto)
-    ->Arg(64)->Arg(256)->Arg(1200)->Unit(benchmark::kNanosecond);
+    ->Arg(64)
+    ->Arg(256)
+    ->Arg(1200)
+    ->Unit(benchmark::kNanosecond);
 BENCHMARK(quicx::perf::BM_Packet_Rtt1Packet_EncodeNoCrypto)
-    ->Arg(64)->Arg(256)->Arg(1200)->Arg(4096)->Unit(benchmark::kNanosecond);
+    ->Arg(64)
+    ->Arg(256)
+    ->Arg(1200)
+    ->Arg(4096)
+    ->Unit(benchmark::kNanosecond);
 
 BENCHMARK(quicx::perf::BM_Packet_PacketNumber_Encode)
-    ->Arg(0x01)->Arg(0x1234)->Arg(0x123456)->Arg(0x12345678)
+    ->Arg(0x01)
+    ->Arg(0x1234)
+    ->Arg(0x123456)
+    ->Arg(0x12345678)
     ->Unit(benchmark::kNanosecond);
-BENCHMARK(quicx::perf::BM_Packet_PacketNumber_DecodeTruncated)
-    ->Unit(benchmark::kNanosecond);
+BENCHMARK(quicx::perf::BM_Packet_PacketNumber_DecodeTruncated)->Unit(benchmark::kNanosecond);
 
 BENCHMARK(quicx::perf::BM_Packet_Coalesced_Decode)->Unit(benchmark::kNanosecond);
 BENCHMARK(quicx::perf::BM_Packet_SinglePacket_DecodeViaDispatch)->Unit(benchmark::kNanosecond);
@@ -509,5 +519,7 @@ BENCHMARK(quicx::perf::BM_Packet_SinglePacket_DecodeViaDispatch_NoAlloc)->Unit(b
 BENCHMARK_MAIN();
 
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif

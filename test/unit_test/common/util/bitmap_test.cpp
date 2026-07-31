@@ -1,17 +1,17 @@
-#include <gtest/gtest.h>
 #include "common/util/bitmap.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace common {
 namespace {
 
-TEST(bitmap_utest, init) {
+TEST(BitmapTest, init) {
     Bitmap bm;
     EXPECT_TRUE(bm.Init(64));
     EXPECT_TRUE(bm.Init(100));
 }
 
-TEST(bitmap_utest, insert) {
+TEST(BitmapTest, insert) {
     Bitmap bm;
 
     EXPECT_TRUE(bm.Init(100));
@@ -20,7 +20,7 @@ TEST(bitmap_utest, insert) {
     EXPECT_TRUE(bm.Insert(65));
 }
 
-TEST(bitmap_utest, remove) {
+TEST(BitmapTest, remove) {
     Bitmap bm;
 
     EXPECT_TRUE(bm.Init(100));
@@ -32,8 +32,7 @@ TEST(bitmap_utest, remove) {
     EXPECT_TRUE(bm.Remove(20));
 }
 
-
-TEST(bitmap_utest, minafter) {
+TEST(BitmapTest, minafter) {
     Bitmap bm;
     EXPECT_TRUE(bm.Init(100));
 
@@ -48,6 +47,6 @@ TEST(bitmap_utest, minafter) {
     EXPECT_EQ(80, bm.GetMinAfter(61));
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace common
+}  // namespace quicx

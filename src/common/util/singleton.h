@@ -4,7 +4,7 @@
 namespace quicx {
 namespace common {
 
-template<typename T>
+template <typename T>
 class Singleton {
 public:
     static T& Instance() {
@@ -19,7 +19,7 @@ protected:
     virtual ~Singleton() {}
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

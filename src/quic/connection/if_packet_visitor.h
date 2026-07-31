@@ -1,8 +1,8 @@
 #ifndef QUIC_CONNECTION_PACKET_VISITOR_INTERFACE
 #define QUIC_CONNECTION_PACKET_VISITOR_INTERFACE
 
-#include "quic/packet/if_packet.h"
 #include "common/buffer/if_buffer.h"
+#include "quic/packet/if_packet.h"
 
 namespace quicx {
 namespace quic {
@@ -40,7 +40,7 @@ public:
     virtual std::shared_ptr<common::IBuffer> GetBuffer() = 0;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -8,14 +8,13 @@ namespace quicx {
 namespace http3 {
 
 /*
-* indicates a dynamic param node
-*/
-class RouterNodeDynamicParam:
-    public RouterNode {
+ * indicates a dynamic param node
+ */
+class RouterNodeDynamicParam: public RouterNode {
 public:
-    RouterNodeDynamicParam(RouterNodeType type, const std::string& section,
-        const std::string& full_path, const RouteConfig& config);
-    
+    RouterNodeDynamicParam(
+        RouterNodeType type, const std::string& section, const std::string& full_path, const RouteConfig& config);
+
     virtual ~RouterNodeDynamicParam() {}
 
     // router match
@@ -25,7 +24,7 @@ private:
     std::string param_name_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

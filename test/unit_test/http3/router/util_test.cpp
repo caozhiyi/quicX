@@ -1,11 +1,11 @@
-#include <gtest/gtest.h>
 #include "http3/router/util.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace http3 {
 namespace {
 
-TEST(router_util, parse_static) {
+TEST(RouterUtilTest, parse_static) {
     std::string path = "/foo/bar";
     int offset = 0;
 
@@ -18,7 +18,7 @@ TEST(router_util, parse_static) {
     EXPECT_EQ(offset, 8);
 }
 
-TEST(router_util, parse_param) {
+TEST(RouterUtilTest, parse_param) {
     std::string path = "/foo/:bar/baz";
     int offset = 0;
 
@@ -35,7 +35,7 @@ TEST(router_util, parse_param) {
     EXPECT_EQ(offset, 13);
 }
 
-TEST(router_util, parse_last) {
+TEST(RouterUtilTest, parse_last) {
     std::string path = "/foo/";
     int offset = 0;
 
@@ -48,6 +48,6 @@ TEST(router_util, parse_last) {
     EXPECT_EQ(offset, 5);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace http3
+}  // namespace quicx

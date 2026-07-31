@@ -3,18 +3,17 @@
 namespace quicx {
 namespace http3 {
 
-DynamicTable::DynamicTable(uint32_t max_size) : max_size_(max_size), current_size_(0), total_insert_count_(0) {
+DynamicTable::DynamicTable(uint32_t max_size):
+    max_size_(max_size),
+    current_size_(0),
+    total_insert_count_(0) {}
 
-}
-
-DynamicTable::~DynamicTable() {
-
-}
+DynamicTable::~DynamicTable() {}
 
 bool DynamicTable::AddHeaderItem(const std::string& name, const std::string& value) {
     // Allow duplicate entries per QPACK (Duplicate instruction). Do not de-duplicate by name/value.
     uint32_t entry_size = CalculateEntrySize(name, value);
-    
+
     // Check if new entry would exceed max size
     if (entry_size > max_size_) {
         return false;
@@ -125,15 +124,15 @@ void DynamicTable::EvictEntries() {
 
 void DynamicTable::UpdateMaxTableSize(uint32_t new_size) {
     // RFC 9204 Section 3.2.3: Dynamic Table Capacity
-    // The decoder MUST treat a new maximum size value that exceeds the limit 
+    // The decoder MUST treat a new maximum size value that exceeds the limit
     // set by SETTINGS_QPACK_MAX_TABLE_CAPACITY as a connection error
-    
+
     // Note: This check should be done at a higher level (connection) where
     // SETTINGS_QPACK_MAX_TABLE_CAPACITY is known. Here we just update the size.
     // The caller is responsible for validating against the setting.
-    
+
     max_size_ = new_size;
-    
+
     // Evict entries if current size exceeds new max size
     while (current_size_ > max_size_) {
         EvictEntries();
@@ -144,18 +143,18 @@ bool DynamicTable::DuplicateEntry(uint32_t absolute_index) {
     // RFC 9204 Section 4.3.4: Duplicate instruction
     // Duplicates an existing dynamic table entry by its absolute index
     // Uses FindHeaderItemByAbsoluteIndex for correct absolute→deque conversion
-    
+
     HeaderItem* item = FindHeaderItemByAbsoluteIndex(static_cast<uint64_t>(absolute_index));
     if (!item) {
-        return false; // Invalid or evicted entry
+        return false;  // Invalid or evicted entry
     }
-    
+
     // Copy name and value BEFORE calling AddHeaderItem, because AddHeaderItem
     // may call EvictEntries which could pop_back the entry we're referencing,
     // causing a dangling reference.
     std::string name = item->name_;
     std::string value = item->value_;
-    
+
     return AddHeaderItem(name, value);
 }
 
@@ -166,5 +165,5 @@ uint32_t DynamicTable::CalculateEntrySize(const std::string& name, const std::st
     return name.length() + value.length() + 32;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

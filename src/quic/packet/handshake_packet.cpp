@@ -80,7 +80,7 @@ bool HandshakePacket::Encode(std::shared_ptr<common::IBuffer> buffer) {
 
 bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bool with_flag) {
     if (!header_.DecodeHeader(buffer, with_flag)) {
-        LOG_ERROR("decode header failed");
+        LOG_ERROR("HandshakePacket::DecodeWithoutCrypto decode header failed");
         return false;
     }
 
@@ -104,8 +104,8 @@ bool HandshakePacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffe
     // decode cipher data
     packet_num_offset_ = cur_pos - span.GetStart();
     if (cur_pos + length_ > end) {
-        LOG_ERROR("HandshakePacket: length field exceeds buffer boundary. length:%u, remaining:%td",
-            (uint32_t)length_, end - cur_pos);
+        LOG_ERROR("HandshakePacket: length field exceeds buffer boundary. length:%u, remaining:%td", (uint32_t)length_,
+            end - cur_pos);
         return false;
     }
     cur_pos += length_;

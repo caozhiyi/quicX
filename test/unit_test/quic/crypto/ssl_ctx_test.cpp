@@ -4,10 +4,10 @@
 namespace quicx {
 namespace quic {
 
-TEST(crypto_ssl_ctx_utest, test1) {
+TEST(CryptoSslCtxTest, test1) {
     TLSCtx ctx;
     EXPECT_TRUE(ctx.Init(false));
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

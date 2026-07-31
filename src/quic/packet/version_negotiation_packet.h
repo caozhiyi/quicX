@@ -3,15 +3,14 @@
 
 #include <memory>
 #include <vector>
-#include "quic/packet/type.h"
-#include "quic/packet/if_packet.h"
 #include "quic/packet/header/long_header.h"
+#include "quic/packet/if_packet.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
 
-class VersionNegotiationPacket:
-    public IPacket {
+class VersionNegotiationPacket: public IPacket {
 public:
     VersionNegotiationPacket();
     VersionNegotiationPacket(uint8_t flag);
@@ -33,7 +32,7 @@ private:
     std::vector<uint32_t> support_version_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

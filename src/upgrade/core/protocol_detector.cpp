@@ -11,17 +11,17 @@ Protocol ProtocolDetector::Detect(const std::vector<uint8_t>& data) {
     if (data.empty()) {
         return Protocol::UNKNOWN;
     }
-    
+
     // Check if it's an HTTP/2 connection
     if (IsHTTP2(data)) {
         return Protocol::HTTP2;
     }
-    
+
     // Check if it's an HTTP/1.1 connection
     if (IsHTTP1_1(data)) {
         return Protocol::HTTP1_1;
     }
-    
+
     return Protocol::UNKNOWN;
 }
 
@@ -31,10 +31,11 @@ bool ProtocolDetector::IsHTTP1_1(const std::vector<uint8_t>& data) {
     }
 
     // Find the first CRLF in the data
-    static auto find_crlf = [](std::vector<uint8_t>::const_iterator from, std::vector<uint8_t>::const_iterator data_end) {
+    static auto find_crlf = [](std::vector<uint8_t>::const_iterator from,
+                                std::vector<uint8_t>::const_iterator data_end) {
         for (auto p = from; p != data_end; ++p) {
             if (*p == '\r' && (p + 1) != data_end && *(p + 1) == '\n') {
-                return p; // points to '\r'
+                return p;  // points to '\r'
             }
         }
         return data_end;
@@ -100,9 +101,8 @@ bool ProtocolDetector::IsHTTP1_1(const std::vector<uint8_t>& data) {
 bool ProtocolDetector::IsHTTP2(const std::vector<uint8_t>& data) {
     // Detect HTTP/2 connection preface: "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
     if (data.size() >= 24) {
-        static const std::array<uint8_t, 24> http2_preface = {
-            'P','R','I',' ','*',' ','H','T','T','P','/','2','.','0','\r','\n','\r','\n','S','M','\r','\n','\r','\n'
-        };
+        static const std::array<uint8_t, 24> http2_preface = {'P', 'R', 'I', ' ', '*', ' ', 'H', 'T', 'T', 'P', '/',
+            '2', '.', '0', '\r', '\n', '\r', '\n', 'S', 'M', '\r', '\n', '\r', '\n'};
         if (std::equal(http2_preface.begin(), http2_preface.end(), data.begin())) {
             return true;
         }
@@ -110,15 +110,12 @@ bool ProtocolDetector::IsHTTP2(const std::vector<uint8_t>& data) {
 
     // Detect a valid HTTP/2 frame header (e.g., SETTINGS) at start
     if (data.size() >= 9) {
-        uint32_t length = (static_cast<uint32_t>(data[0]) << 16) |
-                          (static_cast<uint32_t>(data[1]) << 8) |
+        uint32_t length = (static_cast<uint32_t>(data[0]) << 16) | (static_cast<uint32_t>(data[1]) << 8) |
                           (static_cast<uint32_t>(data[2]));
         uint8_t type = data[3];
         uint8_t /*flags*/ _flags = data[4];
-        uint32_t stream_id = (static_cast<uint32_t>(data[5]) << 24) |
-                             (static_cast<uint32_t>(data[6]) << 16) |
-                             (static_cast<uint32_t>(data[7]) << 8) |
-                             (static_cast<uint32_t>(data[8]));
+        uint32_t stream_id = (static_cast<uint32_t>(data[5]) << 24) | (static_cast<uint32_t>(data[6]) << 16) |
+                             (static_cast<uint32_t>(data[7]) << 8) | (static_cast<uint32_t>(data[8]));
         bool reserved_bit_set = (stream_id & 0x80000000u) != 0;
         stream_id &= 0x7FFFFFFFu;
 
@@ -129,8 +126,7 @@ bool ProtocolDetector::IsHTTP2(const std::vector<uint8_t>& data) {
             }
             // Other valid frame types on stream 0 at start could also indicate HTTP/2
             // e.g., WINDOW_UPDATE (0x08) on non-zero stream, PING(0x06) on stream 0, etc.
-            if ((type == 0x06 /*PING*/ && stream_id == 0) ||
-                (type == 0x03 /*RST_STREAM*/ && stream_id != 0) ||
+            if ((type == 0x06 /*PING*/ && stream_id == 0) || (type == 0x03 /*RST_STREAM*/ && stream_id != 0) ||
                 (type == 0x08 /*WINDOW_UPDATE*/)) {
                 return true;
             }
@@ -140,5 +136,5 @@ bool ProtocolDetector::IsHTTP2(const std::vector<uint8_t>& data) {
     return false;
 }
 
-} // namespace upgrade
-} // namespace quicx 
+}  // namespace upgrade
+}  // namespace quicx

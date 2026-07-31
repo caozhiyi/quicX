@@ -1,5 +1,5 @@
-#include "common/log/log.h"
 #include "quic/crypto/tls/tls_ctx_client.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -8,8 +8,8 @@ TLSClientCtx::TLSClientCtx() {}
 
 TLSClientCtx::~TLSClientCtx() {}
 
-bool TLSClientCtx::Init(bool enable_early_data, const std::string& cipher_suites,
-                         bool verify_peer, const std::string& ca_file) {
+bool TLSClientCtx::Init(
+    bool enable_early_data, const std::string& cipher_suites, bool verify_peer, const std::string& ca_file) {
     if (!TLSCtx::Init(enable_early_data, cipher_suites)) {
         return false;
     }

@@ -6,10 +6,11 @@
 namespace quicx {
 namespace common {
 
-template<typename T>
+template <typename T>
 class LinkedListSolt {
 public:
-    LinkedListSolt(): next_(nullptr) {}
+    LinkedListSolt():
+        next_(nullptr) {}
     virtual ~LinkedListSolt() {}
 
     void SetNext(std::shared_ptr<T> v) { next_ = v; }
@@ -19,7 +20,7 @@ protected:
     std::shared_ptr<T> next_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

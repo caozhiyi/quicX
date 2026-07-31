@@ -1,7 +1,7 @@
-#include "common/buffer/multi_block_buffer.h"
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/buffer/multi_block_buffer.h"
+#include "common/log/log.h"
 
 #include "quic/quicx/global_resource.h"
 
@@ -16,8 +16,7 @@ namespace quicx {
 namespace http3 {
 
 ResponseStream::ResponseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<QpackEncoder>& qpack_decoder,
-    const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, std::weak_ptr<IHttpProcessor> http_processor,
     const std::function<void(std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>)> push_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
@@ -186,12 +185,8 @@ void ResponseStream::HandleHeaders() {
         // response_. We preserve that semantics here: the lambda takes the
         // (req, resp) signature HandleHttp expects but ignores them and uses
         // the captured shared_ptrs.
-        HandleHttp(
-            [handler = route_config_.GetAsyncServerHandler(),
-             req = request_,
-             resp = response_](std::shared_ptr<IRequest>, std::shared_ptr<IResponse>) {
-                handler->OnHeaders(req, resp);
-            });
+        HandleHttp([handler = route_config_.GetAsyncServerHandler(), req = request_, resp = response_](
+                       std::shared_ptr<IRequest>, std::shared_ptr<IResponse>) { handler->OnHeaders(req, resp); });
         LOG_DEBUG("HandleHeaders: async server handler called");
         return;
     }
@@ -244,8 +239,7 @@ void ResponseStream::HandleHeaders() {
 }
 
 void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bool is_last) {
-    LOG_DEBUG(
-        "ResponseStream::HandleData: data size=%zu, is_last=%d, body_length_=%u, received_body_length_=%u",
+    LOG_DEBUG("ResponseStream::HandleData: data size=%zu, is_last=%d, body_length_=%u, received_body_length_=%u",
         data->GetDataLength(), is_last, body_length_, received_body_length_);
 
     // Validate data size
@@ -309,8 +303,7 @@ void ResponseStream::HandleData(const std::shared_ptr<common::IBuffer>& data, bo
         data->MoveReadPt(data_length);
     }
 
-    LOG_DEBUG(
-        "ResponseStream::HandleData: body_ size now=%zu, checking if complete (body_length_=%u, is_last=%d)",
+    LOG_DEBUG("ResponseStream::HandleData: body_ size now=%zu, checking if complete (body_length_=%u, is_last=%d)",
         body_->GetDataLength(), body_length_, is_last);
 
     // check if all data received, call the handler and send response

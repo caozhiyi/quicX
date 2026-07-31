@@ -91,22 +91,19 @@ TEST_F(SendManagerRecheckTimerTest, FiresExactlyAfter100Ms) {
     // in the future. CI VMs can oversleep significantly.
     SleepAndTick(50);
     if (ElapsedSince(start) < kRecheckIntervalMs) {
-        EXPECT_EQ(retry_count_.load(), 0)
-            << "recheck timer fired too early (before deadline)";
+        EXPECT_EQ(retry_count_.load(), 0) << "recheck timer fired too early (before deadline)";
     }
 
     // ~75 ms total – still below the boundary minus slack.
     SleepAndTick(kRecheckIntervalMs - 50 - kSlackMs);
     if (ElapsedSince(start) < kRecheckIntervalMs - kSlackMs) {
-        EXPECT_EQ(retry_count_.load(), 0)
-            << "recheck timer fired before 100ms - " << kSlackMs << " ms";
+        EXPECT_EQ(retry_count_.load(), 0) << "recheck timer fired before 100ms - " << kSlackMs << " ms";
     }
 
     // Push past 100 ms total. Use generous extra (50 ms) to absorb scheduler
     // latency on busy CI hosts. The timer MUST have fired exactly once.
     SleepAndTick(kSlackMs + 50);
-    EXPECT_EQ(retry_count_.load(), 1)
-        << "recheck timer did not fire after the 100 ms interval elapsed";
+    EXPECT_EQ(retry_count_.load(), 1) << "recheck timer did not fire after the 100 ms interval elapsed";
 }
 
 // ---------------------------------------------------------------------------
@@ -122,8 +119,7 @@ TEST_F(SendManagerRecheckTimerTest, OneShotDoesNotKeepFiring) {
 
     // Run the wheel for another ~3 intervals. No rescheduling, no extra fires.
     SleepAndTick(kRecheckIntervalMs * 3);
-    EXPECT_EQ(retry_count_.load(), 1)
-        << "recheck timer fired more than once for a single SetFlowControlBlocked";
+    EXPECT_EQ(retry_count_.load(), 1) << "recheck timer fired more than once for a single SetFlowControlBlocked";
 }
 
 // ---------------------------------------------------------------------------
@@ -159,8 +155,7 @@ TEST_F(SendManagerRecheckTimerTest, ReentrantSetDoesNotDoubleSchedule) {
 
     // And no second fire after that.
     SleepAndTick(kRecheckIntervalMs * 2);
-    EXPECT_EQ(retry_count_.load(), 1)
-        << "double-schedule produced an extra fire";
+    EXPECT_EQ(retry_count_.load(), 1) << "double-schedule produced an extra fire";
 }
 
 // ---------------------------------------------------------------------------
@@ -181,14 +176,12 @@ TEST_F(SendManagerRecheckTimerTest, RescheduleAfterFireWorks) {
     // if the host hasn't already overslept past the deadline.
     SleepAndTick(kRecheckIntervalMs - kSlackMs);
     if (ElapsedSince(rearm_start) < kRecheckIntervalMs) {
-        EXPECT_EQ(retry_count_.load(), 1)
-            << "second fire happened too early after re-arm";
+        EXPECT_EQ(retry_count_.load(), 1) << "second fire happened too early after re-arm";
     }
 
     // After the boundary plus margin, must have fired the second time.
     SleepAndTick(kSlackMs + 50);
-    EXPECT_EQ(retry_count_.load(), 2)
-        << "re-armed recheck timer never fired";
+    EXPECT_EQ(retry_count_.load(), 2) << "re-armed recheck timer never fired";
 }
 
 // ---------------------------------------------------------------------------
@@ -241,8 +234,7 @@ TEST_F(SendManagerRecheckTimerTest, RearmAfterFireUsesFreshInterval) {
     // host actually hasn't crossed the 100 ms deadline).
     SleepAndTick(kRecheckIntervalMs - kSlackMs);
     if (ElapsedSince(rearm_start) < kRecheckIntervalMs) {
-        EXPECT_EQ(retry_count_.load(), 1)
-            << "re-armed timer fired immediately — stale bookkeeping suspected";
+        EXPECT_EQ(retry_count_.load(), 1) << "re-armed timer fired immediately — stale bookkeeping suspected";
     }
 
     // Past 100 ms post-rearm — fires on schedule.

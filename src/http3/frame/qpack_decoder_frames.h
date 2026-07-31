@@ -8,9 +8,9 @@ namespace quicx {
 namespace http3 {
 
 enum class QpackDecoderInstrType : uint8_t {
-    kSectionAck          = 0x00,
-    kStreamCancellation  = 0x01,
-    kInsertCountInc      = 0x02,
+    kSectionAck = 0x00,
+    kStreamCancellation = 0x01,
+    kInsertCountInc = 0x02,
 };
 
 class IQpackDecoderFrame {
@@ -23,15 +23,15 @@ public:
     virtual uint8_t GetType() const = 0;
 };
 
-bool DecodeQpackDecoderFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IQpackDecoderFrame>>& frames);
+bool DecodeQpackDecoderFrames(
+    std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IQpackDecoderFrame>>& frames);
 
 // Section Acknowledgement: [t=0x00][stream_id varint][section_number varint]
 // 0   1   2   3   4   5   6   7
 // +---+---+---+---+---+---+---+---+
 // | 1 |      Stream ID (7+)       |
 // +---+---------------------------+
-class QpackSectionAckFrame:
-    public IQpackDecoderFrame {
+class QpackSectionAckFrame: public IQpackDecoderFrame {
 public:
     QpackSectionAckFrame();
     ~QpackSectionAckFrame() override = default;
@@ -96,9 +96,7 @@ private:
     uint64_t delta_ = 0;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif
-
-

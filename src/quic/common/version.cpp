@@ -1,6 +1,6 @@
+#include "quic/common/version.h"
 #include <cstddef>
 #include <cstdint>
-#include "quic/common/version.h"
 
 namespace quicx {
 namespace quic {
@@ -28,9 +28,12 @@ uint32_t SelectVersion(const std::vector<uint32_t>& versions) {
 
 const char* VersionToString(uint32_t version) {
     switch (version) {
-        case kQuicVersion1: return "QUICv1";
-        case kQuicVersion2: return "QUICv2";
-        default: return "Unknown";
+        case kQuicVersion1:
+            return "QUICv1";
+        case kQuicVersion2:
+            return "QUICv2";
+        default:
+            return "Unknown";
     }
 }
 

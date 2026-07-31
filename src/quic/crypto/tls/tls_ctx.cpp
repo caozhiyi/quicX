@@ -1,5 +1,5 @@
-#include "common/log/log.h"
 #include "quic/crypto/tls/tls_ctx.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -7,9 +7,7 @@ namespace quic {
 TLSCtx::TLSCtx():
     ssl_ctx_(nullptr),
     enable_early_data_(false),
-    keylog_file_(nullptr) {
-
-}
+    keylog_file_(nullptr) {}
 
 TLSCtx::~TLSCtx() {
     if (keylog_file_) {
@@ -36,7 +34,7 @@ bool TLSCtx::Init(bool enable_early_data, const std::string& cipher_suites) {
     // BoringSSL automatically selects the best cipher based on:
     // - Hardware support (AES-NI for AES-GCM, or ChaCha20 otherwise)
     // - Security strength
-    // 
+    //
     // Supported TLS 1.3 ciphers:
     // - TLS_AES_128_GCM_SHA256 (default)
     // - TLS_AES_256_GCM_SHA384
@@ -45,7 +43,7 @@ bool TLSCtx::Init(bool enable_early_data, const std::string& cipher_suites) {
     // For interoperability testing, ChaCha20 can be tested by running on
     // platforms without AES-NI hardware support.
     if (!cipher_suites.empty()) {
-        LOG_INFO("TLS cipher suites requested: %s (note: BoringSSL uses automatic TLS 1.3 cipher selection)", 
+        LOG_INFO("TLS cipher suites requested: %s (note: BoringSSL uses automatic TLS 1.3 cipher selection)",
             cipher_suites.c_str());
     }
 
@@ -54,7 +52,7 @@ bool TLSCtx::Init(bool enable_early_data, const std::string& cipher_suites) {
         SSL_CTX_set_early_data_enabled(ssl_ctx_.get(), 1);
         enable_early_data_ = true;
     }
-    
+
     return true;
 }
 
@@ -93,5 +91,5 @@ void TLSCtx::KeyLogCallback(const SSL* ssl, const char* line) {
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

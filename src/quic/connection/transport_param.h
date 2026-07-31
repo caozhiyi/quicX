@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "common/buffer/buffer_span.h"
 #include <quicx/quic/type.h>
+#include "common/buffer/buffer_span.h"
 
 namespace quicx {
 namespace quic {
@@ -96,8 +96,10 @@ private:
     uint64_t initial_max_stream_data_bidi_remote_;
     uint64_t initial_max_stream_data_uni_;
     // Peer's transport param values (populated during Merge)
-    uint64_t peer_initial_max_stream_data_bidi_remote_;  // peer's bidi_remote: our send limit on locally-initiated bidi streams
-    uint64_t peer_initial_max_stream_data_bidi_local_;   // peer's bidi_local: our send limit on remotely-initiated bidi streams
+    uint64_t peer_initial_max_stream_data_bidi_remote_;  // peer's bidi_remote: our send limit on locally-initiated bidi
+                                                         // streams
+    uint64_t peer_initial_max_stream_data_bidi_local_;   // peer's bidi_local: our send limit on remotely-initiated bidi
+                                                         // streams
     uint64_t initial_max_streams_bidi_;
     uint64_t initial_max_streams_uni_;
     uint64_t ack_delay_exponent_;  // no client

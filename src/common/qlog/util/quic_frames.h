@@ -174,8 +174,7 @@ inline std::string FrameToJson(quic::IFrame* frame) {
         case quic::FrameType::kMaxStreamsUnidirectional: {
             if (auto* mf = dynamic_cast<quic::MaxStreamsFrame*>(frame)) {
                 oss << ",\"stream_type\":\""
-                    << (type == quic::FrameType::kMaxStreamsBidirectional ? "bidirectional" : "unidirectional")
-                    << "\"";
+                    << (type == quic::FrameType::kMaxStreamsBidirectional ? "bidirectional" : "unidirectional") << "\"";
                 oss << ",\"maximum\":" << mf->GetMaximumStreams();
             }
             break;
@@ -211,8 +210,7 @@ inline std::string FrameToJson(quic::IFrame* frame) {
                 nf->GetConnectionID(cid);
                 oss << ",\"connection_id\":\"" << BytesToHex(cid.GetID(), cid.GetLength()) << "\"";
                 oss << ",\"connection_id_length\":" << static_cast<int>(cid.GetLength());
-                oss << ",\"stateless_reset_token\":\""
-                    << BytesToHex(nf->GetStatelessResetToken(), 16) << "\"";
+                oss << ",\"stateless_reset_token\":\"" << BytesToHex(nf->GetStatelessResetToken(), 16) << "\"";
             }
             break;
         }

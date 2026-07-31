@@ -1,5 +1,5 @@
-#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/buffer_encode_wrapper.h"
 #include "common/decode/decode.h"
 #include "common/log/log.h"
 

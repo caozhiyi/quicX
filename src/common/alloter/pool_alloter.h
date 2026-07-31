@@ -1,8 +1,8 @@
 #ifndef COMMON_ALLOTER_POOL_ALLOTER
 #define COMMON_ALLOTER_POOL_ALLOTER
 
-#include <vector>
 #include <cstdint>
+#include <vector>
 #include "common/alloter/if_alloter.h"
 
 namespace quicx {
@@ -31,8 +31,7 @@ static const uint32_t kDefaultNumberAddNodes = 20;
  *     growing during its lifetime, which matches "one pool per connection":
  *     the whole arena is reclaimed when the connection ends.
  */
-class PoolAlloter:
-    public IAlloter {
+class PoolAlloter: public IAlloter {
 public:
     PoolAlloter();
     ~PoolAlloter();
@@ -41,31 +40,30 @@ public:
     void* MallocAlign(uint32_t size);
     void* MallocZero(uint32_t size);
 
-    void Free(void* &data, uint32_t len);
+    void Free(void*& data, uint32_t len);
+
 private:
-    uint32_t FreeListIndex(uint32_t size, uint32_t align = kAlign) {
-        return (size + align - 1) / align - 1;
-    }
-    
+    uint32_t FreeListIndex(uint32_t size, uint32_t align = kAlign) { return (size + align - 1) / align - 1; }
+
     void* ReFill(uint32_t size, uint32_t num = kDefaultNumberAddNodes);
     void* ChunkAlloc(uint32_t size, uint32_t& nums);
 
 private:
     union MemNode {
-        MemNode*    next_;
-        uint8_t     data_[1];
+        MemNode* next_;
+        uint8_t data_[1];
     };
-    
-    uint8_t*  pool_start_;         
-    uint8_t*  pool_end_;
-    std::vector<MemNode*>     free_list_;  
-    std::vector<uint8_t*>     malloc_vec_;
+
+    uint8_t* pool_start_;
+    uint8_t* pool_end_;
+    std::vector<MemNode*> free_list_;
+    std::vector<uint8_t*> malloc_vec_;
     std::shared_ptr<IAlloter> alloter_;
 };
 
 std::shared_ptr<IAlloter> MakePoolAlloterPtr();
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
-#endif 
+#endif

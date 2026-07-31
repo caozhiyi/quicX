@@ -1,17 +1,16 @@
 #ifndef QUIC_FRAME_ACK_FRAME
 #define QUIC_FRAME_ACK_FRAME
 
-#include <vector>
 #include <cstdint>
+#include <vector>
 
-#include "quic/frame/if_frame.h"
 #include "quic/frame/ack_range.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
 
-class AckFrame: 
-    public IFrame {
+class AckFrame: public IFrame {
 public:
     AckFrame();
     virtual ~AckFrame();
@@ -36,15 +35,17 @@ protected:
     AckFrame(FrameType ft);
 
 private:
-    uint64_t largest_acknowledged_; // A variable-length integer representing the largest packet number the peer is acknowledging.
-    uint32_t ack_delay_;            // the time delta in microseconds between when this ACK was sent and when the largest acknowledged packet.
-    uint64_t first_ack_range_;      // A variable-length integer indicating the number of contiguous packets preceding the Largest Acknowledged that are being acknowledged
+    uint64_t largest_acknowledged_;  // A variable-length integer representing the largest packet number the peer is
+                                     // acknowledging.
+    uint32_t ack_delay_;        // the time delta in microseconds between when this ACK was sent and when the largest
+                                // acknowledged packet.
+    uint64_t first_ack_range_;  // A variable-length integer indicating the number of contiguous packets preceding the
+                                // Largest Acknowledged that are being acknowledged
     // uint64_t ack_range_;         // A variable-length integer specifying the number of ACK Range fields in the frame.
-    std::vector<AckRange> ack_ranges_;                 
+    std::vector<AckRange> ack_ranges_;
 };
 
-class AckEcnFrame:
-    public AckFrame {
+class AckEcnFrame: public AckFrame {
 public:
     AckEcnFrame();
     ~AckEcnFrame();
@@ -63,12 +64,15 @@ public:
     uint64_t GetEcnCe() { return ecn_ce_; }
 
 private:
-    uint64_t ect_0_;    // the total number of packets received with the ECT(0) codepoint in the packet number space of the ACK frame.
-    uint64_t ect_1_;    // the total number of packets received with the ECT(1) codepoint in the packet number space of the ACK frame.
-    uint64_t ecn_ce_;   // the total number of packets received with the CE codepoint in the packet number space of the ACK frame.
+    uint64_t ect_0_;   // the total number of packets received with the ECT(0) codepoint in the packet number space of
+                       // the ACK frame.
+    uint64_t ect_1_;   // the total number of packets received with the ECT(1) codepoint in the packet number space of
+                       // the ACK frame.
+    uint64_t ecn_ce_;  // the total number of packets received with the CE codepoint in the packet number space of the
+                       // ACK frame.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

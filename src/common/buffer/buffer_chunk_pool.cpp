@@ -65,8 +65,7 @@ void Recycle(BufferChunk* raw) {
 
 }  // namespace
 
-std::shared_ptr<BufferChunk> BufferChunkPool::Acquire(
-        const std::shared_ptr<BlockMemoryPool>& pool) {
+std::shared_ptr<BufferChunk> BufferChunkPool::Acquire(const std::shared_ptr<BlockMemoryPool>& pool) {
     if (!pool) {
         return nullptr;
     }

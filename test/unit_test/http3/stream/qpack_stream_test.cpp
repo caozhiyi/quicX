@@ -1,24 +1,24 @@
-#include <vector>
 #include <gtest/gtest.h>
+#include <vector>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
-#include "http3/http/error.h"
-#include "http3/qpack/blocked_registry.h"
 #include "http3/frame/qpack_decoder_frames.h"
 #include "http3/frame/qpack_encoder_frames.h"
-#include "http3/stream/qpack_decoder_sender_stream.h"
-#include "http3/stream/qpack_encoder_sender_stream.h"
-#include "http3/stream/qpack_encoder_receiver_stream.h"
+#include "http3/http/error.h"
+#include "http3/qpack/blocked_registry.h"
 #include "http3/stream/qpack_decoder_receiver_stream.h"
+#include "http3/stream/qpack_decoder_sender_stream.h"
+#include "http3/stream/qpack_encoder_receiver_stream.h"
+#include "http3/stream/qpack_encoder_sender_stream.h"
 #include "test/unit_test/http3/stream/mock_quic_stream.h"
 
 namespace quicx {
 namespace http3 {
 namespace {
 
-class QpackStreamTest : public ::testing::Test {
+class QpackStreamTest: public ::testing::Test {
 protected:
     void SetUp() override {
         encoder_send_stream_ = std::make_shared<quic::MockQuicStream>();
@@ -35,18 +35,18 @@ protected:
         decoder_registry_ = std::make_shared<QpackBlockedRegistry>();
         qpack_encoder_ = std::make_shared<QpackEncoder>();
 
-        auto encoder_error_cb = [this](uint64_t /*stream_id*/, uint32_t error_code) {
-            encoder_error_code_ = error_code;
-        };
-        auto decoder_error_cb = [this](uint64_t /*stream_id*/, uint32_t error_code) {
-            decoder_error_code_ = error_code;
-        };
+        auto encoder_error_cb = [this](
+                                    uint64_t /*stream_id*/, uint32_t error_code) { encoder_error_code_ = error_code; };
+        auto decoder_error_cb = [this](
+                                    uint64_t /*stream_id*/, uint32_t error_code) { decoder_error_code_ = error_code; };
 
         encoder_sender_ = std::make_shared<QpackEncoderSenderStream>(encoder_send_stream_, encoder_error_cb);
-        encoder_receiver_ = std::make_shared<QpackEncoderReceiverStream>(encoder_recv_stream_, qpack_encoder_, encoder_registry_, encoder_error_cb);
+        encoder_receiver_ = std::make_shared<QpackEncoderReceiverStream>(
+            encoder_recv_stream_, qpack_encoder_, encoder_registry_, encoder_error_cb);
 
         decoder_sender_ = std::make_shared<QpackDecoderSenderStream>(decoder_send_stream_, decoder_error_cb);
-        decoder_receiver_ = std::make_shared<QpackDecoderReceiverStream>(decoder_recv_stream_, decoder_registry_, decoder_error_cb);
+        decoder_receiver_ =
+            std::make_shared<QpackDecoderReceiverStream>(decoder_recv_stream_, decoder_registry_, decoder_error_cb);
     }
 
     void TearDown() override {
@@ -134,5 +134,3 @@ TEST_F(QpackStreamTest, DecoderSenderReceiverRoundTrip) {
 }  // namespace
 }  // namespace http3
 }  // namespace quicx
-
-

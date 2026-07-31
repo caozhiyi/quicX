@@ -1,15 +1,15 @@
-#include <cstdint>
 #include <gtest/gtest.h>
+#include <cstdint>
 
-#include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/cubic_congestion_control.h"
+#include "quic/congestion_control/if_congestion_control.h"
 
-using quicx::quic::CcConfigV2;
-using quicx::quic::ICongestionControl;
-using quicx::quic::CubicCongestionControl;
-using quicx::quic::SentPacketEvent;
 using quicx::quic::AckEvent;
+using quicx::quic::CcConfigV2;
+using quicx::quic::CubicCongestionControl;
+using quicx::quic::ICongestionControl;
 using quicx::quic::LossEvent;
+using quicx::quic::SentPacketEvent;
 
 TEST(CubicCongestionControlTest, InitialState) {
     CubicCongestionControl cc;
@@ -47,7 +47,7 @@ TEST(CubicCongestionControlTest, LossReducesCwndAndEntersRecovery) {
     CubicCongestionControl cc;
     CcConfigV2 cfg;
     cfg.mss_bytes = 1000;
-    cfg.initial_cwnd_bytes = 20 * cfg.mss_bytes; // 20000
+    cfg.initial_cwnd_bytes = 20 * cfg.mss_bytes;  // 20000
     cfg.min_cwnd_bytes = 2 * cfg.mss_bytes;
     cc.Configure(cfg);
 
@@ -101,7 +101,7 @@ TEST(CubicCongestionControlTest, CanSendAndPacingRateBasics) {
     EXPECT_EQ(can_send, cfg.initial_cwnd_bytes);
 
     // Set SRTT and verify pacing rate formula cwnd/srtt * 1.25 (CUBIC uses 1.25x gain)
-    cc.OnRoundTripSample(100000, 0); // 100ms
+    cc.OnRoundTripSample(100000, 0);  // 100ms
     // bytes/sec = cwnd_bytes * 1.25 / rtt_seconds = cwnd_bytes * 1e6 * 5 / (rtt_us * 4)
     const uint64_t expected_bytes_per_sec = (cfg.initial_cwnd_bytes * 1000000ull * 5) / (100000ull * 4);
     EXPECT_EQ(cc.GetPacingRateBytesPerSec(), expected_bytes_per_sec);
@@ -112,5 +112,3 @@ TEST(CubicCongestionControlTest, CanSendAndPacingRateBasics) {
     EXPECT_EQ(cc.CanSend(0, can_send), ICongestionControl::SendState::kBlockedByCwnd);
     EXPECT_EQ(can_send, 0u);
 }
-
-

@@ -1,8 +1,8 @@
 #ifndef QUIC_COMMON_NETWORK_ADDRESS
 #define QUIC_COMMON_NETWORK_ADDRESS
 
-#include <string>
 #include <cstdint>
+#include <string>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -14,8 +14,8 @@ namespace quicx {
 namespace common {
 
 enum class AddressType {
-    kIpv4  = 0x1,
-    kIpv6  = 0x2,
+    kIpv4 = 0x1,
+    kIpv6 = 0x2,
 };
 
 class Address {
@@ -32,7 +32,10 @@ public:
     virtual void SetPort(uint16_t port);
     virtual uint16_t GetPort() const;
 
-    virtual void SetAddressType(AddressType address_type) { address_type_ = address_type; InvalidateCachedSockaddr(); }
+    virtual void SetAddressType(AddressType address_type) {
+        address_type_ = address_type;
+        InvalidateCachedSockaddr();
+    }
     virtual AddressType GetAddressType() const { return address_type_; }
 
     // Convenience predicates over GetAddressType().  IsIPv4() and IsIPv6() are
@@ -42,8 +45,8 @@ public:
 
     virtual const std::string AsString() const;
 
-    friend std::ostream& operator<< (std::ostream &out, Address &addr);
-    friend bool operator==(const Address &addr1, const Address &addr2);
+    friend std::ostream& operator<<(std::ostream& out, Address& addr);
+    friend bool operator==(const Address& addr1, const Address& addr2);
 
     static AddressType CheckAddressType(const std::string& ip);
 
@@ -91,7 +94,7 @@ private:
     mutable bool cached_v6_valid_ = false;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

@@ -7,7 +7,7 @@
 namespace quicx {
 
 namespace common {
-    class QlogTrace;
+class QlogTrace;
 }
 
 namespace quic {
@@ -17,8 +17,8 @@ struct CcConfigV2 {
     uint64_t min_cwnd_bytes = 2 * 1460;
     uint64_t max_cwnd_bytes = 1000 * 1460;
     uint64_t mss_bytes = 1460;
-    double beta = 0.5;        // cwnd *= beta on loss
-    bool ecn_enabled = false; // reserved
+    double beta = 0.5;         // cwnd *= beta on loss
+    bool ecn_enabled = false;  // reserved
 };
 
 struct SentPacketEvent {
@@ -75,7 +75,7 @@ public:
     virtual void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) = 0;
 };
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
 #endif

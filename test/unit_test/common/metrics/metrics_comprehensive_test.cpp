@@ -1,16 +1,16 @@
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <regex>
+#include <sstream>
+#include <string>
 #include <thread>
 #include <vector>
-#include <string>
-#include <sstream>
-#include <regex>
-#include <chrono>
-#include <atomic>
-#include <algorithm>
 
-#include <quicx/common/type.h>
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include <quicx/common/type.h>
 
 namespace quicx {
 namespace common {
@@ -19,7 +19,7 @@ namespace common {
 // Test Fixture
 // ===========================================================================
 
-class MetricsComprehensiveTest : public testing::Test {
+class MetricsComprehensiveTest: public testing::Test {
 protected:
     void SetUp() override {
         MetricsConfig config;
@@ -182,48 +182,90 @@ TEST_F(MetricsComprehensiveTest, AllRetryMetricsRegistered) {
 // Verify all 82 metric IDs are unique
 TEST_F(MetricsComprehensiveTest, AllMetricIDsUnique) {
     std::vector<MetricID> all_ids = {
-        MetricsStd::UdpPacketsRx, MetricsStd::UdpPacketsTx, MetricsStd::UdpBytesRx,
-        MetricsStd::UdpBytesTx, MetricsStd::UdpDroppedPackets, MetricsStd::UdpSendErrors,
-        MetricsStd::QuicConnectionsActive, MetricsStd::QuicConnectionsTotal,
-        MetricsStd::QuicConnectionsClosed, MetricsStd::QuicHandshakeSuccess,
-        MetricsStd::QuicHandshakeFail, MetricsStd::QuicHandshakeDurationUs,
-        MetricsStd::QuicPacketsRx, MetricsStd::QuicPacketsTx,
-        MetricsStd::QuicPacketsRetransmit, MetricsStd::QuicPacketsLost,
-        MetricsStd::QuicPacketsDropped, MetricsStd::QuicPacketsAcked,
-        MetricsStd::QuicStreamsActive, MetricsStd::QuicStreamsCreated,
-        MetricsStd::QuicStreamsClosed, MetricsStd::QuicStreamsBytesRx,
-        MetricsStd::QuicStreamsBytesTx, MetricsStd::QuicStreamsResetRx,
+        MetricsStd::UdpPacketsRx,
+        MetricsStd::UdpPacketsTx,
+        MetricsStd::UdpBytesRx,
+        MetricsStd::UdpBytesTx,
+        MetricsStd::UdpDroppedPackets,
+        MetricsStd::UdpSendErrors,
+        MetricsStd::QuicConnectionsActive,
+        MetricsStd::QuicConnectionsTotal,
+        MetricsStd::QuicConnectionsClosed,
+        MetricsStd::QuicHandshakeSuccess,
+        MetricsStd::QuicHandshakeFail,
+        MetricsStd::QuicHandshakeDurationUs,
+        MetricsStd::QuicPacketsRx,
+        MetricsStd::QuicPacketsTx,
+        MetricsStd::QuicPacketsRetransmit,
+        MetricsStd::QuicPacketsLost,
+        MetricsStd::QuicPacketsDropped,
+        MetricsStd::QuicPacketsAcked,
+        MetricsStd::QuicStreamsActive,
+        MetricsStd::QuicStreamsCreated,
+        MetricsStd::QuicStreamsClosed,
+        MetricsStd::QuicStreamsBytesRx,
+        MetricsStd::QuicStreamsBytesTx,
+        MetricsStd::QuicStreamsResetRx,
         MetricsStd::QuicStreamsResetTx,
-        MetricsStd::QuicFlowControlBlocked, MetricsStd::QuicStreamDataBlocked,
-        MetricsStd::Http3RequestsTotal, MetricsStd::Http3RequestsActive,
-        MetricsStd::Http3RequestsFailed, MetricsStd::Http3RequestDurationUs,
-        MetricsStd::Http3ResponseBytesRx, MetricsStd::Http3ResponseBytesTx,
-        MetricsStd::Http3PushPromisesRx, MetricsStd::Http3PushPromisesTx,
-        MetricsStd::CongestionWindowBytes, MetricsStd::CongestionEventsTotal,
-        MetricsStd::SlowStartExits, MetricsStd::BytesInFlight,
-        MetricsStd::RttSmoothedUs, MetricsStd::RttVarianceUs, MetricsStd::RttMinUs,
+        MetricsStd::QuicFlowControlBlocked,
+        MetricsStd::QuicStreamDataBlocked,
+        MetricsStd::Http3RequestsTotal,
+        MetricsStd::Http3RequestsActive,
+        MetricsStd::Http3RequestsFailed,
+        MetricsStd::Http3RequestDurationUs,
+        MetricsStd::Http3ResponseBytesRx,
+        MetricsStd::Http3ResponseBytesTx,
+        MetricsStd::Http3PushPromisesRx,
+        MetricsStd::Http3PushPromisesTx,
+        MetricsStd::CongestionWindowBytes,
+        MetricsStd::CongestionEventsTotal,
+        MetricsStd::SlowStartExits,
+        MetricsStd::BytesInFlight,
+        MetricsStd::RttSmoothedUs,
+        MetricsStd::RttVarianceUs,
+        MetricsStd::RttMinUs,
         MetricsStd::PacketProcessTimeUs,
-        MetricsStd::MemPoolAllocatedBlocks, MetricsStd::MemPoolFreeBlocks,
-        MetricsStd::MemPoolAllocations, MetricsStd::MemPoolDeallocations,
-        MetricsStd::ErrorsProtocol, MetricsStd::ErrorsInternal,
-        MetricsStd::ErrorsFlowControl, MetricsStd::ErrorsStreamLimit,
-        MetricsStd::Quic0RttAccepted, MetricsStd::Quic0RttRejected,
-        MetricsStd::Quic0RttBytesRx, MetricsStd::Quic0RttBytesTx,
-        MetricsStd::PathMtuCurrent, MetricsStd::PathMtuUpdates,
-        MetricsStd::ConnectionMigrationsTotal, MetricsStd::ConnectionMigrationsFailed,
-        MetricsStd::TlsHandshakeDurationUs, MetricsStd::TlsSessionsResumed,
+        MetricsStd::MemPoolAllocatedBlocks,
+        MetricsStd::MemPoolFreeBlocks,
+        MetricsStd::MemPoolAllocations,
+        MetricsStd::MemPoolDeallocations,
+        MetricsStd::ErrorsProtocol,
+        MetricsStd::ErrorsInternal,
+        MetricsStd::ErrorsFlowControl,
+        MetricsStd::ErrorsStreamLimit,
+        MetricsStd::Quic0RttAccepted,
+        MetricsStd::Quic0RttRejected,
+        MetricsStd::Quic0RttBytesRx,
+        MetricsStd::Quic0RttBytesTx,
+        MetricsStd::PathMtuCurrent,
+        MetricsStd::PathMtuUpdates,
+        MetricsStd::ConnectionMigrationsTotal,
+        MetricsStd::ConnectionMigrationsFailed,
+        MetricsStd::TlsHandshakeDurationUs,
+        MetricsStd::TlsSessionsResumed,
         MetricsStd::TlsSessionsCached,
-        MetricsStd::FramesRxTotal, MetricsStd::FramesTxTotal,
-        MetricsStd::Http3Responses2xx, MetricsStd::Http3Responses3xx,
-        MetricsStd::Http3Responses4xx, MetricsStd::Http3Responses5xx,
-        MetricsStd::PacingRateBytesPerSec, MetricsStd::PacingDelayUs,
-        MetricsStd::AckDelayUs, MetricsStd::AckRangesPerFrame, MetricsStd::AckFrequency,
-        MetricsStd::IdleTimeoutTotal, MetricsStd::PtoCountTotal,
+        MetricsStd::FramesRxTotal,
+        MetricsStd::FramesTxTotal,
+        MetricsStd::Http3Responses2xx,
+        MetricsStd::Http3Responses3xx,
+        MetricsStd::Http3Responses4xx,
+        MetricsStd::Http3Responses5xx,
+        MetricsStd::PacingRateBytesPerSec,
+        MetricsStd::PacingDelayUs,
+        MetricsStd::AckDelayUs,
+        MetricsStd::AckRangesPerFrame,
+        MetricsStd::AckFrequency,
+        MetricsStd::IdleTimeoutTotal,
+        MetricsStd::PtoCountTotal,
         MetricsStd::PtoCountPerConnection,
-        MetricsStd::VersionNegotiationTotal, MetricsStd::QuicVersionInUse,
-        MetricsStd::QuicRetryPacketsSent, MetricsStd::QuicRetryByHighRate,
-        MetricsStd::QuicRetryBySuspiciousIP, MetricsStd::QuicRetryByPolicy,
-        MetricsStd::QuicRetryTokensValidated, MetricsStd::QuicRetryTokensInvalid,
+        MetricsStd::VersionNegotiationTotal,
+        MetricsStd::QuicVersionInUse,
+        MetricsStd::QuicRetryPacketsSent,
+        MetricsStd::QuicRetryByHighRate,
+        MetricsStd::QuicRetryBySuspiciousIP,
+        MetricsStd::QuicRetryByPolicy,
+        MetricsStd::QuicRetryTokensValidated,
+        MetricsStd::QuicRetryTokensInvalid,
     };
 
     // All should be valid
@@ -462,11 +504,11 @@ TEST_F(MetricsComprehensiveTest, StandardGaugeRttMetrics) {
 
 TEST_F(MetricsComprehensiveTest, StandardHistogramHandshakeDuration) {
     // Observe handshake durations in various buckets
-    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 800);     // < 1000
-    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 3000);    // < 5000
-    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 8000);    // < 10000
-    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 200000);  // < 500000
-    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 2000000); // > 1000000 → +Inf
+    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 800);      // < 1000
+    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 3000);     // < 5000
+    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 8000);     // < 10000
+    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 200000);   // < 500000
+    Metrics::HistogramObserve(MetricsStd::QuicHandshakeDurationUs, 2000000);  // > 1000000 → +Inf
 
     std::string output = Metrics::ExportPrometheus();
     EXPECT_NE(output.find("quic_handshake_duration_us_bucket"), std::string::npos);
@@ -579,9 +621,7 @@ TEST_F(MetricsComprehensiveTest, ThreadExitGaugeMerge) {
     auto id = Metrics::RegisterGauge("thread_exit_gauge", "Thread exit gauge test");
 
     {
-        std::thread t([id]() {
-            Metrics::GaugeInc(id, 50);
-        });
+        std::thread t([id]() { Metrics::GaugeInc(id, 50); });
         t.join();
     }
 
@@ -615,9 +655,7 @@ TEST_F(MetricsComprehensiveTest, MultipleThreadsExitAndMerge) {
     auto id = Metrics::RegisterCounter("multi_exit_counter", "Multi thread exit test");
 
     for (int i = 0; i < 5; ++i) {
-        std::thread t([id]() {
-            Metrics::CounterInc(id, 100);
-        });
+        std::thread t([id]() { Metrics::CounterInc(id, 100); });
         t.join();
     }
 
@@ -671,9 +709,7 @@ TEST_F(MetricsComprehensiveTest, PrometheusHistogramFormat) {
 }
 
 TEST_F(MetricsComprehensiveTest, PrometheusLabelsFormat) {
-    auto id = Metrics::RegisterCounter(
-        "prom_fmt_labeled", "Labeled counter",
-        {{"method", "GET"}, {"status", "200"}});
+    auto id = Metrics::RegisterCounter("prom_fmt_labeled", "Labeled counter", {{"method", "GET"}, {"status", "200"}});
     Metrics::CounterInc(id, 5);
 
     std::string output = Metrics::ExportPrometheus();
@@ -685,9 +721,7 @@ TEST_F(MetricsComprehensiveTest, PrometheusLabelsFormat) {
 
 TEST_F(MetricsComprehensiveTest, PrometheusHistogramWithLabels) {
     std::vector<uint64_t> buckets = {10, 100};
-    auto id = Metrics::RegisterHistogram(
-        "prom_fmt_hist_labels", "Labeled histogram", buckets,
-        {{"endpoint", "/api"}});
+    auto id = Metrics::RegisterHistogram("prom_fmt_hist_labels", "Labeled histogram", buckets, {{"endpoint", "/api"}});
     Metrics::HistogramObserve(id, 50);
 
     std::string output = Metrics::ExportPrometheus();
@@ -712,8 +746,7 @@ TEST_F(MetricsComprehensiveTest, EmptyLabels) {
 
 TEST_F(MetricsComprehensiveTest, ManyLabels) {
     auto id = Metrics::RegisterCounter(
-        "many_labels", "Many labels counter",
-        {{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}});
+        "many_labels", "Many labels counter", {{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}});
     Metrics::CounterInc(id, 1);
 
     std::string output = Metrics::ExportPrometheus();

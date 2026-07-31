@@ -63,9 +63,7 @@ private:
     // Lock-free read used by all log dispatch paths. Safe because logger_
     // is write-once and logger_owner_ keeps the pointee alive for the
     // remainder of this BaseLogger's lifetime.
-    Logger* GetLoggerRaw() const {
-        return logger_.load(std::memory_order_acquire);
-    }
+    Logger* GetLoggerRaw() const { return logger_.load(std::memory_order_acquire); }
 
 protected:
     // level_ is read on every LOG_* call (potentially from any thread that

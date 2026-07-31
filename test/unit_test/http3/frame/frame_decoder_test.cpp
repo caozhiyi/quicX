@@ -209,8 +209,7 @@ TEST_F(FrameDecodeTest, DecodeIncompleteFrame) {
 // ============================================================================
 
 // Helper: build a fresh 1024-byte buffer and write |bytes| into it.
-static std::shared_ptr<common::SingleBlockBuffer> MakeBuffer(
-        const std::vector<uint8_t>& bytes) {
+static std::shared_ptr<common::SingleBlockBuffer> MakeBuffer(const std::vector<uint8_t>& bytes) {
     auto chunk = std::make_shared<common::StandaloneBufferChunk>(1024);
     auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
     if (!bytes.empty()) {
@@ -237,7 +236,7 @@ TEST_F(FrameDecodeTest, UnknownFrameType_LengthSplitAcrossTwoBuffers) {
     // Second call: the decoder must remember it already consumed an unknown
     // frame type and treat buf2 as [length][payload], NOT as a brand-new frame.
     EXPECT_TRUE(decoder.DecodeFrames(buf2, frames));
-    EXPECT_EQ(frames.size(), 0u);  // Unknown frame is skipped, no frame produced.
+    EXPECT_EQ(frames.size(), 0u);          // Unknown frame is skipped, no frame produced.
     EXPECT_EQ(buf2->GetDataLength(), 0u);  // All 4 bytes consumed.
 }
 
@@ -271,8 +270,7 @@ TEST_F(FrameDecodeTest, UnknownFrameType_FollowedByValidFrameInSecondBuffer) {
     // OnData #1: unknown frame type only.
     auto buf1 = MakeBuffer({0x21});
     // OnData #2: [length=2][AA BB]   then a valid DATA frame [type=0x00][len=2][01 02].
-    auto buf2 = MakeBuffer({0x02, 0xAA, 0xBB,
-                            0x00, 0x02, 0x01, 0x02});
+    auto buf2 = MakeBuffer({0x02, 0xAA, 0xBB, 0x00, 0x02, 0x01, 0x02});
 
     FrameDecoder decoder;
     std::vector<std::shared_ptr<IFrame>> frames;

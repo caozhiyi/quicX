@@ -1,11 +1,11 @@
 #ifndef UTEST_CONNECTION_MOCK_QUIC_CONNECTION
 #define UTEST_CONNECTION_MOCK_QUIC_CONNECTION
 
+#include <quicx/quic/if_quic_connection.h>
+#include <quicx/quic/if_quic_stream.h>
 #include <cstdint>
 #include <cstring>
 #include <vector>
-#include <quicx/quic/if_quic_connection.h>
-#include <quicx/quic/if_quic_stream.h>
 
 namespace quicx {
 namespace quic {

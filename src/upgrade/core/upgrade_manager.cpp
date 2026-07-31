@@ -1,5 +1,5 @@
-#include "common/log/log.h"
 #include "upgrade/core/upgrade_manager.h"
+#include "common/log/log.h"
 #include "upgrade/core/version_negotiator.h"
 
 namespace quicx {
@@ -13,12 +13,12 @@ UpgradeManager::UpgradeManager(const UpgradeSettings& settings):
 void UpgradeManager::ProcessUpgrade(ConnectionContext& context) {
     // Perform version negotiation
     last_result_ = VersionNegotiator::Negotiate(context, settings_);
-    
+
     if (!last_result_.success) {
         HandleUpgradeFailure(context, last_result_.error_message);
         return;
     }
-    
+
     // Send appropriate response based on negotiation result
     SendUpgradeResponse(context, last_result_);
 }
@@ -42,16 +42,19 @@ void UpgradeManager::SendUpgradeResponse(ConnectionContext& context, const Negot
 }
 
 void UpgradeManager::SendFailureResponse(ConnectionContext& context, const std::string& error) {
-    std::string error_response = 
+    std::string error_response =
         "HTTP/1.1 400 Bad Request\r\n"
         "Content-Type: text/plain\r\n"
-        "Content-Length: " + std::to_string(error.length()) + "\r\n"
-        "\r\n" + error;
-    
+        "Content-Length: " +
+        std::to_string(error.length()) +
+        "\r\n"
+        "\r\n" +
+        error;
+
     // Store error response for potential partial sends
     context.pending_response = std::vector<uint8_t>(error_response.begin(), error_response.end());
     context.response_sent = 0;
-    
+
     LOG_ERROR("Upgrade failed: %s", error.c_str());
 }
 
@@ -62,5 +65,5 @@ void UpgradeManager::HandleUpgradeFailure(ConnectionContext& context, const std:
     }
 }
 
-} // namespace upgrade
-} // namespace quicx 
+}  // namespace upgrade
+}  // namespace quicx

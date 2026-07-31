@@ -1,7 +1,7 @@
-#include <openssl/aead.h>
-#include <openssl/evp.h>
-#include <openssl/chacha.h>
 #include "quic/crypto/chacha20_poly1305_cryptographer.h"
+#include <openssl/aead.h>
+#include <openssl/chacha.h>
+#include <openssl/evp.h>
 
 namespace quicx {
 namespace quic {
@@ -14,13 +14,11 @@ ChaCha20Poly1305Cryptographer::ChaCha20Poly1305Cryptographer() {
     aead_iv_length_ = EVP_AEAD_nonce_length(aead_);
     aead_tag_length_ = EVP_AEAD_max_tag_len(aead_);
 
-    cipher_key_length_ = 32; 
+    cipher_key_length_ = 32;
     cipher_iv_length_ = 16;
 }
 
-ChaCha20Poly1305Cryptographer::~ChaCha20Poly1305Cryptographer() {
-
-}
+ChaCha20Poly1305Cryptographer::~ChaCha20Poly1305Cryptographer() {}
 
 const char* ChaCha20Poly1305Cryptographer::GetName() {
     return "chacha20_poly1305_cryptographer";
@@ -32,9 +30,8 @@ CryptographerId ChaCha20Poly1305Cryptographer::GetCipherId() {
 
 bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
     uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length, EVP_CIPHER_CTX* /*cached_hp_ctx*/) {
-
     const uint8_t* sample_pos = sample.GetStart();
-    uint32_t *counter = (uint32_t *)(sample_pos);
+    uint32_t* counter = (uint32_t*)(sample_pos);
     sample_pos += sizeof(uint32_t);
 
     CRYPTO_chacha_20(out_mask, kHeaderMask.data(), kHeaderMask.size(), key.data(), sample_pos, *counter);
@@ -43,5 +40,5 @@ bool ChaCha20Poly1305Cryptographer::MakeHeaderProtectMask(common::BufferSpan& sa
     return true;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

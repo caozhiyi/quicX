@@ -7,9 +7,9 @@
 
 #include "common/network/address.h"
 
+#include <quicx/quic/if_quic_connection.h>
 #include "quic/connection/connection_id.h"
 #include "quic/crypto/tls/type.h"
-#include <quicx/quic/if_quic_connection.h>
 #include "quic/packet/if_packet.h"
 
 namespace quicx {
@@ -62,6 +62,21 @@ public:
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() = 0;
     // Main send interface (replaces GenerateSendData)
     virtual bool TrySend() = 0;
+    // PERF (P2 follow-up to sendmmsg batch path): "burst" variant of TrySend
+    // that emits up to budget back-to-back packets in a single call, reusing
+    // the per-call setup work (encryption-level scheduler context look-up,
+    // cryptographer pointer fetch, packet-builder fixed fields) across the
+    // inner iterations. Returns the actual number of packets emitted in
+    // this call (>=0, <= budget). The default implementation just polls
+    // TrySend() in a loop so legacy / mock subclasses keep working with no
+    // changes; BaseConnection overrides this with an optimised path.
+    virtual int TrySendBurst(int budget) {
+        int sent = 0;
+        while (sent < budget && TrySend()) {
+            ++sent;
+        }
+        return sent;
+    }
     // Set sender for direct packet transmission (used by tests)
     virtual void SetSender(std::shared_ptr<ISender> sender) {}
     // Install (or clear with nullptr) a per-drain-round batch sink. When
@@ -108,33 +123,33 @@ public:
     virtual common::Address AcquireSendAddress() { return peer_addr_; }
 
     // ==================== Connection Migration (RFC 9000 Section 9) ====================
-    
+
     // Simple migration API (for interop tests - system chooses new address)
     virtual bool InitiateMigration() override { return false; }
-    
+
     // Full migration API (production use - specify new local address)
     virtual MigrationResult InitiateMigrationTo(const std::string& local_ip, uint16_t local_port = 0) override {
         (void)local_ip;
         (void)local_port;
         return MigrationResult::kFailedInvalidState;
     }
-    
+
     // Set callback for migration events
     virtual void SetMigrationCallback(migration_callback cb) override { migration_cb_ = cb; }
-    
+
     // Get current local address
     virtual void GetLocalAddr(std::string& addr, uint32_t& port) override;
-    
+
     // Check if migration is supported (peer didn't disable it)
     virtual bool IsMigrationSupported() const override { return false; }
-    
+
     // Check if migration is in progress
     virtual bool IsMigrationInProgress() const override { return false; }
-    
+
     // Internal: Set migration socket for sending during migration
     virtual void SetMigrationSocket(int32_t sockfd) { migration_sockfd_ = sockfd; }
     virtual int32_t GetMigrationSocket() const { return migration_sockfd_; }
-    
+
     // Internal: Get local address bound to socket
     virtual bool GetLocalAddressFromSocket(int32_t sockfd, common::Address& addr);
 
@@ -150,14 +165,14 @@ protected:
     int32_t sockfd_;
     int32_t migration_sockfd_{-1};  // Socket used during migration
     common::Address peer_addr_;
-    common::Address local_addr_;    // Cached local address
+    common::Address local_addr_;  // Cached local address
     // callback
     std::function<void(ConnectionID&, std::shared_ptr<IConnection>)> add_conn_id_cb_;
     std::function<void(ConnectionID&)> retire_conn_id_cb_;
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb_;
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb_;
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb_;
-    migration_callback migration_cb_;  // Migration event callback
+    migration_callback migration_cb_;            // Migration event callback
     RegisterSocketCallback register_socket_cb_;  // Register socket with receiver for migration
 
     stream_state_callback stream_state_cb_;

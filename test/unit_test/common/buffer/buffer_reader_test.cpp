@@ -154,7 +154,10 @@ TEST(BufferReaderContiguousTest, VisitDataOnEmptyReader) {
     reader.Read(buffer, 8);
 
     size_t visit_count = 0;
-    reader.VisitData([&](uint8_t*, uint32_t) { visit_count++; return true; });
+    reader.VisitData([&](uint8_t*, uint32_t) {
+        visit_count++;
+        return true;
+    });
     EXPECT_EQ(0u, visit_count);
 }
 

@@ -93,8 +93,8 @@ private:
      * All multi-byte fields are written big-endian to be stable across
      * heterogeneous-architecture clusters.
      */
-    static std::string BuildHmacPayload(const common::Address& client_addr, uint64_t timestamp_ms,
-        uint8_t cid_len, const uint8_t* cid_bytes);
+    static std::string BuildHmacPayload(
+        const common::Address& client_addr, uint64_t timestamp_ms, uint8_t cid_len, const uint8_t* cid_bytes);
 
     std::string current_secret_;
     std::string previous_secret_;  // For validation during rotation window

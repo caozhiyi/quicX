@@ -5,15 +5,13 @@
 #include <deque>
 #include <memory>
 
-#include "quic/congestion_control/if_pacer.h"
 #include "quic/congestion_control/if_congestion_control.h"
-
+#include "quic/congestion_control/if_pacer.h"
 
 namespace quicx {
 namespace quic {
 
-
-class BBRv3CongestionControl : public ICongestionControl {
+class BBRv3CongestionControl: public ICongestionControl {
 public:
     BBRv3CongestionControl();
     ~BBRv3CongestionControl() override = default;
@@ -39,7 +37,7 @@ public:
 
 private:
     enum class Mode { kStartup, kDrain, kProbeBw, kProbeRtt };
-    
+
     // ProbeBW sub-states for BBRv3
     enum class ProbeBwState {
         kDown,    // Probe for queue, reduce inflight
@@ -48,7 +46,10 @@ private:
         kUp       // Probe for bandwidth increase
     };
 
-    struct BwSample { uint64_t time_us; uint64_t bytes_per_sec; };
+    struct BwSample {
+        uint64_t time_us;
+        uint64_t bytes_per_sec;
+    };
 
     void MaybeEnterOrExitProbeRtt(uint64_t now_us);
     void AdvanceProbeBwCycle(uint64_t now_us);
@@ -63,7 +64,7 @@ private:
     void EnterProbeBwState(ProbeBwState state, uint64_t now_us);
     bool ShouldAdvanceProbeBwState(uint64_t now_us) const;
 
-    uint64_t BdpBytes(uint64_t gain_num, uint64_t gain_den) const; // BDP * gain
+    uint64_t BdpBytes(uint64_t gain_num, uint64_t gain_den) const;  // BDP * gain
 
     // Config
     CcConfigV2 cfg_{};
@@ -89,7 +90,7 @@ private:
     uint64_t bw_sample_bytes_acc_ = 0;
 
     // Gains
-    double pacing_gain_ = 2.885; // STARTUP
+    double pacing_gain_ = 2.885;  // STARTUP
     double cwnd_gain_ = 2.0;
 
     // ProbeBW cycle
@@ -100,8 +101,8 @@ private:
     uint64_t rounds_since_probe_ = 0;
 
     // ProbeRTT
-    static constexpr uint64_t kProbeRttIntervalUs = 10ull * 1000ull * 1000ull; // 10s
-    static constexpr uint64_t kProbeRttTimeUs = 200ull * 1000ull;              // 200ms
+    static constexpr uint64_t kProbeRttIntervalUs = 10ull * 1000ull * 1000ull;  // 10s
+    static constexpr uint64_t kProbeRttTimeUs = 200ull * 1000ull;               // 200ms
     bool probe_rtt_done_stamp_valid_ = false;
     uint64_t probe_rtt_done_stamp_us_ = 0;
 
@@ -114,8 +115,8 @@ private:
 
     // Loss threshold (approx v3 behavior). 2% default
     double loss_thresh_ = 0.02;
-    double beta_loss_ = 0.9;   // Multiplicative decrease factor on loss
-    double beta_ecn_ = 0.85;   // More aggressive factor on ECN
+    double beta_loss_ = 0.9;  // Multiplicative decrease factor on loss
+    double beta_ecn_ = 0.85;  // More aggressive factor on ECN
 
     // ECN handling
     bool ecn_seen_in_round_ = false;
@@ -123,7 +124,7 @@ private:
     // Full bandwidth detection (instance-local)
     uint64_t full_bw_bps_ = 0;
     int full_bw_cnt_ = 0;
-    
+
     // Round tracking
     uint64_t round_count_ = 0;
     uint64_t round_start_pn_ = 0;
@@ -135,9 +136,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
 #endif
-
-

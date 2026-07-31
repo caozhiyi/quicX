@@ -13,11 +13,11 @@ class ConnectionID;
 
 /**
  * @brief Retry mechanism cryptography utilities
- * 
+ *
  * Provides all cryptographic operations for QUIC Retry mechanism (RFC 9000 § 8.1):
  * 1. Retry Integrity Tag computation (RFC 9001 § 5.8, RFC 9369 for v2)
  * 2. Retry Token generation and validation (HMAC-based)
- * 
+ *
  * This module encapsulates all OpenSSL operations to separate crypto logic from
  * business logic in ServerWorker and RetryTokenManager.
  */
@@ -29,10 +29,10 @@ public:
 
     /**
      * @brief Compute Retry Integrity Tag using AES-128-GCM
-     * 
+     *
      * The Retry Integrity Tag is computed over the Retry Pseudo-Packet:
      *   Retry Pseudo-Packet = ODCID_Len(1) || ODCID || Retry_Packet_Without_Tag
-     * 
+     *
      * @param original_dcid Original Destination Connection ID from client's Initial
      * @param retry_packet_without_tag Encoded Retry packet body (excluding the 16-byte tag)
      * @param retry_packet_len Length of retry_packet_without_tag
@@ -45,7 +45,7 @@ public:
 
     /**
      * @brief Verify Retry Integrity Tag
-     * 
+     *
      * @param original_dcid Original Destination Connection ID
      * @param retry_packet_without_tag Encoded Retry packet body (excluding tag)
      * @param retry_packet_len Length of retry_packet_without_tag
@@ -62,7 +62,7 @@ public:
 
     /**
      * @brief Compute HMAC-SHA256 for Retry Token
-     * 
+     *
      * @param data Input data to compute HMAC over
      * @param data_len Length of input data
      * @param key HMAC secret key
@@ -71,12 +71,12 @@ public:
      * @param out_len Output length of HMAC (will be 32)
      * @return true on success, false on error
      */
-    static bool ComputeTokenHMAC(const uint8_t* data, size_t data_len, const uint8_t* key, size_t key_len,
-        uint8_t* out_hmac, size_t& out_len);
+    static bool ComputeTokenHMAC(
+        const uint8_t* data, size_t data_len, const uint8_t* key, size_t key_len, uint8_t* out_hmac, size_t& out_len);
 
     /**
      * @brief Convenience overload for std::string
-     * 
+     *
      * @param data Input data
      * @param key HMAC key
      * @param out_hmac Output HMAC string (32 bytes)
@@ -86,7 +86,7 @@ public:
 
     /**
      * @brief Constant-time HMAC comparison (for token verification)
-     * 
+     *
      * @param hmac_a First HMAC
      * @param hmac_b Second HMAC
      * @return true if HMACs are equal, false otherwise
@@ -99,7 +99,7 @@ public:
 
     /**
      * @brief Generate cryptographically secure random bytes
-     * 
+     *
      * @param out_buffer Output buffer for random bytes
      * @param length Number of random bytes to generate
      * @return true on success, false on error
@@ -108,7 +108,7 @@ public:
 
     /**
      * @brief Generate a random secret key for token HMAC
-     * 
+     *
      * @param key_size Size of secret key in bytes (typically 32 for SHA256)
      * @param out_secret Output secret key
      * @return true on success, false on error

@@ -38,8 +38,7 @@ bool TLSServerCtx::Init(const std::string& cert_file, const std::string& key_fil
     return true;
 }
 
-bool TLSServerCtx::Init(
-    const char* cert_pem, const char* key_pem, bool enable_early_data, 
+bool TLSServerCtx::Init(const char* cert_pem, const char* key_pem, bool enable_early_data,
     uint32_t session_ticket_timeout, const std::string& cipher_suites) {
     if (!Init(enable_early_data, session_ticket_timeout, cipher_suites)) {
         return false;

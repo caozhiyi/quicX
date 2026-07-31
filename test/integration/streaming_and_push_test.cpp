@@ -18,7 +18,7 @@
 
 // ==================== Async Server Handler for streaming upload ====================
 
-class StreamingUploadHandler : public quicx::IAsyncServerHandler {
+class StreamingUploadHandler: public quicx::IAsyncServerHandler {
 public:
     void OnHeaders(std::shared_ptr<quicx::IRequest> request, std::shared_ptr<quicx::IResponse> response) override {
         response_ = response;
@@ -39,7 +39,8 @@ public:
         if (is_last && response_) {
             response_->SetStatusCode(200);
             response_->AddHeader("content-type", "application/json");
-            std::string body = "{\"name\":\"" + upload_name_ + "\",\"size\":" + std::to_string(received_data_.size()) + "}";
+            std::string body =
+                "{\"name\":\"" + upload_name_ + "\",\"size\":" + std::to_string(received_data_.size()) + "}";
             response_->AppendBody(body);
         }
     }
@@ -58,7 +59,7 @@ private:
 
 // ==================== Test Fixture ====================
 
-class StreamingAndPushTest : public ::testing::Test {
+class StreamingAndPushTest: public ::testing::Test {
 protected:
     std::shared_ptr<quicx::IServer> server_;
     std::thread server_thread_;
@@ -168,8 +169,7 @@ TEST_F(StreamingAndPushTest, AsyncServerHandlerUpload) {
     StartServer();
 
     // Register async handler for streaming upload
-    server_->AddHandler(quicx::HttpMethod::kPost, "/upload/:name",
-        std::make_shared<StreamingUploadHandler>());
+    server_->AddHandler(quicx::HttpMethod::kPost, "/upload/:name", std::make_shared<StreamingUploadHandler>());
 
     StartServerThread();
 
@@ -187,8 +187,8 @@ TEST_F(StreamingAndPushTest, AsyncServerHandlerUpload) {
 
     std::string url = "https://127.0.0.1:" + std::to_string(port_) + "/upload/testfile";
 
-    client->DoRequest(url, quicx::HttpMethod::kPost, request,
-        [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+    client->DoRequest(
+        url, quicx::HttpMethod::kPost, request, [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             EXPECT_EQ(error, 0u);
             if (error == 0 && response) {
                 status_code = response->GetStatusCode();
@@ -252,8 +252,8 @@ TEST_F(StreamingAndPushTest, ClientBodyProvider) {
 
     std::string url = "https://127.0.0.1:" + std::to_string(port_) + "/echo-size";
 
-    client->DoRequest(url, quicx::HttpMethod::kPost, request,
-        [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+    client->DoRequest(
+        url, quicx::HttpMethod::kPost, request, [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             EXPECT_EQ(error, 0u);
             if (error == 0 && response) {
                 status_code = response->GetStatusCode();
@@ -275,7 +275,7 @@ TEST_F(StreamingAndPushTest, ClientBodyProvider) {
 
 // ==================== Async Client Handler (Streaming Download) Tests ====================
 
-class TestAsyncClientHandler : public quicx::IAsyncClientHandler {
+class TestAsyncClientHandler: public quicx::IAsyncClientHandler {
 public:
     void OnHeaders(std::shared_ptr<quicx::IResponse> response) override {
         status_code = response->GetStatusCode();
@@ -407,8 +407,8 @@ TEST_F(StreamingAndPushTest, ServerPushAccepted) {
     auto request = quicx::IRequest::Create();
     std::string url = "https://127.0.0.1:" + std::to_string(port_) + "/with-push";
 
-    client->DoRequest(url, quicx::HttpMethod::kGet, request,
-        [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+    client->DoRequest(
+        url, quicx::HttpMethod::kGet, request, [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0 && response) {
                 main_body = response->GetBodyAsString();
             }
@@ -467,8 +467,8 @@ TEST_F(StreamingAndPushTest, ServerPushCancelled) {
     auto request = quicx::IRequest::Create();
     std::string url = "https://127.0.0.1:" + std::to_string(port_) + "/with-push-cancel";
 
-    client->DoRequest(url, quicx::HttpMethod::kGet, request,
-        [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+    client->DoRequest(
+        url, quicx::HttpMethod::kGet, request, [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             if (error == 0 && response) {
                 main_body = response->GetBodyAsString();
             }
@@ -519,10 +519,9 @@ inline uint8_t LargeBodyByteAt(size_t index) {
 
 // Server handler that consumes a streaming upload and reports total bytes
 // received, also asserting the deterministic byte pattern matches.
-class LargeUploadHandler : public quicx::IAsyncServerHandler {
+class LargeUploadHandler: public quicx::IAsyncServerHandler {
 public:
-    void OnHeaders(std::shared_ptr<quicx::IRequest> request,
-                   std::shared_ptr<quicx::IResponse> response) override {
+    void OnHeaders(std::shared_ptr<quicx::IRequest> request, std::shared_ptr<quicx::IResponse> response) override {
         response_ = response;
         received_bytes_ = 0;
         pattern_ok_ = true;
@@ -541,8 +540,8 @@ public:
         if (is_last && response_) {
             response_->SetStatusCode(200);
             response_->AddHeader("content-type", "application/json");
-            std::string body = "{\"size\":" + std::to_string(received_bytes_) +
-                               ",\"ok\":" + (pattern_ok_ ? "true" : "false") + "}";
+            std::string body =
+                "{\"size\":" + std::to_string(received_bytes_) + ",\"ok\":" + (pattern_ok_ ? "true" : "false") + "}";
             response_->AppendBody(body);
         }
     }
@@ -564,8 +563,7 @@ TEST_F(StreamingAndPushTest, LargeBodyUpload1MB) {
     StartServer();
 
     auto handler = std::make_shared<LargeUploadHandler>();
-    server_->AddHandler(quicx::HttpMethod::kPost, "/upload-large",
-                        handler);
+    server_->AddHandler(quicx::HttpMethod::kPost, "/upload-large", handler);
 
     StartServerThread();
 
@@ -576,8 +574,7 @@ TEST_F(StreamingAndPushTest, LargeBodyUpload1MB) {
     auto bytes_sent = std::make_shared<size_t>(0);
     const size_t total_size = kOneMegabyte;
 
-    request->SetRequestBodyProvider([bytes_sent, total_size](uint8_t* buffer,
-                                                              size_t buffer_size) -> size_t {
+    request->SetRequestBodyProvider([bytes_sent, total_size](uint8_t* buffer, size_t buffer_size) -> size_t {
         if (*bytes_sent >= total_size) {
             return 0;
         }
@@ -596,8 +593,8 @@ TEST_F(StreamingAndPushTest, LargeBodyUpload1MB) {
     std::string response_body;
     std::string url = "https://127.0.0.1:" + std::to_string(port_) + "/upload-large";
 
-    client->DoRequest(url, quicx::HttpMethod::kPost, request,
-        [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+    client->DoRequest(
+        url, quicx::HttpMethod::kPost, request, [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             EXPECT_EQ(error, 0u);
             if (error == 0 && response) {
                 status_code = response->GetStatusCode();
@@ -613,8 +610,7 @@ TEST_F(StreamingAndPushTest, LargeBodyUpload1MB) {
 
     EXPECT_TRUE(completed.load());
     EXPECT_EQ(status_code, 200);
-    EXPECT_NE(response_body.find("\"size\":" + std::to_string(total_size)),
-              std::string::npos);
+    EXPECT_NE(response_body.find("\"size\":" + std::to_string(total_size)), std::string::npos);
     EXPECT_NE(response_body.find("\"ok\":true"), std::string::npos);
 
     client->Close();
@@ -629,8 +625,7 @@ TEST_F(StreamingAndPushTest, LargeBodyDownload5MB) {
             auto sent = std::make_shared<size_t>(0);
             const size_t total = kFiveMegabyte;
             resp->AddHeader("content-length", std::to_string(total));
-            resp->SetResponseBodyProvider([sent, total](uint8_t* buf,
-                                                        size_t buf_size) -> size_t {
+            resp->SetResponseBodyProvider([sent, total](uint8_t* buf, size_t buf_size) -> size_t {
                 if (*sent >= total) {
                     return 0;
                 }
@@ -651,7 +646,7 @@ TEST_F(StreamingAndPushTest, LargeBodyDownload5MB) {
 
     // Track received bytes incrementally so we don't materialise 5 MiB twice
     // and so we can verify the byte pattern progressively.
-    class StreamingDownloadHandler : public quicx::IAsyncClientHandler {
+    class StreamingDownloadHandler: public quicx::IAsyncClientHandler {
     public:
         void OnHeaders(std::shared_ptr<quicx::IResponse> response) override {
             status_code = response->GetStatusCode();

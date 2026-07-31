@@ -1,5 +1,5 @@
-#include "http3/router/util.h"
 #include "http3/router/router_node_root.h"
+#include "http3/router/util.h"
 
 namespace quicx {
 namespace http3 {

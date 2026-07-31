@@ -8,5 +8,5 @@ std::vector<std::shared_ptr<IFrame>>& IPacket::GetFrames() {
     return s_no_use;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

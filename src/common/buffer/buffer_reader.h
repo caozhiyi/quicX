@@ -5,8 +5,8 @@
 #include <functional>
 #include <memory>
 
-#include "common/buffer/buffer_span.h"
 #include <quicx/common/if_buffer_read.h>
+#include "common/buffer/buffer_span.h"
 
 namespace quicx {
 namespace common {
@@ -20,7 +20,7 @@ class IBuffer;
 //   - IBuffer mode: reads through an IBuffer interface with an independent offset.
 //     Supports multi-block buffers. Does not modify the underlying buffer's
 //     read pointer until Sync() is called.
-class BufferReader : public virtual IBufferRead {
+class BufferReader: public virtual IBufferRead {
 public:
     BufferReader();
 

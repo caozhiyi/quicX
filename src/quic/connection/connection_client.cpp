@@ -1,9 +1,9 @@
 #include <cstring>
 #include <vector>
 
+#include "common/buffer/buffer_span.h"
 #include "common/log/log.h"
 #include "common/qlog/qlog.h"
-#include "common/buffer/buffer_span.h"
 
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_frame_processor.h"
@@ -18,26 +18,23 @@
 namespace quicx {
 namespace quic {
 
-ClientConnection::ClientConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop,
-    const ConnectionCallbacks& callbacks):
+ClientConnection::ClientConnection(
+    std::shared_ptr<TLSCtx> ctx, std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks):
     BaseConnection(StreamIDGenerator::StreamStarter::kClient, false, loop, callbacks) {
     tls_connection_ = std::make_shared<TLSClientConnection>(ctx, &connection_crypto_);
     if (!tls_connection_->Init()) {
         LOG_ERROR("tls connection init failed.");
     }
 
-    auto crypto_stream = std::make_shared<CryptoStream>(event_loop_,
-        [this](auto a) { ActiveSendStream(a); },
-        [this](auto a) { InnerStreamClose(a); },
+    auto crypto_stream = std::make_shared<CryptoStream>(
+        event_loop_, [this](auto a) { ActiveSendStream(a); }, [this](auto a) { InnerStreamClose(a); },
         [this](auto a, auto b, auto c) { InnerConnectionClose(a, b, c); });
-    crypto_stream->SetCryptoStreamReadCallBack(
-        [this](auto a, auto b, auto c) { WriteCryptoData(a, b, c); });
+    crypto_stream->SetCryptoStreamReadCallBack([this](auto a, auto b, auto c) { WriteCryptoData(a, b, c); });
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 
     // Set HANDSHAKE_DONE frame handler callback
-    frame_processor_->SetHandshakeDoneCallback(
-        [this](auto a) { return HandleHandshakeDoneFrame(a); });
+    frame_processor_->SetHandshakeDoneCallback([this](auto a) { return HandleHandshakeDoneFrame(a); });
 }
 
 ClientConnection::~ClientConnection() {
@@ -77,7 +74,8 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
             remembered_qtp.initial_max_streams_bidi_ = cached_session_info.initial_max_streams_bidi;
             remembered_qtp.initial_max_streams_uni_ = cached_session_info.initial_max_streams_uni;
             remembered_qtp.initial_max_stream_data_bidi_local_ = cached_session_info.initial_max_stream_data_bidi_local;
-            remembered_qtp.initial_max_stream_data_bidi_remote_ = cached_session_info.initial_max_stream_data_bidi_remote;
+            remembered_qtp.initial_max_stream_data_bidi_remote_ =
+                cached_session_info.initial_max_stream_data_bidi_remote;
             remembered_qtp.initial_max_stream_data_uni_ = cached_session_info.initial_max_stream_data_uni;
             remembered_tp.Init(remembered_qtp);
             send_flow_controller_.UpdateConfig(remembered_tp);
@@ -100,13 +98,12 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
             // mutates transport_param_ internal state without re-triggering
             // SendFlowController/RecvFlowController init paths.
             transport_param_.Merge(remembered_tp);
-            LOG_INFO("0-RTT: Pre-initialized flow controller with remembered TP: "
+            LOG_INFO(
+                "0-RTT: Pre-initialized flow controller with remembered TP: "
                 "max_data=%u, max_streams_bidi=%u, max_streams_uni=%u, "
                 "peer_bidi_remote=%u, peer_bidi_local=%u",
-                cached_session_info.initial_max_data,
-                cached_session_info.initial_max_streams_bidi,
-                cached_session_info.initial_max_streams_uni,
-                cached_session_info.initial_max_stream_data_bidi_remote,
+                cached_session_info.initial_max_data, cached_session_info.initial_max_streams_bidi,
+                cached_session_info.initial_max_streams_uni, cached_session_info.initial_max_stream_data_bidi_remote,
                 cached_session_info.initial_max_stream_data_bidi_local);
         }
     }
@@ -135,9 +132,8 @@ bool ClientConnection::Dial(const common::Address& addr, const std::string& alpn
     return DialFinalize(tls_conn, addr);
 }
 
-bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_conn,
-    const common::Address& addr, const std::string& alpn,
-    const QuicTransportParams& tp_config, const std::string& server_name) {
+bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_conn, const common::Address& addr,
+    const std::string& alpn, const QuicTransportParams& tp_config, const std::string& server_name) {
     // RFC 9368 §3: A client that wishes to speak QUIC v2 but remain
     // interoperable with v1-only peers SHOULD start its handshake with a v1
     // Initial packet and rely on the Compatible Version Negotiation mechanism
@@ -148,16 +144,17 @@ bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_con
     // server via available_versions), and on successful upgrade the connection
     // will transparently switch to |version_ctx_.preferred_version|.
     if (version_ctx_.quic_version != kQuicVersion1) {
-        LOG_INFO("RFC 9368: starting client handshake with v1 Initial "
-                         "(preferred=0x%08x, compatible VN will upgrade if peer agrees)",
-                         version_ctx_.quic_version);
+        LOG_INFO(
+            "RFC 9368: starting client handshake with v1 Initial "
+            "(preferred=0x%08x, compatible VN will upgrade if peer agrees)",
+            version_ctx_.quic_version);
         SetPreferredVersion(version_ctx_.quic_version);
         SetVersion(kQuicVersion1);
     }
 
     // Set application protocol
-    LOG_INFO("ClientConnection::DialSetupTLS: configuring ALPN='%s' (len=%zu), SNI='%s'",
-        alpn.c_str(), alpn.size(), server_name.c_str());
+    LOG_INFO("ClientConnection::DialSetupTLS: configuring ALPN='%s' (len=%zu), SNI='%s'", alpn.c_str(), alpn.size(),
+        server_name.c_str());
     uint8_t* alpn_data = (uint8_t*)alpn.c_str();
     if (!tls_conn->AddAlpn(alpn_data, alpn.size())) {
         LOG_ERROR("add alpn failed. alpn:%s", alpn.c_str());
@@ -196,8 +193,7 @@ bool ClientConnection::DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_con
     return true;
 }
 
-bool ClientConnection::DialFinalize(std::shared_ptr<TLSClientConnection> tls_conn,
-    const common::Address& addr) {
+bool ClientConnection::DialFinalize(std::shared_ptr<TLSClientConnection> tls_conn, const common::Address& addr) {
     // RFC 9000 §7.2: Generate the original DCID. This is a *placeholder* used purely
     // to derive Initial-packet keys before the server picks its own CID. We deliberately
     // do NOT push it into the remote CID manager's map: the map is reserved for
@@ -214,8 +210,7 @@ bool ClientConnection::DialFinalize(std::shared_ptr<TLSClientConnection> tls_con
     // Install the placeholder DCID as the active remote CID (outside the map). It will
     // be replaced by the server-issued SCID upon receiving the first Initial/Handshake
     // packet (see OnInitialPacket / OnHandshakePacket).
-    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(
-        dcid.GetID(), dcid.GetLength(), /*sequence=*/0);
+    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(dcid.GetID(), dcid.GetLength(), /*sequence=*/0);
 
     // Install initial secret using the placeholder DCID
     auto current_dcid = cid_coordinator_->GetRemoteConnectionIDManager()->GetCurrentID();
@@ -286,8 +281,7 @@ bool ClientConnection::OnHandshakePacket(const std::shared_ptr<IPacket>& packet)
     // connection migration. SetCurrentID lives outside the map, so subsequent
     // NEW_CONNECTION_ID frames (sequence >= 1) populate the map cleanly.
     auto long_header = static_cast<LongHeader*>(handshake_packet->GetHeader());
-    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(
-        long_header->GetSourceConnectionId(),
+    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(long_header->GetSourceConnectionId(),
         long_header->GetSourceConnectionIdLength(),
         /*sequence=*/0);
     return OnNormalPacket(packet);
@@ -335,8 +329,10 @@ bool ClientConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
                 session_info.initial_max_data = remote_tp_snapshot_.initial_max_data;
                 session_info.initial_max_streams_bidi = remote_tp_snapshot_.initial_max_streams_bidi;
                 session_info.initial_max_streams_uni = remote_tp_snapshot_.initial_max_streams_uni;
-                session_info.initial_max_stream_data_bidi_local = remote_tp_snapshot_.initial_max_stream_data_bidi_local;
-                session_info.initial_max_stream_data_bidi_remote = remote_tp_snapshot_.initial_max_stream_data_bidi_remote;
+                session_info.initial_max_stream_data_bidi_local =
+                    remote_tp_snapshot_.initial_max_stream_data_bidi_local;
+                session_info.initial_max_stream_data_bidi_remote =
+                    remote_tp_snapshot_.initial_max_stream_data_bidi_remote;
                 session_info.initial_max_stream_data_uni = remote_tp_snapshot_.initial_max_stream_data_uni;
                 session_info.active_connection_id_limit = remote_tp_snapshot_.active_connection_id_limit;
                 LOG_INFO("Saving remembered TP: max_data=%u, max_streams_bidi=%u, max_streams_uni=%u",
@@ -371,8 +367,7 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
         std::memcpy(retry_without_tag.data() + header_len, token_span.GetStart(), token_len);
 
         uint32_t version = long_header->GetVersion();
-        if (!RetryCrypto::VerifyRetryIntegrityTag(original_dcid_,
-                retry_without_tag.data(), retry_without_tag.size(),
+        if (!RetryCrypto::VerifyRetryIntegrityTag(original_dcid_, retry_without_tag.data(), retry_without_tag.size(),
                 version, retry_packet->GetRetryIntegrityTag())) {
             LOG_WARN("Retry Integrity Tag verification failed, discarding Retry packet");
             return false;
@@ -390,8 +385,7 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
     // Update remote connection ID (this is the new server CID, sequence-0 per RFC).
     // Use SetCurrentID() instead of AddID(ptr,len)+UseNextID() — see OnHandshakePacket
     // for the rationale (the legacy path collided with NEW_CONNECTION_ID sequence numbers).
-    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(
-        long_header->GetSourceConnectionId(),
+    cid_coordinator_->GetRemoteConnectionIDManager()->SetCurrentID(long_header->GetSourceConnectionId(),
         long_header->GetSourceConnectionIdLength(),
         /*sequence=*/0);
 
@@ -426,8 +420,10 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
     updated_tp.max_idle_timeout_ms_ = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
     updated_tp.max_udp_payload_size_ = static_cast<uint32_t>(transport_param_.GetmaxUdpPayloadSize());
     updated_tp.initial_max_data_ = static_cast<uint32_t>(transport_param_.GetInitialMaxData());
-    updated_tp.initial_max_stream_data_bidi_local_ = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataBidiLocal());
-    updated_tp.initial_max_stream_data_bidi_remote_ = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataBidiRemote());
+    updated_tp.initial_max_stream_data_bidi_local_ =
+        static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataBidiLocal());
+    updated_tp.initial_max_stream_data_bidi_remote_ =
+        static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataBidiRemote());
     updated_tp.initial_max_stream_data_uni_ = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamDataUni());
     updated_tp.initial_max_streams_bidi_ = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamsBidi());
     updated_tp.initial_max_streams_uni_ = static_cast<uint32_t>(transport_param_.GetInitialMaxStreamsUni());
@@ -510,8 +506,8 @@ bool ClientConnection::OnRetryPacket(const std::shared_ptr<IPacket>& packet) {
 }
 
 void ClientConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level) {
-    LOG_INFO("ClientConnection::WriteCryptoData called. buffer_len=%d, err=%d, level=%d",
-        buffer->GetDataLength(), err, encryption_level);
+    LOG_INFO("ClientConnection::WriteCryptoData called. buffer_len=%d, err=%d, level=%d", buffer->GetDataLength(), err,
+        encryption_level);
     if (err != 0) {
         LOG_ERROR("get crypto data failed. err:%d", err);
         return;

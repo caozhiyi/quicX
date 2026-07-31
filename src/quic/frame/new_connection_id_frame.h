@@ -2,17 +2,16 @@
 #define QUIC_FRAME_NEW_CONNECTION_ID_FRAME
 
 #include <cstdint>
-#include "quic/frame/if_frame.h"
-#include "quic/connection/type.h"
 #include "quic/connection/connection_id.h"
+#include "quic/connection/type.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
 
-static const uint16_t kStatelessResetTokenLength = 16; // 128-bit = 16 bytes
+static const uint16_t kStatelessResetTokenLength = 16;  // 128-bit = 16 bytes
 
-class NewConnectionIDFrame:
-    public IFrame {
+class NewConnectionIDFrame: public IFrame {
 public:
     NewConnectionIDFrame();
     ~NewConnectionIDFrame();
@@ -34,15 +33,16 @@ public:
     const uint8_t* GetStatelessResetToken() { return stateless_reset_token_; }
 
 private:
-    uint64_t sequence_number_;  // the connection ID by the sender.
-    uint64_t retire_prior_to_;  // which connection IDs should be retired.
-    uint8_t  length_;           // the length of the connection ID.
-    uint8_t  connection_id_[kMaxCidLength];    // a connection ID of the specified length.
+    uint64_t sequence_number_;              // the connection ID by the sender.
+    uint64_t retire_prior_to_;              // which connection IDs should be retired.
+    uint8_t length_;                        // the length of the connection ID.
+    uint8_t connection_id_[kMaxCidLength];  // a connection ID of the specified length.
 
-    uint8_t stateless_reset_token_[kStatelessResetTokenLength];  // a 128-bit value that will be used for a stateless reset when the associated connection ID is used.
+    uint8_t stateless_reset_token_[kStatelessResetTokenLength];  // a 128-bit value that will be used for a stateless
+                                                                 // reset when the associated connection ID is used.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

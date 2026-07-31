@@ -1,21 +1,23 @@
 #ifndef HTTP3_HTTP_RESPONSE
 #define HTTP3_HTTP_RESPONSE
 
-#include <string>
-#include <vector>
-#include <memory>
-#include <unordered_map>
-#include <quicx/http3/type.h>
 #include <quicx/http3/if_response.h>
+#include <quicx/http3/type.h>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {
 
-class Response:
-    public IResponse {
+class Response: public IResponse {
 public:
-    Response(): status_code_(200), response_body_provider_(nullptr), request_body_consumer_(nullptr) {}
+    Response():
+        status_code_(200),
+        response_body_provider_(nullptr),
+        request_body_consumer_(nullptr) {}
     virtual ~Response() {}
 
     // Set/get status code
@@ -37,7 +39,7 @@ public:
     virtual std::shared_ptr<IBufferRead> GetBody() const override { return body_; }
     virtual void SetResponseBodyProvider(const body_provider& provider) override { response_body_provider_ = provider; }
     virtual body_provider GetResponseBodyProvider() const override { return response_body_provider_; }
-    
+
     // Request body receiving (server)
     virtual void SetRequestBodyConsumer(const body_consumer& consumer) { request_body_consumer_ = consumer; }
     virtual body_consumer GetRequestBodyConsumer() const { return request_body_consumer_; }
@@ -51,13 +53,13 @@ private:
     uint32_t status_code_;
     std::unordered_map<std::string, std::string> headers_;
     std::shared_ptr<common::IBuffer> body_;
-    body_provider response_body_provider_;    // For streaming response body sending (server)
-    body_consumer request_body_consumer_;     // For streaming request body receiving (server)
+    body_provider response_body_provider_;  // For streaming response body sending (server)
+    body_consumer request_body_consumer_;   // For streaming request body receiving (server)
 
     std::vector<std::shared_ptr<IResponse>> push_responses_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

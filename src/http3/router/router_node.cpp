@@ -1,20 +1,18 @@
-#include "http3/router/util.h"
 #include "http3/router/router_node.h"
-#include "http3/router/router_node_wildcard.h"
-#include "http3/router/router_node_static_path.h"
 #include "http3/router/router_node_dynamic_param.h"
+#include "http3/router/router_node_static_path.h"
+#include "http3/router/router_node_wildcard.h"
+#include "http3/router/util.h"
 
 namespace quicx {
 namespace http3 {
 
-RouterNode::RouterNode(RouterNodeType type, const std::string& section,
-        const std::string& full_path, const RouteConfig& config):
+RouterNode::RouterNode(
+    RouterNodeType type, const std::string& section, const std::string& full_path, const RouteConfig& config):
     type_(type),
     section_(section),
     full_path_(full_path),
-    config_(config) {
-
-}
+    config_(config) {}
 
 bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteConfig& config) {
     std::string section = PathParse(path, path_offset);
@@ -28,14 +26,14 @@ bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteC
     auto iter = static_path_map_.find(section);
     if (iter != static_path_map_.end()) {
         cur_node = iter->second;
-    } 
+    }
 
     // find dynamic param second
     if (!cur_node) {
         auto iter = dynamic_param_map_.find(section);
         if (iter != dynamic_param_map_.end()) {
             cur_node = iter->second;
-        } 
+        }
     }
 
     // create new node
@@ -46,25 +44,25 @@ bool RouterNode::AddRoute(const std::string& path, int path_offset, const RouteC
         }
 
         switch (cur_node->GetNodeType()) {
-        case RouterNodeType::RNT_STATIC_PATH:
-        case RouterNodeType::RNT_STATIC_MIDDLE_PATH:
-            static_path_map_[section] = cur_node;
-            break;
-        
-        case RouterNodeType::RNT_DYNAMIC_PARAM:
-        case RouterNodeType::RNT_DYNAMIC_MIDDLE_PARAM:
-            dynamic_param_map_[section] = cur_node;
-            break;
+            case RouterNodeType::RNT_STATIC_PATH:
+            case RouterNodeType::RNT_STATIC_MIDDLE_PATH:
+                static_path_map_[section] = cur_node;
+                break;
 
-        case RouterNodeType::RNT_WILDCARD:
-            wildcard_node_ = cur_node;
-            break;
+            case RouterNodeType::RNT_DYNAMIC_PARAM:
+            case RouterNodeType::RNT_DYNAMIC_MIDDLE_PARAM:
+                dynamic_param_map_[section] = cur_node;
+                break;
 
-        default:
-            return false;
+            case RouterNodeType::RNT_WILDCARD:
+                wildcard_node_ = cur_node;
+                break;
+
+            default:
+                return false;
         }
     }
-    
+
     if (path_offset >= path.size()) {
         return true;
     }
@@ -96,7 +94,7 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
 
     // find wildcard last
     if (wildcard_node_) {
-        if(wildcard_node_->Match(path, path_offset, cur_section, result)) {
+        if (wildcard_node_->Match(path, path_offset, cur_section, result)) {
             return true;
 
         } else {
@@ -107,14 +105,14 @@ bool RouterNode::Match(const std::string& path, int path_offset, const std::stri
     return false;
 }
 
-std::shared_ptr<IRouterNode> RouterNode::MakeNode(const std::string& path, int path_offset,
-    const std::string& section, const RouteConfig& config) {
+std::shared_ptr<IRouterNode> RouterNode::MakeNode(
+    const std::string& path, int path_offset, const std::string& section, const RouteConfig& config) {
     if (section[0] != '/') {
         return nullptr;
     }
-    
+
     bool is_last = path.size() <= path_offset;
-    
+
     RouterNodeType node_type;
     std::string full_path = path.substr(0, path_offset);
 
@@ -127,24 +125,23 @@ std::shared_ptr<IRouterNode> RouterNode::MakeNode(const std::string& path, int p
 
     } else {
         switch (section[1]) {
-        case ':':
-            node_type = is_last ? RouterNodeType::RNT_DYNAMIC_PARAM : RouterNodeType::RNT_DYNAMIC_MIDDLE_PARAM;
-            return std::make_shared<RouterNodeDynamicParam>(node_type, section, full_path, config);
+            case ':':
+                node_type = is_last ? RouterNodeType::RNT_DYNAMIC_PARAM : RouterNodeType::RNT_DYNAMIC_MIDDLE_PARAM;
+                return std::make_shared<RouterNodeDynamicParam>(node_type, section, full_path, config);
 
-        case '*':
-            if (!is_last) {
-                return nullptr; // only support last wildcard
-            }
-            return std::make_shared<RouterNodeWildcard>(section, full_path, config);
+            case '*':
+                if (!is_last) {
+                    return nullptr;  // only support last wildcard
+                }
+                return std::make_shared<RouterNodeWildcard>(section, full_path, config);
 
-        default:
-            node_type = is_last ? RouterNodeType::RNT_STATIC_PATH : RouterNodeType::RNT_STATIC_MIDDLE_PATH;
-            return std::make_shared<RouterNodeStaticPath>(node_type, section, full_path, config);
+            default:
+                node_type = is_last ? RouterNodeType::RNT_STATIC_PATH : RouterNodeType::RNT_STATIC_MIDDLE_PATH;
+                return std::make_shared<RouterNodeStaticPath>(node_type, section, full_path, config);
         }
     }
     return nullptr;
 }
 
-}
-}
-
+}  // namespace http3
+}  // namespace quicx

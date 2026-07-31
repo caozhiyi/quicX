@@ -12,65 +12,66 @@
 
 #include <gtest/gtest.h>
 
-#include "common/log/log.h"
-#include "common/timer/timer.h"
-#include "quic/packet/packet_decode.h"
-#include "quic/packet/type.h"
-#include "quic/crypto/tls/tls_ctx_client.h"
-#include "quic/crypto/tls/tls_ctx_server.h"
-#include "quic/connection/connection_client.h"
-#include "quic/connection/connection_server.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
-#include "quic/quicx/global_resource.h"
-#include "mock_sender.h"
+#include "common/log/log.h"
+#include "common/timer/timer.h"
 #include "connection_test_util.h"
+#include "mock_sender.h"
+#include "quic/connection/connection_client.h"
+#include "quic/connection/connection_server.h"
+#include "quic/crypto/tls/tls_ctx_client.h"
+#include "quic/crypto/tls/tls_ctx_server.h"
+#include "quic/frame/padding_frame.h"
+#include "quic/frame/type.h"
+#include "quic/packet/packet_decode.h"
+#include "quic/packet/type.h"
+#include "quic/quicx/global_resource.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
 static const char kCertPem[] =
-      "-----BEGIN CERTIFICATE-----\n"
-      "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
-      "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
-      "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
-      "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
-      "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
-      "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
-      "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
-      "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
-      "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
-      "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
-      "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
-      "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
-      "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
-      "-----END CERTIFICATE-----\n";
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
+    "BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
+    "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
+    "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
+    "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
+    "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
+    "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
+    "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
+    "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
+    "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
+    "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
+    "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
+    "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
+    "-----END CERTIFICATE-----\n";
 
 static const char kKeyPem[] =
-      "-----BEGIN RSA PRIVATE KEY-----\n"
-      "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
-      "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
-      "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
-      "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
-      "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
-      "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
-      "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
-      "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
-      "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
-      "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
-      "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
-      "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
-      "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
-      "-----END RSA PRIVATE KEY-----\n";
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
+    "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
+    "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
+    "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
+    "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
+    "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
+    "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
+    "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
+    "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
+    "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
+    "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
+    "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
+    "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
+    "-----END RSA PRIVATE KEY-----\n";
 
 // Trigger a TrySend on send_conn, decode all packets contained in the
 // resulting datagram and forward them to recv_conn. Returns the number
 // of QUIC packets contained in the datagram (>=1 means a datagram was
 // produced; ==0 means there was nothing to send).
-static size_t SendAndDeliverDatagram(std::shared_ptr<IConnection> send_conn,
-                                     std::shared_ptr<IConnection> recv_conn,
-                                     std::shared_ptr<MockSender> sender_mock) {
+static size_t SendAndDeliverDatagram(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn,
+    std::shared_ptr<MockSender> sender_mock) {
     sender_mock->Clear();
     if (!send_conn->TrySend()) {
         return 0;
@@ -98,7 +99,7 @@ static size_t SendAndDeliverDatagram(std::shared_ptr<IConnection> send_conn,
 // (EE, Cert, CV, Finished CRYPTO) packets across multiple TrySend() rounds,
 // and that Initial packets are produced before Handshake packets (ordering
 // requirement from RFC 9001 §4.1.4).
-TEST(quic_connection_coalescing_utest, server_init_handshake_coalesce) {
+TEST(QuicConnectionCoalescingTest, server_init_handshake_coalesce) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -149,10 +150,8 @@ TEST(quic_connection_coalescing_utest, server_init_handshake_coalesce) {
         }
     }
 
-    LOG_INFO("server produced %zu packet(s) total across all TrySend rounds",
-             all_server_pkts.size());
-    ASSERT_GE(all_server_pkts.size(), 2u)
-        << "Server should produce at least Initial + Handshake packets";
+    LOG_INFO("server produced %zu packet(s) total across all TrySend rounds", all_server_pkts.size());
+    ASSERT_GE(all_server_pkts.size(), 2u) << "Server should produce at least Initial + Handshake packets";
 
     // Verify that both Initial and Handshake packets are present,
     // and that all Initial packets appear before any Handshake packet.
@@ -161,8 +160,7 @@ TEST(quic_connection_coalescing_utest, server_init_handshake_coalesce) {
     for (const auto& pkt : all_server_pkts) {
         auto type = pkt->GetHeader()->GetPacketType();
         if (type == PacketType::kInitialPacketType) {
-            EXPECT_FALSE(seen_handshake)
-                << "Initial packets must precede Handshake packets (RFC 9001 §4.1.4)";
+            EXPECT_FALSE(seen_handshake) << "Initial packets must precede Handshake packets (RFC 9001 §4.1.4)";
             seen_initial = true;
         } else if (type == PacketType::kHandshakePacketType) {
             seen_handshake = true;
@@ -175,7 +173,7 @@ TEST(quic_connection_coalescing_utest, server_init_handshake_coalesce) {
 // RFC 9000 §12.2: End-to-end handshake should still succeed when packet
 // coalescing is in effect, exercising the receive path's ability to parse
 // multi-packet datagrams.
-TEST(quic_connection_coalescing_utest, full_handshake_with_coalescing) {
+TEST(QuicConnectionCoalescingTest, full_handshake_with_coalescing) {
     std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
     server_ctx->Init(kCertPem, kKeyPem, true, 172800);
 
@@ -218,6 +216,157 @@ TEST(quic_connection_coalescing_utest, full_handshake_with_coalescing) {
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
+}
+
+// Helper: count frames of a given type inside one decoded packet.
+// NOTE: DecodePackets() in this codebase only calls DecodeWithoutCrypto(),
+// which parses headers but does NOT decrypt the AEAD payload, so the
+// frame list is generally empty. Kept for documentation; the structural
+// tests below rely on packet counts and datagram sizing rather than
+// on per-packet frame inspection.
+static size_t CountFramesOfType(const std::shared_ptr<IPacket>& pkt, uint16_t frame_type) {
+    size_t n = 0;
+    for (const auto& f : pkt->GetFrames()) {
+        if (static_cast<uint16_t>(f->GetType()) == frame_type) {
+            n++;
+        }
+    }
+    return n;
+}
+
+// RFC 9000 §14.1: A client MUST pad UDP datagrams that contain Initial
+// packets to at least 1200 bytes. Before the client has received the
+// server's first reply the Handshake cryptographer has not yet been
+// installed, so the coalesce path (which requires both cryptographers
+// present) is skipped and the legacy single-level path runs. In this
+// case the PADDING MUST live inside the Initial packet itself — there
+// is no trailing Handshake packet to absorb it. Since the datagram
+// contains exactly one (Initial) packet and is >= 1200B, the PADDING
+// can only live inside that one packet.
+TEST(QuicConnectionCoalescingTest, client_first_flight_padding_in_initial) {
+    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
+    client_ctx->Init(false, "", false);
+
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop);
+    common::Address addr(common::AddressType::kIpv4);
+    addr.SetIp("127.0.0.1");
+    addr.SetPort(9432);
+    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
+
+    auto client_sender = AttachMockSender(client_conn);
+
+    // Drive the client first flight via the burst entry (same path used
+    // by Worker::ProcessSend in production). No inbound traffic has
+    // arrived, so Handshake keys are not installed → the coalesce path
+    // bails on the cryptographer probe and the legacy single-level
+    // burst runs.
+    int n = client_conn->TrySendBurst(2);
+    ASSERT_GE(n, 1);
+
+    auto buffer = client_sender->GetLastSentBuffer();
+    ASSERT_TRUE(buffer != nullptr);
+    const uint32_t datagram_size = buffer->GetDataLength();
+    LOG_INFO("client first-flight datagram size=%u (packets emitted=%d)", datagram_size, n);
+
+    // Structural assertion 1: anti-amplification minimum (§14.1).
+    EXPECT_GE(datagram_size, 1200u) << "Client Initial-bearing datagram MUST be >= 1200B (RFC 9000 §14.1)";
+
+    std::vector<std::shared_ptr<IPacket>> packets;
+    ASSERT_TRUE(DecodePackets(buffer, packets));
+
+    // Structural assertion 2: coalesce path skipped — datagram carries
+    // exactly one Initial packet (no Handshake follows).
+    ASSERT_EQ(packets.size(), 1u) << "Without server Handshake keys yet, coalesce path must not fire";
+    EXPECT_EQ(packets[0]->GetHeader()->GetPacketType(), PacketType::kInitialPacketType);
+
+    // Implication of assertions 1 + 2: since the entire >= 1200B
+    // datagram is one Initial packet, the PADDING bytes are necessarily
+    // inside that Initial packet's plaintext. (We cannot directly count
+    // PADDING frames here because DecodePackets() does not decrypt the
+    // AEAD payload.)
+}
+
+// RFC 9000 §12.2 + §14.1: When the server replies to the client's first
+// Initial it has Handshake keys ready and both Initial-space and
+// Handshake-space CRYPTO bytes queued. Our coalesce path should then
+// emit Initial + Handshake into the *same* UDP datagram, with the
+// Initial packet preceding the Handshake packet (RFC 9001 §4.1.4).
+// The server has no §14.1 obligation, so target padding = 0 on this
+// leg; we only assert that the two packets share one datagram.
+TEST(QuicConnectionCoalescingTest, server_coalesce_initial_handshake_one_datagram) {
+    std::shared_ptr<TLSServerCtx> server_ctx = std::make_shared<TLSServerCtx>();
+    server_ctx->Init(kCertPem, kKeyPem, true, 172800);
+
+    std::shared_ptr<TLSClientCtx> client_ctx = std::make_shared<TLSClientCtx>();
+    client_ctx->Init(false, "", false);
+
+    auto event_loop = common::MakeEventLoop();
+    ASSERT_TRUE(event_loop->Init());
+
+    auto client_conn = std::make_shared<ClientConnection>(client_ctx, event_loop);
+    common::Address addr(common::AddressType::kIpv4);
+    addr.SetIp("127.0.0.1");
+    addr.SetPort(9432);
+    client_conn->Dial(addr, "h3", DEFAULT_QUIC_TRANSPORT_PARAMS);
+
+    auto server_conn = std::make_shared<ServerConnection>(server_ctx, event_loop, "h3");
+    server_conn->AddTransportParam(DEFAULT_QUIC_TRANSPORT_PARAMS);
+
+    auto client_sender = AttachMockSender(client_conn);
+    auto server_sender = AttachMockSender(server_conn);
+
+    // 1) Client → server (Initial). Use TrySendBurst so the production
+    // entry path is exercised here too.
+    client_sender->Clear();
+    ASSERT_GE(client_conn->TrySendBurst(2), 1);
+    {
+        auto buf = client_sender->GetLastSentBuffer();
+        ASSERT_TRUE(buf != nullptr);
+        std::vector<std::shared_ptr<IPacket>> pkts;
+        ASSERT_TRUE(DecodePackets(buf, pkts));
+        server_conn->OnPackets(0, pkts);
+    }
+
+    // 2) Server → client. Drive the burst entry which runs the
+    // Initial+Handshake coalesce probe in kStateConnecting.
+    server_sender->Clear();
+    int n = server_conn->TrySendBurst(4);
+    ASSERT_GE(n, 2) << "Server first reply should emit at least Initial + Handshake "
+                       "in a single burst";
+
+    auto buf = server_sender->GetLastSentBuffer();
+    ASSERT_TRUE(buf != nullptr);
+    const uint32_t datagram_size = buf->GetDataLength();
+    LOG_INFO("server first-reply datagram size=%u packets_emitted=%d", datagram_size, n);
+
+    std::vector<std::shared_ptr<IPacket>> packets;
+    ASSERT_TRUE(DecodePackets(buf, packets));
+
+    // Structural assertion 1: server first reply is a coalesced
+    // Initial+Handshake datagram (both packets in one buffer).
+    ASSERT_GE(packets.size(), 2u) << "Server first reply should coalesce Initial + Handshake "
+                                     "into one datagram";
+
+    // Structural assertion 2: Initial precedes Handshake (RFC 9001 §4.1.4).
+    EXPECT_EQ(packets[0]->GetHeader()->GetPacketType(), PacketType::kInitialPacketType);
+    EXPECT_EQ(packets[1]->GetHeader()->GetPacketType(), PacketType::kHandshakePacketType);
+
+    // Structural sanity: datagram should fit within our 1500B chunk
+    // ceiling — guards against runaway encoding from the coalesce path.
+    EXPECT_LE(datagram_size, 1500u);
+
+    // NOTE: We cannot directly assert "PADDING is not inside the
+    // Initial packet" from DecodePackets alone because that helper
+    // does not decrypt the AEAD payload (frames remain unparsed).
+    // The placement-of-padding invariant is instead enforced by the
+    // builder: TryCoalescedInitialHandshake() explicitly sets the
+    // Initial's add_padding=false and only sets min_size on the
+    // trailing Handshake packet (and only when client_first_flight,
+    // which is not the case here so min_size=0 → no padding at all).
+    // See connection_base.cpp::TryCoalescedInitialHandshake step 3 & 4.
 }
 
 }  // namespace

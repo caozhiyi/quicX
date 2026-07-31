@@ -1,12 +1,12 @@
-#include <string>
-#include <gtest/gtest.h>
 #include "common/util/time.h"
+#include <gtest/gtest.h>
+#include <string>
 
 namespace quicx {
 namespace common {
 namespace {
 
-TEST(time_utest, get_time1) {
+TEST(TimeTest, get_time1) {
     std::cout << UTCTimeSec() << std::endl;
     std::cout << UTCTimeMsec() << std::endl;
     std::cout << GetFormatTime() << std::endl;
@@ -17,11 +17,10 @@ TEST(time_utest, get_time1) {
     std::cout << buf << std::endl;
 }
 
-
-TEST(time_utest, get_time2) {
+TEST(TimeTest, get_time2) {
     std::string year = GetFormatTime(FormatTimeUnit::kYearFormat);
     EXPECT_EQ(year.length(), sizeof("xxxx") - 1);
-    
+
     std::string month = GetFormatTime(FormatTimeUnit::kMonthFormat);
     EXPECT_EQ(month.length(), sizeof("xxxx-xx") - 1);
 
@@ -41,6 +40,6 @@ TEST(time_utest, get_time2) {
     EXPECT_EQ(millisecond.length(), sizeof("xxxx-xx-xx xx:xx:xx:xxx") - 1);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace common
+}  // namespace quicx

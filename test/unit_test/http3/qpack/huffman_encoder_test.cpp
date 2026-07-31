@@ -1,16 +1,14 @@
 // huffman_encoder_test.cpp
-#include <gtest/gtest.h>
 #include "http3/qpack/huffman_encoder.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace http3 {
 namespace {
 
-class HuffmanEncoderTest : public testing::Test {
+class HuffmanEncoderTest: public testing::Test {
 protected:
-    void SetUp() override {
-        encoder_ = std::make_unique<HuffmanEncoder>();
-    }
+    void SetUp() override { encoder_ = std::make_unique<HuffmanEncoder>(); }
 
     std::unique_ptr<HuffmanEncoder> encoder_;
 };

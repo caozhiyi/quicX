@@ -1,16 +1,14 @@
 #ifndef QUIC_CONGESTION_CONTROL_RENO_CONGESTION_CONTROL
 #define QUIC_CONGESTION_CONTROL_RENO_CONGESTION_CONTROL
 
+#include <memory>
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/if_pacer.h"
-#include <memory>
 
 namespace quicx {
 namespace quic {
 
-
-class RenoCongestionControl:
-    public ICongestionControl {
+class RenoCongestionControl: public ICongestionControl {
 public:
     RenoCongestionControl();
     ~RenoCongestionControl() override = default;
@@ -58,7 +56,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
 #endif

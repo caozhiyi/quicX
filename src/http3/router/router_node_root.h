@@ -8,10 +8,9 @@ namespace quicx {
 namespace http3 {
 
 /*
-* indicates a root node
-*/
-class RouterNodeRoot:
-    public RouterNode {
+ * indicates a root node
+ */
+class RouterNodeRoot: public RouterNode {
 public:
     RouterNodeRoot();
     virtual ~RouterNodeRoot() {}
@@ -19,7 +18,7 @@ public:
     virtual bool Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result);
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

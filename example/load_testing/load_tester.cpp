@@ -140,8 +140,7 @@ private:
             metrics_.total_requests++;
 
             client->DoRequest(config_.url, quicx::HttpMethod::kGet, request,
-                [this, req_start, completed, mtx, cv](
-                    std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+                [this, req_start, completed, mtx, cv](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
                     auto req_end = std::chrono::high_resolution_clock::now();
                     double latency_ms = std::chrono::duration<double, std::milli>(req_end - req_start).count();
 
@@ -266,7 +265,8 @@ private:
 
         std::cout << "\nPerformance:" << std::endl;
         std::cout << "  Duration: " << std::setprecision(1) << duration_sec << "s" << std::endl;
-        std::cout << "  Throughput: " << std::setprecision(1) << (duration_sec > 0 ? successful / duration_sec : 0) << " req/s" << std::endl;
+        std::cout << "  Throughput: " << std::setprecision(1) << (duration_sec > 0 ? successful / duration_sec : 0)
+                  << " req/s" << std::endl;
 
         // Latency statistics
         std::lock_guard<std::mutex> lock(metrics_.latencies_mutex);
@@ -359,22 +359,18 @@ int main(int argc, char* argv[]) {
     }
     int recommended_max = static_cast<int>(hw_cores);
     if (config.num_clients > recommended_max && !force_clients) {
-        std::cerr << "[warn] --clients=" << config.num_clients
-                  << " exceeds hardware_concurrency=" << hw_cores
-                  << "; capping to " << recommended_max
-                  << " to avoid CPU oversubscription on the load generator."
+        std::cerr << "[warn] --clients=" << config.num_clients << " exceeds hardware_concurrency=" << hw_cores
+                  << "; capping to " << recommended_max << " to avoid CPU oversubscription on the load generator."
                   << "\n        Pass --force to override (each client owns its"
                      " own master event-loop thread)."
                   << std::endl;
         // Preserve total request volume so results stay comparable.
         long long total = static_cast<long long>(config.num_clients) * config.requests_per_client;
         config.num_clients = recommended_max;
-        config.requests_per_client = static_cast<int>(
-            (total + config.num_clients - 1) / config.num_clients);
+        config.requests_per_client = static_cast<int>((total + config.num_clients - 1) / config.num_clients);
         std::cerr << "        Adjusted: --clients=" << config.num_clients
-                  << " --requests=" << config.requests_per_client
-                  << " (total ≈ " << (long long)config.num_clients * config.requests_per_client
-                  << ")" << std::endl;
+                  << " --requests=" << config.requests_per_client << " (total ≈ "
+                  << (long long)config.num_clients * config.requests_per_client << ")" << std::endl;
     }
 
     LoadTester tester(config);

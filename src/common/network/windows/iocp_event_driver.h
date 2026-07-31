@@ -4,8 +4,8 @@
 #define COMMON_NETWORK_WINDOWS_IOCP_EVENT_DRIVER
 
 #include <cstdint>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 #include "common/network/if_event_driver.h"
 
 namespace quicx {
@@ -32,10 +32,12 @@ private:
         EventType type;
         WSABUF wsabuf;
         char byte;
-        OverlappedContext(): fd(-1), type(EventType::ET_READ) {
+        OverlappedContext():
+            fd(-1),
+            type(EventType::ET_READ) {
             ZeroMemory(&overlapped, sizeof(overlapped));
             wsabuf.buf = &byte;
-            wsabuf.len = 0; // zero-byte recv
+            wsabuf.len = 0;  // zero-byte recv
             byte = 0;
         }
     };
@@ -52,10 +54,8 @@ private:
     static bool ws_initialized_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
-#endif // COMMON_NETWORK_WINDOWS_IOCP_EVENT_DRIVER
-#endif // _WIN32
-
-
+#endif  // COMMON_NETWORK_WINDOWS_IOCP_EVENT_DRIVER
+#endif  // _WIN32

@@ -9,5 +9,5 @@ std::shared_ptr<ITimer> MakeTimer() {
     return std::make_shared<TimingWheelTimer>();
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

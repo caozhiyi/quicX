@@ -121,8 +121,8 @@ public:
             waited += step_ms;
         }
         if (pending_sends_.load() > 0) {
-            std::cout << "Warning: " << pending_sends_.load()
-                      << " message(s) still pending after " << timeout_ms << "ms" << std::endl;
+            std::cout << "Warning: " << pending_sends_.load() << " message(s) still pending after " << timeout_ms
+                      << "ms" << std::endl;
         }
     }
 

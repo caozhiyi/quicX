@@ -45,8 +45,7 @@ bool CryptoFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(offset_), "failed to decode offset");
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(length_), "failed to decode length");
     if (length_ > buffer->GetDataLength()) {
-        LOG_ERROR(
-            "insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
+        LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), length_);
         return false;
     }
     wrapper.Flush();

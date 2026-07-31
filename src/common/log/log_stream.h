@@ -1,10 +1,10 @@
 #ifndef COMMON_LOG_LOG_STREAM
 #define COMMON_LOG_LOG_STREAM
 
-#include <memory>
-#include <string>
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <string>
 
 namespace quicx {
 namespace common {
@@ -43,7 +43,7 @@ private:
     std::function<void(std::shared_ptr<Log>)> call_back_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

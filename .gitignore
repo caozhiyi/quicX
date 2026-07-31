@@ -1,37 +1,55 @@
+# ---- IDE / OS artifacts ----------------------------------------------------
 .vs
-Debug
-__MACOSX
-x64
 .vscode
-*.o
 .VSCodeCounter
-gtest
+.cache
+.cursorrules
+.DS_Store
+__MACOSX
+__pycache__/
+
+# ---- Build outputs ---------------------------------------------------------
+Debug
+x64
+build
+build*/
+winbuild
+vsbuild
+cmake-build-*
+bazel-*
+MODULE.bazel.lock
+*.o
 *.log
+gtest
 quicx_utest
 libquicx.a
 libhttp3.a
-build
-.cache
-.cursorrules
-bazel-*
-MODULE.bazel.lock
-temp
-winbuild
 third.bk
+temp
 seeds
-vsbuild
-# Test artifacts - auto-generated
+
+# ---- Archives that should never be committed -------------------------------
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+
+# ---- Test / runtime artifacts ----------------------------------------------
 www/*.bin
 downloads/
 logs/
 test_qlog*
 *qlogs/
 *.sqlog
-
-# Temporary files
 *.pcap
 *.qlog
-
-# Session cache
 session_cache/
-__pycache__/
+7006/
+
+# ---- TLS material (must never be committed) --------------------------------
+# Local self-signed certs are generated at runtime by example scripts.
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx

@@ -37,6 +37,18 @@ public:
 
     virtual uint8_t GetWaitSendEncryptionLevel();
 
+    // Non-destructive query: does this crypto stream currently have
+    // unsent plaintext bytes queued at |level|? Used by the burst-send
+    // path to decide whether Initial+Handshake coalescing (RFC 9000
+    // §12.2) is applicable in the current round.
+    bool HasPendingDataAt(uint8_t level) const {
+        if (level >= kNumEncryptionLevels) {
+            return false;
+        }
+        const auto& buf = send_buffers_[level];
+        return buf && buf->GetDataLength() > 0;
+    }
+
     using crypto_stream_read_callback =
         std::function<void(std::shared_ptr<IBufferRead> buffer, int32_t err, uint16_t encryption_level)>;
     virtual void SetCryptoStreamReadCallBack(crypto_stream_read_callback cb) { recv_cb_ = cb; }

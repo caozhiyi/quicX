@@ -2,21 +2,21 @@
 // that can be found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <thread>
-#include <chrono>
 #include <vector>
-#include <algorithm>
 
+#include "common/qlog/event/connectivity_events.h"
+#include "common/qlog/event/recovery_events.h"
+#include "common/qlog/event/transport_events.h"
 #include "common/qlog/qlog.h"
 #include "common/qlog/qlog_manager.h"
 #include "common/qlog/qlog_trace.h"
-#include "common/qlog/event/transport_events.h"
-#include "common/qlog/event/recovery_events.h"
-#include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/util/qlog_constants.h"
 
 namespace quicx {
@@ -26,7 +26,7 @@ namespace {
 namespace fs = std::filesystem;
 
 // File extension produced by JsonSeqSerializer + AsyncWriter (JSON-SEQ /
-// draft-02). Tests in this file always read freshly produced files.
+// draft-03). Tests in this file always read freshly produced files.
 constexpr const char* kQlogFileExt = ".sqlog";
 
 // Helper: strip the leading JSON-SEQ Record Separator (0x1E) and any leading
@@ -58,8 +58,8 @@ static void WaitForFileContent(const std::string& dir, int expected_min_lines, i
         }
         if (total_lines >= expected_min_lines) break;
 
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - start).count();
+        auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
         if (elapsed > max_wait_ms) break;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -104,26 +104,38 @@ static bool IsBalancedJson(const std::string& json) {
     int braces = 0, brackets = 0;
     bool in_string = false, escaped = false;
     for (char c : json) {
-        if (escaped) { escaped = false; continue; }
-        if (c == '\\' && in_string) { escaped = true; continue; }
-        if (c == '"') { in_string = !in_string; continue; }
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (c == '\\' && in_string) {
+            escaped = true;
+            continue;
+        }
+        if (c == '"') {
+            in_string = !in_string;
+            continue;
+        }
         if (!in_string) {
-            if (c == '{') braces++;
-            else if (c == '}') braces--;
-            else if (c == '[') brackets++;
-            else if (c == ']') brackets--;
+            if (c == '{')
+                braces++;
+            else if (c == '}')
+                braces--;
+            else if (c == '[')
+                brackets++;
+            else if (c == ']')
+                brackets--;
         }
     }
     return braces == 0 && brackets == 0 && !in_string;
 }
 
 // Test fixture
-class QlogE2EOutputTest : public ::testing::Test {
+class QlogE2EOutputTest: public ::testing::Test {
 protected:
     void SetUp() override {
         // Create unique output directory for each test
-        test_dir_ = "./test_qlog_e2e_" + std::to_string(
-            std::chrono::steady_clock::now().time_since_epoch().count());
+        test_dir_ = "./test_qlog_e2e_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
 
         QlogConfig config;
         config.enabled = true;
@@ -239,7 +251,7 @@ TEST_F(QlogE2EOutputTest, CompleteConnectionLifecycleOutput) {
     auto lines = ReadConnectionQlogLines(test_dir_, "e2e-life");
     ASSERT_GE(lines.size(), 12u) << "Expected at least 12 lines (1 header + 11 events)";
 
-    // Line 0: trace record (combined LogFile + trace metadata in draft-02)
+    // Line 0: trace record (combined LogFile + trace metadata in draft-03)
     EXPECT_TRUE(lines[0].find("\"qlog_format\"") != std::string::npos) << "L0: " << lines[0];
     EXPECT_TRUE(lines[0].find("\"qlog_version\"") != std::string::npos) << "L0: " << lines[0];
     EXPECT_TRUE(lines[0].find("\"vantage_point\"") != std::string::npos) << "L0: " << lines[0];
@@ -248,8 +260,7 @@ TEST_F(QlogE2EOutputTest, CompleteConnectionLifecycleOutput) {
 
     // Lines 1+: Events - verify each is valid JSON
     for (size_t i = 0; i < lines.size(); i++) {
-        EXPECT_TRUE(IsBalancedJson(lines[i]))
-            << "Line " << i << " is not valid JSON: " << lines[i];
+        EXPECT_TRUE(IsBalancedJson(lines[i])) << "Line " << i << " is not valid JSON: " << lines[i];
     }
 
     // Verify specific events appear in order
@@ -310,14 +321,13 @@ TEST_F(QlogE2EOutputTest, EventFieldsCorrectness) {
     // Event line (index 1, after the single trace header line)
     const std::string& event_line = lines[1];
 
-    // Must have required fields. Note: per draft-02 `time` is a string-encoded
-    // integer (e.g. "12345"), so we look for the field name only.
-    EXPECT_TRUE(event_line.find("\"time\":") != std::string::npos)
-        << "Event must contain time: " << event_line;
+    // Must have required fields. Per qlog draft-03 `time` is a JSON
+    // number (the draft-02 string encoding was reverted); we only check
+    // for the field name's presence here.
+    EXPECT_TRUE(event_line.find("\"time\":") != std::string::npos) << "Event must contain time: " << event_line;
     EXPECT_TRUE(event_line.find("\"name\":\"transport:packet_sent\"") != std::string::npos)
         << "Event must contain correct name: " << event_line;
-    EXPECT_TRUE(event_line.find("\"data\":") != std::string::npos)
-        << "Event must contain data: " << event_line;
+    EXPECT_TRUE(event_line.find("\"data\":") != std::string::npos) << "Event must contain data: " << event_line;
 
     // Verify data content
     EXPECT_TRUE(event_line.find("\"packet_number\":42") != std::string::npos)
@@ -372,8 +382,7 @@ TEST_F(QlogE2EOutputTest, MultipleConnectionsSeparateFiles) {
             if (entry.path().extension() == kQlogFileExt) file_count++;
         }
     }
-    EXPECT_EQ(num_conns, file_count)
-        << "Expected " << num_conns << " qlog files, got " << file_count;
+    EXPECT_EQ(num_conns, file_count) << "Expected " << num_conns << " qlog files, got " << file_count;
 
     // Verify each file contains the correct packet_number
     for (int i = 0; i < num_conns; i++) {
@@ -431,8 +440,7 @@ TEST_F(QlogE2EOutputTest, EventOrderPreserved) {
     for (size_t i = 1; i < lines.size(); i++) {
         if (lines[i].find("connection_started") != std::string::npos && conn_started_idx < 0)
             conn_started_idx = static_cast<int>(i);
-        if (lines[i].find("packet_sent") != std::string::npos && pkt_sent_idx < 0)
-            pkt_sent_idx = static_cast<int>(i);
+        if (lines[i].find("packet_sent") != std::string::npos && pkt_sent_idx < 0) pkt_sent_idx = static_cast<int>(i);
         if (lines[i].find("packet_received") != std::string::npos && pkt_recv_idx < 0)
             pkt_recv_idx = static_cast<int>(i);
         if (lines[i].find("connection_closed") != std::string::npos && conn_closed_idx < 0)
@@ -500,8 +508,7 @@ TEST_F(QlogE2EOutputTest, EventWhitelistFiltering) {
     // Verify only allowed events appear (skip line 0 which is the header)
     for (size_t i = 1; i < lines.size(); i++) {
         EXPECT_TRUE(
-            lines[i].find("packet_sent") != std::string::npos ||
-            lines[i].find("packet_received") != std::string::npos)
+            lines[i].find("packet_sent") != std::string::npos || lines[i].find("packet_received") != std::string::npos)
             << "Unexpected event in filtered output: " << lines[i];
     }
 }
@@ -555,7 +562,7 @@ TEST_F(QlogE2EOutputTest, VantagePointInFile) {
     auto lines = ReadConnectionQlogLines(test_dir_, "e2e-vp-s");
     ASSERT_GE(lines.size(), 1u);
 
-    // Trace metadata is on line 0 (combined LogFile + trace per draft-02).
+    // Trace metadata is on line 0 (combined LogFile + trace per draft-03).
     EXPECT_TRUE(lines[0].find("\"type\":\"server\"") != std::string::npos)
         << "Vantage point should be server: " << lines[0];
 }

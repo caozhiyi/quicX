@@ -26,14 +26,14 @@ static void BM_Qpack_Huffman_Decode(benchmark::State& state) {
     }
 }
 
-} // namespace http3
-} // namespace quicx
+}  // namespace http3
+}  // namespace quicx
 
 BENCHMARK(quicx::http3::BM_Qpack_Huffman_Encode)->Arg(8)->Arg(64)->Arg(1024);
 BENCHMARK(quicx::http3::BM_Qpack_Huffman_Decode)->Arg(8)->Arg(64)->Arg(1024);
 BENCHMARK_MAIN();
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif
-
-

@@ -1,12 +1,13 @@
+#include "upgrade/handlers/smart_handler_factory.h"
 #include "common/log/log.h"
 #include "upgrade/handlers/http_smart_handler.h"
 #include "upgrade/handlers/https_smart_handler.h"
-#include "upgrade/handlers/smart_handler_factory.h"
 
 namespace quicx {
 namespace upgrade {
 
-std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop) {
+std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(
+    const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop) {
     // Treat partial HTTPS settings as HTTP
     const bool has_file_pair = !settings.cert_file.empty() && !settings.key_file.empty();
     const bool has_pem_pair = (settings.cert_pem != nullptr) && (settings.key_pem != nullptr);
@@ -27,9 +28,8 @@ std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(const UpgradeS
     }
 }
 
-std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(const UpgradeSettings& settings,
-                                                                  std::shared_ptr<common::IEventLoop> event_loop,
-                                                                  HandlerKind kind) {
+std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(
+    const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop, HandlerKind kind) {
     switch (kind) {
         case HandlerKind::kHttp:
             LOG_INFO("Creating HTTP smart handler (forced)");
@@ -52,5 +52,5 @@ std::shared_ptr<ISmartHandler> SmartHandlerFactory::CreateHandler(const UpgradeS
     }
 }
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx

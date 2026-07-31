@@ -1,19 +1,19 @@
 #if defined(QUICX_ENABLE_BENCHMARKS)
 #include <benchmark/benchmark.h>
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
-#include <chrono>
-#include <filesystem>
-#include <cstdlib>
 
+#include "common/qlog/event/connectivity_events.h"
+#include "common/qlog/event/recovery_events.h"
+#include "common/qlog/event/transport_events.h"
 #include "common/qlog/qlog_manager.h"
 #include "common/qlog/qlog_trace.h"
-#include "common/qlog/writer/async_writer.h"
-#include "common/qlog/event/transport_events.h"
-#include "common/qlog/event/recovery_events.h"
-#include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/util/qlog_constants.h"
+#include "common/qlog/writer/async_writer.h"
 #include "common/util/time.h"
 
 namespace quicx {
@@ -235,12 +235,10 @@ static void BM_Qlog_AsyncWriter_QueuePressure(benchmark::State& state) {
     CleanupBenchTempDir();
 
     state.SetItemsProcessed(state.iterations() * burst_size);
-    state.counters["total_events"] = benchmark::Counter(
-        static_cast<double>(writer.GetTotalEventsWritten()),
-        benchmark::Counter::kDefaults);
-    state.counters["total_bytes"] = benchmark::Counter(
-        static_cast<double>(writer.GetTotalBytesWritten()),
-        benchmark::Counter::kDefaults);
+    state.counters["total_events"] =
+        benchmark::Counter(static_cast<double>(writer.GetTotalEventsWritten()), benchmark::Counter::kDefaults);
+    state.counters["total_bytes"] =
+        benchmark::Counter(static_cast<double>(writer.GetTotalBytesWritten()), benchmark::Counter::kDefaults);
 }
 
 // ========== Benchmark 4: Sampling Rate Performance Comparison ==========
@@ -374,8 +372,7 @@ static void BM_Qlog_MultiConnection_Write(benchmark::State& state) {
     std::vector<std::unique_ptr<QlogTrace>> traces;
     traces.reserve(num_connections);
     for (int64_t i = 0; i < num_connections; ++i) {
-        auto trace = std::make_unique<QlogTrace>(
-            "bench-multi-" + std::to_string(i), VantagePoint::kClient, cfg);
+        auto trace = std::make_unique<QlogTrace>("bench-multi-" + std::to_string(i), VantagePoint::kClient, cfg);
         trace->SetWriter(&writer);
         traces.push_back(std::move(trace));
     }
@@ -408,14 +405,11 @@ BENCHMARK(quicx::common::BM_Qlog_SingleEventLatency_RecoveryMetrics);
 BENCHMARK(quicx::common::BM_Qlog_SingleEventLatency_ConnectionStarted);
 
 // 2. Throughput (events per second)
-BENCHMARK(quicx::common::BM_Qlog_Throughput_PacketSent)
-    ->Arg(100)->Arg(1000)->Arg(10000);
-BENCHMARK(quicx::common::BM_Qlog_Throughput_MixedEvents)
-    ->Arg(100)->Arg(1000)->Arg(10000);
+BENCHMARK(quicx::common::BM_Qlog_Throughput_PacketSent)->Arg(100)->Arg(1000)->Arg(10000);
+BENCHMARK(quicx::common::BM_Qlog_Throughput_MixedEvents)->Arg(100)->Arg(1000)->Arg(10000);
 
 // 3. AsyncWriter queue pressure
-BENCHMARK(quicx::common::BM_Qlog_AsyncWriter_QueuePressure)
-    ->Arg(1000)->Arg(5000)->Arg(10000);
+BENCHMARK(quicx::common::BM_Qlog_AsyncWriter_QueuePressure)->Arg(1000)->Arg(5000)->Arg(10000);
 
 // 4. Sampling rate comparison
 BENCHMARK(quicx::common::BM_Qlog_SamplingRate_100Percent);
@@ -431,8 +425,7 @@ BENCHMARK(quicx::common::BM_Qlog_Serialization_ConnectionStartedToJson);
 BENCHMARK(quicx::common::BM_Qlog_Manager_CreateRemoveTrace);
 
 // 7. Multi-connection write
-BENCHMARK(quicx::common::BM_Qlog_MultiConnection_Write)
-    ->Arg(1)->Arg(5)->Arg(10)->Arg(50);
+BENCHMARK(quicx::common::BM_Qlog_MultiConnection_Write)->Arg(1)->Arg(5)->Arg(10)->Arg(50);
 
 BENCHMARK_MAIN();
 #else

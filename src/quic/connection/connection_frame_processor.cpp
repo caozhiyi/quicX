@@ -8,7 +8,6 @@
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_frame_processor.h"
 #include "quic/connection/connection_id_coordinator.h"
-#include "quic/connection/error.h"
 #include "quic/connection/connection_path_manager.h"
 #include "quic/connection/connection_state_machine.h"
 #include "quic/connection/connection_stream_manager.h"
@@ -355,8 +354,7 @@ bool FrameProcessor::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
             send_flow_controller_->OnMaxStreamsBidiReceived(new_limit);
         }
 
-        LOG_INFO(
-            "Received MAX_STREAMS_BIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
+        LOG_INFO("Received MAX_STREAMS_BIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     } else {
         uint64_t old_limit = send_flow_controller_ ? send_flow_controller_->GetUniStreamLimit() : 0;
 
@@ -365,8 +363,7 @@ bool FrameProcessor::OnMaxStreamFrame(std::shared_ptr<IFrame> frame) {
             send_flow_controller_->OnMaxStreamsUniReceived(new_limit);
         }
 
-        LOG_INFO(
-            "Received MAX_STREAMS_UNIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
+        LOG_INFO("Received MAX_STREAMS_UNIDIRECTIONAL: %llu -> %llu, retrying pending requests", old_limit, new_limit);
     }
 
     // Trigger retry of pending stream creation requests
@@ -387,10 +384,10 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
     uint64_t sequence_number = new_cid_frame->GetSequenceNumber();
     uint64_t retire_prior_to = new_cid_frame->GetRetirePriorTo();
     if (retire_prior_to > sequence_number) {
-        LOG_ERROR("NEW_CONNECTION_ID: retire_prior_to (%llu) > sequence_number (%llu)",
-            retire_prior_to, sequence_number);
-        event_sink_.OnConnectionClose(QuicErrorCode::kFrameEncodingError,
-            FrameType::kNewConnectionId, "retire_prior_to > sequence_number");
+        LOG_ERROR(
+            "NEW_CONNECTION_ID: retire_prior_to (%llu) > sequence_number (%llu)", retire_prior_to, sequence_number);
+        event_sink_.OnConnectionClose(
+            QuicErrorCode::kFrameEncodingError, FrameType::kNewConnectionId, "retire_prior_to > sequence_number");
         return false;
     }
 
@@ -405,8 +402,8 @@ bool FrameProcessor::OnNewConnectionIDFrame(std::shared_ptr<IFrame> frame) {
             event_sink_.OnFrameReady(retire);
         }
         if (retire_prior_to > kMaxRetirePerFrame) {
-            LOG_WARN("NEW_CONNECTION_ID: retire_prior_to (%llu) capped at %llu to prevent DoS",
-                retire_prior_to, kMaxRetirePerFrame);
+            LOG_WARN("NEW_CONNECTION_ID: retire_prior_to (%llu) capped at %llu to prevent DoS", retire_prior_to,
+                kMaxRetirePerFrame);
         }
         // Apply batch retirement to the *remote* CID pool (these are CIDs the peer
         // issued for us to use, and the peer is now telling us to retire all CIDs
@@ -436,8 +433,7 @@ bool FrameProcessor::OnRetireConnectionIDFrame(std::shared_ptr<IFrame> frame) {
         LOG_ERROR("invalid retire connection id frame.");
         return false;
     }
-    LOG_DEBUG("OnRetireConnectionIDFrame: peer retiring local CID seq=%llu",
-        retire_cid_frame->GetSequenceNumber());
+    LOG_DEBUG("OnRetireConnectionIDFrame: peer retiring local CID seq=%llu", retire_cid_frame->GetSequenceNumber());
     // Peer is retiring a CID we provided to them, remove from local pool
     cid_coordinator_.GetLocalConnectionIDManager()->RetireIDBySequence(retire_cid_frame->GetSequenceNumber());
 

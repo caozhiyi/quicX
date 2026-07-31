@@ -1,8 +1,8 @@
 #include "common/log/log.h"
 #include "common/qlog/qlog.h"
 
-#include "quic/connection/connection_server.h"
 #include "quic/connection/connection_frame_processor.h"
+#include "quic/connection/connection_server.h"
 #include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/error.h"
 #include "quic/frame/handshake_done_frame.h"
@@ -20,18 +20,15 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
     if (!tls_connection_->Init()) {
         LOG_ERROR("tls connection init failed.");
     }
-    auto crypto_stream = std::make_shared<CryptoStream>(event_loop_,
-        [this](auto a) { ActiveSendStream(a); },
-        [this](auto a) { InnerStreamClose(a); },
+    auto crypto_stream = std::make_shared<CryptoStream>(
+        event_loop_, [this](auto a) { ActiveSendStream(a); }, [this](auto a) { InnerStreamClose(a); },
         [this](auto a, auto b, auto c) { InnerConnectionClose(a, b, c); });
-    crypto_stream->SetCryptoStreamReadCallBack(
-        [this](auto a, auto b, auto c) { WriteCryptoData(a, b, c); });
+    crypto_stream->SetCryptoStreamReadCallBack([this](auto a, auto b, auto c) { WriteCryptoData(a, b, c); });
 
     connection_crypto_.SetCryptoStream(crypto_stream);
 
     // Set HANDSHAKE_DONE frame handler callback (returns bool)
-    frame_processor_->SetHandshakeDoneCallback(
-        [this](auto a) { return HandleHandshakeDoneFrame(a); });
+    frame_processor_->SetHandshakeDoneCallback([this](auto a) { return HandleHandshakeDoneFrame(a); });
 }
 
 ServerConnection::~ServerConnection() {
@@ -93,8 +90,7 @@ bool ServerConnection::HandleHandshakeDoneFrame(std::shared_ptr<IFrame> frame) {
     // RFC 9000 §19.20: "A server MUST treat receipt of a HANDSHAKE_DONE
     // frame as a connection error of type PROTOCOL_VIOLATION."
     LOG_ERROR("Server received HANDSHAKE_DONE frame from client - PROTOCOL_VIOLATION");
-    InnerConnectionClose(QuicErrorCode::kProtocolViolation,
-        static_cast<uint16_t>(FrameType::kHandshakeDone),
+    InnerConnectionClose(QuicErrorCode::kProtocolViolation, static_cast<uint16_t>(FrameType::kHandshakeDone),
         "server received HANDSHAKE_DONE frame");
     return false;
 }

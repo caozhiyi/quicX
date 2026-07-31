@@ -8,8 +8,7 @@ namespace quicx {
 namespace quic {
 
 class Buffer;
-class NewTokenFrame:
-    public IFrame {
+class NewTokenFrame: public IFrame {
 public:
     NewTokenFrame();
     ~NewTokenFrame();
@@ -18,8 +17,7 @@ public:
     virtual bool Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type = false);
     virtual uint32_t EncodeSize();
 
-
-    void SetToken(uint8_t* token, uint32_t token_length) { 
+    void SetToken(uint8_t* token, uint32_t token_length) {
         token_ = token;
         token_length_ = token_length;
     }
@@ -37,7 +35,7 @@ private:
     uint8_t* token_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

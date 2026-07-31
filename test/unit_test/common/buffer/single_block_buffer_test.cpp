@@ -80,7 +80,10 @@ TEST(SingleBlockBufferTest, InvalidBufferOperationsAreNoops) {
     EXPECT_EQ(0u, buffer.GetDataLength());
 
     size_t visits = 0;
-    buffer.VisitData([&](uint8_t*, uint32_t) { visits++; return true; });
+    buffer.VisitData([&](uint8_t*, uint32_t) {
+        visits++;
+        return true;
+    });
     EXPECT_EQ(0u, visits);
 
     EXPECT_EQ(0u, buffer.MoveWritePt(3));
@@ -92,7 +95,10 @@ TEST(SingleBlockBufferTest, VisitNoOpWhenEmpty) {
     auto chunk = MakeChunk(16);
     SingleBlockBuffer buffer(chunk);
     size_t visit_count = 0;
-    buffer.VisitData([&](uint8_t*, uint32_t) { visit_count++; return true; });
+    buffer.VisitData([&](uint8_t*, uint32_t) {
+        visit_count++;
+        return true;
+    });
     EXPECT_EQ(0u, visit_count);
 }
 
@@ -122,17 +128,17 @@ TEST(SingleBlockBufferTest, ConstructorAndValid) {
     // Default constructor - no chunk
     SingleBlockBuffer buffer1;
     EXPECT_FALSE(buffer1.Valid());
-    
+
     // Constructor with BufferChunk
     auto chunk1 = MakeChunk(32);
     SingleBlockBuffer buffer2(chunk1);
     EXPECT_TRUE(buffer2.Valid());
-    
+
     // Constructor with StandaloneBufferChunk
     auto chunk2 = MakeStandaloneChunk(64);
     SingleBlockBuffer buffer3(chunk2);
     EXPECT_TRUE(buffer3.Valid());
-    
+
     // Constructor with nullptr
     SingleBlockBuffer buffer4(nullptr);
     EXPECT_FALSE(buffer4.Valid());
@@ -142,26 +148,26 @@ TEST(SingleBlockBufferTest, ConstructorAndValid) {
 TEST(SingleBlockBufferTest, Reset) {
     SingleBlockBuffer buffer;
     EXPECT_FALSE(buffer.Valid());
-    
+
     // Reset with valid chunk
     auto chunk1 = MakeChunk(32);
     buffer.Reset(chunk1);
     EXPECT_TRUE(buffer.Valid());
     EXPECT_EQ(0u, buffer.GetDataLength());
     EXPECT_EQ(32u, buffer.GetFreeLength());
-    
+
     // Write some data
     std::array<uint8_t, 4> payload = {1, 2, 3, 4};
     buffer.Write(payload.data(), payload.size());
     EXPECT_EQ(4u, buffer.GetDataLength());
-    
+
     // Reset with another chunk - should clear previous data
     auto chunk2 = MakeChunk(64);
     buffer.Reset(chunk2);
     EXPECT_TRUE(buffer.Valid());
     EXPECT_EQ(0u, buffer.GetDataLength());
     EXPECT_EQ(64u, buffer.GetFreeLength());
-    
+
     // Reset with nullptr
     buffer.Reset(nullptr);
     EXPECT_FALSE(buffer.Valid());
@@ -171,13 +177,13 @@ TEST(SingleBlockBufferTest, Reset) {
 TEST(SingleBlockBufferTest, WriteBasic) {
     auto chunk = MakeChunk(64);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Write small data
     std::array<uint8_t, 4> data1 = {1, 2, 3, 4};
     EXPECT_EQ(4u, buffer.Write(data1.data(), data1.size()));
     EXPECT_EQ(4u, buffer.GetDataLength());
     EXPECT_EQ(60u, buffer.GetFreeLength());
-    
+
     // Write more data
     std::array<uint8_t, 8> data2 = {5, 6, 7, 8, 9, 10, 11, 12};
     EXPECT_EQ(8u, buffer.Write(data2.data(), data2.size()));
@@ -189,7 +195,7 @@ TEST(SingleBlockBufferTest, WriteBasic) {
 TEST(SingleBlockBufferTest, WriteNullptr) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     EXPECT_EQ(0u, buffer.Write(nullptr, 10));
     EXPECT_EQ(0u, buffer.GetDataLength());
 }
@@ -198,15 +204,15 @@ TEST(SingleBlockBufferTest, WriteNullptr) {
 TEST(SingleBlockBufferTest, WriteExceedingCapacity) {
     auto chunk = MakeChunk(16);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 32> large_data;
     std::fill(large_data.begin(), large_data.end(), 0xAA);
-    
+
     // Should only write 16 bytes (buffer capacity)
     EXPECT_EQ(16u, buffer.Write(large_data.data(), large_data.size()));
     EXPECT_EQ(16u, buffer.GetDataLength());
     EXPECT_EQ(0u, buffer.GetFreeLength());
-    
+
     // Try to write more - should fail
     std::array<uint8_t, 4> more_data = {1, 2, 3, 4};
     EXPECT_EQ(0u, buffer.Write(more_data.data(), more_data.size()));
@@ -216,18 +222,18 @@ TEST(SingleBlockBufferTest, WriteExceedingCapacity) {
 TEST(SingleBlockBufferTest, WriteFromBuffer) {
     auto chunk1 = MakeChunk(32);
     auto chunk2 = MakeChunk(64);
-    
+
     SingleBlockBuffer src(chunk1);
     SingleBlockBuffer dst(chunk2);
-    
+
     // Write data to source
     std::array<uint8_t, 8> data = {10, 20, 30, 40, 50, 60, 70, 80};
     src.Write(data.data(), data.size());
-    
+
     // Write from source to destination
     EXPECT_EQ(8u, dst.Write(std::make_shared<SingleBlockBuffer>(std::move(src))));
     EXPECT_EQ(8u, dst.GetDataLength());
-    
+
     // Verify data
     std::array<uint8_t, 8> out;
     dst.Read(out.data(), out.size());
@@ -238,19 +244,19 @@ TEST(SingleBlockBufferTest, WriteFromBuffer) {
 TEST(SingleBlockBufferTest, WriteFromSharedBufferSpan) {
     auto chunk1 = MakeChunk(32);
     auto chunk2 = MakeChunk(64);
-    
+
     SingleBlockBuffer src(chunk1);
     SingleBlockBuffer dst(chunk2);
-    
+
     // Write data to source
     std::array<uint8_t, 6> data = {11, 22, 33, 44, 55, 66};
     src.Write(data.data(), data.size());
-    
+
     // Get span and write to destination
     auto span = src.GetSharedReadableSpan();
     EXPECT_EQ(6u, dst.Write(span));
     EXPECT_EQ(6u, dst.GetDataLength());
-    
+
     // Verify data
     std::array<uint8_t, 6> out;
     dst.Read(out.data(), out.size());
@@ -261,19 +267,19 @@ TEST(SingleBlockBufferTest, WriteFromSharedBufferSpan) {
 TEST(SingleBlockBufferTest, WriteFromSharedBufferSpanWithLength) {
     auto chunk1 = MakeChunk(32);
     auto chunk2 = MakeChunk(64);
-    
+
     SingleBlockBuffer src(chunk1);
     SingleBlockBuffer dst(chunk2);
-    
+
     // Write 10 bytes to source
     std::array<uint8_t, 10> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     src.Write(data.data(), data.size());
-    
+
     // Get span and write only first 5 bytes to destination
     auto span = src.GetSharedReadableSpan();
     EXPECT_EQ(5u, dst.Write(span, 5));
     EXPECT_EQ(5u, dst.GetDataLength());
-    
+
     // Verify only first 5 bytes were written
     std::array<uint8_t, 5> out;
     dst.Read(out.data(), out.size());
@@ -284,17 +290,17 @@ TEST(SingleBlockBufferTest, WriteFromSharedBufferSpanWithLength) {
 TEST(SingleBlockBufferTest, ReadBasic) {
     auto chunk = MakeChunk(64);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Write data
     std::array<uint8_t, 12> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
     buffer.Write(data.data(), data.size());
-    
+
     // Read partial data
     std::array<uint8_t, 5> out1;
     EXPECT_EQ(5u, buffer.Read(out1.data(), out1.size()));
     EXPECT_TRUE(std::equal(data.begin(), data.begin() + 5, out1.begin()));
     EXPECT_EQ(7u, buffer.GetDataLength());
-    
+
     // Read remaining data
     std::array<uint8_t, 10> out2;
     EXPECT_EQ(7u, buffer.Read(out2.data(), out2.size()));
@@ -306,10 +312,10 @@ TEST(SingleBlockBufferTest, ReadBasic) {
 TEST(SingleBlockBufferTest, ReadNullptr) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 4> data = {1, 2, 3, 4};
     buffer.Write(data.data(), data.size());
-    
+
     EXPECT_EQ(0u, buffer.Read(nullptr, 10));
     EXPECT_EQ(4u, buffer.GetDataLength());  // Data should still be there
 }
@@ -318,10 +324,10 @@ TEST(SingleBlockBufferTest, ReadNullptr) {
 TEST(SingleBlockBufferTest, ReadAutoClear) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 8> data = {1, 2, 3, 4, 5, 6, 7, 8};
     buffer.Write(data.data(), data.size());
-    
+
     // Read all data - should auto-clear
     std::array<uint8_t, 10> out;
     EXPECT_EQ(8u, buffer.Read(out.data(), out.size()));
@@ -333,21 +339,21 @@ TEST(SingleBlockBufferTest, ReadAutoClear) {
 TEST(SingleBlockBufferTest, ReadNotMovePt) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 6> data = {10, 20, 30, 40, 50, 60};
     buffer.Write(data.data(), data.size());
-    
+
     // Read without moving pointer
     std::array<uint8_t, 4> out1;
     EXPECT_EQ(4u, buffer.ReadNotMovePt(out1.data(), out1.size()));
     EXPECT_TRUE(std::equal(data.begin(), data.begin() + 4, out1.begin()));
     EXPECT_EQ(6u, buffer.GetDataLength());  // Data length unchanged
-    
+
     // Read again - should get same data
     std::array<uint8_t, 4> out2;
     EXPECT_EQ(4u, buffer.ReadNotMovePt(out2.data(), out2.size()));
     EXPECT_TRUE(std::equal(out1.begin(), out1.end(), out2.begin()));
-    
+
     // Now actually read
     std::array<uint8_t, 6> out3;
     EXPECT_EQ(6u, buffer.Read(out3.data(), out3.size()));
@@ -358,10 +364,10 @@ TEST(SingleBlockBufferTest, ReadNotMovePt) {
 TEST(SingleBlockBufferTest, ReadNotMovePtNullptr) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 4> data = {1, 2, 3, 4};
     buffer.Write(data.data(), data.size());
-    
+
     EXPECT_EQ(0u, buffer.ReadNotMovePt(nullptr, 10));
     EXPECT_EQ(4u, buffer.GetDataLength());
 }
@@ -370,14 +376,14 @@ TEST(SingleBlockBufferTest, ReadNotMovePtNullptr) {
 TEST(SingleBlockBufferTest, MoveReadPtForward) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 12> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
     buffer.Write(data.data(), data.size());
-    
+
     // Move forward 5 bytes
     EXPECT_EQ(5u, buffer.MoveReadPt(5));
     EXPECT_EQ(7u, buffer.GetDataLength());
-    
+
     // Read remaining data
     std::array<uint8_t, 7> out;
     buffer.Read(out.data(), out.size());
@@ -388,10 +394,10 @@ TEST(SingleBlockBufferTest, MoveReadPtForward) {
 TEST(SingleBlockBufferTest, MoveReadPtForwardBeyond) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 8> data = {1, 2, 3, 4, 5, 6, 7, 8};
     buffer.Write(data.data(), data.size());
-    
+
     // Try to move 20 bytes forward (more than available)
     EXPECT_EQ(8u, buffer.MoveReadPt(20));
     EXPECT_EQ(0u, buffer.GetDataLength());
@@ -402,12 +408,12 @@ TEST(SingleBlockBufferTest, MoveReadPtForwardBeyond) {
 TEST(SingleBlockBufferTest, MoveWritePtForward) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Reserve 10 bytes
     EXPECT_EQ(10u, buffer.MoveWritePt(10));
     EXPECT_EQ(10u, buffer.GetDataLength());
     EXPECT_EQ(22u, buffer.GetFreeLength());
-    
+
     // Reserve 5 more bytes
     EXPECT_EQ(5u, buffer.MoveWritePt(5));
     EXPECT_EQ(15u, buffer.GetDataLength());
@@ -418,7 +424,7 @@ TEST(SingleBlockBufferTest, MoveWritePtForward) {
 TEST(SingleBlockBufferTest, MoveWritePtForwardBeyond) {
     auto chunk = MakeChunk(16);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Try to reserve 100 bytes (more than capacity)
     EXPECT_EQ(16u, buffer.MoveWritePt(100));
     EXPECT_EQ(16u, buffer.GetDataLength());
@@ -429,10 +435,10 @@ TEST(SingleBlockBufferTest, MoveWritePtForwardBeyond) {
 TEST(SingleBlockBufferTest, GetData) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 6> data = {11, 22, 33, 44, 55, 66};
     buffer.Write(data.data(), data.size());
-    
+
     uint8_t* ptr = buffer.GetData();
     ASSERT_NE(nullptr, ptr);
     EXPECT_EQ(0, std::memcmp(ptr, data.data(), data.size()));
@@ -442,10 +448,10 @@ TEST(SingleBlockBufferTest, GetData) {
 TEST(SingleBlockBufferTest, GetDataAsString) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::string text = "Hello, World!";
     buffer.Write(reinterpret_cast<const uint8_t*>(text.data()), text.size());
-    
+
     std::string result = buffer.GetDataAsString();
     EXPECT_EQ(text, result);
 }
@@ -454,10 +460,10 @@ TEST(SingleBlockBufferTest, GetDataAsString) {
 TEST(SingleBlockBufferTest, GetReadableSpanAsView) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 8> data = {1, 2, 3, 4, 5, 6, 7, 8};
     buffer.Write(data.data(), data.size());
-    
+
     auto span = buffer.GetReadableSpan();
     EXPECT_TRUE(span.Valid());
     EXPECT_EQ(8u, span.GetLength());
@@ -467,10 +473,10 @@ TEST(SingleBlockBufferTest, GetReadableSpanAsView) {
 TEST(SingleBlockBufferTest, GetReadableSpan) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 5> data = {10, 20, 30, 40, 50};
     buffer.Write(data.data(), data.size());
-    
+
     auto span = buffer.GetReadableSpan();
     EXPECT_EQ(5u, span.GetLength());
     EXPECT_EQ(0, std::memcmp(span.GetStart(), data.data(), data.size()));
@@ -480,29 +486,29 @@ TEST(SingleBlockBufferTest, GetReadableSpan) {
 TEST(SingleBlockBufferTest, GetSharedReadableSpan) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 12> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
     buffer.Write(data.data(), data.size());
-    
+
     // Get all data
     auto span1 = buffer.GetSharedReadableSpan();
     EXPECT_TRUE(span1.Valid());
     EXPECT_EQ(12u, span1.GetLength());
-    
+
     // Get specific length
     auto span2 = buffer.GetSharedReadableSpan(5);
     EXPECT_TRUE(span2.Valid());
     EXPECT_EQ(5u, span2.GetLength());
-    
+
     // Get with must_fill_length = true
     auto span3 = buffer.GetSharedReadableSpan(10, true);
     EXPECT_TRUE(span3.Valid());
     EXPECT_EQ(10u, span3.GetLength());
-    
+
     // Get with must_fill_length = true but insufficient data
     auto span4 = buffer.GetSharedReadableSpan(20, true);
     EXPECT_FALSE(span4.Valid());
-    
+
     // Get with must_fill_length = false and insufficient data
     auto span5 = buffer.GetSharedReadableSpan(20, false);
     EXPECT_TRUE(span5.Valid());
@@ -513,23 +519,23 @@ TEST(SingleBlockBufferTest, GetSharedReadableSpan) {
 TEST(SingleBlockBufferTest, GetWritableSpan) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Initially all space is writable
     auto span1 = buffer.GetWritableSpan();
     EXPECT_EQ(32u, span1.GetLength());
-    
+
     // Write some data
     std::array<uint8_t, 10> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     buffer.Write(data.data(), data.size());
-    
+
     // Writable space reduced
     auto span2 = buffer.GetWritableSpan();
     EXPECT_EQ(22u, span2.GetLength());
-    
+
     // Get writable span with expected length
     auto span3 = buffer.GetWritableSpan(15);
     EXPECT_EQ(15u, span3.GetLength());
-    
+
     // Get writable span with expected length exceeding available
     auto span4 = buffer.GetWritableSpan(30);
     EXPECT_EQ(0u, span4.GetLength());  // Insufficient space
@@ -539,15 +545,15 @@ TEST(SingleBlockBufferTest, GetWritableSpan) {
 TEST(SingleBlockBufferTest, GetFreeLength) {
     auto chunk = MakeChunk(64);
     SingleBlockBuffer buffer(chunk);
-    
+
     EXPECT_EQ(64u, buffer.GetFreeLength());
-    
+
     buffer.MoveWritePt(20);
     EXPECT_EQ(44u, buffer.GetFreeLength());
-    
+
     buffer.MoveWritePt(30);
     EXPECT_EQ(14u, buffer.GetFreeLength());
-    
+
     buffer.MoveWritePt(14);
     EXPECT_EQ(0u, buffer.GetFreeLength());
 }
@@ -556,18 +562,18 @@ TEST(SingleBlockBufferTest, GetFreeLength) {
 TEST(SingleBlockBufferTest, Clear) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Write data
     std::array<uint8_t, 10> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     buffer.Write(data.data(), data.size());
     EXPECT_EQ(10u, buffer.GetDataLength());
     EXPECT_EQ(22u, buffer.GetFreeLength());
-    
+
     // Clear
     buffer.Clear();
     EXPECT_EQ(0u, buffer.GetDataLength());
     EXPECT_EQ(32u, buffer.GetFreeLength());
-    
+
     // Can write again
     buffer.Write(data.data(), data.size());
     EXPECT_EQ(10u, buffer.GetDataLength());
@@ -577,10 +583,10 @@ TEST(SingleBlockBufferTest, Clear) {
 TEST(SingleBlockBufferTest, VisitData) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 8> data = {10, 20, 30, 40, 50, 60, 70, 80};
     buffer.Write(data.data(), data.size());
-    
+
     size_t visit_count = 0;
     buffer.VisitData([&](uint8_t* ptr, uint32_t len) {
         EXPECT_EQ(8u, len);
@@ -595,10 +601,10 @@ TEST(SingleBlockBufferTest, VisitData) {
 TEST(SingleBlockBufferTest, VisitDataNullVisitor) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 4> data = {1, 2, 3, 4};
     buffer.Write(data.data(), data.size());
-    
+
     // Should not crash
     buffer.VisitData(nullptr);
 }
@@ -607,10 +613,10 @@ TEST(SingleBlockBufferTest, VisitDataNullVisitor) {
 TEST(SingleBlockBufferTest, VisitDataSpans) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 6> data = {11, 22, 33, 44, 55, 66};
     buffer.Write(data.data(), data.size());
-    
+
     size_t visit_count = 0;
     buffer.VisitDataSpans([&](SharedBufferSpan& span) {
         EXPECT_TRUE(span.Valid());
@@ -626,10 +632,10 @@ TEST(SingleBlockBufferTest, VisitDataSpans) {
 TEST(SingleBlockBufferTest, VisitDataSpansNullVisitor) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 4> data = {1, 2, 3, 4};
     buffer.Write(data.data(), data.size());
-    
+
     // Should not crash
     buffer.VisitDataSpans(nullptr);
 }
@@ -638,7 +644,7 @@ TEST(SingleBlockBufferTest, VisitDataSpansNullVisitor) {
 TEST(SingleBlockBufferTest, GetChunk) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     auto retrieved = buffer.GetChunk();
     EXPECT_EQ(chunk, retrieved);
 }
@@ -647,10 +653,10 @@ TEST(SingleBlockBufferTest, GetChunk) {
 TEST(SingleBlockBufferTest, MoveSelfAssignment) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     std::array<uint8_t, 4> data = {1, 2, 3, 4};
     buffer.Write(data.data(), data.size());
-    
+
     // Self-assignment should be safe
     buffer = std::move(buffer);
     EXPECT_TRUE(buffer.Valid());
@@ -660,10 +666,10 @@ TEST(SingleBlockBufferTest, MoveSelfAssignment) {
 // Test: Operations on invalid buffer
 TEST(SingleBlockBufferTest, InvalidBufferOperations) {
     SingleBlockBuffer buffer;
-    
+
     std::array<uint8_t, 4> data = {1, 2, 3, 4};
     std::array<uint8_t, 4> out;
-    
+
     // All operations should fail gracefully
     EXPECT_EQ(0u, buffer.Write(data.data(), data.size()));
     EXPECT_EQ(0u, buffer.Read(out.data(), out.size()));
@@ -674,17 +680,17 @@ TEST(SingleBlockBufferTest, InvalidBufferOperations) {
     EXPECT_EQ(0u, buffer.GetFreeLength());
     EXPECT_EQ(nullptr, buffer.GetData());
     EXPECT_EQ("", buffer.GetDataAsString());
-    
+
     auto span = buffer.GetReadableSpan();
     EXPECT_FALSE(span.Valid());
     EXPECT_EQ(0u, span.GetLength());
-    
+
     auto shared_span = buffer.GetSharedReadableSpan();
     EXPECT_FALSE(shared_span.Valid());
-    
+
     auto writable_span = buffer.GetWritableSpan();
     EXPECT_EQ(0u, writable_span.GetLength());
-    
+
     buffer.Clear();  // Should not crash
 }
 
@@ -692,14 +698,14 @@ TEST(SingleBlockBufferTest, InvalidBufferOperations) {
 TEST(SingleBlockBufferTest, SequentialReadWriteCycles) {
     auto chunk = MakeChunk(64);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Cycle 1
     std::array<uint8_t, 10> data1 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     buffer.Write(data1.data(), data1.size());
     std::array<uint8_t, 10> out1;
     buffer.Read(out1.data(), out1.size());
     EXPECT_TRUE(std::equal(data1.begin(), data1.end(), out1.begin()));
-    
+
     // Cycle 2 - buffer should be auto-cleared and reusable
     std::array<uint8_t, 15> data2;
     std::fill(data2.begin(), data2.end(), 0xAA);
@@ -708,7 +714,7 @@ TEST(SingleBlockBufferTest, SequentialReadWriteCycles) {
     std::array<uint8_t, 15> out2;
     buffer.Read(out2.data(), out2.size());
     EXPECT_TRUE(std::equal(data2.begin(), data2.end(), out2.begin()));
-    
+
     // Cycle 3
     std::array<uint8_t, 20> data3;
     std::fill(data3.begin(), data3.end(), 0xBB);
@@ -720,17 +726,17 @@ TEST(SingleBlockBufferTest, SequentialReadWriteCycles) {
 TEST(SingleBlockBufferTest, LargeDataOperations) {
     auto chunk = MakeStandaloneChunk(4096);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Write large data
     std::vector<uint8_t> large_data(4096);
     for (size_t i = 0; i < large_data.size(); ++i) {
         large_data[i] = static_cast<uint8_t>(i % 256);
     }
-    
+
     EXPECT_EQ(4096u, buffer.Write(large_data.data(), large_data.size()));
     EXPECT_EQ(4096u, buffer.GetDataLength());
     EXPECT_EQ(0u, buffer.GetFreeLength());
-    
+
     // Read in chunks
     std::vector<uint8_t> read_data(4096);
     size_t offset = 0;
@@ -740,7 +746,7 @@ TEST(SingleBlockBufferTest, LargeDataOperations) {
         offset += read;
         if (read == 0) break;
     }
-    
+
     EXPECT_EQ(4096u, offset);
     EXPECT_TRUE(std::equal(large_data.begin(), large_data.end(), read_data.begin()));
 }
@@ -749,14 +755,14 @@ TEST(SingleBlockBufferTest, LargeDataOperations) {
 TEST(SingleBlockBufferTest, BoundaryConditions) {
     auto chunk = MakeChunk(16);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Write exactly buffer size
     std::array<uint8_t, 16> data;
     std::fill(data.begin(), data.end(), 0x55);
     EXPECT_EQ(16u, buffer.Write(data.data(), data.size()));
     EXPECT_EQ(16u, buffer.GetDataLength());
     EXPECT_EQ(0u, buffer.GetFreeLength());
-    
+
     // Read exactly buffer size
     std::array<uint8_t, 16> out;
     EXPECT_EQ(16u, buffer.Read(out.data(), out.size()));
@@ -769,25 +775,25 @@ TEST(SingleBlockBufferTest, BoundaryConditions) {
 TEST(SingleBlockBufferTest, ZeroLengthOperations) {
     auto chunk = MakeChunk(32);
     SingleBlockBuffer buffer(chunk);
-    
+
     // Write zero bytes
     std::array<uint8_t, 4> data = {1, 2, 3, 4};
     EXPECT_EQ(0u, buffer.Write(data.data(), 0));
     EXPECT_EQ(0u, buffer.GetDataLength());
-    
+
     // Write some data
     buffer.Write(data.data(), data.size());
-    
+
     // Read zero bytes
     std::array<uint8_t, 4> out;
     EXPECT_EQ(0u, buffer.Read(out.data(), 0));
     EXPECT_EQ(4u, buffer.GetDataLength());  // Data unchanged
-    
+
     // Move pointers by zero
     EXPECT_EQ(0u, buffer.MoveReadPt(0));
     EXPECT_EQ(0u, buffer.MoveWritePt(0));
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace common
+}  // namespace quicx

@@ -139,16 +139,16 @@ public:
 
 private:
     // State flag
-    bool is_unvalidated_;               // True if address is not yet validated
+    bool is_unvalidated_;  // True if address is not yet validated
 
     // Byte counters
-    uint64_t sent_bytes_;               // Total bytes sent to unvalidated address
-    uint64_t received_bytes_;           // Total bytes received from unvalidated address
+    uint64_t sent_bytes_;      // Total bytes sent to unvalidated address
+    uint64_t received_bytes_;  // Total bytes received from unvalidated address
 
     // Constants (RFC 9000 Section 8.1)
-    static constexpr uint64_t kAmplificationFactor = 3;      // Maximum amplification factor
-    static constexpr uint64_t kDefaultInitialCredit = 400;   // Initial credit (~allows 1200 bytes)
-    static constexpr double kNearLimitThreshold = 0.9;       // 90% of limit for Retry consideration
+    static constexpr uint64_t kAmplificationFactor = 3;     // Maximum amplification factor
+    static constexpr uint64_t kDefaultInitialCredit = 400;  // Initial credit (~allows 1200 bytes)
+    static constexpr double kNearLimitThreshold = 0.9;      // 90% of limit for Retry consideration
 };
 
 }  // namespace quic

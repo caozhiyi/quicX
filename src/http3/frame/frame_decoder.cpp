@@ -67,8 +67,7 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
                 if (buffer->GetDataLength() == 0) {
                     return true;  // Need more data
                 }
-                LOG_ERROR(
-                    "DecodeFrames: failed to decode frame type varint (corrupt or incomplete data), remaining=%u",
+                LOG_ERROR("DecodeFrames: failed to decode frame type varint (corrupt or incomplete data), remaining=%u",
                     wrapper.GetDataLength());
                 return false;
             }
@@ -114,13 +113,11 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
                 // buffer still has data, the first byte indicates an N-byte
                 // varint we can't yet complete → keep waiting.
                 if (buffer->GetDataLength() > 0 && len_wrapper.GetReadLength() == 0) {
-                    LOG_DEBUG(
-                        "FrameDecoder: unknown frame type=0x%llx, length varint incomplete, waiting",
+                    LOG_DEBUG("FrameDecoder: unknown frame type=0x%llx, length varint incomplete, waiting",
                         (unsigned long long)current_frame_type_);
                     return true;  // Need more data; state preserved.
                 }
-                LOG_ERROR(
-                    "FrameDecoder: failed to decode length varint for unknown frame type=0x%llx",
+                LOG_ERROR("FrameDecoder: failed to decode length varint for unknown frame type=0x%llx",
                     (unsigned long long)current_frame_type_);
                 return false;
             }
@@ -152,8 +149,7 @@ bool FrameDecoder::DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::ve
             DecodeResult result = current_frame_->Decode(buffer, false);
 
             if (result == DecodeResult::kError) {
-                LOG_ERROR("FrameDecoder: failed to decode frame type=0x%llx",
-                    (unsigned long long)current_frame_type_);
+                LOG_ERROR("FrameDecoder: failed to decode frame type=0x%llx", (unsigned long long)current_frame_type_);
                 return false;
             }
 

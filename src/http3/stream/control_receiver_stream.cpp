@@ -1,8 +1,8 @@
+#include "http3/stream/control_receiver_stream.h"
 #include "common/log/log.h"
-#include "http3/http/error.h"
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/settings_frame.h"
-#include "http3/stream/control_receiver_stream.h"
+#include "http3/http/error.h"
 
 namespace quicx {
 namespace http3 {
@@ -15,8 +15,7 @@ ControlReceiverStream::ControlReceiverStream(const std::shared_ptr<IQuicRecvStre
     IRecvStream(StreamType::kControl, stream, error_handler),
     goaway_handler_(goaway_handler),
     settings_handler_(settings_handler) {
-    stream_->SetStreamReadCallBack(
-        [this](auto a, auto b, auto c) { OnData(a, b, c); });
+    stream_->SetStreamReadCallBack([this](auto a, auto b, auto c) { OnData(a, b, c); });
     // No send-side callback: the control stream is split into a sender side
     // (ControlSenderStream, owns IQuicSendStream) and a receiver side
     // (this class, owns IQuicRecvStream). Each side handles only its own
@@ -66,7 +65,8 @@ void ControlReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_la
     } else {
         // RFC 9114 Section 7: Frame decoding failure on control stream is a connection error
         // Do NOT fall through to QPACK instruction handling with corrupted data
-        LOG_ERROR("ControlReceiverStream::OnData: DecodeFrames failed on control stream, "
+        LOG_ERROR(
+            "ControlReceiverStream::OnData: DecodeFrames failed on control stream, "
             "closing connection with H3_FRAME_ERROR");
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kFrameError);
     }

@@ -8,9 +8,9 @@
 #include <string>
 
 #include <quicx/common/if_event_loop.h>
+#include <quicx/quic/if_quic_stream.h>
 #include "quic/crypto/tls/type.h"
 #include "quic/frame/if_frame.h"
-#include <quicx/quic/if_quic_stream.h>
 #include "quic/stream/if_frame_visitor.h"
 
 namespace quicx {
@@ -34,9 +34,9 @@ public:
 
     // try generate data to send
     enum class TrySendResult {
-        kSuccess = 0,        // generate data done
-        kFailed = 1,         // generate data failed (permanent error, remove from active list)
-        kBreak = 2,          // generate data need send alone (packet full)
+        kSuccess = 0,             // generate data done
+        kFailed = 1,              // generate data failed (permanent error, remove from active list)
+        kBreak = 2,               // generate data need send alone (packet full)
         kFlowControlBlocked = 3,  // blocked by flow control, keep in active list waiting for window update
     };
 

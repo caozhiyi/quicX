@@ -1,13 +1,13 @@
 #ifndef UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
 #define UTEST_HTTP3_STREAM_MOCK_QUIC_STREAM
 
+#include <quicx/quic/if_quic_bidirection_stream.h>
+#include <quicx/quic/if_quic_recv_stream.h>
+#include <quicx/quic/if_quic_send_stream.h>
 #include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
-#include <quicx/quic/if_quic_send_stream.h>
-#include <quicx/quic/if_quic_recv_stream.h>
-#include <quicx/quic/if_quic_bidirection_stream.h>
 
 namespace quicx {
 namespace common {
@@ -20,9 +20,15 @@ class MockQuicStream:
     public virtual IQuicSendStream,
     public virtual IQuicRecvStream {
 public:
-    MockQuicStream(): stream_id_(0), direction_(StreamDirection::kBidi) {}
-    explicit MockQuicStream(uint64_t stream_id): stream_id_(stream_id), direction_(StreamDirection::kBidi) {}
-    MockQuicStream(uint64_t stream_id, StreamDirection dir): stream_id_(stream_id), direction_(dir) {}
+    MockQuicStream():
+        stream_id_(0),
+        direction_(StreamDirection::kBidi) {}
+    explicit MockQuicStream(uint64_t stream_id):
+        stream_id_(stream_id),
+        direction_(StreamDirection::kBidi) {}
+    MockQuicStream(uint64_t stream_id, StreamDirection dir):
+        stream_id_(stream_id),
+        direction_(dir) {}
 
     void SetPeer(std::shared_ptr<MockQuicStream> peer) { peer_ = peer; }
 
@@ -97,7 +103,7 @@ private:
     std::vector<std::pair<std::shared_ptr<IBufferRead>, bool>> pending_inbound_data_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
-#endif  // MOCK_QUIC_RECV_STREAM_H 
+#endif  // MOCK_QUIC_RECV_STREAM_H

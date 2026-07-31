@@ -33,7 +33,7 @@ public:
      *                   (useful for testing).
      */
     explicit ConnectionRateMonitor(std::shared_ptr<common::IEventLoop> event_loop = nullptr);
-    
+
     ~ConnectionRateMonitor();
 
     /**
@@ -92,16 +92,16 @@ public:
 private:
     /** Counter for current time window (atomic for thread safety). */
     std::atomic<uint32_t> current_count_{0};
-    
+
     /** Rate from the last complete time window. */
     std::atomic<uint32_t> last_rate_{0};
-    
+
     /** Event loop for timer scheduling. */
     std::weak_ptr<common::IEventLoop> event_loop_;
-    
+
     /** Timer ID for the periodic rate calculation. */
     uint64_t timer_id_{0};
-    
+
     /** Flag to track if timer is active. */
     std::atomic<bool> timer_active_{false};
 };

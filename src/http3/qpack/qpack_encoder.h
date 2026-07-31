@@ -1,9 +1,9 @@
 #ifndef HTTP3_QPACK_QPACK_ENCODER
 #define HTTP3_QPACK_QPACK_ENCODER
 
+#include <functional>
 #include <memory>
 #include <string>
-#include <functional>
 #include <unordered_map>
 
 #include "common/buffer/if_buffer.h"
@@ -14,9 +14,13 @@ namespace http3 {
 
 class QpackEncoder {
 public:
-    QpackEncoder(): dynamic_table_(1024), max_table_capacity_(1024),
-        local_max_table_capacity_(1024), peer_max_table_capacity_(0),
-        peer_cap_known_(false), enable_dynamic_table_(false) {}
+    QpackEncoder():
+        dynamic_table_(1024),
+        max_table_capacity_(1024),
+        local_max_table_capacity_(1024),
+        peer_max_table_capacity_(0),
+        peer_cap_known_(false),
+        enable_dynamic_table_(false) {}
     ~QpackEncoder() {}
 
     // RFC 9204 §3.2.3: The encoder's actual table capacity MUST NOT exceed
@@ -43,10 +47,10 @@ public:
     uint32_t GetMaxTableCapacity() const { return max_table_capacity_; }
     uint32_t GetLocalMaxTableCapacity() const { return local_max_table_capacity_; }
     uint32_t GetPeerMaxTableCapacity() const { return peer_max_table_capacity_; }
-    
+
     // Get the current insert count of the dynamic table (monotonically increasing)
     uint64_t GetInsertCount() const { return dynamic_table_.GetInsertCount(); }
-    
+
     // Enable or disable dynamic table usage (default: enabled for better compression)
     void SetDynamicTableEnabled(bool enabled) { enable_dynamic_table_ = enabled; }
     bool IsDynamicTableEnabled() const { return enable_dynamic_table_; }
@@ -58,23 +62,27 @@ public:
     // blocks with a Required Insert Count of zero (no dependency on dynamic table).
     uint64_t GetLastDecodedRequiredInsertCount() const { return last_decoded_ric_; }
     // Set a callback used to send encoder instructions (Insert entries) on QPACK encoder stream
-    void SetInstructionSender(std::function<void(const std::vector<std::pair<std::string,std::string>>&)> cb) { instruction_sender_ = std::move(cb); }
+    void SetInstructionSender(std::function<void(const std::vector<std::pair<std::string, std::string>>&)> cb) {
+        instruction_sender_ = std::move(cb);
+    }
     // Optional: set a function to emit decoder stream frames (Section Ack, Stream Cancel, Insert Count Increment)
-    void SetDecoderFeedbackSender(std::function<void(uint8_t type, uint64_t value)> cb) { decoder_feedback_sender_ = std::move(cb); }
+    void SetDecoderFeedbackSender(std::function<void(uint8_t type, uint64_t value)> cb) {
+        decoder_feedback_sender_ = std::move(cb);
+    }
     // Emit a decoder feedback frame via bound sender
-    void EmitDecoderFeedback(uint8_t type, uint64_t value) { if (decoder_feedback_sender_) decoder_feedback_sender_(type, value); }
+    void EmitDecoderFeedback(uint8_t type, uint64_t value) {
+        if (decoder_feedback_sender_) decoder_feedback_sender_(type, value);
+    }
     // Decoder-stream side: parse QPACK encoder instructions (RFC 9204)
     bool DecodeEncoderInstructions(const std::shared_ptr<common::IBuffer> instr_buf);
     // Encoder-stream side: generate QPACK encoder instructions (RFC 9204)
-    bool EncodeEncoderInstructions(const std::vector<std::pair<std::string,std::string>>& inserts,
-                                   std::shared_ptr<common::IBuffer> instr_buf,
-                                   bool with_name_ref = false,
-                                   bool set_capacity = false,
-                                   uint32_t new_capacity = 0,
-                                   int32_t duplicate_index = -1);
+    bool EncodeEncoderInstructions(const std::vector<std::pair<std::string, std::string>>& inserts,
+        std::shared_ptr<common::IBuffer> instr_buf, bool with_name_ref = false, bool set_capacity = false,
+        uint32_t new_capacity = 0, int32_t duplicate_index = -1);
     // HEADERS prefix write/read per RFC 9204
     void WriteHeaderPrefix(std::shared_ptr<common::IBuffer> buffer, uint64_t required_insert_count, int64_t base);
-    bool ReadHeaderPrefix(const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, int64_t& base);
+    bool ReadHeaderPrefix(
+        const std::shared_ptr<common::IBuffer> buffer, uint64_t& required_insert_count, int64_t& base);
 
 private:
     void SetEnableDynamicTable(bool enable) { enable_dynamic_table_ = enable; }
@@ -85,8 +93,8 @@ private:
     // (HandleSettings() flips enable_dynamic_table_).
     void RecomputeMaxTableCapacity() {
         if (peer_cap_known_) {
-            max_table_capacity_ = local_max_table_capacity_ < peer_max_table_capacity_
-                ? local_max_table_capacity_ : peer_max_table_capacity_;
+            max_table_capacity_ = local_max_table_capacity_ < peer_max_table_capacity_ ? local_max_table_capacity_
+                                                                                       : peer_max_table_capacity_;
         } else {
             max_table_capacity_ = local_max_table_capacity_;
         }
@@ -118,13 +126,13 @@ private:
     bool peer_cap_known_;
     // Dynamic table enabled by default for better compression (RFC 9204)
     // Can be disabled via SetDynamicTableEnabled() if needed
-    bool enable_dynamic_table_ {true};
-    std::function<void(const std::vector<std::pair<std::string,std::string>>&)> instruction_sender_;
+    bool enable_dynamic_table_{true};
+    std::function<void(const std::vector<std::pair<std::string, std::string>>&)> instruction_sender_;
     std::function<void(uint8_t type, uint64_t value)> decoder_feedback_sender_;
-    uint64_t last_decoded_ric_ {0};
+    uint64_t last_decoded_ric_{0};
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

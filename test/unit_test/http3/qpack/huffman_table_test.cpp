@@ -1,12 +1,12 @@
-#include <gtest/gtest.h>
 #include "http3/qpack/huffman_table.h"
+#include <gtest/gtest.h>
 #include "http3/qpack/huffman_encoder.h"
 
 namespace quicx {
 namespace http3 {
 namespace {
 
-class HuffmanTableTest : public testing::Test {
+class HuffmanTableTest: public testing::Test {
 protected:
     void SetUp() override {
         table_ = std::make_unique<HuffmanTable>();
@@ -30,7 +30,7 @@ TEST_F(HuffmanTableTest, DecodeSingleCharacter) {
     std::string input = "a";
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
-    
+
     std::string decoded;
     EXPECT_TRUE(table_->Decode(encoded, decoded));
     EXPECT_EQ(decoded, "a");
@@ -41,7 +41,7 @@ TEST_F(HuffmanTableTest, DecodeMultipleCharacters) {
     std::string input = "abc";
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
-    
+
     std::string decoded;
     EXPECT_TRUE(table_->Decode(encoded, decoded));
     EXPECT_EQ(decoded, "abc");
@@ -52,7 +52,7 @@ TEST_F(HuffmanTableTest, DecodeWithPadding) {
     std::string input = "ab";
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
-    
+
     std::string decoded;
     EXPECT_TRUE(table_->Decode(encoded, decoded));
     EXPECT_EQ(decoded, "ab");
@@ -63,7 +63,7 @@ TEST_F(HuffmanTableTest, DecodeInvalidInput) {
     // Invalid Huffman code
     std::vector<uint8_t> encoded = {0xFF};  // 11111111
     std::string decoded;
-    
+
     EXPECT_FALSE(table_->Decode(encoded, decoded));
 }
 
@@ -72,7 +72,7 @@ TEST_F(HuffmanTableTest, DecodeInvalidPadding) {
     // Using 0's for padding (should be 1's)
     std::vector<uint8_t> encoded = {0x0C, 0x30};  // 00001100 00110000
     std::string decoded;
-    
+
     EXPECT_FALSE(table_->Decode(encoded, decoded));
 }
 
@@ -81,7 +81,7 @@ TEST_F(HuffmanTableTest, DecodeHttpHeaders) {
     std::string input = ":method";
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
-    
+
     std::string decoded;
     EXPECT_TRUE(table_->Decode(encoded, decoded));
     EXPECT_EQ(decoded, ":method");
@@ -95,7 +95,7 @@ TEST_F(HuffmanTableTest, DecodeLongString) {
     }
     std::vector<uint8_t> encoded = encoder_->Encode(input);
     EXPECT_FALSE(encoded.empty());
-    
+
     std::string decoded;
     EXPECT_TRUE(table_->Decode(encoded, decoded));
     EXPECT_EQ(decoded.length(), 1000);  // Each byte decodes to two 'a's
@@ -104,4 +104,4 @@ TEST_F(HuffmanTableTest, DecodeLongString) {
 
 }  // namespace
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

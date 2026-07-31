@@ -1,11 +1,11 @@
 #ifndef QUIC_UDP_IF_RECEIVER
 #define QUIC_UDP_IF_RECEIVER
 
-#include <string>
 #include <cstdint>
+#include <string>
 
-#include "quic/udp/net_packet.h"
 #include <quicx/common/if_event_loop.h>
+#include "quic/udp/net_packet.h"
 
 namespace quicx {
 namespace quic {

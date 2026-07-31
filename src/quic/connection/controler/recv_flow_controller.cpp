@@ -24,19 +24,18 @@ void RecvFlowController::UpdateConfig(const TransportParam& tp) {
     max_streams_bidi_ = tp.GetInitialMaxStreamsBidi();
     max_streams_uni_ = tp.GetInitialMaxStreamsUni();
 
-    LOG_DEBUG("RecvFlowController::UpdateConfig: max_data=%llu, max_streams_bidi=%llu, max_streams_uni=%llu",
-        max_data_, max_streams_bidi_, max_streams_uni_);
+    LOG_DEBUG("RecvFlowController::UpdateConfig: max_data=%llu, max_streams_bidi=%llu, max_streams_uni=%llu", max_data_,
+        max_streams_bidi_, max_streams_uni_);
 }
 
 bool RecvFlowController::OnDataReceived(uint32_t size) {
     received_bytes_ += size;
-    LOG_DEBUG("RecvFlowController::OnDataReceived: received %u bytes, total=%llu, limit=%llu", size,
-        received_bytes_, max_data_);
+    LOG_DEBUG("RecvFlowController::OnDataReceived: received %u bytes, total=%llu, limit=%llu", size, received_bytes_,
+        max_data_);
 
     // Check if peer exceeded our limit (protocol violation)
     if (received_bytes_ > max_data_) {
-        LOG_ERROR(
-            "RecvFlowController::OnDataReceived: peer exceeded MAX_DATA limit (received=%llu, limit=%llu)",
+        LOG_ERROR("RecvFlowController::OnDataReceived: peer exceeded MAX_DATA limit (received=%llu, limit=%llu)",
             received_bytes_, max_data_);
         return false;
     }
@@ -99,8 +98,7 @@ bool RecvFlowController::OnStreamCreated(uint64_t stream_id, std::shared_ptr<IFr
     // return false and triggering a STREAM_LIMIT_ERROR connection close
     // -- a violation of RFC 9000 §4.6 that only manifests under load.
     bool stream_is_server_initiated = (stream_id & 0x01) != 0;
-    bool stream_is_local =
-        (local_starter_ == StreamIDGenerator::kServer) == stream_is_server_initiated;
+    bool stream_is_local = (local_starter_ == StreamIDGenerator::kServer) == stream_is_server_initiated;
     if (stream_is_local) {
         // Locally-initiated: not subject to the MAX_STREAMS budget we
         // advertised to the peer. Nothing to validate, no MAX_STREAMS to

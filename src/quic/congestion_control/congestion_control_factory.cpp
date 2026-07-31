@@ -1,9 +1,9 @@
-#include "quic/congestion_control/reno_congestion_control.h"
-#include "quic/congestion_control/cubic_congestion_control.h"
+#include "quic/congestion_control/congestion_control_factory.h"
 #include "quic/congestion_control/bbr_v1_congestion_control.h"
 #include "quic/congestion_control/bbr_v2_congestion_control.h"
 #include "quic/congestion_control/bbr_v3_congestion_control.h"
-#include "quic/congestion_control/congestion_control_factory.h"
+#include "quic/congestion_control/cubic_congestion_control.h"
+#include "quic/congestion_control/reno_congestion_control.h"
 
 namespace quicx {
 namespace quic {
@@ -25,5 +25,5 @@ std::unique_ptr<ICongestionControl> CreateCongestionControl(CongestionControlTyp
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

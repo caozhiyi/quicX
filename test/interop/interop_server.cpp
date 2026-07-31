@@ -31,12 +31,12 @@
 #include <memory>
 #include <string>
 
-#include <quicx/quic/if_quic_server.h>
-#include <quicx/quic/if_quic_connection.h>
-#include <quicx/quic/if_quic_bidirection_stream.h>
-#include <quicx/http3/if_server.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
+#include <quicx/quic/if_quic_bidirection_stream.h>
+#include <quicx/quic/if_quic_connection.h>
+#include <quicx/quic/if_quic_server.h>
 
 using namespace quicx;
 
@@ -52,8 +52,9 @@ struct StreamContext {
 
 class HqInteropServer {
 public:
-    HqInteropServer(const std::string& root_dir, uint16_t port)
-        : root_dir_(root_dir), port_(port) {}
+    HqInteropServer(const std::string& root_dir, uint16_t port):
+        root_dir_(root_dir),
+        port_(port) {}
 
     bool Init(const std::string& cert_file, const std::string& key_file) {
         QuicTransportParams transport_params;
@@ -63,10 +64,8 @@ public:
         quic_ = IQuicServer::Create(transport_params);
 
         quic_->SetConnectionStateCallBack(
-            [this](std::shared_ptr<IQuicConnection> conn, ConnectionOperation op,
-                   uint32_t error, const std::string& reason) {
-                OnConnection(conn, op, error, reason);
-            });
+            [this](std::shared_ptr<IQuicConnection> conn, ConnectionOperation op, uint32_t error,
+                const std::string& reason) { OnConnection(conn, op, error, reason); });
 
         QuicServerConfig config;
         config.cert_file_ = cert_file;
@@ -81,12 +80,18 @@ public:
         if (const char* lvl = std::getenv("LOG_LEVEL")) {
             std::string s = lvl;
             for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            if (s == "debug") config.config_.log_level_ = LogLevel::kDebug;
-            else if (s == "info") config.config_.log_level_ = LogLevel::kInfo;
-            else if (s == "warn" || s == "warning") config.config_.log_level_ = LogLevel::kWarn;
-            else if (s == "error") config.config_.log_level_ = LogLevel::kError;
-            else if (s == "fatal") config.config_.log_level_ = LogLevel::kFatal;
-            else if (s == "null" || s == "off" || s == "none") config.config_.log_level_ = LogLevel::kNull;
+            if (s == "debug")
+                config.config_.log_level_ = LogLevel::kDebug;
+            else if (s == "info")
+                config.config_.log_level_ = LogLevel::kInfo;
+            else if (s == "warn" || s == "warning")
+                config.config_.log_level_ = LogLevel::kWarn;
+            else if (s == "error")
+                config.config_.log_level_ = LogLevel::kError;
+            else if (s == "fatal")
+                config.config_.log_level_ = LogLevel::kFatal;
+            else if (s == "null" || s == "off" || s == "none")
+                config.config_.log_level_ = LogLevel::kNull;
         }
         config.config_.log_path_ = "./logs";  // Current directory for logs
 
@@ -184,14 +189,14 @@ public:
     }
 
 private:
-    void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation op,
-                      uint32_t error, const std::string& reason) {
+    void OnConnection(
+        std::shared_ptr<IQuicConnection> conn, ConnectionOperation op, uint32_t error, const std::string& reason) {
         if (op == ConnectionOperation::kConnectionClose) {
             std::string addr;
             uint32_t port;
             conn->GetRemoteAddr(addr, port);
-            std::cout << "Connection closed from " << addr << ":" << port
-                      << " error=" << error << " reason=" << reason << std::endl;
+            std::cout << "Connection closed from " << addr << ":" << port << " error=" << error << " reason=" << reason
+                      << std::endl;
             return;
         }
 
@@ -202,9 +207,7 @@ private:
         std::cout << "New connection from " << addr << ":" << port << std::endl;
 
         conn->SetStreamStateCallBack(
-            [this](std::shared_ptr<IQuicStream> stream, uint32_t err) {
-                OnStream(stream, err);
-            });
+            [this](std::shared_ptr<IQuicStream> stream, uint32_t err) { OnStream(stream, err); });
     }
 
     void OnStream(std::shared_ptr<IQuicStream> stream, uint32_t error) {
@@ -223,14 +226,13 @@ private:
         ctx->stream = bidi;
         ctx->www_root = root_dir_;
 
-        bidi->SetStreamReadCallBack(
-            [ctx](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t err) {
-                OnStreamData(ctx, data, is_last, err);
-            });
+        bidi->SetStreamReadCallBack([ctx](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t err) {
+            OnStreamData(ctx, data, is_last, err);
+        });
     }
 
-    static void OnStreamData(std::shared_ptr<StreamContext> ctx,
-                             std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+    static void OnStreamData(
+        std::shared_ptr<StreamContext> ctx, std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
         if (error != 0) {
             std::cerr << "Stream read error: " << error << std::endl;
             return;
@@ -329,8 +331,9 @@ private:
 
 class H3InteropServer {
 public:
-    H3InteropServer(const std::string& root_dir, uint16_t port)
-        : root_dir_(root_dir), port_(port) {}
+    H3InteropServer(const std::string& root_dir, uint16_t port):
+        root_dir_(root_dir),
+        port_(port) {}
 
     bool Init(const std::string& cert_file, const std::string& key_file) {
         server_ = IServer::Create();
@@ -375,8 +378,8 @@ public:
 
         // Register wildcard GET handler to serve any file from www root
         std::string root = root_dir_;
-        server_->AddHandler(HttpMethod::kGet, "/*filepath",
-            [root](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
+        server_->AddHandler(
+            HttpMethod::kGet, "/*filepath", [root](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
                 std::string path = req->GetPath();
                 if (path.empty() || path[0] != '/') {
                     path = "/" + path;
@@ -407,8 +410,11 @@ public:
                 // Wrap FILE* in shared_ptr to safely track closure state
                 struct FileState {
                     FILE* fp;
-                    FileState(FILE* f) : fp(f) {}
-                    ~FileState() { if (fp) fclose(fp); }
+                    FileState(FILE* f):
+                        fp(f) {}
+                    ~FileState() {
+                        if (fp) fclose(fp);
+                    }
                 };
                 auto state = std::make_shared<FileState>(file);
                 resp->SetResponseBodyProvider([state](uint8_t* buf, size_t size) -> size_t {
@@ -484,7 +490,7 @@ int main(int argc, char* argv[]) {
     std::string cipher_suite;
     uint32_t quic_version = 0;
     bool strict_version = false;
-    
+
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--port" && i + 1 < argc) {
@@ -515,14 +521,14 @@ int main(int argc, char* argv[]) {
             quic_version = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 0));
         }
     }
-    
+
     // Fall back to environment variables if not provided via command line
     const char* port_env = std::getenv("PORT");
     const char* www_env = std::getenv("WWW");
     const char* cert_env = std::getenv("CERT_FILE");
     const char* key_env = std::getenv("KEY_FILE");
     const char* qlog_env = std::getenv("QLOGDIR");
-    
+
     if (port == 443 && port_env) {
         port = std::atoi(port_env);
     }
@@ -538,7 +544,7 @@ int main(int argc, char* argv[]) {
     if (qlog_dir.empty() && qlog_env) {
         qlog_dir = qlog_env;
     }
-    
+
     // Auto-detect HTTP/3 mode from TESTCASE environment variable
     const char* testcase_env = std::getenv("TESTCASE");
     if (!enable_http3 && testcase_env && strcmp(testcase_env, "http3") == 0) {

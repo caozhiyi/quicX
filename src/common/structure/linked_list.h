@@ -1,17 +1,20 @@
 #ifndef COMMON_STRUCTURE_LINKED_LIST
 #define COMMON_STRUCTURE_LINKED_LIST
 
-#include <memory>
 #include <cstdint>
+#include <memory>
 #include "common/structure/linked_list_solt.h"
 
 namespace quicx {
 namespace common {
 
-template<typename T>
+template <typename T>
 class LinkedList {
 public:
-    LinkedList(): size_(0), head_(nullptr), tail_(nullptr) {}
+    LinkedList():
+        size_(0),
+        head_(nullptr),
+        tail_(nullptr) {}
     ~LinkedList() {}
 
     uint32_t Size() { return size_; }
@@ -30,7 +33,7 @@ public:
         if (!v) {
             return;
         }
-    
+
         if (!tail_) {
             tail_ = v;
             head_ = v;
@@ -52,7 +55,7 @@ public:
         if (!head_) {
             tail_.reset();
         }
-        
+
         size_--;
         return ret;
     }
@@ -63,7 +66,7 @@ private:
     std::shared_ptr<T> tail_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

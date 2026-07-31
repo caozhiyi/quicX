@@ -1,5 +1,5 @@
-#include "http3/router/if_router_node.h"
 #include "http3/router/router_node_wildcard.h"
+#include "http3/router/if_router_node.h"
 
 namespace quicx {
 namespace http3 {

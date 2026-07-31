@@ -29,9 +29,9 @@
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/log/log.h"
 
-#include "quic/frame/crypto_frame.h"
-#include "quic/crypto/type.h"
 #include "quic/common/version.h"
+#include "quic/crypto/type.h"
+#include "quic/frame/crypto_frame.h"
 #include "quic/packet/init_packet.h"
 #include "quic/packet/packet_decode.h"
 
@@ -40,8 +40,7 @@
 using namespace quicx;
 
 static std::shared_ptr<common::SingleBlockBuffer> MakeBuf(size_t cap) {
-    return std::make_shared<common::SingleBlockBuffer>(
-        std::make_shared<common::StandaloneBufferChunk>(cap));
+    return std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(cap));
 }
 
 int main(int argc, char** argv) {
@@ -50,10 +49,14 @@ int main(int argc, char** argv) {
     const char* out = "/tmp/decode_stacks.raw";
     bool mute_log = false;
     for (int i = 1; i < argc; ++i) {
-        if (!std::strcmp(argv[i], "--hz") && i + 1 < argc) hz = std::atoi(argv[++i]);
-        else if (!std::strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = std::atoi(argv[++i]);
-        else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
-        else if (!std::strcmp(argv[i], "--mute-log")) mute_log = true;
+        if (!std::strcmp(argv[i], "--hz") && i + 1 < argc)
+            hz = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--seconds") && i + 1 < argc)
+            seconds = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--out") && i + 1 < argc)
+            out = argv[++i];
+        else if (!std::strcmp(argv[i], "--mute-log"))
+            mute_log = true;
     }
     if (mute_log) {
         LOG_SET_LEVEL(common::LogLevel::kNull);
@@ -81,7 +84,10 @@ int main(int argc, char** argv) {
     tx.SetPayload(payload);
 
     auto encoded = MakeBuf(kPayloadBytes + 256);
-    if (!tx.Encode(encoded)) { std::fprintf(stderr, "encode failed\n"); return 1; }
+    if (!tx.Encode(encoded)) {
+        std::fprintf(stderr, "encode failed\n");
+        return 1;
+    }
 
     std::vector<uint8_t> wire(encoded->GetDataLength());
     encoded->ReadNotMovePt(wire.data(), static_cast<uint32_t>(wire.size()));
@@ -115,16 +121,15 @@ int main(int argc, char** argv) {
             auto in = MakeBuf(wire.size() + 16);
             in->Write(wire.data(), static_cast<uint32_t>(wire.size()));
             std::vector<std::shared_ptr<quic::IPacket>> packets;
-            (void) quic::DecodePackets(in, packets);
+            (void)quic::DecodePackets(in, packets);
             ++iters;
         }
     }
     prof.Stop();
     auto t1 = std::chrono::steady_clock::now();
     double elapsed_s = std::chrono::duration<double>(t1 - t0).count();
-    std::fprintf(stderr, "decoded %lu packets in %.3f s  => %.1f ns/call  (samples=%u)\n",
-                 (unsigned long)iters, elapsed_s, elapsed_s * 1e9 / iters,
-                 prof.SampleCount());
+    std::fprintf(stderr, "decoded %lu packets in %.3f s  => %.1f ns/call  (samples=%u)\n", (unsigned long)iters,
+        elapsed_s, elapsed_s * 1e9 / iters, prof.SampleCount());
 
     prof.Dump();
     return 0;

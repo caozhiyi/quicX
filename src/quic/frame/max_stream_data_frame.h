@@ -7,8 +7,7 @@
 namespace quicx {
 namespace quic {
 
-class MaxStreamDataFrame:
-    public IStreamFrame {
+class MaxStreamDataFrame: public IStreamFrame {
 public:
     MaxStreamDataFrame();
     ~MaxStreamDataFrame();
@@ -24,7 +23,7 @@ private:
     uint64_t maximum_data_;  // the maximum amount of data that can be sent on the entire connection.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

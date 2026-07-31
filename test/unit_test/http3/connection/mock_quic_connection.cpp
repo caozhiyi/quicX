@@ -1,5 +1,5 @@
-#include "test/unit_test/http3/stream/mock_quic_stream.h"
 #include "test/unit_test/http3/connection/mock_quic_connection.h"
+#include "test/unit_test/http3/stream/mock_quic_stream.h"
 
 namespace quicx {
 namespace quic {
@@ -100,5 +100,5 @@ void MockQuicConnection::RemoveTimer(uint64_t timer_id) {
     (void)timer_id;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

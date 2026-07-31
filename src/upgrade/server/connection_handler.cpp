@@ -1,11 +1,10 @@
-#include "common/log/log.h"
-#include "common/network/io_handle.h"
-#include "common/network/if_event_driver.h"
 #include "upgrade/server/connection_handler.h"
+#include "common/log/log.h"
+#include "common/network/if_event_driver.h"
+#include "common/network/io_handle.h"
 
 namespace quicx {
 namespace upgrade {
-
 
 void ConnectionHandler::OnRead(uint32_t fd) {
     auto loop = event_loop_.lock();
@@ -49,9 +48,6 @@ void ConnectionHandler::OnRead(uint32_t fd) {
         // Notify smart handler about the new connection so it can allocate
         // per-connection state (SSL object, ConnectionContext, timer).
         handler_->OnConnect(client_fd);
-
-        LOG_INFO("[TLSDBG] accept ok: client_fd=%lu from %s:%d (registered ET_READ, OnConnect done)",
-                 (unsigned long)client_fd, client_addr.GetIp().c_str(), client_addr.GetPort());
     }
 }
 
@@ -74,6 +70,5 @@ void ConnectionHandler::OnClose(uint32_t fd) {
     }
 }
 
-
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx

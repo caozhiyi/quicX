@@ -39,10 +39,8 @@ public:
      * @param rate_threshold Connections per time window that mark IP as suspicious.
      * @param window_seconds Time window for rate calculation (seconds).
      */
-    IPRateLimiter(uint32_t max_cache_size = 10000,
-                  uint32_t rate_threshold = 100,
-                  uint32_t window_seconds = 60);
-    
+    IPRateLimiter(uint32_t max_cache_size = 10000, uint32_t rate_threshold = 100, uint32_t window_seconds = 60);
+
     ~IPRateLimiter() = default;
 
     /**
@@ -123,9 +121,11 @@ private:
         std::string ip;
         uint32_t count;
         std::chrono::steady_clock::time_point window_start;
-        
-        IPEntry(const std::string& ip_addr)
-            : ip(ip_addr), count(0), window_start(std::chrono::steady_clock::now()) {}
+
+        IPEntry(const std::string& ip_addr):
+            ip(ip_addr),
+            count(0),
+            window_start(std::chrono::steady_clock::now()) {}
     };
 
     /**
@@ -159,19 +159,19 @@ private:
 private:
     /** Maximum cache size (LRU eviction threshold). */
     uint32_t max_cache_size_;
-    
+
     /** Rate threshold for marking IP as suspicious. */
     uint32_t rate_threshold_;
-    
+
     /** Time window for rate calculation. */
     std::chrono::seconds window_duration_;
-    
+
     /** LRU list of IP entries (front = most recent). */
     std::list<IPEntry> lru_list_;
-    
+
     /** Map from IP to iterator in LRU list for O(1) lookup. */
     std::unordered_map<std::string, std::list<IPEntry>::iterator> ip_map_;
-    
+
     /** Mutex for thread safety. */
     mutable std::mutex mutex_;
 };

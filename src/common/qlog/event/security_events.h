@@ -17,10 +17,10 @@ namespace common {
  */
 class KeyUpdatedData: public EventData {
 public:
-    std::string key_type;            // "initial", "handshake", "1rtt", "0rtt"
-    std::string trigger = "tls";     // "tls", "key_update", "retry"
-    bool is_write = false;           // true=write/send key, false=read/recv key
-    uint32_t generation = 0;         // Key generation (incremented on key update)
+    std::string key_type;         // "initial", "handshake", "1rtt", "0rtt"
+    std::string trigger = "tls";  // "tls", "key_update", "retry"
+    bool is_write = false;        // true=write/send key, false=read/recv key
+    uint32_t generation = 0;      // Key generation (incremented on key update)
 
     std::string ToJson() const override {
         std::ostringstream oss;
@@ -41,8 +41,8 @@ public:
  */
 class KeyDiscardedData: public EventData {
 public:
-    std::string key_type;            // "initial", "handshake", "0rtt"
-    std::string trigger = "tls";     // "tls", "handshake_done"
+    std::string key_type;         // "initial", "handshake", "0rtt"
+    std::string trigger = "tls";  // "tls", "handshake_done"
 
     std::string ToJson() const override {
         std::ostringstream oss;

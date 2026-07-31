@@ -1,9 +1,9 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_CONNECTION
 #define QUIC_INCLUDE_IF_QUIC_CONNECTION
 
+#include <quicx/quic/type.h>
 #include <memory>
 #include <string>
-#include <quicx/quic/type.h>
 
 namespace quicx {
 namespace common {
@@ -112,7 +112,7 @@ public:
      *
      * This is a convenience wrapper for interop tests that delegates to
      * InitiateMigrationTo() with the current local IP and a system-chosen port.
-     * 
+     *
      * The migration will:
      * - Keep the same local IP address
      * - Bind to a new ephemeral port (system-chosen)
@@ -120,7 +120,7 @@ public:
      * - Rotate DCID and perform path validation
      *
      * @return true if migration was successfully initiated, false otherwise.
-     * 
+     *
      * @note For production use, prefer InitiateMigrationTo() which provides
      *       detailed error codes and explicit address control.
      */

@@ -49,20 +49,22 @@
 namespace quicx {
 namespace perf {
 
-static constexpr int      kSampMaxDepth    = 48;
-static constexpr uint32_t kSampRingEntries = 1u << 17;   // 131072 samples ≈ 130 s @ 1 kHz
+static constexpr int kSampMaxDepth = 48;
+static constexpr uint32_t kSampRingEntries = 1u << 17;  // 131072 samples ≈ 130 s @ 1 kHz
 
 struct Sample {
     uint8_t depth;
-    void*   frames[kSampMaxDepth];
+    void* frames[kSampMaxDepth];
 };
 
 #if defined(_WIN32)
 
 class SamplingProfiler {
 public:
-    SamplingProfiler(const char* out_path, int hz = 997)
-        : out_path_(out_path), hz_(hz > 0 ? hz : 100), ring_(nullptr) {}
+    SamplingProfiler(const char* out_path, int hz = 997):
+        out_path_(out_path),
+        hz_(hz > 0 ? hz : 100),
+        ring_(nullptr) {}
     ~SamplingProfiler() {}
 
     void Start() {}
@@ -71,9 +73,9 @@ public:
     uint32_t SampleCount() const { return 0; }
 
 private:
-    const char*  out_path_;
-    int          hz_;
-    Sample*      ring_ = nullptr;
+    const char* out_path_;
+    int hz_;
+    Sample* ring_ = nullptr;
     std::atomic<uint32_t> write_pos_{0};
 };
 
@@ -81,12 +83,17 @@ private:
 
 class SamplingProfiler {
 public:
-    SamplingProfiler(const char* out_path, int hz = 997)
-        : out_path_(out_path), hz_(hz > 0 ? hz : 100),
-          ring_(new Sample[kSampRingEntries]) {
+    SamplingProfiler(const char* out_path, int hz = 997):
+        out_path_(out_path),
+        hz_(hz > 0 ? hz : 100),
+        ring_(new Sample[kSampRingEntries]) {
         s_instance_ = this;
     }
-    ~SamplingProfiler() { Stop(); s_instance_ = nullptr; delete[] ring_; }
+    ~SamplingProfiler() {
+        Stop();
+        s_instance_ = nullptr;
+        delete[] ring_;
+    }
 
     void Start() {
         if (running_) return;
@@ -99,9 +106,9 @@ public:
         sigaction(SIGPROF, &sa, &old_sa_);
 
         struct itimerval it{};
-        it.it_interval.tv_sec  = 0;
+        it.it_interval.tv_sec = 0;
         it.it_interval.tv_usec = 1000000 / hz_;
-        it.it_value            = it.it_interval;
+        it.it_value = it.it_interval;
         setitimer(ITIMER_PROF, &it, nullptr);
         running_ = true;
     }
@@ -119,8 +126,7 @@ public:
     bool Dump() const {
         FILE* fp = std::fopen(out_path_, "w");
         if (!fp) {
-            std::fprintf(stderr, "SamplingProfiler: cannot open %s: %s\n",
-                         out_path_, std::strerror(errno));
+            std::fprintf(stderr, "SamplingProfiler: cannot open %s: %s\n", out_path_, std::strerror(errno));
             return false;
         }
         uint32_t n = write_pos_.load(std::memory_order_relaxed);
@@ -135,15 +141,11 @@ public:
             std::fputc('\n', fp);
         }
         std::fclose(fp);
-        std::fprintf(stderr,
-            "SamplingProfiler: wrote %u samples (of %u max) to %s\n",
-            n, kSampRingEntries, out_path_);
+        std::fprintf(stderr, "SamplingProfiler: wrote %u samples (of %u max) to %s\n", n, kSampRingEntries, out_path_);
         return true;
     }
 
-    uint32_t SampleCount() const {
-        return write_pos_.load(std::memory_order_relaxed);
-    }
+    uint32_t SampleCount() const { return write_pos_.load(std::memory_order_relaxed); }
 
 private:
     static void Handler(int /*sig*/, siginfo_t* /*info*/, void* /*ucontext*/) {
@@ -156,9 +158,9 @@ private:
         s.depth = static_cast<uint8_t>(d < 0 ? 0 : d);
     }
 
-    const char*  out_path_;
-    int          hz_;
-    bool         running_ = false;
+    const char* out_path_;
+    int hz_;
+    bool running_ = false;
     struct sigaction old_sa_{};
 
     // Fixed-size, no allocation inside handler.

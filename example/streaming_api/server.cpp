@@ -8,15 +8,15 @@
  * - Handling large file uploads/downloads without buffering entire content
  */
 
+#include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
+#include <quicx/http3/if_server.h>
 #include <signal.h>
 #include <chrono>
 #include <cstdio>
 #include <iostream>
 #include <memory>
-#include <quicx/http3/if_async_handler.h>
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
-#include <quicx/http3/if_server.h>
 
 using namespace quicx;
 

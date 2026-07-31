@@ -1,26 +1,23 @@
 #ifndef COMMON_NETWORK_IF_EVENT_DRIVER
 #define COMMON_NETWORK_IF_EVENT_DRIVER
 
+#include <cstdint>
 #include <memory>
 #include <vector>
-#include <cstdint>
 
 namespace quicx {
 namespace common {
 
 // Event types
-enum EventType: int32_t {
-    ET_READ  = 0x01,
-    ET_WRITE = 0x02,
-    ET_ERROR = 0x04,
-    ET_CLOSE = 0x08
-};
+enum EventType : int32_t { ET_READ = 0x01, ET_WRITE = 0x02, ET_ERROR = 0x04, ET_CLOSE = 0x08 };
 
 // Event structure
 struct Event {
     int32_t fd = 0;
     EventType type = EventType::ET_READ;
-    Event(int32_t socket, EventType type): fd(socket), type(type) {}
+    Event(int32_t socket, EventType type):
+        fd(socket),
+        type(type) {}
 };
 
 // Event driver interface
@@ -54,7 +51,7 @@ public:
     static std::unique_ptr<IEventDriver> Create();
 };
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
-#endif // COMMON_NETWORK_IF_EVENT_DRIVER 
+#endif  // COMMON_NETWORK_IF_EVENT_DRIVER

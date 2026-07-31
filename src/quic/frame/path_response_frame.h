@@ -6,8 +6,7 @@
 namespace quicx {
 namespace quic {
 
-class PathResponseFrame:
-    public IFrame {
+class PathResponseFrame: public IFrame {
 public:
     PathResponseFrame();
     ~PathResponseFrame();
@@ -23,7 +22,7 @@ private:
     uint8_t data_[kPathDataLength];  // 8-byte field contains arbitrary data.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

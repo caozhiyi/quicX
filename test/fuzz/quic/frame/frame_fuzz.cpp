@@ -1,32 +1,35 @@
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <unordered_map>
 
-#include "quic/frame/if_frame.h"
-#include "quic/frame/ack_frame.h"
-#include "quic/frame/ping_frame.h"
-#include "quic/frame/stream_frame.h"
-#include "quic/frame/crypto_frame.h"
-#include "quic/frame/padding_frame.h"
-#include "quic/frame/max_data_frame.h"
-#include "quic/frame/new_token_frame.h"
-#include "quic/frame/max_streams_frame.h"
-#include "quic/frame/reset_stream_frame.h"
-#include "quic/frame/stop_sending_frame.h"
-#include "quic/frame/data_blocked_frame.h"
-#include "quic/frame/path_response_frame.h"
-#include "quic/frame/handshake_done_frame.h"
-#include "quic/frame/path_challenge_frame.h"
-#include "quic/frame/streams_blocked_frame.h"
-#include "quic/frame/max_stream_data_frame.h"
-#include "quic/frame/connection_close_frame.h"
 #include "common/buffer/single_block_buffer.h"
-#include "quic/frame/new_connection_id_frame.h"
-#include "quic/frame/stream_data_blocked_frame.h"
-#include "quic/frame/retire_connection_id_frame.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/ack_frame.h"
+#include "quic/frame/connection_close_frame.h"
+#include "quic/frame/crypto_frame.h"
+#include "quic/frame/data_blocked_frame.h"
+#include "quic/frame/handshake_done_frame.h"
+#include "quic/frame/if_frame.h"
+#include "quic/frame/max_data_frame.h"
+#include "quic/frame/max_stream_data_frame.h"
+#include "quic/frame/max_streams_frame.h"
+#include "quic/frame/new_connection_id_frame.h"
+#include "quic/frame/new_token_frame.h"
+#include "quic/frame/padding_frame.h"
+#include "quic/frame/path_challenge_frame.h"
+#include "quic/frame/path_response_frame.h"
+#include "quic/frame/ping_frame.h"
+#include "quic/frame/reset_stream_frame.h"
+#include "quic/frame/retire_connection_id_frame.h"
+#include "quic/frame/stop_sending_frame.h"
+#include "quic/frame/stream_data_blocked_frame.h"
+#include "quic/frame/stream_frame.h"
+#include "quic/frame/streams_blocked_frame.h"
 
+// clang-format off
+// Hand-aligned frame-type -> factory map. Columns are kept aligned so adding a
+// new frame type is a trivial copy-paste of an aligned row; do not reformat.
 static const std::unordered_map<uint16_t, std::function<std::shared_ptr<quicx::quic::IFrame>(uint16_t)>> kFrameCreatorMap = {
     {quicx::quic::FrameType::kPadding,                     [](uint16_t type) -> std::shared_ptr<quicx::quic::IFrame> { return std::make_shared<quicx::quic::PaddingFrame>(); }},
     {quicx::quic::FrameType::kPing,                        [](uint16_t type) -> std::shared_ptr<quicx::quic::IFrame> { return std::make_shared<quicx::quic::PingFrame>(); }},
@@ -54,6 +57,7 @@ static const std::unordered_map<uint16_t, std::function<std::shared_ptr<quicx::q
     {quicx::quic::FrameType::kConnectionCloseApp,          [](uint16_t type) -> std::shared_ptr<quicx::quic::IFrame> { return std::make_shared<quicx::quic::ConnectionCloseFrame>(type); }},
     {quicx::quic::FrameType::kHandshakeDone,               [](uint16_t type) -> std::shared_ptr<quicx::quic::IFrame> { return std::make_shared<quicx::quic::HandshakeDoneFrame>(); }},
 };
+// clang-format on
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (data == nullptr || size == 0) {
@@ -85,5 +89,3 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
     return 0;
 }
-
-

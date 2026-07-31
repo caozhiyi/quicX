@@ -98,7 +98,7 @@ TEST(QlogConfigTest, CommonFieldsDefaults) {
     CommonFields fields;
 
     // Default protocol_types is the standardized identifier pair per
-    // qlog draft-02.
+    // qlog draft-03.
     ASSERT_EQ(2u, fields.protocol_types.size());
     EXPECT_EQ("QUIC", fields.protocol_types[0]);
     EXPECT_EQ("HTTP3", fields.protocol_types[1]);

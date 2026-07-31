@@ -3,12 +3,12 @@
 
 #include "gtest/gtest.h"
 
+#include <quicx/quic/type.h>
 #include "quic/connection/transport_param.h"
 #include "quic/frame/data_blocked_frame.h"
 #include "quic/frame/max_data_frame.h"
 #include "quic/frame/max_streams_frame.h"
 #include "quic/frame/streams_blocked_frame.h"
-#include <quicx/quic/type.h>
 
 namespace quicx {
 namespace quic {
@@ -425,16 +425,14 @@ TEST_F(RecvFlowControllerTest, OnStreamCreatedSkipsLocallyInitiatedStreams) {
     for (uint64_t i = 0; i < 50; ++i) {
         uint64_t stream_id = i * 4;  // 0, 4, 8, ..., 196
         EXPECT_TRUE(controller_->OnStreamCreated(stream_id, max_streams_frame))
-            << "locally-initiated bidi stream " << stream_id
-            << " was charged against MAX_STREAMS_BIDI";
+            << "locally-initiated bidi stream " << stream_id << " was charged against MAX_STREAMS_BIDI";
     }
 
     // Client-initiated uni IDs: 2, 6, 10, ... (bit 0 = 0, bit 1 = 1).
     for (uint64_t i = 0; i < 50; ++i) {
         uint64_t stream_id = 2 + i * 4;
         EXPECT_TRUE(controller_->OnStreamCreated(stream_id, max_streams_frame))
-            << "locally-initiated uni stream " << stream_id
-            << " was charged against MAX_STREAMS_UNI";
+            << "locally-initiated uni stream " << stream_id << " was charged against MAX_STREAMS_UNI";
     }
 
     // The advertised limits must not have moved -- a self-initiated

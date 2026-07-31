@@ -28,7 +28,7 @@ protected:
         // Probe for a kernel-confirmed free UDP port (see test_server_helper.h).
         port_ = quicx::test::ProbeFreeUdpPort(next_port_);
         ASSERT_NE(port_, 0u) << "failed to find a free UDP port for test server";
-        
+
         server_ = quicx::IServer::Create();
 
         quicx::Http3ServerConfig server_config;
@@ -83,19 +83,19 @@ protected:
             client_->Close();
             client_.reset();
         }
-        
+
         // Stop server and wait for all threads to complete
         if (server_) {
             server_->Stop();
             server_->Join();  // Wait for internal worker threads
         }
-        
+
         if (server_thread_.joinable()) {
             server_thread_.join();  // Wait for Start() to return
         }
-        
+
         server_.reset();
-        
+
         // Small delay to ensure port is fully released
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }

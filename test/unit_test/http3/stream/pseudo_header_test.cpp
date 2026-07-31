@@ -1,12 +1,12 @@
+#include "http3/stream/pseudo_header.h"
 #include <gtest/gtest.h>
 #include "http3/http/request.h"
 #include "http3/http/response.h"
-#include "http3/stream/pseudo_header.h"
 
 namespace quicx {
 namespace http3 {
 
-class PseudoHeaderTest : public testing::Test {
+class PseudoHeaderTest: public testing::Test {
 protected:
     void SetUp() override {
         request_ = std::make_shared<Request>();
@@ -38,7 +38,7 @@ TEST_F(PseudoHeaderTest, EncodeRequestPOST) {
     request_->SetPath("/api/data");
     request_->SetScheme("http");
     request_->SetAuthority("api.example.com");
-    
+
     PseudoHeader::Instance().EncodeRequest(request_);
 
     auto headers = request_->GetHeaders();
@@ -51,11 +51,7 @@ TEST_F(PseudoHeaderTest, EncodeRequestPOST) {
 // Test Request Decoding
 TEST_F(PseudoHeaderTest, DecodeRequest) {
     std::unordered_map<std::string, std::string> headers = {
-        {":method", "GET"},
-        {":path", "/test"},
-        {":scheme", "https"},
-        {":authority", "example.com"}
-    };
+        {":method", "GET"}, {":path", "/test"}, {":scheme", "https"}, {":authority", "example.com"}};
     request_->SetHeaders(headers);
 
     PseudoHeader::Instance().DecodeRequest(request_);
@@ -69,7 +65,7 @@ TEST_F(PseudoHeaderTest, DecodeRequest) {
 // Test Response Encoding
 TEST_F(PseudoHeaderTest, EncodeResponse) {
     response_->SetStatusCode(200);
-    
+
     PseudoHeader::Instance().EncodeResponse(response_);
 
     auto headers = response_->GetHeaders();
@@ -78,7 +74,7 @@ TEST_F(PseudoHeaderTest, EncodeResponse) {
 
 TEST_F(PseudoHeaderTest, EncodeResponseError) {
     response_->SetStatusCode(404);
-    
+
     PseudoHeader::Instance().EncodeResponse(response_);
 
     auto headers = response_->GetHeaders();
@@ -87,16 +83,13 @@ TEST_F(PseudoHeaderTest, EncodeResponseError) {
 
 // Test Response Decoding
 TEST_F(PseudoHeaderTest, DecodeResponse) {
-    std::unordered_map<std::string, std::string> headers = {
-        {":status", "200"}
-    };
+    std::unordered_map<std::string, std::string> headers = {{":status", "200"}};
     response_->SetHeaders(headers);
 
     PseudoHeader::Instance().DecodeResponse(response_);
 
     EXPECT_EQ(response_->GetStatusCode(), 200);
 }
-
 
 TEST_F(PseudoHeaderTest, RequestWithCustomHeaders) {
     request_->SetMethod(HttpMethod::kPost);
@@ -142,7 +135,7 @@ TEST_F(PseudoHeaderTest, RequestEncodeDecodeCombined) {
 
     // Encode the request
     PseudoHeader::Instance().EncodeRequest(request_);
-    
+
     // Create a new request for decoding
     auto decoded_request = std::make_shared<Request>();
     decoded_request->SetHeaders(request_->GetHeaders());
@@ -168,7 +161,7 @@ TEST_F(PseudoHeaderTest, ResponseEncodeDecodeCombined) {
 
     // Encode the response
     PseudoHeader::Instance().EncodeResponse(response_);
-    
+
     // Create a new response for decoding
     auto decoded_response = std::make_shared<Response>();
     decoded_response->SetHeaders(response_->GetHeaders());
@@ -195,7 +188,7 @@ TEST_F(PseudoHeaderTest, RequestComplexPathEncodeDecodeCombined) {
 
     // Encode the request
     PseudoHeader::Instance().EncodeRequest(request_);
-    
+
     // Create a new request for decoding
     auto decoded_request = std::make_shared<Request>();
     decoded_request->SetHeaders(request_->GetHeaders());
@@ -224,7 +217,7 @@ TEST_F(PseudoHeaderTest, ResponseMultipleHeadersEncodeDecodeCombined) {
 
     // Encode the response
     PseudoHeader::Instance().EncodeResponse(response_);
-    
+
     // Create a new response for decoding
     auto decoded_response = std::make_shared<Response>();
     decoded_response->SetHeaders(response_->GetHeaders());
@@ -240,4 +233,4 @@ TEST_F(PseudoHeaderTest, ResponseMultipleHeadersEncodeDecodeCombined) {
 }
 
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

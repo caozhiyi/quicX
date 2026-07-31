@@ -121,10 +121,8 @@ TEST(SendControlTest, NonAckElicitingPacketsAreNotTracked) {
     SendControl send_control(timer);
 
     bool callback_invoked = false;
-    send_control.SetStreamDataAckCallback(
-        [&callback_invoked](uint64_t /*stream_id*/, uint64_t /*offset_start*/, uint64_t /*length*/, bool /*has_fin*/) {
-            callback_invoked = true;
-        });
+    send_control.SetStreamDataAckCallback([&callback_invoked](uint64_t /*stream_id*/, uint64_t /*offset_start*/,
+                                              uint64_t /*length*/, bool /*has_fin*/) { callback_invoked = true; });
 
     // Padding-only packet should not be considered ack-eliciting
     auto packet = MakePacket(1, FrameTypeBit::kPaddingBit);
@@ -198,13 +196,11 @@ TEST(SendControlG2Test, S1_FullSendThenFullAckClearsInFlight) {
     }
 
     EXPECT_EQ(sc.GetCcBytesInFlightForTest(), kPktCount * kMss)
-        << "After sending " << kPktCount
-        << " ack-eliciting packets, in_flight must be exactly N*mss.";
+        << "After sending " << kPktCount << " ack-eliciting packets, in_flight must be exactly N*mss.";
 
     AckContiguous(sc, /*low*/ 1, /*high*/ kPktCount, /*now*/ 300);
 
-    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 0u)
-        << "After ACKing every sent packet, in_flight must drain to 0.";
+    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 0u) << "After ACKing every sent packet, in_flight must drain to 0.";
 }
 
 // G2-S2 [BUG FIX VERIFICATION]: Selective ACK gap-PN calculation.
@@ -253,21 +249,19 @@ TEST(SendControlG2Test, S2_RfcCompliantSelectiveAckPnsByValue) {
     auto ack = std::make_shared<AckFrame>();
     ack->SetLargestAck(3);
     ack->SetAckDelay(0);
-    ack->SetFirstAckRange(0);                   // pn=3
-    ack->AddAckRange(/*gap=*/0, /*range=*/0);   // RFC: pn=1
+    ack->SetFirstAckRange(0);                  // pn=3
+    ack->AddAckRange(/*gap=*/0, /*range=*/0);  // RFC: pn=1
     sc.OnPacketAck(200, PacketNumberSpace::kApplicationNumberSpace, ack);
 
     // RFC-compliant outcome: pn=3 (offset 300) and pn=1 (offset 100) ACKed.
     ASSERT_EQ(acked_stream_offsets.size(), 2u);
     EXPECT_EQ(acked_stream_offsets[0], 300u) << "pn=3 ACKed first (largest_ack)";
-    EXPECT_EQ(acked_stream_offsets[1], 100u)
-        << "pn=1 must be ACKed by addrange{gap=0,len=0}. If got 200, the "
-           "G2 off-by-one regression is back: send_control.cpp ~line 307 "
-           "must subtract (gap+2), not (gap+1).";
+    EXPECT_EQ(acked_stream_offsets[1], 100u) << "pn=1 must be ACKed by addrange{gap=0,len=0}. If got 200, the "
+                                                "G2 off-by-one regression is back: send_control.cpp ~line 307 "
+                                                "must subtract (gap+2), not (gap+1).";
 
     // pn=2 is in the gap and must remain in flight.
-    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), kMss)
-        << "Only pn=2 should remain in flight after the selective ACK.";
+    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), kMss) << "Only pn=2 should remain in flight after the selective ACK.";
 }
 
 // G2-S3 [SUSPECTED BUG]: DetectLostPackets path then retransmit then full ACK.
@@ -306,27 +300,24 @@ TEST(SendControlG2Test, S3_DetectLossPathThenRetransmitDoesNotLeakInFlight) {
 
     AckContiguous(sc, 4, 4, 200);  // ACK pn=4 -> declares pn=1 lost
 
-    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 2u * kMss)
-        << "After ACK(4) + loss(1): outstanding {2,3} = 2*mss.";
+    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 2u * kMss) << "After ACK(4) + loss(1): outstanding {2,3} = 2*mss.";
 
     auto pkt5_retx = MakePacket(5, FrameTypeBit::kStreamBit);
     sc.OnPacketSend(220, pkt5_retx, kMss);
 
-    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 3u * kMss)
-        << "After retransmit pn=5: outstanding {2,3,5} = 3*mss.";
+    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 3u * kMss) << "After retransmit pn=5: outstanding {2,3,5} = 3*mss.";
 
     auto ack = std::make_shared<AckFrame>();
     ack->SetLargestAck(5);
     ack->SetAckDelay(0);
-    ack->SetFirstAckRange(0);   // pn=5
+    ack->SetFirstAckRange(0);                  // pn=5
     ack->AddAckRange(/*gap=*/0, /*range=*/1);  // skip pn=4 (already ACKed), cover 3,2
     sc.OnPacketAck(300, PacketNumberSpace::kApplicationNumberSpace, ack);
 
     EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 0u)
         << "All packets accounted for; in_flight must be 0. "
            "If non-zero, send_control LEAKED in_flight by "
-        << sc.GetCcBytesInFlightForTest()
-        << " bytes via the DetectLost path -- this is the G2 fingerprint.";
+        << sc.GetCcBytesInFlightForTest() << " bytes via the DetectLost path -- this is the G2 fingerprint.";
 }
 
 // G2-S4 [SUSPECTED BUG]: Spurious ACK for already-erased pn.
@@ -373,8 +364,7 @@ TEST(SendControlG2Test, S4_SpuriousAckForErasedLostPnIsNoOp) {
     ack->AddAckRange(/*gap=*/0, /*range=*/1);  // 3,2
     sc.OnPacketAck(300, PacketNumberSpace::kApplicationNumberSpace, ack);
 
-    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 0u)
-        << "Final in_flight must be 0.";
+    EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 0u) << "Final in_flight must be 0.";
 }
 
 }  // namespace g2

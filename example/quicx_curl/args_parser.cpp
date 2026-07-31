@@ -1,15 +1,15 @@
+#include "args_parser.h"
 #include <cstring>
 #include <iostream>
-#include "args_parser.h"
 
 bool ArgsParser::Parse(int argc, char* argv[], CurlArgs& args) {
     if (argc < 2) {
         return false;
     }
-    
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        
+
         if (arg[0] != '-') {
             // Positional argument (URL)
             if (args.url.empty()) {
@@ -17,7 +17,7 @@ bool ArgsParser::Parse(int argc, char* argv[], CurlArgs& args) {
             }
             continue;
         }
-        
+
         if (arg.size() >= 2 && arg[1] != '-') {
             // Short option
             std::string opt = arg.substr(1);
@@ -29,7 +29,7 @@ bool ArgsParser::Parse(int argc, char* argv[], CurlArgs& args) {
             // Long option
             std::string opt = arg.substr(2);
             std::string value;
-            
+
             size_t eq_pos = opt.find('=');
             if (eq_pos != std::string::npos) {
                 value = opt.substr(eq_pos + 1);
@@ -37,18 +37,18 @@ bool ArgsParser::Parse(int argc, char* argv[], CurlArgs& args) {
             } else {
                 value = (i + 1 < argc) ? argv[i + 1] : "";
             }
-            
+
             if (!ParseLongOption(opt, value, i, argc, argv, args)) {
                 return false;
             }
         }
     }
-    
+
     return args.IsValid();
 }
 
-bool ArgsParser::ParseShortOption(const std::string& opt, const std::string& value,
-                                  int& i, int argc, char* argv[], CurlArgs& args) {
+bool ArgsParser::ParseShortOption(
+    const std::string& opt, const std::string& value, int& i, int argc, char* argv[], CurlArgs& args) {
     if (opt == "X") {
         args.method = GetNextArg(i, argc, argv);
     } else if (opt == "H") {
@@ -72,12 +72,12 @@ bool ArgsParser::ParseShortOption(const std::string& opt, const std::string& val
         std::cerr << "Unknown option: -" << opt << std::endl;
         return false;
     }
-    
+
     return true;
 }
 
-bool ArgsParser::ParseLongOption(const std::string& opt, const std::string& value,
-                                 int& i, int argc, char* argv[], CurlArgs& args) {
+bool ArgsParser::ParseLongOption(
+    const std::string& opt, const std::string& value, int& i, int argc, char* argv[], CurlArgs& args) {
     if (opt == "request") {
         args.method = GetNextArg(i, argc, argv);
     } else if (opt == "header") {
@@ -103,7 +103,7 @@ bool ArgsParser::ParseLongOption(const std::string& opt, const std::string& valu
         std::cerr << "Unknown option: --" << opt << std::endl;
         return false;
     }
-    
+
     return true;
 }
 
@@ -134,6 +134,3 @@ void ArgsParser::ShowHelp(const char* program_name) {
     std::cout << "  " << program_name << " -v -i https://example.com/api/status\n";
     std::cout << "  " << program_name << " -o output.json https://example.com/api/data\n\n";
 }
-
-
-

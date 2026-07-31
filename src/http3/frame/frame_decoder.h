@@ -1,8 +1,8 @@
 #ifndef HTTP3_FRAME_FRAME_DECODER
 #define HTTP3_FRAME_FRAME_DECODER
 
-#include <memory>
 #include <cstdint>
+#include <memory>
 
 #include "common/buffer/if_buffer.h"
 #include "http3/frame/if_frame.h"

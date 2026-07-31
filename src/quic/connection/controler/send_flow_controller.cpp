@@ -9,42 +9,40 @@
 namespace quicx {
 namespace quic {
 
-SendFlowController::SendFlowController(StreamIDGenerator::StreamStarter starter)
-    : sent_bytes_(0),
-      max_data_(0),
-      max_streams_bidi_(0),
-      max_streams_uni_(0),
-      max_bidi_stream_id_(0),
-      max_uni_stream_id_(0),
-      id_generator_(starter) {}
+SendFlowController::SendFlowController(StreamIDGenerator::StreamStarter starter):
+    sent_bytes_(0),
+    max_data_(0),
+    max_streams_bidi_(0),
+    max_streams_uni_(0),
+    max_bidi_stream_id_(0),
+    max_uni_stream_id_(0),
+    id_generator_(starter) {}
 
 void SendFlowController::UpdateConfig(const TransportParam& tp) {
     max_data_ = tp.GetInitialMaxData();
     max_streams_bidi_ = tp.GetInitialMaxStreamsBidi();
     max_streams_uni_ = tp.GetInitialMaxStreamsUni();
 
-    LOG_INFO("SendFlowController::UpdateConfig: max_data=%llu, max_streams_bidi=%llu, max_streams_uni=%llu",
-        max_data_, max_streams_bidi_, max_streams_uni_);
+    LOG_INFO("SendFlowController::UpdateConfig: max_data=%llu, max_streams_bidi=%llu, max_streams_uni=%llu", max_data_,
+        max_streams_bidi_, max_streams_uni_);
 }
 
 void SendFlowController::OnDataSent(uint32_t size) {
     sent_bytes_ += size;
-    LOG_DEBUG("SendFlowController::OnDataSent: sent %u bytes, total=%llu, limit=%llu", size, sent_bytes_,
-        max_data_);
+    LOG_DEBUG("SendFlowController::OnDataSent: sent %u bytes, total=%llu, limit=%llu", size, sent_bytes_, max_data_);
 }
 
 void SendFlowController::OnMaxDataReceived(uint64_t limit) {
     if (limit > max_data_) {
-        LOG_INFO(
-            "SendFlowController::OnMaxDataReceived: increasing limit from %llu to %llu", max_data_, limit);
+        LOG_INFO("SendFlowController::OnMaxDataReceived: increasing limit from %llu to %llu", max_data_, limit);
         max_data_ = limit;
         // Limit increased -> peer might block us at the new limit later; reset
         // de-dup so a fresh DATA_BLOCKED can be emitted if we hit the new wall.
         last_data_blocked_limit_ = 0;
     } else {
         // RFC 9000 Section 4.1: Ignore frames that don't increase limits
-        LOG_INFO("SendFlowController::OnMaxDataReceived: ignoring non-increasing limit %llu (current=%llu)",
-            limit, max_data_);
+        LOG_INFO("SendFlowController::OnMaxDataReceived: ignoring non-increasing limit %llu (current=%llu)", limit,
+            max_data_);
     }
 }
 
@@ -66,7 +64,8 @@ bool SendFlowController::CanSendData(uint64_t& can_send_size, std::shared_ptr<IF
             last_data_blocked_limit_ = max_data_;
             LOG_DEBUG("SendFlowController::CanSendData: BLOCKED at limit %llu (DATA_BLOCKED emitted)", max_data_);
         } else {
-            LOG_DEBUG("SendFlowController::CanSendData: BLOCKED at limit %llu (suppressed duplicate DATA_BLOCKED)", max_data_);
+            LOG_DEBUG("SendFlowController::CanSendData: BLOCKED at limit %llu (suppressed duplicate DATA_BLOCKED)",
+                max_data_);
         }
         can_send_size = 0;
         return false;
@@ -98,9 +97,8 @@ void SendFlowController::OnMaxStreamsBidiReceived(uint64_t limit) {
         max_streams_bidi_ = limit;
     } else {
         // RFC 9000 Section 4.1: Ignore non-increasing limits
-        LOG_DEBUG(
-            "SendFlowController::OnMaxStreamsBidiReceived: ignoring non-increasing limit %llu (current=%llu)", limit,
-            max_streams_bidi_);
+        LOG_DEBUG("SendFlowController::OnMaxStreamsBidiReceived: ignoring non-increasing limit %llu (current=%llu)",
+            limit, max_streams_bidi_);
     }
 }
 
@@ -118,9 +116,8 @@ bool SendFlowController::CanCreateBidiStream(uint64_t& stream_id, std::shared_pt
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedBidirectional);
         frame->SetMaximumStreams(max_streams_bidi_);
         blocked_frame = frame;
-        LOG_DEBUG(
-            "SendFlowController::CanCreateBidiStream: BLOCKED at limit %llu (next would be %llu)", max_streams_bidi_,
-            next_stream_count);
+        LOG_DEBUG("SendFlowController::CanCreateBidiStream: BLOCKED at limit %llu (next would be %llu)",
+            max_streams_bidi_, next_stream_count);
         return false;
     }
 
@@ -134,25 +131,22 @@ bool SendFlowController::CanCreateBidiStream(uint64_t& stream_id, std::shared_pt
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedBidirectional);
         frame->SetMaximumStreams(max_streams_bidi_);
         blocked_frame = frame;
-        LOG_DEBUG(
-            "SendFlowController::CanCreateBidiStream: near limit, remaining=%llu, threshold=%llu", remaining,
+        LOG_DEBUG("SendFlowController::CanCreateBidiStream: near limit, remaining=%llu, threshold=%llu", remaining,
             kStreamsBlockedThreshold);
     }
 
-    LOG_DEBUG("SendFlowController::CanCreateBidiStream: allocated stream %llu, count=%llu, limit=%llu",
-        stream_id, stream_id >> 2, max_streams_bidi_);
+    LOG_DEBUG("SendFlowController::CanCreateBidiStream: allocated stream %llu, count=%llu, limit=%llu", stream_id,
+        stream_id >> 2, max_streams_bidi_);
     return true;
 }
 
 void SendFlowController::OnMaxStreamsUniReceived(uint64_t limit) {
     if (limit > max_streams_uni_) {
-        LOG_DEBUG(
-            "SendFlowController::OnMaxStreamsUniReceived: increasing from %llu to %llu", max_streams_uni_, limit);
+        LOG_DEBUG("SendFlowController::OnMaxStreamsUniReceived: increasing from %llu to %llu", max_streams_uni_, limit);
         max_streams_uni_ = limit;
     } else {
-        LOG_DEBUG(
-            "SendFlowController::OnMaxStreamsUniReceived: ignoring non-increasing limit %llu (current=%llu)", limit,
-            max_streams_uni_);
+        LOG_DEBUG("SendFlowController::OnMaxStreamsUniReceived: ignoring non-increasing limit %llu (current=%llu)",
+            limit, max_streams_uni_);
     }
 }
 
@@ -170,9 +164,8 @@ bool SendFlowController::CanCreateUniStream(uint64_t& stream_id, std::shared_ptr
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedUnidirectional);
         frame->SetMaximumStreams(max_streams_uni_);
         blocked_frame = frame;
-        LOG_DEBUG(
-            "SendFlowController::CanCreateUniStream: BLOCKED at limit %llu (next would be %llu)", max_streams_uni_,
-            next_stream_count);
+        LOG_DEBUG("SendFlowController::CanCreateUniStream: BLOCKED at limit %llu (next would be %llu)",
+            max_streams_uni_, next_stream_count);
         return false;
     }
 
@@ -186,12 +179,12 @@ bool SendFlowController::CanCreateUniStream(uint64_t& stream_id, std::shared_ptr
         auto frame = std::make_shared<StreamsBlockedFrame>(FrameType::kStreamsBlockedUnidirectional);
         frame->SetMaximumStreams(max_streams_uni_);
         blocked_frame = frame;
-        LOG_DEBUG("SendFlowController::CanCreateUniStream: near limit, remaining=%llu, threshold=%llu",
-            remaining, kStreamsBlockedThreshold);
+        LOG_DEBUG("SendFlowController::CanCreateUniStream: near limit, remaining=%llu, threshold=%llu", remaining,
+            kStreamsBlockedThreshold);
     }
 
-    LOG_DEBUG("SendFlowController::CanCreateUniStream: allocated stream %llu, count=%llu, limit=%llu",
-        stream_id, stream_id >> 2, max_streams_uni_);
+    LOG_DEBUG("SendFlowController::CanCreateUniStream: allocated stream %llu, count=%llu, limit=%llu", stream_id,
+        stream_id >> 2, max_streams_uni_);
     return true;
 }
 

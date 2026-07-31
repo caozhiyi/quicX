@@ -83,9 +83,9 @@ void TransportParam::Init(const QuicTransportParams& conf) {
 bool TransportParam::Merge(const TransportParam& tp) {
     // RFC 9000 §18: Transport parameters are mostly peer-set limits; adopt remote values directly.
     // Only max_idle_timeout uses min (RFC 9000 §10.1: "minimum of the values ... from both endpoints").
-    max_idle_timeout_ = (max_idle_timeout_ == 0) ? tp.max_idle_timeout_
-                      : (tp.max_idle_timeout_ == 0) ? max_idle_timeout_
-                      : std::min(tp.max_idle_timeout_, max_idle_timeout_);
+    max_idle_timeout_ = (max_idle_timeout_ == 0)      ? tp.max_idle_timeout_
+                        : (tp.max_idle_timeout_ == 0) ? max_idle_timeout_
+                                                      : std::min(tp.max_idle_timeout_, max_idle_timeout_);
     max_udp_payload_size_ = tp.max_udp_payload_size_;
     initial_max_data_ = tp.initial_max_data_;
     // NOTE: initial_max_stream_data_bidi_local_ and initial_max_stream_data_bidi_remote_
@@ -377,16 +377,14 @@ bool TransportParam::Decode(const common::BufferSpan& buffer) {
             }
         }
     }
-    LOG_INFO("TransportParam::Decode: DONE — initial_max_data=%llu, "
-                     "bidi_local=%llu, bidi_remote=%llu, uni=%llu, "
-                     "streams_bidi=%llu, streams_uni=%llu, max_idle_timeout=%llu",
-                     (unsigned long long)initial_max_data_,
-                     (unsigned long long)initial_max_stream_data_bidi_local_,
-                     (unsigned long long)initial_max_stream_data_bidi_remote_,
-                     (unsigned long long)initial_max_stream_data_uni_,
-                     (unsigned long long)initial_max_streams_bidi_,
-                     (unsigned long long)initial_max_streams_uni_,
-                     (unsigned long long)max_idle_timeout_);
+    LOG_INFO(
+        "TransportParam::Decode: DONE — initial_max_data=%llu, "
+        "bidi_local=%llu, bidi_remote=%llu, uni=%llu, "
+        "streams_bidi=%llu, streams_uni=%llu, max_idle_timeout=%llu",
+        (unsigned long long)initial_max_data_, (unsigned long long)initial_max_stream_data_bidi_local_,
+        (unsigned long long)initial_max_stream_data_bidi_remote_, (unsigned long long)initial_max_stream_data_uni_,
+        (unsigned long long)initial_max_streams_bidi_, (unsigned long long)initial_max_streams_uni_,
+        (unsigned long long)max_idle_timeout_);
     return true;
 }
 
@@ -396,35 +394,30 @@ uint32_t TransportParam::EncodeSize() {
     // Each uint param encodes as: varint(type) + varint(varint_len(value)) + varint(value)
     auto uint_param_size = [](uint32_t type, uint64_t value) -> uint32_t {
         uint16_t value_varint_len = common::GetEncodeVarintLength(value);
-        return common::GetEncodeVarintLength(type)
-             + common::GetEncodeVarintLength(value_varint_len)
-             + value_varint_len;
+        return common::GetEncodeVarintLength(type) + common::GetEncodeVarintLength(value_varint_len) + value_varint_len;
     };
 
     // Each string param encodes as: varint(type) + varint(str.length()) + str.length()
     auto string_param_size = [](uint32_t type, const std::string& value) -> uint32_t {
-        return common::GetEncodeVarintLength(type)
-             + common::GetEncodeVarintLength(value.length())
-             + static_cast<uint32_t>(value.length());
+        return common::GetEncodeVarintLength(type) + common::GetEncodeVarintLength(value.length()) +
+               static_cast<uint32_t>(value.length());
     };
 
     // Each bool param encodes as: varint(type) + varint(0) (zero-length per RFC 9000 §18)
     auto bool_param_size = [](uint32_t type) -> uint32_t {
-        return common::GetEncodeVarintLength(type)
-             + common::GetEncodeVarintLength(0);
+        return common::GetEncodeVarintLength(type) + common::GetEncodeVarintLength(0);
     };
 
     if (!original_destination_connection_id_.empty()) {
-        size += string_param_size(
-            static_cast<uint32_t>(TransportParamType::kOriginalDestinationConnectionId),
+        size += string_param_size(static_cast<uint32_t>(TransportParamType::kOriginalDestinationConnectionId),
             original_destination_connection_id_);
     }
     if (max_idle_timeout_) {
         size += uint_param_size(static_cast<uint32_t>(TransportParamType::kMaxIdleTimeout), max_idle_timeout_);
     }
     if (!stateless_reset_token_.empty()) {
-        size += string_param_size(
-            static_cast<uint32_t>(TransportParamType::kStatelessResetToken), stateless_reset_token_);
+        size +=
+            string_param_size(static_cast<uint32_t>(TransportParamType::kStatelessResetToken), stateless_reset_token_);
     }
     if (max_udp_payload_size_) {
         size += uint_param_size(static_cast<uint32_t>(TransportParamType::kMaxUdpPayloadSize), max_udp_payload_size_);
@@ -433,13 +426,11 @@ uint32_t TransportParam::EncodeSize() {
         size += uint_param_size(static_cast<uint32_t>(TransportParamType::kInitialMaxData), initial_max_data_);
     }
     if (initial_max_stream_data_bidi_local_) {
-        size += uint_param_size(
-            static_cast<uint32_t>(TransportParamType::kInitialMaxStreamDataBidiLocal),
+        size += uint_param_size(static_cast<uint32_t>(TransportParamType::kInitialMaxStreamDataBidiLocal),
             initial_max_stream_data_bidi_local_);
     }
     if (initial_max_stream_data_bidi_remote_) {
-        size += uint_param_size(
-            static_cast<uint32_t>(TransportParamType::kInitialMaxStreamDataBidiRemote),
+        size += uint_param_size(static_cast<uint32_t>(TransportParamType::kInitialMaxStreamDataBidiRemote),
             initial_max_stream_data_bidi_remote_);
     }
     if (initial_max_stream_data_uni_) {
@@ -451,8 +442,8 @@ uint32_t TransportParam::EncodeSize() {
             static_cast<uint32_t>(TransportParamType::kInitialMaxStreamsBidi), initial_max_streams_bidi_);
     }
     if (initial_max_streams_uni_) {
-        size += uint_param_size(
-            static_cast<uint32_t>(TransportParamType::kInitialMaxStreamsUni), initial_max_streams_uni_);
+        size +=
+            uint_param_size(static_cast<uint32_t>(TransportParamType::kInitialMaxStreamsUni), initial_max_streams_uni_);
     }
     if (ack_delay_exponent_) {
         size += uint_param_size(static_cast<uint32_t>(TransportParamType::kAckDelayExponent), ack_delay_exponent_);
@@ -464,8 +455,7 @@ uint32_t TransportParam::EncodeSize() {
         size += bool_param_size(static_cast<uint32_t>(TransportParamType::kDisableActiveMigration));
     }
     if (!preferred_address_.empty()) {
-        size += string_param_size(
-            static_cast<uint32_t>(TransportParamType::kPreferredAddress), preferred_address_);
+        size += string_param_size(static_cast<uint32_t>(TransportParamType::kPreferredAddress), preferred_address_);
     }
     if (active_connection_id_limit_) {
         size += uint_param_size(
@@ -483,9 +473,8 @@ uint32_t TransportParam::EncodeSize() {
     // RFC 9368 version_information: varint(type) + varint(tp_len) + 4 * (1 + N) bytes
     if (has_version_information_) {
         const uint32_t tp_len = static_cast<uint32_t>(4 * (1 + available_versions_.size()));
-        size += common::GetEncodeVarintLength(static_cast<uint32_t>(TransportParamType::kVersionInformation))
-             +  common::GetEncodeVarintLength(tp_len)
-             +  tp_len;
+        size += common::GetEncodeVarintLength(static_cast<uint32_t>(TransportParamType::kVersionInformation)) +
+                common::GetEncodeVarintLength(tp_len) + tp_len;
     }
 
     return size;

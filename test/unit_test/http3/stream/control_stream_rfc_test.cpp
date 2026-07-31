@@ -1,15 +1,15 @@
+#include <gtest/gtest.h>
 #include <limits>
 #include <unordered_map>
-#include <gtest/gtest.h>
 
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 
-#include "http3/http/error.h"
 #include "http3/frame/goaway_frame.h"
-#include "http3/qpack/qpack_encoder.h"
-#include "http3/frame/settings_frame.h"
 #include "http3/frame/max_push_id_frame.h"
+#include "http3/frame/settings_frame.h"
+#include "http3/http/error.h"
+#include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/control_server_receiver_stream.h"
 #include "test/unit_test/http3/stream/mock_quic_stream.h"
 
@@ -17,8 +17,7 @@ namespace quicx {
 namespace http3 {
 namespace {
 
-class ControlStreamRfcTest:
-    public ::testing::Test {
+class ControlStreamRfcTest: public ::testing::Test {
 protected:
     void SetUp() override {
         client_stream_ = std::make_shared<quic::MockQuicStream>();
@@ -29,21 +28,12 @@ protected:
 
         qpack_encoder_ = std::make_shared<QpackEncoder>();
 
-        auto error_cb = [this](uint64_t /*stream_id*/, uint32_t error_code) {
-            last_error_ = error_code;
-        };
-        auto goaway_cb = [this](uint64_t id) {
-            last_goaway_id_ = id;
-        };
-        auto settings_cb = [this](const std::unordered_map<uint16_t, uint64_t>& settings) {
-            last_settings_ = settings;
-        };
-        auto max_push_cb = [this](uint64_t id) {
-            last_max_push_id_ = id;
-        };
-        auto cancel_cb = [this](uint64_t id) {
-            last_cancel_id_ = id;
-        };
+        auto error_cb = [this](uint64_t /*stream_id*/, uint32_t error_code) { last_error_ = error_code; };
+        auto goaway_cb = [this](uint64_t id) { last_goaway_id_ = id; };
+        auto settings_cb = [this](
+                               const std::unordered_map<uint16_t, uint64_t>& settings) { last_settings_ = settings; };
+        auto max_push_cb = [this](uint64_t id) { last_max_push_id_ = id; };
+        auto cancel_cb = [this](uint64_t id) { last_cancel_id_ = id; };
 
         receiver_stream_ = std::make_shared<ControlServerReceiverStream>(
             server_stream_, qpack_encoder_, error_cb, goaway_cb, settings_cb, max_push_cb, cancel_cb);
@@ -134,5 +124,3 @@ TEST_F(ControlStreamRfcTest, GoAwayMustNotIncrease) {
 }  // namespace
 }  // namespace http3
 }  // namespace quicx
-
-

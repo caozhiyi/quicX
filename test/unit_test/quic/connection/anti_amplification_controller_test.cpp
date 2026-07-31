@@ -5,11 +5,9 @@
 namespace quicx {
 namespace quic {
 
-class AntiAmplificationControllerTest : public ::testing::Test {
+class AntiAmplificationControllerTest: public ::testing::Test {
 protected:
-    void SetUp() override {
-        controller_ = std::make_unique<AntiAmplificationController>();
-    }
+    void SetUp() override { controller_ = std::make_unique<AntiAmplificationController>(); }
 
     std::unique_ptr<AntiAmplificationController> controller_;
 };
@@ -32,7 +30,7 @@ TEST_F(AntiAmplificationControllerTest, EnterUnvalidatedStateSetsState) {
 
     EXPECT_TRUE(controller_->IsUnvalidated());
     EXPECT_EQ(controller_->GetBytesSent(), 0u);
-    EXPECT_EQ(controller_->GetBytesReceived(), 400u);  // Default initial credit
+    EXPECT_EQ(controller_->GetBytesReceived(), 400u);     // Default initial credit
     EXPECT_EQ(controller_->GetRemainingBudget(), 1200u);  // 400 * 3
 }
 

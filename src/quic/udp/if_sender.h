@@ -64,7 +64,7 @@ public:
     static std::shared_ptr<ISender> MakeSender(int32_t sockfd = -1);
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

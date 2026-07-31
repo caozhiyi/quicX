@@ -26,14 +26,14 @@
 #include <string>
 
 #if defined(_WIN32)
-#  include <winsock2.h>
-#  include <ws2tcpip.h>
-#  pragma comment(lib, "Ws2_32.lib")
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "Ws2_32.lib")
 #else
-#  include <arpa/inet.h>
-#  include <netinet/in.h>
-#  include <sys/socket.h>
-#  include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 namespace quicx {
@@ -51,9 +51,8 @@ namespace test {
 //
 // Returns the bound port on success, or 0 on failure (caller should
 // ASSERT on the result).
-inline uint16_t ProbeFreeUdpPort(std::atomic<uint16_t>& next_port,
-                                 const std::string& ip = "127.0.0.1",
-                                 int max_attempts = 64) {
+inline uint16_t ProbeFreeUdpPort(
+    std::atomic<uint16_t>& next_port, const std::string& ip = "127.0.0.1", int max_attempts = 64) {
 #if defined(_WIN32)
     using fd_t = SOCKET;
     constexpr fd_t kInvalidFd = INVALID_SOCKET;

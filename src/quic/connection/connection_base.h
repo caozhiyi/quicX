@@ -8,6 +8,7 @@
 
 #include <quicx/common/if_event_loop.h>
 
+#include <quicx/quic/type.h>
 #include "quic/connection/connection_crypto.h"
 #include "quic/connection/connection_id_coordinator.h"
 #include "quic/connection/connection_id_manager.h"
@@ -23,7 +24,6 @@
 #include "quic/connection/remote_transport_param_snapshot.h"
 #include "quic/connection/transport_param.h"
 #include "quic/connection/version_context.h"
-#include <quicx/quic/type.h>
 #include "quic/udp/if_sender.h"
 
 namespace quicx {
@@ -43,8 +43,8 @@ class BaseConnection:
     public IConnectionEventSink,
     public std::enable_shared_from_this<BaseConnection> {
 public:
-    BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled,
-        std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks);
+    BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_enabled, std::shared_ptr<common::IEventLoop> loop,
+        const ConnectionCallbacks& callbacks);
     // Set sender for direct packet transmission
     void SetSender(std::shared_ptr<ISender> sender) override;
 
@@ -95,24 +95,31 @@ public:
     // ==================== New High-Level Send Interfaces ====================
 
     // Main send interface (replaces GenerateSendData)
-// Called by Worker to attempt sending data. Internally decides whether to send,
-// what to send, and handles all packet building and transmission.
-// @return true if successfully sent data, false if no data or send failed
+    // Called by Worker to attempt sending data. Internally decides whether to send,
+    // what to send, and handles all packet building and transmission.
+    // @return true if successfully sent data, false if no data or send failed
     bool TrySend() override;
+    // Optimised multi-packet variant. Reuses encryption-level scheduling
+    // context, cryptographer lookup and packet-builder fixed-field setup
+    // across inner iterations; only the per-packet state (cwnd headroom,
+    // pending frames, FC slack, chunk allocation, build, send, post-send
+    // bookkeeping) is recomputed. Returns the number of packets actually
+    // emitted in this call (<= budget).
+    int TrySendBurst(int budget) override;
 
     // Send ACK packet immediately
-// Simplified interface for immediate ACK sending, used for cross-level ACKs
-// or when immediate ACK is required.
-// @param ns Packet number space
-// @return true if successfully sent
+    // Simplified interface for immediate ACK sending, used for cross-level ACKs
+    // or when immediate ACK is required.
+    // @param ns Packet number space
+    // @return true if successfully sent
     bool SendImmediateAck(PacketNumberSpace ns);
 
     // Send single frame immediately
-// Used for frames requiring immediate transmission such as PATH_CHALLENGE,
-// PATH_RESPONSE, or CONNECTION_CLOSE.
-// @param frame Frame to send
-// @param level Encryption level (defaults to current level)
-// @return true if successfully sent
+    // Used for frames requiring immediate transmission such as PATH_CHALLENGE,
+    // PATH_RESPONSE, or CONNECTION_CLOSE.
+    // @param frame Frame to send
+    // @param level Encryption level (defaults to current level)
+    // @return true if successfully sent
     bool SendImmediateFrame(std::shared_ptr<IFrame> frame, EncryptionLevel level = kApplication);
 
     // handle packets
@@ -138,9 +145,7 @@ public:
     // Production accessor used by Worker to gate early-connection delivery
     // (see IConnection::HasEarlyDataWriteKey doc). Implemented as a thin
     // wrapper over connection_crypto_; cheap, non-allocating.
-    bool HasEarlyDataWriteKey() const override {
-        return connection_crypto_.GetCryptographer(kEarlyData) != nullptr;
-    }
+    bool HasEarlyDataWriteKey() const override { return connection_crypto_.GetCryptographer(kEarlyData) != nullptr; }
 
     // ==================== Test-Only Accessors ====================
     // These methods exist solely for unit testing. Production code MUST NOT call them.
@@ -164,9 +169,7 @@ public:
     bool IsServerForTest() const { return version_ctx_.is_server; }
     bool CompatVnCompletedForTest() const { return version_ctx_.compat_vn_completed; }
     const TransportParam& GetLocalTransportParamForTest() const { return transport_param_; }
-    const std::string& GetInitialSecretDcidForTest() const {
-        return connection_crypto_.GetInitialSecretDcid();
-    }
+    const std::string& GetInitialSecretDcidForTest() const { return connection_crypto_.GetInitialSecretDcid(); }
     // ==================== End Test-Only Accessors ====================
 
     // IConnectionStateListener
@@ -261,10 +264,56 @@ private:
     // (FC accounting, key-update trigger).  Returns the SendBuffer outcome.
     bool TrySendNew();
 
+    // Burst-mode core of TrySendNew. Caller passes the maximum number of
+    // packets allowed in this round; the routine reuses send context /
+    // cryptographer / packet-builder fixed fields across iterations and
+    // breaks out early if any inner step says we should yield (cwnd full,
+    // FC blocked, no data, build failure, encryption level change, etc.).
+    // Returns the actual packets emitted (>=0).
+    int TrySendNewBurst(int budget);
+
+    // RFC 9000 §12.2 Initial+Handshake coalescing helpers.
+    //
+    // TryCoalescedInitialHandshake: detects whether both Initial and
+    // Handshake have pending CRYPTO bytes in the current round; if yes,
+    // builds one UDP datagram containing both QUIC packets and hands it
+    // to SendBuffer / send_sink_. Returns the number of QUIC packets
+    // emitted (0 = not applicable / build failure, 2 = coalesced).
+    // A return of 0 is non-fatal: the caller falls back to the normal
+    // level-sticky TrySendNewBurst path.
+    //
+    // Padding (RFC 9000 §14.1) is carried *inside the Handshake packet*,
+    // not the Initial packet. This is legal because §14.1 mandates the
+    // datagram (not Initial specifically) be >= 1200 B, and §12.2
+    // explicitly lists coalescing as one of the two means of meeting
+    // that requirement. Carrying padding in Handshake keeps the Initial
+    // small (cheaper for the peer's initial-keys AEAD path) and lets us
+    // build packets in their natural on-wire order without needing a
+    // back-patch / temporary buffer.
+    int TryCoalescedInitialHandshake();
+
     // Send buffer using sender_ (internal helper)
-// @param buffer Buffer to send
-// @return true if successfully sent
+    // @param buffer Buffer to send
+    // @return true if successfully sent
     bool SendBuffer(std::shared_ptr<common::IBuffer> buffer);
+
+    // qlog draft-03: open a new outbound UDP datagram for instrumentation
+    // purposes. Allocates a fresh datagram_id from next_send_datagram_id_
+    // and tells SendControl to tag every packet_sent it records until the
+    // matching FinishSendDatagram() call. Cheap (one increment + one
+    // setter call); safe to invoke even when qlog is disabled.
+    void BeginSendDatagram();
+
+    // qlog draft-03: close the current outbound UDP datagram, sending the
+    // accumulated buffer via SendBuffer() and, if qlog is enabled, emitting
+    // a transport:datagrams_sent event summarising every QUIC packet that
+    // travelled in it. Replaces direct calls to SendBuffer() from the
+    // production send paths so that the datagram boundary is always
+    // mirrored in the qlog stream.
+    bool FinishSendDatagram(std::shared_ptr<common::IBuffer> buffer);
+    // Same as FinishSendDatagram() but for the SendImmediate() path
+    // (single-packet shortcut that bypasses the worker batch sink).
+    bool FinishSendDatagramImmediate(std::shared_ptr<common::IBuffer> buffer);
 
 public:
     // PERF (sendmmsg batch path): when set non-null, SendBuffer() appends the
@@ -279,9 +328,7 @@ public:
     // The pointer is owned by the caller and must outlive every SendBuffer
     // call between Set/clear. Worker installs and clears it inside a single
     // ProcessSend iteration so lifetime is trivially correct.
-    void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* sink) override {
-        send_sink_ = sink;
-    }
+    void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* sink) override { send_sink_ = sink; }
 
 protected:
     virtual void ThreadTransferBefore() override;
@@ -395,6 +442,22 @@ protected:
 
     // Qlog trace for this connection
     std::shared_ptr<common::QlogTrace> qlog_trace_;
+
+    // qlog draft-03: per-connection monotonic datagram id counters. Each
+    // ingress/egress UDP datagram is stamped so that coalesced QUIC packets
+    // can be grouped back to their enclosing datagram in viewers. 0 is the
+    // "unset" sentinel; the first real id is 1.
+    uint64_t next_recv_datagram_id_ = 1;
+    uint64_t next_send_datagram_id_ = 1;
+    // The id of the UDP datagram currently being drained inside OnPackets()
+    // (set before the dispatch loop, cleared after). The per-packet
+    // QLOG_PACKET_RECEIVED call sites read it to stamp PacketReceivedData
+    // so each packet links back to its enclosing datagrams_received event.
+    // 0 means "no datagram in flight".
+    uint64_t current_recv_datagram_id_ = 0;
+    // NB: outgoing datagram correlation lives inside SendControl
+    // (see Begin/EndSendDatagram + current_send_datagram_id_ there) so we
+    // don't duplicate state here.
 
     // hint for early-data scheduling: whether any application stream (id != 0) has pending send
     bool has_app_send_pending_ = false;

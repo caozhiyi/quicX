@@ -1,19 +1,21 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/ack_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/ack_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(ack_frame_utest, codec) {
+TEST(AckFrameTest, codec) {
     AckFrame frame1;
     AckFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     frame1.SetAckDelay(104);
     frame1.SetLargestAck(1234);
@@ -45,18 +47,20 @@ TEST(ack_frame_utest, codec) {
     EXPECT_EQ(range[2].ack_range_, 3);*/
 }
 
-TEST(ack_ecn_frame_utest, decod1) {
+TEST(AckEcnFrameTest, decod1) {
     AckEcnFrame frame1;
     AckEcnFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     frame1.SetAckDelay(104);
     frame1.SetLargestAck(4321);
     frame1.SetFirstAckRange(7);
-    //frame1.SetFirstAckRange(10012);
-    //frame1.SetLargestAck(19);
+    // frame1.SetFirstAckRange(10012);
+    // frame1.SetLargestAck(19);
     frame1.AddAckRange(3, 5);
     frame1.AddAckRange(4, 6);
     frame1.AddAckRange(2, 3);
@@ -91,6 +95,6 @@ TEST(ack_ecn_frame_utest, decod1) {
     EXPECT_EQ(frame1.GetEcnCe(), frame2.GetEcnCe());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

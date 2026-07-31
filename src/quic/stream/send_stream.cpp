@@ -220,15 +220,13 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             std::shared_ptr<StreamDataBlockedFrame> frame = std::make_shared<StreamDataBlockedFrame>();
             frame->SetStreamID(stream_id_);
             frame->SetMaximumData(peer_data_limit_);
-            LOG_DEBUG(
-                "stream send data blocked. stream id:%llu, peer data limit:%llu", stream_id_, peer_data_limit_);
+            LOG_DEBUG("stream send data blocked. stream id:%llu, peer data limit:%llu", stream_id_, peer_data_limit_);
 
             // Metrics: Stream blocked by flow control
             common::Metrics::CounterInc(common::MetricsStd::QuicStreamDataBlocked);
 
             if (!visitor->HandleFrame(frame)) {
-                LOG_DEBUG(
-                    "stream send data blocked failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
+                LOG_DEBUG("stream send data blocked failed. stream id:%d, frame type:%d", stream_id_, frame->GetType());
                 return TrySendResult::kFailed;
             }
             // Mark that we've sent STREAM_DATA_BLOCKED for this limit
@@ -237,8 +235,8 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     }
 
     if (peer_data_limit_ <= send_data_offset_) {
-        LOG_DEBUG("stream send data flow control blocked. stream id:%llu, peer data limit:%llu, send data offset:%llu", stream_id_,
-            peer_data_limit_, send_data_offset_);
+        LOG_DEBUG("stream send data flow control blocked. stream id:%llu, peer data limit:%llu, send data offset:%llu",
+            stream_id_, peer_data_limit_, send_data_offset_);
         return TrySendResult::kFlowControlBlocked;  // Keep in active list, waiting for MAX_STREAM_DATA
     }
 
@@ -266,8 +264,10 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
     if (send_buffer_->GetDataLength() > 0) {
         // Guard against unsigned underflow: peer_data_limit_ >= send_data_offset_ is guaranteed
         // by the check above (line 209), but use safe subtraction with uint64_t to avoid truncation
-        uint64_t stream_send_size_64 = (peer_data_limit_ > send_data_offset_) ? (peer_data_limit_ - send_data_offset_) : 0;
-        uint32_t stream_send_size = static_cast<uint32_t>(std::min(stream_send_size_64, static_cast<uint64_t>(UINT32_MAX)));
+        uint64_t stream_send_size_64 =
+            (peer_data_limit_ > send_data_offset_) ? (peer_data_limit_ - send_data_offset_) : 0;
+        uint32_t stream_send_size =
+            static_cast<uint32_t>(std::min(stream_send_size_64, static_cast<uint64_t>(UINT32_MAX)));
         uint32_t conn_send_size = visitor->GetLeftStreamDataSize();
         send_size = stream_send_size > conn_send_size ? conn_send_size : stream_send_size;
 
@@ -296,7 +296,9 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
         common::Metrics::CounterInc(common::MetricsStd::DiagSendBufChunksSum, send_buffer_->GetChunkCount());
         common::Metrics::CounterInc(common::MetricsStd::DiagSendBufProbeCount);
 
-        LOG_DEBUG("stream send calc: stream_id:%d, peer_limit:%llu, send_offset:%llu, stream_send_size:%u, conn_send_size:%u, final_send_size:%u",
+        LOG_DEBUG(
+            "stream send calc: stream_id:%d, peer_limit:%llu, send_offset:%llu, stream_send_size:%u, "
+            "conn_send_size:%u, final_send_size:%u",
             stream_id_, peer_data_limit_, send_data_offset_, stream_send_size, conn_send_size, send_size);
 
         // Only try to get data if we have space to send
@@ -368,14 +370,14 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
             //     let BaseConnection::TrySend's existing cwnd-limited /
             //     conn-FC-blocked recovery (DATA_BLOCKED + recheck timer +
             //     ACK-driven send_retry_cb_) bring us back.
-            uint64_t stream_slack =
-                (peer_data_limit_ > send_data_offset_) ? (peer_data_limit_ - send_data_offset_) : 0;
+            uint64_t stream_slack = (peer_data_limit_ > send_data_offset_) ? (peer_data_limit_ - send_data_offset_) : 0;
             bool stream_level_blocked = stream_slack < kStreamDataBlockedThreshold;
 
-            LOG_DEBUG("stream send data: zero-data frame. stream id:%d, buffer_len:%d, "
-                              "peer_limit:%llu, send_offset:%llu, stream_slack:%llu, stream_level_blocked:%d",
-                stream_id_, send_buffer_->GetDataLength(), peer_data_limit_, send_data_offset_,
-                stream_slack, stream_level_blocked ? 1 : 0);
+            LOG_DEBUG(
+                "stream send data: zero-data frame. stream id:%d, buffer_len:%d, "
+                "peer_limit:%llu, send_offset:%llu, stream_slack:%llu, stream_level_blocked:%d",
+                stream_id_, send_buffer_->GetDataLength(), peer_data_limit_, send_data_offset_, stream_slack,
+                stream_level_blocked ? 1 : 0);
 
             if (stream_level_blocked) {
                 // Genuine stream-level FC. RFC 9000 §19.13: STREAM_DATA_BLOCKED
@@ -388,8 +390,8 @@ IStream::TrySendResult SendStream::TrySendData(IFrameVisitor* visitor, Encryptio
                     blocked_frame->SetMaximumData(peer_data_limit_);
                     visitor->HandleFrame(blocked_frame);
                     blocked_at_limit_ = peer_data_limit_;
-                    LOG_DEBUG("stream send: sent STREAM_DATA_BLOCKED frame. stream id:%d, limit:%llu",
-                        stream_id_, peer_data_limit_);
+                    LOG_DEBUG("stream send: sent STREAM_DATA_BLOCKED frame. stream id:%d, limit:%llu", stream_id_,
+                        peer_data_limit_);
                 }
                 return TrySendResult::kFlowControlBlocked;
             }

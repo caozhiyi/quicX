@@ -1,12 +1,11 @@
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
-#include "quic/packet/if_packet.h"
-#include "quic/packet/packet_decode.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
-
+#include "quic/packet/if_packet.h"
+#include "quic/packet/packet_decode.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (data == nullptr || size == 0) {
@@ -30,5 +29,3 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
     return 0;
 }
-
-

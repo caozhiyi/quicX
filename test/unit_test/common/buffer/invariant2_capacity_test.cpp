@@ -44,7 +44,7 @@ std::shared_ptr<BufferChunk> MakeChunk() {
 // ----- B2-01 ----------------------------------------------------------------
 // The chunk's physical length is a property of its storage and cannot be
 // shrunk by any consumer-facing operation. It must always equal kBlockSize.
-TEST(BufferInvariant2_Capacity, ChunkLengthIsPhysical) {
+TEST(BufferInvariant2CapacityTest, ChunkLengthIsPhysical) {
     auto chunk = MakeChunk();
     ASSERT_TRUE(chunk->Valid());
     EXPECT_EQ(kBlockSize, chunk->GetLength());
@@ -59,7 +59,7 @@ TEST(BufferInvariant2_Capacity, ChunkLengthIsPhysical) {
 // ----- B2-02 ----------------------------------------------------------------
 // SetCapacityLimit(N) on a fresh buffer must cap the writable region to N
 // bytes, regardless of the chunk's larger physical size.
-TEST(BufferInvariant2_Capacity, BufferCapacityLimitShrinksFreeLength) {
+TEST(BufferInvariant2CapacityTest, BufferCapacityLimitShrinksFreeLength) {
     auto chunk = MakeChunk();
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
     EXPECT_EQ(kBlockSize, buf->GetFreeLength());
@@ -72,7 +72,7 @@ TEST(BufferInvariant2_Capacity, BufferCapacityLimitShrinksFreeLength) {
 // SetCapacityLimit must not be observable through the chunk. This is the
 // invariant that the legacy SetLimitSize broke (chunk->GetLength() shrank
 // underneath any other view of the chunk).
-TEST(BufferInvariant2_Capacity, BufferCapacityLimitDoesNotMutateChunkLength) {
+TEST(BufferInvariant2CapacityTest, BufferCapacityLimitDoesNotMutateChunkLength) {
     auto chunk = MakeChunk();
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
 
@@ -88,7 +88,7 @@ TEST(BufferInvariant2_Capacity, BufferCapacityLimitDoesNotMutateChunkLength) {
 // ----- B2-04 ----------------------------------------------------------------
 // Writes never spill past the capacity limit, even when the source buffer
 // exceeds it.
-TEST(BufferInvariant2_Capacity, WriteRespectsCapacityLimit) {
+TEST(BufferInvariant2CapacityTest, WriteRespectsCapacityLimit) {
     auto chunk = MakeChunk();
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
     buf->SetCapacityLimit(100);
@@ -106,7 +106,7 @@ TEST(BufferInvariant2_Capacity, WriteRespectsCapacityLimit) {
 // to the physical size. This keeps the buffer safe from API misuse and
 // matches the old "SetLimitSize(100) on a 64-byte chunk → 64" semantics
 // without leaking the limit concept down into the chunk.
-TEST(BufferInvariant2_Capacity, CapacityLimitIsClampedToPhysical) {
+TEST(BufferInvariant2CapacityTest, CapacityLimitIsClampedToPhysical) {
     auto chunk = MakeChunk();
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
 
@@ -118,7 +118,7 @@ TEST(BufferInvariant2_Capacity, CapacityLimitIsClampedToPhysical) {
 // ----- B2-06 ----------------------------------------------------------------
 // The limit survives across multiple writes; it is a property of the buffer
 // view, not consumed on the first write.
-TEST(BufferInvariant2_Capacity, LimitSurvivesAcrossWrites) {
+TEST(BufferInvariant2CapacityTest, LimitSurvivesAcrossWrites) {
     auto chunk = MakeChunk();
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
     buf->SetCapacityLimit(50);

@@ -224,25 +224,18 @@ static void BM_Qpack_BlockedRegistry_AddAck(benchmark::State& state) {
 // Registration
 // ===========================================================================
 
-BENCHMARK(quicx::perf::BM_Qpack_Encode_LargeHeaders)
-    ->Arg(0)->Arg(8)->Arg(32)->Arg(64)
-    ->Unit(benchmark::kMicrosecond);
-BENCHMARK(quicx::perf::BM_Qpack_Decode_LargeHeaders)
-    ->Arg(0)->Arg(8)->Arg(32)->Arg(64)
-    ->Unit(benchmark::kMicrosecond);
+BENCHMARK(quicx::perf::BM_Qpack_Encode_LargeHeaders)->Arg(0)->Arg(8)->Arg(32)->Arg(64)->Unit(benchmark::kMicrosecond);
+BENCHMARK(quicx::perf::BM_Qpack_Decode_LargeHeaders)->Arg(0)->Arg(8)->Arg(32)->Arg(64)->Unit(benchmark::kMicrosecond);
 
-BENCHMARK(quicx::perf::BM_Qpack_DynamicTable_Insert)
-    ->Arg(512)->Arg(4096)->Arg(16384)
-    ->Unit(benchmark::kMicrosecond);
-BENCHMARK(quicx::perf::BM_Qpack_DynamicTable_Find)
-    ->Unit(benchmark::kNanosecond);
+BENCHMARK(quicx::perf::BM_Qpack_DynamicTable_Insert)->Arg(512)->Arg(4096)->Arg(16384)->Unit(benchmark::kMicrosecond);
+BENCHMARK(quicx::perf::BM_Qpack_DynamicTable_Find)->Unit(benchmark::kNanosecond);
 
-BENCHMARK(quicx::perf::BM_Qpack_BlockedRegistry_AddAck)
-    ->Arg(16)->Arg(128)->Arg(1024)
-    ->Unit(benchmark::kMicrosecond);
+BENCHMARK(quicx::perf::BM_Qpack_BlockedRegistry_AddAck)->Arg(16)->Arg(128)->Arg(1024)->Unit(benchmark::kMicrosecond);
 
 BENCHMARK_MAIN();
 
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif

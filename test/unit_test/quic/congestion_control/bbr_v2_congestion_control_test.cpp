@@ -1,15 +1,15 @@
-#include <cstdint>
 #include <gtest/gtest.h>
+#include <cstdint>
 
-#include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/bbr_v2_congestion_control.h"
+#include "quic/congestion_control/if_congestion_control.h"
 
+using quicx::quic::AckEvent;
+using quicx::quic::BBRv2CongestionControl;
 using quicx::quic::CcConfigV2;
 using quicx::quic::ICongestionControl;
-using quicx::quic::BBRv2CongestionControl;
-using quicx::quic::SentPacketEvent;
-using quicx::quic::AckEvent;
 using quicx::quic::LossEvent;
+using quicx::quic::SentPacketEvent;
 
 TEST(BBRv2CongestionControlTest, InitialState) {
     BBRv2CongestionControl cc;
@@ -66,14 +66,14 @@ TEST(BBRv2CongestionControlTest, ProbeRttAndProbeBwCycle) {
     cc.Configure(cfg);
 
     // Set RTT and send enough data for bandwidth sampling
-    cc.OnRoundTripSample(100000, 0); // 100ms
-    
+    cc.OnRoundTripSample(100000, 0);  // 100ms
+
     // Send ACKs over sufficient time for bandwidth sampling
     uint64_t base_time = 100000;
     for (int i = 0; i < 20; ++i) {
         cc.OnPacketAcked(AckEvent{static_cast<uint64_t>(i + 1), 1000, base_time + i * 10000, 0, false});
     }
-    
+
     // Should have valid pacing rate
     uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
@@ -87,17 +87,15 @@ TEST(BBRv2CongestionControlTest, ProbeBwFullEightSegmentCycle) {
     cc.Configure(cfg);
 
     // Set RTT and send enough data for bandwidth sampling
-    cc.OnRoundTripSample(100000ull, 0ull); // 100ms
-    
+    cc.OnRoundTripSample(100000ull, 0ull);  // 100ms
+
     // Send ACKs over sufficient time for bandwidth sampling
     uint64_t base_time = 100000;
     for (int i = 0; i < 25; ++i) {
         cc.OnPacketAcked(AckEvent{static_cast<uint64_t>(i + 1), 1000ull, base_time + i * 10000, 0ull, false});
     }
-    
+
     // Should have valid pacing rate
     uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
 }
-
-

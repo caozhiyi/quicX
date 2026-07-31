@@ -1,8 +1,8 @@
-#include "common/log/log.h"
 #include "quic/quicx/msg_parser.h"
-#include "quic/packet/packet_decode.h"
+#include "common/log/log.h"
 #include "quic/packet/header/long_header.h"
 #include "quic/packet/header/short_header.h"
+#include "quic/packet/packet_decode.h"
 
 namespace quicx {
 namespace quic {
@@ -12,7 +12,7 @@ bool MsgParser::ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketParseR
     // This is needed for RFC 9000 §14.1 minimum datagram size check.
     packet_info.datagram_size_ = net_packet->GetData()->GetDataLength();
 
-    if(!DecodePackets(net_packet->GetData(), packet_info.packets_)) {
+    if (!DecodePackets(net_packet->GetData(), packet_info.packets_)) {
         LOG_ERROR("decode packet failed");
         return false;
     }
@@ -21,7 +21,7 @@ bool MsgParser::ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketParseR
         LOG_ERROR("parse packet list is empty.");
         return false;
     }
-    
+
     uint8_t* cid_buf = nullptr;
     uint16_t cid_len = 0;
     auto first_packet_header = packet_info.packets_[0]->GetHeader();
@@ -41,5 +41,5 @@ bool MsgParser::ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketParseR
     return true;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

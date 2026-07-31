@@ -134,9 +134,8 @@ void PathManager::OnPathResponse(const uint8_t* data) {
     bool peer_addr_changed = !(candidate_peer_addr_ == peer_addr_);
 
     if (peer_addr_changed) {
-        LOG_INFO("PathManager: path validated successfully, switching from %s:%d to %s:%d",
-            peer_addr_.GetIp().c_str(), peer_addr_.GetPort(), candidate_peer_addr_.GetIp().c_str(),
-            candidate_peer_addr_.GetPort());
+        LOG_INFO("PathManager: path validated successfully, switching from %s:%d to %s:%d", peer_addr_.GetIp().c_str(),
+            peer_addr_.GetPort(), candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
 
         set_peer_addr_cb_(candidate_peer_addr_);
 
@@ -194,8 +193,7 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
         // Only consider as NAT rebinding if we see repeated observations; otherwise ignore
         if (!(addr == candidate_peer_addr_)) {
             // First observation: store candidate but do not start probe yet
-            LOG_DEBUG(
-                "PathManager: first observation of new address (migration disabled), waiting for confirmation");
+            LOG_DEBUG("PathManager: first observation of new address (migration disabled), waiting for confirmation");
             candidate_peer_addr_ = addr;
             return;
         }
@@ -205,8 +203,7 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
 
     // Check if this address is already in the queue or currently being probed
     if (path_probe_inflight_ && addr == candidate_peer_addr_) {
-        LOG_DEBUG(
-            "PathManager: address %s:%d is already being probed, ignoring", addr.GetIp().c_str(), addr.GetPort());
+        LOG_DEBUG("PathManager: address %s:%d is already being probed, ignoring", addr.GetIp().c_str(), addr.GetPort());
         return;
     }
 
@@ -221,8 +218,8 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
     // If probe is in progress, add to queue; otherwise start immediately
     if (path_probe_inflight_) {
         pending_candidate_addrs_.push_back(addr);
-        LOG_INFO("PathManager: added %s:%d to probe queue (queue size: %zu)", addr.GetIp().c_str(),
-            addr.GetPort(), pending_candidate_addrs_.size());
+        LOG_INFO("PathManager: added %s:%d to probe queue (queue size: %zu)", addr.GetIp().c_str(), addr.GetPort(),
+            pending_candidate_addrs_.size());
     } else {
         candidate_peer_addr_ = addr;
         StartPathValidationProbe();
@@ -230,11 +227,10 @@ void PathManager::OnObservedPeerAddress(const ::quicx::common::Address& addr) {
         // If probe didn't start (e.g., Application keys not ready), queue the address for later
         if (!path_probe_inflight_) {
             pending_candidate_addrs_.push_back(addr);
-            LOG_INFO("PathManager: path probe deferred, added %s:%d to queue (queue size: %zu)",
-                addr.GetIp().c_str(), addr.GetPort(), pending_candidate_addrs_.size());
+            LOG_INFO("PathManager: path probe deferred, added %s:%d to queue (queue size: %zu)", addr.GetIp().c_str(),
+                addr.GetPort(), pending_candidate_addrs_.size());
         } else {
-            LOG_INFO(
-                "PathManager: started path validation probe to %s:%d", addr.GetIp().c_str(), addr.GetPort());
+            LOG_INFO("PathManager: started path validation probe to %s:%d", addr.GetIp().c_str(), addr.GetPort());
         }
     }
 }
@@ -248,8 +244,8 @@ void PathManager::OnCandidatePathBytesReceived(uint32_t bytes) {
 // ==================== Client-Initiated Migration ====================
 
 MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::Address& local_addr) {
-    LOG_INFO("PathManager::InitiateMigrationToAddress: starting migration to local %s:%d",
-        local_addr.GetIp().c_str(), local_addr.GetPort());
+    LOG_INFO("PathManager::InitiateMigrationToAddress: starting migration to local %s:%d", local_addr.GetIp().c_str(),
+        local_addr.GetPort());
 
     // 1. Check if migration is disabled by peer
     if (transport_param_.GetDisableActiveMigration()) {
@@ -360,8 +356,7 @@ void PathManager::ScheduleProbeRetry() {
 
     if (probe_retry_count_ >= kMaxProbeRetries) {
         // Give up probing after max retries; revert to old path
-        LOG_WARN(
-            "PathManager: path validation failed after %d attempts, reverting to old path. candidate: %s:%d",
+        LOG_WARN("PathManager: path validation failed after %d attempts, reverting to old path. candidate: %s:%d",
             probe_retry_count_, candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
 
         if (is_client_initiated_migration_) {
@@ -507,7 +502,7 @@ void PathManager::CleanupMigrationState() {
     }
 
     // Close and cleanup migration socket if migration failed
-        if (migration_socket_ > 0) {
+    if (migration_socket_ > 0) {
         // Only close if migration failed; if successful, the socket is now in use
         if (!is_client_initiated_migration_ || path_probe_inflight_) {
             // Migration in progress but we're cleaning up = failure

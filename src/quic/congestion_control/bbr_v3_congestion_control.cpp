@@ -1,9 +1,9 @@
 #include <algorithm>
 
 #include "common/qlog/qlog.h"
-#include "quic/congestion_control/util.h"
-#include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v3_congestion_control.h"
+#include "quic/congestion_control/normal_pacer.h"
+#include "quic/congestion_control/util.h"
 
 // References for BBRv3 (teaching subset):
 //   [BBRv3-Draft]  draft-cardwell-iccrg-bbr-congestion-control-02 §4.2,
@@ -84,12 +84,12 @@ void BBRv3CongestionControl::OnPacketSent(const SentPacketEvent& ev) {
 
 void BBRv3CongestionControl::OnPacketAcked(const AckEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_acked) ? bytes_in_flight_ - ev.bytes_acked : 0;
-    
+
     // Update min_rtt timestamp when min_rtt is updated (from OnRoundTripSample)
     if (min_rtt_stamp_us_ == 0 || srtt_us_ <= min_rtt_us_) {
         min_rtt_stamp_us_ = ev.ack_time;
     }
-    
+
     if (ev.ecn_ce) {
         ecn_seen_in_round_ = true;
         // ECN handling will be done at round end via AdaptOnEcn()
@@ -203,7 +203,7 @@ ICongestionControl::SendState BBRv3CongestionControl::CanSend(uint64_t now, uint
 uint64_t BBRv3CongestionControl::GetPacingRateBytesPerSec() const {
     if (max_bw_bps_ == 0) {
         // Use default RTT instead of returning cwnd_bytes (which is not a rate)
-        uint64_t rtt_us = (srtt_us_ > 0) ? srtt_us_ : 333000; // default 333ms
+        uint64_t rtt_us = (srtt_us_ > 0) ? srtt_us_ : 333000;  // default 333ms
         uint64_t bw_bytes_per_sec = MulDiv(cwnd_bytes_, 1000000ull, rtt_us);
         return static_cast<uint64_t>(bw_bytes_per_sec * pacing_gain_);
     }
@@ -218,16 +218,16 @@ uint64_t BBRv3CongestionControl::NextSendTime(uint64_t now) const {
 
 uint64_t BBRv3CongestionControl::BdpBytes(uint64_t gain_num, uint64_t gain_den) const {
     if (min_rtt_us_ == 0) return std::max<uint64_t>(cwnd_bytes_, 4 * cfg_.mss_bytes);
-    uint64_t bw = (max_bw_bps_ > 0) ? max_bw_bps_ : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
-    uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull); // bytes
+    uint64_t bw = (max_bw_bps_ > 0)
+                      ? max_bw_bps_
+                      : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
+    uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull);  // bytes
     return congestion_control::muldiv_safe(bdp, gain_num, gain_den);
 }
 
 void BBRv3CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
     // Enter ProbeRTT only if min_rtt is stale (>10s)
-    if (mode_ != Mode::kProbeRtt &&
-        min_rtt_stamp_us_ > 0 &&
-        now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
+    if (mode_ != Mode::kProbeRtt && min_rtt_stamp_us_ > 0 && now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
         {
             common::CongestionStateUpdatedData qlog_data;
             qlog_data.old_state = "congestion_avoidance";
@@ -255,7 +255,7 @@ void BBRv3CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
         EnterProbeBwState(ProbeBwState::kDown, now_us);
         cycle_index_ = 7;
         cycle_start_us_ = now_us;
-        min_rtt_stamp_us_ = now_us; // reset staleness
+        min_rtt_stamp_us_ = now_us;  // reset staleness
     }
 }
 
@@ -366,18 +366,16 @@ void BBRv3CongestionControl::AdaptInflightBoundsOnLoss(uint64_t now_us) {
     // ECN-CE marks fire before queue overflow.
     // Only calculate loss rate if we have meaningful data
     if (round_delivered_bytes_ == 0 && round_lost_bytes_ == 0) return;
-    
+
     // Calculate loss rate: lost / (delivered + lost)
     uint64_t total = round_delivered_bytes_ + round_lost_bytes_;
     if (total == 0) return;
-    
+
     double loss_rate = static_cast<double>(round_lost_bytes_) / static_cast<double>(total);
     if (loss_rate > loss_thresh_) {
         // Reduce inflight_hi on excessive loss using beta_loss
-        inflight_hi_bytes_ = std::max<uint64_t>(
-            inflight_lo_bytes_, 
-            static_cast<uint64_t>(inflight_hi_bytes_ * beta_loss_)
-        );
+        inflight_hi_bytes_ =
+            std::max<uint64_t>(inflight_lo_bytes_, static_cast<uint64_t>(inflight_hi_bytes_ * beta_loss_));
     } else if (round_lost_bytes_ == 0) {
         // Only raise hi when there's no loss in this round
         inflight_hi_bytes_ = std::min<uint64_t>(inflight_hi_bytes_ + 2 * cfg_.mss_bytes, cfg_.max_cwnd_bytes);
@@ -387,14 +385,11 @@ void BBRv3CongestionControl::AdaptInflightBoundsOnLoss(uint64_t now_us) {
 
 void BBRv3CongestionControl::AdaptOnEcn() {
     if (!ecn_seen_in_round_) return;
-    
+
     // ECN marks indicate congestion before loss occurs
     // React more conservatively than loss
-    inflight_hi_bytes_ = std::max<uint64_t>(
-        inflight_lo_bytes_,
-        static_cast<uint64_t>(inflight_hi_bytes_ * beta_ecn_)
-    );
-    
+    inflight_hi_bytes_ = std::max<uint64_t>(inflight_lo_bytes_, static_cast<uint64_t>(inflight_hi_bytes_ * beta_ecn_));
+
     // Exit Startup if we see ECN marks early
     if (mode_ == Mode::kStartup) {
         {
@@ -407,7 +402,7 @@ void BBRv3CongestionControl::AdaptOnEcn() {
         pacing_gain_ = 1.0 / 2.885;
         cwnd_gain_ = 2.0;
     }
-    
+
     // Exit Probe UP state on ECN
     if (mode_ == Mode::kProbeBw && probe_bw_state_ == ProbeBwState::kUp) {
         EnterProbeBwState(ProbeBwState::kDown, 0);
@@ -419,7 +414,7 @@ void BBRv3CongestionControl::UpdateInflightBounds() {
     // This provides a reasonable lower bound for inflight data
     if (max_bw_bps_ > 0 && min_rtt_us_ > 0) {
         uint64_t bdp = BdpBytes(1000, 1000);
-        
+
         if (mode_ == Mode::kStartup) {
             // No lower bound during startup
             inflight_lo_bytes_ = 0;
@@ -435,7 +430,7 @@ void BBRv3CongestionControl::UpdateInflightBounds() {
 void BBRv3CongestionControl::EnterProbeBwState(ProbeBwState state, uint64_t now_us) {
     probe_bw_state_ = state;
     probe_bw_state_start_us_ = now_us;
-    
+
     // [BBRv3-Draft] §4.2 four-phase ProbeBW state machine. v1's 8-RTT
     // gain cycle (1.25, 0.75, 1.0×6) is replaced by an explicit
     // DOWN→CRUISE→REFILL→UP loop with state-dependent durations
@@ -452,10 +447,10 @@ void BBRv3CongestionControl::EnterProbeBwState(ProbeBwState state, uint64_t now_
             pacing_gain_ = 0.75;  // Drain queue
             break;
         case ProbeBwState::kCruise:
-            pacing_gain_ = 1.0;   // Maintain current rate
+            pacing_gain_ = 1.0;  // Maintain current rate
             break;
         case ProbeBwState::kRefill:
-            pacing_gain_ = 1.0;   // Fill pipe before probing
+            pacing_gain_ = 1.0;  // Fill pipe before probing
             break;
         case ProbeBwState::kUp:
             pacing_gain_ = 1.25;  // Probe for more bandwidth
@@ -465,31 +460,29 @@ void BBRv3CongestionControl::EnterProbeBwState(ProbeBwState state, uint64_t now_
 
 bool BBRv3CongestionControl::ShouldAdvanceProbeBwState(uint64_t now_us) const {
     if (probe_bw_state_start_us_ == 0) return false;
-    
+
     uint64_t min_duration_us = std::max<uint64_t>(min_rtt_us_, 1000);
     uint64_t elapsed_us = now_us - probe_bw_state_start_us_;
-    
+
     switch (probe_bw_state_) {
         case ProbeBwState::kDown:
             // Stay in DOWN until inflight drops below target OR timeout
             // Add timeout to prevent infinite blocking (max 5 RTTs)
-            if (elapsed_us >= min_duration_us * 5) 
-            return true;
-            return elapsed_us >= min_duration_us && 
-                   bytes_in_flight_ <= BdpBytes(1000, 1000);
-        
+            if (elapsed_us >= min_duration_us * 5) return true;
+            return elapsed_us >= min_duration_us && bytes_in_flight_ <= BdpBytes(1000, 1000);
+
         case ProbeBwState::kCruise:
             // Cruise for multiple RTTs before next probe
             return elapsed_us >= min_duration_us * 3;
-        
+
         case ProbeBwState::kRefill:
             // Refill for one RTT
             return elapsed_us >= min_duration_us;
-        
+
         case ProbeBwState::kUp:
             // Probe for one RTT
             return elapsed_us >= min_duration_us;
-        
+
         default:
             return false;
     }
@@ -499,7 +492,5 @@ void BBRv3CongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> tra
     qlog_trace_ = trace;
 }
 
-} // namespace quic
-} // namespace quicx
-
-
+}  // namespace quic
+}  // namespace quicx

@@ -1,8 +1,8 @@
 #ifndef COMMON_UTIL_RANDOM
 #define COMMON_UTIL_RANDOM
 
-#include <random>
 #include <cstdint>
+#include <random>
 
 namespace quicx {
 namespace common {
@@ -44,7 +44,7 @@ private:
     std::uniform_int_distribution<int32_t> uniform_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

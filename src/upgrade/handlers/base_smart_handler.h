@@ -4,11 +4,11 @@
 #include <memory>
 #include <unordered_map>
 
-#include <quicx/upgrade/type.h>
 #include <quicx/common/if_event_loop.h>
+#include <quicx/upgrade/type.h>
 #include "upgrade/core/upgrade_manager.h"
-#include "upgrade/handlers/if_smart_handler.h"
 #include "upgrade/handlers/connection_context.h"
+#include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
 namespace upgrade {
@@ -25,8 +25,7 @@ namespace upgrade {
 constexpr uint64_t kUpgradeNegotiationTimeoutMs = 30000;  // 30 s
 
 // Base smart handler containing common logic
-class BaseSmartHandler:
-    public ISmartHandler {
+class BaseSmartHandler: public ISmartHandler {
 public:
     explicit BaseSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop);
     virtual ~BaseSmartHandler() = default;
@@ -51,10 +50,10 @@ protected:
     void OnUpgradeComplete(ConnectionContext& context);
     void OnUpgradeFailed(ConnectionContext& context, const std::string& error);
     void HandleNegotiationTimeout(uint32_t fd);
-    
+
     // Get negotiated protocol (for HTTPS connections)
     virtual std::string GetNegotiatedProtocol(std::shared_ptr<ITcpSocket> socket) const { return ""; }
-    
+
     // Try to send pending response (handles partial sends)
     void TrySendResponse(ConnectionContext& context);
 
@@ -66,7 +65,7 @@ protected:
     std::weak_ptr<common::IEventLoop> event_loop_;
 };
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx
 
 #endif

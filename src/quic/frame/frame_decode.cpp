@@ -143,8 +143,7 @@ bool DecodeFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shar
 
         // Defensive: validate progress
         if (buffer->GetDataLength() >= length_before) {
-            LOG_ERROR(
-                "decode made no progress. frame type:%d, remaining:%u", frame_type, buffer->GetDataLength());
+            LOG_ERROR("decode made no progress. frame type:%d, remaining:%u", frame_type, buffer->GetDataLength());
             return false;
         }
     }

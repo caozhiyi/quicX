@@ -1,17 +1,17 @@
 #include <cstdint>
 #ifdef __APPLE__
 
-#include <fcntl.h>
 #include <errno.h>
-#include <cstring>
-#include <unistd.h>
-#include <vector>
+#include <fcntl.h>
 #include <sys/event.h>
 #include <sys/types.h>
+#include <unistd.h>
+#include <cstring>
+#include <vector>
 
 #include "common/log/log.h"
-#include "common/network/io_handle.h"
 #include "common/network/if_event_driver.h"
+#include "common/network/io_handle.h"
 #include "common/network/macos/kqueue_event_driver.h"
 
 namespace quicx {
@@ -40,7 +40,7 @@ bool KqueueEventDriver::Init() {
         LOG_ERROR("Failed to create kqueue instance: %s", strerror(errno));
         return false;
     }
-    
+
     // Create pipe for wakeup (macOS doesn't have pipe2)
     if (!common::Pipe(wakeup_fd_[0], wakeup_fd_[1])) {
         LOG_ERROR("Failed to create wakeup pipe: %s", strerror(errno));
@@ -61,7 +61,7 @@ bool KqueueEventDriver::Init() {
         kqueue_fd_ = -1;
         return false;
     }
-    
+
     auto noblock_ret2 = common::SocketNoblocking(wakeup_fd_[1]);
     if (noblock_ret2.error_code_ != 0) {
         LOG_ERROR("Failed to set wakeup pipe write end non-blocking: %s", strerror(noblock_ret2.error_code_));
@@ -69,16 +69,16 @@ bool KqueueEventDriver::Init() {
         common::Close(wakeup_fd_[0]);
         wakeup_fd_[0] = -1;
         wakeup_fd_[1] = -1;
-        
+
         close(kqueue_fd_);
         kqueue_fd_ = -1;
         return false;
     }
-    
+
     // Add read end to kqueue for wakeup events
     struct kevent kev;
     EV_SET(&kev, wakeup_fd_[0], EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
-    
+
     if (kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr) < 0) {
         LOG_ERROR("Failed to add wakeup fd to kqueue: %s", strerror(errno));
         common::Close(wakeup_fd_[1]);
@@ -88,7 +88,7 @@ bool KqueueEventDriver::Init() {
         kqueue_fd_ = -1;
         return false;
     }
-    
+
     LOG_INFO("Kqueue event driver initialized with wakeup support");
     return true;
 }
@@ -106,7 +106,7 @@ bool KqueueEventDriver::AddFd(int32_t sockfd, int32_t events) {
         EV_SET(&changelist[nchanges], sockfd, EVFILT_READ, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         nchanges++;
     }
-    
+
     if (events & EventType::ET_WRITE) {
         EV_SET(&changelist[nchanges], sockfd, EVFILT_WRITE, EV_ADD | EV_ENABLE, 0, 0, nullptr);
         nchanges++;
@@ -129,11 +129,11 @@ bool KqueueEventDriver::RemoveFd(int32_t sockfd) {
     }
 
     struct kevent kev;
-    
+
     // Remove read events
     EV_SET(&kev, sockfd, EVFILT_READ, EV_DELETE, 0, 0, nullptr);
     kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr);
-    
+
     // Remove write events
     EV_SET(&kev, sockfd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
     kevent(kqueue_fd_, &kev, 1, nullptr, 0, nullptr);
@@ -166,8 +166,8 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
         timeout.tv_nsec = (timeout_ms % 1000) * 1000000;
     }
 
-    int nfds = kevent(kqueue_fd_, nullptr, 0, kqueue_events_scratch_.data(), max_events_,
-                     timeout_ms >= 0 ? &timeout : nullptr);
+    int nfds = kevent(
+        kqueue_fd_, nullptr, 0, kqueue_events_scratch_.data(), max_events_, timeout_ms >= 0 ? &timeout : nullptr);
 
     if (nfds < 0) {
         if (errno == EINTR) {
@@ -197,7 +197,7 @@ int KqueueEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
             }
 
             EventType type = ConvertFromKqueueEvent(kqueue_events_scratch_[i]);
-            events.push_back(Event{ (int32_t)kqueue_events_scratch_[i].ident, type });
+            events.push_back(Event{(int32_t)kqueue_events_scratch_[i].ident, type});
         }
     }
 
@@ -236,7 +236,7 @@ void KqueueEventDriver::Wakeup() {
     }
 }
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
-#endif 
+#endif

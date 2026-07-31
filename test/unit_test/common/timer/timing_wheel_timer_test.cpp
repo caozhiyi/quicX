@@ -4,8 +4,8 @@
 #include <set>
 #include <vector>
 
-#include "common/util/time.h"
 #include "common/timer/timing_wheel_timer.h"
+#include "common/util/time.h"
 
 namespace quicx {
 namespace common {
@@ -13,38 +13,40 @@ namespace {
 
 // ---- helpers ----------------------------------------------------------------
 
-static uint64_t Now() { return UTCTimeMsec(); }
+static uint64_t Now() {
+    return UTCTimeMsec();
+}
 
 // ---- AddTimer ---------------------------------------------------------------
 
-TEST(timing_wheel_timer_utest, add_single) {
+TEST(TimingWheelTimerTest, add_single) {
     TimerTask t;
     TimingWheelTimer tw;
     EXPECT_NE(0u, tw.AddTimer(t, 30));
 }
 
-TEST(timing_wheel_timer_utest, add_multiple) {
+TEST(TimingWheelTimerTest, add_multiple) {
     TimerTask t1, t2, t3, t4;
     TimingWheelTimer tw;
     uint64_t now = Now();
-    EXPECT_NE(0u, tw.AddTimer(t1, 10,  now));
-    EXPECT_NE(0u, tw.AddTimer(t2, 30,  now));
-    EXPECT_NE(0u, tw.AddTimer(t3, 40,  now));
-    EXPECT_NE(0u, tw.AddTimer(t4, 50,  now));
+    EXPECT_NE(0u, tw.AddTimer(t1, 10, now));
+    EXPECT_NE(0u, tw.AddTimer(t2, 30, now));
+    EXPECT_NE(0u, tw.AddTimer(t3, 40, now));
+    EXPECT_NE(0u, tw.AddTimer(t4, 50, now));
     EXPECT_FALSE(tw.Empty());
 }
 
 // ---- RemoveTimer ------------------------------------------------------------
 
-TEST(timing_wheel_timer_utest, remove_all) {
+TEST(TimingWheelTimerTest, remove_all) {
     TimerTask t1, t2, t3, t4;
     TimingWheelTimer tw;
     uint64_t now = Now();
 
-    tw.AddTimer(t1, 10,  now);
-    tw.AddTimer(t2, 30,  now);
-    tw.AddTimer(t3, 40,  now);
-    tw.AddTimer(t4, 40,  now);
+    tw.AddTimer(t1, 10, now);
+    tw.AddTimer(t2, 30, now);
+    tw.AddTimer(t3, 40, now);
+    tw.AddTimer(t4, 40, now);
 
     EXPECT_TRUE(tw.RemoveTimer(t1));
     EXPECT_TRUE(tw.RemoveTimer(t2));
@@ -53,7 +55,7 @@ TEST(timing_wheel_timer_utest, remove_all) {
     EXPECT_TRUE(tw.Empty());
 }
 
-TEST(timing_wheel_timer_utest, remove_invalid) {
+TEST(TimingWheelTimerTest, remove_invalid) {
     TimerTask t;
     TimingWheelTimer tw;
     // Never added — should return false
@@ -62,13 +64,13 @@ TEST(timing_wheel_timer_utest, remove_invalid) {
 
 // ---- MinTime ----------------------------------------------------------------
 
-TEST(timing_wheel_timer_utest, min_time_empty) {
+TEST(TimingWheelTimerTest, min_time_empty) {
     TimingWheelTimer tw;
     uint64_t now = Now();
     EXPECT_EQ(-1, tw.MinTime(now));
 }
 
-TEST(timing_wheel_timer_utest, min_time_single) {
+TEST(TimingWheelTimerTest, min_time_single) {
     TimerTask t;
     TimingWheelTimer tw;
     uint64_t now = Now();
@@ -77,14 +79,14 @@ TEST(timing_wheel_timer_utest, min_time_single) {
     EXPECT_EQ(10 * TimeUnit::kSecond, tw.MinTime(now));
 }
 
-TEST(timing_wheel_timer_utest, min_time_multiple) {
+TEST(TimingWheelTimerTest, min_time_multiple) {
     TimerTask t1, t2, t3;
     TimingWheelTimer tw;
     uint64_t now = Now();
 
-    tw.AddTimer(t1, 10 * TimeUnit::kSecond,  now);
-    tw.AddTimer(t2, 30 * TimeUnit::kSecond,  now);
-    tw.AddTimer(t3, 40 * TimeUnit::kMinute,  now);
+    tw.AddTimer(t1, 10 * TimeUnit::kSecond, now);
+    tw.AddTimer(t2, 30 * TimeUnit::kSecond, now);
+    tw.AddTimer(t3, 40 * TimeUnit::kMinute, now);
 
     EXPECT_EQ(10 * TimeUnit::kSecond, tw.MinTime(now));
 
@@ -97,19 +99,19 @@ TEST(timing_wheel_timer_utest, min_time_multiple) {
 
 // ---- TimerRun — callbacks fire correctly ------------------------------------
 
-TEST(timing_wheel_timer_utest, timerrun_basic) {
+TEST(TimingWheelTimerTest, timerrun_basic) {
     int fired = 0;
     TimerTask t1, t2, t3;
     TimingWheelTimer tw;
     uint64_t now = Now();
 
-    t1.SetTimeoutCallback([&]{ ++fired; });
-    t2.SetTimeoutCallback([&]{ ++fired; });
-    t3.SetTimeoutCallback([&]{ ++fired; });
+    t1.SetTimeoutCallback([&] { ++fired; });
+    t2.SetTimeoutCallback([&] { ++fired; });
+    t3.SetTimeoutCallback([&] { ++fired; });
 
-    tw.AddTimer(t1, 20,  now);
-    tw.AddTimer(t2, 30 * TimeUnit::kSecond,  now);
-    tw.AddTimer(t3, 40 * TimeUnit::kMinute,  now);
+    tw.AddTimer(t1, 20, now);
+    tw.AddTimer(t2, 30 * TimeUnit::kSecond, now);
+    tw.AddTimer(t3, 40 * TimeUnit::kMinute, now);
 
     EXPECT_EQ(20, tw.MinTime(now));
 
@@ -136,50 +138,64 @@ TEST(timing_wheel_timer_utest, timerrun_basic) {
     EXPECT_TRUE(tw.Empty());
 }
 
-TEST(timing_wheel_timer_utest, timerrun_all_expire) {
+TEST(TimingWheelTimerTest, timerrun_all_expire) {
     int fired = 0;
     TimerTask t1, t2, t3;
     TimingWheelTimer tw;
     uint64_t now = Now();
 
-    t1.SetTimeoutCallback([&]{ ++fired; });
-    t2.SetTimeoutCallback([&]{ ++fired; });
-    t3.SetTimeoutCallback([&]{ ++fired; });
+    t1.SetTimeoutCallback([&] { ++fired; });
+    t2.SetTimeoutCallback([&] { ++fired; });
+    t3.SetTimeoutCallback([&] { ++fired; });
 
-    tw.AddTimer(t1, 20,                     now);
+    tw.AddTimer(t1, 20, now);
     tw.AddTimer(t2, 31 * TimeUnit::kSecond, now);
-    tw.AddTimer(t3,  1 * TimeUnit::kMinute, now);
+    tw.AddTimer(t3, 1 * TimeUnit::kMinute, now);
 
-    now += 20;   tw.TimerRun(now);  EXPECT_EQ(1, fired);
-    now += 10;   tw.TimerRun(now);
-    now += 30970; tw.TimerRun(now); EXPECT_EQ(2, fired);
-    now += 29000; tw.TimerRun(now); EXPECT_EQ(3, fired);
+    now += 20;
+    tw.TimerRun(now);
+    EXPECT_EQ(1, fired);
+    now += 10;
+    tw.TimerRun(now);
+    now += 30970;
+    tw.TimerRun(now);
+    EXPECT_EQ(2, fired);
+    now += 29000;
+    tw.TimerRun(now);
+    EXPECT_EQ(3, fired);
 
     EXPECT_TRUE(tw.Empty());
 }
 
-TEST(timing_wheel_timer_utest, timerrun_readd) {
+TEST(TimingWheelTimerTest, timerrun_readd) {
     int fired = 0;
     TimerTask t1, t2;
     TimingWheelTimer tw;
     uint64_t now = Now();
 
-    t1.SetTimeoutCallback([&]{ ++fired; });
-    t2.SetTimeoutCallback([&]{ ++fired; });
+    t1.SetTimeoutCallback([&] { ++fired; });
+    t2.SetTimeoutCallback([&] { ++fired; });
 
-    tw.AddTimer(t1, 20,                     now);
+    tw.AddTimer(t1, 20, now);
     tw.AddTimer(t2, 31 * TimeUnit::kSecond, now);
 
-    now += 20;   tw.TimerRun(now);  EXPECT_EQ(1, fired);
-    now += 10;   tw.TimerRun(now);
+    now += 20;
+    tw.TimerRun(now);
+    EXPECT_EQ(1, fired);
+    now += 10;
+    tw.TimerRun(now);
 
     // Re-add t1 with a fresh timeout
     tw.AddTimer(t1, 40, now);
     EXPECT_EQ(40, tw.MinTime(now));
 
-    now += 40;   tw.TimerRun(now);  EXPECT_EQ(2, fired);
+    now += 40;
+    tw.TimerRun(now);
+    EXPECT_EQ(2, fired);
 
-    now += 30930; tw.TimerRun(now); EXPECT_EQ(3, fired);
+    now += 30930;
+    tw.TimerRun(now);
+    EXPECT_EQ(3, fired);
 
     EXPECT_EQ(-1, tw.MinTime(now));
     EXPECT_TRUE(tw.Empty());
@@ -187,13 +203,13 @@ TEST(timing_wheel_timer_utest, timerrun_readd) {
 
 // ---- Long timeout (overflow list) ------------------------------------------
 
-TEST(timing_wheel_timer_utest, long_timeout_overflow) {
+TEST(TimingWheelTimerTest, long_timeout_overflow) {
     int fired = 0;
     TimerTask t;
     TimingWheelTimer tw;
     uint64_t now = Now();
 
-    t.SetTimeoutCallback([&]{ ++fired; });
+    t.SetTimeoutCallback([&] { ++fired; });
 
     // 2 hours — beyond L2Range (~17.5 min) → goes into overflow list
     tw.AddTimer(t, 2 * TimeUnit::kHour, now);
@@ -214,14 +230,14 @@ TEST(timing_wheel_timer_utest, long_timeout_overflow) {
 
 // ---- Immediate / already-expired timer -------------------------------------
 
-TEST(timing_wheel_timer_utest, immediate_timer) {
+TEST(TimingWheelTimerTest, immediate_timer) {
     int fired = 0;
     TimerTask t;
     TimingWheelTimer tw;
     uint64_t now = Now();
 
-    t.SetTimeoutCallback([&]{ ++fired; });
-    tw.AddTimer(t, 0, now);   // expires immediately
+    t.SetTimeoutCallback([&] { ++fired; });
+    tw.AddTimer(t, 0, now);  // expires immediately
 
     tw.TimerRun(now);
     EXPECT_EQ(1, fired);
@@ -230,15 +246,15 @@ TEST(timing_wheel_timer_utest, immediate_timer) {
 
 // ---- Multiple tasks in same slot -------------------------------------------
 
-TEST(timing_wheel_timer_utest, same_slot_multiple_tasks) {
+TEST(TimingWheelTimerTest, same_slot_multiple_tasks) {
     int fired = 0;
     TimerTask t1, t2, t3;
     TimingWheelTimer tw;
     uint64_t now = Now();
 
-    t1.SetTimeoutCallback([&]{ ++fired; });
-    t2.SetTimeoutCallback([&]{ ++fired; });
-    t3.SetTimeoutCallback([&]{ ++fired; });
+    t1.SetTimeoutCallback([&] { ++fired; });
+    t2.SetTimeoutCallback([&] { ++fired; });
+    t3.SetTimeoutCallback([&] { ++fired; });
 
     // All three land in the same 1-ms resolution slot
     tw.AddTimer(t1, 100, now);
@@ -267,7 +283,7 @@ TEST(timing_wheel_timer_utest, same_slot_multiple_tasks) {
 // Cascade(1, ...) BEFORE firing the slot. A task scheduled at exactly
 // boundary+0..15 ms must still fire on time.
 
-TEST(timing_wheel_timer_utest, cascade_l0_boundary_fire) {
+TEST(TimingWheelTimerTest, cascade_l0_boundary_fire) {
     // Use a base aligned to 256 so we can reason about boundaries cleanly.
     // The wheel uses (uint32_t)deadline & kL0Mask, so absolute alignment
     // determines which slot a task lands in.
@@ -277,9 +293,9 @@ TEST(timing_wheel_timer_utest, cascade_l0_boundary_fire) {
     TimerTask tp, ta, tn;
     TimingWheelTimer tw;
 
-    tp.SetTimeoutCallback([&]{ ++fired_pre;  });
-    ta.SetTimeoutCallback([&]{ ++fired_at;   });
-    tn.SetTimeoutCallback([&]{ ++fired_post; });
+    tp.SetTimeoutCallback([&] { ++fired_pre; });
+    ta.SetTimeoutCallback([&] { ++fired_at; });
+    tn.SetTimeoutCallback([&] { ++fired_post; });
 
     // Bootstrap the wheel at `base`.
     tw.TimerRun(base);
@@ -301,7 +317,7 @@ TEST(timing_wheel_timer_utest, cascade_l0_boundary_fire) {
     EXPECT_TRUE(tw.Empty());
 }
 
-TEST(timing_wheel_timer_utest, cascade_l1_boundary_fire) {
+TEST(TimingWheelTimerTest, cascade_l1_boundary_fire) {
     // Cross the L1 boundary: 16384 ms. That triggers Cascade(2, c2) at the
     // moment c0==0 && c1==0.
     constexpr uint64_t kL1 = 16384;
@@ -312,18 +328,18 @@ TEST(timing_wheel_timer_utest, cascade_l1_boundary_fire) {
     TimerTask t1, t2;
     TimingWheelTimer tw;
 
-    t1.SetTimeoutCallback([&]{ ++fired_in_l1; });
-    t2.SetTimeoutCallback([&]{ ++fired_after; });
+    t1.SetTimeoutCallback([&] { ++fired_in_l1; });
+    t2.SetTimeoutCallback([&] { ++fired_after; });
 
     tw.TimerRun(base);
 
     // t1 lives in level 2 (>= L1Range)…
-    EXPECT_NE(0u, tw.AddTimer(t1, kL1 + 5, base));      // 16389 ms out
+    EXPECT_NE(0u, tw.AddTimer(t1, kL1 + 5, base));  // 16389 ms out
     // t2 lives in overflow won't apply here (still < L2Range), but well past L1:
     EXPECT_NE(0u, tw.AddTimer(t2, kL1 * 3 + 7, base));  // ~49 s
 
     // Big jump straight over the L1 boundary, then a second jump past t2.
-    tw.TimerRun(base + kL1 + 100);    // crosses the c1==0 boundary inside Tick
+    tw.TimerRun(base + kL1 + 100);  // crosses the c1==0 boundary inside Tick
     EXPECT_EQ(1, fired_in_l1);
     EXPECT_EQ(0, fired_after);
 
@@ -338,11 +354,11 @@ TEST(timing_wheel_timer_utest, cascade_l1_boundary_fire) {
 //     RemoveTimer(pto_timer_); AddTimer(pto_timer_, 88ms);
 // The bug presented as "after ~800 such cycles, the next 88ms fire never came".
 
-TEST(timing_wheel_timer_utest, pto_style_remove_add_thousand_times_then_fire) {
+TEST(TimingWheelTimerTest, pto_style_remove_add_thousand_times_then_fire) {
     int fired = 0;
     TimerTask pto;
     TimingWheelTimer tw;
-    pto.SetTimeoutCallback([&]{ ++fired; });
+    pto.SetTimeoutCallback([&] { ++fired; });
 
     uint64_t now = Now();
     tw.TimerRun(now);
@@ -362,8 +378,7 @@ TEST(timing_wheel_timer_utest, pto_style_remove_add_thousand_times_then_fire) {
 
         // Cache invariant: MinTime must always agree with the freshly armed
         // 88ms deadline (no other tasks present).
-        ASSERT_EQ(88, tw.MinTime(now))
-            << "MinTime drifted after " << i << " remove+add cycles";
+        ASSERT_EQ(88, tw.MinTime(now)) << "MinTime drifted after " << i << " remove+add cycles";
     }
 
     // Now stop re-arming; the timer MUST fire ~88 ms later.
@@ -374,17 +389,17 @@ TEST(timing_wheel_timer_utest, pto_style_remove_add_thousand_times_then_fire) {
     EXPECT_TRUE(tw.Empty());
 }
 
-TEST(timing_wheel_timer_utest, pto_style_rearm_across_l1_boundary) {
+TEST(TimingWheelTimerTest, pto_style_rearm_across_l1_boundary) {
     // Same as above but engineered so the rearm cycles straddle the
     // 16384 ms L1 cascade boundary — the suspected location of the bug.
     int fired = 0;
     TimerTask pto;
     TimingWheelTimer tw;
-    pto.SetTimeoutCallback([&]{ ++fired; });
+    pto.SetTimeoutCallback([&] { ++fired; });
 
     constexpr uint64_t kL1 = 16384;
     uint64_t base = (Now() & ~(kL1 - 1)) + kL1 * 2;
-    uint64_t now  = base + kL1 - 200;  // start 200ms before an L1 boundary
+    uint64_t now = base + kL1 - 200;  // start 200ms before an L1 boundary
     tw.TimerRun(now);
 
     ASSERT_NE(0u, tw.AddTimer(pto, 88, now));
@@ -395,9 +410,7 @@ TEST(timing_wheel_timer_utest, pto_style_rearm_across_l1_boundary) {
         tw.TimerRun(now);
         ASSERT_TRUE(tw.RemoveTimer(pto));
         ASSERT_NE(0u, tw.AddTimer(pto, 88, now));
-        ASSERT_EQ(88, tw.MinTime(now))
-            << "MinTime drift around L1 boundary, iter=" << i
-            << " now=" << now;
+        ASSERT_EQ(88, tw.MinTime(now)) << "MinTime drift around L1 boundary, iter=" << i << " now=" << now;
     }
 
     now += 88;
@@ -426,19 +439,18 @@ struct Tracker {
         for (const auto& kv : live) earliest = std::min(earliest, kv.second);
         if (earliest <= now) return 0;
         uint64_t d = earliest - now;
-        if (d > static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))
-            return std::numeric_limits<int32_t>::max();
+        if (d > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) return std::numeric_limits<int32_t>::max();
         return static_cast<int32_t>(d);
     }
 };
 
 }  // namespace
 
-TEST(timing_wheel_timer_utest, min_time_cache_invariant_under_random_ops) {
+TEST(TimingWheelTimerTest, min_time_cache_invariant_under_random_ops) {
     std::mt19937_64 rng(0xC0FFEEu);
-    std::uniform_int_distribution<int>      op_dist(0, 99);
-    std::uniform_int_distribution<uint32_t> to_dist(1, 100000);   // up to 100s
-    std::uniform_int_distribution<uint32_t> step_dist(0, 50);     // 0..50ms ticks
+    std::uniform_int_distribution<int> op_dist(0, 99);
+    std::uniform_int_distribution<uint32_t> to_dist(1, 100000);  // up to 100s
+    std::uniform_int_distribution<uint32_t> step_dist(0, 50);    // 0..50ms ticks
 
     TimingWheelTimer tw;
     Tracker tracker;
@@ -446,13 +458,13 @@ TEST(timing_wheel_timer_utest, min_time_cache_invariant_under_random_ops) {
     // Pool of tasks; we add/remove by index.
     constexpr int kN = 64;
     std::vector<TimerTask> pool(kN);
-    std::vector<bool>      alive(kN, false);
+    std::vector<bool> alive(kN, false);
 
     uint64_t now = Now();
     tw.TimerRun(now);
 
     for (int i = 0; i < kN; ++i) {
-        pool[i].SetTimeoutCallback([&, i]{
+        pool[i].SetTimeoutCallback([&, i] {
             // When the wheel fires this task, mirror in tracker.
             tracker.live.erase(pool[i].GetId());
             alive[i] = false;
@@ -460,7 +472,7 @@ TEST(timing_wheel_timer_utest, min_time_cache_invariant_under_random_ops) {
     }
 
     for (int iter = 0; iter < 5000; ++iter) {
-        int op  = op_dist(rng);
+        int op = op_dist(rng);
         int idx = op_dist(rng) % kN;
 
         if (op < 45) {
@@ -485,23 +497,22 @@ TEST(timing_wheel_timer_utest, min_time_cache_invariant_under_random_ops) {
             tw.TimerRun(now);
             // Drop tracker entries whose deadline has passed (they fired).
             for (auto it = tracker.live.begin(); it != tracker.live.end();) {
-                if (it->second <= now) it = tracker.live.erase(it);
-                else ++it;
+                if (it->second <= now)
+                    it = tracker.live.erase(it);
+                else
+                    ++it;
             }
             // Sync alive[] with tracker (fired tasks set alive[i]=false in cb).
         }
 
         int32_t expected = tracker.Expected(now);
-        int32_t actual   = tw.MinTime(now);
-        ASSERT_EQ(expected, actual)
-            << "MinTime cache invariant broken at iter=" << iter
-            << " op=" << op << " idx=" << idx
-            << " now=" << now
-            << " live=" << tracker.live.size();
+        int32_t actual = tw.MinTime(now);
+        ASSERT_EQ(expected, actual) << "MinTime cache invariant broken at iter=" << iter << " op=" << op
+                                    << " idx=" << idx << " now=" << now << " live=" << tracker.live.size();
     }
 }
 
-TEST(timing_wheel_timer_utest, min_time_cache_after_min_task_removed) {
+TEST(TimingWheelTimerTest, min_time_cache_after_min_task_removed) {
     // Targeted: after RemoveTimer of the cached-min task, MinTime must
     // recompute correctly even if the rebuild path is taken.
     TimerTask t_min, t_mid, t_far;
@@ -509,20 +520,20 @@ TEST(timing_wheel_timer_utest, min_time_cache_after_min_task_removed) {
     uint64_t now = Now();
     tw.TimerRun(now);
 
-    tw.AddTimer(t_min, 10,    now);
-    tw.AddTimer(t_mid, 500,   now);
+    tw.AddTimer(t_min, 10, now);
+    tw.AddTimer(t_mid, 500, now);
     tw.AddTimer(t_far, 50000, now);
 
-    EXPECT_EQ(10,    tw.MinTime(now));
+    EXPECT_EQ(10, tw.MinTime(now));
     EXPECT_TRUE(tw.RemoveTimer(t_min));
-    EXPECT_EQ(500,   tw.MinTime(now));   // forces dirty -> rescan
+    EXPECT_EQ(500, tw.MinTime(now));  // forces dirty -> rescan
     EXPECT_TRUE(tw.RemoveTimer(t_mid));
     EXPECT_EQ(50000, tw.MinTime(now));
     EXPECT_TRUE(tw.RemoveTimer(t_far));
-    EXPECT_EQ(-1,    tw.MinTime(now));
+    EXPECT_EQ(-1, tw.MinTime(now));
 }
 
-TEST(timing_wheel_timer_utest, min_time_cache_after_fire_invalidation) {
+TEST(TimingWheelTimerTest, min_time_cache_after_fire_invalidation) {
     // A task firing must invalidate the cache so the next-earliest is reported.
     int fired = 0;
     TimerTask t1, t2;
@@ -530,10 +541,10 @@ TEST(timing_wheel_timer_utest, min_time_cache_after_fire_invalidation) {
     uint64_t now = Now();
     tw.TimerRun(now);
 
-    t1.SetTimeoutCallback([&]{ ++fired; });
-    t2.SetTimeoutCallback([&]{ ++fired; });
+    t1.SetTimeoutCallback([&] { ++fired; });
+    t2.SetTimeoutCallback([&] { ++fired; });
 
-    tw.AddTimer(t1, 50,  now);
+    tw.AddTimer(t1, 50, now);
     tw.AddTimer(t2, 200, now);
 
     EXPECT_EQ(50, tw.MinTime(now));
@@ -552,7 +563,7 @@ TEST(timing_wheel_timer_utest, min_time_cache_after_fire_invalidation) {
 // sender, etc.). When it finally does, current_ms_ jumps far. All in-range
 // tasks must fire, none get lost.
 
-TEST(timing_wheel_timer_utest, large_jump_fires_all_due_tasks_in_order) {
+TEST(TimingWheelTimerTest, large_jump_fires_all_due_tasks_in_order) {
     constexpr int kN = 200;
     std::vector<TimerTask> tasks(kN);
     std::vector<int> fire_order;
@@ -569,7 +580,7 @@ TEST(timing_wheel_timer_utest, large_jump_fires_all_due_tasks_in_order) {
     for (int i = 0; i < kN; ++i) {
         deadlines[i] = dist(rng);
         const int idx = i;
-        tasks[idx].SetTimeoutCallback([&, idx]{ fire_order.push_back(idx); });
+        tasks[idx].SetTimeoutCallback([&, idx] { fire_order.push_back(idx); });
         ASSERT_NE(0u, tw.AddTimer(tasks[idx], deadlines[idx], now));
     }
 
@@ -591,14 +602,14 @@ TEST(timing_wheel_timer_utest, large_jump_fires_all_due_tasks_in_order) {
     }
 }
 
-TEST(timing_wheel_timer_utest, jump_nine_seconds_with_short_timer) {
+TEST(TimingWheelTimerTest, jump_nine_seconds_with_short_timer) {
     // The exact pathology from the interop log: a 88ms timer set, then the
     // wheel does not get ticked for 9 seconds. When it finally ticks,
     // the timer MUST fire (and exactly once).
     int fired = 0;
     TimerTask t;
     TimingWheelTimer tw;
-    t.SetTimeoutCallback([&]{ ++fired; });
+    t.SetTimeoutCallback([&] { ++fired; });
 
     uint64_t now = Now();
     tw.TimerRun(now);
@@ -611,15 +622,15 @@ TEST(timing_wheel_timer_utest, jump_nine_seconds_with_short_timer) {
     EXPECT_TRUE(tw.Empty());
 }
 
-TEST(timing_wheel_timer_utest, reentrant_add_in_callback) {
+TEST(TimingWheelTimerTest, reentrant_add_in_callback) {
     // OnPTOTimer re-arms inside the callback. Make sure that's safe and
     // the re-armed timer is NOT fired in the same Tick.
     int fired_outer = 0, fired_inner = 0;
     TimerTask outer, inner;
     TimingWheelTimer tw;
 
-    inner.SetTimeoutCallback([&]{ ++fired_inner; });
-    outer.SetTimeoutCallback([&]{
+    inner.SetTimeoutCallback([&] { ++fired_inner; });
+    outer.SetTimeoutCallback([&] {
         ++fired_outer;
         tw.AddTimer(inner, 50);  // re-arm during fire
     });
@@ -654,7 +665,7 @@ TEST(timing_wheel_timer_utest, reentrant_add_in_callback) {
 //      losing track of the still-pending 100 ms task.
 //   4. MinTime() must return 100 ms, not 10 000 ms.
 
-TEST(timing_wheel_timer_utest, min_time_cache_dirty_then_add_larger_deadline) {
+TEST(TimingWheelTimerTest, min_time_cache_dirty_then_add_larger_deadline) {
     TimerTask t_short, t_holder, t_long;
     TimingWheelTimer tw;
     uint64_t now = Now();
@@ -665,9 +676,9 @@ TEST(timing_wheel_timer_utest, min_time_cache_dirty_then_add_larger_deadline) {
 
     // Insert and remove an extra task that briefly held the cache, to force
     // RemoveTimer to mark the cache dirty (kInvalidDeadline).
-    tw.AddTimer(t_holder, 50, now);              // becomes new cache min
-    EXPECT_EQ(50, tw.MinTime(now));              // confirm
-    EXPECT_TRUE(tw.RemoveTimer(t_holder));       // -> cache_dirty_ = true
+    tw.AddTimer(t_holder, 50, now);         // becomes new cache min
+    EXPECT_EQ(50, tw.MinTime(now));         // confirm
+    EXPECT_TRUE(tw.RemoveTimer(t_holder));  // -> cache_dirty_ = true
 
     // 2. Now add a *much later* timer while cache is dirty. Pre-fix code
     //    would set cache = now+10s and clear dirty, hiding the 100 ms task.
@@ -675,12 +686,11 @@ TEST(timing_wheel_timer_utest, min_time_cache_dirty_then_add_larger_deadline) {
 
     // 3. MinTime must report 100 ms (the still-pending short timer), not
     //    10 000 ms.
-    EXPECT_EQ(100, tw.MinTime(now))
-        << "Bug #21 regression: AddTimer on dirty cache must not overwrite "
-           "an unscanned earlier deadline.";
+    EXPECT_EQ(100, tw.MinTime(now)) << "Bug #21 regression: AddTimer on dirty cache must not overwrite "
+                                       "an unscanned earlier deadline.";
 }
 
-TEST(timing_wheel_timer_utest, min_time_cache_dirty_after_fire_then_add_larger) {
+TEST(TimingWheelTimerTest, min_time_cache_dirty_after_fire_then_add_larger) {
     // Variant of the above: cache is marked dirty by a fired slot (Tick),
     // then AddTimer(larger) must still preserve any remaining shorter task.
     TimerTask t_fired, t_short, t_long;
@@ -688,19 +698,18 @@ TEST(timing_wheel_timer_utest, min_time_cache_dirty_after_fire_then_add_larger) 
     uint64_t now = Now();
     tw.TimerRun(now);
 
-    tw.AddTimer(t_fired, 10,  now);   // will fire and dirty the cache
-    tw.AddTimer(t_short, 100, now);   // must remain visible afterwards
+    tw.AddTimer(t_fired, 10, now);   // will fire and dirty the cache
+    tw.AddTimer(t_short, 100, now);  // must remain visible afterwards
 
     now += 10;
-    tw.TimerRun(now);                 // fires t_fired, sets cache_dirty_
+    tw.TimerRun(now);  // fires t_fired, sets cache_dirty_
 
     // Add a far-future task while cache is dirty.
     tw.AddTimer(t_long, 10000, now);
 
     // Remaining time of t_short = 100 - 10 = 90.
-    EXPECT_EQ(90, tw.MinTime(now))
-        << "Bug #21 regression (post-fire variant): MinTime must rescan and "
-           "find the still-pending short timer.";
+    EXPECT_EQ(90, tw.MinTime(now)) << "Bug #21 regression (post-fire variant): MinTime must rescan and "
+                                      "find the still-pending short timer.";
 }
 
 // Mimics the exact ResetIdleTimer pattern observed in production:
@@ -708,14 +717,14 @@ TEST(timing_wheel_timer_utest, min_time_cache_dirty_after_fire_then_add_larger) 
 //   - on every ACK arrival: RemoveTimer(idle) + AddTimer(idle, 10 s)
 // MinTime must always reflect the recheck timer until the recheck fires,
 // regardless of how often the idle timer is rearmed.
-TEST(timing_wheel_timer_utest, reset_idle_timer_does_not_hide_short_timer) {
+TEST(TimingWheelTimerTest, reset_idle_timer_does_not_hide_short_timer) {
     TimerTask recheck, idle;
     TimingWheelTimer tw;
     uint64_t now = Now();
     tw.TimerRun(now);
 
-    tw.AddTimer(recheck, 100,   now);
-    tw.AddTimer(idle,    10000, now);
+    tw.AddTimer(recheck, 100, now);
+    tw.AddTimer(idle, 10000, now);
     EXPECT_EQ(100, tw.MinTime(now));
 
     // Simulate 5 ACK arrivals over the next 50 ms, each rearming idle.
@@ -727,8 +736,7 @@ TEST(timing_wheel_timer_utest, reset_idle_timer_does_not_hide_short_timer) {
         // Whatever happens on idle, recheck stays the next-earliest.
         int32_t mt = tw.MinTime(now);
         EXPECT_GE(mt, 0);
-        EXPECT_LE(mt, 100 - 10 * (i + 1) + 1)
-            << "iter " << i << ": recheck must remain the min, got " << mt;
+        EXPECT_LE(mt, 100 - 10 * (i + 1) + 1) << "iter " << i << ": recheck must remain the min, got " << mt;
     }
 }
 
@@ -745,7 +753,7 @@ TEST(timing_wheel_timer_utest, reset_idle_timer_does_not_hide_short_timer) {
 
 // Sparse L0 occupancy: a single timer planted in the *high* end of the L0
 // wheel must still be discovered by the bitmap scan when MinTime() rebuilds.
-TEST(timing_wheel_timer_utest, bitmap_l0_sparse_high_slot) {
+TEST(TimingWheelTimerTest, bitmap_l0_sparse_high_slot) {
     TimingWheelTimer tw;
     // Pick a base aligned to 256 ms so the L0 cursor starts at slot 0.
     uint64_t base = (Now() & ~static_cast<uint64_t>(0xff)) + 0x1000;
@@ -753,11 +761,11 @@ TEST(timing_wheel_timer_utest, bitmap_l0_sparse_high_slot) {
 
     TimerTask filler, target;
     // Filler in slot 1 — ensures bitmap word 0 has multiple bits.
-    tw.AddTimer(filler, 1,   base);
+    tw.AddTimer(filler, 1, base);
     // Target in slot 250 — lives in bitmap word 3 (slots 192..255).
     tw.AddTimer(target, 250, base);
 
-    EXPECT_EQ(1, tw.MinTime(base));   // filler is the min
+    EXPECT_EQ(1, tw.MinTime(base));       // filler is the min
     ASSERT_TRUE(tw.RemoveTimer(filler));  // dirties cache
     // After rebuild, EarliestDeadline must locate the bit in word 3.
     EXPECT_EQ(250, tw.MinTime(base));
@@ -765,7 +773,7 @@ TEST(timing_wheel_timer_utest, bitmap_l0_sparse_high_slot) {
 
 // L1 slot's per-slot min cache must be refreshed when a non-empty slot
 // loses its current minimum (NOT cleared!).
-TEST(timing_wheel_timer_utest, bitmap_l1_slot_min_refresh_on_partial_remove) {
+TEST(TimingWheelTimerTest, bitmap_l1_slot_min_refresh_on_partial_remove) {
     TimingWheelTimer tw;
     uint64_t now = Now();
     tw.TimerRun(now);
@@ -780,7 +788,7 @@ TEST(timing_wheel_timer_utest, bitmap_l1_slot_min_refresh_on_partial_remove) {
     tw.TimerRun(base);
 
     TimerTask t_min, t_mid, t_max;
-    tw.AddTimer(t_min, 300, base);   // earliest in this L1 slot
+    tw.AddTimer(t_min, 300, base);  // earliest in this L1 slot
     tw.AddTimer(t_mid, 400, base);
     tw.AddTimer(t_max, 500, base);
 
@@ -790,8 +798,7 @@ TEST(timing_wheel_timer_utest, bitmap_l1_slot_min_refresh_on_partial_remove) {
     // bitmap bit should remain set, but the per-slot min cache must
     // refresh to t_mid's deadline.
     ASSERT_TRUE(tw.RemoveTimer(t_min));
-    EXPECT_EQ(400, tw.MinTime(base))
-        << "L1 slot_min did not refresh after removing the slot's min task";
+    EXPECT_EQ(400, tw.MinTime(base)) << "L1 slot_min did not refresh after removing the slot's min task";
 
     // Remove t_mid; cache should refresh to t_max.
     ASSERT_TRUE(tw.RemoveTimer(t_mid));
@@ -804,7 +811,7 @@ TEST(timing_wheel_timer_utest, bitmap_l1_slot_min_refresh_on_partial_remove) {
 }
 
 // L2 equivalent of the above.
-TEST(timing_wheel_timer_utest, bitmap_l2_slot_min_refresh_on_partial_remove) {
+TEST(TimingWheelTimerTest, bitmap_l2_slot_min_refresh_on_partial_remove) {
     TimingWheelTimer tw;
     uint64_t now = Now();
     // L1Range == 16384. Anything in [16384, 1048576) goes to L2.
@@ -820,35 +827,33 @@ TEST(timing_wheel_timer_utest, bitmap_l2_slot_min_refresh_on_partial_remove) {
     EXPECT_EQ(20000, tw.MinTime(base));
 
     ASSERT_TRUE(tw.RemoveTimer(t_a));
-    EXPECT_EQ(25000, tw.MinTime(base))
-        << "L2 slot_min did not refresh after removing the slot's min task";
+    EXPECT_EQ(25000, tw.MinTime(base)) << "L2 slot_min did not refresh after removing the slot's min task";
 
     ASSERT_TRUE(tw.RemoveTimer(t_b));
     EXPECT_EQ(-1, tw.MinTime(base));
 }
 
 // Overflow per-slot min refresh.
-TEST(timing_wheel_timer_utest, bitmap_overflow_slot_min_refresh) {
+TEST(TimingWheelTimerTest, bitmap_overflow_slot_min_refresh) {
     TimingWheelTimer tw;
     uint64_t now = Now();
     tw.TimerRun(now);
 
     TimerTask t_a, t_b;
     // Both go to overflow (> 1 048 576 ms ≈ 17.5 min).
-    tw.AddTimer(t_a, 30 * 60 * 1000, now);   // 30 min
-    tw.AddTimer(t_b, 60 * 60 * 1000, now);   // 60 min
+    tw.AddTimer(t_a, 30 * 60 * 1000, now);  // 30 min
+    tw.AddTimer(t_b, 60 * 60 * 1000, now);  // 60 min
     EXPECT_EQ(30 * 60 * 1000, tw.MinTime(now));
 
     ASSERT_TRUE(tw.RemoveTimer(t_a));
-    EXPECT_EQ(60 * 60 * 1000, tw.MinTime(now))
-        << "overflow slot_min did not refresh after removing min task";
+    EXPECT_EQ(60 * 60 * 1000, tw.MinTime(now)) << "overflow slot_min did not refresh after removing min task";
     ASSERT_TRUE(tw.RemoveTimer(t_b));
     EXPECT_EQ(-1, tw.MinTime(now));
 }
 
 // Cascade must clear the bitmap bit of the source slot AND repopulate the
 // destination level's bits. Verifies via a Remove that forces a rescan.
-TEST(timing_wheel_timer_utest, bitmap_cascade_clears_source_and_populates_dest) {
+TEST(TimingWheelTimerTest, bitmap_cascade_clears_source_and_populates_dest) {
     TimingWheelTimer tw;
     constexpr uint64_t kL1 = 16384;
     uint64_t base = (Now() & ~(kL1 - 1)) + (kL1 * 4);  // L1-aligned
@@ -856,8 +861,8 @@ TEST(timing_wheel_timer_utest, bitmap_cascade_clears_source_and_populates_dest) 
 
     // Two L1 timers in the same L1 slot, just inside the next L1 epoch.
     TimerTask t1, t2;
-    tw.AddTimer(t1, kL1 + 50,  base);   // fires at base + 16434
-    tw.AddTimer(t2, kL1 + 100, base);   // fires at base + 16484
+    tw.AddTimer(t1, kL1 + 50, base);   // fires at base + 16434
+    tw.AddTimer(t2, kL1 + 100, base);  // fires at base + 16484
 
     // Drive past the L1 boundary but stop before the timers fire.
     // current_ms_ becomes base + kL1 + 1 (just past cascade point), and
@@ -878,21 +883,21 @@ TEST(timing_wheel_timer_utest, bitmap_cascade_clears_source_and_populates_dest) 
 // Stress: many sparsely-scheduled timers across all four levels with
 // frequent removes triggering cache rebuilds. Compares against a brute-
 // force tracker on every iteration. Targets bitmap maintenance bugs.
-TEST(timing_wheel_timer_utest, bitmap_stress_random_remove_forces_rescan) {
+TEST(TimingWheelTimerTest, bitmap_stress_random_remove_forces_rescan) {
     std::mt19937_64 rng(0xBADCAFEu);
     std::uniform_int_distribution<uint32_t> to_dist(1, 2'000'000);  // up to ~33 min
-    std::uniform_int_distribution<int>      coin(0, 1);
+    std::uniform_int_distribution<int> coin(0, 1);
 
     TimingWheelTimer tw;
     Tracker tracker;
     constexpr int kN = 128;
     std::vector<TimerTask> pool(kN);
-    std::vector<bool>      alive(kN, false);
+    std::vector<bool> alive(kN, false);
     uint64_t now = Now();
     tw.TimerRun(now);
 
     for (int i = 0; i < kN; ++i) {
-        pool[i].SetTimeoutCallback([&, i]{
+        pool[i].SetTimeoutCallback([&, i] {
             tracker.live.erase(pool[i].GetId());
             alive[i] = false;
         });
@@ -914,8 +919,7 @@ TEST(timing_wheel_timer_utest, bitmap_stress_random_remove_forces_rescan) {
             ASSERT_TRUE(tw.RemoveTimer(pool[i]));
             tracker.live.erase(pool[i].GetId());
             alive[i] = false;
-            ASSERT_EQ(tracker.Expected(now), tw.MinTime(now))
-                << "post-remove rebuild mismatch at i=" << i;
+            ASSERT_EQ(tracker.Expected(now), tw.MinTime(now)) << "post-remove rebuild mismatch at i=" << i;
         }
     }
 

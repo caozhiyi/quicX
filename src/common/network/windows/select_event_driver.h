@@ -3,16 +3,15 @@
 #ifndef COMMON_NETWORK_WINDOWS_SELECT_EVENT_DRIVER
 #define COMMON_NETWORK_WINDOWS_SELECT_EVENT_DRIVER
 
-#include <vector>
 #include <unordered_map>
+#include <vector>
 #include "common/network/if_event_driver.h"
 
 namespace quicx {
 namespace common {
 
 // Select-based event driver implementation for Windows (for debugging)
-class SelectEventDriver:
-    public IEventDriver {
+class SelectEventDriver: public IEventDriver {
 public:
     SelectEventDriver();
     virtual ~SelectEventDriver();
@@ -41,19 +40,19 @@ public:
 private:
     // Convert EventType to select events
     int ConvertToSelectEvents(int32_t events) const;
-    
+
     // Convert select events to EventType
     int32_t ConvertFromSelectEvents(int select_events) const;
 
     std::unordered_map<int32_t, int32_t> monitored_fds_;  // fd -> events
-    int32_t wakeup_fd_[2];  // Pipe for wakeup
+    int32_t wakeup_fd_[2];                                // Pipe for wakeup
     int max_events_ = 1024;
     bool initialized_ = false;
     static bool ws_initialized_;
 };
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
-#endif // COMMON_NETWORK_WINDOWS_SELECT_EVENT_DRIVER 
-#endif // _WIN32
+#endif  // COMMON_NETWORK_WINDOWS_SELECT_EVENT_DRIVER
+#endif  // _WIN32

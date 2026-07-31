@@ -1,18 +1,19 @@
 #include <cstdlib>
 
 #include "common/buffer/single_block_buffer.h"
-#include "common/buffer/standalone_buffer_chunk.h"  
+#include "common/buffer/standalone_buffer_chunk.h"
 
+#include "quic/connection/connection_id_generator.h"
 #include "quic/connection/type.h"
 #include "quic/frame/crypto_frame.h"
-#include "quic/connection/connection_id_generator.h"
 
 #include "test/unit_test/quic/packet/common_test_frame.h"
 
 namespace quicx {
 namespace quic {
 
-static uint8_t kData[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30};
+static uint8_t kData[] = {
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30};
 static uint64_t kOffset = 1024;
 static uint8_t kLevel = 1;
 
@@ -21,19 +22,22 @@ PacketTest::PacketTest() {
     ConnectionIDGenerator::Instance().Generator(dcid, kMaxCidLength);
 
     cli_cryptographer_ = MakeCryptographer(kCipherIdAes128GcmSha256);
-    if (cli_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt.data(), kInitialSalt.size(), false) != ICryptographer::Result::kOk) {
+    if (cli_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt.data(), kInitialSalt.size(), false) !=
+        ICryptographer::Result::kOk) {
         abort();
     }
 
     ser_cryptographer_ = MakeCryptographer(kCipherIdAes128GcmSha256);
-    if (ser_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt.data(), kInitialSalt.size(), true) != ICryptographer::Result::kOk) {
+    if (ser_cryptographer_->InstallInitSecret(dcid, kMaxCidLength, kInitialSalt.data(), kInitialSalt.size(), true) !=
+        ICryptographer::Result::kOk) {
         abort();
     }
 }
 
 std::shared_ptr<IFrame> PacketTest::GetTestFrame() {
     std::shared_ptr<CryptoFrame> frame = std::make_shared<CryptoFrame>();
-    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
     data_buffer->Write(kData, sizeof(kData));
     frame->SetData(data_buffer->GetSharedReadableSpan());
     frame->SetOffset(kOffset);
@@ -53,11 +57,11 @@ bool PacketTest::CheckTestFrame(std::shared_ptr<IFrame> f) {
     if (frame->GetOffset() != kOffset) {
         return false;
     }
-    
+
     if (frame->GetLength() != sizeof(kData)) {
         return false;
     }
-    
+
     auto data = frame->GetData();
     uint8_t* data_ptr = data.GetStart();
     for (size_t i = 0; i < frame->GetLength(); i++) {
@@ -71,12 +75,11 @@ bool PacketTest::CheckTestFrame(std::shared_ptr<IFrame> f) {
 
 std::shared_ptr<ICryptographer> PacketTest::GetTestClientCryptographer() {
     return cli_cryptographer_;
-    
 }
 
 std::shared_ptr<ICryptographer> PacketTest::GetTestServerCryptographer() {
     return ser_cryptographer_;
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

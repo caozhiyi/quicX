@@ -68,7 +68,9 @@
 namespace fs = std::filesystem;
 
 static std::atomic<bool> g_shutdown{false};
-static void HandleSignal(int) { g_shutdown.store(true, std::memory_order_release); }
+static void HandleSignal(int) {
+    g_shutdown.store(true, std::memory_order_release);
+}
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -76,22 +78,22 @@ static void HandleSignal(int) { g_shutdown.store(true, std::memory_order_release
 static std::string GuessContentType(const fs::path& p) {
     static const std::unordered_map<std::string, std::string> kMime = {
         {".html", "text/html; charset=utf-8"},
-        {".htm",  "text/html; charset=utf-8"},
-        {".css",  "text/css; charset=utf-8"},
-        {".js",   "application/javascript; charset=utf-8"},
-        {".mjs",  "application/javascript; charset=utf-8"},
+        {".htm", "text/html; charset=utf-8"},
+        {".css", "text/css; charset=utf-8"},
+        {".js", "application/javascript; charset=utf-8"},
+        {".mjs", "application/javascript; charset=utf-8"},
         {".json", "application/json; charset=utf-8"},
-        {".txt",  "text/plain; charset=utf-8"},
-        {".md",   "text/plain; charset=utf-8"},
-        {".png",  "image/png"},
-        {".jpg",  "image/jpeg"},
+        {".txt", "text/plain; charset=utf-8"},
+        {".md", "text/plain; charset=utf-8"},
+        {".png", "image/png"},
+        {".jpg", "image/jpeg"},
         {".jpeg", "image/jpeg"},
-        {".gif",  "image/gif"},
-        {".svg",  "image/svg+xml"},
+        {".gif", "image/gif"},
+        {".svg", "image/svg+xml"},
         {".webp", "image/webp"},
-        {".ico",  "image/x-icon"},
+        {".ico", "image/x-icon"},
         {".woff", "font/woff"},
-        {".woff2","font/woff2"},
+        {".woff2", "font/woff2"},
         {".wasm", "application/wasm"},
     };
     auto it = kMime.find(p.extension().string());
@@ -123,10 +125,8 @@ static fs::path ResolveSafePath(const fs::path& root, std::string url_path) {
     return canonical_full;
 }
 
-static void ServeFile(const fs::path& doc_root,
-                      uint16_t h3_port,
-                      std::shared_ptr<quicx::IRequest>  req,
-                      std::shared_ptr<quicx::IResponse> resp) {
+static void ServeFile(const fs::path& doc_root, uint16_t h3_port, std::shared_ptr<quicx::IRequest> req,
+    std::shared_ptr<quicx::IResponse> resp) {
     std::string url_path = req->GetPath();
     fs::path file = ResolveSafePath(doc_root, url_path);
 
@@ -157,46 +157,44 @@ static void ServeFile(const fs::path& doc_root,
     std::string body = oss.str();
 
     resp->SetStatusCode(200);
-    resp->AddHeader("Content-Type",   GuessContentType(file));
+    resp->AddHeader("Content-Type", GuessContentType(file));
     resp->AddHeader("Content-Length", std::to_string(body.size()));
-    resp->AddHeader("Alt-Svc",
-                    "h3=\":" + std::to_string(h3_port) + "\"; ma=86400");
+    resp->AddHeader("Alt-Svc", "h3=\":" + std::to_string(h3_port) + "\"; ma=86400");
     resp->AppendBody(body);
 
-    std::cout << "[h3 200] " << url_path << " -> " << file.string()
-              << " (" << body.size() << " B)" << std::endl;
+    std::cout << "[h3 200] " << url_path << " -> " << file.string() << " (" << body.size() << " B)" << std::endl;
 }
 
 // ---- arg parsing -----------------------------------------------------------
 
 struct Options {
-    std::string doc_root  = "./www";
+    std::string doc_root = "./www";
     std::string cert_path = "./cert.pem";
-    std::string key_path  = "./key.pem";
-    std::string host      = "0.0.0.0";
-    uint16_t h3_port      = 7010;
-    uint16_t http_port    = 8080;   // 0 -> disable plaintext upgrade port
-    uint16_t https_port   = 8443;   // 0 -> disable TLS upgrade port
-    bool     no_upgrade   = false;
+    std::string key_path = "./key.pem";
+    std::string host = "0.0.0.0";
+    uint16_t h3_port = 7010;
+    uint16_t http_port = 8080;   // 0 -> disable plaintext upgrade port
+    uint16_t https_port = 8443;  // 0 -> disable TLS upgrade port
+    bool no_upgrade = false;
 };
 
 static void PrintUsageAndExit(const char* argv0, int code) {
-    std::cerr <<
-        "Usage: " << argv0 << " [options]\n"
-        "  --doc-root <dir>     (default ./www)\n"
-        "  --cert <file>        (default ./cert.pem)\n"
-        "  --key  <file>        (default ./key.pem)\n"
-        "  --host <addr>        (default 0.0.0.0)\n"
-        "  --h3-port <port>     (default 7010, UDP)\n"
-        "  --http-port <port>   (default 8080,  TCP, 0=disable)\n"
-        "  --https-port <port>  (default 8443,  TCP, 0=disable)\n"
-        "  --no-upgrade         do not start the TCP upgrade endpoint\n";
+    std::cerr << "Usage: " << argv0
+              << " [options]\n"
+                 "  --doc-root <dir>     (default ./www)\n"
+                 "  --cert <file>        (default ./cert.pem)\n"
+                 "  --key  <file>        (default ./key.pem)\n"
+                 "  --host <addr>        (default 0.0.0.0)\n"
+                 "  --h3-port <port>     (default 7010, UDP)\n"
+                 "  --http-port <port>   (default 8080,  TCP, 0=disable)\n"
+                 "  --https-port <port>  (default 8443,  TCP, 0=disable)\n"
+                 "  --no-upgrade         do not start the TCP upgrade endpoint\n";
     std::exit(code);
 }
 
 static Options ParseArgs(int argc, char* argv[]) {
     Options o;
-    auto need = [&](int i){
+    auto need = [&](int i) {
         if (i + 1 >= argc) {
             std::cerr << "Missing value for " << argv[i] << "\n";
             PrintUsageAndExit(argv[0], 2);
@@ -204,16 +202,32 @@ static Options ParseArgs(int argc, char* argv[]) {
     };
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if      (a == "--doc-root")    { need(i); o.doc_root  = argv[++i]; }
-        else if (a == "--cert")        { need(i); o.cert_path = argv[++i]; }
-        else if (a == "--key")         { need(i); o.key_path  = argv[++i]; }
-        else if (a == "--host")        { need(i); o.host      = argv[++i]; }
-        else if (a == "--h3-port")     { need(i); o.h3_port   = static_cast<uint16_t>(std::stoi(argv[++i])); }
-        else if (a == "--http-port")   { need(i); o.http_port = static_cast<uint16_t>(std::stoi(argv[++i])); }
-        else if (a == "--https-port")  { need(i); o.https_port= static_cast<uint16_t>(std::stoi(argv[++i])); }
-        else if (a == "--no-upgrade")  { o.no_upgrade = true; }
-        else if (a == "-h" || a == "--help") { PrintUsageAndExit(argv[0], 0); }
-        else {
+        if (a == "--doc-root") {
+            need(i);
+            o.doc_root = argv[++i];
+        } else if (a == "--cert") {
+            need(i);
+            o.cert_path = argv[++i];
+        } else if (a == "--key") {
+            need(i);
+            o.key_path = argv[++i];
+        } else if (a == "--host") {
+            need(i);
+            o.host = argv[++i];
+        } else if (a == "--h3-port") {
+            need(i);
+            o.h3_port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (a == "--http-port") {
+            need(i);
+            o.http_port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (a == "--https-port") {
+            need(i);
+            o.https_port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (a == "--no-upgrade") {
+            o.no_upgrade = true;
+        } else if (a == "-h" || a == "--help") {
+            PrintUsageAndExit(argv[0], 0);
+        } else {
             std::cerr << "Unknown option: " << a << "\n";
             PrintUsageAndExit(argv[0], 2);
         }
@@ -242,11 +256,11 @@ static Options ParseArgs(int argc, char* argv[]) {
 //   got a ServerHello back -- a perfect "TLS hangs forever" symptom.
 struct UpgradeRuntime {
     std::shared_ptr<quicx::common::IEventLoop> loop;
-    std::unique_ptr<quicx::upgrade::IUpgrade>  server;
-    std::thread                                thr;
-    std::atomic<bool>                          running{false};
-    std::atomic<bool>                          init_ok{false};
-    std::atomic<bool>                          init_done{false};
+    std::unique_ptr<quicx::upgrade::IUpgrade> server;
+    std::thread thr;
+    std::atomic<bool> running{false};
+    std::atomic<bool> init_ok{false};
+    std::atomic<bool> init_done{false};
 };
 
 static bool StartUpgrade(UpgradeRuntime& rt, const Options& opt) {
@@ -269,22 +283,21 @@ static bool StartUpgrade(UpgradeRuntime& rt, const Options& opt) {
         }
 
         quicx::upgrade::UpgradeSettings s;
-        s.listen_addr  = opt.host;
-        s.http_port    = opt.http_port;
-        s.https_port   = opt.https_port;
-        s.h3_port      = opt.h3_port;       // for Alt-Svc advertisement only
-        s.enable_http1 = (opt.http_port  != 0);
+        s.listen_addr = opt.host;
+        s.http_port = opt.http_port;
+        s.https_port = opt.https_port;
+        s.h3_port = opt.h3_port;  // for Alt-Svc advertisement only
+        s.enable_http1 = (opt.http_port != 0);
         s.enable_http2 = (opt.https_port != 0);
-        s.enable_http3 = true;              // advertise h3
+        s.enable_http3 = true;  // advertise h3
         if (opt.https_port != 0) {
             s.cert_file = opt.cert_path;
-            s.key_file  = opt.key_path;
+            s.key_file = opt.key_path;
         }
         s.log_level = quicx::LogLevel::kInfo;
 
         if (!rt.server->AddListener(s)) {
-            std::cerr << "[upgrade] AddListener failed (host=" << opt.host
-                      << " http=" << opt.http_port
+            std::cerr << "[upgrade] AddListener failed (host=" << opt.host << " http=" << opt.http_port
                       << " https=" << opt.https_port << ")\n";
             rt.init_done.store(true, std::memory_order_release);
             return;
@@ -341,26 +354,27 @@ int main(int argc, char* argv[]) {
 
     if (!fs::exists(opt.doc_root)) {
         fs::create_directories(opt.doc_root);
-        std::ofstream(opt.doc_root + "/index.html")
-            << "<!doctype html><meta charset=utf-8>"
-               "<title>quicX H3 static</title>"
-               "<h1>It works over HTTP/3!</h1>";
+        std::ofstream(opt.doc_root + "/index.html") << "<!doctype html><meta charset=utf-8>"
+                                                       "<title>quicX H3 static</title>"
+                                                       "<h1>It works over HTTP/3!</h1>";
         std::cout << "Created sample doc root: " << opt.doc_root << std::endl;
     }
 
     auto slurp = [](const std::string& p) {
         std::ifstream f(p);
-        std::ostringstream o; o << f.rdbuf(); return o.str();
+        std::ostringstream o;
+        o << f.rdbuf();
+        return o.str();
     };
     std::string cert_pem = slurp(opt.cert_path);
-    std::string key_pem  = slurp(opt.key_path);
+    std::string key_pem = slurp(opt.key_path);
     if (cert_pem.empty() || key_pem.empty()) {
         std::cerr << "ERROR: failed to read cert/key. "
                   << "Generate them via run.sh or openssl.\n";
         return 1;
     }
 
-    std::signal(SIGINT,  HandleSignal);
+    std::signal(SIGINT, HandleSignal);
     std::signal(SIGTERM, HandleSignal);
 
     // ------------------------------------------------------------------
@@ -374,29 +388,26 @@ int main(int argc, char* argv[]) {
     // the entire lifetime of the server. They live in main() until return,
     // which is fine here.
     cfg.quic_config_.cert_pem_ = cert_pem.c_str();
-    cfg.quic_config_.key_pem_  = key_pem.c_str();
-    cfg.quic_config_.config_.thread_mode_       = quicx::ThreadMode::kMultiThread;
+    cfg.quic_config_.key_pem_ = key_pem.c_str();
+    cfg.quic_config_.config_.thread_mode_ = quicx::ThreadMode::kMultiThread;
     cfg.quic_config_.config_.worker_thread_num_ = 2;
-    cfg.quic_config_.config_.log_level_         = quicx::LogLevel::kInfo;
-    cfg.quic_config_.config_.log_path_          = "/tmp/h3_static_logs";
+    cfg.quic_config_.config_.log_level_ = quicx::LogLevel::kInfo;
+    cfg.quic_config_.config_.log_path_ = "/tmp/h3_static_logs";
     h3->Init(cfg);
 
     fs::path root_abs = fs::absolute(opt.doc_root);
-    uint16_t h3_port  = opt.h3_port;
+    uint16_t h3_port = opt.h3_port;
     h3->AddHandler(quicx::HttpMethod::kGet, "/*",
-        [root_abs, h3_port](std::shared_ptr<quicx::IRequest>  req,
-                            std::shared_ptr<quicx::IResponse> resp) {
+        [root_abs, h3_port](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
             ServeFile(root_abs, h3_port, req, resp);
         });
 
     if (!h3->Start(opt.host, opt.h3_port)) {
-        std::cerr << "Failed to start HTTP/3 server on UDP "
-                  << opt.host << ":" << opt.h3_port << std::endl;
+        std::cerr << "Failed to start HTTP/3 server on UDP " << opt.host << ":" << opt.h3_port << std::endl;
         return 1;
     }
-    std::cout << "[h3] listening on UDP "
-              << opt.host << ":" << opt.h3_port
-              << ", doc_root=" << root_abs.string() << std::endl;
+    std::cout << "[h3] listening on UDP " << opt.host << ":" << opt.h3_port << ", doc_root=" << root_abs.string()
+              << std::endl;
 
     // ------------------------------------------------------------------
     // 2. Upgrade endpoint (TCP) -- optional but on by default
@@ -406,23 +417,23 @@ int main(int argc, char* argv[]) {
     if (!opt.no_upgrade && (opt.http_port || opt.https_port)) {
         upgrade_ok = StartUpgrade(up, opt);
         if (upgrade_ok) {
-            std::cout << "[upgrade] running on " << opt.host
-                      << " (http=" << opt.http_port
-                      << ", https=" << opt.https_port
-                      << "), advertising h3 on :" << opt.h3_port << std::endl;
+            std::cout << "[upgrade] running on " << opt.host << " (http=" << opt.http_port
+                      << ", https=" << opt.https_port << "), advertising h3 on :" << opt.h3_port << std::endl;
         } else {
             std::cerr << "[upgrade] disabled due to startup failure; "
-                         "H3 server still running" << std::endl;
+                         "H3 server still running"
+                      << std::endl;
         }
     }
 
-    std::cout <<
-        "Open in Chrome:\n"
-        "  google-chrome --user-data-dir=/tmp/chrome-h3 "
-        "--ignore-certificate-errors "
-        "--origin-to-force-quic-on=" << opt.host << ":" << opt.h3_port << " "
-        "https://" << opt.host << ":"
-        << (opt.https_port ? opt.https_port : opt.h3_port) << "/\n";
+    std::cout << "Open in Chrome:\n"
+                 "  google-chrome --user-data-dir=/tmp/chrome-h3 "
+                 "--ignore-certificate-errors "
+                 "--origin-to-force-quic-on="
+              << opt.host << ":" << opt.h3_port
+              << " "
+                 "https://"
+              << opt.host << ":" << (opt.https_port ? opt.https_port : opt.h3_port) << "/\n";
 
     // ------------------------------------------------------------------
     // 3. Wait for shutdown

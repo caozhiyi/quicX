@@ -5,9 +5,11 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/log/log.h"
 #include "common/util/time.h"
+#include "quicx/common/metrics.h"
+#include "quicx/common/metrics_std.h"
 
-#include "quic/common/version.h"
 #include "quic/common/constants.h"
+#include "quic/common/version.h"
 #include "quic/connection/connection_id_manager.h"
 #include "quic/connection/connection_stream_manager.h"
 #include "quic/connection/controler/send_control.h"
@@ -122,8 +124,8 @@ void PacketBuilder::SetConnectionIDs(const std::shared_ptr<IPacket>& packet, Con
     if (header->GetHeaderType() == PacketHeaderType::kLongHeader) {
         auto local_cid = local_cid_manager->GetCurrentID();
         ((LongHeader*)header)->SetSourceConnectionId(local_cid.GetID(), local_cid.GetLength());
-        LOG_DEBUG("PacketBuilder::SetConnectionIDs: set source CID, length=%u, hash=%llu",
-            local_cid.GetLength(), local_cid.Hash());
+        LOG_DEBUG("PacketBuilder::SetConnectionIDs: set source CID, length=%u, hash=%llu", local_cid.GetLength(),
+            local_cid.Hash());
     }
 
     // Set destination CID for all packets
@@ -157,8 +159,7 @@ void PacketBuilder::HandleInitialPacketRequirements(const std::shared_ptr<IPacke
             if (!ctx.frame_visitor->HandleFrame(padding_frame)) {
                 LOG_WARN("PacketBuilder::HandleInitialPacketRequirements: failed to add padding frame");
             } else {
-                LOG_DEBUG(
-                    "PacketBuilder::HandleInitialPacketRequirements: added %u bytes padding to reach %u bytes",
+                LOG_DEBUG("PacketBuilder::HandleInitialPacketRequirements: added %u bytes padding to reach %u bytes",
                     target_size - current_size, target_size);
             }
         }
@@ -172,6 +173,16 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     BuildResult result;
     result.success = false;
 
+    // Phase-level timing probes. Cheap (~30ns/read on steady_clock) and the
+    // HistogramObserve calls themselves short-circuit when the metric is
+    // disabled, so leaving them in the hot path costs nothing in production
+    // builds where diag_* metrics are off. See aliased breakdown below:
+    //   t0 -> t1 : visitor construct + frame add + stream frames (build_phase_frames_us)
+    //   t1 -> t2 : packet object create + header setup + payload bind   (build_phase_setup_us)
+    //   t2 -> t3 : packet->Encode (AEAD seal + header protection)        (build_phase_encode_us)
+    //   t3 -> t4 : send_control bookkeeping (OnPacketSend + result fill) (build_phase_record_us)
+    const uint64_t t0 = common::Metrics::NowUs();
+
     // 1. Validate required parameters
     if (!ctx.cryptographer) {
         result.error_message = "cryptographer is null";
@@ -184,6 +195,21 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
         LOG_ERROR("PacketBuilder::BuildDataPacket: %s", result.error_message.c_str());
         return result;
     }
+
+    // Snapshot the buffer's pre-existing data length so the final
+    // `encoded_size` reflects only the bytes this BuildDataPacket call
+    // appended. This matters for the Initial+Handshake coalescing path
+    // where the caller hands us a buffer that *already* contains the
+    // preceding QUIC packet (Initial), and we are appending the next one
+    // (Handshake) to the same datagram. Without this snapshot,
+    // GetDataLength() at the bottom would yield the combined datagram
+    // length and SendControl::OnPacketSend would over-charge cwnd /
+    // bytes-in-flight by the Initial's size, severely skewing congestion
+    // control during the handshake.
+    //
+    // All existing (single-packet) callers pass a fresh empty buffer, so
+    // pre_size = 0 there and the arithmetic is a no-op.
+    const uint32_t pre_size = output_buffer ? output_buffer->GetDataLength() : 0;
 
     // 2. Create frame visitor with MTU limit
     //
@@ -230,9 +256,23 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
         return result;  // Not an error, just no data
     }
 
-    // 6. Handle Initial packet padding BEFORE creating the packet
-    // This ensures the padding is included in the payload
-    if (ctx.add_padding && ctx.level == kInitial) {
+    // 6. Handle datagram-size padding BEFORE creating the packet
+    // This ensures the padding is included in the payload.
+    //
+    // Historically this branch was gated by `ctx.level == kInitial` because
+    // the only call site that asked for padding was the Initial-bringup
+    // path (RFC 9000 §14.1: client MUST expand carrying-Initial datagrams
+    // to >= 1200 B). The level gate has been removed so that the
+    // coalesced-Initial+Handshake send path can request padding to be
+    // carried in the *Handshake* packet within the same datagram, which
+    // RFC 9000 §14.1 + §12.2 explicitly allow ("by coalescing the Initial
+    // packet"). The 1200-byte rule applies to the on-wire datagram, not
+    // to any specific packet within it, so it's legal — and cheaper at
+    // the receiver — to let the trailing Handshake packet carry the
+    // PADDING frames. All existing single-Initial callers still work
+    // unchanged because they continue to pass add_padding=true with
+    // min_size=kMinInitialPacketSize.
+    if (ctx.add_padding) {
         uint32_t current_size = payload_buffer->GetDataLength();
         if (current_size < ctx.min_size) {
             auto padding_frame = std::make_shared<PaddingFrame>();
@@ -240,8 +280,8 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
             if (!visitor.HandleFrame(padding_frame)) {
                 LOG_WARN("PacketBuilder::BuildDataPacket: failed to add padding frame");
             } else {
-                LOG_DEBUG("PacketBuilder::BuildDataPacket: added %u bytes padding to reach %u bytes",
-                    ctx.min_size - current_size, ctx.min_size);
+                LOG_DEBUG("PacketBuilder::BuildDataPacket: added %u bytes padding to reach %u bytes (level=%d)",
+                    ctx.min_size - current_size, ctx.min_size, ctx.level);
             }
         }
     }
@@ -283,15 +323,16 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
             if (!visitor.HandleFrame(padding_frame)) {
                 LOG_WARN("PacketBuilder::BuildDataPacket: failed to add HP-sample padding frame");
             } else {
-                LOG_DEBUG("PacketBuilder::BuildDataPacket: added %u bytes HP-sample padding "
-                          "(level=%u, plaintext was %u, now %u)",
-                    kMinProtectedPlaintext - current_size, ctx.level,
-                    current_size, kMinProtectedPlaintext);
+                LOG_DEBUG(
+                    "PacketBuilder::BuildDataPacket: added %u bytes HP-sample padding "
+                    "(level=%u, plaintext was %u, now %u)",
+                    kMinProtectedPlaintext - current_size, ctx.level, current_size, kMinProtectedPlaintext);
             }
         }
     }
 
     // 7. Create packet object
+    const uint64_t t1 = common::Metrics::NowUs();
     auto packet = CreatePacketByLevel(ctx.level);
     if (!packet) {
         result.error_message = "failed to create packet for level=" + std::to_string(ctx.level);
@@ -330,6 +371,21 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     packet->SetPayload(payload_buffer->GetSharedReadableSpan());
     packet->SetCryptographer(ctx.cryptographer);
 
+    // 12b. qlog draft-03: hand the visitor's encoded-frame list to the
+    //      packet so SendControl::OnPacketSend can emit per-frame qlog
+    //      data. Outbound IPackets normally don't store frame objects —
+    //      they hold raw encoded bytes in `payload_` — so without this
+    //      step packet_sent events would carry `"frames":[]`. The four
+    //      packet types we may have constructed here (Initial / Handshake
+    //      / 0-RTT / 1-RTT) all override GetFrames() to return their own
+    //      mutable frames_list_, so assigning through the reference is
+    //      safe. Retry / VersionNegotiation packets never reach this
+    //      path.
+    {
+        auto& packet_frames = packet->GetFrames();
+        packet_frames = visitor.TakeHandledFrames();
+    }
+
     // 13. Set frame type bit for ACK-eliciting detection
     packet->AddFrameTypeBit(static_cast<FrameTypeBit>(visitor.GetFrameTypeBit()));
 
@@ -338,6 +394,11 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // still points to the same plaintext bytes when this packet is later
     // retransmitted (cf. TrySendRetransmit). Format:
     //   "first-send pn=<pn> level=<lvl> payload_len=<n> chunk=<ptr> head=<hex16>"
+    //
+    // Gated behind QUICX_DIAG_RTX because LOG_INFO + snprintf×16 on every
+    // built data packet costs ~5µs/packet, which dominates BuildDataPacket
+    // at 27k pkts/s. Enable explicitly during retransmit-debug sessions.
+#ifdef QUICX_DIAG_RTX
     {
         auto pl = payload_buffer->GetSharedReadableSpan();
         char head[64] = {0};
@@ -345,20 +406,23 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
         for (uint32_t i = 0; i < dump_len; ++i) {
             std::snprintf(head + i * 3, sizeof(head) - i * 3, "%02x ", pl.GetStart()[i]);
         }
-        LOG_INFO("[DIAG-RTX] first-send pn=%llu level=%d payload_len=%u chunk=%p head=%s",
-            (unsigned long long)pn, ctx.level, pl.GetLength(),
-            (void*)pl.GetChunk().get(), head);
+        LOG_INFO("[DIAG-RTX] first-send pn=%llu level=%d payload_len=%u chunk=%p head=%s", (unsigned long long)pn,
+            ctx.level, pl.GetLength(), (void*)pl.GetChunk().get(), head);
     }
+#endif
 
     // 14. Encode packet to output buffer
+    const uint64_t t2 = common::Metrics::NowUs();
     if (!packet->Encode(output_buffer)) {
         result.error_message = "failed to encode packet";
         LOG_ERROR("PacketBuilder::BuildDataPacket: %s", result.error_message.c_str());
         return result;
     }
+    const uint64_t t3 = common::Metrics::NowUs();
 
-    uint32_t encoded_size = output_buffer->GetDataLength();
-    LOG_DEBUG("PacketBuilder::BuildDataPacket: encoded packet size=%u bytes", encoded_size);
+    uint32_t encoded_size = output_buffer->GetDataLength() - pre_size;
+    LOG_DEBUG("PacketBuilder::BuildDataPacket: encoded packet size=%u bytes (pre=%u, total=%u)", encoded_size, pre_size,
+        output_buffer->GetDataLength());
 
     // 15. Record packet send event (for congestion control)
     auto stream_data_info = visitor.GetStreamDataInfo();
@@ -371,8 +435,19 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     result.packet_size = encoded_size;
     result.stream_data_size = static_cast<uint32_t>(visitor.GetStreamDataSize());
 
-    LOG_DEBUG("PacketBuilder::BuildDataPacket: successfully built packet at level=%d, pn=%llu, size=%u",
-        ctx.level, pn, encoded_size);
+    LOG_DEBUG("PacketBuilder::BuildDataPacket: successfully built packet at level=%d, pn=%llu, size=%u", ctx.level, pn,
+        encoded_size);
+
+    // Emit phase breakdown. All four observations happen together so the
+    // sample counts stay consistent across phases (a missing observation in
+    // one phase would make ratio reasoning unreliable). NowUs() is monotonic
+    // steady_clock so we don't have to guard against backward jumps.
+    const uint64_t t4 = common::Metrics::NowUs();
+    common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseFramesUs, t1 - t0);
+    common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseSetupUs, t2 - t1);
+    common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseEncodeUs, t3 - t2);
+    common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildPhaseRecordUs, t4 - t3);
+
     return result;
 }
 
@@ -392,7 +467,7 @@ PacketBuilder::BuildResult PacketBuilder::BuildAckPacket(EncryptionLevel level,
     ctx.frames.push_back(ack_frame);
     ctx.include_stream_data = false;        // ACK packets don't include stream data
     ctx.add_padding = (level == kInitial);  // Initial packets need padding
-    ctx.min_size = kMinInitialPacketSize;    // RFC 9000 §14.1
+    ctx.min_size = kMinInitialPacketSize;   // RFC 9000 §14.1
 
     LOG_DEBUG("PacketBuilder::BuildAckPacket: building ACK packet at level=%d", level);
     return BuildDataPacket(ctx, output_buffer, packet_number, send_control);

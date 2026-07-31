@@ -2,21 +2,20 @@
 // that can be found in the LICENSE file.
 
 #include "common/qlog/writer/async_writer.h"
-#include "common/util/time.h"
 #include "common/log/log.h"
+#include "common/util/time.h"
 
-#include <filesystem>
 #include <algorithm>
+#include <filesystem>
 
 namespace quicx {
 namespace common {
 
-AsyncWriter::AsyncWriter(const QlogConfig& config)
-    : config_(config),
-      running_(false),
-      total_events_written_(0),
-      total_bytes_written_(0) {
-}
+AsyncWriter::AsyncWriter(const QlogConfig& config):
+    config_(config),
+    running_(false),
+    total_events_written_(0),
+    total_bytes_written_(0) {}
 
 AsyncWriter::~AsyncWriter() {
     Stop();
@@ -31,8 +30,7 @@ void AsyncWriter::Start() {
     try {
         std::filesystem::create_directories(config_.output_dir);
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to create qlog output directory: %s, error: %s",
-                  config_.output_dir.c_str(), e.what());
+        LOG_ERROR("Failed to create qlog output directory: %s, error: %s", config_.output_dir.c_str(), e.what());
         running_ = false;
         return;
     }
@@ -56,8 +54,8 @@ void AsyncWriter::Stop() {
     // Close all files
     CloseAllFiles();
 
-    LOG_INFO("qlog AsyncWriter stopped, total_events=%llu, total_bytes=%llu",
-             total_events_written_.load(), total_bytes_written_.load());
+    LOG_INFO("qlog AsyncWriter stopped, total_events=%llu, total_bytes=%llu", total_events_written_.load(),
+        total_bytes_written_.load());
 }
 
 void AsyncWriter::WriteHeader(const std::string& connection_id, const std::string& header) {
@@ -179,8 +177,7 @@ std::ofstream& AsyncWriter::GetOrCreateFile(const std::string& connection_id) {
 
     // Create new file
     std::string filename = GenerateFilename(connection_id);
-    auto file = std::make_unique<std::ofstream>(filename,
-                                                std::ios::out | std::ios::trunc);
+    auto file = std::make_unique<std::ofstream>(filename, std::ios::out | std::ios::trunc);
 
     if (!file->is_open()) {
         LOG_ERROR("Failed to open qlog file: %s", filename.c_str());

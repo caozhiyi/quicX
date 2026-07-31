@@ -1,13 +1,13 @@
 #include <algorithm>
 #include <cstring>
 
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/multi_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/log/log.h"
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 
 namespace quicx {
 namespace common {
@@ -382,9 +382,7 @@ std::vector<SharedBufferSpan> MultiBlockBuffer::GetSharedReadableSpans(uint32_t 
     }
     // total_data_length_ is uint64_t but per-call cap fits in uint32_t (in
     // practice it's bounded by chunk-pool capacity and per-frame send size).
-    uint32_t available = (total_data_length_ > UINT32_MAX)
-                             ? UINT32_MAX
-                             : static_cast<uint32_t>(total_data_length_);
+    uint32_t available = (total_data_length_ > UINT32_MAX) ? UINT32_MAX : static_cast<uint32_t>(total_data_length_);
     uint32_t remaining = (length == 0) ? available : std::min(length, available);
     out.reserve(chunks_.size());
     for (const auto& state : chunks_) {

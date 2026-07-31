@@ -14,7 +14,7 @@ namespace quicx {
 namespace common {
 class IEventLoop;
 class QlogTrace;
-}
+}  // namespace common
 
 namespace quic {
 

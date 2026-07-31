@@ -2,15 +2,15 @@
 // that can be found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
-#include <chrono>
 
-#include "common/qlog/qlog_trace.h"
-#include "common/qlog/event/transport_events.h"
-#include "common/qlog/event/recovery_events.h"
 #include "common/qlog/event/connectivity_events.h"
+#include "common/qlog/event/recovery_events.h"
+#include "common/qlog/event/transport_events.h"
+#include "common/qlog/qlog_trace.h"
 #include "common/qlog/writer/async_writer.h"
 
 namespace quicx {
@@ -27,8 +27,8 @@ QlogConfig CreateTestConfig() {
 }
 
 // Helper function to create a trace with a writer set up
-std::unique_ptr<QlogTrace> CreateTraceWithWriter(const std::string& conn_id, VantagePoint vantage_point,
-                                                   std::shared_ptr<AsyncWriter>& writer_out) {
+std::unique_ptr<QlogTrace> CreateTraceWithWriter(
+    const std::string& conn_id, VantagePoint vantage_point, std::shared_ptr<AsyncWriter>& writer_out) {
     QlogConfig config = CreateTestConfig();
     auto trace = std::make_unique<QlogTrace>(conn_id, vantage_point, config);
     // Create writer but don't start it (avoid thread issues in tests)
@@ -338,8 +338,7 @@ TEST(QlogTraceTest, ConcurrentLogging) {
 
     // Create one independent trace per thread (mirrors real per-connection use)
     for (int t = 0; t < num_threads; t++) {
-        auto trace = std::make_shared<QlogTrace>("conn-14-" + std::to_string(t),
-                                                  VantagePoint::kServer, config);
+        auto trace = std::make_shared<QlogTrace>("conn-14-" + std::to_string(t), VantagePoint::kServer, config);
         trace->SetWriter(writer.get());
         traces.push_back(trace);
     }

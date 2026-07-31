@@ -1,8 +1,8 @@
-#include "common/log/log.h"
-#include "http3/stream/type.h"
-#include "http3/qpack/qpack_encoder.h"
-#include "http3/frame/qpack_encoder_frames.h"
 #include "http3/stream/qpack_encoder_sender_stream.h"
+#include "common/log/log.h"
+#include "http3/frame/qpack_encoder_frames.h"
+#include "http3/qpack/qpack_encoder.h"
+#include "http3/stream/type.h"
 
 namespace quicx {
 namespace http3 {
@@ -27,7 +27,7 @@ QpackEncoderSenderStream::~QpackEncoderSenderStream() {
     stream_.reset();
 }
 
-bool QpackEncoderSenderStream::SendInstructions(const std::vector<std::pair<std::string,std::string>>& inserts) {
+bool QpackEncoderSenderStream::SendInstructions(const std::vector<std::pair<std::string, std::string>>& inserts) {
     if (inserts.empty()) {
         return true;
     }
@@ -55,7 +55,7 @@ bool QpackEncoderSenderStream::SendSetCapacity(uint64_t capacity) {
     f.SetCapacity(capacity);
     if (!f.Encode(buf)) {
         return false;
-    }   
+    }
     return stream_->Flush();
 }
 
@@ -77,9 +77,9 @@ bool QpackEncoderSenderStream::SendInsertWithoutNameRef(const std::string& name,
     if (!EnsureStreamPreamble()) {
         return false;
     }
-    
+
     auto buf = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    QpackInsertWithoutNameRefFrame f; 
+    QpackInsertWithoutNameRefFrame f;
     f.Set(name, value);
     if (!f.Encode(buf)) {
         return false;
@@ -92,14 +92,13 @@ bool QpackEncoderSenderStream::SendDuplicate(uint64_t index) {
         return false;
     }
     auto buf = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    QpackDuplicateFrame f; f.Set(index);
+    QpackDuplicateFrame f;
+    f.Set(index);
     if (!f.Encode(buf)) {
         return false;
     }
     return stream_->Flush();
 }
 
-}
-}
-
-
+}  // namespace http3
+}  // namespace quicx

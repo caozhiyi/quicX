@@ -8,20 +8,17 @@
 namespace quicx {
 namespace common {
 
-FileLogger::FileLogger(const std::string& file, 
-    FileLoggerSpiltUnit unit, 
-    uint16_t max_store_days,
-    uint16_t time_offset):
+FileLogger::FileLogger(
+    const std::string& file, FileLoggerSpiltUnit unit, uint16_t max_store_days, uint16_t time_offset):
     file_name_(file),
     time_offset_(time_offset),
     spilt_unit_(unit) {
-
     if (unit == FileLoggerSpiltUnit::kHour) {
-        time_buf_len_ = 13; // xxxx-xx-xx:xx
+        time_buf_len_ = 13;  // xxxx-xx-xx:xx
         max_file_num_ = max_store_days * 24;
 
     } else {
-        time_buf_len_ = 10; // xxxx-xx-xx
+        time_buf_len_ = 10;  // xxxx-xx-xx
         max_file_num_ = max_store_days;
     }
 
@@ -37,7 +34,7 @@ FileLogger::~FileLogger() {
 }
 
 void FileLogger::Run() {
-     while (!stop_) {
+    while (!stop_) {
         auto log = Pop();
         if (log) {
             CheckTime(log->log_);
@@ -85,11 +82,11 @@ void FileLogger::Fatal(std::shared_ptr<Log>& log) {
 
 void FileLogger::SetMaxStoreDays(uint16_t max) {
     if (spilt_unit_ == FileLoggerSpiltUnit::kHour) {
-        time_buf_len_ = 13; // xxxx-xx-xx:xx
+        time_buf_len_ = 13;  // xxxx-xx-xx:xx
         max_file_num_ = max * 24;
 
     } else {
-        time_buf_len_ = 10; // xxxx-xx-xx
+        time_buf_len_ = 10;  // xxxx-xx-xx
         max_file_num_ = max;
     }
 
@@ -104,7 +101,7 @@ void FileLogger::CheckTime(char* log) {
     if (stream_.is_open()) {
         stream_.close();
     }
-    
+
     // get new time and file name
     memcpy(time_, log + time_offset_, time_buf_len_);
     std::string file_name(file_name_);
@@ -124,8 +121,7 @@ void FileLogger::CheckTime(char* log) {
         std::filesystem::create_directories(log_path.parent_path(), ec);
         if (ec) {
             // Fall back to stderr — we cannot log via ourselves here.
-            std::fprintf(stderr,
-                "[FileLogger] failed to create log directory \"%s\": %s\n",
+            std::fprintf(stderr, "[FileLogger] failed to create log directory \"%s\": %s\n",
                 log_path.parent_path().string().c_str(), ec.message().c_str());
         }
     }
@@ -133,8 +129,7 @@ void FileLogger::CheckTime(char* log) {
     // open new log file
     stream_.open(file_name.c_str(), std::ios::app | std::ios::out);
     if (!stream_.is_open()) {
-        std::fprintf(stderr,
-            "[FileLogger] failed to open log file \"%s\"\n", file_name.c_str());
+        std::fprintf(stderr, "[FileLogger] failed to open log file \"%s\"\n", file_name.c_str());
     }
 }
 
@@ -147,5 +142,5 @@ void FileLogger::CheckExpireFiles() {
     }
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

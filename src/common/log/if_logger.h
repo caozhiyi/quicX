@@ -2,8 +2,8 @@
 #define COMMON_LOG_IF_LOG
 
 #include <atomic>
-#include <memory>
 #include <cstdint>
+#include <memory>
 
 namespace quicx {
 namespace common {
@@ -12,8 +12,8 @@ namespace common {
  * @brief Log message structure
  */
 struct Log {
-    char*    log_;   ///< Log message content
-    uint32_t len_;   ///< Length of log message
+    char* log_;     ///< Log message content
+    uint32_t len_;  ///< Length of log message
 };
 
 /**
@@ -34,7 +34,8 @@ struct Log {
  */
 class Logger {
 public:
-    Logger(): logger_next_(nullptr) {}
+    Logger():
+        logger_next_(nullptr) {}
     virtual ~Logger() {}
 
     /**
@@ -51,9 +52,8 @@ public:
      */
     bool SetLogger(std::shared_ptr<Logger> logger) {
         Logger* expected = nullptr;
-        if (!logger_next_.compare_exchange_strong(expected, logger.get(),
-                                                  std::memory_order_release,
-                                                  std::memory_order_relaxed)) {
+        if (!logger_next_.compare_exchange_strong(
+                expected, logger.get(), std::memory_order_release, std::memory_order_relaxed)) {
             // Already set; ignore.
             return false;
         }
@@ -75,27 +75,37 @@ public:
     /**
      * @brief Log a debug message
      */
-    virtual void Debug(std::shared_ptr<Log>& log) { if (auto next = GetNextLoggerRaw()) next->Debug(log); }
+    virtual void Debug(std::shared_ptr<Log>& log) {
+        if (auto next = GetNextLoggerRaw()) next->Debug(log);
+    }
 
     /**
      * @brief Log an info message
      */
-    virtual void Info(std::shared_ptr<Log>& log) { if (auto next = GetNextLoggerRaw()) next->Info(log); }
+    virtual void Info(std::shared_ptr<Log>& log) {
+        if (auto next = GetNextLoggerRaw()) next->Info(log);
+    }
 
     /**
      * @brief Log a warning message
      */
-    virtual void Warn(std::shared_ptr<Log>& log) { if (auto next = GetNextLoggerRaw()) next->Warn(log); }
+    virtual void Warn(std::shared_ptr<Log>& log) {
+        if (auto next = GetNextLoggerRaw()) next->Warn(log);
+    }
 
     /**
      * @brief Log an error message
      */
-    virtual void Error(std::shared_ptr<Log>& log) { if (auto next = GetNextLoggerRaw()) next->Error(log); }
+    virtual void Error(std::shared_ptr<Log>& log) {
+        if (auto next = GetNextLoggerRaw()) next->Error(log);
+    }
 
     /**
      * @brief Log a fatal message
      */
-    virtual void Fatal(std::shared_ptr<Log>& log) { if (auto next = GetNextLoggerRaw()) next->Fatal(log); }
+    virtual void Fatal(std::shared_ptr<Log>& log) {
+        if (auto next = GetNextLoggerRaw()) next->Fatal(log);
+    }
 
 protected:
     /**
@@ -109,9 +119,7 @@ protected:
      * acquire pairs with the release in SetLogger so callers see a fully
      * constructed downstream object.
      */
-    Logger* GetNextLoggerRaw() const {
-        return logger_next_.load(std::memory_order_acquire);
-    }
+    Logger* GetNextLoggerRaw() const { return logger_next_.load(std::memory_order_acquire); }
 
     // Cached raw pointer for hot-path reads (no shared_ptr atomic ops).
     std::atomic<Logger*> logger_next_;
@@ -121,7 +129,7 @@ protected:
     std::shared_ptr<Logger> owner_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

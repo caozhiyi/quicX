@@ -24,9 +24,19 @@ HeaderFlag::HeaderFlag(uint8_t flag) {
 }
 
 bool HeaderFlag::EncodeFlag(std::shared_ptr<common::IBuffer> buffer) {
-    // Clear buffer before encoding to ensure we write from the beginning
-    buffer->Clear();
-
+    // NOTE: Earlier versions of this method called buffer->Clear() here on
+    // the (incorrect) assumption that the flag byte is always the very
+    // first thing written into a fresh per-packet buffer. RFC 9000 §12.2
+    // packet coalescing breaks that assumption: TryCoalescedInitialHandshake
+    // appends a second packet (Handshake) onto the same buffer that already
+    // contains the first (Initial). Clearing here would silently wipe the
+    // Initial bytes, leaving an Initial-shaped hole that the wire never
+    // sees and the peer fails to decode (only the second packet survives).
+    //
+    // The flag byte must therefore be *appended* at the current write
+    // pointer like every other field of the packet. Callers that need a
+    // clean buffer must Clear() it explicitly themselves; this method
+    // remains append-only to compose correctly under coalescing.
     uint32_t need_size = EncodeFlagSize();
     if (need_size > buffer->GetFreeLength()) {
         LOG_ERROR(

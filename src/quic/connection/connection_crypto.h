@@ -43,10 +43,10 @@ public:
     void OnCryptoFrame(std::shared_ptr<IFrame> frame);
 
     bool InitIsReady() { return cryptographers_[kInitial] != nullptr; }
-    
+
     // Legacy: Install Initial secret with default (v1) salt
     bool InstallInitSecret(const uint8_t* secret, uint32_t len, bool is_server);
-    
+
     // Version-aware: Install Initial secret with version-specific salt (RFC 9369)
     bool InstallInitSecretWithVersion(const uint8_t* secret, uint32_t len, uint32_t version, bool is_server);
 
@@ -55,7 +55,7 @@ public:
     // read_cid: CID for decrypting inbound packets (client's local Source CID)
     bool InstallInitSecretForRetry(
         const uint8_t* write_cid, uint32_t write_len, const uint8_t* read_cid, uint32_t read_len);
-    
+
     // Version-aware Retry secret installation
     bool InstallInitSecretForRetryWithVersion(
         const uint8_t* write_cid, uint32_t write_len, const uint8_t* read_cid, uint32_t read_len, uint32_t version);
@@ -111,7 +111,7 @@ public:
 
     // Check if Application level cryptographer is ready for key updates
     bool CanKeyUpdate() const { return cryptographers_[kApplication] != nullptr; }
-    
+
     // Version management
     void SetVersion(uint32_t version) { quic_version_ = version; }
     uint32_t GetVersion() const { return quic_version_; }
@@ -128,7 +128,7 @@ private:
     EncryptionLevel cur_encryption_level_;
     std::shared_ptr<CryptoStream> crypto_stream_;
     std::shared_ptr<ICryptographer> cryptographers_[kNumEncryptionLevels];
-    
+
     // QUIC version for this connection (default to v2 as preferred)
     uint32_t quic_version_ = kQuicVersion2;
 

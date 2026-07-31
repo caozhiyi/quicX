@@ -234,8 +234,8 @@ TEST_F(HTTP3MethodsTest, ConcurrentRequests) {
     // Fire all requests asynchronously from the same thread
     for (int i = 0; i < num_requests; ++i) {
         auto request = quicx::IRequest::Create();
-        client_->DoRequest(url, quicx::HttpMethod::kGet, request,
-            [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+        client_->DoRequest(
+            url, quicx::HttpMethod::kGet, request, [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
                 if (error == 0 && response && response->GetBodyAsString() == "GET response") {
                     success_count++;
                 }

@@ -76,9 +76,7 @@ bool BaseLogger::SetLogger(std::shared_ptr<Logger> log) {
     // singleton's logger while other threads were still dispatching
     // into the previous one.
     Logger* expected = nullptr;
-    if (!logger_.compare_exchange_strong(expected, log.get(),
-                                         std::memory_order_release,
-                                         std::memory_order_relaxed)) {
+    if (!logger_.compare_exchange_strong(expected, log.get(), std::memory_order_release, std::memory_order_relaxed)) {
         return false;
     }
     // The CAS winner takes ownership for the rest of this BaseLogger's
@@ -198,23 +196,33 @@ LogStreamParam BaseLogger::GetStreamParam(LogLevel level, const char* file, uint
         case LogLevel::kNull:
             break;
         case LogLevel::kFatal:
-            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Fatal(l); };
+            cb = [logger](std::shared_ptr<Log> l) {
+                if (logger) logger->Fatal(l);
+            };
             log->len_ = FormatLog(file, line, "FAT", log->log_, log->len_);
             break;
         case LogLevel::kError:
-            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Error(l); };
+            cb = [logger](std::shared_ptr<Log> l) {
+                if (logger) logger->Error(l);
+            };
             log->len_ = FormatLog(file, line, "ERR", log->log_, log->len_);
             break;
         case LogLevel::kWarn:
-            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Warn(l); };
+            cb = [logger](std::shared_ptr<Log> l) {
+                if (logger) logger->Warn(l);
+            };
             log->len_ = FormatLog(file, line, "WAR", log->log_, log->len_);
             break;
         case LogLevel::kInfo:
-            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Info(l); };
+            cb = [logger](std::shared_ptr<Log> l) {
+                if (logger) logger->Info(l);
+            };
             log->len_ = FormatLog(file, line, "INF", log->log_, log->len_);
             break;
         case LogLevel::kDebug:
-            cb = [logger](std::shared_ptr<Log> l) { if (logger) logger->Debug(l); };
+            cb = [logger](std::shared_ptr<Log> l) {
+                if (logger) logger->Debug(l);
+            };
             log->len_ = FormatLog(file, line, "DEB", log->log_, log->len_);
             break;
         default:

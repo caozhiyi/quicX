@@ -6,10 +6,10 @@
 #include <memory>
 #include <vector>
 
+#include <quicx/quic/type.h>
 #include "common/network/address.h"
 #include "common/timer/timer_task.h"
 #include "quic/common/constants.h"
-#include <quicx/quic/type.h>
 
 namespace quicx {
 
@@ -65,13 +65,13 @@ public:
      */
     struct Deps {
         std::shared_ptr<::quicx::common::IEventLoop> event_loop;
-        SendManager*                                 send_manager{nullptr};
-        ConnectionIDCoordinator*                     cid_coordinator{nullptr};
-        TransportParam*                              transport_param{nullptr};
-        ::quicx::common::Address*                    peer_addr{nullptr};
-        ToSendFrameCallback                          to_send_frame_cb;
-        ActiveSendCallback                           active_send_cb;
-        SetPeerAddressCallback                       set_peer_addr_cb;
+        SendManager* send_manager{nullptr};
+        ConnectionIDCoordinator* cid_coordinator{nullptr};
+        TransportParam* transport_param{nullptr};
+        ::quicx::common::Address* peer_addr{nullptr};
+        ToSendFrameCallback to_send_frame_cb;
+        ActiveSendCallback active_send_cb;
+        SetPeerAddressCallback set_peer_addr_cb;
     };
 
     explicit PathManager(Deps deps);
@@ -131,7 +131,7 @@ public:
 
     /**
      * @brief Initiate migration to a new local address
-     * 
+     *
      * Creates a new socket, binds to the specified address, rotates DCID,
      * and starts path validation. This is the production-grade API.
      *
@@ -273,25 +273,25 @@ private:
     bool dcid_pre_rotated_{false};
 
     // ==================== Client-Initiated Migration State ====================
-    
+
     // True if current probe is for client-initiated migration (not NAT rebinding)
     bool is_client_initiated_migration_{false};
-    
+
     // Socket created for migration (will become main socket on success)
     int32_t migration_socket_{-1};
-    
+
     // Local address before migration (for reporting)
     ::quicx::common::Address old_local_addr_;
-    
+
     // New local address for migration
     ::quicx::common::Address new_local_addr_;
-    
+
     // Migration start time (for timeout and reporting)
     uint64_t migration_start_time_{0};
-    
+
     // Migration timeout timer
     ::quicx::common::TimerTask migration_timeout_task_;
-    
+
     // Path validation timeout (configurable; default per RFC 9000 §8.2.4
     // — at least 3×PTO, see kDefaultPathValidationTimeoutMs in
     // quic/common/constants.h).

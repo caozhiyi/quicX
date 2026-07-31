@@ -4,23 +4,21 @@
 #include <memory>
 
 #include <quicx/http3/if_response.h>
+#include <quicx/quic/if_quic_send_stream.h>
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_send_stream.h"
-#include <quicx/quic/if_quic_send_stream.h>
 
 namespace quicx {
 namespace http3 {
 
 /**
  * @brief Push sender stream
- * 
+ *
  * The push sender stream is used to send push frames to the client.
  */
-class PushSenderStream:
-    public ISendStream {
+class PushSenderStream: public ISendStream {
 public:
-    PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-        const std::shared_ptr<IQuicSendStream>& stream,
+    PushSenderStream(const std::shared_ptr<QpackEncoder>& qpack_encoder, const std::shared_ptr<IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     virtual ~PushSenderStream() {}
 
@@ -40,7 +38,7 @@ private:
     std::shared_ptr<QpackEncoder> qpack_encoder_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

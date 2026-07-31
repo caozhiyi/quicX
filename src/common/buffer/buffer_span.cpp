@@ -1,5 +1,5 @@
-#include "common/log/log.h"
 #include "common/buffer/buffer_span.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace common {
@@ -38,6 +38,5 @@ uint32_t BufferSpan::GetLength() const {
     return static_cast<uint32_t>(end_ - start_);
 }
 
-}
-}
-
+}  // namespace common
+}  // namespace quicx

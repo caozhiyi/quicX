@@ -3,10 +3,10 @@
 #define QUIC_PACKET_INIT_PACKET
 
 #include <memory>
-#include "quic/packet/type.h"
 #include "quic/frame/if_frame.h"
-#include "quic/packet/if_packet.h"
 #include "quic/packet/header/long_header.h"
+#include "quic/packet/if_packet.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
@@ -30,8 +30,7 @@ Initial Packet {
     Packet Payload (8..),
 }
 */
-class InitPacket:
-    public IPacket {
+class InitPacket: public IPacket {
 public:
     InitPacket();
     InitPacket(uint8_t flag);
@@ -58,8 +57,8 @@ public:
 private:
     LongHeader header_;
     uint32_t token_length_;
-    uint8_t* token_raw_;                    // Non-owning pointer (used during decode, lifetime tied to packet buffer)
-    common::SharedBufferSpan token_span_;   // Owning span (used when token is explicitly set with ownership)
+    uint8_t* token_raw_;                   // Non-owning pointer (used during decode, lifetime tied to packet buffer)
+    common::SharedBufferSpan token_span_;  // Owning span (used when token is explicitly set with ownership)
 
     uint32_t length_;
     common::SharedBufferSpan payload_;
@@ -69,7 +68,7 @@ private:
     std::vector<std::shared_ptr<IFrame>> frames_list_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

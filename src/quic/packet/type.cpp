@@ -1,26 +1,25 @@
-#include "quic/common/version.h"
 #include "quic/packet/type.h"
+#include "quic/common/version.h"
 
 namespace quicx {
 namespace quic {
 
 const char* PacketTypeToString(PacketType type) {
-    switch (type)
-    {
-    case PacketType::kInitialPacketType:
-        return "initial";
-    case PacketType::k0RttPacketType:
-        return "0rtt";
-    case PacketType::kHandshakePacketType:
-        return "handshake";
-    case PacketType::kRetryPacketType:
-        return "retry";
-    case PacketType::kNegotiationPacketType:
-        return "negotiation";
-    case PacketType::k1RttPacketType:
-        return "1rtt";
-    default:
-        return "unkonw";
+    switch (type) {
+        case PacketType::kInitialPacketType:
+            return "initial";
+        case PacketType::k0RttPacketType:
+            return "0rtt";
+        case PacketType::kHandshakePacketType:
+            return "handshake";
+        case PacketType::kRetryPacketType:
+            return "retry";
+        case PacketType::kNegotiationPacketType:
+            return "negotiation";
+        case PacketType::k1RttPacketType:
+            return "1rtt";
+        default:
+            return "unkonw";
     }
 }
 
@@ -44,13 +43,18 @@ PacketType MapWireToPacketType(uint8_t wire_bits, uint32_t version) {
         v1_bits = static_cast<uint8_t>((wire_bits + 3) & 0x03);
     }
     switch (v1_bits) {
-        case 0: return PacketType::kInitialPacketType;
-        case 1: return PacketType::k0RttPacketType;
-        case 2: return PacketType::kHandshakePacketType;
-        case 3: return PacketType::kRetryPacketType;
-        default: return PacketType::kUnknownPacketType;
+        case 0:
+            return PacketType::kInitialPacketType;
+        case 1:
+            return PacketType::k0RttPacketType;
+        case 2:
+            return PacketType::kHandshakePacketType;
+        case 3:
+            return PacketType::kRetryPacketType;
+        default:
+            return PacketType::kUnknownPacketType;
     }
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

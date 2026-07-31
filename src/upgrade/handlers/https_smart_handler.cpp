@@ -3,12 +3,12 @@
 #include <tuple>
 
 #include "common/log/log.h"
-#include "upgrade/network/if_tcp_socket.h"
 #include "upgrade/handlers/https_smart_handler.h"
+#include "upgrade/network/if_tcp_socket.h"
 
-#include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/pem.h>
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
 
 namespace quicx {
@@ -24,7 +24,6 @@ SSLContext::~SSLContext() {
 
 HttpsSmartHandler::HttpsSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop):
     BaseSmartHandler(settings, event_loop) {
-    
     if (!InitializeSSL()) {
         LOG_ERROR("Failed to initialize SSL context");
         ssl_ready_ = false;
@@ -40,7 +39,7 @@ HttpsSmartHandler::~HttpsSmartHandler() {
         CleanupSSL(&pair.second);
     }
     ssl_context_map_.clear();
-    
+
     // Clean up SSL context
     if (ssl_ctx_) {
         SSL_CTX_free(ssl_ctx_);
@@ -53,23 +52,23 @@ bool HttpsSmartHandler::InitializeSSL() {
     SSL_library_init();
     SSL_load_error_strings();
     OpenSSL_add_all_algorithms();
-    
+
     // Create SSL context
     ssl_ctx_ = SSL_CTX_new(TLS_server_method());
     if (!ssl_ctx_) {
         LOG_ERROR("Failed to create SSL context");
         return false;
     }
-    
+
     // Set SSL options
     SSL_CTX_set_options(ssl_ctx_, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
-    
+
     // Set up ALPN
     if (!SetupALPN()) {
         LOG_ERROR("Failed to set up ALPN");
         return false;
     }
-    
+
     // Load certificate and private key
     bool cert_loaded = false;
     if (!settings_.cert_file.empty() && !settings_.key_file.empty()) {
@@ -77,7 +76,7 @@ bool HttpsSmartHandler::InitializeSSL() {
             LOG_ERROR("Failed to load certificate file: %s", settings_.cert_file.c_str());
             return false;
         }
-        
+
         if (SSL_CTX_use_PrivateKey_file(ssl_ctx_, settings_.key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
             LOG_ERROR("Failed to load private key file: %s", settings_.key_file.c_str());
             return false;
@@ -88,17 +87,17 @@ bool HttpsSmartHandler::InitializeSSL() {
         // Load certificate and key from memory
         BIO* cert_bio = BIO_new_mem_buf(settings_.cert_pem, -1);
         BIO* key_bio = BIO_new_mem_buf(settings_.key_pem, -1);
-        
+
         if (!cert_bio || !key_bio) {
             LOG_ERROR("Failed to create BIO for certificate/key");
             if (cert_bio) BIO_free(cert_bio);
             if (key_bio) BIO_free(key_bio);
             return false;
         }
-        
+
         X509* cert = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
         EVP_PKEY* key = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
-        
+
         if (!cert || !key) {
             LOG_ERROR("Failed to read certificate/key from memory");
             if (cert) X509_free(cert);
@@ -107,7 +106,7 @@ bool HttpsSmartHandler::InitializeSSL() {
             BIO_free(key_bio);
             return false;
         }
-        
+
         if (SSL_CTX_use_certificate(ssl_ctx_, cert) <= 0) {
             LOG_ERROR("Failed to set certificate");
             X509_free(cert);
@@ -116,7 +115,7 @@ bool HttpsSmartHandler::InitializeSSL() {
             BIO_free(key_bio);
             return false;
         }
-        
+
         if (SSL_CTX_use_PrivateKey(ssl_ctx_, key) <= 0) {
             LOG_ERROR("Failed to set private key");
             X509_free(cert);
@@ -125,7 +124,7 @@ bool HttpsSmartHandler::InitializeSSL() {
             BIO_free(key_bio);
             return false;
         }
-        
+
         X509_free(cert);
         EVP_PKEY_free(key);
         BIO_free(cert_bio);
@@ -136,7 +135,7 @@ bool HttpsSmartHandler::InitializeSSL() {
         // In tests, we may not have certs. Allow SSL init to continue but handshake will fail later if used.
         LOG_WARN("No certificate configuration provided; HTTPS features limited for tests");
     }
-    
+
     // Verify certificate and private key match when loaded
     if (cert_loaded) {
         if (SSL_CTX_check_private_key(ssl_ctx_) <= 0) {
@@ -144,7 +143,7 @@ bool HttpsSmartHandler::InitializeSSL() {
             return false;
         }
     }
-    
+
     LOG_INFO("SSL context initialized successfully");
     return true;
 }
@@ -158,9 +157,7 @@ bool HttpsSmartHandler::InitializeConnection(std::shared_ptr<ITcpSocket> socket)
     // stable and its `ssl` member is never owned by a temporary that could
     // be destroyed (and double-free the SSL*) due to copy/move.
     auto emplaced = ssl_context_map_.emplace(
-        std::piecewise_construct,
-        std::forward_as_tuple(socket),
-        std::forward_as_tuple(socket));
+        std::piecewise_construct, std::forward_as_tuple(socket), std::forward_as_tuple(socket));
     if (!emplaced.second) {
         LOG_ERROR("SSLContext already exists for fd=%d", socket->GetFd());
         return false;
@@ -182,14 +179,11 @@ bool HttpsSmartHandler::InitializeConnection(std::shared_ptr<ITcpSocket> socket)
 int HttpsSmartHandler::ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) {
     auto ssl_it = ssl_context_map_.find(socket);
     if (ssl_it == ssl_context_map_.end()) {
-        LOG_ERROR("[TLSDBG] ReadData: no SSLContext for fd=%d", socket->GetFd());
+        LOG_ERROR("ReadData: no SSLContext for fd=%d", socket->GetFd());
         return -1;
     }
 
     SSLContext& ssl_ctx = ssl_it->second;
-    LOG_INFO("[TLSDBG] ReadData fd=%d handshake_completed=%d failed=%d",
-             socket->GetFd(), (int)ssl_ctx.handshake_completed,
-             (int)ssl_ctx.handshake_failed);
 
     // If the previous SSL_accept() produced a fatal error (e.g. the client
     // sent plaintext HTTP to the TLS port -- HTTP_REQUEST -- or used an
@@ -256,15 +250,15 @@ int HttpsSmartHandler::WriteData(std::shared_ptr<ITcpSocket> socket, std::vector
     if (ssl_it == ssl_context_map_.end()) {
         return -1;
     }
-    
+
     SSLContext& ssl_ctx = ssl_it->second;
-    
+
     if (!ssl_ctx.handshake_completed) {
         // Continue SSL handshake
         HandleSSLHandshake(socket);
-        return 0; // Can't write during handshake
+        return 0;  // Can't write during handshake
     }
-    
+
     // Encrypt and send data
     return SSL_write(ssl_ctx.ssl, data.data(), data.size());
 }
@@ -280,13 +274,13 @@ void HttpsSmartHandler::CleanupConnection(std::shared_ptr<ITcpSocket> socket) {
 void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
     auto ssl_it = ssl_context_map_.find(socket);
     if (ssl_it == ssl_context_map_.end()) {
-        LOG_ERROR("[TLSDBG] HandleSSLHandshake: no SSLContext for fd=%d", socket->GetFd());
+        LOG_ERROR("HandleSSLHandshake: no SSLContext for fd=%d", socket->GetFd());
         return;
     }
-    
+
     SSLContext& ssl_ctx = ssl_it->second;
     if (!ssl_ctx.ssl) {
-        LOG_ERROR("[TLSDBG] HandleSSLHandshake: SSL* is null for fd=%d", socket->GetFd());
+        LOG_ERROR("HandleSSLHandshake: SSL* is null for fd=%d", socket->GetFd());
         return;
     }
 
@@ -295,14 +289,12 @@ void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
     // *only* what this SSL_accept() produced.
     ERR_clear_error();
     int ret = SSL_accept(ssl_ctx.ssl);
-    int saved_errno = errno;
-    LOG_INFO("[TLSDBG] SSL_accept fd=%d ret=%d errno=%d", socket->GetFd(), ret, saved_errno);
 
     if (ret == 1) {
         // SSL handshake completed successfully
         ssl_ctx.handshake_completed = true;
         LOG_INFO("SSL handshake completed for socket: %d", socket->GetFd());
-        
+
         // Get ALPN negotiated protocol
         const unsigned char* alpn_protocol;
         unsigned int alpn_len;
@@ -313,7 +305,7 @@ void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
         } else {
             LOG_INFO("No ALPN protocol negotiated");
         }
-        
+
         // Get client certificate info if available
         X509* client_cert = SSL_get_peer_certificate(ssl_ctx.ssl);
         if (client_cert) {
@@ -322,7 +314,7 @@ void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
             LOG_INFO("Client certificate: %s", subject);
             X509_free(client_cert);
         }
-        
+
         // Process any pending data
         if (!ssl_ctx.pending_data.empty()) {
             // Data will be processed in the next ReadData call
@@ -332,13 +324,11 @@ void HttpsSmartHandler::HandleSSLHandshake(std::shared_ptr<ITcpSocket> socket) {
         unsigned long err_q = ERR_peek_error();
         char err_buf[256] = {0};
         if (err_q) ERR_error_string_n(err_q, err_buf, sizeof(err_buf));
-        LOG_INFO("[TLSDBG] SSL_accept fd=%d ssl_error=%d err_queue=0x%lx (%s) errno=%d",
-                 socket->GetFd(), ssl_error, err_q, err_buf, saved_errno);
         if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
             // Handshake in progress, this is normal
             return;
         } else {
-            LOG_ERROR("SSL handshake failed: %d", ssl_error);
+            LOG_ERROR("SSL handshake failed: ssl_error=%d openssl_err=0x%lx (%s)", ssl_error, err_q, err_buf);
             // Mark this connection as fatally broken so the next ReadData()
             // call returns -1, which makes BaseSmartHandler::OnRead invoke
             // OnClose() and unregister the fd from the event driver. Without
@@ -373,8 +363,18 @@ bool HttpsSmartHandler::SetupALPN() {
     //   0x02 'h' '2'                      -> "h2"
     //   0x08 'h' 't' 't' 'p' '/' '1' '.' '1' -> "http/1.1"
     static const unsigned char alpn_protocols[] = {
-        0x02, 'h', '2',
-        0x08, 'h', 't', 't', 'p', '/', '1', '.', '1',
+        0x02,
+        'h',
+        '2',
+        0x08,
+        'h',
+        't',
+        't',
+        'p',
+        '/',
+        '1',
+        '.',
+        '1',
     };
 
     // Set ALPN protocols (used by SSL_CTX as the *client*-side advertisement
@@ -392,9 +392,8 @@ bool HttpsSmartHandler::SetupALPN() {
     return true;
 }
 
-int HttpsSmartHandler::ALPNSelectCallback(SSL* ssl, const unsigned char** out,
-                                         unsigned char* outlen, const unsigned char* in,
-                                         unsigned int inlen, void* arg) {
+int HttpsSmartHandler::ALPNSelectCallback(SSL* ssl, const unsigned char** out, unsigned char* outlen,
+    const unsigned char* in, unsigned int inlen, void* arg) {
     HttpsSmartHandler* handler = static_cast<HttpsSmartHandler*>(arg);
     (void)ssl;
     (void)handler;
@@ -422,16 +421,15 @@ int HttpsSmartHandler::ALPNSelectCallback(SSL* ssl, const unsigned char** out,
     // `curl` both do), and fall back to `h2` only for clients that refuse to
     // negotiate H1.1 (nghttp/h2load/some gRPC libs). The `h2` path then sends
     // a minimal but spec-compliant H2 response carrying the same Alt-Svc.
-    static const char* const kPreferred[] = { "http/1.1", "h2" };
+    static const char* const kPreferred[] = {"http/1.1", "h2"};
 
     for (const char* preferred : kPreferred) {
         size_t preferred_len = strlen(preferred);
         for (unsigned int i = 0; i < inlen;) {
             unsigned char len = in[i++];
             if (i + len > inlen) break;
-            if (len == preferred_len &&
-                std::memcmp(&in[i], preferred, preferred_len) == 0) {
-                *out    = &in[i];
+            if (len == preferred_len && std::memcmp(&in[i], preferred, preferred_len) == 0) {
+                *out = &in[i];
                 *outlen = len;
                 LOG_INFO("Selected ALPN protocol: %s", preferred);
                 return SSL_TLSEXT_ERR_OK;
@@ -457,5 +455,5 @@ std::string HttpsSmartHandler::GetNegotiatedProtocol(std::shared_ptr<ITcpSocket>
     return "";
 }
 
-} // namespace upgrade
-} // namespace quicx 
+}  // namespace upgrade
+}  // namespace quicx

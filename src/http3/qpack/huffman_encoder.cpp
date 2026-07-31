@@ -3,9 +3,7 @@
 namespace quicx {
 namespace http3 {
 
-HuffmanEncoder::HuffmanEncoder() {
-
-}
+HuffmanEncoder::HuffmanEncoder() {}
 
 bool HuffmanEncoder::ShouldHuffmanEncode(const std::string& input) {
     size_t encoded_bits = 0;
@@ -68,7 +66,8 @@ std::string HuffmanEncoder::Decode(const std::vector<uint8_t>& input) {
     return output;
 }
 
-void HuffmanEncoder::WriteBits(uint32_t code, uint8_t num_bits, uint32_t& current_byte, uint8_t& bits_left, std::vector<uint8_t>& output) {
+void HuffmanEncoder::WriteBits(
+    uint32_t code, uint8_t num_bits, uint32_t& current_byte, uint8_t& bits_left, std::vector<uint8_t>& output) {
     while (num_bits > 0) {
         uint8_t bits_to_write = std::min(bits_left, num_bits);
         uint32_t mask = ((1 << bits_to_write) - 1);
@@ -92,6 +91,9 @@ void HuffmanEncoder::WriteBits(uint32_t code, uint8_t num_bits, uint32_t& curren
 // This table maps each byte value to its corresponding Huffman code and code length
 // The values are defined in the RFC 7541 Appendix B
 // https://datatracker.ietf.org/doc/html/rfc7541#appendix-B
+// clang-format off
+// RFC 7541 Appendix B Huffman code table. Each row is hand-aligned (symbol,
+// code, num_bits) for readability against the RFC; preserve the layout.
 const std::vector<HuffmanEncoder::HuffmanCode> HuffmanEncoder::huffman_vector_ = {    
     {0,   0x1ff8,     13},
     {1,   0x7fffd8,   23},
@@ -351,6 +353,7 @@ const std::vector<HuffmanEncoder::HuffmanCode> HuffmanEncoder::huffman_vector_ =
     {255, 0x3ffffee,  26},
     {256, 0x3fffffff, 30}, // EOS
 };
+// clang-format on
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

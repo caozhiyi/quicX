@@ -9,7 +9,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-TEST(transport_param_utest, test1) {
+TEST(TransportParamTest, test1) {
     TransportParam tp1;
     tp1.Init(DEFAULT_QUIC_TRANSPORT_PARAMS);
 
@@ -44,7 +44,7 @@ TEST(transport_param_utest, test1) {
     EXPECT_EQ(tp1.GetRetrySourceConnectionId(), tp2.GetRetrySourceConnectionId());
 }
 
-TEST(transport_param_utest, test2) {
+TEST(TransportParamTest, test2) {
     TransportParam tp1;
 
     uint8_t buf[1024] = {0};
@@ -82,7 +82,7 @@ TEST(transport_param_utest, test2) {
 
 // Round-trip encoding of a version_information TP with chosen=v2 and
 // available={v2, v1} should preserve all fields exactly.
-TEST(transport_param_utest, VersionInformation_RoundTrip) {
+TEST(TransportParamTest, VersionInformation_RoundTrip) {
     TransportParam tp1;
     tp1.SetVersionInformation(kQuicVersion2, {kQuicVersion2, kQuicVersion1});
     ASSERT_TRUE(tp1.HasVersionInformation());
@@ -106,7 +106,7 @@ TEST(transport_param_utest, VersionInformation_RoundTrip) {
 // A version_information TP with an empty available_versions list (only the
 // chosen version) is valid per RFC 9368 §3 (tp_len == 4, "available versions"
 // is zero or more 32-bit fields).
-TEST(transport_param_utest, VersionInformation_ChosenOnly) {
+TEST(TransportParamTest, VersionInformation_ChosenOnly) {
     TransportParam tp1;
     tp1.SetVersionInformation(kQuicVersion1, {});
 
@@ -125,16 +125,19 @@ TEST(transport_param_utest, VersionInformation_ChosenOnly) {
 
 // A version_information TP whose length is not a multiple of 4 must be
 // rejected: RFC 9368 §3 requires each field to be exactly 32 bits wide.
-TEST(transport_param_utest, VersionInformation_RejectInvalidLength) {
+TEST(TransportParamTest, VersionInformation_RejectInvalidLength) {
     // Hand-crafted bytes (QUIC varint 1-byte form: 6-bit value in low bits):
     //   varint(0x11) 'version_information' id (1 byte: 0x11)
     //   varint(5)    tp_len; invalid: not a multiple of 4 (1 byte: 0x05)
     //   5 data bytes
     uint8_t buf[] = {
-        0x11,                    // TP id
-        0x05,                    // tp_len = 5 (INVALID; must be multiple of 4)
-        0x00, 0x00, 0x00, 0x01,  // partial "chosen version"
-        0xde,                    // extra trailing byte
+        0x11,  // TP id
+        0x05,  // tp_len = 5 (INVALID; must be multiple of 4)
+        0x00,
+        0x00,
+        0x00,
+        0x01,  // partial "chosen version"
+        0xde,  // extra trailing byte
     };
     common::BufferSpan read_buffer(buf, sizeof(buf));
     TransportParam tp;
@@ -143,7 +146,7 @@ TEST(transport_param_utest, VersionInformation_RejectInvalidLength) {
 
 // A version_information TP whose tp_len is 0 must be rejected: RFC 9368 §3
 // requires at least a chosen_version field (tp_len >= 4).
-TEST(transport_param_utest, VersionInformation_RejectZeroLength) {
+TEST(TransportParamTest, VersionInformation_RejectZeroLength) {
     uint8_t buf[] = {
         0x11,  // TP id
         0x00,  // tp_len = 0 (INVALID; must be >= 4)
@@ -155,7 +158,7 @@ TEST(transport_param_utest, VersionInformation_RejectZeroLength) {
 
 // Merge() must copy peer's version_information so the upper layer can make
 // downgrade-detection / upgrade decisions.
-TEST(transport_param_utest, VersionInformation_MergedFromPeer) {
+TEST(TransportParamTest, VersionInformation_MergedFromPeer) {
     TransportParam local;
     // local has no version_information yet.
     EXPECT_FALSE(local.HasVersionInformation());

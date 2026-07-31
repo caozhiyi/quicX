@@ -5,12 +5,12 @@
 #include <memory>
 #include <unordered_map>
 
-#include "http3/connection/if_connection.h"
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/type.h>
+#include <quicx/quic/if_quic_connection.h>
+#include "http3/connection/if_connection.h"
 #include "http3/stream/control_client_sender_stream.h"
 #include "http3/stream/control_receiver_stream.h"
-#include <quicx/quic/if_quic_connection.h>
 
 namespace quicx {
 namespace http3 {
@@ -21,9 +21,7 @@ public:
         const std::shared_ptr<IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
         const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
-        const http_response_handler& push_handler,
-        uint64_t max_concurrent_streams = 200,
-        bool enable_push = false);
+        const http_response_handler& push_handler, uint64_t max_concurrent_streams = 200, bool enable_push = false);
     virtual ~ClientConnection();
 
     // Two-phase init: control/qpack stream wiring is deferred to Init() because

@@ -1,5 +1,5 @@
-#include <random>
 #include "common/util/random.h"
+#include <random>
 
 namespace quicx {
 namespace common {
@@ -16,17 +16,13 @@ std::mt19937& RangeRandom::Engine() {
 }
 
 RangeRandom::RangeRandom(int32_t min, int32_t max):
-    uniform_(min, max) {
+    uniform_(min, max) {}
 
-}
-
-RangeRandom::~RangeRandom() {
-
-}
+RangeRandom::~RangeRandom() {}
 
 int32_t RangeRandom::Random() {
     return uniform_(Engine());
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

@@ -1,13 +1,13 @@
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
+#include "common/log/log.h"
 
 #include <quicx/quic/if_quic_server.h>
 
-#include "http3/config.h"
-#include "http3/http/server.h"
 #include <quicx/http3/if_async_handler.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include "http3/config.h"
+#include "http3/http/server.h"
 #include "http3/metric/metrics_handler.h"
 
 namespace quicx {
@@ -21,9 +21,7 @@ Server::Server(const Http3Settings& settings):
     settings_(settings) {
     quic_ = IQuicServer::Create(settings.quic_transport_params_);
     router_ = std::make_shared<Router>();
-    quic_->SetConnectionStateCallBack([this](auto a, auto b, auto c, auto d) {
-        OnConnection(a, b, c, d);
-    });
+    quic_->SetConnectionStateCallBack([this](auto a, auto b, auto c, auto d) { OnConnection(a, b, c, d); });
 }
 
 Server::~Server() {
@@ -145,8 +143,8 @@ void Server::OnConnection(
     }
 
     // create a new server connection
-    auto server_conn = std::make_shared<ServerConnection>(unique_id, settings_, shared_from_this(), quic_, conn,
-        [this](auto a, auto b) { HandleError(a, b); },
+    auto server_conn = std::make_shared<ServerConnection>(
+        unique_id, settings_, shared_from_this(), quic_, conn, [this](auto a, auto b) { HandleError(a, b); },
         config_.max_concurrent_streams_, config_.enable_push_);
 
     // Initialize connection (starts timers)

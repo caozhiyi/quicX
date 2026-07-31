@@ -7,8 +7,7 @@
 namespace quicx {
 namespace quic {
 
-class MaxStreamsFrame:
-    public IFrame {
+class MaxStreamsFrame: public IFrame {
 public:
     MaxStreamsFrame(uint16_t frame_type);
     ~MaxStreamsFrame();
@@ -22,10 +21,11 @@ public:
 
 private:
     uint8_t stream_type_;
-    uint64_t maximum_streams_;  // A count of the cumulative number of streams of the corresponding type that can be opened over the lifetime of the connection.
+    uint64_t maximum_streams_;  // A count of the cumulative number of streams of the corresponding type that can be
+                                // opened over the lifetime of the connection.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

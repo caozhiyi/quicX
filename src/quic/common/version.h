@@ -28,17 +28,23 @@ static constexpr size_t kQuicVersionsCount = sizeof(kQuicVersions) / sizeof(kQui
 bool VersionCheck(uint32_t version);
 
 // Check if version is QUIC v2
-inline bool IsQuicV2(uint32_t version) { return version == kQuicVersion2; }
+inline bool IsQuicV2(uint32_t version) {
+    return version == kQuicVersion2;
+}
 
 // Check if version is QUIC v1
-inline bool IsQuicV1(uint32_t version) { return version == kQuicVersion1; }
+inline bool IsQuicV1(uint32_t version) {
+    return version == kQuicVersion1;
+}
 
 // Get preferred version from a list of versions
 // Returns 0 if no compatible version found
 uint32_t SelectVersion(const std::vector<uint32_t>& versions);
 
 // Get the default (most preferred) version
-inline uint32_t GetDefaultVersion() { return kQuicVersions[0]; }
+inline uint32_t GetDefaultVersion() {
+    return kQuicVersions[0];
+}
 
 // Get version string for logging
 const char* VersionToString(uint32_t version);

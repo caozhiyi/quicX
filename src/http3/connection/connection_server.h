@@ -1,34 +1,30 @@
 #ifndef HTTP3_CONNECTION_SERVER_CONNECTION
 #define HTTP3_CONNECTION_SERVER_CONNECTION
 
-#include <memory>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 
 #include <quicx/http3/type.h>
-#include <quicx/quic/if_quic_stream.h>
-#include <quicx/quic/if_quic_server.h>
-#include "http3/stream/response_stream.h"
-#include "http3/connection/if_connection.h"
 #include <quicx/quic/if_quic_connection.h>
-#include "http3/stream/push_sender_stream.h"
+#include <quicx/quic/if_quic_server.h>
+#include <quicx/quic/if_quic_stream.h>
+#include "http3/connection/if_connection.h"
 #include "http3/stream/control_sender_stream.h"
 #include "http3/stream/control_server_receiver_stream.h"
+#include "http3/stream/push_sender_stream.h"
+#include "http3/stream/response_stream.h"
 
 namespace quicx {
 namespace http3 {
 
-class ServerConnection:
-    public IConnection {
+class ServerConnection: public IConnection {
 public:
-    ServerConnection(const std::string& unique_id,
-        const Http3Settings& settings,
-        const std::shared_ptr<IHttpProcessor>& http_processor,
-        std::shared_ptr<IQuicServer> quic_server,
+    ServerConnection(const std::string& unique_id, const Http3Settings& settings,
+        const std::shared_ptr<IHttpProcessor>& http_processor, std::shared_ptr<IQuicServer> quic_server,
         const std::shared_ptr<IQuicConnection>& quic_connection,
         const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
-        uint64_t max_concurrent_streams = 200,
-        bool enable_push = false);
+        uint64_t max_concurrent_streams = 200, bool enable_push = false);
     virtual ~ServerConnection();
 
     // Two-phase init: control/qpack stream wiring is deferred to Init() because
@@ -55,7 +51,8 @@ private:
     // handle stream status
     void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code);
     // Callback when stream type is identified (RFC 9114 Section 6.2)
-    void OnStreamTypeIdentified(uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data);
+    void OnStreamTypeIdentified(
+        uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data);
     // handle goaway frame
     void HandleGoaway(uint64_t id);
     // handle max push id frame
@@ -95,7 +92,7 @@ private:
     std::weak_ptr<IHttpProcessor> http_processor_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

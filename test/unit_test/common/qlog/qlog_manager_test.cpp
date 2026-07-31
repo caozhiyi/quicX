@@ -6,14 +6,14 @@
 #include <string>
 #include <vector>
 
-#include "common/qlog/qlog_manager.h"
 #include "common/qlog/event/transport_events.h"
+#include "common/qlog/qlog_manager.h"
 
 namespace quicx {
 namespace common {
 namespace {
 
-class QlogManagerTest : public ::testing::Test {
+class QlogManagerTest: public ::testing::Test {
 protected:
     void SetUp() override {
         // Reset manager to default state
@@ -99,10 +99,7 @@ TEST_F(QlogManagerTest, SetEventWhitelist) {
     auto& manager = QlogManager::Instance();
 
     std::vector<std::string> whitelist = {
-        "transport:packet_sent",
-        "transport:packet_received",
-        "recovery:metrics_updated"
-    };
+        "transport:packet_sent", "transport:packet_received", "recovery:metrics_updated"};
 
     manager.SetEventWhitelist(whitelist);
 
@@ -445,8 +442,8 @@ TEST_F(QlogManagerTest, ConfigurationExtremeValues) {
 
     QlogConfig config;
     config.enabled = true;
-    config.async_queue_size = 1;  // Minimum
-    config.flush_interval_ms = 0;  // Immediate
+    config.async_queue_size = 1;           // Minimum
+    config.flush_interval_ms = 0;          // Immediate
     config.max_file_size_mb = UINT64_MAX;  // Maximum
     config.sampling_rate = 1.0f;
 

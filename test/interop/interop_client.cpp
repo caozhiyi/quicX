@@ -36,19 +36,17 @@ struct WinsockInit {
         WSADATA wsaData;
         WSAStartup(MAKEWORD(2, 2), &wsaData);
     }
-    ~WinsockInit() {
-        WSACleanup();
-    }
+    ~WinsockInit() { WSACleanup(); }
 };
 #else
-#include <netdb.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #endif
 #include <atomic>
 #include <cctype>
+#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
-#include <condition_variable>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -57,13 +55,13 @@ struct WinsockInit {
 #include <thread>
 #include <vector>
 
-#include <quicx/quic/if_quic_client.h>
-#include <quicx/quic/if_quic_connection.h>
-#include <quicx/quic/if_quic_bidirection_stream.h>
-#include <quicx/http3/if_client.h>
 #include <quicx/http3/if_async_handler.h>
+#include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <quicx/quic/if_quic_bidirection_stream.h>
+#include <quicx/quic/if_quic_client.h>
+#include <quicx/quic/if_quic_connection.h>
 
 using namespace quicx;
 
@@ -85,7 +83,7 @@ static std::string ResolveHost(const std::string& host) {
     // Prefer IPv4 (AF_INET) over IPv6 (AF_INET6)
     char ipv4[INET_ADDRSTRLEN] = "";
     char ipv6[INET6_ADDRSTRLEN] = "";
-    
+
     for (rp = result; rp != nullptr; rp = rp->ai_next) {
         if (rp->ai_family == AF_INET && ipv4[0] == '\0') {
             struct sockaddr_in* addr = reinterpret_cast<struct sockaddr_in*>(rp->ai_addr);
@@ -97,7 +95,7 @@ static std::string ResolveHost(const std::string& host) {
     }
 
     freeaddrinfo(result);
-    
+
     // Return IPv4 if available, otherwise IPv6
     if (ipv4[0] != '\0') {
         return std::string(ipv4);
@@ -126,12 +124,11 @@ struct DownloadContext {
 
 class HqInteropClient {
 public:
-    HqInteropClient(const std::string& download_dir, const std::string& qlog_dir = "")
-        : download_dir_(download_dir), qlog_dir_(qlog_dir) {}
+    HqInteropClient(const std::string& download_dir, const std::string& qlog_dir = ""):
+        download_dir_(download_dir),
+        qlog_dir_(qlog_dir) {}
 
-    ~HqInteropClient() {
-        Shutdown();
-    }
+    ~HqInteropClient() { Shutdown(); }
 
     bool Init() {
         QuicTransportParams transport_params;
@@ -145,10 +142,8 @@ public:
         }
 
         quic_->SetConnectionStateCallBack(
-            [this](std::shared_ptr<IQuicConnection> conn, ConnectionOperation op,
-                   uint32_t error, const std::string& reason) {
-                OnConnection(conn, op, error, reason);
-            });
+            [this](std::shared_ptr<IQuicConnection> conn, ConnectionOperation op, uint32_t error,
+                const std::string& reason) { OnConnection(conn, op, error, reason); });
 
         QuicClientConfig config;
         config.verify_peer_ = false;  // Interop tests use self-signed certificates
@@ -160,12 +155,18 @@ public:
         if (const char* lvl = std::getenv("LOG_LEVEL")) {
             std::string s = lvl;
             for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            if (s == "debug") config.config_.log_level_ = LogLevel::kDebug;
-            else if (s == "info") config.config_.log_level_ = LogLevel::kInfo;
-            else if (s == "warn" || s == "warning") config.config_.log_level_ = LogLevel::kWarn;
-            else if (s == "error") config.config_.log_level_ = LogLevel::kError;
-            else if (s == "fatal") config.config_.log_level_ = LogLevel::kFatal;
-            else if (s == "null" || s == "off" || s == "none") config.config_.log_level_ = LogLevel::kNull;
+            if (s == "debug")
+                config.config_.log_level_ = LogLevel::kDebug;
+            else if (s == "info")
+                config.config_.log_level_ = LogLevel::kInfo;
+            else if (s == "warn" || s == "warning")
+                config.config_.log_level_ = LogLevel::kWarn;
+            else if (s == "error")
+                config.config_.log_level_ = LogLevel::kError;
+            else if (s == "fatal")
+                config.config_.log_level_ = LogLevel::kFatal;
+            else if (s == "null" || s == "off" || s == "none")
+                config.config_.log_level_ = LogLevel::kNull;
         }
         config.config_.log_path_ = "./logs";  // Current directory for logs
 
@@ -320,52 +321,49 @@ public:
 
         // Set read callback to receive response data
         // Note: Keep ctx alive by capturing it in lambda
-        bidi->SetStreamReadCallBack(
-            [ctx](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
-                // Debug: Log every callback invocation
-                static std::atomic<int> call_count{0};
-                int count = ++call_count;
-                std::cout << "[CALLBACK #" << count << "] data=" << (data ? data->GetDataLength() : 0) 
-                          << " bytes, is_last=" << is_last << ", error=" << error << std::endl;
+        bidi->SetStreamReadCallBack([ctx](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+            // Debug: Log every callback invocation
+            static std::atomic<int> call_count{0};
+            int count = ++call_count;
+            std::cout << "[CALLBACK #" << count << "] data=" << (data ? data->GetDataLength() : 0)
+                      << " bytes, is_last=" << is_last << ", error=" << error << std::endl;
 
-                if (error != 0) {
-                    std::cerr << "Stream read error: " << error << std::endl;
-                    std::lock_guard<std::mutex> lock(ctx->mtx);
-                    ctx->done = true;
-                    ctx->cv.notify_all();
-                    return;
-                }
+            if (error != 0) {
+                std::cerr << "Stream read error: " << error << std::endl;
+                std::lock_guard<std::mutex> lock(ctx->mtx);
+                ctx->done = true;
+                ctx->cv.notify_all();
+                return;
+            }
 
-                if (data) {
-                    uint32_t len = data->GetDataLength();
-                    if (len > 0) {
-                        std::vector<uint8_t> buf(len);
-                        uint32_t read = data->Read(buf.data(), len);
-                        if (ctx->file && read > 0) {
-                            size_t written = fwrite(buf.data(), 1, read, ctx->file);
-                            ctx->bytes_received += written;
-                        }
+            if (data) {
+                uint32_t len = data->GetDataLength();
+                if (len > 0) {
+                    std::vector<uint8_t> buf(len);
+                    uint32_t read = data->Read(buf.data(), len);
+                    if (ctx->file && read > 0) {
+                        size_t written = fwrite(buf.data(), 1, read, ctx->file);
+                        ctx->bytes_received += written;
                     }
                 }
+            }
 
-                if (is_last) {
-                    if (ctx->file) {
-                        fclose(ctx->file);
-                        ctx->file = nullptr;
-                    }
-                    std::cout << "Downloaded " << ctx->bytes_received << " bytes -> "
-                              << ctx->filepath << std::endl;
-                    std::lock_guard<std::mutex> lock(ctx->mtx);
-                    ctx->success = true;
-                    ctx->done = true;
-                    ctx->cv.notify_all();
+            if (is_last) {
+                if (ctx->file) {
+                    fclose(ctx->file);
+                    ctx->file = nullptr;
                 }
-            });
+                std::cout << "Downloaded " << ctx->bytes_received << " bytes -> " << ctx->filepath << std::endl;
+                std::lock_guard<std::mutex> lock(ctx->mtx);
+                ctx->success = true;
+                ctx->done = true;
+                ctx->cv.notify_all();
+            }
+        });
 
         // Send hq-interop request: "GET /path\r\n"
         std::string request = "GET " + path + "\r\n";
-        int32_t sent = bidi->Send(reinterpret_cast<uint8_t*>(request.data()),
-                                  static_cast<uint32_t>(request.size()));
+        int32_t sent = bidi->Send(reinterpret_cast<uint8_t*>(request.data()), static_cast<uint32_t>(request.size()));
         if (sent < 0) {
             std::cerr << "Failed to send request" << std::endl;
             return false;
@@ -406,13 +404,13 @@ public:
             std::cout << "All " << urls.size() << " downloads completed" << std::endl;
             return true;
         }
-        
+
         // Multiple files: send all requests concurrently on a single connection
         // All stream creation and sends happen on THIS thread (serially) to avoid
         // thread-safety issues with MakeStream. The QUIC stack handles I/O
         // asynchronously via its event loop.
         std::cout << "Starting " << urls.size() << " concurrent downloads..." << std::endl;
-        
+
         std::shared_ptr<IQuicConnection> conn;
         {
             std::lock_guard<std::mutex> lock(conn_mtx_);
@@ -422,7 +420,7 @@ public:
             std::cerr << "No active connection" << std::endl;
             return false;
         }
-        
+
         // Shared state for tracking all downloads
         struct AllDownloadsState {
             std::mutex mtx;
@@ -433,16 +431,16 @@ public:
         };
         auto state = std::make_shared<AllDownloadsState>();
         state->total = static_cast<int>(urls.size());
-        
+
         int initiated = 0;
         for (size_t i = 0; i < urls.size(); i++) {
             const auto& url = urls[i];
             std::string path = ExtractPath(url);
             std::string filename = ExtractFilename(url);
             std::string filepath = download_dir_ + "/" + filename;
-            
+
             std::cout << "Downloading: " << url << " -> " << filepath << std::endl;
-            
+
             // Create stream (serially, thread-safe)
             std::shared_ptr<IQuicStream> stream;
             for (int retry = 0; retry < 300; retry++) {
@@ -455,14 +453,14 @@ public:
                 state->completed++;
                 continue;
             }
-            
+
             auto bidi = std::dynamic_pointer_cast<IQuicBidirectionStream>(stream);
             if (!bidi) {
                 std::cerr << "Failed to cast stream for " << url << std::endl;
                 state->completed++;
                 continue;
             }
-            
+
             auto ctx = std::make_shared<DownloadContext>();
             ctx->filepath = filepath;
             ctx->file = fopen(filepath.c_str(), "wb");
@@ -471,62 +469,65 @@ public:
                 state->completed++;
                 continue;
             }
-            
-            bidi->SetStreamReadCallBack(
-                [ctx, state](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
-                    if (error != 0) {
-                        std::lock_guard<std::mutex> lock(ctx->mtx);
-                        if (ctx->file) { fclose(ctx->file); ctx->file = nullptr; }
-                        ctx->done = true;
-                        state->completed++;
-                        state->cv.notify_all();
-                        return;
+
+            bidi->SetStreamReadCallBack([ctx, state](std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) {
+                if (error != 0) {
+                    std::lock_guard<std::mutex> lock(ctx->mtx);
+                    if (ctx->file) {
+                        fclose(ctx->file);
+                        ctx->file = nullptr;
                     }
-                    
-                    if (data) {
-                        uint32_t len = data->GetDataLength();
-                        if (len > 0) {
-                            std::vector<uint8_t> buf(len);
-                            uint32_t read = data->Read(buf.data(), len);
-                            if (ctx->file && read > 0) {
-                                fwrite(buf.data(), 1, read, ctx->file);
-                                ctx->bytes_received += read;
-                            }
+                    ctx->done = true;
+                    state->completed++;
+                    state->cv.notify_all();
+                    return;
+                }
+
+                if (data) {
+                    uint32_t len = data->GetDataLength();
+                    if (len > 0) {
+                        std::vector<uint8_t> buf(len);
+                        uint32_t read = data->Read(buf.data(), len);
+                        if (ctx->file && read > 0) {
+                            fwrite(buf.data(), 1, read, ctx->file);
+                            ctx->bytes_received += read;
                         }
                     }
-                    
-                    if (is_last) {
-                        if (ctx->file) { fclose(ctx->file); ctx->file = nullptr; }
-                        std::cout << "Downloaded " << ctx->bytes_received << " bytes -> "
-                                  << ctx->filepath << std::endl;
-                        ctx->success = true;
-                        ctx->done = true;
-                        state->succeeded++;
-                        state->completed++;
-                        state->cv.notify_all();
+                }
+
+                if (is_last) {
+                    if (ctx->file) {
+                        fclose(ctx->file);
+                        ctx->file = nullptr;
                     }
-                });
-            
+                    std::cout << "Downloaded " << ctx->bytes_received << " bytes -> " << ctx->filepath << std::endl;
+                    ctx->success = true;
+                    ctx->done = true;
+                    state->succeeded++;
+                    state->completed++;
+                    state->cv.notify_all();
+                }
+            });
+
             std::string request = "GET " + path + "\r\n";
-            bidi->Send(reinterpret_cast<uint8_t*>(request.data()),
-                       static_cast<uint32_t>(request.size()));
+            bidi->Send(reinterpret_cast<uint8_t*>(request.data()), static_cast<uint32_t>(request.size()));
             bidi->Flush();
             // Close send direction (FIN) - server waits for FIN before responding
             bidi->Close();
             std::cout << "Sent request: GET " << path << std::endl;
             initiated++;
         }
-        
+
         // Wait for all downloads to complete (or timeout)
         {
             std::unique_lock<std::mutex> lock(state->mtx);
-            state->cv.wait_for(lock, std::chrono::seconds(60),
-                [&state] { return state->completed.load() >= state->total; });
+            state->cv.wait_for(
+                lock, std::chrono::seconds(60), [&state] { return state->completed.load() >= state->total; });
         }
-        
-        std::cout << "All " << state->succeeded.load() << "/" << state->total
-                  << " downloads completed (" << initiated << " initiated)" << std::endl;
-        
+
+        std::cout << "All " << state->succeeded.load() << "/" << state->total << " downloads completed (" << initiated
+                  << " initiated)" << std::endl;
+
         return state->succeeded.load() == state->total;
     }
 
@@ -549,9 +550,9 @@ public:
             }
         }
         if (quic_) {
-            quic_->AddTimer(500, [this]() { 
+            quic_->AddTimer(500, [this]() {
                 if (quic_) {
-                    quic_->Destroy(); 
+                    quic_->Destroy();
                 }
             });
             quic_->Join();
@@ -560,8 +561,8 @@ public:
     }
 
 private:
-    void OnConnection(std::shared_ptr<IQuicConnection> conn, ConnectionOperation op,
-                      uint32_t error, const std::string& reason) {
+    void OnConnection(
+        std::shared_ptr<IQuicConnection> conn, ConnectionOperation op, uint32_t error, const std::string& reason) {
         if (op == ConnectionOperation::kConnectionClose) {
             std::cout << "Connection closed, error=" << error << " reason=" << reason << std::endl;
             std::lock_guard<std::mutex> lock(conn_mtx_);
@@ -654,7 +655,7 @@ int main(int argc, char* argv[]) {
     std::string cipher_suite;
     uint32_t force_version = 0;
     uint32_t quic_version = 0;
-    
+
     // Parse command-line arguments
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -689,7 +690,7 @@ int main(int argc, char* argv[]) {
             urls.push_back(arg);
         }
     }
-    
+
     // Fall back to environment variables if not provided via command line
     const char* server_env = std::getenv("SERVER");
     const char* port_env = std::getenv("PORT");
@@ -697,7 +698,7 @@ int main(int argc, char* argv[]) {
     const char* downloads_env = std::getenv("DOWNLOADS");
     const char* testcase_env = std::getenv("TESTCASE");
     const char* qlog_env = std::getenv("QLOGDIR");
-    
+
     if (server.empty() && server_env) {
         server = server_env;
     }
@@ -713,7 +714,7 @@ int main(int argc, char* argv[]) {
     if (urls.empty() && requests_env) {
         urls = ParseUrls(requests_env);
     }
-    
+
     // If server not specified, extract from first URL
     if (server.empty() && !urls.empty()) {
         // Parse first URL to extract server and port
@@ -727,7 +728,7 @@ int main(int argc, char* argv[]) {
                 host_end = first_url.length();
             }
             std::string host_port = first_url.substr(host_start, host_end - host_start);
-            
+
             // Check if port is specified
             size_t colon_pos = host_port.find(":");
             if (colon_pos != std::string::npos) {
@@ -739,12 +740,16 @@ int main(int argc, char* argv[]) {
             std::cout << "Extracted server from URL: " << server << ":" << port << std::endl;
         }
     }
-    
+
     // Validate required parameters
     if (server.empty() || urls.empty()) {
         std::cerr << "Error: SERVER and URLs are required" << std::endl;
-        std::cerr << "Usage: " << argv[0] << " --server <host> [--port <port>] [--download-dir <dir>] [--qlog-dir <dir>] <url1> [url2 ...]" << std::endl;
-        std::cerr << "   Or set SERVER and REQUESTS environment variables, or provide URLs (server will be extracted from URL)" << std::endl;
+        std::cerr << "Usage: " << argv[0]
+                  << " --server <host> [--port <port>] [--download-dir <dir>] [--qlog-dir <dir>] <url1> [url2 ...]"
+                  << std::endl;
+        std::cerr << "   Or set SERVER and REQUESTS environment variables, or provide URLs (server will be extracted "
+                     "from URL)"
+                  << std::endl;
         return 1;
     }
 
@@ -774,7 +779,7 @@ int main(int argc, char* argv[]) {
         snprintf(version_buf, sizeof(version_buf), "0x%08x", quic_version);
         setenv("QUIC_VERSION", version_buf, 1);
     }
-    
+
     bool is_migration_test = testcase_env && (strcmp(testcase_env, "connectionmigration") == 0);
 
     std::cout << "========================================" << std::endl;
@@ -811,12 +816,18 @@ int main(int argc, char* argv[]) {
         if (const char* lvl = std::getenv("LOG_LEVEL")) {
             std::string s = lvl;
             for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-            if (s == "debug") h3_config.quic_config_.config_.log_level_ = LogLevel::kDebug;
-            else if (s == "info") h3_config.quic_config_.config_.log_level_ = LogLevel::kInfo;
-            else if (s == "warn" || s == "warning") h3_config.quic_config_.config_.log_level_ = LogLevel::kWarn;
-            else if (s == "error") h3_config.quic_config_.config_.log_level_ = LogLevel::kError;
-            else if (s == "fatal") h3_config.quic_config_.config_.log_level_ = LogLevel::kFatal;
-            else if (s == "null" || s == "off" || s == "none") h3_config.quic_config_.config_.log_level_ = LogLevel::kNull;
+            if (s == "debug")
+                h3_config.quic_config_.config_.log_level_ = LogLevel::kDebug;
+            else if (s == "info")
+                h3_config.quic_config_.config_.log_level_ = LogLevel::kInfo;
+            else if (s == "warn" || s == "warning")
+                h3_config.quic_config_.config_.log_level_ = LogLevel::kWarn;
+            else if (s == "error")
+                h3_config.quic_config_.config_.log_level_ = LogLevel::kError;
+            else if (s == "fatal")
+                h3_config.quic_config_.config_.log_level_ = LogLevel::kFatal;
+            else if (s == "null" || s == "off" || s == "none")
+                h3_config.quic_config_.config_.log_level_ = LogLevel::kNull;
         }
         h3_config.quic_config_.config_.log_path_ = "./logs";
         h3_config.connection_timeout_ms_ = 30000;
@@ -860,13 +871,16 @@ int main(int argc, char* argv[]) {
             auto req = IRequest::Create();
 
             // Create async handler for streaming file download
-            class FileDownloadHandler : public IAsyncClientHandler {
+            class FileDownloadHandler: public IAsyncClientHandler {
             public:
-                FileDownloadHandler(const std::string& filepath, const std::string& url,
-                                    std::atomic<int>& completed, std::atomic<int>& succeeded,
-                                    std::mutex& io_mtx, std::condition_variable& done_cv)
-                    : filepath_(filepath), url_(url), completed_(completed), succeeded_(succeeded),
-                      io_mtx_(io_mtx), done_cv_(done_cv) {}
+                FileDownloadHandler(const std::string& filepath, const std::string& url, std::atomic<int>& completed,
+                    std::atomic<int>& succeeded, std::mutex& io_mtx, std::condition_variable& done_cv):
+                    filepath_(filepath),
+                    url_(url),
+                    completed_(completed),
+                    succeeded_(succeeded),
+                    io_mtx_(io_mtx),
+                    done_cv_(done_cv) {}
 
                 void OnHeaders(std::shared_ptr<IResponse> response) override {
                     status_code_ = response->GetStatusCode();
@@ -890,8 +904,8 @@ int main(int argc, char* argv[]) {
                             fclose(file_);
                             file_ = nullptr;
                         }
-                        std::cout << "H3 Downloaded " << bytes_received_ << " bytes -> "
-                                  << filepath_ << " (status=" << status_code_ << ")" << std::endl;
+                        std::cout << "H3 Downloaded " << bytes_received_ << " bytes -> " << filepath_
+                                  << " (status=" << status_code_ << ")" << std::endl;
                         if (status_code_ == 200 && bytes_received_ > 0) {
                             succeeded_++;
                         }
@@ -922,8 +936,7 @@ int main(int argc, char* argv[]) {
                 uint32_t status_code_ = 0;
             };
 
-            auto handler = std::make_shared<FileDownloadHandler>(
-                filepath, url, completed, succeeded, io_mtx, done_cv);
+            auto handler = std::make_shared<FileDownloadHandler>(filepath, url, completed, succeeded, io_mtx, done_cv);
 
             if (!h3_client->DoRequest(url, HttpMethod::kGet, req, handler)) {
                 std::cerr << "H3 Failed to send request for " << url << std::endl;
@@ -934,12 +947,10 @@ int main(int argc, char* argv[]) {
         // Wait for all downloads to complete
         {
             std::unique_lock<std::mutex> lock(io_mtx);
-            done_cv.wait_for(lock, std::chrono::seconds(60),
-                [&] { return completed.load() >= total; });
+            done_cv.wait_for(lock, std::chrono::seconds(60), [&] { return completed.load() >= total; });
         }
 
-        std::cout << "H3 All " << succeeded.load() << "/" << total
-                  << " downloads completed" << std::endl;
+        std::cout << "H3 All " << succeeded.load() << "/" << total << " downloads completed" << std::endl;
 
         h3_client->Close();
 
@@ -963,14 +974,14 @@ int main(int argc, char* argv[]) {
     // 2nd connection: use saved session (resumption/0-RTT), download remaining files
     if ((enable_resumption || enable_zerortt) && urls.size() >= 2) {
         std::cout << "*** Two-connection test (" << (enable_zerortt ? "0-RTT" : "Resumption") << ") ***" << std::endl;
-        
+
         // For 0-RTT: minimize 1-RTT data by downloading only 1 file in connection 1
         // The test checks that 1-RTT payload < 50% of total filename data.
         // For Resumption: split evenly (no such constraint).
         size_t split = enable_zerortt ? 1 : urls.size() / 2;
         std::vector<std::string> urls_first(urls.begin(), urls.begin() + split);
         std::vector<std::string> urls_second(urls.begin() + split, urls.end());
-        
+
         // --- Connection 1: normal handshake ---
         std::cout << "--- Connection 1: normal handshake (" << urls_first.size() << " files) ---" << std::endl;
         if (!client.Connect(server, port)) {
@@ -984,13 +995,14 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         client.Shutdown();
         std::cout << "Connection 1 closed, session saved" << std::endl;
-        
+
         // Small delay between connections
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        
+
         // --- Connection 2: resumption/0-RTT ---
-        std::cout << "--- Connection 2: " << (enable_zerortt ? "0-RTT" : "Resumption") << " (" << urls_second.size() << " files) ---" << std::endl;
-        
+        std::cout << "--- Connection 2: " << (enable_zerortt ? "0-RTT" : "Resumption") << " (" << urls_second.size()
+                  << " files) ---" << std::endl;
+
         // Reinitialize client for second connection
         HqInteropClient client2(downloads_dir, qlog_dir);
         if (!client2.Init()) {

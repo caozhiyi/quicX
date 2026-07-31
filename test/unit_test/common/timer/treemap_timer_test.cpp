@@ -1,19 +1,19 @@
 #include <gtest/gtest.h>
 
-#include "common/util/time.h"
 #include "common/timer/timer.h"
+#include "common/util/time.h"
 
 namespace quicx {
 namespace common {
 namespace {
 
-TEST(treemap_timer_utest, addtimer1) {
+TEST(TreemapTimerTest, addtimer1) {
     TimerTask t;
     auto timer = MakeTimer();
     EXPECT_TRUE(timer->AddTimer(t, 30));
 }
 
-TEST(treemap_timer_utest, addtimer2) {
+TEST(TreemapTimerTest, addtimer2) {
     TimerTask t1, t2, t3, t4;
     auto timer = MakeTimer();
 
@@ -23,7 +23,7 @@ TEST(treemap_timer_utest, addtimer2) {
     EXPECT_TRUE(timer->AddTimer(t4, 50));
 }
 
-TEST(treemap_timer_utest, RemoveTimer) {
+TEST(TreemapTimerTest, RemoveTimer) {
     TimerTask t1, t2, t3, t4;
     auto timer = MakeTimer();
 
@@ -38,7 +38,7 @@ TEST(treemap_timer_utest, RemoveTimer) {
     EXPECT_TRUE(timer->RemoveTimer(t4));
 }
 
-TEST(treemap_timer_utest, mintime) {
+TEST(TreemapTimerTest, mintime) {
     TimerTask t1, t2, t3;
     uint64_t now = UTCTimeMsec();
     auto timer = MakeTimer();
@@ -56,7 +56,7 @@ TEST(treemap_timer_utest, mintime) {
     EXPECT_EQ(40 * TimeUnit::kMinute, timer->MinTime(now));
 }
 
-TEST(treemap_timer_utest, timerrun1) {
+TEST(TreemapTimerTest, timerrun1) {
     TimerTask t1, t2, t3;
     uint64_t now = UTCTimeMsec();
     auto timer = MakeTimer();
@@ -84,7 +84,7 @@ TEST(treemap_timer_utest, timerrun1) {
     EXPECT_TRUE(timer->Empty());
 }
 
-TEST(treemap_timer_utest, timerrun2) {
+TEST(TreemapTimerTest, timerrun2) {
     TimerTask t1, t2, t3, t4;
     uint64_t now = UTCTimeMsec();
     auto timer = MakeTimer();
@@ -112,7 +112,7 @@ TEST(treemap_timer_utest, timerrun2) {
     EXPECT_TRUE(timer->Empty());
 }
 
-TEST(treemap_timer_utest, timerrun3) {
+TEST(TreemapTimerTest, timerrun3) {
     TimerTask t1, t2, t3, t4;
     uint64_t now = UTCTimeMsec();
     auto timer = MakeTimer();
@@ -144,6 +144,6 @@ TEST(treemap_timer_utest, timerrun3) {
     EXPECT_TRUE(timer->Empty());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace common
+}  // namespace quicx

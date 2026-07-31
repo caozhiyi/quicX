@@ -1,8 +1,8 @@
 #ifndef HTTP3_FRAME_CANCEL_PUSH_FRAME
 #define HTTP3_FRAME_CANCEL_PUSH_FRAME
 
-#include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
+#include "http3/frame/type.h"
 
 namespace quicx {
 namespace http3 {

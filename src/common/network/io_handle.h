@@ -2,37 +2,40 @@
 #define QUIC_COMMON_NETWORK_IO_HANDLE
 
 #include <cstdint>
-#include "common/util/os_return.h"
 #include "common/network/address.h"
+#include "common/util/os_return.h"
 
 namespace quicx {
 namespace common {
 
 struct Iovec {
-    void      *iov_base_;      // starting address of buffer
-    size_t    iov_len_;        // size of buffer
-    Iovec() : iov_base_(nullptr), iov_len_(0) {}
-    Iovec(void* base, size_t len) : iov_base_(base), iov_len_(len) {}
+    void* iov_base_;  // starting address of buffer
+    size_t iov_len_;  // size of buffer
+    Iovec():
+        iov_base_(nullptr),
+        iov_len_(0) {}
+    Iovec(void* base, size_t len):
+        iov_base_(base),
+        iov_len_(len) {}
 };
 
 struct Msghdr {
-    void *msg_name_;		/* Address to send to/receive from.  */
-    uint32_t msg_namelen_;	/* Length of address data.  */
+    void* msg_name_;       /* Address to send to/receive from.  */
+    uint32_t msg_namelen_; /* Length of address data.  */
 
-    struct Iovec *msg_iov_;	/* Vector of data to send/receive into.  */
-    size_t msg_iovlen_;		/* Number of elements in the vector.  */
+    struct Iovec* msg_iov_; /* Vector of data to send/receive into.  */
+    size_t msg_iovlen_;     /* Number of elements in the vector.  */
 
-    void *msg_control_;		/* Ancillary data (eg BSD filedesc passing). */
-    size_t msg_controllen_;	/* Ancillary data buffer length.*/
+    void* msg_control_;     /* Ancillary data (eg BSD filedesc passing). */
+    size_t msg_controllen_; /* Ancillary data buffer length.*/
 
-    int16_t msg_flags_;		/* Flags on received message.  */
+    int16_t msg_flags_; /* Flags on received message.  */
 };
 
 struct MMsghdr {
-    Msghdr   msg_hdr_;		/* Actual message header.  */
-    uint32_t msg_len_;	/* Number of received or sent bytes for the entry.  */
+    Msghdr msg_hdr_;   /* Actual message header.  */
+    uint32_t msg_len_; /* Number of received or sent bytes for the entry.  */
 };
-
 
 SysCallInt32Result TcpSocket();
 
@@ -43,15 +46,21 @@ SysCallInt32Result TcpSocket();
 // Field layout intentionally mirrors SysCallInt32Result so existing code
 // that only reads `return_value_` / `error_code_` keeps compiling unchanged.
 struct UdpSocketResult {
-    int32_t return_value_;   // socket fd (>=0 on success, -1 on failure)
-    int32_t error_code_;     // 0 on success, errno otherwise
-    int32_t family_;         // AF_INET or AF_INET6 on success, 0 on failure
+    int32_t return_value_;  // socket fd (>=0 on success, -1 on failure)
+    int32_t error_code_;    // 0 on success, errno otherwise
+    int32_t family_;        // AF_INET or AF_INET6 on success, 0 on failure
 };
 
 // Create a dual-stack UDP socket (AF_INET6 with IPV6_V6ONLY=0). The
 // returned `family_` will be AF_INET6 in the normal case, or AF_INET if
 // the platform does not support IPv6 and we fell back to a v4-only socket.
 UdpSocketResult UdpSocket();
+
+// Resolve a UDP socket's address family (AF_INET / AF_INET6). Returns 0
+// (AF_UNSPEC) if the family cannot be determined. Cheap on fds we
+// created (O(1) cache hit); falls back to one SO_DOMAIN/getsockname
+// syscall otherwise.
+int32_t ResolveSocketFamily(int32_t sockfd);
 
 // Create an IPv4-only UDP socket (AF_INET). `family_` is always AF_INET.
 UdpSocketResult UdpSocket4();
@@ -71,9 +80,9 @@ SysCallInt32Result Bind(int32_t sockfd, Address& addr);
 SysCallInt32Result Accept(int32_t sockfd, Address& addr);
 SysCallInt32Result Listen(int32_t sockfd, int32_t backlog);
 
-SysCallInt32Result Write(int32_t sockfd, const char *data, uint32_t len);
-SysCallInt32Result Writev(int32_t sockfd, Iovec *vec, uint32_t vec_len);
-SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr);
+SysCallInt32Result Write(int32_t sockfd, const char* data, uint32_t len);
+SysCallInt32Result Writev(int32_t sockfd, Iovec* vec, uint32_t vec_len);
+SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_t flag, const Address& addr);
 SysCallInt32Result SendMsg(int32_t sockfd, const Msghdr* msg, int16_t flag);
 SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag);
 
@@ -106,18 +115,16 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 //   - other errno values are real send failures, propagate as today.
 //
 // Not implemented (returns EIO) on macOS — caller must check error_code_.
-SysCallInt32Result SendMsgGso(int32_t sockfd,
-                              const char* payload, uint32_t total_len,
-                              uint16_t segment_size,
-                              const Address& addr);
+SysCallInt32Result SendMsgGso(
+    int32_t sockfd, const char* payload, uint32_t total_len, uint16_t segment_size, const Address& addr);
 
-SysCallInt32Result Recv(int32_t sockfd, char *data, uint32_t len, uint16_t flag);
-SysCallInt32Result Readv(int32_t sockfd, Iovec *vec, uint32_t vec_len);
-SysCallInt32Result RecvFrom(int32_t sockfd, char *msg, uint32_t len, uint16_t flag, Address& addr);
+SysCallInt32Result Recv(int32_t sockfd, char* data, uint32_t len, uint16_t flag);
+SysCallInt32Result Readv(int32_t sockfd, Iovec* vec, uint32_t vec_len);
+SysCallInt32Result RecvFrom(int32_t sockfd, char* msg, uint32_t len, uint16_t flag, Address& addr);
 SysCallInt32Result RecvMsg(int32_t sockfd, Msghdr* msg, int16_t flag);
 SysCallInt32Result RecvmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint16_t flag, uint32_t time_out);
 
-SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void *optval, uint32_t optlen);
+SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void* optval, uint32_t optlen);
 
 // Default UDP socket buffer size requested for every QUIC UDP socket.
 // 4 MiB is the "good middle ground" used by Chromium/QUICHE example servers
@@ -161,7 +168,7 @@ bool Pipe(int32_t& pipe1, int32_t& pipe2);
 SysCallInt32Result EnableUdpEcn(int32_t sockfd);
 // Receive a datagram and extract ECN codepoint from ancillary data if available
 // ECN values: 0b00 Not-ECT, 0b10 ECT(0), 0b01 ECT(1), 0b11 CE
-SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn);
+SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char* buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn);
 
 // Set default ECN marking on outgoing UDP packets (via IP_TOS/IPV6_TCLASS)
 // ecn_codepoint: 0x00 Not-ECT, 0x01 ECT(1), 0x02 ECT(0), 0x03 CE (not recommended)
@@ -177,11 +184,11 @@ SysCallInt32Result EnableUdpEcnMarking(int32_t sockfd, uint8_t ecn_codepoint);
 // Plain-old-data layout so the UDP receiver can stack-allocate an array
 // of these without heap traffic on the hot path.
 struct RecvBatchEntry {
-    char*    buf_;
+    char* buf_;
     uint32_t buf_len_;
     uint32_t bytes_;
-    Address  peer_addr_;
-    uint8_t  ecn_;
+    Address peer_addr_;
+    uint8_t ecn_;
 };
 
 // Drain up to `entries_count` UDP datagrams from `sockfd` non-blockingly
@@ -209,11 +216,9 @@ struct RecvBatchEntry {
 //
 // Pre-conditions: each entries[i].buf_ must point to a writable buffer
 // of entries[i].buf_len_ bytes; entries_count >= 1.
-SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries,
-                                 uint32_t entries_count, bool want_ecn);
+SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries, uint32_t entries_count, bool want_ecn);
 
-
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

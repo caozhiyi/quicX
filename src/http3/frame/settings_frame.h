@@ -2,8 +2,8 @@
 #define HTTP3_FRAME_SETTINGS_FRAME
 
 #include <unordered_map>
-#include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
+#include "http3/frame/type.h"
 
 namespace quicx {
 namespace http3 {

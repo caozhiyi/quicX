@@ -1,8 +1,8 @@
 #include <algorithm>
 
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 
 #include "quic/config.h"
 #include "quic/connection/error.h"
@@ -113,8 +113,7 @@ IStream::TrySendResult RecvStream::TrySendData(IFrameVisitor* visitor) {
 
 uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     if (!recv_machine_->OnFrame(frame->GetType())) {
-        LOG_WARN(
-            "stream recv can't process stream frame. stream id:%d, frame type:%d", stream_id_, frame->GetType());
+        LOG_WARN("stream recv can't process stream frame. stream id:%d, frame type:%d", stream_id_, frame->GetType());
         return 0;
     }
 
@@ -128,8 +127,8 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             connection_close_cb_(
                 QuicErrorCode::kFlowControlError, frame->GetType(), "stream frame offset+length integer overflow.");
         }
-        LOG_ERROR("stream frame offset+length overflow. stream id:%d, offset:%llu, length:%u",
-            stream_id_, stream_frame->GetOffset(), stream_frame->GetLength());
+        LOG_ERROR("stream frame offset+length overflow. stream id:%d, offset:%llu, length:%u", stream_id_,
+            stream_frame->GetOffset(), stream_frame->GetLength());
         return 0;
     }
     if (frame_end > local_data_limit_) {
@@ -150,8 +149,8 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             if (connection_close_cb_) {
                 connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "final size change.");
             }
-            LOG_DEBUG("stream recv invalid final size. stream id:%d, fin offset:%d, final offset:%d",
-                stream_id_, fin_offset, final_offset_);
+            LOG_DEBUG("stream recv invalid final size. stream id:%d, fin offset:%d, final offset:%d", stream_id_,
+                fin_offset, final_offset_);
             return 0;
         }
         final_offset_ = fin_offset;
@@ -188,10 +187,11 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             recv_machine_->RecvAllData();
         }
 
-        LOG_DEBUG("RecvStream::OnStreamFrame triggering recv_cb_. stream id:%d, has_cb:%d, is_last:%d, "
+        LOG_DEBUG(
+            "RecvStream::OnStreamFrame triggering recv_cb_. stream id:%d, has_cb:%d, is_last:%d, "
             "buffer_len:%d, final_offset:%d, except_offset:%d, out_order_size:%d",
-            stream_id_, (recv_cb_ ? 1 : 0), is_last, buffer_->GetDataLength(),
-            final_offset_, except_offset_, (int)out_order_frame_.size());
+            stream_id_, (recv_cb_ ? 1 : 0), is_last, buffer_->GetDataLength(), final_offset_, except_offset_,
+            (int)out_order_frame_.size());
 
         if (recv_cb_) {
             recv_cb_(buffer_, is_last, reset_error_);
@@ -206,8 +206,8 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // is received indicating a change in the final size for the stream, an endpoint MUST respond with
         // an error of type FINAL_SIZE_ERROR.
         if (final_offset_ != 0 && stream_frame->GetOffset() > final_offset_) {
-            LOG_ERROR("stream recv data out of final size. stream id:%d, offset:%d, final offset:%d",
-                stream_id_, stream_frame->GetOffset(), final_offset_);
+            LOG_ERROR("stream recv data out of final size. stream id:%d, offset:%d, final offset:%d", stream_id_,
+                stream_frame->GetOffset(), final_offset_);
             if (connection_close_cb_) {
                 connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "data out of final size.");
             }
@@ -217,18 +217,16 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // RFC 9000 Section 2.2: The data at a given offset MUST NOT change if it is sent multiple times.
         if (out_order_frame_.find(stream_frame->GetOffset()) != out_order_frame_.end() ||
             stream_frame->GetOffset() < except_offset_) {
-            LOG_DEBUG(
-                "stream recv repeat packet. stream id:%d, offset:%d", stream_id_, stream_frame->GetOffset());
+            LOG_DEBUG("stream recv repeat packet. stream id:%d, offset:%d", stream_id_, stream_frame->GetOffset());
             return 0;
         }
 
         // Limit out-of-order frame buffer to prevent memory exhaustion from malicious peers
         if (out_order_frame_.size() >= kMaxOutOfOrderFrames) {
-            LOG_ERROR("too many out-of-order frames. stream id:%d, count:%d",
-                stream_id_, (int)out_order_frame_.size());
+            LOG_ERROR("too many out-of-order frames. stream id:%d, count:%d", stream_id_, (int)out_order_frame_.size());
             if (connection_close_cb_) {
-                connection_close_cb_(QuicErrorCode::kFlowControlError,
-                    frame->GetType(), "too many out-of-order frames");
+                connection_close_cb_(
+                    QuicErrorCode::kFlowControlError, frame->GetType(), "too many out-of-order frames");
             }
             return 0;
         }
@@ -239,8 +237,8 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // - Send MAX_STREAM_DATA early (when 25% consumed) to prevent sender stalling
     // - Use large increments to reduce frequency of updates
     // - This allows sender to continue at full speed without waiting for window updates
-    const uint64_t kWindowThreshold = local_data_limit_ / 4;      // Trigger at 25% remaining (proactive)
-    const uint64_t kWindowIncrement = kStreamWindowIncrement;     // Use configured increment for high throughput
+    const uint64_t kWindowThreshold = local_data_limit_ / 4;   // Trigger at 25% remaining (proactive)
+    const uint64_t kWindowIncrement = kStreamWindowIncrement;  // Use configured increment for high throughput
 
     uint64_t remaining_window = local_data_limit_ - except_offset_;
     if (remaining_window < kWindowThreshold) {
@@ -248,10 +246,11 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             // Calculate increment to restore window to a healthy size
             // Aim for at least 2MB available window after update
             uint64_t target_window = kStreamWindowIncrement;
-            uint64_t needed = (target_window > remaining_window) ? (target_window - remaining_window) : kWindowIncrement;
+            uint64_t needed =
+                (target_window > remaining_window) ? (target_window - remaining_window) : kWindowIncrement;
             // Round up to nearest kWindowIncrement
             needed = ((needed + kWindowIncrement - 1) / kWindowIncrement) * kWindowIncrement;
-            
+
             local_data_limit_ += needed;
             auto max_frame = std::make_shared<MaxStreamDataFrame>();
             max_frame->SetStreamID(stream_id_);
@@ -259,7 +258,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             frames_list_.emplace_back(max_frame);
 
             ToSend();
-            LOG_DEBUG("Proactive flow control update: stream_id=%llu, new_limit=%llu, consumed=%llu, added=%llu", 
+            LOG_DEBUG("Proactive flow control update: stream_id=%llu, new_limit=%llu, consumed=%llu, added=%llu",
                 stream_id_, local_data_limit_, except_offset_, needed);
         }
     }
@@ -283,8 +282,7 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     // Use configured increments (see quic/config.h)
 
     if (local_data_limit_ >= kMaxStreamWindowSize) {
-        LOG_WARN("stream recv window already at max. stream id:%d, limit:%llu",
-            stream_id_, local_data_limit_);
+        LOG_WARN("stream recv window already at max. stream id:%d, limit:%llu", stream_id_, local_data_limit_);
         return;
     }
     local_data_limit_ = std::min(local_data_limit_ + kBlockedWindowIncrement, kMaxStreamWindowSize);
@@ -294,8 +292,8 @@ void RecvStream::OnStreamDataBlockFrame(std::shared_ptr<IFrame> frame) {
     max_frame->SetMaximumData(local_data_limit_);
     frames_list_.emplace_back(max_frame);
 
-    LOG_DEBUG("stream recv data blocked, increased window. stream id:%d, blocked_at:%llu, new_limit:%llu",
-        stream_id_, block_frame->GetMaximumData(), local_data_limit_);
+    LOG_DEBUG("stream recv data blocked, increased window. stream id:%d, blocked_at:%llu, new_limit:%llu", stream_id_,
+        block_frame->GetMaximumData(), local_data_limit_);
 
     ToSend();
 }

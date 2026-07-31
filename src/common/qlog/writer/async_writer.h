@@ -4,12 +4,12 @@
 #ifndef COMMON_QLOG_WRITER_ASYNC_WRITER
 #define COMMON_QLOG_WRITER_ASYNC_WRITER
 
-#include <thread>
 #include <atomic>
-#include <map>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <thread>
 
 #include "common/qlog/qlog_config.h"
 #include "common/structure/thread_safe_queue.h"
@@ -26,8 +26,10 @@ struct WriteTask {
     bool is_header = false;  // true: header; false: event
 
     WriteTask() = default;
-    WriteTask(const std::string& cid, const std::string& d, bool header = false)
-        : connection_id(cid), data(d), is_header(header) {}
+    WriteTask(const std::string& cid, const std::string& d, bool header = false):
+        connection_id(cid),
+        data(d),
+        is_header(header) {}
 };
 
 /**

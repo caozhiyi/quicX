@@ -1,11 +1,11 @@
 #ifndef TEST_CONGESTION_CONTROL_CC_TEST_FRAMEWORK
 #define TEST_CONGESTION_CONTROL_CC_TEST_FRAMEWORK
 
-#include <map>
-#include <string>
-#include <memory>
-#include <vector>
 #include <functional>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "network_simulator.h"
 #include "quic/congestion_control/if_congestion_control.h"
@@ -22,20 +22,20 @@ struct CCTestMetrics {
     uint64_t total_packets_lost = 0;
     double throughput_mbps = 0.0;
     double packet_loss_rate = 0.0;
-    
+
     // Congestion window statistics
     double avg_cwnd_bytes = 0.0;
     double max_cwnd_bytes = 0.0;
     double min_cwnd_bytes = 0.0;
-    
+
     // RTT statistics
     double avg_rtt_ms = 0.0;
-    
+
     // Algorithm behavior
     uint64_t slow_start_duration_us = 0;
     uint64_t recovery_count = 0;
     double cwnd_growth_rate = 0.0;  // Average cwnd growth in slow start
-    
+
     // State history for detailed analysis
     struct StateSnapshot {
         uint64_t time_us;
@@ -55,7 +55,7 @@ struct TestScenario {
     NetworkCondition network_condition;
     uint64_t test_duration_us;
     std::vector<std::pair<uint64_t, NetworkCondition>> condition_changes;  // Time -> new condition
-    
+
     // Factory methods for common scenarios
     static TestScenario IdealNetwork(uint64_t duration_us = 5000000);
     static TestScenario LowLatencyNetwork(uint64_t duration_us = 10000000);
@@ -65,7 +65,7 @@ struct TestScenario {
     static TestScenario BufferBloat(uint64_t duration_us = 10000000);
     static TestScenario SatelliteLink(uint64_t duration_us = 20000000);
     static TestScenario ExtremeLoss(uint64_t duration_us = 10000000);
-    
+
     // Dynamic scenarios
     static TestScenario NetworkDegradation(uint64_t duration_us = 10000000);
     static TestScenario NetworkImprovement(uint64_t duration_us = 10000000);
@@ -77,18 +77,18 @@ class CCTestFramework {
 public:
     // Factory function type for creating congestion control instances
     using CCFactory = std::function<std::unique_ptr<ICongestionControl>()>;
-    
+
     CCTestFramework(CCFactory cc_factory, const TestScenario& scenario);
-    
+
     // Run the test
     void Run();
-    
+
     // Get test results
     const CCTestMetrics& GetMetrics() const { return metrics_; }
-    
+
     // Print statistics
     void PrintStats(bool detailed = false) const;
-    
+
 private:
     void TrySendPackets();
     void SendPacket(uint64_t bytes);
@@ -96,7 +96,7 @@ private:
     void CheckForLostPackets();
     void RecordStateSnapshot();
     void CalculateMetrics();
-    
+
     struct SentPacketInfo {
         uint64_t bytes;
         uint64_t sent_time;
@@ -105,17 +105,17 @@ private:
                                      // this is a spurious loss and we undo
                                      // the bookkeeping in ProcessAcks.
     };
-    
+
     std::unique_ptr<ICongestionControl> cc_;
     NetworkSimulator network_sim_;
     TestScenario scenario_;
-    
+
     uint64_t current_time_us_;
     uint64_t next_packet_number_;
     uint64_t initial_cwnd_;
     uint64_t slow_start_exit_time_;
     uint64_t last_recovery_time_;
-    
+
     std::map<uint64_t, SentPacketInfo> sent_packets_;
     CCTestMetrics metrics_;
 };
@@ -128,11 +128,11 @@ public:
     static CCTestFramework::CCFactory BBRv1();
     static CCTestFramework::CCFactory BBRv2();
     static CCTestFramework::CCFactory BBRv3();
-    
+
     static std::vector<std::pair<std::string, CCTestFramework::CCFactory>> AllAlgorithms();
 };
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
 #endif

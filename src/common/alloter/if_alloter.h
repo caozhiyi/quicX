@@ -1,10 +1,10 @@
 #ifndef COMMON_ALLOTER_IF_ALLOTER
 #define COMMON_ALLOTER_IF_ALLOTER
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <new>
-#include <cstdint>
-#include <cstddef>
 #include <type_traits>
 #include <utility>
 
@@ -53,7 +53,7 @@ public:
      * @param data Pointer to memory to free (set to nullptr after freeing)
      * @param len Size of memory block in bytes (optional)
      */
-    virtual void Free(void* &data, uint32_t len = 0) = 0;
+    virtual void Free(void*& data, uint32_t len = 0) = 0;
 
 protected:
     /**
@@ -62,9 +62,7 @@ protected:
      * @param size Unaligned size
      * @return Aligned size
      */
-    uint32_t Align(uint32_t size) {
-        return ((size + kAlign - 1) & ~(kAlign - 1));
-    }
+    uint32_t Align(uint32_t size) { return ((size + kAlign - 1) & ~(kAlign - 1)); }
 };
 
 /**
@@ -79,11 +77,13 @@ protected:
  * model this is naturally true because the alloter is owned by the
  * connection and destroyed last.
  */
-template<typename T>
+template <typename T>
 class PoolDeleter {
 public:
-    PoolDeleter() noexcept : alloter_(nullptr) {}
-    explicit PoolDeleter(IAlloter* a) noexcept : alloter_(a) {}
+    PoolDeleter() noexcept:
+        alloter_(nullptr) {}
+    explicit PoolDeleter(IAlloter* a) noexcept:
+        alloter_(a) {}
 
     void operator()(T* p) const noexcept {
         if (!p) return;
@@ -106,7 +106,7 @@ private:
  * shared_ptr control block on the default heap and incurs atomic refcount
  * operations.
  */
-template<typename T>
+template <typename T>
 using PoolUniquePtr = std::unique_ptr<T, PoolDeleter<T>>;
 
 /**
@@ -135,7 +135,7 @@ using PoolUniquePtr = std::unique_ptr<T, PoolDeleter<T>>;
  * threads is safe for reading but the final destruction MUST happen on
  * the alloter's owning thread.
  */
-template<typename T>
+template <typename T>
 class PoolStdAllocator {
 public:
     using value_type = T;
@@ -143,17 +143,22 @@ public:
     // with std::allocate_shared (some libstdc++ versions still query these).
     using propagate_on_container_copy_assignment = std::false_type;
     using propagate_on_container_move_assignment = std::false_type;
-    using propagate_on_container_swap            = std::false_type;
-    using is_always_equal                        = std::false_type;
+    using propagate_on_container_swap = std::false_type;
+    using is_always_equal = std::false_type;
 
-    template<typename U> struct rebind { using other = PoolStdAllocator<U>; };
+    template <typename U>
+    struct rebind {
+        using other = PoolStdAllocator<U>;
+    };
 
-    PoolStdAllocator() noexcept : alloter_(nullptr) {}
-    explicit PoolStdAllocator(IAlloter* a) noexcept : alloter_(a) {}
+    PoolStdAllocator() noexcept:
+        alloter_(nullptr) {}
+    explicit PoolStdAllocator(IAlloter* a) noexcept:
+        alloter_(a) {}
 
-    template<typename U>
-    PoolStdAllocator(const PoolStdAllocator<U>& other) noexcept
-        : alloter_(other.GetAlloter()) {}
+    template <typename U>
+    PoolStdAllocator(const PoolStdAllocator<U>& other) noexcept:
+        alloter_(other.GetAlloter()) {}
 
     T* allocate(std::size_t n) {
         // PoolAlloter::Free needs the size, and the STL contract guarantees the
@@ -176,11 +181,11 @@ public:
 
     IAlloter* GetAlloter() const noexcept { return alloter_; }
 
-    template<typename U>
+    template <typename U>
     bool operator==(const PoolStdAllocator<U>& o) const noexcept {
         return alloter_ == o.GetAlloter();
     }
-    template<typename U>
+    template <typename U>
     bool operator!=(const PoolStdAllocator<U>& o) const noexcept {
         return alloter_ != o.GetAlloter();
     }
@@ -204,7 +209,8 @@ private:
  */
 class AlloterWrap {
 public:
-    AlloterWrap(std::shared_ptr<IAlloter> a) : alloter_(a) {}
+    AlloterWrap(std::shared_ptr<IAlloter> a):
+        alloter_(a) {}
     ~AlloterWrap() {}
 
     /**
@@ -219,7 +225,7 @@ public:
      * @param args Constructor arguments
      * @return Pointer to constructed object, or nullptr on failure
      */
-    template<typename T, typename... Args >
+    template <typename T, typename... Args>
     T* PoolNew(Args&&... args);
 
     /**
@@ -234,7 +240,7 @@ public:
      * @param args Constructor arguments
      * @return PoolUniquePtr<T>, empty on failure
      */
-    template<typename T, typename... Args>
+    template <typename T, typename... Args>
     PoolUniquePtr<T> PoolMakeUnique(Args&&... args);
 
     /**
@@ -263,7 +269,7 @@ public:
      * @return std::shared_ptr<T>; throws std::bad_alloc on allocation failure
      *         (per std::allocate_shared contract)
      */
-    template<typename T, typename... Args>
+    template <typename T, typename... Args>
     std::shared_ptr<T> PoolMakeShared(Args&&... args);
 
     /**
@@ -282,11 +288,12 @@ public:
      * PoolNew<T>() + manual PoolDelete<T>(). When shared ownership is
      * required, use PoolMakeShared<T>() instead of this function.
      */
-    template<typename T, typename... Args >
-    [[deprecated("Slow on hot paths: shared_ptr control block is not pooled. "
-                 "Use PoolMakeShared<T>() (pooled control block), "
-                 "PoolMakeUnique<T>() (zero-overhead RAII), or "
-                 "PoolNew<T>() + PoolDelete<T>() instead.")]]
+    template <typename T, typename... Args>
+    [[deprecated(
+        "Slow on hot paths: shared_ptr control block is not pooled. "
+        "Use PoolMakeShared<T>() (pooled control block), "
+        "PoolMakeUnique<T>() (zero-overhead RAII), or "
+        "PoolNew<T>() + PoolDelete<T>() instead.")]]
     std::shared_ptr<T> PoolNewSharePtr(Args&&... args);
 
     /**
@@ -295,7 +302,7 @@ public:
      * @tparam T Object type
      * @param c Pointer to object to delete
      */
-    template<typename T>
+    template <typename T>
     void PoolDelete(T* c);
 
     /**
@@ -305,7 +312,7 @@ public:
      * @param size Size in bytes
      * @return Pointer to allocated memory, or nullptr on failure
      */
-    template<typename T>
+    template <typename T>
     T* PoolMalloc(uint32_t size);
 
     /**
@@ -316,9 +323,10 @@ public:
      * PoolFree<T>() for raw buffers; if shared ownership of a typed object
      * is needed use PoolMakeShared<T>() instead.
      */
-    template<typename T>
-    [[deprecated("Slow on hot paths: shared_ptr control block is not pooled. "
-                 "Use PoolMalloc<T>() + PoolFree<T>() instead.")]]
+    template <typename T>
+    [[deprecated(
+        "Slow on hot paths: shared_ptr control block is not pooled. "
+        "Use PoolMalloc<T>() + PoolFree<T>() instead.")]]
     std::shared_ptr<T> PoolMallocSharePtr(uint32_t size);
 
     /**
@@ -328,7 +336,7 @@ public:
      * @param m Pointer to memory to free
      * @param len Size in bytes
      */
-    template<typename T>
+    template <typename T>
     void PoolFree(T* m, uint32_t len);
 
     /**
@@ -344,36 +352,35 @@ private:
     std::shared_ptr<IAlloter> alloter_;
 };
 
-template<typename T, typename... Args>
+template <typename T, typename... Args>
 T* AlloterWrap::PoolNew(Args&&... args) {
     uint32_t sz = sizeof(T);
-    
+
     void* data = alloter_->MallocAlign(sz);
     if (!data) {
         return nullptr;
     }
 
-    T* res = new(data) T(std::forward<Args>(args)...);
+    T* res = new (data) T(std::forward<Args>(args)...);
     return res;
 }
 
-template<typename T, typename... Args>
+template <typename T, typename... Args>
 PoolUniquePtr<T> AlloterWrap::PoolMakeUnique(Args&&... args) {
     T* p = PoolNew<T>(std::forward<Args>(args)...);
     // Stateless deleter: only a raw IAlloter*. No atomic refcount, no capture.
     return PoolUniquePtr<T>(p, PoolDeleter<T>(alloter_.get()));
 }
 
-template<typename T, typename... Args>
+template <typename T, typename... Args>
 std::shared_ptr<T> AlloterWrap::PoolMakeShared(Args&&... args) {
     // std::allocate_shared lets the STL place BOTH the control block and the
     // T object in a single allocation served by our pool. This is the
     // pool-aware analogue of std::make_shared.
-    return std::allocate_shared<T>(PoolStdAllocator<T>(alloter_.get()),
-                                   std::forward<Args>(args)...);
+    return std::allocate_shared<T>(PoolStdAllocator<T>(alloter_.get()), std::forward<Args>(args)...);
 }
 
-template<typename T, typename... Args >
+template <typename T, typename... Args>
 std::shared_ptr<T> AlloterWrap::PoolNewSharePtr(Args&&... args) {
     // Implemented in terms of PoolMakeShared so the legacy API also benefits
     // from the pooled control block. Kept around only for source compatibility
@@ -382,7 +389,7 @@ std::shared_ptr<T> AlloterWrap::PoolNewSharePtr(Args&&... args) {
     return PoolMakeShared<T>(std::forward<Args>(args)...);
 }
 
-template<typename T>
+template <typename T>
 void AlloterWrap::PoolDelete(T* c) {
     if (!c) {
         return;
@@ -394,13 +401,13 @@ void AlloterWrap::PoolDelete(T* c) {
     void* data = (void*)c;
     alloter_->Free(data, len);
 }
-    
-template<typename T>
-T* AlloterWrap::PoolMalloc(uint32_t sz) {  
+
+template <typename T>
+T* AlloterWrap::PoolMalloc(uint32_t sz) {
     return (T*)alloter_->MallocAlign(sz);
 }
 
-template<typename T>
+template <typename T>
 std::shared_ptr<T> AlloterWrap::PoolMallocSharePtr(uint32_t size) {
     T* ret = PoolMalloc<T>(size);
     // Capture only the raw IAlloter*: no atomic refcount on the captured
@@ -413,8 +420,8 @@ std::shared_ptr<T> AlloterWrap::PoolMallocSharePtr(uint32_t size) {
         raw->Free(data, size);
     });
 }
-    
-template<typename T>
+
+template <typename T>
 void AlloterWrap::PoolFree(T* m, uint32_t len) {
     if (!m) {
         return;
@@ -423,7 +430,7 @@ void AlloterWrap::PoolFree(T* m, uint32_t len) {
     alloter_->Free(data, len);
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
-#endif 
+#endif

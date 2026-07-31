@@ -26,7 +26,7 @@ void SendRequest(const std::string& url, const std::string& endpoint_name) {
     auto client = quicx::IClient::Create();
 
     quicx::Http3ClientConfig config;
-    config.quic_config_.verify_peer_ = false;  // examples use self-signed certs
+    config.quic_config_.verify_peer_ = false;                         // examples use self-signed certs
     config.quic_config_.config_.log_level_ = quicx::LogLevel::kWarn;  // Reduce noise
     client->Init(config);
 

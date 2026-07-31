@@ -17,7 +17,7 @@ private:
     std::chrono::system_clock::time_point start_time_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

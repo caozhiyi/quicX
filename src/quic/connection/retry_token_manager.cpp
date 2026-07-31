@@ -40,15 +40,14 @@ inline uint64_t ReadBE64(const char* src) {
 
 inline uint64_t NowMs() {
     return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
             .count());
 }
 
 }  // namespace
 
-std::string RetryTokenManager::BuildHmacPayload(const common::Address& client_addr, uint64_t timestamp_ms,
-    uint8_t cid_len, const uint8_t* cid_bytes) {
+std::string RetryTokenManager::BuildHmacPayload(
+    const common::Address& client_addr, uint64_t timestamp_ms, uint8_t cid_len, const uint8_t* cid_bytes) {
     // Layout: client_ip (string) || client_port_be (2) || timestamp_be (8) || cid_len (1) || cid (N)
     std::string payload;
     payload.reserve(client_addr.GetIp().size() + 2 + 8 + 1 + cid_len);
@@ -134,8 +133,8 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
 
     // Check size consistency considering CID length
     if (token.size() != offset + cid_len + 32) {
-        LOG_WARN("Invalid Retry token size: %zu (expected %zu for CID len %d)", token.size(),
-            offset + cid_len + 32, cid_len);
+        LOG_WARN("Invalid Retry token size: %zu (expected %zu for CID len %d)", token.size(), offset + cid_len + 32,
+            cid_len);
         return false;
     }
 
@@ -158,16 +157,16 @@ bool RetryTokenManager::ValidateToken(const std::string& token, const common::Ad
     if (now < timestamp) {
         // Either the token is from the future or system clock was rolled back.
         // Either way refuse: we cannot bound its age.
-        LOG_WARN("Retry token timestamp in future: token=%llu, now=%llu",
-            static_cast<unsigned long long>(timestamp), static_cast<unsigned long long>(now));
+        LOG_WARN("Retry token timestamp in future: token=%llu, now=%llu", static_cast<unsigned long long>(timestamp),
+            static_cast<unsigned long long>(now));
         return false;
     }
 
     uint64_t max_age_ms = max_age_seconds * 1000;
     uint64_t age = now - timestamp;
     if (age >= max_age_ms) {
-        LOG_WARN("Retry token expired: age=%llu ms, max=%llu ms",
-            static_cast<unsigned long long>(age), static_cast<unsigned long long>(max_age_ms));
+        LOG_WARN("Retry token expired: age=%llu ms, max=%llu ms", static_cast<unsigned long long>(age),
+            static_cast<unsigned long long>(max_age_ms));
         return false;
     }
 

@@ -3,10 +3,10 @@
 #define QUIC_PACKET_RETRY_PACKET
 
 #include <memory>
-#include "quic/packet/type.h"
 #include "common/buffer/buffer_span.h"
-#include "quic/packet/if_packet.h"
 #include "quic/packet/header/long_header.h"
+#include "quic/packet/if_packet.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
@@ -27,8 +27,7 @@ Retry Packet {
 }
 */
 
-class RetryPacket:
-    public IPacket {
+class RetryPacket: public IPacket {
 public:
     RetryPacket();
     RetryPacket(uint8_t flag);
@@ -53,7 +52,7 @@ private:
     uint8_t retry_integrity_tag_[kRetryIntegrityTagLength];
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

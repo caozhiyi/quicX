@@ -1,25 +1,24 @@
 #ifndef QUIC_FRAME_STREAM_FRAME
 #define QUIC_FRAME_STREAM_FRAME
 
-#include <memory>
 #include <cstdint>
+#include <memory>
 #include "common/buffer/if_buffer.h"
-#include "quic/frame/if_stream_frame.h"
 #include "common/buffer/shared_buffer_span.h"
+#include "quic/frame/if_stream_frame.h"
 
 namespace quicx {
 namespace quic {
 
-enum StreamFrameFlag: uint8_t {
-    kFinFlag  = 0x01,
-    kLenFlag  = 0x02,
-    kOffFlag  = 0x04,
+enum StreamFrameFlag : uint8_t {
+    kFinFlag = 0x01,
+    kLenFlag = 0x02,
+    kOffFlag = 0x04,
     kMaskFlag = 0x07,
 };
 
 class Buffer;
-class StreamFrame:
-    public IStreamFrame {
+class StreamFrame: public IStreamFrame {
 public:
     StreamFrame();
     StreamFrame(uint16_t frame_type);
@@ -37,20 +36,23 @@ public:
     bool IsFin() { return frame_type_ & kFinFlag; }
 
     bool HasLength() { return frame_type_ & kLenFlag; }
-    void SetData(common::SharedBufferSpan data) { data_ = data; length_ = data.GetLength(); }
+    void SetData(common::SharedBufferSpan data) {
+        data_ = data;
+        length_ = data.GetLength();
+    }
     common::SharedBufferSpan GetData() { return data_; }
     uint32_t GetLength() { return length_; }
 
     static bool IsStreamFrame(uint16_t frame_type);
 
 private:
-    uint64_t offset_;     // the byte offset in the stream for the data in this STREAM frame.
+    uint64_t offset_;  // the byte offset in the stream for the data in this STREAM frame.
 
-    uint32_t length_;     // the length of the Stream Data field in this STREAM frame.
-    common::SharedBufferSpan data_;       // the bytes from the designated stream to be delivered.
+    uint32_t length_;                // the length of the Stream Data field in this STREAM frame.
+    common::SharedBufferSpan data_;  // the bytes from the designated stream to be delivered.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

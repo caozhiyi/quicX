@@ -1,13 +1,13 @@
-#include <cstring>
 #include <cstdlib>
+#include <cstring>
 
-#include "common/alloter/pool_alloter.h"
 #include "common/alloter/normal_alloter.h"
+#include "common/alloter/pool_alloter.h"
 
 namespace quicx {
 namespace common {
 
-PoolAlloter::PoolAlloter() : 
+PoolAlloter::PoolAlloter():
     pool_start_(nullptr),
     pool_end_(nullptr) {
     free_list_.resize(kDefaultNumberOfFreeLists);
@@ -36,7 +36,7 @@ void* PoolAlloter::Malloc(uint32_t size) {
         void* bytes = ReFill(Align(size));
         return bytes;
     }
-    
+
     *my_free = result->next_;
     return result;
 }
@@ -53,11 +53,11 @@ void* PoolAlloter::MallocZero(uint32_t size) {
     return ret;
 }
 
-void PoolAlloter::Free(void* &data, uint32_t len) {
+void PoolAlloter::Free(void*& data, uint32_t len) {
     if (!data) {
         return;
     }
-    
+
     // len=0 would cause FreeListIndex underflow (UINT32_MAX), fallback to normal allocator
     if (len == 0 || len > kDefaultMaxBytes) {
         alloter_->Free(data);
@@ -67,7 +67,7 @@ void PoolAlloter::Free(void* &data, uint32_t len) {
 
     MemNode* node = (MemNode*)data;
     MemNode** my_free = &(free_list_[FreeListIndex(len)]);
-    
+
     node->next_ = *my_free;
     *my_free = node;
     data = nullptr;
@@ -79,13 +79,13 @@ void* PoolAlloter::ReFill(uint32_t size, uint32_t num) {
     uint8_t* chunk = (uint8_t*)ChunkAlloc(size, nums);
 
     MemNode* volatile* my_free;
-    MemNode* res, *current, *next;
+    MemNode *res, *current, *next;
     if (1 == nums) {
         return chunk;
     }
 
     res = (MemNode*)chunk;
-    
+
     my_free = &(free_list_[FreeListIndex(size)]);
 
     *my_free = next = (MemNode*)(chunk + size);
@@ -108,20 +108,19 @@ void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
     uint32_t need_bytes = size * nums;
     uint32_t left_bytes = uint32_t(pool_end_ - pool_start_);
 
-    //pool is enough
+    // pool is enough
     if (left_bytes >= need_bytes) {
         res = pool_start_;
         pool_start_ += need_bytes;
         return res;
-    
+
     } else if (left_bytes >= size) {
         nums = left_bytes / size;
         need_bytes = size * nums;
         res = pool_start_;
         pool_start_ += need_bytes;
         return res;
-
-    } 
+    }
     uint32_t bytes_to_get = size * nums;
 
     if (left_bytes > 0) {
@@ -132,7 +131,7 @@ void* PoolAlloter::ChunkAlloc(uint32_t size, uint32_t& nums) {
 
     pool_start_ = (uint8_t*)alloter_->Malloc(bytes_to_get);
     if (!pool_start_) {
-        return nullptr; // out of memory, graceful failure
+        return nullptr;  // out of memory, graceful failure
     }
 
     malloc_vec_.push_back(pool_start_);
@@ -144,5 +143,5 @@ std::shared_ptr<IAlloter> MakePoolAlloterPtr() {
     return std::make_shared<PoolAlloter>();
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

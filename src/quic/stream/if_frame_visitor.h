@@ -2,18 +2,18 @@
 #define QUIC_STREAM_IF_FRAME_VISITOR
 
 #include <vector>
-#include "quic/frame/if_frame.h"
 #include "common/buffer/if_buffer.h"
 #include "quic/connection/controler/send_control.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
 
 // Error type for frame encoding
 enum class FrameEncodeError {
-    kNone = 0,              // No error
-    kInsufficientSpace = 1, // Insufficient buffer space
-    kOtherError = 2,        // Other encoding errors
+    kNone = 0,               // No error
+    kInsufficientSpace = 1,  // Insufficient buffer space
+    kOtherError = 2,         // Other encoding errors
 };
 
 /*
@@ -36,7 +36,7 @@ public:
     virtual void SetStreamDataSizeLimit(uint32_t size) = 0;
     virtual uint32_t GetLeftStreamDataSize() = 0;
     virtual void AddStreamDataSize(uint32_t size) {}
-    virtual uint64_t GetStreamDataSize()  = 0;
+    virtual uint64_t GetStreamDataSize() = 0;
 
     // Remaining writable bytes in the visitor's underlying packet buffer.
     // Used by stream/crypto producers to size each frame's payload so the
@@ -52,8 +52,7 @@ public:
     virtual FrameEncodeError GetLastError() const { return FrameEncodeError::kNone; }
 };
 
-
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

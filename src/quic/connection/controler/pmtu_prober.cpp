@@ -9,12 +9,11 @@
 namespace quicx {
 namespace quic {
 
-PmtuProber::PmtuProber()
-    : probe_inflight_(false),
-      mtu_limit_bytes_(1450),
-      probe_target_bytes_(1450),
-      probe_packet_number_(0) {
-}
+PmtuProber::PmtuProber():
+    probe_inflight_(false),
+    mtu_limit_bytes_(1450),
+    probe_target_bytes_(1450),
+    probe_packet_number_(0) {}
 
 void PmtuProber::StartProbe() {
     if (mtu_limit_bytes_ < 1450) {
@@ -72,8 +71,7 @@ bool PmtuProber::CheckAckCoversProbe(std::shared_ptr<IFrame> frame) {
     auto ranges = ack->GetAckRange();
     for (auto it = ranges.begin(); it != ranges.end(); ++it) {
         uint64_t range_high = cursor - it->GetGap() - 2;
-        uint64_t range_low =
-            (range_high >= it->GetAckRangeLength()) ? (range_high - it->GetAckRangeLength()) : 0;
+        uint64_t range_low = (range_high >= it->GetAckRangeLength()) ? (range_high - it->GetAckRangeLength()) : 0;
         if (probe >= range_low && probe <= range_high) {
             OnProbeResult(true);
             return true;

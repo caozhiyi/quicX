@@ -1,5 +1,5 @@
-#include <array>
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 
@@ -82,7 +82,7 @@ TEST(BufferSpanTest, DefaultConstructor) {
 TEST(BufferSpanTest, CopyConstructor) {
     uint8_t storage[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     BufferSpan span1(storage, storage + 8);
-    
+
     BufferSpan span2(span1);
     EXPECT_TRUE(span2.Valid());
     EXPECT_EQ(span1.GetStart(), span2.GetStart());
@@ -93,10 +93,10 @@ TEST(BufferSpanTest, CopyConstructor) {
 TEST(BufferSpanTest, Assignment) {
     uint8_t storage1[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     uint8_t storage2[4] = {9, 10, 11, 12};
-    
+
     BufferSpan span1(storage1, storage1 + 8);
     BufferSpan span2(storage2, storage2 + 4);
-    
+
     span1 = span2;
     EXPECT_EQ(storage2, span1.GetStart());
     EXPECT_EQ(4u, span1.GetLength());
@@ -105,7 +105,7 @@ TEST(BufferSpanTest, Assignment) {
 TEST(BufferSpanTest, ZeroLengthSpan) {
     uint8_t storage[4] = {1, 2, 3, 4};
     BufferSpan span(storage, storage);
-    
+
     EXPECT_TRUE(span.Valid());
     EXPECT_EQ(0u, span.GetLength());
 }
@@ -113,7 +113,7 @@ TEST(BufferSpanTest, ZeroLengthSpan) {
 TEST(BufferSpanTest, LargeSpan) {
     std::vector<uint8_t> storage(4096);
     BufferSpan span(storage.data(), storage.data() + storage.size());
-    
+
     EXPECT_TRUE(span.Valid());
     EXPECT_EQ(4096u, span.GetLength());
 }
@@ -134,7 +134,7 @@ TEST(SharedBufferSpanTest, DefaultConstructor) {
 TEST(SharedBufferSpanTest, ConstructorWithPointers) {
     auto pool = MakeBlockMemoryPoolPtr(32u, 1u);
     auto chunk = std::make_shared<BufferChunk>(pool);
-    
+
     SharedBufferSpan span(chunk, chunk->GetData(), chunk->GetData() + 16);
     EXPECT_TRUE(span.Valid());
     EXPECT_EQ(16u, span.GetLength());
@@ -144,10 +144,10 @@ TEST(SharedBufferSpanTest, ConstructorWithPointers) {
 TEST(SharedBufferSpanTest, CopyConstructor) {
     auto pool = MakeBlockMemoryPoolPtr(32u, 1u);
     auto chunk = std::make_shared<BufferChunk>(pool);
-    
+
     SharedBufferSpan span1(chunk, chunk->GetData(), 16u);
     SharedBufferSpan span2(span1);
-    
+
     EXPECT_TRUE(span2.Valid());
     EXPECT_EQ(span1.GetStart(), span2.GetStart());
     EXPECT_EQ(span1.GetLength(), span2.GetLength());
@@ -157,10 +157,10 @@ TEST(SharedBufferSpanTest, CopyConstructor) {
 TEST(SharedBufferSpanTest, MoveConstructor) {
     auto pool = MakeBlockMemoryPoolPtr(32u, 1u);
     auto chunk = std::make_shared<BufferChunk>(pool);
-    
+
     SharedBufferSpan span1(chunk, chunk->GetData(), 16u);
     auto* start = span1.GetStart();
-    
+
     SharedBufferSpan span2(std::move(span1));
     EXPECT_TRUE(span2.Valid());
     EXPECT_EQ(start, span2.GetStart());
@@ -171,10 +171,10 @@ TEST(SharedBufferSpanTest, Assignment) {
     auto pool = MakeBlockMemoryPoolPtr(32u, 2u);
     auto chunk1 = std::make_shared<BufferChunk>(pool);
     auto chunk2 = std::make_shared<BufferChunk>(pool);
-    
+
     SharedBufferSpan span1(chunk1, chunk1->GetData(), 16u);
     SharedBufferSpan span2(chunk2, chunk2->GetData(), 8u);
-    
+
     span1 = span2;
     EXPECT_EQ(chunk2, span1.GetChunk());
     EXPECT_EQ(8u, span1.GetLength());
@@ -184,11 +184,11 @@ TEST(SharedBufferSpanTest, MoveAssignment) {
     auto pool = MakeBlockMemoryPoolPtr(32u, 2u);
     auto chunk1 = std::make_shared<BufferChunk>(pool);
     auto chunk2 = std::make_shared<BufferChunk>(pool);
-    
+
     SharedBufferSpan span1(chunk1, chunk1->GetData(), 16u);
     SharedBufferSpan span2(chunk2, chunk2->GetData(), 8u);
     auto* start2 = span2.GetStart();
-    
+
     span1 = std::move(span2);
     EXPECT_EQ(start2, span1.GetStart());
     EXPECT_EQ(8u, span1.GetLength());
@@ -197,7 +197,7 @@ TEST(SharedBufferSpanTest, MoveAssignment) {
 TEST(SharedBufferSpanTest, ZeroLengthSpan) {
     auto pool = MakeBlockMemoryPoolPtr(32u, 1u);
     auto chunk = std::make_shared<BufferChunk>(pool);
-    
+
     SharedBufferSpan span(chunk, chunk->GetData(), 0u);
     EXPECT_TRUE(span.Valid());
     EXPECT_EQ(0u, span.GetLength());
@@ -211,7 +211,7 @@ TEST(SharedBufferSpanTest, NullChunk) {
 TEST(SharedBufferSpanTest, ChunkLifetime) {
     auto pool = MakeBlockMemoryPoolPtr(32u, 1u);
     std::weak_ptr<BufferChunk> weak_chunk;
-    
+
     SharedBufferSpan span;
     {
         auto chunk = std::make_shared<BufferChunk>(pool);
@@ -219,18 +219,16 @@ TEST(SharedBufferSpanTest, ChunkLifetime) {
         span = SharedBufferSpan(chunk, chunk->GetData(), 16u);
         EXPECT_FALSE(weak_chunk.expired());
     }
-    
+
     // Span should keep chunk alive
     EXPECT_FALSE(weak_chunk.expired());
     EXPECT_TRUE(span.Valid());
-    
+
     span = SharedBufferSpan();
     // Now chunk should be released
     EXPECT_TRUE(weak_chunk.expired());
 }
 
-}
-}
-}
-
-
+}  // namespace
+}  // namespace common
+}  // namespace quicx

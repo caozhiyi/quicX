@@ -4,11 +4,17 @@
 namespace quicx {
 namespace quic {
 
-ConnectionID::ConnectionID(): length_(kMaxCidLength), sequence_number_(0), hash_(0) {
+ConnectionID::ConnectionID():
+    length_(kMaxCidLength),
+    sequence_number_(0),
+    hash_(0) {
     memset(id_, 0, kMaxCidLength);
 }
 
-ConnectionID::ConnectionID(const uint8_t* id, uint8_t len, uint64_t sequence_number): length_(len), sequence_number_(sequence_number), hash_(0) {
+ConnectionID::ConnectionID(const uint8_t* id, uint8_t len, uint64_t sequence_number):
+    length_(len),
+    sequence_number_(sequence_number),
+    hash_(0) {
     memset(id_, 0, kMaxCidLength);
     memcpy(id_, id, len);
 }
@@ -25,7 +31,7 @@ uint64_t ConnectionID::GetSequenceNumber() const {
 }
 
 const uint8_t* ConnectionID::GetID() const {
-    return id_; 
+    return id_;
 }
 
 uint8_t ConnectionID::GetLength() const {
@@ -56,5 +62,5 @@ bool ConnectionID::operator!=(const ConnectionID& other) const {
     return !(*this == other);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

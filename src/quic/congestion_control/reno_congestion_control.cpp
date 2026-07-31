@@ -1,8 +1,8 @@
 #include <algorithm>
 
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 #include "common/qlog/qlog.h"
 
 #include "quic/congestion_control/normal_pacer.h"
@@ -31,8 +31,7 @@ void RenoCongestionControl::Configure(const CcConfigV2& cfg) {
 void RenoCongestionControl::OnPacketSent(const SentPacketEvent& ev) {
     uint64_t old_bytes_in_flight = bytes_in_flight_;
     bytes_in_flight_ += ev.bytes;
-    LOG_DEBUG(
-        "RenoCongestionControl::OnPacketSent: pn=%llu, bytes=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu", ev.pn,
+    LOG_DEBUG("RenoCongestionControl::OnPacketSent: pn=%llu, bytes=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu", ev.pn,
         ev.bytes, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
 
     // Metrics: Bytes in flight
@@ -52,8 +51,7 @@ void RenoCongestionControl::OnPacketAcked(const AckEvent& ev) {
     // Metrics: Bytes in flight
     common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
-    LOG_DEBUG(
-        "RenoCongestionControl::OnPacketAcked: pn=%llu, bytes_acked=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu",
+    LOG_DEBUG("RenoCongestionControl::OnPacketAcked: pn=%llu, bytes_acked=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu",
         ev.pn, ev.bytes_acked, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
 
     // Treat ECN-CE as a congestion signal similar to loss (RFC3168 behavior)
@@ -98,9 +96,8 @@ void RenoCongestionControl::OnPacketLost(const LossEvent& ev) {
     // Metrics: Bytes in flight
     common::Metrics::GaugeSet(common::MetricsStd::BytesInFlight, bytes_in_flight_);
 
-    LOG_WARN(
-        "RenoCongestionControl::OnPacketLost: pn=%llu, bytes_lost=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu", ev.pn,
-        ev.bytes_lost, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
+    LOG_WARN("RenoCongestionControl::OnPacketLost: pn=%llu, bytes_lost=%llu, bytes_in_flight: %llu->%llu, cwnd=%llu",
+        ev.pn, ev.bytes_lost, old_bytes_in_flight, bytes_in_flight_, cwnd_bytes_);
     if (!in_recovery_) {
         EnterRecovery(ev.lost_time);
     }
@@ -196,9 +193,8 @@ void RenoCongestionControl::EnterRecovery(uint64_t now) {
     recovery_start_time_ = now;
     in_slow_start_ = false;
 
-    LOG_WARN(
-        "RenoCongestionControl::EnterRecovery: cwnd: %llu->%llu, ssthresh: %llu->%llu, bytes_in_flight=%llu", old_cwnd,
-        cwnd_bytes_, old_ssthresh, ssthresh_bytes_, bytes_in_flight_);
+    LOG_WARN("RenoCongestionControl::EnterRecovery: cwnd: %llu->%llu, ssthresh: %llu->%llu, bytes_in_flight=%llu",
+        old_cwnd, cwnd_bytes_, old_ssthresh, ssthresh_bytes_, bytes_in_flight_);
 
     // Metrics: Congestion event
     common::Metrics::CounterInc(common::MetricsStd::CongestionEventsTotal);

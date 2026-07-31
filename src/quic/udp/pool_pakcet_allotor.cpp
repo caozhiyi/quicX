@@ -51,6 +51,5 @@ void PoolPacketAllotor::Free(NetPacket* pkt) {
     delete pkt;
 }
 
-}
-}
-
+}  // namespace quic
+}  // namespace quicx

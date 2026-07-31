@@ -2,8 +2,8 @@
 #define QUIC_FRAME_IF_FRAME
 
 #include <memory>
-#include "quic/frame/type.h"
 #include "common/buffer/if_buffer.h"
+#include "quic/frame/type.h"
 
 namespace quicx {
 namespace quic {
@@ -60,7 +60,7 @@ protected:
     uint16_t frame_type_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

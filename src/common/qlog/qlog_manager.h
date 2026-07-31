@@ -5,14 +5,14 @@
 #define COMMON_QLOG_QLOG_MANAGER
 
 #include <map>
-#include <mutex>
 #include <memory>
+#include <mutex>
 #include <string>
 
-#include "common/util/singleton.h"
 #include "common/qlog/qlog_config.h"
 #include "common/qlog/qlog_trace.h"
 #include "common/qlog/writer/async_writer.h"
+#include "common/util/singleton.h"
 
 namespace quicx {
 namespace common {
@@ -25,7 +25,7 @@ namespace common {
  * - Global configuration management
  * - Async write thread management
  */
-class QlogManager : public Singleton<QlogManager> {
+class QlogManager: public Singleton<QlogManager> {
 public:
     QlogManager();
     ~QlogManager();
@@ -76,10 +76,7 @@ public:
      * @param vantage_point Vantage point (client/server)
      * @return Trace smart pointer (nullptr on failure)
      */
-    std::shared_ptr<QlogTrace> CreateTrace(
-        const std::string& connection_id,
-        VantagePoint vantage_point
-    );
+    std::shared_ptr<QlogTrace> CreateTrace(const std::string& connection_id, VantagePoint vantage_point);
 
     /**
      * @brief Remove connection's Trace (called when connection closes)

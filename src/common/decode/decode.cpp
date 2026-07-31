@@ -25,22 +25,21 @@
 #endif
 
 #ifdef __linux__
-#include <endian.h>
 #include <arpa/inet.h>
+#include <endian.h>
 #endif
 
 #include <cstring>
 
-#include "common/log/log.h"
 #include "common/decode/decode.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace common {
 
 const static uint64_t kMaxDecode = ((uint64_t)-1) >> 2;
 
-#define IntSet(p, value, len, bits)          \
-    (*(p)++ = (uint8_t)(((value >> ((len) * 8)) & 0xff) | ((bits) << 6)))
+#define IntSet(p, value, len, bits) (*(p)++ = (uint8_t)(((value >> ((len) * 8)) & 0xff) | ((bits) << 6)))
 
 uint8_t* EncodeVarint(uint8_t* start, uint8_t* end, uint64_t value) {
     if (start >= end) {
@@ -101,7 +100,7 @@ uint16_t GetEncodeVarintLength(uint64_t value) {
     if (value <= 0x3F) {
         return 1;
     } else if (value <= 0x3FFF) {
-        return 2; 
+        return 2;
     } else if (value <= 0x3FFFFFFF) {
         return 4;
     }
@@ -145,7 +144,7 @@ uint8_t* DecodeVarint(uint8_t* start, uint8_t* end, uint32_t& value) {
     return ret_pos;
 }
 
-uint8_t* FixedEncodeUint8(uint8_t *start, uint8_t *end, uint8_t value) {
+uint8_t* FixedEncodeUint8(uint8_t* start, uint8_t* end, uint8_t value) {
     if (start == nullptr || end == nullptr || start >= end) {
         return nullptr;
     }
@@ -153,7 +152,7 @@ uint8_t* FixedEncodeUint8(uint8_t *start, uint8_t *end, uint8_t value) {
     return start;
 }
 
-uint8_t* FixedDecodeUint8(uint8_t *start, uint8_t *end, uint8_t& out) {
+uint8_t* FixedDecodeUint8(uint8_t* start, uint8_t* end, uint8_t& out) {
     if (start == nullptr || end == nullptr || start >= end) {
         return nullptr;
     }
@@ -161,7 +160,7 @@ uint8_t* FixedDecodeUint8(uint8_t *start, uint8_t *end, uint8_t& out) {
     return start;
 }
 
-uint8_t* FixedEncodeUint16(uint8_t *start, uint8_t *end, uint16_t value) {
+uint8_t* FixedEncodeUint16(uint8_t* start, uint8_t* end, uint16_t value) {
     if (start == nullptr || end == nullptr || start + sizeof(uint16_t) > end) {
         return nullptr;
     }
@@ -170,7 +169,7 @@ uint8_t* FixedEncodeUint16(uint8_t *start, uint8_t *end, uint16_t value) {
     return start + sizeof(uint16_t);
 }
 
-uint8_t* FixedDecodeUint16(uint8_t *start, uint8_t *end, uint16_t& out) {
+uint8_t* FixedDecodeUint16(uint8_t* start, uint8_t* end, uint16_t& out) {
     if (start == nullptr || end == nullptr || start + sizeof(uint16_t) > end) {
         return nullptr;
     }
@@ -180,7 +179,7 @@ uint8_t* FixedDecodeUint16(uint8_t *start, uint8_t *end, uint16_t& out) {
     return start + sizeof(uint16_t);
 }
 
-uint8_t* FixedEncodeUint32(uint8_t *start, uint8_t *end, uint32_t value) {
+uint8_t* FixedEncodeUint32(uint8_t* start, uint8_t* end, uint32_t value) {
     if (start == nullptr || end == nullptr || start + sizeof(uint32_t) > end) {
         return nullptr;
     }
@@ -189,7 +188,7 @@ uint8_t* FixedEncodeUint32(uint8_t *start, uint8_t *end, uint32_t value) {
     return start + sizeof(uint32_t);
 }
 
-uint8_t* FixedDecodeUint32(uint8_t *start, uint8_t *end, uint32_t& out) {
+uint8_t* FixedDecodeUint32(uint8_t* start, uint8_t* end, uint32_t& out) {
     if (start == nullptr || end == nullptr || start + sizeof(uint32_t) > end) {
         return nullptr;
     }
@@ -199,7 +198,7 @@ uint8_t* FixedDecodeUint32(uint8_t *start, uint8_t *end, uint32_t& out) {
     return start + sizeof(uint32_t);
 }
 
-uint8_t* FixedEncodeUint64(uint8_t *start, uint8_t *end, uint64_t value) {
+uint8_t* FixedEncodeUint64(uint8_t* start, uint8_t* end, uint64_t value) {
     if (start == nullptr || end == nullptr || start + sizeof(uint64_t) > end) {
         return nullptr;
     }
@@ -208,7 +207,7 @@ uint8_t* FixedEncodeUint64(uint8_t *start, uint8_t *end, uint64_t value) {
     return start + sizeof(uint64_t);
 }
 
-uint8_t* FixedDecodeUint64(uint8_t *start, uint8_t *end, uint64_t& out) {
+uint8_t* FixedDecodeUint64(uint8_t* start, uint8_t* end, uint64_t& out) {
     if (start == nullptr || end == nullptr || start + sizeof(uint64_t) > end) {
         return nullptr;
     }
@@ -218,7 +217,7 @@ uint8_t* FixedDecodeUint64(uint8_t *start, uint8_t *end, uint64_t& out) {
     return start + sizeof(uint64_t);
 }
 
-uint8_t* EncodeBytes(uint8_t *start, uint8_t *end, uint8_t* in, uint32_t in_len) {
+uint8_t* EncodeBytes(uint8_t* start, uint8_t* end, uint8_t* in, uint32_t in_len) {
     if (start == nullptr || end == nullptr || end - start < in_len) {
         LOG_ERROR("too small to encode bytes");
         return nullptr;
@@ -233,7 +232,7 @@ uint8_t* EncodeBytes(uint8_t *start, uint8_t *end, uint8_t* in, uint32_t in_len)
     return start + in_len;
 }
 
-uint8_t* DecodeBytesCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t out_len) {
+uint8_t* DecodeBytesCopy(uint8_t* start, uint8_t* end, uint8_t*& out, uint32_t out_len) {
     if (start == nullptr || end == nullptr || end - start < out_len) {
         LOG_ERROR("too small to decode bytes");
         return nullptr;
@@ -245,7 +244,7 @@ uint8_t* DecodeBytesCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t o
     return start + out_len;
 }
 
-uint8_t* DecodeBytesNoCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t out_len) {
+uint8_t* DecodeBytesNoCopy(uint8_t* start, uint8_t* end, uint8_t*& out, uint32_t out_len) {
     if (start == nullptr || end == nullptr || end - start < out_len) {
         LOG_ERROR("too small to decode bytes");
         return nullptr;
@@ -255,5 +254,5 @@ uint8_t* DecodeBytesNoCopy(uint8_t *start, uint8_t *end, uint8_t*& out, uint32_t
     return start + out_len;
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

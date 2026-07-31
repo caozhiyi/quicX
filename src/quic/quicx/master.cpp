@@ -1,5 +1,5 @@
-#include "common/log/log.h"
 #include "quic/quicx/master.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -41,7 +41,8 @@ void Master::AddWorker(std::shared_ptr<IWorker> worker) {
 
 bool Master::AddListener(int32_t listener_sock) {
     if (!receiver_) {
-        LOG_DEBUG("Master::AddListener: receiver not initialized, adding socket fd=%d to pending_listeners_", listener_sock);
+        LOG_DEBUG(
+            "Master::AddListener: receiver not initialized, adding socket fd=%d to pending_listeners_", listener_sock);
         ListenerInfo info;
         info.sock = listener_sock;
         pending_listeners_.push_back(info);

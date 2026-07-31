@@ -6,8 +6,7 @@
 namespace quicx {
 namespace quic {
 
-class ChaCha20Poly1305Cryptographer:
-    public AeadBaseCryptographer {
+class ChaCha20Poly1305Cryptographer: public AeadBaseCryptographer {
 public:
     ChaCha20Poly1305Cryptographer();
     virtual ~ChaCha20Poly1305Cryptographer();
@@ -17,12 +16,11 @@ public:
     CryptographerId GetCipherId() override;
 
 protected:
-    virtual bool MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key,
-                            uint8_t* out_mask, size_t mask_cap, size_t& out_mask_length,
-                            EVP_CIPHER_CTX* cached_hp_ctx = nullptr) override;
+    virtual bool MakeHeaderProtectMask(common::BufferSpan& sample, std::vector<uint8_t>& key, uint8_t* out_mask,
+        size_t mask_cap, size_t& out_mask_length, EVP_CIPHER_CTX* cached_hp_ctx = nullptr) override;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

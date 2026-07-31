@@ -17,21 +17,21 @@
 #if defined(QUICX_ENABLE_BENCHMARKS)
 
 #include <benchmark/benchmark.h>
-#include <cstring>
-#include <memory>
-#include <vector>
-#include <string>
-#include <map>
-#include <atomic>
-#include <thread>
-#include <chrono>
-#include <numeric>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstring>
+#include <map>
+#include <memory>
+#include <numeric>
+#include <string>
+#include <thread>
+#include <vector>
 
 // Platform-specific includes for memory tracking (must be at top level)
 #if defined(__APPLE__)
-#include <malloc/malloc.h>
 #include <mach/mach.h>
+#include <malloc/malloc.h>
 #include <unistd.h>
 #elif defined(__linux__)
 #include <malloc.h>
@@ -104,8 +104,8 @@ static void BM_MemoryBaseline_BufferFootprint(benchmark::State& state) {
         size_t rss_after = GetCurrentRSS();
 
         benchmark::DoNotOptimize(buf);
-        state.counters["rss_delta_bytes"] = benchmark::Counter(
-            static_cast<double>(rss_after > rss_before ? rss_after - rss_before : 0));
+        state.counters["rss_delta_bytes"] =
+            benchmark::Counter(static_cast<double>(rss_after > rss_before ? rss_after - rss_before : 0));
     }
 }
 
@@ -138,8 +138,8 @@ static void BM_MemoryBaseline_PoolAllocatorOverhead(benchmark::State& state) {
         state.counters["ideal_bytes"] = benchmark::Counter(static_cast<double>(ideal));
         state.counters["actual_bytes"] = benchmark::Counter(static_cast<double>(actual));
         if (ideal > 0 && actual > 0) {
-            state.counters["overhead_ratio"] = benchmark::Counter(
-                static_cast<double>(actual) / static_cast<double>(ideal));
+            state.counters["overhead_ratio"] =
+                benchmark::Counter(static_cast<double>(actual) / static_cast<double>(ideal));
         }
 
         // Cleanup
@@ -167,12 +167,9 @@ static void BM_MemoryBaseline_BlockPoolEfficiency(benchmark::State& state) {
             blocks.push_back(ptr);
         }
 
-        state.counters["pool_size"] = benchmark::Counter(
-            static_cast<double>(pool->GetSize()));
-        state.counters["block_length"] = benchmark::Counter(
-            static_cast<double>(pool->GetBlockLength()));
-        state.counters["total_requested"] = benchmark::Counter(
-            static_cast<double>(num_blocks * block_size));
+        state.counters["pool_size"] = benchmark::Counter(static_cast<double>(pool->GetSize()));
+        state.counters["block_length"] = benchmark::Counter(static_cast<double>(pool->GetBlockLength()));
+        state.counters["total_requested"] = benchmark::Counter(static_cast<double>(num_blocks * block_size));
 
         // Free all
         for (auto ptr : blocks) {
@@ -180,8 +177,7 @@ static void BM_MemoryBaseline_BlockPoolEfficiency(benchmark::State& state) {
         }
 
         // After free, pool still holds memory
-        state.counters["pool_size_after_free"] = benchmark::Counter(
-            static_cast<double>(pool->GetSize()));
+        state.counters["pool_size_after_free"] = benchmark::Counter(static_cast<double>(pool->GetSize()));
     }
 }
 
@@ -210,12 +206,9 @@ static void BM_MemoryBaseline_ManySmallBuffers(benchmark::State& state) {
 
         size_t rss_after = GetCurrentRSS();
 
-        state.counters["total_buffers"] = benchmark::Counter(
-            static_cast<double>(num_buffers));
+        state.counters["total_buffers"] = benchmark::Counter(static_cast<double>(num_buffers));
         state.counters["rss_per_buffer"] = benchmark::Counter(
-            num_buffers > 0 && rss_after > rss_before
-                ? static_cast<double>(rss_after - rss_before) / num_buffers
-                : 0);
+            num_buffers > 0 && rss_after > rss_before ? static_cast<double>(rss_after - rss_before) / num_buffers : 0);
 
         benchmark::DoNotOptimize(buffers.data());
     }
@@ -252,12 +245,10 @@ static void BM_MemoryBaseline_AllocFreeStability(benchmark::State& state) {
 
     size_t final_rss = GetCurrentRSS();
 
-    state.counters["initial_rss_kb"] = benchmark::Counter(
-        static_cast<double>(initial_rss) / 1024.0);
-    state.counters["final_rss_kb"] = benchmark::Counter(
-        static_cast<double>(final_rss) / 1024.0);
-    state.counters["rss_growth_kb"] = benchmark::Counter(
-        static_cast<double>(final_rss > initial_rss ? final_rss - initial_rss : 0) / 1024.0);
+    state.counters["initial_rss_kb"] = benchmark::Counter(static_cast<double>(initial_rss) / 1024.0);
+    state.counters["final_rss_kb"] = benchmark::Counter(static_cast<double>(final_rss) / 1024.0);
+    state.counters["rss_growth_kb"] =
+        benchmark::Counter(static_cast<double>(final_rss > initial_rss ? final_rss - initial_rss : 0) / 1024.0);
 }
 
 // ===========================================================================
@@ -281,10 +272,8 @@ static void BM_MemoryBaseline_BufferChainGrowth(benchmark::State& state) {
             written += to_write;
         }
 
-        state.counters["data_length"] = benchmark::Counter(
-            static_cast<double>(buf->GetDataLength()));
-        state.counters["chunk_count"] = benchmark::Counter(
-            static_cast<double>(buf->GetChunkCount()));
+        state.counters["data_length"] = benchmark::Counter(static_cast<double>(buf->GetDataLength()));
+        state.counters["chunk_count"] = benchmark::Counter(static_cast<double>(buf->GetChunkCount()));
 
         benchmark::DoNotOptimize(buf);
     }
@@ -340,12 +329,9 @@ static void BM_MemoryBaseline_PoolReleaseHalf(benchmark::State& state) {
 
         uint32_t size_after = pool->GetSize();
 
-        state.counters["pool_before"] = benchmark::Counter(
-            static_cast<double>(size_before));
-        state.counters["pool_after"] = benchmark::Counter(
-            static_cast<double>(size_after));
-        state.counters["released"] = benchmark::Counter(
-            static_cast<double>(size_before - size_after));
+        state.counters["pool_before"] = benchmark::Counter(static_cast<double>(size_before));
+        state.counters["pool_after"] = benchmark::Counter(static_cast<double>(size_after));
+        state.counters["released"] = benchmark::Counter(static_cast<double>(size_before - size_after));
     }
 }
 
@@ -358,37 +344,37 @@ static void BM_MemoryBaseline_PoolReleaseHalf(benchmark::State& state) {
 
 // Buffer footprint
 BENCHMARK(quicx::perf::BM_MemoryBaseline_BufferFootprint)
-    ->Arg(1024)->Arg(4096)->Arg(16384)->Arg(65536)
+    ->Arg(1024)
+    ->Arg(4096)
+    ->Arg(16384)
+    ->Arg(65536)
     ->Unit(benchmark::kMicrosecond);
 
 // Pool allocator overhead
-BENCHMARK(quicx::perf::BM_MemoryBaseline_PoolAllocatorOverhead)
-    ->Arg(100)->Arg(1000)->Arg(10000);
+BENCHMARK(quicx::perf::BM_MemoryBaseline_PoolAllocatorOverhead)->Arg(100)->Arg(1000)->Arg(10000);
 
 // Block pool efficiency
-BENCHMARK(quicx::perf::BM_MemoryBaseline_BlockPoolEfficiency)
-    ->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
+BENCHMARK(quicx::perf::BM_MemoryBaseline_BlockPoolEfficiency)->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
 
 // Many small buffers (per-stream simulation)
-BENCHMARK(quicx::perf::BM_MemoryBaseline_ManySmallBuffers)
-    ->Arg(10)->Arg(100)->Arg(1000)
-    ->Unit(benchmark::kMicrosecond);
+BENCHMARK(quicx::perf::BM_MemoryBaseline_ManySmallBuffers)->Arg(10)->Arg(100)->Arg(1000)->Unit(benchmark::kMicrosecond);
 
 // Long-running stability
 BENCHMARK(quicx::perf::BM_MemoryBaseline_AllocFreeStability);
 
 // Buffer chain growth
 BENCHMARK(quicx::perf::BM_MemoryBaseline_BufferChainGrowth)
-    ->Arg(4096)->Arg(16384)->Arg(65536)->Arg(262144)
+    ->Arg(4096)
+    ->Arg(16384)
+    ->Arg(65536)
+    ->Arg(262144)
     ->Unit(benchmark::kMicrosecond);
 
 // Shared pointer overhead
-BENCHMARK(quicx::perf::BM_MemoryBaseline_SharedPtrOverhead)
-    ->Arg(10)->Arg(100)->Arg(1000);
+BENCHMARK(quicx::perf::BM_MemoryBaseline_SharedPtrOverhead)->Arg(10)->Arg(100)->Arg(1000);
 
 // Pool release half
-BENCHMARK(quicx::perf::BM_MemoryBaseline_PoolReleaseHalf)
-    ->Arg(1024)->Arg(4096)->Arg(16384);
+BENCHMARK(quicx::perf::BM_MemoryBaseline_PoolReleaseHalf)->Arg(1024)->Arg(4096)->Arg(16384);
 
 BENCHMARK_MAIN();
 

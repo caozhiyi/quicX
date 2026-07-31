@@ -1,15 +1,14 @@
 #ifndef QUIC_QUICX_QUIC_CLIENT
 #define QUIC_QUICX_QUIC_CLIENT
 
-#include <quicx/quic/type.h>
 #include <quicx/quic/if_quic_client.h>
+#include <quicx/quic/type.h>
 #include "quic/quicx/master_with_thread.h"
 
 namespace quicx {
 namespace quic {
 
-class QuicClient:
-    public IQuicClient {
+class QuicClient: public IQuicClient {
 public:
     QuicClient(const QuicTransportParams& params);
     virtual ~QuicClient();
@@ -27,8 +26,8 @@ public:
     virtual void Destroy() override;
 
     // connect to a quic server with a specific resumption session (DER bytes) for this connection
-    virtual bool Connection(const std::string& ip, uint16_t port,
-        const std::string& alpn, int32_t timeout_ms, const std::string& resumption_session_der = "", const std::string& server_name = "") override;
+    virtual bool Connection(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
+        const std::string& resumption_session_der = "", const std::string& server_name = "") override;
 
     // called when connection state changed, like connected, disconnected, etc
     // user should set this callback before connection or listen and accept, otherwise, connection will be lost
@@ -43,7 +42,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<IWorker>> worker_map_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -1,52 +1,79 @@
-#include "common/log/log.h"
-#include "quic/frame/type.h"
 #include "quic/connection/util.h"
+#include "common/log/log.h"
 #include "quic/frame/stream_frame.h"
+#include "quic/frame/type.h"
 
 namespace quicx {
 namespace quic {
 
 bool IsAckElictingPacket(uint32_t frame_type) {
-    return ((frame_type) & ~(FrameTypeBit::kAckBit | FrameTypeBit::kAckEcnBit | FrameTypeBit::kPaddingBit | FrameTypeBit::kConnectionCloseBit));
+    return ((frame_type) & ~(FrameTypeBit::kAckBit | FrameTypeBit::kAckEcnBit | FrameTypeBit::kPaddingBit |
+                               FrameTypeBit::kConnectionCloseBit));
 }
 
 PacketNumberSpace CryptoLevel2PacketNumberSpace(uint16_t level) {
     switch (level) {
-    case PacketCryptoLevel::kInitialCryptoLevel: return PacketNumberSpace::kInitialNumberSpace;
-    case PacketCryptoLevel::kHandshakeCryptoLevel:  return PacketNumberSpace::kHandshakeNumberSpace;
-    case PacketCryptoLevel::kEarlyDataCryptoLevel:
-    case PacketCryptoLevel::kApplicationCryptoLevel: return PacketNumberSpace::kApplicationNumberSpace;
-    default:
-        LOG_ERROR("unknown crypto level: %d", level);
-        return PacketNumberSpace::kInitialNumberSpace;  // safe fallback
+        case PacketCryptoLevel::kInitialCryptoLevel:
+            return PacketNumberSpace::kInitialNumberSpace;
+        case PacketCryptoLevel::kHandshakeCryptoLevel:
+            return PacketNumberSpace::kHandshakeNumberSpace;
+        case PacketCryptoLevel::kEarlyDataCryptoLevel:
+        case PacketCryptoLevel::kApplicationCryptoLevel:
+            return PacketNumberSpace::kApplicationNumberSpace;
+        default:
+            LOG_ERROR("unknown crypto level: %d", level);
+            return PacketNumberSpace::kInitialNumberSpace;  // safe fallback
     }
 }
 
 const std::string FrameType2String(uint16_t frame_type) {
     switch (frame_type) {
-        case FrameType::kPadding:                      return "PADDING";
-        case FrameType::kPing:                         return "PING";
-        case FrameType::kAck:                          return "ACK";
-        case FrameType::kAckEcn:                       return "ACK_ECN";
-        case FrameType::kCrypto:                       return "CRYPTO";
-        case FrameType::kNewToken:                     return "NEW_TOKEN";
-        case FrameType::kMaxData:                      return "MAX_DATA";
-        case FrameType::kMaxStreamsBidirectional:      return "MAX_STREAMS_BIDIRECTIONAL";
-        case FrameType::kMaxStreamsUnidirectional:     return "MAX_STREAMS_UNIDIRECTIONAL";
-        case FrameType::kDataBlocked:                  return "DATA_BLOCKED";
-        case FrameType::kStreamsBlockedBidirectional:  return "STREAMS_BLOCKED_BIDIRECTIONAL";
-        case FrameType::kStreamsBlockedUnidirectional: return "STREAMS_BLOCKED_UNIDIRECTIONAL";
-        case FrameType::kNewConnectionId:              return "NEW_CONNECTION_ID";
-        case FrameType::kRetireConnectionId:           return "RETIRE_CONNECTION_ID";
-        case FrameType::kPathChallenge:                return "PATH_CHALLENGE";
-        case FrameType::kPathResponse:                 return "PATH_RESPONSE";
-        case FrameType::kConnectionClose:              return "CONNECTION_CLOSE";
-        case FrameType::kConnectionCloseApp:           return "CONNECTION_CLOSE_APP";
-        case FrameType::kHandshakeDone:                return "HANDSHAKE_DONE";
-        case FrameType::kResetStream:                  return "RESET_STREAM";
-        case FrameType::kStopSending:                  return "STOP_SENDING";
-        case FrameType::kStreamDataBlocked:            return "STREAM_DATA_BLOCKED";
-        case FrameType::kMaxStreamData:                return "MAX_STREAM_DATA";
+        case FrameType::kPadding:
+            return "PADDING";
+        case FrameType::kPing:
+            return "PING";
+        case FrameType::kAck:
+            return "ACK";
+        case FrameType::kAckEcn:
+            return "ACK_ECN";
+        case FrameType::kCrypto:
+            return "CRYPTO";
+        case FrameType::kNewToken:
+            return "NEW_TOKEN";
+        case FrameType::kMaxData:
+            return "MAX_DATA";
+        case FrameType::kMaxStreamsBidirectional:
+            return "MAX_STREAMS_BIDIRECTIONAL";
+        case FrameType::kMaxStreamsUnidirectional:
+            return "MAX_STREAMS_UNIDIRECTIONAL";
+        case FrameType::kDataBlocked:
+            return "DATA_BLOCKED";
+        case FrameType::kStreamsBlockedBidirectional:
+            return "STREAMS_BLOCKED_BIDIRECTIONAL";
+        case FrameType::kStreamsBlockedUnidirectional:
+            return "STREAMS_BLOCKED_UNIDIRECTIONAL";
+        case FrameType::kNewConnectionId:
+            return "NEW_CONNECTION_ID";
+        case FrameType::kRetireConnectionId:
+            return "RETIRE_CONNECTION_ID";
+        case FrameType::kPathChallenge:
+            return "PATH_CHALLENGE";
+        case FrameType::kPathResponse:
+            return "PATH_RESPONSE";
+        case FrameType::kConnectionClose:
+            return "CONNECTION_CLOSE";
+        case FrameType::kConnectionCloseApp:
+            return "CONNECTION_CLOSE_APP";
+        case FrameType::kHandshakeDone:
+            return "HANDSHAKE_DONE";
+        case FrameType::kResetStream:
+            return "RESET_STREAM";
+        case FrameType::kStopSending:
+            return "STOP_SENDING";
+        case FrameType::kStreamDataBlocked:
+            return "STREAM_DATA_BLOCKED";
+        case FrameType::kMaxStreamData:
+            return "MAX_STREAM_DATA";
         default:
             if (StreamFrame::IsStreamFrame(frame_type)) {
                 return "STREAM_DATA";
@@ -57,5 +84,5 @@ const std::string FrameType2String(uint16_t frame_type) {
     return "UNKNOWN";
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

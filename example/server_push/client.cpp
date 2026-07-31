@@ -1,10 +1,10 @@
+#include <quicx/http3/if_client.h>
+#include <quicx/http3/if_response.h>
 #include <chrono>
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
 #include <thread>
-#include <quicx/http3/if_client.h>
-#include <quicx/http3/if_response.h>
 
 int main() {
     quicx::Http3Settings settings = quicx::kDefaultHttp3Settings;
@@ -43,7 +43,7 @@ int main() {
         [&mutex1, &cv1, &completed1](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             std::cout << "status: " << response->GetStatusCode() << std::endl;
             std::cout << "response: " << response->GetBodyAsString() << std::endl;
-            
+
             // Notify completion
             {
                 std::lock_guard<std::mutex> lock(mutex1);
@@ -85,7 +85,7 @@ int main() {
         [&mutex2, &cv2, &completed2](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
             std::cout << "status: " << response->GetStatusCode() << std::endl;
             std::cout << "response: " << response->GetBodyAsString() << std::endl;
-            
+
             // Notify completion
             {
                 std::lock_guard<std::mutex> lock(mutex2);
@@ -107,6 +107,6 @@ int main() {
     // 2. Server to send the push data
     // 3. Client to receive and process the push
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-    
+
     std::cout << "Client finished, waiting for any pending push responses..." << std::endl;
 }

@@ -9,8 +9,7 @@
 namespace quicx {
 namespace http3 {
 
-class RouterNode:
-    public IRouterNode {
+class RouterNode: public IRouterNode {
 public:
     /**
      * @brief Constructor for RouterNode
@@ -19,9 +18,9 @@ public:
      * @param full_path Full path up to this node
      * @param config Route configuration (handler + mode)
      */
-    RouterNode(RouterNodeType type, const std::string& section,
-        const std::string& full_path, const RouteConfig& config);
-    
+    RouterNode(
+        RouterNodeType type, const std::string& section, const std::string& full_path, const RouteConfig& config);
+
     virtual ~RouterNode() {}
 
     const std::string& GetFullPath() { return full_path_; }
@@ -40,22 +39,22 @@ public:
      * @param config Route configuration
      * @return Shared pointer to created node
      */
-    static std::shared_ptr<IRouterNode> MakeNode(const std::string& path, int path_offset,
-        const std::string& section, const RouteConfig& config);
+    static std::shared_ptr<IRouterNode> MakeNode(
+        const std::string& path, int path_offset, const std::string& section, const RouteConfig& config);
 
 protected:
     RouterNodeType type_;
-    std::string section_;   // section of the path, like "/user", "/blog"
-    std::string full_path_; // full path, like "/user/:info", "/blog/list"
+    std::string section_;    // section of the path, like "/user", "/blog"
+    std::string full_path_;  // full path, like "/user/:info", "/blog/list"
 
-    RouteConfig config_;    // Route configuration (handler + mode)
+    RouteConfig config_;  // Route configuration (handler + mode)
 
-    std::shared_ptr<IRouterNode> wildcard_node_; // wildcard node
-    std::unordered_map<std::string, std::shared_ptr<IRouterNode>> dynamic_param_map_; // dynamic param => router node
-    std::unordered_map<std::string, std::shared_ptr<IRouterNode>> static_path_map_;   // static section => router node
+    std::shared_ptr<IRouterNode> wildcard_node_;                                       // wildcard node
+    std::unordered_map<std::string, std::shared_ptr<IRouterNode>> dynamic_param_map_;  // dynamic param => router node
+    std::unordered_map<std::string, std::shared_ptr<IRouterNode>> static_path_map_;    // static section => router node
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

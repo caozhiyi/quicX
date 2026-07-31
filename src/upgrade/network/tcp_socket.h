@@ -1,10 +1,10 @@
 #ifndef UPGRADE_NETWORK_TCP_SOCKET
 #define UPGRADE_NETWORK_TCP_SOCKET
 
-#include <memory>
-#include <vector>
-#include <string>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "common/network/address.h"
 #include "upgrade/network/if_tcp_socket.h"
@@ -13,8 +13,7 @@ namespace quicx {
 namespace upgrade {
 
 // TCP socket implementation
-class TcpSocket:
-    public ITcpSocket {
+class TcpSocket: public ITcpSocket {
 public:
     TcpSocket();
     explicit TcpSocket(int fd);
@@ -42,13 +41,12 @@ public:
     virtual std::string GetRemoteAddress() const override;
     virtual uint16_t GetRemotePort() const override;
 
-
 private:
     int64_t fd_ = -1;
     common::Address remote_address_;
 };
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx
 
-#endif // UPGRADE_NETWORK_TCP_SOCKET 
+#endif  // UPGRADE_NETWORK_TCP_SOCKET

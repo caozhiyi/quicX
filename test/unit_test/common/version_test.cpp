@@ -22,16 +22,14 @@ TEST(QuicxVersionTest, MacrosAreNonNegativeAndConsistent) {
     EXPECT_GE(QUICX_VERSION_PATCH, 0);
 
     // QUICX_VERSION_NUMBER must encode and round-trip the components.
-    const unsigned int encoded = QUICX_VERSION_NUMBER(
-        QUICX_VERSION_MAJOR, QUICX_VERSION_MINOR, QUICX_VERSION_PATCH);
+    const unsigned int encoded = QUICX_VERSION_NUMBER(QUICX_VERSION_MAJOR, QUICX_VERSION_MINOR, QUICX_VERSION_PATCH);
     EXPECT_EQ(encoded, QUICX_VERSION);
 }
 
 TEST(QuicxVersionTest, StringMatchesNumericComponents) {
     // Construct "<major>.<minor>.<patch>" and compare against the macro
     // expansion to guarantee they agree.
-    std::string expected = std::to_string(QUICX_VERSION_MAJOR) + "." +
-                           std::to_string(QUICX_VERSION_MINOR) + "." +
+    std::string expected = std::to_string(QUICX_VERSION_MAJOR) + "." + std::to_string(QUICX_VERSION_MINOR) + "." +
                            std::to_string(QUICX_VERSION_PATCH);
     EXPECT_STREQ(QUICX_VERSION_STRING, expected.c_str());
 }

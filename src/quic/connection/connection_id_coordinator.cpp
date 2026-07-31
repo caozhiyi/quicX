@@ -109,8 +109,8 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
     // Also cap by kMaxLocalCIDPoolSize - current_count to avoid over-generating beyond our own max
     to_generate = std::min<size_t>(to_generate, kMaxLocalCIDPoolSize - current_count);
 
-    LOG_DEBUG("ConnectionIDCoordinator: replenishing local CID pool: current=%zu, generating=%zu",
-        current_count, to_generate);
+    LOG_DEBUG("ConnectionIDCoordinator: replenishing local CID pool: current=%zu, generating=%zu", current_count,
+        to_generate);
 
     for (size_t i = 0; i < to_generate; ++i) {
         // Generate new connection ID
@@ -142,8 +142,8 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
             QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
         }
 
-        LOG_DEBUG("ConnectionIDCoordinator: generated NEW_CONNECTION_ID: seq=%llu, len=%d",
-            new_cid.GetSequenceNumber(), new_cid.GetLength());
+        LOG_DEBUG("ConnectionIDCoordinator: generated NEW_CONNECTION_ID: seq=%llu, len=%d", new_cid.GetSequenceNumber(),
+            new_cid.GetLength());
     }
 }
 

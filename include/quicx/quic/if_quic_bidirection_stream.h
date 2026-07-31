@@ -1,9 +1,9 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_BIDRECTION_STREAM
 #define QUIC_INCLUDE_IF_QUIC_BIDRECTION_STREAM
 
-#include <quicx/quic/type.h>
-#include <quicx/quic/if_quic_stream.h>
 #include <quicx/common/if_buffer_write.h>
+#include <quicx/quic/if_quic_stream.h>
+#include <quicx/quic/type.h>
 
 namespace quicx {
 
@@ -13,8 +13,7 @@ namespace quicx {
  * Combines the send and receive halves into a single object, mirroring HTTP/3's
  * request/response patterns.
  */
-class IQuicBidirectionStream:
-    public virtual IQuicStream {
+class IQuicBidirectionStream: public virtual IQuicStream {
 public:
     IQuicBidirectionStream() {}
     virtual ~IQuicBidirectionStream() {}
@@ -62,6 +61,6 @@ public:
     virtual uint64_t GetPendingSendBytes() = 0;
 };
 
-}
+}  // namespace quicx
 
 #endif

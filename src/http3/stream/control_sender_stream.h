@@ -1,24 +1,23 @@
 #ifndef HTTP3_STREAM_CONTROL_SENDER_STREAM
 #define HTTP3_STREAM_CONTROL_SENDER_STREAM
 
-#include <memory>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 
-#include "http3/stream/if_send_stream.h"
 #include <quicx/quic/if_quic_send_stream.h>
+#include "http3/stream/if_send_stream.h"
 
 namespace quicx {
 namespace http3 {
 
 /**
  * @brief ControlSenderStream is the base class for all HTTP/3 control sender streams
- * 
+ *
  * The control sender stream is used to send control frames to the peer.
  * It is responsible for sending the SETTINGS, GOAWAY and QPACK encoder instructions frames to the peer.
  */
-class ControlSenderStream:
-    public ISendStream {
+class ControlSenderStream: public ISendStream {
 public:
     ControlSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
@@ -34,7 +33,7 @@ public:
     virtual bool SendQpackInstructions(const std::vector<uint8_t>& blob);
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

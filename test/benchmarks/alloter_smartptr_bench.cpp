@@ -38,7 +38,15 @@ struct Payload64 {
     uint64_t h = 0;
 
     Payload64() = default;
-    explicit Payload64(uint64_t v) : a(v), b(v), c(v), d(v), e(v), f(v), g(v), h(v) {}
+    explicit Payload64(uint64_t v):
+        a(v),
+        b(v),
+        c(v),
+        d(v),
+        e(v),
+        f(v),
+        g(v),
+        h(v) {}
 };
 static_assert(sizeof(Payload64) == 64, "Payload64 must stay at 64 bytes");
 
@@ -103,8 +111,8 @@ BENCHMARK(BM_PoolMakeShared);
 //    the rewrite preserved performance and to baseline against any future
 //    regressions).
 #if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic push
-#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 static void BM_PoolNewSharePtr_Legacy(benchmark::State& state) {
     AlloterWrap wrap(std::shared_ptr<IAlloter>(new PoolAlloter()));
@@ -114,7 +122,7 @@ static void BM_PoolNewSharePtr_Legacy(benchmark::State& state) {
     }
 }
 #if defined(__GNUC__) || defined(__clang__)
-#  pragma GCC diagnostic pop
+#pragma GCC diagnostic pop
 #endif
 BENCHMARK(BM_PoolNewSharePtr_Legacy);
 
@@ -197,5 +205,7 @@ BENCHMARK(BM_PoolMakeUnique_Bulk);
 
 BENCHMARK_MAIN();
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif

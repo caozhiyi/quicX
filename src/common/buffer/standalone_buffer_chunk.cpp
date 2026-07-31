@@ -87,7 +87,5 @@ uint8_t* StandaloneBufferChunk::GetWriteFloor() const {
     return data_ + write_floor_offset_;
 }
 
-}
-}
-
-
+}  // namespace common
+}  // namespace quicx

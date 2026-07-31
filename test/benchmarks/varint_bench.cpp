@@ -22,13 +22,13 @@ static void BM_Varint_EncodeDecode(benchmark::State& state) {
     }
 }
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
 BENCHMARK(quicx::common::BM_Varint_EncodeDecode)->Arg(0x3F)->Arg(0x3FFF)->Arg(0x3FFFFFFF)->Arg(0x3FFFFFFFFFFFFFFF);
 BENCHMARK_MAIN();
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif
-
-

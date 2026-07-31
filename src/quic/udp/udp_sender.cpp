@@ -1,7 +1,7 @@
 #include "quic/udp/udp_sender.h"
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 #include "common/network/io_handle.h"
 
 #include <atomic>
@@ -69,8 +69,7 @@ public:
             last_refill_ = now;
             tokens_ = static_cast<double>(rate_bps) * 0.02;  // start full of 20ms credit
         }
-        const auto elapsed_s =
-            std::chrono::duration<double>(now - last_refill_).count();
+        const auto elapsed_s = std::chrono::duration<double>(now - last_refill_).count();
         last_refill_ = now;
 
         const double cap = std::max(static_cast<double>(rate_bps) * 0.02, 1500.0);
@@ -157,9 +156,7 @@ private:
     }
 
     void EnsureWorker() {
-        std::call_once(start_once_, [this]() {
-            worker_ = std::thread(&DelayQueue::Run, this);
-        });
+        std::call_once(start_once_, [this]() { worker_ = std::thread(&DelayQueue::Run, this); });
     }
 
     void Run() {
@@ -182,8 +179,7 @@ private:
                     if (stop_ && q_.empty()) {
                         return;
                     }
-                    if (q_.empty() || q_.front().release_at >
-                        std::chrono::steady_clock::now()) {
+                    if (q_.empty() || q_.front().release_at > std::chrono::steady_clock::now()) {
                         continue;
                     }
                 }
@@ -209,19 +205,15 @@ private:
         if (sock <= 0) {
             return;
         }
-        auto ret = common::SendTo(sock, (const char*)span.GetStart(),
-                                  span.GetLength(), 0, dp.pkt->GetAddress());
+        auto ret = common::SendTo(sock, (const char*)span.GetStart(), span.GetLength(), 0, dp.pkt->GetAddress());
         if (ret.error_code_ != 0) {
-            LOG_ERROR(
-                "[fault-inject] delayed sendto failed to: %s, len: %d, err: %d",
-                dp.pkt->GetAddress().AsString().c_str(), span.GetLength(),
-                ret.error_code_);
+            LOG_ERROR("[fault-inject] delayed sendto failed to: %s, len: %d, err: %d",
+                dp.pkt->GetAddress().AsString().c_str(), span.GetLength(), ret.error_code_);
             common::Metrics::CounterInc(common::MetricsStd::UdpSendErrors);
             return;
         }
         common::Metrics::CounterInc(common::MetricsStd::UdpPacketsTx);
-        common::Metrics::CounterInc(common::MetricsStd::UdpBytesTx,
-                                    span.GetLength());
+        common::Metrics::CounterInc(common::MetricsStd::UdpBytesTx, span.GetLength());
     }
 
     std::mutex mu_;
@@ -244,10 +236,10 @@ void UdpSender::SetDropPerMillion(uint32_t ratio_per_million) {
     }
     drop_per_million_.store(ratio_per_million, std::memory_order_relaxed);
     // Recompute combined flag: any of the three knobs being non-zero counts.
-    const uint32_t any = (ratio_per_million != 0 ||
-                          rate_limit_bps_.load(std::memory_order_relaxed) != 0 ||
-                          egress_delay_ms_.load(std::memory_order_relaxed) != 0)
-                             ? 1u : 0u;
+    const uint32_t any = (ratio_per_million != 0 || rate_limit_bps_.load(std::memory_order_relaxed) != 0 ||
+                             egress_delay_ms_.load(std::memory_order_relaxed) != 0)
+                             ? 1u
+                             : 0u;
     any_fault_enabled_.store(any, std::memory_order_relaxed);
 }
 
@@ -260,10 +252,10 @@ void UdpSender::SetRateLimitBps(uint64_t bytes_per_second) {
     if (bytes_per_second == 0) {
         Bucket().Reset();
     }
-    const uint32_t any = (drop_per_million_.load(std::memory_order_relaxed) != 0 ||
-                          bytes_per_second != 0 ||
-                          egress_delay_ms_.load(std::memory_order_relaxed) != 0)
-                             ? 1u : 0u;
+    const uint32_t any = (drop_per_million_.load(std::memory_order_relaxed) != 0 || bytes_per_second != 0 ||
+                             egress_delay_ms_.load(std::memory_order_relaxed) != 0)
+                             ? 1u
+                             : 0u;
     any_fault_enabled_.store(any, std::memory_order_relaxed);
 }
 
@@ -274,9 +266,9 @@ uint64_t UdpSender::GetRateLimitBps() {
 void UdpSender::SetEgressDelayMs(uint32_t delay_ms) {
     egress_delay_ms_.store(delay_ms, std::memory_order_relaxed);
     const uint32_t any = (drop_per_million_.load(std::memory_order_relaxed) != 0 ||
-                          rate_limit_bps_.load(std::memory_order_relaxed) != 0 ||
-                          delay_ms != 0)
-                             ? 1u : 0u;
+                             rate_limit_bps_.load(std::memory_order_relaxed) != 0 || delay_ms != 0)
+                             ? 1u
+                             : 0u;
     any_fault_enabled_.store(any, std::memory_order_relaxed);
 }
 
@@ -333,11 +325,10 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
         uint64_t sendto_t0 = common::Metrics::NowUs();
         auto ret = common::SendTo(sock, (const char*)span.GetStart(), span.GetLength(), 0, pkt->GetAddress());
         common::Metrics::HistogramObserve(
-            common::MetricsStd::DiagSendtoLatencyUs,
-            common::Metrics::NowUs() - sendto_t0);
+            common::MetricsStd::DiagSendtoLatencyUs, common::Metrics::NowUs() - sendto_t0);
         if (ret.error_code_ != 0) {
-            LOG_ERROR(
-                "send packet to: %s, len: %d, err: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(), ret.error_code_);
+            LOG_ERROR("send packet to: %s, len: %d, err: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(),
+                ret.error_code_);
             common::Metrics::CounterInc(common::MetricsStd::UdpSendErrors);
             return false;
         }
@@ -354,8 +345,7 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
     // they would to a real wire-loss event.
     const uint32_t drop_pm = drop_per_million_.load(std::memory_order_relaxed);
     if (drop_pm > 0 && NextRandPerMillion() < drop_pm) {
-        LOG_DEBUG(
-            "[fault-inject] drop egress packet to: %s, len: %d (drop_per_million=%u)",
+        LOG_DEBUG("[fault-inject] drop egress packet to: %s, len: %d (drop_per_million=%u)",
             pkt->GetAddress().AsString().c_str(), span.GetLength(), drop_pm);
         return true;
     }
@@ -364,10 +354,8 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
     const uint64_t rate = rate_limit_bps_.load(std::memory_order_relaxed);
     if (rate > 0) {
         if (!Bucket().TryConsume(span.GetLength(), rate)) {
-            LOG_DEBUG(
-                "[fault-inject] rate-limit drop to: %s, len: %d (bps=%llu)",
-                pkt->GetAddress().AsString().c_str(), span.GetLength(),
-                static_cast<unsigned long long>(rate));
+            LOG_DEBUG("[fault-inject] rate-limit drop to: %s, len: %d (bps=%llu)", pkt->GetAddress().AsString().c_str(),
+                span.GetLength(), static_cast<unsigned long long>(rate));
             // Tail-drop: same as real congestion drop on a saturated link.
             return true;
         }
@@ -379,8 +367,7 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
     const uint32_t delay_ms = egress_delay_ms_.load(std::memory_order_relaxed);
     if (delay_ms > 0) {
         DelayedPacket dp;
-        dp.release_at = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(delay_ms);
+        dp.release_at = std::chrono::steady_clock::now() + std::chrono::milliseconds(delay_ms);
         dp.pkt = pkt;
         dp.sock = sock;
         DelayQueue::Instance().Enqueue(std::move(dp));
@@ -395,8 +382,8 @@ bool UdpSender::Send(std::shared_ptr<NetPacket>& pkt) {
     // and the random draw didn't drop). ----
     auto ret = common::SendTo(sock, (const char*)span.GetStart(), span.GetLength(), 0, pkt->GetAddress());
     if (ret.error_code_ != 0) {
-        LOG_ERROR(
-            "send packet to: %s, len: %d, err: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(), ret.error_code_);
+        LOG_ERROR("send packet to: %s, len: %d, err: %d", pkt->GetAddress().AsString().c_str(), span.GetLength(),
+            ret.error_code_);
         common::Metrics::CounterInc(common::MetricsStd::UdpSendErrors);
         return false;
     }
@@ -519,16 +506,25 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
         return ok;
     }
 
-    // Determine which family slot every Address must have cached. We don't
-    // know the socket's domain at this layer, so we infer from whichever
-    // slot is filled on the first packet. Production traffic uses one
-    // family per socket so this is stable for the life of the connection.
+    // Determine which family slot every Address must have cached. The
+    // cache family MUST match the socket's actual family — on macOS
+    // (and Linux dual-stack), passing an AF_INET sockaddr to an
+    // AF_INET6 socket returns EINVAL from sendmsg, which historically
+    // caused every batch to fall back to per-packet Send(), making
+    // sendmmsg a no-op on the entire hot path. Resolve the socket
+    // family once (cheap: O(1) cache hit on fds we created) and use it
+    // to pick the cache slot.
+    const int32_t sock_family = common::ResolveSocketFamily(sock0);
     socklen_t probe_len = 0;
-    int probe_family = AF_INET;
-    if (!first->GetAddress().GetCachedSockaddr(AF_INET, probe_len)) {
+    int probe_family = (sock_family == AF_INET6) ? AF_INET6 : AF_INET;
+    if (!first->GetAddress().GetCachedSockaddr(probe_family, probe_len)) {
+        // Fall back to the other family slot in case EnsureSockaddrCache
+        // only populated one side (e.g. v4 cache when the addr's IP is
+        // textually IPv4 and family resolution returned AF_UNSPEC).
+        const int alt_family = (probe_family == AF_INET) ? AF_INET6 : AF_INET;
         probe_len = 0;
-        if (first->GetAddress().GetCachedSockaddr(AF_INET6, probe_len)) {
-            probe_family = AF_INET6;
+        if (first->GetAddress().GetCachedSockaddr(alt_family, probe_len)) {
+            probe_family = alt_family;
         } else {
             // Cache miss on the very first packet -> degrade to Send() for
             // the whole batch. As a side effect every Send() populates its
@@ -547,7 +543,7 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
 
     // ---- assemble mmsghdr / iovec arrays on the stack ----
     common::MMsghdr msgs[kMaxBatchSize];
-    common::Iovec   iovs[kMaxBatchSize];
+    common::Iovec iovs[kMaxBatchSize];
 
     size_t prepared = 0;
     for (; prepared < batch_n; prepared++) {
@@ -560,8 +556,7 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
         }
 
         socklen_t cached_len = 0;
-        const struct sockaddr* cached =
-            pkt->GetAddress().GetCachedSockaddr(probe_family, cached_len);
+        const struct sockaddr* cached = pkt->GetAddress().GetCachedSockaddr(probe_family, cached_len);
         if (!cached) {
             break;  // any cache miss -> degrade
         }
@@ -573,16 +568,16 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
         auto span = buffer->GetReadableSpan();
 
         iovs[prepared].iov_base_ = const_cast<uint8_t*>(span.GetStart());
-        iovs[prepared].iov_len_  = span.GetLength();
+        iovs[prepared].iov_len_ = span.GetLength();
 
         common::Msghdr& hdr = msgs[prepared].msg_hdr_;
-        hdr.msg_name_       = const_cast<struct sockaddr*>(cached);
-        hdr.msg_namelen_    = cached_len;
-        hdr.msg_iov_        = &iovs[prepared];
-        hdr.msg_iovlen_     = 1;
-        hdr.msg_control_    = nullptr;
+        hdr.msg_name_ = const_cast<struct sockaddr*>(cached);
+        hdr.msg_namelen_ = cached_len;
+        hdr.msg_iov_ = &iovs[prepared];
+        hdr.msg_iovlen_ = 1;
+        hdr.msg_control_ = nullptr;
         hdr.msg_controllen_ = 0;
-        hdr.msg_flags_      = 0;
+        hdr.msg_flags_ = 0;
         msgs[prepared].msg_len_ = 0;
     }
 
@@ -624,8 +619,7 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
     bool used_gso = false;
     size_t gso_sent_pkts = 0;
     if (!g_gso_unsupported.load(std::memory_order_relaxed) && batch_n >= 2) {
-        const struct sockaddr* ref_addr =
-            static_cast<const struct sockaddr*>(msgs[0].msg_hdr_.msg_name_);
+        const struct sockaddr* ref_addr = static_cast<const struct sockaddr*>(msgs[0].msg_hdr_.msg_name_);
         const uint32_t ref_alen = msgs[0].msg_hdr_.msg_namelen_;
         const size_t ref_len = iovs[0].iov_len_;
         size_t gso_run = 1;
@@ -640,7 +634,7 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
                 break;
             }
             const size_t this_len = iovs[gso_run].iov_len_;
-            if (this_len > ref_len) break;          // trailing must be <= ref
+            if (this_len > ref_len) break;  // trailing must be <= ref
             if (this_len < ref_len) {
                 // Allow ONLY if it's the last packet of the run.
                 ++gso_run;
@@ -666,22 +660,16 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
                 }
 
                 const uint64_t gt0 = common::Metrics::NowUs();
-                auto gret = common::SendMsgGso(
-                    sock0,
-                    reinterpret_cast<const char*>(scratch.data()),
-                    static_cast<uint32_t>(total),
-                    static_cast<uint16_t>(ref_len),
-                    batch[0]->GetAddress());
+                auto gret = common::SendMsgGso(sock0, reinterpret_cast<const char*>(scratch.data()),
+                    static_cast<uint32_t>(total), static_cast<uint16_t>(ref_len), batch[0]->GetAddress());
                 const uint64_t gdt = common::Metrics::NowUs() - gt0;
 
                 if (gret.return_value_ >= 0) {
                     for (size_t i = 0; i < gso_run; ++i) {
                         common::Metrics::CounterInc(common::MetricsStd::UdpPacketsTx);
-                        common::Metrics::CounterInc(common::MetricsStd::UdpBytesTx,
-                                                    iovs[i].iov_len_);
+                        common::Metrics::CounterInc(common::MetricsStd::UdpBytesTx, iovs[i].iov_len_);
                     }
-                    common::Metrics::HistogramObserve(
-                        common::MetricsStd::DiagSendtoLatencyUs, gdt / gso_run);
+                    common::Metrics::HistogramObserve(common::MetricsStd::DiagSendtoLatencyUs, gdt / gso_run);
                     common::Metrics::CounterInc(common::MetricsStd::DiagUdpSendBatchOk);
                     used_gso = true;
                     gso_sent_pkts = gso_run;
@@ -693,8 +681,10 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
 #endif
                     ) {
                         g_gso_unsupported.store(true, std::memory_order_relaxed);
-                        LOG_WARN("UDP GSO unsupported (errno=%d), "
-                                 "falling back to sendmmsg permanently", e);
+                        LOG_WARN(
+                            "UDP GSO unsupported (errno=%d), "
+                            "falling back to sendmmsg permanently",
+                            e);
                     }
                     // Either way, drop through to sendmmsg below.
                 }
@@ -705,11 +695,11 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
     // If GSO sent the leading run, shrink the sendmmsg call to the
     // remaining tail. This is just a base-pointer + count adjustment;
     // no array copy needed because msgs/iovs are still in scope.
-    common::MMsghdr*       mm_send  = msgs;
-    const common::Iovec*   iov_send = iovs;
+    common::MMsghdr* mm_send = msgs;
+    const common::Iovec* iov_send = iovs;
     size_t mm_count = batch_n;
     if (used_gso) {
-        mm_send  += gso_sent_pkts;
+        mm_send += gso_sent_pkts;
         iov_send += gso_sent_pkts;
         mm_count -= gso_sent_pkts;
     }
@@ -728,17 +718,14 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
     // the kSendtoLat distribution comparable to the pre-batching baseline so
     // perf experiments don't need a separate phase.
     if (mm_count > 0) {
-        common::Metrics::HistogramObserve(
-            common::MetricsStd::DiagSendtoLatencyUs,
-            dt / mm_count);
+        common::Metrics::HistogramObserve(common::MetricsStd::DiagSendtoLatencyUs, dt / mm_count);
     }
 
     if (ret.return_value_ < 0) {
         // Whole-batch sendmmsg failure (e.g. EINTR before any packet was
         // queued). Fall back to per-packet Send so the existing single-
         // packet error handling kicks in (logging, metrics, etc.).
-        LOG_ERROR("sendmmsg failed: vlen=%zu, err=%d -> degrade to Send()",
-                  mm_count, ret.error_code_);
+        LOG_ERROR("sendmmsg failed: vlen=%zu, err=%d -> degrade to Send()", mm_count, ret.error_code_);
         // Account already-sent GSO packets, then resend just the tail.
         uint32_t ok = static_cast<uint32_t>(gso_sent_pkts);
         for (size_t i = gso_sent_pkts; i < batch.size(); ++i) {
@@ -756,8 +743,7 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
     // doesn't update msg_len_.
     for (uint32_t k = 0; k < sent; k++) {
         const uint32_t bytes =
-            mm_send[k].msg_len_ ? mm_send[k].msg_len_
-                                : static_cast<uint32_t>(mm_send[k].msg_hdr_.msg_iov_->iov_len_);
+            mm_send[k].msg_len_ ? mm_send[k].msg_len_ : static_cast<uint32_t>(mm_send[k].msg_hdr_.msg_iov_->iov_len_);
         common::Metrics::CounterInc(common::MetricsStd::UdpPacketsTx);
         common::Metrics::CounterInc(common::MetricsStd::UdpBytesTx, bytes);
     }
@@ -766,10 +752,8 @@ uint32_t UdpSender::SendBatch(std::vector<std::shared_ptr<NetPacket>>& batch) {
         // them across drain rounds (which would invert FIFO order with the
         // next round's traffic), drop them — QUIC's loss detection will
         // retransmit. Log so unexpected losses are visible.
-        LOG_WARN("sendmmsg short-write: %u/%zu, dropped %zu",
-                 sent, mm_count, mm_count - sent);
-        common::Metrics::CounterInc(common::MetricsStd::UdpSendErrors,
-                                    mm_count - sent);
+        LOG_WARN("sendmmsg short-write: %u/%zu, dropped %zu", sent, mm_count, mm_count - sent);
+        common::Metrics::CounterInc(common::MetricsStd::UdpSendErrors, mm_count - sent);
     }
     if (sent > 0) {
         common::Metrics::CounterInc(common::MetricsStd::DiagUdpSendBatchOk);

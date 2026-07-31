@@ -44,9 +44,7 @@ struct VersionContext {
     // --- Helpers ---
 
     // Returns the effective preferred version: explicit if set, otherwise quic_version.
-    uint32_t GetEffectivePreferredVersion() const {
-        return preferred_version ? preferred_version : quic_version;
-    }
+    uint32_t GetEffectivePreferredVersion() const { return preferred_version ? preferred_version : quic_version; }
 };
 
 }  // namespace quic

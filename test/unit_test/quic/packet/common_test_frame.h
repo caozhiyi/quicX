@@ -2,15 +2,14 @@
 #define UTEST_QUIC_PACKET_HEADER_COMMON_TEST_FRAME
 
 #include "common/util/singleton.h"
-#include "quic/frame/if_frame.h"
 #include "quic/crypto/if_cryptographer.h"
+#include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
 
 static const uint8_t kBufLength = 128;
-class PacketTest:
-    public common::Singleton<PacketTest> {
+class PacketTest: public common::Singleton<PacketTest> {
 public:
     PacketTest();
     ~PacketTest() {}
@@ -25,7 +24,7 @@ private:
     std::shared_ptr<ICryptographer> ser_cryptographer_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif
