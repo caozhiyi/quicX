@@ -1,13 +1,13 @@
-#include "common/log/log.h"
-#include "http3/http/error.h"
-#include "http3/stream/type.h"
-#include "http3/http/response.h"
-#include "http3/frame/data_frame.h"
-#include "http3/frame/headers_frame.h"
-#include "http3/stream/pseudo_header.h"
 #include "http3/stream/push_receiver_stream.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/multi_block_buffer.h"
+#include "common/log/log.h"
+#include "http3/frame/data_frame.h"
+#include "http3/frame/headers_frame.h"
+#include "http3/http/error.h"
+#include "http3/http/response.h"
+#include "http3/stream/pseudo_header.h"
+#include "http3/stream/type.h"
 #include "quic/quicx/global_resource.h"
 
 namespace quicx {
@@ -23,8 +23,7 @@ PushReceiverStream::PushReceiverStream(const std::shared_ptr<QpackEncoder>& qpac
     parse_state_(ParseState::kReadingPushId),
     push_id_(0),
     body_length_(0) {
-    stream_->SetStreamReadCallBack(
-        [this](auto a, auto b, auto c) { OnData(a, b, c); });
+    stream_->SetStreamReadCallBack([this](auto a, auto b, auto c) { OnData(a, b, c); });
     // No send-side callback is registered here: a server push stream is, by
     // RFC 9114 §4.4 / §6.2.2, unidirectional from server to client, and on
     // the client side stream_ is therefore an IQuicRecvStream — there is no
@@ -73,8 +72,7 @@ void PushReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
             std::vector<std::shared_ptr<IFrame>> frames;
             bool decode_ok = frame_decoder_.DecodeFrames(buffer, frames);
 
-            LOG_DEBUG(
-                "PushReceiverStream: DecodeFrames returned %d, decoded %zu frames", decode_ok, frames.size());
+            LOG_DEBUG("PushReceiverStream: DecodeFrames returned %d, decoded %zu frames", decode_ok, frames.size());
 
             // Distinguish between incomplete frame (need more data) and actual decode error
             if (!decode_ok) {
@@ -143,8 +141,8 @@ void PushReceiverStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
             body_length_ = std::stoul(headers_["content-length"]);
             LOG_DEBUG("found content-length=%u", body_length_);
         } catch (const std::exception& e) {
-            LOG_ERROR("PushReceiverStream: invalid content-length value '%s': %s",
-                headers_["content-length"].c_str(), e.what());
+            LOG_ERROR("PushReceiverStream: invalid content-length value '%s': %s", headers_["content-length"].c_str(),
+                e.what());
             error_handler_(GetStreamID(), Http3ErrorCode::kMessageError);
             return;
         }

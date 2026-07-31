@@ -7,8 +7,7 @@
 namespace quicx {
 namespace quic {
 
-class RetireConnectionIDFrame:
-    public IFrame {
+class RetireConnectionIDFrame: public IFrame {
 public:
     RetireConnectionIDFrame();
     ~RetireConnectionIDFrame();
@@ -24,7 +23,7 @@ private:
     uint64_t sequence_number_;  // the connection ID being retired.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

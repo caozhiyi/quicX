@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <memory>
 
-#include "common/buffer/buffer_span.h"
 #include "common/buffer/buffer_reader.h"
+#include "common/buffer/buffer_span.h"
 #include "common/buffer/if_buffer.h"
 #include "common/decode/decode.h"
 

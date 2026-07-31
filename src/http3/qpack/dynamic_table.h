@@ -1,10 +1,10 @@
 #ifndef HTTP3_QPACK_DYNAMIC_TABLE
 #define HTTP3_QPACK_DYNAMIC_TABLE
 
-#include <deque>
-#include <utility>
 #include <cstdint>
+#include <deque>
 #include <unordered_map>
+#include <utility>
 #include "http3/qpack/type.h"
 #include "http3/qpack/util.h"
 
@@ -58,7 +58,7 @@ public:
 
     // Update maximum size of dynamic table
     void UpdateMaxTableSize(uint32_t new_size);
-    
+
     // RFC 9204 Section 4.3.4: Duplicate an existing entry
     // Duplicates the entry at the given absolute index
     // Returns true if successful, false if index is invalid
@@ -71,12 +71,12 @@ private:
     std::deque<HeaderItem> headeritem_deque_;  // Dynamic table entries (front=newest, back=oldest)
     std::unordered_map<std::pair<std::string, std::string>, uint32_t, pair_hash> headeritem_index_map_;
 
-    uint32_t max_size_;      // Maximum allowed size of dynamic table
-    uint32_t current_size_;  // Current size of dynamic table
+    uint32_t max_size_;            // Maximum allowed size of dynamic table
+    uint32_t current_size_;        // Current size of dynamic table
     uint64_t total_insert_count_;  // Total number of inserts (monotonically increasing)
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

@@ -19,11 +19,13 @@ public:
     uint64_t GetGap() const { return gap_; }
 
 private:
-    uint64_t gap_; // A variable-length integer indicating the number of contiguous unacknowledged packets preceding the packet number one lower than the smallest in the preceding ACK Range
-    uint64_t ack_range_length_; // A variable-length integer indicating the number of contiguous acknowledged packets preceding the largest packet number, as determined by the preceding Gap
+    uint64_t gap_;  // A variable-length integer indicating the number of contiguous unacknowledged packets preceding
+                    // the packet number one lower than the smallest in the preceding ACK Range
+    uint64_t ack_range_length_;  // A variable-length integer indicating the number of contiguous acknowledged packets
+                                 // preceding the largest packet number, as determined by the preceding Gap
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

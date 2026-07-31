@@ -1,19 +1,21 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/connection_close_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/connection_close_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(connection_close_frame_utest, codec) {
+TEST(ConnectionCloseFrameTest, codec) {
     ConnectionCloseFrame frame1;
     ConnectionCloseFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     frame1.SetErrorCode(10086);
     frame1.SetErrFrameType(0x05);
@@ -33,6 +35,6 @@ TEST(connection_close_frame_utest, codec) {
     EXPECT_EQ(frame1.GetReason(), frame2.GetReason());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

@@ -1,9 +1,8 @@
 #include <algorithm>
 
-#include "http3/http/response.h"
 #include "common/buffer/multi_block_buffer.h"
+#include "http3/http/response.h"
 #include "quic/quicx/global_resource.h"
-
 
 namespace quicx {
 
@@ -16,8 +15,7 @@ namespace http3 {
 // Helper function to convert header name to lowercase (HTTP/2 and HTTP/3 requirement)
 static std::string ToLowerCase(const std::string& str) {
     std::string result = str;
-    std::transform(result.begin(), result.end(), result.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) { return std::tolower(c); });
     return result;
 }
 
@@ -55,8 +53,7 @@ void Response::AppendBody(const std::string& body) {
     if (body.empty()) {
         return;
     }
-    AppendBody(reinterpret_cast<const uint8_t*>(body.data()),
-               static_cast<uint32_t>(body.size()));
+    AppendBody(reinterpret_cast<const uint8_t*>(body.data()), static_cast<uint32_t>(body.size()));
 }
 
 void Response::AppendBody(const uint8_t* data, uint32_t length) {
@@ -69,5 +66,5 @@ void Response::AppendBody(const uint8_t* data, uint32_t length) {
     body_->Write(data, length);
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

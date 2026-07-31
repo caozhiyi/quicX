@@ -5,10 +5,10 @@
 #include <memory>
 #include <string>
 
-#include "common/qlog/event/qlog_event.h"
-#include "common/qlog/event/transport_events.h"
-#include "common/qlog/event/recovery_events.h"
 #include "common/qlog/event/connectivity_events.h"
+#include "common/qlog/event/qlog_event.h"
+#include "common/qlog/event/recovery_events.h"
+#include "common/qlog/event/transport_events.h"
 
 namespace quicx {
 namespace common {
@@ -16,12 +16,10 @@ namespace {
 
 // Test EventData base class and JSON escaping
 TEST(QlogEventTest, JsonEscaping) {
-    class TestEventData : public EventData {
+    class TestEventData: public EventData {
     public:
         std::string test_string;
-        std::string ToJson() const override {
-            return "{\"test\":\"" + EscapeJson(test_string) + "\"}";
-        }
+        std::string ToJson() const override { return "{\"test\":\"" + EscapeJson(test_string) + "\"}"; }
     };
 
     // Test special characters
@@ -298,8 +296,7 @@ TEST(QlogEventTest, AllPacketTypes) {
         data.packet_size = 100;
 
         std::string json = data.ToJson();
-        EXPECT_TRUE(json.find("\"packet_type\":\"" + test_case.expected_string + "\"")
-                    != std::string::npos)
+        EXPECT_TRUE(json.find("\"packet_type\":\"" + test_case.expected_string + "\"") != std::string::npos)
             << "Failed for packet type: " << test_case.expected_string;
     }
 }
@@ -408,9 +405,7 @@ TEST(QlogEventTest, PacketsAckedDataFullFields) {
 
 // Test: PacketLostData field coverage with all trigger types
 TEST(QlogEventTest, PacketLostDataAllTriggers) {
-    std::vector<std::string> triggers = {
-        "time_threshold", "packet_threshold", "pto_expired"
-    };
+    std::vector<std::string> triggers = {"time_threshold", "packet_threshold", "pto_expired"};
 
     for (const auto& trigger : triggers) {
         PacketLostData data;
@@ -475,10 +470,8 @@ TEST(QlogEventTest, RecoveryMetricsDataMinimalFields) {
     EXPECT_TRUE(JsonHasKey(json, "cwnd")) << json;
 
     // Optional fields should be absent
-    EXPECT_FALSE(JsonHasKey(json, "ssthresh"))
-        << "ssthresh should be omitted when UINT64_MAX: " << json;
-    EXPECT_FALSE(JsonHasKey(json, "pacing_rate"))
-        << "pacing_rate should be omitted when 0: " << json;
+    EXPECT_FALSE(JsonHasKey(json, "ssthresh")) << "ssthresh should be omitted when UINT64_MAX: " << json;
+    EXPECT_FALSE(JsonHasKey(json, "pacing_rate")) << "pacing_rate should be omitted when 0: " << json;
 }
 
 // Test: CongestionStateUpdatedData field coverage
@@ -533,9 +526,7 @@ TEST(QlogEventTest, ConnectionStartedDataFullFields) {
 
 // Test: ConnectionClosedData full field coverage with all triggers
 TEST(QlogEventTest, ConnectionClosedDataAllTriggers) {
-    std::vector<std::string> triggers = {
-        "clean", "application", "error", "stateless_reset"
-    };
+    std::vector<std::string> triggers = {"clean", "application", "error", "stateless_reset"};
 
     for (const auto& trigger : triggers) {
         ConnectionClosedData data;
@@ -553,9 +544,7 @@ TEST(QlogEventTest, ConnectionClosedDataAllTriggers) {
 
 // Test: ConnectionStateUpdatedData field coverage with all state transitions
 TEST(QlogEventTest, ConnectionStateUpdatedDataAllStates) {
-    std::vector<std::string> states = {
-        "initial", "handshake", "connected", "closing", "draining", "closed"
-    };
+    std::vector<std::string> states = {"initial", "handshake", "connected", "closing", "draining", "closed"};
 
     for (size_t i = 0; i + 1 < states.size(); i++) {
         ConnectionStateUpdatedData data;
@@ -592,14 +581,27 @@ TEST(QlogEventTest, AllEventDataProduceBalancedJson) {
         bool in_string = false;
         bool escaped = false;
         for (char c : json) {
-            if (escaped) { escaped = false; continue; }
-            if (c == '\\' && in_string) { escaped = true; continue; }
-            if (c == '"') { in_string = !in_string; continue; }
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (c == '\\' && in_string) {
+                escaped = true;
+                continue;
+            }
+            if (c == '"') {
+                in_string = !in_string;
+                continue;
+            }
             if (!in_string) {
-                if (c == '{') braces++;
-                else if (c == '}') braces--;
-                else if (c == '[') brackets++;
-                else if (c == ']') brackets--;
+                if (c == '{')
+                    braces++;
+                else if (c == '}')
+                    braces--;
+                else if (c == '[')
+                    brackets++;
+                else if (c == ']')
+                    brackets--;
             }
         }
         return braces == 0 && brackets == 0 && !in_string;

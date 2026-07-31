@@ -8,7 +8,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-TEST(send_state_machine_utest, normal_state_change) {
+TEST(SendStateMachineTest, normal_state_change) {
     StreamStateMachineSend state;
     EXPECT_EQ(state.GetStatus(), StreamState::kReady);
 
@@ -24,7 +24,7 @@ TEST(send_state_machine_utest, normal_state_change) {
     EXPECT_TRUE(state.AllAckDone());
 }
 
-TEST(send_state_machine_utest, wrong_state_change) {
+TEST(SendStateMachineTest, wrong_state_change) {
     StreamStateMachineSend state;
     EXPECT_EQ(state.GetStatus(), StreamState::kReady);
 

@@ -8,8 +8,8 @@
 #include <queue>
 #include <unordered_map>
 
-#include "common/structure/double_buffer.h"
 #include <quicx/quic/type.h>
+#include "common/structure/double_buffer.h"
 
 namespace quicx {
 
@@ -17,7 +17,7 @@ namespace quicx {
 namespace common {
 class IEventLoop;
 class QlogTrace;
-}
+}  // namespace common
 
 namespace quic {
 
@@ -84,7 +84,8 @@ public:
      * @param recv_size Recv flow control window size (local_data_limit for RecvStream), 0 means same as send_size
      * @return Stream instance or nullptr on error
      */
-    std::shared_ptr<IStream> MakeStream(uint32_t send_size, uint64_t stream_id, StreamDirection type, uint32_t recv_size = 0);
+    std::shared_ptr<IStream> MakeStream(
+        uint32_t send_size, uint64_t stream_id, StreamDirection type, uint32_t recv_size = 0);
 
     // ==================== Stream Closure ====================
 
@@ -113,7 +114,8 @@ public:
      * @param recv_size Recv flow control window size (local_data_limit), 0 means same as send_size
      * @return Stream instance or nullptr on error
      */
-    std::shared_ptr<IStream> CreateRemoteStream(uint32_t send_size, uint64_t stream_id, StreamDirection direction, uint32_t recv_size = 0);
+    std::shared_ptr<IStream> CreateRemoteStream(
+        uint32_t send_size, uint64_t stream_id, StreamDirection direction, uint32_t recv_size = 0);
 
     // ==================== Stream ACK Notification ====================
 
@@ -173,9 +175,7 @@ public:
      * @brief Check if there are active streams pending send
      * @return true if active streams exist, false otherwise
      */
-    bool HasActiveStreams() const {
-        return !active_streams_.IsEmpty();
-    }
+    bool HasActiveStreams() const { return !active_streams_.IsEmpty(); }
 
     /**
      * @brief Check if there are active streams that can send at the given encryption level

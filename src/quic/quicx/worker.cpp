@@ -1,14 +1,14 @@
 #include <sstream>
 #include <thread>
 
+#include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "common/log/log.h"
 #include "common/log/log_context.h"
 #include "common/qlog/qlog.h"
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 
-#include "quic/common/version.h"
 #include "quic/common/constants.h"
+#include "quic/common/version.h"
 #include "quic/config.h"
 #include "quic/packet/init_packet.h"
 #include "quic/quicx/global_resource.h"
@@ -105,7 +105,7 @@ void Worker::ProcessSend() {
         // The cap is centralized in quic/config.h::kMaxPacketsPerRound so
         // benchmark sweeps only touch one place.
         int packets_sent = 0;
-        
+
         // Install the per-round batch sink so SendBuffer() inside TrySend()
         // appends NetPackets here instead of calling sender_->Send() per
         // packet. We always clear the sink first so a previous iteration's
@@ -113,9 +113,39 @@ void Worker::ProcessSend() {
         tx_batch.clear();
         conn->SetSendSink(&tx_batch);
 
-        while (packets_sent < kMaxPacketsPerRound && conn->TrySend()) {
+        // PERF (P2): drain via TrySendBurst with a real budget so the
+        // connection emits as many back-to-back packets as the round
+        // allows *in a single call*. Inside one burst, the per-packet
+        // setup (encryption-level scheduler context, cryptographer,
+        // packet-builder fixed fields, key phase, CID managers, padding/
+        // min_size policy, token) is hoisted out of the inner loop —
+        // each iteration of the burst only redoes the work that actually
+        // changes (cwnd headroom, FC slack, pending frames, chunk alloc,
+        // build, send, post-send bookkeeping).
+        //
+        // The outer while-drain (replaces the legacy `while(TrySend())`
+        // loop) is kept so that whatever a single burst cannot decide
+        // for itself gets a chance to be re-evaluated *between* bursts:
+        //   - encryption-level switch (burst is sticky on one level)
+        //   - retransmit ↔ new-data flip (NeedReSend() is checked once
+        //     per TrySendBurst entry)
+        //   - new pending frames / ACKs queued by a callback that fired
+        //     while the burst was running
+        // It is also the only path that can unwedge a burst that broke
+        // out early on a transient cwnd/FC condition that has since
+        // cleared. Per-round packet cap (kMaxPacketsPerRound) is enforced
+        // here, not inside the burst, so the burst budget shrinks as we
+        // approach the cap.
+        while (packets_sent < kMaxPacketsPerRound) {
+            int budget = kMaxPacketsPerRound - packets_sent;
+            int n = conn->TrySendBurst(budget);
+            if (n <= 0) {
+                break;
+            }
+            packets_sent += n;
+        }
+        if (packets_sent > 0) {
             has_more_data = true;
-            packets_sent++;
         }
 
         // Detach the sink BEFORE flushing so any sender_->Send() fallback
@@ -133,8 +163,7 @@ void Worker::ProcessSend() {
                 // Already logged inside SendBatch with detail; this is a
                 // cheap counter-side signal so a steady stream of short-
                 // writes shows up in conn-level logs too.
-                LOG_DEBUG("ProcessSend: SendBatch sent %u/%zu",
-                          sent, tx_batch.size());
+                LOG_DEBUG("ProcessSend: SendBatch sent %u/%zu", sent, tx_batch.size());
             }
             // Drop refs immediately so the underlying buffers can be
             // recycled by their pool before the next connection's drain.
@@ -148,10 +177,8 @@ void Worker::ProcessSend() {
         // kMaxPacketsPerRound (in quic/config.h) would help. We sample
         // whether we sent zero packets too — that means we entered
         // ProcessSend without anything to do.
-        common::Metrics::HistogramObserve(
-            common::MetricsStd::DiagPktPerIterHist,
-            static_cast<uint64_t>(packets_sent));
-        
+        common::Metrics::HistogramObserve(common::MetricsStd::DiagPktPerIterHist, static_cast<uint64_t>(packets_sent));
+
         // If we hit the limit, keep connection in active set for next round
         if (packets_sent >= kMaxPacketsPerRound) {
             has_more_data = true;
@@ -218,8 +245,8 @@ void Worker::HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnectio
         prev_ptr = (void*)conn_map_[cid.Hash()].get();
     }
     conn_map_[cid.Hash()] = conn;
-    LOG_INFO("[DISPATCH-TRACE] add_cid cid_hash=%llu conn=%p was_present=%d prev=%p conn_map=%zu",
-        cid.Hash(), (void*)conn.get(), was_present ? 1 : 0, prev_ptr, conn_map_.size());
+    LOG_INFO("[DISPATCH-TRACE] add_cid cid_hash=%llu conn=%p was_present=%d prev=%p conn_map=%zu", cid.Hash(),
+        (void*)conn.get(), was_present ? 1 : 0, prev_ptr, conn_map_.size());
     LOG_DEBUG("add connection id to client worker. cid:%llu", cid.Hash());
     if (auto notify = connection_id_notify_.lock()) {
         notify->AddConnectionID(cid, GetWorkerId());
@@ -228,8 +255,7 @@ void Worker::HandleAddConnectionId(ConnectionID& cid, std::shared_ptr<IConnectio
 
 void Worker::HandleRetireConnectionId(ConnectionID& cid) {
     size_t erased = conn_map_.erase(cid.Hash());
-    LOG_INFO("[DISPATCH-TRACE] retire_cid cid_hash=%llu erased=%zu conn_map=%zu",
-        cid.Hash(), erased, conn_map_.size());
+    LOG_INFO("[DISPATCH-TRACE] retire_cid cid_hash=%llu erased=%zu conn_map=%zu", cid.Hash(), erased, conn_map_.size());
     if (auto notify = connection_id_notify_.lock()) {
         notify->RetireConnectionID(cid, GetWorkerId());
     }
@@ -238,21 +264,20 @@ void Worker::HandleRetireConnectionId(ConnectionID& cid) {
 void Worker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     LOG_DEBUG("Worker::HandleHandshakeDone called, connecting_set size=%zu", connecting_set_.size());
     bool in_connecting = connecting_set_.find(conn) != connecting_set_.end();
-    LOG_INFO("[DISPATCH-TRACE] handshake_done conn=%p scid_hash=%llu in_connecting=%d "
-             "conn_map=%zu connecting_set=%zu",
-        (void*)conn.get(), conn->GetConnectionIDHash(), in_connecting ? 1 : 0,
-        conn_map_.size(), connecting_set_.size());
+    LOG_INFO(
+        "[DISPATCH-TRACE] handshake_done conn=%p scid_hash=%llu in_connecting=%d "
+        "conn_map=%zu connecting_set=%zu",
+        (void*)conn.get(), conn->GetConnectionIDHash(), in_connecting ? 1 : 0, conn_map_.size(),
+        connecting_set_.size());
     if (in_connecting) {
         LOG_DEBUG("Connection found in connecting_set, moving to conn_map");
         connecting_set_.erase(conn);
         conn_map_[conn->GetConnectionIDHash()] = conn;
-        LOG_DEBUG(
-            "Added to conn_map with hash=%llu, conn_map size=%zu", conn->GetConnectionIDHash(), conn_map_.size());
+        LOG_DEBUG("Added to conn_map with hash=%llu, conn_map size=%zu", conn->GetConnectionIDHash(), conn_map_.size());
 
         // Check if 0-RTT early data write key is available: if so, this is an early connection
         const bool early = conn->HasEarlyDataWriteKey();
-        ConnectionOperation op = early ? ConnectionOperation::kEarlyConnection
-                                       : ConnectionOperation::kConnectionCreate;
+        ConnectionOperation op = early ? ConnectionOperation::kEarlyConnection : ConnectionOperation::kConnectionCreate;
         connection_handler_(conn, op, 0, "");
     } else {
         // Connection already moved out of connecting_set (e.g. early connection triggered earlier).
@@ -315,12 +340,12 @@ void Worker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint64_t e
     // Also remove from connecting_set if still there
     bool was_connecting = connecting_set_.erase(conn) > 0;
 
-    LOG_INFO("[DISPATCH-TRACE] conn_close conn=%p scid_hash=%llu err=%llu reason=\"%s\" "
-             "local_removed=%zu orphan_removed=%zu was_connecting=%d "
-             "conn_map=%zu connecting_set=%zu",
-        (void*)conn.get(), conn->GetConnectionIDHash(), (unsigned long long)error, reason.c_str(),
-        local_removed, orphan_removed, was_connecting ? 1 : 0,
-        conn_map_.size(), connecting_set_.size());
+    LOG_INFO(
+        "[DISPATCH-TRACE] conn_close conn=%p scid_hash=%llu err=%llu reason=\"%s\" "
+        "local_removed=%zu orphan_removed=%zu was_connecting=%d "
+        "conn_map=%zu connecting_set=%zu",
+        (void*)conn.get(), conn->GetConnectionIDHash(), (unsigned long long)error, reason.c_str(), local_removed,
+        orphan_removed, was_connecting ? 1 : 0, conn_map_.size(), connecting_set_.size());
 
     connection_handler_(conn, ConnectionOperation::kConnectionClose, error, reason);
 }

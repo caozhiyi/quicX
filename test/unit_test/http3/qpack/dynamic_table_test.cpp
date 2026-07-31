@@ -1,15 +1,13 @@
-#include <gtest/gtest.h>
 #include "http3/qpack/dynamic_table.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace http3 {
 namespace {
 
-class DynamicTableTest : public testing::Test {
+class DynamicTableTest: public testing::Test {
 protected:
-    void SetUp() override {
-        table_ = std::make_unique<DynamicTable>(1024);
-    }
+    void SetUp() override { table_ = std::make_unique<DynamicTable>(1024); }
 
     std::unique_ptr<DynamicTable> table_;
 };
@@ -17,7 +15,7 @@ protected:
 TEST_F(DynamicTableTest, InsertAndLookup) {
     // Insert a header field
     EXPECT_TRUE(table_->AddHeaderItem("content-type", "application/json"));
-    
+
     // Look up the inserted field
     auto item = table_->FindHeaderItem(0);
     EXPECT_EQ(item->name_, "content-type");
@@ -48,10 +46,10 @@ TEST_F(DynamicTableTest, CapacityEviction) {
     table_->UpdateMaxTableSize(100);
 
     // Insert enough entries to trigger eviction
-    EXPECT_TRUE(table_->AddHeaderItem("header1", "value1")); // ~32 bytes
-    EXPECT_TRUE(table_->AddHeaderItem("header2", "value2")); // ~32 bytes
-    EXPECT_TRUE(table_->AddHeaderItem("header3", "value3")); // ~32 bytes
-    EXPECT_TRUE(table_->AddHeaderItem("header4", "value4")); // ~32 bytes
+    EXPECT_TRUE(table_->AddHeaderItem("header1", "value1"));  // ~32 bytes
+    EXPECT_TRUE(table_->AddHeaderItem("header2", "value2"));  // ~32 bytes
+    EXPECT_TRUE(table_->AddHeaderItem("header3", "value3"));  // ~32 bytes
+    EXPECT_TRUE(table_->AddHeaderItem("header4", "value4"));  // ~32 bytes
 
     // Verify old entries are evicted
     auto item = table_->FindHeaderItem(0);
@@ -74,14 +72,14 @@ TEST_F(DynamicTableTest, ResizeTable) {
 
     // Verify entries are evicted
     EXPECT_EQ(table_->FindHeaderItem(1), nullptr);
-    
+
     auto item = table_->FindHeaderItem(0);
     EXPECT_EQ(item->name_, "header2");
     EXPECT_EQ(item->value_, "value2");
 
     // Increase table size
     table_->UpdateMaxTableSize(200);
-    EXPECT_TRUE(table_->AddHeaderItem("header3", "value3")); // Should be able to insert new entry
+    EXPECT_TRUE(table_->AddHeaderItem("header3", "value3"));  // Should be able to insert new entry
 }
 
 TEST_F(DynamicTableTest, DuplicateEntries) {
@@ -106,8 +104,8 @@ TEST_F(DynamicTableTest, InvalidLookup) {
 
     // Try to look up invalid indices
     EXPECT_TRUE(table_->FindHeaderItem(0) != nullptr);  // Index 0 is valid
-    EXPECT_EQ(table_->FindHeaderItem(2), nullptr);  // Index 2 doesn't exist
-    EXPECT_EQ(table_->FindHeaderItem(100), nullptr); // Large index doesn't exist
+    EXPECT_EQ(table_->FindHeaderItem(2), nullptr);      // Index 2 doesn't exist
+    EXPECT_EQ(table_->FindHeaderItem(100), nullptr);    // Large index doesn't exist
 }
 
 TEST_F(DynamicTableTest, EmptyStrings) {
@@ -126,11 +124,11 @@ TEST_F(DynamicTableTest, SizeCalculation) {
     table_->AddHeaderItem("test", "value");
     EXPECT_EQ(table_->GetTableSize(), 41);
 
-    // size = name(3) + value(3) + overhead(32) 
+    // size = name(3) + value(3) + overhead(32)
     table_->AddHeaderItem("foo", "bar");
     EXPECT_EQ(table_->GetTableSize(), 79);
 
-    // size = name(1) + value(1) + overhead(32) = 34 
+    // size = name(1) + value(1) + overhead(32) = 34
     table_->AddHeaderItem("x", "y");
     EXPECT_EQ(table_->GetTableSize(), 113);
 }

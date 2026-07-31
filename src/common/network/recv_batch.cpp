@@ -27,9 +27,9 @@
 #include <cstring>
 
 #ifdef _WIN32
+#include <mswsock.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <mswsock.h>
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -135,8 +135,7 @@ constexpr int kRecvBatchFlag = MSG_DONTWAIT;
 
 }  // namespace
 
-SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries,
-                                 uint32_t entries_count, bool want_ecn) {
+SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries, uint32_t entries_count, bool want_ecn) {
     if (entries == nullptr || entries_count == 0) {
         return {0, 0};
     }
@@ -153,10 +152,10 @@ SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries,
     // wiring loop below, and slots beyond `entries_count` are never read.
     // mmsgs[] is memset-zeroed for the kernel's strict expectation that
     // unused msghdr fields (msg_flags, padding) start at 0.
-    MMsghdr           mmsgs[kMaxBatch];
-    Iovec             iovs [kMaxBatch];
-    sockaddr_storage  addrs[kMaxBatch];
-    char              cmsg_pool[kMaxBatch * kCmsgPerDgram];
+    MMsghdr mmsgs[kMaxBatch];
+    Iovec iovs[kMaxBatch];
+    sockaddr_storage addrs[kMaxBatch];
+    char cmsg_pool[kMaxBatch * kCmsgPerDgram];
 
     std::memset(mmsgs, 0, sizeof(MMsghdr) * entries_count);
     std::memset(addrs, 0, sizeof(sockaddr_storage) * entries_count);
@@ -166,31 +165,30 @@ SysCallInt32Result RecvFromBatch(int32_t sockfd, RecvBatchEntry* entries,
     // receive maps to exactly one buffer.
     for (uint32_t i = 0; i < entries_count; ++i) {
         iovs[i].iov_base_ = entries[i].buf_;
-        iovs[i].iov_len_  = entries[i].buf_len_;
+        iovs[i].iov_len_ = entries[i].buf_len_;
 
         Msghdr& h = mmsgs[i].msg_hdr_;
-        h.msg_name_       = &addrs[i];
-        h.msg_namelen_    = sizeof(addrs[i]);
-        h.msg_iov_        = &iovs[i];
-        h.msg_iovlen_     = 1;
+        h.msg_name_ = &addrs[i];
+        h.msg_namelen_ = sizeof(addrs[i]);
+        h.msg_iov_ = &iovs[i];
+        h.msg_iovlen_ = 1;
         // Always supply a cmsg buffer so that, if the socket happens to
         // be configured to deliver ancillary data, the kernel does not
         // set MSG_CTRUNC. Cost is negligible (one stack memset).
-        h.msg_control_    = cmsg_pool + (i * kCmsgPerDgram);
+        h.msg_control_ = cmsg_pool + (i * kCmsgPerDgram);
         h.msg_controllen_ = kCmsgPerDgram;
-        h.msg_flags_      = 0;
+        h.msg_flags_ = 0;
 
         // Pre-zero the output fields the caller will read on success.
         entries[i].bytes_ = 0;
-        entries[i].ecn_   = 0;
+        entries[i].ecn_ = 0;
     }
 
     // The platform-specific work — actually pulling datagrams off the
     // socket — is fully encapsulated by RecvmMsg(). On Linux that's
     // recvmmsg(2); on macOS/Windows it's a recvmsg loop with EAGAIN
     // early-exit (see io_handle.cpp on each platform).
-    SysCallInt32Result rc = RecvmMsg(sockfd, mmsgs, entries_count,
-                                     kRecvBatchFlag, /*time_out=*/0);
+    SysCallInt32Result rc = RecvmMsg(sockfd, mmsgs, entries_count, kRecvBatchFlag, /*time_out=*/0);
     if (rc.return_value_ <= 0) {
         // Either real error or "0 datagrams + 0 errno" (socket empty).
         // Either way, nothing to copy into entries; pass result through.

@@ -4,8 +4,8 @@
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/log/log.h"
 
-#include "quic/packet/header/short_header.h"
 #include "quic/config.h"
+#include "quic/packet/header/short_header.h"
 
 namespace quicx {
 namespace quic {

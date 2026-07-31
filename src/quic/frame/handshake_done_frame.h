@@ -6,14 +6,14 @@
 namespace quicx {
 namespace quic {
 
-class HandshakeDoneFrame:
-    public IFrame {
+class HandshakeDoneFrame: public IFrame {
 public:
-    HandshakeDoneFrame(): IFrame(FrameType::kHandshakeDone) {}
+    HandshakeDoneFrame():
+        IFrame(FrameType::kHandshakeDone) {}
     ~HandshakeDoneFrame() {}
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

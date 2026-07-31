@@ -13,8 +13,7 @@ namespace quic {
 /*
  pool packet allotor, alloc packet from pool memory
 */
-class PoolPacketAllotor:
-    public NormalPacketAllotor {
+class PoolPacketAllotor: public NormalPacketAllotor {
 public:
     PoolPacketAllotor();
     virtual ~PoolPacketAllotor();
@@ -29,7 +28,7 @@ private:
     common::ThreadSafeQueue<NetPacket*> packet_queue_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

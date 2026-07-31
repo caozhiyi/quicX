@@ -43,8 +43,7 @@ namespace perf {
 static constexpr size_t kBufCap = 4096;
 
 static std::shared_ptr<common::SingleBlockBuffer> MakeBuffer(size_t cap = kBufCap) {
-    return std::make_shared<common::SingleBlockBuffer>(
-        std::make_shared<common::StandaloneBufferChunk>(cap));
+    return std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(cap));
 }
 
 // Helper: encode a frame, produce a raw byte vector that can be re-fed into
@@ -155,8 +154,22 @@ static std::shared_ptr<quic::ConnectionCloseFrame> MakeConnectionCloseFrame() {
 }
 
 static uint8_t g_token_storage[64] = {
-    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-    0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    0x01,
+    0x02,
+    0x03,
+    0x04,
+    0x05,
+    0x06,
+    0x07,
+    0x08,
+    0x09,
+    0x0a,
+    0x0b,
+    0x0c,
+    0x0d,
+    0x0e,
+    0x0f,
+    0x10,
 };
 
 static std::shared_ptr<quic::NewTokenFrame> MakeNewTokenFrame() {
@@ -316,14 +329,22 @@ BENCHMARK(quicx::perf::BM_Frame_Decode_HandshakeDone)->Unit(benchmark::kNanoseco
 
 // Ack frame with many ranges (real-world hot case on loss-heavy links).
 BENCHMARK(quicx::perf::BM_Frame_AckFrame_ManyRanges_Encode)
-    ->Arg(1)->Arg(16)->Arg(64)->Arg(128)
+    ->Arg(1)
+    ->Arg(16)
+    ->Arg(64)
+    ->Arg(128)
     ->Unit(benchmark::kNanosecond);
 BENCHMARK(quicx::perf::BM_Frame_AckFrame_ManyRanges_Decode)
-    ->Arg(1)->Arg(16)->Arg(64)->Arg(128)
+    ->Arg(1)
+    ->Arg(16)
+    ->Arg(64)
+    ->Arg(128)
     ->Unit(benchmark::kNanosecond);
 
 BENCHMARK_MAIN();
 
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif

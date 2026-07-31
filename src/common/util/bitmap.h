@@ -1,8 +1,8 @@
 #ifndef COMMON_UTIL_BITMAP
 #define COMMON_UTIL_BITMAP
 
-#include <vector>
 #include <cstdint>
+#include <vector>
 
 namespace quicx {
 namespace common {
@@ -23,7 +23,7 @@ public:
 
     // return true even the bit is not in bitmap
     bool Remove(uint32_t index);
-    
+
     // get min index after input param
     // if return -1, means the bitmap has no value
     int32_t GetMinAfter(uint32_t index = 0);
@@ -40,7 +40,7 @@ private:
     std::vector<int64_t> bitmap_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

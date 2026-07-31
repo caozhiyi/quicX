@@ -3,13 +3,9 @@
 namespace quicx {
 namespace http3 {
 
-QpackBlockedRegistry::QpackBlockedRegistry() {
+QpackBlockedRegistry::QpackBlockedRegistry() {}
 
-}
-
-QpackBlockedRegistry::~QpackBlockedRegistry() {
-
-}
+QpackBlockedRegistry::~QpackBlockedRegistry() {}
 
 bool QpackBlockedRegistry::Add(uint64_t key, const std::function<void()>& retry_fn) {
     // RFC 9204 Section 2.1.2: Check if we've reached the max blocked streams limit
@@ -110,5 +106,5 @@ bool QpackBlockedRegistry::RemoveByStreamId(uint64_t stream_id) {
     return true;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

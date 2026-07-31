@@ -49,7 +49,7 @@ inline uint8_t LargeBodyByteAt(size_t index) {
 
 // ==================== Test Fixture ====================
 
-class LossyTransferTest : public ::testing::Test {
+class LossyTransferTest: public ::testing::Test {
 protected:
     std::shared_ptr<quicx::IServer> server_;
     std::thread server_thread_;
@@ -63,9 +63,9 @@ protected:
     // field defaults to "off", so an existing call site that passes only
     // a drop_per_million still gets the original semantics.
     struct FaultProfile {
-        uint32_t drop_per_million = 0;   // 0 = no random loss
-        uint64_t rate_limit_bps   = 0;   // 0 = unlimited
-        uint32_t egress_delay_ms  = 0;   // 0 = immediate
+        uint32_t drop_per_million = 0;  // 0 = no random loss
+        uint64_t rate_limit_bps = 0;    // 0 = unlimited
+        uint32_t egress_delay_ms = 0;   // 0 = immediate
     };
 
     void SetUp() override {
@@ -139,7 +139,7 @@ protected:
     // Streaming download handler that verifies the deterministic byte pattern
     // incrementally. Identical to StreamingAndPushTest's helper so failures
     // are directly comparable.
-    class StreamingDownloadHandler : public quicx::IAsyncClientHandler {
+    class StreamingDownloadHandler: public quicx::IAsyncClientHandler {
     public:
         void OnHeaders(std::shared_ptr<quicx::IResponse> response) override {
             status_code = response->GetStatusCode();
@@ -176,20 +176,16 @@ protected:
     // client, with the fault profile `fp` applied for the whole transfer.
     // Returns the handler so the caller can assert details.
     std::shared_ptr<StreamingDownloadHandler> RunLossyDownload(
-        size_t total_size,
-        const FaultProfile& fp,
-        std::chrono::seconds budget) {
+        size_t total_size, const FaultProfile& fp, std::chrono::seconds budget) {
         StartServer();
 
         const size_t total_bytes = total_size;
         server_->AddHandler(quicx::HttpMethod::kGet, "/download-large",
-            [total_bytes](std::shared_ptr<quicx::IRequest> req,
-                          std::shared_ptr<quicx::IResponse> resp) {
+            [total_bytes](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
                 resp->SetStatusCode(200);
                 auto sent = std::make_shared<size_t>(0);
                 resp->AddHeader("content-length", std::to_string(total_bytes));
-                resp->SetResponseBodyProvider([sent, total_bytes](uint8_t* buf,
-                                                                  size_t buf_size) -> size_t {
+                resp->SetResponseBodyProvider([sent, total_bytes](uint8_t* buf, size_t buf_size) -> size_t {
                     if (*sent >= total_bytes) {
                         return 0;
                     }
@@ -242,8 +238,7 @@ protected:
                 // received is the bug fingerprint we're hunting.
                 auto stuck_for = std::chrono::steady_clock::now() - last_progress_ts;
                 if (stuck_for > std::chrono::seconds(3)) {
-                    ::testing::Test::RecordProperty(
-                        "stuck_bytes", std::to_string(last_received));
+                    ::testing::Test::RecordProperty("stuck_bytes", std::to_string(last_received));
                 }
             }
         }
@@ -257,9 +252,7 @@ protected:
 
     // Backwards-compat overload: existing tests just pass a drop rate.
     std::shared_ptr<StreamingDownloadHandler> RunLossyDownload(
-        size_t total_size,
-        uint32_t drop_per_million,
-        std::chrono::seconds budget) {
+        size_t total_size, uint32_t drop_per_million, std::chrono::seconds budget) {
         FaultProfile fp;
         fp.drop_per_million = drop_per_million;
         return RunLossyDownload(total_size, fp, budget);
@@ -308,8 +301,7 @@ const char LossyTransferTest::key_pem_[] =
 // LargeBodyDownload5MB exactly. This guards against the fault-injection patch
 // regressing the happy path.
 TEST_F(LossyTransferTest, BaselineNoLoss5MB) {
-    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/0,
-                                     std::chrono::seconds(60));
+    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/0, std::chrono::seconds(60));
     ASSERT_NE(handler, nullptr);
     EXPECT_TRUE(handler->completed.load());
     EXPECT_EQ(handler->status_code, 200);
@@ -323,12 +315,9 @@ TEST_F(LossyTransferTest, BaselineNoLoss5MB) {
 // 1% loss on a 1 MiB transfer. With a healthy stack this finishes well under
 // 30 s on loopback. EXPECTED to pass: this is the "should still work" floor.
 TEST_F(LossyTransferTest, OnePercentLoss1MB) {
-    auto handler = RunLossyDownload(kOneMegabyte, /*drop_pm=*/10'000,
-                                     std::chrono::seconds(30));
+    auto handler = RunLossyDownload(kOneMegabyte, /*drop_pm=*/10'000, std::chrono::seconds(30));
     ASSERT_NE(handler, nullptr);
-    EXPECT_TRUE(handler->completed.load())
-        << "1MB stuck under 1% loss; received="
-        << handler->received.load();
+    EXPECT_TRUE(handler->completed.load()) << "1MB stuck under 1% loss; received=" << handler->received.load();
     EXPECT_EQ(handler->error, 0u);
     EXPECT_EQ(handler->received.load(), kOneMegabyte);
 }
@@ -337,12 +326,9 @@ TEST_F(LossyTransferTest, OnePercentLoss1MB) {
 // sim transfer-loss case. With the bug present we expect the transfer to
 // stall part-way through and the test to fail by timeout.
 TEST_F(LossyTransferTest, OnePercentLoss5MB) {
-    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/10'000,
-                                     std::chrono::seconds(45));
+    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/10'000, std::chrono::seconds(45));
     ASSERT_NE(handler, nullptr);
-    EXPECT_TRUE(handler->completed.load())
-        << "5MB stuck under 1% loss; received="
-        << handler->received.load();
+    EXPECT_TRUE(handler->completed.load()) << "5MB stuck under 1% loss; received=" << handler->received.load();
     EXPECT_EQ(handler->error, 0u);
     EXPECT_EQ(handler->received.load(), kFiveMegabyte);
 }
@@ -351,12 +337,9 @@ TEST_F(LossyTransferTest, OnePercentLoss5MB) {
 // "consistent stall". If only this case fails, the bug is loss-density
 // dependent; if both 1% and 5% fail, it's a deterministic state-machine bug.
 TEST_F(LossyTransferTest, FivePercentLoss5MB) {
-    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/50'000,
-                                     std::chrono::seconds(60));
+    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/50'000, std::chrono::seconds(60));
     ASSERT_NE(handler, nullptr);
-    EXPECT_TRUE(handler->completed.load())
-        << "5MB stuck under 5% loss; received="
-        << handler->received.load();
+    EXPECT_TRUE(handler->completed.load()) << "5MB stuck under 5% loss; received=" << handler->received.load();
     EXPECT_EQ(handler->error, 0u);
     EXPECT_EQ(handler->received.load(), kFiveMegabyte);
 }
@@ -367,24 +350,18 @@ TEST_F(LossyTransferTest, FivePercentLoss5MB) {
 // DISABLED because it can flake on CI; run explicitly with
 //   --gtest_also_run_disabled_tests --gtest_filter='*HighLoss*'
 TEST_F(LossyTransferTest, DISABLED_TenPercentLoss5MB) {
-    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/100'000,
-                                     std::chrono::seconds(120));
+    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/100'000, std::chrono::seconds(120));
     ASSERT_NE(handler, nullptr);
-    EXPECT_TRUE(handler->completed.load())
-        << "5MB stuck under 10% loss; received="
-        << handler->received.load();
+    EXPECT_TRUE(handler->completed.load()) << "5MB stuck under 10% loss; received=" << handler->received.load();
     EXPECT_EQ(handler->received.load(), kFiveMegabyte);
 }
 
 // 20% loss. Extreme stress. Useful when manually hunting for stalls; not part
 // of the default suite because it's deliberately brutal.
 TEST_F(LossyTransferTest, DISABLED_TwentyPercentLoss5MB) {
-    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/200'000,
-                                     std::chrono::seconds(180));
+    auto handler = RunLossyDownload(kFiveMegabyte, /*drop_pm=*/200'000, std::chrono::seconds(180));
     ASSERT_NE(handler, nullptr);
-    EXPECT_TRUE(handler->completed.load())
-        << "5MB stuck under 20% loss; received="
-        << handler->received.load();
+    EXPECT_TRUE(handler->completed.load()) << "5MB stuck under 20% loss; received=" << handler->received.load();
     EXPECT_EQ(handler->received.load(), kFiveMegabyte);
 }
 
@@ -415,14 +392,12 @@ TEST_F(LossyTransferTest, DISABLED_TwentyPercentLoss5MB) {
 // nothing to do with packet recovery. Useful as a control test.
 TEST_F(LossyTransferTest, DISABLED_SimMirror1MbpsNoLoss5MB) {
     FaultProfile fp;
-    fp.rate_limit_bps  = 125'000;   // 1 Mbps
-    fp.egress_delay_ms = 5;          // 10 ms RTT
-    auto handler = RunLossyDownload(kFiveMegabyte, fp,
-                                     std::chrono::seconds(120));
+    fp.rate_limit_bps = 125'000;  // 1 Mbps
+    fp.egress_delay_ms = 5;       // 10 ms RTT
+    auto handler = RunLossyDownload(kFiveMegabyte, fp, std::chrono::seconds(120));
     ASSERT_NE(handler, nullptr);
     EXPECT_TRUE(handler->completed.load())
-        << "5MB stuck under sim-mirror (1Mbps + 5ms, no loss); received="
-        << handler->received.load();
+        << "5MB stuck under sim-mirror (1Mbps + 5ms, no loss); received=" << handler->received.load();
     EXPECT_EQ(handler->error, 0u);
     EXPECT_EQ(handler->received.load(), kFiveMegabyte);
 }
@@ -435,15 +410,13 @@ TEST_F(LossyTransferTest, DISABLED_SimMirror1MbpsNoLoss5MB) {
 // 50-90s when healthy.
 TEST_F(LossyTransferTest, DISABLED_SimMirror1Mbps1pctLoss5MB) {
     FaultProfile fp;
-    fp.drop_per_million = 10'000;    // 1% loss
-    fp.rate_limit_bps   = 125'000;   // 1 Mbps
-    fp.egress_delay_ms  = 5;          // 10 ms RTT
-    auto handler = RunLossyDownload(kFiveMegabyte, fp,
-                                     std::chrono::seconds(180));
+    fp.drop_per_million = 10'000;  // 1% loss
+    fp.rate_limit_bps = 125'000;   // 1 Mbps
+    fp.egress_delay_ms = 5;        // 10 ms RTT
+    auto handler = RunLossyDownload(kFiveMegabyte, fp, std::chrono::seconds(180));
     ASSERT_NE(handler, nullptr);
     EXPECT_TRUE(handler->completed.load())
-        << "5MB stuck under sim-mirror (1Mbps + 5ms + 1% loss); received="
-        << handler->received.load();
+        << "5MB stuck under sim-mirror (1Mbps + 5ms + 1% loss); received=" << handler->received.load();
     EXPECT_EQ(handler->received.load(), kFiveMegabyte);
 }
 
@@ -453,14 +426,12 @@ TEST_F(LossyTransferTest, DISABLED_SimMirror1Mbps1pctLoss5MB) {
 TEST_F(LossyTransferTest, DISABLED_SimMirror1Mbps1pctLoss1MB) {
     FaultProfile fp;
     fp.drop_per_million = 10'000;
-    fp.rate_limit_bps   = 125'000;
-    fp.egress_delay_ms  = 5;
-    auto handler = RunLossyDownload(kOneMegabyte, fp,
-                                     std::chrono::seconds(60));
+    fp.rate_limit_bps = 125'000;
+    fp.egress_delay_ms = 5;
+    auto handler = RunLossyDownload(kOneMegabyte, fp, std::chrono::seconds(60));
     ASSERT_NE(handler, nullptr);
     EXPECT_TRUE(handler->completed.load())
-        << "1MB stuck under sim-mirror (1Mbps + 5ms + 1% loss); received="
-        << handler->received.load();
+        << "1MB stuck under sim-mirror (1Mbps + 5ms + 1% loss); received=" << handler->received.load();
     EXPECT_EQ(handler->received.load(), kOneMegabyte);
 }
 
@@ -471,14 +442,12 @@ TEST_F(LossyTransferTest, DISABLED_SimMirror1Mbps1pctLoss1MB) {
 TEST_F(LossyTransferTest, DISABLED_SimMirror2Mbps1pctLoss5MB) {
     FaultProfile fp;
     fp.drop_per_million = 10'000;
-    fp.rate_limit_bps   = 250'000;   // 2 Mbps
-    fp.egress_delay_ms  = 5;
-    auto handler = RunLossyDownload(kFiveMegabyte, fp,
-                                     std::chrono::seconds(120));
+    fp.rate_limit_bps = 250'000;  // 2 Mbps
+    fp.egress_delay_ms = 5;
+    auto handler = RunLossyDownload(kFiveMegabyte, fp, std::chrono::seconds(120));
     ASSERT_NE(handler, nullptr);
     EXPECT_TRUE(handler->completed.load())
-        << "5MB stuck under sim-mirror (2Mbps + 5ms + 1% loss); received="
-        << handler->received.load();
+        << "5MB stuck under sim-mirror (2Mbps + 5ms + 1% loss); received=" << handler->received.load();
     EXPECT_EQ(handler->received.load(), kFiveMegabyte);
 }
 

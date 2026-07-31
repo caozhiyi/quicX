@@ -10,8 +10,7 @@ namespace quic {
 static const uint16_t kPathDataLength = 8;
 
 class PathResponseFrame;
-class PathChallengeFrame:
-    public IFrame {
+class PathChallengeFrame: public IFrame {
 public:
     PathChallengeFrame();
     ~PathChallengeFrame();
@@ -30,7 +29,7 @@ private:
     static std::shared_ptr<common::RangeRandom> random_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

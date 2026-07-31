@@ -77,19 +77,23 @@ int main(int argc, char** argv) {
     const char* out = "/tmp/qpack_encode_stacks.raw";
     bool mute_log = true;
     for (int i = 1; i < argc; ++i) {
-        if (!std::strcmp(argv[i], "--hz") && i + 1 < argc) hz = std::atoi(argv[++i]);
-        else if (!std::strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = std::atoi(argv[++i]);
-        else if (!std::strcmp(argv[i], "--cookies") && i + 1 < argc) n_cookies = std::atoi(argv[++i]);
-        else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
-        else if (!std::strcmp(argv[i], "--keep-log")) mute_log = false;
+        if (!std::strcmp(argv[i], "--hz") && i + 1 < argc)
+            hz = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--seconds") && i + 1 < argc)
+            seconds = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--cookies") && i + 1 < argc)
+            n_cookies = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--out") && i + 1 < argc)
+            out = argv[++i];
+        else if (!std::strcmp(argv[i], "--keep-log"))
+            mute_log = false;
     }
     if (mute_log) {
         LOG_SET_LEVEL(common::LogLevel::kNull);
     }
 
     auto headers = MakeLargeRequestHeaders(n_cookies);
-    std::fprintf(stderr, "profile_qpack_encode: %zu headers (cookies=%d)\n",
-                 headers.size(), n_cookies);
+    std::fprintf(stderr, "profile_qpack_encode: %zu headers (cookies=%d)\n", headers.size(), n_cookies);
 
     // Dump /proc/self/maps for the offline resolver.
     {
@@ -119,16 +123,15 @@ int main(int argc, char** argv) {
         for (int k = 0; k < 64; ++k) {
             auto buf = MakeBuffer();
             bool ok = encoder.Encode(headers, buf);
-            (void) ok;
+            (void)ok;
             ++iters;
         }
     }
     prof.Stop();
     auto t1 = std::chrono::steady_clock::now();
     double elapsed_s = std::chrono::duration<double>(t1 - t0).count();
-    std::fprintf(stderr, "encoded %lu calls in %.3f s  => %.1f ns/call  (samples=%u)\n",
-                 (unsigned long)iters, elapsed_s, elapsed_s * 1e9 / iters,
-                 prof.SampleCount());
+    std::fprintf(stderr, "encoded %lu calls in %.3f s  => %.1f ns/call  (samples=%u)\n", (unsigned long)iters,
+        elapsed_s, elapsed_s * 1e9 / iters, prof.SampleCount());
 
     prof.Dump();
     return 0;

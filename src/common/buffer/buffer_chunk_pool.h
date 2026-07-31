@@ -45,8 +45,7 @@ public:
     // Returns nullptr only if `pool` is null OR allocation fails (matches
     // the failure mode of BufferChunk's ctor: an "invalid" chunk is
     // returned, just like the direct make_shared path would yield).
-    static std::shared_ptr<BufferChunk> Acquire(
-        const std::shared_ptr<BlockMemoryPool>& pool);
+    static std::shared_ptr<BufferChunk> Acquire(const std::shared_ptr<BlockMemoryPool>& pool);
 };
 
 }  // namespace common

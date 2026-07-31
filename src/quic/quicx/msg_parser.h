@@ -1,12 +1,12 @@
 #ifndef QUIC_QUICX_MSG_PARSER
 #define QUIC_QUICX_MSG_PARSER
 
-#include <vector>
 #include <memory>
+#include <vector>
 
-#include "quic/udp/net_packet.h"
-#include "quic/packet/if_packet.h"
 #include "quic/connection/connection_id.h"
+#include "quic/packet/if_packet.h"
+#include "quic/udp/net_packet.h"
 
 namespace quicx {
 namespace quic {
@@ -35,7 +35,7 @@ public:
     static bool ParsePacket(std::shared_ptr<NetPacket>& net_packet, PacketParseResult& packet_info);
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

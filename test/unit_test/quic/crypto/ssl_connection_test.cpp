@@ -273,7 +273,7 @@ static const char kKeyPem[] =
     "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
     "-----END RSA PRIVATE KEY-----\n";
 
-TEST(crypto_ssl_connection_utest, test1) {
+TEST(CryptoSslConnectionTest, test1) {
     std::shared_ptr<TLSCtx> client_ctx = std::make_shared<TLSClientCtx>();
     client_ctx->Init(true);
 

@@ -1,24 +1,22 @@
+#include "upgrade/core/version_negotiator.h"
 #include <algorithm>
 #include "upgrade/core/protocol_detector.h"
-#include "upgrade/core/version_negotiator.h"
 
 namespace quicx {
 namespace upgrade {
 
-NegotiationResult VersionNegotiator::Negotiate(
-    ConnectionContext& context, const UpgradeSettings& settings) {
-    
+NegotiationResult VersionNegotiator::Negotiate(ConnectionContext& context, const UpgradeSettings& settings) {
     // Step 1: Protocol detection (skip if already known)
     if (context.detected_protocol == Protocol::UNKNOWN) {
         if (!DetectProtocol(context)) {
             return {false, Protocol::UNKNOWN, "", {}, "Protocol detection failed"};
         }
     }
-    
+
     // Step 2: Select optimal protocol
     Protocol target = SelectBestProtocol(context, settings);
     context.target_protocol = target;
-    
+
     // Step 3: Generate upgrade strategy
     return GenerateUpgradeStrategy(context, settings);
 }
@@ -27,7 +25,7 @@ bool VersionNegotiator::DetectProtocol(ConnectionContext& context) {
     if (context.initial_data.empty()) {
         return false;
     }
-    
+
     context.detected_protocol = ProtocolDetector::Detect(context.initial_data);
     return context.detected_protocol != Protocol::UNKNOWN;
 }
@@ -55,21 +53,20 @@ Protocol VersionNegotiator::SelectBestProtocol(const ConnectionContext& context,
 
 NegotiationResult VersionNegotiator::GenerateUpgradeStrategy(
     ConnectionContext& context, const UpgradeSettings& settings) {
-    
     NegotiationResult result;
     result.target_protocol = context.target_protocol;
-    
+
     // If target protocol is the same as detected protocol, no upgrade needed
     if (context.target_protocol == context.detected_protocol) {
         result.success = true;
         return result;
     }
-    
+
     // Only support upgrade to HTTP/3
     if (context.target_protocol == Protocol::HTTP3) {
         result.success = true;
         result.upgrade_token = "h3";
-        
+
         // Generate upgrade data based on detected protocol
         switch (context.detected_protocol) {
             case Protocol::HTTP1_1:
@@ -91,11 +88,12 @@ NegotiationResult VersionNegotiator::GenerateUpgradeStrategy(
         result.success = false;
         result.error_message = "Only HTTP/3 upgrades are supported";
     }
-    
+
     return result;
 }
 
-bool VersionNegotiator::SupportsProtocol(const std::vector<std::string>& client_protocols, const std::string& protocol) {
+bool VersionNegotiator::SupportsProtocol(
+    const std::vector<std::string>& client_protocols, const std::string& protocol) {
     return std::find(client_protocols.begin(), client_protocols.end(), protocol) != client_protocols.end();
 }
 
@@ -110,10 +108,15 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP1UpgradeData(const UpgradeSe
     std::string response =
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: text/plain\r\n"
-        "Content-Length: " + std::to_string(body.size()) + "\r\n"
-        "Alt-Svc: " + alt_svc + "\r\n"
+        "Content-Length: " +
+        std::to_string(body.size()) +
+        "\r\n"
+        "Alt-Svc: " +
+        alt_svc +
+        "\r\n"
         "Connection: close\r\n"
-        "\r\n" + body;
+        "\r\n" +
+        body;
 
     return std::vector<uint8_t>(response.begin(), response.end());
 }
@@ -149,17 +152,14 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
     // length is enough. This avoids pulling in a real HPACK encoder while
     // staying spec-compliant.
 
-    auto append_frame_header = [](std::vector<uint8_t>& buf,
-                                  uint32_t payload_len,
-                                  uint8_t type,
-                                  uint8_t flags,
-                                  uint32_t stream_id) {
+    auto append_frame_header = [](std::vector<uint8_t>& buf, uint32_t payload_len, uint8_t type, uint8_t flags,
+                                   uint32_t stream_id) {
         buf.push_back(static_cast<uint8_t>((payload_len >> 16) & 0xFF));
         buf.push_back(static_cast<uint8_t>((payload_len >> 8) & 0xFF));
         buf.push_back(static_cast<uint8_t>(payload_len & 0xFF));
         buf.push_back(type);
         buf.push_back(flags);
-        buf.push_back(static_cast<uint8_t>((stream_id >> 24) & 0x7F)); // R bit clear
+        buf.push_back(static_cast<uint8_t>((stream_id >> 24) & 0x7F));  // R bit clear
         buf.push_back(static_cast<uint8_t>((stream_id >> 16) & 0xFF));
         buf.push_back(static_cast<uint8_t>((stream_id >> 8) & 0xFF));
         buf.push_back(static_cast<uint8_t>(stream_id & 0xFF));
@@ -168,9 +168,7 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
     // HPACK: literal header field without indexing, name from static table
     //   first byte: 0000 NNNN where NNNN is the static index (must be < 15);
     //   followed by value-len (7-bit, H=0) and value bytes.
-    auto append_lit_indexed_name = [](std::vector<uint8_t>& buf,
-                                      uint8_t static_index,
-                                      const std::string& value) {
+    auto append_lit_indexed_name = [](std::vector<uint8_t>& buf, uint8_t static_index, const std::string& value) {
         // 0x0F = 15, max representable in the 4-bit prefix without overflow
         // marker; all indexes we use are <= 8 so a single byte is fine.
         buf.push_back(static_cast<uint8_t>(0x00 | (static_index & 0x0F)));
@@ -181,9 +179,7 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
     // HPACK: literal header field without indexing, name as literal string
     //   first byte: 0000 0000
     //   then name-len(7bit) name-bytes, value-len(7bit) value-bytes
-    auto append_lit_literal_name = [](std::vector<uint8_t>& buf,
-                                      const std::string& name,
-                                      const std::string& value) {
+    auto append_lit_literal_name = [](std::vector<uint8_t>& buf, const std::string& name, const std::string& value) {
         buf.push_back(0x00);
         buf.push_back(static_cast<uint8_t>(name.size() & 0x7F));
         buf.insert(buf.end(), name.begin(), name.end());
@@ -195,15 +191,14 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
     out.reserve(256);
 
     // 1) Server SETTINGS (empty)
-    append_frame_header(out, /*len*/0, /*type SETTINGS*/0x04, /*flags*/0x00, /*stream*/0);
+    append_frame_header(out, /*len*/ 0, /*type SETTINGS*/ 0x04, /*flags*/ 0x00, /*stream*/ 0);
 
     // 2) SETTINGS ACK
-    append_frame_header(out, /*len*/0, /*type SETTINGS*/0x04, /*flags ACK*/0x01, /*stream*/0);
+    append_frame_header(out, /*len*/ 0, /*type SETTINGS*/ 0x04, /*flags ACK*/ 0x01, /*stream*/ 0);
 
     // Build response body and headers
     const std::string body = "h3 available on :" + std::to_string(settings.h3_port) + "\n";
-    const std::string alt_svc_value =
-        "h3=\":" + std::to_string(settings.h3_port) + "\"; ma=86400";
+    const std::string alt_svc_value = "h3=\":" + std::to_string(settings.h3_port) + "\"; ma=86400";
     const std::string content_length_value = std::to_string(body.size());
 
     // 3) HEADERS frame (END_HEADERS=0x04 | END_STREAM=0x00 -- body follows in DATA)
@@ -221,7 +216,7 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
     hdr_block.reserve(96);
 
     // :status: 200 -- indexed (static table index 8)
-    hdr_block.push_back(0x88); // 1xxxxxxx with index=8
+    hdr_block.push_back(0x88);  // 1xxxxxxx with index=8
 
     // content-type: text/plain -- literal name
     append_lit_literal_name(hdr_block, "content-type", "text/plain");
@@ -233,16 +228,16 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
     append_lit_literal_name(hdr_block, "alt-svc", alt_svc_value);
 
     append_frame_header(out, static_cast<uint32_t>(hdr_block.size()),
-                        /*type HEADERS*/0x01,
-                        /*flags END_HEADERS*/0x04,
-                        /*stream*/1);
+        /*type HEADERS*/ 0x01,
+        /*flags END_HEADERS*/ 0x04,
+        /*stream*/ 1);
     out.insert(out.end(), hdr_block.begin(), hdr_block.end());
 
     // 4) DATA frame on stream 1 with END_STREAM
     append_frame_header(out, static_cast<uint32_t>(body.size()),
-                        /*type DATA*/0x00,
-                        /*flags END_STREAM*/0x01,
-                        /*stream*/1);
+        /*type DATA*/ 0x00,
+        /*flags END_STREAM*/ 0x01,
+        /*stream*/ 1);
     out.insert(out.end(), body.begin(), body.end());
 
     // 5) GOAWAY: last_stream_id=1, error_code=0 (NO_ERROR), no debug data
@@ -262,14 +257,14 @@ std::vector<uint8_t> VersionNegotiator::GenerateHTTP2UpgradeData(const UpgradeSe
         goaway_payload.push_back(0x00);
 
         append_frame_header(out, static_cast<uint32_t>(goaway_payload.size()),
-                            /*type GOAWAY*/0x07,
-                            /*flags*/0x00,
-                            /*stream*/0);
+            /*type GOAWAY*/ 0x07,
+            /*flags*/ 0x00,
+            /*stream*/ 0);
         out.insert(out.end(), goaway_payload.begin(), goaway_payload.end());
     }
 
     return out;
 }
 
-} // namespace upgrade
-} // namespace quicx 
+}  // namespace upgrade
+}  // namespace quicx

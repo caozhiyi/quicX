@@ -6,8 +6,7 @@
 namespace quicx {
 namespace quic {
 
-class PaddingFrame:
-    public IFrame {
+class PaddingFrame: public IFrame {
 public:
     PaddingFrame();
     ~PaddingFrame();
@@ -23,7 +22,7 @@ private:
     uint32_t padding_length_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

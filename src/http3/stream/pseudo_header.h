@@ -1,22 +1,22 @@
 #ifndef HTTP3_STREAM_PSEUDO_HEADER
 #define HTTP3_STREAM_PSEUDO_HEADER
 
-#include <string>
-#include <vector>
-#include <memory>
-#include <unordered_map>
-#include "common/util/singleton.h"
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
+#include "common/util/singleton.h"
 
 namespace quicx {
 namespace http3 {
 
 /**
- * @brief PseudoHeader is a singleton class that is used to encode and decode the pseudo-headers of the request and response.
+ * @brief PseudoHeader is a singleton class that is used to encode and decode the pseudo-headers of the request and
+ * response.
  */
-class PseudoHeader:
-    public common::Singleton<PseudoHeader> {
+class PseudoHeader: public common::Singleton<PseudoHeader> {
 public:
     PseudoHeader();
     ~PseudoHeader();
@@ -39,7 +39,7 @@ private:
 
     // Request pseudo-headers
     const std::string PSEUDO_HEADER_METHOD = ":method";
-    const std::string PSEUDO_HEADER_SCHEME = ":scheme"; 
+    const std::string PSEUDO_HEADER_SCHEME = ":scheme";
     const std::string PSEUDO_HEADER_AUTHORITY = ":authority";
     const std::string PSEUDO_HEADER_PATH = ":path";
 
@@ -47,7 +47,7 @@ private:
     const std::string PSEUDO_HEADER_STATUS = ":status";
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

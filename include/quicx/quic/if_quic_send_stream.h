@@ -1,9 +1,9 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_SEND_STREAM
 #define QUIC_INCLUDE_IF_QUIC_SEND_STREAM
 
-#include <quicx/quic/if_quic_stream.h>
 #include <quicx/common/if_buffer_read.h>
 #include <quicx/common/if_buffer_write.h>
+#include <quicx/quic/if_quic_stream.h>
 
 namespace quicx {
 
@@ -13,8 +13,7 @@ namespace quicx {
  * Local endpoints explicitly create send streams. The remote peer cannot open
  * them; instead it receives notifications when the stream ID becomes visible.
  */
-class IQuicSendStream:
-    public virtual IQuicStream {
+class IQuicSendStream: public virtual IQuicStream {
 public:
     IQuicSendStream() {}
     virtual ~IQuicSendStream() {}
@@ -41,7 +40,7 @@ public:
     virtual int32_t Send(std::shared_ptr<IBufferRead> buffer) = 0;
     /**
      * @brief Get the buffer to write data to the stream.
-     * 
+     *
      * @return The buffer to write data to the stream. then call Flush() to flush the data to the wire.
      */
     virtual std::shared_ptr<IBufferWrite> GetSendBuffer() = 0;
@@ -75,6 +74,6 @@ public:
     virtual uint64_t GetPendingSendBytes() = 0;
 };
 
-}
+}  // namespace quicx
 
 #endif

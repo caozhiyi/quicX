@@ -6,8 +6,7 @@
 namespace quicx {
 namespace common {
 
-class NormalAlloter:
-    public IAlloter {
+class NormalAlloter: public IAlloter {
 public:
     NormalAlloter();
     ~NormalAlloter();
@@ -16,12 +15,12 @@ public:
     void* MallocAlign(uint32_t size);
     void* MallocZero(uint32_t size);
 
-    void Free(void* &data, uint32_t len = 0);
+    void Free(void*& data, uint32_t len = 0);
 };
 
 std::shared_ptr<NormalAlloter> MakeNormalAlloterPtr();
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
-#endif 
+#endif

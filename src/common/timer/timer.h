@@ -10,6 +10,6 @@ namespace common {
 std::shared_ptr<ITimer> MakeTimer();
 
 }
-}
+}  // namespace quicx
 
 #endif

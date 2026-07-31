@@ -1,15 +1,15 @@
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 
-#include "common/buffer/buffer_chunk.h"
-#include "common/buffer/single_block_buffer.h"
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/buffer/buffer_chunk.h"
+#include "common/buffer/buffer_span.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/log/log.h"
+#include "common/network/io_handle.h"
 #include "common/qlog/qlog.h"
 #include "common/util/time.h"
-#include "common/buffer/buffer_span.h"
-#include "common/network/io_handle.h"
 #include "quic/common/constants.h"
 
 #include "quic/common/version.h"
@@ -52,8 +52,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // connection_base.h — this is intentionally NOT the monotonic clock used
     // for RTT/PTO).
     handshake_start_wall_time_ms_ = common::UTCTimeMsec();
-    connection_crypto_.SetRemoteTransportParamCB(
-        [this](auto& tp) { OnTransportParams(tp); });
+    connection_crypto_.SetRemoteTransportParamCB([this](auto& tp) { OnTransportParams(tp); });
 
     // RFC 9000: When 0-RTT write key is installed, trigger early connection callback
     // so the application can start sending data before the handshake completes
@@ -66,13 +65,12 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
 
     // RFC 9001 §4.8: surface a fatal TLS handshake alert as a CONNECTION_CLOSE so a
     // failed handshake does not silently hang the connection.
-    connection_crypto_.SetHandshakeErrorCB([this](uint64_t error, const std::string& reason) {
-        InnerConnectionClose(error, 0, reason);
-    });
+    connection_crypto_.SetHandshakeErrorCB(
+        [this](uint64_t error, const std::string& reason) { InnerConnectionClose(error, 0, reason); });
 
     // Initialize connection ID coordinator (refactored)
-    cid_coordinator_ = std::make_unique<ConnectionIDCoordinator>(loop, send_manager_,
-        [this](auto& cid) { AddConnectionId(cid); },
+    cid_coordinator_ = std::make_unique<ConnectionIDCoordinator>(
+        loop, send_manager_, [this](auto& cid) { AddConnectionId(cid); },
         [this](auto& cid) { RetireConnectionId(cid); });
     cid_coordinator_->Initialize();
 
@@ -112,35 +110,30 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     // Setup delayed ACK callback for normal Application packets
     recv_control_.SetActiveSendCB([this]() { ActiveSend(); });
 
-    transport_param_.AddTransportParamListener(
-        [this](const auto& tp) { recv_control_.UpdateConfig(tp); });
-    transport_param_.AddTransportParamListener(
-        [this](const auto& tp) { send_manager_.UpdateConfig(tp); });
-    transport_param_.AddTransportParamListener(
-        [this](const auto& tp) { send_flow_controller_.UpdateConfig(tp); });
-    transport_param_.AddTransportParamListener(
-        [this](const auto& tp) { recv_flow_controller_.UpdateConfig(tp); });
+    transport_param_.AddTransportParamListener([this](const auto& tp) { recv_control_.UpdateConfig(tp); });
+    transport_param_.AddTransportParamListener([this](const auto& tp) { send_manager_.UpdateConfig(tp); });
+    transport_param_.AddTransportParamListener([this](const auto& tp) { send_flow_controller_.UpdateConfig(tp); });
+    transport_param_.AddTransportParamListener([this](const auto& tp) { recv_flow_controller_.UpdateConfig(tp); });
 
     // Set stream data ACK callback for tracking stream completion
     send_manager_.send_control_.SetStreamDataAckCallback(
         [this](auto a, auto b, auto c, auto d) { OnStreamDataAcked(a, b, c, d); });
 
     // Initialize timer coordinator (refactored)
-    timer_coordinator_ =
-        std::make_unique<TimerCoordinator>(loop, transport_param_, send_manager_, state_machine_);
+    timer_coordinator_ = std::make_unique<TimerCoordinator>(loop, transport_param_, send_manager_, state_machine_);
 
     // Initialize path manager (refactored)
     // Constructor takes a single Deps struct (named-field init) instead of
     // an 8-positional-argument list — see PathManager::Deps in
     // connection_path_manager.h for the lifetime contract.
     PathManager::Deps path_deps;
-    path_deps.event_loop       = loop;
-    path_deps.send_manager     = &send_manager_;
-    path_deps.cid_coordinator  = cid_coordinator_.get();
-    path_deps.transport_param  = &transport_param_;
-    path_deps.peer_addr        = &peer_addr_;
+    path_deps.event_loop = loop;
+    path_deps.send_manager = &send_manager_;
+    path_deps.cid_coordinator = cid_coordinator_.get();
+    path_deps.transport_param = &transport_param_;
+    path_deps.peer_addr = &peer_addr_;
     path_deps.to_send_frame_cb = [this](auto&& f) { ToSendFrame(std::forward<decltype(f)>(f)); };
-    path_deps.active_send_cb   = [this]() { ActiveSend(); };
+    path_deps.active_send_cb = [this]() { ActiveSend(); };
     path_deps.set_peer_addr_cb = [this](const common::Address& addr) { this->SetPeerAddress(addr); };
     path_manager_ = std::make_unique<PathManager>(std::move(path_deps));
 
@@ -156,8 +149,8 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     send_manager_.SetStreamManager(stream_manager_.get());
 
     // Initialize connection closer (refactored)
-    connection_closer_ = std::make_unique<ConnectionCloser>(
-        loop, state_machine_, send_manager_, transport_param_, connection_close_cb_);
+    connection_closer_ =
+        std::make_unique<ConnectionCloser>(loop, state_machine_, send_manager_, transport_param_, connection_close_cb_);
 
     // Initialize frame processor (refactored) - uses IConnectionEventSink interface (no callbacks!)
     frame_processor_ = std::make_unique<FrameProcessor>(*this, state_machine_, connection_crypto_, send_manager_,
@@ -297,8 +290,7 @@ void BaseConnection::SetStreamStateCallBack(stream_state_callback cb) {
     if (frame_processor_) {
         frame_processor_->SetStreamStateCallback(cb);
     }
-    LOG_DEBUG(
-        "BaseConnection::SetStreamStateCallBack: callback updated in both IConnection and FrameProcessor");
+    LOG_DEBUG("BaseConnection::SetStreamStateCallBack: callback updated in both IConnection and FrameProcessor");
 }
 
 uint64_t BaseConnection::AddTimer(timer_callback callback, uint32_t timeout_ms) {
@@ -413,16 +405,15 @@ bool BaseConnection::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& rem
     //     the client used for its FIRST Initial (version_ctx_.original_version), which was
     //     recorded when the server first processed that packet. If the server
     //     has not yet recorded version_ctx_.original_version, fall back to current.
-    const uint32_t expected_peer_on_wire = version_ctx_.is_server
-        ? (version_ctx_.original_version != 0 ? version_ctx_.original_version : version_ctx_.quic_version)
-        : version_ctx_.quic_version;
+    const uint32_t expected_peer_on_wire =
+        version_ctx_.is_server
+            ? (version_ctx_.original_version != 0 ? version_ctx_.original_version : version_ctx_.quic_version)
+            : version_ctx_.quic_version;
 
     if (peer_chosen != expected_peer_on_wire) {
-        LOG_ERROR(
-            "RFC 9368: peer chosen_version 0x%08x does not match version used on wire 0x%08x",
-            peer_chosen, expected_peer_on_wire);
-        InnerConnectionClose(QuicErrorCode::kVersionNegotiationError, 0,
-            "version_information chosen_version mismatch");
+        LOG_ERROR("RFC 9368: peer chosen_version 0x%08x does not match version used on wire 0x%08x", peer_chosen,
+            expected_peer_on_wire);
+        InnerConnectionClose(QuicErrorCode::kVersionNegotiationError, 0, "version_information chosen_version mismatch");
         return false;
     }
 
@@ -443,8 +434,8 @@ bool BaseConnection::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& rem
                         "RFC 9368: downgrade detected: server advertises preferred 0x%08x "
                         "but connection ended up on 0x%08x",
                         version_ctx_.preferred_version, version_ctx_.quic_version);
-                    InnerConnectionClose(QuicErrorCode::kVersionNegotiationError, 0,
-                        "Compatible Version downgrade detected");
+                    InnerConnectionClose(
+                        QuicErrorCode::kVersionNegotiationError, 0, "Compatible Version downgrade detected");
                     return false;
                 }
             }
@@ -468,7 +459,8 @@ bool BaseConnection::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& rem
     }
 
     uint32_t negotiated = peer_chosen;  // Default: stay on client's chosen version.
-    const uint32_t our_pref = (version_ctx_.preferred_version != 0) ? version_ctx_.preferred_version : version_ctx_.quic_version;
+    const uint32_t our_pref =
+        (version_ctx_.preferred_version != 0) ? version_ctx_.preferred_version : version_ctx_.quic_version;
     if (our_pref != peer_chosen) {
         for (uint32_t cv : peer_available) {
             if (cv == our_pref) {
@@ -509,11 +501,8 @@ bool BaseConnection::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& rem
         return true;
     }
 
-    if (!connection_crypto_.RekeyInitialForVersion(
-            negotiated,
-            reinterpret_cast<const uint8_t*>(odcid.data()),
-            static_cast<uint32_t>(odcid.size()),
-            true /* is_server */)) {
+    if (!connection_crypto_.RekeyInitialForVersion(negotiated, reinterpret_cast<const uint8_t*>(odcid.data()),
+            static_cast<uint32_t>(odcid.size()), true /* is_server */)) {
         LOG_ERROR("RFC 9368: RekeyInitialForVersion failed");
         InnerConnectionClose(QuicErrorCode::kInternalError, 0, "Compatible VN rekey failed");
         return false;
@@ -551,12 +540,16 @@ void BaseConnection::BuildLocalVersionInformation(TransportParam& tp) const {
     //   - Preference == version_ctx_.quic_version => [version_ctx_.quic_version]  (1 entry)
     //   - Preference != version_ctx_.quic_version => [version_ctx_.preferred_version, version_ctx_.quic_version]
     std::vector<uint32_t> available;
-    const uint32_t pref = (version_ctx_.preferred_version != 0) ? version_ctx_.preferred_version : version_ctx_.quic_version;
+    const uint32_t pref =
+        (version_ctx_.preferred_version != 0) ? version_ctx_.preferred_version : version_ctx_.quic_version;
     if (pref != version_ctx_.quic_version) {
         // Sanity-check: we only advertise versions we actually support.
         bool pref_supported = false;
         for (size_t i = 0; i < kQuicVersionsCount; i++) {
-            if (kQuicVersions[i] == pref) { pref_supported = true; break; }
+            if (kQuicVersions[i] == pref) {
+                pref_supported = true;
+                break;
+            }
         }
         if (pref_supported) {
             available.push_back(pref);
@@ -589,8 +582,36 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         auto ns = CryptoLevel2PacketNumberSpace(packets[0]->GetCryptoLevel());
         recv_control_.OnEcnCounters(pending_ecn_, ns);
     }
+
+    // qlog draft-03 §4.11: every entry in `packets` came from a single UDP
+    // datagram (MsgParser::ParsePacket → DecodePackets splits coalesced
+    // QUIC packets but keeps the datagram boundary intact and the caller —
+    // ServerWorker / ClientWorker — invokes OnPackets once per parse
+    // result). Allocate a datagram id here, stash it for the per-packet
+    // QLOG_PACKET_RECEIVED sites to copy onto each PacketReceivedData, and
+    // emit a single datagrams_received summary after the loop.
+    const uint64_t datagram_id = next_recv_datagram_id_++;
+    current_recv_datagram_id_ = datagram_id;
+    uint32_t recv_datagram_total_bytes = 0;
+    std::vector<uint64_t> recv_packet_numbers;
+    if (qlog_trace_) {
+        recv_packet_numbers.reserve(packets.size());
+    }
+
     for (size_t i = 0; i < packets.size(); i++) {
+        if (qlog_trace_) {
+            // packet_size from the encoded src buffer; sum into the datagram
+            // total so the datagrams_received event matches what hit the
+            // socket. We collect packet numbers here too so the event can
+            // list them in arrival order regardless of dispatch outcome.
+            recv_datagram_total_bytes += packets[i]->GetSrcBuffer().GetLength();
+        }
+
         bool packet_processed = DispatchByType(packets[i]);
+
+        if (qlog_trace_) {
+            recv_packet_numbers.push_back(packets[i]->GetPacketNumber());
+        }
 
         // After processing (decrypting and decoding frames), record packet for ACK tracking
         if (packet_processed) {
@@ -598,16 +619,27 @@ void BaseConnection::OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket
         }
     }
 
+    if (qlog_trace_) {
+        common::DatagramsReceivedData dg_data;
+        dg_data.datagram_id = datagram_id;
+        dg_data.count = static_cast<uint32_t>(packets.size());
+        dg_data.raw_length = recv_datagram_total_bytes;
+        dg_data.packet_numbers = std::move(recv_packet_numbers);
+        QLOG_DATAGRAMS_RECEIVED(qlog_trace_, dg_data);
+    }
+    // Clear the per-datagram slot once the loop is done; defensive so any
+    // out-of-band log call later in the connection's lifetime doesn't pick
+    // up a stale id.
+    current_recv_datagram_id_ = 0;
+
     // reset idle timeout timer task
     timer_coordinator_->ResetIdleTimer();
 }
 
-void BaseConnection::HandlePacketsInClosingState(uint64_t now,
-    std::vector<std::shared_ptr<IPacket>>& packets) {
+void BaseConnection::HandlePacketsInClosingState(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) {
     bool has_connection_close = false;
     for (auto& packet : packets) {
-        std::shared_ptr<ICryptographer> cryptographer =
-            connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
+        std::shared_ptr<ICryptographer> cryptographer = connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
         if (cryptographer) {
             packet->SetCryptographer(cryptographer);
 
@@ -713,8 +745,8 @@ bool BaseConnection::OnInitialPacket(const std::shared_ptr<IPacket>& packet) {
         // client side prior to having installed keys). The DCID in the
         // packet is the one we use to derive the Initial secret.
         if (pkt_version != 0 && pkt_version != version_ctx_.quic_version) {
-            LOG_INFO("Updating connection version from packet: 0x%08x -> 0x%08x",
-                version_ctx_.quic_version, pkt_version);
+            LOG_INFO(
+                "Updating connection version from packet: 0x%08x -> 0x%08x", version_ctx_.quic_version, pkt_version);
             SetVersion(pkt_version);
             // RFC 9368 §4: our version_information TP must advertise
             // chosen_version == current on-wire version. Re-encode and hand
@@ -739,22 +771,17 @@ bool BaseConnection::OnInitialPacket(const std::shared_ptr<IPacket>& packet) {
         //     (i.e. the DCID stashed away in ConnectionCrypto on
         //     InstallInitSecret, which is what the server also used when it
         //     rekeyed via ValidateAndMaybeUpgradeByRemoteTP).
-        LOG_INFO(
-            "RFC 9368: client detected server version upgrade: 0x%08x -> 0x%08x",
-            version_ctx_.quic_version, pkt_version);
+        LOG_INFO("RFC 9368: client detected server version upgrade: 0x%08x -> 0x%08x", version_ctx_.quic_version,
+            pkt_version);
 
         const std::string& dcid = connection_crypto_.GetInitialSecretDcid();
         if (dcid.empty()) {
-            LOG_ERROR(
-                "RFC 9368: cannot rekey client Initial (no cached DCID); dropping packet");
+            LOG_ERROR("RFC 9368: cannot rekey client Initial (no cached DCID); dropping packet");
             return false;
         }
 
-        if (!connection_crypto_.RekeyInitialForVersion(
-                pkt_version,
-                reinterpret_cast<const uint8_t*>(dcid.data()),
-                static_cast<uint32_t>(dcid.size()),
-                false /* is_server */)) {
+        if (!connection_crypto_.RekeyInitialForVersion(pkt_version, reinterpret_cast<const uint8_t*>(dcid.data()),
+                static_cast<uint32_t>(dcid.size()), false /* is_server */)) {
             LOG_ERROR("RFC 9368: client-side RekeyInitialForVersion failed");
             return false;
         }
@@ -816,6 +843,10 @@ bool BaseConnection::On1rttPacket(const std::shared_ptr<IPacket>& packet) {
             data.packet_number = packet->GetPacketNumber();
             data.packet_type = packet->GetHeader()->GetPacketType();
             data.packet_size = packet->GetSrcBuffer().GetLength();
+            // draft-03: link this packet to its enclosing UDP datagram (set
+            // by OnPackets before the dispatch loop). 0 means "no datagram
+            // open" and the field is omitted from the JSON.
+            data.datagram_id = current_recv_datagram_id_;
             auto& frames = packet->GetFrames();
             data.frame_objects.reserve(frames.size());
             for (const auto& frame : frames) {
@@ -954,6 +985,10 @@ bool BaseConnection::OnNormalPacket(const std::shared_ptr<IPacket>& packet) {
         data.packet_number = packet->GetPacketNumber();
         data.packet_type = packet->GetHeader()->GetPacketType();
         data.packet_size = packet->GetSrcBuffer().GetLength();
+        // draft-03: stamp the enclosing UDP datagram id (allocated by
+        // OnPackets before the dispatch loop) so viewers can collapse
+        // coalesced QUIC packets back into the originating datagram.
+        data.datagram_id = current_recv_datagram_id_;
 
         // Pass the full frame objects so the serializer can emit per-frame
         // qlog fields (stream_id/offset, ack ranges, etc.) instead of just
@@ -1059,8 +1094,8 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
             if (pos != std::string::npos) {
                 common::Address addr(pref.substr(0, pos), static_cast<uint16_t>(std::stoi(pref.substr(pos + 1))));
                 if (!(addr == GetPeerAddress())) {
-                    LOG_INFO("Client initiating migration to server's preferred address: %s:%d",
-                        addr.GetIp().c_str(), addr.GetPort());
+                    LOG_INFO("Client initiating migration to server's preferred address: %s:%d", addr.GetIp().c_str(),
+                        addr.GetPort());
                     path_manager_->OnObservedPeerAddress(addr);
                 } else {
                     LOG_DEBUG("Preferred address is same as current address, no migration needed");
@@ -1111,8 +1146,7 @@ void BaseConnection::CheckPTOTimeout() {
 
     // RFC 9002: Close connection after persistent timeout (~3 PTO cycles)
     if (consecutive_ptos >= RttCalculator::kMaxConsecutivePTOs) {
-        LOG_WARN(
-            "Connection idle timeout: %u consecutive PTOs without ACK, closing connection", consecutive_ptos);
+        LOG_WARN("Connection idle timeout: %u consecutive PTOs without ACK, closing connection", consecutive_ptos);
 
         // Metrics: PTO count
         common::Metrics::CounterInc(common::MetricsStd::PtoCountTotal);
@@ -1408,11 +1442,9 @@ MigrationResult BaseConnection::InitiateMigrationTo(const std::string& local_ip,
     // 4. Register migration socket with receiver so PATH_RESPONSE can be received
     if (result == MigrationResult::kSuccess && migration_sockfd_ > 0 && register_socket_cb_) {
         if (!register_socket_cb_(migration_sockfd_)) {
-            LOG_ERROR("InitiateMigrationTo: failed to register migration socket %d with receiver",
-                migration_sockfd_);
+            LOG_ERROR("InitiateMigrationTo: failed to register migration socket %d with receiver", migration_sockfd_);
         } else {
-            LOG_INFO("InitiateMigrationTo: registered migration socket %d with receiver",
-                migration_sockfd_);
+            LOG_INFO("InitiateMigrationTo: registered migration socket %d with receiver", migration_sockfd_);
         }
     }
 
@@ -1437,8 +1469,8 @@ bool BaseConnection::IsMigrationInProgress() const {
 }
 
 void BaseConnection::OnMigrationComplete(const MigrationInfo& info) {
-    LOG_INFO("BaseConnection::OnMigrationComplete: result=%d, is_nat_rebinding=%d",
-        static_cast<int>(info.result_), info.is_nat_rebinding_);
+    LOG_INFO("BaseConnection::OnMigrationComplete: result=%d, is_nat_rebinding=%d", static_cast<int>(info.result_),
+        info.is_nat_rebinding_);
 
     if (info.result_ == MigrationResult::kSuccess) {
         // Migration successful: switch to the new socket
@@ -1644,22 +1676,14 @@ void BaseConnection::OnStateToClosed() {
 // ==================== New High-Level Send Interfaces Implementation ====================
 
 bool BaseConnection::TrySend() {
-    common::Metrics::CounterInc(common::MetricsStd::DiagTrySendIters);
-    // 1. State check - allow Connecting, Connected, and Closing states
-    // - Connecting: needed for handshake packets
-    // - Connected: normal data transmission
-    // - Closing: needed to send CONNECTION_CLOSE frames
-    // - Draining/Closed: should not send any packets
+    // Single-packet legacy entry point. Worker::ProcessSend now drives the
+    // multi-packet TrySendBurst path; this is kept for mock/test paths and
+    // for the retransmit fast-exit semantics. Counter accounting lives in
+    // TrySendBurst so the production hot path is not double-counted.
     if (state_machine_.IsClosed() || state_machine_.IsDraining()) {
-        LOG_DEBUG(
-            "BaseConnection::TrySend: connection is closed/draining, state=%d", state_machine_.GetState());
+        LOG_DEBUG("BaseConnection::TrySend: connection is closed/draining, state=%d", state_machine_.GetState());
         return false;
     }
-
-    // 2. Dispatch: retransmit lost packets first (RFC 9000 §13.3), then
-    // fall through to the normal-send path. Both helpers preserve the
-    // original return-value contract used by Worker::ProcessSend (true ⇒
-    // re-enter TrySend, false ⇒ stop this round).
     if (send_manager_.GetSendControl().NeedReSend()) {
         return TrySendRetransmit();
     }
@@ -1681,8 +1705,8 @@ bool BaseConnection::TrySendRetransmit() {
     auto crypto_level = lost_pkt->GetCryptoLevel();
     auto cryptographer = connection_crypto_.GetCryptographer(crypto_level);
     if (!cryptographer) {
-        LOG_WARN("BaseConnection::TrySendRetransmit: no cryptographer for lost packet level=%d, dropping",
-            crypto_level);
+        LOG_WARN(
+            "BaseConnection::TrySendRetransmit: no cryptographer for lost packet level=%d, dropping", crypto_level);
         return !lost_packets.empty();  // try next lost packet
     }
 
@@ -1737,13 +1761,13 @@ bool BaseConnection::TrySendRetransmit() {
         char head[64] = {0};
         uint32_t dump_len = pl.GetLength() < 16 ? pl.GetLength() : 16;
         for (uint32_t i = 0; i < dump_len; ++i) {
-            std::snprintf(head + i * 3, sizeof(head) - i * 3, "%02x ",
-                pl.Valid() ? pl.GetStart()[i] : 0);
+            std::snprintf(head + i * 3, sizeof(head) - i * 3, "%02x ", pl.Valid() ? pl.GetStart()[i] : 0);
         }
-        LOG_INFO("[DIAG-RTX] retransmit-pre orig_pn=%llu new_pn=%llu payload_len=%u "
-                 "payload_valid=%d chunk=%p head=%s",
-            (unsigned long long)orig_pn, (unsigned long long)new_pn, pl.GetLength(),
-            (int)pl.Valid(), (void*)pl.GetChunk().get(), head);
+        LOG_INFO(
+            "[DIAG-RTX] retransmit-pre orig_pn=%llu new_pn=%llu payload_len=%u "
+            "payload_valid=%d chunk=%p head=%s",
+            (unsigned long long)orig_pn, (unsigned long long)new_pn, pl.GetLength(), (int)pl.Valid(),
+            (void*)pl.GetChunk().get(), head);
     }
 
     if (!lost_pkt->Encode(buffer)) {
@@ -1752,6 +1776,10 @@ bool BaseConnection::TrySendRetransmit() {
     }
 
     uint32_t encoded_size = buffer->GetDataLength();
+
+    // qlog draft-03: open a fresh datagram before OnPacketSend so the
+    // retransmitted packet's packet_sent event carries its datagram_id.
+    BeginSendDatagram();
 
     // Record this retransmission in SendControl carrying the original
     // stream_data, otherwise an ACK on the new PN would not flow back to
@@ -1765,283 +1793,518 @@ bool BaseConnection::TrySendRetransmit() {
     // duplicates, the retransmission lost its payload.
     std::string sd_summary;
     for (const auto& sd : lost_entry.stream_data) {
-        sd_summary += "{sid=" + std::to_string(sd.stream_id) +
-                      ",off=" + std::to_string(sd.offset_start) +
-                      ",len=" + std::to_string(sd.length) +
-                      ",fin=" + std::to_string(sd.has_fin) + "}";
+        sd_summary += "{sid=" + std::to_string(sd.stream_id) + ",off=" + std::to_string(sd.offset_start) +
+                      ",len=" + std::to_string(sd.length) + ",fin=" + std::to_string(sd.has_fin) + "}";
     }
-    LOG_INFO("BaseConnection::TrySendRetransmit: retransmitted lost packet with new pn=%llu, size=%u, "
-                    "stream_data count=%zu ranges=%s",
+    LOG_INFO(
+        "BaseConnection::TrySendRetransmit: retransmitted lost packet with new pn=%llu, size=%u, "
+        "stream_data count=%zu ranges=%s",
         new_pn, encoded_size, lost_entry.stream_data.size(), sd_summary.c_str());
 
-    return SendBuffer(buffer);
+    return FinishSendDatagram(buffer);
 }
 
 bool BaseConnection::TrySendNew() {
-    // Normal-send branch of TrySend (factored out from the original 363-line
-    // monolith). All references to "TrySend" in log strings below were kept as
-    // "BaseConnection::TrySend" to avoid noisy log-search churn for ops/tests.
+    // Thin wrapper kept for backward compatibility with the historical
+    // "one packet per call" contract. All real work lives in
+    // TrySendNewBurst(budget=1).
+    return TrySendNewBurst(1) > 0;
+}
 
-    // 2. Get send context (determine encryption level)
-    auto send_ctx = encryption_scheduler_->GetNextSendContext();
-    LOG_DEBUG("BaseConnection::TrySend: selected encryption level=%d", send_ctx.level);
+int BaseConnection::TrySendBurst(int budget) {
+    common::Metrics::CounterInc(common::MetricsStd::DiagTrySendIters);
+    if (budget <= 0) {
+        return 0;
+    }
+    // 1. State check - allow Connecting, Connected, and Closing states
+    if (state_machine_.IsClosed() || state_machine_.IsDraining()) {
+        LOG_DEBUG("BaseConnection::TrySendBurst: connection is closed/draining, state=%d", state_machine_.GetState());
+        return 0;
+    }
+    int sent = 0;
+    // Retransmit path keeps its own per-call cadence (loss queue churn,
+    // separate cryptographer per lost packet). We loop one-packet at a
+    // time here so RFC 9001 §6.5 key-phase handling stays unchanged.
+    while (sent < budget && send_manager_.GetSendControl().NeedReSend()) {
+        if (!TrySendRetransmit()) {
+            // No more retransmits to issue right now; fall through to the
+            // fresh-data burst below.
+            break;
+        }
+        ++sent;
+    }
+    if (sent < budget) {
+        // RFC 9000 §12.2 Initial+Handshake coalescing.
+        //
+        // Before falling into the regular level-sticky burst path, if the
+        // round simultaneously has Initial *and* Handshake CRYPTO bytes
+        // queued, try to emit one coalesced UDP datagram carrying both
+        // QUIC packets. This is the cheapest way to drain the handshake:
+        //   - 1 UDP datagram instead of 2 (halves syscall + cwnd-tax overhead)
+        //   - 1 round-trip elimination opportunity for the peer (it can
+        //     ACK both PN spaces from a single delivery)
+        //   - Padding (RFC §14.1 client first-flight) lives inside the
+        //     Handshake packet, keeping the Initial small.
+        //
+        // The detection is intentionally limited to the handshake state
+        // (Initial keys not yet discarded, both cryptographers installed)
+        // so it never fires once 1-RTT is established. A return of 0 from
+        // TryCoalescedInitialHandshake means "not applicable or build
+        // failed"; in that case we just fall through to the legacy
+        // single-level burst below — never a hard failure of the round.
+        if (state_machine_.GetState() == ConnectionStateType::kStateConnecting) {
+            int coalesced = TryCoalescedInitialHandshake();
+            if (coalesced > 0) {
+                sent += coalesced;
+            }
+        }
+    }
+    if (sent < budget) {
+        sent += TrySendNewBurst(budget - sent);
+    }
+    if (sent > 0) {
+        common::Metrics::HistogramObserve(common::MetricsStd::DiagTrySendBurstPkts, static_cast<uint64_t>(sent));
+    }
+    return sent;
+}
 
-    // 3. Get cryptographer
-    auto cryptographer = connection_crypto_.GetCryptographer(send_ctx.level);
-    if (!cryptographer) {
-        LOG_ERROR("BaseConnection::TrySend: no cryptographer for level=%d", send_ctx.level);
-        return false;
+int BaseConnection::TrySendNewBurst(int budget) {
+    // Burst-mode core of TrySendNew. We hoist *all* per-call constants
+    // (encryption level, cryptographer, key phase, version, CID managers,
+    // padding/min_size policy, token) out of the inner loop so the hot
+    // path per packet only runs the work that genuinely changes:
+    //   * cwnd headroom (mutates after every Send → SentPacketManager
+    //     credits / debits bytes_in_flight)
+    //   * connection-level flow control slack
+    //   * pending frame list
+    //   * chunk allocation, packet build, SendBuffer, post-send accounting
+    if (budget <= 0) {
+        return 0;
     }
 
-    // 4. Check congestion window
-    uint32_t max_bytes = send_manager_.GetAvailableWindow();
-    if (max_bytes == 0) {
-        // RFC 9000 §9.3.3: An endpoint sending a probing packet on a path is exempt from
-        // amplification limits and any congestion limits that would prevent that packet from
-        // being sent. PATH_CHALLENGE / PATH_RESPONSE / NEW_CONNECTION_ID / PADDING are probing
-        // frames. If the wait list contains a PATH_CHALLENGE or PATH_RESPONSE, allow sending
-        // a probing packet up to MTU to validate the path even when cwnd is full.
-        bool has_probing = false;
-        for (const auto& f : send_manager_.wait_frame_list_) {
-            uint16_t t = static_cast<uint16_t>(f->GetType());
-            if (t == FrameType::kPathChallenge || t == FrameType::kPathResponse) {
-                has_probing = true;
+    // 2. Get send context (determine encryption level) ONCE per burst.
+    // This is the cheapest hoist: a couple of bool checks + a struct copy.
+    // The only mutation it can drive is SetInitialPacketSent(true) at the
+    // tail of each successful build — which only matters for kInitial and
+    // is preserved inside the loop below.
+    auto send_ctx = encryption_scheduler_->GetNextSendContext();
+    LOG_DEBUG("BaseConnection::TrySendBurst: selected encryption level=%d", send_ctx.level);
+
+    // 3. Cryptographer (one shared_ptr fetch per burst instead of one per packet).
+    auto cryptographer = connection_crypto_.GetCryptographer(send_ctx.level);
+    if (!cryptographer) {
+        LOG_ERROR("BaseConnection::TrySendBurst: no cryptographer for level=%d", send_ctx.level);
+        return 0;
+    }
+
+    // 4. Packet builder fixed fields. Everything below survives a full burst.
+    PacketBuilder::DataPacketContext tmpl;
+    tmpl.level = send_ctx.level;
+    tmpl.cryptographer = cryptographer;
+    tmpl.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
+    tmpl.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
+    tmpl.quic_version = connection_crypto_.GetVersion();
+    tmpl.key_phase = connection_crypto_.GetCurrentKeyPhase();
+    tmpl.stream_manager = stream_manager_.get();
+    tmpl.add_padding = (send_ctx.level == kInitial);
+    tmpl.min_size = kMinInitialPacketSize;  // RFC 9000 §14.1
+    tmpl.token = send_manager_.GetToken();
+
+    int sent = 0;
+    bool ack_attached_this_burst = false;
+    while (sent < budget) {
+        // 4a. cwnd recheck (mutates after every successful Send: the
+        // sent-packet manager credits/debits bytes_in_flight, so an
+        // earlier packet in this burst can push cwnd to 0).
+        uint32_t max_bytes = send_manager_.GetAvailableWindow();
+        if (max_bytes == 0) {
+            // RFC 9000 §9.3.3 probing-frame exemption.
+            bool has_probing = false;
+            for (const auto& f : send_manager_.wait_frame_list_) {
+                uint16_t t = static_cast<uint16_t>(f->GetType());
+                if (t == FrameType::kPathChallenge || t == FrameType::kPathResponse) {
+                    has_probing = true;
+                    break;
+                }
+            }
+            if (has_probing) {
+                max_bytes = kMinInitialPacketSize;
+                LOG_DEBUG(
+                    "BaseConnection::TrySendBurst: cwnd full but probing frame pending — bypassing cwnd (RFC 9000 "
+                    "§9.3.3)");
+            } else {
+                LOG_DEBUG("BaseConnection::TrySendBurst: congestion window full at pkt #%d", sent);
+                send_manager_.SetCwndLimited();
+                common::Metrics::CounterInc(common::MetricsStd::DiagTrySendCwndBlocked);
                 break;
             }
         }
-        if (has_probing) {
-            // Allow up to one MTU's worth of probing data; do not mark cwnd limited.
-            // RFC 9000 §14.1 + §8.2.1 floor.
-            max_bytes = kMinInitialPacketSize;
-            LOG_DEBUG("BaseConnection::TrySend: cwnd full but probing frame pending — bypassing cwnd (RFC 9000 §9.3.3)");
+
+        // 4b. Pending frames (always per-packet — GetPendingFrames may
+        // hand out at most one packet's worth of frames at a time).
+        auto frames = send_manager_.GetPendingFrames(send_ctx.level, max_bytes);
+
+        // 4c. ACK piggyback. ShouldSendAckNow is consumed by the ACK
+        // emission path (RecvControl::MayGenerateAckFrame clears the
+        // pending flag), so only the FIRST iteration of a burst attaches
+        // the queued ACK — subsequent packets get fresh ACKs only if a
+        // new one becomes due, exactly as the original one-packet-per-
+        // TrySend path behaved.
+        if (send_ctx.has_pending_ack && !ack_attached_this_burst) {
+            auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), send_ctx.ack_space, ecn_enabled_);
+            if (ack_frame) {
+                frames.insert(frames.begin(), ack_frame);
+                LOG_DEBUG("BaseConnection::TrySendBurst: added ACK frame for ns=%d", send_ctx.ack_space);
+            }
+            ack_attached_this_burst = true;
+        }
+
+        bool has_stream_data = send_manager_.HasStreamData(send_ctx.level);
+        if (frames.empty() && !has_stream_data) {
+            LOG_DEBUG("BaseConnection::TrySendBurst: no data to send at pkt #%d", sent);
+            common::Metrics::CounterInc(common::MetricsStd::DiagTrySendNoData);
+            break;
+        }
+
+        // 4d. Per-packet build context (copies of the hoisted template +
+        // freshly-computed bits). The copy is a handful of pointers — far
+        // cheaper than the work we just elided.
+        PacketBuilder::DataPacketContext build_ctx = tmpl;
+        build_ctx.frames = std::move(frames);
+        build_ctx.include_stream_data = has_stream_data;
+
+        // 4e. Connection-level flow control.
+        uint64_t conn_flow_limit = 0;
+        std::shared_ptr<IFrame> blocked_frame;
+        bool fc_blocked_with_data = false;
+        if (send_flow_controller_.CanSendData(conn_flow_limit, blocked_frame)) {
+            build_ctx.max_stream_data_size = static_cast<uint32_t>(std::min<uint64_t>(conn_flow_limit, UINT32_MAX));
+            if (has_stream_data && build_ctx.max_stream_data_size < 32) {
+                LOG_INFO(
+                    "BaseConnection::TrySendBurst budget: max_bytes(cwnd)=%u, conn_flow_limit=%llu, "
+                    "max_stream_data_size=%u (<32) — stream frame header may not fit",
+                    max_bytes, (unsigned long long)conn_flow_limit, build_ctx.max_stream_data_size);
+            }
+            if (blocked_frame) {
+                LOG_DEBUG("BaseConnection::TrySendBurst: queueing proactive DATA_BLOCKED frame (near limit)");
+                send_manager_.ToSendFrame(blocked_frame);
+            }
         } else {
-            LOG_DEBUG("BaseConnection::TrySend: congestion window full");
-            // Mark as cwnd limited so that when ACK arrives, send_retry_cb_ will be called
-            send_manager_.SetCwndLimited();
-            common::Metrics::CounterInc(common::MetricsStd::DiagTrySendCwndBlocked);
-            return false;
+            build_ctx.max_stream_data_size = 0;
+            LOG_DEBUG("BaseConnection::TrySendBurst: connection-level FC blocked, blocked_frame=%p, has_stream_data=%d",
+                blocked_frame.get(), has_stream_data ? 1 : 0);
+            if (blocked_frame) {
+                send_manager_.ToSendFrame(blocked_frame);
+            }
+            if (has_stream_data) {
+                fc_blocked_with_data = true;
+            }
         }
+        if (fc_blocked_with_data) {
+            send_manager_.SetFlowControlBlocked();
+        }
+
+        // 4f. Buffer chunk + packet build.
+        auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+        if (!chunk || !chunk->Valid()) {
+            LOG_ERROR("BaseConnection::TrySendBurst: failed to allocate buffer chunk at pkt #%d", sent);
+            break;
+        }
+        auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
+
+        // qlog draft-03: every iteration of this burst loop ships exactly
+        // one QUIC packet inside its own UDP datagram (coalescing only
+        // happens via the dedicated TryCoalescedInitialHandshake() path),
+        // so a fresh datagram_id per iteration is the correct binding.
+        BeginSendDatagram();
+
+        uint64_t t_build_start = common::Metrics::NowUs();
+        auto result = packet_builder_->BuildDataPacket(
+            build_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+        {
+            uint64_t t_build_end = common::Metrics::NowUs();
+            if (t_build_end > t_build_start) {
+                common::Metrics::HistogramObserve(common::MetricsStd::DiagBuildLatencyUs, t_build_end - t_build_start);
+            }
+        }
+
+        if (!result.success) {
+            LOG_ERROR(
+                "BaseConnection::TrySendBurst: failed to build packet: %s "
+                "[max_bytes(cwnd)=%u, conn_flow_limit=%llu, max_stream_data_size=%u, "
+                "frames=%zu, has_stream_data=%d]",
+                result.error_message.c_str(), max_bytes, (unsigned long long)conn_flow_limit,
+                build_ctx.max_stream_data_size, build_ctx.frames.size(), has_stream_data ? 1 : 0);
+            if (has_stream_data && !fc_blocked_with_data) {
+                send_manager_.SetFlowControlBlocked();
+            }
+            common::Metrics::CounterInc(common::MetricsStd::DiagTrySendBuildFail);
+            // qlog draft-03: discard the datagram bracket opened above so
+            // a subsequent packet doesn't inherit a stale (empty) id.
+            (void)send_manager_.GetSendControl().EndSendDatagram();
+            break;
+        }
+
+        LOG_DEBUG("BaseConnection::TrySendBurst: built packet pn=%llu, size=%u bytes", result.packet_number,
+            result.packet_size);
+
+        // 4g. Initial-packet bookkeeping. Same semantics as the original
+        // one-packet-per-call path: flip the scheduler bit exactly once
+        // (the helper is idempotent).
+        if (send_ctx.level == kInitial) {
+            encryption_scheduler_->SetInitialPacketSent(true);
+        }
+
+        // 4h. Send (or enqueue into the worker batch sink).
+        uint64_t t_send_start = common::Metrics::NowUs();
+        bool send_success = FinishSendDatagram(buffer);
+        {
+            uint64_t t_send_end = common::Metrics::NowUs();
+            if (t_send_end > t_send_start) {
+                common::Metrics::HistogramObserve(common::MetricsStd::DiagSendLatencyUs, t_send_end - t_send_start);
+            }
+        }
+
+        if (send_success) {
+            common::Metrics::HistogramObserve(common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
+        }
+
+        // 4i. Conn-level FC accounting + key update trigger (unchanged).
+        if (send_success && result.stream_data_size > 0) {
+            send_flow_controller_.OnDataSent(result.stream_data_size);
+        }
+        if (send_success && send_ctx.level == kApplication && key_update_trigger_.IsEnabled()) {
+            if (key_update_trigger_.OnBytesSent(result.packet_size)) {
+                if (connection_crypto_.TriggerKeyUpdate()) {
+                    key_update_trigger_.MarkTriggered();
+                    key_update_trigger_.Reset();
+                    LOG_INFO("Key Update triggered after sending %u bytes", result.packet_size);
+                }
+            }
+        }
+
+        if (!send_success) {
+            // SendBuffer already accounted the failure; stop the burst
+            // so the worker can decide whether to drop the conn or retry.
+            break;
+        }
+        ++sent;
     }
 
-    // 5. Get pending frames
-    auto frames = send_manager_.GetPendingFrames(send_ctx.level, max_bytes);
-    LOG_DEBUG("BaseConnection::TrySend: got %zu pending frames", frames.size());
+    return sent;
+}
 
-    // 6. Add pending ACK if needed
-    if (send_ctx.has_pending_ack) {
-        auto ack_frame = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), send_ctx.ack_space, ecn_enabled_);
-        if (ack_frame) {
-            frames.insert(frames.begin(), ack_frame);
-            LOG_DEBUG("BaseConnection::TrySend: added ACK frame for ns=%d", send_ctx.ack_space);
-        }
+int BaseConnection::TryCoalescedInitialHandshake() {
+    // 1. Quick applicability check.
+    //
+    // We need both Initial and Handshake to (a) have install cryptographers
+    // and (b) have CRYPTO bytes pending in their per-level send queues.
+    // The cryptographer check naturally screens out the post-Initial-discard
+    // window (RFC 9000 §4.10): once Initial keys are dropped, GetCryptographer
+    // returns nullptr and we fall back to the normal single-level path.
+    auto initial_crypto = connection_crypto_.GetCryptographer(kInitial);
+    auto handshake_crypto = connection_crypto_.GetCryptographer(kHandshake);
+    if (!initial_crypto || !handshake_crypto) {
+        return 0;
     }
 
-    // 7. Check if there's stream data to send
-    bool has_stream_data = send_manager_.HasStreamData(send_ctx.level);
-    LOG_DEBUG("BaseConnection::TrySend: has_stream_data=%d", has_stream_data);
-
-    // 8. If no data at all, return
-    if (frames.empty() && !has_stream_data) {
-        LOG_DEBUG("BaseConnection::TrySend: no data to send");
-        common::Metrics::CounterInc(common::MetricsStd::DiagTrySendNoData);
-        return false;
+    auto crypto_stream = connection_crypto_.GetCryptoStream();
+    if (!crypto_stream) {
+        return 0;
+    }
+    bool init_pending = crypto_stream->HasPendingDataAt(kInitial);
+    bool hs_pending = crypto_stream->HasPendingDataAt(kHandshake);
+    if (!init_pending || !hs_pending) {
+        return 0;
     }
 
-    // 9. Build data packet context
-    PacketBuilder::DataPacketContext build_ctx;
-    build_ctx.level = send_ctx.level;
-    build_ctx.cryptographer = cryptographer;
-    build_ctx.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
-    build_ctx.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
-    build_ctx.quic_version = connection_crypto_.GetVersion();
-    build_ctx.key_phase = connection_crypto_.GetCurrentKeyPhase();
-    build_ctx.frames = std::move(frames);
-    build_ctx.stream_manager = stream_manager_.get();
-    build_ctx.include_stream_data = has_stream_data;
-    build_ctx.add_padding = (send_ctx.level == kInitial);
-    build_ctx.min_size = kMinInitialPacketSize;  // RFC 9000 §14.1
-    build_ctx.token = send_manager_.GetToken();
-
-    // Set connection-level flow control limit for stream data
-    uint64_t conn_flow_limit = 0;
-    std::shared_ptr<IFrame> blocked_frame;
-    bool fc_blocked_with_data = false;
-    if (send_flow_controller_.CanSendData(conn_flow_limit, blocked_frame)) {
-        // max_stream_data_size expresses ONLY the connection-level flow-control
-        // slack the peer currently grants us (per RFC 9000 §4.1). It must NOT
-        // be conflated with cwnd/MTU:
-        //   * Per-packet cwnd/pacing is already enforced by the packet builder
-        //     when it consumes max_bytes worth of frames.
-        //   * Per-datagram MTU is already enforced by FixBufferFrameVisitor's
-        //     fixed buffer (kVisitorBudget≈1420B) and by GetPacketLeftSize().
-        // Previously this line did `min(max_bytes, conn_flow_limit)`, which let
-        // cwnd's per-window byte budget (often capped to MTU≈1450B by
-        // SendManager::GetAvailableWindow) leak into the stream-level cap.
-        // Result: visitor->GetLeftStreamDataSize() returned ~1234B on average
-        // and STREAM payload was permanently throttled to ≤1300B even when
-        // the packet buffer had ~1396B of usable room. Drop the max_bytes
-        // factor so the visitor's stream cap reflects pure conn FC slack;
-        // packet- and cwnd-level limits still bind via their proper paths.
-        build_ctx.max_stream_data_size =
-            static_cast<uint32_t>(std::min<uint64_t>(conn_flow_limit, UINT32_MAX));
-        // DIAGNOSTIC (G2): expose budget components when stream data is queued
-        // and yet we keep producing zero-byte STREAM frames. We want to know
-        // whether cwnd (max_bytes) or conn-FC slack (conn_flow_limit) is the
-        // dominant 0 — and in particular, whether max_stream_data_size is
-        // smaller than the per-STREAM frame header overhead (~10–20 bytes)
-        // even though the stream has data ready.
-        if (has_stream_data && build_ctx.max_stream_data_size < 32) {
-            LOG_INFO(
-                "BaseConnection::TrySend budget: max_bytes(cwnd)=%u, conn_flow_limit=%llu, "
-                "max_stream_data_size=%u (<32) — stream frame header may not fit",
-                max_bytes, (unsigned long long)conn_flow_limit, build_ctx.max_stream_data_size);
-        }
-        // RFC 9000 §19.12: near-limit proactive DATA_BLOCKED still needs to
-        // be queued for transmission. CanSendData() returns true (still some
-        // headroom) but may have emitted a DATA_BLOCKED on the side; without
-        // this branch the frame is allocated and silently dropped.
-        if (blocked_frame) {
-            LOG_DEBUG(
-                "BaseConnection::TrySend: queueing proactive DATA_BLOCKED frame (near limit)");
-            send_manager_.ToSendFrame(blocked_frame);
-        }
-    } else {
-        // Flow control blocked, don't send stream data
-        build_ctx.max_stream_data_size = 0;
-        LOG_DEBUG(
-            "BaseConnection::TrySend: connection-level FC blocked, blocked_frame=%p, has_stream_data=%d",
-            blocked_frame.get(), has_stream_data ? 1 : 0);
-        if (blocked_frame) {
-            // Queue the DATA_BLOCKED frame
-            send_manager_.ToSendFrame(blocked_frame);
-        }
-        // Bug #17: when the connection-level flow control wall is reached and
-        // we still have streams asking to send (has_stream_data == true), the
-        // worker would otherwise see TrySend() ultimately return false (the
-        // packet builder will produce "no data to send" because no STREAM
-        // frame can be encoded under max_stream_data_size == 0) and remove
-        // the connection from its active set. Once removed, no event will
-        // re-enter TrySend until the *peer* sends MAX_DATA — but quic-go /
-        // quiche only emit MAX_DATA after the application consumes the data,
-        // which can be far in the future (or never, if the peer is itself
-        // stuck waiting for more bytes from us). Mark the manager as flow-
-        // control-blocked so a recheck timer keeps polling, and so the next
-        // ACK forces a retry.
-        if (has_stream_data) {
-            fc_blocked_with_data = true;
-        }
-    }
-    if (fc_blocked_with_data) {
-        send_manager_.SetFlowControlBlocked();
+    // 2. cwnd budget. Coalescing emits >=1200 B on the client first flight
+    // (anti-amplification padding) and a bit less on the server first
+    // flight. If cwnd cannot cover at least the padded minimum we bail and
+    // let the regular single-level burst try a smaller packet that fits.
+    //
+    // RFC 9002 explicitly allows the *initial* Initial to bypass cwnd, but
+    // we already implement that via the SendControl initial-allowance hook
+    // (see GetAvailableWindow). For subsequent rounds this check correctly
+    // gates by current cwnd.
+    uint32_t max_bytes = send_manager_.GetAvailableWindow();
+    if (max_bytes == 0) {
+        // Anti-amplification probe exemption isn't relevant here (no
+        // PATH_CHALLENGE during initial handshake). Just bail.
+        send_manager_.SetCwndLimited();
+        return 0;
     }
 
-    // 10. Build packet - allocate buffer chunk first
+    // 3. Build Initial first into the (empty) shared buffer.
+    //
+    // Padding is intentionally *disabled* for the Initial packet here.
+    // Per RFC 9000 §14.1 + §12.2 the 1200 B rule applies to the whole
+    // datagram; we will add the padding to the trailing Handshake packet
+    // instead so the Initial stays as small as possible (cheaper for the
+    // peer's Initial-keys AEAD path, and lets us build packets in natural
+    // on-wire order without a back-patch dance).
     auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
     if (!chunk || !chunk->Valid()) {
-        LOG_ERROR("BaseConnection::TrySend: failed to allocate buffer chunk");
-        return false;
+        LOG_ERROR("BaseConnection::TryCoalescedInitialHandshake: failed to allocate chunk");
+        return 0;
     }
     auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
-    // PERF VALIDATION (send-side queueing): time BuildDataPacket and
-    // SendBuffer separately. Hypothesis: even though sender_->Send() is a
-    // synchronous sendto(), the per-packet build+send cost may be high
-    // enough that with N back-to-back packets per worker tick the last
-    // packet's wire-time lags the first packet's RecordPacketSendUs() by
-    // tens of milliseconds, inflating the apparent RTT. Cheap clock reads
-    // (steady_clock) are gated by IsEnabled() to keep the production path
-    // unaffected.
-    uint64_t t_build_start = common::Metrics::NowUs();
+    // qlog draft-03: this is the canonical packet-coalescing path. Open
+    // ONE datagram_id and let both the Initial and Handshake builds share
+    // it so qvis can render them as a single UDP datagram (which is the
+    // whole point of the visualisation upgrade).
+    BeginSendDatagram();
 
-    auto result = packet_builder_->BuildDataPacket(
-        build_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+    PacketBuilder::DataPacketContext init_ctx;
+    init_ctx.level = kInitial;
+    init_ctx.cryptographer = initial_crypto;
+    init_ctx.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
+    init_ctx.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
+    init_ctx.quic_version = connection_crypto_.GetVersion();
+    init_ctx.key_phase = 0;
+    init_ctx.stream_manager = stream_manager_.get();
+    init_ctx.include_stream_data = true;  // CryptoStream drains via stream-frame path
+    init_ctx.add_padding = false;         // padding deferred to Handshake (see above)
+    init_ctx.min_size = 0;
+    init_ctx.token = send_manager_.GetToken();
+    init_ctx.max_stream_data_size = max_bytes;
+    init_ctx.frames = send_manager_.GetPendingFrames(kInitial, max_bytes);
 
-    {
-        uint64_t t_build_end = common::Metrics::NowUs();
-        if (t_build_end > t_build_start) {
-            common::Metrics::HistogramObserve(
-                common::MetricsStd::DiagBuildLatencyUs, t_build_end - t_build_start);
+    // Piggyback any pending Initial-space ACK (cross-level ACKs are
+    // already correctly routed by the scheduler in the non-coalesced
+    // path; here we just emit our own-space ACK if RecvControl says it's
+    // due — same as the normal burst path).
+    if (recv_control_.ShouldSendAckNow(kInitialNumberSpace)) {
+        auto ack = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), kInitialNumberSpace, ecn_enabled_);
+        if (ack) {
+            init_ctx.frames.insert(init_ctx.frames.begin(), ack);
         }
     }
 
-    if (!result.success) {
-        LOG_ERROR("BaseConnection::TrySend: failed to build packet: %s "
-                          "[max_bytes(cwnd)=%u, conn_flow_limit=%llu, max_stream_data_size=%u, "
-                          "frames=%zu, has_stream_data=%d]",
-                          result.error_message.c_str(),
-                          max_bytes, (unsigned long long)conn_flow_limit,
-                          build_ctx.max_stream_data_size,
-                          build_ctx.frames.size(), has_stream_data ? 1 : 0);
-        // Bug #20 (companion to #17/#19): "no data to send" while
-        // has_stream_data was true means stream(s) refused to produce a frame
-        // (returned kBreak / kFlowControlBlocked) but no DATA_BLOCKED frame
-        // was queued either — neither cwnd-full (handled at line 1740) nor
-        // explicit conn-FC-blocked (handled at line 1838). This typically
-        // happens when max_bytes (cwnd headroom) is small enough that the
-        // STREAM frame header + offset cannot fit, or after a SendStream
-        // returns kBreak because conn-level slack was 0. Without a wakeup
-        // path the worker erases the connection from active set and we sit
-        // silent until idle timeout. Arm the same recheck timer used by
-        // Bug #17 so we re-enter TrySend periodically; once cwnd grows back
-        // (next ACK) or conn-FC slack widens (next MAX_DATA), the stream
-        // can resume.
-        if (has_stream_data && !fc_blocked_with_data) {
-            send_manager_.SetFlowControlBlocked();
+    auto init_result = packet_builder_->BuildDataPacket(
+        init_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+    if (!init_result.success) {
+        LOG_WARN("BaseConnection::TryCoalescedInitialHandshake: Initial build failed: %s",
+            init_result.error_message.c_str());
+        // qlog: discard the datagram bracket opened above (empty datagram).
+        (void)send_manager_.GetSendControl().EndSendDatagram();
+        return 0;
+    }
+    const uint32_t initial_size = init_result.packet_size;
+    LOG_DEBUG("BaseConnection::TryCoalescedInitialHandshake: built Initial pn=%llu size=%u", init_result.packet_number,
+        initial_size);
+
+    // 4. Compute padding target for the Handshake packet.
+    //
+    // RFC 9000 §14.1: client carrying-Initial datagrams MUST be >= 1200 B.
+    // The server has no such requirement, but we still benefit from
+    // coalescing (one syscall, one round-trip).
+    //
+    // The PacketBuilder's `min_size` field is compared against the
+    // *plaintext payload* length inside the visitor (see step 6 of
+    // BuildDataPacket). The on-wire Handshake packet additionally
+    // contributes a long-header (~13 B lower bound) + AEAD tag (16 B) =
+    // ~29 B of envelope overhead on top of the plaintext. To translate
+    // "datagram total >= 1200 B" into a plaintext lower bound we
+    // subtract a conservative envelope estimate. Erring high (29 B) is
+    // safe: it may make the datagram a few bytes over 1200 (still fully
+    // compliant; §14.1 has no upper bound below MTU) but never under.
+    const bool is_client = !version_ctx_.is_server;
+    const bool client_first_flight = is_client && !encryption_scheduler_->IsInitialPacketSent();
+    const uint32_t target_datagram_size = client_first_flight ? kMinInitialPacketSize : 0;
+    constexpr uint32_t kHandshakeEnvelopeEstimate = 29;  // header lower bound + AEAD tag
+
+    uint32_t handshake_min_plaintext = 0;
+    if (target_datagram_size > 0 && target_datagram_size > initial_size + kHandshakeEnvelopeEstimate) {
+        handshake_min_plaintext = target_datagram_size - initial_size - kHandshakeEnvelopeEstimate;
+    }
+
+    // 5. Build Handshake, *appended* to the same buffer.
+    //
+    // The pre_size snapshot added to BuildDataPacket means SendControl
+    // will see the Handshake's own packet size (not the combined
+    // datagram length) when OnPacketSend records bytes-in-flight.
+    PacketBuilder::DataPacketContext hs_ctx;
+    hs_ctx.level = kHandshake;
+    hs_ctx.cryptographer = handshake_crypto;
+    hs_ctx.local_cid_manager = init_ctx.local_cid_manager;
+    hs_ctx.remote_cid_manager = init_ctx.remote_cid_manager;
+    hs_ctx.quic_version = init_ctx.quic_version;
+    hs_ctx.key_phase = 0;
+    hs_ctx.stream_manager = stream_manager_.get();
+    hs_ctx.include_stream_data = true;
+    hs_ctx.add_padding = (handshake_min_plaintext > 0);
+    hs_ctx.min_size = handshake_min_plaintext;
+    hs_ctx.max_stream_data_size = max_bytes;  // separate per-level cap
+    hs_ctx.frames = send_manager_.GetPendingFrames(kHandshake, max_bytes);
+
+    if (recv_control_.ShouldSendAckNow(kHandshakeNumberSpace)) {
+        auto ack = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), kHandshakeNumberSpace, ecn_enabled_);
+        if (ack) {
+            hs_ctx.frames.insert(hs_ctx.frames.begin(), ack);
         }
-        common::Metrics::CounterInc(common::MetricsStd::DiagTrySendBuildFail);
-        return false;
+    }
+
+    auto hs_result = packet_builder_->BuildDataPacket(
+        hs_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
+    if (!hs_result.success) {
+        // Initial has already been built into the buffer and recorded by
+        // SendControl. Two options at this point:
+        //   (a) Send what we have — Initial alone — accepting it lacks
+        //       padding (if client_first_flight, that violates §14.1).
+        //   (b) Send anyway only if padding wasn't required; otherwise
+        //       drop and let the legacy path rebuild Initial with padding.
+        //
+        // We take a third, simpler stance: if Handshake build fails,
+        // send the Initial as-is *only* when no padding was required
+        // (server or non-first-flight). For the client first flight,
+        // we cannot safely send an under-1200 datagram, so we report 0
+        // and rely on the normal level-sticky burst (next iteration) to
+        // rebuild the Initial with padding. The cost of this fallback
+        // is one wasted packet-number on the Initial — acceptable
+        // because handshake build failures are rare paths.
+        LOG_WARN(
+            "BaseConnection::TryCoalescedInitialHandshake: Handshake build failed: %s "
+            "(initial_size=%u, client_first_flight=%d)",
+            hs_result.error_message.c_str(), initial_size, client_first_flight ? 1 : 0);
+        if (client_first_flight) {
+            // Discard the buffer; caller's TrySendNewBurst will rebuild
+            // and pad Initial properly on the next pass.
+            // qlog draft-03: the Initial we just built is being thrown
+            // away — drain the datagram bracket so the next attempt gets
+            // a fresh id rather than inheriting this orphan one.
+            (void)send_manager_.GetSendControl().EndSendDatagram();
+            return 0;
+        }
+        // Server or non-first-flight: ship Initial alone — the datagram
+        // therefore holds exactly one packet (the Initial) and the
+        // standard FinishSendDatagram path is correct.
+        encryption_scheduler_->SetInitialPacketSent(true);
+        if (!FinishSendDatagram(buffer)) {
+            return 0;
+        }
+        return 1;
     }
 
     LOG_DEBUG(
-        "BaseConnection::TrySend: built packet pn=%llu, size=%u bytes", result.packet_number, result.packet_size);
+        "BaseConnection::TryCoalescedInitialHandshake: built Handshake pn=%llu size=%u, "
+        "datagram_total=%u (target>=%u, client_first_flight=%d)",
+        hs_result.packet_number, hs_result.packet_size, initial_size + hs_result.packet_size, target_datagram_size,
+        client_first_flight ? 1 : 0);
 
-    // 11. Mark Initial packet as sent (if needed)
-    if (send_ctx.level == kInitial) {
-        encryption_scheduler_->SetInitialPacketSent(true);
+    // 6. Update Initial-sent flag (scheduler uses this for 0-RTT ordering).
+    encryption_scheduler_->SetInitialPacketSent(true);
+
+    // 7. Ship the coalesced datagram.
+    if (!FinishSendDatagram(buffer)) {
+        // SendBuffer already accounted the failure; both packets are
+        // already in the SendControl bytes-in-flight ledger and will be
+        // detected as lost via the normal PTO path. Nothing more to do.
+        return 0;
     }
-
-    // 12. Send buffer
-    uint64_t t_send_start = common::Metrics::NowUs();
-    bool send_success = SendBuffer(buffer);
-    {
-        uint64_t t_send_end = common::Metrics::NowUs();
-        if (t_send_end > t_send_start) {
-            common::Metrics::HistogramObserve(
-                common::MetricsStd::DiagSendLatencyUs, t_send_end - t_send_start);
-        }
-    }
-
-    // PERF VALIDATION: count successful datagram emissions. TrySend hands one
-    // datagram to SendBuffer per successful pass, so this is also "successful
-    // TrySend iterations on the data path" (the lost-packet retransmit branch
-    // earlier returns directly without reaching here — that branch is rare in
-    // a clean loopback transfer and intentionally excluded).
-    if (send_success) {
-        // Packet payload size distribution diagnostic
-        common::Metrics::HistogramObserve(
-            common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
-    }
-
-    // 12.5. Update connection-level send flow control tracking
-    // CRITICAL: Without this, sent_bytes_ stays at 0 and flow control is bypassed.
-    // Peers with smaller initial_max_data would see FLOW_CONTROL_ERROR.
-    if (send_success && result.stream_data_size > 0) {
-        send_flow_controller_.OnDataSent(result.stream_data_size);
-    }
-
-    // 13. RFC 9001 Section 6: Check if Key Update should be triggered
-    if (send_success && send_ctx.level == kApplication && key_update_trigger_.IsEnabled()) {
-        if (key_update_trigger_.OnBytesSent(result.packet_size)) {
-            // Trigger key update
-            if (connection_crypto_.TriggerKeyUpdate()) {
-                key_update_trigger_.MarkTriggered();
-                key_update_trigger_.Reset();
-                LOG_INFO("Key Update triggered after sending %u bytes", result.packet_size);
-            }
-        }
-    }
-
-    return send_success;
+    common::Metrics::HistogramObserve(common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
+    return 2;
 }
 
 bool BaseConnection::SendBuffer(std::shared_ptr<common::IBuffer> buffer) {
@@ -2081,10 +2344,11 @@ bool BaseConnection::SendBuffer(std::shared_ptr<common::IBuffer> buffer) {
         // flushes before returning from ProcessSend.
         if (send_sink_) {
             send_sink_->push_back(std::move(packet));
-            LOG_DEBUG("BaseConnection::SendBuffer: queued %u bytes for batch, sock=%d",
-                      buffer->GetDataLength(), send_sock);
+            LOG_DEBUG(
+                "BaseConnection::SendBuffer: queued %u bytes for batch, sock=%d", buffer->GetDataLength(), send_sock);
             return true;
         }
+        // sink not installed -> direct Send (bypasses batch entirely)
 
         if (!sender_->Send(packet)) {
             LOG_ERROR("BaseConnection::SendBuffer: sender_->Send() failed");
@@ -2099,6 +2363,61 @@ bool BaseConnection::SendBuffer(std::shared_ptr<common::IBuffer> buffer) {
     LOG_ERROR("BaseConnection::SendBuffer: no sender available");
     common::Metrics::CounterInc(common::MetricsStd::DiagSendBufferFail);
     return false;
+}
+
+// qlog draft-03 helpers: bracket every outbound UDP datagram with a Begin /
+// Finish pair so that:
+//   * every QUIC packet built inside the bracket is tagged in qlog with the
+//     same datagram_id (visible on packet_sent events), and
+//   * once the datagram is shipped, a single transport:datagrams_sent event
+//     is emitted summarising packet_count / raw_length / packet_numbers.
+//
+// These two pieces of metadata are what qvis (and the draft-03 spec)
+// require to render Initial+Handshake coalescing — the exact case where
+// the previous draft-02 trace looked like two unrelated packets.
+void BaseConnection::BeginSendDatagram() {
+    // The id 0 is reserved for "no datagram open"; first real id is 1.
+    // Even when qlog is disabled the call is essentially a counter bump
+    // plus a setter store, so we don't bother gating on qlog_trace_.
+    const uint64_t id = next_send_datagram_id_++;
+    send_manager_.GetSendControl().BeginSendDatagram(id);
+}
+
+bool BaseConnection::FinishSendDatagram(std::shared_ptr<common::IBuffer> buffer) {
+    // Drain accumulator BEFORE SendBuffer: SendBuffer may move ownership of
+    // `buffer` into the worker batch sink and then return immediately, but
+    // the per-packet OnPacketSend callbacks that populate the accumulator
+    // have already fired (during BuildDataPacket).
+    auto summary = send_manager_.GetSendControl().EndSendDatagram();
+
+    bool ok = SendBuffer(buffer);
+
+    // Only emit the qlog event if (a) qlog is on and (b) at least one
+    // packet was recorded. The packet_count==0 case shouldn't normally
+    // happen on the FinishSendDatagram path but is benign: skip silently.
+    if (qlog_trace_ && summary.packet_count > 0) {
+        common::DatagramsSentData dg_data;
+        dg_data.datagram_id = summary.datagram_id;
+        dg_data.count = summary.packet_count;
+        dg_data.raw_length = summary.raw_length;
+        dg_data.packet_numbers = std::move(summary.packet_numbers);
+        QLOG_DATAGRAMS_SENT(qlog_trace_, dg_data);
+    }
+    return ok;
+}
+
+bool BaseConnection::FinishSendDatagramImmediate(std::shared_ptr<common::IBuffer> buffer) {
+    auto summary = send_manager_.GetSendControl().EndSendDatagram();
+    bool ok = SendImmediate(buffer);
+    if (qlog_trace_ && summary.packet_count > 0) {
+        common::DatagramsSentData dg_data;
+        dg_data.datagram_id = summary.datagram_id;
+        dg_data.count = summary.packet_count;
+        dg_data.raw_length = summary.raw_length;
+        dg_data.packet_numbers = std::move(summary.packet_numbers);
+        QLOG_DATAGRAMS_SENT(qlog_trace_, dg_data);
+    }
+    return ok;
 }
 
 bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
@@ -2143,6 +2462,9 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
     }
     auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
+    // qlog draft-03: ACK-only datagram carries exactly one QUIC packet.
+    BeginSendDatagram();
+
     auto result = packet_builder_->BuildAckPacket(target_level, cryptographer, ack_frame,
         cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
         buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion(),
@@ -2150,6 +2472,8 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
 
     if (!result.success) {
         LOG_ERROR("BaseConnection::SendImmediateAck: failed to build packet: %s", result.error_message.c_str());
+        // qlog: discard the empty datagram bracket.
+        (void)send_manager_.GetSendControl().EndSendDatagram();
         return false;
     }
 
@@ -2157,7 +2481,7 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
         result.packet_size);
 
     // 5. Send immediately
-    return SendImmediate(buffer);
+    return FinishSendDatagramImmediate(buffer);
 }
 
 bool BaseConnection::SendImmediateFrame(std::shared_ptr<IFrame> frame, EncryptionLevel level) {
@@ -2178,14 +2502,18 @@ bool BaseConnection::SendImmediateFrame(std::shared_ptr<IFrame> frame, Encryptio
     }
     auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
+    // qlog draft-03: immediate-frame datagram carries exactly one packet.
+    BeginSendDatagram();
+
     auto result = packet_builder_->BuildImmediatePacket(frame, level, cryptographer,
         cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
         buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion(),
         connection_crypto_.GetCurrentKeyPhase());
 
     if (!result.success) {
-        LOG_ERROR(
-            "BaseConnection::SendImmediateFrame: failed to build packet: %s", result.error_message.c_str());
+        LOG_ERROR("BaseConnection::SendImmediateFrame: failed to build packet: %s", result.error_message.c_str());
+        // qlog: discard the empty datagram bracket.
+        (void)send_manager_.GetSendControl().EndSendDatagram();
         return false;
     }
 
@@ -2193,7 +2521,7 @@ bool BaseConnection::SendImmediateFrame(std::shared_ptr<IFrame> frame, Encryptio
         "BaseConnection::SendImmediateFrame: built packet pn=%llu, size=%u", result.packet_number, result.packet_size);
 
     // 3. Send immediately
-    return SendImmediate(buffer);
+    return FinishSendDatagramImmediate(buffer);
 }
 
 }  // namespace quic

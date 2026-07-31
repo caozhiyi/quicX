@@ -2,9 +2,9 @@
 #include <cstring>
 #include <string>
 
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 #include "common/qlog/qlog.h"
 
 #include "quic/config.h"
@@ -84,6 +84,11 @@ void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& pac
         qlog_data.packet_number = packet->GetPacketNumber();
         qlog_data.packet_type = packet->GetHeader()->GetPacketType();
         qlog_data.packet_size = pkt_len;
+        // qlog draft-03: tag this packet with the UDP datagram it travels
+        // in, so qvis can render Initial+Handshake (and similar) coalesced
+        // bundles as a single datagram. Zero means "caller did not open a
+        // datagram"; ToJson() will omit the field in that case.
+        qlog_data.datagram_id = current_send_datagram_id_;
 
         // Pass the rich frame objects so the serializer can emit
         // per-frame fields (stream_id/offset/length, ack ranges, ...).
@@ -94,6 +99,15 @@ void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& pac
         }
 
         QLOG_PACKET_SENT(qlog_trace_, qlog_data);
+
+        // Accumulate into the in-progress datagram so EndSendDatagram can
+        // later emit a single transport:datagrams_sent event with the full
+        // packet_numbers list and raw_length.
+        if (current_send_datagram_id_ != 0) {
+            current_send_packet_count_++;
+            current_send_raw_length_ += pkt_len;
+            current_send_packet_numbers_.push_back(packet->GetPacketNumber());
+        }
     }
 
     // Track when we last sent ack-eliciting data for PTO timer
@@ -149,9 +163,8 @@ void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& pac
     pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
     uint64_t pto_ms_send = rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay());
     timer_->AddTimer(pto_timer_, pto_ms_send);
-    LOG_DEBUG(
-        "SendControl::OnPacketSend: PTO armed, ns=%d pn=%llu pto_ms=%llu unacked[%d]_size=%zu",
-        ns, packet->GetPacketNumber(), pto_ms_send, ns, unacked_packets_[ns].size());
+    LOG_DEBUG("SendControl::OnPacketSend: PTO armed, ns=%d pn=%llu pto_ms=%llu unacked[%d]_size=%zu", ns,
+        packet->GetPacketNumber(), pto_ms_send, ns, unacked_packets_[ns].size());
 }
 
 void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::shared_ptr<IFrame>& frame) {
@@ -166,8 +179,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
         static thread_local uint64_t last_ack_us = 0;
         uint64_t now_us = common::Metrics::NowUs();
         if (last_ack_us != 0 && now_us > last_ack_us) {
-            common::Metrics::HistogramObserve(
-                common::MetricsStd::DiagAckGapUs, now_us - last_ack_us);
+            common::Metrics::HistogramObserve(common::MetricsStd::DiagAckGapUs, now_us - last_ack_us);
         }
         last_ack_us = now_us;
     }
@@ -176,8 +188,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
     common::Metrics::CounterInc(common::MetricsStd::DiagAcksReceived);
 
     auto ack_frame = std::dynamic_pointer_cast<AckFrame>(frame);
-    LOG_DEBUG("SendControl::OnPacketAck: largest_ack=%llu, first_ack_range=%u, ns=%d",
-        ack_frame->GetLargestAck(), ack_frame->GetFirstAckRange(), ns);
+    LOG_DEBUG("SendControl::OnPacketAck: largest_ack=%llu, first_ack_range=%u, ns=%d", ack_frame->GetLargestAck(),
+        ack_frame->GetFirstAckRange(), ns);
 
     // Log packets_acked event to qlog
     if (qlog_trace_) {
@@ -274,9 +286,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
 
             // Only notify congestion control if packet wasn't already declared lost
             if (!iter->second.is_lost) {
-                congestion_control_->OnPacketAcked(
-                    AckEvent{pkt_num, iter->second.pkt_len_, now * 1000, ack_frame->GetAckDelay(), ecn_ce,
-                        iter->second.send_time_ * 1000});
+                congestion_control_->OnPacketAcked(AckEvent{pkt_num, iter->second.pkt_len_, now * 1000,
+                    ack_frame->GetAckDelay(), ecn_ce, iter->second.send_time_ * 1000});
                 // BUGFIX: RttCalculator reports in milliseconds, but CC algorithms
                 // (BBR v1/v2/v3) store srtt_us_/min_rtt_us_ in *microseconds*.
                 // Without this ×1000 conversion, BBR's BDP = bw × min_rtt_us / 1e6
@@ -285,8 +296,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
                 // Use max(1, ...) to guarantee at least 1ms (1000us) — on loopback
                 // the ms-granularity clock often yields 0ms RTT samples.
                 uint64_t srtt_us_for_cc = std::max<uint64_t>(1, rtt_calculator_.GetSmoothedRtt()) * 1000;
-                congestion_control_->OnRoundTripSample(srtt_us_for_cc,
-                    static_cast<uint64_t>(ack_frame->GetAckDelay()) * 1000);
+                congestion_control_->OnRoundTripSample(
+                    srtt_us_for_cc, static_cast<uint64_t>(ack_frame->GetAckDelay()) * 1000);
 
                 // Metrics: Packet acknowledged
                 common::Metrics::CounterInc(common::MetricsStd::QuicPacketsAcked);
@@ -326,9 +337,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
 
             // Notify congestion control to decrement bytes_in_flight
             if (!task->second.is_lost) {
-                congestion_control_->OnPacketAcked(
-                    AckEvent{pkt_num, task->second.pkt_len_, now * 1000, ack_frame->GetAckDelay(), false,
-                        task->second.send_time_ * 1000});
+                congestion_control_->OnPacketAcked(AckEvent{pkt_num, task->second.pkt_len_, now * 1000,
+                    ack_frame->GetAckDelay(), false, task->second.send_time_ * 1000});
 
                 // Metrics: Packet acknowledged
                 common::Metrics::CounterInc(common::MetricsStd::QuicPacketsAcked);
@@ -347,8 +357,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
                         stream_info.stream_id, stream_info.offset_start, stream_info.length, stream_info.has_fin);
                 }
             } else {
-                LOG_DEBUG("SendControl::OnPacketAck: callback=%d, stream_data.empty()=%d",
-                    stream_data_ack_cb_ ? 1 : 0, task->second.stream_data.empty());
+                LOG_DEBUG("SendControl::OnPacketAck: callback=%d, stream_data.empty()=%d", stream_data_ack_cb_ ? 1 : 0,
+                    task->second.stream_data.empty());
             }
 
             // Remove from unacked_packets
@@ -383,9 +393,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
                 // Notify congestion control to decrement bytes_in_flight
                 // BUG FIX: Was missing this call, causing bytes_in_flight to leak
                 if (!task->second.is_lost) {
-                    congestion_control_->OnPacketAcked(
-                        AckEvent{pkt_num, task->second.pkt_len_, now * 1000, ack_frame->GetAckDelay(), false,
-                            task->second.send_time_ * 1000});
+                    congestion_control_->OnPacketAcked(AckEvent{pkt_num, task->second.pkt_len_, now * 1000,
+                        ack_frame->GetAckDelay(), false, task->second.send_time_ * 1000});
 
                     // Metrics: Packet acknowledged
                     common::Metrics::CounterInc(common::MetricsStd::QuicPacketsAcked);
@@ -394,8 +403,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
                 // Notify stream data ACK if callback is set
                 if (stream_data_ack_cb_ && !task->second.stream_data.empty()) {
                     for (const auto& stream_info : task->second.stream_data) {
-                        stream_data_ack_cb_(stream_info.stream_id, stream_info.offset_start, stream_info.length,
-                            stream_info.has_fin);
+                        stream_data_ack_cb_(
+                            stream_info.stream_id, stream_info.offset_start, stream_info.length, stream_info.has_fin);
                     }
                 }
 
@@ -454,8 +463,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
         pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
         uint64_t pto_ms_ack = rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay());
         timer_->AddTimer(pto_timer_, pto_ms_ack);
-        LOG_DEBUG(
-            "SendControl::OnPacketAck: PTO re-armed (in-flight), pto_ms=%llu unacked[0/1/2]={%zu,%zu,%zu}",
+        LOG_DEBUG("SendControl::OnPacketAck: PTO re-armed (in-flight), pto_ms=%llu unacked[0/1/2]={%zu,%zu,%zu}",
             pto_ms_ack, unacked_packets_[0].size(), unacked_packets_[1].size(), unacked_packets_[2].size());
     } else if (!handshake_complete_) {
         // RFC 9002 §6.2.2.1: During handshake, keep PTO timer alive even when
@@ -469,7 +477,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
         LOG_DEBUG("SendControl::OnPacketAck: PTO armed (pre-handshake), pto_ms=%llu", pto_ms_hs);
     } else {
         LOG_DEBUG(
-            "SendControl::OnPacketAck: PTO LEFT CANCELLED (handshake done, nothing in-flight) unacked[0/1/2]={%zu,%zu,%zu}",
+            "SendControl::OnPacketAck: PTO LEFT CANCELLED (handshake done, nothing in-flight) "
+            "unacked[0/1/2]={%zu,%zu,%zu}",
             unacked_packets_[0].size(), unacked_packets_[1].size(), unacked_packets_[2].size());
     }
     // else: handshake done AND nothing ack-eliciting in flight → PTO not
@@ -492,8 +501,7 @@ void SendControl::UpdateConfig(const TransportParam& tp) {
 }
 
 void SendControl::ClearRetransmissionData() {
-    LOG_DEBUG(
-        "SendControl::ClearRetransmissionData: clearing, unacked[0/1/2]={%zu,%zu,%zu}",
+    LOG_DEBUG("SendControl::ClearRetransmissionData: clearing, unacked[0/1/2]={%zu,%zu,%zu}",
         unacked_packets_[0].size(), unacked_packets_[1].size(), unacked_packets_[2].size());
     lost_packets_.clear();
     for (int i = 0; i < PacketNumberSpace::kNumberSpaceCount; i++) {
@@ -580,9 +588,8 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
         // Declare lost if kPacketThreshold (3) packets with higher numbers are acknowledged
         if (largest_acked >= pkt_num + kPacketThreshold) {
             should_declare_lost = true;
-            LOG_DEBUG(
-                "DetectLostPackets: packet %llu lost by packet threshold (largest_acked=%llu, threshold=%u)", pkt_num,
-                largest_acked, kPacketThreshold);
+            LOG_DEBUG("DetectLostPackets: packet %llu lost by packet threshold (largest_acked=%llu, threshold=%u)",
+                pkt_num, largest_acked, kPacketThreshold);
         }
 
         // RFC 9002 Section 6.1.2: Time threshold
@@ -677,8 +684,7 @@ void SendControl::OnPTOTimer() {
 
     LOG_WARN(
         "SendControl::OnPTOTimer: PTO fired, pto_count=%u, triggering probe", rtt_calculator_.GetConsecutivePTOCount());
-    LOG_DEBUG(
-        "SendControl::OnPTOTimer: entry, unacked[0/1/2]={%zu,%zu,%zu} handshake_complete=%d",
+    LOG_DEBUG("SendControl::OnPTOTimer: entry, unacked[0/1/2]={%zu,%zu,%zu} handshake_complete=%d",
         unacked_packets_[0].size(), unacked_packets_[1].size(), unacked_packets_[2].size(),
         handshake_complete_ ? 1 : 0);
 
@@ -695,7 +701,8 @@ void SendControl::OnPTOTimer() {
                     // Mark as lost and trigger retransmission
                     it->second.is_lost = true;
                     lost_packets_.push_back(LostPacketEntry{it->second.packet, it->second.stream_data});
-                    congestion_control_->OnPacketLost(LossEvent{it->first, it->second.pkt_len_, common::UTCTimeMsec() * 1000});
+                    congestion_control_->OnPacketLost(
+                        LossEvent{it->first, it->second.pkt_len_, common::UTCTimeMsec() * 1000});
                     timer_->RemoveTimer(it->second.timer_task_);
 
                     // Log marked_for_retransmit event (PTO-triggered)
@@ -738,8 +745,7 @@ void SendControl::OnPTOTimer() {
     // "retx-of-retx never reaches peer" failure mode observed in
     // transfer-5MB / quicx-quic-go interop (see PTO arm expire analysis).
     if (handshake_complete_ && application_probe_cb_) {
-        LOG_WARN(
-            "SendControl::OnPTOTimer: post-handshake, scheduling PING probe (found_retransmit=%d)",
+        LOG_WARN("SendControl::OnPTOTimer: post-handshake, scheduling PING probe (found_retransmit=%d)",
             found_retransmit ? 1 : 0);
         application_probe_cb_();
     }
@@ -757,6 +763,34 @@ void SendControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {
     if (congestion_control_) {
         congestion_control_->SetQlogTrace(trace);
     }
+}
+
+void SendControl::BeginSendDatagram(uint64_t datagram_id) {
+    // No-op when qlog isn't enabled: the per-packet accumulator path inside
+    // OnPacketSend already guards on qlog_trace_, so just keep the id at 0
+    // and avoid touching the vector to stay branch-free in the no-qlog hot
+    // path. When qlog is enabled we still want the id even if the caller
+    // doesn't end up calling EndSendDatagram (e.g. SendImmediateAck only
+    // emits one packet) — the id annotation on packet_sent is useful on
+    // its own.
+    current_send_datagram_id_ = datagram_id;
+    current_send_packet_count_ = 0;
+    current_send_raw_length_ = 0;
+    current_send_packet_numbers_.clear();
+}
+
+SendControl::SendDatagramSummary SendControl::EndSendDatagram() {
+    SendDatagramSummary out;
+    out.datagram_id = current_send_datagram_id_;
+    out.packet_count = current_send_packet_count_;
+    out.raw_length = current_send_raw_length_;
+    out.packet_numbers = std::move(current_send_packet_numbers_);
+    // Reset accumulator for the next datagram.
+    current_send_datagram_id_ = 0;
+    current_send_packet_count_ = 0;
+    current_send_raw_length_ = 0;
+    current_send_packet_numbers_.clear();
+    return out;
 }
 
 void SendControl::LogRecoveryMetricsIfChanged(uint64_t now) {

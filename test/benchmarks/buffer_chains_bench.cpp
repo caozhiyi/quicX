@@ -38,8 +38,8 @@ static void BM_BufferChains_AppendAndFlatten(benchmark::State& state) {
     }
 }
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
 BENCHMARK(quicx::common::BM_BufferChains_AppendAndFlatten)
     ->Args({64, 4096})
@@ -47,7 +47,7 @@ BENCHMARK(quicx::common::BM_BufferChains_AppendAndFlatten)
     ->Args({1024, 4 * 1024 * 1024});
 BENCHMARK_MAIN();
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif
-
-

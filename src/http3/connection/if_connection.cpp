@@ -32,14 +32,13 @@ void IConnection::Init() {
     // pure virtual on a half-destroyed object (was the cause of the
     // __cxa_pure_virtual SIGABRT). Per ownership_and_memory.md §3.1.
     std::weak_ptr<IConnection> weak_self = weak_from_this();
-    quic_connection_->SetStreamStateCallBack(
-        [weak_self](std::shared_ptr<IQuicStream> stream, uint32_t error_code) {
-            auto self = weak_self.lock();
-            if (!self) {
-                return;
-            }
-            self->HandleStream(stream, error_code);
-        });
+    quic_connection_->SetStreamStateCallBack([weak_self](std::shared_ptr<IQuicStream> stream, uint32_t error_code) {
+        auto self = weak_self.lock();
+        if (!self) {
+            return;
+        }
+        self->HandleStream(stream, error_code);
+    });
 
     // Start periodic cleanup timer for completed streams (runs every 100ms)
     StartCleanupTimer();
@@ -96,8 +95,7 @@ void IConnection::Shutdown() {
     goaway_sent_id_ = goaway_id;
     draining_ = true;
 
-    LOG_INFO("IConnection::Shutdown: GOAWAY sent (id=%llu), entering drain",
-        (unsigned long long)goaway_id);
+    LOG_INFO("IConnection::Shutdown: GOAWAY sent (id=%llu), entering drain", (unsigned long long)goaway_id);
 
     // If there's nothing in flight already, close immediately rather than
     // waiting up to 100ms for the cleanup timer tick.
@@ -218,8 +216,8 @@ void IConnection::HandleSettings(const std::unordered_map<uint16_t, uint64_t>& s
     if (it != settings_.end()) {
         uint32_t peer_cap = static_cast<uint32_t>(it->second);
         qpack_encoder_->SetPeerMaxTableCapacity(peer_cap);
-        LOG_DEBUG("HandleSettings: peer qpack_max_table_capacity=%u, encoder cap set to %u",
-            peer_cap, qpack_encoder_->GetMaxTableCapacity());
+        LOG_DEBUG("HandleSettings: peer qpack_max_table_capacity=%u, encoder cap set to %u", peer_cap,
+            qpack_encoder_->GetMaxTableCapacity());
     }
 }
 
@@ -298,10 +296,8 @@ void IConnection::CleanupDestroyedStreams() {
     // finished stream alive in streams_to_destroy_ for one extra tick;
     // by the time we land here that holding-area has been cleared above,
     // so HasInFlightRequests() reflects the real state.
-    if (draining_ && quic_connection_ && !quic_connection_->IsTerminating()
-        && !HasInFlightRequests()) {
-        LOG_INFO(
-            "IConnection::CleanupDestroyedStreams: drain complete, emitting CONNECTION_CLOSE(H3_NO_ERROR)");
+    if (draining_ && quic_connection_ && !quic_connection_->IsTerminating() && !HasInFlightRequests()) {
+        LOG_INFO("IConnection::CleanupDestroyedStreams: drain complete, emitting CONNECTION_CLOSE(H3_NO_ERROR)");
         Close(0);
     }
 }

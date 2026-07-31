@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 
-#include <vector>
 #include <cstring>
+#include <vector>
 
-#include <openssl/ssl.h>
-#include <openssl/crypto.h>
 #include <openssl/bio.h>
+#include <openssl/crypto.h>
 #include <openssl/pem.h>
+#include <openssl/ssl.h>
 
 // A minimal QUIC/TLS harness using only BoringSSL APIs to demonstrate 0-RTT.
 // This test does not use the project's QUIC code. It directly wires SSL_quic_method
@@ -17,38 +17,38 @@ namespace quic {
 namespace {
 
 static const char kCertPem[] =
-      "-----BEGIN CERTIFICATE-----\n"
-      "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
-      "BAYTAkFVMRMwEQYDVQQIDApTb21tLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
-      "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
-      "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
-      "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
-      "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
-      "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
-      "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
-      "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
-      "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
-      "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
-      "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
-      "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
-      "-----END CERTIFICATE-----\n";
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIICWDCCAcGgAwIBAgIJAPuwTC6rEJsMMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV\n"
+    "BAYTAkFVMRMwEQYDVQQIDApTb21tLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX\n"
+    "aWRnaXRzIFB0eSBMdGQwHhcNMTQwNDIzMjA1MDQwWhcNMTcwNDIyMjA1MDQwWjBF\n"
+    "MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\n"
+    "ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKB\n"
+    "gQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92kWdGMdAQhLci\n"
+    "HnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiFKKAnHmUcrgfV\n"
+    "W28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQABo1AwTjAdBgNV\n"
+    "HQ4EFgQUi3XVrMsIvg4fZbf6Vr5sp3Xaha8wHwYDVR0jBBgwFoAUi3XVrMsIvg4f\n"
+    "Zbf6Vr5sp3Xaha8wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQUFAAOBgQA76Hht\n"
+    "ldY9avcTGSwbwoiuIqv0jTL1fHFnzy3RHMLDh+Lpvolc5DSrSJHCP5WuK0eeJXhr\n"
+    "T5oQpHL9z/cCDLAKCKRa4uV0fhEdOWBqyR9p8y5jJtye72t6CuFUV5iqcpF4BH4f\n"
+    "j2VNHwsSrJwkD4QUGlUtH7vwnQmyCFxZMmWAJg==\n"
+    "-----END CERTIFICATE-----\n";
 
 static const char kKeyPem[] =
-      "-----BEGIN RSA PRIVATE KEY-----\n"
-      "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
-      "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
-      "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
-      "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
-      "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
-      "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
-      "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
-      "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
-      "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
-      "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
-      "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
-      "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
-      "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
-      "-----END RSA PRIVATE KEY-----\n";
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIICXgIBAAKBgQDYK8imMuRi/03z0K1Zi0WnvfFHvwlYeyK9Na6XJYaUoIDAtB92\n"
+    "kWdGMdAQhLciHnAjkXLI6W15OoV3gA/ElRZ1xUpxTMhjP6PyY5wqT5r6y8FxbiiF\n"
+    "KKAnHmUcrgfVW28tQ+0rkLGMryRtrukXOgXBv7gcrmU7G1jC2a7WqmeI8QIDAQAB\n"
+    "AoGBAIBy09Fd4DOq/Ijp8HeKuCMKTHqTW1xGHshLQ6jwVV2vWZIn9aIgmDsvkjCe\n"
+    "i6ssZvnbjVcwzSoByhjN8ZCf/i15HECWDFFh6gt0P5z0MnChwzZmvatV/FXCT0j+\n"
+    "WmGNB/gkehKjGXLLcjTb6dRYVJSCZhVuOLLcbWIV10gggJQBAkEA8S8sGe4ezyyZ\n"
+    "m4e9r95g6s43kPqtj5rewTsUxt+2n4eVodD+ZUlCULWVNAFLkYRTBCASlSrm9Xhj\n"
+    "QpmWAHJUkQJBAOVzQdFUaewLtdOJoPCtpYoY1zd22eae8TQEmpGOR11L6kbxLQsk\n"
+    "aMly/DOnOaa82tqAGTdqDEZgSNmCeKKknmECQAvpnY8GUOVAubGR6c+W90iBuQLj\n"
+    "LtFp/9ihd2w/PoDwrHZaoUYVcT4VSfJQog/k7kjE4MYXYWL8eEKg3WTWQNECQQDk\n"
+    "104Wi91Umd1PzF0ijd2jXOERJU1wEKe6XLkYYNHWQAe5l4J4MWj9OdxFXAxIuuR/\n"
+    "tfDwbqkta4xcux67//khAkEAvvRXLHTaa6VFzTaiiO8SaFsHV3lQyXOtMrBpB5jd\n"
+    "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
+    "-----END RSA PRIVATE KEY-----\n";
 
 // Simple buffer to accumulate outgoing handshake data per encryption level.
 struct OutRecord {
@@ -71,17 +71,19 @@ static int OnNewSession(SSL* /*ssl*/, SSL_SESSION* sess) {
     }
     g_captured_session = sess;
     SSL_SESSION_up_ref(g_captured_session);
-    return 0; // keep ownership in lib
+    return 0;  // keep ownership in lib
 }
 
-static int OnSetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER* /*cipher*/, const uint8_t* /*secret*/, size_t /*secret_len*/) {
+static int OnSetReadSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER* /*cipher*/,
+    const uint8_t* /*secret*/, size_t /*secret_len*/) {
     QuicPeer* self = reinterpret_cast<QuicPeer*>(SSL_get_app_data(ssl));
     if (!self) return 0;
     if (level == ssl_encryption_early_data) self->saw_early_read_secret = true;
     return 1;
 }
 
-static int OnSetWriteSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER* /*cipher*/, const uint8_t* /*secret*/, size_t /*secret_len*/) {
+static int OnSetWriteSecret(SSL* ssl, ssl_encryption_level_t level, const SSL_CIPHER* /*cipher*/,
+    const uint8_t* /*secret*/, size_t /*secret_len*/) {
     QuicPeer* self = reinterpret_cast<QuicPeer*>(SSL_get_app_data(ssl));
     if (!self) return 0;
     if (level == ssl_encryption_early_data) self->saw_early_write_secret = true;
@@ -111,8 +113,8 @@ static const SSL_QUIC_METHOD kQuicMethod = {
     OnSendAlert,
 };
 
-static int AlpnSelectCb(SSL* /*ssl*/, const unsigned char** out, unsigned char* outlen,
-                        const unsigned char* in, unsigned int inlen, void* /*arg*/) {
+static int AlpnSelectCb(SSL* /*ssl*/, const unsigned char** out, unsigned char* outlen, const unsigned char* in,
+    unsigned int inlen, void* /*arg*/) {
     const char* proto = "h3";
     for (unsigned int i = 0; i < inlen;) {
         unsigned int len = in[i++];
@@ -127,7 +129,7 @@ static int AlpnSelectCb(SSL* /*ssl*/, const unsigned char** out, unsigned char* 
 }
 
 static void SetClientALPN(SSL* ssl) {
-    const uint8_t alpn[] = {2, 'h', '3'}; // length-prefixed list
+    const uint8_t alpn[] = {2, 'h', '3'};  // length-prefixed list
     SSL_set_alpn_protos(ssl, alpn, sizeof(alpn));
 }
 
@@ -168,7 +170,10 @@ static void Transfer(QuicPeer& a, QuicPeer& b) {
         progressed = false;
         auto want = SSL_quic_read_level(b.ssl);
         for (auto it = a.out.begin(); it != a.out.end();) {
-            if (it->first != want) { ++it; continue; }
+            if (it->first != want) {
+                ++it;
+                continue;
+            }
             int ok = SSL_provide_quic_data(b.ssl, it->first, it->second.data(), it->second.size());
             ASSERT_EQ(1, ok);
             if (it->first == ssl_encryption_application) {
@@ -202,8 +207,7 @@ static void DriveHandshake(QuicPeer& client, QuicPeer& server) {
     ASSERT_TRUE(SSL_is_init_finished(server.ssl));
 }
 
-
-TEST(bssl_quic_0rtt_demo, early_data_resume_basic) {
+TEST(BsslQuic0rttDemoTest, early_data_resume_basic) {
     SSL_CTX* server_ctx = SSL_CTX_new(TLS_method());
     ASSERT_NE(server_ctx, nullptr);
     SSL_CTX_set_min_proto_version(server_ctx, TLS1_3_VERSION);
@@ -240,12 +244,13 @@ TEST(bssl_quic_0rtt_demo, early_data_resume_basic) {
     SSL_set_connect_state(cli1.ssl);
 
     static const char kEarlyCtx[] = "quic-early-data";
-    ASSERT_EQ(1, SSL_set_quic_early_data_context(srv1.ssl, reinterpret_cast<const uint8_t*>(kEarlyCtx), sizeof(kEarlyCtx) - 1));
-    ASSERT_EQ(1, SSL_set_quic_early_data_context(cli1.ssl, reinterpret_cast<const uint8_t*>(kEarlyCtx), sizeof(kEarlyCtx) - 1));
+    ASSERT_EQ(1,
+        SSL_set_quic_early_data_context(srv1.ssl, reinterpret_cast<const uint8_t*>(kEarlyCtx), sizeof(kEarlyCtx) - 1));
+    ASSERT_EQ(1,
+        SSL_set_quic_early_data_context(cli1.ssl, reinterpret_cast<const uint8_t*>(kEarlyCtx), sizeof(kEarlyCtx) - 1));
 
     SetClientALPN(cli1.ssl);
 
-    
     SetQuicTransportParams(cli1.ssl);
     SetQuicTransportParams(srv1.ssl);
 
@@ -277,8 +282,10 @@ TEST(bssl_quic_0rtt_demo, early_data_resume_basic) {
     ASSERT_EQ(1, SSL_set_quic_method(cli2.ssl, &kQuicMethod));
     ASSERT_EQ(1, SSL_set_quic_method(srv2.ssl, &kQuicMethod));
 
-    ASSERT_EQ(1, SSL_set_quic_early_data_context(srv2.ssl, reinterpret_cast<const uint8_t*>(kEarlyCtx), sizeof(kEarlyCtx) - 1));
-    ASSERT_EQ(1, SSL_set_quic_early_data_context(cli2.ssl, reinterpret_cast<const uint8_t*>(kEarlyCtx), sizeof(kEarlyCtx) - 1));
+    ASSERT_EQ(1,
+        SSL_set_quic_early_data_context(srv2.ssl, reinterpret_cast<const uint8_t*>(kEarlyCtx), sizeof(kEarlyCtx) - 1));
+    ASSERT_EQ(1,
+        SSL_set_quic_early_data_context(cli2.ssl, reinterpret_cast<const uint8_t*>(kEarlyCtx), sizeof(kEarlyCtx) - 1));
 
     SSL_set_early_data_enabled(cli2.ssl, 1);
     ASSERT_EQ(1, SSL_set_session(cli2.ssl, g_captured_session));
@@ -296,7 +303,7 @@ TEST(bssl_quic_0rtt_demo, early_data_resume_basic) {
         (void)SSL_get_error(cli2.ssl, rc);
     }
     Transfer(cli2, srv2);
-    
+
     // Start server handshake
     rc = SSL_do_handshake(srv2.ssl);
     if (rc <= 0) {
@@ -307,7 +314,7 @@ TEST(bssl_quic_0rtt_demo, early_data_resume_basic) {
     // Verify 0-RTT state
     EXPECT_TRUE(SSL_in_early_data(cli2.ssl));
     EXPECT_TRUE(cli2.saw_early_write_secret);
-    
+
     // Complete the handshake
     DriveHandshake(cli2, srv2);
 
@@ -326,8 +333,6 @@ TEST(bssl_quic_0rtt_demo, early_data_resume_basic) {
     SSL_CTX_free(server_ctx);
 }
 
-}
-}
-}
-
-
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

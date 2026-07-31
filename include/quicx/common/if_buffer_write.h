@@ -40,6 +40,6 @@ public:
     virtual uint32_t MoveWritePt(uint32_t len) = 0;
 };
 
-}
+}  // namespace quicx
 
 #endif

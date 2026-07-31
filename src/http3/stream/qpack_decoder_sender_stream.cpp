@@ -1,6 +1,6 @@
-#include "http3/stream/type.h"
-#include "http3/frame/qpack_decoder_frames.h"
 #include "http3/stream/qpack_decoder_sender_stream.h"
+#include "http3/frame/qpack_decoder_frames.h"
+#include "http3/stream/type.h"
 
 namespace quicx {
 namespace http3 {
@@ -12,14 +12,12 @@ public:
     static bool Encode(const std::shared_ptr<common::IBuffer>& buffer) {
         uint8_t t = static_cast<uint8_t>(StreamType::kQpackDecoder);
         return buffer && buffer->Write(&t, 1) == 1;
-        }
+    }
 };
-    
+
 QpackDecoderSenderStream::QpackDecoderSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-    ISendStream(StreamType::kQpackDecoder, stream, error_handler) {
-    
-}
+    ISendStream(StreamType::kQpackDecoder, stream, error_handler) {}
 
 QpackDecoderSenderStream::~QpackDecoderSenderStream() {
     // Note: Do NOT call stream_->Close() here during destruction.
@@ -79,7 +77,5 @@ bool QpackDecoderSenderStream::SendInsertCountIncrement(uint64_t delta) {
     return stream_->Flush();
 }
 
-}
-}
-
-
+}  // namespace http3
+}  // namespace quicx

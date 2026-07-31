@@ -119,8 +119,8 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
     // decode scid
     wrapper.DecodeFixedUint8(source_connection_id_length_);
     if (source_connection_id_length_ > kMaxConnectionLength) {
-        LOG_ERROR("source connection id length exceeds maximum. length:%d, max:%d",
-            source_connection_id_length_, kMaxConnectionLength);
+        LOG_ERROR("source connection id length exceeds maximum. length:%d, max:%d", source_connection_id_length_,
+            kMaxConnectionLength);
         return false;
     }
     if (source_connection_id_length_ > 0) {
@@ -136,7 +136,7 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
     *header_start = wire_flag_byte;
 
     header_src_data_ = common::SharedBufferSpan(buffer->GetChunk(), header_start, data_span.GetEnd());
-    
+
     return true;
 }
 

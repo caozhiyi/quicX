@@ -6,14 +6,14 @@
 namespace quicx {
 namespace quic {
 
-class PingFrame:
-    public IFrame {
+class PingFrame: public IFrame {
 public:
-    PingFrame(): IFrame(FrameType::kPing) {}
+    PingFrame():
+        IFrame(FrameType::kPing) {}
     ~PingFrame() {}
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

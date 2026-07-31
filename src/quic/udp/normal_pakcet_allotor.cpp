@@ -1,7 +1,7 @@
 #include "quic/udp/normal_pakcet_allotor.h"
-#include "common/log/log.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {
@@ -19,6 +19,5 @@ std::shared_ptr<NetPacket> NormalPacketAllotor::Malloc() {
     return pkt;
 }
 
-}
-}
-
+}  // namespace quic
+}  // namespace quicx

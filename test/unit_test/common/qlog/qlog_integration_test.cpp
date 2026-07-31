@@ -5,12 +5,12 @@
 #include <memory>
 #include <string>
 
+#include "common/qlog/event/connectivity_events.h"
+#include "common/qlog/event/recovery_events.h"
+#include "common/qlog/event/transport_events.h"
 #include "common/qlog/qlog.h"
 #include "common/qlog/qlog_manager.h"
 #include "common/qlog/qlog_trace.h"
-#include "common/qlog/event/transport_events.h"
-#include "common/qlog/event/recovery_events.h"
-#include "common/qlog/event/connectivity_events.h"
 
 namespace quicx {
 namespace common {
@@ -26,15 +26,11 @@ QlogConfig CreateTestConfig() {
 }
 
 // Test fixture for proper setup/teardown
-class QlogIntegrationTest : public ::testing::Test {
+class QlogIntegrationTest: public ::testing::Test {
 protected:
-    void SetUp() override {
-        QlogManager::Instance().SetConfig(CreateTestConfig());
-    }
+    void SetUp() override { QlogManager::Instance().SetConfig(CreateTestConfig()); }
 
-    void TearDown() override {
-        QlogManager::Instance().Enable(false);
-    }
+    void TearDown() override { QlogManager::Instance().Enable(false); }
 };
 
 // Test P0: Connection lifecycle events

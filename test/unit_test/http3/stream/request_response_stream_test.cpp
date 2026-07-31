@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
+#include <quicx/http3/if_request.h>
+#include <quicx/http3/if_response.h>
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "http3/http/request.h"
-#include <quicx/http3/if_request.h>
-#include <quicx/http3/if_response.h>
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/request_stream.h"
@@ -17,8 +17,8 @@ namespace {
 class MockClientConnection {
 public:
     MockClientConnection(
-        const std::shared_ptr<QpackEncoder>& qpack_encoder, std::shared_ptr<IQuicBidirectionStream> stream)
-        : error_code_(0) {
+        const std::shared_ptr<QpackEncoder>& qpack_encoder, std::shared_ptr<IQuicBidirectionStream> stream):
+        error_code_(0) {
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
         auto response_handler =
             std::bind(&MockClientConnection::ResponseHandler, this, std::placeholders::_1, std::placeholders::_2);
@@ -27,8 +27,8 @@ public:
         auto push_promise_handler = std::bind(&MockClientConnection::PushPromiseHandler, this, std::placeholders::_1);
 
         // In self-loop tests, use the same encoder for both encode and decode
-        request_stream_ = std::make_shared<RequestStream>(
-            qpack_encoder, qpack_encoder, blocked_registry_, stream, response_handler, error_handler, push_promise_handler);
+        request_stream_ = std::make_shared<RequestStream>(qpack_encoder, qpack_encoder, blocked_registry_, stream,
+            response_handler, error_handler, push_promise_handler);
         request_stream_->Init();  // CRITICAL: Initialize callbacks
     }
     ~MockClientConnection() {}
@@ -85,11 +85,11 @@ public:
         auto push_handler = [](std::shared_ptr<IResponse>, std::shared_ptr<ResponseStream>) {};
 
         blocked_registry_ = std::make_shared<QpackBlockedRegistry>();
-        response_stream_ =
-            std::make_shared<ResponseStream>(qpack_encoder, qpack_encoder, blocked_registry_, stream, processor, push_handler,
-                std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
-                []() { return true; });  // Mock: always return true for settings_received
-        response_stream_->Init();        // CRITICAL: Initialize callbacks
+        response_stream_ = std::make_shared<ResponseStream>(qpack_encoder, qpack_encoder, blocked_registry_, stream,
+            processor, push_handler,
+            std::bind(&MockServerConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2),
+            []() { return true; });  // Mock: always return true for settings_received
+        response_stream_->Init();    // CRITICAL: Initialize callbacks
     }
     ~MockServerConnection() {}
 
@@ -366,8 +366,7 @@ TEST_F(RequestResponseStreamTest, BinaryDataBuffer) {
 // ============================================================================
 TEST_F(RequestResponseStreamTest, GetHeadersThenSeparateFinDoesNotDoubleSendResponse) {
     int handler_invocations = 0;
-    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> req,
-                                                std::shared_ptr<IResponse> resp) {
+    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
         ++handler_invocations;
         resp->SetStatusCode(200);
         resp->AddHeader("content-type", "application/octet-stream");
@@ -388,8 +387,7 @@ TEST_F(RequestResponseStreamTest, GetHeadersThenSeparateFinDoesNotDoubleSendResp
     // production semantics for a HEADERS-only STREAM frame, no FIN).
     EXPECT_TRUE(client_connection_->SendRequest(request));
 
-    EXPECT_EQ(handler_invocations, 1)
-        << "handler should run exactly once on HEADERS";
+    EXPECT_EQ(handler_invocations, 1) << "handler should run exactly once on HEADERS";
 
     // Now simulate quic-go's split-FIN behaviour: a second STREAM frame
     // with zero payload and FIN=true arrives on the same server stream.
@@ -404,10 +402,9 @@ TEST_F(RequestResponseStreamTest, GetHeadersThenSeparateFinDoesNotDoubleSendResp
     // producing a second handler invocation and a second HEADERS frame
     // on the wire (which an RFC-9114 peer rejects as TRAILERS containing
     // pseudo-headers).
-    EXPECT_EQ(handler_invocations, 1)
-        << "Bug #24: a separate FIN-only STREAM frame must NOT re-trigger "
-           "the upstream HTTP handler / cause a second SendResponse on the "
-           "same stream (would manifest as TRAILERS with :status to peer).";
+    EXPECT_EQ(handler_invocations, 1) << "Bug #24: a separate FIN-only STREAM frame must NOT re-trigger "
+                                         "the upstream HTTP handler / cause a second SendResponse on the "
+                                         "same stream (would manifest as TRAILERS with :status to peer).";
 }
 
 // Sanity companion: when HEADERS and FIN arrive in the same OnData batch
@@ -416,8 +413,7 @@ TEST_F(RequestResponseStreamTest, GetHeadersThenSeparateFinDoesNotDoubleSendResp
 // fixing the split-FIN path.
 TEST_F(RequestResponseStreamTest, GetHeadersWithFinInSameBatchSendsResponseOnce) {
     int handler_invocations = 0;
-    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> req,
-                                                std::shared_ptr<IResponse> resp) {
+    auto http_handler = [&handler_invocations](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
         ++handler_invocations;
         resp->SetStatusCode(200);
         resp->AppendBody("OK");

@@ -1,16 +1,16 @@
 #ifndef QUIC_CONGESTION_CONTROL_CUBIC_CONGESTION_CONTROL
 #define QUIC_CONGESTION_CONTROL_CUBIC_CONGESTION_CONTROL
 
-#include <memory>
 #include <cstdint>
+#include <memory>
 
-#include "quic/congestion_control/if_pacer.h"
 #include "quic/congestion_control/if_congestion_control.h"
+#include "quic/congestion_control/if_pacer.h"
 
 namespace quicx {
 namespace quic {
 
-class CubicCongestionControl : public ICongestionControl {
+class CubicCongestionControl: public ICongestionControl {
 public:
     CubicCongestionControl();
     ~CubicCongestionControl() override = default;
@@ -38,7 +38,7 @@ private:
     void ResetEpoch(uint64_t now);
     void IncreaseOnAck(uint64_t bytes_acked, uint64_t now);
     void EnterRecovery(uint64_t now);
-    
+
     // HyStart helpers
     void ResetHyStart();
     bool CheckHyStartExit(uint64_t latest_rtt, uint64_t now);
@@ -46,12 +46,12 @@ private:
     // Constants for CUBIC (in packets domain)
     static constexpr double kCubicC = 0.4;     // cubic scaling constant
     static constexpr double kBetaCubic = 0.7;  // multiplicative decrease factor
-    
+
     // HyStart constants
-    static constexpr double kHyStartLowWindow = 16.0;    // Low cwnd threshold (in packets)
-    static constexpr uint32_t kHyStartMinSamples = 8;    // Min RTT samples needed
-    static constexpr uint32_t kHyStartRttThreshUs = 4000; // 4ms RTT increase threshold
-    static constexpr uint32_t kHyStartAckDeltaUs = 2000; // 2ms ACK train threshold
+    static constexpr double kHyStartLowWindow = 16.0;      // Low cwnd threshold (in packets)
+    static constexpr uint32_t kHyStartMinSamples = 8;      // Min RTT samples needed
+    static constexpr uint32_t kHyStartRttThreshUs = 4000;  // 4ms RTT increase threshold
+    static constexpr uint32_t kHyStartAckDeltaUs = 2000;   // 2ms ACK train threshold
 
     // Config
     CcConfigV2 cfg_{};
@@ -65,16 +65,16 @@ private:
     uint64_t srtt_us_ = 0;
 
     // CUBIC specific (packets domain and time in microseconds)
-    double w_max_pkts_ = 0.0;          // cwnd before last loss (in packets)
-    double w_last_pkts_ = 0.0;         // last cwnd in packets
-    uint64_t epoch_start_us_ = 0;      // epoch start time
-    double k_time_sec_ = 0.0;          // K in seconds
+    double w_max_pkts_ = 0.0;      // cwnd before last loss (in packets)
+    double w_last_pkts_ = 0.0;     // last cwnd in packets
+    uint64_t epoch_start_us_ = 0;  // epoch start time
+    double k_time_sec_ = 0.0;      // K in seconds
 
     // Recovery bookkeeping
     bool in_slow_start_ = true;
     bool in_recovery_ = false;
     uint64_t recovery_start_time_us_ = 0;
-    
+
     // HyStart state
     bool hystart_enabled_ = true;
     uint64_t hystart_min_rtt_us_ = UINT64_MAX;
@@ -92,9 +92,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
 #endif
-
-

@@ -9,7 +9,6 @@ SharedBufferSpan::SharedBufferSpan(std::shared_ptr<IBufferChunk> chunk, uint8_t*
     chunk_(std::move(chunk)),
     start_(start),
     end_(end) {
-
     if (!Valid()) {
         chunk_.reset();
         start_ = nullptr;
@@ -113,5 +112,5 @@ uint32_t SharedBufferSpan::GetLength() const {
 BufferSpan SharedBufferSpan::GetSpan() const {
     return BufferSpan(start_, end_);
 }
-}
-}
+}  // namespace common
+}  // namespace quicx

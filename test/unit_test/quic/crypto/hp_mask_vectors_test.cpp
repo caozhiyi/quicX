@@ -1,3 +1,7 @@
+// clang-format off
+// RFC 9001 Appendix A header-protection mask test vectors. Test body follows
+// BoringSSL 2-space indentation convention; do not reformat.
+
 #include <gtest/gtest.h>
 #include <openssl/evp.h>
 #include <memory>
@@ -68,7 +72,7 @@ static void ExpectHpMaskChaCha20(const uint8_t* hp_key,
 }
 #endif
 
-TEST(HeaderProtectionMask, AES128ECB_Vector) {
+TEST(HeaderProtectionMaskTest, AES128ECB_Vector) {
   // Arrange cryptographer with a known base secret.
   uint8_t base_secret[32]; for (int i = 0; i < 32; ++i) base_secret[i] = static_cast<uint8_t>(i);
   auto enc = std::make_shared<Aes128GcmCryptographer>();
@@ -95,7 +99,7 @@ TEST(HeaderProtectionMask, AES128ECB_Vector) {
 }
 
 #ifdef EVP_chacha20
-TEST(HeaderProtectionMask, ChaCha20_Vector) {
+TEST(HeaderProtectionMaskTest, ChaCha20_Vector) {
   // Arrange cryptographer with a known base secret.
   uint8_t base_secret[32]; for (int i = 0; i < 32; ++i) base_secret[i] = static_cast<uint8_t>(0xA0 + i);
   auto enc = std::make_shared<ChaCha20Poly1305Cryptographer>();
@@ -125,5 +129,4 @@ TEST(HeaderProtectionMask, ChaCha20_Vector) {
 } // namespace
 } // namespace quic
 } // namespace quicx
-
-
+// clang-format on

@@ -1,24 +1,20 @@
 
-#include "common/network/io_handle.h"
 #include "quic/connection/if_connection.h"
+#include "common/network/io_handle.h"
 
 namespace quicx {
 namespace quic {
 
 IConnection::IConnection(const ConnectionCallbacks& callbacks):
-        active_connection_cb_(callbacks.active_connection_cb),
-        handshake_done_cb_(callbacks.handshake_done_cb),
-        add_conn_id_cb_(callbacks.add_conn_id_cb),
-        retire_conn_id_cb_(callbacks.retire_conn_id_cb),
-        connection_close_cb_(callbacks.connection_close_cb),
-        sockfd_(-1),
-        migration_sockfd_(-1) {
+    active_connection_cb_(callbacks.active_connection_cb),
+    handshake_done_cb_(callbacks.handshake_done_cb),
+    add_conn_id_cb_(callbacks.add_conn_id_cb),
+    retire_conn_id_cb_(callbacks.retire_conn_id_cb),
+    connection_close_cb_(callbacks.connection_close_cb),
+    sockfd_(-1),
+    migration_sockfd_(-1) {}
 
-}
-
-IConnection::~IConnection() {
-
-}
+IConnection::~IConnection() {}
 
 void IConnection::GetRemoteAddr(std::string& addr, uint32_t& port) {
     addr = peer_addr_.GetIp();
@@ -30,7 +26,7 @@ void IConnection::SetPeerAddress(const common::Address& addr) {
 }
 
 void IConnection::SetPeerAddress(const common::Address&& addr) {
-    peer_addr_ = std::move(addr); 
+    peer_addr_ = std::move(addr);
 }
 
 const common::Address& IConnection::GetPeerAddress() {
@@ -44,7 +40,7 @@ void IConnection::GetLocalAddr(std::string& addr, uint32_t& port) {
         port = local_addr_.GetPort();
         return;
     }
-    
+
     // Otherwise, query from socket
     int32_t sock = (migration_sockfd_ > 0) ? migration_sockfd_ : sockfd_;
     if (sock > 0) {
@@ -56,7 +52,7 @@ void IConnection::GetLocalAddr(std::string& addr, uint32_t& port) {
             return;
         }
     }
-    
+
     addr = "";
     port = 0;
 }
@@ -68,5 +64,5 @@ bool IConnection::GetLocalAddressFromSocket(int32_t sockfd, common::Address& add
     return common::ParseLocalAddress(sockfd, addr);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

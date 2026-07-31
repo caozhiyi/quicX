@@ -1,9 +1,9 @@
 #ifndef HTTP3_QPACK_HUFFMAN_TABLE
 #define HTTP3_QPACK_HUFFMAN_TABLE
 
-#include <vector>
-#include <string>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace quicx {
 namespace http3 {
@@ -20,10 +20,10 @@ public:
 
 private:
     struct HuffmanNode {
-        uint8_t  next;   // next state
-        uint8_t  emit;   // emit symbol
-        uint8_t  symbol; // symbol
-        uint8_t  ending; // ending state
+        uint8_t next;    // next state
+        uint8_t emit;    // emit symbol
+        uint8_t symbol;  // symbol
+        uint8_t ending;  // ending state
     };
     static HuffmanNode huffman_table_[256][16];
 
@@ -35,7 +35,7 @@ private:
     bool ValidatePadding(uint8_t last_byte, uint8_t padding_bits) const;
 };
 
-} 
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

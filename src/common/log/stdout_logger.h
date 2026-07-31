@@ -7,9 +7,7 @@
 namespace quicx {
 namespace common {
 
-class StdoutLogger: 
-    public Logger {
-
+class StdoutLogger: public Logger {
 public:
     StdoutLogger();
     ~StdoutLogger();
@@ -24,7 +22,7 @@ private:
     std::mutex mutex_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

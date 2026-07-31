@@ -5,8 +5,8 @@
 #include <thread>
 #include <vector>
 
-#include "common/network/event_loop.h"
 #include <quicx/common/if_event_loop.h>
+#include "common/network/event_loop.h"
 #include "common/network/if_event_driver.h"
 #include "common/network/io_handle.h"
 
@@ -155,8 +155,7 @@ TEST(EventLoopTest, PureTimerSelfDrives_50ms) {
     auto t1 = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
 
-    EXPECT_EQ(1, fired.load())
-        << "Timer did not fire after Wait() returned (elapsed=" << elapsed << "ms)";
+    EXPECT_EQ(1, fired.load()) << "Timer did not fire after Wait() returned (elapsed=" << elapsed << "ms)";
     // Wait should have blocked for ~50ms (allow generous slack).
     EXPECT_GE(elapsed, 30) << "Wait() returned too early (timer not driving)";
     EXPECT_LE(elapsed, 500) << "Wait() blocked far longer than the 50ms timer";
@@ -191,9 +190,8 @@ TEST(EventLoopTest, PureTimerSelfDrives_LongTimeoutNotPrematurelyWoken) {
     // Should NOT have fired (woken via Wakeup, not the 9s timer).
     EXPECT_EQ(0, fired.load());
     // But also must NOT have spun: must have blocked >= ~100ms.
-    EXPECT_GE(elapsed, 100)
-        << "Wait() returned suspiciously fast (" << elapsed
-        << "ms) despite no events — possible busy-loop or 0-timeout poll";
+    EXPECT_GE(elapsed, 100) << "Wait() returned suspiciously fast (" << elapsed
+                            << "ms) despite no events — possible busy-loop or 0-timeout poll";
     EXPECT_LE(elapsed, 1500);
 
     EXPECT_TRUE(loop.RemoveTimer(id));

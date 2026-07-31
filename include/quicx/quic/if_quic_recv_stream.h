@@ -12,8 +12,7 @@ namespace quicx {
  * install the read callback immediately after obtaining the stream; otherwise
  * inbound data may be dropped.
  */
-class IQuicRecvStream:
-    public virtual IQuicStream {
+class IQuicRecvStream: public virtual IQuicStream {
 public:
     IQuicRecvStream() {}
     virtual ~IQuicRecvStream() {}
@@ -37,6 +36,6 @@ public:
     virtual void SetStreamReadCallBack(stream_read_callback cb) = 0;
 };
 
-}
+}  // namespace quicx
 
 #endif

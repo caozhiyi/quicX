@@ -1,5 +1,5 @@
-#include "common/log/log.h"
 #include "quic/stream/stream_id_generator.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace quic {

@@ -38,11 +38,10 @@ private:
     uint8_t id_[kMaxCidLength];
     uint8_t length_;
     uint64_t sequence_number_;
-    mutable uint64_t hash_; // mutable for lazy initialization in Hash()
+    mutable uint64_t hash_;  // mutable for lazy initialization in Hash()
 };
 
-
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

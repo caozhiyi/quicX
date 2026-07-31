@@ -27,13 +27,8 @@ namespace detail {
  *   - For Initial, token is also present.
  *   - flags / length are optional.
  */
-inline void WritePacketHeader(std::ostringstream& oss,
-                              quic::PacketType packet_type,
-                              uint64_t packet_number,
-                              const std::string& scid,
-                              const std::string& dcid,
-                              uint32_t version,
-                              const std::string& token) {
+inline void WritePacketHeader(std::ostringstream& oss, quic::PacketType packet_type, uint64_t packet_number,
+    const std::string& scid, const std::string& dcid, uint32_t version, const std::string& token) {
     oss << "\"header\":{";
     oss << "\"packet_type\":\"" << PacketTypeToQlogString(packet_type) << "\",";
     oss << "\"packet_number\":" << packet_number;
@@ -43,8 +38,8 @@ inline void WritePacketHeader(std::ostringstream& oss,
     if (!dcid.empty()) {
         oss << ",\"dcid\":\"" << dcid << "\"";
     }
-    if (version != 0 && packet_type != quic::PacketType::k1RttPacketType
-        && packet_type != quic::PacketType::kUnknownPacketType) {
+    if (version != 0 && packet_type != quic::PacketType::k1RttPacketType &&
+        packet_type != quic::PacketType::kUnknownPacketType) {
         // Print version as 0xXXXXXXXX hex string per common qlog convention.
         char buf[16];
         std::snprintf(buf, sizeof(buf), "0x%08x", version);
@@ -63,9 +58,8 @@ inline void WritePacketHeader(std::ostringstream& oss,
  * `frame_types` enum list (frame_type only) for tests / call sites that have
  * not yet been migrated.
  */
-inline void WriteFrames(std::ostringstream& oss,
-                        const std::vector<std::shared_ptr<quic::IFrame>>& frame_objects,
-                        const std::vector<quic::FrameType>& frame_types) {
+inline void WriteFrames(std::ostringstream& oss, const std::vector<std::shared_ptr<quic::IFrame>>& frame_objects,
+    const std::vector<quic::FrameType>& frame_types) {
     oss << "\"frames\":[";
     if (!frame_objects.empty()) {
         for (size_t i = 0; i < frame_objects.size(); ++i) {
@@ -99,10 +93,15 @@ public:
     uint32_t packet_size = 0;
 
     // Long-header metadata (optional; empty/zero means "not applicable")
-    std::string scid;     // hex string
-    std::string dcid;     // hex string
+    std::string scid;  // hex string
+    std::string dcid;  // hex string
     uint32_t version = 0;
-    std::string token;    // hex string (Initial packets only)
+    std::string token;  // hex string (Initial packets only)
+
+    // draft-03 §4.10 (datagrams_sent / packet_sent): links this packet to
+    // the enclosing UDP datagram, exposing packet coalescing in the viewer.
+    // 0 means "unset" and the field is omitted from the output JSON.
+    uint64_t datagram_id = 0;
 
     // Optional fields
     struct RawInfo {
@@ -120,8 +119,13 @@ public:
         if (raw.enabled && !raw.payload_hex.empty()) {
             oss << ",\"payload\":\"" << raw.payload_hex << "\"";
         }
-        oss << "},";
+        oss << "}";
 
+        if (datagram_id != 0) {
+            oss << ",\"datagram_id\":" << datagram_id;
+        }
+
+        oss << ",";
         detail::WriteFrames(oss, frame_objects, frames);
         oss << "}";
         return oss.str();
@@ -146,14 +150,103 @@ public:
     uint32_t version = 0;
     std::string token;
 
+    // draft-03: links the packet back to the enclosing datagrams_received
+    // event. Zero means "unset".
+    uint64_t datagram_id = 0;
+
     std::string ToJson() const override {
         std::ostringstream oss;
         oss << "{";
         detail::WritePacketHeader(oss, packet_type, packet_number, scid, dcid, version, token);
 
-        oss << ",\"raw\":{\"length\":" << packet_size << "},";
+        oss << ",\"raw\":{\"length\":" << packet_size << "}";
 
+        if (datagram_id != 0) {
+            oss << ",\"datagram_id\":" << datagram_id;
+        }
+
+        oss << ",";
         detail::WriteFrames(oss, frame_objects, frames);
+        oss << "}";
+        return oss.str();
+    }
+};
+
+/**
+ * @brief datagrams_sent event data (qlog draft-03 §4.10).
+ *
+ * Emitted once per UDP datagram leaving the endpoint. Together with the
+ * matching `datagram_id` on each `packet_sent` event this exposes packet
+ * coalescing to viewers (qvis shows coalesced packets as a single group
+ * on the time axis).
+ *
+ * Fields:
+ *   - count: number of QUIC packets carried in the datagram (>= 1).
+ *   - raw.length: total bytes written to the wire (sum of all coalesced
+ *     QUIC packets' encoded sizes).
+ *   - datagram_id: monotonically increasing identifier scoped to the
+ *     emitting trace (the connection).
+ *   - packet_numbers: PNs of the packets carried, in transmit order.
+ *     Optional per spec but extremely useful for offline analysis.
+ */
+class DatagramsSentData: public EventData {
+public:
+    uint64_t datagram_id = 0;
+    uint32_t count = 1;
+    uint32_t raw_length = 0;
+    std::vector<uint64_t> packet_numbers;
+
+    std::string ToJson() const override {
+        std::ostringstream oss;
+        oss << "{";
+        oss << "\"count\":" << count;
+        oss << ",\"raw\":{\"length\":" << raw_length << "}";
+        if (datagram_id != 0) {
+            oss << ",\"datagram_id\":" << datagram_id;
+        }
+        if (!packet_numbers.empty()) {
+            oss << ",\"packet_numbers\":[";
+            for (size_t i = 0; i < packet_numbers.size(); ++i) {
+                if (i > 0) oss << ",";
+                oss << packet_numbers[i];
+            }
+            oss << "]";
+        }
+        oss << "}";
+        return oss.str();
+    }
+};
+
+/**
+ * @brief datagrams_received event data (qlog draft-03 §4.11).
+ *
+ * Counterpart to DatagramsSentData on the ingress side. Emitted once per
+ * UDP datagram (post coalesce-split). See DatagramsSentData for the field
+ * semantics.
+ */
+class DatagramsReceivedData: public EventData {
+public:
+    uint64_t datagram_id = 0;
+    uint32_t count = 1;
+    uint32_t raw_length = 0;
+    std::vector<uint64_t> packet_numbers;
+
+    std::string ToJson() const override {
+        std::ostringstream oss;
+        oss << "{";
+        oss << "\"count\":" << count;
+        oss << ",\"raw\":{\"length\":" << raw_length << "}";
+        if (datagram_id != 0) {
+            oss << ",\"datagram_id\":" << datagram_id;
+        }
+        if (!packet_numbers.empty()) {
+            oss << ",\"packet_numbers\":[";
+            for (size_t i = 0; i < packet_numbers.size(); ++i) {
+                if (i > 0) oss << ",";
+                oss << packet_numbers[i];
+            }
+            oss << "]";
+        }
         oss << "}";
         return oss.str();
     }

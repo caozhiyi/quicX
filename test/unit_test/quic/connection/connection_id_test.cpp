@@ -2,9 +2,9 @@
 #include <cstdint>
 #include <cstring>
 
-#include "quic/connection/type.h"
 #include "quic/connection/connection_id.h"
 #include "quic/connection/connection_id_generator.h"
+#include "quic/connection/type.h"
 
 namespace quicx {
 namespace quic {
@@ -34,7 +34,7 @@ TEST(ConnectionIDTest, DefaultConstructorAndHash) {
 }
 
 TEST(ConnectionIDTest, ParamConstructorAndAccessors) {
-    uint8_t raw[8] = {1,2,3,4,5,6,7,8};
+    uint8_t raw[8] = {1, 2, 3, 4, 5, 6, 7, 8};
     uint8_t len = 8;
     uint64_t seq = 42;
 
@@ -56,7 +56,7 @@ TEST(ConnectionIDTest, ParamConstructorAndAccessors) {
 }
 
 TEST(ConnectionIDTest, CopyConstructorAndAssignment) {
-    uint8_t a[4] = {9,9,9,9};
+    uint8_t a[4] = {9, 9, 9, 9};
     ConnectionID cid_a(a, 4, 7);
 
     // Copy constructor
@@ -67,7 +67,7 @@ TEST(ConnectionIDTest, CopyConstructorAndAssignment) {
     EXPECT_EQ(cid_b.Hash(), cid_a.Hash());
 
     // Assignment
-    uint8_t c[6] = {1,1,2,2,3,3};
+    uint8_t c[6] = {1, 1, 2, 2, 3, 3};
     ConnectionID cid_c(c, 6, 11);
     cid_b = cid_c;
     EXPECT_EQ(cid_b.GetLength(), cid_c.GetLength());
@@ -77,12 +77,12 @@ TEST(ConnectionIDTest, CopyConstructorAndAssignment) {
 }
 
 TEST(ConnectionIDTest, EqualityOperators) {
-    uint8_t a[4] = {1,2,3,4};
-    uint8_t b[4] = {1,2,3,5};
+    uint8_t a[4] = {1, 2, 3, 4};
+    uint8_t b[4] = {1, 2, 3, 5};
 
     ConnectionID cid1(a, 4, 1);
-    ConnectionID cid2(a, 4, 2); // same bytes, different seq
-    ConnectionID cid3(b, 4, 1); // different bytes
+    ConnectionID cid2(a, 4, 2);  // same bytes, different seq
+    ConnectionID cid3(b, 4, 1);  // different bytes
 
     // Equality compares only ID bytes; seq doesn't affect equality
     EXPECT_TRUE(cid1 == cid2);
@@ -93,10 +93,10 @@ TEST(ConnectionIDTest, EqualityOperators) {
 }
 
 TEST(ConnectionIDTest, SetIDUpdatesBytesAndLength) {
-    uint8_t a[4] = {1,2,3,4};
+    uint8_t a[4] = {1, 2, 3, 4};
     ConnectionID cid(a, 4, 0);
 
-    uint8_t b[6] = {4,3,2,1,9,8};
+    uint8_t b[6] = {4, 3, 2, 1, 9, 8};
     cid.SetID(b, 6);
 
     EXPECT_EQ(cid.GetLength(), 6);
@@ -112,6 +112,6 @@ TEST(ConnectionIDTest, SetIDUpdatesBytesAndLength) {
     EXPECT_EQ(h1, h2);
 }
 
-} // namespace
-} // namespace quic
-} // namespace quicx
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

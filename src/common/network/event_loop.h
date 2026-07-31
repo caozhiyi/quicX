@@ -11,8 +11,8 @@
 #include <unordered_set>
 #include <vector>
 
-#include "common/network/if_event_driver.h"
 #include <quicx/common/if_event_loop.h>
+#include "common/network/if_event_driver.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
 
@@ -67,8 +67,8 @@ private:
     std::shared_ptr<ITimer> timer_;
     std::vector<Event> events_;
 
-    std::unordered_map<uint64_t, TimerTask> timers_;  // kept only for repeat timers (see AddTimer)
-    std::unordered_set<uint64_t> timer_ids_;          // all live timer ids; used to bound ClearAllTimers
+    std::unordered_map<uint64_t, TimerTask> timers_;   // kept only for repeat timers (see AddTimer)
+    std::unordered_set<uint64_t> timer_ids_;           // all live timer ids; used to bound ClearAllTimers
     std::unordered_map<uint64_t, bool> timer_repeat_;  // timer id -> repeat
     std::unordered_map<uint32_t, std::weak_ptr<IFdHandler>> fd_to_handler_;
 

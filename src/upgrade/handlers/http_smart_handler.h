@@ -7,8 +7,7 @@ namespace quicx {
 namespace upgrade {
 
 // HTTP Smart Handler for plain text connections
-class HttpSmartHandler:
-    public BaseSmartHandler {
+class HttpSmartHandler: public BaseSmartHandler {
 public:
     explicit HttpSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop);
 
@@ -21,7 +20,7 @@ protected:
     std::string GetType() const override { return "HTTP"; }
 };
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx
 
-#endif // UPGRADE_HANDLERS_HTTP_SMART_HANDLER_H 
+#endif  // UPGRADE_HANDLERS_HTTP_SMART_HANDLER_H

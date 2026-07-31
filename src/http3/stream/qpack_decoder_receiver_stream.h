@@ -1,23 +1,22 @@
 #ifndef HTTP3_STREAM_QPACK_DECODER_RECEIVER_STREAM
 #define HTTP3_STREAM_QPACK_DECODER_RECEIVER_STREAM
 
-#include <memory>
-#include <functional>
-#include "http3/stream/if_recv_stream.h"
-#include "http3/qpack/blocked_registry.h"
 #include <quicx/quic/if_quic_recv_stream.h>
+#include <functional>
+#include <memory>
+#include "http3/qpack/blocked_registry.h"
+#include "http3/stream/if_recv_stream.h"
 
 namespace quicx {
 namespace http3 {
 
 /**
  * @brief Qpack decoder receiver stream
- * 
+ *
  * The qpack decoder receiver stream is used to receive qpack decoder frames.
  * It is responsible for handling the SECTION_ACKNOWLEDGEMENT, STREAM_CANCELLATION, and INSERT_COUNT_INCREMENT frames.
  */
-class QpackDecoderReceiverStream:
-    public IRecvStream {
+class QpackDecoderReceiverStream: public IRecvStream {
 public:
     QpackDecoderReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
@@ -33,9 +32,7 @@ private:
     void ParseDecoderFrames(std::shared_ptr<IBufferRead> data);
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif
-
-

@@ -34,19 +34,16 @@
 #define QUICX_VERSION_STRINGIFY(x) QUICX_VERSION_STRINGIFY_IMPL(x)
 
 // Human-readable version string, e.g. "1.0.0".
-#define QUICX_VERSION_STRING            \
-    QUICX_VERSION_STRINGIFY(QUICX_VERSION_MAJOR) "." \
-    QUICX_VERSION_STRINGIFY(QUICX_VERSION_MINOR) "." \
-    QUICX_VERSION_STRINGIFY(QUICX_VERSION_PATCH)
+#define QUICX_VERSION_STRING                     \
+    QUICX_VERSION_STRINGIFY(QUICX_VERSION_MAJOR) \
+    "." QUICX_VERSION_STRINGIFY(QUICX_VERSION_MINOR) "." QUICX_VERSION_STRINGIFY(QUICX_VERSION_PATCH)
 
 // Single 32-bit integer encoding suitable for compile-time comparisons.
 //   QUICX_VERSION >= QUICX_VERSION_NUMBER(1, 0, 0)
 // is the recommended way to feature-gate against a minimum library version.
-#define QUICX_VERSION_NUMBER(major, minor, patch) \
-    (((major) * 10000) + ((minor) * 100) + (patch))
+#define QUICX_VERSION_NUMBER(major, minor, patch) (((major) * 10000) + ((minor) * 100) + (patch))
 
-#define QUICX_VERSION \
-    QUICX_VERSION_NUMBER(QUICX_VERSION_MAJOR, QUICX_VERSION_MINOR, QUICX_VERSION_PATCH)
+#define QUICX_VERSION QUICX_VERSION_NUMBER(QUICX_VERSION_MAJOR, QUICX_VERSION_MINOR, QUICX_VERSION_PATCH)
 
 namespace quicx {
 

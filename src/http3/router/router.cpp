@@ -6,7 +6,7 @@ namespace http3 {
 
 bool Router::AddRoute(HttpMethod method, const std::string& path, const RouteConfig& config) {
     std::shared_ptr<IRouterNode> cur_node;
-    
+
     auto iter = router_map_.find(method);
     if (iter != router_map_.end()) {
         cur_node = iter->second;
@@ -24,7 +24,7 @@ bool Router::AddRoute(HttpMethod method, const std::string& path, const RouteCon
 
 MatchResult Router::Match(HttpMethod method, const std::string& path) {
     MatchResult result;
-    
+
     auto iter = router_map_.find(method);
     if (iter == router_map_.end()) {
         return std::move(result);
@@ -34,5 +34,5 @@ MatchResult Router::Match(HttpMethod method, const std::string& path) {
     return std::move(result);
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

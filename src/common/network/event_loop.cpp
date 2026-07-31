@@ -69,8 +69,7 @@ void EventLoop::AssertInLoopThread() {
         // 2026-05-29). We now log AND abort so any cross-thread access is
         // surfaced immediately with a stack trace from the crashed thread.
         LOG_FATAL("EventLoop accessed from wrong thread! expected_tid_hash=%zu actual_tid_hash=%zu",
-                  std::hash<std::thread::id>{}(thread_id_),
-                  std::hash<std::thread::id>{}(std::this_thread::get_id()));
+            std::hash<std::thread::id>{}(thread_id_), std::hash<std::thread::id>{}(std::this_thread::get_id()));
         // Flush pending log records so the FATAL line is on disk before abort.
         std::abort();
     }
@@ -116,13 +115,13 @@ int EventLoop::Wait() {
     int n = driver_->Wait(events_, timeout_ms);
 
     if (timeout_ms >= 0) {
-        int64_t blocked_ms = static_cast<int64_t>(UTCTimeMsec()) -
-                             static_cast<int64_t>(enter_wait_ms);
+        int64_t blocked_ms = static_cast<int64_t>(UTCTimeMsec()) - static_cast<int64_t>(enter_wait_ms);
         if (blocked_ms > timeout_ms + 100) {
-            LOG_ERROR("EventLoop::Wait: driver overran timeout (blocked=%lldms, "
-                      "requested timeout=%d ms, next_timer=%d ms, n=%d) — "
-                      "possible timer-cache regression",
-                      (long long)blocked_ms, timeout_ms, next_ms, n);
+            LOG_ERROR(
+                "EventLoop::Wait: driver overran timeout (blocked=%lldms, "
+                "requested timeout=%d ms, next_timer=%d ms, n=%d) — "
+                "possible timer-cache regression",
+                (long long)blocked_ms, timeout_ms, next_ms, n);
         }
     }
     if (n < 0) {

@@ -56,8 +56,8 @@ QuicServer::~QuicServer() {
     //    would block on loop->Wait() until the next packet arrives.
     for (auto& kv : worker_map_) {
         if (auto wwt = std::dynamic_pointer_cast<WorkerWithThread>(kv.second)) {
-            wwt->Stop();   // sets stop_ AND wakes up the worker event loop
-            wwt->Join();   // wait for Run() to actually exit
+            wwt->Stop();  // sets stop_ AND wakes up the worker event loop
+            wwt->Join();  // wait for Run() to actually exit
         }
     }
 

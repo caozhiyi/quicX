@@ -1,9 +1,9 @@
 #ifndef COMMON_NETWORK_IF_EVENT_LOOP
 #define COMMON_NETWORK_IF_EVENT_LOOP
 
-#include <memory>
 #include <cstdint>
 #include <functional>
+#include <memory>
 
 namespace quicx {
 namespace common {

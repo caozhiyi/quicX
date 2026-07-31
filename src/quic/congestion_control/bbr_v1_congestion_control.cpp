@@ -2,9 +2,9 @@
 
 #include "common/log/log.h"
 #include "common/qlog/qlog.h"
-#include "quic/congestion_control/util.h"
-#include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v1_congestion_control.h"
+#include "quic/congestion_control/normal_pacer.h"
+#include "quic/congestion_control/util.h"
 
 // References for BBRv1 (this implementation is a teaching subset, not a
 // drop-in BBR):
@@ -58,7 +58,7 @@ void BBRv1CongestionControl::Configure(const CcConfigV2& cfg) {
     // exponentially in O(log BDP) rounds, then drops to its inverse during
     // DRAIN. cwnd_gain stays at 2.0 throughout startup/drain to absorb the
     // BDP plus its STARTUP overshoot before PROBE_BW sets gain=1.0.
-    pacing_gain_ = 2.885; // STARTUP gain ~ 2/ln(2)
+    pacing_gain_ = 2.885;  // STARTUP gain ~ 2/ln(2)
     cwnd_gain_ = 2.0;
 
     cycle_index_ = 0;
@@ -154,7 +154,7 @@ void BBRv1CongestionControl::OnPacketLost(const LossEvent& ev) {
             QLOG_CONGESTION_STATE_UPDATED(qlog_trace_, qlog_data);
         }
         mode_ = Mode::kDrain;
-        pacing_gain_ = 1.0 / 2.885; // drain faster by pacing below bw
+        pacing_gain_ = 1.0 / 2.885;  // drain faster by pacing below bw
         cwnd_gain_ = 2.0;
     }
     UpdatePacingRate();
@@ -215,13 +215,19 @@ uint64_t BBRv1CongestionControl::BdpBytes(uint64_t gain_num, uint64_t gain_den) 
         uint64_t default_bdp = std::max<uint64_t>(cfg_.initial_cwnd_bytes, 4 * cfg_.mss_bytes);
         return congestion_control::muldiv_safe(default_bdp, gain_num, gain_den);
     }
-    uint64_t bw = (max_bw_bps_ > 0) ? max_bw_bps_ : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
-    uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull); // bytes
+    uint64_t bw = (max_bw_bps_ > 0)
+                      ? max_bw_bps_
+                      : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
+    uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull);  // bytes
     return congestion_control::muldiv_safe(bdp, gain_num, gain_den);
 }
 
-void BBRv1CongestionControl::SetPacingGain(double gain) { pacing_gain_ = gain; }
-void BBRv1CongestionControl::SetCwndGain(double gain) { cwnd_gain_ = gain; }
+void BBRv1CongestionControl::SetPacingGain(double gain) {
+    pacing_gain_ = gain;
+}
+void BBRv1CongestionControl::SetCwndGain(double gain) {
+    cwnd_gain_ = gain;
+}
 void BBRv1CongestionControl::UpdatePacingRate() {
     if (!pacer_) return;
     pacer_->OnPacingRateUpdated(GetPacingRateBytesPerSec());
@@ -235,9 +241,7 @@ void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
     // without this BBR would gradually inflate its min_rtt estimate and
     // bufferbloat. Same idea as RFC 9438 §5.2 HyStart's RTT inflation
     // exit, but applied periodically instead of one-shot in slow-start.
-    if (mode_ != Mode::kProbeRtt && 
-        min_rtt_stamp_us_ > 0 && 
-        now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
+    if (mode_ != Mode::kProbeRtt && min_rtt_stamp_us_ > 0 && now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
         {
             common::CongestionStateUpdatedData qlog_data;
             qlog_data.old_state = "congestion_avoidance";
@@ -251,7 +255,7 @@ void BBRv1CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
         probe_rtt_done_stamp_valid_ = true;
         probe_rtt_done_stamp_us_ = now_us + kProbeRttTimeUs;
     }
-    
+
     // Exit ProbeRTT after 200ms
     if (mode_ == Mode::kProbeRtt && now_us >= probe_rtt_done_stamp_us_) {
         {
@@ -279,7 +283,7 @@ void BBRv1CongestionControl::AdvanceProbeBwCycle(uint64_t now_us) {
     // 2-7 cruise at 1.0×. This is the steady-state rate-search loop —
     // distinct from CUBIC's window-based probing (RFC 9438 §4.2).
     static const double kGainCycle[8] = {1.25, 0.75, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
-    uint64_t cycle_len_us = std::max<uint64_t>(min_rtt_us_, 1000); // at least 1ms
+    uint64_t cycle_len_us = std::max<uint64_t>(min_rtt_us_, 1000);  // at least 1ms
     if (now_us - cycle_start_us_ >= cycle_len_us) {
         cycle_index_ = (cycle_index_ + 1) % 8;
         cycle_start_us_ = now_us;
@@ -354,7 +358,5 @@ void BBRv1CongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> tra
     qlog_trace_ = trace;
 }
 
-} // namespace quic
-} // namespace quicx
-
-
+}  // namespace quic
+}  // namespace quicx

@@ -51,7 +51,7 @@ public:
     virtual void Reset() = 0;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

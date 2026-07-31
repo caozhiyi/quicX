@@ -6,10 +6,10 @@ namespace quic {
 
 enum class PacketHeaderType {
     kShortHeader = 0x0,
-    kLongHeader  = 0x1,
+    kLongHeader = 0x1,
 };
 
 }
-}
+}  // namespace quicx
 
 #endif

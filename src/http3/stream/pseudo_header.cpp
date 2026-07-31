@@ -1,7 +1,7 @@
+#include "http3/stream/pseudo_header.h"
 #include <string>
 #include "common/http/url.h"
 #include "common/log/log.h"
-#include "http3/stream/pseudo_header.h"
 
 namespace quicx {
 namespace http3 {
@@ -17,8 +17,7 @@ PseudoHeader::PseudoHeader() {
     response_pseudo_headers_.push_back(PSEUDO_HEADER_STATUS);
 }
 
-PseudoHeader::~PseudoHeader() {
-}
+PseudoHeader::~PseudoHeader() {}
 
 void PseudoHeader::EncodeRequest(std::shared_ptr<IRequest> request) {
     // Add pseudo-headers
@@ -124,5 +123,5 @@ const std::unordered_map<HttpMethod, std::string> PseudoHeader::kMethodToStringM
     {HttpMethod::kAny, "ANY"},
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

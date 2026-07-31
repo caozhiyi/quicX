@@ -8,10 +8,10 @@
 #include <vector>
 
 #include <quicx/http3/type.h>
+#include <quicx/quic/if_quic_connection.h>
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_stream.h"
-#include <quicx/quic/if_quic_connection.h>
 
 namespace quicx {
 namespace http3 {

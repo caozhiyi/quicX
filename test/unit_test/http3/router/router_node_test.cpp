@@ -5,7 +5,7 @@ namespace quicx {
 namespace http3 {
 namespace {
 
-TEST(router_node, add_router) {
+TEST(RouterNodeTest, add_router) {
     RouterNodeRoot root;
     http_handler null_handler = nullptr;
     RouteConfig config(null_handler);
@@ -17,7 +17,7 @@ TEST(router_node, add_router) {
     EXPECT_FALSE(root.AddRoute("/test/home/*/other", 0, config));
 }
 
-TEST(router_node, match) {
+TEST(RouterNodeTest, match) {
     RouterNodeRoot root;
     http_handler null_handler = nullptr;
     RouteConfig config(null_handler);
@@ -43,6 +43,6 @@ TEST(router_node, match) {
     EXPECT_FALSE(root.Match("", 0, "", result3));
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace http3
+}  // namespace quicx

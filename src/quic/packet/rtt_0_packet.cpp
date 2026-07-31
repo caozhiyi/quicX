@@ -115,8 +115,8 @@ bool Rtt0Packet::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
     // decode cipher data
     packet_num_offset_ = cur_pos - span.GetStart();
     if (cur_pos + length_ > end) {
-        LOG_ERROR("Rtt0Packet: length field exceeds buffer boundary. length:%u, remaining:%td",
-            (uint32_t)length_, end - cur_pos);
+        LOG_ERROR("Rtt0Packet: length field exceeds buffer boundary. length:%u, remaining:%td", (uint32_t)length_,
+            end - cur_pos);
         return false;
     }
     cur_pos += length_;

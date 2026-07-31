@@ -1,21 +1,17 @@
-#include "http3/qpack/util.h"
-#include "http3/frame/type.h"
 #include "http3/frame/qpack_encoder_frames.h"
+#include "http3/frame/type.h"
+#include "http3/qpack/util.h"
 
 namespace quicx {
 namespace http3 {
 
 QpackSetCapacityFrame::QpackSetCapacityFrame(uint8_t type):
     IQpackEncoderFrame(type),
-    capacity_(0) {
-    
-}
+    capacity_(0) {}
 
 QpackSetCapacityFrame::QpackSetCapacityFrame(QpackEncoderType type):
     IQpackEncoderFrame(static_cast<uint8_t>(type)),
-    capacity_(0) {
-
-}
+    capacity_(0) {}
 
 bool QpackSetCapacityFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // RFC 9204: 001xxxxx with 5-bit prefix in the first byte
@@ -28,9 +24,7 @@ bool QpackSetCapacityFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
 }
 
 QpackInsertWithNameRefFrame::QpackInsertWithNameRefFrame():
-    IQpackEncoderFrame(0) {
-
-}
+    IQpackEncoderFrame(0) {}
 
 bool QpackInsertWithNameRefFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // Encoder stream: 1 S i i i i i i (6-bit prefix for index)
@@ -55,11 +49,11 @@ bool QpackInsertWithNameRefFrame::Decode(std::shared_ptr<common::IBuffer> buffer
     return QpackDecodeStringLiteral(buffer, value_);
 }
 
-uint32_t QpackInsertWithNameRefFrame::EvaluateEncodeSize() { 
+uint32_t QpackInsertWithNameRefFrame::EvaluateEncodeSize() {
     return 1 + static_cast<uint32_t>(value_.size());
 }
 
-void QpackInsertWithNameRefFrame::Set(bool is_static, uint64_t name_index, const std::string& value) { 
+void QpackInsertWithNameRefFrame::Set(bool is_static, uint64_t name_index, const std::string& value) {
     is_static_ = is_static;
     name_index_ = name_index;
     value_ = value;
@@ -69,7 +63,7 @@ bool QpackInsertWithNameRefFrame::IsStatic() const {
     return is_static_;
 }
 
-uint64_t QpackInsertWithNameRefFrame::GetNameIndex() const { 
+uint64_t QpackInsertWithNameRefFrame::GetNameIndex() const {
     return name_index_;
 }
 
@@ -77,15 +71,13 @@ const std::string& QpackInsertWithNameRefFrame::GetValue() const {
     return value_;
 }
 
-
 QpackInsertWithoutNameRefFrame::QpackInsertWithoutNameRefFrame():
-    IQpackEncoderFrame(0) {
-
-}
+    IQpackEncoderFrame(0) {}
 
 bool QpackInsertWithoutNameRefFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // Encoder stream: 01 n n n n n n (6-bit zero) + name/value
-    if (!QpackEncodePrefixedInteger(buffer, kQpackInsertWithoutNameRefPrefixBits, kQpackInsertWithoutNameRefFirstByteBase, 0)) {
+    if (!QpackEncodePrefixedInteger(
+            buffer, kQpackInsertWithoutNameRefPrefixBits, kQpackInsertWithoutNameRefFirstByteBase, 0)) {
         return false;
     }
     if (!QpackEncodeStringLiteral(name_, buffer, false)) {
@@ -111,16 +103,16 @@ bool QpackInsertWithoutNameRefFrame::Decode(std::shared_ptr<common::IBuffer> buf
     return QpackDecodeStringLiteral(buffer, value_);
 }
 
-uint32_t QpackInsertWithoutNameRefFrame::EvaluateEncodeSize() { 
+uint32_t QpackInsertWithoutNameRefFrame::EvaluateEncodeSize() {
     return 1 + static_cast<uint32_t>(name_.size() + value_.size());
 }
 
 void QpackInsertWithoutNameRefFrame::Set(const std::string& name, const std::string& value) {
-    name_ = name; 
+    name_ = name;
     value_ = value;
 }
 
-const std::string& QpackInsertWithoutNameRefFrame::GetName() const { 
+const std::string& QpackInsertWithoutNameRefFrame::GetName() const {
     return name_;
 }
 
@@ -129,9 +121,7 @@ const std::string& QpackInsertWithoutNameRefFrame::GetValue() const {
 }
 
 QpackDuplicateFrame::QpackDuplicateFrame():
-    IQpackEncoderFrame(0) {
-
-}
+    IQpackEncoderFrame(0) {}
 
 bool QpackDuplicateFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // Encoder stream Duplicate: 0001 xxxx (4-bit prefix index)
@@ -141,7 +131,7 @@ bool QpackDuplicateFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t first = 0;
     return QpackDecodePrefixedInteger(buffer, kQpackDuplicatePrefixBits, first, index_);
 }
-uint32_t QpackDuplicateFrame::EvaluateEncodeSize() { 
+uint32_t QpackDuplicateFrame::EvaluateEncodeSize() {
     return 1;
 }
 
@@ -153,7 +143,5 @@ uint64_t QpackDuplicateFrame::Get() const {
     return index_;
 }
 
-}
-}
-
-
+}  // namespace http3
+}  // namespace quicx

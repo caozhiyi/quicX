@@ -74,7 +74,7 @@ TEST(StandaloneBufferChunkTest, AllocatesAndReleases) {
 TEST(BufferChunkTest, GetPool) {
     auto pool = MakeBlockMemoryPoolPtr(64u, 1u);
     BufferChunk chunk(pool);
-    
+
     ASSERT_TRUE(chunk.Valid());
     EXPECT_EQ(pool, chunk.GetPool());
 }
@@ -84,7 +84,7 @@ TEST(BufferChunkTest, SelfMoveAssignment) {
     BufferChunk chunk(pool);
     ASSERT_TRUE(chunk.Valid());
     auto* data = chunk.GetData();
-    
+
     // Self-assignment should be safe
     chunk = std::move(chunk);
     EXPECT_TRUE(chunk.Valid());
@@ -93,15 +93,15 @@ TEST(BufferChunkTest, SelfMoveAssignment) {
 
 TEST(BufferChunkTest, MultipleChunksFromSamePool) {
     auto pool = MakeBlockMemoryPoolPtr(64u, 3u);
-    
+
     BufferChunk chunk1(pool);
     BufferChunk chunk2(pool);
     BufferChunk chunk3(pool);
-    
+
     EXPECT_TRUE(chunk1.Valid());
     EXPECT_TRUE(chunk2.Valid());
     EXPECT_TRUE(chunk3.Valid());
-    
+
     // All should have different data pointers
     EXPECT_NE(chunk1.GetData(), chunk2.GetData());
     EXPECT_NE(chunk2.GetData(), chunk3.GetData());
@@ -111,7 +111,7 @@ TEST(BufferChunkTest, MultipleChunksFromSamePool) {
 TEST(BufferChunkTest, PoolRecycling) {
     auto pool = MakeBlockMemoryPoolPtr(64u, 1u);
     EXPECT_EQ(0u, pool->GetSize());
-    
+
     uint8_t* first_data = nullptr;
     {
         BufferChunk chunk1(pool);
@@ -119,7 +119,7 @@ TEST(BufferChunkTest, PoolRecycling) {
         EXPECT_EQ(0u, pool->GetSize());
     }
     EXPECT_EQ(1u, pool->GetSize());
-    
+
     {
         BufferChunk chunk2(pool);
         // Should reuse the same memory
@@ -132,15 +132,15 @@ TEST(BufferChunkTest, PoolRecycling) {
 TEST(BufferChunkTest, WriteAndReadData) {
     auto pool = MakeBlockMemoryPoolPtr(64u, 1u);
     BufferChunk chunk(pool);
-    
+
     ASSERT_TRUE(chunk.Valid());
     auto* data = chunk.GetData();
-    
+
     // Write data
     for (uint32_t i = 0; i < 10; ++i) {
         data[i] = static_cast<uint8_t>(i + 1);
     }
-    
+
     // Read and verify
     for (uint32_t i = 0; i < 10; ++i) {
         EXPECT_EQ(i + 1, data[i]);
@@ -174,11 +174,11 @@ TEST(StandaloneBufferChunkTest, LargeAllocation) {
 TEST(StandaloneBufferChunkTest, MoveAssignment) {
     StandaloneBufferChunk chunk1(128);
     StandaloneBufferChunk chunk2(64);
-    
+
     ASSERT_TRUE(chunk1.Valid());
     ASSERT_TRUE(chunk2.Valid());
     auto* data1 = chunk1.GetData();
-    
+
     chunk2 = std::move(chunk1);
     EXPECT_FALSE(chunk1.Valid());
     EXPECT_TRUE(chunk2.Valid());
@@ -190,7 +190,7 @@ TEST(StandaloneBufferChunkTest, SelfMoveAssignment) {
     StandaloneBufferChunk chunk(64);
     ASSERT_TRUE(chunk.Valid());
     auto* data = chunk.GetData();
-    
+
     chunk = std::move(chunk);
     EXPECT_TRUE(chunk.Valid());
     EXPECT_EQ(data, chunk.GetData());
@@ -205,12 +205,12 @@ TEST(StandaloneBufferChunkTest, WriteAndReadData) {
     StandaloneBufferChunk chunk(64);
     ASSERT_TRUE(chunk.Valid());
     auto* data = chunk.GetData();
-    
+
     // Write pattern
     for (uint32_t i = 0; i < chunk.GetLength(); ++i) {
         data[i] = static_cast<uint8_t>(i % 256);
     }
-    
+
     // Verify pattern
     for (uint32_t i = 0; i < chunk.GetLength(); ++i) {
         EXPECT_EQ(static_cast<uint8_t>(i % 256), data[i]);
@@ -221,21 +221,21 @@ TEST(StandaloneBufferChunkTest, MultipleIndependentChunks) {
     StandaloneBufferChunk chunk1(64);
     StandaloneBufferChunk chunk2(128);
     StandaloneBufferChunk chunk3(256);
-    
+
     EXPECT_TRUE(chunk1.Valid());
     EXPECT_TRUE(chunk2.Valid());
     EXPECT_TRUE(chunk3.Valid());
-    
+
     EXPECT_EQ(64u, chunk1.GetLength());
     EXPECT_EQ(128u, chunk2.GetLength());
     EXPECT_EQ(256u, chunk3.GetLength());
-    
+
     // All should have different data pointers
     EXPECT_NE(chunk1.GetData(), chunk2.GetData());
     EXPECT_NE(chunk2.GetData(), chunk3.GetData());
     EXPECT_NE(chunk1.GetData(), chunk3.GetData());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace common
+}  // namespace quicx

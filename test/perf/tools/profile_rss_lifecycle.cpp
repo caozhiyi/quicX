@@ -43,23 +43,23 @@
 #include <unistd.h>
 #endif
 
+#include <quicx/common/metrics.h>
 #include <quicx/http3/if_client.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
 #include "quic/connection/controler/rtt_calculator.h"
-#include <quicx/common/metrics.h>
 
+using quicx::Http3ClientConfig;
+using quicx::Http3ServerConfig;
+using quicx::Http3Settings;
+using quicx::HttpMethod;
 using quicx::IClient;
 using quicx::IRequest;
 using quicx::IResponse;
 using quicx::IServer;
-using quicx::Http3Settings;
-using quicx::Http3ClientConfig;
-using quicx::Http3ServerConfig;
-using quicx::HttpMethod;
-using quicx::LogLevel;
 using quicx::kDefaultHttp3Settings;
+using quicx::LogLevel;
 
 namespace {
 
@@ -108,9 +108,9 @@ static Http3Settings MakeSettings() {
 // -------------------------------------------------------------------------
 struct MemSample {
     size_t rss_bytes = 0;
-    size_t heap_in_use = 0;     // mallinfo2.uordblks  - bytes currently allocated
-    size_t heap_total = 0;      // mallinfo2.arena + hblkhd - bytes in heap arenas
-    size_t heap_fordblks = 0;   // free blocks in arena
+    size_t heap_in_use = 0;    // mallinfo2.uordblks  - bytes currently allocated
+    size_t heap_total = 0;     // mallinfo2.arena + hblkhd - bytes in heap arenas
+    size_t heap_fordblks = 0;  // free blocks in arena
 };
 
 static size_t ReadRssBytes() {
@@ -139,19 +139,13 @@ static MemSample Sample() {
 }
 
 static void PrintHeader() {
-    std::printf("%-25s %12s %12s %12s %12s\n",
-                "phase", "rss_MiB", "heap_use_MiB", "heap_tot_MiB", "heap_free_MiB");
-    std::printf("%-25s %12s %12s %12s %12s\n",
-                "-----", "-------", "------------", "------------", "-------------");
+    std::printf("%-25s %12s %12s %12s %12s\n", "phase", "rss_MiB", "heap_use_MiB", "heap_tot_MiB", "heap_free_MiB");
+    std::printf("%-25s %12s %12s %12s %12s\n", "-----", "-------", "------------", "------------", "-------------");
 }
 
 static void PrintSample(const char* tag, const MemSample& m) {
-    std::printf("%-25s %12.3f %12.3f %12.3f %12.3f\n",
-                tag,
-                m.rss_bytes / (1024.0 * 1024.0),
-                m.heap_in_use / (1024.0 * 1024.0),
-                m.heap_total / (1024.0 * 1024.0),
-                m.heap_fordblks / (1024.0 * 1024.0));
+    std::printf("%-25s %12.3f %12.3f %12.3f %12.3f\n", tag, m.rss_bytes / (1024.0 * 1024.0),
+        m.heap_in_use / (1024.0 * 1024.0), m.heap_total / (1024.0 * 1024.0), m.heap_fordblks / (1024.0 * 1024.0));
 }
 
 struct BatchResult {
@@ -179,7 +173,11 @@ static int64_t ParsePromMetric(const std::string& dump, const std::string& name)
         if (c != ' ' && c != '{') continue;
         size_t sp = line.rfind(' ');
         if (sp == std::string::npos) continue;
-        try { return std::stoll(line.substr(sp + 1)); } catch (...) { return -1; }
+        try {
+            return std::stoll(line.substr(sp + 1));
+        } catch (...) {
+            return -1;
+        }
     }
     return -1;
 }
@@ -212,11 +210,10 @@ static BatchResult RunBatch(int n, const std::string& url, const Http3Settings& 
         auto req = IRequest::Create();
         std::atomic<bool> done{false};
         std::atomic<bool> ok{false};
-        client->DoRequest(url, HttpMethod::kGet, req,
-            [&](std::shared_ptr<IResponse>, uint32_t error) {
-                if (error == 0) ok = true;
-                done = true;
-            });
+        client->DoRequest(url, HttpMethod::kGet, req, [&](std::shared_ptr<IResponse>, uint32_t error) {
+            if (error == 0) ok = true;
+            done = true;
+        });
         for (int w = 0; w < 2000 && !done; ++w) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
@@ -271,11 +268,10 @@ int main(int argc, char** argv) {
 
     auto settings = MakeSettings();
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/cd",
-        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(200);
-            resp->AppendBody("ok");
-        });
+    server->AddHandler(HttpMethod::kGet, "/cd", [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+        resp->SetStatusCode(200);
+        resp->AppendBody("ok");
+    });
 
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
@@ -303,14 +299,17 @@ int main(int argc, char** argv) {
         std::atomic<bool> done{false};
         std::atomic<bool> ok{false};
         std::atomic<uint32_t> err{0};
-        client->DoRequest(url, HttpMethod::kGet, req,
-            [&](std::shared_ptr<IResponse>, uint32_t e) { if (e == 0) ok = true; err = e; done = true; });
+        client->DoRequest(url, HttpMethod::kGet, req, [&](std::shared_ptr<IResponse>, uint32_t e) {
+            if (e == 0) ok = true;
+            err = e;
+            done = true;
+        });
         for (int t = 0; t < 2000 && !done; ++t) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         if (ok) warm_ok++;
-        std::fprintf(stderr, "  warmup attempt %d: done=%d ok=%d err=%u\n",
-                     w, (int)done, (int)ok, (unsigned)err.load());
+        std::fprintf(
+            stderr, "  warmup attempt %d: done=%d ok=%d err=%u\n", w, (int)done, (int)ok, (unsigned)err.load());
         client->Close();
     }
     std::printf("warmup         : %d/3 succeeded\n", warm_ok);
@@ -335,31 +334,23 @@ int main(int argc, char** argv) {
         auto r = RunBatch(n, url, settings);
         results.push_back(r);
         std::printf("\n[batch n=%d]\n", n);
-        PrintSample("before",      r.before);
+        PrintSample("before", r.before);
         PrintSample("after (raw)", r.after_raw);
-        PrintSample("after (trim)",r.after_trim);
+        PrintSample("after (trim)", r.after_trim);
         std::printf("  quic_connections_active: before=%lld after=%lld (delta=%lld)\n",
-                    (long long)r.active_conns_before,
-                    (long long)r.active_conns_after,
-                    (long long)(r.active_conns_after - r.active_conns_before));
+            (long long)r.active_conns_before, (long long)r.active_conns_after,
+            (long long)(r.active_conns_after - r.active_conns_before));
         std::printf("  quic_streams_active    : before=%lld after=%lld (delta=%lld)\n",
-                    (long long)r.streams_active_before,
-                    (long long)r.streams_active_after,
-                    (long long)(r.streams_active_after - r.streams_active_before));
+            (long long)r.streams_active_before, (long long)r.streams_active_after,
+            (long long)(r.streams_active_after - r.streams_active_before));
     }
 
     std::printf("\n===== per-connection deltas (after trim, RSS-based) =====\n");
-    std::printf("%-8s %16s %16s %16s %16s\n",
-                "N",
-                "dRSS_KB",
-                "dRSS/N_KB",
-                "dHeapUse_KB",
-                "dHeapUse/N_KB");
+    std::printf("%-8s %16s %16s %16s %16s\n", "N", "dRSS_KB", "dRSS/N_KB", "dHeapUse_KB", "dHeapUse/N_KB");
     for (const auto& r : results) {
-        double drss     = (double)((long long)r.after_trim.rss_bytes - (long long)r.before.rss_bytes) / 1024.0;
-        double dheap    = (double)((long long)r.after_trim.heap_in_use - (long long)r.before.heap_in_use) / 1024.0;
-        std::printf("%-8d %16.1f %16.2f %16.1f %16.2f\n",
-                    r.n, drss, drss / r.n, dheap, dheap / r.n);
+        double drss = (double)((long long)r.after_trim.rss_bytes - (long long)r.before.rss_bytes) / 1024.0;
+        double dheap = (double)((long long)r.after_trim.heap_in_use - (long long)r.before.heap_in_use) / 1024.0;
+        std::printf("%-8d %16.1f %16.2f %16.1f %16.2f\n", r.n, drss, drss / r.n, dheap, dheap / r.n);
     }
 
     // Linear fit on RSS: rss_delta(N) = A + B*N  using least squares.
@@ -369,31 +360,39 @@ int main(int argc, char** argv) {
         for (const auto& r : results) {
             double x = r.n;
             double y = (double)((long long)r.after_trim.rss_bytes - (long long)r.before.rss_bytes);
-            sx += x; sy += y; sxx += x * x; sxy += x * y; ++k;
+            sx += x;
+            sy += y;
+            sxx += x * x;
+            sxy += x * y;
+            ++k;
         }
         double denom = k * sxx - sx * sx;
         if (denom != 0) {
-            double slope = (k * sxy - sx * sy) / denom;        // bytes per conn
-            double intercept = (sy - slope * sx) / k;           // bytes one-shot
-            std::printf("\nleast-squares fit (RSS, post-trim): dRSS = %.0f + %.0f * N  (bytes)\n",
-                        intercept, slope);
+            double slope = (k * sxy - sx * sy) / denom;  // bytes per conn
+            double intercept = (sy - slope * sx) / k;    // bytes one-shot
+            std::printf("\nleast-squares fit (RSS, post-trim): dRSS = %.0f + %.0f * N  (bytes)\n", intercept, slope);
             std::printf("  => one-shot overhead A ≈ %.1f KB\n", intercept / 1024.0);
             std::printf("  => per-connection residue B ≈ %.2f KB\n", slope / 1024.0);
         }
 
         // Same fit on heap-in-use (ignores RSS quantisation + arena retention).
-        sx = sy = sxx = sxy = 0; k = 0;
+        sx = sy = sxx = sxy = 0;
+        k = 0;
         for (const auto& r : results) {
             double x = r.n;
             double y = (double)((long long)r.after_trim.heap_in_use - (long long)r.before.heap_in_use);
-            sx += x; sy += y; sxx += x * x; sxy += x * y; ++k;
+            sx += x;
+            sy += y;
+            sxx += x * x;
+            sxy += x * y;
+            ++k;
         }
         denom = k * sxx - sx * sx;
         if (denom != 0) {
             double slope = (k * sxy - sx * sy) / denom;
             double intercept = (sy - slope * sx) / k;
-            std::printf("\nleast-squares fit (heap_in_use, post-trim): dHeap = %.0f + %.0f * N  (bytes)\n",
-                        intercept, slope);
+            std::printf(
+                "\nleast-squares fit (heap_in_use, post-trim): dHeap = %.0f + %.0f * N  (bytes)\n", intercept, slope);
             std::printf("  => one-shot overhead A ≈ %.1f KB\n", intercept / 1024.0);
             std::printf("  => per-connection residue B ≈ %.2f KB\n", slope / 1024.0);
         }

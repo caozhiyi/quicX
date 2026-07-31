@@ -8,12 +8,14 @@ namespace quicx {
 namespace quic {
 namespace {
 
-TEST(retire_connection_id_frame_utest, codec) {
+TEST(RetireConnectionIdFrameTest, codec) {
     RetireConnectionIDFrame frame1;
     RetireConnectionIDFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     frame1.SetSequenceNumber(23624236235626);
 
@@ -29,6 +31,6 @@ TEST(retire_connection_id_frame_utest, codec) {
     EXPECT_EQ(frame1.GetSequenceNumber(), frame2.GetSequenceNumber());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

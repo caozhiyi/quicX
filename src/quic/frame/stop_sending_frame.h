@@ -7,8 +7,7 @@
 namespace quicx {
 namespace quic {
 
-class StopSendingFrame:
-    public IStreamFrame {
+class StopSendingFrame: public IStreamFrame {
 public:
     StopSendingFrame();
     ~StopSendingFrame();
@@ -21,10 +20,10 @@ public:
     uint64_t GetAppErrorCode() { return app_error_code_; }
 
 private:
-    uint64_t app_error_code_; // the application protocol error code.
+    uint64_t app_error_code_;  // the application protocol error code.
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

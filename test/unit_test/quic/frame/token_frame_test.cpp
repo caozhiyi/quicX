@@ -1,19 +1,21 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/new_token_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/new_token_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(new_token_frame_utest, codec) {
+TEST(NewTokenFrameTest, codec) {
     NewTokenFrame frame1;
     NewTokenFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     char frame_data[64] = "1234567890123456789012345678901234567890";
     frame1.SetToken((uint8_t*)frame_data, strlen(frame_data));
@@ -32,6 +34,6 @@ TEST(new_token_frame_utest, codec) {
     EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2, frame2.GetTokenLength()));
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

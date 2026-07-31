@@ -8,21 +8,20 @@ namespace quicx {
 namespace http3 {
 
 /*
-* indicates a static path node
-*/
-class RouterNodeStaticPath:
-    public RouterNode {
+ * indicates a static path node
+ */
+class RouterNodeStaticPath: public RouterNode {
 public:
-    RouterNodeStaticPath(RouterNodeType type, const std::string& section,
-        const std::string& full_path, const RouteConfig& config);
-    
+    RouterNodeStaticPath(
+        RouterNodeType type, const std::string& section, const std::string& full_path, const RouteConfig& config);
+
     virtual ~RouterNodeStaticPath() {}
 
     // router match
     virtual bool Match(const std::string& path, int path_offset, const std::string& cur_section, MatchResult& result);
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

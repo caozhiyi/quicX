@@ -9,6 +9,6 @@ namespace common {
 void Localtime(const uint64_t* time, void* out_tm);
 
 }
-}
+}  // namespace quicx
 
 #endif

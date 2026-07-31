@@ -3,13 +3,13 @@
 
 #include <memory>
 #include <vector>
-#include "quic/connection/if_connection.h"
-#include "quic/packet/if_packet.h"
-#include "quic/packet/packet_decode.h"
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "mock_sender.h"
+#include "quic/connection/if_connection.h"
+#include "quic/packet/if_packet.h"
+#include "quic/packet/packet_decode.h"
 
 namespace quicx {
 namespace quic {
@@ -44,10 +44,8 @@ inline std::shared_ptr<MockSender> AttachMockSender(std::shared_ptr<IConnection>
  * @param mock_sender MockSender to capture data (if null, creates temporary one)
  * @return true if data was generated
  */
-inline bool GenerateSendDataCompat(std::shared_ptr<IConnection> conn,
-                                   std::shared_ptr<common::IBuffer> buffer,
-                                   SendOperation& send_operation,
-                                   std::shared_ptr<MockSender> mock_sender = nullptr) {
+inline bool GenerateSendDataCompat(std::shared_ptr<IConnection> conn, std::shared_ptr<common::IBuffer> buffer,
+    SendOperation& send_operation, std::shared_ptr<MockSender> mock_sender = nullptr) {
     if (!conn || !buffer) {
         return false;
     }
@@ -97,9 +95,8 @@ inline bool GenerateSendDataCompat(std::shared_ptr<IConnection> conn,
  * @param sender_mock MockSender attached to send_conn
  * @return true if packets were successfully sent and received
  */
-inline bool ConnectionProcess(std::shared_ptr<IConnection> send_conn,
-                              std::shared_ptr<IConnection> recv_conn,
-                              std::shared_ptr<MockSender> sender_mock) {
+inline bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn,
+    std::shared_ptr<MockSender> sender_mock) {
     if (!send_conn || !recv_conn || !sender_mock) {
         return false;
     }

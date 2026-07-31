@@ -88,8 +88,7 @@ bool EncryptionLevelScheduler::HasCrossLevelPendingAck(SendContext& ctx) {
                 ctx.has_pending_ack = true;
                 ctx.ack_space = kInitialNumberSpace;
                 ctx.is_path_probe = false;
-                LOG_DEBUG(
-                    "EncryptionLevelScheduler: Cross-level Initial ACK needed (current level=%d)", current_level);
+                LOG_DEBUG("EncryptionLevelScheduler: Cross-level Initial ACK needed (current level=%d)", current_level);
                 return true;
             } else {
                 // Keys discarded, cannot send ACK
@@ -113,8 +112,7 @@ bool EncryptionLevelScheduler::HasCrossLevelPendingAck(SendContext& ctx) {
                     "EncryptionLevelScheduler: Cross-level Handshake ACK needed (current level=%d)", current_level);
                 return true;
             } else {
-                LOG_DEBUG(
-                    "EncryptionLevelScheduler: Handshake ACK pending but keys discarded (current level=%d)",
+                LOG_DEBUG("EncryptionLevelScheduler: Handshake ACK pending but keys discarded (current level=%d)",
                     current_level);
             }
         }

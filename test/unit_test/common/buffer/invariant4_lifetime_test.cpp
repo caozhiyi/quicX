@@ -93,7 +93,7 @@ std::vector<uint8_t> Snapshot(const SharedBufferSpan& s) {
 // Even though Clear() resets the buffer's read/write pointers to the write
 // floor (so future Write()s land *after* the span), the span's bytes must be
 // byte-identical before and after the Clear.
-TEST(BufferInvariant4_Lifetime, SingleBuffer_ClearDoesNotMutateSpanBytes) {
+TEST(BufferInvariant4LifetimeTest, SingleBuffer_ClearDoesNotMutateSpanBytes) {
     auto buf = MakeSingleBuffer(/*chunk_size=*/64u);
     auto p = Pattern(20);
     buf->Write(p.data(), p.size());
@@ -105,11 +105,9 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_ClearDoesNotMutateSpanBytes) {
     buf->Clear();
 
     auto after = Snapshot(span);
-    EXPECT_EQ(before, after)
-        << "Clear() must not mutate the bytes of any live SharedBufferSpan; "
-        << "the write floor is supposed to keep the span's range frozen.";
-    EXPECT_EQ(p, after)
-        << "Snapshot should also still match the originally written payload.";
+    EXPECT_EQ(before, after) << "Clear() must not mutate the bytes of any live SharedBufferSpan; "
+                             << "the write floor is supposed to keep the span's range frozen.";
+    EXPECT_EQ(p, after) << "Snapshot should also still match the originally written payload.";
 }
 
 // -----------------------------------------------------------------------------
@@ -120,7 +118,7 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_ClearDoesNotMutateSpanBytes) {
 // room) and that those new bytes are *outside* the span's range. This is the
 // concrete proof that floor-based protection is functional, not merely a
 // coincidence of the test setup.
-TEST(BufferInvariant4_Lifetime, SingleBuffer_WriteAfterClearGoesPastSpan) {
+TEST(BufferInvariant4LifetimeTest, SingleBuffer_WriteAfterClearGoesPastSpan) {
     auto buf = MakeSingleBuffer(/*chunk_size=*/64u);
     auto p1 = Pattern(20, 0x10);
     buf->Write(p1.data(), p1.size());
@@ -143,8 +141,7 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_WriteAfterClearGoesPastSpan) {
     // The fresh bytes lie at or beyond the span's end (in pointer terms).
     auto fresh = buf->GetSharedReadableSpan(static_cast<uint32_t>(p2.size()));
     ASSERT_TRUE(fresh.Valid());
-    EXPECT_GE(fresh.GetStart(), span_end)
-        << "Post-Clear Write() must not land inside the still-alive span.";
+    EXPECT_GE(fresh.GetStart(), span_end) << "Post-Clear Write() must not land inside the still-alive span.";
     EXPECT_EQ(0, std::memcmp(fresh.GetStart(), p2.data(), p2.size()));
 }
 
@@ -154,7 +151,7 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_WriteAfterClearGoesPastSpan) {
 // The classic "park on async send queue" scenario: the buffer object is
 // reset, but the chunk lives on through the span's shared_ptr, and its
 // bytes remain readable and unchanged.
-TEST(BufferInvariant4_Lifetime, SingleBuffer_SpanOutlivesBufferDestruction) {
+TEST(BufferInvariant4LifetimeTest, SingleBuffer_SpanOutlivesBufferDestruction) {
     auto buf = MakeSingleBuffer(/*chunk_size=*/64u);
     auto p = Pattern(16, 0x20);
     buf->Write(p.data(), p.size());
@@ -167,8 +164,7 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_SpanOutlivesBufferDestruction) {
     // Drop the buffer.
     buf.reset();
 
-    ASSERT_TRUE(span.Valid())
-        << "Span must remain valid after its originating buffer is destroyed.";
+    ASSERT_TRUE(span.Valid()) << "Span must remain valid after its originating buffer is destroyed.";
     EXPECT_EQ(p.size(), span.GetLength());
     EXPECT_EQ(0, std::memcmp(span.GetStart(), p.data(), p.size()));
 }
@@ -179,7 +175,7 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_SpanOutlivesBufferDestruction) {
 // Read pointer movement only affects what *future* reads see; the bytes the
 // span points to (which already lie behind read_pos_ in offset terms) must
 // remain byte-stable.
-TEST(BufferInvariant4_Lifetime, SingleBuffer_MoveReadPtDoesNotMutateSpan) {
+TEST(BufferInvariant4LifetimeTest, SingleBuffer_MoveReadPtDoesNotMutateSpan) {
     auto buf = MakeSingleBuffer(/*chunk_size=*/64u);
     auto p = Pattern(24, 0x30);
     buf->Write(p.data(), p.size());
@@ -193,9 +189,8 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_MoveReadPtDoesNotMutateSpan) {
     EXPECT_EQ(24u, moved);
     EXPECT_EQ(0u, buf->GetDataLength());
 
-    EXPECT_EQ(before, Snapshot(span))
-        << "Advancing the read pointer must not retroactively rewrite bytes "
-        << "in a still-living span.";
+    EXPECT_EQ(before, Snapshot(span)) << "Advancing the read pointer must not retroactively rewrite bytes "
+                                      << "in a still-living span.";
 }
 
 // -----------------------------------------------------------------------------
@@ -203,7 +198,7 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_MoveReadPtDoesNotMutateSpan) {
 // -----------------------------------------------------------------------------
 // Stress-tests state churn: we keep clearing and re-writing while a single
 // span sits around. As long as the span lives, the original bytes survive.
-TEST(BufferInvariant4_Lifetime, SingleBuffer_ChurnCyclesPreserveSpan) {
+TEST(BufferInvariant4LifetimeTest, SingleBuffer_ChurnCyclesPreserveSpan) {
     auto buf = MakeSingleBuffer(/*chunk_size=*/64u);
     auto original = Pattern(20, 0x10);
     buf->Write(original.data(), original.size());
@@ -221,8 +216,7 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_ChurnCyclesPreserveSpan) {
         buf->Write(fresh.data(), static_cast<uint32_t>(fresh.size()));
     }
 
-    EXPECT_EQ(before, Snapshot(span))
-        << "Churn (Clear + Write) must not perturb the held span at any cycle.";
+    EXPECT_EQ(before, Snapshot(span)) << "Churn (Clear + Write) must not perturb the held span at any cycle.";
     EXPECT_EQ(original, Snapshot(span));
 }
 
@@ -239,7 +233,7 @@ TEST(BufferInvariant4_Lifetime, SingleBuffer_ChurnCyclesPreserveSpan) {
 // memory survives. Crucially, MultiBlockBuffer never reuses a chunk after
 // Clear() — it always allocates fresh ones from the pool — so the issued
 // span's bytes are guaranteed unmolested.
-TEST(BufferInvariant4_Lifetime, MultiBuffer_ClearLeavesSpanIntact) {
+TEST(BufferInvariant4LifetimeTest, MultiBuffer_ClearLeavesSpanIntact) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/16u);
     auto p1 = Pattern(10, 0x10);
     auto p2 = Pattern(10, 0x40);
@@ -255,8 +249,7 @@ TEST(BufferInvariant4_Lifetime, MultiBuffer_ClearLeavesSpanIntact) {
     EXPECT_EQ(0u, buf->GetDataLength());
 
     // Span still points at the original bytes.
-    EXPECT_EQ(before, Snapshot(span))
-        << "MultiBlockBuffer::Clear() must not corrupt outstanding span bytes.";
+    EXPECT_EQ(before, Snapshot(span)) << "MultiBlockBuffer::Clear() must not corrupt outstanding span bytes.";
 }
 
 // -----------------------------------------------------------------------------
@@ -266,7 +259,7 @@ TEST(BufferInvariant4_Lifetime, MultiBuffer_ClearLeavesSpanIntact) {
 // The deque is empty after Clear(); the next Write() must allocate (or
 // fetch from the pool) a *different* chunk. The span and the new write
 // therefore live in disjoint memory regions and cannot interfere.
-TEST(BufferInvariant4_Lifetime, MultiBuffer_ClearThenWriteUsesDistinctChunk) {
+TEST(BufferInvariant4LifetimeTest, MultiBuffer_ClearThenWriteUsesDistinctChunk) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/16u);
     auto p1 = Pattern(10, 0x10);
     buf->Write(p1.data(), p1.size());
@@ -290,13 +283,11 @@ TEST(BufferInvariant4_Lifetime, MultiBuffer_ClearThenWriteUsesDistinctChunk) {
     // the same chunk object the held span pinned, OR if it is, the new write
     // must land *past* the span's end (write-floor protection).
     if (fresh.GetChunk().get() == span_chunk_raw) {
-        EXPECT_GE(fresh.GetStart(), span.GetEnd())
-            << "If a chunk is reused, the write floor must keep the new "
-               "bytes outside the span's range.";
+        EXPECT_GE(fresh.GetStart(), span.GetEnd()) << "If a chunk is reused, the write floor must keep the new "
+                                                      "bytes outside the span's range.";
     }
-    EXPECT_EQ(before, Snapshot(span))
-        << "Span bytes must not be mutated regardless of which chunk the "
-           "new write landed in.";
+    EXPECT_EQ(before, Snapshot(span)) << "Span bytes must not be mutated regardless of which chunk the "
+                                         "new write landed in.";
     EXPECT_EQ(0, std::memcmp(fresh.GetStart(), p2.data(), p2.size()));
 }
 
@@ -305,7 +296,7 @@ TEST(BufferInvariant4_Lifetime, MultiBuffer_ClearThenWriteUsesDistinctChunk) {
 // -----------------------------------------------------------------------------
 // Same as B4-03 but for the multi-chunk variant. The chunk lives on via
 // shared_ptr inside the span; tearing down the buffer is harmless.
-TEST(BufferInvariant4_Lifetime, MultiBuffer_SpanOutlivesBufferDestruction) {
+TEST(BufferInvariant4LifetimeTest, MultiBuffer_SpanOutlivesBufferDestruction) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/16u);
     auto p = Pattern(12, 0x55);
     buf->Write(p.data(), p.size());
@@ -317,8 +308,7 @@ TEST(BufferInvariant4_Lifetime, MultiBuffer_SpanOutlivesBufferDestruction) {
 
     buf.reset();
 
-    ASSERT_TRUE(span.Valid())
-        << "Span must remain valid after its MultiBlockBuffer is destroyed.";
+    ASSERT_TRUE(span.Valid()) << "Span must remain valid after its MultiBlockBuffer is destroyed.";
     EXPECT_EQ(p.size(), span.GetLength());
     EXPECT_EQ(0, std::memcmp(span.GetStart(), p.data(), p.size()));
 }
@@ -329,7 +319,7 @@ TEST(BufferInvariant4_Lifetime, MultiBuffer_SpanOutlivesBufferDestruction) {
 // Two spans issued at different times must both survive a Clear unchanged.
 // This catches any logic that accidentally only protects the most recently
 // issued span.
-TEST(BufferInvariant4_Lifetime, MultiBuffer_MultipleSpansAllSurviveClear) {
+TEST(BufferInvariant4LifetimeTest, MultiBuffer_MultipleSpansAllSurviveClear) {
     auto buf = MakeMultiBuffer(/*chunk_size=*/8u);
     auto p1 = Pattern(8, 0x10);
     auto p2 = Pattern(8, 0x40);
@@ -356,8 +346,7 @@ TEST(BufferInvariant4_Lifetime, MultiBuffer_MultipleSpansAllSurviveClear) {
 
     for (size_t i = 0; i < spans.size(); ++i) {
         ASSERT_TRUE(spans[i].Valid()) << "span[" << i << "] should remain valid";
-        EXPECT_EQ(snaps[i], Snapshot(spans[i]))
-            << "span[" << i << "] bytes drifted after Clear() + buffer drop.";
+        EXPECT_EQ(snaps[i], Snapshot(spans[i])) << "span[" << i << "] bytes drifted after Clear() + buffer drop.";
     }
 
     // First chunk should be the p1 pattern, second p2, third p3.

@@ -1,7 +1,7 @@
-#include "common/log/log.h"
-#include "http3/qpack/blocked_registry.h"
-#include "http3/frame/qpack_decoder_frames.h"
 #include "http3/stream/qpack_decoder_receiver_stream.h"
+#include "common/log/log.h"
+#include "http3/frame/qpack_decoder_frames.h"
+#include "http3/qpack/blocked_registry.h"
 
 namespace quicx {
 namespace http3 {
@@ -26,13 +26,13 @@ void QpackDecoderReceiverStream::OnData(std::shared_ptr<IBufferRead> data, bool 
         error_handler_(stream_->GetStreamID(), error);
         return;
     }
-    
+
     // If buffer is empty (e.g., stream closed with FIN), nothing to do
     if (data->GetDataLength() == 0) {
         LOG_DEBUG("QpackDecoderReceiverStream::OnData: empty buffer, stream likely closed");
         return;
     }
-    
+
     // Note: UnidentifiedStream has already consumed the stream type byte (0x03 for decoder stream)
     // so we can directly parse the decoder frames
     ParseDecoderFrames(data);
@@ -57,7 +57,7 @@ void QpackDecoderReceiverStream::ParseDecoderFrames(std::shared_ptr<IBufferRead>
             // RFC 9204 §4.4.2: remove the earliest pending section for this
             // stream id without invoking retry callback.
             blocked_registry_->RemoveByStreamId(f->GetStreamId());
-            
+
         } else if (frame->GetType() == static_cast<uint8_t>(QpackDecoderInstrType::kInsertCountInc)) {
             QpackInsertCountIncrementFrame* f = dynamic_cast<QpackInsertCountIncrementFrame*>(frame.get());
             insert_count_ += f->GetDelta();
@@ -80,7 +80,5 @@ void QpackDecoderReceiverStream::ParseDecoderFrames(std::shared_ptr<IBufferRead>
     }
 }
 
-}
-}
-
-
+}  // namespace http3
+}  // namespace quicx

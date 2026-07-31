@@ -1,4 +1,8 @@
 
+// clang-format off
+// Derived from BoringSSL upstream `ssl_test.cc`. Preserve BoringSSL's 2-space
+// indentation and inline PEM literal formatting; do not reformat.
+
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -663,3 +667,4 @@ TEST_F(QUICMethodTest, ZeroRTTAccept) {
 }  // namespace
 }  // namespace quic
 }  // namespace quicx
+// clang-format on

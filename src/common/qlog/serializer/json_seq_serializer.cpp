@@ -57,11 +57,13 @@ std::string JsonSeqSerializer::SerializeTraceHeader(const std::string& connectio
         first = false;
     }
 
-    // draft-02: numeric high-precision time fields MUST be serialized as
-    // strings to avoid IEEE-754 precision loss for large epoch timestamps.
+    // draft-03: numeric high-precision time fields are serialized as
+    // JSON numbers (reverted from draft-02's string encoding). The values
+    // are in milliseconds (per default `time_units`) which stays well
+    // within IEEE-754 double precision for any realistic UNIX epoch.
     if (common_fields.reference_time_ms != 0) {
         if (!first) oss << ",";
-        oss << "\"reference_time\":\"" << common_fields.reference_time_ms << "\"";
+        oss << "\"reference_time\":" << common_fields.reference_time_ms;
         first = false;
     }
 
@@ -90,11 +92,12 @@ std::string JsonSeqSerializer::SerializeEvent(const QlogEvent& event) {
     oss << kJsonSeqRecordSeparator;
     oss << "{";
 
-    // draft-02: `time` is serialized as a string-encoded integer in the
-    // unit declared by `configuration.time_units` (default ms). Storing
-    // it as a string avoids precision loss for absolute epoch timestamps.
+    // draft-03: `time` is serialized as a JSON number in the unit
+    // declared by `configuration.time_units` (default ms). This reverts
+    // draft-02's string encoding; ms-resolution timestamps fit within
+    // IEEE-754 double precision indefinitely so there's no precision risk.
     uint64_t time_ms = event.time_us / 1000;
-    oss << "\"time\":\"" << time_ms << "\",";
+    oss << "\"time\":" << time_ms << ",";
 
     // Event name
     oss << "\"name\":\"" << event.name << "\",";

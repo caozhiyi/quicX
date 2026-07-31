@@ -13,8 +13,7 @@ class IPacket;
 class IBufferRead;
 bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IPacket>>& packets);
 
-}
-}
-
+}  // namespace quic
+}  // namespace quicx
 
 #endif

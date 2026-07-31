@@ -2,8 +2,8 @@
 #define QUIC_CRYPTO_TLS_TYPE
 
 #include <cstdint>
-#include "openssl/ssl.h"
 #include "common/util/c_smart_ptr.h"
+#include "openssl/ssl.h"
 
 namespace quicx {
 namespace quic {
@@ -22,18 +22,18 @@ namespace quic {
 // progresses through. When retransmitting a packet, the encryption level needs
 // to be specified so that it is retransmitted at a level which the peer can
 // understand.
-enum EncryptionLevel: int8_t {
-    kInitial             = 0,
-    kEarlyData           = 1,
-    kHandshake           = 2,
-    kApplication         = 3,
+enum EncryptionLevel : int8_t {
+    kInitial = 0,
+    kEarlyData = 1,
+    kHandshake = 2,
+    kApplication = 3,
     kNumEncryptionLevels = 4,
 };
 
 using SSLCtxPtr = common::CSmartPtr<SSL_CTX, SSL_CTX_free>;
 using SSLPtr = common::CSmartPtr<SSL, SSL_free>;
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -41,8 +41,7 @@ bool NewTokenFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_ty
     CHECK_DECODE_ERROR(wrapper.DecodeVarint(token_length_), "failed to decode token length");
     wrapper.Flush();
     if (token_length_ > buffer->GetDataLength()) {
-        LOG_ERROR(
-            "insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), token_length_);
+        LOG_ERROR("insufficient remaining data. remain_size:%d, need_size:%d", buffer->GetDataLength(), token_length_);
         return false;
     }
 

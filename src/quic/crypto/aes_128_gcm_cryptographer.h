@@ -7,8 +7,7 @@
 namespace quicx {
 namespace quic {
 
-class Aes128GcmCryptographer:
-    public AeadBaseCryptographer {
+class Aes128GcmCryptographer: public AeadBaseCryptographer {
 public:
     Aes128GcmCryptographer();
     virtual ~Aes128GcmCryptographer();
@@ -18,7 +17,7 @@ public:
     virtual CryptographerId GetCipherId();
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

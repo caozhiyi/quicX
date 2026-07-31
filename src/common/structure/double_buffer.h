@@ -30,7 +30,8 @@ namespace common {
 template <typename T>
 class DoubleBuffer {
 public:
-    DoubleBuffer() : current_is_buffer1_(true) {}
+    DoubleBuffer():
+        current_is_buffer1_(true) {}
 
     /**
      * @brief Add an item to the write buffer

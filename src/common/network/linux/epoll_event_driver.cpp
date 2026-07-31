@@ -1,9 +1,9 @@
 #ifdef __linux__
 
+#include <errno.h>
+#include <fcntl.h>
 #include <sys/epoll.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
 #include <cstring>
 #include <vector>
 
@@ -37,7 +37,7 @@ bool EpollEventDriver::Init() {
         LOG_ERROR("Failed to create epoll instance: %s", strerror(errno));
         return false;
     }
-    
+
     // Create pipe for wakeup
     if (!common::Pipe(wakeup_fd_[0], wakeup_fd_[1])) {
         LOG_ERROR("Failed to create wakeup pipe: %s", strerror(errno));
@@ -45,7 +45,7 @@ bool EpollEventDriver::Init() {
         epoll_fd_ = -1;
         return false;
     }
-    
+
     // Set both ends of the pipe to non-blocking mode
     auto noblock_ret1 = common::SocketNoblocking(wakeup_fd_[0]);
     if (noblock_ret1.error_code_ != 0) {
@@ -58,7 +58,7 @@ bool EpollEventDriver::Init() {
         epoll_fd_ = -1;
         return false;
     }
-    
+
     auto noblock_ret2 = common::SocketNoblocking(wakeup_fd_[1]);
     if (noblock_ret2.error_code_ != 0) {
         LOG_ERROR("Failed to set wakeup pipe write end non-blocking: %s", strerror(noblock_ret2.error_code_));
@@ -70,12 +70,12 @@ bool EpollEventDriver::Init() {
         epoll_fd_ = -1;
         return false;
     }
-    
+
     // Add read end to epoll for wakeup events
     struct epoll_event ev;
     ev.events = EPOLLIN;
     ev.data.fd = static_cast<int>(wakeup_fd_[0]);  // Store the read fd for identification
-    
+
     if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, static_cast<int>(wakeup_fd_[0]), &ev) < 0) {
         LOG_ERROR("Failed to add wakeup fd to epoll: %s", strerror(errno));
         common::Close(wakeup_fd_[1]);
@@ -86,7 +86,7 @@ bool EpollEventDriver::Init() {
         epoll_fd_ = -1;
         return false;
     }
-    
+
     LOG_INFO("Epoll event driver initialized with wakeup support");
     return true;
 }
@@ -154,7 +154,7 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     }
 
     int nfds = epoll_wait(epoll_fd_, epoll_events_scratch_.data(), max_events_, timeout_ms);
-    
+
     if (nfds < 0) {
         if (errno == EINTR) {
             // Interrupted by signal, return 0 events
@@ -168,7 +168,7 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
     events.clear();
     if (nfds > 0) {
         events.reserve(nfds);  // Reserve space but don't resize yet
-        
+
         for (int i = 0; i < nfds; ++i) {
             // Check if this is a wakeup event
             if (epoll_events_scratch_[i].data.fd == static_cast<int>(wakeup_fd_[0])) {
@@ -180,11 +180,9 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
                 }
                 continue;
             }
-            
-            events.push_back(Event{
-                epoll_events_scratch_[i].data.fd,
-                ConvertFromEpollEvents(epoll_events_scratch_[i].events)
-            });
+
+            events.push_back(
+                Event{epoll_events_scratch_[i].data.fd, ConvertFromEpollEvents(epoll_events_scratch_[i].events)});
         }
     }
 
@@ -193,7 +191,7 @@ int EpollEventDriver::Wait(std::vector<Event>& events, int timeout_ms) {
 
 uint32_t EpollEventDriver::ConvertToEpollEvents(int32_t events) const {
     uint32_t epoll_events = 0;
-    
+
     if (static_cast<int>(events) & static_cast<int>(EventType::ET_READ)) {
         epoll_events |= EPOLLIN;
     }
@@ -212,7 +210,7 @@ uint32_t EpollEventDriver::ConvertToEpollEvents(int32_t events) const {
 
 EventType EpollEventDriver::ConvertFromEpollEvents(uint32_t epoll_events) const {
     EventType events = static_cast<EventType>(0);
-    
+
     if (epoll_events & EPOLLIN) {
         events = static_cast<EventType>(static_cast<int>(events) | static_cast<int>(EventType::ET_READ));
     }
@@ -245,7 +243,7 @@ void EpollEventDriver::Wakeup() {
     }
 }
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
-#endif 
+#endif

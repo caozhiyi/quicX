@@ -13,7 +13,7 @@ namespace quic {
 const uint16_t kMaxV6PacketSize = 1452;
 // The maximum packet size of any QUIC packet over IPv4.
 // 1500(Ethernet) - 20(IPv4 header) - 8(UDP header) = 1472.
-const uint16_t kMaxV4PacketSize = 1472; 
+const uint16_t kMaxV4PacketSize = 1472;
 
 const uint8_t kMaxConnectionLength = 20;
 const uint8_t kMinConnectionLength = 8;
@@ -44,7 +44,7 @@ constexpr uint16_t kMinInitialPacketSize = 1200;
 // linger before we give up and either fall back to the prior path or close.
 constexpr uint32_t kDefaultPathValidationTimeoutMs = 6000;
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

@@ -1,15 +1,14 @@
 #ifndef QUIC_QUICX_QUIC_SERVER
 #define QUIC_QUICX_QUIC_SERVER
 
+#include <quicx/common/if_event_loop.h>
 #include <quicx/quic/if_quic_server.h>
 #include "quic/quicx/master_with_thread.h"
-#include <quicx/common/if_event_loop.h>
 
 namespace quicx {
 namespace quic {
 
-class QuicServer:
-    public IQuicServer {
+class QuicServer: public IQuicServer {
 public:
     QuicServer(const QuicTransportParams& params);
     virtual ~QuicServer();
@@ -42,7 +41,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<IWorker>> worker_map_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

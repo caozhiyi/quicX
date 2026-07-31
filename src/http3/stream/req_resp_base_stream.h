@@ -6,13 +6,13 @@
 #include <memory>
 #include <unordered_map>
 
+#include <quicx/http3/type.h>
+#include <quicx/quic/if_quic_bidirection_stream.h>
 #include "http3/frame/frame_decoder.h"
 #include "http3/frame/if_frame.h"
-#include <quicx/http3/type.h>
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_stream.h"
-#include <quicx/quic/if_quic_bidirection_stream.h>
 
 namespace quicx {
 namespace common {
@@ -96,8 +96,8 @@ private:
 protected:
     uint64_t header_block_key_{0};
     uint32_t next_section_number_{0};
-    std::shared_ptr<QpackEncoder> qpack_encoder_;   // For encoding outgoing headers
-    std::shared_ptr<QpackEncoder> qpack_decoder_;   // For decoding incoming headers (RFC 9204 dual-table)
+    std::shared_ptr<QpackEncoder> qpack_encoder_;  // For encoding outgoing headers
+    std::shared_ptr<QpackEncoder> qpack_decoder_;  // For decoding incoming headers (RFC 9204 dual-table)
     std::shared_ptr<IQuicBidirectionStream> stream_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
 
@@ -105,7 +105,7 @@ protected:
     std::unordered_map<std::string, std::string> headers_;
     std::shared_ptr<common::IBuffer> body_;
     bool is_last_data_;
-    bool current_frame_is_last_;  // Track if current frame is last in OnData batch
+    bool current_frame_is_last_;            // Track if current frame is last in OnData batch
     bool should_notify_completion_{false};  // Defer stream completion notification until all frames processed
 
     bool is_provider_mode_;

@@ -100,6 +100,13 @@ bool FixBufferFrameVisitor::HandleFrame(std::shared_ptr<IFrame> frame) {
     LOG_DEBUG(
         "encoded frame. type:%s, length:%u", FrameType2String(frame->GetType()).c_str(), buffer_->GetDataLength());
 
+    // qlog draft-03: remember this frame in encode order so the packet
+    // built around our buffer can later expose it to qlog. Only the
+    // happy path appends (failed encodes have already returned above),
+    // so the list is exactly the set of frames whose bytes are present
+    // in buffer_ — which is also what travels in the UDP datagram.
+    handled_frames_.push_back(frame);
+
     // Metrics: Frame transmitted
     common::Metrics::CounterInc(common::MetricsStd::FramesTxTotal);
 

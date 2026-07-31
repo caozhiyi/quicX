@@ -4,8 +4,8 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <memory>
-#include <string>
 #include <sstream>
+#include <string>
 
 #include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/event/recovery_events.h"
@@ -18,7 +18,7 @@ namespace common {
 namespace {
 
 // All records produced by the serializer are RS-prefixed (\x1E) and
-// LF-terminated per RFC 7464 / qlog draft-02 §6.2 (JSON-SEQ).
+// LF-terminated per RFC 7464 / qlog draft-03 §6.2 (JSON-SEQ).
 //
 // The helper below strips the leading RS so we can perform substring /
 // JSON-balance checks on the raw JSON payload.
@@ -36,14 +36,27 @@ static bool IsBalancedJson(const std::string& json) {
     bool in_string = false;
     bool escaped = false;
     for (char c : json) {
-        if (escaped) { escaped = false; continue; }
-        if (c == '\\' && in_string) { escaped = true; continue; }
-        if (c == '"') { in_string = !in_string; continue; }
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (c == '\\' && in_string) {
+            escaped = true;
+            continue;
+        }
+        if (c == '"') {
+            in_string = !in_string;
+            continue;
+        }
         if (!in_string) {
-            if (c == '{') braces++;
-            else if (c == '}') braces--;
-            else if (c == '[') brackets++;
-            else if (c == ']') brackets--;
+            if (c == '{')
+                braces++;
+            else if (c == '}')
+                braces--;
+            else if (c == '[')
+                brackets++;
+            else if (c == ']')
+                brackets--;
         }
     }
     return braces == 0 && brackets == 0 && !in_string;
@@ -73,9 +86,9 @@ TEST(QlogSerializerTest, SerializeTraceHeaderBasic) {
     EXPECT_EQ(kJsonSeqRecordSeparator, header.front());
     EXPECT_EQ('\n', header.back());
 
-    // Format / version per draft-02
+    // Format / version per draft-03
     EXPECT_TRUE(header.find("\"qlog_format\":\"JSON-SEQ\"") != std::string::npos);
-    EXPECT_TRUE(header.find("\"qlog_version\":\"draft-02\"") != std::string::npos);
+    EXPECT_TRUE(header.find("\"qlog_version\":\"0.3\"") != std::string::npos);
 
     // Trace metadata is now nested under a single "trace" sub-object.
     EXPECT_TRUE(header.find("\"title\":\"QuicX server\"") != std::string::npos);
@@ -158,8 +171,8 @@ TEST(QlogSerializerTest, SerializePacketSentEvent) {
     EXPECT_EQ(kJsonSeqRecordSeparator, json.front());
     EXPECT_EQ('\n', json.back());
 
-    // Per draft-02, time is a string-encoded integer in time_units.
-    EXPECT_TRUE(json.find("\"time\":\"123456\"") != std::string::npos);
+    // Per draft-03, time is a JSON number in time_units.
+    EXPECT_TRUE(json.find("\"time\":123456,") != std::string::npos);
 
     // Event name and data
     EXPECT_TRUE(json.find("\"name\":\"quic:packet_sent\"") != std::string::npos);
@@ -188,7 +201,7 @@ TEST(QlogSerializerTest, SerializeConnectionStartedEvent) {
 
     std::string json = serializer.SerializeEvent(event);
 
-    EXPECT_TRUE(json.find("\"time\":\"0\"") != std::string::npos);
+    EXPECT_TRUE(json.find("\"time\":0,") != std::string::npos);
     EXPECT_TRUE(json.find("\"name\":\"quic:connection_started\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"src_ip\":\"192.168.1.100\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"dst_port\":443") != std::string::npos);
@@ -205,7 +218,7 @@ TEST(QlogSerializerTest, SerializeEventWithoutData) {
 
     std::string json = serializer.SerializeEvent(event);
 
-    EXPECT_TRUE(json.find("\"time\":\"1\"") != std::string::npos);
+    EXPECT_TRUE(json.find("\"time\":1,") != std::string::npos);
     EXPECT_TRUE(json.find("\"name\":\"test:event\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"data\":{}") != std::string::npos);
 }
@@ -219,20 +232,20 @@ TEST(QlogSerializerTest, TimestampPrecision) {
     event.data = std::make_unique<PacketSentData>();
 
     event.time_us = 0;
-    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":\"0\"") != std::string::npos);
+    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":0,") != std::string::npos);
 
     // 1 us truncates to 0 ms (integer time unit)
     event.time_us = 1;
-    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":\"0\"") != std::string::npos);
+    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":0,") != std::string::npos);
 
     event.time_us = 1000;
-    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":\"1\"") != std::string::npos);
+    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":1,") != std::string::npos);
 
     event.time_us = 1234567;
-    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":\"1234\"") != std::string::npos);
+    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":1234,") != std::string::npos);
 
     event.time_us = 999999;
-    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":\"999\"") != std::string::npos);
+    EXPECT_TRUE(serializer.SerializeEvent(event).find("\"time\":999,") != std::string::npos);
 }
 
 // Test JSON-SEQ format compliance: trace header is a single record
@@ -381,8 +394,8 @@ TEST(QlogSerializerTest, HeaderIsIndependentJson) {
     config.time_offset = 0;
     config.time_units = "ms";
 
-    std::string header = serializer.SerializeTraceHeader(
-        "conn-json-test", VantagePoint::kServer, common_fields, config);
+    std::string header =
+        serializer.SerializeTraceHeader("conn-json-test", VantagePoint::kServer, common_fields, config);
 
     // Strip RS prefix and trailing LF; the payload must be balanced JSON.
     std::string payload = StripRs(header);
@@ -447,15 +460,14 @@ TEST(QlogSerializerTest, HeaderRequiredTopLevelFields) {
     CommonFields common_fields;
     QlogConfiguration config;
 
-    std::string header = serializer.SerializeTraceHeader(
-        "conn-hdr", VantagePoint::kClient, common_fields, config);
+    std::string header = serializer.SerializeTraceHeader("conn-hdr", VantagePoint::kClient, common_fields, config);
 
     EXPECT_TRUE(header.find("\"qlog_format\"") != std::string::npos);
     EXPECT_TRUE(header.find("\"qlog_version\"") != std::string::npos);
 }
 
 // Test: Header contains required vantage_point, common_fields, configuration
-// (all nested under the "trace" sub-object per draft-02).
+// (all nested under the "trace" sub-object per draft-03).
 TEST(QlogSerializerTest, HeaderTraceSubObjectRequiredFields) {
     JsonSeqSerializer serializer;
 
@@ -466,8 +478,7 @@ TEST(QlogSerializerTest, HeaderTraceSubObjectRequiredFields) {
     config.time_offset = 0;
     config.time_units = "ms";
 
-    std::string header = serializer.SerializeTraceHeader(
-        "conn-meta", VantagePoint::kServer, common_fields, config);
+    std::string header = serializer.SerializeTraceHeader("conn-meta", VantagePoint::kServer, common_fields, config);
 
     EXPECT_TRUE(header.find("\"trace\":{") != std::string::npos);
     EXPECT_TRUE(header.find("\"vantage_point\"") != std::string::npos);
@@ -505,12 +516,13 @@ TEST(QlogSerializerTest, TimestampMonotonicity) {
 
         std::string json = serializer.SerializeEvent(event);
 
-        // Time is a string in JSON: `"time":"<int>"`. Find and parse it.
-        const std::string key = "\"time\":\"";
+        // qlog draft-03: time is a JSON number, e.g. `"time":<int>,`.
+        // Find the key, then read digits up to the next ',' or '}'.
+        const std::string key = "\"time\":";
         size_t key_pos = json.find(key);
         ASSERT_NE(std::string::npos, key_pos);
         size_t value_start = key_pos + key.size();
-        size_t value_end = json.find('"', value_start);
+        size_t value_end = json.find_first_of(",}", value_start);
         ASSERT_NE(std::string::npos, value_end);
         std::string time_str = json.substr(value_start, value_end - value_start);
         timestamps.push_back(std::stoull(time_str));
@@ -518,8 +530,7 @@ TEST(QlogSerializerTest, TimestampMonotonicity) {
 
     for (size_t i = 1; i < timestamps.size(); i++) {
         EXPECT_GE(timestamps[i], timestamps[i - 1])
-            << "Timestamps should be monotonically increasing: "
-            << timestamps[i - 1] << " -> " << timestamps[i];
+            << "Timestamps should be monotonically increasing: " << timestamps[i - 1] << " -> " << timestamps[i];
     }
 }
 
@@ -562,8 +573,7 @@ TEST(QlogSerializerTest, FullQlogOutputIsValidJsonSeq) {
     config.time_offset = 0;
     config.time_units = "ms";
 
-    std::string output = serializer.SerializeTraceHeader(
-        "conn-full", VantagePoint::kClient, common_fields, config);
+    std::string output = serializer.SerializeTraceHeader("conn-full", VantagePoint::kClient, common_fields, config);
 
     for (int i = 0; i < 5; i++) {
         QlogEvent event;
@@ -588,11 +598,9 @@ TEST(QlogSerializerTest, FullQlogOutputIsValidJsonSeq) {
         pos = lf + 1;
         if (record.empty()) continue;
         record_count++;
-        EXPECT_EQ(kJsonSeqRecordSeparator, record.front())
-            << "Record " << record_count << " should start with RS";
+        EXPECT_EQ(kJsonSeqRecordSeparator, record.front()) << "Record " << record_count << " should start with RS";
         std::string payload = record.substr(1);
-        EXPECT_TRUE(IsBalancedJson(payload))
-            << "Record " << record_count << " not balanced JSON: " << payload;
+        EXPECT_TRUE(IsBalancedJson(payload)) << "Record " << record_count << " not balanced JSON: " << payload;
     }
 
     // 1 trace header record + 5 event records = 6 total

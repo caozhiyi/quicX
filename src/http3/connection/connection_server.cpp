@@ -22,8 +22,7 @@ ServerConnection::ServerConnection(const std::string& unique_id, const Http3Sett
     const std::shared_ptr<IHttpProcessor>& http_processor, std::shared_ptr<IQuicServer> quic_server,
     const std::shared_ptr<IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
-    uint64_t max_concurrent_streams,
-    bool enable_push):
+    uint64_t max_concurrent_streams, bool enable_push):
     IConnection(unique_id, quic_connection, error_handler),
     http_processor_(http_processor),
     quic_server_(quic_server),
@@ -47,9 +46,8 @@ void ServerConnection::Init() {
 
     // create control stream
     auto control_stream = quic_connection_->MakeStream(StreamDirection::kSend);
-    control_sender_stream_ =
-        std::make_shared<ControlClientSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(control_stream),
-            MakeErrorHandler());
+    control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
+        std::dynamic_pointer_cast<IQuicSendStream>(control_stream), MakeErrorHandler());
 
     settings_ = IConnection::AdaptSettings(settings);
     control_sender_stream_->SendSettings(settings_);
@@ -75,23 +73,20 @@ void ServerConnection::Init() {
 
         // Create QPACK Encoder Stream (server -> client, type 0x02)
         auto qpack_enc_stream = quic_connection_->MakeStream(StreamDirection::kSend);
-        auto encoder_sender =
-            std::make_shared<QpackEncoderSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream),
-                MakeErrorHandler());
+        auto encoder_sender = std::make_shared<QpackEncoderSenderStream>(
+            std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream), MakeErrorHandler());
         streams_[encoder_sender->GetStreamID()] = encoder_sender;
 
         // Create QPACK Decoder Stream (server receives from client, type 0x03)
         auto qpack_dec_stream = quic_connection_->MakeStream(StreamDirection::kRecv);
         auto decoder_receiver = std::make_shared<QpackDecoderReceiverStream>(
-            std::dynamic_pointer_cast<IQuicRecvStream>(qpack_dec_stream), blocked_registry_,
-            MakeErrorHandler());
+            std::dynamic_pointer_cast<IQuicRecvStream>(qpack_dec_stream), blocked_registry_, MakeErrorHandler());
         streams_[decoder_receiver->GetStreamID()] = decoder_receiver;
 
         // Create QPACK Decoder Sender Stream (server -> client, type 0x03)
         auto qpack_dec_sender_stream = quic_connection_->MakeStream(StreamDirection::kSend);
         auto decoder_sender = std::make_shared<QpackDecoderSenderStream>(
-            std::dynamic_pointer_cast<IQuicSendStream>(qpack_dec_sender_stream),
-            MakeErrorHandler());
+            std::dynamic_pointer_cast<IQuicSendStream>(qpack_dec_sender_stream), MakeErrorHandler());
         streams_[decoder_sender->GetStreamID()] = decoder_sender;
 
         // Wire QPACK encoder to send instructions via encoder stream
@@ -142,14 +137,12 @@ bool ServerConnection::SendPush(uint64_t push_id, std::shared_ptr<IResponse> res
     // IsAcceptingNewPushes() first so the log line below is only about
     // the per-push-id cap.
     if (!IsAcceptingNewPushes()) {
-        LOG_INFO(
-            "ServerConnection::SendPush: refusing push_id=%llu (draining or peer GOAWAY received)",
+        LOG_INFO("ServerConnection::SendPush: refusing push_id=%llu (draining or peer GOAWAY received)",
             (unsigned long long)push_id);
         return false;
     }
     if (goaway_received_id_ != kNoGoaway && push_id >= goaway_received_id_) {
-        LOG_INFO(
-            "ServerConnection::SendPush: push_id=%llu >= peer GOAWAY id %llu, refusing",
+        LOG_INFO("ServerConnection::SendPush: push_id=%llu >= peer GOAWAY id %llu, refusing",
             (unsigned long long)push_id, (unsigned long long)goaway_received_id_);
         return false;
     }
@@ -165,9 +158,8 @@ bool ServerConnection::SendPush(uint64_t push_id, std::shared_ptr<IResponse> res
         return false;
     }
 
-    std::shared_ptr<PushSenderStream> push_stream =
-        std::make_shared<PushSenderStream>(qpack_encoder_, std::dynamic_pointer_cast<IQuicSendStream>(stream),
-            MakeErrorHandler());
+    std::shared_ptr<PushSenderStream> push_stream = std::make_shared<PushSenderStream>(
+        qpack_encoder_, std::dynamic_pointer_cast<IQuicSendStream>(stream), MakeErrorHandler());
 
     // Save push_id to stream mapping for cancellation support
     push_stream->SetPushId(push_id);
@@ -221,19 +213,16 @@ void ServerConnection::HandlePush(
                 auto server_conn = std::static_pointer_cast<ServerConnection>(self);
                 server_conn->HandleTimer();
             });
-            LOG_DEBUG(
-                "ServerConnection::HandleHttp: started push timer for push_id < %llu", send_limit_push_id_);
+            LOG_DEBUG("ServerConnection::HandleHttp: started push timer for push_id < %llu", send_limit_push_id_);
         } else {
-            LOG_DEBUG(
-                "ServerConnection::HandleHttp: push timer already active, updated send_limit_push_id_ to %llu",
+            LOG_DEBUG("ServerConnection::HandleHttp: push timer already active, updated send_limit_push_id_ to %llu",
                 send_limit_push_id_);
         }
     }
 }
 
 void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error) {
-    LOG_DEBUG(
-        "ServerConnection::HandleStream stream. stream id: %llu, error: %d", stream->GetStreamID(), error);
+    LOG_DEBUG("ServerConnection::HandleStream stream. stream id: %llu, error: %d", stream->GetStreamID(), error);
     if (error != 0) {
         LOG_ERROR("ServerConnection::HandleStream error: %d", error);
         if (stream) {
@@ -260,8 +249,7 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
         // STOP_SENDING / RESET the new stream with H3_REQUEST_REJECTED
         // (RFC 9114 §8.1) so the client can retry idempotent requests.
         if (draining_) {
-            LOG_INFO(
-                "ServerConnection::HandleStream: refusing new request stream %llu after GOAWAY (draining)",
+            LOG_INFO("ServerConnection::HandleStream: refusing new request stream %llu after GOAWAY (draining)",
                 stream->GetStreamID());
             stream->Reset(Http3ErrorCode::kRequestRejected);
             return;
@@ -282,8 +270,7 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
         // callbacks so a deferred event after ~ServerConnection() is a no-op
         // rather than a UAF / pure-virtual dispatch.
         auto weak_self = WeakSelfAs<ServerConnection>();
-        auto push_cb = [weak_self](std::shared_ptr<IResponse> resp,
-                                   std::shared_ptr<ResponseStream> rstream) {
+        auto push_cb = [weak_self](std::shared_ptr<IResponse> resp, std::shared_ptr<ResponseStream> rstream) {
             auto self = weak_self.lock();
             if (!self) {
                 return;
@@ -298,8 +285,8 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
             return self->SettingsReceived();
         };
         std::shared_ptr<ResponseStream> response_stream = std::make_shared<ResponseStream>(qpack_encoder_,
-            qpack_decoder_, blocked_registry_, std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), http_processor_,
-            std::move(push_cb), MakeErrorHandler(), std::move(settings_received_cb));
+            qpack_decoder_, blocked_registry_, std::dynamic_pointer_cast<IQuicBidirectionStream>(stream),
+            http_processor_, std::move(push_cb), MakeErrorHandler(), std::move(settings_received_cb));
         response_stream->Init();  // Must be called after construction to set up callbacks
 
         // Propagate qlog trace from QUIC connection to HTTP/3 stream
@@ -315,8 +302,7 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
         // Create an UnidentifiedStream to read the stream type first
         auto recv_stream = std::dynamic_pointer_cast<IQuicRecvStream>(stream);
         auto weak_self = WeakSelfAs<ServerConnection>();
-        auto unidentified = std::make_shared<UnidentifiedStream>(recv_stream,
-            MakeErrorHandler(),
+        auto unidentified = std::make_shared<UnidentifiedStream>(recv_stream, MakeErrorHandler(),
             [weak_self](
                 uint64_t stream_type, std::shared_ptr<IQuicRecvStream> s, std::shared_ptr<IBufferRead> remaining_data) {
                 auto self = weak_self.lock();
@@ -333,8 +319,7 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
 
 void ServerConnection::OnStreamTypeIdentified(
     uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data) {
-    LOG_DEBUG(
-        "ServerConnection: stream type %llu identified for stream %llu", stream_type, stream->GetStreamID());
+    LOG_DEBUG("ServerConnection: stream type %llu identified for stream %llu", stream_type, stream->GetStreamID());
 
     // Remove the temporary UnidentifiedStream
     streams_.erase(stream->GetStreamID());
@@ -346,8 +331,8 @@ void ServerConnection::OnStreamTypeIdentified(
     switch (stream_type) {
         case static_cast<uint64_t>(StreamType::kControl):  // Control Stream (RFC 9114 Section 6.2.1)
             LOG_DEBUG("ServerConnection: creating Control Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<ControlServerReceiverStream>(stream, qpack_decoder_,
-                MakeErrorHandler(),
+            typed_stream = std::make_shared<ControlServerReceiverStream>(
+                stream, qpack_decoder_, MakeErrorHandler(),
                 [weak_self](uint64_t id) {
                     auto self = weak_self.lock();
                     if (!self) return;
@@ -377,15 +362,14 @@ void ServerConnection::OnStreamTypeIdentified(
             LOG_DEBUG(
                 "ServerConnection: creating QPACK Encoder Receiver Stream for stream %llu", stream->GetStreamID());
             // RFC 9204: Peer's encoder instructions populate our LOCAL decoder table (qpack_decoder_)
-            typed_stream = std::make_shared<QpackEncoderReceiverStream>(stream, qpack_decoder_, blocked_registry_,
-                MakeErrorHandler());
+            typed_stream = std::make_shared<QpackEncoderReceiverStream>(
+                stream, qpack_decoder_, blocked_registry_, MakeErrorHandler());
             break;
 
         case static_cast<uint64_t>(StreamType::kQpackDecoder):  // QPACK Decoder Stream (RFC 9204 Section 4.2)
             LOG_DEBUG(
                 "ServerConnection: creating QPACK Decoder Receiver Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<QpackDecoderReceiverStream>(stream, blocked_registry_,
-                MakeErrorHandler());
+            typed_stream = std::make_shared<QpackDecoderReceiverStream>(stream, blocked_registry_, MakeErrorHandler());
             break;
 
         default:
@@ -409,14 +393,13 @@ void ServerConnection::HandleGoaway(uint64_t id) {
     // id ≥ that value. The id MUST NOT increase across multiple GOAWAYs;
     // a peer that violates this MUST be treated as H3_ID_ERROR.
     if (goaway_received_id_ != kNoGoaway && id > goaway_received_id_) {
-        LOG_ERROR(
-            "ServerConnection::HandleGoaway: peer GOAWAY id increased (%llu -> %llu), closing with H3_ID_ERROR",
+        LOG_ERROR("ServerConnection::HandleGoaway: peer GOAWAY id increased (%llu -> %llu), closing with H3_ID_ERROR",
             (unsigned long long)goaway_received_id_, (unsigned long long)id);
         Close(static_cast<uint32_t>(Http3ErrorCode::kIdError));
         return;
     }
-    LOG_INFO("ServerConnection::HandleGoaway: client GOAWAY received, max_accepted_push_id=%llu",
-        (unsigned long long)id);
+    LOG_INFO(
+        "ServerConnection::HandleGoaway: client GOAWAY received, max_accepted_push_id=%llu", (unsigned long long)id);
     goaway_received_id_ = id;
 
     // The server still owes the client all in-flight responses. Don't
@@ -593,8 +576,7 @@ void ServerConnection::HandleTimer() {
     } else if (current_next_push_id > send_limit_push_id_) {
         // All pushes were cancelled or already sent, but new push_id were allocated
         // This means new PUSH_PROMISE was sent but then cancelled, so no timer needed
-        LOG_DEBUG(
-            "ServerConnection::HandleTimer: next_push_id_=%llu > send_limit_push_id_=%llu, but no pending pushes",
+        LOG_DEBUG("ServerConnection::HandleTimer: next_push_id_=%llu > send_limit_push_id_=%llu, but no pending pushes",
             current_next_push_id, send_limit_push_id_);
         // Update send_limit_push_id_ to match current_next_push_id for consistency
         send_limit_push_id_ = current_next_push_id;
@@ -611,8 +593,7 @@ bool ServerConnection::CanPush() const {
     // The server can use push IDs from 0 to max_push_id_ (inclusive).
     // Use > instead of >= so that when MAX_PUSH_ID=0, push ID 0 is allowed.
     if (next_push_id_ > max_push_id_) {
-        LOG_DEBUG(
-            "ServerConnection::CanPush: next_push_id=%llu > max_push_id=%llu", next_push_id_, max_push_id_);
+        LOG_DEBUG("ServerConnection::CanPush: next_push_id=%llu > max_push_id=%llu", next_push_id_, max_push_id_);
         return false;
     }
 

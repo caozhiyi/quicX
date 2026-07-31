@@ -38,8 +38,7 @@ inline constexpr auto& kTlsLabelIv = kTlsLabelIvV1;
 inline constexpr auto& kTlsLabelKu = kTlsLabelKuV1;
 
 // QUIC v1 Initial Salt (RFC 9001)
-inline constexpr std::array<uint8_t, 20> kInitialSaltV1 = {
-    0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17,
+inline constexpr std::array<uint8_t, 20> kInitialSaltV1 = {0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17,
     0x9a, 0xe6, 0xa4, 0xc8, 0x0c, 0xad, 0xcc, 0xbb, 0x7f, 0x0a};
 
 // ============================================================================
@@ -58,8 +57,7 @@ inline constexpr std::array<uint8_t, 15> kTlsLabelKuV2 = {
     't', 'l', 's', '1', '3', ' ', 'q', 'u', 'i', 'c', 'v', '2', ' ', 'k', 'u'};
 
 // QUIC v2 Initial Salt (RFC 9369)
-inline constexpr std::array<uint8_t, 20> kInitialSaltV2 = {
-    0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93,
+inline constexpr std::array<uint8_t, 20> kInitialSaltV2 = {0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93,
     0x81, 0xbe, 0x6e, 0x26, 0x9d, 0xcb, 0xf9, 0xbd, 0x2e, 0xd9};
 
 // ============================================================================
@@ -68,15 +66,13 @@ inline constexpr std::array<uint8_t, 20> kInitialSaltV2 = {
 
 // QUIC v1 Retry Integrity Key (RFC 9001)
 inline constexpr std::array<uint8_t, 16> kRetryIntegrityKeyV1 = {
-    0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a,
-    0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
+    0xbe, 0x0c, 0x69, 0x0b, 0x9f, 0x66, 0x57, 0x5a, 0x1d, 0x76, 0x6b, 0x54, 0xe3, 0x68, 0xc8, 0x4e};
 inline constexpr std::array<uint8_t, 12> kRetryIntegrityNonceV1 = {
     0x46, 0x15, 0x99, 0xd3, 0x5d, 0x63, 0x2b, 0xf2, 0x23, 0x98, 0x25, 0xbb};
 
 // QUIC v2 Retry Integrity Key (RFC 9369)
 inline constexpr std::array<uint8_t, 16> kRetryIntegrityKeyV2 = {
-    0x8f, 0xb4, 0xb0, 0x1b, 0x56, 0xac, 0x48, 0xe2,
-    0x60, 0xfb, 0xcb, 0xce, 0xad, 0x7c, 0xcc, 0x92};
+    0x8f, 0xb4, 0xb0, 0x1b, 0x56, 0xac, 0x48, 0xe2, 0x60, 0xfb, 0xcb, 0xce, 0xad, 0x7c, 0xcc, 0x92};
 inline constexpr std::array<uint8_t, 12> kRetryIntegrityNonceV2 = {
     0xd8, 0x69, 0x69, 0xbc, 0x2d, 0x7c, 0x6d, 0x99, 0x90, 0xef, 0xb0, 0x4a};
 
@@ -160,20 +156,12 @@ struct QuicLabels {
 inline QuicLabels GetQuicLabels(uint32_t version) {
     if (version == kQuicVersion2) {
         // QUIC v2
-        return QuicLabels{
-            kTlsLabelKeyV2.data(), kTlsLabelKeyV2.size(),
-            kTlsLabelHpV2.data(), kTlsLabelHpV2.size(),
-            kTlsLabelIvV2.data(), kTlsLabelIvV2.size(),
-            kTlsLabelKuV2.data(), kTlsLabelKuV2.size()
-        };
+        return QuicLabels{kTlsLabelKeyV2.data(), kTlsLabelKeyV2.size(), kTlsLabelHpV2.data(), kTlsLabelHpV2.size(),
+            kTlsLabelIvV2.data(), kTlsLabelIvV2.size(), kTlsLabelKuV2.data(), kTlsLabelKuV2.size()};
     }
     // Default to v1
-    return QuicLabels{
-        kTlsLabelKeyV1.data(), kTlsLabelKeyV1.size(),
-        kTlsLabelHpV1.data(), kTlsLabelHpV1.size(),
-        kTlsLabelIvV1.data(), kTlsLabelIvV1.size(),
-        kTlsLabelKuV1.data(), kTlsLabelKuV1.size()
-    };
+    return QuicLabels{kTlsLabelKeyV1.data(), kTlsLabelKeyV1.size(), kTlsLabelHpV1.data(), kTlsLabelHpV1.size(),
+        kTlsLabelIvV1.data(), kTlsLabelIvV1.size(), kTlsLabelKuV1.data(), kTlsLabelKuV1.size()};
 }
 
 }  // namespace quic

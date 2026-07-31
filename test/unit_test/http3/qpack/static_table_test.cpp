@@ -1,23 +1,21 @@
 // static_table_test.cpp
-#include <gtest/gtest.h>
 #include "http3/qpack/static_table.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace http3 {
 namespace {
 
-class StaticTableTest : public testing::Test {
+class StaticTableTest: public testing::Test {
 protected:
-    void SetUp() override {
-        table_ = std::make_unique<StaticTable>();
-    }
+    void SetUp() override { table_ = std::make_unique<StaticTable>(); }
 
     std::unique_ptr<StaticTable> table_;
 };
 
 TEST_F(StaticTableTest, LookupByIndex) {
     std::string name, value;
-    
+
     // Test lookup of known static entries
     auto item = table_->FindHeaderItem(0);
     EXPECT_TRUE(item != nullptr);
@@ -47,7 +45,7 @@ TEST_F(StaticTableTest, LookupByNameAndValue) {
     EXPECT_TRUE(item != nullptr);
     EXPECT_EQ(item->name_, "accept-encoding");
     EXPECT_EQ(item->value_, "gzip, deflate, br");
-    
+
     // Test non-existent entries
     EXPECT_EQ(table_->FindHeaderItemIndex("non-existent", "value"), -1);
     EXPECT_EQ(table_->FindHeaderItemIndex(":method", "INVALID"), -1);
@@ -66,7 +64,7 @@ TEST_F(StaticTableTest, LookupByNameOnly) {
     item = table_->FindHeaderItem(index);
     EXPECT_EQ(item->name_, "accept-encoding");
     EXPECT_EQ(item->value_, "gzip, deflate, br");
-    
+
     // Test non-existent name
     EXPECT_EQ(table_->FindHeaderItemIndex("non-existent"), -1);
 }

@@ -2,8 +2,8 @@
 #define QUIC_STREAM_FIX_BUFFER_FRAME_VISITOR
 
 #include <vector>
-#include "quic/stream/if_frame_visitor.h"
 #include "quic/connection/controler/send_control.h"
+#include "quic/stream/if_frame_visitor.h"
 
 namespace quicx {
 namespace quic {
@@ -11,8 +11,7 @@ namespace quic {
 /*
  fix buffer length visitor
 */
-class FixBufferFrameVisitor:
-    public IFrameVisitor {
+class FixBufferFrameVisitor: public IFrameVisitor {
 public:
     FixBufferFrameVisitor(uint32_t limit_size);
     virtual ~FixBufferFrameVisitor();
@@ -34,10 +33,8 @@ public:
     // Expose remaining bytes in the underlying packet buffer so STREAM/
     // CRYPTO frame producers can size payload to the *current* datagram's
     // real free space (replaces the historical hardcoded 1300 cap).
-    virtual uint32_t GetPacketLeftSize() override {
-        return buffer_ ? buffer_->GetFreeLength() : 0;
-    }
-    
+    virtual uint32_t GetPacketLeftSize() override { return buffer_ ? buffer_->GetFreeLength() : 0; }
+
     virtual std::vector<StreamDataInfo> GetStreamDataInfo() const override;
 
     // Get accumulated frame type bit for all frames processed
@@ -45,6 +42,19 @@ public:
 
     // Get last encoding error
     virtual FrameEncodeError GetLastError() const override { return last_error_; }
+
+    // qlog draft-03 instrumentation: every frame whose Encode() actually
+    // succeeded (i.e. its bytes were committed to buffer_) is appended here
+    // in encode order. PacketBuilder hands this list to the freshly built
+    // IPacket so SendControl::OnPacketSend can emit per-frame qlog data on
+    // packet_sent events — without this we'd report `"frames":[]` because
+    // outbound IPackets never store their frames anywhere else (they only
+    // hold the encoded payload bytes).
+    //
+    // Returned by move to avoid double-allocating the vector on the hot
+    // path; safe because the visitor is a per-call local and never reused
+    // after the move.
+    std::vector<std::shared_ptr<IFrame>> TakeHandledFrames() { return std::move(handled_frames_); }
 
 private:
     uint8_t encryption_level_;
@@ -66,9 +76,15 @@ private:
 
     // Last encoding error
     FrameEncodeError last_error_;
+
+    // qlog draft-03: see TakeHandledFrames() above. Stays empty when no
+    // frame ever encodes (or all fail); a successful Encode() pushes the
+    // original frame shared_ptr so downstream consumers get full per-frame
+    // detail (stream_id/offset/length/ack ranges/...) rather than just a
+    // frame-type enum.
+    std::vector<std::shared_ptr<IFrame>> handled_frames_;
 };
 
-
-}
-}
+}  // namespace quic
+}  // namespace quicx
 #endif

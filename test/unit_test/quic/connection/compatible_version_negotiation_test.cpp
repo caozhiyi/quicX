@@ -32,6 +32,8 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/timer/timer.h"
+#include "connection_test_util.h"
+#include "mock_sender.h"
 #include "quic/common/version.h"
 #include "quic/connection/connection_base.h"
 #include "quic/connection/connection_client.h"
@@ -41,8 +43,6 @@
 #include "quic/crypto/tls/tls_ctx_server.h"
 #include "quic/packet/packet_decode.h"
 #include "quic/quicx/global_resource.h"
-#include "connection_test_util.h"
-#include "mock_sender.h"
 
 namespace quicx {
 namespace quic {
@@ -84,9 +84,8 @@ static const char kKeyPem[] =
     "-----END RSA PRIVATE KEY-----\n";
 
 // Pump one packet exchange (send->decode->deliver).
-static bool ExchangePackets(std::shared_ptr<IConnection> sender,
-                            std::shared_ptr<IConnection> receiver,
-                            std::shared_ptr<MockSender> sender_mock) {
+static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver,
+    std::shared_ptr<MockSender> sender_mock) {
     sender_mock->Clear();
     if (!sender->TrySend()) {
         return false;
@@ -184,7 +183,7 @@ static HandshakeEndpoints RunHandshake(uint32_t client_pref = 0, uint32_t server
 // Consequently the advertised |available_versions| lists are asymmetric:
 //   * Client:  [v2, v1]  (preferred + wire)
 //   * Server:  [v1]      (wire only; no unsolicited upgrade offer)
-TEST(CompatibleVersionNegotiation, DefaultHandshakeIsConservative) {
+TEST(CompatibleVersionNegotiationTest, DefaultHandshakeIsConservative) {
     auto ep = RunHandshake();
     ASSERT_NE(ep.client, nullptr);
     ASSERT_NE(ep.server, nullptr);
@@ -235,7 +234,7 @@ TEST(CompatibleVersionNegotiation, DefaultHandshakeIsConservative) {
 // desired") collapses available_versions to a single entry and matches the
 // server's default behaviour exactly.
 // --------------------------------------------------------------------------
-TEST(CompatibleVersionNegotiation, ClientPreferV1NoUpgrade) {
+TEST(CompatibleVersionNegotiationTest, ClientPreferV1NoUpgrade) {
     // Force client to explicitly prefer v1 and the wire version also v1 —
     // DialSetupTLS() skips the "prefer v2, start v1" auto-downgrade path
     // because quic_version_ is already kQuicVersion1.
@@ -293,7 +292,7 @@ TEST(CompatibleVersionNegotiation, ClientPreferV1NoUpgrade) {
 //   * The local transport_param_ (populated from the peer's TP via Merge())
 //     reports chosen_version = v2 on both sides.
 // --------------------------------------------------------------------------
-TEST(CompatibleVersionNegotiation, V1ToV2Upgrade) {
+TEST(CompatibleVersionNegotiationTest, V1ToV2Upgrade) {
     // client_pref = 0: rely on DialSetupTLS()'s default behaviour, which for
     //                  quic_version_ defaulting to v2 translates to
     //                  SetPreferredVersion(v2) + SetVersion(v1).

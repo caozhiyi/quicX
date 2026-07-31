@@ -9,8 +9,7 @@
 namespace quicx {
 namespace quic {
 
-class UdpSender:
-    public ISender {
+class UdpSender: public ISender {
 public:
     UdpSender();
     UdpSender(int32_t sockfd);
@@ -113,7 +112,7 @@ private:
     static std::atomic<uint32_t> any_fault_enabled_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

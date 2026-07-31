@@ -1,10 +1,10 @@
+#include "upgrade/server/upgrade_server.h"
 #include <memory>
 #include "common/log/log.h"
-#include "common/network/io_handle.h"
-#include "upgrade/server/upgrade_server.h"
 #include "common/network/if_event_driver.h"
-#include "upgrade/server/connection_handler.h"
+#include "common/network/io_handle.h"
 #include "upgrade/handlers/smart_handler_factory.h"
+#include "upgrade/server/connection_handler.h"
 
 namespace quicx {
 namespace upgrade {
@@ -13,10 +13,8 @@ std::unique_ptr<IUpgrade> IUpgrade::MakeUpgrade(std::shared_ptr<common::IEventLo
     return std::make_unique<UpgradeServer>(event_loop);
 }
 
-UpgradeServer::UpgradeServer(std::shared_ptr<common::IEventLoop> event_loop)
-    : event_loop_(event_loop) {
-
-}
+UpgradeServer::UpgradeServer(std::shared_ptr<common::IEventLoop> event_loop):
+    event_loop_(event_loop) {}
 
 UpgradeServer::~UpgradeServer() {
     // Best-effort: deregister every listening fd from the event loop before
@@ -75,19 +73,15 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
 
         int listen_fd = CreateListenSocket(settings.listen_addr, port);
         if (listen_fd < 0) {
-            LOG_ERROR("Failed to create %s listening socket on %s:%d",
-                      label, settings.listen_addr.c_str(), port);
+            LOG_ERROR("Failed to create %s listening socket on %s:%d", label, settings.listen_addr.c_str(), port);
             return false;
         }
 
         if (loop->RegisterFd(listen_fd, common::EventType::ET_READ, connection_handler)) {
-            LOG_INFO("%s listener added on %s:%d",
-                     handler->GetType().c_str(),
-                     settings.listen_addr.c_str(), port);
+            LOG_INFO("%s listener added on %s:%d", handler->GetType().c_str(), settings.listen_addr.c_str(), port);
         } else {
-            LOG_ERROR("Failed to add %s listener on %s:%d",
-                      handler->GetType().c_str(),
-                      settings.listen_addr.c_str(), port);
+            LOG_ERROR(
+                "Failed to add %s listener on %s:%d", handler->GetType().c_str(), settings.listen_addr.c_str(), port);
             common::Close(listen_fd);
             return false;
         }
@@ -117,8 +111,7 @@ bool UpgradeServer::AddListener(UpgradeSettings& settings) {
             return false;
         }
     } else if (settings.https_port != 0) {
-        LOG_WARN("https_port=%u was set but no cert/key configured; skipping TLS listener",
-                 settings.https_port);
+        LOG_WARN("https_port=%u was set but no cert/key configured; skipping TLS listener", settings.https_port);
     }
 
     if (!started_any) {
@@ -167,5 +160,5 @@ int UpgradeServer::CreateListenSocket(const std::string& addr, uint16_t port) {
     return listen_fd;
 }
 
-} // namespace upgrade
-} // namespace quicx 
+}  // namespace upgrade
+}  // namespace quicx

@@ -1,22 +1,25 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/crypto_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/crypto_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(crypto_frame_utest, codec) {
+TEST(CryptoFrameTest, codec) {
     CryptoFrame frame1;
     CryptoFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     char frame_data[64] = "1234567890123456789012345678901234567890";
-    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
     data_buffer->Write((uint8_t*)frame_data, strlen(frame_data));
 
     frame1.SetOffset(1042451);
@@ -37,6 +40,6 @@ TEST(crypto_frame_utest, codec) {
     EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2.GetStart(), data2.GetLength()));
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

@@ -18,11 +18,16 @@ namespace {
 // Helper to convert EncryptionLevel to qlog key_type string
 const char* EncryptionLevelToKeyType(EncryptionLevel level) {
     switch (level) {
-        case kInitial:     return "initial";
-        case kHandshake:   return "handshake";
-        case kApplication: return "1rtt";
-        case kEarlyData:   return "0rtt";
-        default:           return "unknown";
+        case kInitial:
+            return "initial";
+        case kHandshake:
+            return "handshake";
+        case kApplication:
+            return "1rtt";
+        case kEarlyData:
+            return "0rtt";
+        default:
+            return "unknown";
     }
 }
 }  // anonymous namespace
@@ -101,8 +106,8 @@ void ConnectionCrypto::SendAlert(EncryptionLevel level, uint8_t alert) {
     // dropping the alert, which would otherwise leave the connection hanging.
     static const uint64_t kCryptoErrorBase = 0x0100;
     uint64_t error_code = kCryptoErrorBase + alert;
-    LOG_ERROR("TLS alert %u at encryption level %d, closing with CRYPTO_ERROR 0x%llx",
-              alert, (int)level, (unsigned long long)error_code);
+    LOG_ERROR("TLS alert %u at encryption level %d, closing with CRYPTO_ERROR 0x%llx", alert, (int)level,
+        (unsigned long long)error_code);
     if (handshake_error_cb_) {
         handshake_error_cb_(error_code, "tls handshake alert");
     }
@@ -143,11 +148,12 @@ bool ConnectionCrypto::InstallInitSecret(const uint8_t* secret, uint32_t len, bo
     return InstallInitSecretWithVersion(secret, len, quic_version_, is_server);
 }
 
-bool ConnectionCrypto::InstallInitSecretWithVersion(const uint8_t* secret, uint32_t len, uint32_t version, bool is_server) {
+bool ConnectionCrypto::InstallInitSecretWithVersion(
+    const uint8_t* secret, uint32_t len, uint32_t version, bool is_server) {
     if (cryptographers_[kInitial]) {
         return false;
     }
-    
+
     // Update stored version
     quic_version_ = version;
 
@@ -158,11 +164,11 @@ bool ConnectionCrypto::InstallInitSecretWithVersion(const uint8_t* secret, uint3
     // make initial cryptographer
     std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(kCipherIdAes128GcmSha256);
     cryptographer->SetVersion(version);
-    
+
     // Use version-aware initial secret installation
     cryptographer->InstallInitSecretWithVersion(secret, len, version, is_server);
     cryptographers_[kInitial] = cryptographer;
-    
+
     LOG_INFO("Installed Initial secret with version %s (0x%08x)", VersionToString(version), version);
 
     // Log key_updated events for Initial keys (both read and write)
@@ -238,10 +244,10 @@ bool ConnectionCrypto::InstallInitSecretForRetryWithVersion(
     if (cryptographers_[kInitial]) {
         return false;
     }
-    
+
     // Update stored version
     quic_version_ = version;
-    
+
     // Get version-specific salt
     const uint8_t* salt = GetInitialSalt(version);
     size_t salt_len = GetInitialSaltLength(version);
@@ -311,8 +317,8 @@ bool ConnectionCrypto::TriggerKeyUpdate() {
     // Flip key phase
     current_key_phase_ ^= 1;
 
-    LOG_INFO("Key update completed successfully (version: %s, new key_phase: %u)",
-        VersionToString(quic_version_), current_key_phase_);
+    LOG_INFO("Key update completed successfully (version: %s, new key_phase: %u)", VersionToString(quic_version_),
+        current_key_phase_);
 
     // Log key_updated events for 1-RTT key update
     if (qlog_trace_) {

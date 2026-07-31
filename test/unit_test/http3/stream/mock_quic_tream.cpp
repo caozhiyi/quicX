@@ -1,6 +1,6 @@
 
-#include "common/buffer/standalone_buffer_chunk.h"
 #include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "test/unit_test/http3/stream/mock_quic_stream.h"
 
 namespace quicx {
@@ -42,8 +42,7 @@ void MockQuicStream::SetStreamReadCallBack(stream_read_callback cb) {
 namespace {
 // Helper: deliver a buffer to a peer stream, buffering when no read_cb_ is
 // installed yet. Same semantics for both Send variants and Flush.
-inline void DeliverToPeer(std::shared_ptr<MockQuicStream> peer,
-                          std::shared_ptr<IBufferRead> buf, bool is_last) {
+inline void DeliverToPeer(std::shared_ptr<MockQuicStream> peer, std::shared_ptr<IBufferRead> buf, bool is_last) {
     if (!peer) return;
     if (peer->ReadCb()) {
         peer->ReadCb()(buf, is_last, 0);
@@ -131,5 +130,5 @@ uint64_t MockQuicStream::GetPendingSendBytes() {
     return send_buffer_->GetDataLength();
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

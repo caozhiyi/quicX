@@ -1,3 +1,7 @@
+// clang-format off
+// RFC 9001 Initial Packet test vectors. Byte arrays are hand-aligned to match
+// the RFC layout; do not reformat.
+
 #include <gtest/gtest.h>
 #include <memory>
 
@@ -96,7 +100,7 @@ static bool RoundTripHeader(std::shared_ptr<ICryptographer> enc, std::shared_ptr
     return out_pn_len == pn_len;
 }
 
-TEST(Rfc9001InitialVectors, Aes128Gcm_InitialSecrets_RoundTrip) {
+TEST(Rfc9001InitialVectorsTest, Aes128Gcm_InitialSecrets_RoundTrip) {
     auto srv = std::make_shared<Aes128GcmCryptographer>();
     auto cli = std::make_shared<Aes128GcmCryptographer>();
 
@@ -116,7 +120,7 @@ TEST(Rfc9001InitialVectors, Aes128Gcm_InitialSecrets_RoundTrip) {
     ASSERT_TRUE(RoundTripHeader(cli, srv));
 }
 
-TEST(Rfc9001InitialVectors, ChaCha20Poly1305_InitialSecrets_RoundTrip) {
+TEST(Rfc9001InitialVectorsTest, ChaCha20Poly1305_InitialSecrets_RoundTrip) {
     auto srv = std::make_shared<ChaCha20Poly1305Cryptographer>();
     auto cli = std::make_shared<ChaCha20Poly1305Cryptographer>();
 
@@ -138,3 +142,4 @@ TEST(Rfc9001InitialVectors, ChaCha20Poly1305_InitialSecrets_RoundTrip) {
 }  // namespace
 }  // namespace quic
 }  // namespace quicx
+// clang-format on

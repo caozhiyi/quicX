@@ -1,9 +1,9 @@
 #ifdef _WIN32
 // Windows networking headers (winsock2 first). No need to include windows.h directly.
 #define WIN32_LEAN_AND_MEAN
+#include <mswsock.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <mswsock.h>
 
 #include <atomic>
 #include <string>
@@ -14,7 +14,8 @@
 namespace quicx {
 namespace common {
 
-namespace {
+namespace {}  // namespace
+
 // Resolve the address family of `sockfd`. Cache hit covers all UDP fds
 // we created; falls back to getsockname() (the only portable Windows
 // path — there is no SO_DOMAIN on winsock).
@@ -29,7 +30,6 @@ int32_t ResolveSocketFamily(int32_t sockfd) {
     }
     return AF_INET;
 }
-}  // namespace
 
 // Retrieve WSARecvMsg function pointer at runtime (not always declared by headers)
 static LPFN_WSARECVMSG ResolveWSARecvMsg(SOCKET sockfd) {
@@ -210,10 +210,8 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 // + WSAUDP_SEND_MSG_SIZE). For now we don't wire it up — return EIO so
 // the caller (UdpSender::SendBatch) permanently disables GSO and falls
 // back to the sendmmsg-emulation path above.
-SysCallInt32Result SendMsgGso(int32_t /*sockfd*/,
-                              const char* /*payload*/, uint32_t /*total_len*/,
-                              uint16_t /*segment_size*/,
-                              const Address& /*addr*/) {
+SysCallInt32Result SendMsgGso(int32_t /*sockfd*/, const char* /*payload*/, uint32_t /*total_len*/,
+    uint16_t /*segment_size*/, const Address& /*addr*/) {
     return {-1, EIO};
 }
 
@@ -303,12 +301,16 @@ SysCallInt32Result SetUdpSocketBuffer(int32_t sockfd, int32_t size_bytes) {
     getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, (char*)&actual_snd, &len);
 
     if (actual_rcv < warn_threshold && !warned_rcvbuf.exchange(true)) {
-        LOG_WARN("UDP SO_RCVBUF clamped to %d bytes (requested %d). "
-                 "Packets may be dropped under load.", actual_rcv, size_bytes);
+        LOG_WARN(
+            "UDP SO_RCVBUF clamped to %d bytes (requested %d). "
+            "Packets may be dropped under load.",
+            actual_rcv, size_bytes);
     }
     if (actual_snd < warn_threshold && !warned_sndbuf.exchange(true)) {
-        LOG_WARN("UDP SO_SNDBUF clamped to %d bytes (requested %d). "
-                 "Sends may stall under load.", actual_snd, size_bytes);
+        LOG_WARN(
+            "UDP SO_SNDBUF clamped to %d bytes (requested %d). "
+            "Sends may stall under load.",
+            actual_snd, size_bytes);
     }
     return {actual_rcv, 0};
 }

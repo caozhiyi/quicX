@@ -1,15 +1,14 @@
 #ifndef QUIC_FRAME_CONNECTION_CLOSE_FRAME
 #define QUIC_FRAME_CONNECTION_CLOSE_FRAME
 
-#include <string>
 #include <cstdint>
+#include <string>
 #include "quic/frame/if_frame.h"
 
 namespace quicx {
 namespace quic {
 
-class ConnectionCloseFrame:
-    public IFrame {
+class ConnectionCloseFrame: public IFrame {
 public:
     ConnectionCloseFrame();
     ConnectionCloseFrame(uint16_t frame_type);
@@ -30,8 +29,8 @@ public:
 
 private:
     bool is_application_error_;
-    uint32_t error_code_;        // indicates the reason for closing this connection.
-    uint32_t err_frame_type_;    // the type of frame that triggered the error.
+    uint32_t error_code_;      // indicates the reason for closing this connection.
+    uint32_t err_frame_type_;  // the type of frame that triggered the error.
     std::string reason_;
     /*
     uint32_t reason_length; // the length of the reason phrase in bytes.
@@ -39,7 +38,7 @@ private:
     */
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

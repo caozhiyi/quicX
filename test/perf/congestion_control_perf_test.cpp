@@ -56,7 +56,7 @@ static std::vector<Event> BuildEventStream(size_t n_events) {
     std::vector<Event> out;
     out.reserve(n_events);
 
-    constexpr size_t kAckEvery = 2;   // ACK every 2 sends
+    constexpr size_t kAckEvery = 2;     // ACK every 2 sends
     constexpr size_t kLossEvery = 128;  // 1 loss per ~100 sends
 
     uint64_t pn = 0;
@@ -90,7 +90,10 @@ static void ConfigureCc(quic::ICongestionControl* cc) {
 static void BM_Cc_OnPacketSent(benchmark::State& state) {
     auto type = static_cast<quic::CongestionControlType>(state.range(0));
     auto cc = quic::CreateCongestionControl(type);
-    if (!cc) { state.SkipWithError("CC create failed"); return; }
+    if (!cc) {
+        state.SkipWithError("CC create failed");
+        return;
+    }
     ConfigureCc(cc.get());
 
     uint64_t pn = 0;
@@ -116,7 +119,10 @@ static void BM_Cc_EventStream(benchmark::State& state) {
 
     for (auto _ : state) {
         auto cc = quic::CreateCongestionControl(type);
-        if (!cc) { state.SkipWithError("CC create failed"); return; }
+        if (!cc) {
+            state.SkipWithError("CC create failed");
+            return;
+        }
         ConfigureCc(cc.get());
 
         for (const auto& e : events) {
@@ -147,7 +153,10 @@ static void BM_Cc_EventStream(benchmark::State& state) {
 static void BM_Cc_CanSend(benchmark::State& state) {
     auto type = static_cast<quic::CongestionControlType>(state.range(0));
     auto cc = quic::CreateCongestionControl(type);
-    if (!cc) { state.SkipWithError("CC create failed"); return; }
+    if (!cc) {
+        state.SkipWithError("CC create failed");
+        return;
+    }
     ConfigureCc(cc.get());
 
     // Put some bytes in flight so CanSend has work to do.
@@ -196,8 +205,8 @@ static void BM_Pacer_CanSend_TimeUntilSend(benchmark::State& state) {
 // Google benchmark macros embed __LINE__ as a unique id, so every BENCHMARK
 // invocation must live on its own source line.
 
-#define REGISTER_CC_VARIANTS(bm)                                        \
-    BENCHMARK(bm)                                                       \
+#define REGISTER_CC_VARIANTS(bm)                                            \
+    BENCHMARK(bm)                                                           \
         ->Arg(static_cast<int>(quicx::quic::CongestionControlType::kCubic)) \
         ->Arg(static_cast<int>(quicx::quic::CongestionControlType::kReno))  \
         ->Arg(static_cast<int>(quicx::quic::CongestionControlType::kBbrV1)) \
@@ -209,11 +218,12 @@ REGISTER_CC_VARIANTS(quicx::perf::BM_Cc_OnPacketSent);
 REGISTER_CC_VARIANTS(quicx::perf::BM_Cc_EventStream);
 REGISTER_CC_VARIANTS(quicx::perf::BM_Cc_CanSend);
 
-BENCHMARK(quicx::perf::BM_Pacer_CanSend_TimeUntilSend)
-    ->Unit(benchmark::kNanosecond);
+BENCHMARK(quicx::perf::BM_Pacer_CanSend_TimeUntilSend)->Unit(benchmark::kNanosecond);
 
 BENCHMARK_MAIN();
 
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif

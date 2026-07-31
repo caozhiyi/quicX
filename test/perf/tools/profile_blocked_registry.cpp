@@ -34,11 +34,16 @@ int main(int argc, char** argv) {
     const char* out = "/tmp/blocked_registry_stacks.raw";
     bool mute_log = true;
     for (int i = 1; i < argc; ++i) {
-        if (!std::strcmp(argv[i], "--hz") && i + 1 < argc) hz = std::atoi(argv[++i]);
-        else if (!std::strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = std::atoi(argv[++i]);
-        else if (!std::strcmp(argv[i], "--n") && i + 1 < argc) n_pending = std::atoi(argv[++i]);
-        else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out = argv[++i];
-        else if (!std::strcmp(argv[i], "--keep-log")) mute_log = false;
+        if (!std::strcmp(argv[i], "--hz") && i + 1 < argc)
+            hz = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--seconds") && i + 1 < argc)
+            seconds = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--n") && i + 1 < argc)
+            n_pending = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--out") && i + 1 < argc)
+            out = argv[++i];
+        else if (!std::strcmp(argv[i], "--keep-log"))
+            mute_log = false;
     }
     if (mute_log) {
         LOG_SET_LEVEL(common::LogLevel::kNull);
@@ -78,18 +83,18 @@ int main(int argc, char** argv) {
         // Drain via AckByStreamId / RemoveByStreamId — this is the O(N^2) path.
         for (int i = 0; i < n_pending; ++i) {
             uint64_t sid = static_cast<uint64_t>(i);
-            if (i & 1) reg.RemoveByStreamId(sid);
-            else       reg.AckByStreamId(sid);
+            if (i & 1)
+                reg.RemoveByStreamId(sid);
+            else
+                reg.AckByStreamId(sid);
         }
         ++iters;
     }
     prof.Stop();
     auto t1 = std::chrono::steady_clock::now();
     double elapsed_s = std::chrono::duration<double>(t1 - t0).count();
-    std::fprintf(stderr,
-        "performed %lu fill+drain cycles (N=%d) in %.3f s  => %.1f us/cycle  (samples=%u)\n",
-        (unsigned long)iters, n_pending, elapsed_s,
-        elapsed_s * 1e6 / iters, prof.SampleCount());
+    std::fprintf(stderr, "performed %lu fill+drain cycles (N=%d) in %.3f s  => %.1f us/cycle  (samples=%u)\n",
+        (unsigned long)iters, n_pending, elapsed_s, elapsed_s * 1e6 / iters, prof.SampleCount());
 
     prof.Dump();
     return 0;

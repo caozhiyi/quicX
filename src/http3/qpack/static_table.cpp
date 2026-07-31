@@ -1,5 +1,9 @@
 #include "http3/qpack/static_table.h"
 
+// clang-format off
+// RFC 9204 Appendix A static table. Entries are hand-aligned in columns so the
+// table reads like the RFC; do not let clang-format collapse the spacing.
+
 namespace quicx {
 namespace http3 {
 
@@ -155,3 +159,4 @@ int32_t StaticTable::FindHeaderItemIndex(const std::string& name) {
 
 }
 }
+// clang-format on

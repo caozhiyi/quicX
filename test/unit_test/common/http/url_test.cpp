@@ -139,25 +139,19 @@ TEST(QueryStringTest, SerializeEmpty) {
 }
 
 TEST(QueryStringTest, SerializeWithEncoding) {
-    std::string result = SerializeQueryString({
-        {"q", "hello world"},
-        {"email", "test@example.com"}
-    });
+    std::string result = SerializeQueryString({{"q", "hello world"}, {"email", "test@example.com"}});
     EXPECT_TRUE(result.find("hello%20world") != std::string::npos);
     EXPECT_TRUE(result.find("test%40example.com") != std::string::npos);
 }
 
 TEST(QueryStringTest, RoundTrip) {
     std::unordered_map<std::string, std::string> original = {
-        {"page", "1"},
-        {"q", "hello world"},
-        {"email", "test@example.com"}
-    };
-    
+        {"page", "1"}, {"q", "hello world"}, {"email", "test@example.com"}};
+
     std::string serialized = SerializeQueryString(original);
     std::unordered_map<std::string, std::string> parsed;
     EXPECT_TRUE(ParseQueryString(serialized, parsed));
-    
+
     EXPECT_EQ(parsed["page"], "1");
     EXPECT_EQ(parsed["q"], "hello world");
     EXPECT_EQ(parsed["email"], "test@example.com");
@@ -230,7 +224,7 @@ TEST(PathWithQueryTest, WithEncodedValues) {
 TEST(ParsePathWithQueryTest, PathOnly) {
     std::string path;
     std::unordered_map<std::string, std::string> query;
-    
+
     EXPECT_TRUE(ParsePathWithQuery("/api/users", path, query));
     EXPECT_EQ(path, "/api/users");
     EXPECT_TRUE(query.empty());
@@ -239,7 +233,7 @@ TEST(ParsePathWithQueryTest, PathOnly) {
 TEST(ParsePathWithQueryTest, PathWithQuery) {
     std::string path;
     std::unordered_map<std::string, std::string> query;
-    
+
     EXPECT_TRUE(ParsePathWithQuery("/api/users?page=1&limit=10", path, query));
     EXPECT_EQ(path, "/api/users");
     EXPECT_EQ(query["page"], "1");
@@ -249,7 +243,7 @@ TEST(ParsePathWithQueryTest, PathWithQuery) {
 TEST(ParsePathWithQueryTest, PathWithEncodedQuery) {
     std::string path;
     std::unordered_map<std::string, std::string> query;
-    
+
     EXPECT_TRUE(ParsePathWithQuery("/search?q=hello%20world&email=test%40example.com", path, query));
     EXPECT_EQ(path, "/search");
     EXPECT_EQ(query["q"], "hello world");
@@ -259,14 +253,14 @@ TEST(ParsePathWithQueryTest, PathWithEncodedQuery) {
 TEST(ParsePathWithQueryTest, EmptyString) {
     std::string path;
     std::unordered_map<std::string, std::string> query;
-    
+
     EXPECT_FALSE(ParsePathWithQuery("", path, query));
 }
 
 TEST(ParsePathWithQueryTest, RootPath) {
     std::string path;
     std::unordered_map<std::string, std::string> query;
-    
+
     EXPECT_TRUE(ParsePathWithQuery("/", path, query));
     EXPECT_EQ(path, "/");
     EXPECT_TRUE(query.empty());
@@ -274,19 +268,16 @@ TEST(ParsePathWithQueryTest, RootPath) {
 
 TEST(ParsePathWithQueryTest, RoundTrip) {
     std::string original_path = "/api/users";
-    std::unordered_map<std::string, std::string> original_query = {
-        {"page", "1"},
-        {"limit", "10"}
-    };
-    
+    std::unordered_map<std::string, std::string> original_query = {{"page", "1"}, {"limit", "10"}};
+
     // Build
     std::string path_with_query = BuildPathWithQuery(original_path, original_query);
-    
+
     // Parse
     std::string parsed_path;
     std::unordered_map<std::string, std::string> parsed_query;
     EXPECT_TRUE(ParsePathWithQuery(path_with_query, parsed_path, parsed_query));
-    
+
     // Verify
     EXPECT_EQ(parsed_path, original_path);
     EXPECT_EQ(parsed_query["page"], "1");
@@ -303,13 +294,12 @@ TEST(URLIntegrationTest, EdgeCases) {
     EXPECT_TRUE(ParseQueryString("key1=&key2=value", params));
     EXPECT_EQ(params["key1"], "");
     EXPECT_EQ(params["key2"], "value");
-    
+
     // Multiple equals signs
     params.clear();
     EXPECT_TRUE(ParseQueryString("data=a=b=c", params));
     EXPECT_EQ(params["data"], "a=b=c");
 }
-
 
 // ============================================================================
 // ParseURLForPseudoHeaders Tests (Client-side optimization)
@@ -318,10 +308,9 @@ TEST(URLIntegrationTest, EdgeCases) {
 TEST(ParseURLForPseudoHeadersTest, BasicHTTPS) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_TRUE(ParseURLForPseudoHeaders("https://example.com/api/users", 
-                                        scheme, host, port, path_with_query));
-    
+
+    EXPECT_TRUE(ParseURLForPseudoHeaders("https://example.com/api/users", scheme, host, port, path_with_query));
+
     EXPECT_EQ(scheme, "https");
     EXPECT_EQ(host, "example.com");
     EXPECT_EQ(port, 443);
@@ -331,10 +320,10 @@ TEST(ParseURLForPseudoHeadersTest, BasicHTTPS) {
 TEST(ParseURLForPseudoHeadersTest, WithNonDefaultPort) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_TRUE(ParseURLForPseudoHeaders("https://api.example.com:8443/v1/endpoint", 
-                                        scheme, host, port, path_with_query));
-    
+
+    EXPECT_TRUE(
+        ParseURLForPseudoHeaders("https://api.example.com:8443/v1/endpoint", scheme, host, port, path_with_query));
+
     EXPECT_EQ(scheme, "https");
     EXPECT_EQ(host, "api.example.com");
     EXPECT_EQ(port, 8443);
@@ -344,10 +333,10 @@ TEST(ParseURLForPseudoHeadersTest, WithNonDefaultPort) {
 TEST(ParseURLForPseudoHeadersTest, WithQueryString) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_TRUE(ParseURLForPseudoHeaders("https://example.com/search?q=test&page=1", 
-                                        scheme, host, port, path_with_query));
-    
+
+    EXPECT_TRUE(
+        ParseURLForPseudoHeaders("https://example.com/search?q=test&page=1", scheme, host, port, path_with_query));
+
     EXPECT_EQ(scheme, "https");
     EXPECT_EQ(host, "example.com");
     EXPECT_EQ(port, 443);
@@ -358,10 +347,10 @@ TEST(ParseURLForPseudoHeadersTest, WithQueryString) {
 TEST(ParseURLForPseudoHeadersTest, WithFragment) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_TRUE(ParseURLForPseudoHeaders("https://example.com/page?query=value#section", 
-                                        scheme, host, port, path_with_query));
-    
+
+    EXPECT_TRUE(
+        ParseURLForPseudoHeaders("https://example.com/page?query=value#section", scheme, host, port, path_with_query));
+
     EXPECT_EQ(scheme, "https");
     EXPECT_EQ(host, "example.com");
     EXPECT_EQ(port, 443);
@@ -373,10 +362,9 @@ TEST(ParseURLForPseudoHeadersTest, WithFragment) {
 TEST(ParseURLForPseudoHeadersTest, HTTPDefaultPort) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_TRUE(ParseURLForPseudoHeaders("http://example.com/api", 
-                                        scheme, host, port, path_with_query));
-    
+
+    EXPECT_TRUE(ParseURLForPseudoHeaders("http://example.com/api", scheme, host, port, path_with_query));
+
     EXPECT_EQ(scheme, "http");
     EXPECT_EQ(port, 80);
 }
@@ -384,31 +372,29 @@ TEST(ParseURLForPseudoHeadersTest, HTTPDefaultPort) {
 TEST(ParseURLForPseudoHeadersTest, RootPath) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_TRUE(ParseURLForPseudoHeaders("https://example.com", 
-                                        scheme, host, port, path_with_query));
-    
+
+    EXPECT_TRUE(ParseURLForPseudoHeaders("https://example.com", scheme, host, port, path_with_query));
+
     EXPECT_EQ(path_with_query, "/");
 }
 
 TEST(ParseURLForPseudoHeadersTest, PathWithoutLeadingSlash) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_TRUE(ParseURLForPseudoHeaders("https://example.com/api", 
-                                        scheme, host, port, path_with_query));
-    
+
+    EXPECT_TRUE(ParseURLForPseudoHeaders("https://example.com/api", scheme, host, port, path_with_query));
+
     EXPECT_EQ(path_with_query[0], '/');
 }
 
 TEST(ParseURLForPseudoHeadersTest, ComplexQueryString) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_TRUE(ParseURLForPseudoHeaders(
-        "https://api.example.com:8080/search?q=hello world&filters[0]=active&sort=-created_at", 
-        scheme, host, port, path_with_query));
-    
+
+    EXPECT_TRUE(
+        ParseURLForPseudoHeaders("https://api.example.com:8080/search?q=hello world&filters[0]=active&sort=-created_at",
+            scheme, host, port, path_with_query));
+
     EXPECT_EQ(scheme, "https");
     EXPECT_EQ(host, "api.example.com");
     EXPECT_EQ(port, 8080);
@@ -420,23 +406,22 @@ TEST(ParseURLForPseudoHeadersTest, ComplexQueryString) {
 TEST(ParseURLForPseudoHeadersTest, EmptyURL) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
+
     EXPECT_FALSE(ParseURLForPseudoHeaders("", scheme, host, port, path_with_query));
 }
 
 TEST(ParseURLForPseudoHeadersTest, NoScheme) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
+
     EXPECT_FALSE(ParseURLForPseudoHeaders("example.com/api", scheme, host, port, path_with_query));
 }
 
 TEST(ParseURLForPseudoHeadersTest, InvalidPort) {
     std::string scheme, host, path_with_query;
     uint16_t port;
-    
-    EXPECT_FALSE(ParseURLForPseudoHeaders("https://example.com:invalid/api", 
-                                         scheme, host, port, path_with_query));
+
+    EXPECT_FALSE(ParseURLForPseudoHeaders("https://example.com:invalid/api", scheme, host, port, path_with_query));
 }
 
 TEST(URLErrorTest, ParsePathWithQueryEmpty) {
@@ -459,6 +444,6 @@ TEST(URLPerformanceTest, EncodeDecodeMany) {
     }
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace common
+}  // namespace quicx

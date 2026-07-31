@@ -1,12 +1,13 @@
+#include "http3/frame/qpack_decoder_frames.h"
 #include "common/log/log.h"
 #include "http3/frame/type.h"
 #include "http3/qpack/util.h"
-#include "http3/frame/qpack_decoder_frames.h"
 
 namespace quicx {
 namespace http3 {
 
-bool DecodeQpackDecoderFrames(std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IQpackDecoderFrame>>& frames) {
+bool DecodeQpackDecoderFrames(
+    std::shared_ptr<common::IBuffer> buffer, std::vector<std::shared_ptr<IQpackDecoderFrame>>& frames) {
     if (!buffer) {
         return false;
     }
@@ -40,14 +41,13 @@ bool DecodeQpackDecoderFrames(std::shared_ptr<common::IBuffer> buffer, std::vect
 }
 
 QpackSectionAckFrame::QpackSectionAckFrame():
-    IQpackDecoderFrame() {
-
-}
+    IQpackDecoderFrame() {}
 
 bool QpackSectionAckFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // RFC 9204 Section 4.4.1 - Section Acknowledgment carries only Stream ID
     // as a 7-bit-prefix varint with pattern 1xxxxxxx.
-    return QpackEncodePrefixedInteger(buffer, kQpackDecSectionAckPrefixBits, kQpackDecSectionAckFirstByteMask, stream_id_);
+    return QpackEncodePrefixedInteger(
+        buffer, kQpackDecSectionAckPrefixBits, kQpackDecSectionAckFirstByteMask, stream_id_);
 }
 
 bool QpackSectionAckFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
@@ -64,29 +64,27 @@ uint32_t QpackSectionAckFrame::EvaluateEncodeSize() {
     return 1;
 }
 
-uint64_t QpackSectionAckFrame::GetStreamId() const { 
+uint64_t QpackSectionAckFrame::GetStreamId() const {
     return stream_id_;
 }
 
-uint64_t QpackSectionAckFrame::GetSectionNumber() const { 
+uint64_t QpackSectionAckFrame::GetSectionNumber() const {
     return section_number_;
 }
 
-void QpackSectionAckFrame::Set(uint64_t sid, uint64_t sec) { 
-    stream_id_ = sid; 
+void QpackSectionAckFrame::Set(uint64_t sid, uint64_t sec) {
+    stream_id_ = sid;
     section_number_ = sec;
 }
 
-
 QpackStreamCancellationFrame::QpackStreamCancellationFrame():
-    IQpackDecoderFrame() {
-
-}
+    IQpackDecoderFrame() {}
 
 bool QpackStreamCancellationFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // RFC 9204 Section 4.4.2 - Stream Cancellation carries only Stream ID
     // as a 6-bit-prefix varint with pattern 01xxxxxx.
-    return QpackEncodePrefixedInteger(buffer, kQpackDecStreamCancelPrefixBits, kQpackDecStreamCancelFirstByteMask, stream_id_);
+    return QpackEncodePrefixedInteger(
+        buffer, kQpackDecStreamCancelPrefixBits, kQpackDecStreamCancelFirstByteMask, stream_id_);
 }
 
 bool QpackStreamCancellationFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
@@ -99,15 +97,15 @@ bool QpackStreamCancellationFrame::Decode(std::shared_ptr<common::IBuffer> buffe
     return true;
 }
 
-uint32_t QpackStreamCancellationFrame::EvaluateEncodeSize() { 
+uint32_t QpackStreamCancellationFrame::EvaluateEncodeSize() {
     return 1;
 }
 
-uint64_t QpackStreamCancellationFrame::GetStreamId() const { 
+uint64_t QpackStreamCancellationFrame::GetStreamId() const {
     return stream_id_;
 }
 
-uint64_t QpackStreamCancellationFrame::GetSectionNumber() const { 
+uint64_t QpackStreamCancellationFrame::GetSectionNumber() const {
     return section_number_;
 }
 
@@ -116,15 +114,13 @@ void QpackStreamCancellationFrame::Set(uint64_t sid, uint64_t sec) {
     section_number_ = sec;
 }
 
-
 QpackInsertCountIncrementFrame::QpackInsertCountIncrementFrame():
-    IQpackDecoderFrame() {
-
-}
+    IQpackDecoderFrame() {}
 
 bool QpackInsertCountIncrementFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     // 00xxxxxx with 6-bit prefix for delta
-    return QpackEncodePrefixedInteger(buffer, kQpackDecInsertCountIncPrefixBits, kQpackDecInsertCountIncFirstByteMask, delta_);
+    return QpackEncodePrefixedInteger(
+        buffer, kQpackDecInsertCountIncPrefixBits, kQpackDecInsertCountIncFirstByteMask, delta_);
 }
 
 bool QpackInsertCountIncrementFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
@@ -136,15 +132,13 @@ uint32_t QpackInsertCountIncrementFrame::EvaluateEncodeSize() {
     return 1 + 1;
 }
 
-uint64_t QpackInsertCountIncrementFrame::GetDelta() const { 
+uint64_t QpackInsertCountIncrementFrame::GetDelta() const {
     return delta_;
 }
 
-void QpackInsertCountIncrementFrame::Set(uint64_t d) { 
+void QpackInsertCountIncrementFrame::Set(uint64_t d) {
     delta_ = d;
 }
 
-}
-}
-
-
+}  // namespace http3
+}  // namespace quicx

@@ -46,13 +46,16 @@ public:
      * @brief Send context returned by GetNextSendContext()
      */
     struct SendContext {
-        EncryptionLevel level;            // Encryption level to use for next packet
-        bool has_pending_ack;             // Whether there's a pending ACK to send
-        PacketNumberSpace ack_space;      // Packet number space for the ACK (if has_pending_ack)
-        bool is_path_probe;               // Whether this is for path validation
+        EncryptionLevel level;        // Encryption level to use for next packet
+        bool has_pending_ack;         // Whether there's a pending ACK to send
+        PacketNumberSpace ack_space;  // Packet number space for the ACK (if has_pending_ack)
+        bool is_path_probe;           // Whether this is for path validation
 
-        SendContext()
-            : level(kInitial), has_pending_ack(false), ack_space(kInitialNumberSpace), is_path_probe(false) {}
+        SendContext():
+            level(kInitial),
+            has_pending_ack(false),
+            ack_space(kInitialNumberSpace),
+            is_path_probe(false) {}
     };
 
     /**

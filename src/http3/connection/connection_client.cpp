@@ -1,8 +1,9 @@
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 #include "common/util/time.h"
 
+#include <quicx/quic/if_quic_stream.h>
 #include "http3/connection/connection_client.h"
 #include "http3/connection/type.h"
 #include "http3/frame/qpack_decoder_frames.h"
@@ -17,7 +18,6 @@
 #include "http3/stream/request_stream.h"
 #include "http3/stream/type.h"
 #include "http3/stream/unidentified_stream.h"
-#include <quicx/quic/if_quic_stream.h>
 
 namespace quicx {
 namespace http3 {
@@ -26,9 +26,7 @@ ClientConnection::ClientConnection(const std::string& unique_id, const Http3Sett
     const std::shared_ptr<IQuicConnection>& quic_connection,
     const std::function<void(const std::string& unique_id, uint32_t error_code)>& error_handler,
     const std::function<bool(std::unordered_map<std::string, std::string>& headers)>& push_promise_handler,
-    const http_response_handler& push_handler,
-    uint64_t max_concurrent_streams,
-    bool enable_push):
+    const http_response_handler& push_handler, uint64_t max_concurrent_streams, bool enable_push):
     IConnection(unique_id, quic_connection, error_handler),
     push_promise_handler_(push_promise_handler),
     push_handler_(push_handler),
@@ -50,9 +48,8 @@ void ClientConnection::Init() {
 
     // create control stream
     auto control_stream = quic_connection_->MakeStream(StreamDirection::kSend);
-    control_sender_stream_ =
-        std::make_shared<ControlClientSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(control_stream),
-            MakeErrorHandler());
+    control_sender_stream_ = std::make_shared<ControlClientSenderStream>(
+        std::dynamic_pointer_cast<IQuicSendStream>(control_stream), MakeErrorHandler());
 
     settings_ = IConnection::AdaptSettings(settings);
     control_sender_stream_->SendSettings(settings_);
@@ -97,9 +94,8 @@ void ClientConnection::Init() {
     auto qpack_dec_sender_stream = quic_connection_->MakeStream(StreamDirection::kSend);
 
     // Wire QPACK instruction sender to QPACK encoder stream
-    auto encoder_sender =
-        std::make_shared<QpackEncoderSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream),
-            MakeErrorHandler());
+    auto encoder_sender = std::make_shared<QpackEncoderSenderStream>(
+        std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream), MakeErrorHandler());
     streams_[encoder_sender->GetStreamID()] = encoder_sender;
 
     // Use weak_ptr to avoid circular reference (encoder lambda -> shared_ptr -> connection -> encoder)
@@ -115,9 +111,8 @@ void ClientConnection::Init() {
     // Wire decoder feedback sender to QPACK decoder sender stream
     // This goes on qpack_decoder_ because it's the local decoder that emits feedback
     // (Section Ack, Stream Cancel, Insert Count Increment) to the peer's encoder.
-    auto decoder_sender =
-        std::make_shared<QpackDecoderSenderStream>(std::dynamic_pointer_cast<IQuicSendStream>(qpack_dec_sender_stream),
-            MakeErrorHandler());
+    auto decoder_sender = std::make_shared<QpackDecoderSenderStream>(
+        std::dynamic_pointer_cast<IQuicSendStream>(qpack_dec_sender_stream), MakeErrorHandler());
     streams_[decoder_sender->GetStreamID()] = decoder_sender;
     qpack_decoder_->SetDecoderFeedbackSender([decoder_sender](uint8_t type, uint64_t value) {
         if (!decoder_sender) {
@@ -155,9 +150,9 @@ void ClientConnection::CreateAndSendRequestStream(
         }
         self->HandlePushPromise(headers, push_id);
     };
-    std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_, qpack_decoder_, blocked_registry_,
-        std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), handler,
-        MakeErrorHandler(), std::move(push_promise_cb));
+    std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_, qpack_decoder_,
+        blocked_registry_, std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), handler, MakeErrorHandler(),
+        std::move(push_promise_cb));
     request_stream->Init();  // Must be called after construction to set up callbacks
 
     // Propagate qlog trace from QUIC connection to HTTP/3 stream
@@ -189,9 +184,9 @@ void ClientConnection::CreateAndSendRequestStream(std::shared_ptr<IRequest> requ
         }
         self->HandlePushPromise(headers, push_id);
     };
-    std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_, qpack_decoder_, blocked_registry_,
-        std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), handler,
-        MakeErrorHandler(), std::move(push_promise_cb));
+    std::shared_ptr<RequestStream> request_stream = std::make_shared<RequestStream>(qpack_encoder_, qpack_decoder_,
+        blocked_registry_, std::dynamic_pointer_cast<IQuicBidirectionStream>(stream), handler, MakeErrorHandler(),
+        std::move(push_promise_cb));
     request_stream->Init();  // Must be called after construction to set up callbacks
 
     // Propagate qlog trace from QUIC connection to HTTP/3 stream
@@ -323,8 +318,7 @@ void ClientConnection::CancelPush(uint64_t push_id) {
 }
 
 void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code) {
-    LOG_DEBUG(
-        "ClientConnection::HandleStream stream. stream id: %llu, error: %d", stream->GetStreamID(), error_code);
+    LOG_DEBUG("ClientConnection::HandleStream stream. stream id: %llu, error: %d", stream->GetStreamID(), error_code);
     if (error_code != 0) {
         LOG_ERROR("ClientConnection::HandleStream error: %d", error_code);
         if (stream) {
@@ -369,8 +363,7 @@ void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
         // Create an UnidentifiedStream to read the stream type first
         auto recv_stream = std::dynamic_pointer_cast<IQuicRecvStream>(stream);
         auto weak_self = WeakSelfAs<ClientConnection>();
-        auto unidentified = std::make_shared<UnidentifiedStream>(recv_stream,
-            MakeErrorHandler(),
+        auto unidentified = std::make_shared<UnidentifiedStream>(recv_stream, MakeErrorHandler(),
             [weak_self](
                 uint64_t stream_type, std::shared_ptr<IQuicRecvStream> s, std::shared_ptr<IBufferRead> remaining_data) {
                 auto self = weak_self.lock();
@@ -387,8 +380,7 @@ void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
 
 void ClientConnection::OnStreamTypeIdentified(
     uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data) {
-    LOG_DEBUG(
-        "ClientConnection: stream type %llu identified for stream %llu", stream_type, stream->GetStreamID());
+    LOG_DEBUG("ClientConnection: stream type %llu identified for stream %llu", stream_type, stream->GetStreamID());
 
     // Remove the temporary UnidentifiedStream
     streams_.erase(stream->GetStreamID());
@@ -400,8 +392,8 @@ void ClientConnection::OnStreamTypeIdentified(
     switch (stream_type) {
         case static_cast<uint64_t>(StreamType::kControl):  // Control Stream (RFC 9114 Section 6.2.1)
             LOG_DEBUG("ClientConnection: creating Control Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<ControlReceiverStream>(stream, qpack_decoder_,
-                MakeErrorHandler(),
+            typed_stream = std::make_shared<ControlReceiverStream>(
+                stream, qpack_decoder_, MakeErrorHandler(),
                 [weak_self](uint64_t id) {
                     auto self = weak_self.lock();
                     if (!self) return;
@@ -412,24 +404,22 @@ void ClientConnection::OnStreamTypeIdentified(
 
         case static_cast<uint64_t>(StreamType::kPush):  // Push Stream (RFC 9114 Section 4.6)
             LOG_DEBUG("ClientConnection: creating Push Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<PushReceiverStream>(qpack_decoder_, stream,
-                MakeErrorHandler(),
-                push_handler_);
+            typed_stream =
+                std::make_shared<PushReceiverStream>(qpack_decoder_, stream, MakeErrorHandler(), push_handler_);
             break;
 
         case static_cast<uint64_t>(StreamType::kQpackEncoder):  // QPACK Encoder Stream (RFC 9204 Section 4.2)
             LOG_DEBUG(
                 "ClientConnection: creating QPACK Encoder Receiver Stream for stream %llu", stream->GetStreamID());
             // RFC 9204: Peer's encoder instructions populate our LOCAL decoder table (qpack_decoder_)
-            typed_stream = std::make_shared<QpackEncoderReceiverStream>(stream, qpack_decoder_, blocked_registry_,
-                MakeErrorHandler());
+            typed_stream = std::make_shared<QpackEncoderReceiverStream>(
+                stream, qpack_decoder_, blocked_registry_, MakeErrorHandler());
             break;
 
         case static_cast<uint64_t>(StreamType::kQpackDecoder):  // QPACK Decoder Stream (RFC 9204 Section 4.2)
             LOG_DEBUG(
                 "ClientConnection: creating QPACK Decoder Receiver Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<QpackDecoderReceiverStream>(stream, blocked_registry_,
-                MakeErrorHandler());
+            typed_stream = std::make_shared<QpackDecoderReceiverStream>(stream, blocked_registry_, MakeErrorHandler());
             break;
 
         default:
@@ -454,14 +444,13 @@ void ClientConnection::HandleGoaway(uint64_t id) {
     // (IsAcceptingNewRequests() picks this up via goaway_received_id_).
     // The id MUST NOT increase across multiple GOAWAYs.
     if (goaway_received_id_ != kNoGoaway && id > goaway_received_id_) {
-        LOG_ERROR(
-            "ClientConnection::HandleGoaway: server GOAWAY id increased (%llu -> %llu), closing with H3_ID_ERROR",
+        LOG_ERROR("ClientConnection::HandleGoaway: server GOAWAY id increased (%llu -> %llu), closing with H3_ID_ERROR",
             (unsigned long long)goaway_received_id_, (unsigned long long)id);
         Close(static_cast<uint32_t>(Http3ErrorCode::kIdError));
         return;
     }
-    LOG_INFO("ClientConnection::HandleGoaway: server GOAWAY received, max_processed_stream_id=%llu",
-        (unsigned long long)id);
+    LOG_INFO(
+        "ClientConnection::HandleGoaway: server GOAWAY received, max_processed_stream_id=%llu", (unsigned long long)id);
     goaway_received_id_ = id;
     // Do NOT Close() here: we still want in-flight responses to land.
     // The cleanup-timer drain probe will fire when the user has called

@@ -28,7 +28,7 @@ namespace common {
 static void BM_TreeMap_AddRemove(benchmark::State& state) {
     TreeMapTimer timer;
     TimerTask task;
-    task.SetTimeoutCallback([](){});
+    task.SetTimeoutCallback([]() {});
     uint64_t now = UTCTimeMsec();
     for (auto _ : state) {
         timer.AddTimer(task, 100, now);
@@ -41,7 +41,7 @@ BENCHMARK(BM_TreeMap_AddRemove);
 static void BM_Wheel_AddRemove(benchmark::State& state) {
     TimingWheelTimer timer;
     TimerTask task;
-    task.SetTimeoutCallback([](){});
+    task.SetTimeoutCallback([]() {});
     uint64_t now = UTCTimeMsec();
     for (auto _ : state) {
         timer.AddTimer(task, 100, now);
@@ -62,7 +62,7 @@ static void BM_TreeMap_BulkAdd(benchmark::State& state) {
         state.PauseTiming();
         TreeMapTimer timer;
         std::vector<TimerTask> tasks(N);
-        for (auto& t : tasks) t.SetTimeoutCallback([](){});
+        for (auto& t : tasks) t.SetTimeoutCallback([]() {});
         state.ResumeTiming();
 
         for (int i = 0; i < N; ++i) {
@@ -81,7 +81,7 @@ static void BM_Wheel_BulkAdd(benchmark::State& state) {
         state.PauseTiming();
         TimingWheelTimer timer;
         std::vector<TimerTask> tasks(N);
-        for (auto& t : tasks) t.SetTimeoutCallback([](){});
+        for (auto& t : tasks) t.SetTimeoutCallback([]() {});
         state.ResumeTiming();
 
         for (int i = 0; i < N; ++i) {
@@ -105,13 +105,13 @@ static void BM_TreeMap_RunFire(benchmark::State& state) {
         state.PauseTiming();
         TreeMapTimer timer;
         std::vector<TimerTask> tasks(N);
-        for (auto& t : tasks) t.SetTimeoutCallback([](){});
+        for (auto& t : tasks) t.SetTimeoutCallback([]() {});
         for (int i = 0; i < N; ++i) {
-            timer.AddTimer(tasks[i], 0, now);   // expires at `now`
+            timer.AddTimer(tasks[i], 0, now);  // expires at `now`
         }
         state.ResumeTiming();
 
-        timer.TimerRun(now);   // fires all N
+        timer.TimerRun(now);  // fires all N
     }
     state.SetItemsProcessed(state.iterations() * N);
 }
@@ -124,13 +124,13 @@ static void BM_Wheel_RunFire(benchmark::State& state) {
         state.PauseTiming();
         TimingWheelTimer timer;
         std::vector<TimerTask> tasks(N);
-        for (auto& t : tasks) t.SetTimeoutCallback([](){});
+        for (auto& t : tasks) t.SetTimeoutCallback([]() {});
         for (int i = 0; i < N; ++i) {
             timer.AddTimer(tasks[i], 0, now);
         }
         state.ResumeTiming();
 
-        timer.TimerRun(now);   // fires all N
+        timer.TimerRun(now);  // fires all N
     }
     state.SetItemsProcessed(state.iterations() * N);
 }
@@ -146,7 +146,7 @@ static void BM_TreeMap_MinTime(benchmark::State& state) {
     uint64_t now = UTCTimeMsec();
     std::vector<TimerTask> tasks(N);
     for (int i = 0; i < N; ++i) {
-        tasks[i].SetTimeoutCallback([](){});
+        tasks[i].SetTimeoutCallback([]() {});
         timer.AddTimer(tasks[i], static_cast<uint32_t>(10 + (i % 500)), now);
     }
     for (auto _ : state) {
@@ -161,7 +161,7 @@ static void BM_Wheel_MinTime(benchmark::State& state) {
     uint64_t now = UTCTimeMsec();
     std::vector<TimerTask> tasks(N);
     for (int i = 0; i < N; ++i) {
-        tasks[i].SetTimeoutCallback([](){});
+        tasks[i].SetTimeoutCallback([]() {});
         timer.AddTimer(tasks[i], static_cast<uint32_t>(10 + (i % 500)), now);
     }
     for (auto _ : state) {
@@ -185,15 +185,18 @@ static void BM_TreeMap_Scatter(benchmark::State& state) {
         state.PauseTiming();
         TreeMapTimer timer;
         std::vector<TimerTask> tasks(N);
-        for (auto& t : tasks) t.SetTimeoutCallback([](){});
+        for (auto& t : tasks) t.SetTimeoutCallback([]() {});
         state.ResumeTiming();
 
         for (int i = 0; i < N; ++i) {
             uint32_t delay;
             int r = i % 10;
-            if (r < 5)      delay = static_cast<uint32_t>(1  + (i % 20));         // 1-20 ms
-            else if (r < 8) delay = static_cast<uint32_t>(20 + (i % 480));        // 20-499 ms
-            else            delay = static_cast<uint32_t>(500 + (i % 59500));     // 500-59999 ms
+            if (r < 5)
+                delay = static_cast<uint32_t>(1 + (i % 20));  // 1-20 ms
+            else if (r < 8)
+                delay = static_cast<uint32_t>(20 + (i % 480));  // 20-499 ms
+            else
+                delay = static_cast<uint32_t>(500 + (i % 59500));  // 500-59999 ms
             timer.AddTimer(tasks[i], delay, now);
         }
         benchmark::DoNotOptimize(timer.MinTime(now));
@@ -209,15 +212,18 @@ static void BM_Wheel_Scatter(benchmark::State& state) {
         state.PauseTiming();
         TimingWheelTimer timer;
         std::vector<TimerTask> tasks(N);
-        for (auto& t : tasks) t.SetTimeoutCallback([](){});
+        for (auto& t : tasks) t.SetTimeoutCallback([]() {});
         state.ResumeTiming();
 
         for (int i = 0; i < N; ++i) {
             uint32_t delay;
             int r = i % 10;
-            if (r < 5)      delay = static_cast<uint32_t>(1  + (i % 20));
-            else if (r < 8) delay = static_cast<uint32_t>(20 + (i % 480));
-            else            delay = static_cast<uint32_t>(500 + (i % 59500));
+            if (r < 5)
+                delay = static_cast<uint32_t>(1 + (i % 20));
+            else if (r < 8)
+                delay = static_cast<uint32_t>(20 + (i % 480));
+            else
+                delay = static_cast<uint32_t>(500 + (i % 59500));
             timer.AddTimer(tasks[i], delay, now);
         }
         benchmark::DoNotOptimize(timer.MinTime(now));
@@ -236,7 +242,7 @@ static void BM_TreeMap_MixedTick(benchmark::State& state) {
     uint64_t now = UTCTimeMsec();
     TreeMapTimer timer;
     std::vector<TimerTask> tasks(N);
-    for (auto& t : tasks) t.SetTimeoutCallback([](){});
+    for (auto& t : tasks) t.SetTimeoutCallback([]() {});
     for (int i = 0; i < N; ++i) {
         timer.AddTimer(tasks[i], static_cast<uint32_t>(5 + (i % 20)), now);
     }
@@ -258,7 +264,7 @@ static void BM_Wheel_MixedTick(benchmark::State& state) {
     uint64_t now = UTCTimeMsec();
     TimingWheelTimer timer;
     std::vector<TimerTask> tasks(N);
-    for (auto& t : tasks) t.SetTimeoutCallback([](){});
+    for (auto& t : tasks) t.SetTimeoutCallback([]() {});
     for (int i = 0; i < N; ++i) {
         timer.AddTimer(tasks[i], static_cast<uint32_t>(5 + (i % 20)), now);
     }
@@ -280,5 +286,7 @@ BENCHMARK(BM_Wheel_MixedTick)->Arg(100)->Arg(1000)->Arg(10000);
 BENCHMARK_MAIN();
 
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif

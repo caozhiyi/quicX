@@ -2,11 +2,11 @@
 #define COMMON_BUFFER_SINGLE_BLOCK_BUFFER
 
 #include <cstdint>
-#include <memory>
 #include <functional>
+#include <memory>
 
-#include "common/buffer/if_buffer.h"
 #include "common/buffer/buffer_span.h"
+#include "common/buffer/if_buffer.h"
 #include "common/buffer/if_buffer_chunk.h"
 #include "common/buffer/shared_buffer_span.h"
 

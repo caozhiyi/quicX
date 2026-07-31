@@ -1,10 +1,10 @@
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
-#include "test_cryptographer.h"
-#include "quic/packet/handshake_packet.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/packet/handshake_packet.h"
+#include "test_cryptographer.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     if (data == nullptr || size == 0) {
@@ -62,6 +62,6 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         quicx::quic::HandshakePacket packet2;
         (void)packet2.DecodeWithCrypto(out);
     }
-    
+
     return 0;
 }

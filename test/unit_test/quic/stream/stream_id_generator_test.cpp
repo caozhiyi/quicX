@@ -1,11 +1,11 @@
-#include <gtest/gtest.h>
 #include "quic/stream/stream_id_generator.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(stream_id_generator_utest, client) {
+TEST(StreamIdGeneratorTest, client) {
     StreamIDGenerator generator(StreamIDGenerator::StreamStarter::kClient);
 
     uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
@@ -27,13 +27,13 @@ TEST(stream_id_generator_utest, client) {
     EXPECT_EQ(stream_id, 6);
 
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
-    EXPECT_EQ(stream_id, 10); 
+    EXPECT_EQ(stream_id, 10);
 
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
     EXPECT_EQ(stream_id, 14);
 }
 
-TEST(stream_id_generator_utest, server) {
+TEST(StreamIdGeneratorTest, server) {
     StreamIDGenerator generator(StreamIDGenerator::StreamStarter::kServer);
 
     uint64_t stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kBidirectional);
@@ -58,9 +58,9 @@ TEST(stream_id_generator_utest, server) {
     EXPECT_EQ(stream_id, 11);
 
     stream_id = generator.NextStreamID(StreamIDGenerator::StreamDirection::kUnidirectional);
-    EXPECT_EQ(stream_id, 15); 
+    EXPECT_EQ(stream_id, 15);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

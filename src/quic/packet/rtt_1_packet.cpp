@@ -126,8 +126,8 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     // Sample needs 16 bytes, starting at offset 4 from payload start
     size_t payload_len = span.GetEnd() - span.GetStart();
     if (payload_len < 4 + kHeaderProtectSampleLength) {
-        LOG_ERROR("payload too short for header protection sample. payload_len:%zu, required:%zu",
-            payload_len, 4 + kHeaderProtectSampleLength);
+        LOG_ERROR("payload too short for header protection sample. payload_len:%zu, required:%zu", payload_len,
+            4 + kHeaderProtectSampleLength);
         return false;
     }
     common::BufferSpan sample =
@@ -135,8 +135,8 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     auto result = crypto_grapher_->DecryptHeader(header_span, sample, header_span.GetLength(), packet_num_len,
         header_.GetHeaderType() == PacketHeaderType::kShortHeader);
     if (result != ICryptographer::Result::kOk) {
-        LOG_ERROR("decrypt header failed. result:%d, payload_len:%zu, header_len:%zu", 
-            result, payload_len, header_span.GetLength());
+        LOG_ERROR("decrypt header failed. result:%d, payload_len:%zu, header_len:%zu", result, payload_len,
+            header_span.GetLength());
         return false;
     }
 
@@ -184,13 +184,14 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
                 plaintext_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
                 result = crypto_grapher_->DecryptPacketWithPrevKey(packet_number_, ad_span, payload, plaintext_buffer);
                 if (result != ICryptographer::Result::kOk) {
-                    LOG_ERROR("decrypt packet failed with both current and prev key. result:%d, pn:%llu",
-                        result, packet_number_);
+                    LOG_ERROR("decrypt packet failed with both current and prev key. result:%d, pn:%llu", result,
+                        packet_number_);
                     return false;
                 }
                 // Decrypted with previous key - this is a reordered old packet, no key update needed
             } else {
-                LOG_ERROR("decrypt packet failed. result:%d, pn:%llu, truncated_pn:%llu, pn_len:%u, largest_recv_pn:%llu, "
+                LOG_ERROR(
+                    "decrypt packet failed. result:%d, pn:%llu, truncated_pn:%llu, pn_len:%u, largest_recv_pn:%llu, "
                     "payload_len:%zu, ad_len:%zu, header_len:%zu",
                     result, packet_number_, truncated_pn, packet_num_len, largest_received_pn_,
                     (size_t)(span.GetEnd() - cur_pos), (size_t)(cur_pos - buffer_header_pos), header_len);
@@ -206,8 +207,8 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
         saved_header_len_ = header_len;
         saved_truncated_pn_ = truncated_pn;
         key_phase_changed_ = true;
-        LOG_INFO("Key Phase changed (expected:%u, received:%u) at pn:%llu, signaling key update",
-            expected_key_phase_, received_key_phase, packet_number_);
+        LOG_INFO("Key Phase changed (expected:%u, received:%u) at pn:%llu, signaling key update", expected_key_phase_,
+            received_key_phase, packet_number_);
         return false;
     }
 
@@ -244,8 +245,8 @@ bool Rtt1Packet::RetryPayloadDecrypt() {
 
     auto result = crypto_grapher_->DecryptPacket(packet_number_, ad_span, payload, plaintext_buffer);
     if (result != ICryptographer::Result::kOk) {
-        LOG_ERROR("RetryPayloadDecrypt: decrypt still failed after key update. result:%d, pn:%llu",
-            result, packet_number_);
+        LOG_ERROR(
+            "RetryPayloadDecrypt: decrypt still failed after key update. result:%d, pn:%llu", result, packet_number_);
         return false;
     }
 

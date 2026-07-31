@@ -44,8 +44,7 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
         packet->GetPacketNumber(), packet->GetFrameTypeBit(), IsAckElictingPacket(packet->GetFrameTypeBit()) ? 1 : 0);
 
     if (!IsAckElictingPacket(packet->GetFrameTypeBit())) {
-        LOG_DEBUG(
-            "RecvControl::OnPacketRecv: packet %llu is not ack-eliciting, skipping", packet->GetPacketNumber());
+        LOG_DEBUG("RecvControl::OnPacketRecv: packet %llu is not ack-eliciting, skipping", packet->GetPacketNumber());
         return;
     }
 
@@ -187,8 +186,7 @@ std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNum
             if (runs.size() >= kMaxAckRanges) {
                 // Stop collecting ranges if we hit the limit
                 // The remaining packets will be ACKed in the next frame
-                LOG_WARN(
-                    "RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%zu), deferring remaining ACKs",
+                LOG_WARN("RecvControl::MayGenerateAckFrame: hit max ACK ranges limit (%zu), deferring remaining ACKs",
                     kMaxAckRanges);
                 break;
             }

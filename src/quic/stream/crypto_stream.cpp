@@ -31,6 +31,33 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
     }
 
     if (!send_buffers_[level] || send_buffers_[level]->GetDataLength() == 0) {
+        // Bug fix (burst-mode handshake stall):
+        // The current encryption level has no pending CRYPTO data, but data for
+        // *other* levels (e.g. Handshake EE/Cert/CV/Fin while the caller is
+        // still draining Initial) may still be waiting. StreamManager treats
+        // kSuccess as "stream finished" and erases it from the active set, so
+        // if we silently return here the CryptoStream is dropped even though
+        // it still has work pending — the next level switch will never see it,
+        // and the handshake stalls until the idle-timeout fires.
+        //
+        // In the legacy per-packet send path this was masked because each
+        // TrySend() re-ran the encryption-level scheduler and the freshly
+        // selected level usually matched a non-empty buffer. The burst-mode
+        // send path reuses one selected level across multiple build attempts
+        // within a single round, which is what exposed the latent bug.
+        //
+        // Fix: before signalling kSuccess, re-arm ToSend() if any other level
+        // still has data, so StreamManager keeps the CryptoStream on the
+        // active list for the next round.
+        for (uint8_t i = 0; i < kNumEncryptionLevels; i++) {
+            if (i == level) {
+                continue;
+            }
+            if (send_buffers_[i] && send_buffers_[i]->GetDataLength() > 0) {
+                ToSend();
+                break;
+            }
+        }
         return IStream::TrySendResult::kSuccess;
     }
 
@@ -46,8 +73,7 @@ IStream::TrySendResult CryptoStream::TrySendData(IFrameVisitor* visitor, Encrypt
     // on each packet (kVisitorBudget is 1420).
     constexpr uint32_t kCryptoHeaderReserve = 20;
     uint32_t crypto_pkt_left = visitor->GetPacketLeftSize();
-    uint32_t crypto_pkt_cap = crypto_pkt_left > kCryptoHeaderReserve
-        ? crypto_pkt_left - kCryptoHeaderReserve : 0;
+    uint32_t crypto_pkt_cap = crypto_pkt_left > kCryptoHeaderReserve ? crypto_pkt_left - kCryptoHeaderReserve : 0;
 
     uint32_t write_size = visitor->GetLeftStreamDataSize();
     if (write_size > crypto_pkt_cap) {
@@ -274,8 +300,8 @@ void CryptoStream::OnCryptoFrame(std::shared_ptr<IFrame> frame) {
             new_frame->SetEncryptionLevel(level);
             // Allocate a dedicated buffer and copy bytes so the span stays valid
             // after the source packet buffer is recycled.
-            auto standalone = std::make_shared<common::MultiBlockBuffer>(
-                GlobalResource::Instance().GetThreadLocalBlockPool());
+            auto standalone =
+                std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
             standalone->Write(data_span.GetStart(), crypto_frame->GetLength());
             auto owned_span = standalone->GetSharedReadableSpan(crypto_frame->GetLength());
             new_frame->SetData(owned_span);

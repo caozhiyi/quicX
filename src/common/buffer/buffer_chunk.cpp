@@ -1,8 +1,8 @@
 #include <cstdlib>
 
-#include "common/log/log.h"
 #include "common/alloter/pool_block.h"
 #include "common/buffer/buffer_chunk.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace common {
@@ -144,6 +144,5 @@ void BufferChunk::Release() {
     pool_.reset();
 }
 
-}
-}
-
+}  // namespace common
+}  // namespace quicx

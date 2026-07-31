@@ -1,14 +1,14 @@
-#include <cstdint>
 #include <gtest/gtest.h>
+#include <cstdint>
 
-#include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/bbr_v1_congestion_control.h"
+#include "quic/congestion_control/if_congestion_control.h"
 
+using quicx::quic::AckEvent;
+using quicx::quic::BBRv1CongestionControl;
 using quicx::quic::CcConfigV2;
 using quicx::quic::ICongestionControl;
-using quicx::quic::BBRv1CongestionControl;
 using quicx::quic::SentPacketEvent;
-using quicx::quic::AckEvent;
 
 TEST(BBRv1CongestionControlTest, InitialState) {
     BBRv1CongestionControl cc;
@@ -42,7 +42,7 @@ TEST(BBRv1CongestionControlTest, BandwidthSampleUpdatesAndDrainAfterStable) {
         // Send multiple packets per round with proper timing
         for (int i = 0; i < 10; ++i) {
             uint64_t pn = round * 10 + i + 1;
-            uint64_t time = base_time + round * 110000 + i * 10000; // >SRTT between rounds
+            uint64_t time = base_time + round * 110000 + i * 10000;  // >SRTT between rounds
             cc.OnPacketAcked(AckEvent{pn, 1000ull, time, 0ull, false});
         }
     }
@@ -54,9 +54,9 @@ TEST(BBRv1CongestionControlTest, PacingRateAndCanSend) {
     BBRv1CongestionControl cc;
     CcConfigV2 cfg;
     cfg.mss_bytes = 1000;
-    cfg.initial_cwnd_bytes = 10 * cfg.mss_bytes; // 10000
+    cfg.initial_cwnd_bytes = 10 * cfg.mss_bytes;  // 10000
     cc.Configure(cfg);
-    cc.OnRoundTripSample(100000, 0); // 100ms
+    cc.OnRoundTripSample(100000, 0);  // 100ms
 
     // Bandwidth sampling needs at least SRTT elapsed time
     // Send multiple ACKs over >SRTT timespan for proper bandwidth estimation
@@ -64,7 +64,7 @@ TEST(BBRv1CongestionControlTest, PacingRateAndCanSend) {
     for (int i = 0; i < 10; ++i) {
         cc.OnPacketAcked(AckEvent{static_cast<uint64_t>(i + 1), 1000ull, base_time + i * 10000, 0ull, false});
     }
-    
+
     // After proper sampling, should have valid pacing rate
     uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
@@ -89,14 +89,14 @@ TEST(BBRv1CongestionControlTest, ProbeRttTransitionTiming) {
     cc.Configure(cfg);
 
     // Seed RTT and bandwidth with proper timing
-    cc.OnRoundTripSample(100000ull, 0ull); // 100ms
-    
+    cc.OnRoundTripSample(100000ull, 0ull);  // 100ms
+
     // Send ACKs over sufficient time for bandwidth sampling
     uint64_t base_time = 100000;
     for (int i = 0; i < 15; ++i) {
         cc.OnPacketAcked(AckEvent{static_cast<uint64_t>(i + 1), 1000ull, base_time + i * 10000, 0ull, false});
     }
-    
+
     // Should have valid pacing rate after bandwidth sampling
     uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
@@ -110,14 +110,14 @@ TEST(BBRv1CongestionControlTest, ProbeBwGainCycleTiming) {
     cc.Configure(cfg);
 
     // Set RTT and send enough data for bandwidth sampling
-    cc.OnRoundTripSample(100000ull, 0ull); // 100ms
-    
+    cc.OnRoundTripSample(100000ull, 0ull);  // 100ms
+
     // Send ACKs over sufficient time for bandwidth sampling and state transitions
     uint64_t base_time = 100000;
     for (int i = 0; i < 20; ++i) {
         cc.OnPacketAcked(AckEvent{static_cast<uint64_t>(i + 1), 1000ull, base_time + i * 10000, 0ull, false});
     }
-    
+
     // Should have valid pacing rate and be in a stable state
     uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
@@ -131,17 +131,15 @@ TEST(BBRv1CongestionControlTest, ProbeBwFullEightSegmentCycle) {
     cc.Configure(cfg);
 
     // Set RTT and send enough data for bandwidth sampling
-    cc.OnRoundTripSample(100000ull, 0ull); // 100ms
-    
-    // Send ACKs over sufficient time for bandwidth sampling  
+    cc.OnRoundTripSample(100000ull, 0ull);  // 100ms
+
+    // Send ACKs over sufficient time for bandwidth sampling
     uint64_t base_time = 100000;
     for (int i = 0; i < 25; ++i) {
         cc.OnPacketAcked(AckEvent{static_cast<uint64_t>(i + 1), 1000ull, base_time + i * 10000, 0ull, false});
     }
-    
+
     // Should have valid pacing rate
     uint64_t pacing_rate = cc.GetPacingRateBytesPerSec();
     EXPECT_GT(pacing_rate, 0u);
 }
-
-

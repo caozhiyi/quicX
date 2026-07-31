@@ -7,7 +7,7 @@ namespace common {
 // cpu endian is big endian?
 bool IsBigEndian();
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

@@ -7,17 +7,11 @@
 namespace quicx {
 namespace quic {
 
-enum class CongestionControlType {
-    kCubic,
-    kBbrV1,
-    kBbrV2,
-    kBbrV3,
-    kReno
-};
+enum class CongestionControlType { kCubic, kBbrV1, kBbrV2, kBbrV3, kReno };
 
 std::unique_ptr<ICongestionControl> CreateCongestionControl(CongestionControlType type);
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
-#endif // QUIC_CONGESTION_CONTROL_FACTORY_H
+#endif  // QUIC_CONGESTION_CONTROL_FACTORY_H

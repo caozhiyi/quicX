@@ -1,22 +1,21 @@
 #ifndef HTTP3_STREAM_QPACK_DECODER_SENDER_STREAM
 #define HTTP3_STREAM_QPACK_DECODER_SENDER_STREAM
 
-#include <memory>
-#include <functional>
-#include "http3/stream/if_send_stream.h"
 #include <quicx/quic/if_quic_send_stream.h>
+#include <functional>
+#include <memory>
+#include "http3/stream/if_send_stream.h"
 
 namespace quicx {
 namespace http3 {
 
 /**
  * @brief Qpack decoder sender stream
- * 
+ *
  * The qpack decoder sender stream is used to send qpack decoder frames.
  * It is responsible for sending the SECTION_ACKNOWLEDGEMENT, STREAM_CANCELLATION, and INSERT_COUNT_INCREMENT frames.
- */ 
-class QpackDecoderSenderStream:
-    public ISendStream {
+ */
+class QpackDecoderSenderStream: public ISendStream {
 public:
     explicit QpackDecoderSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
@@ -30,9 +29,7 @@ public:
     bool SendInsertCountIncrement(uint64_t delta);
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif
-
-

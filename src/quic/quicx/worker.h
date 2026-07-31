@@ -8,9 +8,9 @@
 #include <quicx/common/if_event_loop.h>
 #include "common/structure/double_buffer.h"
 
+#include <quicx/quic/type.h>
 #include "quic/connection/if_connection.h"
 #include "quic/crypto/tls/tls_ctx.h"
-#include <quicx/quic/type.h>
 #include "quic/quicx/if_worker.h"
 #include "quic/udp/if_sender.h"
 
@@ -82,7 +82,7 @@ protected:
 
     connection_state_callback connection_handler_;
     std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)
-    RegisterSocketCallback register_socket_cb_;  // Register socket with receiver for migration
+    RegisterSocketCallback register_socket_cb_;     // Register socket with receiver for migration
 };
 
 }  // namespace quic

@@ -44,28 +44,28 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecretWithVersion(
 
     // make packet protect key
     dest_secret.key_.resize(aead_key_length_);
-    if (!Hkdf::HkdfExpand(dest_secret.key_.data(), aead_key_length_, secret, secret_len,
-            labels.key, labels.key_len, digest_)) {
+    if (!Hkdf::HkdfExpand(
+            dest_secret.key_.data(), aead_key_length_, secret, secret_len, labels.key, labels.key_len, digest_)) {
         CleanSecret(dest_secret);
         return Result::kDeriveFailed;
     }
 
     // make packet protect iv
     dest_secret.iv_.resize(aead_iv_length_);
-    if (!Hkdf::HkdfExpand(dest_secret.iv_.data(), aead_iv_length_, secret, secret_len,
-            labels.iv, labels.iv_len, digest_)) {
+    if (!Hkdf::HkdfExpand(
+            dest_secret.iv_.data(), aead_iv_length_, secret, secret_len, labels.iv, labels.iv_len, digest_)) {
         CleanSecret(dest_secret);
         return Result::kDeriveFailed;
     }
 
     // make header protect key
     dest_secret.hp_.resize(cipher_key_length_);
-    if (!Hkdf::HkdfExpand(dest_secret.hp_.data(), cipher_key_length_, secret, secret_len,
-            labels.hp, labels.hp_len, digest_)) {
+    if (!Hkdf::HkdfExpand(
+            dest_secret.hp_.data(), cipher_key_length_, secret, secret_len, labels.hp, labels.hp_len, digest_)) {
         CleanSecret(dest_secret);
         return Result::kDeriveFailed;
     }
-    
+
     // Initialize or refresh cached contexts
     //
     // PERF (P0): the HP context is initialized ONCE per key install. We pick
@@ -93,9 +93,8 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecretWithVersion(
             // For ECB: pass NULL iv (ECB has no IV). For CTR / ChaCha20 fallback,
             // pass kHeaderMask as the IV (kept for backward compatibility with
             // any code path that might use it).
-            const uint8_t* hp_iv = (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb())
-                                       ? nullptr
-                                       : kHeaderMask.data();
+            const uint8_t* hp_iv =
+                (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb()) ? nullptr : kHeaderMask.data();
             EVP_EncryptInit_ex(hp_write_ctx_.get(), hp_cipher, NULL, dest_secret.hp_.data(), hp_iv);
             if (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb()) {
                 EVP_CIPHER_CTX_set_padding(hp_write_ctx_.get(), 0);
@@ -106,9 +105,8 @@ ICryptographer::Result AeadBaseCryptographer::InstallSecretWithVersion(
             EVP_AEAD_CTX_new(aead_, dest_secret.key_.data(), dest_secret.key_.size(), aead_tag_length_));
         hp_read_ctx_.reset(EVP_CIPHER_CTX_new());
         if (hp_read_ctx_.get() && hp_cipher) {
-            const uint8_t* hp_iv = (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb())
-                                       ? nullptr
-                                       : kHeaderMask.data();
+            const uint8_t* hp_iv =
+                (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb()) ? nullptr : kHeaderMask.data();
             EVP_EncryptInit_ex(hp_read_ctx_.get(), hp_cipher, NULL, dest_secret.hp_.data(), hp_iv);
             if (hp_cipher == EVP_aes_128_ecb() || hp_cipher == EVP_aes_256_ecb()) {
                 EVP_CIPHER_CTX_set_padding(hp_read_ctx_.get(), 0);
@@ -140,14 +138,14 @@ ICryptographer::Result AeadBaseCryptographer::KeyUpdateWithVersion(
         }
         base = raw_secret;
     }
-    
+
     // Get version-specific labels
     QuicLabels labels = GetQuicLabels(version);
-    
+
     size_t hash_len = EVP_MD_size(digest_);
     std::vector<uint8_t> next_secret(hash_len);
-    if (!Hkdf::HkdfExpand(next_secret.data(), next_secret.size(), base.data(), base.size(),
-            labels.ku, labels.ku_len, digest_)) {
+    if (!Hkdf::HkdfExpand(
+            next_secret.data(), next_secret.size(), base.data(), base.size(), labels.ku, labels.ku_len, digest_)) {
         OPENSSL_cleanse(base.data(), base.size());
         return Result::kDeriveFailed;
     }
@@ -252,13 +250,13 @@ ICryptographer::Result AeadBaseCryptographer::InstallInitSecretWithVersion(
     const uint8_t* secret, size_t secret_len, uint32_t version, bool is_server) {
     // Store version for future operations
     quic_version_ = version;
-    
+
     // Get version-specific salt
     const uint8_t* salt = GetInitialSalt(version);
     size_t salt_len = GetInitialSaltLength(version);
-    
+
     LOG_INFO("Installing Initial secret with version 0x%08x", version);
-    
+
     return InstallInitSecret(secret, secret_len, salt, salt_len, is_server);
 }
 
@@ -299,8 +297,9 @@ ICryptographer::Result AeadBaseCryptographer::DecryptPacket(uint64_t pkt_number,
     return Result::kOk;
 }
 
-ICryptographer::Result AeadBaseCryptographer::DecryptPacketWithPrevKey(uint64_t pkt_number, common::BufferSpan& associated_data,
-    common::BufferSpan& ciphertext, std::shared_ptr<common::IBuffer> out_plaintext) {
+ICryptographer::Result AeadBaseCryptographer::DecryptPacketWithPrevKey(uint64_t pkt_number,
+    common::BufferSpan& associated_data, common::BufferSpan& ciphertext,
+    std::shared_ptr<common::IBuffer> out_plaintext) {
     if (prev_read_secret_.key_.empty() || prev_read_secret_.iv_.empty()) {
         return Result::kNotInitialized;
     }
@@ -323,8 +322,8 @@ ICryptographer::Result AeadBaseCryptographer::DecryptPacketWithPrevKey(uint64_t 
     size_t out_length = 0;
     auto out_span = out_plaintext->GetWritableSpan();
 
-    if (EVP_AEAD_CTX_open(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce, prev_read_secret_.iv_.size(),
-            ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(),
+    if (EVP_AEAD_CTX_open(raw, out_span.GetStart(), &out_length, out_span.GetLength(), nonce,
+            prev_read_secret_.iv_.size(), ciphertext.GetStart(), ciphertext.GetLength(), associated_data.GetStart(),
             associated_data.GetLength()) != 1) {
         return Result::kDecryptFailed;
     }
@@ -377,8 +376,8 @@ ICryptographer::Result AeadBaseCryptographer::DecryptHeader(common::BufferSpan& 
     // get mask
     uint8_t mask[kHeaderProtectMaskLength] = {0};
     size_t mask_length = 0;
-    if (!MakeHeaderProtectMask(sample, read_secret_.hp_, mask, kHeaderProtectMaskLength, mask_length,
-            hp_read_ctx_.get())) {
+    if (!MakeHeaderProtectMask(
+            sample, read_secret_.hp_, mask, kHeaderProtectMaskLength, mask_length, hp_read_ctx_.get())) {
         LOG_ERROR("make header protect mask failed");
         return Result::kHpFailed;
     }
@@ -422,8 +421,8 @@ ICryptographer::Result AeadBaseCryptographer::EncryptHeader(common::BufferSpan& 
     // get mask
     uint8_t mask[kHeaderProtectMaskLength] = {0};
     size_t mask_length = 0;
-    if (!MakeHeaderProtectMask(sample, write_secret_.hp_, mask, kHeaderProtectMaskLength, mask_length,
-            hp_write_ctx_.get())) {
+    if (!MakeHeaderProtectMask(
+            sample, write_secret_.hp_, mask, kHeaderProtectMaskLength, mask_length, hp_write_ctx_.get())) {
         LOG_ERROR("make header protect mask failed");
         return Result::kHpFailed;
     }

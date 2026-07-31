@@ -18,8 +18,7 @@ class BlockMemoryPool;
 // abstractions (SingleBlockBuffer, MultiBlockBuffer, SharedBufferSpan, …) never
 // talk to BlockMemoryPool directly; they operate on BufferChunk or one of its
 // lightweight views instead.
-class BufferChunk:
-    public IBufferChunk {
+class BufferChunk: public IBufferChunk {
 public:
     // Acquire a block from the provided pool. The constructor never throws; in
     // case of failure the returned BufferChunk is simply marked invalid. A
@@ -63,8 +62,7 @@ private:
     uint32_t freeze_count_ = 0;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif
-

@@ -141,16 +141,16 @@ public:
 
 private:
     // Connection-level data flow control
-    uint64_t sent_bytes_;              // Total bytes sent on connection
-    uint64_t max_data_;                // Maximum bytes we can send (set by peer)
+    uint64_t sent_bytes_;  // Total bytes sent on connection
+    uint64_t max_data_;    // Maximum bytes we can send (set by peer)
 
     // Stream creation limits (set by peer)
-    uint64_t max_streams_bidi_;        // Maximum bidirectional streams we can create
-    uint64_t max_streams_uni_;         // Maximum unidirectional streams we can create
+    uint64_t max_streams_bidi_;  // Maximum bidirectional streams we can create
+    uint64_t max_streams_uni_;   // Maximum unidirectional streams we can create
 
     // Stream ID tracking
-    uint64_t max_bidi_stream_id_;      // Highest bidirectional stream ID allocated
-    uint64_t max_uni_stream_id_;       // Highest unidirectional stream ID allocated
+    uint64_t max_bidi_stream_id_;  // Highest bidirectional stream ID allocated
+    uint64_t max_uni_stream_id_;   // Highest unidirectional stream ID allocated
 
     // Stream ID generator
     StreamIDGenerator id_generator_;

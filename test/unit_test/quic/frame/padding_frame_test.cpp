@@ -1,19 +1,21 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/padding_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/padding_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(padding_frame_utest, codec) {
+TEST(PaddingFrameTest, codec) {
     PaddingFrame frame1;
     PaddingFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     frame1.SetPaddingLength(100);
     EXPECT_TRUE(frame1.Encode(write_buffer));
@@ -28,6 +30,6 @@ TEST(padding_frame_utest, codec) {
     EXPECT_EQ(frame1.GetPaddingLength(), frame2.GetPaddingLength());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

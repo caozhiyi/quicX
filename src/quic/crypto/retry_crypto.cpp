@@ -67,8 +67,8 @@ bool RetryCrypto::ComputeRetryIntegrityTag(const ConnectionID& original_dcid, co
     // Build Retry Pseudo-Packet
     std::vector<uint8_t> pseudo_packet(1 + original_dcid.GetLength() + retry_packet_len);
     size_t pseudo_len = 0;
-    if (!BuildRetryPseudoPacket(original_dcid, retry_packet_without_tag, retry_packet_len, pseudo_packet.data(),
-            pseudo_len)) {
+    if (!BuildRetryPseudoPacket(
+            original_dcid, retry_packet_without_tag, retry_packet_len, pseudo_packet.data(), pseudo_len)) {
         LOG_ERROR("ComputeRetryIntegrityTag: Failed to build pseudo-packet");
         return false;
     }
@@ -84,10 +84,9 @@ bool RetryCrypto::ComputeRetryIntegrityTag(const ConnectionID& original_dcid, co
     // Compute tag: seal empty plaintext with pseudo-packet as AAD
     uint8_t out_buf[kRetryIntegrityTagLength];
     size_t out_len = 0;
-    int seal_ok = EVP_AEAD_CTX_seal(ctx, out_buf, &out_len, sizeof(out_buf),
-        retry_nonce, 12,       // 12-byte nonce
-        nullptr, 0,            // empty plaintext
-        pseudo_packet.data(), pseudo_len);  // pseudo-packet as AAD
+    int seal_ok = EVP_AEAD_CTX_seal(ctx, out_buf, &out_len, sizeof(out_buf), retry_nonce, 12,  // 12-byte nonce
+        nullptr, 0,                                                                            // empty plaintext
+        pseudo_packet.data(), pseudo_len);                                                     // pseudo-packet as AAD
 
     EVP_AEAD_CTX_free(ctx);
 
@@ -141,8 +140,7 @@ bool RetryCrypto::ComputeTokenHMAC(
     }
 
     unsigned int hmac_len = 0;
-    unsigned char* result =
-        HMAC(EVP_sha256(), key, static_cast<int>(key_len), data, data_len, out_hmac, &hmac_len);
+    unsigned char* result = HMAC(EVP_sha256(), key, static_cast<int>(key_len), data, data_len, out_hmac, &hmac_len);
 
     if (!result || hmac_len != kTokenHMACLength) {
         LOG_ERROR("ComputeTokenHMAC: HMAC computation failed (result=%p, len=%u)", result, hmac_len);

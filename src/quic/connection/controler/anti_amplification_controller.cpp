@@ -5,19 +5,18 @@
 namespace quicx {
 namespace quic {
 
-AntiAmplificationController::AntiAmplificationController()
-    : is_unvalidated_(false),
-      sent_bytes_(0),
-      received_bytes_(0) {}
+AntiAmplificationController::AntiAmplificationController():
+    is_unvalidated_(false),
+    sent_bytes_(0),
+    received_bytes_(0) {}
 
 void AntiAmplificationController::EnterUnvalidatedState(uint64_t initial_credit) {
     is_unvalidated_ = true;
     sent_bytes_ = 0;
     received_bytes_ = initial_credit;
 
-    LOG_DEBUG(
-        "AntiAmplificationController::EnterUnvalidatedState: initial_credit=%llu, max_send=%llu",
-        initial_credit, initial_credit * kAmplificationFactor);
+    LOG_DEBUG("AntiAmplificationController::EnterUnvalidatedState: initial_credit=%llu, max_send=%llu", initial_credit,
+        initial_credit * kAmplificationFactor);
 }
 
 void AntiAmplificationController::ExitUnvalidatedState() {
@@ -26,8 +25,7 @@ void AntiAmplificationController::ExitUnvalidatedState() {
     }
 
     LOG_DEBUG(
-        "AntiAmplificationController::ExitUnvalidatedState: sent=%llu, received=%llu",
-        sent_bytes_, received_bytes_);
+        "AntiAmplificationController::ExitUnvalidatedState: sent=%llu, received=%llu", sent_bytes_, received_bytes_);
 
     is_unvalidated_ = false;
     sent_bytes_ = 0;
@@ -40,9 +38,8 @@ void AntiAmplificationController::OnBytesReceived(uint64_t bytes) {
     }
 
     received_bytes_ += bytes;
-    LOG_DEBUG(
-        "AntiAmplificationController::OnBytesReceived: received %llu bytes, total=%llu, max_send=%llu",
-        bytes, received_bytes_, received_bytes_ * kAmplificationFactor);
+    LOG_DEBUG("AntiAmplificationController::OnBytesReceived: received %llu bytes, total=%llu, max_send=%llu", bytes,
+        received_bytes_, received_bytes_ * kAmplificationFactor);
 }
 
 void AntiAmplificationController::OnBytesSent(uint64_t bytes) {
@@ -51,8 +48,7 @@ void AntiAmplificationController::OnBytesSent(uint64_t bytes) {
     }
 
     sent_bytes_ += bytes;
-    LOG_DEBUG(
-        "AntiAmplificationController::OnBytesSent: sent %llu bytes, total=%llu, limit=%llu, remaining=%llu",
+    LOG_DEBUG("AntiAmplificationController::OnBytesSent: sent %llu bytes, total=%llu, limit=%llu, remaining=%llu",
         bytes, sent_bytes_, received_bytes_ * kAmplificationFactor, GetRemainingBudget());
 }
 
@@ -117,8 +113,8 @@ void AntiAmplificationController::Reset() {
     sent_bytes_ = 0;
     received_bytes_ = 0;
 
-    LOG_DEBUG("AntiAmplificationController::Reset: counters reset (state=%s)",
-        is_unvalidated_ ? "unvalidated" : "validated");
+    LOG_DEBUG(
+        "AntiAmplificationController::Reset: counters reset (state=%s)", is_unvalidated_ ? "unvalidated" : "validated");
 }
 
 }  // namespace quic

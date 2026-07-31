@@ -1,12 +1,12 @@
-#include <chrono>
-#include <iostream>
-#include <sstream>
-#include <thread>
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
+#include <chrono>
+#include <iostream>
+#include <sstream>
+#include <thread>
 
 // Custom application metrics
 namespace {

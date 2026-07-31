@@ -88,6 +88,32 @@ namespace common {
     } while (0)
 
 /**
+ * @brief Log transport:datagrams_sent event (draft-03 §4.10).
+ *
+ * Emit once per UDP datagram leaving the endpoint. The payload should
+ * carry `count`, `raw_length`, optional `datagram_id` and the list of
+ * `packet_numbers` carried (used by qvis to render packet coalescing).
+ */
+#define QLOG_DATAGRAMS_SENT(trace, data)                                                                         \
+    do {                                                                                                         \
+        if (trace) {                                                                                             \
+            auto event_data = std::make_unique<::quicx::common::DatagramsSentData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kDatagramsSent, std::move(event_data)); \
+        }                                                                                                        \
+    } while (0)
+
+/**
+ * @brief Log transport:datagrams_received event (draft-03 §4.11).
+ */
+#define QLOG_DATAGRAMS_RECEIVED(trace, data)                                                                         \
+    do {                                                                                                             \
+        if (trace) {                                                                                                 \
+            auto event_data = std::make_unique<::quicx::common::DatagramsReceivedData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kDatagramsReceived, std::move(event_data)); \
+        }                                                                                                            \
+    } while (0)
+
+/**
  * @brief Log recovery_metrics_updated event
  */
 #define QLOG_METRICS_UPDATED(trace, data)                   \
@@ -143,49 +169,45 @@ namespace common {
 /**
  * @brief Log stream_state_updated event
  */
-#define QLOG_STREAM_STATE_UPDATED(trace, data)                                                                \
-    do {                                                                                                      \
-        if (trace) {                                                                                          \
-            auto event_data = std::make_unique<::quicx::common::StreamStateUpdatedData>(data);                \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kStreamStateUpdated, std::move(event_data));     \
-        }                                                                                                     \
+#define QLOG_STREAM_STATE_UPDATED(trace, data)                                                                        \
+    do {                                                                                                              \
+        if (trace) {                                                                                                  \
+            auto event_data = std::make_unique<::quicx::common::StreamStateUpdatedData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kStreamStateUpdated, std::move(event_data)); \
+        }                                                                                                             \
     } while (0)
 
 /**
  * @brief Log packet_dropped event
  */
-#define QLOG_PACKET_DROPPED(trace, data)                                                                      \
-    do {                                                                                                      \
-        if (trace) {                                                                                          \
-            auto event_data = std::make_unique<::quicx::common::PacketDroppedData>(data);                     \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kPacketDropped, std::move(event_data));          \
-        }                                                                                                     \
+#define QLOG_PACKET_DROPPED(trace, data)                                                                         \
+    do {                                                                                                         \
+        if (trace) {                                                                                             \
+            auto event_data = std::make_unique<::quicx::common::PacketDroppedData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kPacketDropped, std::move(event_data)); \
+        }                                                                                                        \
     } while (0)
 
 /**
  * @brief Log packet_buffered event
  */
-#define QLOG_PACKET_BUFFERED(trace, data)                                                                     \
-    do {                                                                                                      \
-        if (trace) {                                                                                          \
-            auto event_data = std::make_unique<::quicx::common::PacketBufferedData>(data);                    \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kPacketBuffered, std::move(event_data));         \
-        }                                                                                                     \
+#define QLOG_PACKET_BUFFERED(trace, data)                                                                         \
+    do {                                                                                                          \
+        if (trace) {                                                                                              \
+            auto event_data = std::make_unique<::quicx::common::PacketBufferedData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kPacketBuffered, std::move(event_data)); \
+        }                                                                                                         \
     } while (0)
 
 /**
  * @brief Log connection_id_updated event
  */
-#define QLOG_CONNECTION_ID_UPDATED(trace, data)                                                               \
-    do {                                                                                                      \
-        if (trace) {                                                                                          \
-            auto event_data = std::make_unique<::quicx::common::ConnectionIdUpdatedData>(data);               \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kConnectionIdUpdated, std::move(event_data));    \
-        }                                                                                                     \
+#define QLOG_CONNECTION_ID_UPDATED(trace, data)                                                                        \
+    do {                                                                                                               \
+        if (trace) {                                                                                                   \
+            auto event_data = std::make_unique<::quicx::common::ConnectionIdUpdatedData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kConnectionIdUpdated, std::move(event_data)); \
+        }                                                                                                              \
     } while (0)
 
 /**
@@ -195,57 +217,52 @@ namespace common {
     do {                                                                                                      \
         if (trace) {                                                                                          \
             auto event_data = std::make_unique<::quicx::common::KeyUpdatedData>(data);                        \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kKeyUpdated, std::move(event_data));             \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kKeyUpdated, std::move(event_data)); \
         }                                                                                                     \
     } while (0)
 
 /**
  * @brief Log security:key_discarded event
  */
-#define QLOG_KEY_DISCARDED(trace, data)                                                                       \
-    do {                                                                                                      \
-        if (trace) {                                                                                          \
-            auto event_data = std::make_unique<::quicx::common::KeyDiscardedData>(data);                      \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kKeyDiscarded, std::move(event_data));           \
-        }                                                                                                     \
+#define QLOG_KEY_DISCARDED(trace, data)                                                                         \
+    do {                                                                                                        \
+        if (trace) {                                                                                            \
+            auto event_data = std::make_unique<::quicx::common::KeyDiscardedData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kKeyDiscarded, std::move(event_data)); \
+        }                                                                                                       \
     } while (0)
 
 /**
  * @brief Log recovery:marked_for_retransmit event
  */
-#define QLOG_MARKED_FOR_RETRANSMIT(trace, data)                                                               \
-    do {                                                                                                      \
-        if (trace) {                                                                                          \
-            auto event_data = std::make_unique<::quicx::common::MarkedForRetransmitData>(data);               \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kMarkedForRetransmit, std::move(event_data));    \
-        }                                                                                                     \
+#define QLOG_MARKED_FOR_RETRANSMIT(trace, data)                                                                        \
+    do {                                                                                                               \
+        if (trace) {                                                                                                   \
+            auto event_data = std::make_unique<::quicx::common::MarkedForRetransmitData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kMarkedForRetransmit, std::move(event_data)); \
+        }                                                                                                              \
     } while (0)
 
 /**
  * @brief Log http3:frame_created event
  */
-#define QLOG_HTTP3_FRAME_CREATED(trace, data)                                                                 \
-    do {                                                                                                      \
-        if (trace) {                                                                                          \
-            auto event_data = std::make_unique<::quicx::common::Http3FrameCreatedData>(data);                 \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kHttp3FrameCreated, std::move(event_data));      \
-        }                                                                                                     \
+#define QLOG_HTTP3_FRAME_CREATED(trace, data)                                                                        \
+    do {                                                                                                             \
+        if (trace) {                                                                                                 \
+            auto event_data = std::make_unique<::quicx::common::Http3FrameCreatedData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kHttp3FrameCreated, std::move(event_data)); \
+        }                                                                                                            \
     } while (0)
 
 /**
  * @brief Log http3:frame_parsed event
  */
-#define QLOG_HTTP3_FRAME_PARSED(trace, data)                                                                  \
-    do {                                                                                                      \
-        if (trace) {                                                                                          \
-            auto event_data = std::make_unique<::quicx::common::Http3FrameParsedData>(data);                  \
-            trace->LogEvent(                                                                                  \
-                QLOG_TIME_US(), ::quicx::common::QlogEvents::kHttp3FrameParsed, std::move(event_data));       \
-        }                                                                                                     \
+#define QLOG_HTTP3_FRAME_PARSED(trace, data)                                                                        \
+    do {                                                                                                            \
+        if (trace) {                                                                                                \
+            auto event_data = std::make_unique<::quicx::common::Http3FrameParsedData>(data);                        \
+            trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kHttp3FrameParsed, std::move(event_data)); \
+        }                                                                                                           \
     } while (0)
 
 /**
@@ -260,16 +277,15 @@ namespace common {
  * Note: This event is logged at the server level (not per-connection),
  * so it uses QlogManager directly to create a temporary trace.
  */
-#define QLOG_SERVER_LISTENING(manager, data)                                                                  \
-    do {                                                                                                      \
-        if ((manager).IsEnabled()) {                                                                          \
-            auto trace = (manager).CreateTrace("server", ::quicx::common::VantagePoint::kServer);             \
-            if (trace) {                                                                                      \
-                auto event_data = std::make_unique<::quicx::common::ServerListeningData>(data);               \
-                trace->LogEvent(                                                                              \
-                    QLOG_TIME_US(), ::quicx::common::QlogEvents::kServerListening, std::move(event_data));    \
-            }                                                                                                 \
-        }                                                                                                     \
+#define QLOG_SERVER_LISTENING(manager, data)                                                                           \
+    do {                                                                                                               \
+        if ((manager).IsEnabled()) {                                                                                   \
+            auto trace = (manager).CreateTrace("server", ::quicx::common::VantagePoint::kServer);                      \
+            if (trace) {                                                                                               \
+                auto event_data = std::make_unique<::quicx::common::ServerListeningData>(data);                        \
+                trace->LogEvent(QLOG_TIME_US(), ::quicx::common::QlogEvents::kServerListening, std::move(event_data)); \
+            }                                                                                                          \
+        }                                                                                                              \
     } while (0)
 
 #else  // QLOG_ENABLED == 0
@@ -279,6 +295,8 @@ namespace common {
 #define QLOG_EVENT(trace, event_name, event_data) ((void)0)
 #define QLOG_PACKET_SENT(trace, data) ((void)0)
 #define QLOG_PACKET_RECEIVED(trace, data) ((void)0)
+#define QLOG_DATAGRAMS_SENT(trace, data) ((void)0)
+#define QLOG_DATAGRAMS_RECEIVED(trace, data) ((void)0)
 #define QLOG_METRICS_UPDATED(trace, data) ((void)0)
 #define QLOG_CONNECTION_STARTED(trace, data) ((void)0)
 #define QLOG_CONNECTION_CLOSED(trace, data) ((void)0)

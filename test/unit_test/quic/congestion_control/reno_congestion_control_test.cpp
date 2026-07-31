@@ -2,7 +2,6 @@
 #include <cinttypes>
 #include <cstdint>
 
-
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/congestion_control/reno_congestion_control.h"
 
@@ -271,9 +270,8 @@ TEST(RenoCongestionControlTest, G2_LossThenSpuriousAckDoubleDecrement_Documented
     // Today: in_flight floors at 0 via saturating subtract, so we would see 0
     // here even though the real in-flight is 1460 (pn=2 still unacked).
     // Expectation locked: contract violated by caller -> in_flight underflow.
-    EXPECT_EQ(cc.GetBytesInFlight(), 0u)
-        << "Algorithm layer has no pn dedup; double-decrement floors at 0. "
-           "If this changes, the send_control guard can be relaxed.";
+    EXPECT_EQ(cc.GetBytesInFlight(), 0u) << "Algorithm layer has no pn dedup; double-decrement floors at 0. "
+                                            "If this changes, the send_control guard can be relaxed.";
 }
 
 // H2: When an ACK arrives whose acked_packet_send_time was filled in but the
@@ -317,17 +315,17 @@ TEST(RenoCongestionControlTest, G2_RecoveryAcksMustDrainInFlightEvenWithoutCwndG
         ack.pn = i;
         ack.bytes_acked = 1460;
         ack.ack_time = 300;
-        ack.acked_packet_send_time = 1000 + (i - 1);  // < loss_time? send_time was 1000+i-1, but loss_time was 200; we INTENTIONALLY make these <= loss_time so recovery does NOT exit.
+        ack.acked_packet_send_time =
+            1000 + (i - 1);  // < loss_time? send_time was 1000+i-1, but loss_time was 200; we INTENTIONALLY make these
+                             // <= loss_time so recovery does NOT exit.
         // Wait: 1000+(i-1) is always >>200, so this would actually exit recovery.
         // To keep recovery, set send_time to something < loss_time.
         ack.acked_packet_send_time = 0;  // 0 < 200 = recovery_start_time -> stays in recovery
         cc.OnPacketAcked(ack);
     }
     EXPECT_TRUE(cc.InRecovery()) << "send_time=0 < recovery_start=200 must keep us in recovery";
-    EXPECT_EQ(cc.GetBytesInFlight(), (99u - 49u) * 1460u)
-        << "ACKs in recovery MUST still drain in_flight";
-    EXPECT_EQ(cc.GetCongestionWindow(), cwnd_in_recovery)
-        << "ACKs in recovery MUST NOT grow cwnd";
+    EXPECT_EQ(cc.GetBytesInFlight(), (99u - 49u) * 1460u) << "ACKs in recovery MUST still drain in_flight";
+    EXPECT_EQ(cc.GetCongestionWindow(), cwnd_in_recovery) << "ACKs in recovery MUST NOT grow cwnd";
 
     // CanSend should now report a healthy window: cwnd=73000, in_flight=73000.
     // Actually 50 packets at 1460 each = 73000, and cwnd halved to 73000.
@@ -405,14 +403,10 @@ TEST(RenoCongestionControlTest, G2_RepeatedLossDoesNotStrandCwndAtSubMSSGap) {
             ++sub_mss_gap_observations;
             // Surface the first occurrence in the test log for diagnosis.
             if (sub_mss_gap_observations == 1) {
-                ::testing::Test::RecordProperty("first_sub_mss_round",
-                    std::to_string(round));
-                ::testing::Test::RecordProperty("first_sub_mss_cwnd",
-                    std::to_string(cw));
-                ::testing::Test::RecordProperty("first_sub_mss_inflight",
-                    std::to_string(inf));
-                ::testing::Test::RecordProperty("first_sub_mss_gap",
-                    std::to_string(gap));
+                ::testing::Test::RecordProperty("first_sub_mss_round", std::to_string(round));
+                ::testing::Test::RecordProperty("first_sub_mss_cwnd", std::to_string(cw));
+                ::testing::Test::RecordProperty("first_sub_mss_inflight", std::to_string(inf));
+                ::testing::Test::RecordProperty("first_sub_mss_gap", std::to_string(gap));
             }
         }
         now += 10;
@@ -428,12 +422,11 @@ TEST(RenoCongestionControlTest, G2_RepeatedLossDoesNotStrandCwndAtSubMSSGap) {
     // halving against a high in_flight should NEVER produce sub-MSS gaps
     // — cwnd halves to a multiple of MSS-ish range and either stays >= in_flight
     // (window-open) or stays below in_flight (fully cwnd-blocked, gap=0).
-    EXPECT_EQ(sub_mss_gap_observations, 0)
-        << "Algorithm layer produced sub-MSS cwnd gap " << sub_mss_gap_observations
-        << " times. If >0, this IS the G2 bug at the CC layer. If 0, the bug "
-           "is in send_control (e.g. spurious double-decrement of in_flight, "
-           "or partial-byte sends crediting in_flight) and these tests can't "
-           "see it.";
+    EXPECT_EQ(sub_mss_gap_observations, 0) << "Algorithm layer produced sub-MSS cwnd gap " << sub_mss_gap_observations
+                                           << " times. If >0, this IS the G2 bug at the CC layer. If 0, the bug "
+                                              "is in send_control (e.g. spurious double-decrement of in_flight, "
+                                              "or partial-byte sends crediting in_flight) and these tests can't "
+                                              "see it.";
 }
 
 // H4: cwnd must never go below cfg.min_cwnd_bytes regardless of how many
@@ -459,8 +452,7 @@ TEST(RenoCongestionControlTest, G2_CwndNeverDropsBelowMinAfterRepeatedLosses) {
     // is not called again). cwnd stays at the post-loss value.
     for (uint64_t i = 1; i <= 30; ++i) {
         cc.OnPacketLost(LossEvent{i, cfg.mss_bytes, 1000 + i});
-        EXPECT_GE(cc.GetCongestionWindow(), cfg.min_cwnd_bytes)
-            << "cwnd dropped below min after " << i << " losses";
+        EXPECT_GE(cc.GetCongestionWindow(), cfg.min_cwnd_bytes) << "cwnd dropped below min after " << i << " losses";
     }
     EXPECT_TRUE(cc.InRecovery());
 }

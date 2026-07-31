@@ -1,20 +1,19 @@
 #ifndef HTTP3_QPACK_STATIC_TABLE
 #define HTTP3_QPACK_STATIC_TABLE
 
-#include <vector>
 #include <cstdint>
-#include <utility> // for std::pair
 #include <unordered_map>
+#include <utility>  // for std::pair
+#include <vector>
 
+#include "common/util/singleton.h"
 #include "http3/qpack/type.h"
 #include "http3/qpack/util.h"
-#include "common/util/singleton.h"
 
 namespace quicx {
 namespace http3 {
 
-class StaticTable:
-    public common::Singleton<StaticTable> {
+class StaticTable: public common::Singleton<StaticTable> {
 public:
     StaticTable();
     virtual ~StaticTable() {}
@@ -31,12 +30,13 @@ public:
     int32_t FindHeaderItemIndex(const std::string& name);
 
 private:
-    std::vector<HeaderItem> headeritem_vec_; // static table
-    std::unordered_map<std::string, uint32_t> headeritem_name_map_; // static table name map
-    std::unordered_map<std::pair<std::string, std::string>, uint32_t, pair_hash> headeritem_index_map_; // static table index map
+    std::vector<HeaderItem> headeritem_vec_;                         // static table
+    std::unordered_map<std::string, uint32_t> headeritem_name_map_;  // static table name map
+    std::unordered_map<std::pair<std::string, std::string>, uint32_t, pair_hash>
+        headeritem_index_map_;  // static table index map
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

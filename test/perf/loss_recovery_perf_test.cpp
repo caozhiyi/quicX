@@ -82,7 +82,10 @@ static void BM_Recovery_AckBurst(benchmark::State& state) {
 
     for (auto _ : state) {
         auto cc = quic::CreateCongestionControl(type);
-        if (!cc) { state.SkipWithError("create cc failed"); return; }
+        if (!cc) {
+            state.SkipWithError("create cc failed");
+            return;
+        }
 
         quic::CcConfigV2 cfg;
         cfg.initial_cwnd_bytes = 32 * 1460;
@@ -96,8 +99,7 @@ static void BM_Recovery_AckBurst(benchmark::State& state) {
 
         // Now ack all of them in a single burst.
         for (int i = 1; i <= burst; ++i) {
-            cc->OnPacketAcked(
-                {(uint64_t)i, 1460, (uint64_t)(burst * 100 + 50), /*ack_delay=*/5, false});
+            cc->OnPacketAcked({(uint64_t)i, 1460, (uint64_t)(burst * 100 + 50), /*ack_delay=*/5, false});
         }
 
         benchmark::DoNotOptimize(cc->GetCongestionWindow());
@@ -118,7 +120,10 @@ static void BM_Recovery_LossBurst(benchmark::State& state) {
 
     for (auto _ : state) {
         auto cc = quic::CreateCongestionControl(type);
-        if (!cc) { state.SkipWithError("create cc failed"); return; }
+        if (!cc) {
+            state.SkipWithError("create cc failed");
+            return;
+        }
 
         quic::CcConfigV2 cfg;
         cfg.initial_cwnd_bytes = 64 * 1460;
@@ -148,29 +153,27 @@ BENCHMARK(quicx::perf::BM_Recovery_RttUpdate)->Unit(benchmark::kNanosecond);
 BENCHMARK(quicx::perf::BM_Recovery_RttGetters)->Unit(benchmark::kNanosecond);
 
 BENCHMARK(quicx::perf::BM_Recovery_AckBurst)
-    ->ArgsProduct({
-        {static_cast<int>(quicx::quic::CongestionControlType::kCubic),
-         static_cast<int>(quicx::quic::CongestionControlType::kReno),
-         static_cast<int>(quicx::quic::CongestionControlType::kBbrV1),
-         static_cast<int>(quicx::quic::CongestionControlType::kBbrV2),
-         static_cast<int>(quicx::quic::CongestionControlType::kBbrV3)},
-        {16, 64, 256}
-    })
+    ->ArgsProduct({{static_cast<int>(quicx::quic::CongestionControlType::kCubic),
+                       static_cast<int>(quicx::quic::CongestionControlType::kReno),
+                       static_cast<int>(quicx::quic::CongestionControlType::kBbrV1),
+                       static_cast<int>(quicx::quic::CongestionControlType::kBbrV2),
+                       static_cast<int>(quicx::quic::CongestionControlType::kBbrV3)},
+        {16, 64, 256}})
     ->Unit(benchmark::kMicrosecond);
 
 BENCHMARK(quicx::perf::BM_Recovery_LossBurst)
-    ->ArgsProduct({
-        {static_cast<int>(quicx::quic::CongestionControlType::kCubic),
-         static_cast<int>(quicx::quic::CongestionControlType::kReno),
-         static_cast<int>(quicx::quic::CongestionControlType::kBbrV1),
-         static_cast<int>(quicx::quic::CongestionControlType::kBbrV2),
-         static_cast<int>(quicx::quic::CongestionControlType::kBbrV3)},
-        {4, 16, 64}
-    })
+    ->ArgsProduct({{static_cast<int>(quicx::quic::CongestionControlType::kCubic),
+                       static_cast<int>(quicx::quic::CongestionControlType::kReno),
+                       static_cast<int>(quicx::quic::CongestionControlType::kBbrV1),
+                       static_cast<int>(quicx::quic::CongestionControlType::kBbrV2),
+                       static_cast<int>(quicx::quic::CongestionControlType::kBbrV3)},
+        {4, 16, 64}})
     ->Unit(benchmark::kMicrosecond);
 
 BENCHMARK_MAIN();
 
 #else
-int main() { return 0; }
+int main() {
+    return 0;
+}
 #endif

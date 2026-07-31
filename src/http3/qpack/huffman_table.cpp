@@ -1,12 +1,10 @@
-#include <cassert>
 #include "http3/qpack/huffman_table.h"
+#include <cassert>
 
 namespace quicx {
 namespace http3 {
 
-HuffmanTable::HuffmanTable() {
-
-}
+HuffmanTable::HuffmanTable() {}
 
 bool HuffmanTable::Decode(const std::vector<uint8_t>& input, std::string& output) const {
     if (input.empty()) {
@@ -61,13 +59,13 @@ bool HuffmanTable::DecodeBits(uint8_t& state, uint8_t& ending, uint8_t bits, std
 uint8_t HuffmanTable::CountPaddingBits(uint8_t last_byte) const {
     uint8_t padding_bits = 0;
     uint8_t mask = 0x01;  // Start checking from least significant bit
-    
+
     // Count consecutive 1s from least significant bit
     while ((last_byte & mask) == mask && padding_bits < 7) {
         padding_bits++;
         mask <<= 1;  // Left shift one bit to continue checking
     }
-    
+
     return padding_bits;
 }
 
@@ -75,10 +73,10 @@ bool HuffmanTable::ValidatePadding(uint8_t last_byte, uint8_t padding_bits) cons
     if (padding_bits == 0) {
         return true;  // No padding bits, return true directly
     }
-    
+
     // Create padding bits mask: e.g. when padding_bits=3, mask is 0b00000111
     uint8_t padding_mask = (1 << padding_bits) - 1;
-    
+
     // Check if padding bits are all 1s
     // Example: last_byte = 0b10101111, padding_bits = 3
     // padding_mask = 0b00000111
@@ -87,6 +85,9 @@ bool HuffmanTable::ValidatePadding(uint8_t last_byte, uint8_t padding_bits) cons
     return (last_byte & padding_mask) == padding_mask;
 }
 
+// clang-format off
+// Machine-generated Huffman decoder state-transition table (RFC 7541 Appendix B).
+// Hand-aligned for readability; do not let clang-format rewrap it.
 HuffmanTable::HuffmanNode HuffmanTable::huffman_table_[256][16] = {
     /* 0 */
     {
@@ -2701,6 +2702,7 @@ HuffmanTable::HuffmanNode HuffmanTable::huffman_table_[256][16] = {
         {0xff, 0x00, 0x00, 0x00}, {0xff, 0x00, 0x00, 0x00}
     }
 };
+// clang-format on
 
 }  // namespace http3
 }  // namespace quicx

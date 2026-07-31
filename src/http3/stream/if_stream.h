@@ -9,15 +9,14 @@ namespace http3 {
 
 /**
  * @brief IStream is the base class for all HTTP/3 streams
- * 
+ *
  * All HTTP/3 streams inherit from this class.
  */
 class IStream {
 public:
-    IStream(StreamType stream_type,
-            const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-            stream_type_(stream_type),
-            error_handler_(error_handler) {}
+    IStream(StreamType stream_type, const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
+        stream_type_(stream_type),
+        error_handler_(error_handler) {}
     virtual ~IStream() {}
     // get stream type
     virtual StreamType GetType() { return stream_type_; }
@@ -42,7 +41,7 @@ protected:
     std::function<void(uint64_t stream_id, uint32_t error_code)> error_handler_;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

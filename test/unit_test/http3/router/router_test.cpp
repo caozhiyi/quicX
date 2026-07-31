@@ -1,11 +1,11 @@
-#include <gtest/gtest.h>
 #include "http3/router/router.h"
+#include <gtest/gtest.h>
 
 namespace quicx {
 namespace http3 {
 namespace {
 
-TEST(router, add_router) {
+TEST(RouterTest, add_router) {
     Router router;
     http_handler null_handler = nullptr;
     RouteConfig config(null_handler);
@@ -17,7 +17,7 @@ TEST(router, add_router) {
     EXPECT_FALSE(router.AddRoute(HttpMethod::kPost, "/test/home/*/other", config));
 }
 
-TEST(router, match) {
+TEST(RouterTest, match) {
     Router router;
     http_handler null_handler = nullptr;
     RouteConfig config(null_handler);
@@ -30,13 +30,13 @@ TEST(router, match) {
     EXPECT_TRUE(router.Match(HttpMethod::kGet, "/test/123/user/456").is_match);
     EXPECT_TRUE(router.Match(HttpMethod::kGet, "/test/home/123").is_match);
     EXPECT_TRUE(router.Match(HttpMethod::kGet, "/").is_match);
-    
+
     EXPECT_FALSE(router.Match(HttpMethod::kGet, "/test/other").is_match);
     EXPECT_FALSE(router.Match(HttpMethod::kGet, "").is_match);
     EXPECT_FALSE(router.Match(HttpMethod::kPost, "/test/123/456").is_match);
 }
 
-TEST(router, match_single_path_param) {
+TEST(RouterTest, match_single_path_param) {
     // Reproduce AdvancedFeaturesTest.SinglePathParam scenario:
     //   AddRoute("/users/:id"), Match("/users/42")
     Router router;
@@ -61,7 +61,7 @@ TEST(router, match_single_path_param) {
     }
 }
 
-TEST(router, match_path_param_with_sibling_nested) {
+TEST(RouterTest, match_path_param_with_sibling_nested) {
     // Reproduce AdvancedFeaturesTest scenario where BOTH /users/:id and
     // /users/:user_id/posts/:post_id are registered together. Match a single
     // segment path /users/42 must still match /users/:id and extract
@@ -103,7 +103,7 @@ TEST(router, match_path_param_with_sibling_nested) {
     if (it_pid != r3.params.end()) EXPECT_EQ(it_pid->second, "100");
 }
 
-TEST(router, match_advanced_features_full_set) {
+TEST(RouterTest, match_advanced_features_full_set) {
     // Reproduce ALL routes registered by AdvancedFeaturesTest::RegisterHandlers
     // and verify that /users/42 matches /users/:id.  This is the exact
     // failing scenario in the integration test.
@@ -133,6 +133,6 @@ TEST(router, match_advanced_features_full_set) {
     EXPECT_TRUE(r3.is_match);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace http3
+}  // namespace quicx

@@ -23,9 +23,7 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     callbacks.handshake_done_cb = [this](auto a) { HandleHandshakeDone(a); };
     callbacks.add_conn_id_cb = [this](auto a, auto b) { HandleAddConnectionId(a, b); };
     callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
-    callbacks.connection_close_cb = [this](auto a, auto b, auto c) {
-        HandleConnectionClose(a, b, c);
-    };
+    callbacks.connection_close_cb = [this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); };
 
     auto conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), callbacks);
 
@@ -52,16 +50,15 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     // self-cycle (BaseConnection -> version_negotiation_cb_ -> shared_ptr to
     // self) that keeps the connection alive forever after teardown.
     std::weak_ptr<ClientConnection> weak_conn = conn;
-    conn->SetVersionNegotiationCallback(
-        [this, weak_conn, ip, port, alpn, timeout_ms, resumption_session_der, server_name]
-        (uint32_t negotiated_version) {
-            auto c = weak_conn.lock();
-            if (!c) {
-                return;
-            }
-            HandleVersionNegotiation(c, ip, port, alpn, timeout_ms,
-                resumption_session_der, server_name, negotiated_version);
-        });
+    conn->SetVersionNegotiationCallback([this, weak_conn, ip, port, alpn, timeout_ms, resumption_session_der,
+                                            server_name](uint32_t negotiated_version) {
+        auto c = weak_conn.lock();
+        if (!c) {
+            return;
+        }
+        HandleVersionNegotiation(
+            c, ip, port, alpn, timeout_ms, resumption_session_der, server_name, negotiated_version);
+    });
 
     connecting_set_.insert(conn);
 
@@ -80,8 +77,8 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
             [conn, timeout_ms, this]() {
                 // Only timeout if still in connecting state (handshake not completed)
                 if (connecting_set_.find(conn) != connecting_set_.end()) {
-                    LOG_WARN("handshake timeout for connection. cid:%llu, timeout_ms:%d",
-                        conn->GetConnectionIDHash(), timeout_ms);
+                    LOG_WARN("handshake timeout for connection. cid:%llu, timeout_ms:%d", conn->GetConnectionIDHash(),
+                        timeout_ms);
                     HandleConnectionTimeout(conn);
                 }
             },
@@ -129,8 +126,7 @@ void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
         auto loop = event_loop_.lock();
         if (loop) loop->RemoveTimer(timer_it->second);
         handshake_timers_.erase(timer_it);
-        LOG_DEBUG(
-            "handshake completed, cancelled timeout timer for connection. cid:%llu", conn->GetConnectionIDHash());
+        LOG_DEBUG("handshake completed, cancelled timeout timer for connection. cid:%llu", conn->GetConnectionIDHash());
     }
 
     // Call base class implementation
@@ -195,9 +191,7 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     vn_callbacks.handshake_done_cb = [this](auto a) { HandleHandshakeDone(a); };
     vn_callbacks.add_conn_id_cb = [this](auto a, auto b) { HandleAddConnectionId(a, b); };
     vn_callbacks.retire_conn_id_cb = [this](auto a) { HandleRetireConnectionId(a); };
-    vn_callbacks.connection_close_cb = [this](auto a, auto b, auto c) {
-        HandleConnectionClose(a, b, c);
-    };
+    vn_callbacks.connection_close_cb = [this](auto a, auto b, auto c) { HandleConnectionClose(a, b, c); };
 
     auto new_conn = std::make_shared<ClientConnection>(ctx_, event_loop_.lock(), vn_callbacks);
 
@@ -222,19 +216,18 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     }
 
     // Set version negotiation callback for the new connection.
-    // If server sends another VN packet, the connection will be closed (see BaseConnection::OnVersionNegotiationPacket).
-    // Capture as weak_ptr to avoid self-cycle (see notes in Connect()).
+    // If server sends another VN packet, the connection will be closed (see
+    // BaseConnection::OnVersionNegotiationPacket). Capture as weak_ptr to avoid self-cycle (see notes in Connect()).
     std::weak_ptr<ClientConnection> weak_new_conn = new_conn;
-    new_conn->SetVersionNegotiationCallback(
-        [this, weak_new_conn, ip, port, alpn, timeout_ms, resumption_session_der, server_name]
-        (uint32_t negotiated_version) {
-            auto c = weak_new_conn.lock();
-            if (!c) {
-                return;
-            }
-            HandleVersionNegotiation(c, ip, port, alpn, timeout_ms,
-                resumption_session_der, server_name, negotiated_version);
-        });
+    new_conn->SetVersionNegotiationCallback([this, weak_new_conn, ip, port, alpn, timeout_ms, resumption_session_der,
+                                                server_name](uint32_t negotiated_version) {
+        auto c = weak_new_conn.lock();
+        if (!c) {
+            return;
+        }
+        HandleVersionNegotiation(
+            c, ip, port, alpn, timeout_ms, resumption_session_der, server_name, negotiated_version);
+    });
 
     connecting_set_.insert(new_conn);
 

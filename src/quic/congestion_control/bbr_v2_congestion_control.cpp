@@ -1,9 +1,9 @@
 #include <algorithm>
 
 #include "common/qlog/qlog.h"
-#include "quic/congestion_control/util.h"
-#include "quic/congestion_control/normal_pacer.h"
 #include "quic/congestion_control/bbr_v2_congestion_control.h"
+#include "quic/congestion_control/normal_pacer.h"
+#include "quic/congestion_control/util.h"
 
 // References for BBRv2 (teaching subset):
 //   [BBRv2-Slides] Cardwell et al., "BBR v2: A Model-based Congestion
@@ -43,7 +43,7 @@ void BBRv2CongestionControl::Configure(const CcConfigV2& cfg) {
     bw_window_.clear();
     max_bw_bps_ = 0;
 
-    pacing_gain_ = 2.885; // STARTUP
+    pacing_gain_ = 2.885;  // STARTUP
     cwnd_gain_ = 2.0;
     cycle_index_ = 0;
     cycle_start_us_ = 0;
@@ -53,7 +53,7 @@ void BBRv2CongestionControl::Configure(const CcConfigV2& cfg) {
     inflight_hi_bytes_ = UINT64_MAX;
     inflight_lo_bytes_ = 0;
     loss_event_count_in_round_ = 0;
-    
+
     // Initialize full bandwidth detection
     full_bw_bps_ = 0;
     full_bw_cnt_ = 0;
@@ -80,7 +80,7 @@ void BBRv2CongestionControl::OnPacketAcked(const AckEvent& ev) {
     // gently than the loss path (5% trim here vs 30% in OnPacketLost),
     // because ECN marks fire before any actual queue overflow.
     if (ev.ecn_ce) {
-        inflight_hi_bytes_ = std::max<uint64_t>(inflight_lo_bytes_, (inflight_hi_bytes_ * 95) / 100); // -5%
+        inflight_hi_bytes_ = std::max<uint64_t>(inflight_lo_bytes_, (inflight_hi_bytes_ * 95) / 100);  // -5%
     }
 
     // Update min_rtt timestamp when min_rtt is updated (from OnRoundTripSample)
@@ -137,7 +137,7 @@ void BBRv2CongestionControl::OnPacketAcked(const AckEvent& ev) {
 void BBRv2CongestionControl::OnPacketLost(const LossEvent& ev) {
     bytes_in_flight_ = (bytes_in_flight_ > ev.bytes_lost) ? bytes_in_flight_ - ev.bytes_lost : 0;
     loss_event_count_in_round_++;
-    
+
     // BBRv2: reduce hi bound on loss using multiplicative decrease (beta = 0.7)
     // [BBRv2-Slides] §"Loss response": v2 trims inflight_hi by beta=0.7
     // on loss instead of v1's binary STARTUP→DRAIN exit. This is the
@@ -147,7 +147,7 @@ void BBRv2CongestionControl::OnPacketLost(const LossEvent& ev) {
     // directly, so steady-state throughput is bounded by inflight_hi
     // while cwnd_bytes_ continues to track BDP × gain.
     inflight_hi_bytes_ = std::max<uint64_t>(inflight_lo_bytes_, (inflight_hi_bytes_ * 7) / 10);
-    
+
     if (mode_ == Mode::kStartup) {
         {
             common::CongestionStateUpdatedData qlog_data;
@@ -209,17 +209,17 @@ uint64_t BBRv2CongestionControl::BdpBytes(uint64_t gain_num, uint64_t gain_den) 
         uint64_t default_bdp = std::max<uint64_t>(cfg_.initial_cwnd_bytes, 4 * cfg_.mss_bytes);
         return congestion_control::muldiv_safe(default_bdp, gain_num, gain_den);
     }
-    uint64_t bw = (max_bw_bps_ > 0) ? max_bw_bps_ : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
-    uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull); // bytes
+    uint64_t bw = (max_bw_bps_ > 0)
+                      ? max_bw_bps_
+                      : (srtt_us_ > 0 ? MulDiv(cwnd_bytes_, 1000000ull, srtt_us_) : cfg_.initial_cwnd_bytes);
+    uint64_t bdp = MulDiv(bw, min_rtt_us_, 1000000ull);  // bytes
     return congestion_control::muldiv_safe(bdp, gain_num, gain_den);
 }
 
 void BBRv2CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
     // Enter ProbeRTT if min_rtt hasn't been updated in 10 seconds
     // BBR standard: probe RTT when min_rtt is stale (> 10s old)
-    if (mode_ != Mode::kProbeRtt && 
-        min_rtt_stamp_us_ > 0 && 
-        now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
+    if (mode_ != Mode::kProbeRtt && min_rtt_stamp_us_ > 0 && now_us - min_rtt_stamp_us_ >= kProbeRttIntervalUs) {
         {
             common::CongestionStateUpdatedData qlog_data;
             qlog_data.old_state = "congestion_avoidance";
@@ -233,7 +233,7 @@ void BBRv2CongestionControl::MaybeEnterOrExitProbeRtt(uint64_t now_us) {
         probe_rtt_done_stamp_valid_ = true;
         probe_rtt_done_stamp_us_ = now_us + kProbeRttTimeUs;
     }
-    
+
     // Exit ProbeRTT after 200ms
     if (mode_ == Mode::kProbeRtt && now_us >= probe_rtt_done_stamp_us_) {
         {
@@ -279,7 +279,7 @@ void BBRv2CongestionControl::UpdateMaxBandwidth(uint64_t sample_bps, uint64_t no
 void BBRv2CongestionControl::CheckStartupFullBandwidth(uint64_t now_us) {
     (void)now_us;
     if (max_bw_bps_ == 0) return;
-    
+
     // [BBR-Draft] §4.1.1.2 / [BBRv2-Slides] keep the v1 STARTUP-fill
     // detector unchanged: three consecutive rounds with <25% bandwidth
     // growth → pipe is full, exit STARTUP. v2 keeps this signal-driven
@@ -289,7 +289,7 @@ void BBRv2CongestionControl::CheckStartupFullBandwidth(uint64_t now_us) {
     // Check if bandwidth is still growing (>25% increase)
     if (full_bw_bps_ == 0 || max_bw_bps_ > full_bw_bps_ * 125 / 100) {
         full_bw_bps_ = max_bw_bps_;  // Update full bandwidth
-        full_bw_cnt_ = 0;             // Reset counter
+        full_bw_cnt_ = 0;            // Reset counter
     } else {
         full_bw_cnt_++;
         // Exit STARTUP if bandwidth stopped growing for 3 rounds
@@ -328,7 +328,5 @@ void BBRv2CongestionControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> tra
     qlog_trace_ = trace;
 }
 
-} // namespace quic
-} // namespace quicx
-
-
+}  // namespace quic
+}  // namespace quicx

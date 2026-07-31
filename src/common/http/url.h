@@ -1,8 +1,8 @@
 #ifndef COMMON_HTTP_URL
 #define COMMON_HTTP_URL
 
-#include <string>
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 
 namespace quicx {
@@ -11,11 +11,8 @@ namespace common {
 // Parse URL for HTTP/3 pseudo-headers (client-side, no query parsing needed)
 // Extracts: scheme, host, port, path_with_query (includes ?query but excludes #fragment)
 // This is more efficient for client-side as it doesn't parse query string into map
-bool ParseURLForPseudoHeaders(const std::string& url_str, 
-                              std::string& scheme,
-                              std::string& host,
-                              uint16_t& port,
-                              std::string& path_with_query);
+bool ParseURLForPseudoHeaders(
+    const std::string& url_str, std::string& scheme, std::string& host, uint16_t& port, std::string& path_with_query);
 
 // URL encode/decode utilities (RFC 3986)
 // Encode unsafe characters for use in URL components
@@ -43,10 +40,10 @@ std::string BuildPathWithQuery(const std::string& path, const std::unordered_map
 
 // Parse :path pseudo-header into path and query parameters
 // Example: "/api/users?page=1&limit=10" -> ("/api/users", {{"page", "1"}, {"limit", "10"}})
-bool ParsePathWithQuery(const std::string& path_with_query, std::string& path, 
-                        std::unordered_map<std::string, std::string>& query);
+bool ParsePathWithQuery(
+    const std::string& path_with_query, std::string& path, std::unordered_map<std::string, std::string>& query);
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

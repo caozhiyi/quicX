@@ -1,11 +1,11 @@
-#include <memory>
+#include "http3/stream/control_server_receiver_stream.h"
 #include <cstdint>
+#include <memory>
 #include "common/log/log.h"
-#include "http3/http/error.h"
+#include "http3/frame/cancel_push_frame.h"
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/max_push_id_frame.h"
-#include "http3/frame/cancel_push_frame.h"
-#include "http3/stream/control_server_receiver_stream.h"
+#include "http3/http/error.h"
 
 namespace quicx {
 namespace http3 {
@@ -32,8 +32,8 @@ void ControlServerReceiverStream::HandleFrame(std::shared_ptr<IFrame> frame) {
             // RFC 9114 Section 5.2: A server MUST NOT send a GOAWAY with a stream ID
             // that is greater than the stream ID given in an earlier GOAWAY
             if (goaway_received_ && stream_id > last_goaway_id_) {
-                LOG_ERROR("ControlServerReceiverStream: GOAWAY stream ID increased from %llu to %llu",
-                    last_goaway_id_, stream_id);
+                LOG_ERROR("ControlServerReceiverStream: GOAWAY stream ID increased from %llu to %llu", last_goaway_id_,
+                    stream_id);
                 error_handler_(stream_->GetStreamID(), Http3ErrorCode::kIdError);
                 return;
             }

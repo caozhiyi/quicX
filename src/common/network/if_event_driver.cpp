@@ -1,11 +1,11 @@
 #include "common/network/if_event_driver.h"
 
 #ifdef _WIN32
-    #include "common/network/windows/select_event_driver.h"
+#include "common/network/windows/select_event_driver.h"
 #elif defined(__APPLE__)
-    #include "common/network/macos/kqueue_event_driver.h"
+#include "common/network/macos/kqueue_event_driver.h"
 #else
-    #include "common/network/linux/epoll_event_driver.h"
+#include "common/network/linux/epoll_event_driver.h"
 #endif
 
 namespace quicx {
@@ -21,7 +21,5 @@ std::unique_ptr<IEventDriver> IEventDriver::Create() {
 #endif
 }
 
-}
-}
-
-
+}  // namespace common
+}  // namespace quicx

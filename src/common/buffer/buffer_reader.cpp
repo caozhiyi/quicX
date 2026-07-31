@@ -1,9 +1,9 @@
 #include <cstring>
 #include <vector>
 
-#include "common/log/log.h"
-#include "common/buffer/if_buffer.h"
 #include "common/buffer/buffer_reader.h"
+#include "common/buffer/if_buffer.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace common {
@@ -14,8 +14,8 @@ BufferReader::BufferReader(uint8_t* start, uint8_t* end) {
     Reset(start, end);
 }
 
-BufferReader::BufferReader(uint8_t* start, uint32_t len)
-    : BufferReader(start, start ? start + len : nullptr) {}
+BufferReader::BufferReader(uint8_t* start, uint32_t len):
+    BufferReader(start, start ? start + len : nullptr) {}
 
 BufferReader::BufferReader(std::shared_ptr<IBuffer> buffer) {
     Reset(buffer);
@@ -278,11 +278,8 @@ BufferSpan BufferReader::GetReadableSpan() const {
 
 bool BufferReader::Valid() const {
     if (is_contiguous_) {
-        return buffer_start_ != nullptr &&
-               buffer_end_ != nullptr &&
-               buffer_start_ <= buffer_end_ &&
-               read_pos_ >= buffer_start_ &&
-               read_pos_ <= buffer_end_;
+        return buffer_start_ != nullptr && buffer_end_ != nullptr && buffer_start_ <= buffer_end_ &&
+               read_pos_ >= buffer_start_ && read_pos_ <= buffer_end_;
     }
     return buffer_ != nullptr;
 }

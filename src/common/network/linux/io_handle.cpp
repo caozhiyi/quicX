@@ -1,25 +1,26 @@
 #ifdef __linux__
-#include <netdb.h>
-#include <fcntl.h>
-#include <atomic>
-#include <cstring>
-#include <unistd.h>       // for close
-#include <ifaddrs.h>
-#include <sys/uio.h>
-#include <sys/types.h>
+#include "common/network/io_handle.h"
 #include <arpa/inet.h>
-#include <sys/socket.h>
+#include <fcntl.h>
+#include <ifaddrs.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <unistd.h>  // for close
+#include <atomic>
+#include <cstring>
 #include "common/log/log.h"
-#include "common/network/io_handle.h"
 #include "common/network/socket_family_cache.h"
 
 namespace quicx {
 namespace common {
 
-namespace {
+namespace {}  // namespace
+
 // Resolve the address family of `sockfd`. Cache hit is the common case
 // (we created the fd and recorded its family). For caller-provided fds
 // (e.g. TCP fds in the upgrade path, test fixtures) we fall back to
@@ -35,7 +36,6 @@ int32_t ResolveSocketFamily(int32_t sockfd) {
     }
     return AF_INET;  // best-effort default
 }
-}  // namespace
 
 SysCallInt32Result TcpSocket() {
     int32_t sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -159,7 +159,7 @@ SysCallInt32Result Listen(int32_t sockfd, int32_t backlog) {
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result Write(int32_t sockfd, const char *data, uint32_t len) {
+SysCallInt32Result Write(int32_t sockfd, const char* data, uint32_t len) {
     int flags = 0;
 #ifdef MSG_NOSIGNAL
     flags = MSG_NOSIGNAL;
@@ -171,12 +171,12 @@ SysCallInt32Result Write(int32_t sockfd, const char *data, uint32_t len) {
     }
     return {rc, rc != -1 ? 0 : errno};
 }
-SysCallInt32Result Writev(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
+SysCallInt32Result Writev(int32_t sockfd, Iovec* vec, uint32_t vec_len) {
     const int32_t rc = writev(sockfd, (iovec*)vec, vec_len);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result SendTo(int32_t sockfd, const char *msg, uint32_t len, uint16_t flag, const Address& addr) {
+SysCallInt32Result SendTo(int32_t sockfd, const char* msg, uint32_t len, uint16_t flag, const Address& addr) {
     // O(1) cache hit on the hot path; falls back to a single SO_DOMAIN
     // syscall for fds we don't own (e.g. test fixtures).
     const int32_t domain = ResolveSocketFamily(sockfd);
@@ -237,10 +237,8 @@ SysCallInt32Result SendmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
 #define UDP_SEGMENT 103
 #endif
 
-SysCallInt32Result SendMsgGso(int32_t sockfd,
-                              const char* payload, uint32_t total_len,
-                              uint16_t segment_size,
-                              const Address& addr) {
+SysCallInt32Result SendMsgGso(
+    int32_t sockfd, const char* payload, uint32_t total_len, uint16_t segment_size, const Address& addr) {
     if (payload == nullptr || total_len == 0 || segment_size == 0) {
         return {-1, EINVAL};
     }
@@ -254,7 +252,7 @@ SysCallInt32Result SendMsgGso(int32_t sockfd,
     // Stack scratch used only on cache miss; on the steady-state hot path
     // GetCachedSockaddr returns a pointer into Address's internal storage
     // and these locals stay untouched.
-    struct sockaddr_in  scratch4{};
+    struct sockaddr_in scratch4{};
     struct sockaddr_in6 scratch6{};
     const struct sockaddr* dst = nullptr;
     socklen_t dst_len = 0;
@@ -273,8 +271,7 @@ SysCallInt32Result SendMsgGso(int32_t sockfd,
     } else {
         scratch6.sin6_family = AF_INET6;
         scratch6.sin6_port = htons(addr.GetPort());
-        if (addr.GetAddressType() == AddressType::kIpv6 ||
-            addr.GetIp().find(':') != std::string::npos) {
+        if (addr.GetAddressType() == AddressType::kIpv6 || addr.GetIp().find(':') != std::string::npos) {
             inet_pton(AF_INET6, addr.GetIp().c_str(), &scratch6.sin6_addr);
         } else {
             std::string mapped = "::ffff:" + addr.GetIp();
@@ -287,7 +284,7 @@ SysCallInt32Result SendMsgGso(int32_t sockfd,
 
     struct iovec iov;
     iov.iov_base = const_cast<char*>(payload);
-    iov.iov_len  = total_len;
+    iov.iov_len = total_len;
 
     // CMSG_SPACE(sizeof(uint16_t)) is 24 bytes on x86_64; round up to 32 to
     // be safe across architectures and avoid any chance of cmsg padding
@@ -297,11 +294,11 @@ SysCallInt32Result SendMsgGso(int32_t sockfd,
 
     struct msghdr msg;
     memset(&msg, 0, sizeof(msg));
-    msg.msg_name       = const_cast<struct sockaddr*>(dst);
-    msg.msg_namelen    = dst_len;
-    msg.msg_iov        = &iov;
-    msg.msg_iovlen     = 1;
-    msg.msg_control    = cbuf;
+    msg.msg_name = const_cast<struct sockaddr*>(dst);
+    msg.msg_namelen = dst_len;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cbuf;
     msg.msg_controllen = sizeof(cbuf);
 
     struct cmsghdr* cm = CMSG_FIRSTHDR(&msg);
@@ -309,8 +306,8 @@ SysCallInt32Result SendMsgGso(int32_t sockfd,
     // which is the same value (17) and is the portable way to pass UDP
     // socket options through cmsg.
     cm->cmsg_level = IPPROTO_UDP;
-    cm->cmsg_type  = UDP_SEGMENT;
-    cm->cmsg_len   = CMSG_LEN(sizeof(uint16_t));
+    cm->cmsg_type = UDP_SEGMENT;
+    cm->cmsg_len = CMSG_LEN(sizeof(uint16_t));
     // Use memcpy rather than a direct uint16_t* store to avoid any
     // theoretical alignment issue on stricter architectures.
     uint16_t seg = segment_size;
@@ -320,17 +317,17 @@ SysCallInt32Result SendMsgGso(int32_t sockfd,
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result Recv(int32_t sockfd, char *data, uint32_t len, uint16_t flag) {
+SysCallInt32Result Recv(int32_t sockfd, char* data, uint32_t len, uint16_t flag) {
     const int32_t rc = recv(sockfd, data, len, flag);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result Readv(int32_t sockfd, Iovec *vec, uint32_t vec_len) {
+SysCallInt32Result Readv(int32_t sockfd, Iovec* vec, uint32_t vec_len) {
     const int32_t rc = readv(sockfd, (iovec*)vec, vec_len);
     return {rc, rc != -1 ? 0 : errno};
 }
 
-SysCallInt32Result RecvFrom(int32_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr) {
+SysCallInt32Result RecvFrom(int32_t sockfd, char* buf, uint32_t len, uint16_t flag, Address& addr) {
     struct sockaddr_storage addr_ss;
     memset(&addr_ss, 0, sizeof(addr_ss));
     socklen_t fromlen = sizeof(addr_ss);
@@ -398,7 +395,7 @@ SysCallInt32Result RecvmMsg(int32_t sockfd, MMsghdr* msgvec, uint32_t vlen, uint
     return {rc, 0};
 }
 
-SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void *optval, uint32_t optlen) {
+SysCallInt32Result SetSockOpt(int32_t sockfd, int level, int optname, const void* optval, uint32_t optlen) {
     const int32_t rc = setsockopt(sockfd, level, optname, optval, optlen);
     return {rc, rc != -1 ? 0 : errno};
 }
@@ -429,16 +426,18 @@ SysCallInt32Result SetUdpSocketBuffer(int32_t sockfd, int32_t size_bytes) {
     getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &actual_snd, &len);
 
     if (actual_rcv < warn_threshold && !warned_rcvbuf.exchange(true)) {
-        LOG_WARN("UDP SO_RCVBUF clamped to %d bytes (requested %d, expected ~%d "
-                 "after kernel doubling). Packets may be dropped under load. "
-                 "Run as root: sysctl -w net.core.rmem_max=%d",
-                 actual_rcv, size_bytes, expected_after_doubling, expected_after_doubling);
+        LOG_WARN(
+            "UDP SO_RCVBUF clamped to %d bytes (requested %d, expected ~%d "
+            "after kernel doubling). Packets may be dropped under load. "
+            "Run as root: sysctl -w net.core.rmem_max=%d",
+            actual_rcv, size_bytes, expected_after_doubling, expected_after_doubling);
     }
     if (actual_snd < warn_threshold && !warned_sndbuf.exchange(true)) {
-        LOG_WARN("UDP SO_SNDBUF clamped to %d bytes (requested %d, expected ~%d "
-                 "after kernel doubling). Sends may stall under load. "
-                 "Run as root: sysctl -w net.core.wmem_max=%d",
-                 actual_snd, size_bytes, expected_after_doubling, expected_after_doubling);
+        LOG_WARN(
+            "UDP SO_SNDBUF clamped to %d bytes (requested %d, expected ~%d "
+            "after kernel doubling). Sends may stall under load. "
+            "Run as root: sysctl -w net.core.wmem_max=%d",
+            actual_snd, size_bytes, expected_after_doubling, expected_after_doubling);
     }
     return {actual_rcv, 0};
 }
@@ -505,53 +504,53 @@ bool ParseLocalAddress(int32_t fd, Address& addr) {
 bool LookupAddress(const std::string& host, Address& addr) {
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
-    
+
     // Check if host is an explicit IPv4 address (contains dots and no colons)
     bool is_ipv4_literal = (host.find('.') != std::string::npos && host.find(':') == std::string::npos);
-    
+
     // If it's an IPv4 literal or looks like one, prefer IPv4
     hints.ai_family = is_ipv4_literal ? AF_INET : AF_UNSPEC;
-    hints.ai_socktype = SOCK_DGRAM; // Datagram socket for UDP
-    hints.ai_flags = AI_PASSIVE;    // For wildcard IP address
+    hints.ai_socktype = SOCK_DGRAM;  // Datagram socket for UDP
+    hints.ai_flags = AI_PASSIVE;     // For wildcard IP address
 
-    struct addrinfo *result;
+    struct addrinfo* result;
     int ret = getaddrinfo(host.c_str(), nullptr, &hints, &result);
     if (ret != 0) {
         return false;
     }
 
     // Prefer IPv4 addresses over IPv6 for better compatibility
-    struct addrinfo *ipv4_addr = nullptr;
-    struct addrinfo *ipv6_addr = nullptr;
-    
-    for (struct addrinfo *rp = result; rp != nullptr; rp = rp->ai_next) {
+    struct addrinfo* ipv4_addr = nullptr;
+    struct addrinfo* ipv6_addr = nullptr;
+
+    for (struct addrinfo* rp = result; rp != nullptr; rp = rp->ai_next) {
         if (rp->ai_family == AF_INET && !ipv4_addr) {
             ipv4_addr = rp;
         } else if (rp->ai_family == AF_INET6 && !ipv6_addr) {
             ipv6_addr = rp;
         }
     }
-    
+
     // Use IPv4 if available, otherwise use IPv6
-    struct addrinfo *selected = ipv4_addr ? ipv4_addr : ipv6_addr;
+    struct addrinfo* selected = ipv4_addr ? ipv4_addr : ipv6_addr;
     if (!selected) {
         freeaddrinfo(result);
         return false;
     }
-    
-    void *addr_ptr;
+
+    void* addr_ptr;
     char ip_str[INET6_ADDRSTRLEN];
-    
+
     if (selected->ai_family == AF_INET) {
-        struct sockaddr_in *ipv4 = (struct sockaddr_in *)selected->ai_addr;
+        struct sockaddr_in* ipv4 = (struct sockaddr_in*)selected->ai_addr;
         addr_ptr = &(ipv4->sin_addr);
         addr.SetAddressType(AddressType::kIpv4);
     } else {
-        struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)selected->ai_addr;
+        struct sockaddr_in6* ipv6 = (struct sockaddr_in6*)selected->ai_addr;
         addr_ptr = &(ipv6->sin6_addr);
         addr.SetAddressType(AddressType::kIpv6);
     }
-    
+
     inet_ntop(selected->ai_family, addr_ptr, ip_str, sizeof(ip_str));
     addr.SetIp(ip_str);
     freeaddrinfo(result);
@@ -578,14 +577,23 @@ SysCallInt32Result EnableUdpEcn(int32_t sockfd) {
     return {0, 0};
 }
 
-SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
-    struct sockaddr_storage addr_ss; memset(&addr_ss, 0, sizeof(addr_ss));
-    struct iovec iov; iov.iov_base = (void*)buf; iov.iov_len = len;
-    char cbuf[128]; memset(cbuf, 0, sizeof(cbuf));
-    struct msghdr msg; memset(&msg, 0, sizeof(msg));
-    msg.msg_name = &addr_ss; msg.msg_namelen = sizeof(addr_ss);
-    msg.msg_iov = &iov; msg.msg_iovlen = 1;
-    msg.msg_control = cbuf; msg.msg_controllen = sizeof(cbuf);
+SysCallInt32Result RecvFromWithEcn(
+    int32_t sockfd, char* buf, uint32_t len, uint16_t flag, Address& addr, uint8_t& ecn) {
+    struct sockaddr_storage addr_ss;
+    memset(&addr_ss, 0, sizeof(addr_ss));
+    struct iovec iov;
+    iov.iov_base = (void*)buf;
+    iov.iov_len = len;
+    char cbuf[128];
+    memset(cbuf, 0, sizeof(cbuf));
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_name = &addr_ss;
+    msg.msg_namelen = sizeof(addr_ss);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cbuf;
+    msg.msg_controllen = sizeof(cbuf);
 
     int32_t rc = recvmsg(sockfd, &msg, flag);
     if (rc == -1) {
@@ -619,12 +627,14 @@ SysCallInt32Result RecvFromWithEcn(int32_t sockfd, char *buf, uint32_t len, uint
     ecn = 0;
     for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
         if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TOS) {
-            int tos = 0; memcpy(&tos, CMSG_DATA(cmsg), sizeof(tos));
+            int tos = 0;
+            memcpy(&tos, CMSG_DATA(cmsg), sizeof(tos));
             ecn = static_cast<uint8_t>(tos & 0x03);
         }
 #ifdef IPV6_TCLASS
         if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_TCLASS) {
-            int tclass = 0; memcpy(&tclass, CMSG_DATA(cmsg), sizeof(tclass));
+            int tclass = 0;
+            memcpy(&tclass, CMSG_DATA(cmsg), sizeof(tclass));
             ecn = static_cast<uint8_t>(tclass & 0x03);
         }
 #endif
@@ -643,7 +653,7 @@ SysCallInt32Result EnableUdpEcnMarking(int32_t sockfd, uint8_t ecn_codepoint) {
     return {0, 0};
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

@@ -5,8 +5,8 @@
 #include <string>
 
 #include "common/qlog/util/qlog_types.h"
-#include "quic/packet/type.h"
 #include "quic/frame/type.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace common {

@@ -1,8 +1,8 @@
 #ifndef QUIC_CONGESTION_CONTROL_UTIL
 #define QUIC_CONGESTION_CONTROL_UTIL
 
-#include <cstdint>
 #include <algorithm>
+#include <cstdint>
 #include <stdexcept>
 
 namespace quicx {
@@ -15,12 +15,12 @@ inline bool multiply_overflow(uint64_t a, uint64_t b, uint64_t& result) {
         result = 0;
         return false;
     }
-    
+
     // Check for overflow: if a > UINT64_MAX / b, then a * b > UINT64_MAX
     if (a > UINT64_MAX / b) {
-        return true; // Overflow
+        return true;  // Overflow
     }
-    
+
     result = a * b;
     return false;
 }
@@ -37,7 +37,7 @@ inline uint64_t multiply_saturate(uint64_t a, uint64_t b) {
 // Safe division with overflow protection
 inline uint64_t divide_safe(uint64_t a, uint64_t b) {
     if (b == 0) {
-        return UINT64_MAX; // Return max value on division by zero
+        return UINT64_MAX;  // Return max value on division by zero
     }
     return a / b;
 }
@@ -48,7 +48,7 @@ inline uint64_t muldiv_safe(uint64_t a, uint64_t num, uint64_t den) {
     if (den == 0) {
         return 0;
     }
-    
+
     // First check if we can do the multiplication safely
     uint64_t product;
     if (multiply_overflow(a, num, product)) {
@@ -74,13 +74,13 @@ inline uint64_t muldiv_safe(uint64_t a, uint64_t num, uint64_t den) {
             return UINT64_MAX;
         }
     }
-    
+
     return product / den;
 }
 
-}
+}  // namespace congestion_control
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
 #endif

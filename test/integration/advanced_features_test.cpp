@@ -17,7 +17,7 @@
 
 #include "test_server_helper.h"
 
-class AdvancedFeaturesTest : public ::testing::Test {
+class AdvancedFeaturesTest: public ::testing::Test {
 protected:
     std::shared_ptr<quicx::IServer> server_;
     std::shared_ptr<quicx::IClient> client_;
@@ -221,8 +221,7 @@ protected:
     };
 
     RequestResult DoRequest(const std::string& path, quicx::HttpMethod method = quicx::HttpMethod::kGet,
-        const std::string& body = "",
-        const std::unordered_map<std::string, std::string>& headers = {}) {
+        const std::string& body = "", const std::unordered_map<std::string, std::string>& headers = {}) {
         auto request = quicx::IRequest::Create();
         if (!body.empty()) {
             request->AppendBody(body);
@@ -236,17 +235,16 @@ protected:
 
         std::string url = "https://127.0.0.1:" + std::to_string(port_) + path;
 
-        client_->DoRequest(url, method, request,
-            [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
-                result.error = error;
-                if (error == 0 && response) {
-                    result.status_code = response->GetStatusCode();
-                    result.body = response->GetBodyAsString();
-                    result.headers = response->GetHeaders();
-                }
-                result.completed = true;
-                done = true;
-            });
+        client_->DoRequest(url, method, request, [&](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+            result.error = error;
+            if (error == 0 && response) {
+                result.status_code = response->GetStatusCode();
+                result.body = response->GetBodyAsString();
+                result.headers = response->GetHeaders();
+            }
+            result.completed = true;
+            done = true;
+        });
 
         for (int i = 0; i < 100 && !done; ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));

@@ -1,13 +1,13 @@
-#include <thread>
+#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
-#include <gtest/gtest.h>
 #include <cstring>
-#include "quic/udp/udp_sender.h"
-#include "quic/udp/udp_receiver.h"
-#include "common/network/io_handle.h"
+#include <thread>
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "common/network/io_handle.h"
+#include "quic/udp/udp_receiver.h"
+#include "quic/udp/udp_sender.h"
 
 namespace quicx {
 namespace quic {
@@ -20,9 +20,7 @@ static constexpr int kTimeoutMs = 5000;
 
 class RecvHandler: public IPacketReceiver {
 public:
-    void OnPacket(std::shared_ptr<NetPacket>& pkt) override {
-        recv_times_.fetch_add(1, std::memory_order_relaxed);
-    }
+    void OnPacket(std::shared_ptr<NetPacket>& pkt) override { recv_times_.fetch_add(1, std::memory_order_relaxed); }
     std::atomic<int> recv_times_{0};
 };
 
@@ -31,7 +29,7 @@ TEST(UdpSenderTest, Send) {
     GTEST_SKIP() << "Skipped on Windows: loopback UDP may be blocked by firewall";
 #endif
     auto event_loop = common::MakeEventLoop();
-    
+
     auto recv_handler = std::make_shared<RecvHandler>();
     std::vector<std::thread> threads;
     auto receiver = std::make_shared<UdpReceiver>(event_loop);
@@ -43,7 +41,7 @@ TEST(UdpSenderTest, Send) {
         // because EventLoop is thread_local
         ASSERT_TRUE(receiver->AddReceiver("127.0.0.1", 1121, recv_handler));
         receiver_ready = true;
-        
+
         char recv_buf[200] = {0};
         auto chunk = std::make_shared<common::StandaloneBufferChunk>(200);
         std::shared_ptr<common::SingleBlockBuffer> recv_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
@@ -56,8 +54,7 @@ TEST(UdpSenderTest, Send) {
         // packets are lost (e.g. Windows Firewall blocking loopback UDP
         // on CI runners). Without this, thread.join() on the main thread
         // blocks indefinitely and the CI job times out.
-        auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(kTimeoutMs);
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(kTimeoutMs);
         while (recv_handler->recv_times_.load(std::memory_order_relaxed) < kSendTimes) {
             if (std::chrono::steady_clock::now() >= deadline) {
                 break;  // timed out; let the main thread check the count

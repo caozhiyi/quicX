@@ -1,7 +1,6 @@
 #ifndef QUIC_PACKET_HEADER_IF_HEADER
 #define QUIC_PACKET_HEADER_IF_HEADER
 
-
 #include <cstdint>
 
 #include "common/buffer/if_buffer.h"
@@ -20,8 +19,10 @@ namespace quic {
 class IHeader: public HeaderFlag {
 public:
     IHeader() {}
-    IHeader(PacketHeaderType type): HeaderFlag(type) {}
-    IHeader(uint8_t flag): HeaderFlag(flag) {}
+    IHeader(PacketHeaderType type):
+        HeaderFlag(type) {}
+    IHeader(uint8_t flag):
+        HeaderFlag(flag) {}
     virtual ~IHeader() {}
 
     /**
@@ -62,7 +63,7 @@ public:
      * @return Connection ID length in bytes
      */
     virtual uint8_t GetDestinationConnectionIdLength() = 0;
-    
+
     /**
      * @brief Get raw header data
      *
@@ -74,7 +75,7 @@ protected:
     common::SharedBufferSpan header_src_data_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

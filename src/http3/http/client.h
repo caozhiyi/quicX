@@ -8,10 +8,10 @@
 #include <unordered_map>
 #include <variant>
 
-#include "http3/connection/connection_client.h"
 #include <quicx/http3/if_client.h>
 #include <quicx/quic/if_quic_client.h>
 #include <quicx/quic/if_quic_connection.h>
+#include "http3/connection/connection_client.h"
 
 namespace quicx {
 namespace http3 {
@@ -57,8 +57,7 @@ private:
     // type so the const-callback and IAsyncClientHandler variants share a
     // single implementation (and a single fast-path/slow-path split).
     template <typename Handler>
-    bool DoRequestImpl(const std::string& url, HttpMethod method,
-        std::shared_ptr<IRequest> request, Handler handler);
+    bool DoRequestImpl(const std::string& url, HttpMethod method, std::shared_ptr<IRequest> request, Handler handler);
 
 private:
     std::shared_ptr<IQuicClient> quic_;

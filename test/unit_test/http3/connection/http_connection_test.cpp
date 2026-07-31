@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
-#include <quicx/http3/type.h>
-#include "http3/http/error.h"
-#include "http3/http/request.h"
 #include <quicx/http3/if_response.h>
+#include <quicx/http3/type.h>
 #include "http3/connection/connection_client.h"
 #include "http3/connection/connection_server.h"
+#include "http3/http/error.h"
+#include "http3/http/request.h"
 #include "test/unit_test/http3/connection/mock_quic_connection.h"
 
 namespace quicx {
@@ -13,8 +13,8 @@ namespace {
 
 class MockClient {
 public:
-    MockClient(std::shared_ptr<IQuicConnection> conn)
-        : error_code_(0) {
+    MockClient(std::shared_ptr<IQuicConnection> conn):
+        error_code_(0) {
         conn_ = std::make_shared<ClientConnection>("", kDefaultHttp3Settings, conn,
             std::bind(&MockClient::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2),
             std::bind(&MockClient::PushPromiseHandler, this, std::placeholders::_1),
@@ -36,20 +36,13 @@ public:
     bool DoRequest(std::shared_ptr<IRequest> request, const http_response_handler& handler) {
         return conn_->DoRequest(request, handler);
     }
-    void SetMaxPushID(uint64_t max_push_id) {
-        conn_->SetMaxPushID(max_push_id);
-    }
-    void CancelPush(uint64_t push_id) {
-        conn_->CancelPush(push_id);
-    }
-    void Shutdown() {
-        conn_->Shutdown();
-    }
-    bool IsAcceptingNewRequests() const {
-        return conn_->IsAcceptingNewRequests();
-    }
+    void SetMaxPushID(uint64_t max_push_id) { conn_->SetMaxPushID(max_push_id); }
+    void CancelPush(uint64_t push_id) { conn_->CancelPush(push_id); }
+    void Shutdown() { conn_->Shutdown(); }
+    bool IsAcceptingNewRequests() const { return conn_->IsAcceptingNewRequests(); }
     uint32_t GetErrorCode() const { return error_code_; }
     const std::string& GetLastErrorUniqueId() const { return last_error_unique_id_; }
+
 private:
     uint32_t error_code_;
     std::string last_error_unique_id_;
@@ -58,21 +51,24 @@ private:
 
 class MockServer {
 public:
-    MockServer(std::shared_ptr<IQuicConnection> conn)
-        : error_code_(0) {
+    MockServer(std::shared_ptr<IQuicConnection> conn):
+        error_code_(0) {
         // Create a mock http processor
-        class MockHttpProcessor : public IHttpProcessor {
+        class MockHttpProcessor: public IHttpProcessor {
         public:
-            MockHttpProcessor(MockServer* server) : server_(server) {}
-            RouteConfig MatchRoute(HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override {
+            MockHttpProcessor(MockServer* server):
+                server_(server) {}
+            RouteConfig MatchRoute(
+                HttpMethod method, const std::string& path, std::shared_ptr<IRequest> request = nullptr) override {
                 return server_->MatchHandler(method, path);
             }
             void BeforeHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
             void AfterHandlerProcess(std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) override {}
+
         private:
             MockServer* server_;
         };
-        
+
         auto processor = std::make_shared<MockHttpProcessor>(this);
         conn_ = std::make_shared<ServerConnection>("", kDefaultHttp3Settings, processor, nullptr, conn,
             std::bind(&MockServer::ErrorHandler, this, std::placeholders::_1, std::placeholders::_2));
@@ -97,16 +93,10 @@ public:
         return RouteConfig(wrapper);
     }
 
-    void SetHttpHandler(const http_handler& handler) {
-        http_handler_ = handler;
-    }
+    void SetHttpHandler(const http_handler& handler) { http_handler_ = handler; }
 
-    void Shutdown() {
-        conn_->Shutdown();
-    }
-    bool IsAcceptingNewPushes() const {
-        return conn_->IsAcceptingNewPushes();
-    }
+    void Shutdown() { conn_->Shutdown(); }
+    bool IsAcceptingNewPushes() const { return conn_->IsAcceptingNewPushes(); }
 
 private:
     uint32_t error_code_;
@@ -115,8 +105,7 @@ private:
     http_handler http_handler_;
 };
 
-class HttpConnectionTest
-    :public testing::Test {
+class HttpConnectionTest: public testing::Test {
 protected:
     void SetUp() override {
         mock_conn_1_ = std::make_shared<quic::MockQuicConnection>();
@@ -135,7 +124,6 @@ protected:
     std::shared_ptr<MockServer> mock_server_;
 };
 
-
 TEST_F(HttpConnectionTest, DoRequest) {
     std::shared_ptr<IRequest> request = std::make_shared<Request>();
     request->SetMethod(HttpMethod::kGet);
@@ -146,7 +134,7 @@ TEST_F(HttpConnectionTest, DoRequest) {
     request->AddHeader("Accept", "*/*");
     request->AddHeader("Content-Type", "text/plain");
     request->AppendBody("Hello, Server!");
-    
+
     auto http_handler = [](std::shared_ptr<IRequest> request, std::shared_ptr<IResponse> response) {
         // check headers
         std::string content;
@@ -211,8 +199,7 @@ TEST_F(HttpConnectionTest, ShutdownRefusesNewRequests) {
 
     bool handler_called = false;
     uint32_t observed_error = 0;
-    auto handler = [&handler_called, &observed_error](
-                       std::shared_ptr<IResponse> /*resp*/, uint32_t error) {
+    auto handler = [&handler_called, &observed_error](std::shared_ptr<IResponse> /*resp*/, uint32_t error) {
         handler_called = true;
         observed_error = error;
     };
@@ -237,4 +224,4 @@ TEST_F(HttpConnectionTest, ServerShutdownRefusesNewPushes) {
 
 }  // namespace
 }  // namespace http3
-}  // namespace quicx 
+}  // namespace quicx

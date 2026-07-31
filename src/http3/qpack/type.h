@@ -9,10 +9,12 @@ namespace http3 {
 struct HeaderItem {
     std::string name_;
     std::string value_;
-    HeaderItem(const std::string& name, const std::string& value) : name_(name), value_(value) {}
+    HeaderItem(const std::string& name, const std::string& value):
+        name_(name),
+        value_(value) {}
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif

@@ -1,8 +1,7 @@
+#include "quic/quicx/worker_with_thread.h"
+#include <quicx/common/if_event_loop.h>
 #include <sstream>
 #include "common/log/log.h"
-#include <quicx/common/if_event_loop.h>
-#include "quic/quicx/worker_with_thread.h"
-
 
 namespace quicx {
 namespace quic {

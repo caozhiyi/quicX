@@ -2,9 +2,9 @@
 #include <thread>
 #include <vector>
 
-#include <quicx/common/type.h>
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include <quicx/common/type.h>
 
 namespace quicx {
 namespace common {

@@ -1,9 +1,9 @@
 #ifndef UPGRADE_NETWORK_IF_TCP_SOCKET
 #define UPGRADE_NETWORK_IF_TCP_SOCKET
 
+#include <cstdint>
 #include <string>
 #include <vector>
-#include <cstdint>
 
 namespace quicx {
 namespace upgrade {
@@ -35,7 +35,7 @@ public:
     virtual uint16_t GetRemotePort() const = 0;
 };
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx
 
-#endif // UPGRADE_NETWORK_IF_TCP_SOCKET 
+#endif  // UPGRADE_NETWORK_IF_TCP_SOCKET

@@ -1,19 +1,21 @@
 #include <gtest/gtest.h>
-\
-#include "quic/frame/max_stream_data_frame.h"
+
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/max_stream_data_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(max_stream_data_frame_utest, codec) {
+TEST(MaxStreamDataFrameTest, codec) {
     MaxStreamDataFrame frame1;
     MaxStreamDataFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     frame1.SetStreamID(1235125324234);
     frame1.SetMaximumData(23624236235626);
@@ -31,6 +33,6 @@ TEST(max_stream_data_frame_utest, codec) {
     EXPECT_EQ(frame1.GetMaximumData(), frame2.GetMaximumData());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

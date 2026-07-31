@@ -1,5 +1,5 @@
-#include <cmath>
 #include "common/util/bitmap.h"
+#include <cmath>
 
 namespace quicx {
 namespace common {
@@ -8,13 +8,9 @@ static const uint32_t kStepSize = sizeof(int64_t) * 8;
 static const uint64_t kSetpBase = 1;
 
 Bitmap::Bitmap():
-    vec_bitmap_(0) {
+    vec_bitmap_(0) {}
 
-}
-
-Bitmap::~Bitmap() {
-
-}
+Bitmap::~Bitmap() {}
 
 bool Bitmap::Init(uint32_t size) {
     uint32_t vec_size = size / kStepSize;
@@ -86,7 +82,7 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
         if (cur_bitmap == 0) {
             ret += kStepSize;
 
-        // find next 1
+            // find next 1
         } else {
             ret += cur_step;
             ret += (uint32_t)std::log2f(float(cur_bitmap & (-cur_bitmap)));
@@ -97,7 +93,7 @@ int32_t Bitmap::GetMinAfter(uint32_t index) {
         ret += kStepSize;
     }
 
-    // find next used vector index 
+    // find next used vector index
     int32_t temp_vec_bitmap = vec_bitmap_ >> bitmap_index;
     if (temp_vec_bitmap == 0) {
         return -1;
@@ -128,5 +124,5 @@ void Bitmap::Clear() {
     }
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

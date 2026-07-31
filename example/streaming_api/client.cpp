@@ -367,23 +367,24 @@ void GetStatus(IClient* client, const std::string& url) {
     std::condition_variable status_cv;
     bool completed = false;
 
-    client->DoRequest(url, HttpMethod::kGet, request, [&status_mutex, &status_cv, &completed](std::shared_ptr<IResponse> response, uint32_t error) {
-        if (error == 0) {
-            std::cout << "[Status] Response:" << std::endl;
-            std::cout << "  - Status: " << response->GetStatusCode() << std::endl;
-            std::cout << "  - Body:" << std::endl;
-            std::cout << response->GetBodyAsString() << std::endl;
-        } else {
-            std::cerr << "[Status] Request failed with error: " << error << std::endl;
-        }
+    client->DoRequest(url, HttpMethod::kGet, request,
+        [&status_mutex, &status_cv, &completed](std::shared_ptr<IResponse> response, uint32_t error) {
+            if (error == 0) {
+                std::cout << "[Status] Response:" << std::endl;
+                std::cout << "  - Status: " << response->GetStatusCode() << std::endl;
+                std::cout << "  - Body:" << std::endl;
+                std::cout << response->GetBodyAsString() << std::endl;
+            } else {
+                std::cerr << "[Status] Request failed with error: " << error << std::endl;
+            }
 
-        // Notify completion
-        {
-            std::lock_guard<std::mutex> lock(status_mutex);
-            completed = true;
-        }
-        status_cv.notify_one();
-    });
+            // Notify completion
+            {
+                std::lock_guard<std::mutex> lock(status_mutex);
+                completed = true;
+            }
+            status_cv.notify_one();
+        });
 
     // Wait for response
     std::unique_lock<std::mutex> lock(status_mutex);

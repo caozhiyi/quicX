@@ -6,8 +6,8 @@
 
 #include <quicx/common/if_event_loop.h>
 
-#include "quic/connection/retry_token_manager.h"
 #include <quicx/quic/if_quic_server.h>
+#include "quic/connection/retry_token_manager.h"
 #include "quic/quicx/connection_rate_monitor.h"
 #include "quic/quicx/ip_rate_limiter.h"
 #include "quic/quicx/worker.h"
@@ -50,9 +50,8 @@ public:
     void Shutdown() override;
 
 protected:
-    void SendVersionNegotiatePacket(const common::Address& addr, int32_t socket,
-        const uint8_t* client_dcid, uint8_t client_dcid_len,
-        const uint8_t* client_scid, uint8_t client_scid_len);
+    void SendVersionNegotiatePacket(const common::Address& addr, int32_t socket, const uint8_t* client_dcid,
+        uint8_t client_dcid_len, const uint8_t* client_scid, uint8_t client_scid_len);
 
     /**
      * @brief Send a Retry packet to the client for address validation

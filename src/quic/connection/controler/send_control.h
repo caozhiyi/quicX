@@ -137,9 +137,7 @@ public:
     // stalls until idle-timeout (Bug-19 / FC-locked PTO probe gap, see
     // docs/diagnosis/transfer_5mb_stall.md).
     using ApplicationProbeCallback = std::function<void()>;
-    void SetApplicationProbeCallback(ApplicationProbeCallback callback) {
-        application_probe_cb_ = callback;
-    }
+    void SetApplicationProbeCallback(ApplicationProbeCallback callback) { application_probe_cb_ = callback; }
 
     // Mark handshake as complete (disables handshake probe timer)
     void SetHandshakeComplete() { handshake_complete_ = true; }
@@ -152,15 +150,33 @@ public:
     // and OnPTOTimer's post-fire rearm) route through this accessor so the
     // pre-handshake PTO stays spec-compliant. Returns 0 pre-handshake-complete,
     // max_ack_delay_ afterwards.
-    uint32_t GetEffectiveMaxAckDelay() const {
-        return handshake_complete_ ? max_ack_delay_ : 0u;
-    }
+    uint32_t GetEffectiveMaxAckDelay() const { return handshake_complete_ ? max_ack_delay_ : 0u; }
 
     // Clear all retransmission data (used when connection is closing)
     void ClearRetransmissionData();
 
     // Set qlog trace for instrumentation
     void SetQlogTrace(std::shared_ptr<common::QlogTrace> trace);
+
+    // qlog draft-03 packet/datagram coalescing instrumentation.
+    //
+    // The connection layer calls BeginSendDatagram(id) at the start of
+    // building one UDP datagram (which may carry one or several coalesced
+    // QUIC packets). Every subsequent OnPacketSend until the next
+    // BeginSendDatagram (or until EndSendDatagram is called) tags its
+    // PacketSentData with that id and is accumulated into the per-datagram
+    // counters. EndSendDatagram() returns those counters so the caller can
+    // emit a transport:datagrams_sent event, then the counters reset to 0.
+    //
+    // Both calls are cheap no-ops when no qlog trace is installed.
+    void BeginSendDatagram(uint64_t datagram_id);
+    struct SendDatagramSummary {
+        uint64_t datagram_id = 0;
+        uint32_t packet_count = 0;
+        uint32_t raw_length = 0;
+        std::vector<uint64_t> packet_numbers;
+    };
+    SendDatagramSummary EndSendDatagram();
 
     // RFC 9000 Section 4.10: Discard packet number space state
     void DiscardPacketNumberSpace(PacketNumberSpace ns);
@@ -239,6 +255,14 @@ private:
 
     // Qlog trace for instrumentation
     std::shared_ptr<common::QlogTrace> qlog_trace_;
+
+    // qlog draft-03 datagram coalescing accumulator (see BeginSendDatagram /
+    // EndSendDatagram). Reset to id=0 / count=0 when no datagram is in
+    // progress so accidental reads still produce a benign zero.
+    uint64_t current_send_datagram_id_ = 0;
+    uint32_t current_send_packet_count_ = 0;
+    uint32_t current_send_raw_length_ = 0;
+    std::vector<uint64_t> current_send_packet_numbers_;
 
     // Helper for logging recovery metrics with sampling
     void LogRecoveryMetricsIfChanged(uint64_t now);

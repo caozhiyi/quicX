@@ -2,8 +2,8 @@
 #define HTTP3_FRAME_HEADERS_FRAME
 
 #include <cstdint>
-#include "http3/frame/type.h"
 #include "http3/frame/if_frame.h"
+#include "http3/frame/type.h"
 
 namespace quicx {
 namespace http3 {

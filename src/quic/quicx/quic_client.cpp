@@ -58,8 +58,8 @@ QuicClient::~QuicClient() {
     //    loop, so the join would block until the next packet.
     for (auto& kv : worker_map_) {
         if (auto wwt = std::dynamic_pointer_cast<WorkerWithThread>(kv.second)) {
-            wwt->Stop();   // sets stop_ AND wakes up the worker event loop
-            wwt->Join();   // wait for Run() to actually exit
+            wwt->Stop();  // sets stop_ AND wakes up the worker event loop
+            wwt->Join();  // wait for Run() to actually exit
         }
     }
 
@@ -104,8 +104,8 @@ bool QuicClient::Init(const QuicClientConfig& config) {
     }
 
     auto tls_ctx = std::make_shared<TLSClientCtx>();
-    if (!tls_ctx->Init(config.config_.enable_0rtt_, config.config_.cipher_suites_,
-                       config.verify_peer_, config.ca_file_)) {
+    if (!tls_ctx->Init(
+            config.config_.enable_0rtt_, config.config_.cipher_suites_, config.verify_peer_, config.ca_file_)) {
         LOG_ERROR("tls ctx init failed.");
         return false;
     }

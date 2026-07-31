@@ -37,8 +37,8 @@
 #include <memory>
 #include <string>
 
-#include <quicx/upgrade/if_upgrade.h>
 #include <quicx/common/if_event_loop.h>
+#include <quicx/upgrade/if_upgrade.h>
 
 #include "common/log/log.h"
 #include "common/log/stdout_logger.h"
@@ -49,26 +49,28 @@ using quicx::upgrade::UpgradeSettings;
 namespace {
 
 std::atomic<bool> g_stop{false};
-void HandleSignal(int) { g_stop.store(true, std::memory_order_release); }
+void HandleSignal(int) {
+    g_stop.store(true, std::memory_order_release);
+}
 
 struct CliOptions {
-    std::string host       = "0.0.0.0";
-    uint16_t    http_port  = 8080;
-    uint16_t    https_port = 8443;
-    uint16_t    h3_port    = 8443;
-    std::string cert_file;   // optional; required to enable HTTPS listener
+    std::string host = "0.0.0.0";
+    uint16_t http_port = 8080;
+    uint16_t https_port = 8443;
+    uint16_t h3_port = 8443;
+    std::string cert_file;  // optional; required to enable HTTPS listener
     std::string key_file;
 };
 
 void PrintUsage(const char* argv0) {
-    std::cerr <<
-        "Usage: " << argv0 << " [options]\n"
-        "  --host <addr>        bind address (default 0.0.0.0)\n"
-        "  --http-port <port>   plaintext HTTP port (default 8080, 0=disable)\n"
-        "  --https-port <port>  TLS port (default 8443, 0=disable)\n"
-        "  --h3-port <port>     port advertised in Alt-Svc (default 8443)\n"
-        "  --cert <file>        PEM cert (required to enable HTTPS)\n"
-        "  --key  <file>        PEM key  (required to enable HTTPS)\n";
+    std::cerr << "Usage: " << argv0
+              << " [options]\n"
+                 "  --host <addr>        bind address (default 0.0.0.0)\n"
+                 "  --http-port <port>   plaintext HTTP port (default 8080, 0=disable)\n"
+                 "  --https-port <port>  TLS port (default 8443, 0=disable)\n"
+                 "  --h3-port <port>     port advertised in Alt-Svc (default 8443)\n"
+                 "  --cert <file>        PEM cert (required to enable HTTPS)\n"
+                 "  --key  <file>        PEM key  (required to enable HTTPS)\n";
 }
 
 bool ParseArgs(int argc, char** argv, CliOptions& out) {
@@ -82,14 +84,28 @@ bool ParseArgs(int argc, char** argv, CliOptions& out) {
     };
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
-        if      (a == "--host")        { if (!need(i)) return false; out.host       = argv[++i]; }
-        else if (a == "--http-port")   { if (!need(i)) return false; out.http_port  = static_cast<uint16_t>(std::stoi(argv[++i])); }
-        else if (a == "--https-port")  { if (!need(i)) return false; out.https_port = static_cast<uint16_t>(std::stoi(argv[++i])); }
-        else if (a == "--h3-port")     { if (!need(i)) return false; out.h3_port    = static_cast<uint16_t>(std::stoi(argv[++i])); }
-        else if (a == "--cert")        { if (!need(i)) return false; out.cert_file  = argv[++i]; }
-        else if (a == "--key")         { if (!need(i)) return false; out.key_file   = argv[++i]; }
-        else if (a == "-h" || a == "--help") { PrintUsage(argv[0]); std::exit(0); }
-        else {
+        if (a == "--host") {
+            if (!need(i)) return false;
+            out.host = argv[++i];
+        } else if (a == "--http-port") {
+            if (!need(i)) return false;
+            out.http_port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (a == "--https-port") {
+            if (!need(i)) return false;
+            out.https_port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (a == "--h3-port") {
+            if (!need(i)) return false;
+            out.h3_port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (a == "--cert") {
+            if (!need(i)) return false;
+            out.cert_file = argv[++i];
+        } else if (a == "--key") {
+            if (!need(i)) return false;
+            out.key_file = argv[++i];
+        } else if (a == "-h" || a == "--help") {
+            PrintUsage(argv[0]);
+            std::exit(0);
+        } else {
             std::cerr << "Unknown option: " << a << "\n";
             PrintUsage(argv[0]);
             return false;
@@ -98,7 +114,7 @@ bool ParseArgs(int argc, char** argv, CliOptions& out) {
     return true;
 }
 
-} // namespace
+}  // namespace
 
 int main(int argc, char** argv) {
     CliOptions opt;
@@ -120,15 +136,15 @@ int main(int argc, char** argv) {
     // -----------------------------------------------------------------------
     // Step 2: build the upgrade settings.
     UpgradeSettings settings;
-    settings.listen_addr  = opt.host;
-    settings.http_port    = opt.http_port;
-    settings.https_port   = opt.https_port;
-    settings.h3_port      = opt.h3_port;
-    settings.enable_http1 = (opt.http_port  != 0);
+    settings.listen_addr = opt.host;
+    settings.http_port = opt.http_port;
+    settings.https_port = opt.https_port;
+    settings.h3_port = opt.h3_port;
+    settings.enable_http1 = (opt.http_port != 0);
     settings.enable_http2 = (opt.https_port != 0);
-    settings.enable_http3 = true;       // Alt-Svc advertises h3 only
+    settings.enable_http3 = true;  // Alt-Svc advertises h3 only
     if (!opt.cert_file.empty()) settings.cert_file = opt.cert_file;
-    if (!opt.key_file.empty())  settings.key_file  = opt.key_file;
+    if (!opt.key_file.empty()) settings.key_file = opt.key_file;
 
     // -----------------------------------------------------------------------
     // Step 3: create the event loop on THIS thread.
@@ -154,19 +170,15 @@ int main(int argc, char** argv) {
     if (!server->AddListener(settings)) {
         // The real reason (EADDRINUSE / cert load failure / ...) was just
         // emitted via LOG_ERROR by the upgrade module itself; check stdout.
-        std::cerr << "Failed to add listener (see LOG_ERROR above for the real cause)"
-                  << std::endl;
+        std::cerr << "Failed to add listener (see LOG_ERROR above for the real cause)" << std::endl;
         return EXIT_FAILURE;
     }
 
-    std::signal(SIGINT,  HandleSignal);
+    std::signal(SIGINT, HandleSignal);
     std::signal(SIGTERM, HandleSignal);
 
-    std::cout << "upgrade_h3_server running on " << settings.listen_addr
-              << " (http=" << settings.http_port
-              << ", https=" << settings.https_port
-              << "), advertising h3 on :" << settings.h3_port
-              << std::endl
+    std::cout << "upgrade_h3_server running on " << settings.listen_addr << " (http=" << settings.http_port
+              << ", https=" << settings.https_port << "), advertising h3 on :" << settings.h3_port << std::endl
               << "Press Ctrl+C to stop." << std::endl;
 
     // -----------------------------------------------------------------------

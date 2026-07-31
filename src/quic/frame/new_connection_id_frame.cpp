@@ -63,8 +63,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     // Check if we have enough data for connection ID
     if (length_ > buffer->GetDataLength()) {
-        LOG_ERROR(
-            "insufficient data for connection ID. need:%d, available:%d", length_, buffer->GetDataLength());
+        LOG_ERROR("insufficient data for connection ID. need:%d, available:%d", length_, buffer->GetDataLength());
         return false;
     }
 
@@ -75,8 +74,8 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     // Check if we have enough data for stateless reset token
     if (kStatelessResetTokenLength > buffer->GetDataLength()) {
-        LOG_ERROR("insufficient data for stateless reset token. need:%d, available:%d",
-            kStatelessResetTokenLength, buffer->GetDataLength());
+        LOG_ERROR("insufficient data for stateless reset token. need:%d, available:%d", kStatelessResetTokenLength,
+            buffer->GetDataLength());
         return false;
     }
 

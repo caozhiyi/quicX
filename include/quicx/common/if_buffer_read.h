@@ -63,6 +63,6 @@ public:
     virtual void Clear() = 0;
 };
 
-}
+}  // namespace quicx
 
 #endif

@@ -363,8 +363,8 @@ int main(int argc, char* argv[]) {
     // PERF VALIDATION: install signal handlers so that SIGINT/SIGTERM trigger
     // graceful shutdown. Using a flag instead of std::exit() to avoid calling
     // async-signal-unsafe functions (delete/free) inside the signal handler.
-    std::signal(SIGINT,  [](int){ g_shutdown = 1; });
-    std::signal(SIGTERM, [](int){ g_shutdown = 1; });
+    std::signal(SIGINT, [](int) { g_shutdown = 1; });
+    std::signal(SIGTERM, [](int) { g_shutdown = 1; });
 
     // PERF VALIDATION: collapse cold-start PTO on loopback. Mirrors
     // test/perf/e2e_perf_test.cpp.

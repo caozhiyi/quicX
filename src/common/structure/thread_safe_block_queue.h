@@ -1,15 +1,15 @@
 #ifndef COMMON_STRUCTURE_THREAD_SAFE_BLOCK_QUEUE
 #define COMMON_STRUCTURE_THREAD_SAFE_BLOCK_QUEUE
 
-#include <queue>
-#include <mutex>
 #include <chrono>
 #include <condition_variable>
+#include <mutex>
+#include <queue>
 
 namespace quicx {
 namespace common {
 
-template<typename T>
+template <typename T>
 class ThreadSafeBlockQueue {
 public:
     ThreadSafeBlockQueue() {}
@@ -29,11 +29,11 @@ public:
 
     T Pop() {
         std::unique_lock<std::mutex> lock(mutex_);
-        empty_notify_.wait(lock, [this]() {return !this->queue_.empty(); });
+        empty_notify_.wait(lock, [this]() { return !this->queue_.empty(); });
 
         auto ret = std::move(queue_.front());
         queue_.pop();
- 
+
         return ret;
     }
 
@@ -51,7 +51,7 @@ public:
     // Try to pop with timeout
     bool TryPop(T& element, std::chrono::milliseconds timeout) {
         std::unique_lock<std::mutex> lock(mutex_);
-        if (!empty_notify_.wait_for(lock, timeout, [this]() {return !this->queue_.empty(); })) {
+        if (!empty_notify_.wait_for(lock, timeout, [this]() { return !this->queue_.empty(); })) {
             return false;
         }
         element = std::move(queue_.front());
@@ -76,12 +76,12 @@ public:
     }
 
 private:
-    std::mutex    mutex_;
+    std::mutex mutex_;
     std::queue<T> queue_;
     std::condition_variable_any empty_notify_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

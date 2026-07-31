@@ -123,8 +123,8 @@ bool InitPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
     }
     token_raw_ = cur_pos;
     if (cur_pos + token_length_ > end) {
-        LOG_ERROR("InitPacket: token length exceeds buffer boundary. token_length:%u, remaining:%td",
-            token_length_, end - cur_pos);
+        LOG_ERROR("InitPacket: token length exceeds buffer boundary. token_length:%u, remaining:%td", token_length_,
+            end - cur_pos);
         return false;
     }
     cur_pos += token_length_;
@@ -139,8 +139,8 @@ bool InitPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, bo
     // decode cipher data
     packet_num_offset_ = cur_pos - span.GetStart();
     if (cur_pos + length_ > end) {
-        LOG_ERROR("InitPacket: length field exceeds buffer boundary. length:%u, remaining:%td",
-            (uint32_t)length_, end - cur_pos);
+        LOG_ERROR("InitPacket: length field exceeds buffer boundary. length:%u, remaining:%td", (uint32_t)length_,
+            end - cur_pos);
         return false;
     }
     cur_pos += length_;

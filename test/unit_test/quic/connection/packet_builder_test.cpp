@@ -21,7 +21,7 @@ std::unique_ptr<ConnectionIDManager> CreateCIDManager(const ConnectionID& cid) {
 }
 
 // Test fixture
-class PacketBuilderTest : public ::testing::Test {
+class PacketBuilderTest: public ::testing::Test {
 protected:
     void SetUp() override {
         builder_ = std::make_unique<PacketBuilder>();
@@ -138,8 +138,8 @@ TEST_F(PacketBuilderTest, Build1RttPacket) {
 
 // Test: Initial packet with token
 TEST_F(PacketBuilderTest, InitialPacketWithToken) {
-    uint8_t token_data[16] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                              0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10};
+    uint8_t token_data[16] = {
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10};
 
     PacketBuilder::BuildContext ctx;
     ctx.encryption_level = kInitial;

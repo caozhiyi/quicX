@@ -2,11 +2,11 @@
 #define COMMON_METRICS_METRICS_REGISTRY
 
 #include <mutex>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
-#include "common/util/singleton.h"
 #include "common/metrics/metrics_internal.h"
+#include "common/util/singleton.h"
 
 namespace quicx {
 namespace common {

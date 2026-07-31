@@ -114,8 +114,7 @@ void ConnectionCloser::StorePeerCloseInfo(uint64_t error, uint16_t trigger_frame
     closing_error_code_ = error;
     closing_trigger_frame_ = trigger_frame;
     closing_reason_ = reason;
-    LOG_INFO(
-        "Stored peer close info: error=%llu, trigger_frame=%u, reason=%s", error, trigger_frame, reason.c_str());
+    LOG_INFO("Stored peer close info: error=%llu, trigger_frame=%u, reason=%s", error, trigger_frame, reason.c_str());
 }
 
 // ==================== Immediate Close ====================

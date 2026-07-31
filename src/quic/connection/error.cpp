@@ -1,5 +1,5 @@
-#include <unordered_map>
 #include "quic/connection/error.h"
+#include <unordered_map>
 
 namespace quicx {
 namespace quic {
@@ -27,5 +27,5 @@ const std::string& GetErrorString(QuicErrorCode code) {
     return kErrorCodeReasons.at(code);
 }
 
-}
-}
+}  // namespace quic
+}  // namespace quicx

@@ -3,9 +3,9 @@
 #define QUIC_PACKET_RTT_0_PACKET
 
 #include <memory>
-#include "quic/packet/type.h"
-#include "quic/packet/if_packet.h"
 #include "quic/packet/header/long_header.h"
+#include "quic/packet/if_packet.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
@@ -28,8 +28,7 @@ namespace quic {
 }
 */
 
-class Rtt0Packet:
-    public IPacket {
+class Rtt0Packet: public IPacket {
 public:
     Rtt0Packet();
     Rtt0Packet(uint8_t flag);
@@ -58,7 +57,7 @@ private:
     std::vector<std::shared_ptr<IFrame>> frames_list_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

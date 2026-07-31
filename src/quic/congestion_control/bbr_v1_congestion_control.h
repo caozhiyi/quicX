@@ -1,18 +1,17 @@
 #ifndef QUIC_CONGESTION_CONTROL_BBR_V1_CONGESTION_CONTROL
 #define QUIC_CONGESTION_CONTROL_BBR_V1_CONGESTION_CONTROL
 
+#include <cstdint>
 #include <deque>
 #include <memory>
-#include <cstdint>
 
-#include "quic/congestion_control/if_pacer.h"
 #include "quic/congestion_control/if_congestion_control.h"
+#include "quic/congestion_control/if_pacer.h"
 
 namespace quicx {
 namespace quic {
 
-
-class BBRv1CongestionControl : public ICongestionControl {
+class BBRv1CongestionControl: public ICongestionControl {
 public:
     BBRv1CongestionControl();
     ~BBRv1CongestionControl() override;
@@ -50,7 +49,7 @@ private:
     void UpdateMaxBandwidth(uint64_t sample_bps, uint64_t now_us);
     void CheckFullBandwidthReached(uint64_t now_us);
 
-    uint64_t BdpBytes(uint64_t gain_num, uint64_t gain_den) const; // BDP * gain
+    uint64_t BdpBytes(uint64_t gain_num, uint64_t gain_den) const;  // BDP * gain
     void SetPacingGain(double gain);
     void SetCwndGain(double gain);
     void UpdatePacingRate();
@@ -70,17 +69,17 @@ private:
     uint64_t min_rtt_stamp_us_ = 0;
 
     // Bandwidth (bytes per second) max filter over a window
-    static constexpr size_t kBwWindow = 10; // ~10 samples
+    static constexpr size_t kBwWindow = 10;  // ~10 samples
     std::deque<BwSample> bw_window_;
     uint64_t max_bw_bps_ = 0;
 
     // Full bandwidth detection
     uint64_t full_bw_bps_ = 0;
-    int full_bw_cnt_ = 0; // 3 rounds with <25% growth
+    int full_bw_cnt_ = 0;  // 3 rounds with <25% growth
     uint64_t end_of_round_pn_ = 0;
 
     // Gains
-    double pacing_gain_ = 2.885; // STARTUP
+    double pacing_gain_ = 2.885;  // STARTUP
     double cwnd_gain_ = 2.0;
 
     // ProbeBW cycle
@@ -88,8 +87,8 @@ private:
     uint64_t cycle_start_us_ = 0;
 
     // ProbeRTT
-    static constexpr uint64_t kProbeRttIntervalUs = 10ull * 1000ull * 1000ull; // 10s
-    static constexpr uint64_t kProbeRttTimeUs = 200ull * 1000ull;              // 200ms
+    static constexpr uint64_t kProbeRttIntervalUs = 10ull * 1000ull * 1000ull;  // 10s
+    static constexpr uint64_t kProbeRttTimeUs = 200ull * 1000ull;               // 200ms
     bool probe_rtt_done_stamp_valid_ = false;
     uint64_t probe_rtt_done_stamp_us_ = 0;
 
@@ -104,9 +103,7 @@ private:
     std::shared_ptr<common::QlogTrace> qlog_trace_;
 };
 
-} // namespace quic
-} // namespace quicx
+}  // namespace quic
+}  // namespace quicx
 
 #endif
-
-

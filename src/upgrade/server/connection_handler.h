@@ -1,19 +1,19 @@
 #ifndef UPGRADE_SERVER_CONNECTION_HANDLER
 #define UPGRADE_SERVER_CONNECTION_HANDLER
 
-#include <memory>
 #include <quicx/common/if_event_loop.h>
+#include <memory>
 #include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
 namespace upgrade {
 
 // TCP action implementation
-class ConnectionHandler:
-    public common::IFdHandler {
+class ConnectionHandler: public common::IFdHandler {
 public:
     ConnectionHandler(std::shared_ptr<common::IEventLoop> event_loop, std::shared_ptr<ISmartHandler> handler):
-        event_loop_(event_loop), handler_(handler) {}
+        event_loop_(event_loop),
+        handler_(handler) {}
     virtual ~ConnectionHandler() = default;
 
     virtual void OnRead(uint32_t fd) override;
@@ -21,12 +21,12 @@ public:
     virtual void OnError(uint32_t fd) override;
     virtual void OnClose(uint32_t fd) override;
 
- private:
+private:
     std::shared_ptr<ISmartHandler> handler_;
     std::weak_ptr<common::IEventLoop> event_loop_;
 };
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx
 
-#endif // UPGRADE_SERVER_CONNECTION_HANDLER 
+#endif  // UPGRADE_SERVER_CONNECTION_HANDLER

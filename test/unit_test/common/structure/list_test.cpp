@@ -1,5 +1,5 @@
-#include <iostream>
 #include <gtest/gtest.h>
+#include <iostream>
 #include "common/structure/linked_list.h"
 #include "common/structure/linked_list_solt.h"
 
@@ -9,19 +9,13 @@ namespace {
 
 static uint32_t kTestSharedCount = 0;
 
-class TestListItem:
-    public LinkedListSolt<TestListItem> {
+class TestListItem: public LinkedListSolt<TestListItem> {
 public:
-    TestListItem(){
-        kTestSharedCount++;
-    }
-    ~TestListItem() {
-        kTestSharedCount--;
-    }
-
+    TestListItem() { kTestSharedCount++; }
+    ~TestListItem() { kTestSharedCount--; }
 };
 
-TEST(linked_list_utest, add1) {
+TEST(LinkedListTest, add1) {
     LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
@@ -40,7 +34,7 @@ TEST(linked_list_utest, add1) {
     EXPECT_EQ(kTestSharedCount, 0);
 }
 
-TEST(linked_list_utest, add2) {
+TEST(LinkedListTest, add2) {
     LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
@@ -56,7 +50,7 @@ TEST(linked_list_utest, add2) {
     EXPECT_EQ(kTestSharedCount, 0);
 }
 
-TEST(linked_list_utest, add3) {
+TEST(LinkedListTest, add3) {
     LinkedList<TestListItem> list;
     {
         auto item1 = std::make_shared<TestListItem>();
@@ -82,6 +76,6 @@ TEST(linked_list_utest, add3) {
     EXPECT_EQ(kTestSharedCount, 0);
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace common
+}  // namespace quicx

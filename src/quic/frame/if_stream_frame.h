@@ -1,8 +1,8 @@
 #ifndef QUIC_FRAME_STREAM_FRAME_INTERFACE
 #define QUIC_FRAME_STREAM_FRAME_INTERFACE
 
-#include "quic/frame/type.h"
 #include "quic/frame/if_frame.h"
+#include "quic/frame/type.h"
 
 namespace quicx {
 namespace quic {
@@ -14,7 +14,9 @@ namespace quic {
  */
 class IStreamFrame: public IFrame {
 public:
-    IStreamFrame(uint16_t ft = FrameType::kUnknown): IFrame(ft), stream_id_(0) {}
+    IStreamFrame(uint16_t ft = FrameType::kUnknown):
+        IFrame(ft),
+        stream_id_(0) {}
     virtual ~IStreamFrame() {}
 
     /**
@@ -35,7 +37,7 @@ protected:
     uint64_t stream_id_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

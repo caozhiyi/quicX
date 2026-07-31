@@ -21,7 +21,7 @@ bool Check(uint8_t* data1, uint8_t* data2, uint32_t len) {
     return true;
 }
 
-TEST(crypto_stream_utest, recv) {
+TEST(CryptoStreamTest, recv) {
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
     std::shared_ptr<CryptoStream> stream = std::make_shared<CryptoStream>(event_loop, nullptr, nullptr, nullptr);
@@ -89,7 +89,7 @@ TEST(crypto_stream_utest, recv) {
     EXPECT_TRUE(Check(recv_data, data, recv_size));
 }
 
-TEST(crypto_stream_utest, send) {
+TEST(CryptoStreamTest, send) {
     auto event_loop = common::MakeEventLoop();
     ASSERT_TRUE(event_loop->Init());
     std::shared_ptr<CryptoStream> stream = std::make_shared<CryptoStream>(event_loop, nullptr, nullptr, nullptr);

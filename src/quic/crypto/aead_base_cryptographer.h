@@ -13,13 +13,14 @@ public:
     virtual ~AeadBaseCryptographer();
 
     virtual Result InstallSecret(const uint8_t* secret, size_t secret_len, bool is_write) override;
-    
+
     // Version-aware secret installation
-    virtual Result InstallSecretWithVersion(const uint8_t* secret, size_t secret_len, bool is_write, uint32_t version) override;
+    virtual Result InstallSecretWithVersion(
+        const uint8_t* secret, size_t secret_len, bool is_write, uint32_t version) override;
 
     virtual Result InstallInitSecret(
         const uint8_t* secret, size_t secret_len, const uint8_t* salt, size_t saltlen, bool is_server) override;
-    
+
     // Version-aware Initial secret installation (RFC 9369)
     virtual Result InstallInitSecretWithVersion(
         const uint8_t* secret, size_t secret_len, uint32_t version, bool is_server) override;
@@ -47,10 +48,11 @@ public:
 
     // Rotate secrets for Key Update (RFC 9001 §6)
     virtual Result KeyUpdate(const uint8_t* new_base_secret, size_t secret_len, bool update_write) override;
-    
+
     // Version-aware Key Update (RFC 9369)
-    virtual Result KeyUpdateWithVersion(const uint8_t* new_base_secret, size_t secret_len, bool update_write, uint32_t version) override;
-    
+    virtual Result KeyUpdateWithVersion(
+        const uint8_t* new_base_secret, size_t secret_len, bool update_write, uint32_t version) override;
+
     // Version management
     virtual void SetVersion(uint32_t version) override { quic_version_ = version; }
     virtual uint32_t GetVersion() const override { return quic_version_; }
@@ -116,7 +118,7 @@ protected:
     uint64_t pn_rotate_threshold_ = 0;       // user-configurable; not enforced
     uint64_t time_rotate_threshold_ms_ = 0;  // user-configurable; not enforced
     bool key_updated_flag_ = false;
-    
+
     // QUIC version for this cryptographer (default to v1)
     uint32_t quic_version_ = 0x00000001;
 };

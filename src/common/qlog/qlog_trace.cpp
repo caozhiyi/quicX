@@ -135,8 +135,7 @@ void QlogTrace::WriteEvent(const QlogEvent& event) {
     // Debug mode: Verify single-thread access assumption
     // Connection should always be processed in the same thread
     if (std::this_thread::get_id() != owner_thread_id_) {
-        LOG_FATAL("QlogTrace accessed from wrong thread! Connection: %s",
-                  connection_id_.c_str());
+        LOG_FATAL("QlogTrace accessed from wrong thread! Connection: %s", connection_id_.c_str());
     }
 #endif
 

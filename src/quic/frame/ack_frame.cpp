@@ -138,8 +138,7 @@ bool AckEcnFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
     auto span = buffer->GetWritableSpan();
     auto remain_size = span.GetLength();
     if (total_ecn_size > remain_size) {
-        LOG_ERROR(
-            "insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, total_ecn_size);
+        LOG_ERROR("insufficient remaining cache space. remain_size:%d, need_size:%d", remain_size, total_ecn_size);
         return false;
     }
 

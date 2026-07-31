@@ -27,8 +27,7 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
             // datagram, treat remaining unparseable bytes as trailing garbage and
             // return success.
             if (!packets.empty()) {
-                LOG_DEBUG("ignoring %zu trailing bytes after %zu successfully decoded packet(s)",
-                    len, packets.size());
+                LOG_DEBUG("ignoring %zu trailing bytes after %zu successfully decoded packet(s)", len, packets.size());
                 buffer->MoveReadPt(buffer->GetDataLength());
                 return true;
             }
@@ -72,7 +71,8 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
                     // exactly like a coalesced packet that we cannot decode
                     // yet: keep the previously decoded packets and stop.
                     if (!packets.empty()) {
-                        LOG_DEBUG("ignoring trailing %d bytes (apparent version 0x%08x is "
+                        LOG_DEBUG(
+                            "ignoring trailing %d bytes (apparent version 0x%08x is "
                             "ciphertext of a coalesced packet) after %zu decoded packet(s)",
                             buffer->GetDataLength(), version, packets.size());
                         buffer->MoveReadPt(buffer->GetDataLength());
@@ -105,8 +105,8 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
                     // values as the canonical PacketType representation).
                     uint8_t wire_type_bits = flag.GetLongHeaderFlag().GetPacketType();
                     PacketType logical_type = MapWireToPacketType(wire_type_bits, version);
-                    LOG_DEBUG("get packet type:%s (wire_bits=%u, version=0x%08x)",
-                        PacketTypeToString(logical_type), wire_type_bits, version);
+                    LOG_DEBUG("get packet type:%s (wire_bits=%u, version=0x%08x)", PacketTypeToString(logical_type),
+                        wire_type_bits, version);
                     // Pass the original wire flag byte to the packet subclass.
                     // The in-memory packet_type_ bitfield therefore carries the
                     // wire bits (which can differ from the v1 enum under
@@ -137,8 +137,10 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
             } else {
                 // Not enough data for a version field
                 if (!packets.empty()) {
-                    LOG_DEBUG("ignoring %d trailing bytes (insufficient for version field) "
-                        "after %zu decoded packet(s)", buffer->GetDataLength(), packets.size());
+                    LOG_DEBUG(
+                        "ignoring %d trailing bytes (insufficient for version field) "
+                        "after %zu decoded packet(s)",
+                        buffer->GetDataLength(), packets.size());
                     buffer->MoveReadPt(buffer->GetDataLength());
                     return true;
                 }
@@ -154,7 +156,8 @@ bool DecodePackets(std::shared_ptr<common::IBuffer> buffer, std::vector<std::sha
             // or the packet is from a different encryption level), we keep the
             // packets that were successfully decoded and discard the rest.
             if (!packets.empty()) {
-                LOG_DEBUG("failed to decode coalesced packet #%zu (remaining %zu bytes), "
+                LOG_DEBUG(
+                    "failed to decode coalesced packet #%zu (remaining %zu bytes), "
                     "keeping %zu previously decoded packet(s)",
                     packets.size() + 1, buffer->GetDataLength(), packets.size());
                 buffer->MoveReadPt(buffer->GetDataLength());

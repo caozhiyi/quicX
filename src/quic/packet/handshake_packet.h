@@ -3,15 +3,14 @@
 #define QUIC_PACKET_HANDSHAKE_PACKET
 
 #include <memory>
-#include "quic/packet/type.h"
-#include "quic/packet/if_packet.h"
 #include "quic/packet/header/long_header.h"
+#include "quic/packet/if_packet.h"
+#include "quic/packet/type.h"
 
 namespace quicx {
 namespace quic {
 
-class HandshakePacket:
-    public IPacket {
+class HandshakePacket: public IPacket {
 public:
     HandshakePacket();
     HandshakePacket(uint8_t flag);
@@ -41,7 +40,7 @@ private:
     std::vector<std::shared_ptr<IFrame>> frames_list_;
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

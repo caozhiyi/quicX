@@ -34,16 +34,16 @@
 #include <string>
 #include <unordered_map>
 
-#include <quicx/http3/type.h>
 #include <quicx/http3/if_response.h>
+#include <quicx/http3/type.h>
 
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
 #include "http3/connection/connection_client.h"
 #include "http3/connection/connection_server.h"
 #include "http3/http/request.h"
 #include "http3/qpack/blocked_registry.h"
 #include "http3/qpack/qpack_encoder.h"
-#include "common/buffer/single_block_buffer.h"
-#include "common/buffer/standalone_buffer_chunk.h"
 
 #include "test/unit_test/http3/connection/mock_quic_connection.h"
 
@@ -79,7 +79,7 @@ static const Http3Settings kE2EDefaultSettings = []() {
 // must observe those tables to assert correctness of the dynamic-table
 // state machine.  Subclassing keeps the production headers untouched.
 // ---------------------------------------------------------------------------
-class InspectableClientConnection : public ClientConnection {
+class InspectableClientConnection: public ClientConnection {
 public:
     using ClientConnection::ClientConnection;
     std::shared_ptr<QpackEncoder> Encoder() const { return qpack_encoder_; }
@@ -88,7 +88,7 @@ public:
     const std::unordered_map<uint16_t, uint64_t>& Settings() const { return settings_; }
 };
 
-class InspectableServerConnection : public ServerConnection {
+class InspectableServerConnection: public ServerConnection {
 public:
     using ServerConnection::ServerConnection;
     std::shared_ptr<QpackEncoder> Encoder() const { return qpack_encoder_; }
@@ -100,12 +100,12 @@ public:
 // ---------------------------------------------------------------------------
 // MockHttpProcessor — drives request handling on the server side.
 // ---------------------------------------------------------------------------
-class TestHttpProcessor : public IHttpProcessor {
+class TestHttpProcessor: public IHttpProcessor {
 public:
     void SetHandler(http_handler h) { handler_ = std::move(h); }
 
-    RouteConfig MatchRoute(HttpMethod /*method*/, const std::string& /*path*/,
-                           std::shared_ptr<IRequest> /*request*/ = nullptr) override {
+    RouteConfig MatchRoute(
+        HttpMethod /*method*/, const std::string& /*path*/, std::shared_ptr<IRequest> /*request*/ = nullptr) override {
         // Wrap so we always have a default 200-OK fallback.
         auto h = handler_;
         return RouteConfig([h](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
@@ -130,7 +130,7 @@ private:
 // on the mocked QUIC loopback, so by the time a TEST_F body starts running
 // the dynamic-table state on both sides reflects a fully-negotiated session.
 // ---------------------------------------------------------------------------
-class QpackDynamicTableE2ETest : public ::testing::Test {
+class QpackDynamicTableE2ETest: public ::testing::Test {
 protected:
     // Helper: wire up client + server with the given settings on each side.
     void Build(const Http3Settings& client_settings, const Http3Settings& server_settings) {
@@ -150,21 +150,14 @@ protected:
         auto server_err = [this](const std::string&, uint32_t ec) { server_error_ = ec; };
 
         client_ = std::make_shared<InspectableClientConnection>(
-            "client",
-            client_settings,
-            mock_conn_client_,
-            client_err,
+            "client", client_settings, mock_conn_client_, client_err,
             // We don't exercise PUSH in these tests; provide stubs.
             [](std::unordered_map<std::string, std::string>&) { return true; },
             [](std::shared_ptr<IResponse>, uint32_t) {});
 
-        server_ = std::make_shared<InspectableServerConnection>(
-            "server",
-            server_settings,
+        server_ = std::make_shared<InspectableServerConnection>("server", server_settings,
             std::static_pointer_cast<IHttpProcessor>(processor_),
-            /*quic_server*/ nullptr,
-            mock_conn_server_,
-            server_err);
+            /*quic_server*/ nullptr, mock_conn_server_, server_err);
 
         // Init() is what actually opens control + qpack streams (and on the
         // mocked transport, that immediately reaches the peer). We must call
@@ -223,10 +216,8 @@ TEST_F(QpackDynamicTableE2ETest, DefaultSettingsEnableDynamicTable) {
 
     // The local decoder table capacity equals what we configured locally
     // (this is what we *advertise* to the peer in our own SETTINGS frame).
-    EXPECT_EQ(client_->Decoder()->GetMaxTableCapacity(),
-              kE2EDefaultSettings.qpack_max_table_capacity);
-    EXPECT_EQ(server_->Decoder()->GetMaxTableCapacity(),
-              kE2EDefaultSettings.qpack_max_table_capacity);
+    EXPECT_EQ(client_->Decoder()->GetMaxTableCapacity(), kE2EDefaultSettings.qpack_max_table_capacity);
+    EXPECT_EQ(server_->Decoder()->GetMaxTableCapacity(), kE2EDefaultSettings.qpack_max_table_capacity);
 
     EXPECT_EQ(client_error_, 0u);
     EXPECT_EQ(server_error_, 0u);
@@ -322,9 +313,8 @@ TEST_F(QpackDynamicTableE2ETest, RequestGrowsServerDecoderTable) {
 //    encoder strategy differences (e.g. duplicating an aging entry).
 // ---------------------------------------------------------------------------
 TEST_F(QpackDynamicTableE2ETest, RepeatedRequestReusesDynamicEntries) {
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
 
     auto noop = [](std::shared_ptr<IResponse>, uint32_t) {};
 
@@ -343,9 +333,8 @@ TEST_F(QpackDynamicTableE2ETest, RepeatedRequestReusesDynamicEntries) {
     uint64_t after_second = server_->Decoder()->GetInsertCount();
     uint64_t second_delta = after_second - after_first;
 
-    EXPECT_LT(second_delta, first_delta)
-        << "second identical request should reuse dynamic entries (got " << second_delta
-        << " vs " << first_delta << ")";
+    EXPECT_LT(second_delta, first_delta) << "second identical request should reuse dynamic entries (got "
+                                         << second_delta << " vs " << first_delta << ")";
 
     EXPECT_EQ(client_error_, 0u);
     EXPECT_EQ(server_error_, 0u);
@@ -362,9 +351,8 @@ TEST_F(QpackDynamicTableE2ETest, RepeatedRequestReusesDynamicEntries) {
 //      second_delta == 1  (only the changed value lands in the table)
 // ---------------------------------------------------------------------------
 TEST_F(QpackDynamicTableE2ETest, NewValueAddsOneEntry) {
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
     auto noop = [](std::shared_ptr<IResponse>, uint32_t) {};
 
     uint64_t before_first = server_->Decoder()->GetInsertCount();
@@ -379,11 +367,9 @@ TEST_F(QpackDynamicTableE2ETest, NewValueAddsOneEntry) {
     uint64_t after_second = server_->Decoder()->GetInsertCount();
     uint64_t second_delta = after_second - after_first;
 
-    EXPECT_EQ(second_delta, 1u)
-        << "exactly one fresh dynamic entry per new x-trace-id value (got "
-        << second_delta << ")";
-    EXPECT_LE(second_delta, first_delta)
-        << "second delta must not exceed the cold-cache delta";
+    EXPECT_EQ(second_delta, 1u) << "exactly one fresh dynamic entry per new x-trace-id value (got " << second_delta
+                                << ")";
+    EXPECT_LE(second_delta, first_delta) << "second delta must not exceed the cold-cache delta";
 }
 
 // ---------------------------------------------------------------------------
@@ -414,8 +400,7 @@ TEST_F(QpackDynamicTableE2ETest, ServerEncoderFeedsClientDecoder) {
     EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-X"), noop));
     uint64_t after_second = client_->Decoder()->GetInsertCount();
     uint64_t second_delta = after_second - after_first;
-    EXPECT_LT(second_delta, first_delta)
-        << "server should reuse its encoder dynamic entries on the second response";
+    EXPECT_LT(second_delta, first_delta) << "server should reuse its encoder dynamic entries on the second response";
 
     // Insert counts on the encoding side must match the receiving side
     // exactly: the QPACK encoder stream is reliable and ordered.
@@ -440,9 +425,8 @@ TEST_F(QpackDynamicTableE2ETest, ZeroCapacityKeepsTableDisabled) {
     EXPECT_FALSE(client_->Decoder()->IsDynamicTableEnabled());
     EXPECT_FALSE(server_->Decoder()->IsDynamicTableEnabled());
 
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
     bool resp_called = false;
     auto on_resp = [&](std::shared_ptr<IResponse> resp, uint32_t err) {
         resp_called = true;
@@ -479,9 +463,8 @@ TEST_F(QpackDynamicTableE2ETest, ZeroCapacityKeepsTableDisabled) {
 //    feedback didn't propagate we'd block.
 // ---------------------------------------------------------------------------
 TEST_F(QpackDynamicTableE2ETest, DecoderFeedbackKeepsBlockedRegistryDrained) {
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
 
     int completed = 0;
     auto on_resp = [&](std::shared_ptr<IResponse>, uint32_t err) {
@@ -593,9 +576,8 @@ TEST_F(QpackDynamicTableE2ETest, PeerCapBelowLocalShrinksEncoder) {
     EXPECT_EQ(client_->Encoder()->GetLocalMaxTableCapacity(), 8192u);
     EXPECT_EQ(client_->Encoder()->GetPeerMaxTableCapacity(), 256u);
 
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
     auto noop = [](std::shared_ptr<IResponse>, uint32_t) {};
 
     // Feed 20 distinct trace ids so eviction must kick in.
@@ -608,8 +590,7 @@ TEST_F(QpackDynamicTableE2ETest, PeerCapBelowLocalShrinksEncoder) {
     EXPECT_GT(client_->Encoder()->GetInsertCount(), 0u);
     // The decoder on the server side must have processed every Insert that
     // arrived, otherwise the connection would be in an inconsistent state.
-    EXPECT_EQ(server_->Decoder()->GetInsertCount(),
-              client_->Encoder()->GetInsertCount());
+    EXPECT_EQ(server_->Decoder()->GetInsertCount(), client_->Encoder()->GetInsertCount());
 
     EXPECT_EQ(client_error_, 0u);
     EXPECT_EQ(server_error_, 0u);
@@ -627,9 +608,8 @@ TEST_F(QpackDynamicTableE2ETest, ManyDistinctValuesEvict) {
     s.qpack_max_table_capacity = 128;
     Build(s, s);
 
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
     auto noop = [](std::shared_ptr<IResponse>, uint32_t) {};
 
     constexpr int kBurst = 50;
@@ -642,8 +622,7 @@ TEST_F(QpackDynamicTableE2ETest, ManyDistinctValuesEvict) {
     EXPECT_GE(client_->Encoder()->GetInsertCount(), 5u);
     // Server decoder must have applied every insert (encoder stream is
     // reliable + ordered).
-    EXPECT_EQ(server_->Decoder()->GetInsertCount(),
-              client_->Encoder()->GetInsertCount());
+    EXPECT_EQ(server_->Decoder()->GetInsertCount(), client_->Encoder()->GetInsertCount());
     // Blocked registry should be near-empty after the burst.  We allow a
     // small residue because, in this synchronous mock loopback, the very
     // last response's Section Acknowledgement may still be pending on
@@ -676,9 +655,8 @@ TEST_F(QpackDynamicTableE2ETest, ZeroBlockedStreamsStillWorks) {
     s.qpack_max_table_capacity = 4096;
     Build(s, s);
 
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
 
     int completed = 0;
     auto on_resp = [&](std::shared_ptr<IResponse>, uint32_t err) {
@@ -753,9 +731,8 @@ TEST_F(QpackDynamicTableE2ETest, BlockedStreamsCeilingRespected) {
 //      empty on both sides.  This is the "zero-information request" case.
 // ---------------------------------------------------------------------------
 TEST_F(QpackDynamicTableE2ETest, PseudoHeadersOnlyHaveZeroDynamicInserts) {
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
 
     auto request = std::make_shared<Request>();
     request->SetMethod(HttpMethod::kGet);
@@ -794,9 +771,8 @@ TEST_F(QpackDynamicTableE2ETest, PseudoHeadersOnlyHaveZeroDynamicInserts) {
 //          (encoder stream is reliable & ordered; no instructions lost).
 // ---------------------------------------------------------------------------
 TEST_F(QpackDynamicTableE2ETest, BurstRequestsKeepEncodersInSync) {
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
     auto noop = [](std::shared_ptr<IResponse>, uint32_t) {};
 
     constexpr int kReqs = 64;
@@ -809,10 +785,8 @@ TEST_F(QpackDynamicTableE2ETest, BurstRequestsKeepEncodersInSync) {
 
     // Encoder/decoder insert counts must match exactly — no Insert
     // instructions lost or duplicated despite the burst.
-    EXPECT_EQ(server_->Decoder()->GetInsertCount(),
-              client_->Encoder()->GetInsertCount());
-    EXPECT_EQ(client_->Decoder()->GetInsertCount(),
-              server_->Encoder()->GetInsertCount());
+    EXPECT_EQ(server_->Decoder()->GetInsertCount(), client_->Encoder()->GetInsertCount());
+    EXPECT_EQ(client_->Decoder()->GetInsertCount(), server_->Encoder()->GetInsertCount());
 
     // BlockedRegistry counts must not grow with the burst (i.e. stay O(1)
     // not O(N)).  See ManyDistinctValuesEvict for the rationale on the
@@ -931,8 +905,7 @@ TEST_F(QpackDynamicTableE2ETest, LongHeaderValueAtDefaultCapRoundTrip) {
     // dynamic-table path should be taken on the request side.
     EXPECT_GE(client_->Encoder()->GetInsertCount(), 1u);
     // Server decoder must have applied the same number of inserts.
-    EXPECT_EQ(server_->Decoder()->GetInsertCount(),
-              client_->Encoder()->GetInsertCount());
+    EXPECT_EQ(server_->Decoder()->GetInsertCount(), client_->Encoder()->GetInsertCount());
 
     EXPECT_EQ(client_error_, 0u);
     EXPECT_EQ(server_error_, 0u);
@@ -1008,9 +981,8 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEmptyValueHeaderRoundTrip) {
 //           must NOT keep growing the dynamic table — the second and later
 //           requests should hit the existing entry.
 TEST_F(QpackDynamicTableE2ETest, ProbeRepeatedSameValueHasNoNewInserts) {
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
     auto noop = [](std::shared_ptr<IResponse>, uint32_t) {};
 
     EXPECT_TRUE(client_->DoRequest(MakeRequest("same-trace-id"), noop));
@@ -1108,8 +1080,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEntryOneOverCapFallsBackToLiteral) {
     // amount (if any pseudo-headers got inserted) or neither did for the
     // oversized entry.  Specifically the oversized entry must NOT get
     // inserted on either side.
-    EXPECT_EQ(client_->Encoder()->GetInsertCount(),
-              server_->Decoder()->GetInsertCount());
+    EXPECT_EQ(client_->Encoder()->GetInsertCount(), server_->Decoder()->GetInsertCount());
     // The oversized entry alone has size 4097 > cap; we don't insert it.
     EXPECT_LE(client_->Encoder()->GetInsertCount() - client_inserts_before, 0u);
     EXPECT_LE(server_->Decoder()->GetInsertCount() - server_inserts_before, 0u);
@@ -1198,11 +1169,10 @@ TEST_F(QpackDynamicTableE2ETest, ProbeZeroBlockedStreamsWithNewHeader) {
         resp->SetStatusCode(200);
     });
     bool resp_called = false;
-    EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-zero-blocked"),
-        [&](std::shared_ptr<IResponse>, uint32_t err) {
-            resp_called = true;
-            EXPECT_EQ(err, 0u);
-        }));
+    EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-zero-blocked"), [&](std::shared_ptr<IResponse>, uint32_t err) {
+        resp_called = true;
+        EXPECT_EQ(err, 0u);
+    }));
     EXPECT_TRUE(handler_called);
     EXPECT_TRUE(resp_called);
     EXPECT_EQ(client_error_, 0u);
@@ -1220,9 +1190,8 @@ TEST_F(QpackDynamicTableE2ETest, ProbeReuseAfterEviction) {
     s.qpack_blocked_streams = 16;
     Build(s, s);
 
-    processor_->SetHandler([](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-        resp->SetStatusCode(200);
-    });
+    processor_->SetHandler(
+        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(200); });
     auto noop = [](std::shared_ptr<IResponse>, uint32_t) {};
 
     EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-A"), noop));
@@ -1309,8 +1278,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeRotatingTraceIdsManyRequestsTightCap) {
     }
     EXPECT_EQ(handled, 30);
     // Insert counts must remain in sync after extensive eviction.
-    EXPECT_EQ(client_->Encoder()->GetInsertCount(),
-              server_->Decoder()->GetInsertCount());
+    EXPECT_EQ(client_->Encoder()->GetInsertCount(), server_->Decoder()->GetInsertCount());
     EXPECT_EQ(client_error_, 0u);
     EXPECT_EQ(server_error_, 0u);
 }
@@ -1366,15 +1334,14 @@ TEST_F(QpackDynamicTableE2ETest, ProbeServerResponseWithLongCustomHeader) {
     bool resp_called = false;
     std::string got_resp_header;
     int got_status = 0;
-    EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-srv"),
-        [&](std::shared_ptr<IResponse> resp, uint32_t err) {
-            resp_called = true;
-            EXPECT_EQ(err, 0u);
-            if (resp) {
-                got_status = resp->GetStatusCode();
-                resp->GetHeader("x-server-long", got_resp_header);
-            }
-        }));
+    EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-srv"), [&](std::shared_ptr<IResponse> resp, uint32_t err) {
+        resp_called = true;
+        EXPECT_EQ(err, 0u);
+        if (resp) {
+            got_status = resp->GetStatusCode();
+            resp->GetHeader("x-server-long", got_resp_header);
+        }
+    }));
     EXPECT_TRUE(handler_called);
     EXPECT_TRUE(resp_called);
     EXPECT_EQ(got_status, 200);
@@ -1395,8 +1362,10 @@ TEST_F(QpackDynamicTableE2ETest, ProbeNameOnlyReuseDifferentValue) {
         ++handled;
         std::string got;
         if (req->GetHeader("x-trace-id", got)) {
-            if (handled == 1) captured_a = got;
-            else captured_b = got;
+            if (handled == 1)
+                captured_a = got;
+            else
+                captured_b = got;
         }
         resp->SetStatusCode(200);
     });
@@ -1411,8 +1380,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeNameOnlyReuseDifferentValue) {
     // Encoder may have inserted both values (= 2 inserts) OR reused name
     // and emitted literal-with-name-ref for the second (= 1 insert).
     // Either way insert counts must agree across peers.
-    EXPECT_EQ(client_->Encoder()->GetInsertCount(),
-              server_->Decoder()->GetInsertCount());
+    EXPECT_EQ(client_->Encoder()->GetInsertCount(), server_->Decoder()->GetInsertCount());
     EXPECT_EQ(client_error_, 0u);
     EXPECT_EQ(server_error_, 0u);
 }
@@ -1460,11 +1428,10 @@ TEST_F(QpackDynamicTableE2ETest, ProbeCapZeroEmitsNoEncoderStreamInserts) {
         resp->SetStatusCode(200);
     });
     bool resp_called = false;
-    EXPECT_TRUE(client_->DoRequest(MakeRequest("no-dyntab"),
-        [&](std::shared_ptr<IResponse>, uint32_t err) {
-            resp_called = true;
-            EXPECT_EQ(err, 0u);
-        }));
+    EXPECT_TRUE(client_->DoRequest(MakeRequest("no-dyntab"), [&](std::shared_ptr<IResponse>, uint32_t err) {
+        resp_called = true;
+        EXPECT_EQ(err, 0u);
+    }));
     EXPECT_TRUE(handler_called);
     EXPECT_TRUE(resp_called);
     EXPECT_EQ(client_->Encoder()->GetInsertCount(), 0u);
@@ -1520,7 +1487,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeDecodeRicAgainstInsertCountAfterEviction) 
     // Manually write a HEADERS block: prefix (RIC=2, base=2) then
     // a single dynamic-indexed reference at absolute index 1
     // (relative_index = base - 1 - abs = 2 - 1 - 1 = 0).
-    driver.WriteHeaderPrefix(hdr_buf, /*ric*/2, /*base*/2);
+    driver.WriteHeaderPrefix(hdr_buf, /*ric*/ 2, /*base*/ 2);
     // Indexed Dynamic: 10xxxxxx with rel=0
     uint8_t indexed_dynamic = 0x80 | 0x00;  // kIndexedDynamic | rel=0
     hdr_buf->Write(&indexed_dynamic, 1);
@@ -1618,17 +1585,15 @@ TEST_F(QpackDynamicTableE2ETest, ProbeAllStaticTableStatusCodes) {
     const std::vector<uint32_t> codes = {200u, 204u, 206u, 304u, 400u, 404u, 500u, 503u};
     for (uint32_t code : codes) {
         Build(kE2EDefaultSettings, kE2EDefaultSettings);  // fresh state per code
-        processor_->SetHandler([code](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(code);
-        });
+        processor_->SetHandler(
+            [code](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) { resp->SetStatusCode(code); });
         bool resp_called = false;
         uint32_t got_status = 0;
-        EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-status"),
-            [&](std::shared_ptr<IResponse> resp, uint32_t err) {
-                resp_called = true;
-                EXPECT_EQ(err, 0u);
-                if (resp) got_status = resp->GetStatusCode();
-            }));
+        EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-status"), [&](std::shared_ptr<IResponse> resp, uint32_t err) {
+            resp_called = true;
+            EXPECT_EQ(err, 0u);
+            if (resp) got_status = resp->GetStatusCode();
+        }));
         EXPECT_TRUE(resp_called) << "status " << code;
         EXPECT_EQ(got_status, code);
         EXPECT_EQ(client_error_, 0u) << "status " << code;
@@ -1694,8 +1659,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeManyRequestsNoEvictionAccumulating) {
         EXPECT_TRUE(client_->DoRequest(MakeRequest("trace-" + std::to_string(i)), noop));
     }
     EXPECT_EQ(handled, 50);
-    EXPECT_EQ(client_->Encoder()->GetInsertCount(),
-              server_->Decoder()->GetInsertCount());
+    EXPECT_EQ(client_->Encoder()->GetInsertCount(), server_->Decoder()->GetInsertCount());
     EXPECT_EQ(client_error_, 0u);
     EXPECT_EQ(server_error_, 0u);
 }
@@ -1736,8 +1700,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeRuntimeShrinkLocalInvariants) {
 
     // Subsequent insert respects the new cap (entry-size 49 fits in 110;
     // a second insert evicts the first).
-    EXPECT_TRUE(enc->DecodeEncoderInstructions(
-        make_insert("x-trace-id", "trace-after")));
+    EXPECT_TRUE(enc->DecodeEncoderInstructions(make_insert("x-trace-id", "trace-after")));
     EXPECT_EQ(enc->GetInsertCount(), inserts_before_shrink + 1);
 }
 
@@ -1795,15 +1758,15 @@ TEST_F(QpackDynamicTableE2ETest, ProbeBlockedRegistryRemoveDoesNotInvokeCallback
     reg.Add((42ull << 32) | 3, cb);
     EXPECT_EQ(reg.GetBlockedCount(), 3u);
 
-    EXPECT_TRUE(reg.RemoveByStreamId(42));   // drops section 1, no callback
+    EXPECT_TRUE(reg.RemoveByStreamId(42));  // drops section 1, no callback
     EXPECT_EQ(fired_count, 0);
     EXPECT_EQ(reg.GetBlockedCount(), 2u);
 
-    EXPECT_TRUE(reg.AckByStreamId(42));      // fires section 2
+    EXPECT_TRUE(reg.AckByStreamId(42));  // fires section 2
     EXPECT_EQ(fired_count, 1);
     EXPECT_EQ(reg.GetBlockedCount(), 1u);
 
-    EXPECT_TRUE(reg.RemoveByStreamId(42));   // drops section 3, no callback
+    EXPECT_TRUE(reg.RemoveByStreamId(42));  // drops section 3, no callback
     EXPECT_EQ(fired_count, 1);
     EXPECT_EQ(reg.GetBlockedCount(), 0u);
 }
@@ -1853,7 +1816,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeDuplicateInsertSurvivesEncoder) {
     // by post-base index 0 with base=0 — wire bytes constructed below.
     auto hdr_chunk = std::make_shared<common::StandaloneBufferChunk>(64);
     auto hdr_buf = std::make_shared<common::SingleBlockBuffer>(hdr_chunk);
-    enc->WriteHeaderPrefix(hdr_buf, /*ric*/1, /*base*/0);
+    enc->WriteHeaderPrefix(hdr_buf, /*ric*/ 1, /*base*/ 0);
     // Post-Base Indexed: 0001xxxx with post_base_index=0.
     uint8_t pb = 0x10;
     hdr_buf->Write(&pb, 1);
@@ -1870,7 +1833,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeDuplicateInsertSurvivesEncoder) {
 //            Pre-fix, AddHeaderItem returning false was silently swallowed.
 TEST_F(QpackDynamicTableE2ETest, ProbeOversizedInsertInstructionRejected) {
     auto dec = std::make_shared<QpackEncoder>();
-    dec->SetMaxTableCapacity(64);          // very small cap
+    dec->SetMaxTableCapacity(64);  // very small cap
     dec->SetDynamicTableEnabled(true);
 
     // Build an Insert Without Name Reference whose entry size > 64.
@@ -1903,11 +1866,10 @@ TEST_F(QpackDynamicTableE2ETest, ProbeSetCapacityExceedingMaxRejected) {
     QpackEncoder e;
     std::vector<std::pair<std::string, std::string>> empty;
     EXPECT_TRUE(e.EncodeEncoderInstructions(empty, buf,
-                                             /*with_name_ref*/false,
-                                             /*set_capacity*/true,
-                                             /*new_capacity*/8192));
-    EXPECT_FALSE(dec->DecodeEncoderInstructions(buf))
-        << "Set Dynamic Table Capacity > SETTINGS max must be rejected";
+        /*with_name_ref*/ false,
+        /*set_capacity*/ true,
+        /*new_capacity*/ 8192));
+    EXPECT_FALSE(dec->DecodeEncoderInstructions(buf)) << "Set Dynamic Table Capacity > SETTINGS max must be rejected";
 }
 
 // PROBE #25: Set Dynamic Table Capacity instruction WITHIN the limit
@@ -1936,9 +1898,9 @@ TEST_F(QpackDynamicTableE2ETest, ProbeSetCapacityWithinLimitTakesEffect) {
     QpackEncoder e;
     std::vector<std::pair<std::string, std::string>> empty;
     EXPECT_TRUE(e.EncodeEncoderInstructions(empty, cap_buf,
-                                             /*with_name_ref*/false,
-                                             /*set_capacity*/true,
-                                             /*new_capacity*/0));
+        /*with_name_ref*/ false,
+        /*set_capacity*/ true,
+        /*new_capacity*/ 0));
     EXPECT_TRUE(dec->DecodeEncoderInstructions(cap_buf));
     // Cap=0 forces all entries out.  We can't introspect entry count via
     // the encoder facade directly, but a downstream insert against cap=0
@@ -2006,10 +1968,10 @@ TEST_F(QpackDynamicTableE2ETest, ProbeBlockedRegistryMultipleSectionsPerStream) 
     reg.Add((7ULL << 32) | 9, [&]() { fired.push_back(9); });
     EXPECT_EQ(reg.GetBlockedCount(), 3u);
 
-    EXPECT_TRUE(reg.AckByStreamId(7));   // earliest = section 1
-    EXPECT_TRUE(reg.AckByStreamId(7));   // next earliest = section 5
-    EXPECT_TRUE(reg.RemoveByStreamId(7));// last one = section 9, no callback
-    EXPECT_FALSE(reg.AckByStreamId(7));  // nothing left
+    EXPECT_TRUE(reg.AckByStreamId(7));     // earliest = section 1
+    EXPECT_TRUE(reg.AckByStreamId(7));     // next earliest = section 5
+    EXPECT_TRUE(reg.RemoveByStreamId(7));  // last one = section 9, no callback
+    EXPECT_FALSE(reg.AckByStreamId(7));    // nothing left
 
     EXPECT_EQ(fired, (std::vector<int>{1, 5}));
     EXPECT_EQ(reg.GetBlockedCount(), 0u);
@@ -2202,8 +2164,7 @@ TEST_F(QpackDynamicTableE2ETest, ProbeEncoderInstructionsFragmented) {
 
     auto encode_two = []() {
         QpackEncoder e;
-        std::vector<std::pair<std::string, std::string>> ins{
-            {"x-frag-1", "value-one"}, {"x-frag-2", "value-two"}};
+        std::vector<std::pair<std::string, std::string>> ins{{"x-frag-1", "value-one"}, {"x-frag-2", "value-two"}};
         auto chunk = std::make_shared<common::StandaloneBufferChunk>(256);
         auto buf = std::make_shared<common::SingleBlockBuffer>(chunk);
         EXPECT_TRUE(e.EncodeEncoderInstructions(ins, buf));

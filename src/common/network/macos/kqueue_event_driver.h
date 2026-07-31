@@ -12,8 +12,7 @@ namespace quicx {
 namespace common {
 
 // Kqueue event driver implementation for macOS
-class KqueueEventDriver:
-    public IEventDriver {
+class KqueueEventDriver: public IEventDriver {
 public:
     KqueueEventDriver();
     virtual ~KqueueEventDriver();
@@ -52,8 +51,8 @@ private:
     std::vector<struct kevent> kqueue_events_scratch_;
 };
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
-#endif // COMMON_NETWORK_MACOS_KQUEUE_EVENT_DRIVER 
-#endif // __APPLE__
+#endif  // COMMON_NETWORK_MACOS_KQUEUE_EVENT_DRIVER
+#endif  // __APPLE__

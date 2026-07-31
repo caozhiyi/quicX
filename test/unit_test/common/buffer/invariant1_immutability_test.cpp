@@ -60,7 +60,7 @@ std::vector<uint8_t> MakePattern(uint32_t len, uint8_t seed = 1) {
 // =============================================================================
 // B1-01  Clear() must not rewrite bytes that an outstanding span references.
 // =============================================================================
-TEST(BufferInvariant1_Immutability, ClearDoesNotMutateIssuedSpan) {
+TEST(BufferInvariant1ImmutabilityTest, ClearDoesNotMutateIssuedSpan) {
     auto chunk = MakeChunk(4096);
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
 
@@ -94,7 +94,7 @@ TEST(BufferInvariant1_Immutability, ClearDoesNotMutateIssuedSpan) {
 // B1-02  After span goes out of scope, the floor is released and the buffer
 //        becomes fully reusable again. Floor must not be a permanent leak.
 // =============================================================================
-TEST(BufferInvariant1_Immutability, FloorReleasedAfterSpanDestroyed) {
+TEST(BufferInvariant1ImmutabilityTest, FloorReleasedAfterSpanDestroyed) {
     auto chunk = MakeChunk(4096);
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
 
@@ -114,8 +114,7 @@ TEST(BufferInvariant1_Immutability, FloorReleasedAfterSpanDestroyed) {
     // span installed must now be lifted.
 
     buf->Clear();
-    EXPECT_EQ(4096u, buf->GetFreeLength())
-        << "after the last span is gone Clear() must fully reclaim the chunk";
+    EXPECT_EQ(4096u, buf->GetFreeLength()) << "after the last span is gone Clear() must fully reclaim the chunk";
 
     // And the freshly cleared buffer must be writable from the very first byte.
     auto fresh = MakePattern(700, /*seed=*/0x40);
@@ -125,21 +124,21 @@ TEST(BufferInvariant1_Immutability, FloorReleasedAfterSpanDestroyed) {
 // =============================================================================
 // B1-03  Multiple overlapping spans -> floor honours the highest end-pointer.
 // =============================================================================
-TEST(BufferInvariant1_Immutability, MultipleSpansFloorIsHighWatermark) {
+TEST(BufferInvariant1ImmutabilityTest, MultipleSpansFloorIsHighWatermark) {
     auto chunk = MakeChunk(4096);
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
 
     auto payload = MakePattern(1000);
     ASSERT_EQ(1000u, buf->Write(payload.data(), payload.size()));
 
-    auto span_short = buf->GetSharedReadableSpan(200);     // covers [0, 200)
+    auto span_short = buf->GetSharedReadableSpan(200);  // covers [0, 200)
     ASSERT_TRUE(span_short.Valid());
     // Drop the first 200 bytes from the buffer's read pointer so the next span
     // starts at offset 200, but the chunk floor must still be at 200 because
     // span_short still references the prefix.
     EXPECT_EQ(200u, buf->MoveReadPt(200));
 
-    auto span_long = buf->GetSharedReadableSpan(800);      // covers [200, 1000)
+    auto span_long = buf->GetSharedReadableSpan(800);  // covers [200, 1000)
     ASSERT_TRUE(span_long.Valid());
     EXPECT_EQ(800u, span_long.GetLength());
 
@@ -161,7 +160,7 @@ TEST(BufferInvariant1_Immutability, MultipleSpansFloorIsHighWatermark) {
 // B1-04  InnerWrite() (i.e. Write() after Clear) must respect the floor and
 //        never start writing inside an outstanding span.
 // =============================================================================
-TEST(BufferInvariant1_Immutability, WriteAfterClearStartsAtOrAboveFloor) {
+TEST(BufferInvariant1ImmutabilityTest, WriteAfterClearStartsAtOrAboveFloor) {
     auto chunk = MakeChunk(4096);
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
 
@@ -187,7 +186,7 @@ TEST(BufferInvariant1_Immutability, WriteAfterClearStartsAtOrAboveFloor) {
 // =============================================================================
 // B1-05  GetWriteFloor() reflects the highest end-pointer of any live span.
 // =============================================================================
-TEST(BufferInvariant1_Immutability, GetWriteFloorReportsHighestEnd) {
+TEST(BufferInvariant1ImmutabilityTest, GetWriteFloorReportsHighestEnd) {
     auto chunk = MakeChunk(4096);
     auto buf = std::make_shared<SingleBlockBuffer>(chunk);
 
@@ -211,7 +210,7 @@ TEST(BufferInvariant1_Immutability, GetWriteFloorReportsHighestEnd) {
 //        holding a span over the OLD chunk: the old chunk lives until the
 //        span dies and its bytes stay frozen.
 // =============================================================================
-TEST(BufferInvariant1_Immutability, ResetDoesNotInvalidateOutstandingSpan) {
+TEST(BufferInvariant1ImmutabilityTest, ResetDoesNotInvalidateOutstandingSpan) {
     auto chunk_a = MakeChunk(4096);
     auto buf = std::make_shared<SingleBlockBuffer>(chunk_a);
 

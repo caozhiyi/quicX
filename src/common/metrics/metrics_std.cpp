@@ -114,6 +114,10 @@ MetricID MetricsStd::DiagBuildLatencyUs = kInvalidMetricID;
 MetricID MetricsStd::DiagSendLatencyUs = kInvalidMetricID;
 MetricID MetricsStd::DiagSendtoLatencyUs = kInvalidMetricID;
 MetricID MetricsStd::DiagAckGapUs = kInvalidMetricID;
+MetricID MetricsStd::DiagBuildPhaseFramesUs = kInvalidMetricID;
+MetricID MetricsStd::DiagBuildPhaseSetupUs = kInvalidMetricID;
+MetricID MetricsStd::DiagBuildPhaseEncodeUs = kInvalidMetricID;
+MetricID MetricsStd::DiagBuildPhaseRecordUs = kInvalidMetricID;
 MetricID MetricsStd::DiagTrySendNoData = kInvalidMetricID;
 MetricID MetricsStd::DiagTrySendCwndBlocked = kInvalidMetricID;
 MetricID MetricsStd::DiagTrySendBuildFail = kInvalidMetricID;
@@ -151,6 +155,7 @@ MetricID MetricsStd::DiagFirstChunkHist = kInvalidMetricID;
 MetricID MetricsStd::DiagSendSizeHist = kInvalidMetricID;
 MetricID MetricsStd::DiagPktPayloadHist = kInvalidMetricID;
 MetricID MetricsStd::DiagPktPerIterHist = kInvalidMetricID;
+MetricID MetricsStd::DiagTrySendBurstPkts = kInvalidMetricID;
 MetricID MetricsStd::DiagSpanWriteHist = kInvalidMetricID;
 
 void InitializeStandardMetrics() {
@@ -304,8 +309,7 @@ void InitializeStandardMetrics() {
     MetricsStd::QuicVersionInUse = Metrics::RegisterGauge("quic_version_in_use", "Current QUIC version in use");
 
     // Retry Mechanism
-    MetricsStd::QuicRetryPacketsSent =
-        Metrics::RegisterCounter("quic_retry_packets_sent", "Total Retry packets sent");
+    MetricsStd::QuicRetryPacketsSent = Metrics::RegisterCounter("quic_retry_packets_sent", "Total Retry packets sent");
     MetricsStd::QuicRetryByHighRate =
         Metrics::RegisterCounter("quic_retry_by_high_rate", "Retry triggered by high connection rate");
     MetricsStd::QuicRetryBySuspiciousIP =
@@ -318,19 +322,33 @@ void InitializeStandardMetrics() {
         Metrics::RegisterCounter("quic_retry_tokens_invalid", "Invalid Retry tokens received");
 
     // Diagnostic (formerly PerfProbe) - Latency Histograms
-    MetricsStd::DiagBuildLatencyUs = Metrics::RegisterHistogram("diag_build_latency_us",
-        "BuildDataPacket latency in microseconds", {10, 50, 100, 500, 1000, 5000, 10000});
-    MetricsStd::DiagSendLatencyUs = Metrics::RegisterHistogram("diag_send_latency_us",
-        "SendBuffer latency in microseconds", {5, 10, 50, 100, 500, 1000, 5000});
-    MetricsStd::DiagSendtoLatencyUs = Metrics::RegisterHistogram("diag_sendto_latency_us",
-        "sendto() syscall latency in microseconds", {1, 5, 10, 50, 100, 500, 1000});
-    MetricsStd::DiagAckGapUs = Metrics::RegisterHistogram("diag_ack_gap_us",
-        "Inter-ACK arrival gap in microseconds", {10, 50, 100, 500, 1000, 5000, 10000});
+    MetricsStd::DiagBuildLatencyUs = Metrics::RegisterHistogram(
+        "diag_build_latency_us", "BuildDataPacket latency in microseconds", {10, 50, 100, 500, 1000, 5000, 10000});
+    MetricsStd::DiagSendLatencyUs = Metrics::RegisterHistogram(
+        "diag_send_latency_us", "SendBuffer latency in microseconds", {5, 10, 50, 100, 500, 1000, 5000});
+    MetricsStd::DiagSendtoLatencyUs = Metrics::RegisterHistogram(
+        "diag_sendto_latency_us", "sendto() syscall latency in microseconds", {1, 5, 10, 50, 100, 500, 1000});
+    MetricsStd::DiagAckGapUs = Metrics::RegisterHistogram(
+        "diag_ack_gap_us", "Inter-ACK arrival gap in microseconds", {10, 50, 100, 500, 1000, 5000, 10000});
+
+    // BuildDataPacket phase decomposition. Buckets target the regime we
+    // care about on loopback (single-digit μs per phase); the 50/100 tail
+    // catches the occasional first-packet warm-up or contended-cache case.
+    MetricsStd::DiagBuildPhaseFramesUs = Metrics::RegisterHistogram(
+        "diag_build_phase_frames_us", "BuildDataPacket phase: visitor+frames", {1, 2, 5, 10, 20, 50, 100, 500});
+    MetricsStd::DiagBuildPhaseSetupUs = Metrics::RegisterHistogram(
+        "diag_build_phase_setup_us", "BuildDataPacket phase: packet+header setup", {1, 2, 5, 10, 20, 50, 100, 500});
+    MetricsStd::DiagBuildPhaseEncodeUs = Metrics::RegisterHistogram(
+        "diag_build_phase_encode_us", "BuildDataPacket phase: AEAD+header protection", {1, 2, 5, 10, 20, 50, 100, 500});
+    MetricsStd::DiagBuildPhaseRecordUs = Metrics::RegisterHistogram("diag_build_phase_record_us",
+        "BuildDataPacket phase: send_control bookkeeping", {1, 2, 5, 10, 20, 50, 100, 500});
 
     // Diagnostic - TrySend path outcomes
     MetricsStd::DiagTrySendNoData = Metrics::RegisterCounter("diag_try_send_no_data", "TrySend: no data to send");
-    MetricsStd::DiagTrySendCwndBlocked = Metrics::RegisterCounter("diag_try_send_cwnd_blocked", "TrySend: cwnd blocked");
-    MetricsStd::DiagTrySendBuildFail = Metrics::RegisterCounter("diag_try_send_build_fail", "TrySend: build packet failed");
+    MetricsStd::DiagTrySendCwndBlocked =
+        Metrics::RegisterCounter("diag_try_send_cwnd_blocked", "TrySend: cwnd blocked");
+    MetricsStd::DiagTrySendBuildFail =
+        Metrics::RegisterCounter("diag_try_send_build_fail", "TrySend: build packet failed");
     MetricsStd::DiagSendBufferFail = Metrics::RegisterCounter("diag_send_buffer_fail", "SendBuffer failed");
 
     // Diagnostic - Send loop wakeup
@@ -364,31 +382,37 @@ void InitializeStandardMetrics() {
 
     // Diagnostic - UDP sender
     MetricsStd::DiagUdpSendCalls = Metrics::RegisterCounter("diag_udp_send_calls", "UdpSender::Send entries");
-    MetricsStd::DiagUdpSendBatchCalls = Metrics::RegisterCounter("diag_udp_send_batch_calls", "UdpSender::SendBatch entries");
+    MetricsStd::DiagUdpSendBatchCalls =
+        Metrics::RegisterCounter("diag_udp_send_batch_calls", "UdpSender::SendBatch entries");
     MetricsStd::DiagUdpSendOk = Metrics::RegisterCounter("diag_udp_send_ok", "UdpSender::Send succeeded");
-    MetricsStd::DiagUdpSendBatchOk = Metrics::RegisterCounter("diag_udp_send_batch_ok", "UdpSender::SendBatch succeeded");
+    MetricsStd::DiagUdpSendBatchOk =
+        Metrics::RegisterCounter("diag_udp_send_batch_ok", "UdpSender::SendBatch succeeded");
 
     // Diagnostic - Datagram fill (sum-based)
-    MetricsStd::DiagStreamSendSizeSum = Metrics::RegisterCounter("diag_stream_send_size_sum", "Sum of STREAM data sizes");
+    MetricsStd::DiagStreamSendSizeSum =
+        Metrics::RegisterCounter("diag_stream_send_size_sum", "Sum of STREAM data sizes");
     MetricsStd::DiagStreamSendCount = Metrics::RegisterCounter("diag_stream_send_count", "STREAM frames produced");
     MetricsStd::DiagStreamSlackSum = Metrics::RegisterCounter("diag_stream_slack_sum", "Sum of stream FC slack");
     MetricsStd::DiagVisitorLeftSum = Metrics::RegisterCounter("diag_visitor_left_sum", "Sum of visitor left size");
     MetricsStd::DiagFirstChunkSum = Metrics::RegisterCounter("diag_first_chunk_sum", "Sum of first-chunk readable");
     MetricsStd::DiagSendBufTotalSum = Metrics::RegisterCounter("diag_send_buf_total_sum", "Sum of send_buffer total");
-    MetricsStd::DiagSendBufChunksSum = Metrics::RegisterCounter("diag_send_buf_chunks_sum", "Sum of send_buffer chunks");
+    MetricsStd::DiagSendBufChunksSum =
+        Metrics::RegisterCounter("diag_send_buf_chunks_sum", "Sum of send_buffer chunks");
     MetricsStd::DiagSendBufProbeCount = Metrics::RegisterCounter("diag_send_buf_probe_count", "Buffer probe count");
 
     // Diagnostic - Datagram fill distribution (Histogram)
-    MetricsStd::DiagFirstChunkHist = Metrics::RegisterHistogram("diag_first_chunk_hist",
-        "First chunk readable size", {256, 512, 1024, 1300, 1500});
-    MetricsStd::DiagSendSizeHist = Metrics::RegisterHistogram("diag_send_size_hist",
-        "STREAM frame send_size", {256, 512, 1024, 1300, 1500});
-    MetricsStd::DiagPktPayloadHist = Metrics::RegisterHistogram("diag_pkt_payload_hist",
-        "Packet payload size", {256, 512, 1024, 1300, 1500});
-    MetricsStd::DiagPktPerIterHist = Metrics::RegisterHistogram("diag_pkt_per_iter_hist",
-        "Packets per worker iteration", {1, 2, 4, 8, 16, 32, 64, 128});
-    MetricsStd::DiagSpanWriteHist = Metrics::RegisterHistogram("diag_span_write_hist",
-        "Write(span) data_len", {256, 512, 1024, 1300, 1500});
+    MetricsStd::DiagFirstChunkHist =
+        Metrics::RegisterHistogram("diag_first_chunk_hist", "First chunk readable size", {256, 512, 1024, 1300, 1500});
+    MetricsStd::DiagSendSizeHist =
+        Metrics::RegisterHistogram("diag_send_size_hist", "STREAM frame send_size", {256, 512, 1024, 1300, 1500});
+    MetricsStd::DiagPktPayloadHist =
+        Metrics::RegisterHistogram("diag_pkt_payload_hist", "Packet payload size", {256, 512, 1024, 1300, 1500});
+    MetricsStd::DiagPktPerIterHist = Metrics::RegisterHistogram(
+        "diag_pkt_per_iter_hist", "Packets per worker iteration", {1, 2, 4, 8, 16, 32, 64, 128});
+    MetricsStd::DiagTrySendBurstPkts = Metrics::RegisterHistogram(
+        "diag_try_send_burst_pkts", "Packets emitted per TrySendBurst() call", {1, 2, 4, 8, 16, 32, 64, 128});
+    MetricsStd::DiagSpanWriteHist =
+        Metrics::RegisterHistogram("diag_span_write_hist", "Write(span) data_len", {256, 512, 1024, 1300, 1500});
 }
 
 }  // namespace common

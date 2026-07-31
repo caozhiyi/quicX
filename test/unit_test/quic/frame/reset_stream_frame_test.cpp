@@ -1,19 +1,21 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/reset_stream_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/reset_stream_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(reset_frame_utest, codec) {
+TEST(ResetFrameTest, codec) {
     ResetStreamFrame frame1;
     ResetStreamFrame frame2;
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     frame1.SetStreamID(1010101);
     frame1.SetAppErrorCode(404);
@@ -33,6 +35,6 @@ TEST(reset_frame_utest, codec) {
     EXPECT_EQ(frame1.GetFinalSize(), frame2.GetFinalSize());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

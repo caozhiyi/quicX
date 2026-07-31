@@ -136,8 +136,7 @@ static void WarmupServer(const std::string& url, const Http3Settings& settings) 
 
     auto req = IRequest::Create();
     std::atomic<bool> done{false};
-    warm->DoRequest(url, HttpMethod::kGet, req,
-        [&](std::shared_ptr<IResponse>, uint32_t) { done = true; });
+    warm->DoRequest(url, HttpMethod::kGet, req, [&](std::shared_ptr<IResponse>, uint32_t) { done = true; });
     for (int w = 0; w < 2000 && !done; ++w) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
@@ -156,8 +155,7 @@ static size_t GetCurrentRSS() {
 #if defined(__APPLE__)
     struct task_basic_info info;
     mach_msg_type_number_t count = TASK_BASIC_INFO_COUNT;
-    if (task_info(mach_task_self(), TASK_BASIC_INFO,
-                  (task_info_t)&info, &count) == KERN_SUCCESS) {
+    if (task_info(mach_task_self(), TASK_BASIC_INFO, (task_info_t)&info, &count) == KERN_SUCCESS) {
         return info.resident_size;
     }
     return 0;
@@ -186,11 +184,10 @@ static void BM_E2E_Handshake_NewConnection(benchmark::State& state) {
     // Setup server (identical pattern to proven http3_e2e_bench)
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/ping",
-        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(200);
-            resp->AppendBody("pong");
-        });
+    server->AddHandler(HttpMethod::kGet, "/ping", [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+        resp->SetStatusCode(200);
+        resp->AppendBody("pong");
+    });
 
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
@@ -238,8 +235,7 @@ static void BM_E2E_Handshake_NewConnection(benchmark::State& state) {
     th.join();
 
     state.counters["success"] = benchmark::Counter(static_cast<double>(success));
-    state.counters["handshakes/s"] = benchmark::Counter(
-        static_cast<double>(success), benchmark::Counter::kIsRate);
+    state.counters["handshakes/s"] = benchmark::Counter(static_cast<double>(success), benchmark::Counter::kIsRate);
 }
 
 // Burst: many new connections concurrently (reflects real "connection storm" traffic).
@@ -256,11 +252,10 @@ static void BM_E2E_Handshake_NewConnection(benchmark::State& state) {
 static void BM_E2E_Handshake_Burst(benchmark::State& state) {
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/ping",
-        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(200);
-            resp->AppendBody("pong");
-        });
+    server->AddHandler(HttpMethod::kGet, "/ping", [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+        resp->SetStatusCode(200);
+        resp->AppendBody("pong");
+    });
 
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
@@ -316,11 +311,10 @@ static void BM_E2E_Handshake_Burst(benchmark::State& state) {
                 auto req = IRequest::Create();
                 std::atomic<bool> done{false};
                 std::atomic<bool> ok{false};
-                raw->DoRequest(url, HttpMethod::kGet, req,
-                    [&](std::shared_ptr<IResponse>, uint32_t error) {
-                        if (error == 0) ok = true;
-                        done = true;
-                    });
+                raw->DoRequest(url, HttpMethod::kGet, req, [&](std::shared_ptr<IResponse>, uint32_t error) {
+                    if (error == 0) ok = true;
+                    done = true;
+                });
                 for (int w = 0; w < 6000 && !done; ++w) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 }
@@ -333,7 +327,10 @@ static void BM_E2E_Handshake_Burst(benchmark::State& state) {
         while (!all_ready) {
             all_ready = true;
             for (auto& f : ready_flags) {
-                if (!f.load(std::memory_order_acquire)) { all_ready = false; break; }
+                if (!f.load(std::memory_order_acquire)) {
+                    all_ready = false;
+                    break;
+                }
             }
             if (!all_ready) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
@@ -358,8 +355,7 @@ static void BM_E2E_Handshake_Burst(benchmark::State& state) {
         clients.clear();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        state.counters["success_rate_%"] = benchmark::Counter(
-            static_cast<double>(success.load()) / burst_size * 100.0);
+        state.counters["success_rate_%"] = benchmark::Counter(static_cast<double>(success.load()) / burst_size * 100.0);
     }
 
     server->Stop();
@@ -384,8 +380,8 @@ static void BM_E2E_Throughput_Download(benchmark::State& state) {
 
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/download",
-        [&big_body](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+    server->AddHandler(
+        HttpMethod::kGet, "/download", [&big_body](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
             resp->SetStatusCode(200);
             resp->AppendBody(big_body);
         });
@@ -430,8 +426,8 @@ static void BM_E2E_Throughput_Download(benchmark::State& state) {
     th.join();
 
     state.SetBytesProcessed(total_bytes);
-    state.counters["avg_body_KB"] = benchmark::Counter(
-        state.iterations() > 0 ? static_cast<double>(total_bytes) / state.iterations() / 1024.0 : 0);
+    state.counters["avg_body_KB"] =
+        benchmark::Counter(state.iterations() > 0 ? static_cast<double>(total_bytes) / state.iterations() / 1024.0 : 0);
 }
 
 // Upload: client -> server, configurable size
@@ -441,8 +437,8 @@ static void BM_E2E_Throughput_Upload(benchmark::State& state) {
 
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kPost, "/upload",
-        [](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
+    server->AddHandler(
+        HttpMethod::kPost, "/upload", [](std::shared_ptr<IRequest> req, std::shared_ptr<IResponse> resp) {
             resp->SetStatusCode(200);
             resp->AppendBody(std::to_string(req->GetBodyAsString().size()));
         });
@@ -472,8 +468,8 @@ static void BM_E2E_Throughput_Upload(benchmark::State& state) {
         req->AppendBody(upload_data);
         std::atomic<bool> done{false};
         std::atomic<bool> ok{false};
-        client->DoRequest("https://127.0.0.1:19504/upload", HttpMethod::kPost, req,
-            [&](std::shared_ptr<IResponse>, uint32_t error) {
+        client->DoRequest(
+            "https://127.0.0.1:19504/upload", HttpMethod::kPost, req, [&](std::shared_ptr<IResponse>, uint32_t error) {
                 if (error == 0) ok = true;
                 done = true;
             });
@@ -488,20 +484,18 @@ static void BM_E2E_Throughput_Upload(benchmark::State& state) {
     th.join();
 
     state.SetBytesProcessed(total_bytes);
-    state.counters["upload_MB/s"] = benchmark::Counter(
-        static_cast<double>(total_bytes) / 1024.0 / 1024.0,
-        benchmark::Counter::kIsRate);
+    state.counters["upload_MB/s"] =
+        benchmark::Counter(static_cast<double>(total_bytes) / 1024.0 / 1024.0, benchmark::Counter::kIsRate);
 }
 
 // Sequential: many request/response round-trips over a single connection
 static void BM_E2E_Throughput_Sequential(benchmark::State& state) {
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/echo",
-        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(200);
-            resp->AppendBody(std::string(1024, 'E'));
-        });
+    server->AddHandler(HttpMethod::kGet, "/echo", [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+        resp->SetStatusCode(200);
+        resp->AppendBody(std::string(1024, 'E'));
+    });
 
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
@@ -530,8 +524,8 @@ static void BM_E2E_Throughput_Sequential(benchmark::State& state) {
             auto req = IRequest::Create();
             std::atomic<bool> done{false};
             std::atomic<bool> ok{false};
-            client->DoRequest("https://127.0.0.1:19505/echo", HttpMethod::kGet, req,
-                [&](std::shared_ptr<IResponse>, uint32_t error) {
+            client->DoRequest(
+                "https://127.0.0.1:19505/echo", HttpMethod::kGet, req, [&](std::shared_ptr<IResponse>, uint32_t error) {
                     if (error == 0) ok = true;
                     done = true;
                 });
@@ -548,8 +542,7 @@ static void BM_E2E_Throughput_Sequential(benchmark::State& state) {
     th.join();
 
     state.SetItemsProcessed(total);
-    state.counters["req/s"] = benchmark::Counter(
-        static_cast<double>(total), benchmark::Counter::kIsRate);
+    state.counters["req/s"] = benchmark::Counter(static_cast<double>(total), benchmark::Counter::kIsRate);
 }
 
 // ===========================================================================
@@ -565,11 +558,10 @@ static void BM_E2E_Throughput_Sequential(benchmark::State& state) {
 static void BM_E2E_Concurrency_MultiStream(benchmark::State& state) {
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/small",
-        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(200);
-            resp->AppendBody(std::string(1024, 'S'));
-        });
+    server->AddHandler(HttpMethod::kGet, "/small", [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+        resp->SetStatusCode(200);
+        resp->AppendBody(std::string(1024, 'S'));
+    });
 
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
@@ -612,8 +604,8 @@ static void BM_E2E_Concurrency_MultiStream(benchmark::State& state) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
 
-        state.counters["success_rate_%"] = benchmark::Counter(
-            concurrent > 0 ? static_cast<double>(success.load()) / concurrent * 100.0 : 0);
+        state.counters["success_rate_%"] =
+            benchmark::Counter(concurrent > 0 ? static_cast<double>(success.load()) / concurrent * 100.0 : 0);
     }
 
     client->Close();
@@ -627,11 +619,10 @@ static void BM_E2E_Concurrency_MultiStream(benchmark::State& state) {
 static void BM_E2E_Concurrency_MultiClient(benchmark::State& state) {
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/mc",
-        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(200);
-            resp->AppendBody(std::string(1024, 'M'));
-        });
+    server->AddHandler(HttpMethod::kGet, "/mc", [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+        resp->SetStatusCode(200);
+        resp->AppendBody(std::string(1024, 'M'));
+    });
 
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
@@ -678,8 +669,8 @@ static void BM_E2E_Concurrency_MultiClient(benchmark::State& state) {
 
         for (auto& t : threads) t.join();
 
-        state.counters["success_rate_%"] = benchmark::Counter(
-            static_cast<double>(total_success.load()) / (num_clients * reqs_per) * 100.0);
+        state.counters["success_rate_%"] =
+            benchmark::Counter(static_cast<double>(total_success.load()) / (num_clients * reqs_per) * 100.0);
     }
 
     server->Stop();
@@ -700,11 +691,10 @@ static void BM_E2E_Concurrency_MultiClient(benchmark::State& state) {
 static void BM_E2E_Stability_SustainedLoad(benchmark::State& state) {
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/stable",
-        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(200);
-            resp->AppendBody("stable");
-        });
+    server->AddHandler(HttpMethod::kGet, "/stable", [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+        resp->SetStatusCode(200);
+        resp->AppendBody("stable");
+    });
 
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
@@ -746,8 +736,10 @@ static void BM_E2E_Stability_SustainedLoad(benchmark::State& state) {
                 for (int w = 0; w < 1000 && !done && !stop.load(std::memory_order_relaxed); ++w) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 }
-                if (success) ok++;
-                else fail++;
+                if (success)
+                    ok++;
+                else
+                    fail++;
             }
         });
 
@@ -762,8 +754,7 @@ static void BM_E2E_Stability_SustainedLoad(benchmark::State& state) {
 
         state.counters["success"] = benchmark::Counter(static_cast<double>(ok.load()));
         state.counters["fail"] = benchmark::Counter(static_cast<double>(fail.load()));
-        state.counters["avg_req/s"] = benchmark::Counter(
-            elapsed > 0 ? static_cast<double>(ok.load()) / elapsed : 0);
+        state.counters["avg_req/s"] = benchmark::Counter(elapsed > 0 ? static_cast<double>(ok.load()) / elapsed : 0);
         if (rss_start > 0 && rss_end > 0) {
             state.counters["rss_delta_KB"] = benchmark::Counter(
                 static_cast<double>(static_cast<int64_t>(rss_end) - static_cast<int64_t>(rss_start)) / 1024.0);
@@ -778,11 +769,10 @@ static void BM_E2E_Stability_SustainedLoad(benchmark::State& state) {
 static void BM_E2E_Stability_ConnectDisconnect(benchmark::State& state) {
     Http3Settings settings = kDefaultHttp3Settings;
     auto server = IServer::Create(settings);
-    server->AddHandler(HttpMethod::kGet, "/cd",
-        [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
-            resp->SetStatusCode(200);
-            resp->AppendBody("ok");
-        });
+    server->AddHandler(HttpMethod::kGet, "/cd", [](std::shared_ptr<IRequest>, std::shared_ptr<IResponse> resp) {
+        resp->SetStatusCode(200);
+        resp->AppendBody("ok");
+    });
 
     Http3ServerConfig sc;
     sc.quic_config_.cert_pem_ = kCert;
@@ -812,8 +802,8 @@ static void BM_E2E_Stability_ConnectDisconnect(benchmark::State& state) {
             auto req = IRequest::Create();
             std::atomic<bool> done{false};
             std::atomic<bool> ok{false};
-            client->DoRequest("https://127.0.0.1:19509/cd", HttpMethod::kGet, req,
-                [&](std::shared_ptr<IResponse>, uint32_t error) {
+            client->DoRequest(
+                "https://127.0.0.1:19509/cd", HttpMethod::kGet, req, [&](std::shared_ptr<IResponse>, uint32_t error) {
                     if (error == 0) ok = true;
                     done = true;
                 });
@@ -828,10 +818,8 @@ static void BM_E2E_Stability_ConnectDisconnect(benchmark::State& state) {
         state.counters["success"] = benchmark::Counter(static_cast<double>(success));
         if (rss_start > 0 && rss_end > 0) {
             int64_t delta = static_cast<int64_t>(rss_end) - static_cast<int64_t>(rss_start);
-            state.counters["rss_delta_KB"] = benchmark::Counter(
-                static_cast<double>(delta) / 1024.0);
-            state.counters["rss_per_conn_B"] = benchmark::Counter(
-                cycles > 0 ? static_cast<double>(delta) / cycles : 0);
+            state.counters["rss_delta_KB"] = benchmark::Counter(static_cast<double>(delta) / 1024.0);
+            state.counters["rss_per_conn_B"] = benchmark::Counter(cycles > 0 ? static_cast<double>(delta) / cycles : 0);
         }
     }
 
@@ -859,46 +847,46 @@ static void BM_E2E_Stability_ConnectDisconnect(benchmark::State& state) {
 // Iterations(2) made a single cold-start miss swing the reported time by
 // ±50%, which is the main cause of the 50×–400× run-to-run variance noted
 // in §4.
-BENCHMARK(quicx::perf::BM_E2E_Handshake_NewConnection)
-    ->Unit(benchmark::kMillisecond)
-    ->Iterations(10)
-    ->UseRealTime();
+BENCHMARK(quicx::perf::BM_E2E_Handshake_NewConnection)->Unit(benchmark::kMillisecond)->Iterations(10)->UseRealTime();
 
 BENCHMARK(quicx::perf::BM_E2E_Handshake_Burst)
-    ->Arg(5)->Arg(10)
+    ->Arg(5)
+    ->Arg(10)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(5)
     ->UseRealTime();
 
 // --- Scenario 2: Throughput ---
-BENCHMARK(quicx::perf::BM_E2E_Throughput_Download)
-    ->Unit(benchmark::kMillisecond)
-    ->Iterations(10)
-    ->UseRealTime();
+BENCHMARK(quicx::perf::BM_E2E_Throughput_Download)->Unit(benchmark::kMillisecond)->Iterations(10)->UseRealTime();
 
 BENCHMARK(quicx::perf::BM_E2E_Throughput_Upload)
-    ->Arg(1024)          // 1KB
-    ->Arg(64 * 1024)     // 64KB
-    ->Arg(256 * 1024)    // 256KB
+    ->Arg(1024)        // 1KB
+    ->Arg(64 * 1024)   // 64KB
+    ->Arg(256 * 1024)  // 256KB
     ->Unit(benchmark::kMillisecond)
     ->Iterations(10)
     ->UseRealTime();
 
 BENCHMARK(quicx::perf::BM_E2E_Throughput_Sequential)
-    ->Arg(10)->Arg(50)
+    ->Arg(10)
+    ->Arg(50)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(5)
     ->UseRealTime();
 
 // --- Scenario 3: Concurrency ---
 BENCHMARK(quicx::perf::BM_E2E_Concurrency_MultiStream)
-    ->Arg(5)->Arg(10)->Arg(20)
+    ->Arg(5)
+    ->Arg(10)
+    ->Arg(20)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(5)
     ->UseRealTime();
 
 BENCHMARK(quicx::perf::BM_E2E_Concurrency_MultiClient)
-    ->Arg(2)->Arg(5)->Arg(10)
+    ->Arg(2)
+    ->Arg(5)
+    ->Arg(10)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(5)
     ->UseRealTime();
@@ -909,13 +897,15 @@ BENCHMARK(quicx::perf::BM_E2E_Concurrency_MultiClient)
 // Keep Iterations(1) here — running them twice would just double wall-clock
 // cost without adding signal.
 BENCHMARK(quicx::perf::BM_E2E_Stability_SustainedLoad)
-    ->Arg(5)->Arg(10)
+    ->Arg(5)
+    ->Arg(10)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1)
     ->UseRealTime();
 
 BENCHMARK(quicx::perf::BM_E2E_Stability_ConnectDisconnect)
-    ->Arg(10)->Arg(20)
+    ->Arg(10)
+    ->Arg(20)
     ->Unit(benchmark::kMillisecond)
     ->Iterations(1)
     ->UseRealTime();

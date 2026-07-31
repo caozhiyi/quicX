@@ -15,8 +15,7 @@ namespace quicx {
 namespace common {
 
 // Epoll event driver implementation for Linux
-class EpollEventDriver:
-    public IEventDriver {
+class EpollEventDriver: public IEventDriver {
 public:
     EpollEventDriver();
     virtual ~EpollEventDriver();
@@ -45,7 +44,7 @@ public:
 private:
     // Convert EventType to epoll events
     uint32_t ConvertToEpollEvents(int32_t events) const;
-    
+
     // Convert epoll events to EventType
     EventType ConvertFromEpollEvents(uint32_t epoll_events) const;
 
@@ -60,8 +59,8 @@ private:
     std::vector<struct epoll_event> epoll_events_scratch_;
 };
 
-} // namespace common
-} // namespace quicx
+}  // namespace common
+}  // namespace quicx
 
-#endif // COMMON_NETWORK_LINUX_EPOLL_EVENT_DRIVER 
-#endif // __linux__
+#endif  // COMMON_NETWORK_LINUX_EPOLL_EVENT_DRIVER
+#endif  // __linux__

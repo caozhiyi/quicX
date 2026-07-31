@@ -17,14 +17,11 @@ public:
 
     virtual std::shared_ptr<NetPacket> Malloc() = 0;
 
-    enum class PacketAllotorType {
-        NORMAL,
-        POOL
-    };
+    enum class PacketAllotorType { NORMAL, POOL };
     static std::shared_ptr<IPacketAllotor> MakePacketAllotor(PacketAllotorType type);
 };
 
-}
-}
+}  // namespace quic
+}  // namespace quicx
 
 #endif

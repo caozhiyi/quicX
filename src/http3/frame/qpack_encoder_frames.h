@@ -1,30 +1,33 @@
 #ifndef HTTP3_FRAME_QPACK_ENCODER_FRAMES
 #define HTTP3_FRAME_QPACK_ENCODER_FRAMES
 
-#include <string>
 #include <cstdint>
+#include <string>
 
 #include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {
 
-enum class QpackEncoderType: uint8_t {
-    kSetDynamicTableCapacity = 0x3f, // 00111111 + varint (RFC 9204 §4.3)
-    kInsertWithNameRef       = 0x80, // 1 N T (pattern) - simplified here as type byte then fields
-    kInsertWithoutNameRef    = 0x40, // 01 T ...
-    kDuplicate               = 0x00, // 00000000 + varint index
+enum class QpackEncoderType : uint8_t {
+    kSetDynamicTableCapacity = 0x3f,  // 00111111 + varint (RFC 9204 §4.3)
+    kInsertWithNameRef = 0x80,        // 1 N T (pattern) - simplified here as type byte then fields
+    kInsertWithoutNameRef = 0x40,     // 01 T ...
+    kDuplicate = 0x00,                // 00000000 + varint index
 };
 
 class IQpackEncoderFrame {
 public:
-    IQpackEncoderFrame(uint8_t type = 0): type_(type) {}
-    IQpackEncoderFrame(QpackEncoderType type): type_(static_cast<uint8_t>(type)) {}
+    IQpackEncoderFrame(uint8_t type = 0):
+        type_(type) {}
+    IQpackEncoderFrame(QpackEncoderType type):
+        type_(static_cast<uint8_t>(type)) {}
     virtual ~IQpackEncoderFrame() = default;
     virtual QpackEncoderType GetType() { return static_cast<QpackEncoderType>(type_); }
     virtual bool Encode(std::shared_ptr<common::IBuffer> buffer) = 0;
     virtual bool Decode(std::shared_ptr<common::IBuffer> buffer) = 0;
     virtual uint32_t EvaluateEncodeSize() = 0;
+
 protected:
     uint8_t type_;
 };
@@ -34,8 +37,7 @@ protected:
 // +---+---+---+---+---+---+---+---+
 // | 0 | 0 | 1 |   Capacity (5+)   |
 // +---+---+---+-------------------+
-class QpackSetCapacityFrame:
-    public IQpackEncoderFrame {
+class QpackSetCapacityFrame: public IQpackEncoderFrame {
 public:
     QpackSetCapacityFrame(uint8_t type = 0);
     QpackSetCapacityFrame(QpackEncoderType type);
@@ -45,6 +47,7 @@ public:
 
     uint64_t GetCapacity() const { return capacity_; }
     void SetCapacity(uint64_t capacity) { capacity_ = capacity; }
+
 private:
     uint64_t capacity_;
 };
@@ -58,8 +61,7 @@ private:
 // +---+---------------------------+
 // |  Value String (Length bytes)  |
 // +-------------------------------+
-class QpackInsertWithNameRefFrame:
-    public IQpackEncoderFrame {
+class QpackInsertWithNameRefFrame: public IQpackEncoderFrame {
 public:
     QpackInsertWithNameRefFrame();
     bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
@@ -69,6 +71,7 @@ public:
     bool IsStatic() const;
     uint64_t GetNameIndex() const;
     const std::string& GetValue() const;
+
 private:
     bool is_static_ = false;
     uint64_t name_index_ = 0;
@@ -86,8 +89,7 @@ private:
 // +---+---------------------------+
 // |  Value String (Length bytes)  |
 // +-------------------------------+
-class QpackInsertWithoutNameRefFrame:
-    public IQpackEncoderFrame {
+class QpackInsertWithoutNameRefFrame: public IQpackEncoderFrame {
 public:
     QpackInsertWithoutNameRefFrame();
     bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
@@ -96,6 +98,7 @@ public:
     void Set(const std::string& name, const std::string& value);
     const std::string& GetName() const;
     const std::string& GetValue() const;
+
 private:
     std::string name_;
     std::string value_;
@@ -106,8 +109,7 @@ private:
 // +---+---+---+---+---+---+---+---+
 // | 0 | 0 | 0 |    Index (5+)     |
 // +---+---+---+-------------------+
-class QpackDuplicateFrame:
-    public IQpackEncoderFrame {
+class QpackDuplicateFrame: public IQpackEncoderFrame {
 public:
     QpackDuplicateFrame();
     bool Encode(std::shared_ptr<common::IBuffer> buffer) override;
@@ -115,13 +117,12 @@ public:
     uint32_t EvaluateEncodeSize() override;
     void Set(uint64_t idx);
     uint64_t Get() const;
+
 private:
     uint64_t index_ = 0;
 };
 
-}
-}
+}  // namespace http3
+}  // namespace quicx
 
 #endif
-
-

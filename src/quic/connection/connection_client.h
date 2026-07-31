@@ -38,9 +38,8 @@ protected:
 
 private:
     // Common TLS setup for both Dial() overloads (ALPN, SNI, transport params)
-    bool DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_conn,
-        const common::Address& addr, const std::string& alpn,
-        const QuicTransportParams& tp_config, const std::string& server_name);
+    bool DialSetupTLS(std::shared_ptr<TLSClientConnection> tls_conn, const common::Address& addr,
+        const std::string& alpn, const QuicTransportParams& tp_config, const std::string& server_name);
     // Common finalization for both Dial() overloads (CID generation, secrets, handshake, qlog)
     bool DialFinalize(std::shared_ptr<TLSClientConnection> tls_conn, const common::Address& addr);
 

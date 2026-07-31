@@ -1,21 +1,23 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/path_response_frame.h"
-#include "quic/frame/path_challenge_frame.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/path_challenge_frame.h"
+#include "quic/frame/path_response_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(path_challenge_frame_utest, codec) {
+TEST(PathChallengeFrameTest, codec) {
     PathChallengeFrame frame1;
     PathChallengeFrame frame2;
     std::shared_ptr<PathResponseFrame> frame3 = std::make_shared<PathResponseFrame>();
 
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
 
     frame1.MakeData();
 
@@ -33,6 +35,6 @@ TEST(path_challenge_frame_utest, codec) {
     EXPECT_TRUE(frame2.CompareData(frame3));
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

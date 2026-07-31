@@ -1,17 +1,18 @@
 #ifndef COMMON_THREAD_THREAD
 #define COMMON_THREAD_THREAD
 
-#include <thread>     // about thread
-#include <atomic>     // for atomic_bool
-#include <memory>     // for shared_ptr
-#include <functional> // for bind
+#include <atomic>      // for atomic_bool
+#include <functional>  // for bind
+#include <memory>      // for shared_ptr
+#include <thread>      // about thread
 
 namespace quicx {
 namespace common {
 
 class Thread {
 public:
-    Thread(): stop_(true) {}
+    Thread():
+        stop_(true) {}
     virtual ~Thread() {
         Stop();
         if (pthread_ && pthread_->joinable()) {
@@ -19,7 +20,7 @@ public:
         }
     }
 
-    //base option
+    // base option
     virtual void Start() {
         stop_ = false;
         if (!pthread_) {
@@ -27,9 +28,7 @@ public:
         }
     }
 
-    virtual void Stop() {
-        stop_ = true;
-    }
+    virtual void Stop() { stop_ = true; }
 
     virtual void Join() {
         // joinable() guard: Join() may be called multiple times across nested
@@ -40,12 +39,10 @@ public:
             pthread_->join();
         }
     }
-    //TO DO
+    // TO DO
     virtual void Run() = 0;
 
-    virtual bool IsStop() {
-        return stop_;
-    }
+    virtual bool IsStop() { return stop_; }
 
 protected:
     Thread(const Thread&) = delete;
@@ -56,7 +53,7 @@ protected:
     std::shared_ptr<std::thread> pthread_;
 };
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
 #endif

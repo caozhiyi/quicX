@@ -107,11 +107,11 @@ public:
  */
 class ConnectionIdUpdatedData: public EventData {
 public:
-    std::string owner;      // "local" or "remote"
-    std::string old_id;     // Old connection ID (hex string, may be empty)
-    std::string new_id;     // New connection ID (hex string, may be empty for retire)
-    std::string trigger;    // "new_connection_id", "retire_connection_id", "retire_prior_to",
-                            // "cid_rotation", "pool_replenish"
+    std::string owner;    // "local" or "remote"
+    std::string old_id;   // Old connection ID (hex string, may be empty)
+    std::string new_id;   // New connection ID (hex string, may be empty for retire)
+    std::string trigger;  // "new_connection_id", "retire_connection_id", "retire_prior_to",
+                          // "cid_rotation", "pool_replenish"
 
     std::string ToJson() const override {
         std::ostringstream oss;

@@ -1,9 +1,9 @@
 #ifndef QUIC_INCLUDE_IF_QUIC_SERVER
 #define QUIC_INCLUDE_IF_QUIC_SERVER
 
+#include <quicx/quic/type.h>
 #include <cstdint>
 #include <string>
-#include <quicx/quic/type.h>
 
 namespace quicx {
 

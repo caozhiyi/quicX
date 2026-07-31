@@ -4,7 +4,8 @@
 namespace quicx {
 namespace http3 {
 
-bool QpackEncodePrefixedInteger(std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t first_byte_prefix_mask, uint64_t value) {
+bool QpackEncodePrefixedInteger(
+    std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t first_byte_prefix_mask, uint64_t value) {
     if (prefix_bits == 0 || prefix_bits > 8) return false;
     uint8_t max_in_prefix = static_cast<uint8_t>((1u << prefix_bits) - 1u);
     uint8_t first = first_byte_prefix_mask;
@@ -25,7 +26,8 @@ bool QpackEncodePrefixedInteger(std::shared_ptr<common::IBuffer> buf, uint8_t pr
     return buf->Write(&last, 1) == 1;
 }
 
-bool QpackDecodePrefixedInteger(const std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t& first_byte, uint64_t& value) {
+bool QpackDecodePrefixedInteger(
+    const std::shared_ptr<common::IBuffer> buf, uint8_t prefix_bits, uint8_t& first_byte, uint64_t& value) {
     if (prefix_bits == 0 || prefix_bits > 8) return false;
     if (buf->Read(&first_byte, 1) != 1) return false;
     uint8_t max_in_prefix = static_cast<uint8_t>((1u << prefix_bits) - 1u);
@@ -46,7 +48,8 @@ bool QpackEncodeStringLiteral(const std::string& s, std::shared_ptr<common::IBuf
     // length prefix with 7-bit prefix
     if (!QpackEncodePrefixedInteger(buf, 7, h_bit, static_cast<uint64_t>(s.size()))) return false;
     if (s.empty()) return true;
-    return buf->Write(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(s.data())), static_cast<uint32_t>(s.size())) == static_cast<int32_t>(s.size());
+    return buf->Write(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(s.data())),
+               static_cast<uint32_t>(s.size())) == static_cast<int32_t>(s.size());
 }
 
 bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::string& out) {
@@ -56,8 +59,8 @@ bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::s
         return false;
     }
     bool huffman = (first & 0x80) != 0;
-    if (len == 0) { 
-        out.clear(); 
+    if (len == 0) {
+        out.clear();
         return true;
     }
     if (!huffman) {
@@ -72,7 +75,5 @@ bool QpackDecodeStringLiteral(const std::shared_ptr<common::IBuffer> buf, std::s
     return true;
 }
 
-}
-}
-
-
+}  // namespace http3
+}  // namespace quicx

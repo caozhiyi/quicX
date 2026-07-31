@@ -12,7 +12,7 @@ namespace quicx {
 namespace quic {
 
 // Simple mock timer for testing
-class TestTimer : public common::ITimer {
+class TestTimer: public common::ITimer {
 public:
     uint64_t AddTimer(common::TimerTask& task, uint32_t time, uint64_t now = 0) override { return 1; }
     bool RemoveTimer(common::TimerTask& task) override { return true; }
@@ -22,7 +22,7 @@ public:
 };
 
 // Test fixture
-class EncryptionLevelSchedulerTest : public ::testing::Test {
+class EncryptionLevelSchedulerTest: public ::testing::Test {
 protected:
     void SetUp() override {
         timer_ = std::make_shared<TestTimer>();

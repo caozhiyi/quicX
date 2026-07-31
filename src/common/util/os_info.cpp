@@ -1,5 +1,5 @@
-#include <atomic>
 #include "common/util/os_info.h"
+#include <atomic>
 
 namespace quicx {
 namespace common {
@@ -14,5 +14,5 @@ bool IsBigEndian() {
     return temp.c != 1;
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

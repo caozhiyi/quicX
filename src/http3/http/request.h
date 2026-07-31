@@ -5,9 +5,9 @@
 #include <string>
 #include <unordered_map>
 
-#include "common/buffer/if_buffer.h"
 #include <quicx/http3/if_request.h>
 #include <quicx/http3/type.h>
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {
@@ -58,7 +58,9 @@ public:
     virtual body_consumer GetResponseBodyConsumer() const { return response_body_consumer_; }
 
     // Query parameters (parsed from :path by URLHelper::ParseQueryParams)
-    virtual void SetQueryParams(const std::unordered_map<std::string, std::string>& params) override { query_params_ = params; }
+    virtual void SetQueryParams(const std::unordered_map<std::string, std::string>& params) override {
+        query_params_ = params;
+    }
     virtual const std::unordered_map<std::string, std::string>& GetQueryParams() const override {
         return query_params_;
     }

@@ -1,17 +1,16 @@
+#include "http3/stream/control_sender_stream.h"
 #include "common/log/log.h"
-#include "http3/http/error.h"
-#include "http3/stream/type.h"
 #include "http3/frame/goaway_frame.h"
 #include "http3/frame/settings_frame.h"
-#include "http3/stream/control_sender_stream.h"
+#include "http3/http/error.h"
+#include "http3/stream/type.h"
 
 namespace quicx {
 namespace http3 {
 
 ControlSenderStream::ControlSenderStream(const std::shared_ptr<IQuicSendStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
-    ISendStream(StreamType::kControl, stream, error_handler) {
-}
+    ISendStream(StreamType::kControl, stream, error_handler) {}
 
 ControlSenderStream::~ControlSenderStream() {
     // Note: Do NOT call stream_->Close() here during destruction.
@@ -35,7 +34,7 @@ bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kMessageError);
         return false;
     }
-    
+
     return stream_->Flush();
 }
 
@@ -43,10 +42,10 @@ bool ControlSenderStream::SendGoaway(uint64_t id) {
     if (!EnsureStreamPreamble()) {
         return false;
     }
-    
+
     GoAwayFrame frame;
     frame.SetStreamId(id);
-    
+
     auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
     if (!frame.Encode(buffer)) {
         LOG_ERROR("ControlSenderStream::SendGoaway: Failed to encode GoAwayFrame");
@@ -60,12 +59,12 @@ bool ControlSenderStream::SendQpackInstructions(const std::vector<uint8_t>& blob
     if (!EnsureStreamPreamble()) {
         return false;
     }
-    
+
     if (blob.empty()) {
         return true;
     }
     return stream_->Send((uint8_t*)blob.data(), blob.size()) > 0;
 }
 
-}
-}
+}  // namespace http3
+}  // namespace quicx

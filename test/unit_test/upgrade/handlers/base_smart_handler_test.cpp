@@ -1,32 +1,33 @@
 #include <gtest/gtest.h>
-#include <memory>
-#include <vector>
-#include <string>
 #include <atomic>
+#include <memory>
+#include <string>
+#include <vector>
 
-#include "common/timer/timer_task.h"
 #include <quicx/common/if_event_loop.h>
+#include "common/timer/timer_task.h"
 
 #include <quicx/upgrade/type.h>
-#include "upgrade/network/tcp_socket.h"
 #include "upgrade/handlers/base_smart_handler.h"
 #include "upgrade/handlers/connection_context.h"
+#include "upgrade/network/tcp_socket.h"
 
 namespace quicx {
 namespace upgrade {
 namespace {
 
 // Mock event loop for testing
-class MockEventLoop:
-    public common::IEventLoop {
+class MockEventLoop: public common::IEventLoop {
 public:
-    MockEventLoop() : init_called_(false), wakeup_called_(false) {}
-    
+    MockEventLoop():
+        init_called_(false),
+        wakeup_called_(false) {}
+
     virtual bool Init() override {
         init_called_ = true;
         return true;
     }
-    
+
     int Wait() override { return 0; }
 
     bool RegisterFd(uint32_t, int32_t, std::shared_ptr<common::IFdHandler>) override { return true; }
@@ -36,67 +37,51 @@ public:
     }
     bool RemoveFd(uint32_t) override { return true; }
 
-    virtual void AddFixedProcess(std::function<void()>) override {
-        return;
-    }
-    virtual void AddFixedProcess(std::weak_ptr<void>, std::function<void()>) override {
-        return;
-    }
+    virtual void AddFixedProcess(std::function<void()>) override { return; }
+    virtual void AddFixedProcess(std::weak_ptr<void>, std::function<void()>) override { return; }
 
     virtual uint64_t AddTimer(std::function<void()> callback, uint32_t, bool = false) override {
         timer_callbacks_.push_back(callback);
         return next_timer_id_++;
     }
 
-    virtual uint64_t AddTimer(common::TimerTask& task, uint32_t, bool = false) override {
-        return 0;
-    }
-    
-    virtual bool RemoveTimer(uint64_t) override {
-        return true;
-    }
+    virtual uint64_t AddTimer(common::TimerTask& task, uint32_t, bool = false) override { return 0; }
 
-    virtual bool RemoveTimer(common::TimerTask& task) override {
-        return true;
-    }
+    virtual bool RemoveTimer(uint64_t) override { return true; }
+
+    virtual bool RemoveTimer(common::TimerTask& task) override { return true; }
 
     virtual void ClearFixedProcesses() override {}
     virtual void ClearAllTimers() override {}
 
-    virtual void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override {
-        return;
-    }
-    
+    virtual void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override { return; }
+
     virtual void PostTask(std::function<void()>) override {}
 
-    virtual void Wakeup() override {
-        wakeup_called_ = true;
-    }
+    virtual void Wakeup() override { wakeup_called_ = true; }
 
-    virtual std::shared_ptr<common::ITimer> GetTimer() override {
-        return nullptr;
-    }
-    
+    virtual std::shared_ptr<common::ITimer> GetTimer() override { return nullptr; }
+
     virtual bool IsInLoopThread() const override {
         return true;  // Mock always returns true for testing
     }
-    
+
     virtual void RunInLoop(std::function<void()> task) override {
         if (task) {
             task();
         }
     }
-    
+
     virtual void AssertInLoopThread() override {
         // Mock implementation - does nothing in test
     }
-    
+
     // Test helper methods
     bool IsInitCalled() const { return init_called_; }
     bool IsWakeupCalled() const { return wakeup_called_; }
     const std::vector<std::pair<int, int32_t>>& GetModifyCalls() const { return modify_calls_; }
     const std::vector<std::function<void()>>& GetTimerCallbacks() const { return timer_callbacks_; }
-    
+
 private:
     std::atomic<bool> init_called_;
     std::atomic<bool> wakeup_called_;
@@ -106,8 +91,7 @@ private:
 };
 
 // Concrete implementation of BaseSmartHandler for testing
-class TestSmartHandler:
-    public BaseSmartHandler {
+class TestSmartHandler: public BaseSmartHandler {
 public:
     explicit TestSmartHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop):
         BaseSmartHandler(settings, event_loop),
@@ -115,44 +99,40 @@ public:
         read_called_(false),
         write_called_(false),
         cleanup_called_(false) {}
-    
+
     virtual bool InitializeConnection(std::shared_ptr<ITcpSocket> socket) override {
         init_called_ = true;
         return true;
     }
-    
+
     virtual int ReadData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override {
         read_called_ = true;
-        data = {0x48, 0x54, 0x54, 0x50}; // "HTTP"
+        data = {0x48, 0x54, 0x54, 0x50};  // "HTTP"
         return data.size();
     }
-    
+
     virtual int WriteData(std::shared_ptr<ITcpSocket> socket, std::vector<uint8_t>& data) override {
         write_called_ = true;
         return data.size();
     }
-    
-    virtual void CleanupConnection(std::shared_ptr<ITcpSocket> socket) override {
-        cleanup_called_ = true;
-    }
-    
-    virtual std::string GetType() const override {
-        return "TEST";
-    }
-    
+
+    virtual void CleanupConnection(std::shared_ptr<ITcpSocket> socket) override { cleanup_called_ = true; }
+
+    virtual std::string GetType() const override { return "TEST"; }
+
     // Test helper methods
     bool IsInitCalled() const { return init_called_; }
     bool IsReadCalled() const { return read_called_; }
     bool IsWriteCalled() const { return write_called_; }
     bool IsCleanupCalled() const { return cleanup_called_; }
-    
+
     // Expose protected methods for testing
+    using BaseSmartHandler::HandleNegotiationTimeout;
     using BaseSmartHandler::HandleProtocolDetection;
     using BaseSmartHandler::OnUpgradeComplete;
     using BaseSmartHandler::OnUpgradeFailed;
-    using BaseSmartHandler::HandleNegotiationTimeout;
     using BaseSmartHandler::TrySendResponse;
-    
+
 private:
     std::atomic<bool> init_called_;
     std::atomic<bool> read_called_;
@@ -160,24 +140,23 @@ private:
     std::atomic<bool> cleanup_called_;
 };
 
-class BaseSmartHandlerTest:
-    public ::testing::Test {
+class BaseSmartHandlerTest: public ::testing::Test {
 protected:
     void SetUp() override {
         settings_.http_port = 8080;
         settings_.https_port = 0;
-        
+
         event_loop_ = std::make_shared<MockEventLoop>();
         handler_ = std::make_unique<TestSmartHandler>(settings_, event_loop_);
         socket_ = std::make_shared<TcpSocket>();
     }
-    
+
     void TearDown() override {
         handler_.reset();
         socket_.reset();
         event_loop_.reset();
     }
-    
+
     UpgradeSettings settings_;
     std::unique_ptr<TestSmartHandler> handler_;
     std::shared_ptr<ITcpSocket> socket_;
@@ -194,9 +173,9 @@ TEST_F(BaseSmartHandlerTest, HandlerCreation) {
 TEST_F(BaseSmartHandlerTest, HandleConnect) {
     uint32_t fd = 100;
     handler_->OnConnect(fd);
-    
+
     EXPECT_TRUE(handler_->IsInitCalled());
-    
+
     // Check if connection context was created
     // Note: We can't directly access connections_ map, but we can verify
     // that the handler processed the connection
@@ -207,10 +186,10 @@ TEST_F(BaseSmartHandlerTest, HandleRead) {
     // First connect
     uint32_t fd = 101;
     handler_->OnConnect(fd);
-    
+
     // Then read
     handler_->OnRead(fd);
-    
+
     EXPECT_TRUE(handler_->IsReadCalled());
 }
 
@@ -219,10 +198,10 @@ TEST_F(BaseSmartHandlerTest, HandleWrite) {
     // First connect
     uint32_t fd = 102;
     handler_->OnConnect(fd);
-    
+
     // Then write - this won't call WriteData unless in NEGOTIATING state
     handler_->OnWrite(fd);
-    
+
     EXPECT_FALSE(handler_->IsWriteCalled());  // WriteData is only called during negotiation
 }
 
@@ -231,10 +210,10 @@ TEST_F(BaseSmartHandlerTest, HandleClose) {
     // First connect
     uint32_t fd = 103;
     handler_->OnConnect(fd);
-    
+
     // Then close
     handler_->OnClose(fd);
-    
+
     EXPECT_TRUE(handler_->IsCleanupCalled());
 }
 
@@ -242,11 +221,11 @@ TEST_F(BaseSmartHandlerTest, HandleClose) {
 TEST_F(BaseSmartHandlerTest, ProtocolDetection) {
     uint32_t fd = 104;
     handler_->OnConnect(fd);
-    
+
     // Simulate reading HTTP data
-    std::vector<uint8_t> http_data = {0x48, 0x54, 0x54, 0x50, 0x2F, 0x31, 0x2E, 0x31}; // "HTTP/1.1"
+    std::vector<uint8_t> http_data = {0x48, 0x54, 0x54, 0x50, 0x2F, 0x31, 0x2E, 0x31};  // "HTTP/1.1"
     handler_->HandleProtocolDetection(fd, http_data);
-    
+
     // Protocol detection should be triggered
     // Note: We can't directly verify the internal state, but we can ensure
     // the method doesn't crash and processes the data
@@ -255,14 +234,14 @@ TEST_F(BaseSmartHandlerTest, ProtocolDetection) {
 // Test upgrade completion
 TEST_F(BaseSmartHandlerTest, UpgradeCompletion) {
     handler_->OnConnect(105);
-    
+
     // Create a connection context
     ConnectionContext context(socket_);
     context.state = ConnectionState::NEGOTIATING;
-    
+
     // Test upgrade completion
     handler_->OnUpgradeComplete(context);
-    
+
     // State should be updated to UPGRADED
     EXPECT_EQ(context.state, ConnectionState::UPGRADED);
 }
@@ -272,10 +251,10 @@ TEST_F(BaseSmartHandlerTest, UpgradeFailure) {
     // Create a connection context
     ConnectionContext context(socket_);
     context.state = ConnectionState::NEGOTIATING;
-    
+
     // Test upgrade failure
     handler_->OnUpgradeFailed(context, "Test error");
-    
+
     // State should be updated to FAILED
     EXPECT_EQ(context.state, ConnectionState::FAILED);
 }
@@ -283,10 +262,10 @@ TEST_F(BaseSmartHandlerTest, UpgradeFailure) {
 // Test negotiation timeout
 TEST_F(BaseSmartHandlerTest, NegotiationTimeout) {
     handler_->OnConnect(106);
-    
+
     // Simulate negotiation timeout
     handler_->HandleNegotiationTimeout(106);
-    
+
     // Timeout handling should not crash
     // The actual timeout logic depends on the specific implementation
 }
@@ -294,17 +273,17 @@ TEST_F(BaseSmartHandlerTest, NegotiationTimeout) {
 // Test write during negotiation
 TEST_F(BaseSmartHandlerTest, WriteDuringNegotiation) {
     handler_->OnConnect(107);
-    
+
     // Create a connection context in NEGOTIATING state
     ConnectionContext context(socket_);
     context.state = ConnectionState::NEGOTIATING;
     std::string response = "HTTP/1.1 101 Switching Protocols\r\n\r\n";
     context.pending_response = std::vector<uint8_t>(response.begin(), response.end());
     context.response_sent = 0;
-    
+
     // Test response sending - this should call WriteData
     handler_->TrySendResponse(context);
-    
+
     EXPECT_TRUE(handler_->IsWriteCalled());  // WriteData should be called during negotiation
 }
 
@@ -315,10 +294,10 @@ TEST_F(BaseSmartHandlerTest, ResponseSending) {
     std::string response = "HTTP/1.1 101 Switching Protocols\r\n\r\n";
     context.pending_response = std::vector<uint8_t>(response.begin(), response.end());
     context.response_sent = 0;
-    
+
     // Test response sending
     handler_->TrySendResponse(context);
-    
+
     EXPECT_TRUE(handler_->IsWriteCalled());  // WriteData should be called
 }
 
@@ -327,13 +306,13 @@ TEST_F(BaseSmartHandlerTest, MultipleConnections) {
     // Handle multiple connections
     handler_->OnConnect(108);
     handler_->OnConnect(109);
-    
+
     EXPECT_TRUE(handler_->IsInitCalled());
-    
+
     // Handle operations on different sockets
     handler_->OnRead(108);
     handler_->OnWrite(109);  // This won't call WriteData unless in NEGOTIATING state
-    
+
     EXPECT_TRUE(handler_->IsReadCalled());
     EXPECT_FALSE(handler_->IsWriteCalled());  // WriteData is only called during negotiation
 }
@@ -341,17 +320,17 @@ TEST_F(BaseSmartHandlerTest, MultipleConnections) {
 // Test event driver integration
 TEST_F(BaseSmartHandlerTest, EventDriverIntegration) {
     handler_->OnConnect(110);
-    
+
     // Event loop is set but not automatically initialized
     EXPECT_FALSE(event_loop_->IsInitCalled());  // Constructor doesn't call Init()
-    
+
     // Test response sending with event driver
     ConnectionContext context(socket_);
     std::string response = "HTTP/1.1 200 OK\r\n\r\n";
     context.pending_response = std::vector<uint8_t>(response.begin(), response.end());
-    
+
     handler_->TrySendResponse(context);
-    
+
     // Event loop should be used for modifying file descriptors
     auto modify_calls = event_loop_->GetModifyCalls();
     // The exact number of calls depends on the implementation
@@ -361,24 +340,24 @@ TEST_F(BaseSmartHandlerTest, EventDriverIntegration) {
 TEST_F(BaseSmartHandlerTest, HandlerLifecycle) {
     // Create handler
     EXPECT_NE(handler_, nullptr);
-    
+
     // Connect
     handler_->OnConnect(111);
     EXPECT_TRUE(handler_->IsInitCalled());
-    
+
     // Read data
     handler_->OnRead(111);
     EXPECT_TRUE(handler_->IsReadCalled());
-    
+
     // Write data - this won't call WriteData unless in NEGOTIATING state
     handler_->OnWrite(111);
     EXPECT_FALSE(handler_->IsWriteCalled());  // WriteData is only called during negotiation
-    
+
     // Close connection
     handler_->OnClose(111);
     EXPECT_TRUE(handler_->IsCleanupCalled());
 }
 
-}
-} // namespace upgrade
-} // namespace quicx 
+}  // namespace
+}  // namespace upgrade
+}  // namespace quicx

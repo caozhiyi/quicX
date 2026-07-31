@@ -78,8 +78,7 @@ public:
         int waited = 0;
         while (pending_requests_.load() > 0) {
             if (waited >= timeout_ms) {
-                std::cout << "WaitForCompletion: timeout after " << timeout_ms
-                          << "ms, " << pending_requests_.load()
+                std::cout << "WaitForCompletion: timeout after " << timeout_ms << "ms, " << pending_requests_.load()
                           << " request(s) still pending" << std::endl;
                 return false;
             }

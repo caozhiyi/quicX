@@ -1,18 +1,20 @@
-#include "common/log/log.h"
-#include "common/log/if_logger.h"
 #include "common/log/log_stream.h"
-
+#include "common/log/if_logger.h"
+#include "common/log/log.h"
 
 namespace quicx {
 namespace common {
 
-#define CHECK_CONTINUE()  do{ if (!log_ || log_->len_ >= kLogBlockSize) { return *this; }  } while(0);
+#define CHECK_CONTINUE()                            \
+    do {                                            \
+        if (!log_ || log_->len_ >= kLogBlockSize) { \
+            return *this;                           \
+        }                                           \
+    } while (0);
 
 LogStream::LogStream(const LogStreamParam& param):
     log_(param.first),
-    call_back_(param.second) {
-
-}
+    call_back_(param.second) {}
 
 LogStream::~LogStream() {
     if (log_ && call_back_) {
@@ -129,5 +131,5 @@ LogStream& LogStream::operator<<(char v) {
     return *this;
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx

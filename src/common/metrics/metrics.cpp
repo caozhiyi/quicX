@@ -2,9 +2,9 @@
 #include <sstream>
 
 #include <quicx/common/metrics.h>
+#include <quicx/common/metrics_std.h>
 #include "common/metrics/metrics_internal.h"
 #include "common/metrics/metrics_registry.h"
-#include <quicx/common/metrics_std.h>
 
 namespace quicx {
 namespace common {
@@ -186,8 +186,7 @@ std::string Metrics::ExportPrometheus() {
 
 uint64_t Metrics::NowUs() {
     return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now().time_since_epoch())
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch())
             .count());
 }
 

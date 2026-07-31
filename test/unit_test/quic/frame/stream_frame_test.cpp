@@ -8,7 +8,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-TEST(stream_frame_utest, codec) {
+TEST(StreamFrameTest, codec) {
     StreamFrame frame1;
     StreamFrame frame2;
 
@@ -45,7 +45,7 @@ TEST(stream_frame_utest, codec) {
     EXPECT_EQ(std::string(frame_data, strlen(frame_data)), std::string((char*)data2.GetStart(), data2.GetLength()));
 }
 
-TEST(stream_frame_utest, encode_size) {
+TEST(StreamFrameTest, encode_size) {
     StreamFrame frame;
     frame.SetStreamID(1);
     frame.SetOffset(0);

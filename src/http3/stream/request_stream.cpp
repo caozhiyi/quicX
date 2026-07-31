@@ -1,7 +1,7 @@
 
-#include "common/log/log.h"
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+#include "common/log/log.h"
 
 #include "http3/frame/push_promise_frame.h"
 #include "http3/http/error.h"
@@ -14,8 +14,7 @@ namespace http3 {
 
 // Constructor for complete mode
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<QpackEncoder>& qpack_decoder,
-    const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, std::shared_ptr<IAsyncClientHandler> async_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
@@ -26,8 +25,7 @@ RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
     push_promise_handler_(push_promise_handler) {}
 
 RequestStream::RequestStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<QpackEncoder>& qpack_decoder,
-    const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream, http_response_handler response_handler,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler,
     const std::function<void(std::unordered_map<std::string, std::string>&, uint64_t push_id)>& push_promise_handler):
@@ -74,8 +72,8 @@ bool RequestStream::SendRequest(std::shared_ptr<IRequest> request) {
     // request stream and never produce a response.
     if (stream_) {
         stream_->Close();
-        LOG_DEBUG("SendRequest: no body, sent FIN on request stream id=%llu",
-            static_cast<unsigned long long>(GetStreamID()));
+        LOG_DEBUG(
+            "SendRequest: no body, sent FIN on request stream id=%llu", static_cast<unsigned long long>(GetStreamID()));
     }
     return true;
 }
@@ -222,8 +220,7 @@ void RequestStream::HandleData(const std::shared_ptr<common::IBuffer>& data, boo
 }
 
 void RequestStream::HandleFrame(std::shared_ptr<IFrame> frame) {
-    LOG_DEBUG("RequestStream::HandleFrame: processing frame type=0x%x", 
-        static_cast<uint32_t>(frame->GetType()));
+    LOG_DEBUG("RequestStream::HandleFrame: processing frame type=0x%x", static_cast<uint32_t>(frame->GetType()));
     switch (frame->GetType()) {
         case FrameType::kPushPromise:
             LOG_DEBUG("RequestStream::HandleFrame: dispatching to HandlePushPromise");

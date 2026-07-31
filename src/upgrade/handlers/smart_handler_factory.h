@@ -1,8 +1,8 @@
 #ifndef UPGRADE_HANDLERS_SMART_HANDLER_FACTORY
 #define UPGRADE_HANDLERS_SMART_HANDLER_FACTORY
 
-#include <memory>
 #include <quicx/upgrade/type.h>
+#include <memory>
 #include "upgrade/handlers/if_smart_handler.h"
 
 namespace quicx {
@@ -22,15 +22,15 @@ public:
     };
 
     // Create appropriate smart handler based on settings
-    static std::shared_ptr<ISmartHandler> CreateHandler(const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop);
+    static std::shared_ptr<ISmartHandler> CreateHandler(
+        const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop);
 
     // Same as above, but the caller picks the protocol explicitly.
-    static std::shared_ptr<ISmartHandler> CreateHandler(const UpgradeSettings& settings,
-                                                        std::shared_ptr<common::IEventLoop> event_loop,
-                                                        HandlerKind kind);
+    static std::shared_ptr<ISmartHandler> CreateHandler(
+        const UpgradeSettings& settings, std::shared_ptr<common::IEventLoop> event_loop, HandlerKind kind);
 };
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx
 
-#endif // UPGRADE_HANDLERS_SMART_HANDLER_FACTORY_H 
+#endif  // UPGRADE_HANDLERS_SMART_HANDLER_FACTORY_H

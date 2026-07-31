@@ -1,22 +1,24 @@
 #include <gtest/gtest.h>
 
-#include "quic/frame/ack_frame.h"
-#include "quic/frame/frame_decode.h"
-#include "quic/frame/stream_frame.h"
-#include "quic/frame/stop_sending_frame.h"
 #include "common/buffer/single_block_buffer.h"
+#include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/ack_frame.h"
 #include "quic/frame/connection_close_frame.h"
+#include "quic/frame/frame_decode.h"
 #include "quic/frame/new_connection_id_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
-#include "common/buffer/standalone_buffer_chunk.h"
+#include "quic/frame/stop_sending_frame.h"
+#include "quic/frame/stream_frame.h"
 
 namespace quicx {
 namespace quic {
 namespace {
 
-TEST(frame_decode_utest, codec) {
-    std::shared_ptr<common::SingleBlockBuffer> read_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
-    std::shared_ptr<common::SingleBlockBuffer> write_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+TEST(QuicFrameDecodeTest, codec) {
+    std::shared_ptr<common::SingleBlockBuffer> read_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
+    std::shared_ptr<common::SingleBlockBuffer> write_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(4096));
 
     AckFrame ack_frame1;
     std::shared_ptr<AckFrame> ack_frame2;
@@ -55,7 +57,8 @@ TEST(frame_decode_utest, codec) {
     stream_frame1.SetFin();
     stream_frame1.SetOffset(1042451);
     stream_frame1.SetStreamID(20010);
-    std::shared_ptr<common::SingleBlockBuffer> data_buffer = std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
+    std::shared_ptr<common::SingleBlockBuffer> data_buffer =
+        std::make_shared<common::SingleBlockBuffer>(std::make_shared<common::StandaloneBufferChunk>(128));
     data_buffer->Write((uint8_t*)frame_data, strlen(frame_data));
     stream_frame1.SetData(data_buffer->GetSharedReadableSpan());
     EXPECT_TRUE(stream_frame1.Encode(write_buffer));
@@ -87,7 +90,7 @@ TEST(frame_decode_utest, codec) {
     bool decode_result = DecodeFrames(read_buffer, frames);
     EXPECT_TRUE(decode_result) << "DecodeFrames failed, decoded " << frames.size() << " frames";
     EXPECT_EQ(frames.size(), 6) << "Expected 6 frames but got " << frames.size();
-    
+
     // Only proceed with checks if we successfully decoded all frames
     if (!decode_result || frames.size() != 6) {
         return;  // Skip remaining checks if decoding failed
@@ -100,7 +103,7 @@ TEST(frame_decode_utest, codec) {
     new_frame2 = std::dynamic_pointer_cast<NewConnectionIDFrame>(frames[3]);
     retire_frame2 = std::dynamic_pointer_cast<RetireConnectionIDFrame>(frames[4]);
     close_frame2 = std::dynamic_pointer_cast<ConnectionCloseFrame>(frames[5]);
-    
+
     // Verify all casts succeeded
     EXPECT_NE(ack_frame2, nullptr) << "Failed to cast frame[0] to AckFrame";
     EXPECT_NE(stop_frame2, nullptr) << "Failed to cast frame[1] to StopSendingFrame";
@@ -108,18 +111,17 @@ TEST(frame_decode_utest, codec) {
     EXPECT_NE(new_frame2, nullptr) << "Failed to cast frame[3] to NewConnectionIDFrame";
     EXPECT_NE(retire_frame2, nullptr) << "Failed to cast frame[4] to RetireConnectionIDFrame";
     EXPECT_NE(close_frame2, nullptr) << "Failed to cast frame[5] to ConnectionCloseFrame";
-    
+
     // Skip remaining checks if any cast failed
-    if (!ack_frame2 || !stop_frame2 || !stream_frame2 || 
-        !new_frame2 || !retire_frame2 || !close_frame2) {
+    if (!ack_frame2 || !stop_frame2 || !stream_frame2 || !new_frame2 || !retire_frame2 || !close_frame2) {
         return;
     }
 
     // check ack frame
     EXPECT_EQ(ack_frame1.GetType(), ack_frame2->GetType());
     EXPECT_EQ(ack_frame1.GetAckDelay(), ack_frame2->GetAckDelay());
-    //EXPECT_EQ(ack_frame1.GetFirstAckRange(), ack_frame2->GetFirstAckRange());
-    //EXPECT_EQ(ack_frame1.GetLargestAck(), ack_frame2->GetLargestAck());
+    // EXPECT_EQ(ack_frame1.GetFirstAckRange(), ack_frame2->GetFirstAckRange());
+    // EXPECT_EQ(ack_frame1.GetLargestAck(), ack_frame2->GetLargestAck());
     auto range = ack_frame2->GetAckRange();
     EXPECT_EQ(range.size(), 3);
     /*EXPECT_EQ(range[0].gap_, 3);
@@ -147,7 +149,7 @@ TEST(frame_decode_utest, codec) {
     EXPECT_EQ(new_frame1.GetType(), new_frame2->GetType());
     EXPECT_EQ(new_frame1.GetRetirePriorTo(), new_frame2->GetRetirePriorTo());
     EXPECT_EQ(new_frame1.GetSequenceNumber(), new_frame2->GetSequenceNumber());
-    EXPECT_EQ(std::string((char*)new_frame1.GetStatelessResetToken(), kStatelessResetTokenLength), 
+    EXPECT_EQ(std::string((char*)new_frame1.GetStatelessResetToken(), kStatelessResetTokenLength),
         std::string((char*)new_frame2->GetStatelessResetToken(), kStatelessResetTokenLength));
 
     // check retire connection id frame
@@ -161,6 +163,6 @@ TEST(frame_decode_utest, codec) {
     EXPECT_EQ(close_frame1.GetReason(), close_frame2->GetReason());
 }
 
-}
-}
-}
+}  // namespace
+}  // namespace quic
+}  // namespace quicx

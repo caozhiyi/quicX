@@ -17,8 +17,7 @@ namespace quicx {
 namespace http3 {
 
 ReqRespBaseStream::ReqRespBaseStream(const std::shared_ptr<QpackEncoder>& qpack_encoder,
-    const std::shared_ptr<QpackEncoder>& qpack_decoder,
-    const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
+    const std::shared_ptr<QpackEncoder>& qpack_decoder, const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::shared_ptr<IQuicBidirectionStream>& stream,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IStream(StreamType::kReqResp, error_handler),
@@ -83,8 +82,7 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
             // before the blocked HEADERS has been decoded and the application
             // would never see the headers/body that arrived behind them.
             if (is_currently_blocked_) {
-                LOG_DEBUG(
-                    "ReqRespBaseStream::OnData: FIN received while blocked, deferring until QPACK unblocks");
+                LOG_DEBUG("ReqRespBaseStream::OnData: FIN received while blocked, deferring until QPACK unblocks");
                 pending_blocked_is_last_ = true;
                 return;
             }
@@ -111,8 +109,8 @@ void ReqRespBaseStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last, 
         return;
     }
 
-    LOG_DEBUG("ReqRespBaseStream::OnData: processing %zu frames, is_last_data=%d, currently_blocked=%d",
-        frames.size(), is_last_data_, is_currently_blocked_);
+    LOG_DEBUG("ReqRespBaseStream::OnData: processing %zu frames, is_last_data=%d, currently_blocked=%d", frames.size(),
+        is_last_data_, is_currently_blocked_);
 
     if (is_currently_blocked_) {
         // The stream is parked behind a still-blocked HEADERS frame at the
@@ -165,8 +163,8 @@ void ReqRespBaseStream::ProcessFrames(std::vector<std::shared_ptr<IFrame>>& fram
         bool last_in_batch = is_last_batch && (i == frames.size() - 1);
         current_frame_is_last_ = last_in_batch;
         is_last_data_ = last_in_batch;
-        LOG_DEBUG("ReqRespBaseStream::ProcessFrames: frame %zu/%zu, type=0x%x, is_last=%d",
-            i + 1, frames.size(), static_cast<uint32_t>(frames[i]->GetType()), current_frame_is_last_);
+        LOG_DEBUG("ReqRespBaseStream::ProcessFrames: frame %zu/%zu, type=0x%x, is_last=%d", i + 1, frames.size(),
+            static_cast<uint32_t>(frames[i]->GetType()), current_frame_is_last_);
 
         HandleFrame(frames[i]);
 
@@ -286,9 +284,9 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
     // same template buffer.  We capture |encoded_fields_template| (a
     // shallow copy with its own read_pos_ aligned at the start of the
     // field section) by value into the retry lambda.
-    auto encoded_fields_template = encoded_fields
-        ? encoded_fields->CloneReadable(encoded_fields->GetDataLength(), /*move_write_pt=*/false)
-        : nullptr;
+    auto encoded_fields_template =
+        encoded_fields ? encoded_fields->CloneReadable(encoded_fields->GetDataLength(), /*move_write_pt=*/false)
+                       : nullptr;
 
     if (!encoded_fields_template) {
         LOG_ERROR("ReqRespBaseStream::HandleHeaders: encoded fields snapshot failed");
@@ -300,8 +298,8 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 
     // First decode attempt. We feed a freshly-cloned view so the template
     // remains pristine for retries.
-    auto first_attempt = encoded_fields_template->CloneReadable(
-        encoded_fields_template->GetDataLength(), /*move_write_pt=*/false);
+    auto first_attempt =
+        encoded_fields_template->CloneReadable(encoded_fields_template->GetDataLength(), /*move_write_pt=*/false);
     if (!qpack_decoder_->Decode(first_attempt, headers_)) {
         // RFC 9204 §2.1.4: header section blocked on Required Insert Count.
         // Three correctness concerns:
@@ -343,8 +341,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
 
                 // RFC 9204 §4.4.1: Only emit Section Ack when RIC > 0.
                 if (self->qpack_decoder_->GetLastDecodedRequiredInsertCount() > 0) {
-                    self->qpack_decoder_->EmitDecoderFeedback(
-                        0x00, self->header_block_key_);
+                    self->qpack_decoder_->EmitDecoderFeedback(0x00, self->header_block_key_);
                 }
                 self->HandleHeaders();
 
@@ -373,8 +370,7 @@ void ReqRespBaseStream::HandleHeaders(std::shared_ptr<IFrame> frame) {
             LOG_ERROR(
                 "ReqRespBaseStream::HandleHeaders: blocked_registry full (max blocked streams exceeded), "
                 "stream=%llu key=%llu",
-                static_cast<unsigned long long>(GetStreamID()),
-                static_cast<unsigned long long>(header_block_key_));
+                static_cast<unsigned long long>(GetStreamID()), static_cast<unsigned long long>(header_block_key_));
             is_currently_blocked_ = false;
             if (error_handler_) {
                 error_handler_(GetStreamID(), Http3ErrorCode::kQpackDecompressionFailed);
@@ -643,14 +639,12 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
     // the wire" within a window of order kBackpressureHighWatermark.
     // 256 KB is ~2× a typical loopback cwnd in our perf runs while still
     // being negligible against multi-MB / multi-GB payloads.
-    constexpr uint64_t kBackpressureHighWatermark = 16 * 1024 * 1024; // EXPERIMENT: was 256KB
+    constexpr uint64_t kBackpressureHighWatermark = 16 * 1024 * 1024;  // EXPERIMENT: was 256KB
     if (stream_) {
         uint64_t pending = stream_->GetPendingSendBytes();
         if (pending >= kBackpressureHighWatermark) {
-            LOG_DEBUG(
-                "SendBodyWithProvider: backpressure, pending=%llu >= hwm=%llu, defer provider pull",
-                static_cast<unsigned long long>(pending),
-                static_cast<unsigned long long>(kBackpressureHighWatermark));
+            LOG_DEBUG("SendBodyWithProvider: backpressure, pending=%llu >= hwm=%llu, defer provider pull",
+                static_cast<unsigned long long>(pending), static_cast<unsigned long long>(kBackpressureHighWatermark));
             return;
         }
     }
@@ -683,8 +677,7 @@ void ReqRespBaseStream::HandleSent(uint32_t length, uint32_t error) {
             size_t request_size =
                 std::min(span.GetLength(), static_cast<uint32_t>(kMaxBatchSize - total_bytes_this_batch));
             size_t bytes_provided = provider_(span.GetStart(), request_size);
-            LOG_DEBUG(
-                "SendBodyWithProvider: bytes provided: %zu (requested %zu)", bytes_provided, request_size);
+            LOG_DEBUG("SendBodyWithProvider: bytes provided: %zu (requested %zu)", bytes_provided, request_size);
 
             if (bytes_provided > request_size) {
                 LOG_ERROR("body provider returned invalid size %zu > %zu", bytes_provided, request_size);

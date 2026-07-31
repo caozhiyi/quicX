@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <vector>
-#include <chrono>
 
-#include "common/network/io_handle.h"
 #include "common/network/if_event_driver.h"
+#include "common/network/io_handle.h"
 
 namespace quicx {
 namespace common {
@@ -111,7 +111,9 @@ TEST(EventDriverTest, ModifyFdAndRemoveFd) {
     n = driver->Wait(events, 50);
     bool has_rfd = false;
     for (const auto& ev : events) {
-        if (ev.fd == rfd) { has_rfd = true; }
+        if (ev.fd == rfd) {
+            has_rfd = true;
+        }
     }
     EXPECT_FALSE(has_rfd);
 
@@ -126,7 +128,7 @@ TEST(EventDriverTest, WakeupUnblocksWait) {
 
     std::vector<Event> events;
 
-    std::thread t([&](){
+    std::thread t([&]() {
         SleepMs(5);
         driver->Wakeup();
     });
@@ -141,8 +143,6 @@ TEST(EventDriverTest, WakeupUnblocksWait) {
     EXPECT_LT(elapsed, 100);
 }
 
-} // namespace
-} // namespace common
-} // namespace quicx
-
-
+}  // namespace
+}  // namespace common
+}  // namespace quicx

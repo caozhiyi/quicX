@@ -1,18 +1,18 @@
 #include <cstring>
 
-#include "common/buffer/if_buffer.h"
 #include "common/buffer/buffer_decode_wrapper.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace common {
 
-BufferDecodeWrapper::BufferDecodeWrapper(std::shared_ptr<IBuffer> buffer)
-    : buffer_(buffer),
-      is_contiguous_(buffer->GetChunkCount() <= 1),
-      flushed_(false),
-      start_(nullptr),
-      pos_(nullptr),
-      end_(nullptr) {
+BufferDecodeWrapper::BufferDecodeWrapper(std::shared_ptr<IBuffer> buffer):
+    buffer_(buffer),
+    is_contiguous_(buffer->GetChunkCount() <= 1),
+    flushed_(false),
+    start_(nullptr),
+    pos_(nullptr),
+    end_(nullptr) {
     if (is_contiguous_) {
         auto span = buffer_->GetReadableSpan();
         start_ = span.GetStart();

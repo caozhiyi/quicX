@@ -8,7 +8,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-TEST(recv_state_machine_utest, normal_state_change) {
+TEST(RecvStateMachineTest, normal_state_change) {
     StreamStateMachineRecv state;
     EXPECT_EQ(state.GetStatus(), StreamState::kRecv);
 
@@ -30,7 +30,7 @@ TEST(recv_state_machine_utest, normal_state_change) {
     EXPECT_EQ(state.GetStatus(), StreamState::kDataRead);
 }
 
-TEST(recv_state_machine_utest, wrong_state_change) {
+TEST(RecvStateMachineTest, wrong_state_change) {
     StreamStateMachineRecv state;
     EXPECT_EQ(state.GetStatus(), StreamState::kRecv);
 

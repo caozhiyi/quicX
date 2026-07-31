@@ -1,9 +1,9 @@
 #ifndef UPGRADE_INCLUDE_IF_UPGRADE
 #define UPGRADE_INCLUDE_IF_UPGRADE
 
-#include <memory>
-#include <quicx/upgrade/type.h>
 #include <quicx/common/if_event_loop.h>
+#include <quicx/upgrade/type.h>
+#include <memory>
 
 namespace quicx {
 namespace upgrade {
@@ -21,7 +21,7 @@ public:
     static std::unique_ptr<IUpgrade> MakeUpgrade(std::shared_ptr<common::IEventLoop> event_loop);
 };
 
-} // namespace upgrade
-} // namespace quicx
+}  // namespace upgrade
+}  // namespace quicx
 
-#endif // UPGRADE_INCLUDE_IF_UPGRADE 
+#endif  // UPGRADE_INCLUDE_IF_UPGRADE

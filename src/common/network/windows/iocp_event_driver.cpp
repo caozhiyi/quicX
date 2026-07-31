@@ -1,10 +1,10 @@
 #ifdef _WIN32
 
 #define WIN32_LEAN_AND_MEAN
+#include <mswsock.h>
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <mswsock.h>
 
 #include <cstring>
 
@@ -49,7 +49,8 @@ bool IOCPEventDriver::Init() {
 }
 
 bool IOCPEventDriver::AddFd(int32_t sockfd, int32_t events) {
-    HANDLE h = CreateIoCompletionPort(reinterpret_cast<HANDLE>(static_cast<intptr_t>(sockfd)), iocp_, static_cast<ULONG_PTR>(sockfd), 0);
+    HANDLE h = CreateIoCompletionPort(
+        reinterpret_cast<HANDLE>(static_cast<intptr_t>(sockfd)), iocp_, static_cast<ULONG_PTR>(sockfd), 0);
     if (!h) {
         LOG_ERROR("Associate socket %d with IOCP failed: %lu", sockfd, GetLastError());
         return false;
@@ -170,7 +171,8 @@ bool IOCPEventDriver::ArmWriteNotif(int32_t fd) {
     OverlappedContext* ctx = new OverlappedContext();
     ctx->fd = fd;
     ctx->type = EventType::ET_WRITE;
-    int rc = WSAIoctl(static_cast<SOCKET>(fd), SIO_IDEAL_SEND_BACKLOG_CHANGE, nullptr, 0, nullptr, 0, &bytes, &ctx->overlapped, nullptr);
+    int rc = WSAIoctl(static_cast<SOCKET>(fd), SIO_IDEAL_SEND_BACKLOG_CHANGE, nullptr, 0, nullptr, 0, &bytes,
+        &ctx->overlapped, nullptr);
     if (rc == 0) {
         return true;
     }
@@ -184,9 +186,7 @@ bool IOCPEventDriver::ArmWriteNotif(int32_t fd) {
 #endif
 }
 
-}
-}
+}  // namespace common
+}  // namespace quicx
 
-#endif // _WIN32
-
-
+#endif  // _WIN32

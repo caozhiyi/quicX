@@ -2,26 +2,24 @@
 // that can be found in the LICENSE file.
 
 #include <gtest/gtest.h>
+#include <set>
 #include <string>
 #include <vector>
-#include <set>
 
+#include "common/qlog/qlog_config.h"
 #include "common/qlog/qlog_manager.h"
 #include "common/qlog/qlog_trace.h"
-#include "common/qlog/qlog_config.h"
 
 namespace quicx {
 namespace common {
 namespace {
 
 // Test fixture for sampling tests
-class QlogSamplingTest : public ::testing::Test {
+class QlogSamplingTest: public ::testing::Test {
 protected:
     void SetUp() override {}
 
-    void TearDown() override {
-        QlogManager::Instance().Enable(false);
-    }
+    void TearDown() override { QlogManager::Instance().Enable(false); }
 
     QlogConfig CreateConfig(float sampling_rate) {
         QlogConfig config;
@@ -126,8 +124,7 @@ TEST_F(QlogSamplingTest, SamplingIsDeterministic) {
         }
     }
 
-    EXPECT_EQ(sampled_first, sampled_second)
-        << "Sampling should be deterministic based on connection_id";
+    EXPECT_EQ(sampled_first, sampled_second) << "Sampling should be deterministic based on connection_id";
 }
 
 // Test: SetSamplingRate dynamically changes sampling behavior
@@ -177,12 +174,10 @@ TEST_F(QlogSamplingTest, SamplingAffectsTraceCreationNotEvents) {
 
     // Once a trace is created, all events should be logged (no per-event sampling)
     for (int i = 0; i < 10; i++) {
-        trace->LogEvent(i * 1000, "quic:test_event",
-            std::make_unique<ConnectionStateUpdatedData>());
+        trace->LogEvent(i * 1000, "quic:test_event", std::make_unique<ConnectionStateUpdatedData>());
     }
 
-    EXPECT_EQ(10u, trace->GetEventCount())
-        << "All events should be logged once trace is created";
+    EXPECT_EQ(10u, trace->GetEventCount()) << "All events should be logged once trace is created";
 
     QlogManager::Instance().RemoveTrace(conn_id);
 }
