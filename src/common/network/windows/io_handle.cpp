@@ -1,9 +1,12 @@
 #ifdef _WIN32
-// Windows networking headers (winsock2 first). No need to include windows.h directly.
+// Windows networking headers (winsock2 first).
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
-#include <mswsock.h>
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mswsock.h>
+#include <windows.h>
 
 #include <atomic>
 #include <string>
