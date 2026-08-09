@@ -7,9 +7,11 @@ namespace quicx {
 namespace http3 {
 
 QpackDecoderReceiverStream::QpackDecoderReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
+    const std::shared_ptr<QpackEncoder>& local_encoder,
     const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
     const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler):
     IRecvStream(StreamType::kQpackDecoder, stream, error_handler),
+    local_encoder_(local_encoder),
     blocked_registry_(blocked_registry) {
     stream_->SetStreamReadCallBack([this](auto a, auto b, auto c) { OnData(a, b, c); });
 }
@@ -64,6 +66,12 @@ void QpackDecoderReceiverStream::ParseDecoderFrames(std::shared_ptr<IBufferRead>
             // RFC 9204 §4.4.3: Insert Count Increment is sent by the *peer's
             // decoder* to inform our *encoder* that the peer has applied N
             // additional inserts (i.e. its Known Received Count grew by N).
+            // Feed it to our encoder so it may start referencing those entries;
+            // until it does, the encoder falls back to literal encoding, which
+            // is what keeps outbound header blocks from blocking peer streams.
+            if (local_encoder_) {
+                local_encoder_->OnPeerInsertCountIncrement(f->GetDelta());
+            }
             // It is purely advisory state for our encoder's bookkeeping —
             // it does NOT mean our local decoder gained any new entries,
             // so we MUST NOT call blocked_registry_->NotifyAll() here.

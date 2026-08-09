@@ -57,8 +57,10 @@ bool ShortHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool wit
 
     common::BufferDecodeWrapper wrapper(buffer);
     if (destination_connection_id_length_ > 0) {
-        auto cid = (uint8_t*)destination_connection_id_;
-        wrapper.DecodeBytes(cid, destination_connection_id_length_);
+        if (!wrapper.DecodeBytesInto(destination_connection_id_, destination_connection_id_length_)) {
+            LOG_ERROR("decode dcid failed.");
+            return false;
+        }
     }
     auto data_span = wrapper.GetDataSpan();
     // the header src must include header flag for AEAD AD construction

@@ -8,7 +8,7 @@
 
 #include <quicx/common/if_event_loop.h>
 
-#include "common/timer/timer_task.h"  // TimerTask is held by value below
+#include <quicx/common/if_timer_scheduler.h>  // Timer handle is held by value below
 
 namespace quicx {
 namespace quic {
@@ -163,7 +163,9 @@ private:
 
     // Graceful close state
     bool graceful_closing_pending_{false};
-    ::quicx::common::TimerTask graceful_close_timer_;
+    ::quicx::common::Timer graceful_close_timer_;
+    // Guards the timeout callback, which captures a raw `this`.
+    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
 
     // Track callback invocation to prevent duplicates
     bool connection_close_cb_invoked_{false};

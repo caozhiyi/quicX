@@ -16,7 +16,7 @@ namespace common {
 // basic management class of log printing
 struct Log;
 class Logger;
-class IAlloter;
+class IAllocator;
 class BaseLogger {
 public:
     BaseLogger(uint16_t cache_size, uint16_t block_size);
@@ -78,7 +78,7 @@ protected:
     uint16_t cache_size_;
     uint16_t block_size_;
 
-    std::shared_ptr<IAlloter> allocter_;
+    std::shared_ptr<IAllocator> allocator_;
     ThreadSafeQueue<Log*> cache_queue_;
 
     // Hot-path-friendly raw pointer to the installed logger. Written once

@@ -1,7 +1,9 @@
-#include "http3/qpack/qpack_encoder.h"
 #include <algorithm>
 #include <cstdint>
+
 #include "common/log/log.h"
+
+#include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/huffman_encoder.h"
 #include "http3/qpack/qpack_constants.h"
 #include "http3/qpack/static_table.h"
@@ -44,11 +46,13 @@ bool QpackEncoder::Encode(
         int32_t index;  // static or dynamic absolute index
     };
 
-    // Record the total insert count before we start encoding.
-    // BUGFIX P1-1: Use GetInsertCount() (monotonically increasing) instead of
-    // GetEntryCount() (current deque size). After evictions, GetEntryCount() < GetInsertCount(),
-    // and absolute indices are based on total insert count.
-    uint64_t base_insert_count = dynamic_table_.GetInsertCount();
+    // Base for this header block. We deliberately use the peer's Known
+    // Received Count rather than our own total insert count: combined with the
+    // "only reference acknowledged entries" rule below it guarantees
+    // Base <= peer's applied insert count and Required Insert Count <= Base,
+    // so this header block can never block a stream on the decoder side
+    // (RFC 9204 §2.1.2). See QpackEncoder::OnPeerInsertCountIncrement().
+    uint64_t base_insert_count = known_received_count_;
 
     // Collect headers in the correct order (pseudo-headers first, then regular)
     std::vector<std::pair<std::string, std::string>> ordered_headers;
@@ -111,15 +115,25 @@ bool QpackEncoder::Encode(
             // monotonically increasing and survives evictions.
             int64_t abs_idx = dynamic_table_.FindAbsoluteIndex(h.first, h.second);
             if (abs_idx >= 0) {
-                // Existing entry — determine if pre-base or post-base
                 uint64_t abs_idx_u = static_cast<uint64_t>(abs_idx);
+                // Only entries the peer has already applied may be referenced.
+                // Referencing a newer entry would push Required Insert Count
+                // past the peer's applied count and block the stream, which
+                // overruns SETTINGS_QPACK_BLOCKED_STREAMS and gets the whole
+                // connection killed with QPACK_DECOMPRESSION_FAILED.
                 if (abs_idx_u < base_insert_count) {
                     enc.action = EncodeAction::kDynamicIndexed;
-                } else {
-                    enc.action = EncodeAction::kDynamicPostBaseIndexed;
+                    enc.index = static_cast<int32_t>(abs_idx);
+                    max_required_insert_count = std::max(max_required_insert_count, abs_idx_u + 1);
+                    encodings.push_back(std::move(enc));
+                    continue;
                 }
-                enc.index = static_cast<int32_t>(abs_idx);
-                max_required_insert_count = std::max(max_required_insert_count, abs_idx_u + 1);
+                // Entry exists but is not acknowledged yet: emit it literally
+                // this time. Do NOT insert a duplicate — the entry is already
+                // in our table and will become referenceable once the peer
+                // acknowledges it.
+                enc.action = EncodeAction::kLiteralNoNameRef;
+                enc.index = -1;
                 encodings.push_back(std::move(enc));
                 continue;
             }
@@ -143,11 +157,15 @@ bool QpackEncoder::Encode(
                 instruction_sender_({{h.first, h.second}});
             }
 
-            // The newly inserted entry's absolute index
-            uint64_t new_abs_index = dynamic_table_.GetInsertCount() - 1;
-            enc.action = EncodeAction::kDynamicPostBaseIndexed;
-            enc.index = static_cast<int32_t>(new_abs_index);
-            max_required_insert_count = std::max(max_required_insert_count, new_abs_index + 1);
+            // The insert has only just been announced on the encoder stream, so
+            // the peer has certainly not applied it yet. Emitting a post-base
+            // reference here (the previous behaviour) made the Required Insert
+            // Count exceed the peer's applied count for EVERY header block that
+            // introduced a new entry, blocking one stream per request. Encode
+            // the value literally this time; once the peer's Insert Count
+            // Increment arrives, the branch above will reference it.
+            enc.action = EncodeAction::kLiteralNoNameRef;
+            enc.index = -1;
             encodings.push_back(std::move(enc));
             continue;
         }
@@ -528,13 +546,11 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
                 uint64_t ric = dynamic_table_.GetInsertCount();
                 // If name not found, fall back to Insert Without Name Reference
                 if (d_name_idx < 0) {
-                    // Insert Without Name Reference (01xxxxxx)
-                    if (!QpackEncodePrefixedInteger(instr_buf, QpackEncoderInstr::kInsertWithoutNameRefPrefix,
-                            QpackEncoderInstr::kInsertWithoutNameRef, 0)) {
-                        LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert without name ref failed.");
-                        return false;
-                    }
-                    if (!QpackEncodeStringLiteral(p.first, instr_buf, false)) {
+                    // Fall back to Insert With Literal Name (01Hxxxxx): name is a
+                    // 6-bit prefix string literal sharing the instruction byte.
+                    if (!QpackEncodeStringLiteralWithPrefix(p.first, instr_buf,
+                            QpackEncoderInstr::kInsertWithoutNameRefPrefix, QpackEncoderInstr::kInsertWithoutNameRef,
+                            QpackEncoderInstr::kInsertWithoutNameRefHuffmanBit, false)) {
                         LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode string literal failed. name:%s",
                             p.first.c_str());
                         return false;
@@ -565,13 +581,11 @@ bool QpackEncoder::EncodeEncoderInstructions(const std::vector<std::pair<std::st
             }
 
         } else {
-            // Insert Without Name Reference (01xxxxxx)
-            if (!QpackEncodePrefixedInteger(instr_buf, QpackEncoderInstr::kInsertWithoutNameRefPrefix,
-                    QpackEncoderInstr::kInsertWithoutNameRef, 0)) {
-                LOG_ERROR("QpackEncoder::EncodeEncoderInstructions: encode insert without name ref failed.");
-                return false;
-            }
-            if (!QpackEncodeStringLiteral(p.first, instr_buf, false)) {
+            // Insert With Literal Name (01Hxxxxx): the name is a 6-bit prefix
+            // string literal packed into the instruction byte itself.
+            if (!QpackEncodeStringLiteralWithPrefix(p.first, instr_buf, QpackEncoderInstr::kInsertWithoutNameRefPrefix,
+                    QpackEncoderInstr::kInsertWithoutNameRef, QpackEncoderInstr::kInsertWithoutNameRefHuffmanBit,
+                    false)) {
                 LOG_ERROR(
                     "QpackEncoder::EncodeEncoderInstructions: encode string literal failed. name:%s", p.first.c_str());
                 return false;
@@ -683,15 +697,12 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             }
 
         } else if ((fb & QpackEncoderInstr::kInsertWithoutNameRefMask) == QpackEncoderInstr::kInsertWithoutNameRef) {
-            // Insert Without Name Reference (01xxxxxx)
-            uint64_t ignore = 0;
-            if (!decode_after_first(fb, QpackEncoderInstr::kInsertWithoutNameRefPrefix, ignore)) {
-                LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode insert without name ref failed. ignore:%llu",
-                    ignore);
-                return false;
-            }
+            // Insert With Literal Name (01Hxxxxx), RFC 9204 Section 4.3.3.
+            // The name length lives in this very byte, so it must be decoded
+            // from |fb| rather than from a fresh 8-bit prefix string literal.
             std::string name, value;
-            if (!QpackDecodeStringLiteral(instr_buf, name)) {
+            if (!QpackDecodeStringLiteralWithPrefix(instr_buf, fb, QpackEncoderInstr::kInsertWithoutNameRefPrefix,
+                    QpackEncoderInstr::kInsertWithoutNameRefHuffmanBit, name)) {
                 LOG_ERROR(
                     "QpackEncoder::DecodeEncoderInstructions: decode string literal failed. name:%s", name.c_str());
                 return false;
@@ -733,7 +744,7 @@ bool QpackEncoder::DecodeEncoderInstructions(const std::shared_ptr<common::IBuff
             dynamic_table_.UpdateMaxTableSize(static_cast<uint32_t>(cap));
 
         } else if ((fb & QpackEncoderInstr::kDuplicateMask) == QpackEncoderInstr::kDuplicate) {
-            // RFC 9204 Section 4.3.4: Duplicate instruction (0001xxxx)
+            // RFC 9204 Section 4.3.4: Duplicate instruction (000xxxxx)
             uint64_t rel = 0;
             if (!decode_after_first(fb, QpackEncoderInstr::kDuplicatePrefix, rel)) {
                 LOG_ERROR("QpackEncoder::DecodeEncoderInstructions: decode duplicate failed. rel:%llu", rel);
@@ -783,12 +794,17 @@ void QpackEncoder::WriteHeaderPrefix(
     }
     QpackEncodePrefixedInteger(buffer, QpackHeaderPrefix::kRequiredInsertCountPrefix, 0x00, encoded_ric);
 
-    // Encode Delta Base (7-bit prefix with S bit)
-    // Delta Base = Base - Required Insert Count
-    // S=0 if Delta Base >= 0, S=1 if Delta Base < 0
+    // Encode Delta Base (7-bit prefix with S bit), RFC 9204 Section 4.5.1:
+    //   Base >= ReqInsertCount : S = 0, DeltaBase = Base - ReqInsertCount
+    //   Base <  ReqInsertCount : S = 1, DeltaBase = ReqInsertCount - Base - 1
+    // The "- 1" in the S=1 branch is mandatory: the sign bit already tells the
+    // decoder the direction, so the value 0 is reused for a delta of one.
+    // Omitting it makes every post-base reference off by one against a
+    // conforming peer (while staying self-consistent, hiding the bug in
+    // encoder<->decoder round-trip tests).
     int64_t delta_base = base - static_cast<int64_t>(required_insert_count);
     bool s_bit = (delta_base < 0);
-    uint64_t abs_delta_base = static_cast<uint64_t>(s_bit ? -delta_base : delta_base);
+    uint64_t abs_delta_base = static_cast<uint64_t>(s_bit ? (-delta_base - 1) : delta_base);
     uint8_t s_mask = s_bit ? QpackHeaderPrefix::kDeltaBaseSignBit : 0x00;
     QpackEncodePrefixedInteger(buffer, QpackHeaderPrefix::kDeltaBasePrefix, s_mask, abs_delta_base);
 }
@@ -855,11 +871,20 @@ bool QpackEncoder::ReadHeaderPrefix(
     }
     bool s_bit = (first & QpackHeaderPrefix::kDeltaBaseSignBit) != 0;
 
-    // Calculate Base from Required Insert Count and Delta Base
-    // Base = Required Insert Count + Delta Base (if S=0)
-    // Base = Required Insert Count - Delta Base (if S=1)
-    int64_t delta_base = s_bit ? -static_cast<int64_t>(abs_delta_base) : static_cast<int64_t>(abs_delta_base);
-    base = static_cast<int64_t>(required_insert_count) + delta_base;
+    // Calculate Base from Required Insert Count and Delta Base, RFC 9204 4.5.1:
+    //   S = 0 : Base = ReqInsertCount + DeltaBase
+    //   S = 1 : Base = ReqInsertCount - DeltaBase - 1
+    if (s_bit) {
+        base = static_cast<int64_t>(required_insert_count) - static_cast<int64_t>(abs_delta_base) - 1;
+        if (base < 0) {
+            LOG_ERROR("QpackEncoder::ReadHeaderPrefix: negative base. ric:%llu, delta_base:%llu",
+                required_insert_count, abs_delta_base);
+            return false;
+        }
+
+    } else {
+        base = static_cast<int64_t>(required_insert_count) + static_cast<int64_t>(abs_delta_base);
+    }
 
     return true;
 }

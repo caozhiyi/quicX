@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "common/timer/timer.h"
+#include "common/timer/treemap_timer.h"
 #include "common/util/time.h"
 
 namespace quicx {
@@ -9,13 +9,13 @@ namespace {
 
 TEST(TreemapTimerTest, addtimer1) {
     TimerTask t;
-    auto timer = MakeTimer();
+    auto timer = std::make_shared<TreeMapTimer>();
     EXPECT_TRUE(timer->AddTimer(t, 30));
 }
 
 TEST(TreemapTimerTest, addtimer2) {
     TimerTask t1, t2, t3, t4;
-    auto timer = MakeTimer();
+    auto timer = std::make_shared<TreeMapTimer>();
 
     EXPECT_TRUE(timer->AddTimer(t1, 10));
     EXPECT_TRUE(timer->AddTimer(t2, 30));
@@ -25,7 +25,7 @@ TEST(TreemapTimerTest, addtimer2) {
 
 TEST(TreemapTimerTest, RemoveTimer) {
     TimerTask t1, t2, t3, t4;
-    auto timer = MakeTimer();
+    auto timer = std::make_shared<TreeMapTimer>();
 
     EXPECT_TRUE(timer->AddTimer(t1, 10));
     EXPECT_TRUE(timer->AddTimer(t2, 30));
@@ -41,7 +41,7 @@ TEST(TreemapTimerTest, RemoveTimer) {
 TEST(TreemapTimerTest, mintime) {
     TimerTask t1, t2, t3;
     uint64_t now = UTCTimeMsec();
-    auto timer = MakeTimer();
+    auto timer = std::make_shared<TreeMapTimer>();
 
     EXPECT_TRUE(timer->AddTimer(t1, 10 * TimeUnit::kSecond, now));
     EXPECT_TRUE(timer->AddTimer(t2, 30 * TimeUnit::kSecond, now));
@@ -59,7 +59,7 @@ TEST(TreemapTimerTest, mintime) {
 TEST(TreemapTimerTest, timerrun1) {
     TimerTask t1, t2, t3;
     uint64_t now = UTCTimeMsec();
-    auto timer = MakeTimer();
+    auto timer = std::make_shared<TreeMapTimer>();
 
     EXPECT_TRUE(timer->AddTimer(t1, 20 * TimeUnit::kMillisecond, now));
     EXPECT_TRUE(timer->AddTimer(t2, 30 * TimeUnit::kSecond, now));
@@ -87,7 +87,7 @@ TEST(TreemapTimerTest, timerrun1) {
 TEST(TreemapTimerTest, timerrun2) {
     TimerTask t1, t2, t3, t4;
     uint64_t now = UTCTimeMsec();
-    auto timer = MakeTimer();
+    auto timer = std::make_shared<TreeMapTimer>();
 
     EXPECT_TRUE(timer->AddTimer(t1, 20 * TimeUnit::kMillisecond, now));
     EXPECT_TRUE(timer->AddTimer(t2, 31 * TimeUnit::kSecond, now));
@@ -115,7 +115,7 @@ TEST(TreemapTimerTest, timerrun2) {
 TEST(TreemapTimerTest, timerrun3) {
     TimerTask t1, t2, t3, t4;
     uint64_t now = UTCTimeMsec();
-    auto timer = MakeTimer();
+    auto timer = std::make_shared<TreeMapTimer>();
 
     EXPECT_TRUE(timer->AddTimer(t1, 20 * TimeUnit::kMillisecond, now));
     EXPECT_TRUE(timer->AddTimer(t2, 31 * TimeUnit::kSecond, now));

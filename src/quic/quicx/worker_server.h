@@ -110,7 +110,7 @@ private:
      * handshake completes, which inflates per-connection RSS and delays
      * BaseConnection destruction in connect/close benchmarks.
      */
-    std::unordered_map<std::shared_ptr<IConnection>, uint64_t> handshake_timers_;
+    std::unordered_map<std::shared_ptr<IConnection>, common::Timer> handshake_timers_;
 };
 
 }  // namespace quic

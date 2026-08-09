@@ -31,7 +31,6 @@ PathManager::PathManager(Deps deps):
     probe_retry_count_(0),
     probe_retry_delay_ms_(0),
     is_client_initiated_migration_(false),
-    migration_socket_(-1),
     migration_start_time_(0),
     path_validation_timeout_ms_(kDefaultPathValidationTimeoutMs) {
     memset(pending_path_challenge_data_, 0, sizeof(pending_path_challenge_data_));
@@ -84,14 +83,14 @@ void PathManager::StartPathValidationProbeInternal(bool dcid_pre_rotated) {
     if (is_client_initiated_migration_) {
         auto loop = event_loop_.lock();
         if (loop) {
-            loop->RemoveTimer(migration_timeout_task_);
-            migration_timeout_task_.SetTimeoutCallback([this]() {
-                if (path_probe_inflight_ && is_client_initiated_migration_) {
-                    LOG_WARN("PathManager: migration timeout after %u ms", path_validation_timeout_ms_);
-                    HandleMigrationFailure(MigrationResult::kFailedTimeout);
-                }
-            });
-            loop->AddTimer(migration_timeout_task_, path_validation_timeout_ms_, 0);
+            migration_timeout_task_ = loop->AddTimer(life_token_,
+                [this]() {
+                    if (path_probe_inflight_ && is_client_initiated_migration_) {
+                        LOG_WARN("PathManager: migration timeout after %u ms", path_validation_timeout_ms_);
+                        HandleMigrationFailure(MigrationResult::kFailedTimeout);
+                    }
+                },
+                path_validation_timeout_ms_);
         }
     }
 }
@@ -124,11 +123,8 @@ void PathManager::OnPathResponse(const uint8_t* data) {
 
     // Token matched: path validated -> promote candidate to active
     path_probe_inflight_ = false;
-    auto loop2 = event_loop_.lock();
-    if (loop2) {
-        loop2->RemoveTimer(path_probe_task_);         // Cancel retry timer
-        loop2->RemoveTimer(migration_timeout_task_);  // Cancel migration timeout
-    }
+    path_probe_task_.Cancel();         // Cancel retry timer
+    migration_timeout_task_.Cancel();  // Cancel migration timeout
     memset(pending_path_challenge_data_, 0, sizeof(pending_path_challenge_data_));
 
     bool peer_addr_changed = !(candidate_peer_addr_ == peer_addr_);
@@ -139,13 +135,19 @@ void PathManager::OnPathResponse(const uint8_t* data) {
 
         set_peer_addr_cb_(candidate_peer_addr_);
 
-        // Rotate to next remote CID and retire the old one (delegated to coordinator)
-        // SKIP if DCID was pre-rotated (client-initiated migration via InitiateMigration())
+        // Rotate to next remote CID (delegated to coordinator). For client-initiated
+        // migration the DCID was already pre-rotated in InitiateMigrationToAddress().
         if (!dcid_pre_rotated_) {
             cid_coordinator_.RotateRemoteConnectionID();
         } else {
             LOG_DEBUG("PathManager: skipping CID rotation (already pre-rotated)");
         }
+
+        // The migration path is now validated, so it is safe to retire the
+        // previously-used DCID. Retiring it earlier (in the PATH_CHALLENGE probe)
+        // would make the peer delete a path that was still active and abort the
+        // connection (RFC 9000 §9.2 / peer's path-deletion checks).
+        cid_coordinator_.RetirePendingRemoteConnectionID();
 
         // Reset cwnd/RTT and PMTU for new path
         send_manager_.ResetPathSignals();
@@ -291,14 +293,16 @@ MigrationResult PathManager::InitiateMigrationToAddress(const ::quicx::common::A
     }
 
     // 6. Store migration state
-    migration_socket_ = new_socket;
     // new_local_addr_ is populated by CreateBoundSocket
     is_client_initiated_migration_ = true;
     migration_start_time_ = common::UTCTimeMsec();
 
-    // 7. Set migration socket for sending during validation
-    if (set_migration_socket_cb_) {
-        set_migration_socket_cb_(new_socket);
+    // 7. Hand the probe socket to its owner (MigrationController), which
+    // installs it on the emitter and registers it with the receiver. We keep no
+    // copy: a second copy is exactly what caused the fd to be closed twice on a
+    // failed migration.
+    if (probe_socket_ready_cb_) {
+        probe_socket_ready_cb_(new_socket);
     }
 
     // 8. Start path validation with pre-rotated DCID
@@ -335,21 +339,12 @@ void PathManager::ExitAntiAmplification() {
     return peer_addr_;
 }
 
-int32_t PathManager::GetSendSocket() const {
-    // During client-initiated migration, use the migration socket
-    if (is_client_initiated_migration_ && migration_socket_ > 0) {
-        return migration_socket_;
-    }
-    // Otherwise return -1 to indicate use default socket
-    return -1;
-}
-
 // ==================== Private Methods ====================
 
 void PathManager::ScheduleProbeRetry() {
     auto loop = event_loop_.lock();
     if (!loop) return;
-    loop->RemoveTimer(path_probe_task_);
+    path_probe_task_.Cancel();
     if (!path_probe_inflight_) {
         return;
     }
@@ -379,27 +374,24 @@ void PathManager::ScheduleProbeRetry() {
     probe_retry_count_++;
     probe_retry_delay_ms_ = std::min<uint32_t>(probe_retry_delay_ms_ * 2, kMaxProbeDelayMs);
 
-    path_probe_task_.SetTimeoutCallback([this]() {
-        if (!path_probe_inflight_) {
-            return;
-        }
-        auto challenge = std::make_shared<PathChallengeFrame>();
-        challenge->MakeData();
-        LOG_DEBUG("PathManager: retrying path validation (attempt %d/%d) to %s:%d", probe_retry_count_ + 1,
-            kMaxProbeRetries, candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
-        memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
-        to_send_frame_cb_(challenge);
-        ScheduleProbeRetry();
-    });
-
-    loop->AddTimer(path_probe_task_, probe_retry_delay_ms_, 0);
+    path_probe_task_ = loop->AddTimer(life_token_,
+        [this]() {
+            if (!path_probe_inflight_) {
+                return;
+            }
+            auto challenge = std::make_shared<PathChallengeFrame>();
+            challenge->MakeData();
+            LOG_DEBUG("PathManager: retrying path validation (attempt %d/%d) to %s:%d", probe_retry_count_ + 1,
+                kMaxProbeRetries, candidate_peer_addr_.GetIp().c_str(), candidate_peer_addr_.GetPort());
+            memcpy(pending_path_challenge_data_, challenge->GetData(), 8);
+            to_send_frame_cb_(challenge);
+            ScheduleProbeRetry();
+        },
+        probe_retry_delay_ms_);
 }
 
 void PathManager::CompleteMigration() {
     LOG_INFO("PathManager::CompleteMigration: migration successful, switching to new socket");
-
-    // Migration successful: the new socket becomes the main socket
-    // The connection should now use migration_socket_ as the primary socket
 
     // Build migration info for callback
     MigrationInfo info;
@@ -416,21 +408,14 @@ void PathManager::CompleteMigration() {
     info.result_ = MigrationResult::kSuccess;
     info.is_nat_rebinding_ = false;
 
-    // The migration socket is now the main socket
-    // The old socket should be closed by the caller after switching
-    // We keep migration_socket_ set so that GetSendSocket() continues to return it
-    // until the BaseConnection switches the socket
-
-    // Invoke callback to notify application layer
+    // Notify MigrationController, which owns the probe fd and performs the
+    // switch (promote probe -> primary, then unregister + close the retired
+    // one). PathManager holds no socket state, so there is nothing to clear
+    // here and no ambiguity about who closes what — the previous version had
+    // both sides deferring to the other, so the old fd leaked.
     if (migration_complete_cb_) {
         migration_complete_cb_(info);
     }
-
-    // Note: We don't close migration_socket_ here because it's now the active socket
-    // The caller (BaseConnection) is responsible for:
-    // 1. Using migration_socket_ as the new primary socket
-    // 2. Closing the old socket
-    // 3. Clearing migration_socket_ after the switch
 
     LOG_INFO("PathManager: migration completed successfully in %lu ms",
         info.migration_end_time_ - info.migration_start_time_);
@@ -479,42 +464,20 @@ void PathManager::HandleMigrationFailure(MigrationResult result) {
 void PathManager::CleanupMigrationState() {
     // Cancel timers.
     //
-    // Cross-thread safety: this method is called both from the owning worker's
-    // EventLoop (e.g. during HandleMigrationFailure) AND from ~PathManager,
-    // which runs on whatever thread releases the last shared_ptr to the
-    // ServerConnection. In long-running perf scenarios the http3 ServerConnection
-    // map is cleared from a foreign thread, so we cannot assume we are in the
-    // loop thread. Direct RemoveTimer would trip EventLoop::AssertInLoopThread()
-    // and (now that the assert aborts) crash the process. See
-    // connection_timer_coordinator.cpp::ResetIdleTimer for the same pattern.
-    auto loop = event_loop_.lock();
-    if (loop) {
-        if (loop->IsInLoopThread()) {
-            loop->RemoveTimer(migration_timeout_task_);
-        } else {
-            uint64_t task_id = migration_timeout_task_.GetId();
-            loop->RunInLoop([loop, task_id]() {
-                common::TimerTask probe;
-                probe.SetIdForTest(task_id);
-                loop->RemoveTimer(probe);
-            });
-        }
-    }
+    // This runs both from the owning worker's EventLoop (e.g. during
+    // HandleMigrationFailure) AND from ~PathManager, which executes on whatever
+    // thread releases the last shared_ptr to the ServerConnection -- in
+    // long-running perf scenarios the http3 ServerConnection map is cleared from
+    // a foreign thread. Timer::Cancel() is defined to be safe from any thread, so
+    // the previous IsInLoopThread()/RunInLoop-remove-by-id split (which also lost
+    // the id whenever the timer had been re-registered) is gone.
+    migration_timeout_task_.Cancel();
+    path_probe_task_.Cancel();
 
-    // Close and cleanup migration socket if migration failed
-    if (migration_socket_ > 0) {
-        // Only close if migration failed; if successful, the socket is now in use
-        if (!is_client_initiated_migration_ || path_probe_inflight_) {
-            // Migration in progress but we're cleaning up = failure
-            common::Close(migration_socket_);
-        }
-        migration_socket_ = -1;
-    }
-
-    // Clear migration socket callback
-    if (set_migration_socket_cb_) {
-        set_migration_socket_cb_(-1);
-    }
+    // Probe-socket disposal is MigrationController's job (it owns the fd); we
+    // never held it, so there is nothing to close here. This is what fixes the
+    // old double-close: this function used to close the same fd that
+    // BaseConnection::OnMigrationComplete then closed again.
 
     // Reset addresses
     old_local_addr_ = ::quicx::common::Address();

@@ -35,8 +35,8 @@
 #include <vector>
 
 // Common
-#include "common/alloter/pool_alloter.h"
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_allocator.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/buffer/if_buffer.h"
@@ -293,7 +293,7 @@ static void BM_CpuHotspot_HuffmanDecode(benchmark::State& state) {
 
 static void BM_CpuHotspot_PoolAllocator(benchmark::State& state) {
     const uint32_t alloc_size = static_cast<uint32_t>(state.range(0));
-    auto alloc = common::MakePoolAlloterPtr();
+    auto alloc = common::MakePoolAllocatorPtr();
 
     for (auto _ : state) {
         void* ptr = alloc->Malloc(alloc_size);

@@ -100,7 +100,9 @@ private:
     std::weak_ptr<common::IEventLoop> event_loop_;
 
     /** Timer ID for the periodic rate calculation. */
-    uint64_t timer_id_{0};
+    common::Timer timer_;
+    // Guards the sampling callback, which captures a raw `this`.
+    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
 
     /** Flag to track if timer is active. */
     std::atomic<bool> timer_active_{false};

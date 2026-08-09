@@ -38,16 +38,25 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     std::shared_ptr<common::IEventLoop> loop, const ConnectionCallbacks& callbacks):
     IConnection(callbacks),
     ecn_enabled_(ecn_enabled),
-    recv_control_(loop->GetTimer()),
-    send_manager_(loop->GetTimer()),
+    recv_control_(loop),
+    send_manager_(loop),
     event_loop_(loop),
     last_communicate_time_(0),
     send_flow_controller_(start),
     recv_flow_controller_(start),
     state_machine_(this),
-    packet_builder_(std::make_unique<PacketBuilder>()) {
-    version_ctx_.is_server = (start == StreamIDGenerator::StreamStarter::kServer);
-    version_ctx_.quic_version = kQuicVersion2;
+    packet_builder_(std::make_unique<PacketBuilder>()),
+    is_server_(start == StreamIDGenerator::StreamStarter::kServer) {
+    // Sole owner of version state. Its TP-push callback routes back here
+    // because EncodeAndPushTpToTls also serves the general (non-version) TP
+    // path at setup, which is not the negotiator's business.
+    version_negotiator_ = std::make_unique<VersionNegotiator>(is_server_, connection_crypto_, transport_param_);
+    version_negotiator_->SetPushTransportParamCallback([this](TransportParam& tp) { return EncodeAndPushTpToTls(tp); });
+    version_negotiator_->SetCloseConnectionCallback(
+        [this](uint64_t error, uint16_t trigger_frame, std::string reason) {
+            InnerConnectionClose(error, trigger_frame, std::move(reason));
+        });
+
     // Metrics: Record handshake start time (wall clock; see field comment in
     // connection_base.h — this is intentionally NOT the monotonic clock used
     // for RTT/PTO).
@@ -74,7 +83,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
         [this](auto& cid) { RetireConnectionId(cid); });
     cid_coordinator_->Initialize();
 
-    send_manager_.SetSendRetryCallBack([this]() { ActiveSend(); });
+    send_manager_.SetSendRetryCallBack([this]() { OnConnectionActive(); });
     send_manager_.SetSendFlowController(&send_flow_controller_);
 
     // RFC 9002 §6.2.2.1: During handshake, if PTO fires and no ACK-eliciting
@@ -82,7 +91,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     send_manager_.GetSendControl().SetProbeNeededCallback([this]() {
         LOG_INFO("Handshake probe: sending PING frame to elicit ACK");
         auto ping = std::make_shared<PingFrame>();
-        ToSendFrame(ping);
+        OnFrameReady(ping);
     });
 
     // RFC 9002 §6.2.4 (Bug-19): post-handshake PTO probe.
@@ -100,15 +109,15 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     send_manager_.GetSendControl().SetApplicationProbeCallback([this]() {
         LOG_INFO("Post-handshake PTO probe: queueing PING frame to elicit ACK");
         auto ping = std::make_shared<PingFrame>();
-        ToSendFrame(ping);
-        ActiveSend();
+        OnFrameReady(ping);
+        OnConnectionActive();
     });
 
     // RFC 9000: Setup immediate ACK callback for Initial/Handshake/out-of-order packets
     recv_control_.SetImmediateAckCB([this](PacketNumberSpace ns) { SendImmediateAck(ns); });
 
     // Setup delayed ACK callback for normal Application packets
-    recv_control_.SetActiveSendCB([this]() { ActiveSend(); });
+    recv_control_.SetActiveSendCB([this]() { OnConnectionActive(); });
 
     transport_param_.AddTransportParamListener([this](const auto& tp) { recv_control_.UpdateConfig(tp); });
     transport_param_.AddTransportParamListener([this](const auto& tp) { send_manager_.UpdateConfig(tp); });
@@ -116,7 +125,7 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     transport_param_.AddTransportParamListener([this](const auto& tp) { recv_flow_controller_.UpdateConfig(tp); });
 
     // Set stream data ACK callback for tracking stream completion
-    send_manager_.send_control_.SetStreamDataAckCallback(
+    send_manager_.GetSendControl().SetStreamDataAckCallback(
         [this](auto a, auto b, auto c, auto d) { OnStreamDataAcked(a, b, c, d); });
 
     // Initialize timer coordinator (refactored)
@@ -132,14 +141,44 @@ BaseConnection::BaseConnection(StreamIDGenerator::StreamStarter start, bool ecn_
     path_deps.cid_coordinator = cid_coordinator_.get();
     path_deps.transport_param = &transport_param_;
     path_deps.peer_addr = &peer_addr_;
-    path_deps.to_send_frame_cb = [this](auto&& f) { ToSendFrame(std::forward<decltype(f)>(f)); };
-    path_deps.active_send_cb = [this]() { ActiveSend(); };
+    path_deps.to_send_frame_cb = [this](auto&& f) { OnFrameReady(std::forward<decltype(f)>(f)); };
+    path_deps.active_send_cb = [this]() { OnConnectionActive(); };
     path_deps.set_peer_addr_cb = [this](const common::Address& addr) { this->SetPeerAddress(addr); };
     path_manager_ = std::make_unique<PathManager>(std::move(path_deps));
 
     // Initialize encryption level scheduler (refactored) - centralizes encryption level selection
     encryption_scheduler_ =
         std::make_unique<EncryptionLevelScheduler>(connection_crypto_, recv_control_, *path_manager_);
+
+    // Sole owner of the egress path. The address provider warms the sockaddr
+    // cache on peer_addr_ — our long-lived storage — before handing out the
+    // copy that lands on the NetPacket. Without this warm-up every NetPacket
+    // Address starts empty and UdpSender::SendBatch's fast-path probe degrades
+    // to a per-packet sendto for the whole batch (observed udp_sb_ok=0 on a
+    // 500MB upload). Both family slots are populated so v4-on-v6-dualstack and
+    // v6 sockets all hit the cache; EnsureSockaddrCache is idempotent, so the
+    // first call is one inet_pton and later calls are a single bool check.
+    //
+    // The old SendImmediate path skipped this entirely, which is why handshake
+    // packets and immediate ACKs used to miss the cache.
+    emitter_ = std::make_unique<DatagramEmitter>(
+        send_manager_.GetSendControl(),
+        [this]() {
+            peer_addr_.EnsureSockaddrCache(AF_INET);
+            peer_addr_.EnsureSockaddrCache(AF_INET6);
+            return AcquireSendAddress();
+        },
+        nullptr /* qlog trace installed later via SetQlogTrace */);
+
+    // Sole owner of socket lifecycle across migration. It performs the socket
+    // switch and the close(2); we only forward the finished event to the
+    // application (that needs shared_from_this(), which only we can do).
+    migration_controller_ =
+        std::make_unique<MigrationController>(state_machine_, *path_manager_, transport_param_, *emitter_);
+    migration_controller_->SetMigrationFinishedCallback(
+        [this](const MigrationInfo& info) { OnMigrationFinished(info); });
+    migration_controller_->SetLocalAddressUpdatedCallback(
+        [this](const common::Address& addr) { local_addr_ = addr; });
 
     // Initialize stream manager (refactored) - uses IConnectionEventSink interface (no callbacks!)
     stream_manager_ = std::make_unique<StreamManager>(
@@ -180,7 +219,7 @@ BaseConnection::~BaseConnection() {
 }
 
 void BaseConnection::SetSender(std::shared_ptr<ISender> sender) {
-    sender_ = sender;
+    emitter_->SetSender(std::move(sender));
     LOG_DEBUG("BaseConnection: Sender injected");
 }
 
@@ -214,7 +253,7 @@ void BaseConnection::CloseInternal() {
     send_manager_.ClearRetransmissionData();
 
     // Delegate to connection closer
-    connection_closer_->StartGracefulClose([this]() { ActiveSend(); });
+    connection_closer_->StartGracefulClose([this]() { OnConnectionActive(); });
 }
 
 void BaseConnection::Reset(uint32_t error_code) {
@@ -293,12 +332,12 @@ void BaseConnection::SetStreamStateCallBack(stream_state_callback cb) {
     LOG_DEBUG("BaseConnection::SetStreamStateCallBack: callback updated in both IConnection and FrameProcessor");
 }
 
-uint64_t BaseConnection::AddTimer(timer_callback callback, uint32_t timeout_ms) {
+uint64_t BaseConnection::AddTimer(timer_callback callback, uint32_t timeout_ms, bool periodic) {
     if (!timer_coordinator_) {
         LOG_ERROR("BaseConnection::AddTimer: timer_coordinator_ is null");
         return 0;
     }
-    return timer_coordinator_->AddTimer(callback, timeout_ms);
+    return timer_coordinator_->AddTimer(callback, timeout_ms, periodic);
 }
 
 void BaseConnection::RemoveTimer(uint64_t timer_id) {
@@ -345,7 +384,7 @@ void BaseConnection::AddTransportParam(const QuicTransportParams& tp_config) {
     // RFC 9368 §3: Include the version_information (id 0x11) transport parameter.
     // chosen_version is the version this endpoint is currently using for its Initial
     // packets; available_versions is our preference-ordered supported list.
-    BuildLocalVersionInformation(transport_param_);
+    version_negotiator_->BuildLocalVersionInformation(transport_param_);
 
     // Encode local transport parameters and hand them to TLS.  See
     // EncodeAndPushTpToTls() for the 1024-byte sizing rationale.
@@ -375,188 +414,6 @@ bool BaseConnection::EncodeAndPushTpToTls(TransportParam& tp) {
         return false;
     }
     return tls_connection_->AddTransportParam(tp_buffer, static_cast<uint32_t>(bytes_written));
-}
-
-bool BaseConnection::RebuildAndPushVersionInformation() {
-    if (!transport_param_.HasVersionInformation()) {
-        return false;
-    }
-    BuildLocalVersionInformation(transport_param_);
-    return EncodeAndPushTpToTls(transport_param_);
-}
-
-bool BaseConnection::ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& remote_tp) {
-    // RFC 9368 §4: If the peer did not send version_information, there is nothing
-    // to validate. This is also the case for endpoints speaking a version that
-    // predates RFC 9368 — interop with those must continue to work.
-    if (!remote_tp.HasVersionInformation()) {
-        return true;
-    }
-
-    const uint32_t peer_chosen = remote_tp.GetChosenVersion();
-    const std::vector<uint32_t>& peer_available = remote_tp.GetAvailableVersions();
-
-    // RFC 9368 §4: The peer's chosen_version MUST match the version used on the
-    // wire for the Initial packets that carried these transport parameters.
-    //   - For client-received (server) TP: peer_chosen must equal version_ctx_.quic_version
-    //     (the version of server-sent Initial packets, which by now equals what
-    //     we have been decrypting with).
-    //   - For server-received (client) TP: peer_chosen must equal the version
-    //     the client used for its FIRST Initial (version_ctx_.original_version), which was
-    //     recorded when the server first processed that packet. If the server
-    //     has not yet recorded version_ctx_.original_version, fall back to current.
-    const uint32_t expected_peer_on_wire =
-        version_ctx_.is_server
-            ? (version_ctx_.original_version != 0 ? version_ctx_.original_version : version_ctx_.quic_version)
-            : version_ctx_.quic_version;
-
-    if (peer_chosen != expected_peer_on_wire) {
-        LOG_ERROR("RFC 9368: peer chosen_version 0x%08x does not match version used on wire 0x%08x", peer_chosen,
-            expected_peer_on_wire);
-        InnerConnectionClose(QuicErrorCode::kVersionNegotiationError, 0, "version_information chosen_version mismatch");
-        return false;
-    }
-
-    if (!version_ctx_.is_server) {
-        // Client-side downgrade detection (RFC 9368 §4):
-        // If the application explicitly specified a |version_ctx_.preferred_version| that
-        // differs from the version we actually negotiated (version_ctx_.quic_version), and
-        // the server's |available_versions| advertises that preferred version,
-        // then a MITM may have stripped or rewrote our Initial to force a
-        // downgrade.  Close with VERSION_NEGOTIATION_ERROR in that case.
-        //
-        // Without an explicit preference we have no way to know the "expected"
-        // outcome, so we don't invent one.
-        if (version_ctx_.preferred_version != 0 && version_ctx_.preferred_version != version_ctx_.quic_version) {
-            for (uint32_t sv : peer_available) {
-                if (sv == version_ctx_.preferred_version) {
-                    LOG_ERROR(
-                        "RFC 9368: downgrade detected: server advertises preferred 0x%08x "
-                        "but connection ended up on 0x%08x",
-                        version_ctx_.preferred_version, version_ctx_.quic_version);
-                    InnerConnectionClose(
-                        QuicErrorCode::kVersionNegotiationError, 0, "Compatible Version downgrade detected");
-                    return false;
-                }
-            }
-        }
-        // Client side: no further action. Initial key rekey (if any) has
-        // already happened via OnInitialPacket when the server's v2 Initial
-        // arrived.
-        version_ctx_.compat_vn_completed = true;
-        return true;
-    }
-
-    // ------- Server side -------
-    // Decide whether to upgrade from the client's chosen_version to a version we
-    // prefer more. We only consider upgrading to |version_ctx_.preferred_version| (if the
-    // application explicitly set one and it differs from |version_ctx_.quic_version|), and
-    // only when the client's available_versions list also contains it. This
-    // keeps the default path (no preference) conservative: a server without an
-    // explicit preference just stays on the client's chosen_version.
-    if (version_ctx_.compat_vn_completed) {
-        return true;  // Already upgraded (or decided not to).
-    }
-
-    uint32_t negotiated = peer_chosen;  // Default: stay on client's chosen version.
-    const uint32_t our_pref =
-        (version_ctx_.preferred_version != 0) ? version_ctx_.preferred_version : version_ctx_.quic_version;
-    if (our_pref != peer_chosen) {
-        for (uint32_t cv : peer_available) {
-            if (cv == our_pref) {
-                negotiated = our_pref;
-                break;
-            }
-        }
-    }
-
-    if (negotiated == version_ctx_.quic_version) {
-        // No version change; but still record version_ctx_.original_version for later
-        // consistency bookkeeping.
-        if (version_ctx_.original_version == 0) {
-            version_ctx_.original_version = peer_chosen;
-        }
-        version_ctx_.compat_vn_completed = true;
-        return true;
-    }
-
-    // Upgrade! Re-derive Initial keys using the new version's salt with the
-    // client's original DCID (same DCID the client used when sending its first
-    // Initial). RFC 9368 §4: the DCID does not change across a compatible VN.
-    LOG_INFO("RFC 9368: upgrading connection from 0x%08x to 0x%08x", version_ctx_.quic_version, negotiated);
-
-    // Record the version the client used before we upgrade.
-    if (version_ctx_.original_version == 0) {
-        version_ctx_.original_version = peer_chosen;
-    }
-
-    // Obtain the client's original DCID. On the server this is the
-    // original_destination_connection_id we advertised in our own TP, which is
-    // the DCID the client sent in its first Initial.
-    const std::string& odcid = transport_param_.GetOriginalDestinationConnectionId();
-    if (odcid.empty()) {
-        LOG_ERROR("RFC 9368: cannot upgrade, original_destination_connection_id missing");
-        // Fall back to client's chosen_version (no upgrade) rather than failing.
-        version_ctx_.compat_vn_completed = true;
-        return true;
-    }
-
-    if (!connection_crypto_.RekeyInitialForVersion(negotiated, reinterpret_cast<const uint8_t*>(odcid.data()),
-            static_cast<uint32_t>(odcid.size()), true /* is_server */)) {
-        LOG_ERROR("RFC 9368: RekeyInitialForVersion failed");
-        InnerConnectionClose(QuicErrorCode::kInternalError, 0, "Compatible VN rekey failed");
-        return false;
-    }
-
-    // Update in-memory version so subsequent outbound Initial packets use the
-    // new version (PacketBuilder reads version_ctx_.quic_version via connection_crypto_).
-    version_ctx_.quic_version = negotiated;
-    // Also update our local version_information TP so the TP we send to the
-    // client (in EncryptedExtensions) reports chosen_version = negotiated, and
-    // hand the re-encoded TP bytes to TLS before it serializes
-    // EncryptedExtensions — otherwise the client will see chosen_version ==
-    // original wire version and correctly reject the connection via the
-    // RFC 9368 §4 consistency check.
-    RebuildAndPushVersionInformation();
-
-    version_ctx_.compat_vn_completed = true;
-    common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
-    return true;
-}
-
-void BaseConnection::BuildLocalVersionInformation(TransportParam& tp) const {
-    // RFC 9368 §3: Build the local version_information TP value.
-    //   chosen_version     = current |version_ctx_.quic_version| (the version actually on
-    //                        the wire in our Initial packets).
-    //   available_versions = versions we are willing to speak for this
-    //                        connection, in preference order (most preferred
-    //                        first).
-    //
-    // To keep interop with peers that predate RFC 9368 predictable, and to
-    // avoid unsolicited upgrades in "default" scenarios, we only widen the
-    // list beyond |version_ctx_.quic_version| when the application explicitly expressed a
-    // different preferred version via |SetPreferredVersion|.
-    //   - No preference set          => [version_ctx_.quic_version]  (1 entry)
-    //   - Preference == version_ctx_.quic_version => [version_ctx_.quic_version]  (1 entry)
-    //   - Preference != version_ctx_.quic_version => [version_ctx_.preferred_version, version_ctx_.quic_version]
-    std::vector<uint32_t> available;
-    const uint32_t pref =
-        (version_ctx_.preferred_version != 0) ? version_ctx_.preferred_version : version_ctx_.quic_version;
-    if (pref != version_ctx_.quic_version) {
-        // Sanity-check: we only advertise versions we actually support.
-        bool pref_supported = false;
-        for (size_t i = 0; i < kQuicVersionsCount; i++) {
-            if (kQuicVersions[i] == pref) {
-                pref_supported = true;
-                break;
-            }
-        }
-        if (pref_supported) {
-            available.push_back(pref);
-        }
-    }
-    available.push_back(version_ctx_.quic_version);
-    tp.SetVersionInformation(version_ctx_.quic_version, available);
 }
 
 uint64_t BaseConnection::GetConnectionIDHash() {
@@ -687,12 +544,8 @@ void BaseConnection::HandlePacketsInClosingState(uint64_t now, std::vector<std::
             frame->SetErrorCode(connection_closer_->GetClosingErrorCode());
             frame->SetErrFrameType(connection_closer_->GetClosingTriggerFrame());
             frame->SetReason(connection_closer_->GetClosingReason());
-            send_manager_.ToSendFrame(frame);
-            if (active_connection_cb_) {
-                active_connection_cb_(shared_from_this());
-            }
-            connection_closer_->MarkConnectionCloseRetransmitted(current_time);
-        }
+            EnqueueFrameDuringTermination(frame);
+            connection_closer_->MarkConnectionCloseRetransmitted(current_time);        }
     }
 }
 
@@ -711,13 +564,27 @@ bool BaseConnection::DispatchByType(const std::shared_ptr<IPacket>& packet) {
     auto packet_type = packet->GetHeader()->GetPacketType();
     switch (packet_type) {
         case PacketType::kNegotiationPacketType:
-            return OnVersionNegotiationPacket(packet);
+            return version_negotiator_->OnVersionNegotiationPacket(packet);
         case PacketType::kInitialPacketType:
             return OnInitialPacket(packet);
         case PacketType::k0RttPacketType:
             return On0rttPacket(packet);
-        case PacketType::kHandshakePacketType:
-            return OnHandshakePacket(packet);
+        case PacketType::kHandshakePacketType: {
+            if (!OnHandshakePacket(packet)) {
+                return false;
+            }
+            // RFC 9369 §4.1 bounds how long the pre-upgrade Initial keys that
+            // RekeyInitialForVersion retained may live: only until a packet in
+            // the negotiated version is successfully processed. A Handshake
+            // packet is a conservative choice of that moment — Handshake keys
+            // are derived from the TLS handshake and therefore only ever exist
+            // for the negotiated version, so getting here proves the peer has
+            // seen and adopted the upgrade and will never send under the old
+            // version again. Placed in the dispatcher so the base and
+            // ClientConnection overrides of OnHandshakePacket share it.
+            connection_crypto_.DiscardPreviousInitialKeys();
+            return true;
+        }
         case PacketType::kRetryPacketType:
             return OnRetryPacket(packet);
         case PacketType::k1RttPacketType:
@@ -736,70 +603,76 @@ bool BaseConnection::OnInitialPacket(const std::shared_ptr<IPacket>& packet) {
     // is needed on the server side for the mandatory "peer_chosen_version
     // matches on-wire version" consistency check in
     // ValidateAndMaybeUpgradeByRemoteTP().
-    if (pkt_version != 0 && version_ctx_.original_version == 0) {
-        version_ctx_.original_version = pkt_version;
-    }
+    version_negotiator_->RecordPeerOriginalVersion(pkt_version);
 
     if (!connection_crypto_.InitIsReady()) {
         // First Initial on this connection (server side first packet, or
         // client side prior to having installed keys). The DCID in the
         // packet is the one we use to derive the Initial secret.
-        if (pkt_version != 0 && pkt_version != version_ctx_.quic_version) {
-            LOG_INFO(
-                "Updating connection version from packet: 0x%08x -> 0x%08x", version_ctx_.quic_version, pkt_version);
-            SetVersion(pkt_version);
-            // RFC 9368 §4: our version_information TP must advertise
-            // chosen_version == current on-wire version. Re-encode and hand
-            // the fresh TP buffer to TLS before it serializes
-            // EncryptedExtensions.
-            RebuildAndPushVersionInformation();
+        if (version_negotiator_->DiffersFromCurrent(pkt_version)) {
+            LOG_INFO("Updating connection version from packet: 0x%08x -> 0x%08x", version_negotiator_->GetVersion(),
+                pkt_version);
+            // ApplyVersion also re-pushes version_information to TLS, which
+            // RFC 9368 §4 requires before EncryptedExtensions is serialized.
+            version_negotiator_->ApplyVersion(pkt_version);
         }
 
         LOG_INFO("Installing Initial Secret for decryption from packet DCID: length=%u, version=0x%08x",
-            header->GetDestinationConnectionIdLength(), version_ctx_.quic_version);
+            header->GetDestinationConnectionIdLength(), version_negotiator_->GetVersion());
         connection_crypto_.InstallInitSecret(
             (uint8_t*)header->GetDestinationConnectionId(), header->GetDestinationConnectionIdLength(), true);
 
-    } else if (!version_ctx_.is_server && pkt_version != 0 && pkt_version != version_ctx_.quic_version) {
-        // RFC 9368 Compatible Version Negotiation (client side):
-        // The server decided to upgrade the connection to a different
-        // (compatible) QUIC version. We already have an Initial cryptographer
-        // installed under the old version's salt, so we cannot decrypt this
-        // Initial yet. Re-derive the Initial secret using:
-        //   - the new version's salt / labels, and
-        //   - the SAME DCID we used for our first Initial
-        //     (i.e. the DCID stashed away in ConnectionCrypto on
-        //     InstallInitSecret, which is what the server also used when it
-        //     rekeyed via ValidateAndMaybeUpgradeByRemoteTP).
-        LOG_INFO("RFC 9368: client detected server version upgrade: 0x%08x -> 0x%08x", version_ctx_.quic_version,
-            pkt_version);
+    } else if (version_negotiator_->IsPeerVersionSwitch(pkt_version)) {
+        // RFC 9368 Compatible Version Negotiation (client side): the server
+        // upgraded the connection. We already hold an Initial cryptographer
+        // under the old version's salt, so we cannot decrypt this Initial until
+        // we re-derive keys. Same mechanism the server uses when acting on our
+        // version_information TP, hence the shared entry point.
+        LOG_INFO("RFC 9368: client detected server version upgrade: 0x%08x -> 0x%08x",
+            version_negotiator_->GetVersion(), pkt_version);
 
-        const std::string& dcid = connection_crypto_.GetInitialSecretDcid();
-        if (dcid.empty()) {
-            LOG_ERROR("RFC 9368: cannot rekey client Initial (no cached DCID); dropping packet");
-            return false;
+        switch (version_negotiator_->ApplyCompatibleUpgrade(pkt_version)) {
+            case VersionNegotiator::UpgradeResult::kUpgraded:
+                break;
+
+            case VersionNegotiator::UpgradeResult::kNoDcid:
+                // Unlike the server, the client cannot proceed without rekeying:
+                // it has no key that decrypts this packet.
+                LOG_ERROR("RFC 9368: cannot rekey client Initial (no cached DCID); dropping packet");
+                return false;
+
+            case VersionNegotiator::UpgradeResult::kRekeyFailed:
+            default:
+                LOG_ERROR("RFC 9368: client-side RekeyInitialForVersion failed");
+                return false;
         }
-
-        if (!connection_crypto_.RekeyInitialForVersion(pkt_version, reinterpret_cast<const uint8_t*>(dcid.data()),
-                static_cast<uint32_t>(dcid.size()), false /* is_server */)) {
-            LOG_ERROR("RFC 9368: client-side RekeyInitialForVersion failed");
-            return false;
-        }
-
-        // Sync connection-level version with crypto-level version.
-        SetVersion(pkt_version);
-
-        // Update our version_information TP so that any remaining outbound
-        // TLS messages (rare: should already be serialized on the client) see
-        // chosen_version == on-wire version. Also keep the cached copy fresh
-        // for any future consistency check.
-        RebuildAndPushVersionInformation();
-
-        version_ctx_.compat_vn_completed = true;
-        common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
     }
 
-    return OnNormalPacket(packet);
+    // Resolve Initial keys by the version on the wire, not by the connection's
+    // current version.
+    //
+    // After a Compatible VN upgrade both generations are live: the negotiated
+    // one, plus the pre-upgrade one that RekeyInitialForVersion retained
+    // because the peer keeps retransmitting its first flight under the original
+    // version until our upgrade reaches it (RFC 9369 §4.1). Handing such a
+    // packet to the current keys yields EVP_AEAD_CTX_open failed and, when the
+    // peer's first flight spans several Initial packets, a stalled handshake.
+    auto initial_cryptographer = connection_crypto_.GetInitialCryptographerForVersion(pkt_version);
+    if (!initial_cryptographer) {
+        // RFC 9369 §4.1: "An endpoint MUST drop packets using any other
+        // version." We hold no Initial key for this one, so there is nothing
+        // worth attempting.
+        if (qlog_trace_) {
+            common::PacketDroppedData drop_data;
+            drop_data.packet_type = packet->GetHeader()->GetPacketType();
+            drop_data.packet_size = packet->GetSrcBuffer().GetLength();
+            drop_data.trigger = "unsupported_version";
+            QLOG_PACKET_DROPPED(qlog_trace_, drop_data);
+        }
+        return false;
+    }
+
+    return OnNormalPacket(packet, initial_cryptographer);
 }
 
 bool BaseConnection::On0rttPacket(const std::shared_ptr<IPacket>& packet) {
@@ -867,76 +740,10 @@ bool BaseConnection::On1rttPacket(const std::shared_ptr<IPacket>& packet) {
     return false;
 }
 
-bool BaseConnection::OnVersionNegotiationPacket(const std::shared_ptr<IPacket>& packet) {
-    auto vn_packet = std::dynamic_pointer_cast<VersionNegotiationPacket>(packet);
-    if (!vn_packet) {
-        LOG_ERROR("Failed to cast to VersionNegotiationPacket");
-        return false;
-    }
-
-    auto supported_versions = vn_packet->GetSupportVersion();
-    LOG_WARN("Received Version Negotiation packet with %zu supported versions", supported_versions.size());
-
-    // RFC 9000 Section 6.2: Discard if our version is listed (downgrade attack)
-    if (IsVnDowngradeAttack(supported_versions)) {
-        return true;
-    }
-
-    // RFC 9000 Section 6: Version negotiation should only happen once
-    if (version_ctx_.version_negotiation_done) {
-        LOG_ERROR("Received Version Negotiation packet after already negotiating version - closing connection");
-        InnerConnectionClose(QuicErrorCode::kProtocolViolation, 0, "Version negotiation attempted multiple times");
-        return true;
-    }
-
-    // Select a compatible version and trigger callback
-    uint32_t compatible_version = SelectVersion(supported_versions);
-    HandleCompatibleVersionFound(compatible_version);
-
-    common::Metrics::CounterInc(common::MetricsStd::VersionNegotiationTotal);
-    return true;
-}
-
-bool BaseConnection::IsVnDowngradeAttack(const std::vector<uint32_t>& supported_versions) {
-    uint32_t our_version = version_ctx_.quic_version;
-    for (auto version : supported_versions) {
-        if (version == our_version) {
-            LOG_WARN("Version Negotiation lists our current version 0x%08x - possible attack!", our_version);
-            if (qlog_trace_) {
-                common::PacketDroppedData drop_data;
-                drop_data.packet_type = PacketType::kNegotiationPacketType;
-                drop_data.trigger = "version_negotiation_downgrade";
-                QLOG_PACKET_DROPPED(qlog_trace_, drop_data);
-            }
-            return true;
-        }
-    }
-    return false;
-}
-
-void BaseConnection::HandleCompatibleVersionFound(uint32_t compatible_version) {
-    uint32_t our_version = version_ctx_.quic_version;
-    if (compatible_version != 0 && compatible_version != our_version) {
-        LOG_INFO("Found compatible version: 0x%08x (%s), will reconnect", compatible_version,
-            VersionToString(compatible_version));
-        version_ctx_.negotiated_version = compatible_version;
-        version_ctx_.version_negotiation_needed = true;
-
-        if (version_negotiation_cb_) {
-            version_negotiation_cb_(compatible_version);
-        } else {
-            LOG_WARN("Version negotiation callback not set, closing connection");
-            InnerConnectionClose(
-                QuicErrorCode::kVersionNegotiationError, 0, "Version negotiation required but no handler");
-        }
-    } else {
-        LOG_ERROR("No compatible QUIC version found in server's list");
-        InnerConnectionClose(QuicErrorCode::kVersionNegotiationError, 0, "No compatible QUIC version");
-    }
-}
-
-bool BaseConnection::OnNormalPacket(const std::shared_ptr<IPacket>& packet) {
-    std::shared_ptr<ICryptographer> cryptographer = connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
+bool BaseConnection::OnNormalPacket(
+    const std::shared_ptr<IPacket>& packet, const std::shared_ptr<ICryptographer>& cryptographer_override) {
+    std::shared_ptr<ICryptographer> cryptographer =
+        cryptographer_override ? cryptographer_override : connection_crypto_.GetCryptographer(packet->GetCryptoLevel());
     if (!cryptographer) {
         LOG_ERROR("decrypt grapher is not ready.");
         if (qlog_trace_) {
@@ -1034,6 +841,64 @@ bool BaseConnection::OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint
     return frame_processor_->OnFrames(frames, crypto_level);
 }
 
+bool BaseConnection::ParsePreferredAddress(const std::string& value, common::Address& out) {
+    if (value.empty()) {
+        return false;
+    }
+
+    std::string host;
+    std::string port_str;
+
+    if (value[0] == '[') {
+        // Bracketed IPv6: "[<ipv6>]:<port>".
+        const auto close = value.find(']');
+        if (close == std::string::npos || close == 1) {
+            return false;  // no closing bracket, or empty host
+        }
+        if (close + 1 >= value.size() || value[close + 1] != ':') {
+            return false;  // must be followed by ":<port>"
+        }
+        host = value.substr(1, close - 1);
+        port_str = value.substr(close + 2);
+
+    } else {
+        const auto colon = value.find(':');
+        if (colon == std::string::npos || colon == 0) {
+            return false;  // no port, or empty host
+        }
+        // More than one colon without brackets is an unbracketed IPv6 literal:
+        // genuinely ambiguous, so refuse instead of guessing.
+        if (value.find(':', colon + 1) != std::string::npos) {
+            return false;
+        }
+        host = value.substr(0, colon);
+        port_str = value.substr(colon + 1);
+    }
+
+    if (host.empty() || port_str.empty()) {
+        return false;
+    }
+
+    // Hand-rolled rather than std::stoi/strtoul: no exceptions, no errno, and
+    // trailing garbage ("443x") is rejected instead of silently ignored.
+    uint32_t port = 0;
+    for (char c : port_str) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        port = port * 10 + static_cast<uint32_t>(c - '0');
+        if (port > 65535) {
+            return false;  // bail on overflow; also catches absurdly long input
+        }
+    }
+    if (port == 0) {
+        return false;  // port 0 is not a usable destination
+    }
+
+    out = common::Address(host, static_cast<uint16_t>(port));
+    return true;
+}
+
 void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
     // RFC 9368 §4: Validate remote peer's version_information (if present) and,
     // on the server, decide whether to compatibly upgrade the connection version.
@@ -1089,19 +954,16 @@ void BaseConnection::OnTransportParams(TransportParam& remote_tp) {
         if (!pref.empty()) {
             LOG_INFO("Server advertised preferred address: %s", pref.c_str());
 
-            // Parse "ip:port" format
-            auto pos = pref.find(':');
-            if (pos != std::string::npos) {
-                common::Address addr(pref.substr(0, pos), static_cast<uint16_t>(std::stoi(pref.substr(pos + 1))));
-                if (!(addr == GetPeerAddress())) {
-                    LOG_INFO("Client initiating migration to server's preferred address: %s:%d", addr.GetIp().c_str(),
-                        addr.GetPort());
-                    path_manager_->OnObservedPeerAddress(addr);
-                } else {
-                    LOG_DEBUG("Preferred address is same as current address, no migration needed");
-                }
+            common::Address addr;
+            if (!ParsePreferredAddress(pref, addr)) {
+                // Peer-controlled value; a bad one isignored, not fatal.
+                LOG_WARN("Invalid preferred address: %s (expected host:port or [ipv6]:port)", pref.c_str());
+            } else if (addr == GetPeerAddress()) {
+                LOG_DEBUG("Preferred address is same as current address, no migration needed");
             } else {
-                LOG_WARN("Invalid preferred address format: %s (expected ip:port)", pref.c_str());
+                LOG_INFO("Client initiating migration to server's preferred address: %s:%d", addr.GetIp().c_str(),
+                    addr.GetPort());
+                path_manager_->OnObservedPeerAddress(addr);
             }
         }
     }
@@ -1156,12 +1018,17 @@ void BaseConnection::CheckPTOTimeout() {
     }
 }
 
-void BaseConnection::ToSendFrame(std::shared_ptr<IFrame> frame) {
-    send_manager_.ToSendFrame(frame);
-    ActiveSend();
+void BaseConnection::OnFrameReady(std::shared_ptr<IFrame> frame) {
+    // Sole "enqueue a frame" entry point. Queueing and waking are inseparable
+    // here on purpose: the old split (SendManager::ToSendFrame for queue-only
+    // vs BaseConnection::ToSendFrame for queue+wake — same name, different
+    // semantics) forced every caller to know which one it wanted, and two call
+    // sites had to hand-patch the missing wake-up afterwards.
+    send_manager_.EnqueueFrame(frame);
+    OnConnectionActive();
 }
 
-void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
+void BaseConnection::OnStreamDataReady(std::shared_ptr<IStream> stream) {
     if (state_machine_.IsTerminating()) {
         return;
     }
@@ -1170,35 +1037,20 @@ void BaseConnection::ActiveSendStream(std::shared_ptr<IStream> stream) {
         return;
     }
     if (stream->GetStreamID() != 0) {
-        has_app_send_pending_ = true;
         // Notify scheduler that early data (0-RTT) might be needed
         encryption_scheduler_->SetEarlyDataPending(true);
     }
-    // Use StreamManager for stream scheduling (Week 4 refactoring)
     stream_manager_->MarkStreamActive(stream);
-    ActiveSend();
+    OnConnectionActive();
 }
 
 EncryptionLevel BaseConnection::GetCurEncryptionLevel() {
-    auto level = connection_crypto_.GetCurEncryptionLevel();
-
-    // In 0-RTT scenario, we need to ensure proper packet sending order:
-    // 1. First send Initial packet (with ClientHello)
-    // 2. Then send 0-RTT packet (with early data)
-    if (has_app_send_pending_ && level == kInitial) {
-        // Check if we have 0-RTT keys available
-        if (connection_crypto_.GetCryptographer(kEarlyData)) {
-            // Check if we have already sent the Initial packet with ClientHello
-            // This ensures we don't skip the Initial packet in 0-RTT scenarios
-            if (initial_packet_sent_) {
-                return kEarlyData;
-            } else {
-                // Still need to send Initial packet first
-                return kInitial;
-            }
-        }
-    }
-    return level;
+    // Thin delegate. The 0-RTT send-ordering decision (Initial before
+    // EarlyData) belongs to EncryptionLevelScheduler, which the send path
+    // drives via SetEarlyDataPending() / SetInitialPacketSent(). The branch
+    // that used to live here was unreachable anyway: its initial_packet_sent_
+    // flag had no writer in the entire tree.
+    return connection_crypto_.GetCurEncryptionLevel();
 }
 
 void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
@@ -1207,27 +1059,19 @@ void BaseConnection::OnObservedPeerAddress(const common::Address& addr) {
     }
 }
 
-void BaseConnection::ActiveSend() {
-    common::Metrics::CounterInc(common::MetricsStd::DiagActiveSendCalls);
-    // Don't trigger send retry if connection is closing, draining, or closed
-    // This prevents unnecessary retransmissions when connection is terminating
-    if (state_machine_.IsTerminating()) {
-        LOG_DEBUG("ActiveSend called but connection is terminating, ignoring, state=%d",
-            static_cast<int>(state_machine_.GetState()));
-        return;
-    }
-
-    // NOTE: ActiveSend is on the per-send hot path (one call per outbound
-    // packet, one per ACK delivery, one per stream wakeup, one per timer
-    // fire). At INFO level under a 25k-request load it produces ~30k log
-    // lines/second per worker, all funneled through the synchronous file
-    // logger -- the worker thread blocks on disk IO and visibly "freezes"
-    // for 5-10 seconds in the middle of a benchmark. Keep at DEBUG.
+void BaseConnection::EnqueueFrameDuringTermination(std::shared_ptr<IFrame> frame) {
+    // OnConnectionActive() deliberately suppresses wake-ups once
+    // IsTerminating() is true, to stop retransmission churn on a dying
+    // connection. CONNECTION_CLOSE has to defeat that suppression or it would
+    // never leave the host, so this path pokes active_connection_cb_ directly.
+    //
+    // This exists as a named operation on purpose: the bypass used to be
+    // open-coded at both call sites, where it read like a redundant hand-patch
+    // rather than a deliberate exception.
+    send_manager_.EnqueueFrame(frame);
     if (active_connection_cb_) {
-        LOG_DEBUG("ActiveSend: invoking active_connection_cb_");
+        LOG_DEBUG("EnqueueFrameDuringTermination: forcing send while terminating");
         active_connection_cb_(shared_from_this());
-    } else {
-        LOG_WARN("ActiveSend: active_connection_cb_ is null!");
     }
 }
 
@@ -1235,19 +1079,28 @@ void BaseConnection::ActiveSend() {
 // These methods replace callback-based event notification with direct method calls,
 // reducing std::bind overhead and improving performance.
 
-void BaseConnection::OnStreamDataReady(std::shared_ptr<IStream> stream) {
-    // Delegate to existing ActiveSendStream method
-    ActiveSendStream(stream);
-}
-
-void BaseConnection::OnFrameReady(std::shared_ptr<IFrame> frame) {
-    // Delegate to existing ToSendFrame method
-    ToSendFrame(frame);
-}
-
 void BaseConnection::OnConnectionActive() {
-    // Delegate to existing ActiveSend method
-    ActiveSend();
+    common::Metrics::CounterInc(common::MetricsStd::DiagActiveSendCalls);
+    // Don't trigger send retry if connection is closing, draining, or closed
+    // This prevents unnecessary retransmissions when connection is terminating
+    if (state_machine_.IsTerminating()) {
+        LOG_DEBUG("OnConnectionActive called but connection is terminating, ignoring, state=%d",
+            static_cast<int>(state_machine_.GetState()));
+        return;
+    }
+
+    // NOTE: this is on the per-send hot path (one call per outbound packet, one
+    // per ACK delivery, one per stream wakeup, one per timer fire). At INFO
+    // level under a 25k-request load it produces ~30k log lines/second per
+    // worker, all funneled through the synchronous file logger -- the worker
+    // thread blocks on disk IO and visibly "freezes" for 5-10 seconds in the
+    // middle of a benchmark. Keep at DEBUG.
+    if (active_connection_cb_) {
+        LOG_DEBUG("OnConnectionActive: invoking active_connection_cb_");
+        active_connection_cb_(shared_from_this());
+    } else {
+        LOG_WARN("OnConnectionActive: active_connection_cb_ is null!");
+    }
 }
 
 void BaseConnection::OnStreamClosed(uint64_t stream_id) {
@@ -1261,38 +1114,6 @@ void BaseConnection::OnConnectionClose(uint64_t error, uint16_t frame_type, cons
 }
 
 // ==================== End of IConnectionEventSink Implementation ====================
-
-// Immediate send for critical frames (ACK, PATH_CHALLENGE/RESPONSE, CONNECTION_CLOSE)
-// Bypasses normal send path for low latency
-bool BaseConnection::SendImmediate(std::shared_ptr<common::IBuffer> buffer) {
-    if (!buffer || buffer->GetDataLength() == 0) {
-        LOG_WARN("SendImmediate: empty buffer");
-        return false;
-    }
-
-    // Prefer sender_ (direct UDP send) if available
-    if (sender_) {
-        auto net_packet = std::make_shared<NetPacket>();
-        net_packet->SetData(buffer);
-        // During migration, use migration socket for sending
-        int32_t send_sock = (migration_sockfd_ > 0) ? migration_sockfd_ : sockfd_;
-        net_packet->SetSocket(send_sock);
-        net_packet->SetAddress(AcquireSendAddress());
-        net_packet->SetTime(common::UTCTimeMsec());
-
-        bool result = sender_->Send(net_packet);
-        if (result) {
-            LOG_DEBUG("SendImmediate: packet sent via sender_, size=%d, sock=%d", buffer->GetDataLength(), send_sock);
-        } else {
-            LOG_ERROR("SendImmediate: sender_->Send() failed");
-        }
-        return result;
-
-    } else {
-        LOG_ERROR("SendImmediate: no sender_ available");
-        return false;
-    }
-}
 
 void BaseConnection::InnerConnectionClose(uint64_t error, uint16_t trigger_frame, std::string reason) {
     if (error != QuicErrorCode::kNoError) {
@@ -1333,7 +1154,7 @@ void BaseConnection::ImmediateClose(uint64_t error, uint16_t trigger_frame, std:
     stream_manager_->ResetAllStreams(error);
 
     // Delegate to connection closer
-    connection_closer_->StartImmediateClose(error, trigger_frame, reason, [this]() { ActiveSend(); });
+    connection_closer_->StartImmediateClose(error, trigger_frame, reason, [this]() { OnConnectionActive(); });
 }
 
 void BaseConnection::InnerStreamClose(uint64_t stream_id) {
@@ -1372,13 +1193,11 @@ void BaseConnection::CheckAndReplenishLocalCIDPool() {
 }
 
 bool BaseConnection::InitiateMigration() {
-    // RFC 9000 Section 9: Connection Migration (Simple API for interop tests)
-    // This is a convenience wrapper that delegates to the production API.
-    // It keeps the same local IP but gets a new ephemeral port from the system.
+    // RFC 9000 §9 convenience wrapper for interop tests: keep the local IP but
+    // let the system pick a fresh ephemeral port. Address-family resolution
+    // stays here because it needs peer_addr_ and the cached local address.
+    LOG_INFO("InitiateMigration: delegating to MigrationController");
 
-    LOG_INFO("InitiateMigration: delegating to production API InitiateMigrationTo()");
-
-    // Get current local address
     std::string current_ip;
     uint32_t current_port;
     GetLocalAddr(current_ip, current_port);
@@ -1397,58 +1216,11 @@ bool BaseConnection::InitiateMigration() {
         }
     }
 
-    // Delegate to production API: same IP, but port=0 means system chooses new port
-    // This creates a real socket switch, which is what production migration does
-    MigrationResult result = InitiateMigrationTo(current_ip, 0);
-
-    bool success = (result == MigrationResult::kSuccess);
-    if (!success) {
-        LOG_WARN("InitiateMigration: failed with result %d", static_cast<int>(result));
-    }
-
-    return success;
+    return migration_controller_->InitiateMigration(current_ip);
 }
 
 MigrationResult BaseConnection::InitiateMigrationTo(const std::string& local_ip, uint16_t local_port) {
-    // RFC 9000 Section 9: Connection Migration (Production API)
-    // This implements full client-initiated connection migration with local address change
-
-    LOG_INFO("BaseConnection::InitiateMigrationTo: starting migration to %s:%d", local_ip.c_str(), local_port);
-
-    // 1. Check if connection is in a state that allows migration
-    if (!state_machine_.CanSendData()) {
-        LOG_WARN("InitiateMigrationTo: connection not in connected state");
-        return MigrationResult::kFailedInvalidState;
-    }
-
-    // 2. Setup callbacks for socket management
-    if (path_manager_) {
-        path_manager_->SetSocketCallbacks(
-            [this]() { return sockfd_; }, [this](int32_t sock) { migration_sockfd_ = sock; });
-
-        // Set migration complete callback to handle socket switch
-        path_manager_->SetMigrationCompleteCallback([this](const MigrationInfo& info) { OnMigrationComplete(info); });
-    }
-
-    // 3. Create address and delegate to PathManager
-    common::Address local_addr(local_ip, local_port);
-
-    if (!path_manager_) {
-        return MigrationResult::kFailedInvalidState;
-    }
-
-    auto result = path_manager_->InitiateMigrationToAddress(local_addr);
-
-    // 4. Register migration socket with receiver so PATH_RESPONSE can be received
-    if (result == MigrationResult::kSuccess && migration_sockfd_ > 0 && register_socket_cb_) {
-        if (!register_socket_cb_(migration_sockfd_)) {
-            LOG_ERROR("InitiateMigrationTo: failed to register migration socket %d with receiver", migration_sockfd_);
-        } else {
-            LOG_INFO("InitiateMigrationTo: registered migration socket %d with receiver", migration_sockfd_);
-        }
-    }
-
-    return result;
+    return migration_controller_->InitiateMigrationTo(local_ip, local_port);
 }
 
 void BaseConnection::SetMigrationCallback(migration_callback cb) {
@@ -1456,51 +1228,43 @@ void BaseConnection::SetMigrationCallback(migration_callback cb) {
 }
 
 void BaseConnection::GetLocalAddr(std::string& addr, uint32_t& port) {
-    // Use IConnection's implementation which queries from socket
-    IConnection::GetLocalAddr(addr, port);
-}
+    // Cached value wins.
+    if (!local_addr_.GetIp().empty()) {
+        addr = local_addr_.GetIp();
+        port = local_addr_.GetPort();
+        return;
+    }
 
-bool BaseConnection::IsMigrationSupported() const {
-    return !transport_param_.GetDisableActiveMigration();
-}
-
-bool BaseConnection::IsMigrationInProgress() const {
-    return path_manager_ && path_manager_->IsPathProbeInflight();
-}
-
-void BaseConnection::OnMigrationComplete(const MigrationInfo& info) {
-    LOG_INFO("BaseConnection::OnMigrationComplete: result=%d, is_nat_rebinding=%d", static_cast<int>(info.result_),
-        info.is_nat_rebinding_);
-
-    if (info.result_ == MigrationResult::kSuccess) {
-        // Migration successful: switch to the new socket
-        if (migration_sockfd_ > 0) {
-            int32_t old_sock = sockfd_;
-            sockfd_ = migration_sockfd_;
-            migration_sockfd_ = -1;
-
-            // Update cached local address
-            common::Address new_local;
-            if (GetLocalAddressFromSocket(sockfd_, new_local)) {
-                local_addr_ = new_local;
-            }
-
-            LOG_INFO("BaseConnection: switched to migration socket %d (old: %d)", sockfd_, old_sock);
-
-            // Note: The old socket might still be in use by the event loop
-            // We don't close it here - the caller (Worker) should manage socket lifecycle
-        }
-    } else {
-        // Migration failed: cleanup migration socket if any
-        if (migration_sockfd_ > 0) {
-            common::Close(migration_sockfd_);
-            migration_sockfd_ = -1;
+    // Otherwise query the socket. The active fd (primary, or the probe socket
+    // while a migration is in flight) is owned by the emitter.
+    const int32_t sock = emitter_->GetActiveSocket();
+    if (sock > 0) {
+        common::Address local;
+        if (GetLocalAddressFromSocket(sock, local)) {
+            local_addr_ = local;
+            addr = local_addr_.GetIp();
+            port = local_addr_.GetPort();
+            return;
         }
     }
 
-    // Notify application layer
+    addr = "";
+    port = 0;
+}
+
+bool BaseConnection::IsMigrationSupported() const {
+    return migration_controller_->IsMigrationSupported();
+}
+
+bool BaseConnection::IsMigrationInProgress() const {
+    return migration_controller_->IsMigrationInProgress();
+}
+
+void BaseConnection::OnMigrationFinished(const MigrationInfo& info) {
+    // Socket switching / retiring already happened inside MigrationController;
+    // all that is left is telling the application. This lives here because
+    // building the IQuicConnection shared_ptr needs shared_from_this().
     if (migration_cb_) {
-        // Need to cast shared_from_this() to IQuicConnection
         auto self = std::dynamic_pointer_cast<IQuicConnection>(shared_from_this());
         migration_cb_(self, info);
     }
@@ -1555,23 +1319,18 @@ void BaseConnection::OnStateToClosing() {
     timer_coordinator_->StopIdleTimer();
 
     send_manager_.ClearRetransmissionData();
+    // ClearActiveStreams() already drops the pending frame list.
     send_manager_.ClearActiveStreams();
-    send_manager_.wait_frame_list_.clear();
 
     auto frame = std::make_shared<ConnectionCloseFrame>();
     frame->SetErrorCode(connection_closer_->GetClosingErrorCode());
     frame->SetErrFrameType(connection_closer_->GetClosingTriggerFrame());
     frame->SetReason(connection_closer_->GetClosingReason());
 
-    // Add CONNECTION_CLOSE frame to send queue
-    send_manager_.ToSendFrame(frame);
-
-    // Trigger active connection callback to send CONNECTION_CLOSE frame
-    // Note: We need to explicitly trigger sending because ActiveSend() is blocked in Closing state
-    if (active_connection_cb_) {
-        LOG_DEBUG("Triggering active connection callback to send CONNECTION_CLOSE frame");
-        active_connection_cb_(shared_from_this());
-    }
+    // Queue CONNECTION_CLOSE and force it onto the wire: the normal wake-up
+    // path is suppressed in Closing state, so this uses the explicit
+    // terminating-state entry point.
+    EnqueueFrameDuringTermination(frame);
 
     // Record the time when CONNECTION_CLOSE is first sent
     // RFC 9000 Section 10.2: Retransmit at most once per PTO to avoid flooding
@@ -1599,13 +1358,16 @@ void BaseConnection::OnStateToClosing() {
     auto loop = event_loop_.lock();
     if (!loop) return;
     auto weak_self = weak_from_this();
-    loop->AddTimer(
+    // Fire-and-forget: nothing ever cancels this, and the weak_ptr in the closure
+    // is its own lifetime guard. PostDelayed says exactly that, and hands back no
+    // handle that could be dropped by accident.
+    loop->PostDelayed(
         [weak_self]() {
             auto self = weak_self.lock();
             if (!self) return;
             self->OnClosingTimeout();
         },
-        wait_ms, false);
+        wait_ms);
 }
 
 void BaseConnection::OnStateToDraining() {
@@ -1623,8 +1385,8 @@ void BaseConnection::OnStateToDraining() {
     timer_coordinator_->StopIdleTimer();
 
     send_manager_.ClearRetransmissionData();
+    // ClearActiveStreams() already drops the pending frame list.
     send_manager_.ClearActiveStreams();
-    send_manager_.wait_frame_list_.clear();
 
     // IMPORTANT: Same self-pinning as OnStateToClosing — grab shared_from_this()
     // BEFORE the callback to keep `this` alive through the timer setup.
@@ -1636,13 +1398,13 @@ void BaseConnection::OnStateToDraining() {
     auto loop = event_loop_.lock();
     if (!loop) return;
     auto weak_self = weak_from_this();
-    loop->AddTimer(
+    loop->PostDelayed(
         [weak_self]() {
             auto self = weak_self.lock();
             if (!self) return;
             self->OnClosingTimeout();
         },
-        connection_closer_->GetCloseWaitTime() * 3, false);
+        connection_closer_->GetCloseWaitTime() * 3);
 }
 
 void BaseConnection::OnStateToClosed() {
@@ -1674,21 +1436,6 @@ void BaseConnection::OnStateToClosed() {
 }
 
 // ==================== New High-Level Send Interfaces Implementation ====================
-
-bool BaseConnection::TrySend() {
-    // Single-packet legacy entry point. Worker::ProcessSend now drives the
-    // multi-packet TrySendBurst path; this is kept for mock/test paths and
-    // for the retransmit fast-exit semantics. Counter accounting lives in
-    // TrySendBurst so the production hot path is not double-counted.
-    if (state_machine_.IsClosed() || state_machine_.IsDraining()) {
-        LOG_DEBUG("BaseConnection::TrySend: connection is closed/draining, state=%d", state_machine_.GetState());
-        return false;
-    }
-    if (send_manager_.GetSendControl().NeedReSend()) {
-        return TrySendRetransmit();
-    }
-    return TrySendNew();
-}
 
 bool BaseConnection::TrySendRetransmit() {
     // RFC 9000 §13.3: Retransmit lost packets first.
@@ -1751,11 +1498,13 @@ bool BaseConnection::TrySendRetransmit() {
     }
     auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
-    // [DIAG-RTX] Snapshot the payload bytes that lost_pkt is about to re-encode.
-    // Compare with the matching "first-send pn=<old_pn>" log to determine
-    // whether the SharedBufferSpan still points to the original plaintext or
-    // whether the underlying chunk has been overwritten / freed by some
-    // intermediate path.
+    // Payload snapshot for retransmit debugging, paired with the "first-send"
+    // dump in PacketBuilder::BuildDataPacket. Both are gated: snprintf×16 plus
+    // LOG_INFO per packet was measured at ~5us/packet there, and this side runs
+    // once per retransmission -- i.e. hottest exactly during the loss storms it
+    // exists to diagnose. The gate was previously only applied to the other
+    // half of the pair.
+#ifdef QUICX_DIAG_RTX
     if (auto rtt1 = std::dynamic_pointer_cast<Rtt1Packet>(lost_pkt)) {
         auto pl = rtt1->GetPayload();
         char head[64] = {0};
@@ -1769,6 +1518,9 @@ bool BaseConnection::TrySendRetransmit() {
             (unsigned long long)orig_pn, (unsigned long long)new_pn, pl.GetLength(), (int)pl.Valid(),
             (void*)pl.GetChunk().get(), head);
     }
+#else
+    (void)orig_pn;
+#endif
 
     if (!lost_pkt->Encode(buffer)) {
         LOG_ERROR("BaseConnection::TrySendRetransmit: failed to re-encode lost packet pn=%llu", new_pn);
@@ -1779,7 +1531,7 @@ bool BaseConnection::TrySendRetransmit() {
 
     // qlog draft-03: open a fresh datagram before OnPacketSend so the
     // retransmitted packet's packet_sent event carries its datagram_id.
-    BeginSendDatagram();
+    auto scope = emitter_->Open();
 
     // Record this retransmission in SendControl carrying the original
     // stream_data, otherwise an ACK on the new PN would not flow back to
@@ -1787,10 +1539,14 @@ bool BaseConnection::TrySendRetransmit() {
     // permanently missing the bytes that the retransmit just delivered.
     send_control.OnPacketSend(common::UTCTimeMsec(), lost_pkt, encoded_size, lost_entry.stream_data);
 
-    // DIAGNOSTIC (H-plan): log the stream_data byte ranges actually carried
-    // by this retransmitted packet so we can correlate with what the peer
-    // observes on the wire. If the peer never sees these byte ranges as
-    // duplicates, the retransmission lost its payload.
+    // The stream_data byte ranges this retransmission carries. Building the
+    // summary string is unconditional work, so it stays behind the diagnostic
+    // gate; without it, a loss storm pays a heap allocation and several
+    // std::to_string calls per retransmitted packet, on top of a synchronous
+    // INFO-level log line. (The same lesson is recorded on OnConnectionActive,
+    // where INFO-level logging on a per-send path stalled the worker thread on
+    // disk IO for seconds at a time.)
+#ifdef QUICX_DIAG_RTX
     std::string sd_summary;
     for (const auto& sd : lost_entry.stream_data) {
         sd_summary += "{sid=" + std::to_string(sd.stream_id) + ",off=" + std::to_string(sd.offset_start) +
@@ -1800,15 +1556,12 @@ bool BaseConnection::TrySendRetransmit() {
         "BaseConnection::TrySendRetransmit: retransmitted lost packet with new pn=%llu, size=%u, "
         "stream_data count=%zu ranges=%s",
         new_pn, encoded_size, lost_entry.stream_data.size(), sd_summary.c_str());
+#else
+    LOG_DEBUG("BaseConnection::TrySendRetransmit: retransmitted pn=%llu, size=%u, stream_data count=%zu", new_pn,
+        encoded_size, lost_entry.stream_data.size());
+#endif
 
-    return FinishSendDatagram(buffer);
-}
-
-bool BaseConnection::TrySendNew() {
-    // Thin wrapper kept for backward compatibility with the historical
-    // "one packet per call" contract. All real work lives in
-    // TrySendNewBurst(budget=1).
-    return TrySendNewBurst(1) > 0;
+    return scope.Commit(buffer);
 }
 
 int BaseConnection::TrySendBurst(int budget) {
@@ -1855,7 +1608,11 @@ int BaseConnection::TrySendBurst(int budget) {
         if (state_machine_.GetState() == ConnectionStateType::kStateConnecting) {
             int coalesced = TryCoalescedInitialHandshake();
             if (coalesced > 0) {
-                sent += coalesced;
+                // Clamp: a coalesced datagram reports 2 packets, so an
+                // unclamped += would let TrySendBurst(1) return 2 and break
+                // the documented "returns <= budget" contract.
+                const int room = budget - sent;
+                sent += (coalesced > room) ? room : coalesced;
             }
         }
     }
@@ -1866,6 +1623,26 @@ int BaseConnection::TrySendBurst(int budget) {
         common::Metrics::HistogramObserve(common::MetricsStd::DiagTrySendBurstPkts, static_cast<uint64_t>(sent));
     }
     return sent;
+}
+
+void BaseConnection::FillPacketIdentity(
+    PacketBuilder::DataPacketContext& ctx, EncryptionLevel level, std::shared_ptr<ICryptographer> cryptographer) {
+    ctx.level = level;
+    ctx.cryptographer = std::move(cryptographer);
+    ctx.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
+    ctx.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
+    ctx.quic_version = connection_crypto_.GetVersion();
+    ctx.stream_manager = stream_manager_.get();
+}
+
+void BaseConnection::MaybePrependAck(std::vector<std::shared_ptr<IFrame>>& frames, PacketNumberSpace ns) {
+    if (!recv_control_.ShouldSendAckNow(ns)) {
+        return;
+    }
+    auto ack = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), ns, ecn_enabled_);
+    if (ack) {
+        frames.insert(frames.begin(), ack);
+    }
 }
 
 int BaseConnection::TrySendNewBurst(int budget) {
@@ -1899,13 +1676,8 @@ int BaseConnection::TrySendNewBurst(int budget) {
 
     // 4. Packet builder fixed fields. Everything below survives a full burst.
     PacketBuilder::DataPacketContext tmpl;
-    tmpl.level = send_ctx.level;
-    tmpl.cryptographer = cryptographer;
-    tmpl.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
-    tmpl.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
-    tmpl.quic_version = connection_crypto_.GetVersion();
+    FillPacketIdentity(tmpl, send_ctx.level, cryptographer);
     tmpl.key_phase = connection_crypto_.GetCurrentKeyPhase();
-    tmpl.stream_manager = stream_manager_.get();
     tmpl.add_padding = (send_ctx.level == kInitial);
     tmpl.min_size = kMinInitialPacketSize;  // RFC 9000 §14.1
     tmpl.token = send_manager_.GetToken();
@@ -1919,14 +1691,7 @@ int BaseConnection::TrySendNewBurst(int budget) {
         uint32_t max_bytes = send_manager_.GetAvailableWindow();
         if (max_bytes == 0) {
             // RFC 9000 §9.3.3 probing-frame exemption.
-            bool has_probing = false;
-            for (const auto& f : send_manager_.wait_frame_list_) {
-                uint16_t t = static_cast<uint16_t>(f->GetType());
-                if (t == FrameType::kPathChallenge || t == FrameType::kPathResponse) {
-                    has_probing = true;
-                    break;
-                }
-            }
+            bool has_probing = send_manager_.HasPendingProbingFrame();
             if (has_probing) {
                 max_bytes = kMinInitialPacketSize;
                 LOG_DEBUG(
@@ -1974,27 +1739,36 @@ int BaseConnection::TrySendNewBurst(int budget) {
         build_ctx.include_stream_data = has_stream_data;
 
         // 4e. Connection-level flow control.
+        //
+        // A block here does not abort the packet: it only zeroes the STREAM-byte
+        // allowance. CRYPTO frames are exempt (RFC 9000 §4.1) and honour no such
+        // limit — FixBufferFrameVisitor::HandleFrame applies the allowance only
+        // on the is_stream branch, and CryptoStream::TrySendData never consults
+        // it — so a handshake cannot stall behind a full connection FC window.
         uint64_t conn_flow_limit = 0;
         std::shared_ptr<IFrame> blocked_frame;
         bool fc_blocked_with_data = false;
         if (send_flow_controller_.CanSendData(conn_flow_limit, blocked_frame)) {
             build_ctx.max_stream_data_size = static_cast<uint32_t>(std::min<uint64_t>(conn_flow_limit, UINT32_MAX));
             if (has_stream_data && build_ctx.max_stream_data_size < 32) {
-                LOG_INFO(
+                // DEBUG, not INFO: this fires on every burst iteration while the
+                // connection FC window is nearly exhausted, which is a sustained
+                // condition rather than a one-off event.
+                LOG_DEBUG(
                     "BaseConnection::TrySendBurst budget: max_bytes(cwnd)=%u, conn_flow_limit=%llu, "
                     "max_stream_data_size=%u (<32) — stream frame header may not fit",
                     max_bytes, (unsigned long long)conn_flow_limit, build_ctx.max_stream_data_size);
             }
             if (blocked_frame) {
                 LOG_DEBUG("BaseConnection::TrySendBurst: queueing proactive DATA_BLOCKED frame (near limit)");
-                send_manager_.ToSendFrame(blocked_frame);
+                send_manager_.EnqueueFrame(blocked_frame);
             }
         } else {
             build_ctx.max_stream_data_size = 0;
             LOG_DEBUG("BaseConnection::TrySendBurst: connection-level FC blocked, blocked_frame=%p, has_stream_data=%d",
                 blocked_frame.get(), has_stream_data ? 1 : 0);
             if (blocked_frame) {
-                send_manager_.ToSendFrame(blocked_frame);
+                send_manager_.EnqueueFrame(blocked_frame);
             }
             if (has_stream_data) {
                 fc_blocked_with_data = true;
@@ -2016,7 +1790,9 @@ int BaseConnection::TrySendNewBurst(int budget) {
         // one QUIC packet inside its own UDP datagram (coalescing only
         // happens via the dedicated TryCoalescedInitialHandshake() path),
         // so a fresh datagram_id per iteration is the correct binding.
-        BeginSendDatagram();
+        // Scope is loop-body scoped: it drains on `break` as well as on the
+        // normal path, so no iteration can leak an open bracket.
+        auto scope = emitter_->Open();
 
         uint64_t t_build_start = common::Metrics::NowUs();
         auto result = packet_builder_->BuildDataPacket(
@@ -2039,9 +1815,8 @@ int BaseConnection::TrySendNewBurst(int budget) {
                 send_manager_.SetFlowControlBlocked();
             }
             common::Metrics::CounterInc(common::MetricsStd::DiagTrySendBuildFail);
-            // qlog draft-03: discard the datagram bracket opened above so
-            // a subsequent packet doesn't inherit a stale (empty) id.
-            (void)send_manager_.GetSendControl().EndSendDatagram();
+            // qlog draft-03: Scope's destructor discards the bracket opened
+            // above so a subsequent packet doesn't inherit a stale (empty) id.
             break;
         }
 
@@ -2057,7 +1832,7 @@ int BaseConnection::TrySendNewBurst(int budget) {
 
         // 4h. Send (or enqueue into the worker batch sink).
         uint64_t t_send_start = common::Metrics::NowUs();
-        bool send_success = FinishSendDatagram(buffer);
+        bool send_success = scope.Commit(buffer);
         {
             uint64_t t_send_end = common::Metrics::NowUs();
             if (t_send_end > t_send_start) {
@@ -2153,17 +1928,13 @@ int BaseConnection::TryCoalescedInitialHandshake() {
     // qlog draft-03: this is the canonical packet-coalescing path. Open
     // ONE datagram_id and let both the Initial and Handshake builds share
     // it so qvis can render them as a single UDP datagram (which is the
-    // whole point of the visualisation upgrade).
-    BeginSendDatagram();
+    // whole point of the visualisation upgrade). The Scope guarantees the
+    // bracket closes on every one of the early returns below.
+    auto scope = emitter_->Open();
 
     PacketBuilder::DataPacketContext init_ctx;
-    init_ctx.level = kInitial;
-    init_ctx.cryptographer = initial_crypto;
-    init_ctx.local_cid_manager = cid_coordinator_->GetLocalConnectionIDManager().get();
-    init_ctx.remote_cid_manager = cid_coordinator_->GetRemoteConnectionIDManager().get();
-    init_ctx.quic_version = connection_crypto_.GetVersion();
-    init_ctx.key_phase = 0;
-    init_ctx.stream_manager = stream_manager_.get();
+    FillPacketIdentity(init_ctx, kInitial, initial_crypto);
+    init_ctx.key_phase = 0;               // long headers carry no key-phase bit
     init_ctx.include_stream_data = true;  // CryptoStream drains via stream-frame path
     init_ctx.add_padding = false;         // padding deferred to Handshake (see above)
     init_ctx.min_size = 0;
@@ -2175,20 +1946,14 @@ int BaseConnection::TryCoalescedInitialHandshake() {
     // already correctly routed by the scheduler in the non-coalesced
     // path; here we just emit our own-space ACK if RecvControl says it's
     // due — same as the normal burst path).
-    if (recv_control_.ShouldSendAckNow(kInitialNumberSpace)) {
-        auto ack = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), kInitialNumberSpace, ecn_enabled_);
-        if (ack) {
-            init_ctx.frames.insert(init_ctx.frames.begin(), ack);
-        }
-    }
+    MaybePrependAck(init_ctx.frames, kInitialNumberSpace);
 
     auto init_result = packet_builder_->BuildDataPacket(
         init_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
     if (!init_result.success) {
         LOG_WARN("BaseConnection::TryCoalescedInitialHandshake: Initial build failed: %s",
             init_result.error_message.c_str());
-        // qlog: discard the datagram bracket opened above (empty datagram).
-        (void)send_manager_.GetSendControl().EndSendDatagram();
+        // Scope's destructor discards the empty datagram bracket.
         return 0;
     }
     const uint32_t initial_size = init_result.packet_size;
@@ -2210,7 +1975,7 @@ int BaseConnection::TryCoalescedInitialHandshake() {
     // subtract a conservative envelope estimate. Erring high (29 B) is
     // safe: it may make the datagram a few bytes over 1200 (still fully
     // compliant; §14.1 has no upper bound below MTU) but never under.
-    const bool is_client = !version_ctx_.is_server;
+    const bool is_client = !is_server_;
     const bool client_first_flight = is_client && !encryption_scheduler_->IsInitialPacketSent();
     const uint32_t target_datagram_size = client_first_flight ? kMinInitialPacketSize : 0;
     constexpr uint32_t kHandshakeEnvelopeEstimate = 29;  // header lower bound + AEAD tag
@@ -2226,25 +1991,15 @@ int BaseConnection::TryCoalescedInitialHandshake() {
     // will see the Handshake's own packet size (not the combined
     // datagram length) when OnPacketSend records bytes-in-flight.
     PacketBuilder::DataPacketContext hs_ctx;
-    hs_ctx.level = kHandshake;
-    hs_ctx.cryptographer = handshake_crypto;
-    hs_ctx.local_cid_manager = init_ctx.local_cid_manager;
-    hs_ctx.remote_cid_manager = init_ctx.remote_cid_manager;
-    hs_ctx.quic_version = init_ctx.quic_version;
-    hs_ctx.key_phase = 0;
-    hs_ctx.stream_manager = stream_manager_.get();
+    FillPacketIdentity(hs_ctx, kHandshake, handshake_crypto);
+    hs_ctx.key_phase = 0;  // long headers carry no key-phase bit
     hs_ctx.include_stream_data = true;
     hs_ctx.add_padding = (handshake_min_plaintext > 0);
     hs_ctx.min_size = handshake_min_plaintext;
     hs_ctx.max_stream_data_size = max_bytes;  // separate per-level cap
     hs_ctx.frames = send_manager_.GetPendingFrames(kHandshake, max_bytes);
 
-    if (recv_control_.ShouldSendAckNow(kHandshakeNumberSpace)) {
-        auto ack = recv_control_.MayGenerateAckFrame(common::UTCTimeMsec(), kHandshakeNumberSpace, ecn_enabled_);
-        if (ack) {
-            hs_ctx.frames.insert(hs_ctx.frames.begin(), ack);
-        }
-    }
+    MaybePrependAck(hs_ctx.frames, kHandshakeNumberSpace);
 
     auto hs_result = packet_builder_->BuildDataPacket(
         hs_ctx, buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl());
@@ -2272,16 +2027,15 @@ int BaseConnection::TryCoalescedInitialHandshake() {
             // Discard the buffer; caller's TrySendNewBurst will rebuild
             // and pad Initial properly on the next pass.
             // qlog draft-03: the Initial we just built is being thrown
-            // away — drain the datagram bracket so the next attempt gets
-            // a fresh id rather than inheriting this orphan one.
-            (void)send_manager_.GetSendControl().EndSendDatagram();
+            // away — the Scope destructor drains the datagram bracket so
+            // the next attempt gets a fresh id rather than inheriting this
+            // orphan one.
             return 0;
         }
         // Server or non-first-flight: ship Initial alone — the datagram
-        // therefore holds exactly one packet (the Initial) and the
-        // standard FinishSendDatagram path is correct.
+        // therefore holds exactly one packet (the Initial).
         encryption_scheduler_->SetInitialPacketSent(true);
-        if (!FinishSendDatagram(buffer)) {
+        if (!scope.Commit(buffer)) {
             return 0;
         }
         return 1;
@@ -2296,128 +2050,24 @@ int BaseConnection::TryCoalescedInitialHandshake() {
     // 6. Update Initial-sent flag (scheduler uses this for 0-RTT ordering).
     encryption_scheduler_->SetInitialPacketSent(true);
 
+    // No connection-level flow-control accounting here, unlike TrySendNewBurst.
+    // That asymmetry is correct, not an omission: send_flow_controller_ counts
+    // STREAM bytes, and this path cannot emit any. StreamManager::BuildStreamFrames
+    // skips every non-CryptoStream unless the level is kEarlyData or kApplication
+    // (RFC 9000 §12.5), so at Initial/Handshake only CRYPTO frames are produced —
+    // and the byte counter behind result.stream_data_size is only advanced by
+    // SendStream, which CryptoStream does not derive from. The value is therefore
+    // always 0 here and OnDataSent() would be a no-op.
+
     // 7. Ship the coalesced datagram.
-    if (!FinishSendDatagram(buffer)) {
-        // SendBuffer already accounted the failure; both packets are
+    if (!scope.Commit(buffer)) {
+        // The emitter already accounted the failure; both packets are
         // already in the SendControl bytes-in-flight ledger and will be
         // detected as lost via the normal PTO path. Nothing more to do.
         return 0;
     }
     common::Metrics::HistogramObserve(common::MetricsStd::DiagPktPayloadHist, buffer->GetDataLength());
     return 2;
-}
-
-bool BaseConnection::SendBuffer(std::shared_ptr<common::IBuffer> buffer) {
-    if (!buffer || buffer->GetDataLength() == 0) {
-        LOG_WARN("BaseConnection::SendBuffer: empty buffer");
-        common::Metrics::CounterInc(common::MetricsStd::DiagSendBufferFail);
-        return false;
-    }
-
-    // Use sender_ if available (preferred)
-    if (sender_) {
-        // PERF (P1 follow-up): proactively populate the sockaddr cache on
-        // peer_addr_ so the value-typed copy made by AcquireSendAddress()
-        // and stored on the NetPacket already has a ready-to-use cache.
-        // Without this, every NetPacket Address starts empty and
-        // UdpSender::SendBatch's fast-path probe degrades to per-packet
-        // sendto for the entire batch (observed udp_sb_ok=0 on a 500MB
-        // upload). Both family slots are populated so that v4-on-v6-dual-
-        // stack and v6 sockets all hit the cache. EnsureSockaddrCache is
-        // idempotent — first call is a single inet_pton; subsequent calls
-        // are a single bool check.
-        peer_addr_.EnsureSockaddrCache(AF_INET);
-        peer_addr_.EnsureSockaddrCache(AF_INET6);
-
-        auto packet = std::make_shared<NetPacket>();
-        packet->SetData(buffer);
-        packet->SetAddress(AcquireSendAddress());
-        // During migration, use migration socket for sending
-        int32_t send_sock = (migration_sockfd_ > 0) ? migration_sockfd_ : sockfd_;
-        packet->SetSocket(send_sock);
-
-        // PERF (sendmmsg batch path): if Worker installed a sink for this
-        // drain round, just hand the packet to it and return. The actual
-        // sendmmsg(2) syscall is issued once at the end of the drain over
-        // the whole accumulated batch. Order is preserved (push_back is
-        // FIFO) and there is no buffering across drain rounds — Worker
-        // flushes before returning from ProcessSend.
-        if (send_sink_) {
-            send_sink_->push_back(std::move(packet));
-            LOG_DEBUG(
-                "BaseConnection::SendBuffer: queued %u bytes for batch, sock=%d", buffer->GetDataLength(), send_sock);
-            return true;
-        }
-        // sink not installed -> direct Send (bypasses batch entirely)
-
-        if (!sender_->Send(packet)) {
-            LOG_ERROR("BaseConnection::SendBuffer: sender_->Send() failed");
-            common::Metrics::CounterInc(common::MetricsStd::DiagSendBufferFail);
-            return false;
-        }
-
-        LOG_DEBUG("BaseConnection::SendBuffer: sent %u bytes via sender_, sock=%d", buffer->GetDataLength(), send_sock);
-        return true;
-    }
-
-    LOG_ERROR("BaseConnection::SendBuffer: no sender available");
-    common::Metrics::CounterInc(common::MetricsStd::DiagSendBufferFail);
-    return false;
-}
-
-// qlog draft-03 helpers: bracket every outbound UDP datagram with a Begin /
-// Finish pair so that:
-//   * every QUIC packet built inside the bracket is tagged in qlog with the
-//     same datagram_id (visible on packet_sent events), and
-//   * once the datagram is shipped, a single transport:datagrams_sent event
-//     is emitted summarising packet_count / raw_length / packet_numbers.
-//
-// These two pieces of metadata are what qvis (and the draft-03 spec)
-// require to render Initial+Handshake coalescing — the exact case where
-// the previous draft-02 trace looked like two unrelated packets.
-void BaseConnection::BeginSendDatagram() {
-    // The id 0 is reserved for "no datagram open"; first real id is 1.
-    // Even when qlog is disabled the call is essentially a counter bump
-    // plus a setter store, so we don't bother gating on qlog_trace_.
-    const uint64_t id = next_send_datagram_id_++;
-    send_manager_.GetSendControl().BeginSendDatagram(id);
-}
-
-bool BaseConnection::FinishSendDatagram(std::shared_ptr<common::IBuffer> buffer) {
-    // Drain accumulator BEFORE SendBuffer: SendBuffer may move ownership of
-    // `buffer` into the worker batch sink and then return immediately, but
-    // the per-packet OnPacketSend callbacks that populate the accumulator
-    // have already fired (during BuildDataPacket).
-    auto summary = send_manager_.GetSendControl().EndSendDatagram();
-
-    bool ok = SendBuffer(buffer);
-
-    // Only emit the qlog event if (a) qlog is on and (b) at least one
-    // packet was recorded. The packet_count==0 case shouldn't normally
-    // happen on the FinishSendDatagram path but is benign: skip silently.
-    if (qlog_trace_ && summary.packet_count > 0) {
-        common::DatagramsSentData dg_data;
-        dg_data.datagram_id = summary.datagram_id;
-        dg_data.count = summary.packet_count;
-        dg_data.raw_length = summary.raw_length;
-        dg_data.packet_numbers = std::move(summary.packet_numbers);
-        QLOG_DATAGRAMS_SENT(qlog_trace_, dg_data);
-    }
-    return ok;
-}
-
-bool BaseConnection::FinishSendDatagramImmediate(std::shared_ptr<common::IBuffer> buffer) {
-    auto summary = send_manager_.GetSendControl().EndSendDatagram();
-    bool ok = SendImmediate(buffer);
-    if (qlog_trace_ && summary.packet_count > 0) {
-        common::DatagramsSentData dg_data;
-        dg_data.datagram_id = summary.datagram_id;
-        dg_data.count = summary.packet_count;
-        dg_data.raw_length = summary.raw_length;
-        dg_data.packet_numbers = std::move(summary.packet_numbers);
-        QLOG_DATAGRAMS_SENT(qlog_trace_, dg_data);
-    }
-    return ok;
 }
 
 bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
@@ -2463,7 +2113,7 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
     auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
 
     // qlog draft-03: ACK-only datagram carries exactly one QUIC packet.
-    BeginSendDatagram();
+    auto scope = emitter_->Open();
 
     auto result = packet_builder_->BuildAckPacket(target_level, cryptographer, ack_frame,
         cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
@@ -2472,56 +2122,16 @@ bool BaseConnection::SendImmediateAck(PacketNumberSpace ns) {
 
     if (!result.success) {
         LOG_ERROR("BaseConnection::SendImmediateAck: failed to build packet: %s", result.error_message.c_str());
-        // qlog: discard the empty datagram bracket.
-        (void)send_manager_.GetSendControl().EndSendDatagram();
+        // Scope's destructor discards the empty datagram bracket.
         return false;
     }
 
     LOG_DEBUG("BaseConnection::SendImmediateAck: built ACK packet pn=%llu, size=%u", result.packet_number,
         result.packet_size);
 
-    // 5. Send immediately
-    return FinishSendDatagramImmediate(buffer);
-}
-
-bool BaseConnection::SendImmediateFrame(std::shared_ptr<IFrame> frame, EncryptionLevel level) {
-    LOG_DEBUG("BaseConnection::SendImmediateFrame: frame_type=%d, level=%d", frame->GetType(), level);
-
-    // 1. Get cryptographer
-    auto cryptographer = connection_crypto_.GetCryptographer(level);
-    if (!cryptographer) {
-        LOG_ERROR("BaseConnection::SendImmediateFrame: no cryptographer for level=%d", level);
-        return false;
-    }
-
-    // 2. Use PacketBuilder to build single-frame packet - allocate buffer chunk first
-    auto chunk = std::make_shared<common::BufferChunk>(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
-    if (!chunk || !chunk->Valid()) {
-        LOG_ERROR("BaseConnection::SendImmediateFrame: failed to allocate buffer chunk");
-        return false;
-    }
-    auto buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
-
-    // qlog draft-03: immediate-frame datagram carries exactly one packet.
-    BeginSendDatagram();
-
-    auto result = packet_builder_->BuildImmediatePacket(frame, level, cryptographer,
-        cid_coordinator_->GetLocalConnectionIDManager().get(), cid_coordinator_->GetRemoteConnectionIDManager().get(),
-        buffer, send_manager_.GetPacketNumber(), send_manager_.GetSendControl(), connection_crypto_.GetVersion(),
-        connection_crypto_.GetCurrentKeyPhase());
-
-    if (!result.success) {
-        LOG_ERROR("BaseConnection::SendImmediateFrame: failed to build packet: %s", result.error_message.c_str());
-        // qlog: discard the empty datagram bracket.
-        (void)send_manager_.GetSendControl().EndSendDatagram();
-        return false;
-    }
-
-    LOG_DEBUG(
-        "BaseConnection::SendImmediateFrame: built packet pn=%llu, size=%u", result.packet_number, result.packet_size);
-
-    // 3. Send immediately
-    return FinishSendDatagramImmediate(buffer);
+    // 5. Send immediately: bypass the batch sink so the ACK does not wait for
+    // the end-of-round sendmmsg flush.
+    return scope.Commit(buffer, /*bypass_batch=*/true);
 }
 
 }  // namespace quic

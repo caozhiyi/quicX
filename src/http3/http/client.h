@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <variant>
+#include <vector>
 
 #include <quicx/http3/if_client.h>
 #include <quicx/quic/if_quic_client.h>
@@ -70,6 +71,16 @@ private:
     // rare insert/erase against rehash.
     mutable std::shared_mutex conn_map_mu_;
     std::unordered_map<std::string, std::shared_ptr<ClientConnection>> conn_map_;
+
+    // Connections whose destruction has been deferred. The QUIC close
+    // callback is delivered synchronously from the frame-processing path and
+    // is often entered from a ClientConnection method itself (server GOAWAY ->
+    // HandleGoaway -> Shutdown -> Close), so dropping the last reference
+    // during the erase would run ~ClientConnection while that method is still
+    // on the stack and let the remaining frames of the same datagram dispatch
+    // into freed HTTP/3 streams. Park the pointer here and release it on the
+    // next connection event instead.
+    std::vector<std::shared_ptr<ClientConnection>> closing_conns_;
 
     http_response_handler push_handler_;
     http_push_promise_handler push_promise_handler_;

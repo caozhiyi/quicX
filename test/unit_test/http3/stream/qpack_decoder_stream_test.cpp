@@ -57,7 +57,7 @@ public:
         EXPECT_EQ(stream_type, static_cast<uint64_t>(StreamType::kQpackDecoder));
 
         // Create the actual QPACK decoder receiver stream
-        receiver_stream_ = std::make_shared<QpackDecoderReceiverStream>(stream, blocked_registry_,
+        receiver_stream_ = std::make_shared<QpackDecoderReceiverStream>(stream, local_encoder_, blocked_registry_,
             std::bind(&MockReceiverConnection::ErrorHandle, this, std::placeholders::_1, std::placeholders::_2));
 
         // Feed remaining data to the decoder stream
@@ -79,6 +79,7 @@ private:
     uint32_t retry_count_;
 
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
+    std::shared_ptr<QpackEncoder> local_encoder_{std::make_shared<QpackEncoder>()};
     std::shared_ptr<UnidentifiedStream> unidentified_stream_;
     std::shared_ptr<QpackDecoderReceiverStream> receiver_stream_;
 };

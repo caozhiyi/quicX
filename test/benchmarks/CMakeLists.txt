@@ -40,6 +40,6 @@ add_quicx_benchmark(qpack_instr_bench qpack_instr_bench.cpp)
 add_quicx_benchmark(quic_ack_maxdata_bench quic_ack_maxdata_bench.cpp)
 add_quicx_benchmark(qlog_overhead_bench qlog_overhead_bench.cpp)
 add_quicx_benchmark(metrics_bench metrics_bench.cpp)
-add_quicx_benchmark(alloter_smartptr_bench alloter_smartptr_bench.cpp)
+add_quicx_benchmark(allocator_smartptr_bench allocator_smartptr_bench.cpp)
 
 # cmake -S .. -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_BENCHMARKS=ON && cmake --build build -j

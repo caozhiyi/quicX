@@ -13,6 +13,21 @@
 #include <quicx/http3/if_response.h>
 #include <quicx/http3/if_server.h>
 
+// NOTE on the delays below: request handlers registered via IServer::AddHandler
+// run synchronously on the worker thread that owns the QUIC connection, and the
+// response is sent immediately once the handler returns. There is currently no
+// deferred/async completion path for this "complete body" handler mode, so a
+// blocking std::this_thread::sleep_for() here blocks *all* other streams on the
+// same connection for its duration (streams are effectively processed one at a
+// time per connection). Keep these simulated-latency values small so that even
+// fully-serialized processing of a whole burst of concurrent requests finishes
+// well within run_test.py's timeout budget.
+constexpr int kFastDelayMs = 5;
+constexpr int kMediumDelayMs = 20;
+constexpr int kSlowDelayMs = 50;
+constexpr int kRandomDelayMinMs = 5;
+constexpr int kRandomDelayMaxMs = 50;
+
 // Request statistics
 struct RequestStats {
     std::atomic<uint64_t> total_requests{0};
@@ -134,10 +149,14 @@ int main() {
                 "<body><h1>QuicX HTTP/3 Concurrent Requests Demo</h1>"
                 "<p>This server demonstrates HTTP/3 multiplexing capabilities.</p>"
                 "<h2>Endpoints:</h2><ul>"
-                "<li><b>GET /fast</b> - Fast response (10ms delay)</li>"
-                "<li><b>GET /medium</b> - Medium response (100ms delay)</li>"
-                "<li><b>GET /slow</b> - Slow response (500ms delay)</li>"
-                "<li><b>GET /random</b> - Random delay (10-500ms)</li>"
+                "<li><b>GET /fast</b> - Fast response (" +
+                std::to_string(kFastDelayMs) + "ms delay)</li>"
+                "<li><b>GET /medium</b> - Medium response (" +
+                std::to_string(kMediumDelayMs) + "ms delay)</li>"
+                "<li><b>GET /slow</b> - Slow response (" +
+                std::to_string(kSlowDelayMs) + "ms delay)</li>"
+                "<li><b>GET /random</b> - Random delay (" +
+                std::to_string(kRandomDelayMinMs) + "-" + std::to_string(kRandomDelayMaxMs) + "ms)</li>"
                 "<li><b>GET /data/:size</b> - Generate data of specific size (KB)</li>"
                 "<li><b>GET /stats</b> - Server statistics</li>"
                 "</ul>"
@@ -159,10 +178,10 @@ int main() {
             stats->total_requests++;
             stats->fast_requests++;
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            std::this_thread::sleep_for(std::chrono::milliseconds(kFastDelayMs));
 
             std::ostringstream oss;
-            oss << "{\"endpoint\":\"fast\",\"delay_ms\":10,\"message\":\"Fast response\",\"timestamp\":\""
+            oss << "{\"endpoint\":\"fast\",\"delay_ms\":" << kFastDelayMs << ",\"message\":\"Fast response\",\"timestamp\":\""
                 << GetCurrentTime() << "\"}";
 
             resp->AddHeader("Content-Type", "application/json");
@@ -177,10 +196,11 @@ int main() {
             stats->total_requests++;
             stats->medium_requests++;
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(kMediumDelayMs));
 
             std::ostringstream oss;
-            oss << "{\"endpoint\":\"medium\",\"delay_ms\":100,\"message\":\"Medium response\",\"timestamp\":\""
+            oss << "{\"endpoint\":\"medium\",\"delay_ms\":" << kMediumDelayMs
+                << ",\"message\":\"Medium response\",\"timestamp\":\""
                 << GetCurrentTime() << "\"}";
 
             resp->AddHeader("Content-Type", "application/json");
@@ -195,10 +215,10 @@ int main() {
             stats->total_requests++;
             stats->slow_requests++;
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(kSlowDelayMs));
 
             std::ostringstream oss;
-            oss << "{\"endpoint\":\"slow\",\"delay_ms\":500,\"message\":\"Slow response\",\"timestamp\":\""
+            oss << "{\"endpoint\":\"slow\",\"delay_ms\":" << kSlowDelayMs << ",\"message\":\"Slow response\",\"timestamp\":\""
                 << GetCurrentTime() << "\"}";
 
             resp->AddHeader("Content-Type", "application/json");
@@ -214,7 +234,7 @@ int main() {
 
             static std::random_device rd;
             static std::mt19937 gen(rd());
-            static std::uniform_int_distribution<> dis(10, 500);
+            static std::uniform_int_distribution<> dis(kRandomDelayMinMs, kRandomDelayMaxMs);
 
             int delay_ms = dis(gen);
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
@@ -308,10 +328,11 @@ int main() {
     std::cout << "Max Streams: 2000" << std::endl;
     std::cout << std::endl;
     std::cout << "Endpoints:" << std::endl;
-    std::cout << "  GET /fast        - 10ms delay" << std::endl;
-    std::cout << "  GET /medium      - 100ms delay" << std::endl;
-    std::cout << "  GET /slow        - 500ms delay" << std::endl;
-    std::cout << "  GET /random      - Random delay (10-500ms)" << std::endl;
+    std::cout << "  GET /fast        - " << kFastDelayMs << "ms delay" << std::endl;
+    std::cout << "  GET /medium      - " << kMediumDelayMs << "ms delay" << std::endl;
+    std::cout << "  GET /slow        - " << kSlowDelayMs << "ms delay" << std::endl;
+    std::cout << "  GET /random      - Random delay (" << kRandomDelayMinMs << "-" << kRandomDelayMaxMs << "ms)"
+              << std::endl;
     std::cout << "  GET /data/:size  - Generate data (size in KB)" << std::endl;
     std::cout << "  GET /stats       - Statistics" << std::endl;
     std::cout << "==================================" << std::endl;

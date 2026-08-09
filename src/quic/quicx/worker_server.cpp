@@ -309,7 +309,7 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
     // which is the P4 residue observed in profile_rss_lifecycle.
     auto hs_loop = event_loop_.lock();
     if (!hs_loop) return false;
-    uint64_t timer_id = hs_loop->AddTimer(
+    handshake_timers_[new_conn] = hs_loop->AddTimer(life_token_,
         [new_conn, this]() {
             if (connecting_set_.find(new_conn) != connecting_set_.end()) {
                 LOG_INFO(
@@ -320,10 +320,12 @@ bool ServerWorker::InnerHandlePacket(PacketParseResult& packet_info) {
                 // Properly close the connection to clean up all CIDs
                 HandleConnectionClose(new_conn, QuicErrorCode::kNoError, "handshake timeout");
             }
+            // Drops our handle *and* the shared_ptr<ServerConnection> this
+            // closure captured. Safe from inside the callback: the engine moved
+            // the closure out of its node before invoking it.
             handshake_timers_.erase(new_conn);
         },
         kHandshakeTimeoutMs);
-    handshake_timers_[new_conn] = timer_id;
     return true;
 }
 
@@ -334,8 +336,6 @@ void ServerWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     // outliving itself by up to kHandshakeTimeoutMs.
     auto it = handshake_timers_.find(conn);
     if (it != handshake_timers_.end()) {
-        auto done_loop = event_loop_.lock();
-        if (done_loop) done_loop->RemoveTimer(it->second);
         handshake_timers_.erase(it);
         LOG_DEBUG(
             "ServerWorker: handshake completed, cancelled watchdog timer for cid:%llu", conn->GetConnectionIDHash());
@@ -384,7 +384,7 @@ bool ServerWorker::SendRetryPacket(const common::Address& addr, int32_t socket, 
 
     // Compute Retry Integrity Tag (RFC 9001 Section 5.8)
     // Step 1: Encode retry packet without tag to get the packet body
-    std::shared_ptr<NetPacket> temp_pkt = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    std::shared_ptr<NetPacket> temp_pkt = GlobalResource::Instance().GetThreadLocalPacketAllocator()->Malloc();
     auto temp_buffer = temp_pkt->GetData();
 
     // Set a placeholder tag first for encoding
@@ -412,7 +412,7 @@ bool ServerWorker::SendRetryPacket(const common::Address& addr, int32_t socket, 
     retry_packet.SetRetryIntegrityTag(integrity_tag);
 
     // Encode and send
-    std::shared_ptr<NetPacket> net_packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    std::shared_ptr<NetPacket> net_packet = GlobalResource::Instance().GetThreadLocalPacketAllocator()->Malloc();
     auto buffer = net_packet->GetData();
 
     if (!retry_packet.Encode(buffer)) {
@@ -449,7 +449,7 @@ void ServerWorker::SendVersionNegotiatePacket(const common::Address& addr, int32
         version_negotiation_packet.AddSupportVersion(version);
     }
 
-    std::shared_ptr<NetPacket> net_packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    std::shared_ptr<NetPacket> net_packet = GlobalResource::Instance().GetThreadLocalPacketAllocator()->Malloc();
     auto buffer = net_packet->GetData();
     version_negotiation_packet.Encode(buffer);
 
@@ -467,8 +467,6 @@ void ServerWorker::HandleConnectionClose(std::shared_ptr<IConnection> conn, uint
     // connection object can actually be destroyed.
     auto it = handshake_timers_.find(conn);
     if (it != handshake_timers_.end()) {
-        auto close_loop = event_loop_.lock();
-        if (close_loop) close_loop->RemoveTimer(it->second);
         handshake_timers_.erase(it);
     }
     Worker::HandleConnectionClose(conn, error, reason);

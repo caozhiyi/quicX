@@ -16,55 +16,21 @@ TimerCoordinator::TimerCoordinator(std::shared_ptr<common::IEventLoop> event_loo
     transport_param_(transport_param),
     send_manager_(send_manager),
     state_machine_(state_machine),
-    idle_timer_active_(false) {
-    // Initialize idle timeout task
-    idle_timeout_task_.SetTimeoutCallback([this]() { OnIdleTimeoutInternal(); });
-}
+    idle_timer_active_(false) {}
 
 TimerCoordinator::~TimerCoordinator() {
-    // Bug-fix (close-path cross-thread fatal):
-    //   When the connection is destroyed from a thread that is *not* the
-    //   owning EventLoop's thread (e.g. ~QuicServer running on the application
-    //   thread, or worker_map_.clear() during teardown), calling
-    //   loop->RemoveTimer() directly trips AssertInLoopThread() inside
-    //   EventLoop and aborts the process with the "EventLoop accessed from
-    //   wrong thread!" fatal that we observe ~750 ms after CloseInternal.
+    // Nothing to do: every timer we own is held by a Timer handle, and
+    // ~Timer() cancels -- synchronously when we are on the owning loop thread,
+    // by queueing the cancel for that thread otherwise.
     //
-    // Strategy:
-    //   1. If the loop has already expired, nothing to do.
-    //   2. If we're on the loop thread, RemoveTimer is safe synchronously.
-    //   3. Otherwise, the timer task is owned by `*this` and lives in
-    //      idle_timeout_task_; once we return from this destructor that
-    //      object is gone. We cannot simply post the RemoveTimer to the loop
-    //      because it would dereference a dangling task. Instead we issue a
-    //      synchronous-style RunInLoop with a lookup by the task id which
-    //      we capture by value.
-    if (!idle_timer_active_) {
-        return;
-    }
-    auto loop = event_loop_.lock();
-    if (!loop) {
-        return;
-    }
-    if (loop->IsInLoopThread()) {
-        loop->RemoveTimer(idle_timeout_task_);
-        idle_timer_active_ = false;
-        return;
-    }
-    // Cross-thread destruction: remove by id, captured by value, so the
-    // posted lambda is independent of *this. This is a best-effort cleanup;
-    // if the timer fires before the task runs, OnIdleTimeoutInternal is
-    // protected by idle_timer_active_=false set right below in the lambda
-    // dispatch closure (idle_timeout_callback_ may still be invoked once
-    // but the connection's weak_ptr-guarded callback layer above us will
-    // safely no-op when the connection is gone).
-    uint64_t task_id = idle_timeout_task_.GetId();
-    loop->RunInLoop([loop, task_id]() {
-        common::TimerTask probe;
-        probe.SetIdForTest(task_id);
-        loop->RemoveTimer(probe);
-    });
-    idle_timer_active_ = false;
+    // This used to be 25 lines of cross-thread choreography, because connections
+    // are legitimately destroyed off the loop thread (~QuicServer on the
+    // application thread, worker_map_.clear() during teardown) and calling
+    // EventLoop::RemoveTimer() from there trips AssertInLoopThread() and aborts.
+    // The choreography removed the timer "by id, captured by value" -- which
+    // silently stopped working once ResetIdleTimer had rewritten that id (see
+    // the note in ResetIdleTimer), leaving the idle timer armed with a callback
+    // that held a raw pointer to this object.
 }
 
 // ==================== Idle Timeout Management ====================
@@ -84,7 +50,7 @@ void TimerCoordinator::StartIdleTimer(IdleTimeoutCallback callback) {
         return;
     }
 
-    loop->AddTimer(idle_timeout_task_, timeout_ms, 0);
+    idle_timer_ = loop->AddTimer(life_token_, [this]() { OnIdleTimeoutInternal(); }, timeout_ms);
     idle_timer_active_ = true;
 
     LOG_DEBUG("TimerCoordinator: idle timer started with timeout %u ms", timeout_ms);
@@ -103,30 +69,30 @@ void TimerCoordinator::ResetIdleTimer() {
 
     uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
 
-    // Cross-thread safety (companion to StopIdleTimer / ~TimerCoordinator).
-    // ResetIdleTimer is invoked on every packet processed AND on connection
-    // close paths. While the steady-state caller is OnPackets running on the
-    // owning worker EventLoop, the close paths (e.g. handshake watchdog ->
-    // CloseInternal -> SendConnectionClose -> packet send -> idle reset, or
-    // master-thread teardown) can land here from a foreign thread. Direct
-    // RemoveTimer/AddTimer would trip EventLoop::AssertInLoopThread() and
-    // emit a [FATAL] "EventLoop accessed from wrong thread!" log without
-    // aborting, leaving the timer set in an inconsistent state and causing
-    // cascading CONNECTION_CLOSE storms across all connections of the
-    // affected worker. (See docs analysis 2026-05-29.)
+    // Steady state: one packet in or out per call, so this is a hot path. Rearm
+    // splices the existing node to its new slot -- no allocation, no re-copy of
+    // the callback, and the handle stays the same object.
+    //
+    // The close paths (handshake watchdog -> CloseInternal -> send -> idle reset,
+    // master-thread teardown) can reach this from a foreign thread, and the wheel
+    // is single-threaded, so those hand the rearm to the loop. What they must NOT
+    // do is what the previous code did: re-register a *fresh* TimerTask carrying a
+    // hand-set id. AddTimer overwrites the id it is given, so the new registration
+    // ended up with an id nobody outside that lambda knew, and this object's copy
+    // of the id went stale -- after which StopIdleTimer() and the destructor could
+    // no longer cancel the idle timer at all, leaving a callback holding a raw
+    // `this` armed on a connection about to be freed.
     if (loop->IsInLoopThread()) {
-        loop->RemoveTimer(idle_timeout_task_);
-        loop->AddTimer(idle_timeout_task_, timeout_ms, 0);
+        idle_timer_.Rearm(timeout_ms);
     } else {
-        uint64_t task_id = idle_timeout_task_.GetId();
-        auto cb = idle_timeout_task_.tcb_;
-        loop->RunInLoop([loop, task_id, cb, timeout_ms]() {
-            common::TimerTask probe;
-            probe.SetIdForTest(task_id);
-            loop->RemoveTimer(probe);
-            common::TimerTask reinstall(cb);
-            reinstall.SetIdForTest(task_id);
-            loop->AddTimer(reinstall, timeout_ms, 0);
+        std::weak_ptr<int> token = life_token_;
+        loop->RunInLoop([this, token, timeout_ms]() {
+            // Runs on the loop thread. If we were destroyed meanwhile the token
+            // has expired and idle_timer_ is gone along with its timer.
+            if (token.expired()) {
+                return;
+            }
+            idle_timer_.Rearm(timeout_ms);
         });
     }
 
@@ -138,27 +104,9 @@ void TimerCoordinator::StopIdleTimer() {
         return;
     }
 
-    auto loop = event_loop_.lock();
-    if (!loop) {
-        LOG_ERROR("TimerCoordinator::StopIdleTimer: event_loop_ expired");
-        return;
-    }
-
-    // Cross-thread safety (companion to ~TimerCoordinator). StopIdleTimer
-    // can legitimately be invoked during connection teardown that happens on
-    // any thread (e.g. a master thread tearing down a worker, or the
-    // application thread invoking quic->Destroy()). Direct RemoveTimer would
-    // trip EventLoop::AssertInLoopThread().
-    if (loop->IsInLoopThread()) {
-        loop->RemoveTimer(idle_timeout_task_);
-    } else {
-        uint64_t task_id = idle_timeout_task_.GetId();
-        loop->RunInLoop([loop, task_id]() {
-            common::TimerTask probe;
-            probe.SetIdForTest(task_id);
-            loop->RemoveTimer(probe);
-        });
-    }
+    // Cancel() is safe from any thread by contract, so the previous
+    // IsInLoopThread()/RunInLoop split is gone.
+    idle_timer_.Cancel();
     idle_timer_active_ = false;
 
     LOG_DEBUG("TimerCoordinator: idle timer stopped");
@@ -206,14 +154,10 @@ void TimerCoordinator::CheckPTOTimeout() {
 // ==================== Thread Transfer Support ====================
 
 void TimerCoordinator::OnThreadTransferBefore() {
-    auto loop = event_loop_.lock();
-    if (!loop) {
-        return;
-    }
-
-    // Remove idle timeout timer from old EventLoop
+    // Cancel is thread-safe, and the transfer runs while the connection is
+    // detached from its loop, so there is nothing to post.
     if (idle_timer_active_) {
-        loop->RemoveTimer(idle_timeout_task_);
+        idle_timer_.Cancel();
         LOG_DEBUG("TimerCoordinator: removed idle timer for thread transfer");
     }
 }
@@ -224,37 +168,55 @@ void TimerCoordinator::OnThreadTransferAfter() {
         return;
     }
 
-    // Add idle timeout timer to new EventLoop
+    // Re-arm idle timeout timer on the (possibly new) EventLoop
     if (idle_timer_active_) {
         uint32_t timeout_ms = static_cast<uint32_t>(transport_param_.GetMaxIdleTimeout());
-        loop->AddTimer(idle_timeout_task_, timeout_ms, 0);
+        idle_timer_ = loop->AddTimer(life_token_, [this]() { OnIdleTimeoutInternal(); }, timeout_ms);
         LOG_DEBUG("TimerCoordinator: re-added idle timer after thread transfer");
     }
 }
 
 // ==================== User-Defined Timers ====================
 
-uint64_t TimerCoordinator::AddTimer(TimerCallback callback, uint32_t timeout_ms) {
+uint64_t TimerCoordinator::AddTimer(TimerCallback callback, uint32_t timeout_ms, bool periodic) {
     auto loop = event_loop_.lock();
     if (!loop) {
         LOG_ERROR("TimerCoordinator::AddTimer: event_loop_ expired");
         return 0;
     }
 
-    uint64_t timer_id = loop->AddTimer(callback, timeout_ms);
+    // IQuicConnection::AddTimer hands users a uint64_t, so the id is minted here
+    // and the handle is kept alongside it. The wrapper drops its own entry once
+    // it has run, which is what keeps this map bounded -- the EventLoop-side
+    // equivalent (timer_ids_) grew with every timer ever armed.
+    uint64_t id = next_user_timer_id_++;
+    if (periodic) {
+        // Re-arm is handled by the wheel (interval != 0), so the wrapper must
+        // NOT drop its entry after the first fire -- doing so would destroy the
+        // Timer handle and cancel the underlying node. The id stays until an
+        // explicit RemoveTimer or the coordinator's life token expires.
+        user_timers_[id] = loop->AddRepeatTimer(life_token_, [this, id, callback]() {
+            (void)id;
+            if (callback) {
+                callback();
+            }
+        }, timeout_ms);
+    } else {
+        user_timers_[id] = loop->AddTimer(life_token_, [this, id, callback]() {
+            if (callback) {
+                callback();
+            }
+            user_timers_.erase(id);
+        }, timeout_ms);
+    }
 
-    return timer_id;
+    return id;
 }
 
 void TimerCoordinator::RemoveTimer(uint64_t timer_id) {
-    auto loop = event_loop_.lock();
-    if (!loop) {
-        LOG_ERROR("TimerCoordinator::RemoveTimer: event_loop_ expired");
-        return;
-    }
-
-    loop->RemoveTimer(timer_id);
-    LOG_DEBUG("TimerCoordinator: removed user timer %llu", timer_id);
+    // Erasing the handle cancels the timer and releases the closure.
+    user_timers_.erase(timer_id);
+    LOG_DEBUG("TimerCoordinator: removed user timer %llu", (unsigned long long)timer_id);
 }
 
 }  // namespace quic

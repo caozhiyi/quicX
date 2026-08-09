@@ -1,5 +1,6 @@
 #include "quic/connection/packet_builder.h"
 
+#include <algorithm>
 #include <cstdio>
 
 #include "common/buffer/single_block_buffer.h"
@@ -223,10 +224,28 @@ PacketBuilder::BuildResult PacketBuilder::BuildDataPacket(const DataPacketContex
     // typical Ethernet MTU once IP+UDP headers are added (28 B), so a
     // single packet never IP-fragments on the loopback / common LAN path.
     constexpr uint32_t kVisitorBudget = 1420;
-    FixBufferFrameVisitor visitor(kVisitorBudget);
 
-    // Set stream data size limit for flow control
-    visitor.SetStreamDataSizeLimit(ctx.max_stream_data_size);
+    // The budget above describes a datagram that starts empty. On the
+    // Initial+Handshake coalescing path the caller hands us a buffer that
+    // already holds the preceding Initial packet, so the space actually
+    // left for this packet is smaller by exactly `pre_size`. Failing to
+    // subtract it lets the frame visitor fill up to the full 1420 B, the
+    // encoded packet then runs past the end of the datagram buffer and
+    // AEAD sealing fails with "EVP_AEAD_CTX_seal failed" (no room for the
+    // ciphertext + 16 B tag), which stalls the handshake into PTO loops.
+    // `pre_size` is 0 for every single-packet caller, so this is a no-op
+    // outside the coalescing path.
+    if (pre_size >= kVisitorBudget) {
+        result.error_message = "no datagram space left for coalesced packet";
+        LOG_WARN("PacketBuilder::BuildDataPacket: %s (pre_size=%u)", result.error_message.c_str(), pre_size);
+        return result;
+    }
+    const uint32_t visitor_budget = kVisitorBudget - pre_size;
+    FixBufferFrameVisitor visitor(visitor_budget);
+
+    // Set stream data size limit for flow control. Never let the flow-control
+    // allowance exceed the physical room remaining in this datagram.
+    visitor.SetStreamDataSizeLimit(std::min<uint64_t>(ctx.max_stream_data_size, visitor_budget));
 
     // 3. Add all control frames
     for (auto& frame : ctx.frames) {

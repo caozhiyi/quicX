@@ -46,7 +46,8 @@ public:
     virtual bool ExportResumptionSession(std::string& out_session_der);
 
     // Timer methods
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms);
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms,
+                               bool periodic = false);
     virtual void RemoveTimer(uint64_t timer_id);
 
     // State check

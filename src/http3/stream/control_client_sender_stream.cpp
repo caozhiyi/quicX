@@ -1,6 +1,7 @@
-#include "http3/stream/control_client_sender_stream.h"
 #include "common/buffer/if_buffer.h"
 #include "common/log/log.h"
+
+#include "http3/stream/control_client_sender_stream.h"
 #include "http3/frame/cancel_push_frame.h"
 #include "http3/frame/max_push_id_frame.h"
 #include "http3/http/error.h"
@@ -26,15 +27,15 @@ bool ControlClientSenderStream::SendMaxPushId(uint64_t push_id) {
     MaxPushIdFrame frame;
     frame.SetPushId(push_id);
 
-    auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    if (!frame.Encode(buffer)) {
+    if (!EncodeAndAppendControlFrame([&frame](std::shared_ptr<common::IBuffer> buf) {
+            return frame.Encode(buf);
+        })) {
         LOG_ERROR("ControlClientSenderStream::SendMaxPushId: Failed to encode MaxPushIdFrame");
         error_handler_(0, Http3ErrorCode::kMessageError);
         return false;
     }
-    LOG_DEBUG("ControlClientSenderStream::SendMaxPushId: max_push_id=%llu, buffer length=%llu", push_id,
-        buffer->GetDataLength());
-    return stream_->Flush();
+    LOG_DEBUG("ControlClientSenderStream::SendMaxPushId: max_push_id=%llu", push_id);
+    return true;
 }
 
 bool ControlClientSenderStream::SendCancelPush(uint64_t push_id) {
@@ -45,13 +46,14 @@ bool ControlClientSenderStream::SendCancelPush(uint64_t push_id) {
     CancelPushFrame frame;
     frame.SetPushId(push_id);
 
-    auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    if (!frame.Encode(buffer)) {
+    if (!EncodeAndAppendControlFrame([&frame](std::shared_ptr<common::IBuffer> buf) {
+            return frame.Encode(buf);
+        })) {
         LOG_ERROR("ControlClientSenderStream::SendCancelPush: Failed to encode CancelPushFrame");
         error_handler_(0, Http3ErrorCode::kInternalError);
         return false;
     }
-    return stream_->Send(buffer) > 0;
+    return true;
 }
 
 }  // namespace http3

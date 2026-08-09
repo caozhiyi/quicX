@@ -161,6 +161,33 @@ bool UdpReceiver::RemoveReceiver(int32_t socket_fd) {
 void UdpReceiver::OnRead(uint32_t fd) {
     common::Metrics::CounterInc(common::MetricsStd::DiagUdpOnRead);
 
+    // Keep draining until the socket runs dry (or we hit the round ceiling).
+    //
+    // A single DrainBatch() call pulls at most kMaxRecvBatch (64) datagrams and
+    // returns. That is only sufficient if the event loop immediately re-reports
+    // the fd as readable, which is not something we want to depend on: any
+    // backlog above 64 datagrams then rides on the loop's next wakeup, and if
+    // that wakeup is timer-driven the socket receive buffer keeps growing until
+    // the kernel starts dropping. Observed on 2026-08-06: the server serviced
+    // exactly 64 datagrams per wakeup and a new client's Initial packets were
+    // never read at all, so the handshake could not even start while older
+    // connections kept the socket busy.
+    //
+    // Draining in a loop makes progress independent of the trigger mode. The
+    // round ceiling bounds how long OnRead can monopolise the loop thread so
+    // timers and fixed processes still get serviced under a sustained flood.
+    constexpr int32_t kMaxDrainRounds = 16;
+    for (int32_t round = 0; round < kMaxDrainRounds; ++round) {
+        int32_t got = DrainBatch(fd);
+        if (got < kMaxRecvBatch) {
+            // Short batch (including the -1 "stop" signal) means the socket is
+            // drained or unusable; nothing left to do this wakeup.
+            return;
+        }
+    }
+}
+
+int32_t UdpReceiver::DrainBatch(uint32_t fd) {
     // PERF FIX (loopback throughput on file_transfer):
     //
     // Previously this method recvfrom'd exactly one UDP datagram per call.
@@ -241,7 +268,7 @@ void UdpReceiver::OnRead(uint32_t fd) {
         std::shared_ptr<NetPacket> pkt;
         common::BufferSpan span;
         while (retries < kMaxRecycleRetries) {
-            pkt = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+            pkt = GlobalResource::Instance().GetThreadLocalPacketAllocator()->Malloc();
             span = pkt->GetData()->GetWritableSpan();
             if (span.GetLength() >= kMaxV4PacketSize) {
                 break;
@@ -270,7 +297,7 @@ void UdpReceiver::OnRead(uint32_t fd) {
 
     if (batch == 0) {
         // Nothing to receive into; bail before issuing a 0-batch syscall.
-        return;
+        return -1;
     }
 
     auto rc = common::RecvFromBatch(fd, entries, batch, ecn_enabled_);
@@ -286,7 +313,7 @@ void UdpReceiver::OnRead(uint32_t fd) {
         ) {
             LOG_ERROR("recv batch failed. err:%d", rc.error_code_);
         }
-        return;
+        return -1;
     }
 
     auto recv_iter = receiver_map_.find(fd);
@@ -300,7 +327,7 @@ void UdpReceiver::OnRead(uint32_t fd) {
         for (int i = 0; i < rc.return_value_; ++i) {
             common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
         }
-        return;
+        return -1;
     }
     auto receiver_strong = recv_iter->second.lock();
 
@@ -324,6 +351,10 @@ void UdpReceiver::OnRead(uint32_t fd) {
             common::Metrics::CounterInc(common::MetricsStd::UdpDroppedPackets);
         }
     }
+
+    // A full batch means the socket may still hold more; the caller decides
+    // whether to go around again. A short batch means we hit EAGAIN.
+    return rc.return_value_;
 }
 
 void UdpReceiver::OnWrite(uint32_t fd) {

@@ -88,7 +88,7 @@ EventLoop 在某个线程上跑，UDP socket 的 fd 通过 [`UdpReceiver::AddRec
 
 | 步骤 | 行为 |
 | :--- | :--- |
-| 1 | 从 thread-local 的 `IPacketAllotor::Malloc()` 拿一组 `NetPacket` |
+| 1 | 从 thread-local 的 `IPacketallocator::Malloc()` 拿一组 `NetPacket` |
 | 2 | 校验每个 NetPacket 的 writable span 是否能容下完整 IPv4 MTU（pool 复用陷阱见 `udp_receiver.cpp` 注释 §2.4） |
 | 3 | 一次 `RecvFromBatch`：Linux 单次 `recvmmsg(MSG_DONTWAIT)`；macOS/Windows 是 `recvmsg`/`WSARecvMsg` 循环 |
 | 4 | 为每个收到的 datagram 设置 peer address、socket fd、接收时间戳、ECN 字节 |
@@ -110,7 +110,7 @@ NetPacket 不持有任何协议语义——它就是"网卡来的一坨字节 + 
 
 ### 2.4 缓冲来自池
 
-`NetPacket` 用的 `IBuffer` 由 [`IPacketAllotor`](../../src/quic/udp/if_packet_allotor.h) 分配。生产路径走 `PoolPacketAllotor`，底层 chunk 来自 `common::BlockMemoryPool`。一个常见陷阱：池回收的 NetPacket 可能因为外部还持有 `SharedBufferSpan` 引用，可写区域被压到不足 MTU。`OnRead` 用一个最多 8 次的 retry 循环规避，仍拿不到干净缓冲就缩短本轮 batch。
+`NetPacket` 用的 `IBuffer` 由 [`IPacketallocator`](../../src/quic/udp/if_packet_allocator.h) 分配。生产路径走 `PoolPacketallocator`，底层 chunk 来自 `common::BlockMemoryPool`。一个常见陷阱：池回收的 NetPacket 可能因为外部还持有 `SharedBufferSpan` 引用，可写区域被压到不足 MTU。`OnRead` 用一个最多 8 次的 retry 循环规避，仍拿不到干净缓冲就缩短本轮 batch。
 
 ---
 

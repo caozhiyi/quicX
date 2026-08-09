@@ -99,7 +99,7 @@
 | :--- | :--- |
 | [`design/process_model.md`](design/process_model.md) | master + worker 进程模型、跨线程通道、为什么不用线程池 |
 | [`design/timer_design.md`](design/timer_design.md) | 时间轮 vs treemap 双层定时器的取舍 |
-| [`design/pool_alloter.md`](design/pool_alloter.md) | frame-level 内存池为什么需要、与现有优化互补 |
+| [`design/pool_allocator.md`](design/pool_allocator.md) | frame-level 内存池为什么需要、与现有优化互补 |
 | [`design/udp_io.md`](design/udp_io.md) | GSO / sendmmsg / recvmmsg 取舍与降级路径 |
 
 ### 6.4 协议层细节

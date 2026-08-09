@@ -190,7 +190,10 @@ void QuicServer::Destroy() {
 }
 
 void QuicServer::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
-    master_event_loop_->RunInLoop([this, timeout_ms, cb]() { master_event_loop_->AddTimer(cb, timeout_ms); });
+    // Fire-and-forget by contract (IQuicServer hands back no handle), so this is
+    // PostDelayed rather than a cancellable timer.
+    master_event_loop_->RunInLoop(
+        [this, timeout_ms, cb]() { master_event_loop_->PostDelayed(cb, timeout_ms); });
 }
 
 bool QuicServer::ListenAndAccept(const std::string& ip, uint16_t port) {

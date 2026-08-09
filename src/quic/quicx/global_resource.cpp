@@ -4,7 +4,7 @@ namespace quicx {
 namespace quic {
 
 thread_local std::shared_ptr<common::BlockMemoryPool> pool_;
-thread_local std::shared_ptr<quic::IPacketAllotor> packet_allotor_;
+thread_local std::shared_ptr<quic::IPacketAllocator> packet_allocator_;
 thread_local std::weak_ptr<common::IEventLoop> thread_event_loop_;
 
 GlobalResource::GlobalResource() {}
@@ -21,11 +21,11 @@ std::shared_ptr<common::BlockMemoryPool> GlobalResource::GetThreadLocalBlockPool
     return pool_;
 }
 
-std::shared_ptr<quic::IPacketAllotor> GlobalResource::GetThreadLocalPacketAllotor() {
-    if (!packet_allotor_) {
-        packet_allotor_ = MakeDefaultPacketAllotor();
+std::shared_ptr<quic::IPacketAllocator> GlobalResource::GetThreadLocalPacketAllocator() {
+    if (!packet_allocator_) {
+        packet_allocator_ = MakeDefaultPacketAllocator();
     }
-    return packet_allotor_;
+    return packet_allocator_;
 }
 
 void GlobalResource::RegisterThreadEventLoop(std::shared_ptr<common::IEventLoop> event_loop) {
@@ -58,8 +58,8 @@ std::shared_ptr<common::BlockMemoryPool> GlobalResource::MakeDefaultPool() {
     return common::MakeBlockMemoryPoolPtr(1500, 4);
 }
 
-std::shared_ptr<IPacketAllotor> GlobalResource::MakeDefaultPacketAllotor() {
-    return IPacketAllotor::MakePacketAllotor(IPacketAllotor::PacketAllotorType::POOL);
+std::shared_ptr<IPacketAllocator> GlobalResource::MakeDefaultPacketAllocator() {
+    return IPacketAllocator::MakePacketAllocator(IPacketAllocator::PacketAllocatorType::POOL);
 }
 
 }  // namespace quic

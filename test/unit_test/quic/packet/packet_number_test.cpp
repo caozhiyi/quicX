@@ -20,7 +20,7 @@ TEST(PacketNumberTest, codec) {
     PacketNumber::Encode(buf, 2, pn);
 
     uint64_t new_pn = 0;
-    PacketNumber::Decode(buf, 2, new_pn);
+    PacketNumber::Decode(buf, buf + sizeof(buf), 2, new_pn);
 
     EXPECT_EQ(pn, new_pn);
 

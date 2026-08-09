@@ -66,15 +66,32 @@ bool AckFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool with_type) {
         uint64_t ack_range_count = 0;
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(ack_range_count), "failed to decode ack range count");
 
-        // RFC 9000: Limit ack_range_count to prevent memory exhaustion from malicious packets.
-        // A reasonable upper bound: no more than 256 ACK ranges in a single frame.
-        static constexpr uint64_t kMaxAckRangeCount = 256;
-        if (ack_range_count > kMaxAckRangeCount) {
-            LOG_ERROR("ack range count too large. count:%llu, max:%llu", ack_range_count, kMaxAckRangeCount);
+        // RFC 9000 §19.3 places no fixed upper bound on ACK Range Count; the only
+        // real limit is that the (Gap, ACK Range) pairs must fit inside the frame.
+        // Each pair is at least 2 bytes (two varints), so reject only when the count
+        // cannot possibly fit in the remaining buffer. The previous hard cap of 256
+        // wrongly rejected valid ACK frames that legitimately carry many ranges
+        // (e.g. under packet loss a peer may emit far more than 256 ranges), causing
+        // quicx to drop the ACK and stall the connection. DecodeVarint already bounds
+        // each field to the buffer, so memory use stays bounded by the packet size.
+        const intptr_t remaining = static_cast<intptr_t>(wrapper.GetDataLength());
+        if (ack_range_count > static_cast<uint64_t>(remaining / 2)) {
+            LOG_ERROR("ack range count exceeds remaining buffer. count:%llu, remaining:%lld", ack_range_count,
+                static_cast<long long>(remaining));
             return false;
         }
 
+
         CHECK_DECODE_ERROR(wrapper.DecodeVarint(first_ack_range_), "failed to decode first ack range");
+
+        // RFC 9000 §19.3.1: the First ACK Range MUST NOT exceed the Largest Acknowledged;
+        // otherwise the computed range start (largest - first_ack_range + 1) underflows into a
+        // huge value and feeds a distorted ACK range to loss detection.
+        if (first_ack_range_ > largest_acknowledged_) {
+            LOG_ERROR("first ack range exceeds largest acknowledged. first_ack_range:%llu, largest:%llu",
+                first_ack_range_, largest_acknowledged_);
+            return false;
+        }
 
         uint64_t gap;
         uint64_t range;

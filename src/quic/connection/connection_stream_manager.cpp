@@ -362,7 +362,11 @@ void StreamManager::MarkStreamActive(std::shared_ptr<IStream> stream) {
 
     uint64_t stream_id = stream->GetStreamID();
     common::LogTagGuard guard("|strm:" + std::to_string(stream_id));
-    LOG_DEBUG("StreamManager: marking stream %llu as active", stream_id);
+    LOG_DEBUG("StreamManager: marking stream %llu as active, ptr=%p, is_crypto=%d, is_bidi=%d, direction=%d",
+        stream_id, stream.get(),
+        std::dynamic_pointer_cast<CryptoStream>(stream) ? 1 : 0,
+        std::dynamic_pointer_cast<BidirectionStream>(stream) ? 1 : 0,
+        static_cast<int>(stream->GetDirection()));
 
     // Add to write buffer (safe during BuildStreamFrames processing)
     active_streams_.Add(stream);
@@ -370,7 +374,7 @@ void StreamManager::MarkStreamActive(std::shared_ptr<IStream> stream) {
     // NOTE: Do NOT call event_sink_.OnStreamDataReady(stream) here!
     // This would cause infinite recursion:
     // ActiveSendStream -> MarkStreamActive -> OnStreamDataReady -> ActiveSendStream -> ...
-    // The caller (ActiveSendStream) already handles triggering the send via ActiveSend()
+    // The caller (OnStreamDataReady) already handles triggering the send via OnConnectionActive()
 }
 
 bool StreamManager::BuildStreamFrames(IFrameVisitor* visitor, uint8_t encrypto_level) {

@@ -48,6 +48,10 @@ public:
     // Byte array decoding (fast path only for no-copy; slow path always copies)
     bool DecodeBytes(uint8_t*& out, uint32_t len, bool copy = true);
 
+    // Decode len bytes directly into caller-provided dst (no allocation in either path).
+    // Returns false on truncation. Ownership of dst remains with the caller.
+    bool DecodeBytesInto(uint8_t* dst, uint32_t len);
+
     // Data span from start to current decode position (fast path only, empty for slow path)
     BufferSpan GetDataSpan() const;
     // Remaining decodable bytes

@@ -18,12 +18,14 @@
 #include "quic/connection/controler/recv_flow_controller.h"
 #include "quic/connection/controler/send_flow_controller.h"
 #include "quic/connection/controler/send_manager.h"
+#include "quic/connection/datagram_emitter.h"
 #include "quic/connection/if_connection.h"
 #include "quic/connection/if_connection_event_sink.h"
 #include "quic/connection/key_update_trigger.h"
+#include "quic/connection/migration_controller.h"
 #include "quic/connection/remote_transport_param_snapshot.h"
 #include "quic/connection/transport_param.h"
-#include "quic/connection/version_context.h"
+#include "quic/connection/version_negotiator.h"
 #include "quic/udp/if_sender.h"
 
 namespace quicx {
@@ -57,7 +59,8 @@ public:
     virtual bool MakeStreamAsync(StreamDirection type, stream_creation_callback callback) override;
     // Override to also update FrameProcessor's callback
     virtual void SetStreamStateCallBack(stream_state_callback cb) override;
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) override;
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms,
+                               bool periodic = false) override;
     virtual void RemoveTimer(uint64_t timer_id) override;
     virtual bool IsTerminating() const override;
 
@@ -65,27 +68,25 @@ public:
     void SetKeyUpdateEnabled(bool enabled) { key_update_trigger_.SetEnabled(enabled); }
     bool TriggerKeyUpdate() { return connection_crypto_.TriggerKeyUpdate(); }
 
-    // RFC 9369: QUIC Version management
-    void SetVersion(uint32_t version) {
-        version_ctx_.quic_version = version;
-        connection_crypto_.SetVersion(version);
-    }
-    uint32_t GetVersion() const { return version_ctx_.quic_version; }
+    // RFC 9369 / RFC 9368 / RFC 9000 §6: version state lives in
+    // VersionNegotiator, which keeps the three copies of the on-wire version
+    // (this layer, ConnectionCrypto, and the version_information TP) in step.
+    // These are thin forwarders; there is no version state here.
+    void SetVersion(uint32_t version) { version_negotiator_->ApplyVersion(version); }
+    uint32_t GetVersion() const { return version_negotiator_->GetVersion(); }
 
     // RFC 9368 Compatible Version Negotiation: the application-preferred version.
     // This is the version we *want* to end up using for 1-RTT; if different
-    // from |quic_version| (which is the wire version of our initial Initial
-    // packet) we will advertise willingness to upgrade via version_information.
-    // Defaults to |quic_version| (no upgrade desired).
-    void SetPreferredVersion(uint32_t version) { version_ctx_.preferred_version = version; }
-    uint32_t GetPreferredVersion() const { return version_ctx_.GetEffectivePreferredVersion(); }
+    // from the current wire version we advertise willingness to upgrade via
+    // version_information. Defaults to the wire version (no upgrade desired).
+    void SetPreferredVersion(uint32_t version) { version_negotiator_->SetPreferredVersion(version); }
+    uint32_t GetPreferredVersion() const { return version_negotiator_->GetPreferredVersion(); }
 
-    // RFC 9000 Section 6: Version Negotiation
-    typedef std::function<void(uint32_t new_version)> version_negotiation_callback;
-    void SetVersionNegotiationCallback(version_negotiation_callback cb) { version_negotiation_cb_ = cb; }
-    void SetVersionNegotiationDone() { version_ctx_.version_negotiation_done = true; }
-    bool IsVersionNegotiationNeeded() const { return version_ctx_.version_negotiation_needed; }
-    uint32_t GetNegotiatedVersion() const { return version_ctx_.negotiated_version; }
+    typedef VersionNegotiator::version_negotiation_callback version_negotiation_callback;
+    void SetVersionNegotiationCallback(version_negotiation_callback cb) {
+        version_negotiator_->SetVersionNegotiationCallback(std::move(cb));
+    }
+    void SetVersionNegotiationDone() { version_negotiator_->SetVersionNegotiationDone(); }
 
     // *************** inner interface ***************//
     // set transport param
@@ -98,10 +99,9 @@ public:
     // Called by Worker to attempt sending data. Internally decides whether to send,
     // what to send, and handles all packet building and transmission.
     // @return true if successfully sent data, false if no data or send failed
-    bool TrySend() override;
-    // Optimised multi-packet variant. Reuses encryption-level scheduling
-    // context, cryptographer lookup and packet-builder fixed-field setup
-    // across inner iterations; only the per-packet state (cwnd headroom,
+    // Optimised multi-packet send entry point. Reuses encryption-level
+    // scheduling context, cryptographer lookup and packet-builder fixed-field
+    // setup across inner iterations; only the per-packet state (cwnd headroom,
     // pending frames, FC slack, chunk allocation, build, send, post-send
     // bookkeeping) is recomputed. Returns the number of packets actually
     // emitted in this call (<= budget).
@@ -114,14 +114,6 @@ public:
     // @return true if successfully sent
     bool SendImmediateAck(PacketNumberSpace ns);
 
-    // Send single frame immediately
-    // Used for frames requiring immediate transmission such as PATH_CHALLENGE,
-    // PATH_RESPONSE, or CONNECTION_CLOSE.
-    // @param frame Frame to send
-    // @param level Encryption level (defaults to current level)
-    // @return true if successfully sent
-    bool SendImmediateFrame(std::shared_ptr<IFrame> frame, EncryptionLevel level = kApplication);
-
     // handle packets
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) override;
     virtual void SetPendingEcn(uint8_t ecn) override { pending_ecn_ = ecn; }
@@ -133,9 +125,6 @@ public:
     // Get all local CID hashes for this connection (for cleanup on close)
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() override { return cid_coordinator_->GetAllLocalCIDHashes(); }
 
-    // Flow controller accessors for use by FrameProcessor and StreamManager
-    SendFlowController& GetSendFlowController() { return send_flow_controller_; }
-    RecvFlowController& GetRecvFlowController() { return recv_flow_controller_; }
 
     std::shared_ptr<common::IEventLoop> GetEventLoop() { return event_loop_.lock(); }
 
@@ -165,9 +154,37 @@ public:
         return cid_coordinator_->GetRemoteConnectionIDManagerForTest();
     }
     ConnectionStateType GetConnectionStateForTest() const { return state_machine_.GetState(); }
-    uint32_t GetQuicVersionForTest() const { return version_ctx_.quic_version; }
-    bool IsServerForTest() const { return version_ctx_.is_server; }
-    bool CompatVnCompletedForTest() const { return version_ctx_.compat_vn_completed; }
+
+    // Parse a preferred_address transport-parameter value of the form
+    // "host:port", or "[ipv6]:port" for IPv6.
+    //
+    // This value comes off the wire from the peer (TransportParam::Merge
+    // replaces our copy with theirs, and the decoder only bounds-checks the
+    // bytes), so it is attacker-controlled and gets no benefit of the doubt.
+    // The previous implementation,
+    //     std::stoi(pref.substr(pref.find(':') + 1))
+    // threw on ordinary input -- including a legitimate bare IPv6 literal such
+    // as "::1:4433", since find() lands on the first colon -- and nothing in
+    // the connection path catches, so the process aborted.
+    //
+    // A bare (unbracketed) IPv6 literal is rejected rather than guessed at:
+    // "::1:4433" could equally be host "::1" port 4433, or host "::1:4433"
+    // with no port, and picking one silently would be worse than refusing.
+    //
+    // Public and static so it can be tested directly; it needs no connection.
+    //
+    // @return true, and fills |out|, only if the entire string is a non-empty
+    //         host plus a port in [1, 65535].
+    static bool ParsePreferredAddress(const std::string& value, common::Address& out);
+
+    uint32_t GetQuicVersionForTest() const { return version_negotiator_->GetVersion(); }
+    // The versionConnectionCrypto holds. This is the copy the send path
+    // actually reads, so it drifting from GetQuicVersionForTest() would put the
+    // wrong version on the wire while every connection-level assertion still
+    // passed.
+    uint32_t GetCryptoVersionForTest() const { return connection_crypto_.GetVersion(); }
+    bool IsServerForTest() const { return is_server_; }
+    bool CompatVnCompletedForTest() const { return version_negotiator_->IsCompatVnCompleted(); }
     const TransportParam& GetLocalTransportParamForTest() const { return transport_param_; }
     const std::string& GetInitialSecretDcidForTest() const { return connection_crypto_.GetInitialSecretDcid(); }
     // ==================== End Test-Only Accessors ====================
@@ -195,90 +212,92 @@ protected:
     bool OnInitialPacket(const std::shared_ptr<IPacket>& packet);
     bool On0rttPacket(const std::shared_ptr<IPacket>& packet);
     bool On1rttPacket(const std::shared_ptr<IPacket>& packet);
-    bool OnNormalPacket(const std::shared_ptr<IPacket>& packet);
-    bool OnVersionNegotiationPacket(const std::shared_ptr<IPacket>& packet);
+    // |cryptographer_override|, when non-null, is used instead of the keys the
+    // connection currently holds for this packet's crypto level. Needed by
+    // OnInitialPacket: after an RFC 9368 compatible upgrade, which Initial keys
+    // can read a packet depends on the version in its long header, not on the
+    // connection's current version.
+    bool OnNormalPacket(
+        const std::shared_ptr<IPacket>& packet, const std::shared_ptr<ICryptographer>& cryptographer_override = nullptr);
     virtual bool OnHandshakePacket(const std::shared_ptr<IPacket>& packet);
     virtual bool OnRetryPacket(const std::shared_ptr<IPacket>& packet) = 0;
-
-    // OnVersionNegotiationPacket helpers
-    bool IsVnDowngradeAttack(const std::vector<uint32_t>& supported_versions);
-    void HandleCompatibleVersionFound(uint32_t compatible_version);
 
     // handle frames (delegated to frame processor)
     bool OnFrames(std::vector<std::shared_ptr<IFrame>>& frames, uint16_t crypto_level);
 
     void OnTransportParams(TransportParam& remote_tp);
 
-    // RFC 9368 Compatible Version Negotiation helpers.
-    //
-    // BuildLocalVersionInformation:
-    //   Populate |tp| with the local endpoint's version_information TP value.
-    //   chosen_version   = quic_version_ (the version we are currently using in
-    //                      our Initial packets).
-    //   available_versions = kQuicVersions (our preference list).
-    //
-    // ValidateAndMaybeUpgradeByRemoteTP:
-    //   Called during handshake completion after receiving the remote peer's
-    //   transport parameters. Performs:
-    //     1. Consistency check on remote's chosen_version.
-    //     2. Client-side: downgrade-attack detection against server's
-    //        available_versions list.
-    //     3. Server-side: decide whether to upgrade to a compatible preferred
-    //        version based on the client's available_versions list. If so,
-    //        updates quic_version_ and re-derives Initial keys.
-    //   Returns false if a downgrade attack or protocol violation is detected;
-    //   the caller should then close the connection with VERSION_NEGOTIATION_ERROR.
-    void BuildLocalVersionInformation(TransportParam& tp) const;
-    bool ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& remote_tp);
+    // RFC 9368 §4 validation of the peer's version_information (and the
+    // server-side compatible upgrade it may trigger). Forwards to
+    // VersionNegotiator; returns false if the connection was closed as
+    // inconsistent.
+    bool ValidateAndMaybeUpgradeByRemoteTP(const TransportParam& remote_tp) {
+        return version_negotiator_->ValidateAndMaybeUpgradeByRemoteTP(remote_tp);
+    }
 
 private:
     // Encode the local TransportParam |tp| into a 1024-byte stack buffer and
     // hand the bytes to TLS via SSL_set_quic_transport_params.  Centralizes the
-    // serialize-and-push idiom that previously appeared in 4 sites
-    // (AddTransportParam, OnInitialPacket × 2 version-change branches,
-    // ValidateAndMaybeUpgradeByRemoteTP).  Returns false on encode error.
+    // serialize-and-push idiom. Also serves VersionNegotiator, which needs to
+    // re-push after a version change but has no business knowing about TLS.
+    // Returns false on encode error.
     bool EncodeAndPushTpToTls(TransportParam& tp);
 
-    // Compound helper: rebuild the version_information TP entry to reflect the
-    // currently selected on-wire version, then re-encode + push the full TP
-    // blob to TLS.  Used after a version change (server upgrade decision,
-    // client detecting upgrade, or first server Initial when the requested
-    // version differs from default).  Returns false if encode/push fails.
-    bool RebuildAndPushVersionInformation();
+    // Internal helper methods for the send path
 
-    // Internal helper methods for TrySend()
-
-    // Retransmit-side branch of TrySend: re-encode the next lost packet (with
-    // a fresh packet number, current key phase, current cryptographer) and
-    // hand it to the sender.  Caller (TrySend) MUST have already verified
+    // Retransmit-side branch: re-encode the next lost packet (with a fresh
+    // packet number, current key phase, current cryptographer) and hand it to
+    // the emitter. Caller MUST have already verified
     // SendControl::NeedReSend() returns true.
-    // Returns true if the worker should re-enter TrySend immediately
+    // Returns true if the worker should re-enter the send path immediately
     // (more lost packets queued, or transient drop), false otherwise.
     // RFC 9000 §13.3 / RFC 9001 §6.5.
     bool TrySendRetransmit();
 
-    // Normal-send branch of TrySend: pick encryption level via the encryption
-    // scheduler, gather pending frames + queued ACKs + stream data, build one
-    // outbound packet under cwnd / per-packet MTU / connection-level FC
-    // budgets, hand it to SendBuffer, and update post-send bookkeeping
-    // (FC accounting, key-update trigger).  Returns the SendBuffer outcome.
-    bool TrySendNew();
-
-    // Burst-mode core of TrySendNew. Caller passes the maximum number of
-    // packets allowed in this round; the routine reuses send context /
-    // cryptographer / packet-builder fixed fields across iterations and
-    // breaks out early if any inner step says we should yield (cwnd full,
-    // FC blocked, no data, build failure, encryption level change, etc.).
-    // Returns the actual packets emitted (>=0).
+    // Normal-send branch: pick encryption level via the encryption scheduler,
+    // gather pending frames + queued ACKs + stream data, build outbound packets
+    // under cwnd / per-packet MTU / connection-level FC budgets, hand them to
+    // the emitter, and update post-send bookkeeping (FC accounting, key-update
+    // trigger).
+    //
+    // Caller passes the maximum number of packets allowed in this round; the
+    // routine reuses send context / cryptographer / packet-builder fixed fields
+    // across iterations and breaks out early if any inner step says we should
+    // yield (cwnd full, FC blocked, no data, build failure, encryption level
+    // change, etc.). Returns the actual packets emitted (>=0).
     int TrySendNewBurst(int budget);
+
+    // Fill the identity half of a data-packet build context: the level we are
+    // encrypting at, the cryptographer and CID managers to use, the version, and
+    // the stream source. These are derived identically for every outbound data
+    // packet, so they live here rather than being re-listed at each build site —
+    // there are three such sites (the burst loop plus the Initial and Handshake
+    // halves of a coalesced datagram), which meant adding a field was three
+    // edits and forgetting one was silent.
+    //
+    // Deliberately does NOT touch padding, size limits, token, key phase or
+    // frames: those are exactly what legitimately differs between the
+    // single-level burst and the coalesced datagram, and defaulting them here
+    // would hide that.
+    void FillPacketIdentity(
+        PacketBuilder::DataPacketContext& ctx, EncryptionLevel level, std::shared_ptr<ICryptographer> cryptographer);
+
+    // Prepend an ACK for |ns| to |frames| if RecvControl says one is due.
+    //
+    // Used by the coalescing path, which asks RecvControl once per encryption
+    // level. The burst path deliberately does NOT use this: it takes the
+    // pending-ACK decision from the encryption-level scheduler
+    // (send_ctx.has_pending_ack / ack_space) and attaches at most one ACK per
+    // burst. Those are different policies, not a duplication to be merged.
+    void MaybePrependAck(std::vector<std::shared_ptr<IFrame>>& frames, PacketNumberSpace ns);
 
     // RFC 9000 §12.2 Initial+Handshake coalescing helpers.
     //
     // TryCoalescedInitialHandshake: detects whether both Initial and
     // Handshake have pending CRYPTO bytes in the current round; if yes,
-    // builds one UDP datagram containing both QUIC packets and hands it
-    // to SendBuffer / send_sink_. Returns the number of QUIC packets
-    // emitted (0 = not applicable / build failure, 2 = coalesced).
+    // builds one UDP datagram containing both QUIC packets and ships it
+    // through the emitter. Returns the number of QUIC packets emitted
+    // (0 = not applicable / build failure, 2 = coalesced).
     // A return of 0 is non-fatal: the caller falls back to the normal
     // level-sticky TrySendNewBurst path.
     //
@@ -292,43 +311,24 @@ private:
     // back-patch / temporary buffer.
     int TryCoalescedInitialHandshake();
 
-    // Send buffer using sender_ (internal helper)
-    // @param buffer Buffer to send
-    // @return true if successfully sent
-    bool SendBuffer(std::shared_ptr<common::IBuffer> buffer);
-
-    // qlog draft-03: open a new outbound UDP datagram for instrumentation
-    // purposes. Allocates a fresh datagram_id from next_send_datagram_id_
-    // and tells SendControl to tag every packet_sent it records until the
-    // matching FinishSendDatagram() call. Cheap (one increment + one
-    // setter call); safe to invoke even when qlog is disabled.
-    void BeginSendDatagram();
-
-    // qlog draft-03: close the current outbound UDP datagram, sending the
-    // accumulated buffer via SendBuffer() and, if qlog is enabled, emitting
-    // a transport:datagrams_sent event summarising every QUIC packet that
-    // travelled in it. Replaces direct calls to SendBuffer() from the
-    // production send paths so that the datagram boundary is always
-    // mirrored in the qlog stream.
-    bool FinishSendDatagram(std::shared_ptr<common::IBuffer> buffer);
-    // Same as FinishSendDatagram() but for the SendImmediate() path
-    // (single-packet shortcut that bypasses the worker batch sink).
-    bool FinishSendDatagramImmediate(std::shared_ptr<common::IBuffer> buffer);
+    // Enqueue a frame that must go out even though the connection is
+    // terminating, bypassing the wake-up suppression in OnConnectionActive().
+    // Only CONNECTION_CLOSE legitimately needs this.
+    void EnqueueFrameDuringTermination(std::shared_ptr<IFrame> frame);
 
 public:
-    // PERF (sendmmsg batch path): when set non-null, SendBuffer() appends the
-    // built NetPacket to *send_sink_ instead of immediately calling
-    // sender_->Send(). The owner (Worker::ProcessSend) then issues a single
-    // sender_->SendBatch() over all collected packets, replacing N sendto()
-    // syscalls with one sendmmsg(2). Set to nullptr (the default) to keep
-    // the legacy synchronous-Send-per-buffer behavior — used by paths that
-    // don't go through ProcessSend (e.g. handshake bring-up before the
-    // connection is in the active set).
+    // PERF (sendmmsg batch path): when set non-null, the emitter appends built
+    // NetPackets to *sink instead of calling sender_->Send() directly. The owner
+    // (Worker::ProcessSend) then issues a single sender_->SendBatch() over all
+    // collected packets, replacing N sendto() syscalls with one sendmmsg(2).
+    // Set to nullptr (the default) to keep the synchronous-send-per-buffer
+    // behaviour — used by paths that don't go through ProcessSend (e.g.
+    // handshake bring-up before the connection is in the active set).
     //
-    // The pointer is owned by the caller and must outlive every SendBuffer
-    // call between Set/clear. Worker installs and clears it inside a single
-    // ProcessSend iteration so lifetime is trivially correct.
-    void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* sink) override { send_sink_ = sink; }
+    // The pointer is owned by the caller and must outlive every send between
+    // Set/clear. Worker installs and clears it inside a single ProcessSend
+    // iteration so lifetime is trivially correct.
+    void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* sink) override { emitter_->SetBatchSink(sink); }
 
 protected:
     virtual void ThreadTransferBefore() override;
@@ -338,13 +338,10 @@ protected:
     void OnClosingTimeout();
     void CheckPTOTimeout();  // RFC 9002: Check for idle timeout from excessive PTOs
 
-    void ToSendFrame(std::shared_ptr<IFrame> frame);
-    void ActiveSendStream(std::shared_ptr<IStream> stream);
-    void ActiveSend();
-
-    // Immediate send for critical frames (ACK, PATH_CHALLENGE/RESPONSE, CONNECTION_CLOSE)
-    // Bypasses normal send path and uses sender_ directly
-    bool SendImmediate(std::shared_ptr<common::IBuffer> buffer);
+    // NB: frame-enqueue and send-wakeup live solely on the IConnectionEventSink
+    // surface (OnFrameReady / OnStreamDataReady / OnConnectionActive). The old
+    // ToSendFrame / ActiveSendStream / ActiveSend duplicates are gone: keeping
+    // both meant one semantic had six entry names.
 
     void InnerConnectionClose(uint64_t error, uint16_t trigger_frame, std::string reason);
     void ImmediateClose(uint64_t error, uint16_t trigger_frame, std::string reason);
@@ -395,9 +392,27 @@ protected:
     // Check if migration is in progress
     virtual bool IsMigrationInProgress() const override;
 
-    // Internal: Handle migration completion callback from PathManager
-    void OnMigrationComplete(const MigrationInfo& info);
+    // Internal: forward the migration-finished event to the application. Socket
+    // switching and retiring is done by MigrationController before this runs.
+    void OnMigrationFinished(const MigrationInfo& info);
 
+public:
+    // The active socket fd is owned by the emitter. Public because Worker
+    // installs the socket after construction.
+    virtual void SetSocket(int32_t sockfd) override { emitter_->SetSocket(sockfd); }
+
+    // Socket register/unregister are consumed by MigrationController (the sole
+    // owner of socket lifecycle), so forward them on rather than only storing.
+    virtual void SetRegisterSocketCallback(RegisterSocketCallback cb) override {
+        IConnection::SetRegisterSocketCallback(cb);
+        migration_controller_->SetRegisterSocketCallback(cb);
+    }
+    virtual void SetUnregisterSocketCallback(UnregisterSocketCallback cb) override {
+        IConnection::SetUnregisterSocketCallback(cb);
+        migration_controller_->SetUnregisterSocketCallback(cb);
+    }
+
+protected:
     void CloseInternal();
 
     // Connection ID pool management
@@ -448,7 +463,6 @@ protected:
     // can be grouped back to their enclosing datagram in viewers. 0 is the
     // "unset" sentinel; the first real id is 1.
     uint64_t next_recv_datagram_id_ = 1;
-    uint64_t next_send_datagram_id_ = 1;
     // The id of the UDP datagram currently being drained inside OnPackets()
     // (set before the dispatch loop, cleared after). The per-packet
     // QLOG_PACKET_RECEIVED call sites read it to stamp PacketReceivedData
@@ -456,13 +470,14 @@ protected:
     // 0 means "no datagram in flight".
     uint64_t current_recv_datagram_id_ = 0;
     // NB: outgoing datagram correlation lives inside SendControl
-    // (see Begin/EndSendDatagram + current_send_datagram_id_ there) so we
-    // don't duplicate state here.
+    // (see Begin/EndSendDatagram + current_send_datagram_id_ there) and the
+    // egress id counter lives in DatagramEmitter, so we don't duplicate
+    // either here.
 
-    // hint for early-data scheduling: whether any application stream (id != 0) has pending send
-    bool has_app_send_pending_ = false;
-    // Track whether Initial packet has been sent in 0-RTT scenarios
-    bool initial_packet_sent_ = false;
+    // NB: 0-RTT send ordering (formerly has_app_send_pending_ /
+    // initial_packet_sent_ here) is owned by EncryptionLevelScheduler; see
+    // SetEarlyDataPending() and SetInitialPacketSent() there. Do not
+    // re-introduce copies.
 
     // Remembered remote transport params for 0-RTT session caching (RFC 9000 Section 7.4.1)
     RemoteTransportParamSnapshot remote_tp_snapshot_;
@@ -484,22 +499,26 @@ protected:
     // produce negative durations.
     uint64_t handshake_start_wall_time_ms_{0};
 
-    // Sender for direct packet transmission
-    std::shared_ptr<ISender> sender_;
+    // Sole owner of the egress path: sender, batch sink, datagram-id counter
+    // and the active socket fd. See datagram_emitter.h for the invariants it
+    // exists to hold.
+    std::unique_ptr<DatagramEmitter> emitter_;
 
-    // Optional batch sink for SendBuffer (see SetSendSink). Non-owning.
-    // Worker::ProcessSend installs this for the duration of a single drain
-    // round and clears it before returning, so liveness is always correct.
-    std::vector<std::shared_ptr<NetPacket>>* send_sink_ = nullptr;
+    // Sole owner of socket lifecycle across migration (RFC 9000 §9).
+    std::unique_ptr<MigrationController> migration_controller_;
 
     // Key Update trigger (RFC 9001 Section 6)
     KeyUpdateTrigger key_update_trigger_;
 
-    // QUIC version context (RFC 9000 §6, RFC 9368, RFC 9369)
-    VersionContext version_ctx_;
+    // Sole owner of QUIC version state (RFC 9000 §6, RFC 9368, RFC 9369). Its
+    // VersionContext is private, so the three copies of the on-wire version
+    // cannot drift via a stray field write from here.
+    std::unique_ptr<VersionNegotiator> version_negotiator_;
 
-    // Version negotiation callback (RFC 9000 Section 6)
-    version_negotiation_callback version_negotiation_cb_;
+    // Connection role. This is a construction-time constant, not negotiation
+    // state, so it stays here rather than inside VersionNegotiator — the send
+    // path needs it (client first flight must pad to 1200 B, RFC 9000 §14.1).
+    const bool is_server_;
 };
 
 }  // namespace quic

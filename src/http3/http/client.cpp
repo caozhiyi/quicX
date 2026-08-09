@@ -229,10 +229,19 @@ void Client::OnConnection(
         // The erase races with user-thread shared-lock readers in the
         // DoRequest fast-path; take the unique lock around the modification
         // so the readers never observe a half-rehashed bucket.
+        //
+        // The erase must not drop the last reference inline: this callback is
+        // routinely reached from inside a ClientConnection method (server
+        // GOAWAY -> HandleGoaway -> Shutdown -> Close), so running the
+        // destructor here would unwind into freed memory. Park it in
+        // closing_conns_ and let the next connection event reap it.
+        std::vector<std::shared_ptr<ClientConnection>> reaped;  // destroyed after the lock is released
         {
             std::unique_lock<std::shared_mutex> wlock(conn_map_mu_);
+            reaped.swap(closing_conns_);
             for (auto it = conn_map_.begin(); it != conn_map_.end(); ++it) {
                 if (it->second && it->second->GetQuicConnection().get() == conn.get()) {
+                    closing_conns_.push_back(std::move(it->second));
                     conn_map_.erase(it);
                     break;
                 }

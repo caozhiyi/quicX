@@ -21,6 +21,10 @@ public:
     virtual bool AddListener(int32_t listener_sock) = 0;
     virtual bool AddListener(const std::string& ip, uint16_t port) = 0;
 
+    // Remove a socket from the poll set. Needed to retire the pre-migration
+    // socket; without it retired fds stay armed in the event driver.
+    virtual bool RemoveListener(int32_t listener_sock) = 0;
+
     // add a new connection id
     virtual void AddConnectionID(ConnectionID& cid, const std::string& worker_id) = 0;
     // retire a connection id

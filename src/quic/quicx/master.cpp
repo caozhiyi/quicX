@@ -1,4 +1,5 @@
 #include "quic/quicx/master.h"
+#include "common/util/random.h"
 #include "common/log/log.h"
 
 namespace quicx {
@@ -52,6 +53,22 @@ bool Master::AddListener(int32_t listener_sock) {
     return receiver_->AddReceiver(listener_sock, shared_from_this());
 }
 
+bool Master::RemoveListener(int32_t listener_sock) {
+    // Retire a socket (e.g. the pre-migration one) from the poll set.
+    if (!receiver_) {
+        // Not armed yet: strip it from the pending list if present.
+        for (auto it = pending_listeners_.begin(); it != pending_listeners_.end(); ++it) {
+            if (it->sock == listener_sock) {
+                pending_listeners_.erase(it);
+                return true;
+            }
+        }
+        return false;
+    }
+    LOG_DEBUG("Master::RemoveListener: removing socket fd=%d", listener_sock);
+    return receiver_->RemoveReceiver(listener_sock);
+}
+
 bool Master::AddListener(const std::string& ip, uint16_t port) {
     if (!receiver_) {
         ListenerInfo info;
@@ -64,10 +81,12 @@ bool Master::AddListener(const std::string& ip, uint16_t port) {
 }
 
 void Master::AddConnectionID(ConnectionID& cid, const std::string& worker_id) {
+    std::lock_guard<std::mutex> lock(cid_map_mutex_);
     cid_worker_map_[cid.Hash()] = worker_id;
 }
 
 void Master::RetireConnectionID(ConnectionID& cid, const std::string& worker_id) {
+    std::lock_guard<std::mutex> lock(cid_map_mutex_);
     cid_worker_map_.erase(cid.Hash());
 }
 
@@ -82,20 +101,39 @@ void Master::OnPacket(std::shared_ptr<NetPacket>& pkt) {
     }
     PacketParseResult packet_info;
     if (MsgParser::ParsePacket(pkt, packet_info)) {
-        auto iter = cid_worker_map_.find(packet_info.cid_.Hash());
-        if (iter != cid_worker_map_.end()) {
-            auto worker = worker_map_.find(iter->second);
-            if (worker != worker_map_.end()) {
-                worker->second->HandlePacket(packet_info);
+        // worker_map_ is populated once at init and never mutated at runtime, so
+        // reading it without a lock is safe. cid_worker_map_ is written by worker
+        // threads during handshake, so every access to it must be locked.
+        std::shared_ptr<IWorker> worker;
+        {
+            std::lock_guard<std::mutex> lock(cid_map_mutex_);
+            auto iter = cid_worker_map_.find(packet_info.cid_.Hash());
+            if (iter != cid_worker_map_.end()) {
+                auto w = worker_map_.find(iter->second);
+                if (w != worker_map_.end()) {
+                    worker = w->second;
+                }
             }
-
-        } else {
-            // random find a worker to handle packet
-            auto iter = worker_map_.begin();
-            std::advance(iter, rand() % worker_map_.size());
-            auto worker = iter->second;
-            worker->HandlePacket(packet_info);
         }
+
+        if (!worker) {
+            // New connection: route deterministically by the packet's Destination
+            // Connection ID so that *every* Initial for the same connection (including
+            // client retransmissions, which reuse the same DCID) lands on the SAME
+            // worker. A random choice here let Initial retransmissions create
+            // duplicate ServerConnections on different workers under a multi-worker
+            // config, which corrupted the handshake. Distinct connections still hash
+            // to different workers, so load stays balanced.
+            if (worker_map_.empty()) {
+                return;
+            }
+            size_t idx = packet_info.cid_.Hash() % worker_map_.size();
+            auto iter = worker_map_.begin();
+            std::advance(iter, idx);
+            worker = iter->second;
+        }
+
+        worker->HandlePacket(packet_info);
     }
 }
 

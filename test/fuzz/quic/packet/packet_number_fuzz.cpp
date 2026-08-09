@@ -26,13 +26,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
             // Decode from provided bytes
             uint8_t buf[8] = {0};
             for (uint32_t i = 0; i < pn_len; ++i) buf[i] = data[1 + i];
-            (void)quicx::quic::PacketNumber::Decode(buf, pn_len, pn);
+            (void)quicx::quic::PacketNumber::Decode(buf, buf + sizeof(buf), pn_len, pn);
 
             // Re-encode to another buffer and decode again
             uint8_t out[8] = {0};
             (void)quicx::quic::PacketNumber::Encode(out, pn_len, pn);
             uint64_t pn2 = 0;
-            (void)quicx::quic::PacketNumber::Decode(out, pn_len, pn2);
+            (void)quicx::quic::PacketNumber::Decode(out, out + sizeof(out), pn_len, pn2);
             (void)pn2;
         }
     }

@@ -587,7 +587,7 @@ if (!loop->IsInLoopThread()) {
 - [`ownership_and_memory.md`](ownership_and_memory.md) §5 —— stream 回调的 weak_self 模式
 - [`process_model.md`](process_model.md) —— 跨线程 `Send` / `Close` / `Reset` 的 RunInLoop 转入路径
 - [`packet_lifecycle.md`](packet_lifecycle.md) —— `TrySendData` 在 connection 发送主循环里的位置
-- [`pool_alloter.md`](pool_alloter.md) §5 —— stream `send_buffer` / `buffer_` 的内存来自 BlockMemoryPool
+- [`pool_allocator.md`](pool_allocator.md) §5 —— stream `send_buffer` / `buffer_` 的内存来自 BlockMemoryPool
 
 ---
 

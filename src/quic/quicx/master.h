@@ -2,6 +2,7 @@
 #define QUIC_QUICX_MSG_RECEIVER
 
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 #include "quic/quicx/if_master.h"
@@ -28,6 +29,7 @@ public:
     // add listener
     virtual bool AddListener(int32_t listener_sock) override;
     virtual bool AddListener(const std::string& ip, uint16_t port) override;
+    virtual bool RemoveListener(int32_t listener_sock) override;
 
     // add a new connection id
     virtual void AddConnectionID(ConnectionID& cid, const std::string& worker_id) override;
@@ -44,6 +46,13 @@ protected:
     std::shared_ptr<IReceiver> receiver_;
     std::unordered_map<uint64_t, std::string> cid_worker_map_;
     std::unordered_map<std::string, std::shared_ptr<IWorker>> worker_map_;
+
+    // Guards cid_worker_map_. It is read on the receiver thread (OnPacket) and
+    // written on worker threads (AddConnectionID/RetireConnectionID during
+    // handshake). Without this the unordered_map is accessed concurrently with
+    // no synchronization, which under multi-worker / multi-client load causes
+    // misrouted packets and random handshake failures.
+    mutable std::mutex cid_map_mutex_;
 
     struct ListenerInfo {
         std::string ip;

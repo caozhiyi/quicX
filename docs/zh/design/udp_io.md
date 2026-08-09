@@ -217,7 +217,7 @@ static constexpr int kMaxRecvBatch = 64;
 1. **写入长度用真实可写区** —— `entries[i].buf_len_ = span.GetLength()`，**绝不**写死 `kMaxV4PacketSize`；
 2. **可写区不够就换包** —— `for retries < kMaxRecycleRetries` 循环 Malloc 直到拿到 ≥ 1472 的干净 buffer；retry 上限 8 防止池永久泄漏导致 OnRead 死循环。8 次还拿不到就**缩 batch**（`batch = i; break`），剩下的 datagram 留在内核队列，下次可读事件再 drain。
 
-这道坎是 `pool_alloter.md` § "外部引用陷阱" 在 UDP I/O 层的具体表现——读那篇文档解释**为什么会有 floor pinned**，本节解释**怎么在 syscall 边界守住**。
+这道坎是 `pool_allocator.md` § "外部引用陷阱" 在 UDP I/O 层的具体表现——读那篇文档解释**为什么会有 floor pinned**，本节解释**怎么在 syscall 边界守住**。
 
 ### 4.4 ECN cmsg 的解析
 
@@ -373,7 +373,7 @@ if (!loop->IsInLoopThread()) {
 
 - **`packet_lifecycle.md`** ——一个 datagram 从 UDP 入到 frame 的全路径；本文是其入口/出口段的 syscall 细节。
 - **`process_model.md`** —— EventLoop / Worker 线程模型；本文的"在 loop 线程做 fd 操作"约束源头。
-- **`pool_alloter.md`** —— frame-level 内存池；§4.3 池回收陷阱依赖其 floor-pinned 概念。
+- **`pool_allocator.md`** —— frame-level 内存池；§4.3 池回收陷阱依赖其 floor-pinned 概念。
 - **`metrics.md`** —— 完整 Metrics 名录；本文 §8 是 UDP 子集 + 诊断套路。
 - **`connection_anatomy.md`** —— BaseConnection 调 SendBuffer / sender_->Send 的上层路径；本文是其下层 syscall 实现。
 - **`congestion_control.md`** —— pacing / cwnd 决定何时调 SendBatch；本文是 SendBatch 内部如何 batch。

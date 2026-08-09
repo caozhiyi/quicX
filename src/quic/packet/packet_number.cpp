@@ -1,4 +1,5 @@
 #include "quic/packet/packet_number.h"
+#include <cstdint>
 #include <cstring>
 
 namespace quicx {
@@ -13,7 +14,9 @@ uint64_t PacketNumber::NextPacketNumber(PacketNumberSpace space) {
 }
 
 void PacketNumber::Reset(PacketNumberSpace space) {
-    cur_packet_number_[space] = -1;
+    // Start at the maximum value so the first NextPacketNumber() (which does ++) yields 0,
+    // matching the first packet number used on a new connection/path.
+    cur_packet_number_[space] = UINT64_MAX;
 }
 
 uint32_t PacketNumber::GetPacketNumberLength(uint64_t packet_number) {
@@ -44,7 +47,11 @@ uint8_t* PacketNumber::Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t
     return pos;
 }
 
-uint8_t* PacketNumber::Decode(uint8_t* pos, uint32_t packet_number_len, uint64_t& packet_number) {
+uint8_t* PacketNumber::Decode(uint8_t* pos, uint8_t* end, uint32_t packet_number_len, uint64_t& packet_number) {
+    if (pos == nullptr || end == nullptr || pos > end ||
+        static_cast<uint32_t>(end - pos) < packet_number_len) {
+        return nullptr;
+    }
     for (int i = 0; i < packet_number_len; i++) {
         packet_number = ((packet_number) << 8u) + (*pos);
         pos++;

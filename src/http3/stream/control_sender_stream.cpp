@@ -28,14 +28,14 @@ bool ControlSenderStream::SendSettings(const std::unordered_map<uint16_t, uint64
         frame.SetSetting(static_cast<uint16_t>(setting.first), setting.second);
     }
 
-    auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    if (!frame.Encode(buffer)) {
+    if (!EncodeAndAppendControlFrame([&frame](std::shared_ptr<common::IBuffer> buf) {
+            return frame.Encode(buf);
+        })) {
         LOG_ERROR("ControlSenderStream::SendSettings: Failed to encode SettingsFrame");
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kMessageError);
         return false;
     }
-
-    return stream_->Flush();
+    return true;
 }
 
 bool ControlSenderStream::SendGoaway(uint64_t id) {
@@ -46,13 +46,14 @@ bool ControlSenderStream::SendGoaway(uint64_t id) {
     GoAwayFrame frame;
     frame.SetStreamId(id);
 
-    auto buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
-    if (!frame.Encode(buffer)) {
+    if (!EncodeAndAppendControlFrame([&frame](std::shared_ptr<common::IBuffer> buf) {
+            return frame.Encode(buf);
+        })) {
         LOG_ERROR("ControlSenderStream::SendGoaway: Failed to encode GoAwayFrame");
         error_handler_(stream_->GetStreamID(), Http3ErrorCode::kInternalError);
         return false;
     }
-    return stream_->Flush();
+    return true;
 }
 
 bool ControlSenderStream::SendQpackInstructions(const std::vector<uint8_t>& blob) {

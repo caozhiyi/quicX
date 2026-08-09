@@ -1,4 +1,5 @@
 #include "common/log/file_logger.h"
+#include "common/util/random.h"
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
 #include "common/qlog/qlog_manager.h"
@@ -31,6 +32,13 @@ QuicClient::~QuicClient() {
 
     // 0) Stop the master event loop thread so no callbacks can race with
     //    member destruction. After Join, no loop-thread code is running.
+    //
+    //    NOTE: do NOT try to RemoveListener(sockfd_) here. That call blocks on
+    //    a promise fulfilled by the master loop thread, and this destructor is
+    //    routinely reached from inside a connection-close callback running on
+    //    another loop thread — the wait then deadlocks. Stopping the master
+    //    tears down the receiver and its fd registrations anyway; all we still
+    //    owe is closing the fd itself (step 4).
     if (master_) {
         master_->Stop();
         master_->Join();
@@ -80,6 +88,16 @@ QuicClient::~QuicClient() {
     worker_map_.clear();
     master_.reset();
     master_event_loop_.reset();
+
+    // 4) Close the UDP socket created in Init(). All threads have been joined
+    //    above, so nobody can be reading from / writing to it any more.
+    //    UdpReceiver deliberately does not close fds registered through
+    //    AddReceiver(fd, ...) (they belong to the caller), so this is the only
+    //    place the fd can be released.
+    if (sockfd_ >= 0) {
+        common::Close(sockfd_);
+        sockfd_ = -1;
+    }
 }
 
 bool QuicClient::Init(const QuicClientConfig& config) {
@@ -140,6 +158,9 @@ bool QuicClient::Init(const QuicClientConfig& config) {
         return false;
     }
     int32_t sockfd = sock_ret.return_value_;
+    // Record it immediately so that an early `return false` below still lets
+    // the destructor reclaim the fd.
+    sockfd_ = sockfd;
 
     auto nonblock_ret = common::SocketNoblocking(sockfd);
     if (nonblock_ret.error_code_ != 0) {
@@ -160,6 +181,13 @@ bool QuicClient::Init(const QuicClientConfig& config) {
             auto master = master_weak.lock();
             if (master) {
                 return master->AddListener(sockfd);
+            }
+            return false;
+        });
+        worker->SetUnregisterSocketCallback([master_weak](int32_t sockfd) -> bool {
+            auto master = master_weak.lock();
+            if (master) {
+                return master->RemoveListener(sockfd);
             }
             return false;
         });
@@ -186,6 +214,13 @@ bool QuicClient::Init(const QuicClientConfig& config) {
                 auto master = master_weak2.lock();
                 if (master) {
                     return master->AddListener(sockfd);
+                }
+                return false;
+            });
+            worker_ptr->SetUnregisterSocketCallback([master_weak2](int32_t sockfd) -> bool {
+                auto master = master_weak2.lock();
+                if (master) {
+                    return master->RemoveListener(sockfd);
                 }
                 return false;
             });
@@ -221,15 +256,21 @@ void QuicClient::Destroy() {
 }
 
 void QuicClient::AddTimer(uint32_t timeout_ms, std::function<void()> cb) {
-    master_event_loop_->RunInLoop([this, timeout_ms, cb]() { master_event_loop_->AddTimer(cb, timeout_ms); });
+    // Fire-and-forget by contract (IQuicClient hands back no handle), so this is
+    // PostDelayed rather than a cancellable timer.
+    master_event_loop_->RunInLoop(
+        [this, timeout_ms, cb]() { master_event_loop_->PostDelayed(cb, timeout_ms); });
 }
 
 bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::string& alpn, int32_t timeout_ms,
     const std::string& resumption_session_der, const std::string& server_name) {
     if (thread_mode_ == ThreadMode::kSingleThread) {
         if (!worker_map_.empty()) {
+            // RangeRandom rather than rand(): thread-safe, and free of the low-index
+            // bias of `rand() % n`.
+            common::RangeRandom picker(0, static_cast<int32_t>(worker_map_.size()) - 1);
             auto iter = worker_map_.begin();
-            std::advance(iter, rand() % worker_map_.size());
+            std::advance(iter, picker.Random());
             auto worker = std::dynamic_pointer_cast<ClientWorker>(iter->second);
             if (master_event_loop_) {
                 master_event_loop_->RunInLoop(
@@ -243,8 +284,9 @@ bool QuicClient::Connection(const std::string& ip, uint16_t port, const std::str
     }
 
     if (!worker_map_.empty()) {
+        common::RangeRandom picker(0, static_cast<int32_t>(worker_map_.size()) - 1);
         auto iter = worker_map_.begin();
-        std::advance(iter, rand() % worker_map_.size());
+        std::advance(iter, picker.Random());
         auto worker = std::dynamic_pointer_cast<WorkerWithThread>(iter->second);
         if (!worker) {
             return false;

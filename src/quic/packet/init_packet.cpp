@@ -160,14 +160,18 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
 
     if (!crypto_grapher_) {
         // RFC 9000 Appendix A: Two-step packet number recovery
+        const uint8_t plain_pn_len = header_.GetPacketNumberLength();
+        if (length_ < plain_pn_len) {
+            LOG_ERROR("length field smaller than packet number length. length:%u, pn_len:%u", length_, plain_pn_len);
+            return false;
+        }
         cur_pos += packet_num_offset_;
         uint64_t truncated_pn = 0;
-        cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), truncated_pn);
-        packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, header_.GetPacketNumberLength() * 8);
+        cur_pos = PacketNumber::Decode(cur_pos, end, plain_pn_len, truncated_pn);
+        packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, plain_pn_len * 8);
 
         // decode payload frames
-        payload_ = common::SharedBufferSpan(
-            packet_src_data_.GetChunk(), cur_pos, cur_pos + length_ - header_.GetPacketNumberLength());
+        payload_ = common::SharedBufferSpan(packet_src_data_.GetChunk(), cur_pos, cur_pos + length_ - plain_pn_len);
 
         // Create a SingleBlockBuffer from the payload span
         auto payload_buffer = common::SingleBlockBuffer::FromSpan(payload_);
@@ -188,6 +192,21 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     auto header_span = header_.GetHeaderSrcData().GetSpan();
 
     // get decrypt sample, which is defined in RFC9001 §5.4.2
+    //
+    // The sample is 16 bytes at pn_offset + 4 and MakeHeaderProtectMask feeds
+    // all 16 to EVP_EncryptUpdate, so they must actually be present. Nothing
+    // upstream guarantees that: DecodeWithoutCrypto bounds the `length` field
+    // only from above, so a short Initial packet -- which any peer can send,
+    // Initial keys being derived from the public DCID -- otherwise produced a
+    // pointer past the end of the buffer. The short-header path has always
+    // checked this (rtt_1_packet.cpp); the long-header ones did not.
+    const size_t sample_need = static_cast<size_t>(packet_num_offset_) + 4 + kHeaderProtectSampleLength;
+    const size_t span_len = static_cast<size_t>(span.GetEnd() - span.GetStart());
+    if (span_len < sample_need) {
+        LOG_ERROR("payload too short for header protection sample. payload_len:%zu, required:%zu", span_len,
+            sample_need);
+        return false;
+    }
     common::BufferSpan sample = common::BufferSpan(span.GetStart() + packet_num_offset_ + 4,
         span.GetStart() + packet_num_offset_ + 4 + kHeaderProtectSampleLength);
 
@@ -207,13 +226,21 @@ bool InitPacket::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     cur_pos += packet_num_offset_;
     // RFC 9000 Appendix A: Two-step packet number recovery
     uint64_t truncated_pn = 0;
-    cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, truncated_pn);
+    cur_pos = PacketNumber::Decode(cur_pos, end, packet_num_len, truncated_pn);
     packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, packet_num_len * 8);
 
     // RFC 9001 §5.3: AD includes header (from first byte) up to and including the unprotected PN
     auto ad_span = common::BufferSpan(buffer_header_pos, cur_pos);
 
     // decrypt packet
+    //
+    // packet_num_len comes from the decrypted header, length_ from the wire, and
+    // DecodeWithoutCrypto never checked that length_ >= packet_num_len -- so a
+    // small length_ underflowed this subtraction into a ~2^64-byte span.
+    if (length_ < packet_num_len) {
+        LOG_ERROR("length field smaller than packet number length. length:%u, pn_len:%u", length_, packet_num_len);
+        return false;
+    }
     auto payload = common::BufferSpan(cur_pos, cur_pos + length_ - packet_num_len);
     // Create a separate buffer for decrypted plaintext to avoid garbage data (header/length) from original buffer
     // PERF: BufferChunkPool recycles the BufferChunk wrapper across packets so

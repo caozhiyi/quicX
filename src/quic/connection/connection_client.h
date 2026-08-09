@@ -47,6 +47,16 @@ private:
     ConnectionID original_dcid_;
     bool retry_received_{false};
 
+    // RFC 9000 §19.20: HANDSHAKE_DONE is ack-eliciting and the server WILL
+    // retransmit it whenever our ACK is lost or delayed. Every side effect of
+    // handling it (discarding the Initial/Handshake number spaces, exporting
+    // the resumption session, invoking handshake_done_cb_) must therefore run
+    // exactly once. Without this guard the duplicate frames re-fire
+    // handshake_done_cb_, which makes ClientWorker re-announce
+    // kConnectionCreate to the application layer for an already-established
+    // connection.
+    bool handshake_done_processed_{false};
+
     // TLS settings for Retry (need to restore after Reset)
     std::string saved_alpn_;
     std::string saved_server_name_;

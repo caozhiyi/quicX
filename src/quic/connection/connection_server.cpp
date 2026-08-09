@@ -21,7 +21,7 @@ ServerConnection::ServerConnection(std::shared_ptr<TLSCtx> ctx, std::shared_ptr<
         LOG_ERROR("tls connection init failed.");
     }
     auto crypto_stream = std::make_shared<CryptoStream>(
-        event_loop_, [this](auto a) { ActiveSendStream(a); }, [this](auto a) { InnerStreamClose(a); },
+        event_loop_, [this](auto a) { OnStreamDataReady(a); }, [this](auto a) { InnerStreamClose(a); },
         [this](auto a, auto b, auto c) { InnerConnectionClose(a, b, c); });
     crypto_stream->SetCryptoStreamReadCallBack([this](auto a, auto b, auto c) { WriteCryptoData(a, b, c); });
 
@@ -152,7 +152,7 @@ void ServerConnection::WriteCryptoData(std::shared_ptr<IBufferRead> buffer, int3
         // here, before any other post-handshake bookkeeping, satisfies "as
         // soon as".
         std::shared_ptr<HandshakeDoneFrame> frame = std::make_shared<HandshakeDoneFrame>();
-        ToSendFrame(frame);
+        OnFrameReady(frame);
 
         // Mark handshake complete to stop PTO probing
         send_manager_.GetSendControl().SetHandshakeComplete();

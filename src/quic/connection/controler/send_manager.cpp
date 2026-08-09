@@ -12,38 +12,14 @@
 namespace quicx {
 namespace quic {
 
-SendManager::SendManager(std::shared_ptr<common::ITimer> timer):
-    send_control_(timer),
+SendManager::SendManager(std::shared_ptr<common::ITimerScheduler> scheduler):
+    send_control_(scheduler),
     send_flow_controller_(nullptr),
     packet_number_(),
-    timer_(timer) {
-    pacing_timer_task_ = common::TimerTask();
-    pacing_timer_task_.SetTimeoutCallback([this]() {
-        if (send_retry_cb_) {
-            send_retry_cb_();
-        }
-    });
-
-    // Bug #17: low-frequency wake-up while the connection is held back by the
-    // peer's connection-level flow control limit. Without this fallback, a
-    // connection that has buffered stream data but cannot send (peer's
-    // max_data exhausted, all in-flight packets already acked, peer not
-    // forthcoming with MAX_DATA) gets removed from the worker's active set
-    // and never re-examined until idle timeout fires.
-    flow_control_recheck_task_ = common::TimerTask();
-    flow_control_recheck_task_.SetTimeoutCallback([this]() {
-        flow_control_recheck_scheduled_ = false;
-        if (!is_flow_control_blocked_) {
-            return;  // already unblocked via ACK / MAX_DATA
-        }
-        LOG_INFO("SendManager: flow-control recheck timer fired, retrying send");
-        if (send_retry_cb_) {
-            send_retry_cb_();
-        }
-    });
-
+    scheduler_(scheduler) {
     send_control_.SetPacketLostCallback([this](std::shared_ptr<IPacket> packet) {
-        LOG_WARN("SendManager: packet %llu lost, triggering retransmission", packet->GetPacketNumber());
+        LOG_WARN("SendManager: packet %llu lost, triggering retransmission sc=%p", packet->GetPacketNumber(),
+            (void*)&send_control_);
         // Note: send_retry_cb_ (which calls BaseConnection::ActiveSend) will check connection state
         // and ignore the callback if connection is closing/draining/closed
         if (send_retry_cb_) {
@@ -88,7 +64,7 @@ SendOperation SendManager::GetSendOperation() {
                 uint64_t next_time = send_control_.GetNextSendTime(now);
                 if (next_time > now) {
                     uint64_t delay = next_time - now;
-                    timer_->AddTimer(pacing_timer_task_, delay);
+                    ArmPacingTimer(static_cast<uint32_t>(delay));
                 } else {
                     is_cwnd_limited_ = true;
                     LOG_WARN("congestion control send data limited.");
@@ -111,8 +87,18 @@ SendOperation SendManager::GetSendOperation() {
     return SendOperation::kSendAgainImmediately;
 }
 
-void SendManager::ToSendFrame(std::shared_ptr<IFrame> frame) {
+void SendManager::EnqueueFrame(std::shared_ptr<IFrame> frame) {
     wait_frame_list_.emplace_front(frame);
+}
+
+bool SendManager::HasPendingProbingFrame() const {
+    for (const auto& frame : wait_frame_list_) {
+        uint16_t type = static_cast<uint16_t>(frame->GetType());
+        if (type == FrameType::kPathChallenge || type == FrameType::kPathResponse) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void SendManager::OnPacketAck(PacketNumberSpace ns, std::shared_ptr<IFrame> frame) {
@@ -175,8 +161,8 @@ void SendManager::ClearActiveStreams() {
     // Bug #17: connection is closing — disarm the flow-control recheck so the
     // timer wheel's pending callback does not fire on a teardowning connection.
     is_flow_control_blocked_ = false;
-    if (flow_control_recheck_scheduled_ && timer_) {
-        timer_->RemoveTimer(flow_control_recheck_task_);
+    if (flow_control_recheck_scheduled_) {
+        flow_control_recheck_timer_.Cancel();
         flow_control_recheck_scheduled_ = false;
     }
 }
@@ -294,10 +280,54 @@ void SendManager::SetFlowControlBlocked() {
     // into one counter for dashboard simplicity.
     common::Metrics::CounterInc(common::MetricsStd::DiagFlowControlBlocked);
     static constexpr uint32_t kFlowControlRecheckIntervalMs = 100;
-    if (!flow_control_recheck_scheduled_ && timer_) {
+    if (!flow_control_recheck_scheduled_ && scheduler_) {
         flow_control_recheck_scheduled_ = true;
-        timer_->AddTimer(flow_control_recheck_task_, kFlowControlRecheckIntervalMs);
+        ArmFlowControlRecheckTimer();
     }
+}
+
+void SendManager::ArmPacingTimer(uint32_t delay_ms) {
+    if (pacing_timer_.Rearm(delay_ms)) {
+        return;
+    }
+    if (!scheduler_) {
+        return;
+    }
+    pacing_timer_ = scheduler_->AddTimer(life_token_,
+        [this]() {
+            if (send_retry_cb_) {
+                send_retry_cb_();
+            }
+        },
+        delay_ms);
+}
+
+void SendManager::ArmFlowControlRecheckTimer() {
+    // Bug #17: low-frequency wake-up while the connection is held back by the
+    // peer's connection-level flow control limit. Without this fallback, a
+    // connection that has buffered stream data but cannot send (peer's max_data
+    // exhausted, all in-flight packets already acked, peer not forthcoming with
+    // MAX_DATA) gets removed from the worker's active set and never re-examined
+    // until idle timeout fires.
+    static constexpr uint32_t kFlowControlRecheckIntervalMs = 100;
+    if (flow_control_recheck_timer_.Rearm(kFlowControlRecheckIntervalMs)) {
+        return;
+    }
+    if (!scheduler_) {
+        return;
+    }
+    flow_control_recheck_timer_ = scheduler_->AddTimer(life_token_,
+        [this]() {
+            flow_control_recheck_scheduled_ = false;
+            if (!is_flow_control_blocked_) {
+                return;  // already unblocked via ACK / MAX_DATA
+            }
+            LOG_INFO("SendManager: flow-control recheck timer fired, retrying send");
+            if (send_retry_cb_) {
+                send_retry_cb_();
+            }
+        },
+        kFlowControlRecheckIntervalMs);
 }
 
 std::vector<std::shared_ptr<IFrame>> SendManager::GetPendingFrames(EncryptionLevel level, uint32_t max_bytes) {

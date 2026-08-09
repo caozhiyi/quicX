@@ -133,11 +133,29 @@ void Server::OnConnection(
     std::string unique_id = addr + ":" + std::to_string(port);
     void* conn_key = conn.get();
 
-    if (operation == ConnectionOperation::kConnectionClose) {
-        LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
+    // Release connections retired by an earlier close callback. This runs
+    // before anything else so the destructors execute on a stack frame that
+    // cannot belong to any of the connections being freed (see the
+    // closing_conns_ comment in server.h).
+    {
+        std::vector<std::shared_ptr<ServerConnection>> reaped;
         {
             std::lock_guard<std::mutex> lock(conn_map_mu_);
-            conn_map_.erase(conn_key);
+            reaped.swap(closing_conns_);
+        }
+    }
+
+    if (operation == ConnectionOperation::kConnectionClose) {
+        LOG_INFO("connection close. error: %d, reason: %s", error, reason.c_str());
+        // Do NOT let the map erase drop the last reference here: this callback
+        // is routinely reached from inside a ServerConnection method (e.g.
+        // HandleGoaway -> Shutdown -> Close), so destroying now would unwind
+        // into freed memory. Park it for deferred release instead.
+        std::lock_guard<std::mutex> lock(conn_map_mu_);
+        auto it = conn_map_.find(conn_key);
+        if (it != conn_map_.end()) {
+            closing_conns_.push_back(std::move(it->second));
+            conn_map_.erase(it);
         }
         return;
     }
@@ -165,10 +183,14 @@ void Server::HandleError(const std::string& unique_id, uint32_t error_code) {
     // ServerConnection's stored unique_id. We hold the lock for the whole
     // walk so a concurrent OnConnection insert/erase from another worker
     // thread cannot invalidate our iterator mid-traversal.
+    // Same reasoning as the close path in OnConnection: the error callback is
+    // raised from inside ServerConnection code, so the erase must not be
+    // allowed to run the destructor here. Park the entry for deferred release.
     {
         std::lock_guard<std::mutex> lock(conn_map_mu_);
         for (auto it = conn_map_.begin(); it != conn_map_.end(); ++it) {
             if (it->second && it->second->GetUniqueId() == unique_id) {
+                closing_conns_.push_back(std::move(it->second));
                 conn_map_.erase(it);
                 break;
             }

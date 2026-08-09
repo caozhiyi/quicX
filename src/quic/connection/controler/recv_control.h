@@ -2,9 +2,10 @@
 #define QUIC_CONNECTION_CONTROLER_RECV_CONTROL
 
 #include <functional>
+#include <memory>
 #include <set>
 
-#include "common/timer/if_timer.h"
+#include <quicx/common/if_timer_scheduler.h>
 
 #include "quic/connection/transport_param.h"
 #include "quic/packet/if_packet.h"
@@ -29,12 +30,11 @@ packet, and the packet numbers are not contiguous.
 */
 class RecvControl {
 public:
-    RecvControl(std::shared_ptr<common::ITimer> timer);
+    RecvControl(std::shared_ptr<common::ITimerScheduler> scheduler);
     ~RecvControl() {
-        // Cancel timer to prevent use-after-free when timer fires after destruction
-        if (timer_ && set_timer_) {
-            timer_->RemoveTimer(timer_task_);
-        }
+        // ~Timer() cancels, so the delayed-ACK timer cannot fire into a
+        // destroyed RecvControl (its callback captures a raw `this`).
+        ack_delay_timer_.Cancel();
         // Clear callbacks to prevent dangling references
         immediate_ack_cb_ = nullptr;
         active_send_cb_ = nullptr;
@@ -100,8 +100,11 @@ private:
     // ShouldSendImmediateAck() returns true) and by the timer task; cleared
     // inside MayGenerateAckFrame() once the ACK is emitted.
     bool ack_due_[PacketNumberSpace::kNumberSpaceCount]{false, false, false};
-    std::shared_ptr<common::ITimer> timer_;
-    common::TimerTask timer_task_;
+    std::shared_ptr<common::ITimerScheduler> scheduler_;
+    // Guards the delayed-ACK callback, which captures a raw `this`.
+    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
+    common::Timer ack_delay_timer_;
+    void ArmAckDelayTimer();
     std::function<void(PacketNumberSpace)> immediate_ack_cb_;  // Immediate ACK callback
     std::function<void()> active_send_cb_;                     // Delayed ACK callback
 

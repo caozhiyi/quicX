@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/multi_block_buffer.h"
 #include "http3/qpack/qpack_encoder.h"
 #include "http3/qpack/util.h"

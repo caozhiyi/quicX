@@ -26,7 +26,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/single_block_buffer.h"
 

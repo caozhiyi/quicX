@@ -3,12 +3,13 @@
 #include <memory>
 #include <vector>
 
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
 #include "common/util/time.h"
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
 
 #include "quic/connection/controler/send_control.h"
 #include "quic/frame/ack_frame.h"
@@ -21,21 +22,14 @@ using namespace quicx;
 using namespace quic;
 
 // Mock timer for testing
-class MockTimer: public common::ITimer {
-public:
-    virtual uint64_t AddTimer(common::TimerTask& task, uint32_t time, uint64_t now = 0) override { return 1; }
-    virtual bool RemoveTimer(common::TimerTask& task) override { return true; }
-    virtual int32_t MinTime(uint64_t now = 0) override { return -1; }
-    virtual void TimerRun(uint64_t now = 0) override {}
-    virtual bool Empty() override { return true; }
-};
+using MockTimer = common::TestTimerScheduler;
 
 // Test fixture for stream ACK tracking
 class StreamAckTrackingTest: public ::testing::Test {
 protected:
     void SetUp() override {
         timer_ = std::make_shared<MockTimer>();
-        alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4);
+        allocator_ = common::MakeBlockMemoryPoolPtr(1024, 4);
 
         stream_close_called_ = false;
         stream_close_stream_id_ = 0;
@@ -50,8 +44,8 @@ protected:
 
     void TearDown() override {}
 
-    std::shared_ptr<common::ITimer> timer_;
-    std::shared_ptr<common::BlockMemoryPool> alloter_;
+    std::shared_ptr<common::TestTimerScheduler> timer_;
+    std::shared_ptr<common::BlockMemoryPool> allocator_;
 
     bool stream_close_called_;
     uint64_t stream_close_stream_id_;

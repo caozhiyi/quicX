@@ -29,6 +29,22 @@ class TestScenario:
     client_env: dict[str, str] = field(default_factory=dict)
     needs_two_connections: bool = False
     concurrent_clients: int = 0
+    # Endpoint-level TESTCASE name handed to the container, per perspective.
+    # Mirrors quic-interop-runner's TestCase.testname(Perspective): some
+    # scenarios are driven entirely by the network simulator, so the endpoint
+    # is told to run a plain "transfer".  Handing the scenario name to such an
+    # endpoint makes it exit 127 ("test case unsupported").
+    # None means "same as name".
+    server_testname: Optional[str] = None
+    client_testname: Optional[str] = None
+
+    def testname(self, role: str) -> str:
+        """TESTCASE value for the given role ("server" / "client")."""
+        if role == "server":
+            return self.server_testname or self.name
+        if role == "client":
+            return self.client_testname or self.name
+        raise ValueError(f"unknown role: {role!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +111,8 @@ SCENARIOS: dict[str, TestScenario] = {
         description="TLS key update mechanism",
         files=["2MB.bin"],
         client_env={"FORCE_KEY_UPDATE": "1"},
+        # Only the client drives the key update; the server just transfers.
+        server_testname="transfer",
     ),
     "v2": TestScenario(
         name="v2",
@@ -107,16 +125,23 @@ SCENARIOS: dict[str, TestScenario] = {
         name="rebind-port",
         description="NAT port rebinding (path validation)",
         files=["5MB.bin"],
+        # The simulator performs the rebinding; both endpoints run "transfer".
+        server_testname="transfer",
+        client_testname="transfer",
     ),
     "rebind-addr": TestScenario(
         name="rebind-addr",
         description="NAT address rebinding (path validation)",
         files=["5MB.bin"],
+        server_testname="transfer",
+        client_testname="transfer",
     ),
     "connectionmigration": TestScenario(
         name="connectionmigration",
         description="Active connection migration",
         files=["5MB.bin"],
+        # Only the server is special (it advertises a preferred address).
+        client_testname="transfer",
     ),
 }
 

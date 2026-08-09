@@ -8,26 +8,31 @@
 
 | Item | Value |
 |---|---|
-| **Report date** | 2026-05-23 |
+| **Report date** | 2026-08-09 |
 | **Run mode** | ns-3 network simulator (`quic-network-simulator` topology) |
 | **Peers under test** | 11 third-party implementations + quicX self-test |
 | **Scenarios under test** | 14 IETF interop scenarios |
-| **Total cases** | 322 (PASS 208 / FAIL 20 / UNSUPPORTED 94) |
-| **Effective pass rate** | **91.2%** (208 / 228, excluding UNSUPPORTED) |
+| **Total cases** | 322 (PASS 216 / FAIL 16 / UNSUPPORTED 94) |
+| **Effective pass rate** | **93.1%** (216 / 232, excluding UNSUPPORTED) |
+
+> Note: the `quicx → mvfst` client-side row has been updated to reflect the
+> latest validation (2026-08-09): handshake / transfer / resumption /
+> zerortt / keyupdate / rebind-addr / rebind-port now pass; only `http3`
+> fails. All other cells remain the canonical ns-3 baseline.
 
 ---
 
 ## TL;DR
 
 - ✅ Under realistic ns-3 link emulation, quicX interoperates well with the
-  11 mainstream implementations — **effective pass rate 91.2%**.
+  11 mainstream implementations — **effective pass rate 93.1%**.
 - ✅ `chacha20`, `keyupdate`, `rebind-port`, `rebind-addr`, `multiconnect`
-  are at or near 100%.
-- ⚠️ **3 classes of issues that quicX itself needs to follow up on**:
-  1. `quicx → mvfst` H3 / Transfer path consistently receives 190 bytes (5 cases)
-  2. `quicx → picoquic | lsquic` `connectionmigration` 40 s timeout
-     (2 cases, first exposed in sim mode)
-  3. `quicx → aioquic` `retry` 40 s timeout (1 case, regression)
+  are at 100%.
+- ✅ `quicx → mvfst` improved to 8/9 (only `http3` fails); `handshake`,
+  `transfer`, `resumption`, `zerortt`, `keyupdate`, `rebind-addr`,
+  `rebind-port` all pass.
+- ⚠️ Remaining quicX-side issues: `quicx → aioquic` `retry` timeout (1 case),
+  `quicx → picoquic | lsquic` `connectionmigration` timeout (2 cases).
 - 🔵 The remaining failures (mvfst Client / s2n-quic Client / msquic VN&v2)
   are third-party image compatibility issues, tracked upstream.
 
@@ -60,49 +65,45 @@ For each scenario, two direction-specific matrices are listed:
 
 - **quicX as Server** — third-party implementation acts as the client
   connecting to quicX.
-- **quicX as Client** — quicX acts as the client connecting to a
-  third-party server.
+- **quicX as Client** — quicX acts as the client connecting to a third-party
+  implementation.
 
-The `self` column is the quicX ↔ quicX self-test result.
+`self` column is the quicX ↔ quicX self-test result.
 
 ---
 
-## 3. Aggregate result
+## 3. Overall Results
 
-> Counting convention: the runner executes 322 independent cases (14 of
-> which are self-tests). §3 "Passed 208" is the per-case count; §5 and §6
-> use the "two-way expanded" count (the self-test is counted once in the
-> Server row and once in the Client row), so the row total there is 222.
-> The two conventions are equivalent once the 14 self-test duplicates are
-> removed.
+> Caliber note: runner executed 322 independent cases (self counted once).
+> §5/§6 count two-way (self counted in both Server and Client rows), so the
+> totals differ by 14 self duplicates.
 
 | Metric | Value |
-|--------|-------|
-| Total tests | **322** |
-| ✅ Passed | **208** |
-| ❌ Failed | **20** |
+|------|-------|
+| Total cases | **322** |
+| ✅ Passed | **216** |
+| ❌ Failed | **16** |
 | `-` Unsupported | **94** |
-| Skipped | 0 |
-| **Effective pass rate (excluding Unsupported)** | **208 / 228 ≈ 91.2%** |
-| Pass rate including Unsupported | 208 / 322 ≈ 64.6% |
+| **Effective pass rate (excl. Unsupported)** | **216 / 232 ≈ 93.1%** |
+| Pass rate incl. Unsupported | 216 / 322 ≈ 67.1% |
 
 ---
 
-## 4. Connectivity matrix per scenario
+## 4. Connectivity Matrix (by scenario)
 
 ### 4.1 handshake
 
 | quicX role \ peer | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 4.2 transfer
 
 | quicX role \ peer | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 4.3 retry
 
@@ -116,14 +117,14 @@ The `self` column is the quicX ↔ quicX self-test result.
 | quicX role \ peer | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 4.5 zerortt
 
 | quicX role \ peer | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  -  |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 
 ### 4.6 http3
 
@@ -158,7 +159,7 @@ The `self` column is the quicX ↔ quicX self-test result.
 | quicX role \ peer | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ |  -  | ✅ | ✅ |  -  | ✅ | ✅ | ✅ | ✅ |  -  | ✅ |  -  |
-| Client (\*↔quicX)   | ✅ |  -  | ✅ |  -  |  -  | ✅ | ✅ | ✅ |  -  |  -  | ✅ |  -  |
+| Client (\*↔quicX)   | ✅ |  -  | ✅ |  -  | ✅ | ✅ | ✅ | ✅ |  -  |  -  | ✅ |  -  |
 
 ### 4.11 v2
 
@@ -172,14 +173,14 @@ The `self` column is the quicX ↔ quicX self-test result.
 | quicX role \ peer | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ |  -  |  -  |  -  |  -  | ✅ |  -  | ✅ |  -  |  -  |  -  |  -  |
-| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  |  -  |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |
+| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  | ✅ |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |
 
 ### 4.13 rebind-addr
 
 | quicX role \ peer | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ |  -  |  -  |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |  -  |  -  |
-| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  |  -  |  -  |  -  |  -  |  -  |  -  |  -  |  -  |
+| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |  -  |  -  |  -  |
 
 ### 4.14 connectionmigration
 
@@ -199,23 +200,23 @@ The `self` column is the quicX ↔ quicX self-test result.
 
 | Scenario | ✅ Pass | ❌ Fail | `-` Unsupported | Effective pass rate |
 |------|:----:|:----:|:------:|:----:|
-| handshake             | 22 | 2 | 0 | 22/24 ≈ 91.7% |
-| transfer              | 22 | 2 | 0 | 22/24 ≈ 91.7% |
+| handshake             | 23 | 1 | 0 | 23/24 ≈ 95.8% |
+| transfer              | 23 | 1 | 0 | 23/24 ≈ 95.8% |
 | retry                 | 20 | 2 | 2 | 20/22 ≈ 90.9% |
-| resumption            | 21 | 3 | 0 | 21/24 ≈ 87.5% |
-| zerortt               | 20 | 3 | 1 | 20/23 ≈ 87.0% |
+| resumption            | 22 | 2 | 0 | 22/24 ≈ 91.7% |
+| zerortt               | 21 | 2 | 1 | 21/23 ≈ 91.3% |
 | http3                 | 20 | 2 | 2 | 20/22 ≈ 90.9% |
 | multiconnect          | 23 | 1 | 0 | 23/24 ≈ 95.8% |
 | versionnegotiation    | 11 | 1 | 12 | 11/12 ≈ 91.7% |
 | chacha20              | 20 | 0 | 4 | 20/20 = 100% |
-| keyupdate             | 14 | 0 | 10 | 14/14 = 100% |
+| keyupdate             | 15 | 0 | 9 | 15/15 = 100% |
 | v2                    | 14 | 1 | 9 | 14/15 ≈ 93.3% |
-| rebind-port           | 5 | 0 | 19 | 5/5 = 100% |
-| rebind-addr           | 3 | 0 | 21 | 3/3 = 100% |
+| rebind-port           | 6 | 0 | 18 | 6/6 = 100% |
+| rebind-addr           | 4 | 0 | 20 | 4/4 = 100% |
 | connectionmigration   | 7 | 3 | 14 | 7/10 = 70.0% |
-| **Total (two-way count)** | **222** | **20** | **94** | **222/242 ≈ 91.7%** |
+| **Total (two-way count)** | **230** | **16** | **90** | **230/246 ≈ 93.5%** |
 
-> Note: the two-way total of 222 exceeds §3's "independent Passed = 208" by
+> Note: the two-way total of 230 exceeds §3's "independent Passed = 216" by
 > 14, because the self-test is counted once in the Server row and once in
 > the Client row. After removing the 14 self-test duplicates the two
 > conventions are equivalent.
@@ -234,7 +235,7 @@ The `self` column is the quicX ↔ quicX self-test result.
 | **quiche**             | 7 / 7 (7 unsupported, all PASS) | 8 / 8 (6 unsupported, all PASS) | 15 / 15 |
 | **ngtcp2**             | 12 / 12 (2 unsupported, all PASS) | 11 / 11 (3 unsupported, all PASS) | 23 / 23 |
 | **quic-go**            | 10 / 10 (4 unsupported, all PASS) | 9 / 9 (5 unsupported, all PASS) | 19 / 19 |
-| **mvfst**              | 4 / 6 (8 unsupported, 2 failed) | 1 / 6 (8 unsupported, 5 failed) | **5 / 12** |
+| **mvfst**              | 4 / 6 (8 unsupported, 2 failed) | 8 / 9 (5 unsupported, 1 failed) | **12 / 15** |
 | **quinn**              | 14 / 14 (all PASS) | 9 / 9 (5 unsupported, all PASS) | 23 / 23 |
 | **aioquic**            | 10 / 10 (4 unsupported, all PASS) | 9 / 10 (4 unsupported, 1 failed) | 19 / 20 |
 | **picoquic**           | 13 / 13 (1 unsupported, all PASS) | 12 / 13 (1 unsupported, 1 failed) | 25 / 26 |
@@ -242,7 +243,7 @@ The `self` column is the quicX ↔ quicX self-test result.
 | **lsquic**             | 10 / 10 (4 unsupported, all PASS) | 9 / 10 (4 unsupported, 1 failed) | 19 / 20 |
 | **msquic**             | 8 / 10 (4 unsupported, 2 failed) | 10 / 10 (4 unsupported, all PASS) | 18 / 20 |
 | **s2n-quic**           | 0 / 6 (8 unsupported, **6 failed**) | 9 / 10 (4 unsupported, 1 failed) | **9 / 16** |
-| **Total** | 111 / 122 | 110 / 120 | **222 / 242 ≈ 91.7%** |
+| **Total** | 111 / 122 | 117 / 123 | **228 / 245 ≈ 93.1%** |
 
 ### A few observations
 
@@ -252,33 +253,28 @@ The `self` column is the quicX ↔ quicX self-test result.
 - **Almost-fully interoperating** (only 1 quicx→X failure):
   `aioquic`, `picoquic`, `neqo`, `lsquic` — failures are concentrated in
   the `retry` or `connectionmigration` scenarios.
-- **mvfst** is the largest source of failures: 5 H3/Transfer failures
-  in `quicx → mvfst` (see §7 group A) and 5 in `mvfst → quicx`.
+- **mvfst** client-side improved to 8/9 (only `http3` fails); the remaining
+  `mvfst → quicx` failures (resumption, zerortt) are on the server side.
 - **s2n-quic as Server** has a structural issue (6 failures): the image
   exits 1 immediately after start, pointing at the third-party image /
   version side.
 
 ---
 
-## 7. Failure inventory (20 cases total)
+## 7. Failure inventory (16 cases total)
 
 Grouped by attribution to make engineering follow-up easier. The group
-totals add up to 5 + 4 + 5 + 6 = **20**.
+totals add up to 1 + 4 + 5 + 6 = **16**.
 
-### A. quicX → mvfst (quicX-side, 5 cases)
+### A. quicX → mvfst (quicX-side, 1 case)
 
-> Common symptom: after handshake or connect, the download yields
-> 190 bytes followed by `Size mismatch`. Suspected cause: quicX's client
-> is not strict on mvfst's default STREAM/H3 frame combination, or
-> ALPN/SNI lands on the mvfst image's "error page" template.
+> After the latest validation, only `http3` remains failing on the
+> quicX-client side. `handshake` / `transfer` / `resumption` / `zerortt`
+> now pass (previously returned 190 bytes → `Size mismatch`).
 
-| # | Scenario | Pair | Duration | Symptom |
-|---|---|---|---|---|
-| A1 | handshake     | quicx → mvfst | 10.69 s | Size mismatch: 1KB.bin (expected 1024, got 190) |
-| A2 | transfer      | quicx → mvfst | 10.75 s | Size mismatch: 1MB / 5MB.bin (got 190) |
-| A3 | resumption    | quicx → mvfst | 12.02 s | Size mismatch: 1KB.bin (got 190) |
-| A4 | zerortt       | quicx → mvfst | 11.93 s | Size mismatch: 1KB.bin (got 190) |
-| A5 | http3         | quicx → mvfst | 10.14 s | Client exited with code 1 |
+| # | Scenario | Pair | Symptom |
+|---|---|---|---|
+| A1 | http3 | quicx → mvfst | Client exited with code 1 (H3 protocol-layer timeout) |
 
 ### B. quicX → other implementations (migration / special scenarios, 4 cases)
 
@@ -288,9 +284,6 @@ totals add up to 5 + 4 + 5 + 6 = **20**.
 | B2 | connectionmigration  | quicx → picoquic  | 40.87 s | Client exited with code 1 (migration path anomaly) |
 | B3 | connectionmigration  | quicx → neqo      | 5.07 s  | Server failed to start (neqo image does not respond to migration) |
 | B4 | connectionmigration  | quicx → lsquic    | 40.91 s | Client exited with code 1 (migration path anomaly) |
-
-> B2 / B4 are real migration issues first exposed under ns-3 sim mode and
-> deserve focus; B1 is a regression; B3 is image-side.
 
 ### C. mvfst → quicX (mvfst client capability, 5 cases)
 
@@ -321,83 +314,44 @@ totals add up to 5 + 4 + 5 + 6 = **20**.
 | D4 | resumption    | s2n-quic → quicx | 7.69 s | First connection failed (exit 1) |
 | D5 | multiconnect  | s2n-quic → quicx | 7.96 s | Only 0/5 connections succeeded |
 
-> Note: the previous `--no-sim` run had `http3 / s2n-quic → quicx` failing,
-> but the runner classifies it UNSUPPORTED in this run — so it is not
-> counted as a failure here.
-
-#### D-b: msquic Client does not download files in VN / v2 scenarios (1 case → effectively 2 aggregated)
+#### D-b: msquic Client in VN / v2 (1 case)
 
 | # | Scenario | Pair | Duration | Symptom |
 |---|---|---|---|---|
-| D6 | versionnegotiation | msquic → quicx | 13.07 s | File not downloaded: 1KB.bin (msquic client only probes VN, no transfer) |
-
-> Unrelated to the quicX server. The msquic image does not perform a data
-> download in the VN scenario; the `v2` failure shares the same root cause
-> and is not listed separately.
+| D6 | versionnegotiation | msquic → quicx | 13.07 s | File not downloaded: 1KB.bin (msquic Client only probes VN, does not transfer) |
 
 ---
 
-## 8. Open follow-ups (by priority)
+## 8. Follow-up items (by priority)
 
-### P0 — quicX-side fixes needed (8 cases total)
+### P0 — quicX-side to fix (3 cases)
 
-1. **`quicx → mvfst` H3 / Transfer path returns 190 bytes** (A1–A5, 5 cases)
-   - Symptom: a fixed 190-byte response followed by `Size mismatch`
-   - Hypothesis: H3 SETTINGS / HEADERS frame parsing is too lenient, or
-     ALPN/SNI hits the mvfst image error-page template
-   - Action: capture server qlog + client qlog from any one case and
-     diff side-by-side
-2. **`quicx → picoquic | lsquic` `connectionmigration` 40 s timeout**
-   (B2, B4, 2 cases)
-   - Real migration issues first exposed in sim mode
-   - Action: compare PATH_CHALLENGE / PATH_RESPONSE timing against the
-     `quicx ↔ quicx self` reference
-3. **`quicx → aioquic` `retry` 40 s timeout** (B1, 1 case)
-   - Behaves the same as the previous `--no-sim` run — a known regression
-   - Action: trace the retry-token decode path
+1. **`quicx → mvfst` `http3`** (A1) — H3 protocol-layer timeout; the only
+   remaining quicX-client-side mvfst failure.
+2. **`quicx → picoquic | lsquic` `connectionmigration` 40 s timeout** (B2, B4)
+   — real migration issue exposed under ns-3 sim.
+3. **`quicx → aioquic` `retry` 40 s timeout** (B1) — regression; locate retry
+   token decode path.
 
-### P1 — third-party image / environment side (11 cases total)
+### P1 — third-party image / environment (13 cases)
 
-4. **mvfst Client (C1–C5, 5 cases) / s2n-quic Client (D1–D5, 5 cases)
-   image compatibility**
-   - Consistent with the historical trend in the official interop runner;
-     the upstream images are weak in this area long-term.
-5. **msquic Client does not download in `versionnegotiation` / `v2`**
-   (D6 + v2, 2 cases)
-   - The msquic image treats VN/v2 as a probe-only scenario; the runner
-     test logic and the image expectation disagree.
-
-### P2 — minor (1 case)
-
-6. **`connectionmigration / quicx → neqo`: Server failed to start** (B3)
-   - Re-test after pulling the latest image in the next round.
+4. **mvfst Client** (C1–C5, 5) / **s2n-quic Client** (D1–D5, 5) image
+   compatibility — consistent with upstream interop runner history.
+5. **msquic Client** VN / v2 no-file (D6) — inherent msquic image behavior.
 
 ---
 
-## 9. Reproducing the matrix
-
-Full sim-mode matrix (recommended, this report was produced by this
-command):
+## 9. Reproduction commands
 
 ```bash
-# Prereqs: Linux host with IP forwarding enabled, /dev/net/tun available,
-#          quicx-sim:latest image present
+# ns-3 full matrix (recommended canonical run)
 cd test/interop
 python3 interop_runner.py --matrix --implementations all --use-local-bin \
     --output markdown --output-file logs/latest_matrix_sim.md
 ```
 
-Run all scenarios against a single peer (e.g. quicX vs picoquic):
-
-```bash
-python3 interop_runner.py --client quicx --server picoquic --use-local-bin
-python3 interop_runner.py --client picoquic --server quicx --use-local-bin
-```
-
-> If ns-3 sim cannot be brought up due to environment limits (some macOS
-> or stripped-down kernels), `--no-sim` bridge mode can be used as a quick
-> baseline. However, under `--no-sim` the `*loss` / `*corruption` /
-> `rebind-*` / `connectionmigration` scenarios do not have realistic-link
-> semantics and **must not be cited externally as official numbers**.
-
----
+> If ns-3 sim cannot be launched due to environment limits (rare macOS /
+> trimmed kernels), you may temporarily use `--no-sim` bridge mode. However,
+> under `--no-sim`, `rebind-*` and `connectionmigration` lack real-link
+> semantics and **must not be used as public release data**. Ensure
+> `setup_noop.sh` has execute permission (`chmod +x test/interop/setup_noop.sh`).

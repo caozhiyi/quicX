@@ -71,8 +71,14 @@ public:
 
     /**
      * @brief Set callback for stream state change (application notification)
+     *
+     * The application layer (e.g. the HTTP/3 connection) is usually wired up only
+     * once the QUIC handshake completes, but the peer may already have opened
+     * unidirectional streams in the very same flight (control / QPACK streams).
+     * Those streams were created without anybody listening, so setting the
+     * callback replays them; otherwise their data would be stranded forever.
      */
-    void SetStreamStateCallback(StreamStateCallback cb) { stream_state_cb_ = cb; }
+    void SetStreamStateCallback(StreamStateCallback cb);
 
     /**
      * @brief Set callback for handshake done (client-only)
@@ -119,6 +125,12 @@ private:
     // Application-level callbacks (cannot be replaced by event interface)
     StreamStateCallback stream_state_cb_;
     HandshakeDoneCallback handshake_done_cb_;
+
+    // Peer-initiated streams created before stream_state_cb_ was installed.
+    // Replayed by SetStreamStateCallback(). weak_ptr so a stream closed in the
+    // meantime is simply skipped instead of being kept alive artificially.
+    static constexpr size_t kMaxUnnotifiedRemoteStreams = 64;
+    std::vector<std::weak_ptr<IStream>> unnotified_remote_streams_;
 
     // Qlog trace for connection ID events
     std::shared_ptr<common::QlogTrace> qlog_trace_;

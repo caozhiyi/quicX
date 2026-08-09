@@ -28,7 +28,7 @@ class StreamManager;
 
 class SendManager {
 public:
-    SendManager(std::shared_ptr<common::ITimer> timer);
+    SendManager(std::shared_ptr<common::ITimerScheduler> scheduler);
     ~SendManager();
 
     void UpdateConfig(const TransportParam& tp);
@@ -38,7 +38,23 @@ public:
     uint32_t GetRtt() { return send_control_.GetRtt(); }
     uint32_t GetPTO(uint32_t max_ack_delay) { return send_control_.GetPTO(max_ack_delay); }
     RttCalculator& GetRttCalculator() { return send_control_.GetRttCalculator(); }
-    void ToSendFrame(std::shared_ptr<IFrame> frame);
+    void EnqueueFrame(std::shared_ptr<IFrame> frame);
+
+    /**
+     * @brief Whether any queued frame is a probing frame.
+     *
+     * A probing frame here means PATH_CHALLENGE or PATH_RESPONSE, matching the
+     * RFC 9000 §9.3.3 congestion-window exemption (packets containing only
+     * probing frames may be sent even when cwnd is exhausted, so that path
+     * validation cannot deadlock behind congestion control).
+     *
+     * Note this is deliberately narrower than the §9.1 definition of a probing
+     * packet (which also admits NEW_CONNECTION_ID and PADDING): only the two
+     * frames that actually drive path validation earn the cwnd bypass.
+     *
+     * Replaces direct access to wait_frame_list_ from BaseConnection.
+     */
+    bool HasPendingProbingFrame() const;
 
     // ==================== New High-Level Interfaces ====================
 
@@ -172,7 +188,6 @@ private:
 
     // Packet builder for unified packet construction
     PacketBuilder packet_builder_;
-    friend class BaseConnection;
 
     bool streams_allowed_{true};
 
@@ -182,8 +197,10 @@ private:
     // Anti-amplification controller for unvalidated path
     AntiAmplificationController amp_controller_;
 
-    std::shared_ptr<common::ITimer> timer_;
-    common::TimerTask pacing_timer_task_;
+    std::shared_ptr<common::ITimerScheduler> scheduler_;
+    // Guards the pacing and flow-control callbacks, which capture a raw `this`.
+    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
+    common::Timer pacing_timer_;
     std::function<void()> send_retry_cb_;
     bool is_cwnd_limited_{false};
 
@@ -191,7 +208,7 @@ private:
     //   - is_flow_control_blocked_:  set by SetFlowControlBlocked() when the
     //     server has stream data buffered but the peer's connection-level
     //     max_data has been exhausted.
-    //   - flow_control_recheck_task_: a low-frequency wake-up that fires every
+    //   - flow_control_recheck_timer_: a low-frequency wake-up that fires every
     //     kFlowControlRecheckIntervalMs (100ms) while the flag is set, so the
     //     connection re-enters TrySend even if the peer never sends MAX_DATA
     //     and there are no in-flight packets to trigger an ACK callback.
@@ -199,7 +216,10 @@ private:
     //     while one is already pending.
     bool is_flow_control_blocked_{false};
     bool flow_control_recheck_scheduled_{false};
-    common::TimerTask flow_control_recheck_task_;
+    common::Timer flow_control_recheck_timer_;
+
+    void ArmPacingTimer(uint32_t delay_ms);
+    void ArmFlowControlRecheckTimer();
 
     // Qlog trace for instrumentation
     std::shared_ptr<common::QlogTrace> qlog_trace_;

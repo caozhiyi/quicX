@@ -45,8 +45,8 @@ protected:
             encoder_recv_stream_, qpack_encoder_, encoder_registry_, encoder_error_cb);
 
         decoder_sender_ = std::make_shared<QpackDecoderSenderStream>(decoder_send_stream_, decoder_error_cb);
-        decoder_receiver_ =
-            std::make_shared<QpackDecoderReceiverStream>(decoder_recv_stream_, decoder_registry_, decoder_error_cb);
+        decoder_receiver_ = std::make_shared<QpackDecoderReceiverStream>(
+            decoder_recv_stream_, qpack_encoder_, decoder_registry_, decoder_error_cb);
     }
 
     void TearDown() override {

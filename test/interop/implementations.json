@@ -62,5 +62,35 @@
     "image": "ghcr.io/aws/s2n-quic/s2n-quic-qns:latest",
     "url": "https://github.com/aws/s2n-quic",
     "role": "both"
+  },
+  "kwik": {
+    "image": "peterdoornbosch/kwik_n_flupke-interop",
+    "url": "https://github.com/ptrd/kwik",
+    "role": "both"
+  },
+  "nginx": {
+    "image": "ghcr.io/nginx/nginx-quic-qns:latest",
+    "url": "https://quic.nginx.org/",
+    "role": "server"
+  },
+  "xquic": {
+    "image": "ghcr.io/alibaba/xquic/xquic-interop:latest",
+    "url": "https://github.com/alibaba/xquic",
+    "role": "both"
+  },
+  "haproxy": {
+    "image": "haproxytech/haproxy-qns:latest",
+    "url": "https://github.com/haproxy/haproxy",
+    "role": "server"
+  },
+  "go-x-net": {
+    "image": "us-central1-docker.pkg.dev/golang-interop-testing/quic/go-x-net:latest",
+    "url": "https://pkg.go.dev/golang.org/x/net/internal/quic",
+    "role": "both"
+  },
+  "chrome": {
+    "image": "martenseemann/chrome-quic-interop-runner",
+    "url": "https://github.com/quic-interop/chrome-quic-interop-runner",
+    "role": "client"
   }
 }

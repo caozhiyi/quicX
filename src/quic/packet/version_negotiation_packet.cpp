@@ -63,8 +63,10 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
     // Decode DCID
     uint8_t dcid[kMaxConnectionLength];
     if (dcid_len > 0) {
-        auto cid = (uint8_t*)dcid;
-        wrapper.DecodeBytes(cid, dcid_len);
+        if (!wrapper.DecodeBytesInto(dcid, dcid_len)) {
+            LOG_ERROR("decode dcid failed.");
+            return false;
+        }
     }
     header_.SetDestinationConnectionId(dcid, dcid_len);
 
@@ -79,8 +81,10 @@ bool VersionNegotiationPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuff
     // Decode SCID
     uint8_t scid[kMaxConnectionLength];
     if (scid_len > 0) {
-        auto cid = (uint8_t*)scid;
-        wrapper.DecodeBytes(cid, scid_len);
+        if (!wrapper.DecodeBytesInto(scid, scid_len)) {
+            LOG_ERROR("decode scid failed.");
+            return false;
+        }
     }
     header_.SetSourceConnectionId(scid, scid_len);
 

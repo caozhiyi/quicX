@@ -3,10 +3,11 @@
 #include <memory>
 #include <vector>
 
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/timer/if_timer.h"
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
 
 #include "quic/connection/controler/send_control.h"
 #include "quic/connection/error.h"
@@ -25,22 +26,7 @@ namespace quic {
 namespace {
 
 // Mock Timer for testing
-class MockTimer: public common::ITimer {
-public:
-    MockTimer():
-        next_timer_id_(1) {}
-
-    virtual uint64_t AddTimer(common::TimerTask& task, uint32_t time, uint64_t now = 0) override {
-        return next_timer_id_++;
-    }
-    virtual bool RemoveTimer(common::TimerTask& task) override { return true; }
-    virtual int32_t MinTime(uint64_t now = 0) override { return -1; }
-    virtual void TimerRun(uint64_t now = 0) override {}
-    virtual bool Empty() override { return true; }
-
-private:
-    uint64_t next_timer_id_;
-};
+using MockTimer = common::TestTimerScheduler;
 
 // Mock Connection for integration testing with realistic behavior
 class MockConnectionForIntegration {
@@ -132,7 +118,7 @@ private:
 class StreamIntegrationTest: public ::testing::Test {
 protected:
     void SetUp() override {
-        alloter_ = common::MakeBlockMemoryPoolPtr(1024, 4);
+        allocator_ = common::MakeBlockMemoryPoolPtr(1024, 4);
         mock_conn_ = std::make_shared<MockConnectionForIntegration>();
 
         stream_closed_called_ = false;
@@ -149,7 +135,7 @@ protected:
         };
     }
 
-    std::shared_ptr<common::BlockMemoryPool> alloter_;
+    std::shared_ptr<common::BlockMemoryPool> allocator_;
     std::shared_ptr<MockConnectionForIntegration> mock_conn_;
 
     bool stream_closed_called_;

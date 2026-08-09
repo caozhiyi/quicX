@@ -1,5 +1,5 @@
 #include "common/log/base_logger.h"
-#include "common/alloter/normal_alloter.h"
+#include "common/allocator/normal_allocator.h"
 #include "common/log/if_logger.h"
 #include "common/log/log_context.h"
 #include "common/util/time.h"
@@ -61,7 +61,7 @@ BaseLogger::BaseLogger(uint16_t cache_size, uint16_t block_size):
     cache_size_(cache_size),
     block_size_(block_size),
     logger_(nullptr) {
-    allocter_ = MakeNormalAlloterPtr();
+    allocator_ = MakeNormalAllocatorPtr();
 }
 
 BaseLogger::~BaseLogger() {
@@ -106,7 +106,7 @@ void BaseLogger::SetLevel(LogLevel level) {
         for (size_t i = 0; i < size; i++) {
             if (cache_queue_.Pop(log)) {
                 del = (void*)log;
-                allocter_->Free(del);
+                allocator_->Free(del);
             }
         }
     }
@@ -245,7 +245,7 @@ std::shared_ptr<Log> BaseLogger::GetLog() {
 void BaseLogger::FreeLog(Log* log) {
     if (cache_queue_.Size() > cache_size_) {
         void* del = (void*)log;
-        allocter_->Free(del);
+        allocator_->Free(del);
 
     } else {
         log->len_ = block_size_;
@@ -254,7 +254,7 @@ void BaseLogger::FreeLog(Log* log) {
 }
 
 Log* BaseLogger::NewLog() {
-    Log* item = (Log*)allocter_->MallocAlign(block_size_ + sizeof(Log));
+    Log* item = (Log*)allocator_->MallocAlign(block_size_ + sizeof(Log));
 
     item->log_ = (char*)item + sizeof(Log);
     item->len_ = block_size_;

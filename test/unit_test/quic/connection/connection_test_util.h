@@ -33,10 +33,10 @@ inline std::shared_ptr<MockSender> AttachMockSender(std::shared_ptr<IConnection>
 }
 
 /**
- * @brief Generate send data using TrySend() and return buffer
+ * @brief Generate send data using TrySendBurst(1) and return buffer
  *
  * This is a compatibility helper that mimics the old GenerateSendData() behavior
- * for tests, but uses the new TrySend() + MockSender approach internally.
+ * for tests, but uses the new TrySendBurst(1) + MockSender approach internally.
  *
  * @param conn Connection to send from
  * @param buffer Output buffer (for compatibility - gets filled with sent data)
@@ -63,7 +63,7 @@ inline bool GenerateSendDataCompat(std::shared_ptr<IConnection> conn, std::share
     sender->Clear();
 
     // Trigger send
-    if (!conn->TrySend()) {
+    if (!(conn->TrySendBurst(1) > 0)) {
         send_operation = SendOperation::kAllSendDone;
         return false;
     }
@@ -105,7 +105,7 @@ inline bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::share
     sender_mock->Clear();
 
     // Trigger send
-    if (!send_conn->TrySend()) {
+    if (!(send_conn->TrySendBurst(1) > 0)) {
         return false;
     }
 
@@ -124,6 +124,27 @@ inline bool ConnectionProcess(std::shared_ptr<IConnection> send_conn, std::share
     // Deliver to receiver
     recv_conn->OnPackets(0, packets);
     return true;
+}
+
+/**
+ * @brief Drain everything one side currently wants to send into the other.
+ *
+ * Prefer this over a fixed number of ConnectionProcess() calls when driving a
+ * handshake. How many datagrams a side needs is an implementation detail: with
+ * RFC 9000 §12.2 Initial+Handshake coalescing the server emits ONE datagram
+ * where it used to emit two, so hard-coded step counts assert on the wrong
+ * thing and break the moment the send path legitimately improves.
+ *
+ * @param max_datagrams Safety cap so a misbehaving send path cannot spin here.
+ * @return number of datagrams delivered (0 means the side had nothing queued).
+ */
+inline int DrainInto(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn,
+    std::shared_ptr<MockSender> sender_mock, int max_datagrams = 16) {
+    int delivered = 0;
+    while (delivered < max_datagrams && ConnectionProcess(send_conn, recv_conn, sender_mock)) {
+        ++delivered;
+    }
+    return delivered;
 }
 
 }  // namespace quic

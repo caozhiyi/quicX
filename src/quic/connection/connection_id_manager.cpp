@@ -19,8 +19,17 @@ ConnectionID& ConnectionIDManager::GetCurrentID() {
     // condition is a protocol error, never a license to fabricate a peer CID. The local
     // manager always has at least one entry by the time GetCurrentID is called, since
     // callers explicitly Generator() during dial/accept setup.
+    // NOTE: an empty sequence_cid_map_ is NOT an error by itself. On the client
+    // the *remote* manager is loaded through SetCurrentID() (see below), which
+    // deliberately leaves the map untouched, so the map stays empty for the
+    // whole connection unless the peer issues NEW_CONNECTION_ID. Only a pool
+    // that is empty *and* has no usable cur_id_ is actually broken.
     if (sequence_cid_map_.empty()) {
-        LOG_ERROR("ConnectionIDManager::GetCurrentID called on empty pool, returning stale cur_id_");
+        if (cur_id_.length_ == 0) {
+            LOG_ERROR("ConnectionIDManager::GetCurrentID called with empty pool and no current id");
+        } else {
+            LOG_DEBUG("ConnectionIDManager::GetCurrentID: pool empty, using cur_id_ set via SetCurrentID");
+        }
     }
     return cur_id_;
 }

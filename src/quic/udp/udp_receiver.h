@@ -39,6 +39,12 @@ protected:
 private:
     bool TryRecv(std::shared_ptr<NetPacket>& pkt);
 
+    // Pulls at most kMaxRecvBatch datagrams off `fd` and dispatches each one to
+    // the registered IPacketReceiver. Returns the number of datagrams handled,
+    // or -1 when the caller must stop draining (socket empty, allocator out of
+    // clean buffers, fatal recv error, or receiver deregistered).
+    int32_t DrainBatch(uint32_t fd);
+
 private:
     bool ecn_enabled_;
     std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)

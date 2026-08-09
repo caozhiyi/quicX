@@ -2,7 +2,7 @@
 #include <benchmark/benchmark.h>
 #include <memory>
 
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/multi_block_buffer.h"
 #include "quic/frame/ack_frame.h"
 #include "quic/frame/max_data_frame.h"

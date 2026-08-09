@@ -53,10 +53,10 @@
 
 | 分配器 | 大小 | 时间 | 加速比 vs malloc |
 |--------|------|------|-----------------|
-| PoolAlloter | 16 B | 2.10 ns | **6.2x** |
-| PoolAlloter | 64 B | 2.10 ns | **6.0x** |
-| PoolAlloter | 128 B | 2.06 ns | **6.1x** |
-| PoolAlloter | 256 B | 2.06 ns | **12.6x** |
+| Poolallocator | 16 B | 2.10 ns | **6.2x** |
+| Poolallocator | 64 B | 2.10 ns | **6.0x** |
+| Poolallocator | 128 B | 2.06 ns | **6.1x** |
+| Poolallocator | 256 B | 2.06 ns | **12.6x** |
 | BlockMemoryPool | 1024 B | 7.13 ns | **1.5x** |
 | BlockMemoryPool | 4096 B | 7.13 ns | **1.5x** |
 | BlockMemoryPool | 16384 B | 6.99 ns | **1.6x** |
@@ -65,7 +65,7 @@
 | std::malloc | 4096 B | 10.6 ns | 1.0x |
 
 **关键发现**:
-- **PoolAlloter 小对象（≤256B）**: 比 malloc 快 **6-13x**，仅需 ~2ns
+- **Poolallocator 小对象（≤256B）**: 比 malloc 快 **6-13x**，仅需 ~2ns
 - **BlockMemoryPool 大块（1K-16K）**: 比 malloc 快 **1.5x**，~7ns
 - 自定义分配器对 QUIC 包处理的内存管理有显著优势
 
@@ -127,7 +127,7 @@
 
 ### 3.1 混合负载对比
 
-| 工作模式 | PoolAlloter | std::malloc | 加速比 |
+| 工作模式 | Poolallocator | std::malloc | 加速比 |
 |---------|-------------|-------------|--------|
 | 混合分配/释放 | 356 ns | 1108 ns | **3.1x** |
 

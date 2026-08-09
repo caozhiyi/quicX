@@ -39,7 +39,7 @@ namespace common {
 
 const static uint64_t kMaxDecode = ((uint64_t)-1) >> 2;
 
-#define IntSet(p, value, len, bits) (*(p)++ = (uint8_t)(((value >> ((len) * 8)) & 0xff) | ((bits) << 6)))
+#define IntSet(p, value, len, bits) (*(p)++ = (uint8_t)((((value) >> ((len) * 8)) & 0xff) | ((bits) << 6)))
 
 uint8_t* EncodeVarint(uint8_t* start, uint8_t* end, uint64_t value) {
     if (start >= end) {

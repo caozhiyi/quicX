@@ -7,33 +7,24 @@
 #include "quic/connection/controler/recv_control.h"
 #include "quic/crypto/aes_128_gcm_cryptographer.h"
 #include "quic/frame/ack_frame.h"
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
 
 namespace quicx {
 namespace quic {
-
-// Simple mock timer for testing
-class TestTimer: public common::ITimer {
-public:
-    uint64_t AddTimer(common::TimerTask& task, uint32_t time, uint64_t now = 0) override { return 1; }
-    bool RemoveTimer(common::TimerTask& task) override { return true; }
-    int32_t MinTime(uint64_t now = 0) override { return -1; }
-    void TimerRun(uint64_t now = 0) override {}
-    bool Empty() override { return true; }
-};
 
 // Test fixture
 class EncryptionLevelSchedulerTest: public ::testing::Test {
 protected:
     void SetUp() override {
-        timer_ = std::make_shared<TestTimer>();
-        recv_control_ = std::make_shared<RecvControl>(timer_);
+        scheduler_ = std::make_shared<common::TestTimerScheduler>();
+        recv_control_ = std::make_shared<RecvControl>(scheduler_);
 
         // Note: PathManager and ConnectionCrypto require complex setup
         // For now, we'll test the EncryptionLevelScheduler logic through simpler tests
         // Full integration tests will be added later when mock infrastructure is ready
     }
 
-    std::shared_ptr<common::ITimer> timer_;
+    std::shared_ptr<common::TestTimerScheduler> scheduler_;
     std::shared_ptr<RecvControl> recv_control_;
 };
 

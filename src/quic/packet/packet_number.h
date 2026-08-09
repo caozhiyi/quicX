@@ -20,7 +20,7 @@ public:
     // encode packet number to buffer
     static uint8_t* Encode(uint8_t* pos, uint32_t packet_number_len, uint64_t packet_number);
     // decode packet number from buffer
-    static uint8_t* Decode(uint8_t* pos, uint32_t packet_number_len, uint64_t& packet_number);
+    static uint8_t* Decode(uint8_t* pos, uint8_t* end, uint32_t packet_number_len, uint64_t& packet_number);
     // decode except packet number by truncated packet number
     static uint64_t Decode(uint64_t largest_pn, uint64_t truncated_pn, uint64_t truncated_pn_bits);
 

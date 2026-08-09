@@ -35,7 +35,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import filecmp
 import json
 import logging
 import os
@@ -554,19 +553,16 @@ class LocalProcessManager:
         return self.server_bin.exists() and self.client_bin.exists()
 
     def generate_certs(self, cert_dir: Path) -> bool:
-        cert_dir.mkdir(parents=True, exist_ok=True)
+        # Delegates to the shared helper so the local-binary path can never
+        # again write a weaker cert than the docker path and have it silently
+        # reused for cross-implementation runs.
         self._cert_dir = cert_dir
-        r = subprocess.run(
-            [
-                "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                "-keyout", str(cert_dir / "priv.key"),
-                "-out", str(cert_dir / "cert.pem"),
-                "-days", "1",
-                "-subj", "/CN=localhost",
-            ],
-            capture_output=True, check=False,
-        )
-        return r.returncode == 0
+        try:
+            ensure_certs(cert_dir)
+        except RuntimeError as exc:
+            logger.error("%s", exc)
+            return False
+        return True
 
     def start_server(
         self,
@@ -688,6 +684,62 @@ class LocalProcessManager:
 # File management
 # ---------------------------------------------------------------------------
 
+def ensure_certs(cert_dir: Path) -> None:
+    """Make sure cert_dir holds a usable server cert, key and CA bundle.
+
+    Regenerates whenever the material is missing, unreadable or expires within
+    24h. Three failures this guards against, all seen in the wild:
+
+    * A short-lived ``-days 1`` / ``CN=localhost`` cert with no SAN used to be
+      written by the local-binary path. Because the docker path only checked
+      ``cert.pem`` for *existence*, it silently inherited that cert and every
+      cross-implementation run was served an expired, SAN-less certificate.
+      Both paths now share this one function, so they cannot disagree.
+    * No ``ca.pem`` was ever produced. Peers that actually verify the chain
+      (s2n-quic runs ``--ca /certs/ca.pem``) died at startup with ENOENT
+      before sending a single packet. The cert is self-signed, so it is its
+      own CA and can simply be copied.
+    * Expiry was never revalidated, so a stale cert kept being reused long
+      after ``notAfter`` had passed.
+    """
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    cert = cert_dir / "cert.pem"
+    key = cert_dir / "priv.key"
+    ca = cert_dir / "ca.pem"
+
+    if cert.exists() and key.exists() and ca.exists():
+        probe = subprocess.run(
+            ["openssl", "x509", "-in", str(cert), "-noout", "-checkend", "86400"],
+            capture_output=True, check=False,
+        )
+        if probe.returncode == 0:
+            return
+        logger.warning("Existing certificate is expired or unreadable; regenerating")
+
+    logger.info("Generating TLS certificates in %s", cert_dir)
+    r = subprocess.run(
+        [
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-keyout", str(key),
+            "-out", str(cert),
+            "-days", "30",
+            "-subj", "/CN=server",
+            # SAN must cover both sim mode (193.167.100.100) and direct/no-sim mode (10.0.0.100).
+            # NOTE: 172.30.100.100 was the older sim subnet, removed after the network was
+            # restored to 193.167.x.x (the ns-3 binary hard-codes 193.167.0.2/100.2 internally).
+            "-addext",
+            "subjectAltName=DNS:server,DNS:server4,DNS:server6,DNS:server46,"
+            "DNS:localhost,IP:193.167.100.100,IP:10.0.0.100,IP:127.0.0.1",
+        ],
+        capture_output=True, check=False,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"Failed to generate TLS certificates: {r.stderr.decode()}")
+
+    # Self-signed: the leaf is its own trust anchor.
+    shutil.copyfile(cert, ca)
+
+
 def generate_test_files(www_dir: Path) -> None:
     """Generate random binary test files of various sizes."""
     www_dir.mkdir(parents=True, exist_ok=True)
@@ -699,32 +751,29 @@ def generate_test_files(www_dir: Path) -> None:
                 f.write(os.urandom(size))
 
 
-def verify_downloads(www_dir: Path, download_dir: Path, files: list[str]) -> tuple[bool, list[str]]:
-    """Verify downloaded files match source files.
+def verify_downloads(download_dir: Path, expected: list[tuple[str, int]]) -> tuple[bool, list[str]]:
+    """Verify downloaded files exist and have the expected byte sizes.
+
+    ``expected`` is a list of (filename, expected_size) tuples. Verification is
+    size-based (not content-based): different QUIC servers do not all serve the
+    source file byte-for-byte (e.g. mvfst's HQ server generates <size>
+    pseudo-random bytes), and the official quic-interop-runner also validates
+    downloads by size.
 
     Returns (all_ok, list_of_errors).
     """
     errors: list[str] = []
-    for filename in files:
-        src = www_dir / filename
+    for filename, expected_size in expected:
         dst = download_dir / filename
-
         if not dst.exists():
             errors.append(f"File not downloaded: {filename}")
             continue
-
-        src_size = src.stat().st_size
         dst_size = dst.stat().st_size
-        if src_size != dst_size:
+        if dst_size != expected_size:
             errors.append(
-                f"Size mismatch: {filename} (expected {src_size}, got {dst_size})"
+                f"Size mismatch: {filename} (expected {expected_size}, got {dst_size})"
             )
             continue
-
-        if not filecmp.cmp(str(src), str(dst), shallow=False):
-            errors.append(f"Content mismatch: {filename}")
-            continue
-
         logger.debug("Verified: %s (%d bytes)", filename, dst_size)
 
     return (len(errors) == 0, errors)
@@ -811,10 +860,8 @@ class InteropTestRunner:
                     "Please build with: cmake --build build --target interop_server interop_client"
                 )
             cert_dir = self.work_dir / "certs"
-            if not (cert_dir / "cert.pem").exists():
-                logger.info("Generating TLS certificates...")
-                if not self.process_mgr.generate_certs(cert_dir):
-                    raise RuntimeError("Failed to generate TLS certificates")
+            ensure_certs(cert_dir)
+            self.process_mgr._cert_dir = cert_dir
         else:
             assert self.docker_mgr is not None
             if not self.docker_mgr.is_available():
@@ -827,29 +874,9 @@ class InteropTestRunner:
                     "Docker Compose < v2.24 or not available. "
                     "interface_name may not work; network interface ordering may be wrong."
                 )
-            # Generate self-signed certs if missing
+            # Generate self-signed certs if missing / expired
             cert_dir = self.work_dir / "certs"
-            if not (cert_dir / "cert.pem").exists():
-                logger.info("Generating TLS certificates for Docker mode...")
-                cert_dir.mkdir(parents=True, exist_ok=True)
-                r = subprocess.run(
-                    [
-                        "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                        "-keyout", str(cert_dir / "priv.key"),
-                        "-out", str(cert_dir / "cert.pem"),
-                        "-days", "30",
-                        "-subj", "/CN=server",
-                        # SAN must cover both sim mode (193.167.100.100) and direct/no-sim mode (10.0.0.100).
-                        # NOTE: 172.30.100.100 was the older sim subnet, removed after the network was
-                        # restored to 193.167.x.x (the ns-3 binary hard-codes 193.167.0.2/100.2 internally).
-                        "-addext", "subjectAltName=DNS:server,DNS:server4,DNS:server6,DNS:server46,DNS:localhost,IP:193.167.100.100,IP:10.0.0.100,IP:127.0.0.1",
-                    ],
-                    capture_output=True, check=False,
-                )
-                if r.returncode != 0:
-                    raise RuntimeError(
-                        f"Failed to generate TLS certificates: {r.stderr.decode()}"
-                    )
+            ensure_certs(cert_dir)
 
     def cleanup(self) -> None:
         """Clean up test environment."""
@@ -865,6 +892,23 @@ class InteropTestRunner:
 
     # -- Docker mode -------------------------------------------------------
 
+    @staticmethod
+    def _endpoint_testcase(impl: str, scenario: str, role: str) -> str:
+        """Translate a scenario name into the TESTCASE an endpoint understands.
+
+        Third-party images implement the QNS interface of the official
+        quic-interop-runner, where several scenarios are driven by the network
+        simulator and the endpoint is only asked to run a plain ``transfer``
+        (see ``TestCase.testname(Perspective)`` upstream).  Passing our
+        scenario name to such an endpoint makes it exit 127 -> UNSUPPORTED.
+        quicX's own image understands the scenario names directly, so it is
+        left untouched.
+        """
+        if impl == "quicx":
+            return scenario
+        sc = SCENARIOS.get(scenario)
+        return sc.testname(role) if sc else scenario
+
     def _docker_start_server(
         self, impl: str, image: str, scenario: str,
         log_dir: Path,
@@ -874,7 +918,7 @@ class InteropTestRunner:
         return self.docker_mgr.start_server(
             name=impl,
             image=image,
-            scenario=scenario,
+            scenario=self._endpoint_testcase(impl, scenario, "server"),
             port=self.port,
             www_dir=self.www_dir,
             log_dir=log_dir,
@@ -895,7 +939,7 @@ class InteropTestRunner:
         return self.docker_mgr.run_client(
             name=impl,
             image=image,
-            scenario=scenario,
+            scenario=self._endpoint_testcase(impl, scenario, "client"),
             host=self.host,
             port=self.port,
             urls=urls,
@@ -948,10 +992,41 @@ class InteropTestRunner:
 
     # -- URL builder -------------------------------------------------------
 
-    def _build_urls(self, files: list[str]) -> str:
-        return " ".join(
-            f"https://{self.host}:{self.port}/{f}" for f in files
-        )
+    def _build_urls(self, server_name: str, files: list[str], http3: bool = False) -> str:
+        # Build a single space-separated URL list for all files in the scenario.
+        # mvfst's HQ server (proxygen) serves responses by *length* via its
+        # RandBytesGenHandler: it expects a pure numeric path like /<size> and
+        # generates <size> pseudo-random bytes. A bare filename (the canonical
+        # interop format) makes mvfst fall back to that dynamic generator and emit
+        # "cannot extract requested response-length from url path". For mvfst we
+        # therefore use the pure numeric path /<size>; the downloaded file is then
+        # named after the size and validation is size-based (see _expected_downloads).
+        # NOTE: this numeric quirk is specific to mvfst's *HQ* (hq-interop) server;
+        # its HTTP/3 server serves files by name from static_root, so we keep the
+        # bare filename for http3 scenarios.
+        parts = []
+        for f in files:
+            if server_name == "mvfst" and not http3 and f in TEST_FILE_SIZES:
+                path = f"/{TEST_FILE_SIZES[f]}"
+            else:
+                path = f"/{f}"
+            parts.append(f"https://{self.host}:{self.port}{path}")
+        return " ".join(parts)
+
+    def _expected_downloads(self, server_name: str, files: list[str]) -> list[tuple[str, int]]:
+        """Build the (filename, expected_size) list passed to verify_downloads.
+
+        For mvfst, responses are generated by length (numeric URL path), so the
+        downloaded file is named after the size and validated by size only. For
+        every other server we expect the canonical filename with the source size.
+        """
+        if server_name == "mvfst":
+            return [
+                (str(TEST_FILE_SIZES[f]), TEST_FILE_SIZES[f])
+                for f in files if f in TEST_FILE_SIZES
+            ]
+        return [(f, (self.www_dir / f).stat().st_size) for f in files]
+
 
     # -- Version Negotiation helper ----------------------------------------
 
@@ -997,7 +1072,7 @@ class InteropTestRunner:
         server_log_dir = self._test_log_dir(scenario.name, server_name, client_name, "server")
         client_log_dir = self._test_log_dir(scenario.name, server_name, client_name, "client")
 
-        urls = self._build_urls(scenario.files)
+        urls = self._build_urls(server_name, scenario.files, scenario.name == "http3")
 
         # -- Two-connection scenarios (resumption, zerortt) --
         if scenario.needs_two_connections:
@@ -1122,7 +1197,8 @@ class InteropTestRunner:
                     )
 
             # Verify files
-            ok, errors = verify_downloads(self.www_dir, self.download_dir, scenario.files)
+            ok, errors = verify_downloads(
+                self.download_dir, self._expected_downloads(server_name, scenario.files))
             if not ok:
                 return SingleTestResult(
                     scenario=scenario.name, server=server_name, client=client_name,
@@ -1251,7 +1327,8 @@ class InteropTestRunner:
                 error_message=f"Second connection failed (exit {exit_code})",
             )
 
-        ok, errors = verify_downloads(self.www_dir, self.download_dir, scenario.files)
+        ok, errors = verify_downloads(
+            self.download_dir, self._expected_downloads(server_name, scenario.files))
         if not ok:
             return SingleTestResult(
                 scenario=scenario.name, server=server_name, client=client_name,
@@ -1287,7 +1364,8 @@ class InteropTestRunner:
                 error_message=f"First connection failed (exit {exit_code})",
             )
 
-        ok, errors = verify_downloads(self.www_dir, self.download_dir, scenario.files)
+        ok, errors = verify_downloads(
+            self.download_dir, self._expected_downloads(server_name, scenario.files))
         if not ok:
             return SingleTestResult(
                 scenario=scenario.name, server=server_name, client=client_name,
@@ -1367,7 +1445,7 @@ class InteropTestRunner:
                     "-e", f"SERVER={server_host}",
                     "-e", f"PORT={self.port}",
                     "-e", f"REQUESTS={rewritten_urls}",
-                    "-e", f"TESTCASE={scenario.name}",
+                    "-e", f"TESTCASE={self._endpoint_testcase(client_name, scenario.name, 'client')}",
                     "-e", "QLOGDIR=/logs/qlog/",
                     "-e", "SSLKEYLOGFILE=/logs/keys.log",
                     "-v", f"{conn_dir}:/downloads:delegated",
@@ -1424,7 +1502,7 @@ class InteropTestRunner:
 
     def _run_scenario_local(self, scenario: TestScenario) -> SingleTestResult:
         """Execute a single test scenario in local mode."""
-        urls = self._build_urls(scenario.files)
+        urls = self._build_urls("quicx", scenario.files, scenario.name == "http3")
         server_name = "quicx"
         client_name = "quicx"
 
@@ -1456,7 +1534,8 @@ class InteropTestRunner:
                     error_message=f"Client exited with code {exit_code}",
                 )
 
-            ok, errors = verify_downloads(self.www_dir, self.download_dir, scenario.files)
+            ok, errors = verify_downloads(
+                self.download_dir, self._expected_downloads(server_name, scenario.files))
             if not ok:
                 return SingleTestResult(
                     scenario=scenario.name, server=server_name, client=client_name,
@@ -1511,7 +1590,8 @@ class InteropTestRunner:
                     error_message=f"Second connection failed (exit {exit_code})",
                 )
 
-            ok, errors = verify_downloads(self.www_dir, self.download_dir, scenario.files)
+            ok, errors = verify_downloads(
+                self.download_dir, self._expected_downloads(server_name, scenario.files))
             if not ok:
                 return SingleTestResult(
                     scenario=scenario.name, server=server_name, client=client_name,

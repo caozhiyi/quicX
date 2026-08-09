@@ -7,9 +7,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
-#ifndef NDEBUG
 #include <thread>
-#endif
 
 #include "common/qlog/event/connectivity_events.h"
 #include "common/qlog/event/qlog_event.h"
@@ -135,11 +133,17 @@ private:
     // Writer
     AsyncWriter* writer_;
 
-    // Thread safety: Connection is bound to a single thread, no mutex needed
-#ifndef NDEBUG
-    // Debug mode: Verify single-thread access assumption
+    // Thread safety: Connection is bound to a single thread, no mutex needed.
+    // NOTE: `owner_thread_id_` is intentionally ALWAYS present (not guarded by
+    // NDEBUG). An earlier version guarded it with `#ifndef NDEBUG`, which made
+    // sizeof(QlogTrace) differ between translation units compiled with and
+    // without NDEBUG (e.g. the benchmark forced NDEBUG while the library did
+    // not). That size mismatch meant the allocator (smaller layout) and the
+    // constructor (larger layout) disagreed, producing a 1-byte
+    // heap-buffer-overflow that corrupted the next allocation's vtable pointer
+    // and crashed inside PacketSentData::ToJson(). Keeping the member
+    // unconditional makes the layout stable regardless of build flags.
     std::thread::id owner_thread_id_;
-#endif
 
     // Whether header has been written
     bool header_written_;

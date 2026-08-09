@@ -39,8 +39,9 @@ TEST_F(NetworkIntegrationTest, CompleteUpgradeLifecycle) {
     EXPECT_TRUE(server->AddListener(settings));
 
     std::atomic<bool> timer_fired(false);
-    uint64_t timer_id = event_loop_->AddTimer([&timer_fired]() { timer_fired = true; }, 1);
-    EXPECT_GT(timer_id, 0);
+    auto owner = std::make_shared<int>(0);
+    common::Timer timer = event_loop_->AddTimer(owner, [&timer_fired]() { timer_fired = true; }, 1);
+    EXPECT_TRUE(timer.IsActive());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
@@ -127,11 +128,11 @@ TEST_F(NetworkIntegrationTest, MultipleListenersAndTimers) {
     EXPECT_TRUE(server->AddListener(s2));
 
     std::atomic<int> t1(0), t2(0);
-    uint64_t id1 = event_loop_->AddTimer([&t1]() { t1++; }, 5);
-    uint64_t id2 = event_loop_->AddTimer([&t2]() { t2++; }, 10);
-    EXPECT_GT(id1, 0);
-    EXPECT_GT(id2, 0);
-    EXPECT_NE(id1, id2);
+    auto owner = std::make_shared<int>(0);
+    common::Timer timer1 = event_loop_->AddTimer(owner, [&t1]() { t1++; }, 5);
+    common::Timer timer2 = event_loop_->AddTimer(owner, [&t2]() { t2++; }, 10);
+    EXPECT_TRUE(timer1.IsActive());
+    EXPECT_TRUE(timer2.IsActive());
 
     std::this_thread::sleep_for(std::chrono::milliseconds(15));
     event_loop_->Wait();
@@ -141,11 +142,16 @@ TEST_F(NetworkIntegrationTest, MultipleListenersAndTimers) {
 
 // Test error handling basics
 TEST_F(NetworkIntegrationTest, ErrorHandling) {
-    // RemoveTimer requires an initialized event loop (Init() sets thread_id_).
+    // Cancelling requires an initialized event loop (Init() sets thread_id_).
     // Without Init(), AssertInLoopThread() aborts because thread_id_ is default.
     ASSERT_TRUE(event_loop_->Init());
-    // Removing a non-existent timer ID should return false, not crash.
-    EXPECT_FALSE(event_loop_->RemoveTimer(999));
+    // Cancelling an empty handle, and cancelling twice, must be no-ops rather
+    // than crashes. There is no longer an id to fabricate, which is the point:
+    // "cancel timer 999" cannot be expressed at all.
+    common::Timer empty;
+    EXPECT_FALSE(empty.IsActive());
+    empty.Cancel();
+    empty.Cancel();
 
     // Test TCP socket with invalid FD (create a socket and then close it)
     auto socket = std::make_unique<TcpSocket>();

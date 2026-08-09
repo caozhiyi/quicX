@@ -42,6 +42,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
         quicx::quic::Rtt1Packet packet;
         packet.SetCryptographer(PacketTest::Instance().GetTestClientCryptographer());
+        // DecodeWithCrypto starts from packet_src_data_, and only
+        // DecodeWithoutCrypto ever assigns it. Calling it on a freshly
+        // constructed packet -- as this harness used to -- ran the entire crypto
+        // path over an empty span, so header-protection sampling and the payload
+        // length arithmetic were never actually fuzzed.
+        if (!packet.DecodeWithoutCrypto(in, true)) {
+            return 0;
+        }
         if (!packet.DecodeWithCrypto(in)) {
             return 0;
         }
@@ -55,7 +63,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
         // Decode the re-encoded packet again to exercise the decode path
         quicx::quic::Rtt1Packet packet2;
-        (void)packet2.DecodeWithCrypto(out);
+        packet2.SetCryptographer(PacketTest::Instance().GetTestClientCryptographer());
+        if (packet2.DecodeWithoutCrypto(out, true)) {
+            (void)packet2.DecodeWithCrypto(out);
+        }
     }
 
     return 0;

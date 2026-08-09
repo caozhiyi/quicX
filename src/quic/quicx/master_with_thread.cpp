@@ -123,6 +123,30 @@ bool MasterWithThread::AddListener(int32_t listener_sock) {
     return true;
 }
 
+bool MasterWithThread::RemoveListener(int32_t listener_sock) {
+    // Mirrors AddListener's threading discipline: fd registration state lives on
+    // the master loop, so hop there if we're not already on it.
+    auto loop = event_loop_.lock();
+    if (loop && receiver_) {
+        if (loop->IsInLoopThread()) {
+            return receiver_->RemoveReceiver(listener_sock);
+        }
+        std::promise<bool> done;
+        std::future<bool> fut = done.get_future();
+        loop->RunInLoop([this, listener_sock, &done]() { done.set_value(receiver_->RemoveReceiver(listener_sock)); });
+        return fut.get();
+    }
+
+    // Loop not up yet: drop it from the pending list if it is queued there.
+    for (auto it = pending_listeners_.begin(); it != pending_listeners_.end(); ++it) {
+        if (it->sock == listener_sock) {
+            pending_listeners_.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool MasterWithThread::AddListener(const std::string& ip, uint16_t port) {
     // If EventLoop is initialized, synchronously register the listener on the
     // master-loop thread (see AddListener(int32_t) above for rationale).

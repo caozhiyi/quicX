@@ -2,6 +2,8 @@
 #include <cstring>
 #include <sstream>
 
+#include <openssl/rand.h>
+
 #include "common/log/log.h"
 #include "common/qlog/qlog.h"
 
@@ -27,6 +29,15 @@ std::string CIDToHexString(const ConnectionID& cid) {
     return oss.str();
 }
 }  // anonymous namespace
+
+bool ConnectionIDCoordinator::GenerateStatelessResetToken(uint8_t* out, uint32_t len) {
+    if (out == nullptr || len == 0) {
+        return false;
+    }
+    // RAND_bytes is the same CSPRNG ConnectionIDGenerator and RetryTokenManager
+    // use; it returns 1 on success.
+    return RAND_bytes(out, len) == 1;
+}
 
 ConnectionIDCoordinator::ConnectionIDCoordinator(std::shared_ptr<common::IEventLoop> event_loop,
     SendManager& send_manager, AddConnectionIDCallback add_cb, RetireConnectionIDCallback retire_cb):
@@ -122,16 +133,17 @@ void ConnectionIDCoordinator::CheckAndReplenishLocalCIDPool() {
         frame->SetRetirePriorTo(0);  // Don't force retirement of older IDs
         frame->SetConnectionID(const_cast<uint8_t*>(new_cid.GetID()), new_cid.GetLength());
 
-        // Generate stateless reset token (using random data for now)
-        // In production, this should be derived from a secret
-        uint8_t reset_token[16];
-        for (int j = 0; j < 16; ++j) {
-            reset_token[j] = static_cast<uint8_t>(rand() % 256);
+        // Stateless reset token (RFC 9000 §10.3): must be hard to guess, or a
+        // peer can forge a Stateless Reset and drop the connection.
+        uint8_t reset_token[kStatelessResetTokenLength];
+        if (!GenerateStatelessResetToken(reset_token, kStatelessResetTokenLength)) {
+            LOG_ERROR("ConnectionIDCoordinator: CSPRNG failed, not advertising this CID");
+            break;
         }
         frame->SetStatelessResetToken(reset_token);
 
         // Send frame through send manager
-        send_manager_.ToSendFrame(frame);
+        send_manager_.EnqueueFrame(frame);
 
         // Log connection_id_updated event for pool replenishment
         if (qlog_trace_) {
@@ -164,10 +176,15 @@ bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
 
     auto new_cid = remote_conn_id_manager_->GetCurrentID();
 
-    // Send RETIRE_CONNECTION_ID for the old CID
-    auto retire = std::make_shared<RetireConnectionIDFrame>();
-    retire->SetSequenceNumber(old_cid.GetSequenceNumber());
-    send_manager_.ToSendFrame(retire);
+    // Defer the RETIRE_CONNECTION_ID for the previous DCID. RFC 9000 §9.2 and
+    // peer path-deletion rules require that a CID still bound to an active path
+    // not be retired. We retire it only after the migration path is validated
+    // (PathManager::OnPathResponse -> RetirePendingRemoteConnectionID), otherwise
+    // the peer sees a RETIRE_CONNECTION_ID for a path it still considers live and
+    // aborts the connection (e.g. picoquic: "Cannot delete path through which
+    // packet arrives").
+    pending_retire_remote_seq_ = old_cid.GetSequenceNumber();
+    has_pending_retire_remote_cid_ = true;
 
     // Log connection_id_updated event for CID rotation
     if (qlog_trace_) {
@@ -179,9 +196,22 @@ bool ConnectionIDCoordinator::RotateRemoteConnectionID() {
         QLOG_CONNECTION_ID_UPDATED(qlog_trace_, cid_data);
     }
 
-    LOG_DEBUG("ConnectionIDCoordinator: rotated remote CID, retired seq=%llu", old_cid.GetSequenceNumber());
+    LOG_DEBUG("ConnectionIDCoordinator: rotated remote CID, deferred RETIRE for seq=%llu", old_cid.GetSequenceNumber());
 
     return true;
+}
+
+void ConnectionIDCoordinator::RetirePendingRemoteConnectionID() {
+    if (!has_pending_retire_remote_cid_) {
+        return;
+    }
+    has_pending_retire_remote_cid_ = false;
+    // Enqueue RETIRE_CONNECTION_ID for the previously-used remote CID now that
+    // the migration path is validated and the old CID is no longer active.
+    auto retire = std::make_shared<RetireConnectionIDFrame>();
+    retire->SetSequenceNumber(pending_retire_remote_seq_);
+    send_manager_.EnqueueFrame(retire);
+    LOG_DEBUG("ConnectionIDCoordinator: flushed deferred RETIRE for seq=%llu", pending_retire_remote_seq_);
 }
 
 void ConnectionIDCoordinator::SetPeerActiveConnectionIDLimit(uint64_t limit) {
