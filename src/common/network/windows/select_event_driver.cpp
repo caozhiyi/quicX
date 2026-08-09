@@ -1,11 +1,13 @@
 #ifdef _WIN32
 
-// Windows headers must be included in the correct order
+// Windows headers must be included in the correct order: winsock2.h before windows.h and mswsock.h
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
-#include <mswsock.h>
-#include <windows.h>
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mswsock.h>
+#include <windows.h>
 
 #include "common/log/log.h"
 #include "common/network/io_handle.h"
