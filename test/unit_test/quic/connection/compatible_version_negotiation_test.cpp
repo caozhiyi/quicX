@@ -112,11 +112,11 @@ static int DrainPackets(std::shared_ptr<IConnection> sender, std::shared_ptr<ICo
 }
 
 struct HandshakeEndpoints {
+    std::shared_ptr<common::IEventLoop> loop;
     std::shared_ptr<ClientConnection> client;
     std::shared_ptr<ServerConnection> server;
     std::shared_ptr<MockSender> client_sender;
     std::shared_ptr<MockSender> server_sender;
-    std::shared_ptr<common::IEventLoop> loop;
 };
 
 // Run a full handshake and return both endpoints plus their mock senders so the

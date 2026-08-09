@@ -614,10 +614,14 @@ void TimerCore::FireSlot(uint32_t c0) {
         // Note slab_ may have been reallocated by a nested Arm(), so it must be
         // re-indexed rather than accessed through a previously bound reference.
         bool still_ours = index < slab_.size() && slab_[index].in_use && slab_[index].gen == gen_at_fire;
-        if (interval != 0 && !skip && still_ours && slab_[index].has_node) {
-            slab_[index].it->cb = std::move(cb);
-            slab_[index].it->deadline = current_ms_ + interval;
-            AttachFromIdle(index, current_ms_);
+        if (!skip && still_ours && slab_[index].has_node) {
+            if (!slab_[index].it->cb) {
+                slab_[index].it->cb = std::move(cb);
+            }
+            if (interval != 0 && slab_[index].level < 0) {
+                slab_[index].it->deadline = current_ms_ + interval;
+                AttachFromIdle(index, current_ms_);
+            }
         }
     }
 
