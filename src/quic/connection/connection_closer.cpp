@@ -21,13 +21,10 @@ ConnectionCloser::ConnectionCloser(std::shared_ptr<::quicx::common::IEventLoop> 
     connection_close_cb_(connection_close_cb) {}
 
 ConnectionCloser::~ConnectionCloser() {
-    // Cancel graceful close timer to prevent use-after-free
-    if (graceful_closing_pending_) {
-        auto loop = event_loop_.lock();
-        if (loop) {
-            loop->RemoveTimer(graceful_close_timer_);
-        }
-    }
+    // ~Timer() cancels, so the graceful-close timeout cannot fire into a
+    // destroyed closer. It is also safe from a non-loop thread, which matters:
+    // connections are torn down from the application thread as well.
+    graceful_close_timer_.Cancel();
     // Clear callback to prevent dangling references
     connection_close_cb_ = nullptr;
 }
@@ -48,10 +45,10 @@ bool ConnectionCloser::StartGracefulClose(ActiveSendCallback active_send_cb) {
 
         // Set a timeout to force close if data doesn't complete in time
         // Use 3×PTO as a reasonable timeout (similar to draining period)
-        graceful_close_timer_ = ::quicx::common::TimerTask([this]() { OnGracefulCloseTimeout(); });
         auto loop = event_loop_.lock();
         if (loop) {
-            loop->AddTimer(graceful_close_timer_, GetCloseWaitTime() * 3, 0);
+            graceful_close_timer_ =
+                loop->AddTimer(life_token_, [this]() { OnGracefulCloseTimeout(); }, GetCloseWaitTime() * 3);
         }
         LOG_DEBUG("Graceful close timeout set to %u ms", GetCloseWaitTime() * 3);
         return true;
@@ -65,6 +62,16 @@ bool ConnectionCloser::StartGracefulClose(ActiveSendCallback active_send_cb) {
     closing_trigger_frame_ = 0;
     closing_reason_ = "";
     last_connection_close_retransmit_time_ = 0;
+
+    // Re-arm the worker's active-send set before entering the Closing state.
+    // A graceful close is reached precisely when the connection has "no more
+    // data", i.e. right after the worker dropped it from its active set, and
+    // OnConnectionActive() early-outs once IsTerminating() is true. Nudging
+    // here (while the state machine still reports a live connection) keeps the
+    // CONNECTION_CLOSE built by OnStateToClosing on a guaranteed send path.
+    if (active_send_cb) {
+        active_send_cb();
+    }
 
     state_machine_.OnClose();
     return true;
@@ -84,10 +91,7 @@ bool ConnectionCloser::CheckGracefulCloseComplete(ActiveSendCallback active_send
     graceful_closing_pending_ = false;
 
     // Cancel the graceful close timeout timer since we're completing normally
-    auto loop = event_loop_.lock();
-    if (loop) {
-        loop->RemoveTimer(graceful_close_timer_);
-    }
+    graceful_close_timer_.Cancel();
 
     // Enter Closing state and send CONNECTION_CLOSE
     closing_error_code_ = QuicErrorCode::kNoError;
@@ -103,10 +107,7 @@ void ConnectionCloser::CancelGracefulClose() {
     if (graceful_closing_pending_) {
         LOG_DEBUG("Canceling graceful close");
         graceful_closing_pending_ = false;
-        auto loop = event_loop_.lock();
-        if (loop) {
-            loop->RemoveTimer(graceful_close_timer_);
-        }
+        graceful_close_timer_.Cancel();
     }
 }
 

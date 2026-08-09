@@ -28,6 +28,7 @@
 #include "quic/frame/path_response_frame.h"
 #include "quic/frame/retire_connection_id_frame.h"
 #include "quic/frame/stream_frame.h"
+#include "quic/stream/if_stream.h"
 #include "quic/stream/stream_id_generator.h"
 
 namespace quicx {
@@ -65,6 +66,29 @@ FrameProcessor::FrameProcessor(IConnectionEventSink& event_sink, ConnectionState
     connection_closer_(connection_closer),
     transport_param_(transport_param),
     token_(token) {}
+
+void FrameProcessor::SetStreamStateCallback(StreamStateCallback cb) {
+    stream_state_cb_ = cb;
+    if (!stream_state_cb_ || unnotified_remote_streams_.empty()) {
+        unnotified_remote_streams_.clear();
+        return;
+    }
+
+    // Replay peer-initiated streams that were created before the application
+    // layer registered itself. Move first: the callback may create more streams
+    // and re-enter this method.
+    std::vector<std::weak_ptr<IStream>> pending;
+    pending.swap(unnotified_remote_streams_);
+    for (auto& weak_stream : pending) {
+        auto stream = weak_stream.lock();
+        if (!stream) {
+            continue;
+        }
+        LOG_DEBUG("FrameProcessor::SetStreamStateCallback: replaying deferred stream notify. stream id:%llu",
+            stream->GetStreamID());
+        stream_state_cb_(stream, 0);
+    }
+}
 
 // ==================== Frame Dispatching ====================
 
@@ -258,6 +282,17 @@ bool FrameProcessor::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // notify stream state
     if (stream_state_cb_) {
         stream_state_cb_(new_stream, 0);
+
+    } else if (unnotified_remote_streams_.size() < kMaxUnnotifiedRemoteStreams) {
+        // The application layer is not wired up yet (typically the HTTP/3
+        // connection is only built once the handshake completes, while the peer
+        // sends its control / QPACK unidirectional streams in the same flight).
+        // Remember the stream so SetStreamStateCallback() can replay it, else
+        // nobody would ever attach a read callback and the data would rot in
+        // the recv buffer. Bounded to avoid unbounded growth.
+        unnotified_remote_streams_.emplace_back(new_stream);
+        LOG_DEBUG("FrameProcessor::OnStreamFrame: no stream state callback yet, deferring notify. stream id:%llu",
+            stream_id);
     }
 
     // new stream process frame

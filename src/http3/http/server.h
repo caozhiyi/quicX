@@ -5,6 +5,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <quicx/http3/if_server.h>
 #include <quicx/quic/if_quic_server.h>
@@ -89,6 +90,23 @@ private:
     // would benefit from a shared_mutex like the client's hot lookup.
     mutable std::mutex conn_map_mu_;
     std::unordered_map<void*, std::shared_ptr<ServerConnection>> conn_map_;
+
+    // Connections whose destruction has been deferred.
+    //
+    // The QUIC close callback is delivered *synchronously* from inside the
+    // frame-processing path, and that path is frequently entered from a
+    // ServerConnection method itself (client GOAWAY -> HandleGoaway() ->
+    // Shutdown() -> Close() -> OnConnection(kConnectionClose)). Erasing the
+    // map entry there dropped the last shared_ptr and ran ~ServerConnection
+    // while HandleGoaway() was still on the stack; the remaining frames of
+    // the same datagram were then dispatched into freed HTTP/3 stream
+    // objects, which crashed the server with SIGSEGV (observed against the
+    // s2n-quic client in the http3 interop scenario).
+    //
+    // Instead of destroying inline we park the shared_ptr here and release
+    // it on the next connection event, i.e. from a stack frame that is
+    // guaranteed not to belong to the dying connection.
+    std::vector<std::shared_ptr<ServerConnection>> closing_conns_;
 
     std::vector<http_handler> before_middlewares_;
     std::vector<http_handler> after_middlewares_;

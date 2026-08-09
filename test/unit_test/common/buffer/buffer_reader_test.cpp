@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/buffer_chunk.h"
 #include "common/buffer/buffer_reader.h"
 #include "common/buffer/multi_block_buffer.h"

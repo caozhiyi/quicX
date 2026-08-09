@@ -99,7 +99,7 @@ Underlying mechanisms supporting the main path, consult as needed.
 | :--- | :--- |
 | [`design/process_model.md`](design/process_model.md) | master + worker process model, cross-thread channels, and why we don't use thread pools |
 | [`design/timer_design.md`](design/timer_design.md) | Trade-off between timing wheel vs treemap two-layer timers |
-| [`design/pool_alloter.md`](design/pool_alloter.md) | Why frame-level memory pools are needed and how they complement existing optimizations |
+| [`design/pool_allocator.md`](design/pool_allocator.md) | Why frame-level memory pools are needed and how they complement existing optimizations |
 | [`design/udp_io.md`](design/udp_io.md) | GSO / sendmmsg / recvmmsg trade-offs and fallback paths |
 
 ### 6.4 Protocol Details

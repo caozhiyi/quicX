@@ -8,7 +8,7 @@
 
 #include <quicx/quic/type.h>
 #include "common/network/address.h"
-#include "common/timer/timer_task.h"
+#include <quicx/common/if_timer_scheduler.h>
 #include "quic/common/constants.h"
 
 namespace quicx {
@@ -45,7 +45,8 @@ public:
     using SetPeerAddressCallback = std::function<void(const ::quicx::common::Address&)>;
     using MigrationCompleteCallback = std::function<void(const MigrationInfo&)>;
     using GetSocketCallback = std::function<int32_t()>;
-    using SetMigrationSocketCallback = std::function<void(int32_t)>;
+    // Hands the freshly created probe fd to its owner (MigrationController).
+    using ProbeSocketReadyCallback = std::function<void(int32_t)>;
 
     /**
      * @brief Construction-time dependencies for PathManager.
@@ -147,11 +148,23 @@ public:
     void SetMigrationCompleteCallback(MigrationCompleteCallback cb) { migration_complete_cb_ = cb; }
 
     /**
-     * @brief Set callbacks for socket management during migration
+     * @brief Wire up socket handling for migration.
+     *
+     * PathManager creates the probe socket but does not own it: the fd is handed
+     * straight to on_probe_socket_ready and never stored here. That keeps
+     * DatagramEmitter the single knower of the active fd and MigrationController
+     * the single owner of its lifecycle — previously this class kept a second
+     * copy (migration_socket_) synchronised by callback, and that copy was the
+     * one that got closed twice on a failed migration.
+     *
+     * @param get_active_socket     Returns the currently active fd (used to read
+     *                              the old local address for reporting).
+     * @param on_probe_socket_ready Receives the freshly created probe fd.
      */
-    void SetSocketCallbacks(GetSocketCallback get_sock_cb, SetMigrationSocketCallback set_migration_sock_cb) {
-        get_socket_cb_ = get_sock_cb;
-        set_migration_socket_cb_ = set_migration_sock_cb;
+    void SetSocketFactoryCallbacks(
+        GetSocketCallback get_active_socket, ProbeSocketReadyCallback on_probe_socket_ready) {
+        get_socket_cb_ = std::move(get_active_socket);
+        probe_socket_ready_cb_ = std::move(on_probe_socket_ready);
     }
 
     // ==================== Anti-Amplification ====================
@@ -174,13 +187,6 @@ public:
      * @return Address to use for sending
      */
     ::quicx::common::Address GetSendAddress() const;
-
-    /**
-     * @brief Get socket to use for sending
-     * Returns migration socket if migration in progress, otherwise default
-     * @return Socket fd to use for sending
-     */
-    int32_t GetSendSocket() const;
 
     // ==================== State Queries ====================
 
@@ -250,13 +256,13 @@ private:
     SetPeerAddressCallback set_peer_addr_cb_;
     MigrationCompleteCallback migration_complete_cb_;
     GetSocketCallback get_socket_cb_;
-    SetMigrationSocketCallback set_migration_socket_cb_;
+    ProbeSocketReadyCallback probe_socket_ready_cb_;
 
     // Path validation state
     ::quicx::common::Address candidate_peer_addr_;
     bool path_probe_inflight_{false};
     uint8_t pending_path_challenge_data_[8]{0};
-    ::quicx::common::TimerTask path_probe_task_;
+    ::quicx::common::Timer path_probe_task_;
     uint32_t probe_retry_count_{0};
     uint32_t probe_retry_delay_ms_{0};
 
@@ -277,8 +283,9 @@ private:
     // True if current probe is for client-initiated migration (not NAT rebinding)
     bool is_client_initiated_migration_{false};
 
-    // Socket created for migration (will become main socket on success)
-    int32_t migration_socket_{-1};
+    // NB: the probe socket fd is deliberately NOT stored here. It is handed to
+    // MigrationController via probe_socket_ready_cb_ the moment it is created,
+    // so there is exactly one owner and exactly one close(2) site.
 
     // Local address before migration (for reporting)
     ::quicx::common::Address old_local_addr_;
@@ -290,7 +297,9 @@ private:
     uint64_t migration_start_time_{0};
 
     // Migration timeout timer
-    ::quicx::common::TimerTask migration_timeout_task_;
+    ::quicx::common::Timer migration_timeout_task_;
+    // Guards both timer callbacks above, which capture a raw `this`.
+    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
 
     // Path validation timeout (configurable; default per RFC 9000 §8.2.4
     // — at least 3×PTO, see kDefaultPathValidationTimeoutMs in

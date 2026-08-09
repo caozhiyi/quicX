@@ -1,10 +1,13 @@
 #ifndef HTTP3_STREAM_IF_SEND_STREAM
 #define HTTP3_STREAM_IF_SEND_STREAM
 
-#include <quicx/quic/if_quic_send_stream.h>
 #include <functional>
 #include <memory>
+
+
+#include "quicx/quic/if_quic_send_stream.h"
 #include "http3/stream/if_stream.h"
+#include "common/buffer/if_buffer.h"
 
 namespace quicx {
 namespace http3 {
@@ -31,6 +34,21 @@ public:
 protected:
     // Ensure stream type is sent before any frames
     bool EnsureStreamPreamble();
+
+    // Encode a control frame into a fresh single-block buffer and append it to
+    // the stream's send buffer, then flush.
+    //
+    // Encoding control frames directly into the stream's own MultiBlockBuffer
+    // send buffer fails once its last chunk is full: SETTINGS is written there
+    // at init, after which the chunk's writable span is exhausted, so the
+    // frame's GetFreeLength() pre-check sees 0 free bytes and the fixed-span
+    // BufferEncodeWrapper has nowhere to write (e.g. a server GOAWAY sent
+    // during graceful shutdown was silently dropped, stalling HTTP/3 close).
+    // A dedicated single-block buffer always has a valid writable span, so the
+    // frame encodes cleanly; we then append it as a new chunk and flush, which
+    // is exactly the transmit path SendSettings already uses successfully.
+    bool EncodeAndAppendControlFrame(
+        const std::function<bool(std::shared_ptr<common::IBuffer>)>& encode);
 
 protected:
     bool wrote_type_;  // Track whether stream type has been sent

@@ -40,7 +40,10 @@ TEST(QuicFrameDecodeTest, codec) {
 
     // ack frame
     ack_frame1.SetAckDelay(104);
-    ack_frame1.SetFirstAckRange(10012);
+    // RFC 9000 §19.3.1: First ACK Range MUST NOT exceed Largest Acknowledged, otherwise the
+    // computed range start (largest - first_ack_range + 1) underflows. Keep it valid here since
+    // this test only exercises codec round-trip, not RFC validity enforcement.
+    ack_frame1.SetFirstAckRange(10);
     ack_frame1.SetLargestAck(19);
     ack_frame1.AddAckRange(3, 5);
     ack_frame1.AddAckRange(4, 6);

@@ -29,9 +29,6 @@
 #include <tuple>
 #include <vector>
 
-#include "common/buffer/single_block_buffer.h"
-#include "common/buffer/standalone_buffer_chunk.h"
-#include "common/timer/timer.h"
 #include "connection_test_util.h"
 #include "mock_sender.h"
 #include "quic/common/version.h"
@@ -87,7 +84,7 @@ static const char kKeyPem[] =
 static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver,
     std::shared_ptr<MockSender> sender_mock) {
     sender_mock->Clear();
-    if (!sender->TrySend()) {
+    if (!(sender->TrySendBurst(1) > 0)) {
         return false;
     }
     auto buffer = sender_mock->GetLastSentBuffer();
@@ -102,6 +99,18 @@ static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr
     return true;
 }
 
+// Drain everything one side wants to send. Preferred over a fixed step count:
+// the server coalesces Initial+Handshake into one datagram (RFC 9000 §12.2), so
+// asserting on the number of datagrams asserts on an implementation detail.
+static int DrainPackets(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver,
+    std::shared_ptr<MockSender> sender_mock, int max_datagrams = 16) {
+    int delivered = 0;
+    while (delivered < max_datagrams && ExchangePackets(sender, receiver, sender_mock)) {
+        ++delivered;
+    }
+    return delivered;
+}
+
 struct HandshakeEndpoints {
     std::shared_ptr<ClientConnection> client;
     std::shared_ptr<ServerConnection> server;
@@ -110,11 +119,8 @@ struct HandshakeEndpoints {
     std::shared_ptr<common::IEventLoop> loop;
 };
 
-// Run a default v1 <-> v1 handshake and return both endpoints plus their mock
-// senders so the test can inspect post-handshake state.
-// |client_pref|: if non-zero, the client calls SetPreferredVersion(..) before Dial().
-// |server_pref|: if non-zero, the server calls SetPreferredVersion(..) before
-//                the first client packet arrives.
+// Run a full handshake and return both endpoints plus their mock senders so the
+// test can inspect post-handshake state.
 static HandshakeEndpoints RunHandshake(uint32_t client_pref = 0, uint32_t server_pref = 0) {
     HandshakeEndpoints ep;
 
@@ -157,12 +163,12 @@ static HandshakeEndpoints RunHandshake(uint32_t client_pref = 0, uint32_t server
     ep.client_sender = AttachMockSender(ep.client);
     ep.server_sender = AttachMockSender(ep.server);
 
-    // Four-flight handshake.
-    EXPECT_TRUE(ExchangePackets(ep.client, ep.server, ep.client_sender));
-    EXPECT_TRUE(ExchangePackets(ep.server, ep.client, ep.server_sender));
-    EXPECT_TRUE(ExchangePackets(ep.server, ep.client, ep.server_sender));
-    EXPECT_TRUE(ExchangePackets(ep.client, ep.server, ep.client_sender));
-    EXPECT_TRUE(ExchangePackets(ep.server, ep.client, ep.server_sender));
+    // Four-flight handshake. Each call drains that side fully rather than
+    // assuming a fixed datagram count.
+    EXPECT_GT(DrainPackets(ep.client, ep.server, ep.client_sender), 0);
+    EXPECT_GT(DrainPackets(ep.server, ep.client, ep.server_sender), 0);
+    EXPECT_GT(DrainPackets(ep.client, ep.server, ep.client_sender), 0);
+    EXPECT_GT(DrainPackets(ep.server, ep.client, ep.server_sender), 0);
 
     return ep;
 }
@@ -338,6 +344,40 @@ TEST(CompatibleVersionNegotiationTest, V1ToV2Upgrade) {
     ASSERT_GE(client_tp.GetAvailableVersions().size(), 1u);
     // First entry is server's preferred (v2).
     EXPECT_EQ(client_tp.GetAvailableVersions()[0], kQuicVersion2);
+}
+
+// --------------------------------------------------------------------------
+// The on-wire version is stored twice: once at connection level (what
+// VersionNegotiator tracks) and once inside ConnectionCrypto (which derives
+// Initial secrets from it AND is what the send path reads when stamping the
+// version into outbound long headers). This checks theyended up equal after a
+// real v1-> v2 upgrade on both endpoints.
+//
+// Scope note: this is an integration-level guard only. It cannot pin
+// ApplyVersion()'s duty to propagate into ConnectionCrypto, because on the
+// upgrade path RekeyInitialForVersion() sets crypto's copy itself — verified by
+// mutation, deleting that propagation leaves this test green. The unit tests in
+// version_negotiator_test.cpp cover it.
+//
+// The third copy, the version_information TP, is verified implicitly by the
+// handshake completing: RFC 9368 §4 requires the peer to reject a connection
+// whose chosen_version disagrees with the wire. It cannot be asserted directly
+// here because transport_param_ is overwritten by Merge() with the peer's
+// values once the handshake finishes.
+// --------------------------------------------------------------------------
+TEST(CompatibleVersionNegotiationTest, ConnectionAndCryptoVersionsAgreeAfterUpgrade) {
+    auto ep = RunHandshake(/*client_pref=*/0, /*server_pref=*/kQuicVersion2);
+    ASSERT_NE(ep.client, nullptr);
+    ASSERT_NE(ep.server, nullptr);
+
+    ASSERT_EQ(ep.client->GetConnectionStateForTest(), ConnectionStateType::kStateConnected);
+    ASSERT_EQ(ep.server->GetConnectionStateForTest(), ConnectionStateType::kStateConnected);
+
+    // Both endpoints upgraded, and both copies moved together.
+    EXPECT_EQ(ep.client->GetQuicVersionForTest(), kQuicVersion2);
+    EXPECT_EQ(ep.client->GetCryptoVersionForTest(), kQuicVersion2);
+    EXPECT_EQ(ep.server->GetQuicVersionForTest(), kQuicVersion2);
+    EXPECT_EQ(ep.server->GetCryptoVersionForTest(), kQuicVersion2);
 }
 
 }  // namespace

@@ -25,6 +25,7 @@ namespace {
 
 using quicx::quic::AttachMockSender;
 using quicx::quic::ConnectionProcess;
+using quicx::quic::DrainInto;
 
 // Helper: downcast to BaseConnection so tests can use the non-virtual
 // *ForTest accessors that were intentionally removed from IConnection's vtable.
@@ -121,16 +122,17 @@ GenerateHandshakeDoneConnections(const QuicTransportParams& client_tp = TEST_TRA
     auto client_sender = AttachMockSender(client_conn);
     auto server_sender = AttachMockSender(server_conn);
 
+    // Drain each side rather than assert a fixed datagram count: the server
+    // coalesces Initial+Handshake into a single datagram (RFC 9000 §12.2), so
+    // the old five-step choreography had one step with nothing left to send.
     // client -------init-----> server
-    EXPECT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
-    // client <------init------ server
-    EXPECT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
-    // client <---handshake---- server
-    EXPECT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
+    EXPECT_GT(DrainInto(client_conn, server_conn, client_sender), 0);
+    // client <--init+handshake-- server
+    EXPECT_GT(DrainInto(server_conn, client_conn, server_sender), 0);
     // client ----handshake---> server
-    EXPECT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
+    EXPECT_GT(DrainInto(client_conn, server_conn, client_sender), 0);
     // client <----session----- server
-    EXPECT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
+    EXPECT_GT(DrainInto(server_conn, client_conn, server_sender), 0);
 
     EXPECT_TRUE(server_conn->GetCurEncryptionLevel() == kApplication)
         << "Server connection should be in application encryption level, but got "
@@ -162,7 +164,7 @@ TEST(PathMigrationTest, validation_failure_recovery) {
     // Simulate network black hole: drop all PATH_CHALLENGEs
     for (int attempt = 0; attempt < 10; ++attempt) {
         client_sender->Clear();
-        (void)client_conn->TrySend();
+        (void)(client_conn->TrySendBurst(1) > 0);
 
         // Wait for retry trigger
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -200,7 +202,7 @@ TEST(PathMigrationTest, concurrent_path_probing) {
     // Verify first PATH_CHALLENGE by server's PATH_RESPONSE (avoid decrypting in test)
     {
         client_sender->Clear();
-        ASSERT_TRUE(client_conn->TrySend());
+        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto buffer = client_sender->GetLastSentBuffer();
         ASSERT_NE(buffer, nullptr);
         ASSERT_GT(buffer->GetDataLength(), 0);
@@ -211,7 +213,7 @@ TEST(PathMigrationTest, concurrent_path_probing) {
         server_conn->OnPackets(0, pkts);
 
         server_sender->Clear();
-        ASSERT_TRUE(server_conn->TrySend());
+        ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
         auto sb = server_sender->GetLastSentBuffer();
         ASSERT_NE(sb, nullptr);
         ASSERT_GT(sb->GetDataLength(), 0);
@@ -262,7 +264,7 @@ TEST(PathMigrationTest, cid_pool_replenishment) {
     // Send PATH_CHALLENGE
     {
         client_sender->Clear();
-        ASSERT_TRUE(client_conn->TrySend());
+        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
@@ -274,7 +276,7 @@ TEST(PathMigrationTest, cid_pool_replenishment) {
     // Receive PATH_RESPONSE and complete migration
     {
         server_sender->Clear();
-        ASSERT_TRUE(server_conn->TrySend());
+        ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
         auto sb = server_sender->GetLastSentBuffer();
         ASSERT_NE(sb, nullptr);
         ASSERT_GT(sb->GetDataLength(), 0);
@@ -311,7 +313,7 @@ TEST(PathMigrationTest, cid_pool_replenishment) {
     client_sender->Clear();
     // TrySend may queue the second probe if first probe is still inflight
     // The important thing is that we can queue another migration without crashing
-    if (client_conn->TrySend()) {
+    if ((client_conn->TrySendBurst(1) > 0)) {
         auto buffer2 = client_sender->GetLastSentBuffer();
         if (buffer2 != nullptr && buffer2->GetDataLength() > 0) {
             // PATH_CHALLENGE was sent immediately
@@ -339,7 +341,7 @@ TEST(PathMigrationTest, preferred_address_mechanism) {
     // Verify client sends PATH_CHALLENGE to preferred_address
     {
         client_sender->Clear();
-        if (client_conn->TrySend()) {
+        if ((client_conn->TrySendBurst(1) > 0)) {
             auto buffer = client_sender->GetLastSentBuffer();
             if (buffer && buffer->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -390,7 +392,7 @@ TEST(PathMigrationTest, duplicate_path_response) {
     std::vector<std::shared_ptr<IPacket>> response_pkts;
     {
         client_sender->Clear();
-        ASSERT_TRUE(client_conn->TrySend());
+        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
@@ -399,7 +401,7 @@ TEST(PathMigrationTest, duplicate_path_response) {
         server_conn->OnPackets(0, challenge_pkts);
 
         server_sender->Clear();
-        ASSERT_TRUE(server_conn->TrySend());
+        ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
         auto sb = server_sender->GetLastSentBuffer();
         ASSERT_NE(sb, nullptr);
         ASSERT_GT(sb->GetDataLength(), 0);
@@ -433,7 +435,7 @@ TEST(PathMigrationTest, path_token_validation_and_promotion) {
 
     // Generate probe packet(s)
     client_sender->Clear();
-    ASSERT_TRUE(client_conn->TrySend());
+    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -446,7 +448,7 @@ TEST(PathMigrationTest, path_token_validation_and_promotion) {
 
     // Now server sends PATH_RESPONSE
     server_sender->Clear();
-    if (server_conn->TrySend()) {
+    if ((server_conn->TrySendBurst(1) > 0)) {
         auto sb = server_sender->GetLastSentBuffer();
         if (sb && sb->GetDataLength() > 0) {
             std::vector<std::shared_ptr<IPacket>> rsp;
@@ -471,7 +473,7 @@ TEST(PathMigrationTest, path_token_validation_and_promotion) {
         // crashing
         for (int i = 0; i < 3; ++i) {
             client_sender->Clear();
-            (void)client_conn->TrySend();
+            (void)(client_conn->TrySendBurst(1) > 0);
         }
     }
 }
@@ -491,7 +493,7 @@ TEST(PathMigrationTest, nat_rebinding_integration) {
     // server will probe; deliver its probe to client
     {
         server_sender->Clear();
-        if (server_conn->TrySend()) {
+        if ((server_conn->TrySendBurst(1) > 0)) {
             auto sb = server_sender->GetLastSentBuffer();
             if (sb && sb->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -504,7 +506,7 @@ TEST(PathMigrationTest, nat_rebinding_integration) {
     // client responds; deliver back to server
     {
         client_sender->Clear();
-        if (client_conn->TrySend()) {
+        if ((client_conn->TrySendBurst(1) > 0)) {
             auto cb = client_sender->GetLastSentBuffer();
             if (cb && cb->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -537,7 +539,7 @@ TEST(PathMigrationTest, path_challenge_retry_backoff) {
     // Drive several send cycles without delivering to server to simulate black hole for PATH_CHALLENGE
     for (int i = 0; i < 7; ++i) {
         client_sender->Clear();
-        (void)client_conn->TrySend();
+        (void)(client_conn->TrySendBurst(1) > 0);
         // drop
     }
     // Expect no crash and retries bounded (internal cap 5). This test ensures we do not retry indefinitely.
@@ -561,7 +563,7 @@ TEST(PathMigrationTest, amp_gating_blocks_streams_before_validation) {
     const char* payload = "must gate before validation";
 
     client_sender->Clear();
-    ASSERT_TRUE(client_conn->TrySend());
+    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -595,7 +597,7 @@ TEST(PathMigrationTest, pmtu_probe_success_raises_mtu) {
     // Client sends PATH_CHALLENGE
     {
         client_sender->Clear();
-        ASSERT_TRUE(client_conn->TrySend());
+        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
@@ -608,7 +610,7 @@ TEST(PathMigrationTest, pmtu_probe_success_raises_mtu) {
     // Server replies PATH_RESPONSE; deliver to client to validate path
     {
         server_sender->Clear();
-        ASSERT_TRUE(server_conn->TrySend());
+        ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
         auto sb = server_sender->GetLastSentBuffer();
         ASSERT_NE(sb, nullptr);
         ASSERT_GT(sb->GetDataLength(), 0);
@@ -621,7 +623,7 @@ TEST(PathMigrationTest, pmtu_probe_success_raises_mtu) {
     // After validation, client should attempt a PMTU probe packet (PING+PADDING large)
     {
         client_sender->Clear();
-        ASSERT_TRUE(client_conn->TrySend());
+        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
@@ -636,7 +638,7 @@ TEST(PathMigrationTest, pmtu_probe_success_raises_mtu) {
     // Server generates ACK; deliver back to client to confirm probe success
     {
         server_sender->Clear();
-        if (server_conn->TrySend()) {
+        if ((server_conn->TrySendBurst(1) > 0)) {
             auto sb = server_sender->GetLastSentBuffer();
             if (sb && sb->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -664,7 +666,7 @@ TEST(PathMigrationTest, pmtu_probe_loss_fallback) {
     // Client sends PATH_CHALLENGE; deliver and drop server response to simulate loss of PMTU probe later
     {
         client_sender->Clear();
-        ASSERT_TRUE(client_conn->TrySend());
+        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
@@ -677,7 +679,7 @@ TEST(PathMigrationTest, pmtu_probe_loss_fallback) {
     // Server replies PATH_RESPONSE; deliver to client to validate path
     {
         server_sender->Clear();
-        ASSERT_TRUE(server_conn->TrySend());
+        ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
         auto sb = server_sender->GetLastSentBuffer();
         ASSERT_NE(sb, nullptr);
         ASSERT_GT(sb->GetDataLength(), 0);
@@ -690,7 +692,7 @@ TEST(PathMigrationTest, pmtu_probe_loss_fallback) {
     // After validation, trigger client send (PMTU probe created). Do not deliver to server to simulate black hole.
     {
         client_sender->Clear();
-        (void)client_conn->TrySend();
+        (void)(client_conn->TrySendBurst(1) > 0);
         // Intentionally drop
     }
 
@@ -720,7 +722,7 @@ TEST(PathMigrationTest, disable_active_migration_semantics) {
     // Generate a flight and check no PATH_CHALLENGE appears yet
     {
         client_sender->Clear();
-        (void)client_conn->TrySend();
+        (void)(client_conn->TrySendBurst(1) > 0);
         auto b = client_sender->GetLastSentBuffer();
 
         // When migration is disabled, first observation may not send any data
@@ -752,7 +754,7 @@ TEST(PathMigrationTest, disable_active_migration_semantics) {
     client_conn->OnObservedPeerAddress(new_addr);
     {
         client_sender->Clear();
-        ASSERT_TRUE(client_conn->TrySend());
+        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto b = client_sender->GetLastSentBuffer();
         ASSERT_NE(b, nullptr);
         ASSERT_GT(b->GetDataLength(), 0);
@@ -764,7 +766,7 @@ TEST(PathMigrationTest, disable_active_migration_semantics) {
 
         // Server should respond; generate and decrypt server->client response to find PATH_RESPONSE
         server_sender->Clear();
-        ASSERT_TRUE(server_conn->TrySend());
+        ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
         auto sb = server_sender->GetLastSentBuffer();
         ASSERT_NE(sb, nullptr);
         ASSERT_GT(sb->GetDataLength(), 0);
@@ -818,7 +820,7 @@ TEST(PathMigrationTest, cid_rotation_and_retirement_on_path_switch) {
     // Client sends PATH_CHALLENGE -> deliver to server
     {
         client_sender->Clear();
-        ASSERT_TRUE(client_conn->TrySend());
+        ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
         auto cb = client_sender->GetLastSentBuffer();
         ASSERT_NE(cb, nullptr);
         ASSERT_GT(cb->GetDataLength(), 0);
@@ -831,7 +833,7 @@ TEST(PathMigrationTest, cid_rotation_and_retirement_on_path_switch) {
     // Server PATH_RESPONSE -> client validates and should rotate DCID
     {
         server_sender->Clear();
-        ASSERT_TRUE(server_conn->TrySend());
+        ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
         auto sb = server_sender->GetLastSentBuffer();
         ASSERT_NE(sb, nullptr);
         ASSERT_GT(sb->GetDataLength(), 0);
@@ -844,7 +846,7 @@ TEST(PathMigrationTest, cid_rotation_and_retirement_on_path_switch) {
     // After path validation, client should emit RETIRE_CONNECTION_ID for the old DCID
     // and start using a new DCID from the pool provided by server during handshake
     client_sender->Clear();
-    ASSERT_TRUE(client_conn->TrySend());
+    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto post_b = client_sender->GetLastSentBuffer();
     ASSERT_NE(post_b, nullptr);
     ASSERT_GT(post_b->GetDataLength(), 0);
@@ -872,7 +874,7 @@ TEST(PathMigrationTest, cid_rotation_and_retirement_on_path_switch) {
     // If not in this flight, drive another send
     if (!saw_retire) {
         client_sender->Clear();
-        if (client_conn->TrySend()) {
+        if ((client_conn->TrySendBurst(1) > 0)) {
             auto ab = client_sender->GetLastSentBuffer();
             if (ab && ab->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -892,7 +894,7 @@ TEST(PathMigrationTest, cid_rotation_and_retirement_on_path_switch) {
                 }
                 if (!saw_retire) {
                     client_sender->Clear();
-                    if (client_conn->TrySend()) {
+                    if ((client_conn->TrySendBurst(1) > 0)) {
                         ab = client_sender->GetLastSentBuffer();
                         if (ab && ab->GetDataLength() > 0) {
                             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -922,7 +924,7 @@ TEST(PathMigrationTest, path_challenge_retry_backoff_limits) {
     int path_challenge_count = 0;
     for (int i = 0; i < 10; ++i) {
         client_sender->Clear();
-        if (!client_conn->TrySend()) {
+        if (!(client_conn->TrySendBurst(1) > 0)) {
             continue;
         }
         auto cb = client_sender->GetLastSentBuffer();
@@ -1002,7 +1004,7 @@ TEST(PathMigrationTest, initiate_migration_pre_rotates_dcid) {
 
     // Verify PATH_CHALLENGE is sent
     client_sender->Clear();
-    ASSERT_TRUE(client_conn->TrySend());
+    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -1053,7 +1055,7 @@ TEST(PathMigrationTest, initiate_migration_fails_without_available_cid) {
         ++migration_count;
         // Complete the migration by exchanging PATH_CHALLENGE/RESPONSE
         client_sender->Clear();
-        (void)client_conn->TrySend();
+        (void)(client_conn->TrySendBurst(1) > 0);
         auto cb = client_sender->GetLastSentBuffer();
         if (cb && cb->GetDataLength() > 0) {
             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -1062,7 +1064,7 @@ TEST(PathMigrationTest, initiate_migration_fails_without_available_cid) {
             }
         }
         server_sender->Clear();
-        (void)server_conn->TrySend();
+        (void)(server_conn->TrySendBurst(1) > 0);
         auto sb = server_sender->GetLastSentBuffer();
         if (sb && sb->GetDataLength() > 0) {
             std::vector<std::shared_ptr<IPacket>> pkts;
@@ -1122,7 +1124,7 @@ TEST(PathMigrationTest, initiate_migration_skips_cid_rotation_on_response) {
 
     // Send PATH_CHALLENGE to server
     client_sender->Clear();
-    ASSERT_TRUE(client_conn->TrySend());
+    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto cb = client_sender->GetLastSentBuffer();
     ASSERT_NE(cb, nullptr);
     ASSERT_GT(cb->GetDataLength(), 0);
@@ -1132,7 +1134,7 @@ TEST(PathMigrationTest, initiate_migration_skips_cid_rotation_on_response) {
 
     // Server sends PATH_RESPONSE
     server_sender->Clear();
-    ASSERT_TRUE(server_conn->TrySend());
+    ASSERT_TRUE((server_conn->TrySendBurst(1) > 0));
     auto sb = server_sender->GetLastSentBuffer();
     ASSERT_NE(sb, nullptr);
     ASSERT_GT(sb->GetDataLength(), 0);
@@ -1253,7 +1255,7 @@ TEST(PathMigrationTest, migration_callback_invoked_on_success) {
 
     // Send PATH_CHALLENGE
     client_sender->Clear();
-    ASSERT_TRUE(client_conn->TrySend());
+    ASSERT_TRUE((client_conn->TrySendBurst(1) > 0));
     auto cb = client_sender->GetLastSentBuffer();
     if (cb && cb->GetDataLength() > 0) {
         std::vector<std::shared_ptr<IPacket>> challenge_pkts;
@@ -1264,7 +1266,7 @@ TEST(PathMigrationTest, migration_callback_invoked_on_success) {
 
     // Server sends PATH_RESPONSE
     server_sender->Clear();
-    (void)server_conn->TrySend();
+    (void)(server_conn->TrySendBurst(1) > 0);
     auto sb = server_sender->GetLastSentBuffer();
     if (sb && sb->GetDataLength() > 0) {
         std::vector<std::shared_ptr<IPacket>> response_pkts;

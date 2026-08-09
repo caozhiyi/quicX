@@ -33,11 +33,16 @@ constexpr uint8_t kQpackInsertWithNameRefPrefixBits = 6;        // 1 S i i i i i
 constexpr uint8_t kQpackInsertWithNameRefFirstByteBase = 0x80;  // 1000 0000
 constexpr uint8_t kQpackInsertWithNameRefStaticBit = 0x40;      // 0100 0000 (S bit)
 
-constexpr uint8_t kQpackInsertWithoutNameRefPrefixBits = 6;        // 01 n n n n n n
+// RFC 9204 Section 4.3.3 "Insert with Literal Name": 0 1 H |Name Length (5+)|
+// The H flag and the name length share the instruction byte.
+constexpr uint8_t kQpackInsertWithoutNameRefPrefixBits = 5;        // 0 1 H n n n n n
 constexpr uint8_t kQpackInsertWithoutNameRefFirstByteBase = 0x40;  // 0100 0000
+constexpr uint8_t kQpackInsertWithoutNameRefHuffmanBit = 0x20;     // 0010 0000
 
-constexpr uint8_t kQpackDuplicatePrefixBits = 4;        // 0001 xxxx
-constexpr uint8_t kQpackDuplicateFirstByteBase = 0x10;  // 0001 0000
+// RFC 9204 Section 4.3.4 "Duplicate": 0 0 0 |Index (5+)|
+constexpr uint8_t kQpackDuplicatePrefixBits = 5;        // 000 x xxxx
+constexpr uint8_t kQpackDuplicateFirstByteBase = 0x00;  // 0000 0000
+constexpr uint8_t kQpackDuplicateFirstByteMask = 0xE0;  // 1110 0000
 
 constexpr uint8_t kQpackTop2BitsMask = 0xC0;  // 1100 0000
 

@@ -40,6 +40,30 @@ public:
 
     ~ConnectionIDCoordinator() = default;
 
+    /**
+     * @brief Fill |out| with a stateless reset token (RFC 9000 §10.3).
+     *
+     * The token must be hard to guess: a peer that can predict it can inject a
+     * Stateless Reset packet and tear the connection down at will. It therefore
+     * comes from the CSPRNG, as src/common/util/random.h requires for exactly
+     * this case. It was previously a loop of `rand() % 256`, which is a
+     * non-cryptographic LCG, never seeded anywhere in this project (so identical
+     * on every run), and not thread-safe while workers generate tokens
+     * concurrently.
+     *
+     * TODO(RFC 9000 §10.3.1): once a Stateless Reset *send* path exists, this
+     * has to become HMAC(static_key, connection_id) instead. A server that has
+     * lost state cannot look a random token up -- it must recompute it from the
+     * CID in the incoming packet. Random is correct only while nothing needs to
+     * reconstruct the token, which is true today: this is the only generation
+     * site and there is no validation path.
+     *
+     * Public and static so it can be tested without building a coordinator.
+     *
+     * @return false if |out| is null or |len| is 0, or if the CSPRNG fails.
+     */
+    static bool GenerateStatelessResetToken(uint8_t* out, uint32_t len);
+
     // ==================== Initialization ====================
 
     /**
@@ -87,6 +111,19 @@ public:
      * @return true if rotation succeeded, false otherwise
      */
     bool RotateRemoteConnectionID();
+
+    /**
+     * @brief Flush a previously deferred RETIRE_CONNECTION_ID for the remote CID
+     * rotated away from during migration.
+     *
+     * RotateRemoteConnectionID() intentionally does NOT send the RETIRE frame
+     * immediately: retiring a CID while the path that uses it is still active
+     * makes the peer delete that path and abort the connection (e.g. picoquic
+     * "Cannot delete path through which packet arrives"). This is called from
+     * PathManager::OnPathResponse once the new migration path has been
+     * validated, at which point retiring the old CID is safe.
+     */
+    void RetirePendingRemoteConnectionID();
 
     /**
      * @brief Set peer's active connection ID limit (from transport parameters)
@@ -146,6 +183,14 @@ private:
 
     // Qlog trace for connection ID events
     std::shared_ptr<common::QlogTrace> qlog_trace_;
+
+    // Deferred RETIRE_CONNECTION_ID state. When the remote CID is rotated during
+    // migration, we remember the sequence number of the CID we rotated away from
+    // and only emit the RETIRE_CONNECTION_ID once the new path is validated
+    // (RetirePendingRemoteConnectionID), per RFC 9000 §9.2 / peer path-deletion
+    // requirements.
+    uint64_t pending_retire_remote_seq_{0};
+    bool has_pending_retire_remote_cid_{false};
 };
 
 }  // namespace quic

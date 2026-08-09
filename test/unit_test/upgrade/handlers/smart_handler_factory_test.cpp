@@ -30,15 +30,14 @@ public:
     void AddFixedProcess(std::function<void()>) override { return; }
     void AddFixedProcess(std::weak_ptr<void>, std::function<void()>) override { return; }
     void ClearFixedProcesses() override {}
-    uint64_t AddTimer(std::function<void()>, uint32_t, bool = false) override { return 1; }
-    uint64_t AddTimer(common::TimerTask& task, uint32_t, bool = false) override { return 1; }
-    bool RemoveTimer(uint64_t) override { return true; }
-    bool RemoveTimer(common::TimerTask& task) override { return true; }
+    common::Timer AddTimer(std::weak_ptr<void>, std::function<void()>, uint32_t) override { return common::Timer(); }
+    common::Timer AddRepeatTimer(std::weak_ptr<void>, std::function<void()>, uint32_t) override {
+        return common::Timer();
+    }
+    void PostDelayed(std::function<void()>, uint32_t) override {}
     void ClearAllTimers() override {}
-    void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override { return; }
     void PostTask(std::function<void()>) override {}
     void Wakeup() override {}
-    std::shared_ptr<common::ITimer> GetTimer() override { return nullptr; }
 
     bool IsInLoopThread() const override {
         return true;  // Mock always returns true for testing

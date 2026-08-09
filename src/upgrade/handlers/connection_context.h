@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <quicx/common/if_timer_scheduler.h>
+
 #include "upgrade/network/if_tcp_socket.h"
 
 namespace quicx {
@@ -40,8 +42,10 @@ struct ConnectionContext {
     std::vector<uint8_t> pending_response;
     size_t response_sent = 0;  // Bytes already sent
 
-    // Negotiation timeout timer ID
-    uint64_t negotiation_timer_id = 0;
+    // Negotiation timeout timer. Owning the handle here means closing the
+    // connection cancels the timer, so a fd that is reused cannot inherit a
+    // pending timeout from its predecessor.
+    common::Timer negotiation_timer;
 
     // Constructor initializes the connection context
     ConnectionContext(std::shared_ptr<ITcpSocket> sock):

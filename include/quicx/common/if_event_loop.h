@@ -5,15 +5,10 @@
 #include <functional>
 #include <memory>
 
+#include <quicx/common/if_timer_scheduler.h>
+
 namespace quicx {
 namespace common {
-
-// Forward declarations of timer types. Their full definitions live in
-// internal headers (src/common/timer/{if_timer,timer_task}.h) and are not
-// part of the public API. IEventLoop only references them by reference or
-// std::shared_ptr, so a forward declaration is sufficient for compilation.
-class ITimer;
-class TimerTask;
 
 /**
  * @brief File descriptor event handler interface
@@ -55,8 +50,12 @@ public:
  * @brief Event loop interface for I/O multiplexing and timer management
  *
  * Provides epoll/kqueue-based event processing and timer scheduling.
+ *
+ * The timer half of this interface is inherited from ITimerScheduler so that
+ * components which only need to schedule work later can depend on those three
+ * methods instead of the whole loop.
  */
-class IEventLoop {
+class IEventLoop: public ITimerScheduler {
 public:
     virtual ~IEventLoop() = default;
 
@@ -135,53 +134,16 @@ public:
     virtual void ClearFixedProcesses() = 0;
 
     /**
-     * @brief Add a timer with callback
-     *
-     * @param cb Callback function
-     * @param delay_ms Delay in milliseconds
-     * @param repeat Whether to repeat the timer
-     * @return Timer ID
-     */
-    virtual uint64_t AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat = false) = 0;
-
-    /**
-     * @brief Add a timer task
-     *
-     * @param task Timer task object
-     * @param delay_ms Delay in milliseconds
-     * @param repeat Whether to repeat the timer
-     * @return Timer ID
-     */
-    virtual uint64_t AddTimer(TimerTask& task, uint32_t delay_ms, bool repeat = false) = 0;
-
-    /**
-     * @brief Remove a timer by ID
-     *
-     * @param timer_id Timer ID returned by AddTimer
-     * @return true if removed successfully, false otherwise
-     */
-    virtual bool RemoveTimer(uint64_t timer_id) = 0;
-
-    /**
-     * @brief Remove a timer task
-     *
-     * @param task Timer task to remove
-     * @return true if removed successfully, false otherwise
-     */
-    virtual bool RemoveTimer(TimerTask& task) = 0;
-
-    /**
      * @brief Remove every pending timer and drop all callback closures.
      *
      * Motivation: BaseConnection's Closing/Draining paths each register
-     *   event_loop_->AddTimer([self = shared_from_this()]() {
+     *   event_loop_->PostDelayed([self = shared_from_this()]() {
      *       self->OnClosingTimeout();
-     *   }, 3 * GetCloseWaitTime(), false);
-     * That closure captures a shared_ptr<BaseConnection>; the EventLoop's
-     * timers_ map keeps the captured closure alive until the timer fires.
-     * If the owning QuicClient/QuicServer stops the master event loop
-     * before the timer fires, the callback never runs — and
-     * ~BaseConnection() never runs, leaking ~120KB per connection cycle.
+     *   }, 3 * GetCloseWaitTime());
+     * That closure captures a shared_ptr<BaseConnection>, which the timer holds
+     * until it fires. If the owning QuicClient/QuicServer stops the master event
+     * loop before that happens, the callback never runs -- and neither does
+     * ~BaseConnection(), leaking ~120KB per connection cycle.
      *
      * Call this after the event loop has been stopped and joined, right
      * before (or as part of) owner teardown, to release every pending
@@ -200,20 +162,6 @@ public:
      * @brief Wake up the event loop
      */
     virtual void Wakeup() = 0;
-
-    /**
-     * @brief Get the timer instance
-     *
-     * @return Timer instance
-     */
-    virtual std::shared_ptr<ITimer> GetTimer() = 0;
-
-    /**
-     * @brief Set custom timer for testing
-     *
-     * @param timer Timer instance
-     */
-    virtual void SetTimerForTest(std::shared_ptr<ITimer> timer) = 0;
 
     /**
      * @brief Check if the current thread is the event loop thread

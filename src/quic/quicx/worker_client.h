@@ -37,7 +37,7 @@ private:
         const std::string& server_name, uint32_t negotiated_version);
 
     // Store handshake timeout timers for each connection
-    std::unordered_map<std::shared_ptr<IConnection>, uint64_t> handshake_timers_;
+    std::unordered_map<std::shared_ptr<IConnection>, common::Timer> handshake_timers_;
 };
 
 }  // namespace quic

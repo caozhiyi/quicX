@@ -52,10 +52,13 @@ bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, b
     }
     auto chunk = shared_span.GetChunk();
     uint8_t* cur_pos = span.GetStart();
-    uint32_t token_len = span.GetLength() - kRetryIntegrityTagLength;
 
-    // decode retry token
-    retry_token_ = common::SharedBufferSpan(chunk, span.GetStart(), span.GetStart() + token_len);
+    if (span.GetLength() < kRetryIntegrityTagLength) {
+        LOG_ERROR("retry packet too short for integrity tag");
+        return false;
+    }
+    uint32_t token_len = span.GetLength() - kRetryIntegrityTagLength;
+    retry_token_ = common::SharedBufferSpan(chunk, cur_pos, cur_pos + token_len);
     cur_pos += token_len;
 
     // decode retry integrity tag
@@ -64,6 +67,7 @@ bool RetryPacket::DecodeWithoutCrypto(std::shared_ptr<common::IBuffer> buffer, b
     buffer->MoveReadPt(cur_pos - span.GetStart());
     return true;
 }
+
 
 void RetryPacket::SetRetryIntegrityTag(uint8_t* tag) {
     std::memcpy(retry_integrity_tag_, tag, kRetryIntegrityTagLength);

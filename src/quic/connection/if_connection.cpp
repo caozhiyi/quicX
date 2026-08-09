@@ -10,9 +10,7 @@ IConnection::IConnection(const ConnectionCallbacks& callbacks):
     handshake_done_cb_(callbacks.handshake_done_cb),
     add_conn_id_cb_(callbacks.add_conn_id_cb),
     retire_conn_id_cb_(callbacks.retire_conn_id_cb),
-    connection_close_cb_(callbacks.connection_close_cb),
-    sockfd_(-1),
-    migration_sockfd_(-1) {}
+    connection_close_cb_(callbacks.connection_close_cb) {}
 
 IConnection::~IConnection() {}
 
@@ -34,23 +32,13 @@ const common::Address& IConnection::GetPeerAddress() {
 }
 
 void IConnection::GetLocalAddr(std::string& addr, uint32_t& port) {
-    // If we have a cached local address, use it
+    // Only the cached value is reachable at this level: the active socket fd is
+    // owned by DatagramEmitter, so the socket-query fallback lives in
+    // BaseConnection::GetLocalAddr, which overrides this.
     if (!local_addr_.GetIp().empty()) {
         addr = local_addr_.GetIp();
         port = local_addr_.GetPort();
         return;
-    }
-
-    // Otherwise, query from socket
-    int32_t sock = (migration_sockfd_ > 0) ? migration_sockfd_ : sockfd_;
-    if (sock > 0) {
-        common::Address local;
-        if (GetLocalAddressFromSocket(sock, local)) {
-            local_addr_ = local;
-            addr = local_addr_.GetIp();
-            port = local_addr_.GetPort();
-            return;
-        }
     }
 
     addr = "";

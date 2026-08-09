@@ -8,16 +8,9 @@ ConnectionRateMonitor::ConnectionRateMonitor(std::shared_ptr<common::IEventLoop>
     event_loop_(event_loop) {}
 
 ConnectionRateMonitor::~ConnectionRateMonitor() {
-    // Intentionally do NOT call StopTimer() here:
-    //   * StopTimer() invokes IEventLoop::RemoveTimer(), which is guarded
-    //     by AssertInLoopThread() and aborts when called from anywhere
-    //     other than the worker's event-loop thread.
-    //   * This destructor runs from ServerWorker::Shutdown() on the
-    //     QuicServer-owner thread (after the worker thread has been
-    //     Stop()+Join()'d — see QuicServer::~QuicServer comments).
-    //   * Since the event loop is no longer running, the periodic timer
-    //     cannot fire, and its bookkeeping inside the timer wheel is
-    //     released when the EventLoop itself is destroyed.
+    // ~Timer() cancels, and cancelling is safe from any thread -- which matters
+    // because this destructor runs from ServerWorker::Shutdown() on the
+    // QuicServer-owner thread, after the worker's loop thread has been joined.
 }
 
 void ConnectionRateMonitor::RecordNewConnection() {
@@ -68,13 +61,15 @@ void ConnectionRateMonitor::StartTimer(std::shared_ptr<common::IEventLoop> event
         return;
     }
 
-    // Schedule repeating timer every 1000ms (1 second)
-    timer_id_ = event_loop->AddTimer([this]() { CalculateRate(); },
-        1000,  // 1 second interval
-        true   // repeat
-    );
+    // Schedule repeating timer every 1000ms (1 second).
+    //
+    // This used to pass repeat=true to the id-based AddTimer, which never
+    // actually re-registered anything: the rate was sampled exactly once, for the
+    // lifetime of the process, and the closure stayed pinned in EventLoop's
+    // bookkeeping. AddRepeatTimer really repeats.
+    timer_ = event_loop->AddRepeatTimer(life_token_, [this]() { CalculateRate(); }, 1000);
 
-    LOG_DEBUG("ConnectionRateMonitor: started rate calculation timer (id=%llu)", timer_id_);
+    LOG_DEBUG("ConnectionRateMonitor: started rate calculation timer");
 }
 
 void ConnectionRateMonitor::StopTimer() {
@@ -83,12 +78,8 @@ void ConnectionRateMonitor::StopTimer() {
         return;
     }
 
-    auto loop = event_loop_.lock();
-    if (loop && timer_id_ != 0) {
-        loop->RemoveTimer(timer_id_);
-        LOG_DEBUG("ConnectionRateMonitor: stopped rate calculation timer (id=%llu)", timer_id_);
-        timer_id_ = 0;
-    }
+    timer_.Cancel();
+    LOG_DEBUG("ConnectionRateMonitor: stopped rate calculation timer");
 }
 
 }  // namespace quic

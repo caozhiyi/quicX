@@ -4,7 +4,6 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/log/log.h"
-#include "common/timer/timer.h"
 #include "connection_test_util.h"
 #include "mock_sender.h"
 #include "quic/connection/connection_client.h"
@@ -20,6 +19,7 @@ namespace {
 
 using quicx::quic::AttachMockSender;
 using quicx::quic::ConnectionProcess;
+using quicx::quic::DrainInto;
 
 static const char kCertPem[] =
     "-----BEGIN CERTIFICATE-----\n"
@@ -81,16 +81,16 @@ TEST(QuicConnectionTest, handshake) {
     auto client_sender = AttachMockSender(client_conn);
     auto server_sender = AttachMockSender(server_conn);
 
+    // Drain each side rather than assume a fixed datagram count: the server
+    // coalesces Initial+Handshake into one datagram (RFC 9000 §12.2).
     // client -------init-----> server
-    ConnectionProcess(client_conn, server_conn, client_sender);
-    // client <------init------ server
-    ConnectionProcess(server_conn, client_conn, server_sender);
-    // client <---handshake---- server
-    ConnectionProcess(server_conn, client_conn, server_sender);
+    DrainInto(client_conn, server_conn, client_sender);
+    // client <--init+handshake-- server
+    DrainInto(server_conn, client_conn, server_sender);
     // client ----handshake---> server
-    ConnectionProcess(client_conn, server_conn, client_sender);
+    DrainInto(client_conn, server_conn, client_sender);
     // client <----session----- server
-    ConnectionProcess(server_conn, client_conn, server_sender);
+    DrainInto(server_conn, client_conn, server_sender);
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
@@ -100,7 +100,7 @@ TEST(QuicConnectionTest, handshake) {
     for (int i = 0; i < 10; ++i) {
         // Try to process any remaining handshake data
         server_sender->Clear();
-        if (server_conn->TrySend()) {
+        if ((server_conn->TrySendBurst(1) > 0)) {
             auto buffer = server_sender->GetLastSentBuffer();
             if (buffer && buffer->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -115,7 +115,7 @@ TEST(QuicConnectionTest, handshake) {
 
         // Also try client side
         client_sender->Clear();
-        if (client_conn->TrySend()) {
+        if ((client_conn->TrySendBurst(1) > 0)) {
             auto buffer = client_sender->GetLastSentBuffer();
             if (buffer && buffer->GetDataLength() > 0) {
                 std::vector<std::shared_ptr<IPacket>> pkts;
@@ -160,16 +160,16 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
     auto client_sender = AttachMockSender(client_conn);
     auto server_sender = AttachMockSender(server_conn);
 
+    // Drain each side rather than assume a fixed datagram count: the server
+    // coalesces Initial+Handshake into one datagram (RFC 9000 §12.2).
     // client -------init-----> server
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
-    // client <------init------ server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
-    // client <---handshake---- server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
+    ASSERT_GT(DrainInto(client_conn, server_conn, client_sender), 0);
+    // client <--init+handshake-- server
+    ASSERT_GT(DrainInto(server_conn, client_conn, server_sender), 0);
     // client ----handshake---> server
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
+    ASSERT_GT(DrainInto(client_conn, server_conn, client_sender), 0);
     // client <----session----- server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
+    ASSERT_GT(DrainInto(server_conn, client_conn, server_sender), 0);
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
@@ -202,7 +202,7 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
 
     // First flight from client should be Initial or 0-RTT (if session supports it)
     client_sender2->Clear();
-    ASSERT_TRUE(client_conn2->TrySend());
+    ASSERT_TRUE((client_conn2->TrySendBurst(1) > 0));
     auto buffer1 = client_sender2->GetLastSentBuffer();
     ASSERT_NE(buffer1, nullptr);
     ASSERT_GT(buffer1->GetDataLength(), 0);
@@ -221,7 +221,7 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
     bool found_0rtt = false;
     for (int i = 0; i < 4 && !found_0rtt; ++i) {
         client_sender2->Clear();
-        if (!client_conn2->TrySend()) {
+        if (!(client_conn2->TrySendBurst(1) > 0)) {
             // If no more data to send, break
             break;
         }
@@ -246,7 +246,7 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
         // server -> client
         {
             server_sender2->Clear();
-            if (server_conn2->TrySend()) {
+            if ((server_conn2->TrySendBurst(1) > 0)) {
                 auto buffer = server_sender2->GetLastSentBuffer();
                 if (buffer && buffer->GetDataLength() > 0) {
                     std::vector<std::shared_ptr<IPacket>> pkts;
@@ -259,7 +259,7 @@ TEST(QuicConnectionTest, resume_0rtt_basic) {
         // client -> server
         {
             client_sender2->Clear();
-            if (client_conn2->TrySend()) {
+            if ((client_conn2->TrySendBurst(1) > 0)) {
                 auto buffer = client_sender2->GetLastSentBuffer();
                 if (buffer && buffer->GetDataLength() > 0) {
                     std::vector<std::shared_ptr<IPacket>> pkts;
@@ -298,16 +298,16 @@ TEST(QuicConnectionTest, reject_0rtt_basic) {
     auto client_sender = AttachMockSender(client_conn);
     auto server_sender = AttachMockSender(server_conn);
 
+    // Drain each side rather than assume a fixed datagram count: the server
+    // coalesces Initial+Handshake into one datagram (RFC 9000 §12.2).
     // client -------init-----> server
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
-    // client <------init------ server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
-    // client <---handshake---- server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
+    ASSERT_GT(DrainInto(client_conn, server_conn, client_sender), 0);
+    // client <--init+handshake-- server
+    ASSERT_GT(DrainInto(server_conn, client_conn, server_sender), 0);
     // client ----handshake---> server
-    ASSERT_TRUE(ConnectionProcess(client_conn, server_conn, client_sender));
+    ASSERT_GT(DrainInto(client_conn, server_conn, client_sender), 0);
     // client <----session----- server
-    ASSERT_TRUE(ConnectionProcess(server_conn, client_conn, server_sender));
+    ASSERT_GT(DrainInto(server_conn, client_conn, server_sender), 0);
 
     EXPECT_EQ(server_conn->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client_conn->GetCurEncryptionLevel(), kApplication);
@@ -343,7 +343,7 @@ TEST(QuicConnectionTest, reject_0rtt_basic) {
 
     // First flight from client should be Initial or 0-RTT (if session supports it)
     client_sender2->Clear();
-    ASSERT_TRUE(client_conn2->TrySend());
+    ASSERT_TRUE((client_conn2->TrySendBurst(1) > 0));
     auto buffer1 = client_sender2->GetLastSentBuffer();
     ASSERT_NE(buffer1, nullptr);
     ASSERT_GT(buffer1->GetDataLength(), 0);
@@ -362,7 +362,7 @@ TEST(QuicConnectionTest, reject_0rtt_basic) {
     bool found_0rtt = false;
     for (int i = 0; i < 5 && !found_0rtt; ++i) {
         client_sender2->Clear();
-        if (!client_conn2->TrySend()) {
+        if (!(client_conn2->TrySendBurst(1) > 0)) {
             // If no more data to send, break
             break;
         }

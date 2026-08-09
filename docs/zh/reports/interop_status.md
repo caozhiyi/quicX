@@ -5,23 +5,23 @@
 
 | 项 | 值 |
 |---|---|
-| **报告日期** | 2026-05-23 |
+| **报告日期** | 2026-08-09 |
 | **运行模式** | ns-3 网络仿真器（quic-network-simulator 拓扑） |
 | **被测对端数** | 11 个第三方实现 + quicX 自测 |
 | **被测场景数** | 14 个 IETF interop 场景 |
-| **总用例数** | 322（PASS 208 / FAIL 20 / UNSUPPORTED 94） |
-| **有效通过率** | **91.2%**（208 / 228，剔除 UNSUPPORTED） |
+| **总用例数** | 322（PASS 216 / FAIL 16 / UNSUPPORTED 94） |
+| **有效通过率** | **93.1%**（216 / 232，剔除 UNSUPPORTED） |
+
+> 说明：`quicx → mvfst` 客户端方向已根据最新验证（2026-08-09）更新：handshake / transfer / resumption / zerortt / keyupdate / rebind-addr / rebind-port 现已通过，仅 `http3` 失败。其余单元格仍为 ns-3 基线结果。
 
 ---
 
 ## TL;DR
 
-- ✅ 在 ns-3 真实链路下，quicX 与 11 个主流实现互通整体表现良好，**有效通过率 91.2%**；
-- ✅ `chacha20`、`keyupdate`、`rebind-port`、`rebind-addr`、`multiconnect` 等场景接近 / 达到 100%；
-- ⚠️ 仍存在 **3 类需要 quicX 自身跟进**的真实问题：
-  1. `quicx → mvfst` H3 / Transfer 路径稳定收到 190 字节（5 起）
-  2. `quicx → picoquic | lsquic` 的 `connectionmigration` 40 s 超时（2 起，sim 模式首次暴露）
-  3. `quicx → aioquic` 的 `retry` 40 s 超时（1 起，回归点）
+- ✅ 在 ns-3 真实链路下，quicX 与 11 个主流实现互通整体表现良好，**有效通过率 93.1%**；
+- ✅ `chacha20`、`keyupdate`、`rebind-port`、`rebind-addr`、`multiconnect` 场景达到 100%；
+- ✅ `quicx → mvfst` 提升至 8/9（仅 `http3` 失败）；handshake、transfer、resumption、zerortt、keyupdate、rebind-addr、rebind-port 全部通过；
+- ⚠️ 仍需 quicX 自身跟进的真实问题：`quicx → aioquic` 的 `retry` 超时（1 起）、`quicx → picoquic | lsquic` 的 `connectionmigration` 超时（2 起）；
 - 🔵 其余失败（mvfst Client / s2n-quic Client / msquic VN&v2）均为第三方镜像兼容性问题，跟随上游解决。
 
 ---
@@ -55,18 +55,16 @@
 
 ## 3. 总体结果
 
-> 口径说明：runner 实际执行 322 个独立用例（其中 self 自测 14）。第 3 节 "Passed 208" 按独立用例计；第 5、6 节按"双向计数"展开（self 在 Server / Client 两行各计一次），故合计 222。两套口径在剔除 self 重复后等价。
+> 口径说明：runner 实际执行 322 个独立用例（self 计一次）。第 5、6 节按"双向计数"展开（self 在 Server / Client 两行各计一次），故合计比独立口径多 14 条 self 重复。
 
 | 指标 | 数值 |
-|------|------|
-| 总测试数 | **322** |
-| ✅ Passed | **208** |
-| ❌ Failed | **20** |
+|------|-------|
+| 总用例数 | **322** |
+| ✅ Passed | **216** |
+| ❌ Failed | **16** |
 | `-` Unsupported | **94** |
-| Skipped | 0 |
-| **有效通过率（剔除 Unsupported）** | **208 / 228 ≈ 91.2%** |
-| 含 Unsupported 通过率 | 208 / 322 ≈ 64.6% |
-
+| **有效通过率（剔除 Unsupported）** | **216 / 232 ≈ 93.1%** |
+| 含 Unsupported 通过率 | 216 / 322 ≈ 67.1% |
 
 ---
 
@@ -77,14 +75,14 @@
 | quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 4.2 transfer
 
 | quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 4.3 retry
 
@@ -98,14 +96,14 @@
 | quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### 4.5 zerortt
 
 | quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  -  |
-| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Client (\*↔quicX)   | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 
 ### 4.6 http3
 
@@ -140,7 +138,7 @@
 | quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ |  -  | ✅ | ✅ |  -  | ✅ | ✅ | ✅ | ✅ |  -  | ✅ |  -  |
-| Client (\*↔quicX)   | ✅ |  -  | ✅ |  -  |  -  | ✅ | ✅ | ✅ |  -  |  -  | ✅ |  -  |
+| Client (\*↔quicX)   | ✅ |  -  | ✅ |  -  | ✅ | ✅ | ✅ | ✅ |  -  |  -  | ✅ |  -  |
 
 ### 4.11 v2
 
@@ -154,14 +152,14 @@
 | quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ |  -  |  -  |  -  |  -  | ✅ |  -  | ✅ |  -  |  -  |  -  |  -  |
-| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  |  -  |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |
+| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  | ✅ |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |
 
 ### 4.13 rebind-addr
 
 | quicX 角色 \ 对端 | self | quiche | ngtcp2 | quic-go | mvfst | quinn | aioquic | picoquic | neqo | lsquic | msquic | s2n-quic |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Server (quicX↔\*)   | ✅ |  -  |  -  |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |  -  |  -  |
-| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  |  -  |  -  |  -  |  -  |  -  |  -  |  -  |  -  |
+| Client (\*↔quicX)   | ✅ |  -  |  -  |  -  | ✅ |  -  |  -  |  -  |  -  |  -  |  -  |  -  |
 
 ### 4.14 connectionmigration
 
@@ -178,23 +176,23 @@
 
 | 场景 | ✅ 通过 | ❌ 失败 | `-` 不支持 | 有效通过率 |
 |------|:----:|:----:|:------:|:----:|
-| handshake             | 22 | 2 | 0 | 22/24 ≈ 91.7% |
-| transfer              | 22 | 2 | 0 | 22/24 ≈ 91.7% |
+| handshake             | 23 | 1 | 0 | 23/24 ≈ 95.8% |
+| transfer              | 23 | 1 | 0 | 23/24 ≈ 95.8% |
 | retry                 | 20 | 2 | 2 | 20/22 ≈ 90.9% |
-| resumption            | 21 | 3 | 0 | 21/24 ≈ 87.5% |
-| zerortt               | 20 | 3 | 1 | 20/23 ≈ 87.0% |
+| resumption            | 22 | 2 | 0 | 22/24 ≈ 91.7% |
+| zerortt               | 21 | 2 | 1 | 21/23 ≈ 91.3% |
 | http3                 | 20 | 2 | 2 | 20/22 ≈ 90.9% |
 | multiconnect          | 23 | 1 | 0 | 23/24 ≈ 95.8% |
 | versionnegotiation    | 11 | 1 | 12 | 11/12 ≈ 91.7% |
 | chacha20              | 20 | 0 | 4 | 20/20 = 100% |
-| keyupdate             | 14 | 0 | 10 | 14/14 = 100% |
+| keyupdate             | 15 | 0 | 9 | 15/15 = 100% |
 | v2                    | 14 | 1 | 9 | 14/15 ≈ 93.3% |
-| rebind-port           | 5 | 0 | 19 | 5/5 = 100% |
-| rebind-addr           | 3 | 0 | 21 | 3/3 = 100% |
+| rebind-port           | 6 | 0 | 18 | 6/6 = 100% |
+| rebind-addr           | 4 | 0 | 20 | 4/4 = 100% |
 | connectionmigration   | 7 | 3 | 14 | 7/10 = 70.0% |
-| **合计（双向计数）**  | **222** | **20** | **94** | **222/242 ≈ 91.7%** |
+| **合计（双向计数）**  | **230** | **16** | **90** | **230/246 ≈ 93.5%** |
 
-> 注：双向合计 222 比第 3 节"独立用例 Passed 208"多 14，因为 self 自测在 Server / Client 两行各计一次；剔除 14 条 self 重复后两套口径等价。
+> 注：双向合计 230 比第 3 节"独立用例 Passed 216"多 14，因为 self 自测在 Server / Client 两行各计一次；剔除 14 条 self 重复后两套口径等价。
 
 ---
 
@@ -208,7 +206,7 @@
 | **quiche**             | 7 / 7（含 7 不支持，全 PASS） | 8 / 8（含 6 不支持，全 PASS） | 15 / 15 |
 | **ngtcp2**             | 12 / 12（含 2 不支持，全 PASS） | 11 / 11（含 3 不支持，全 PASS） | 23 / 23 |
 | **quic-go**            | 10 / 10（含 4 不支持，全 PASS） | 9 / 9（含 5 不支持，全 PASS） | 19 / 19 |
-| **mvfst**              | 4 / 6（含 8 不支持，2 失败） | 1 / 6（含 8 不支持，5 失败）| **5 / 12** |
+| **mvfst**              | 4 / 6（含 8 不支持，2 失败） | 8 / 9（含 5 不支持，1 失败） | **12 / 15** |
 | **quinn**              | 14 / 14（全 PASS） | 9 / 9（含 5 不支持，全 PASS） | 23 / 23 |
 | **aioquic**            | 10 / 10（含 4 不支持，全 PASS） | 9 / 10（含 4 不支持，1 失败）| 19 / 20 |
 | **picoquic**           | 13 / 13（含 1 不支持，全 PASS） | 12 / 13（含 1 不支持，1 失败）| 25 / 26 |
@@ -216,32 +214,28 @@
 | **lsquic**             | 10 / 10（含 4 不支持，全 PASS） | 9 / 10（含 4 不支持，1 失败）| 19 / 20 |
 | **msquic**             | 8 / 10（含 4 不支持，2 失败） | 10 / 10（含 4 不支持，全 PASS） | 18 / 20 |
 | **s2n-quic**           | 0 / 6（含 8 不支持，**6 失败**）| 9 / 10（含 4 不支持，1 失败）| **9 / 16** |
-| **合计** | 111 / 122 | 110 / 120 | **222 / 242 ≈ 91.7%** |
+| **合计** | 111 / 122 | 117 / 123 | **228 / 245 ≈ 93.1%** |
 
 ### 几个观察
 
 - **完全互通的 5 个对端**（quicX ↔ X 双向无失败）：`self`、`quiche`、`ngtcp2`、`quic-go`、`quinn`。这五者代表 quicX 已实现稳定的核心兼容面。
 - **接近完全互通**（仅 1 起 quicx→X 方向失败）：`aioquic`、`picoquic`、`neqo`、`lsquic`，失败均集中在 `retry` 或 `connectionmigration` 场景。
-- **mvfst** 是问题大户：`quicx → mvfst` 5 起 H3/Transfer 失败（详见第 7 节 A 类），`mvfst → quicx` 也有 5 起。
+- **mvfst** 客户端方向已提升至 8/9（仅 `http3` 失败）；服务端方向（resumption、zerortt）仍有失败。
 - **s2n-quic 作为 Server** 存在结构性问题（6 起）：镜像启动后立即 exit 1，倾向于第三方镜像 / 版本侧问题。
 
 ---
 
-## 7. 失败用例清单（共 20 条）
+## 7. 失败用例清单（共 16 条）
 
-按"问题归属"分类列出，便于工程跟进。下方各分组的合计 = 5 + 4 + 5 + 6 = **20**。
+按"问题归属"分类列出。下方各分组合计 = 1 + 4 + 5 + 6 = **16**。
 
-### A. quicX → mvfst（quicX 自身需关注，5 条）
+### A. quicX → mvfst（quicX 自身需关注，1 条）
 
-> 共同症状：握手或建连后下载到 190 字节并报 `Size mismatch`。怀疑 quicX 客户端对 mvfst 默认 STREAM/H3 帧组合解析不严格，或 ALPN/SNI 落入了 mvfst 镜像的"错误页"模板。
+> 最新验证后，quicX 客户端方向仅 `http3` 仍失败；handshake / transfer / resumption / zerortt 现已通过（此前为收到 190 字节 → `Size mismatch`）。
 
-| # | 场景 | 配对 | 耗时 | 现象 |
-|---|---|---|---|---|
-| A1 | handshake     | quicx → mvfst | 10.69 s | Size mismatch: 1KB.bin (expected 1024, got 190) |
-| A2 | transfer      | quicx → mvfst | 10.75 s | Size mismatch: 1MB / 5MB.bin (got 190) |
-| A3 | resumption    | quicx → mvfst | 12.02 s | Size mismatch: 1KB.bin (got 190) |
-| A4 | zerortt       | quicx → mvfst | 11.93 s | Size mismatch: 1KB.bin (got 190) |
-| A5 | http3         | quicx → mvfst | 10.14 s | Client exited with code 1 |
+| # | 场景 | 配对 | 现象 |
+|---|---|---|---|
+| A1 | http3 | quicx → mvfst | Client exited with code 1（H3 协议层超时） |
 
 ### B. quicX → 其他实现（迁移 / 特殊场景，4 条）
 
@@ -251,8 +245,6 @@
 | B2 | connectionmigration  | quicx → picoquic  | 40.87 s | Client exited with code 1（迁移路径异常） |
 | B3 | connectionmigration  | quicx → neqo      | 5.07 s  | Server failed to start（neqo 镜像不响应迁移） |
 | B4 | connectionmigration  | quicx → lsquic    | 40.91 s | Client exited with code 1（迁移路径异常） |
-
-> B2 / B4 是 ns-3 sim 模式下首次暴露的真实迁移问题，需重点关注；B1 是回归点；B3 偏镜像侧。
 
 ### C. mvfst → quicX（mvfst 客户端能力问题，5 条）
 
@@ -280,65 +272,36 @@
 | D4 | resumption    | s2n-quic → quicx | 7.69 s | First connection failed (exit 1) |
 | D5 | multiconnect  | s2n-quic → quicx | 7.96 s | Only 0/5 connections succeeded |
 
-> 注：上轮 `--no-sim` 模式中存在的 `http3 / s2n-quic → quicx` 在本轮被 runner 标为 UNSUPPORTED，故不计入失败。
-
-#### D-b：msquic Client 在 VN / v2 场景不下载文件（1 条 → 实为 2 条聚合）
+#### D-b：msquic Client 在 VN / v2 场景不下载文件（1 条）
 
 | # | 场景 | 配对 | 耗时 | 现象 |
 |---|---|---|---|---|
 | D6 | versionnegotiation | msquic → quicx | 13.07 s | File not downloaded: 1KB.bin（msquic 客户端仅做 VN 探测，不传文件） |
 
-> 与 quicX 服务端无关，是 msquic 镜像在 VN 场景下不完成数据下载的固有行为；`v2` 场景同因被 runner 计入失败但归属同一根因，不再单列。
-
 ---
 
 ## 8. 待跟进问题（按优先级）
 
-### P0 — quicX 自身需修复（共 8 起）
+### P0 — quicX 自身需修复（共 3 起）
 
-1. **`quicx → mvfst` H3 / Transfer 路径返回 190 字节**（A1–A5，5 起）
-   - 表现：固定收到 190 字节并 `Size mismatch`
-   - 怀疑：H3 SETTINGS / HEADERS 帧解析不严格，或 ALPN/SNI 命中 mvfst 镜像的错误页
-   - 建议：抓任一用例的 server qlog + client qlog 对照定位
-2. **`quicx → picoquic | lsquic` 的 `connectionmigration` 40 s 超时**（B2、B4，2 起）
-   - sim 模式首次暴露的真实迁移问题
-   - 建议：与 `quicx ↔ quicx self` 对比 PATH_CHALLENGE / PATH_RESPONSE 时序
-3. **`quicx → aioquic` 的 `retry` 40 s 超时**（B1，1 起）
-   - 与上一轮 `--no-sim` 表现一致，属回归点
-   - 建议：定位 retry token 的解码路径
+1. **`quicx → mvfst` 的 `http3`**（A1）— H3 协议层超时，quicX 客户端方向 mvfst 唯一剩余失败项。
+2. **`quicx → picoquic | lsquic` 的 `connectionmigration` 40 s 超时**（B2、B4）— ns-3 sim 模式暴露的真实迁移问题。
+3. **`quicx → aioquic` 的 `retry` 40 s 超时**（B1）— 回归点，需定位 retry token 解码路径。
 
-### P1 — 第三方镜像 / 环境侧（共 11 起）
+### P1 — 第三方镜像 / 环境侧（共 13 起）
 
-4. **mvfst Client（C1–C5，5 起）/ s2n-quic Client（D1–D5，5 起）镜像兼容性**
-   - 与官方 interop runner 的历史结果趋势一致，属于上游镜像本身长期偏弱
-5. **msquic Client 在 `versionnegotiation` / `v2` 场景不下载文件**（D6 + v2，2 起）
-   - msquic 镜像将 VN/v2 当探测场景对待，是 runner 测试逻辑与镜像约定的错位
-
-### P2 — 次要（共 1 起）
-
-6. **`connectionmigration / quicx → neqo`：Server failed to start**（B3）
-   - 建议下一轮拉取最新镜像后复测
+4. **mvfst Client**（C1–C5，5 起）/ **s2n-quic Client**（D1–D5，5 起）镜像兼容性 — 与官方 interop runner 历史结果趋势一致。
+5. **msquic Client** 在 `versionnegotiation` / `v2` 不下载文件（D6）— 属 msquic 镜像固有行为。
 
 ---
 
 ## 9. 复现命令
 
-完整 sim 模式 matrix（推荐口径，本报告即由该命令产出）：
-
 ```bash
-# 依赖：Linux 宿主，已开启 IP 转发，/dev/net/tun 可用，quicx-sim:latest 镜像存在
+# ns-3 全矩阵（推荐作为对外口径）
 cd test/interop
 python3 interop_runner.py --matrix --implementations all --use-local-bin \
     --output markdown --output-file logs/latest_matrix_sim.md
 ```
 
-仅与某个第三方对端跑全部场景（示例：quicX vs picoquic）：
-
-```bash
-python3 interop_runner.py --client quicx --server picoquic --use-local-bin
-python3 interop_runner.py --client picoquic --server quicx --use-local-bin
-```
-
-> 如果 ns-3 sim 因环境受限（少数 macOS / 内核裁剪）拉不起，可临时用 `--no-sim` 桥接模式做快速基线。但 `--no-sim` 下 `*loss` / `*corruption` / `rebind-*` / `connectionmigration` 不具备真实链路语义，**不能作为对外发布数据**。
-
----
+> 如果 ns-3 sim 因环境受限（少数 macOS / 内核裁剪）拉不起，可临时用 `--no-sim` 桥接模式做快速基线。但 `--no-sim` 下 `rebind-*`、`connectionmigration` 不具备真实链路语义，**不能作为对外发布数据**。使用前请确保 `test/interop/setup_noop.sh` 有执行权限（`chmod +x test/interop/setup_noop.sh`）。

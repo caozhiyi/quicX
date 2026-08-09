@@ -31,6 +31,7 @@ public:
     // add listener (override to ensure socket is registered in Master thread's EventLoop)
     virtual bool AddListener(int32_t listener_sock) override;
     virtual bool AddListener(const std::string& ip, uint16_t port) override;
+    virtual bool RemoveListener(int32_t listener_sock) override;
     // process the master
     virtual void Process() override;
     // post a task to the master's event loop

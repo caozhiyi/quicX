@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include "http3/qpack/blocked_registry.h"
+#include "http3/qpack/qpack_encoder.h"
 #include "http3/stream/if_recv_stream.h"
 
 namespace quicx {
@@ -18,7 +19,12 @@ namespace http3 {
  */
 class QpackDecoderReceiverStream: public IRecvStream {
 public:
+    // `local_encoder` is OUR encoder (the one producing outbound header
+    // blocks). The peer's decoder instructions arriving on this stream carry
+    // that encoder's Known Received Count, which it needs in order to avoid
+    // emitting references that would block a stream (RFC 9204 §2.1.2/§2.1.4).
     QpackDecoderReceiverStream(const std::shared_ptr<IQuicRecvStream>& stream,
+        const std::shared_ptr<QpackEncoder>& local_encoder,
         const std::shared_ptr<QpackBlockedRegistry>& blocked_registry,
         const std::function<void(uint64_t stream_id, uint32_t error_code)>& error_handler);
     ~QpackDecoderReceiverStream();
@@ -26,6 +32,7 @@ public:
     virtual void OnData(std::shared_ptr<IBufferRead> data, bool is_last, uint32_t error) override;
 
 private:
+    std::shared_ptr<QpackEncoder> local_encoder_;
     std::shared_ptr<QpackBlockedRegistry> blocked_registry_;
     uint64_t insert_count_{0};
     // Parse decoder stream frames: Section Acknowledgement, Stream Cancellation, Insert Count Increment

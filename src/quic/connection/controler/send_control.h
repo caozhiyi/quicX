@@ -3,11 +3,11 @@
 
 #include <functional>
 #include <list>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
-#include "common/timer/if_timer.h"
-#include "common/timer/timer_task.h"
+#include <quicx/common/if_timer_scheduler.h>
 
 #include "quic/congestion_control/if_congestion_control.h"
 #include "quic/connection/controler/rtt_calculator.h"
@@ -56,27 +56,23 @@ using StreamDataAckCallback =
 // controller of sender.
 class SendControl {
 public:
-    SendControl(std::shared_ptr<common::ITimer> timer);
+    SendControl(std::shared_ptr<common::ITimerScheduler> scheduler);
     ~SendControl() {
-        // Cancel all outstanding timers before our members are destroyed,
-        // otherwise a later timer fire will touch a dangling `this` (the
-        // timer-task lambdas capture `this`).
+        // Every timer we own is held by a Timer handle, and ~Timer() cancels, so
+        // the per-packet handles in unacked_packets_ and pto_timer_ are cleaned
+        // up by their own destructors. Keeping the explicit teardown anyway:
+        // ClearRetransmissionData() also settles congestion-control accounting,
+        // and doing it here documents the ordering requirement.
         //
-        // There are two classes of timers to clean up:
-        //   1. The single shared PTO timer `pto_timer_`.
-        //   2. Per-packet retransmit timer_tasks living inside
-        //      unacked_packets_. Before the P3 work these almost always
-        //      self-completed within the ~775 ms initial PTO window, which
-        //      hid the bug: benchmarks with aggressive initial-RTT overrides
-        //      (see docs/internal/perf_e2e_analysis.md §6 P3) shortened the window to
-        //      ~100 ms, leading to MultiStream teardown races that manifested
-        //      as heap corruption ("double free / unsorted double linked
-        //      list corrupted"). ClearRetransmissionData() removes each
-        //      per-packet timer; delegate to it.
-        if (timer_) {
-            timer_->RemoveTimer(pto_timer_);
-            ClearRetransmissionData();
-        }
+        // History: the per-packet retransmit callbacks capture `this`, and before
+        // the P3 work they almost always self-completed inside the ~775 ms initial
+        // PTO window, which hid the fact that nothing cancelled them. Benchmarks
+        // with aggressive initial-RTT overrides (docs/internal/perf_e2e_analysis.md
+        // §6 P3) shortened that window to ~100 ms and turned MultiStream teardown
+        // into heap corruption. Handles make that class of bug structural rather
+        // than a matter of remembering to clean up.
+        pto_timer_.Cancel();
+        ClearRetransmissionData();
         // Clear callbacks to prevent dangling references
         stream_data_ack_cb_ = nullptr;
         packet_lost_cb_ = nullptr;
@@ -197,27 +193,31 @@ private:
     struct PacketTimerInfo {
         uint64_t send_time_;
         uint32_t pkt_len_;
-        common::TimerTask timer_task_;
+        // Retransmit timer for this packet. Move-only, which is exactly the
+        // point: the previous `common::TimerTask` was a *copy* of the
+        // registration, and cancelling through a copy only worked because the
+        // wheel looked the id up in a side table and shrugged when it was
+        // missing. With a handle there is one owner, here, and losing it cancels.
+        common::Timer timer_;
         std::vector<StreamDataInfo> stream_data;  // Stream data contained in this packet
         std::shared_ptr<IPacket> packet;          // Store packet for retransmission
         bool is_lost = false;
 
         PacketTimerInfo() {}
-        PacketTimerInfo(uint64_t t, uint32_t len, const common::TimerTask& task):
+        PacketTimerInfo(uint64_t t, uint32_t len, common::Timer&& timer):
             send_time_(t),
             pkt_len_(len),
-            timer_task_(task) {}
-        PacketTimerInfo(
-            uint64_t t, uint32_t len, const common::TimerTask& task, const std::vector<StreamDataInfo>& data):
+            timer_(std::move(timer)) {}
+        PacketTimerInfo(uint64_t t, uint32_t len, common::Timer&& timer, const std::vector<StreamDataInfo>& data):
             send_time_(t),
             pkt_len_(len),
-            timer_task_(task),
+            timer_(std::move(timer)),
             stream_data(data) {}
-        PacketTimerInfo(uint64_t t, uint32_t len, const common::TimerTask& task,
-            const std::vector<StreamDataInfo>& data, std::shared_ptr<IPacket> pkt):
+        PacketTimerInfo(uint64_t t, uint32_t len, common::Timer&& timer, const std::vector<StreamDataInfo>& data,
+            std::shared_ptr<IPacket> pkt):
             send_time_(t),
             pkt_len_(len),
-            timer_task_(task),
+            timer_(std::move(timer)),
             stream_data(data),
             packet(pkt) {}
     };
@@ -244,14 +244,22 @@ private:
 
     uint32_t max_ack_delay_ = 0;
     uint32_t ack_delay_exponent_ = 0;
-    std::shared_ptr<common::ITimer> timer_;
+    std::shared_ptr<common::ITimerScheduler> scheduler_;
+    // Guards every callback registered from here: it expires with `*this`, so a
+    // firing that races with destruction is skipped rather than dereferencing a
+    // dead SendControl. All our callbacks capture a raw `this`.
+    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
 
     // RFC 9002: PTO timer for detecting persistent timeouts
-    common::TimerTask pto_timer_;
+    common::Timer pto_timer_;
     uint64_t last_ack_eliciting_sent_time_ = 0;  // Track when we last sent ack-eliciting data
 
     // RFC 9002: PTO timer callback
     void OnPTOTimer();
+
+    // Arm or rearm the PTO timer. Rearm is the common case (once per outgoing
+    // packet), and it reuses the existing timer node.
+    void ArmPtoTimer(uint64_t delay_ms);
 
     // Qlog trace for instrumentation
     std::shared_ptr<common::QlogTrace> qlog_trace_;

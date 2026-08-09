@@ -318,7 +318,6 @@ void ClientConnection::CancelPush(uint64_t push_id) {
 }
 
 void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code) {
-    LOG_DEBUG("ClientConnection::HandleStream stream. stream id: %llu, error: %d", stream->GetStreamID(), error_code);
     if (error_code != 0) {
         LOG_ERROR("ClientConnection::HandleStream error: %d", error_code);
         if (stream) {
@@ -351,8 +350,22 @@ void ClientConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
         }
     }
 
-    // Check stream limit
-    if (streams_.size() >= max_concurrent_streams_) {
+    // NOTE: the request-stream concurrency limit below must NOT gate
+    // server-initiated *unidirectional* streams (control / QPACK encoder /
+    // QPACK decoder). Those are mandated by HTTP/3 (RFC 9114 Section 6.2) and
+    // their count is bounded by the QUIC unidirectional-stream flow control
+    // (STREAMS_BLOCKED_UNIDIRECTIONAL), not by the client's own request limit.
+    // If we applied max_concurrent_streams_ to them, a client that opens several
+    // concurrent requests would push streams_.size() past the limit and cause
+    // HandleStream to return early here, leaving the server's QPACK encoder
+    // stream (type 0x02) with NO read callback. Its encoder instructions would
+    // then sit buffered in the RecvStream forever, the decoder's dynamic table
+    // would never be populated, the header-block decode would stay blocked, and
+    // the connection would hang -> http3 interop failure.
+    // Only enforce the concurrency limit for client-initiated bidi request
+    // streams (kBidi && client-initiated), never for kRecv unidirectional ones.
+    if (stream->GetDirection() == StreamDirection::kBidi &&
+        streams_.size() >= max_concurrent_streams_) {
         LOG_ERROR("ClientConnection::HandleStream max concurrent streams reached");
         Close(Http3ErrorCode::kStreamCreationError);
         return;
@@ -419,7 +432,8 @@ void ClientConnection::OnStreamTypeIdentified(
         case static_cast<uint64_t>(StreamType::kQpackDecoder):  // QPACK Decoder Stream (RFC 9204 Section 4.2)
             LOG_DEBUG(
                 "ClientConnection: creating QPACK Decoder Receiver Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<QpackDecoderReceiverStream>(stream, blocked_registry_, MakeErrorHandler());
+            typed_stream = std::make_shared<QpackDecoderReceiverStream>(
+                stream, qpack_encoder_, blocked_registry_, MakeErrorHandler());
             break;
 
         default:

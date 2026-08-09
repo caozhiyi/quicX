@@ -15,7 +15,6 @@
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
 #include "common/log/log.h"
-#include "common/timer/timer.h"
 #include "connection_test_util.h"
 #include "mock_sender.h"
 #include "quic/connection/connection_client.h"
@@ -73,7 +72,7 @@ static const char kKeyPem[] =
 static size_t SendAndDeliverDatagram(std::shared_ptr<IConnection> send_conn, std::shared_ptr<IConnection> recv_conn,
     std::shared_ptr<MockSender> sender_mock) {
     sender_mock->Clear();
-    if (!send_conn->TrySend()) {
+    if (!(send_conn->TrySendBurst(1) > 0)) {
         return 0;
     }
 
@@ -93,10 +92,10 @@ static size_t SendAndDeliverDatagram(std::shared_ptr<IConnection> send_conn, std
 
 // RFC 9000 §12.2: Verify that the server's first response after receiving
 // the client Initial produces both Initial and Handshake packets.
-// Note: The current TrySend() implementation sends one encryption level per
+// Note: The current TrySendBurst(1) implementation sends one encryption level per
 // call (no intra-datagram coalescing yet). This test verifies that the server
 // correctly generates both Initial (ACK + ServerHello CRYPTO) and Handshake
-// (EE, Cert, CV, Finished CRYPTO) packets across multiple TrySend() rounds,
+// (EE, Cert, CV, Finished CRYPTO) packets across multiple TrySendBurst(1) rounds,
 // and that Initial packets are produced before Handshake packets (ordering
 // requirement from RFC 9001 §4.1.4).
 TEST(QuicConnectionCoalescingTest, server_init_handshake_coalesce) {
@@ -125,7 +124,7 @@ TEST(QuicConnectionCoalescingTest, server_init_handshake_coalesce) {
     size_t client_initial_pkts = SendAndDeliverDatagram(client_conn, server_conn, client_sender);
     ASSERT_GE(client_initial_pkts, 1u);
 
-    // Step 2: server -> client. Drive TrySend() multiple times to drain all
+    // Step 2: server -> client. Drive TrySendBurst(1) multiple times to drain all
     // pending crypto data. The server should produce Initial packet(s)
     // (ACK + ServerHello CRYPTO) followed by Handshake packet(s)
     // (EncryptedExtensions, Certificate, CertificateVerify, Finished).
@@ -134,7 +133,7 @@ TEST(QuicConnectionCoalescingTest, server_init_handshake_coalesce) {
     // Collect all packets produced by the server across multiple TrySend rounds
     std::vector<std::shared_ptr<IPacket>> all_server_pkts;
     for (int round = 0; round < 20; ++round) {
-        if (!server_conn->TrySend()) {
+        if (!(server_conn->TrySendBurst(1) > 0)) {
             break;
         }
         // Decode packets from the last sent datagram

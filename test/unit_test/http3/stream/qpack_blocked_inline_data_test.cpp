@@ -214,8 +214,24 @@ TEST_F(QpackBlockedInlineDataTest, BlockedHeadersFollowedByDataInSameBatch) {
 
     auto encoded_chunk = std::make_shared<common::StandaloneBufferChunk>(256);
     auto encoded_payload = std::make_shared<common::SingleBlockBuffer>(encoded_chunk);
-    ASSERT_TRUE(driver.Encode(headers_in, encoded_payload));
+    // Prime the driver: this first Encode() inserts x-trace into the driver's
+    // dynamic table and announces it on the encoder stream, but encodes the
+    // value literally — the encoder never references an entry the peer has not
+    // acknowledged yet (RFC 9204 §2.1.2). Discard the output.
+    {
+        auto throwaway_chunk = std::make_shared<common::StandaloneBufferChunk>(256);
+        auto throwaway = std::make_shared<common::SingleBlockBuffer>(throwaway_chunk);
+        ASSERT_TRUE(driver.Encode(headers_in, throwaway));
+    }
     ASSERT_FALSE(captured_inserts.empty()) << "driver did not insert into dyn table";
+
+    // Tell the driver the peer applied that insert, so the NEXT header block
+    // references the dynamic table (RIC=1). We deliberately do NOT deliver the
+    // insert to decoder_ yet: that models the encoder-stream instruction still
+    // being in flight, which is exactly the RFC 9204 §2.1.4 blocking condition.
+    driver.OnPeerInsertCountIncrement(1);
+
+    ASSERT_TRUE(driver.Encode(headers_in, encoded_payload));
 
     HeadersFrame headers_frame;
     headers_frame.SetEncodedFields(encoded_payload);
@@ -298,6 +314,16 @@ TEST_F(QpackBlockedInlineDataTest, AdditionalDataWhileBlockedIsAlsoParked) {
     };
     auto enc_chunk = std::make_shared<common::StandaloneBufferChunk>(256);
     auto enc_payload = std::make_shared<common::SingleBlockBuffer>(enc_chunk);
+    // Same two-step priming as the previous test: insert + announce first,
+    // then pretend the peer acked it so the real block carries RIC=1 while
+    // decoder_ is still at insert count 0.
+    {
+        auto throwaway_chunk = std::make_shared<common::StandaloneBufferChunk>(256);
+        auto throwaway = std::make_shared<common::SingleBlockBuffer>(throwaway_chunk);
+        ASSERT_TRUE(driver.Encode(headers_in, throwaway));
+    }
+    ASSERT_FALSE(captured_inserts.empty()) << "driver did not insert into dyn table";
+    driver.OnPeerInsertCountIncrement(1);
     ASSERT_TRUE(driver.Encode(headers_in, enc_payload));
 
     HeadersFrame headers_frame;

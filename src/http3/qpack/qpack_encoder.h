@@ -51,6 +51,29 @@ public:
     // Get the current insert count of the dynamic table (monotonically increasing)
     uint64_t GetInsertCount() const { return dynamic_table_.GetInsertCount(); }
 
+    // === Known Received Count (RFC 9204 §2.1.4) ===
+    // The number of dynamic-table insertions the PEER'S DECODER has confirmed
+    // it applied, learned from Insert Count Increment instructions on the
+    // peer's decoder stream.
+    //
+    // RFC 9204 §2.1.2 forbids the encoder from making a stream blocked beyond
+    // the peer's SETTINGS_QPACK_BLOCKED_STREAMS limit; a decoder that sees the
+    // limit exceeded MUST kill the connection with QPACK_DECOMPRESSION_FAILED.
+    // The encoder used to reference every freshly inserted entry via a
+    // post-base index in the very same header block, which makes the block's
+    // Required Insert Count exceed the peer's applied insert count by
+    // construction — i.e. EVERY request/response blocked a stream. Under
+    // concurrency that trivially overran the limit and tore down the whole
+    // connection.
+    //
+    // We therefore only reference entries the peer has already acknowledged
+    // (abs_index < known_received_count_), which keeps the Required Insert
+    // Count at or below the peer's applied count and makes blocking
+    // impossible. New entries are still inserted and announced on the encoder
+    // stream, so subsequent header blocks get the compression benefit.
+    void OnPeerInsertCountIncrement(uint64_t delta) { known_received_count_ += delta; }
+    uint64_t GetKnownReceivedCount() const { return known_received_count_; }
+
     // Enable or disable dynamic table usage (default: enabled for better compression)
     void SetDynamicTableEnabled(bool enabled) { enable_dynamic_table_ = enabled; }
     bool IsDynamicTableEnabled() const { return enable_dynamic_table_; }
@@ -130,6 +153,8 @@ private:
     std::function<void(const std::vector<std::pair<std::string, std::string>>&)> instruction_sender_;
     std::function<void(uint8_t type, uint64_t value)> decoder_feedback_sender_;
     uint64_t last_decoded_ric_{0};
+    // Peer's Known Received Count; see OnPeerInsertCountIncrement() above.
+    uint64_t known_received_count_{0};
 };
 
 }  // namespace http3

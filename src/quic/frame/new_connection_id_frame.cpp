@@ -69,8 +69,7 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
 
     // Clear connection ID buffer before reading
     memset(connection_id_, 0, kMaxCidLength);
-    uint8_t* conn_id_ptr = connection_id_;
-    CHECK_DECODE_ERROR(wrapper.DecodeBytes(conn_id_ptr, length_), "failed to decode connection id");
+    CHECK_DECODE_ERROR(wrapper.DecodeBytesInto(connection_id_, length_), "failed to decode connection id");
 
     // Check if we have enough data for stateless reset token
     if (kStatelessResetTokenLength > buffer->GetDataLength()) {
@@ -79,9 +78,8 @@ bool NewConnectionIDFrame::Decode(std::shared_ptr<common::IBuffer> buffer, bool 
         return false;
     }
 
-    uint8_t* token_ptr = stateless_reset_token_;
-    CHECK_DECODE_ERROR(
-        wrapper.DecodeBytes(token_ptr, kStatelessResetTokenLength), "failed to decode stateless reset token");
+    CHECK_DECODE_ERROR(wrapper.DecodeBytesInto(stateless_reset_token_, kStatelessResetTokenLength),
+        "failed to decode stateless reset token");
 
     return true;
 }

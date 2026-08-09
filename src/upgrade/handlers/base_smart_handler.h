@@ -63,6 +63,8 @@ protected:
     std::shared_ptr<UpgradeManager> manager_;
     std::unordered_map<uint32_t, ConnectionContext> connections_;
     std::weak_ptr<common::IEventLoop> event_loop_;
+    // Guards the negotiation-timeout callback, which captures a raw `this`.
+    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
 };
 
 }  // namespace upgrade

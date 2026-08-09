@@ -15,6 +15,10 @@ target_include_directories(interop_server PRIVATE
     ${PROJECT_SOURCE_DIR}/src
 )
 
+# Export dynamic symbols so the built-in crash handler's backtrace_symbols_fd()
+# can resolve function names instead of printing bare addresses.
+set_target_properties(interop_server PROPERTIES ENABLE_EXPORTS ON)
+
 # Interop Client (links http3 library for HTTP/3 support)
 add_executable(interop_client
     interop_client.cpp

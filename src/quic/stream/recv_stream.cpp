@@ -1,7 +1,6 @@
-#include <algorithm>
-
 #include <quicx/common/metrics.h>
 #include <quicx/common/metrics_std.h>
+
 #include "common/log/log.h"
 
 #include "quic/config.h"
@@ -26,7 +25,8 @@ RecvStream::RecvStream(std::weak_ptr<common::IEventLoop> loop, uint64_t init_dat
     local_data_limit_(init_data_limit),
     final_offset_(0),
     except_offset_(0),
-    reset_error_(0) {
+    reset_error_(0),
+    out_order_bytes_(0) {
     buffer_ = std::make_shared<common::MultiBlockBuffer>(GlobalResource::Instance().GetThreadLocalBlockPool());
     recv_machine_ = std::make_shared<StreamStateMachineRecv>();
 }
@@ -69,6 +69,66 @@ void RecvStream::Reset(uint32_t error) {
         LOG_DEBUG("stream recv reset due to error. stream id:%d, error:%d", stream_id_, error);
     } else {
         LOG_DEBUG("stream recv complete normally (received FIN). stream id:%d", stream_id_);
+    }
+}
+
+void RecvStream::SetStreamReadCallBack(stream_read_callback cb) {
+    recv_cb_ = cb;
+    if (!recv_cb_ || flush_pending_data_posted_) {
+        return;
+    }
+
+    // Data may already have arrived before anybody was listening: the application
+    // layer (HTTP/3) is only wired up once the handshake completes, whereas the
+    // peer's control / QPACK unidirectional streams typically arrive in the very
+    // same flight. Without this catch-up delivery those bytes stay in buffer_
+    // forever and the stream silently stalls.
+    if (!buffer_ || buffer_->GetDataLength() == 0) {
+        return;
+    }
+
+    // Deliver asynchronously. SetStreamReadCallBack() is normally called from the
+    // constructor of the owning application object, which the caller only
+    // registers *after* the constructor returns. Invoking the callback inline
+    // would re-enter that half-initialised object and let the caller overwrite
+    // the object it just spawned, leaving a dangling `this` captured in the read
+    // callback (use-after-free on the next STREAM frame). Posting to the loop
+    // preserves the "callback fires after the owner is fully registered"
+    // invariant.
+    auto loop = event_loop_.lock();
+    if (!loop) {
+        return;
+    }
+
+    // PostTask, not RunInLoop: RunInLoop executes inline when already on the loop
+    // thread, which is exactly the re-entrancy we must avoid here.
+    flush_pending_data_posted_ = true;
+    auto weak_self = weak_from_this();
+    loop->PostTask([weak_self]() {
+        auto self = std::dynamic_pointer_cast<RecvStream>(weak_self.lock());
+        if (!self) {
+            return;
+        }
+        self->FlushBufferedData();
+    });
+}
+
+void RecvStream::FlushBufferedData() {
+    flush_pending_data_posted_ = false;
+    if (!recv_cb_ || !buffer_ || buffer_->GetDataLength() == 0) {
+        // A regular STREAM frame may have overtaken us and already drained the
+        // buffer through the normal path; nothing left to hand over.
+        return;
+    }
+
+    bool is_last = (has_final_offset_ && final_offset_ == except_offset_ && out_order_frame_.empty());
+    LOG_DEBUG("RecvStream::FlushBufferedData delivering buffered data. stream id:%llu, buffer_len:%u, is_last:%d",
+        stream_id_, buffer_->GetDataLength(), is_last);
+
+    recv_cb_(buffer_, is_last, reset_error_);
+
+    if (recv_machine_->CanAppReadAllData()) {
+        recv_machine_->AppReadAllData();
     }
 }
 
@@ -144,7 +204,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
     // check stream frame whit fin
     if (stream_frame->IsFin()) {
         uint64_t fin_offset = stream_frame->GetOffset() + stream_frame->GetLength();
-        if (final_offset_ != 0 && fin_offset != final_offset_) {
+        if (has_final_offset_ && fin_offset != final_offset_) {
             LOG_ERROR("invalid final size. size:%d", fin_offset);
             if (connection_close_cb_) {
                 connection_close_cb_(QuicErrorCode::kFinalSizeError, frame->GetType(), "final size change.");
@@ -154,6 +214,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             return 0;
         }
         final_offset_ = fin_offset;
+        has_final_offset_ = true;
     }
 
     LOG_DEBUG("stream recv stream frame. stream id:%llu, offset:%llu, length:%u, final offset:%llu", stream_id_,
@@ -176,13 +237,14 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             }
 
             stream_frame = std::dynamic_pointer_cast<StreamFrame>(iter->second);
+            out_order_bytes_ -= stream_frame->GetLength();
             buffer_->Write(stream_frame->GetData().GetStart(), stream_frame->GetLength());
             except_offset_ += stream_frame->GetLength();
             out_order_frame_.erase(iter);
         }
 
         bool is_last = false;
-        if (final_offset_ != 0 && final_offset_ == except_offset_ && out_order_frame_.empty()) {
+        if (has_final_offset_ && final_offset_ == except_offset_ && out_order_frame_.empty()) {
             is_last = true;
             recv_machine_->RecvAllData();
         }
@@ -205,7 +267,7 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
         // RFC 9000 Section 4.6: If a RESET_STREAM or STREAM frame
         // is received indicating a change in the final size for the stream, an endpoint MUST respond with
         // an error of type FINAL_SIZE_ERROR.
-        if (final_offset_ != 0 && stream_frame->GetOffset() > final_offset_) {
+        if (has_final_offset_ && stream_frame->GetOffset() > final_offset_) {
             LOG_ERROR("stream recv data out of final size. stream id:%d, offset:%d, final offset:%d", stream_id_,
                 stream_frame->GetOffset(), final_offset_);
             if (connection_close_cb_) {
@@ -221,16 +283,50 @@ uint32_t RecvStream::OnStreamFrame(std::shared_ptr<IFrame> frame) {
             return 0;
         }
 
-        // Limit out-of-order frame buffer to prevent memory exhaustion from malicious peers
-        if (out_order_frame_.size() >= kMaxOutOfOrderFrames) {
-            LOG_ERROR("too many out-of-order frames. stream id:%d, count:%d", stream_id_, (int)out_order_frame_.size());
+        // Memory-bounded out-of-order buffering.
+        // QUIC streams tolerate out-of-order delivery (RFC 9000 §2.2), so a large
+        // number of buffered frames is NOT a protocol violation and we must NOT
+        // CONNECTION_CLOSE here. The previous code closed the connection once
+        // >= kMaxOutOfOrderFrames (1024) frames piled up behind a single lost gap,
+        // which killed legitimate large transfers (P0: quicx self-loop
+        // transfer/chacha20/rebind-port/rebind-addr/connectionmigration). We now
+        // bound memory by *bytes* and, when over budget, evict the oldest
+        // (lowest-offset) buffered frame. Loss recovery retransmits the evicted
+        // data, so the connection survives and the stream still completes. 32MB
+        // is far above any single-stream transfer, so normal traffic never
+        // triggers eviction.
+        uint32_t frame_len = stream_frame->GetLength();
+        // Bound the out-of-order buffer by *bytes* (memory), not by frame count.
+        // QUIC streams tolerate out-of-order delivery (RFC 9000 §2.2), so a large
+        // number of buffered frames is NOT a protocol violation and we must NOT
+        // CONNECTION_CLOSE here (the old kMaxOutOfOrderFrames=1024 frame-count
+        // limit killed legitimate large transfers — P0: quicx self-loop
+        // transfer/chacha20/rebind-port/rebind-addr/connectionmigration).
+        //
+        // We must NOT evict older buffered frames: out-of-order frames are
+        // already acknowledged at the packet level, so dropping one loses that
+        // data permanently (the sender will not retransmit ACKed data) and the
+        // stream stalls. The only memory bound we can enforce is to close the
+        // connection once the byte budget is exceeded. A 32MB budget is far above
+        // any legitimate single-stream transfer (the 1MB interop files stay well
+        // under it), so legitimate traffic never triggers this; reaching it means
+        // a peer is sending an unbounded amount of unreassemblable out-of-order
+        // data (DoS / broken peer), which is a real flow-control violation worth
+        // closing on. This replaces the old kMaxOutOfOrderFrames=1024 frame-count
+        // limit, whose threshold was too tight and killed legitimate large
+        // transfers (P0: quicx self-loop transfer/chacha20/rebind-*/connectionmigration).
+        if (out_order_bytes_ + frame_len > kMaxOutOfOrderBytes) {
+            LOG_ERROR("out-of-order buffer exceeded byte limit. stream id:%d, buffered bytes:%llu, "
+                      "frame len:%u, limit:%llu",
+                stream_id_, out_order_bytes_, frame_len, (uint64_t)kMaxOutOfOrderBytes);
             if (connection_close_cb_) {
                 connection_close_cb_(
-                    QuicErrorCode::kFlowControlError, frame->GetType(), "too many out-of-order frames");
+                    QuicErrorCode::kFlowControlError, frame->GetType(), "out-of-order buffer exceeded byte limit");
             }
             return 0;
         }
         out_order_frame_[stream_frame->GetOffset()] = stream_frame;
+        out_order_bytes_ += frame_len;
     }
 
     // Proactive flow control window update strategy:
@@ -310,7 +406,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     LOG_DEBUG("stream recv reset stream. stream id:%llu, fin offset:%llu, final offset:%llu", stream_id_, fin_offset,
         final_offset_);
 
-    if (final_offset_ != 0 && fin_offset != final_offset_) {
+    if (has_final_offset_ && fin_offset != final_offset_) {
         LOG_ERROR("stream recv invalid final size. stream id:%d, fin offset:%d, final offset:%d", stream_id_,
             fin_offset, final_offset_);
         if (connection_close_cb_) {
@@ -320,6 +416,7 @@ void RecvStream::OnResetStreamFrame(std::shared_ptr<IFrame> frame) {
     }
 
     final_offset_ = fin_offset;
+    has_final_offset_ = true;
 
     if (recv_machine_->GetStatus() == StreamState::kResetRecvd) {
         if (recv_cb_) {

@@ -26,6 +26,9 @@
 #include <cstring>
 #ifdef _WIN32
 #define setenv(name, value, overwrite) _putenv_s(name, value)
+#else
+#include <execinfo.h>
+#include <unistd.h>
 #endif
 #include <iostream>
 #include <memory>
@@ -472,9 +475,47 @@ void signal_handler(int signum) {
     }
 }
 
+#ifndef _WIN32
+// Async-signal-safe crash dumper: prints the faulting thread's backtrace to
+// stderr so interop failures that end in SIGSEGV/SIGABRT leave a diagnosable
+// trace in the container log instead of a bare "Exited (139)".
+void crash_handler(int signum) {
+    static const char kMsg[] = "\n*** interop_server fatal signal ";
+    ssize_t ignored = write(STDERR_FILENO, kMsg, sizeof(kMsg) - 1);
+    char num[8];
+    int n = 0;
+    int v = signum;
+    if (v == 0) {
+        num[n++] = '0';
+    }
+    while (v > 0 && n < 7) {
+        num[n++] = static_cast<char>('0' + (v % 10));
+        v /= 10;
+    }
+    for (int i = n - 1; i >= 0; --i) {
+        ignored = write(STDERR_FILENO, &num[i], 1);
+    }
+    ignored = write(STDERR_FILENO, " ***\n", 5);
+
+    void* frames[64];
+    int count = backtrace(frames, 64);
+    backtrace_symbols_fd(frames, count, STDERR_FILENO);
+    (void)ignored;
+
+    signal(signum, SIG_DFL);
+    raise(signum);
+}
+#endif
+
 int main(int argc, char* argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+#ifndef _WIN32
+    signal(SIGSEGV, crash_handler);
+    signal(SIGABRT, crash_handler);
+    signal(SIGBUS, crash_handler);
+    signal(SIGFPE, crash_handler);
+#endif
 
     // Parse command-line arguments
     uint16_t port = 443;

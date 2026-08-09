@@ -23,7 +23,7 @@
 |---|---|---|
 | `cpu_hotspot_test` | 组件级 CPU 热点 | TLS / Buffer / Frame / QPACK / Pool / 包处理模拟 |
 | `memory_baseline_test` | 内存基准 | Buffer 足迹、Block Pool 效率、长期稳定性、Chain 增长 |
-| `memory_pool_efficiency_test` | 内存池对比 | `PoolAlloter` / `BlockMemoryPool` / `std::malloc` 多种负载 |
+| `memory_pool_efficiency_test` | 内存池对比 | `Poolallocator` / `BlockMemoryPool` / `std::malloc` 多种负载 |
 | `crypto_perf_test` | 协议热路径 P0 | AEAD（AES-128/256-GCM、ChaCha20-Poly1305）、HKDF |
 | `packet_perf_test` | 协议热路径 P0 | Initial/Handshake/1-RTT 包编解码、coalesced、dispatch |
 | `congestion_control_perf_test` | 协议热路径 P0 | 拥塞控制事件流、Pacer |
@@ -58,7 +58,7 @@
 | `BM_CpuHotspot_StreamFrameEncode` | STREAM 帧编码 |
 | `BM_CpuHotspot_QpackEncode/Decode` | QPACK 编解码 |
 | `BM_CpuHotspot_HuffmanEncode/Decode` | Huffman |
-| `BM_CpuHotspot_PoolAllocator/{16,64,128,256}` | `PoolAlloter` 小对象分配 |
+| `BM_CpuHotspot_PoolAllocator/{16,64,128,256}` | `Poolallocator` 小对象分配 |
 | `BM_CpuHotspot_BlockPoolAllocator/{1024,4096,16384}` | `BlockMemoryPool` 大块 |
 | `BM_CpuHotspot_StdMalloc/{16,256,4096}` | 对照组 |
 | `BM_CpuHotspot_PacketProcessingSimulation` | 完整每包处理路径模拟 |
@@ -81,14 +81,14 @@
 
 | Benchmark | 说明 |
 |---|---|
-| `BM_PoolEfficiency_PoolAlloterVsMalloc_{Pool,Malloc}` | 小对象对比 |
+| `BM_PoolEfficiency_PoolallocatorVsMalloc_{Pool,Malloc}` | 小对象对比 |
 | `BM_PoolEfficiency_BlockPoolVsMalloc_{Pool,Malloc}` | 大块对比 |
 | `BM_PoolEfficiency_MixedWorkload_{Pool,Malloc}` | 混合负载 |
 | `BM_PoolEfficiency_BufferPerPacket/{10,100,1000}` | 每包 Buffer |
 | `BM_PoolEfficiency_PoolExpansion/{10,50,200,500}` | 池扩展 |
 | `BM_PoolEfficiency_MultiThreadContention` | 多线程锁争用 |
 | `BM_PoolEfficiency_RealWorldSizeDistribution` | 真实 size 分布 |
-| `BM_PoolEfficiency_NormalAlloter` | 常规 `Alloter` 对照 |
+| `BM_PoolEfficiency_Normalallocator` | 常规 `allocator` 对照 |
 
 #### `crypto_perf_test`
 
@@ -331,7 +331,7 @@ flamegraph.pl /tmp/decode_stacks.collapsed > /tmp/decode_stacks.svg
 | QPACK 编（9 字段）| ~6.2 μs（1.46 M headers/s） |
 | QPACK 解（5 字段）| ~4.8 μs |
 | Huffman 解 | ~36 ns（317 MiB/s） |
-| `PoolAlloter` 16–256 B | ~2.1 ns（比 malloc 快 **6–13×**） |
+| `Poolallocator` 16–256 B | ~2.1 ns（比 malloc 快 **6–13×**） |
 | `BlockMemoryPool` 1K–16K | ~7.1 ns（比 malloc 快 **~1.5×**） |
 | Packet Processing 模拟 | ~168 ns（理论 5.95 M pps） |
 

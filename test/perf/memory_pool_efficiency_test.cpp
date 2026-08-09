@@ -3,7 +3,7 @@
 // =============================================================================
 //
 // Analyzes the efficiency of quicX's custom memory pool allocators:
-//   - PoolAlloter: Small object pool (slab allocator, <= 256 bytes)
+//   - PoolAllocator: Small object pool (slab allocator, <= 256 bytes)
 //   - BlockMemoryPool: Large block pool (configurable block size)
 //
 // Reports:
@@ -12,7 +12,7 @@
 //   - Fragmentation / pool water-mark after mixed workloads
 //   - Cross-thread contention overhead (per-thread pool ownership)
 //   - "Per-connection pool" scenarios with realistic frame allocation
-//   - PoolAlloter thread-safety contract: single-owner, pinned to one thread
+//   - PoolAllocator thread-safety contract: single-owner, pinned to one thread
 //     (connection-affine). This mirrors quicX's Connection threading model.
 //
 // Build:
@@ -38,10 +38,10 @@
 #include <utility>
 #include <vector>
 
-#include "common/alloter/if_alloter.h"
-#include "common/alloter/normal_alloter.h"
-#include "common/alloter/pool_alloter.h"
-#include "common/alloter/pool_block.h"
+#include "common/allocator/if_allocator.h"
+#include "common/allocator/normal_allocator.h"
+#include "common/allocator/pool_allocator.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/multi_block_buffer.h"
 
@@ -96,12 +96,12 @@ struct LatencyRecorder {
 };
 
 // ===========================================================================
-// 1. PoolAlloter vs std::malloc throughput (single-size hot path)
+// 1. PoolAllocator vs std::malloc throughput (single-size hot path)
 // ===========================================================================
 
-static void BM_PoolEfficiency_PoolAlloterVsMalloc_Pool(benchmark::State& state) {
+static void BM_PoolEfficiency_PoolAllocatorVsMalloc_Pool(benchmark::State& state) {
     const uint32_t size = static_cast<uint32_t>(state.range(0));
-    auto alloc = common::MakePoolAlloterPtr();
+    auto alloc = common::MakePoolAllocatorPtr();
 
     for (auto _ : state) {
         void* ptr = alloc->Malloc(size);
@@ -109,10 +109,10 @@ static void BM_PoolEfficiency_PoolAlloterVsMalloc_Pool(benchmark::State& state) 
         alloc->Free(ptr, size);
     }
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("PoolAlloter");
+    state.SetLabel("PoolAllocator");
 }
 
-static void BM_PoolEfficiency_PoolAlloterVsMalloc_Malloc(benchmark::State& state) {
+static void BM_PoolEfficiency_PoolAllocatorVsMalloc_Malloc(benchmark::State& state) {
     const size_t size = static_cast<size_t>(state.range(0));
 
     for (auto _ : state) {
@@ -161,7 +161,7 @@ static void BM_PoolEfficiency_BlockPoolVsMalloc_Malloc(benchmark::State& state) 
 // ===========================================================================
 
 static void BM_PoolEfficiency_MixedWorkload_Pool(benchmark::State& state) {
-    auto alloc = common::MakePoolAlloterPtr();
+    auto alloc = common::MakePoolAllocatorPtr();
     std::uniform_int_distribution<uint32_t> size_dist(8, 256);
     auto rng = MakeRng();
 
@@ -345,7 +345,7 @@ static void BM_PoolEfficiency_MultiThreadContention(benchmark::State& state) {
 // ===========================================================================
 
 static void BM_PoolEfficiency_RealWorldSizeDistribution(benchmark::State& state) {
-    auto alloc = common::MakePoolAlloterPtr();
+    auto alloc = common::MakePoolAllocatorPtr();
 
     // Typical quicX allocation sizes:
     // - Frame headers: 8-32 bytes
@@ -392,12 +392,12 @@ static void BM_PoolEfficiency_RealWorldSizeDistribution(benchmark::State& state)
 }
 
 // ===========================================================================
-// 8. NormalAlloter baseline (direct malloc/free wrapper)
+// 8. NormalAllocator baseline (direct malloc/free wrapper)
 // ===========================================================================
 
-static void BM_PoolEfficiency_NormalAlloter(benchmark::State& state) {
+static void BM_PoolEfficiency_NormalAllocator(benchmark::State& state) {
     const uint32_t size = static_cast<uint32_t>(state.range(0));
-    auto alloc = common::MakeNormalAlloterPtr();
+    auto alloc = common::MakeNormalAllocatorPtr();
 
     for (auto _ : state) {
         void* ptr = alloc->Malloc(size);
@@ -405,11 +405,11 @@ static void BM_PoolEfficiency_NormalAlloter(benchmark::State& state) {
         alloc->Free(ptr);
     }
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("NormalAlloter");
+    state.SetLabel("NormalAllocator");
 }
 
 // ===========================================================================
-// 9. kDefaultMaxBytes boundary -- pool fall-through to NormalAlloter
+// 9. kDefaultMaxBytes boundary -- pool fall-through to NormalAllocator
 // ---------------------------------------------------------------------------
 // Important edge case: once size > 256B the pool path degrades to a plain
 // malloc call (and loses free-list reuse). This micro-bench confirms the
@@ -418,7 +418,7 @@ static void BM_PoolEfficiency_NormalAlloter(benchmark::State& state) {
 
 static void BM_PoolEfficiency_PoolFallthrough_Large(benchmark::State& state) {
     const uint32_t size = static_cast<uint32_t>(state.range(0));
-    auto alloc = common::MakePoolAlloterPtr();
+    auto alloc = common::MakePoolAllocatorPtr();
 
     for (auto _ : state) {
         void* ptr = alloc->Malloc(size);
@@ -426,7 +426,7 @@ static void BM_PoolEfficiency_PoolFallthrough_Large(benchmark::State& state) {
         alloc->Free(ptr, size);
     }
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("PoolAlloter(>256B fallthrough)");
+    state.SetLabel("PoolAllocator(>256B fallthrough)");
 }
 
 // ===========================================================================
@@ -439,7 +439,7 @@ static void BM_PoolEfficiency_PoolFallthrough_Large(benchmark::State& state) {
 
 static void BM_PoolEfficiency_Latency_Pool(benchmark::State& state) {
     const uint32_t size = 64;
-    auto alloc = common::MakePoolAlloterPtr();
+    auto alloc = common::MakePoolAllocatorPtr();
     LatencyRecorder rec(static_cast<size_t>(state.max_iterations));
 
     for (auto _ : state) {
@@ -451,7 +451,7 @@ static void BM_PoolEfficiency_Latency_Pool(benchmark::State& state) {
     }
     rec.Report(state);
     state.SetItemsProcessed(state.iterations());
-    state.SetLabel("PoolAlloter");
+    state.SetLabel("PoolAllocator");
 }
 
 static void BM_PoolEfficiency_Latency_Malloc(benchmark::State& state) {
@@ -483,7 +483,7 @@ static void BM_PoolEfficiency_Latency_Malloc(benchmark::State& state) {
 //
 // The interesting finding is typically that (c) may lose most of the pool
 // benefit because the control block is still allocated via the global new,
-// and the custom deleter captures a shared_ptr<IAlloter> (extra atomics).
+// and the custom deleter captures a shared_ptr<IAllocator> (extra atomics).
 // ===========================================================================
 
 static void BM_PoolEfficiency_StreamFrame_MakeShared(benchmark::State& state) {
@@ -498,8 +498,8 @@ static void BM_PoolEfficiency_StreamFrame_MakeShared(benchmark::State& state) {
 }
 
 static void BM_PoolEfficiency_StreamFrame_PoolRaw(benchmark::State& state) {
-    auto alloter = common::MakePoolAlloterPtr();
-    common::AlloterWrap wrap(alloter);
+    auto allocator = common::MakePoolAllocatorPtr();
+    common::allocatorWrap wrap(allocator);
 
     for (auto _ : state) {
         auto* f = wrap.PoolNew<quic::StreamFrame>();
@@ -513,8 +513,8 @@ static void BM_PoolEfficiency_StreamFrame_PoolRaw(benchmark::State& state) {
 }
 
 static void BM_PoolEfficiency_StreamFrame_PoolSharePtr(benchmark::State& state) {
-    auto alloter = common::MakePoolAlloterPtr();
-    common::AlloterWrap wrap(alloter);
+    auto allocator = common::MakePoolAllocatorPtr();
+    common::allocatorWrap wrap(allocator);
 
     for (auto _ : state) {
 #if defined(__GNUC__) || defined(__clang__)
@@ -534,11 +534,11 @@ static void BM_PoolEfficiency_StreamFrame_PoolSharePtr(benchmark::State& state) 
 }
 
 // PoolMakeUnique: RAII wrapper with a stateless deleter. No shared_ptr
-// control block, no atomic refcount on the IAlloter. Should be ~equivalent
+// control block, no atomic refcount on the IAllocator. Should be ~equivalent
 // to PoolNew + manual PoolDelete while retaining exception safety.
 static void BM_PoolEfficiency_StreamFrame_PoolUnique(benchmark::State& state) {
-    auto alloter = common::MakePoolAlloterPtr();
-    common::AlloterWrap wrap(alloter);
+    auto allocator = common::MakePoolAllocatorPtr();
+    common::allocatorWrap wrap(allocator);
 
     for (auto _ : state) {
         auto f = wrap.PoolMakeUnique<quic::StreamFrame>();
@@ -613,8 +613,8 @@ static void BM_PoolEfficiency_ConnectionScenario_MakeShared(benchmark::State& st
 }
 
 static void BM_PoolEfficiency_ConnectionScenario_PerConnPool(benchmark::State& state) {
-    auto alloter = common::MakePoolAlloterPtr();
-    common::AlloterWrap wrap(alloter);
+    auto allocator = common::MakePoolAllocatorPtr();
+    common::allocatorWrap wrap(allocator);
     RoundScratch scratch;
 
     for (auto _ : state) {
@@ -648,14 +648,14 @@ static void BM_PoolEfficiency_ConnectionScenario_PerConnPool(benchmark::State& s
         }
     }
     state.SetItemsProcessed(state.iterations() * kFramesPerRound);
-    state.SetLabel("per-connection PoolAlloter (deprecated shared_ptr)");
+    state.SetLabel("per-connection PoolAllocator (deprecated shared_ptr)");
 }
 
 // Same scenario, but using raw PoolNew/PoolDelete to remove shared_ptr
 // control-block cost. This is what a "native pool user" would write.
 static void BM_PoolEfficiency_ConnectionScenario_PerConnPoolRaw(benchmark::State& state) {
-    auto alloter = common::MakePoolAlloterPtr();
-    common::AlloterWrap wrap(alloter);
+    auto allocator = common::MakePoolAllocatorPtr();
+    common::allocatorWrap wrap(allocator);
     RoundScratch scratch;
 
     // Tagged union so we know which dtor to call.
@@ -696,7 +696,7 @@ static void BM_PoolEfficiency_ConnectionScenario_PerConnPoolRaw(benchmark::State
         }
     }
     state.SetItemsProcessed(state.iterations() * kFramesPerRound);
-    state.SetLabel("per-connection PoolAlloter (raw ptr)");
+    state.SetLabel("per-connection PoolAllocator (raw ptr)");
 }
 
 // Same scenario, but using PoolMakeUnique (zero-overhead RAII). We keep the
@@ -705,8 +705,8 @@ static void BM_PoolEfficiency_ConnectionScenario_PerConnPoolRaw(benchmark::State
 // stateless deleter). This is what we recommend users write when they want
 // exception safety without the shared_ptr cost.
 static void BM_PoolEfficiency_ConnectionScenario_PerConnPoolUnique(benchmark::State& state) {
-    auto alloter = common::MakePoolAlloterPtr();
-    common::AlloterWrap wrap(alloter);
+    auto allocator = common::MakePoolAllocatorPtr();
+    common::allocatorWrap wrap(allocator);
     RoundScratch scratch;
 
     struct Entry {
@@ -739,13 +739,13 @@ static void BM_PoolEfficiency_ConnectionScenario_PerConnPoolUnique(benchmark::St
         // frames goes out of scope here -> unique_ptrs call PoolDeleter.
     }
     state.SetItemsProcessed(state.iterations() * kFramesPerRound);
-    state.SetLabel("per-connection PoolAlloter (PoolMakeUnique)");
+    state.SetLabel("per-connection PoolAllocator (PoolMakeUnique)");
 }
 
 // ===========================================================================
 // 13. "Many small pools vs one big pool" (Gap 6)
 // ---------------------------------------------------------------------------
-// "Per-connection pool" amounts to having thousands of PoolAlloter instances
+// "Per-connection pool" amounts to having thousands of PoolAllocator instances
 // (one per Connection). This benchmark contrasts that model against a
 // single shared pool doing the same total number of ops, to quantify
 //   (a) warmup / first-chunk amortisation overhead, and
@@ -759,10 +759,10 @@ static void BM_PoolEfficiency_ManyPools_Distributed(benchmark::State& state) {
     for (auto _ : state) {
         // Create pools, do a burst of ops on each, destroy all.
         // Mirrors "short-lived connection" pattern.
-        std::vector<std::shared_ptr<common::IAlloter>> pools;
+        std::vector<std::shared_ptr<common::IAllocator>> pools;
         pools.reserve(num_pools);
         for (int p = 0; p < num_pools; ++p) {
-            pools.push_back(common::MakePoolAlloterPtr());
+            pools.push_back(common::MakePoolAllocatorPtr());
         }
 
         for (int p = 0; p < num_pools; ++p) {
@@ -786,7 +786,7 @@ static void BM_PoolEfficiency_ManyPools_SingleBig(benchmark::State& state) {
     const int total_ops = num_pools * ops_per_pool;
 
     for (auto _ : state) {
-        auto a = common::MakePoolAlloterPtr();
+        auto a = common::MakePoolAllocatorPtr();
         for (int i = 0; i < total_ops; ++i) {
             void* ptr = a->Malloc(64);
             benchmark::DoNotOptimize(ptr);
@@ -805,9 +805,9 @@ static void BM_PoolEfficiency_ManyPools_SingleBig(benchmark::State& state) {
 // Register Benchmarks
 // ===========================================================================
 
-// 1. PoolAlloter vs std::malloc
-BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolAlloterVsMalloc_Pool)->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256);
-BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolAlloterVsMalloc_Malloc)->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256);
+// 1. PoolAllocator vs std::malloc
+BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolAllocatorVsMalloc_Pool)->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256);
+BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolAllocatorVsMalloc_Malloc)->Arg(16)->Arg(32)->Arg(64)->Arg(128)->Arg(256);
 
 // 2. BlockMemoryPool vs std::malloc
 BENCHMARK(quicx::perf::BM_PoolEfficiency_BlockPoolVsMalloc_Pool)->Arg(1024)->Arg(2048)->Arg(4096)->Arg(16384);
@@ -829,8 +829,8 @@ BENCHMARK(quicx::perf::BM_PoolEfficiency_MultiThreadContention)->Arg(1)->Arg(2)-
 // 7. Real-world size distribution
 BENCHMARK(quicx::perf::BM_PoolEfficiency_RealWorldSizeDistribution);
 
-// 8. NormalAlloter baseline
-BENCHMARK(quicx::perf::BM_PoolEfficiency_NormalAlloter)->Arg(16)->Arg(64)->Arg(256)->Arg(1024);
+// 8. NormalAllocator baseline
+BENCHMARK(quicx::perf::BM_PoolEfficiency_NormalAllocator)->Arg(16)->Arg(64)->Arg(256)->Arg(1024);
 
 // 9. Pool fall-through for sizes > kDefaultMaxBytes (edge case)
 BENCHMARK(quicx::perf::BM_PoolEfficiency_PoolFallthrough_Large)->Arg(512)->Arg(1024)->Arg(4096);

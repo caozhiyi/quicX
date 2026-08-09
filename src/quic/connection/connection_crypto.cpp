@@ -194,13 +194,14 @@ bool ConnectionCrypto::RekeyInitialForVersion(
     uint32_t new_version, const uint8_t* dcid, uint32_t dcid_len, bool is_server) {
     // RFC 9368 §4: When negotiating a compatible version, endpoints derive new
     // Initial keys using the new version's salt and labels, with the SAME DCID
-    // that was used for the client's first Initial. The old Initial cryptographer
-    // is discarded (its keys are never used again; any buffered in-flight Initial
-    // packets MUST be retransmitted under the new version).
+    // that was used for the client's first Initial. Everything we send from now
+    // on uses the new version.
     if (dcid == nullptr || dcid_len == 0) {
         LOG_ERROR("RekeyInitialForVersion: invalid DCID");
         return false;
     }
+
+    const uint32_t old_version = quic_version_;
 
     // Update stored version.
     quic_version_ = new_version;
@@ -210,8 +211,33 @@ bool ConnectionCrypto::RekeyInitialForVersion(
     // a caller passes a different buffer.
     initial_secret_dcid_.assign(reinterpret_cast<const char*>(dcid), dcid_len);
 
-    // Drop the existing Initial cryptographer (if any) so that
-    // InstallInitSecretWithVersion's "already installed" guard does not trip.
+    // Demote — do NOT destroy — the Initial cryptographer we are replacing.
+    //
+    // RFC 9369 §4.1: "The server MUST NOT discard its original version Initial
+    // keys until it successfully processes a packet with the negotiated
+    // version."
+    //
+    // The peer has no idea this upgrade happened until our first packet in the
+    // new version reaches it. Until then it keeps (re)transmitting its first
+    // flight under the ORIGINAL version's salt and labels. Throwing these keys
+    // away here made every one of those packets fail AEAD open
+    // (EVP_AEAD_CTX_open failed). That is merely noisy when the packets are
+    // pure duplicates, but it deadlocks the handshake as soon as the peer's
+    // first flight spans several Initial packets: the CRYPTO ranges carried by
+    // the ones we cannot read are never reassembled, the peer PTOs on the
+    // missing ACKs, and its retransmissions are rejected for the same reason.
+    //
+    // Retaining them costs one small object, changes nothing about what we
+    // send, and is bounded by DiscardPreviousInitialKeys(). Inbound Initial
+    // handling picks between the two generations by the version on the wire —
+    // see GetInitialCryptographerForVersion().
+    if (cryptographers_[kInitial] && old_version != new_version) {
+        prev_initial_cryptographer_ = cryptographers_[kInitial];
+        prev_initial_version_ = old_version;
+    }
+
+    // Clear the slot so InstallInitSecretWithVersion's "already installed"
+    // guard does not trip.
     cryptographers_[kInitial] = nullptr;
 
     std::shared_ptr<ICryptographer> cryptographer = MakeCryptographer(kCipherIdAes128GcmSha256);
@@ -233,6 +259,32 @@ bool ConnectionCrypto::RekeyInitialForVersion(
     }
 
     return true;
+}
+
+std::shared_ptr<ICryptographer> ConnectionCrypto::GetInitialCryptographerForVersion(uint32_t pkt_version) const {
+    // No version to match on (caller could not read one): use current keys,
+    // which is exactly what callers did before versioned lookup existed.
+    if (pkt_version == 0 || pkt_version == quic_version_) {
+        return cryptographers_[kInitial];
+    }
+
+    // The pre-upgrade generation only ever applies to packets that still carry
+    // the pre-upgrade version. It is read-only: we never encrypt with it.
+    if (prev_initial_cryptographer_ && pkt_version == prev_initial_version_) {
+        return prev_initial_cryptographer_;
+    }
+
+    // RFC 9369 §4.1: "An endpoint MUST drop packets using any other version."
+    return nullptr;
+}
+
+void ConnectionCrypto::DiscardPreviousInitialKeys() {
+    if (!prev_initial_cryptographer_) {
+        return;
+    }
+
+    prev_initial_cryptographer_ = nullptr;
+    prev_initial_version_ = 0;
 }
 
 bool ConnectionCrypto::InstallInitSecretForRetryWithVersion(

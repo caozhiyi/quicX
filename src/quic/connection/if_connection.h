@@ -51,7 +51,8 @@ public:
     // set the callback function to handle the stream state change.
     virtual void SetStreamStateCallBack(stream_state_callback cb) override { stream_state_cb_ = cb; }
     // add a timer, implementation in BaseConnection
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) override = 0;
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms,
+                               bool periodic = false) override = 0;
     // remove a timer, implementation in BaseConnection
     virtual void RemoveTimer(uint64_t timer_id) override = 0;
 
@@ -60,31 +61,25 @@ public:
     virtual uint64_t GetConnectionIDHash() = 0;
     // Get all local CID hashes for this connection (for cleanup on close)
     virtual std::vector<uint64_t> GetAllLocalCIDHashes() = 0;
-    // Main send interface (replaces GenerateSendData)
-    virtual bool TrySend() = 0;
-    // PERF (P2 follow-up to sendmmsg batch path): "burst" variant of TrySend
-    // that emits up to budget back-to-back packets in a single call, reusing
-    // the per-call setup work (encryption-level scheduler context look-up,
-    // cryptographer pointer fetch, packet-builder fixed fields) across the
-    // inner iterations. Returns the actual number of packets emitted in
-    // this call (>=0, <= budget). The default implementation just polls
-    // TrySend() in a loop so legacy / mock subclasses keep working with no
-    // changes; BaseConnection overrides this with an optimised path.
-    virtual int TrySendBurst(int budget) {
-        int sent = 0;
-        while (sent < budget && TrySend()) {
-            ++sent;
-        }
-        return sent;
-    }
+    // Main send interface. Emits up to `budget` back-to-back packets in a
+    // single call, reusing the per-call setup work (encryption-level scheduler
+    // context look-up, cryptographer pointer fetch, packet-builder fixed
+    // fields) across the inner iterations. Returns the number of packets
+    // actually emitted (>=0, <= budget).
+    //
+    // There is deliberately no single-packet TrySend() sibling: having both
+    // meant tests drove a path production never took (the one-packet variant
+    // lacked Initial+Handshake coalescing, so handshake behaviour under test
+    // diverged from reality). Callers wanting one packet pass budget=1.
+    virtual int TrySendBurst(int budget) = 0;
     // Set sender for direct packet transmission (used by tests)
     virtual void SetSender(std::shared_ptr<ISender> sender) {}
     // Install (or clear with nullptr) a per-drain-round batch sink. When
-    // installed, TrySend()-driven SendBuffer calls append the built
-    // NetPackets to the sink rather than calling sender_->Send() directly,
-    // so the worker can issue a single sendmmsg(2) over the whole drain
-    // round. Default implementation is a no-op for connection types that
-    // never go through Worker::ProcessSend (e.g. mock/test connections).
+    // installed, built NetPackets are appended to the sink rather than handed
+    // straight to sender_->Send(), so the worker can issue a single
+    // sendmmsg(2) over the whole drain round. Default implementation is a
+    // no-op for connection types that never go through Worker::ProcessSend
+    // (e.g. mock/test connections).
     virtual void SetSendSink(std::vector<std::shared_ptr<NetPacket>>* /*sink*/) {}
     virtual void OnPackets(uint64_t now, std::vector<std::shared_ptr<IPacket>>& packets) = 0;
     // provide ECN value for the next OnPackets call (per received datagram)
@@ -146,24 +141,25 @@ public:
     // Check if migration is in progress
     virtual bool IsMigrationInProgress() const override { return false; }
 
-    // Internal: Set migration socket for sending during migration
-    virtual void SetMigrationSocket(int32_t sockfd) { migration_sockfd_ = sockfd; }
-    virtual int32_t GetMigrationSocket() const { return migration_sockfd_; }
-
     // Internal: Get local address bound to socket
     virtual bool GetLocalAddressFromSocket(int32_t sockfd, common::Address& addr);
 
-    void SetSocket(int32_t sockfd) { sockfd_ = sockfd; }
-    int32_t GetSocket() const { return sockfd_; }
+    // The active socket fd is owned by DatagramEmitter (see BaseConnection), so
+    // this is virtual rather than a field write here.
+    virtual void SetSocket(int32_t sockfd) = 0;
 
     // Set callback to register a new socket with the receiver (for connection migration)
     using RegisterSocketCallback = std::function<bool(int32_t sockfd)>;
-    void SetRegisterSocketCallback(RegisterSocketCallback cb) { register_socket_cb_ = cb; }
+    virtual void SetRegisterSocketCallback(RegisterSocketCallback cb) { register_socket_cb_ = cb; }
+
+    // Set callback to remove a socket from the receiver's poll set. Needed to
+    // retire the old socket after a successful migration and the probe socket
+    // after a failed one; without it retired fds stay armed in the event loop.
+    using UnregisterSocketCallback = std::function<bool(int32_t sockfd)>;
+    virtual void SetUnregisterSocketCallback(UnregisterSocketCallback cb) { unregister_socket_cb_ = cb; }
 
 protected:
     void* user_data_;
-    int32_t sockfd_;
-    int32_t migration_sockfd_{-1};  // Socket used during migration
     common::Address peer_addr_;
     common::Address local_addr_;  // Cached local address
     // callback
@@ -172,8 +168,9 @@ protected:
     std::function<void(std::shared_ptr<IConnection>)> active_connection_cb_;
     std::function<void(std::shared_ptr<IConnection>)> handshake_done_cb_;
     std::function<void(std::shared_ptr<IConnection>, uint64_t error, const std::string& reason)> connection_close_cb_;
-    migration_callback migration_cb_;            // Migration event callback
-    RegisterSocketCallback register_socket_cb_;  // Register socket with receiver for migration
+    migration_callback migration_cb_;                // Migration event callback
+    RegisterSocketCallback register_socket_cb_;      // Register socket with receiver for migration
+    UnregisterSocketCallback unregister_socket_cb_;  // Remove a retired socket from the poll set
 
     stream_state_callback stream_state_cb_;
 };

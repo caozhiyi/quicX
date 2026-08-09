@@ -200,7 +200,7 @@ bool Worker::SendImmediate(std::shared_ptr<common::IBuffer> buffer, const common
         return false;
     }
 
-    std::shared_ptr<NetPacket> packet = GlobalResource::Instance().GetThreadLocalPacketAllotor()->Malloc();
+    std::shared_ptr<NetPacket> packet = GlobalResource::Instance().GetThreadLocalPacketAllocator()->Malloc();
     packet->SetData(buffer);
     packet->SetAddress(addr);
     packet->SetSocket(socket);

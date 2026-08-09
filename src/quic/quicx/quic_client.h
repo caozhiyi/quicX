@@ -40,6 +40,12 @@ private:
     connection_state_callback connection_state_cb_;
     std::shared_ptr<common::IEventLoop> master_event_loop_;
     std::unordered_map<std::string, std::shared_ptr<IWorker>> worker_map_;
+    // The UDP socket created by Init(). It is handed to the master receiver via
+    // AddListener(fd), which by contract does NOT take ownership of the fd
+    // (UdpReceiver only closes fds it created itself). We must therefore close
+    // it ourselves, otherwise every QuicClient instance leaks one fd plus one
+    // kernel UDP socket for the lifetime of the process.
+    int32_t sockfd_{-1};
 };
 
 }  // namespace quic

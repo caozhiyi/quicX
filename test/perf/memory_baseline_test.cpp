@@ -39,8 +39,8 @@
 #endif
 
 // Common
-#include "common/alloter/pool_alloter.h"
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_allocator.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/multi_block_buffer.h"
 
@@ -118,7 +118,7 @@ static void BM_MemoryBaseline_PoolAllocatorOverhead(benchmark::State& state) {
     const uint32_t alloc_size = 64;  // typical small object
 
     for (auto _ : state) {
-        auto alloc = common::MakePoolAlloterPtr();
+        auto alloc = common::MakePoolAllocatorPtr();
         std::vector<void*> ptrs;
         ptrs.reserve(num_allocs);
 
@@ -221,7 +221,7 @@ static void BM_MemoryBaseline_ManySmallBuffers(benchmark::State& state) {
 
 static void BM_MemoryBaseline_AllocFreeStability(benchmark::State& state) {
     const int iterations = 10000;
-    auto alloc = common::MakePoolAlloterPtr();
+    auto alloc = common::MakePoolAllocatorPtr();
 
     size_t initial_rss = GetCurrentRSS();
 

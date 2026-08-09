@@ -6,7 +6,6 @@
 #include <quicx/quic/if_quic_send_stream.h>
 #include "common/buffer/single_block_buffer.h"
 #include "common/buffer/standalone_buffer_chunk.h"
-#include "common/timer/timer.h"
 #include "connection_test_util.h"
 #include "mock_sender.h"
 #include "quic/connection/connection_base.h"
@@ -60,7 +59,7 @@ static const char kKeyPem[] =
 static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver,
     std::shared_ptr<MockSender> sender_mock) {
     sender_mock->Clear();
-    if (!sender->TrySend()) {
+    if (!(sender->TrySendBurst(1) > 0)) {
         return false;
     }
 
@@ -76,6 +75,18 @@ static bool ExchangePackets(std::shared_ptr<IConnection> sender, std::shared_ptr
 
     receiver->OnPackets(0, packets);
     return true;
+}
+
+// Drain everything one side wants to send. Preferred over a fixed step count:
+// the server coalesces Initial+Handshake into one datagram (RFC 9000 §12.2), so
+// asserting on the number of datagrams asserts on an implementation detail.
+static int DrainPackets(std::shared_ptr<IConnection> sender, std::shared_ptr<IConnection> receiver,
+    std::shared_ptr<MockSender> sender_mock, int max_datagrams = 16) {
+    int delivered = 0;
+    while (delivered < max_datagrams && ExchangePackets(sender, receiver, sender_mock)) {
+        ++delivered;
+    }
+    return delivered;
 }
 
 // Helper function to establish a connection
@@ -110,12 +121,12 @@ EstablishConnection() {
     auto client_sender = AttachMockSender(client);
     auto server_sender = AttachMockSender(server);
 
-    // Complete handshake
-    EXPECT_TRUE(ExchangePackets(client, server, client_sender));  // client init -> server
-    EXPECT_TRUE(ExchangePackets(server, client, server_sender));  // server init -> client
-    EXPECT_TRUE(ExchangePackets(server, client, server_sender));  // server handshake -> client
-    EXPECT_TRUE(ExchangePackets(client, server, client_sender));  // client handshake -> server
-    EXPECT_TRUE(ExchangePackets(server, client, server_sender));  // server session -> client
+    // Complete handshake. Each call drains that side fully rather than assuming
+    // a fixed datagram count.
+    EXPECT_GT(DrainPackets(client, server, client_sender), 0);  // client init -> server
+    EXPECT_GT(DrainPackets(server, client, server_sender), 0);  // server init+handshake -> client
+    EXPECT_GT(DrainPackets(client, server, client_sender), 0);  // client handshake -> server
+    EXPECT_GT(DrainPackets(server, client, server_sender), 0);  // server session -> client
 
     EXPECT_EQ(server->GetCurEncryptionLevel(), kApplication);
     EXPECT_EQ(client->GetCurEncryptionLevel(), kApplication);
@@ -157,7 +168,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
 
     // Client should send some data (CONNECTION_CLOSE)
     client_sender->Clear();
-    EXPECT_TRUE(client->TrySend());
+    EXPECT_TRUE((client->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     EXPECT_GT(buffer->GetDataLength(), 0);
@@ -173,7 +184,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseNoPendingData) {
 
     // Server should not send any packets in Draining state
     server_sender->Clear();
-    server->TrySend();
+    (void)server->TrySendBurst(1);
     buffer = server_sender->GetLastSentBuffer();
     if (buffer) {
         EXPECT_EQ(buffer->GetDataLength(), 0);
@@ -211,7 +222,7 @@ TEST_F(ConnectionCloseTest, ImmediateCloseWithError) {
 
     // Verify CONNECTION_CLOSE is sent
     client_sender->Clear();
-    EXPECT_TRUE(client->TrySend());
+    EXPECT_TRUE((client->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     EXPECT_GT(buffer->GetDataLength(), 0);
@@ -241,7 +252,7 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
 
     client_sender->Clear();
-    EXPECT_TRUE(client->TrySend());
+    EXPECT_TRUE((client->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -257,7 +268,7 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
 
     // Server should NOT send any packets in Draining state
     server_sender->Clear();
-    server->TrySend();
+    (void)server->TrySendBurst(1);
     buffer = server_sender->GetLastSentBuffer();
     if (buffer) {
         EXPECT_EQ(buffer->GetDataLength(), 0);
@@ -271,7 +282,7 @@ TEST_F(ConnectionCloseTest, PeerInitiatedClose) {
         send_stream->Send((uint8_t*)data, strlen(data));
 
         server_sender->Clear();
-        server->TrySend();
+        (void)server->TrySendBurst(1);
         buffer = server_sender->GetLastSentBuffer();
         if (buffer) {
             EXPECT_EQ(buffer->GetDataLength(), 0);
@@ -301,7 +312,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
     EXPECT_EQ(client_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
 
     client_sender->Clear();
-    EXPECT_TRUE(client->TrySend());
+    EXPECT_TRUE((client->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -313,7 +324,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
         stream->Send((uint8_t*)data, strlen(data));
 
         server_sender->Clear();
-        server->TrySend();
+        (void)server->TrySendBurst(1);
         buffer = server_sender->GetLastSentBuffer();
 
         if (buffer && buffer->GetDataLength() > 0) {
@@ -334,7 +345,7 @@ TEST_F(ConnectionCloseTest, ClosingStateRetransmitsConnectionClose) {
 
                 // Client should send a response (CONNECTION_CLOSE retransmission) after PTO time
                 client_sender->Clear();
-                client->TrySend();
+                (void)client->TrySendBurst(1);
                 buffer = client_sender->GetLastSentBuffer();
                 if (buffer) {
                     EXPECT_GT(buffer->GetDataLength(), 0);
@@ -357,7 +368,7 @@ TEST_F(ConnectionCloseTest, DrainingStateDoesNotSendPackets) {
     client->Close();
 
     client_sender->Clear();
-    EXPECT_TRUE(client->TrySend());
+    EXPECT_TRUE((client->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -371,7 +382,7 @@ TEST_F(ConnectionCloseTest, DrainingStateDoesNotSendPackets) {
     // Try multiple times to send data, server should remain silent
     for (int i = 0; i < 3; i++) {
         server_sender->Clear();
-        server->TrySend();
+        (void)server->TrySendBurst(1);
         buffer = server_sender->GetLastSentBuffer();
         if (buffer) {
             EXPECT_EQ(buffer->GetDataLength(), 0);
@@ -415,7 +426,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByImmediateClose) {
 
     // Verify CONNECTION_CLOSE is sent
     client_sender->Clear();
-    EXPECT_TRUE(client->TrySend());
+    EXPECT_TRUE((client->TrySendBurst(1) > 0));
     auto buffer = client_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     EXPECT_GT(buffer->GetDataLength(), 0);
@@ -451,7 +462,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
     EXPECT_EQ(server_base->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
 
     server_sender->Clear();
-    EXPECT_TRUE(server->TrySend());
+    EXPECT_TRUE((server->TrySendBurst(1) > 0));
     auto buffer = server_sender->GetLastSentBuffer();
     ASSERT_NE(buffer, nullptr);
     ASSERT_GT(buffer->GetDataLength(), 0);
@@ -467,7 +478,7 @@ TEST_F(ConnectionCloseTest, GracefulCloseInterruptedByPeerClose) {
 
     // Client should not send packets in Draining state
     client_sender->Clear();
-    client->TrySend();
+    (void)client->TrySendBurst(1);
     buffer = client_sender->GetLastSentBuffer();
     if (buffer) {
         EXPECT_EQ(buffer->GetDataLength(), 0);
@@ -497,7 +508,7 @@ TEST_F(ConnectionCloseTest, CloseDuringHandshake) {
 
     // Should not crash
     client_sender->Clear();
-    client->TrySend();
+    (void)client->TrySendBurst(1);
     auto buffer = client_sender->GetLastSentBuffer();
     (void)buffer;  // Just check it doesn't crash
 

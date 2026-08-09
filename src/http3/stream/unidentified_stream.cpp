@@ -29,8 +29,8 @@ void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
         return;
     }
 
-    LOG_DEBUG("UnidentifiedStream: received %zu bytes, buffer size now = %zu on stream %llu", data->GetDataLength(),
-        stream_->GetStreamID());
+    LOG_DEBUG("UnidentifiedStream: received %u bytes on stream %llu", (uint32_t)data->GetDataLength(),
+        (uint64_t)stream_->GetStreamID());
 
     if (data->GetDataLength() < 1) {
         LOG_ERROR("UnidentifiedStream: not enough data to read stream type on stream %llu", stream_->GetStreamID());
@@ -44,8 +44,8 @@ void UnidentifiedStream::OnData(std::shared_ptr<IBufferRead> data, bool is_last,
         common::BufferDecodeWrapper wrapper(buffer);
         if (!wrapper.DecodeVarint(stream_type)) {
             // Not enough data yet, wait for more
-            LOG_DEBUG("UnidentifiedStream: not enough data to read stream type on stream %llu (buffer size=%zu)",
-                stream_->GetStreamID(), data->GetDataLength());
+            LOG_DEBUG("UnidentifiedStream: not enough data to read stream type on stream %llu (buffer size=%u)",
+                (uint64_t)stream_->GetStreamID(), (uint32_t)data->GetDataLength());
             return;
         }
     }

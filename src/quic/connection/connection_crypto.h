@@ -60,8 +60,15 @@ public:
     bool InstallInitSecretForRetryWithVersion(
         const uint8_t* write_cid, uint32_t write_len, const uint8_t* read_cid, uint32_t read_len, uint32_t version);
 
-    // Reset Initial cryptographer (used for Retry or version negotiation)
-    void Reset() { cryptographers_[kInitial] = nullptr; }
+    // Reset Initial cryptographer (used for Retry or version negotiation).
+    // Also drops any pre-upgrade Initial keys: a reset means the Initial
+    // keying is being redone from scratch, so a leftover older generation
+    // would only be a stale key sitting in memory.
+    void Reset() {
+        cryptographers_[kInitial] = nullptr;
+        prev_initial_cryptographer_ = nullptr;
+        prev_initial_version_ = 0;
+    }
 
     // RFC 9368 Compatible Version Negotiation: Re-derive Initial secrets using a new
     // QUIC version's salt, with the same DCID. Used after the endpoint decides to
@@ -74,6 +81,31 @@ public:
     // @param is_server    True on server side, false on client side.
     // @return true on success.
     bool RekeyInitialForVersion(uint32_t new_version, const uint8_t* dcid, uint32_t dcid_len, bool is_server);
+
+    // Selects the Initial keys that can read a packet carrying |pkt_version|.
+    //
+    // After a Compatible VN upgrade a connection legitimately holds Initial
+    // keys for TWO versions at once: the negotiated one (used for everything we
+    // send and receive from now on) and the pre-upgrade one, retained for
+    // decryption only because the peer keeps retransmitting its first flight
+    // under the original version until our upgrade reaches it. Nothing but the
+    // version field of the long header distinguishes the two, so inbound
+    // Initial handling must resolve keys through here instead of reaching
+    // straight for GetCryptographer(kInitial).
+    //
+    // @param pkt_version  Version from the inbound long header. 0 means the
+    //                     caller has no version to match on, in which case the
+    //                     current keys are returned.
+    // @return The matching Initial cryptographer, or nullptr when we hold no
+    //         Initial key for that version — RFC 9369 §4.1 requires the caller
+    //         to drop such a packet.
+    std::shared_ptr<ICryptographer> GetInitialCryptographerForVersion(uint32_t pkt_version) const;
+
+    // RFC 9369 §4.1: "The server MUST NOT discard its original version Initial
+    // keys until it successfully processes a packet with the negotiated
+    // version." Releases the pre-upgrade Initial keys retained by
+    // RekeyInitialForVersion; no-op when no compatible upgrade happened.
+    void DiscardPreviousInitialKeys();
 
     // RFC 9368: Returns the DCID that was used to derive the currently installed
     // Initial secret. After a Compatible VN rekey this is updated accordingly.
@@ -128,6 +160,15 @@ private:
     EncryptionLevel cur_encryption_level_;
     std::shared_ptr<CryptoStream> crypto_stream_;
     std::shared_ptr<ICryptographer> cryptographers_[kNumEncryptionLevels];
+
+    // Initial keys of the version this connection spoke before a Compatible VN
+    // upgrade, kept alive so the peer's in-flight Initial packets (still
+    // encrypted under the original salt/labels) remain decryptable. Null unless
+    // an upgrade actually happened; released by DiscardPreviousInitialKeys().
+    // |prev_initial_version_| is the version those keys belong to and is only
+    // meaningful while the cryptographer is non-null.
+    std::shared_ptr<ICryptographer> prev_initial_cryptographer_;
+    uint32_t prev_initial_version_ = 0;
 
     // QUIC version for this connection (default to v2 as preferred)
     uint32_t quic_version_ = kQuicVersion2;

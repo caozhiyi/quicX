@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_block.h"
 #include "common/buffer/if_buffer.h"
 #include "common/buffer/multi_block_buffer.h"
 

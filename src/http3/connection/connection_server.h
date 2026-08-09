@@ -49,7 +49,7 @@ private:
     bool SendPush(uint64_t push_id, std::shared_ptr<IResponse> response);
     void HandlePush(std::shared_ptr<IResponse> response, std::shared_ptr<ResponseStream> response_stream);
     // handle stream status
-    void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code);
+    void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error_code) override;
     // Callback when stream type is identified (RFC 9114 Section 6.2)
     void OnStreamTypeIdentified(
         uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> remaining_data);
@@ -60,7 +60,7 @@ private:
     // handle cancel push frame
     void HandleCancelPush(uint64_t push_id);
     // handle error
-    void HandleError(uint64_t stream_id, uint32_t error_code);
+    void HandleError(uint64_t stream_id, uint32_t error_code) override;
     // handle timer
     void HandleTimer();
 

@@ -87,9 +87,13 @@ public:
      *
      * @param callback Function to invoke when timer expires.
      * @param timeout_ms Delay in milliseconds before callback is invoked.
+     * @param periodic If true, the timer is re-armed automatically with the
+     *     same timeout_ms after every fire, so the callback need not re-schedule
+     *     itself. Defaults to false (one-shot).
      * @return Timer ID that can be used to cancel the timer.
      */
-    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms) = 0;
+    virtual uint64_t AddTimer(timer_callback callback, uint32_t timeout_ms,
+                              bool periodic = false) = 0;
 
     /**
      * @brief Cancel a previously scheduled timer.

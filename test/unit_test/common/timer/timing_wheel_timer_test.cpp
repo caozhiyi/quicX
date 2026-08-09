@@ -1,15 +1,83 @@
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <random>
 #include <set>
+#include <utility>
 #include <vector>
 
-#include "common/timer/timing_wheel_timer.h"
+#include "common/timer/timer_core.h"
 #include "common/util/time.h"
 
 namespace quicx {
 namespace common {
 namespace {
+
+// ---- legacy-API shim over TimerCore -----------------------------------------
+//
+// Everything below this shim was written against the old TimingWheelTimer
+// (copyable TimerTask value objects, id-based removal). It is deliberately left
+// byte-for-byte unchanged -- all 43 exact MinTime expectations, the Bug #21
+// regressions, and the brute-force invariant fuzzers included -- and re-pointed
+// at the new TimerCore engine through this adapter.
+//
+// That is the point: these assertions are the equivalence proof for the rewrite.
+// Any behavioural divergence between the old wheel and TimerCore surfaces here
+// as a test failure, and the fix belongs in TimerCore, never in an expectation.
+class TimingWheelTimer;
+
+class TimerTask {
+public:
+    TimerTask() = default;
+
+    void SetTimeoutCallback(std::function<void()> cb) { cb_ = std::move(cb); }
+    uint64_t GetId() const { return id_; }
+
+private:
+    friend class TimingWheelTimer;
+
+    std::function<void()> cb_;
+    uint64_t id_ = 0;
+    uint32_t index_ = TimerCore::kNoEntry;
+    uint32_t gen_ = 0;
+};
+
+class TimingWheelTimer {
+public:
+    uint64_t AddTimer(TimerTask& task, uint32_t delay_ms, uint64_t now = 0) {
+        if (now == 0) {
+            now = UTCTimeMsec();
+        }
+        // The old AddTimer silently overwrote task.id_, orphaning any previous
+        // registration. Release the old slot explicitly instead so the slab does
+        // not grow across re-arms.
+        if (task.index_ != TimerCore::kNoEntry) {
+            core_.CancelLocal(task.index_, task.gen_);
+            core_.ReleaseEntry(task.index_, task.gen_);
+        }
+        task.index_ = core_.Arm(task.cb_, {}, false, delay_ms, 0, now, task.gen_);
+        // Ids are 1-based so that 0 keeps meaning "never armed", matching the
+        // old contract that AddTimer never returns 0.
+        task.id_ = static_cast<uint64_t>(task.index_) + 1;
+        return task.id_;
+    }
+
+    bool RemoveTimer(TimerTask& task) {
+        // Old semantics: removing a timer that already fired returns false,
+        // because the wheel erased its id when it fired.
+        if (!core_.IsActive(task.index_, task.gen_)) {
+            return false;
+        }
+        return core_.CancelLocal(task.index_, task.gen_);
+    }
+
+    int32_t MinTime(uint64_t now = 0) { return core_.MinTime(now == 0 ? UTCTimeMsec() : now); }
+    void TimerRun(uint64_t now = 0) { core_.Run(now == 0 ? UTCTimeMsec() : now); }
+    bool Empty() { return core_.Empty(); }
+
+private:
+    TimerCore core_;
+};
 
 // ---- helpers ----------------------------------------------------------------
 

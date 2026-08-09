@@ -77,12 +77,6 @@ void ServerConnection::Init() {
             std::dynamic_pointer_cast<IQuicSendStream>(qpack_enc_stream), MakeErrorHandler());
         streams_[encoder_sender->GetStreamID()] = encoder_sender;
 
-        // Create QPACK Decoder Stream (server receives from client, type 0x03)
-        auto qpack_dec_stream = quic_connection_->MakeStream(StreamDirection::kRecv);
-        auto decoder_receiver = std::make_shared<QpackDecoderReceiverStream>(
-            std::dynamic_pointer_cast<IQuicRecvStream>(qpack_dec_stream), blocked_registry_, MakeErrorHandler());
-        streams_[decoder_receiver->GetStreamID()] = decoder_receiver;
-
         // Create QPACK Decoder Sender Stream (server -> client, type 0x03)
         auto qpack_dec_sender_stream = quic_connection_->MakeStream(StreamDirection::kSend);
         auto decoder_sender = std::make_shared<QpackDecoderSenderStream>(
@@ -231,8 +225,22 @@ void ServerConnection::HandleStream(std::shared_ptr<IQuicStream> stream, uint32_
         return;
     }
 
-    // Check stream limit
-    if (streams_.size() >= max_concurrent_streams_) {
+    // NOTE: the request-stream concurrency limit below must NOT gate
+    // client-initiated *unidirectional* streams (QPACK encoder / QPACK decoder).
+    // Those are mandated by HTTP/3 (RFC 9114 Section 6.2) and their count is
+    // bounded by the QUIC unidirectional-stream flow control, not by the
+    // server's request-stream limit. If we applied max_concurrent_streams_ to
+    // them, a client that opens several concurrent requests would push
+    // streams_.size() past the limit and cause HandleStream to return early
+    // here, leaving the client's QPACK encoder stream (type 0x02) with NO read
+    // callback. Its encoder instructions would then sit buffered in the
+    // RecvStream forever, the server's decoder dynamic table would never be
+    // populated, the request header-block decode would stay blocked, and the
+    // connection would hang -> http3 interop failure.
+    // Only enforce the concurrency limit for bidi request streams, never for
+    // kRecv unidirectional ones.
+    if (stream->GetDirection() == StreamDirection::kBidi &&
+        streams_.size() >= max_concurrent_streams_) {
         LOG_ERROR("ServerConnection::HandleStream max concurrent streams reached");
         Close(Http3ErrorCode::kStreamCreationError);
         return;
@@ -369,7 +377,8 @@ void ServerConnection::OnStreamTypeIdentified(
         case static_cast<uint64_t>(StreamType::kQpackDecoder):  // QPACK Decoder Stream (RFC 9204 Section 4.2)
             LOG_DEBUG(
                 "ServerConnection: creating QPACK Decoder Receiver Stream for stream %llu", stream->GetStreamID());
-            typed_stream = std::make_shared<QpackDecoderReceiverStream>(stream, blocked_registry_, MakeErrorHandler());
+            typed_stream = std::make_shared<QpackDecoderReceiverStream>(
+                stream, qpack_encoder_, blocked_registry_, MakeErrorHandler());
             break;
 
         default:
@@ -402,12 +411,22 @@ void ServerConnection::HandleGoaway(uint64_t id) {
         "ServerConnection::HandleGoaway: client GOAWAY received, max_accepted_push_id=%llu", (unsigned long long)id);
     goaway_received_id_ = id;
 
-    // The server still owes the client all in-flight responses. Don't
-    // close here — the client will eventually close the QUIC connection,
-    // or our application code will call Shutdown() to start a symmetric
-    // server-side drain. Just stop emitting new pushes that violate the
-    // cap; the existing CanPush() check picks this up via
-    // IsAcceptingNewPushes() below.
+    // RFC 9114 §5.2: a client's GOAWAY tells the server the client will
+    // initiate no further requests and accept no further pushes. The server
+    // MUST still finish every in-flight response, then emit ITS OWN GOAWAY
+    // and gracefully close the connection with H3_NO_ERROR. Some peers
+    // (e.g. s2n-quic) block waiting for that symmetric server-side GOAWAY +
+    // close and otherwise idle until their timeout, which fails interop.
+    //
+    // Start the symmetric drain here. Shutdown() sends our GOAWAY (id =
+    // largest stream we will still process) and sets draining_. If any
+    // request/response or push streams are still in flight, the connection
+    // stays open and the periodic CleanupDestroyedStreams() probe closes it
+    // with H3_NO_ERROR once they all drain (see if_connection.cpp). The
+    // early-out above makes this a no-op if we're already terminating.
+    if (!draining_) {
+        Shutdown();
+    }
 }
 
 bool ServerConnection::SendGoawayFrame(uint64_t goaway_id) {

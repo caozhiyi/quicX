@@ -28,7 +28,7 @@ licenses(["notice"])  # MIT-style per project LICENSE
 # Win32 vs POSIX helpers) is appended via select() below.
 _COMMON_SRCS = glob(
     [
-        "alloter/*.cpp",
+        "allocator/*.cpp",
         "buffer/*.cpp",
         "decode/*.cpp",
         "http/*.cpp",

@@ -1,7 +1,7 @@
 #include <cstring>
 #include <memory>
 
-#include "common/alloter/if_alloter.h"
+#include "common/allocator/if_allocator.h"
 #include "common/buffer/buffer_decode_wrapper.h"
 #include "common/buffer/buffer_encode_wrapper.h"
 #include "common/log/log.h"
@@ -112,8 +112,10 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
         return false;
     }
     if (destination_connection_id_length_ > 0) {
-        auto cid = (uint8_t*)destination_connection_id_;
-        wrapper.DecodeBytes(cid, destination_connection_id_length_);
+        if (!wrapper.DecodeBytesInto(destination_connection_id_, destination_connection_id_length_)) {
+            LOG_ERROR("decode dcid failed.");
+            return false;
+        }
     }
 
     // decode scid
@@ -124,8 +126,10 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
         return false;
     }
     if (source_connection_id_length_ > 0) {
-        auto cid = (uint8_t*)source_connection_id_;
-        wrapper.DecodeBytes(cid, source_connection_id_length_);
+        if (!wrapper.DecodeBytesInto(source_connection_id_, source_connection_id_length_)) {
+            LOG_ERROR("decode scid failed.");
+            return false;
+        }
     }
 
     auto data_span = wrapper.GetDataSpan();
@@ -141,7 +145,9 @@ bool LongHeader::DecodeHeader(std::shared_ptr<common::IBuffer> buffer, bool with
 }
 
 uint32_t LongHeader::EncodeHeaderSize() {
-    return sizeof(LongHeader);
+    // Wire length (RFC 9000 long header):
+    // 1 (first byte) + 4 (version) + 1 (dcid len) + dcid + 1 (scid len) + scid.
+    return 1 + 4 + 1 + destination_connection_id_length_ + 1 + source_connection_id_length_;
 }
 
 void LongHeader::SetDestinationConnectionId(const uint8_t* id, uint8_t len) {

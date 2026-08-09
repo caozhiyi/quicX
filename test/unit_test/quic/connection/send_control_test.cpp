@@ -4,6 +4,8 @@
 #include <vector>
 
 #include <quicx/common/if_event_loop.h>
+
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
 #include "quic/connection/controler/send_control.h"
@@ -17,39 +19,7 @@ namespace quicx {
 namespace quic {
 namespace {
 
-class MockTimer: public common::ITimer {
-public:
-    uint32_t add_count = 0;
-    uint32_t rm_count = 0;
 
-    uint64_t AddTimer(common::TimerTask& task, uint32_t /*time*/, uint64_t /*now*/ = 0) override {
-        add_count++;
-        // Set task ID for test
-        task.SetIdForTest(add_count);
-        tasks_.push_back(task);
-        return add_count;
-    }
-
-    bool RemoveTimer(common::TimerTask& task) override {
-        // Find task by ID
-        uint64_t id = task.GetId();
-        for (auto it = tasks_.begin(); it != tasks_.end(); ++it) {
-            if (it->GetId() == id) {
-                tasks_.erase(it);
-                rm_count++;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    int32_t MinTime(uint64_t /*now*/ = 0) override { return tasks_.empty() ? -1 : 0; }
-    void TimerRun(uint64_t /*now*/ = 0) override {}
-    bool Empty() override { return tasks_.empty(); }
-
-private:
-    std::vector<common::TimerTask> tasks_;
-};
 
 std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, FrameTypeBit frame_bits) {
     auto packet = std::make_shared<Rtt1Packet>();
@@ -60,10 +30,7 @@ std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, FrameTypeBit fram
 }
 
 TEST(SendControlTest, AckElicitingPacketsTriggerCallbacks) {
-    auto timer = std::make_shared<MockTimer>();
-    auto event_loop = common::MakeEventLoop();
-    ASSERT_TRUE(event_loop->Init());
-    event_loop->SetTimerForTest(timer);
+    auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl send_control(timer);
 
     std::vector<std::tuple<uint64_t, uint64_t, uint64_t, bool>> callbacks;
@@ -83,10 +50,12 @@ TEST(SendControlTest, AckElicitingPacketsTriggerCallbacks) {
     std::vector<StreamDataInfo> data10 = {StreamDataInfo(4, /*offset=*/100, /*len=*/50, /*fin=*/true)};
     send_control.OnPacketSend(0, pkt10, 1300, data10);
 
-    // Expect 4 timer adds:
-    // - 2 for packet timeout timers (one per packet)
-    // - 2 for PTO timer (scheduled after each packet send, with the second one replacing the first)
-    EXPECT_EQ(timer->add_count, 4u);
+    // 3 arms: one retransmit timer per packet, plus the shared PTO timer. The
+    // second packet does NOT arm a fourth timer -- it rearms the existing PTO
+    // node in place, which is the whole point of the handle-based API. All three
+    // are still pending.
+    EXPECT_EQ(timer->ArmCount(), 3u);
+    EXPECT_EQ(timer->PendingCount(), 3u);
 
     auto ack = std::make_shared<AckFrame>();
     ack->SetLargestAck(10);
@@ -106,18 +75,14 @@ TEST(SendControlTest, AckElicitingPacketsTriggerCallbacks) {
     EXPECT_EQ(std::get<2>(callbacks[1]), 100u);  // length
     EXPECT_FALSE(std::get<3>(callbacks[1]));
 
-    // Expect 4 timer removes:
-    // - 1 for removing old PTO timer when sending packet 10
-    // - 2 for packet timeout timers (cancelled when ACKed)
-    // - 1 for PTO timer (cancelled when ACK received)
-    EXPECT_EQ(timer->rm_count, 4u);
+    // Both retransmit timers are cancelled by the ACK. PTO is cancelled too and
+    // then re-armed, because the handshake is not complete (RFC 9002 6.2.2.1),
+    // so exactly one timer remains pending.
+    EXPECT_EQ(timer->PendingCount(), 1u);
 }
 
 TEST(SendControlTest, NonAckElicitingPacketsAreNotTracked) {
-    auto timer = std::make_shared<MockTimer>();
-    auto event_loop = common::MakeEventLoop();
-    ASSERT_TRUE(event_loop->Init());
-    event_loop->SetTimerForTest(timer);
+    auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl send_control(timer);
 
     bool callback_invoked = false;
@@ -129,7 +94,7 @@ TEST(SendControlTest, NonAckElicitingPacketsAreNotTracked) {
     std::vector<StreamDataInfo> stream_info = {StreamDataInfo(8, /*offset=*/0, /*len=*/42, /*fin=*/false)};
     send_control.OnPacketSend(0, packet, 1000, stream_info);
 
-    EXPECT_EQ(timer->add_count, 0u);  // Timer not armed
+    EXPECT_EQ(timer->ArmCount(), 0u);  // Timer not armed
 
     auto ack = std::make_shared<AckFrame>();
     ack->SetLargestAck(1);
@@ -138,7 +103,11 @@ TEST(SendControlTest, NonAckElicitingPacketsAreNotTracked) {
 
     send_control.OnPacketAck(5, PacketNumberSpace::kApplicationNumberSpace, ack);
     EXPECT_FALSE(callback_invoked);
-    EXPECT_EQ(timer->rm_count, 0u);
+    // The ACK arms the pre-handshake PTO (RFC 9002 §6.2.2.1), and that is the only
+    // timer in play: the padding packet contributed no retransmit timer, so there
+    // was nothing for the ACK to cancel.
+    EXPECT_EQ(timer->ArmCount(), 1u);
+    EXPECT_EQ(timer->PendingCount(), 1u);
 }
 
 // =====================================================================
@@ -181,10 +150,7 @@ void AckContiguous(SendControl& sc, uint64_t low_pn, uint64_t high_pn, uint64_t 
 // G2-S1: Baseline in-flight bookkeeping (C1 + C2).
 // Send N packets, ACK them all, in_flight must return to 0.
 TEST(SendControlG2Test, S1_FullSendThenFullAckClearsInFlight) {
-    auto timer = std::make_shared<MockTimer>();
-    auto event_loop = common::MakeEventLoop();
-    ASSERT_TRUE(event_loop->Init());
-    event_loop->SetTimerForTest(timer);
+    auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl sc(timer);
 
     EXPECT_EQ(sc.GetCcBytesInFlightForTest(), 0u);
@@ -224,10 +190,7 @@ TEST(SendControlG2Test, S1_FullSendThenFullAckClearsInFlight) {
 // orphaned PN broke SendStream byte-range tracking (FIN never recognised as
 // ACKed -> cwnd-stuck-at-1..31B G2 fingerprint).
 TEST(SendControlG2Test, S2_RfcCompliantSelectiveAckPnsByValue) {
-    auto timer = std::make_shared<MockTimer>();
-    auto event_loop = common::MakeEventLoop();
-    ASSERT_TRUE(event_loop->Init());
-    event_loop->SetTimerForTest(timer);
+    auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl sc(timer);
 
     std::vector<uint64_t> acked_stream_offsets;
@@ -282,10 +245,7 @@ TEST(SendControlG2Test, S2_RfcCompliantSelectiveAckPnsByValue) {
 // This exercises the DetectLostPackets branch (line ~537) which DOES erase
 // from unacked_packets_. If C3 holds at this layer, in_flight ends at 0.
 TEST(SendControlG2Test, S3_DetectLossPathThenRetransmitDoesNotLeakInFlight) {
-    auto timer = std::make_shared<MockTimer>();
-    auto event_loop = common::MakeEventLoop();
-    ASSERT_TRUE(event_loop->Init());
-    event_loop->SetTimerForTest(timer);
+    auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl sc(timer);
 
     auto pkt1 = MakePacket(1, FrameTypeBit::kStreamBit);
@@ -327,10 +287,7 @@ TEST(SendControlG2Test, S3_DetectLossPathThenRetransmitDoesNotLeakInFlight) {
 // OnPacketAck. Since the entry was erased, the ACK is a silent no-op.
 // in_flight must stay at the post-retransmit value.
 TEST(SendControlG2Test, S4_SpuriousAckForErasedLostPnIsNoOp) {
-    auto timer = std::make_shared<MockTimer>();
-    auto event_loop = common::MakeEventLoop();
-    ASSERT_TRUE(event_loop->Init());
-    event_loop->SetTimerForTest(timer);
+    auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl sc(timer);
 
     auto pkt1 = MakePacket(1, FrameTypeBit::kStreamBit);

@@ -40,26 +40,22 @@ public:
     virtual void AddFixedProcess(std::function<void()>) override { return; }
     virtual void AddFixedProcess(std::weak_ptr<void>, std::function<void()>) override { return; }
 
-    virtual uint64_t AddTimer(std::function<void()> callback, uint32_t, bool = false) override {
+    common::Timer AddTimer(std::weak_ptr<void>, std::function<void()> callback, uint32_t) override {
         timer_callbacks_.push_back(callback);
-        return next_timer_id_++;
+        return common::Timer();
     }
-
-    virtual uint64_t AddTimer(common::TimerTask& task, uint32_t, bool = false) override { return 0; }
-    virtual bool RemoveTimer(uint64_t) override { return true; }
-
-    virtual bool RemoveTimer(common::TimerTask& task) override { return true; }
+    common::Timer AddRepeatTimer(std::weak_ptr<void>, std::function<void()> callback, uint32_t) override {
+        timer_callbacks_.push_back(callback);
+        return common::Timer();
+    }
+    void PostDelayed(std::function<void()> callback, uint32_t) override { timer_callbacks_.push_back(callback); }
 
     virtual void ClearFixedProcesses() override {}
     virtual void ClearAllTimers() override {}
 
-    virtual void SetTimerForTest(std::shared_ptr<common::ITimer> timer) override { return; }
-
     virtual void PostTask(std::function<void()>) override {}
 
     virtual void Wakeup() override { wakeup_called_ = true; }
-
-    virtual std::shared_ptr<common::ITimer> GetTimer() override { return nullptr; }
 
     virtual bool IsInLoopThread() const override {
         return true;  // Mock always returns true for testing

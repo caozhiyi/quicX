@@ -30,9 +30,12 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     // Inject Sender for direct packet transmission
     conn->SetSender(sender_);
 
-    // Set register socket callback for connection migration
+    // Set socket register/unregister callbacks for connection migration
     if (register_socket_cb_) {
         conn->SetRegisterSocketCallback(register_socket_cb_);
+    }
+    if (unregister_socket_cb_) {
+        conn->SetUnregisterSocketCallback(unregister_socket_cb_);
     }
 
     // Set QUIC version from configuration
@@ -73,7 +76,8 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
     if (timeout_ms > 0 && connecting_set_.find(conn) != connecting_set_.end()) {
         auto loop = event_loop_.lock();
         if (!loop) return;
-        auto timer_id = loop->AddTimer(
+        // Store the handle so we can cancel when the handshake completes
+        handshake_timers_[conn] = loop->AddTimer(life_token_,
             [conn, timeout_ms, this]() {
                 // Only timeout if still in connecting state (handshake not completed)
                 if (connecting_set_.find(conn) != connecting_set_.end()) {
@@ -83,9 +87,6 @@ void ClientWorker::Connect(const std::string& ip, uint16_t port, const std::stri
                 }
             },
             timeout_ms);
-
-        // Store timer ID so we can cancel it when handshake completes
-        handshake_timers_[conn] = timer_id;
     }
 }
 
@@ -123,8 +124,6 @@ void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
     // Cancel handshake timeout timer if it exists
     auto timer_it = handshake_timers_.find(conn);
     if (timer_it != handshake_timers_.end()) {
-        auto loop = event_loop_.lock();
-        if (loop) loop->RemoveTimer(timer_it->second);
         handshake_timers_.erase(timer_it);
         LOG_DEBUG("handshake completed, cancelled timeout timer for connection. cid:%llu", conn->GetConnectionIDHash());
     }
@@ -135,15 +134,12 @@ void ClientWorker::HandleHandshakeDone(std::shared_ptr<IConnection> conn) {
 
 void ClientWorker::Shutdown() {
     // Precondition (enforced by QuicClient::~QuicClient): the worker's
-    // event-loop thread has already been Stop()+Join()'d. We therefore
-    // can — and *must* — avoid touching event_loop_ here:
-    //   * It is not running, so no timer will fire.
-    //   * Calling EventLoop::RemoveTimer from this owner thread would
-    //     trigger AssertInLoopThread()'s abort().
+    // event-loop thread has already been Stop()+Join()'d.
     //
-    // Dropping handshake_timers_ releases each timer-lambda's captured
-    // shared_ptr<IConnection>; the timer-wheel entry inside EventLoop is
-    // cleaned up when the EventLoop itself is destroyed.
+    // Dropping handshake_timers_ cancels each timer and releases the
+    // shared_ptr<IConnection> its callback captured. Cancelling is safe from this
+    // thread by contract (the handle either unlinks the node directly or queues
+    // the cancel for the -- now idle -- loop thread).
     handshake_timers_.clear();
 
     Worker::Shutdown();
@@ -174,8 +170,6 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     // Cancel handshake timer if exists
     auto timer_it = handshake_timers_.find(conn);
     if (timer_it != handshake_timers_.end()) {
-        auto vn_loop = event_loop_.lock();
-        if (vn_loop) vn_loop->RemoveTimer(timer_it->second);
         handshake_timers_.erase(timer_it);
     }
 
@@ -205,9 +199,12 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     // Inject Sender
     new_conn->SetSender(sender_);
 
-    // Set register socket callback for connection migration
+    // Set socket register/unregister callbacks for connection migration
     if (register_socket_cb_) {
         new_conn->SetRegisterSocketCallback(register_socket_cb_);
+    }
+    if (unregister_socket_cb_) {
+        new_conn->SetUnregisterSocketCallback(unregister_socket_cb_);
     }
 
     // Enable Key Update if configured
@@ -242,7 +239,7 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
     if (timeout_ms > 0) {
         auto vn_loop2 = event_loop_.lock();
         if (!vn_loop2) return;
-        auto timer_id = vn_loop2->AddTimer(
+        handshake_timers_[new_conn] = vn_loop2->AddTimer(life_token_,
             [new_conn, timeout_ms, this]() {
                 if (connecting_set_.find(new_conn) != connecting_set_.end()) {
                     LOG_WARN("handshake timeout for reconnected connection. cid:%llu, timeout_ms:%d",
@@ -251,7 +248,6 @@ void ClientWorker::HandleVersionNegotiation(std::shared_ptr<IConnection> conn, c
                 }
             },
             timeout_ms);
-        handshake_timers_[new_conn] = timer_id;
     }
 }
 

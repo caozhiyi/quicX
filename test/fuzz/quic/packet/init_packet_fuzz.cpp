@@ -45,6 +45,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
         quicx::quic::InitPacket packet;
         packet.SetCryptographer(PacketTest::Instance().GetTestClientCryptographer());
+        // DecodeWithCrypto starts from packet_src_data_, and only
+        // DecodeWithoutCrypto ever assigns it. Calling it on a freshly
+        // constructed packet -- as this harness used to -- ran the entire crypto
+        // path over an empty span, so header-protection sampling and the payload
+        // length arithmetic were never actually fuzzed. That is one of the two
+        // reasons the missing long-header bounds checks survived; the other is
+        // that the overread lands inside BoringSSL, which is not instrumented,
+        // so no sanitizer would have flagged it either.
+        if (!packet.DecodeWithoutCrypto(in, true)) {
+            return 0;
+        }
         if (!packet.DecodeWithCrypto(in)) {
             return 0;
         }
@@ -58,7 +69,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
         // Decode the re-encoded packet again to exercise the decode path
         quicx::quic::InitPacket packet2;
-        (void)packet2.DecodeWithCrypto(out);
+        packet2.SetCryptographer(PacketTest::Instance().GetTestClientCryptographer());
+        if (packet2.DecodeWithoutCrypto(out, true)) {
+            (void)packet2.DecodeWithCrypto(out);
+        }
     }
 
     return 0;

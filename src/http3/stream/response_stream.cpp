@@ -1,8 +1,11 @@
-#include <quicx/common/metrics.h>
-#include <quicx/common/metrics_std.h>
 #include "common/buffer/multi_block_buffer.h"
+#include "common/buffer/single_block_buffer.h"
+#include "common/buffer/buffer_chunk_pool.h"
+#include "common/buffer/buffer_chunk.h"
 #include "common/log/log.h"
 
+#include "quicx/common/metrics.h"
+#include "quicx/common/metrics_std.h"
 #include "quic/quicx/global_resource.h"
 
 #include "http3/frame/push_promise_frame.h"
@@ -51,7 +54,19 @@ void ResponseStream::SendPushPromise(const std::unordered_map<std::string, std::
     // Set encoded fields in push promise frame
     push_frame.SetEncodedFields(headers_buffer);
 
-    auto frame_buffer = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
+    // Encode the frame into a fresh single-block buffer. Encoding directly into
+    // the stream's own MultiBlockBuffer send buffer fails once its last chunk is
+    // full (the response body stream is written continuously), so route the
+    // frame through a dedicated buffer and append it as a new chunk.
+    auto chunk = common::BufferChunkPool::Acquire(quic::GlobalResource::Instance().GetThreadLocalBlockPool());
+    if (!chunk || !chunk->Valid()) {
+        LOG_ERROR("ResponseStream::SendPushPromise: failed to allocate buffer chunk");
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        }
+        return;
+    }
+    auto frame_buffer = std::make_shared<common::SingleBlockBuffer>(chunk);
     if (!push_frame.Encode(frame_buffer)) {
         LOG_ERROR("ResponseStream::SendPushPromise frame encode error");
         if (error_handler_) {
@@ -60,7 +75,16 @@ void ResponseStream::SendPushPromise(const std::unordered_map<std::string, std::
         return;
     }
 
-    // Send frame to client
+    // Append the encoded frame to the stream's send buffer and transmit.
+    auto sb = std::dynamic_pointer_cast<common::IBuffer>(stream_->GetSendBuffer());
+    if (!sb) {
+        LOG_ERROR("ResponseStream::SendPushPromise: no send buffer");
+        if (error_handler_) {
+            error_handler_(GetStreamID(), Http3ErrorCode::kInternalError);
+        }
+        return;
+    }
+    sb->Write(frame_buffer);
     stream_->Flush();
 }
 

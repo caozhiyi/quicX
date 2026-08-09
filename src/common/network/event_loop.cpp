@@ -5,7 +5,6 @@
 
 #include "common/log/log.h"
 #include "common/network/event_loop.h"
-#include "common/timer/timer.h"
 #include "common/util/time.h"
 
 #include "quic/quicx/global_resource.h"
@@ -27,14 +26,13 @@ bool EventLoop::Init() {
         LOG_ERROR("Failed to init event driver");
         return false;
     }
-    timer_ = MakeTimer();
-    if (!timer_) {
-        LOG_ERROR("Failed to create timer");
-        return false;
-    }
     events_.reserve(driver_->GetMaxEvents());
     initialized_ = true;
     thread_id_ = std::this_thread::get_id();
+    // Declare the serialisation domain of the (deliberately lock-free) timer
+    // engine. This is what lets Timer::Cancel() decide between unlinking the
+    // node synchronously and queueing the cancel for this thread to apply.
+    timer_core_.BindLoopThread(thread_id_);
 
     // Register this event loop for the current thread (for lock-free pool operations)
     // In test environments EventLoop may be stack-allocated, so we need to handle that case
@@ -77,9 +75,9 @@ void EventLoop::AssertInLoopThread() {
 
 int EventLoop::Wait() {
     uint64_t now = UTCTimeMsec();
-    timer_->TimerRun(now);
+    timer_core_.Run(now);
 
-    int32_t next_ms = timer_->MinTime(now);
+    int32_t next_ms = timer_core_.MinTime(now);
     int timeout_ms = next_ms >= 0 ? static_cast<int>(next_ms) : 1000;
 
     // Check if same-thread wakeup requested (e.g., from AddTimer/PostTask)
@@ -140,7 +138,7 @@ int EventLoop::Wait() {
     // only when prompted by I/O (e.g. unit tests, idle servers) it can be
     // delayed indefinitely. This was part of the same family of bugs as
     // the AddTimer-Wakeup() issue fixed above.
-    timer_->TimerRun(UTCTimeMsec());
+    timer_core_.Run(UTCTimeMsec());
 
     // handle events
     for (int i = 0; i < n; i++) {
@@ -253,32 +251,21 @@ void EventLoop::ClearFixedProcesses() {
 }
 
 void EventLoop::ClearAllTimers() {
-    // NOTE: this releases every pending timer callback, which is the only way
-    // to drop shared_ptr<BaseConnection> captures made by the Closing/Draining
-    // 1.5s AddTimer([self]() { self->OnClosingTimeout(); }, ...) call sites
-    // after the event loop has been stopped. Those captures never fire once
-    // the loop stops iterating, so without this their strong self-refs would
-    // pin BaseConnection (and the EventLoop itself through BaseConnection::
-    // event_loop_) forever, producing the P4 per-connection RSS residue.
+    // Releases every pending timer callback. That is the only way to drop the
+    // shared_ptr<BaseConnection> captured by the Closing/Draining
+    //   AddTimer([self = shared_from_this()]{ self->OnClosingTimeout(); }, ...)
+    // call sites once the loop has stopped iterating: those callbacks never fire
+    // again, so without this their strong self-references pin BaseConnection
+    // (and, through it, the EventLoop) forever -- the P4 per-connection residue.
     //
-    // MUST be called after Stop()/Join() — we walk the underlying ITimer,
-    // which is not thread-safe. Safe teardown order: stop loop → join loop
-    // thread → ClearFixedProcesses() → ClearAllTimers() → drop owner's
-    // shared_ptr<EventLoop>.
-    if (timer_) {
-        // Walk the full set of live ids and remove them one by one. The
-        // underlying wheel will free its slot copies (and their captured
-        // closures), which is what lets [self = shared_from_this()] captures
-        // finally drop their reference.
-        for (uint64_t id : timer_ids_) {
-            TimerTask probe;
-            probe.SetIdForTest(id);
-            timer_->RemoveTimer(probe);  // may be a no-op if already fired
-        }
-    }
-    timer_ids_.clear();
-    timers_.clear();
-    timer_repeat_.clear();
+    // MUST be called after Stop()/Join(): TimerCore is single-threaded. Safe
+    // teardown order: stop loop -> join loop thread -> ClearFixedProcesses() ->
+    // ClearAllTimers() -> drop the owner's shared_ptr<EventLoop>.
+    //
+    // This used to walk an unordered_set of every id ever returned by AddTimer,
+    // synthesising a probe TimerTask per id -- O(cumulative timers). TimerCore
+    // owns its nodes, so it can drop them all directly.
+    timer_core_.Clear();
 
     // Also drain any posted tasks that were RunInLoop()'d from a different
     // thread. Each posted task may capture shared_ptr<Stream>/<Connection>
@@ -290,92 +277,51 @@ void EventLoop::ClearAllTimers() {
     }
 }
 
-uint64_t EventLoop::AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat) {
+Timer EventLoop::AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t delay_ms) {
     AssertInLoopThread();
-    if (!timer_) {
-        LOG_ERROR("EventLoop timer is not initialized. Call Init() first.");
-        return 0;
-    }
-    TimerTask task(cb);
-    uint64_t now = UTCTimeMsec();
-    uint64_t id = timer_->AddTimer(task, delay_ms, now);
-    // P4: only one-shot timers must NOT be retained in EventLoop::timers_,
-    // otherwise the callback (which may capture shared_ptr<BaseConnection>
-    // via [self]) is held alive past its fire, producing a ~120KB per-
-    // connection RSS residue. For repeat timers we still need the cb so
-    // we can re-register on each fire, so they stay in timers_.
-    timer_ids_.insert(id);
-    if (repeat) {
-        timer_repeat_[id] = true;
-        timers_.emplace(id, task);
+    uint32_t gen = 0;
+    uint32_t index = timer_core_.Arm(
+        std::move(cb), std::move(owner), /*has_owner=*/true, delay_ms, /*interval_ms=*/0, UTCTimeMsec(), gen);
+    if (index == TimerCore::kNoEntry) {
+        LOG_ERROR("EventLoop::AddTimer: timer slab exhausted");
+        return Timer();
     }
     // NOTE: do NOT call Wakeup() here.
     //
-    // AddTimer is gated by AssertInLoopThread(), so we are always on the loop
-    // thread, which means Wait() is NOT currently blocking on the driver
-    // (we are between iterations, inside an event/timer/task callback). The
-    // very next Wait() will read MinTime(now) from the timer wheel and pass
-    // the freshly-armed deadline straight into driver_->Wait(timeout). No
-    // explicit wakeup is needed, and triggering one is actively harmful:
-    // the same-thread branch of Wakeup() sets need_immediate_wakeup_, which
-    // forces the next Wait() to use timeout=0, defeating the deadline-driven
-    // blocking. In the field this manifested as a ~9 s silence in the PTO
-    // path: every outgoing packet did RemoveTimer + AddTimer on pto_timer_,
-    // and the resulting flag turned every Wait() into a 0-timeout poll, so
-    // the wheel was never advanced enough by the driver to actually fire
-    // the 88 ms PTO timer when no I/O was pending.
-    return id;
+    // Arming is gated by AssertInLoopThread(), so we are always on the loop
+    // thread, which means Wait() is NOT currently blocking on the driver (we are
+    // between iterations, inside an event/timer/task callback). The very next
+    // Wait() reads MinTime(now) and passes the freshly-armed deadline straight
+    // into driver_->Wait(timeout). No wakeup is needed, and triggering one is
+    // actively harmful: the same-thread branch of Wakeup() sets
+    // need_immediate_wakeup_, which forces the next Wait() to use timeout=0 and
+    // defeats deadline-driven blocking. In the field that manifested as a ~9 s
+    // silence in the PTO path -- every outgoing packet re-armed pto_timer_, and
+    // the resulting flag turned every Wait() into a 0-timeout poll, so the wheel
+    // was never advanced enough to fire the 88 ms PTO when no I/O was pending.
+    return Timer(&timer_core_, index, gen);
 }
 
-uint64_t EventLoop::AddTimer(TimerTask& task, uint32_t delay_ms, bool repeat) {
+Timer EventLoop::AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t interval_ms) {
     AssertInLoopThread();
-    if (!timer_) {
-        LOG_ERROR("EventLoop timer is not initialized. Call Init() first.");
-        return 0;
+    if (interval_ms == 0) {
+        LOG_ERROR("EventLoop::AddRepeatTimer: interval must be non-zero");
+        return Timer();
     }
-    uint64_t now = UTCTimeMsec();
-    uint64_t id = timer_->AddTimer(task, delay_ms, now);
-    // Same P4 rationale as the function above: avoid retaining one-shot
-    // timers in EventLoop::timers_.
-    timer_ids_.insert(id);
-    if (repeat) {
-        timer_repeat_[id] = true;
-        timers_.emplace(id, task);
+    uint32_t gen = 0;
+    uint32_t index =
+        timer_core_.Arm(std::move(cb), std::move(owner), /*has_owner=*/true, interval_ms, interval_ms, UTCTimeMsec(), gen);
+    if (index == TimerCore::kNoEntry) {
+        LOG_ERROR("EventLoop::AddRepeatTimer: timer slab exhausted");
+        return Timer();
     }
-    // See the long comment in the std::function overload above for why we
-    // intentionally do NOT call Wakeup() here.
-    return id;
+    return Timer(&timer_core_, index, gen);
 }
 
-bool EventLoop::RemoveTimer(uint64_t timer_id) {
+void EventLoop::PostDelayed(std::function<void()> cb, uint32_t delay_ms) {
     AssertInLoopThread();
-    if (!timer_) {
-        LOG_ERROR("EventLoop timer is not initialized. Call Init() first.");
-        return false;
-    }
-    // TimingWheelTimer::RemoveTimer(TimerTask&) only reads task.id_, so we
-    // can synthesize a probe task rather than keeping the real TimerTask
-    // (and its captured shared_ptr<>-holding tcb_) around in timers_.
-    TimerTask probe;
-    probe.SetIdForTest(timer_id);
-    bool ok = timer_->RemoveTimer(probe);
-    timer_ids_.erase(timer_id);
-    timers_.erase(timer_id);
-    timer_repeat_.erase(timer_id);
-    return ok;
-}
-
-bool EventLoop::RemoveTimer(TimerTask& task) {
-    AssertInLoopThread();
-    if (!timer_) {
-        LOG_ERROR("EventLoop timer is not initialized. Call Init() first.");
-        return false;
-    }
-    bool ok = timer_->RemoveTimer(task);
-    timer_ids_.erase(task.GetId());
-    timers_.erase(task.GetId());
-    timer_repeat_.erase(task.GetId());
-    return ok;
+    // No handle, hence no slab entry and nothing for the caller to keep alive.
+    timer_core_.ArmDetached(std::move(cb), delay_ms, UTCTimeMsec());
 }
 
 void EventLoop::PostTask(std::function<void()> fn) {
@@ -406,14 +352,6 @@ void EventLoop::Wakeup() {
             driver_->Wakeup();
         }
     }
-}
-
-std::shared_ptr<ITimer> EventLoop::GetTimer() {
-    return timer_;
-}
-
-void EventLoop::SetTimerForTest(std::shared_ptr<ITimer> timer) {
-    timer_ = timer;
 }
 
 void EventLoop::DrainPostedTasks() {

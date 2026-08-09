@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "common/timer/timer_core.h"
+#include "common/util/time.h"
 #include "upgrade/handlers/connection_context.h"
 #include "upgrade/network/tcp_socket.h"
 
@@ -31,7 +33,7 @@ TEST_F(ConnectionContextTest, Creation) {
     EXPECT_TRUE(context.initial_data.empty());
     EXPECT_TRUE(context.alpn_protocols.empty());
     EXPECT_EQ(context.response_sent, 0);
-    EXPECT_EQ(context.negotiation_timer_id, 0);
+    EXPECT_FALSE(context.negotiation_timer.IsActive());
 }
 
 // Test connection context state transitions
@@ -142,17 +144,23 @@ TEST_F(ConnectionContextTest, PendingResponse) {
     EXPECT_LT(context.response_sent, context.pending_response.size());
 }
 
-// Test negotiation timer ID
+// Test negotiation timer ownership
 TEST_F(ConnectionContextTest, NegotiationTimer) {
     ConnectionContext context(socket_);
 
-    // Set timer ID
-    context.negotiation_timer_id = 12345;
-    EXPECT_EQ(context.negotiation_timer_id, 12345);
+    // A fresh context owns no timer. The field is a move-only handle rather than
+    // an id, so "no timer" is not a magic number a caller can forget to reset --
+    // and clearing it cancels.
+    EXPECT_FALSE(context.negotiation_timer.IsActive());
 
-    // Clear timer ID
-    context.negotiation_timer_id = 0;
-    EXPECT_EQ(context.negotiation_timer_id, 0);
+    common::TimerCore core;
+    uint32_t gen = 0;
+    uint32_t index = core.Arm([]() {}, {}, false, 1000, 0, common::UTCTimeMsec(), gen);
+    context.negotiation_timer = common::Timer(&core, index, gen);
+    EXPECT_TRUE(context.negotiation_timer.IsActive());
+
+    context.negotiation_timer.Cancel();
+    EXPECT_FALSE(context.negotiation_timer.IsActive());
 }
 
 // Test complete response sending
@@ -227,14 +235,12 @@ TEST_F(ConnectionContextTest, ContextCleanup) {
     context.alpn_protocols = {"h3", "h2"};
     context.pending_response = {0x05, 0x06, 0x07, 0x08};
     context.response_sent = 2;
-    context.negotiation_timer_id = 999;
 
     // Verify data is present
     EXPECT_FALSE(context.initial_data.empty());
     EXPECT_FALSE(context.alpn_protocols.empty());
     EXPECT_FALSE(context.pending_response.empty());
     EXPECT_GT(context.response_sent, 0);
-    EXPECT_GT(context.negotiation_timer_id, 0);
 
     // Context will be cleaned up when it goes out of scope
     // This test verifies no memory leaks occur

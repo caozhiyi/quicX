@@ -3,8 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "common/timer/if_timer.h"
-#include "common/timer/timer_task.h"
+#include "common/network/event_loop.h"
 #include "quic/connection/connection_client.h"
 #include "quic/connection/connection_closer.h"
 #include "quic/connection/error.h"
@@ -14,36 +13,29 @@ namespace quicx {
 namespace quic {
 namespace {
 
-class RecordingTimer: public common::ITimer {
+// Records the delay of every timer the connection schedules, while still running
+// the production engine underneath.
+//
+// This replaces a hand-rolled ITimer mock that was injected through
+// SetTimerForTest(). Connection components now schedule through
+// ITimerScheduler, which the event loop implements, so the seam moved from
+// "swap the timer" to "watch the loop".
+class RecordingEventLoop: public common::EventLoop {
 public:
-    struct Entry {
-        common::TimerTask task;
-        uint32_t timeout_ms;
-    };
-
-    uint64_t AddTimer(common::TimerTask& task, uint32_t time, uint64_t /*now*/ = 0) override {
-        entries_.push_back({task, time});
-        return entries_.size();
+    common::Timer AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t delay_ms) override {
+        delays_.push_back(delay_ms);
+        return common::EventLoop::AddTimer(std::move(owner), std::move(cb), delay_ms);
     }
 
-    bool RemoveTimer(common::TimerTask& /*task*/) override {
-        ++rm_count_;
-        return true;
+    void PostDelayed(std::function<void()> cb, uint32_t delay_ms) override {
+        delays_.push_back(delay_ms);
+        common::EventLoop::PostDelayed(std::move(cb), delay_ms);
     }
 
-    int32_t MinTime(uint64_t /*now*/ = 0) override {
-        return entries_.empty() ? -1 : static_cast<int32_t>(entries_.front().timeout_ms);
-    }
-    void TimerRun(uint64_t /*now*/ = 0) override {}
-    bool Empty() override { return entries_.empty(); }
-
-    size_t add_count() const { return entries_.size(); }
-    size_t rm_count() const { return rm_count_; }
-    const std::vector<Entry>& entries() const { return entries_; }
+    const std::vector<uint32_t>& delays() const { return delays_; }
 
 private:
-    std::vector<Entry> entries_;
-    size_t rm_count_{0};
+    std::vector<uint32_t> delays_;
 };
 
 class TestClientConnection: public ClientConnection {
@@ -69,10 +61,8 @@ std::shared_ptr<TLSCtx> MakeTlsContext() {
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, CloseSchedulesThreePtoTimer) {
-    auto event_loop = common::MakeEventLoop();
+    auto event_loop = std::make_shared<RecordingEventLoop>();
     ASSERT_TRUE(event_loop->Init());
-    auto timer = std::make_shared<RecordingTimer>();
-    event_loop->SetTimerForTest(timer);
     bool close_callback_invoked = false;
 
     ConnectionCallbacks cbs;
@@ -85,21 +75,19 @@ TEST(ConnectionBaseCloseBehaviorTest, CloseSchedulesThreePtoTimer) {
     conn->Close();
 
     EXPECT_EQ(conn->GetConnectionStateForTest(), ConnectionStateType::kStateClosing);
-    ASSERT_FALSE(timer->entries().empty());
+    ASSERT_FALSE(event_loop->delays().empty());
 
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
     EXPECT_GE(close_wait, 500u);  // Minimum timeout enforced
-    EXPECT_EQ(timer->entries().back().timeout_ms, close_wait * 3);
+    EXPECT_EQ(event_loop->delays().back(), close_wait * 3);
     // After weak_ptr refactoring, OnStateToClosing immediately invokes the
     // connection close callback so the application can release resources early.
     EXPECT_TRUE(close_callback_invoked);
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, ImmediateCloseStoresErrorAndSchedulesTimer) {
-    auto event_loop = common::MakeEventLoop();
+    auto event_loop = std::make_shared<RecordingEventLoop>();
     ASSERT_TRUE(event_loop->Init());
-    auto timer = std::make_shared<RecordingTimer>();
-    event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(MakeTlsContext(), event_loop);
 
     conn->ForceState(ConnectionStateType::kStateConnected);
@@ -110,16 +98,14 @@ TEST(ConnectionBaseCloseBehaviorTest, ImmediateCloseStoresErrorAndSchedulesTimer
     EXPECT_EQ(conn->GetStoredClosingTriggerFrame(), 0x15);
     EXPECT_EQ(conn->GetStoredClosingReason(), "fatal");
 
-    ASSERT_FALSE(timer->entries().empty());
+    ASSERT_FALSE(event_loop->delays().empty());
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();
-    EXPECT_EQ(timer->entries().back().timeout_ms, close_wait * 3);
+    EXPECT_EQ(event_loop->delays().back(), close_wait * 3);
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
-    auto event_loop = common::MakeEventLoop();
+    auto event_loop = std::make_shared<RecordingEventLoop>();
     ASSERT_TRUE(event_loop->Init());
-    auto timer = std::make_shared<RecordingTimer>();
-    event_loop->SetTimerForTest(timer);
     uint64_t error_code = 0;
     std::string reason;
 
@@ -146,10 +132,8 @@ TEST(ConnectionBaseCloseBehaviorTest, ClosingTimeoutInvokesCallback) {
 }
 
 TEST(ConnectionBaseCloseBehaviorTest, CloseWaitTimeHasLowerBound) {
-    auto event_loop = common::MakeEventLoop();
+    auto event_loop = std::make_shared<RecordingEventLoop>();
     ASSERT_TRUE(event_loop->Init());
-    auto timer = std::make_shared<RecordingTimer>();
-    event_loop->SetTimerForTest(timer);
     auto conn = std::make_shared<TestClientConnection>(MakeTlsContext(), event_loop);
 
     uint32_t close_wait = conn->GetCloseWaitTimeForTest();

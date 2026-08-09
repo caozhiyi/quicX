@@ -16,8 +16,8 @@
 namespace quicx {
 namespace quic {
 
-SendControl::SendControl(std::shared_ptr<common::ITimer> timer):
-    timer_(timer),
+SendControl::SendControl(std::shared_ptr<common::ITimerScheduler> scheduler):
+    scheduler_(scheduler),
     max_ack_delay_(kMaxAckDelay) {
     memset(pkt_num_largest_sent_, 0, sizeof(pkt_num_largest_sent_));
     memset(pkt_num_largest_acked_, 0, sizeof(pkt_num_largest_acked_));
@@ -113,7 +113,7 @@ void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& pac
     // Track when we last sent ack-eliciting data for PTO timer
     last_ack_eliciting_sent_time_ = now;
 
-    auto timer_task = common::TimerTask([this, pkt_len, packet, ns] {
+    auto on_retransmit_timeout = [this, pkt_len, packet, ns] {
         // NOTE: Do NOT call rtt_calculator_.OnPTOExpired() here.
         // PTO backoff is managed by the global OnPTOTimer() to avoid
         // exponential over-counting when multiple packets time out together
@@ -141,28 +141,28 @@ void SendControl::OnPacketSend(uint64_t now, const std::shared_ptr<IPacket>& pac
         if (packet_lost_cb_) {
             packet_lost_cb_(packet);
         }
-    });
+    };
     // RFC 9002 §6.2.1: Use PTO with exponential backoff. While the handshake
     // is unconfirmed the peer's advertised max_ack_delay has not yet been
     // reliably delivered and MUST be treated as 0 when computing PTO; see
     // GetEffectiveMaxAckDelay(). Once the teardown-path UAF in ~SendControl
-    // (per-packet timer_task lambdas that captured `this`) was fixed by
+    // (per-packet timer callbacks that captured `this`) was fixed by
     // delegating to ClearRetransmissionData(), it is safe to route all four
     // PTO callsites through the accessor.
-    timer_->AddTimer(timer_task, rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay()));
+    common::Timer retransmit_timer = scheduler_->AddTimer(life_token_, std::move(on_retransmit_timeout),
+        static_cast<uint32_t>(rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay())));
     unacked_packets_[ns][packet->GetPacketNumber()] =
-        PacketTimerInfo(largest_sent_time_[ns], pkt_len, timer_task, stream_data, packet);
+        PacketTimerInfo(largest_sent_time_[ns], pkt_len, std::move(retransmit_timer), stream_data, packet);
     LOG_DEBUG(
         "SendControl::OnPacketSend: saved packet %llu to unacked_packets[%d], stream_data count=%zu, "
         "unacked_packets[%d] size=%zu",
         packet->GetPacketNumber(), ns, stream_data.size(), ns, unacked_packets_[ns].size());
 
-    // RFC 9002: Schedule PTO timer to detect persistent timeouts
-    // Cancel existing timer and reschedule with current PTO value
-    timer_->RemoveTimer(pto_timer_);
-    pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
+    // RFC 9002: Schedule PTO timer to detect persistent timeouts.
+    // Rearm splices the existing node instead of freeing and reallocating one,
+    // which matters because this runs once per outgoing packet.
     uint64_t pto_ms_send = rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay());
-    timer_->AddTimer(pto_timer_, pto_ms_send);
+    ArmPtoTimer(pto_ms_send);
     LOG_DEBUG("SendControl::OnPacketSend: PTO armed, ns=%d pn=%llu pto_ms=%llu unacked[%d]_size=%zu", ns,
         packet->GetPacketNumber(), pto_ms_send, ns, unacked_packets_[ns].size());
 }
@@ -282,7 +282,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
             }
 
             // Cancel the PTO timer since packet is ACKed
-            timer_->RemoveTimer(iter->second.timer_task_);
+            iter->second.timer_.Cancel();
 
             // Only notify congestion control if packet wasn't already declared lost
             if (!iter->second.is_lost) {
@@ -333,7 +333,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
         if (task != unacked_packets_[ns].end()) {
             LOG_DEBUG("SendControl::OnPacketAck: found packet %llu, stream_data count=%zu", pkt_num,
                 task->second.stream_data.size());
-            timer_->RemoveTimer(task->second.timer_task_);
+            task->second.timer_.Cancel();
 
             // Notify congestion control to decrement bytes_in_flight
             if (!task->second.is_lost) {
@@ -388,7 +388,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
         for (uint32_t i = 0; i <= iter->GetAckRangeLength(); i++) {
             auto task = unacked_packets_[ns].find(pkt_num);
             if (task != unacked_packets_[ns].end()) {
-                timer_->RemoveTimer(task->second.timer_task_);
+                task->second.timer_.Cancel();
 
                 // Notify congestion control to decrement bytes_in_flight
                 // BUG FIX: Was missing this call, causing bytes_in_flight to leak
@@ -427,7 +427,7 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
     rtt_calculator_.OnPacketAcked();
 
     // Cancel PTO timer since we received an ACK; we'll re-arm below if needed.
-    timer_->RemoveTimer(pto_timer_);
+    pto_timer_.Cancel();
 
     // RFC 9002 §6.2.1 (Bug #18 fix):
     //   "A sender SHOULD restart its PTO timer every time an ack-eliciting
@@ -460,9 +460,8 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
     if (has_ack_eliciting_in_flight) {
         // Re-arm with the freshly-reset backoff (OnPacketAcked above zeroed
         // pto_count_, so this is a non-backed-off PTO based on latest RTT).
-        pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
         uint64_t pto_ms_ack = rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay());
-        timer_->AddTimer(pto_timer_, pto_ms_ack);
+        ArmPtoTimer(pto_ms_ack);
         LOG_DEBUG("SendControl::OnPacketAck: PTO re-armed (in-flight), pto_ms=%llu unacked[0/1/2]={%zu,%zu,%zu}",
             pto_ms_ack, unacked_packets_[0].size(), unacked_packets_[1].size(), unacked_packets_[2].size());
     } else if (!handshake_complete_) {
@@ -470,10 +469,9 @@ void SendControl::OnPacketAck(uint64_t now, PacketNumberSpace ns, const std::sha
         // there is no ack-eliciting data in flight, so the client sends PING
         // probes if the handshake stalls (e.g. server anti-amplification
         // limited).  probe_needed_cb_ is the PING-injection path.
-        pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
         // RFC 9002 §6.2.1: pre-handshake path → GetEffectiveMaxAckDelay() returns 0.
         uint64_t pto_ms_hs = rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay());
-        timer_->AddTimer(pto_timer_, pto_ms_hs);
+        ArmPtoTimer(pto_ms_hs);
         LOG_DEBUG("SendControl::OnPacketAck: PTO armed (pre-handshake), pto_ms=%llu", pto_ms_hs);
     } else {
         LOG_DEBUG(
@@ -506,7 +504,7 @@ void SendControl::ClearRetransmissionData() {
     lost_packets_.clear();
     for (int i = 0; i < PacketNumberSpace::kNumberSpaceCount; i++) {
         for (auto& pair : unacked_packets_[i]) {
-            timer_->RemoveTimer(pair.second.timer_task_);
+            pair.second.timer_.Cancel();
         }
         unacked_packets_[i].clear();
     }
@@ -516,7 +514,7 @@ void SendControl::ClearRetransmissionData() {
 void SendControl::DiscardPacketNumberSpace(PacketNumberSpace ns) {
     // Clear unacked packets for this space
     for (auto& pair : unacked_packets_[ns]) {
-        timer_->RemoveTimer(pair.second.timer_task_);
+        pair.second.timer_.Cancel();
     }
     unacked_packets_[ns].clear();
 
@@ -541,7 +539,7 @@ void SendControl::ResetInitialPacketNumber() {
 
     // Clear unacked packets for Initial space
     for (auto& pair : unacked_packets_[ns]) {
-        timer_->RemoveTimer(pair.second.timer_task_);
+        pair.second.timer_.Cancel();
     }
     unacked_packets_[ns].clear();
 
@@ -614,7 +612,7 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
     for (uint64_t pkt_num : lost_packet_nums) {
         auto it = unacked_packets_[ns].find(pkt_num);
         if (it != unacked_packets_[ns].end()) {
-            timer_->RemoveTimer(it->second.timer_task_);  // Cancel PTO timer
+            it->second.timer_.Cancel();  // Cancel PTO timer
 
             // Add to lost_packets_ list for retransmission, carrying the
             // original packet's stream_data so the retransmitted PN can
@@ -634,7 +632,8 @@ void SendControl::DetectLostPackets(uint64_t now, PacketNumberSpace ns, uint64_t
                 packet_lost_cb_(it->second.packet);
             }
 
-            LOG_WARN("DetectLostPackets: declared packet %llu lost, triggering retransmission", pkt_num);
+            LOG_WARN("DetectLostPackets: declared packet %llu lost, triggering retransmission sc=%p", pkt_num,
+                (void*)this);
 
             // Log marked_for_retransmit event
             if (qlog_trace_) {
@@ -683,7 +682,8 @@ void SendControl::OnPTOTimer() {
     rtt_calculator_.OnPTOExpired();
 
     LOG_WARN(
-        "SendControl::OnPTOTimer: PTO fired, pto_count=%u, triggering probe", rtt_calculator_.GetConsecutivePTOCount());
+        "SendControl::OnPTOTimer: PTO fired, pto_count=%u, triggering probe sc=%p",
+        rtt_calculator_.GetConsecutivePTOCount(), (void*)this);
     LOG_DEBUG("SendControl::OnPTOTimer: entry, unacked[0/1/2]={%zu,%zu,%zu} handshake_complete=%d",
         unacked_packets_[0].size(), unacked_packets_[1].size(), unacked_packets_[2].size(),
         handshake_complete_ ? 1 : 0);
@@ -703,7 +703,7 @@ void SendControl::OnPTOTimer() {
                     lost_packets_.push_back(LostPacketEntry{it->second.packet, it->second.stream_data});
                     congestion_control_->OnPacketLost(
                         LossEvent{it->first, it->second.pkt_len_, common::UTCTimeMsec() * 1000});
-                    timer_->RemoveTimer(it->second.timer_task_);
+                    it->second.timer_.Cancel();
 
                     // Log marked_for_retransmit event (PTO-triggered)
                     if (qlog_trace_) {
@@ -750,12 +750,27 @@ void SendControl::OnPTOTimer() {
         application_probe_cb_();
     }
 
-    // Reschedule PTO timer with updated backoff for next probe
-    timer_->RemoveTimer(pto_timer_);
-    pto_timer_.SetTimeoutCallback([this]() { OnPTOTimer(); });
+    // Reschedule PTO timer with updated backoff for next probe.
     // RFC 9002 §6.2.1: route through GetEffectiveMaxAckDelay() so the pre-handshake
     // PTO treats peer max_ack_delay as 0 per spec.
-    timer_->AddTimer(pto_timer_, rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay()));
+    //
+    // Note this rearms from inside the PTO callback itself. That is safe: the
+    // node was parked before the callback ran, so Rearm simply re-links it.
+    ArmPtoTimer(rtt_calculator_.GetPTOWithBackoff(GetEffectiveMaxAckDelay()));
+}
+
+void SendControl::ArmPtoTimer(uint64_t delay_ms) {
+    uint32_t delay = static_cast<uint32_t>(delay_ms);
+    // Rearm keeps the same node and the same handle, so the per-packet path pays
+    // no allocation and no re-copy of the callback. It fails only when we have no
+    // timer yet (or it was cancelled outright), in which case we arm a new one.
+    if (pto_timer_.Rearm(delay)) {
+        return;
+    }
+    if (!scheduler_) {
+        return;
+    }
+    pto_timer_ = scheduler_->AddTimer(life_token_, [this]() { OnPTOTimer(); }, delay);
 }
 
 void SendControl::SetQlogTrace(std::shared_ptr<common::QlogTrace> trace) {

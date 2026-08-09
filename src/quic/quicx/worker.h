@@ -40,6 +40,10 @@ public:
     using RegisterSocketCallback = std::function<bool(int32_t sockfd)>;
     void SetRegisterSocketCallback(RegisterSocketCallback cb) { register_socket_cb_ = cb; }
 
+    // Set callback for removing a retired socket from the receiver's poll set.
+    using UnregisterSocketCallback = std::function<bool(int32_t sockfd)>;
+    void SetUnregisterSocketCallback(UnregisterSocketCallback cb) { unregister_socket_cb_ = cb; }
+
     // See IWorker::Shutdown(). Clears all per-connection state so that the
     // refcount cycle between EventLoop and Worker (via fixed-process /
     // BaseConnection::event_loop_ / Stream::event_loop_) can be broken at
@@ -66,6 +70,11 @@ protected:
     std::string worker_id_;
     QuicTransportParams params_;
 
+    // Guards timer callbacks registered by subclasses: it expires with the
+    // worker, so a firing that races with teardown is skipped instead of
+    // touching a destroyed worker.
+    std::shared_ptr<int> life_token_ = std::make_shared<int>(0);
+
     std::shared_ptr<ISender> sender_;
 
     std::shared_ptr<TLSCtx> ctx_;
@@ -83,6 +92,7 @@ protected:
     connection_state_callback connection_handler_;
     std::weak_ptr<common::IEventLoop> event_loop_;  // Observer reference (owner is QuicClient/QuicServer)
     RegisterSocketCallback register_socket_cb_;     // Register socket with receiver for migration
+    UnregisterSocketCallback unregister_socket_cb_;  // Remove a retired socket from the poll set
 };
 
 }  // namespace quic

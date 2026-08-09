@@ -87,11 +87,13 @@ bool MockQuicConnection::ExportResumptionSession(std::string& out_session_der) {
     return false;
 }
 
-uint64_t MockQuicConnection::AddTimer(timer_callback callback, uint32_t timeout_ms) {
+uint64_t MockQuicConnection::AddTimer(timer_callback callback, uint32_t timeout_ms,
+                                       bool periodic) {
     // For mock, just return a timer ID without actually scheduling
     // In real tests, you might want to actually execute the callback
     (void)callback;
     (void)timeout_ms;
+    (void)periodic;
     return next_timer_id_++;
 }
 

@@ -155,6 +155,24 @@ bool BufferDecodeWrapper::DecodeBytes(uint8_t*& out, uint32_t len, bool copy) {
     return true;
 }
 
+bool BufferDecodeWrapper::DecodeBytesInto(uint8_t* dst, uint32_t len) {
+    if (is_contiguous_) {
+        if (static_cast<uint32_t>(end_ - pos_) < len) {
+            return false;
+        }
+        memcpy(dst, pos_, len);
+        pos_ += len;
+        flushed_ = false;
+        return true;
+    }
+    uint32_t read = reader_.Read(dst, len);
+    if (read < len) {
+        return false;
+    }
+    flushed_ = false;
+    return true;
+}
+
 BufferSpan BufferDecodeWrapper::GetDataSpan() const {
     if (is_contiguous_) {
         return BufferSpan(start_, pos_);

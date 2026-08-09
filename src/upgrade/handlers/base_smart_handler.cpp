@@ -27,10 +27,10 @@ void BaseSmartHandler::OnConnect(uint32_t fd) {
 
     // Add negotiation timeout timer (kUpgradeNegotiationTimeoutMs)
     if (auto event_loop = event_loop_.lock()) {
-        context.negotiation_timer_id =
-            event_loop->AddTimer([this, fd]() { HandleNegotiationTimeout(fd); }, kUpgradeNegotiationTimeoutMs);
+        context.negotiation_timer = event_loop->AddTimer(
+            life_token_, [this, fd]() { HandleNegotiationTimeout(fd); }, kUpgradeNegotiationTimeoutMs);
 
-        if (context.negotiation_timer_id > 0) {
+        if (context.negotiation_timer.IsActive()) {
             LOG_DEBUG("Negotiation timeout timer added for socket %d", socket->GetFd());
         } else {
             LOG_ERROR("Failed to add negotiation timeout timer for socket %d", socket->GetFd());
@@ -139,12 +139,9 @@ void BaseSmartHandler::OnClose(uint32_t fd) {
     ConnectionContext& context = it->second;
 
     // Remove negotiation timeout timer if still active
-    if (context.negotiation_timer_id > 0) {
-        if (auto event_loop = event_loop_.lock()) {
-            event_loop->RemoveTimer(context.negotiation_timer_id);
-            context.negotiation_timer_id = 0;
-            LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
-        }
+    if (context.negotiation_timer.IsActive()) {
+        context.negotiation_timer.Cancel();
+        LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
     }
 
     LOG_INFO("%s connection closed, socket: %d", GetType().c_str(), context.socket->GetFd());
@@ -220,12 +217,9 @@ void BaseSmartHandler::OnUpgradeComplete(ConnectionContext& context) {
     context.state = ConnectionState::UPGRADED;
 
     // Remove negotiation timeout timer
-    if (context.negotiation_timer_id > 0) {
-        if (auto event_loop = event_loop_.lock()) {
-            event_loop->RemoveTimer(context.negotiation_timer_id);
-            context.negotiation_timer_id = 0;
-            LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
-        }
+    if (context.negotiation_timer.IsActive()) {
+        context.negotiation_timer.Cancel();
+        LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
     }
 
     LOG_INFO("%s upgrade completed successfully", GetType().c_str());
@@ -235,12 +229,9 @@ void BaseSmartHandler::OnUpgradeFailed(ConnectionContext& context, const std::st
     context.state = ConnectionState::FAILED;
 
     // Remove negotiation timeout timer
-    if (context.negotiation_timer_id > 0) {
-        if (auto event_loop = event_loop_.lock()) {
-            event_loop->RemoveTimer(context.negotiation_timer_id);
-            context.negotiation_timer_id = 0;
-            LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
-        }
+    if (context.negotiation_timer.IsActive()) {
+        context.negotiation_timer.Cancel();
+        LOG_DEBUG("Negotiation timeout timer removed for socket %d", context.socket->GetFd());
     }
 
     LOG_ERROR("%s upgrade failed: %s", GetType().c_str(), error.c_str());

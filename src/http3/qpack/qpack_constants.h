@@ -57,20 +57,25 @@ constexpr uint8_t kInsertWithNameRefMask = 0x80;
 constexpr uint8_t kInsertWithNameRefPrefix = 6;
 constexpr uint8_t kInsertWithNameRefStaticBit = 0x40;  // S bit: 1=static, 0=dynamic
 
-// Insert Without Name Reference (01xxxxxx)
+// Insert With Literal Name (01Hxxxxx), RFC 9204 Section 4.3.3.
+// The H flag and the *name length* share this first byte: the name is a 6-bit
+// prefix string literal (1 bit H + 5 bit length), it is NOT a separate 8-bit
+// prefix string literal following an index field.
 constexpr uint8_t kInsertWithoutNameRef = 0x40;
 constexpr uint8_t kInsertWithoutNameRefMask = 0xC0;
-constexpr uint8_t kInsertWithoutNameRefPrefix = 6;
+constexpr uint8_t kInsertWithoutNameRefHuffmanBit = 0x20;
+constexpr uint8_t kInsertWithoutNameRefPrefix = 5;
 
 // Set Dynamic Table Capacity (001xxxxx)
 constexpr uint8_t kSetDynamicTableCapacity = 0x20;
 constexpr uint8_t kSetDynamicTableCapacityMask = 0xE0;
 constexpr uint8_t kSetDynamicTableCapacityPrefix = 5;
 
-// Duplicate (0001xxxx)
-constexpr uint8_t kDuplicate = 0x10;
-constexpr uint8_t kDuplicateMask = 0xF0;
-constexpr uint8_t kDuplicatePrefix = 4;
+// Duplicate (000xxxxx), RFC 9204 Section 4.3.4 — a 3-bit pattern with a 5-bit
+// index, not 0001xxxx/4-bit.
+constexpr uint8_t kDuplicate = 0x00;
+constexpr uint8_t kDuplicateMask = 0xE0;
+constexpr uint8_t kDuplicatePrefix = 5;
 }  // namespace QpackEncoderInstr
 
 // QPACK String Literal Constants (RFC 9204 Section 4.1.1)

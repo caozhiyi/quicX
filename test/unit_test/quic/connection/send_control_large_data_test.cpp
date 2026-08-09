@@ -4,6 +4,8 @@
 #include <vector>
 
 #include <quicx/common/if_event_loop.h>
+
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
 #include "common/timer/if_timer.h"
 #include "common/timer/timer_task.h"
 #include "quic/connection/controler/send_control.h"
@@ -16,45 +18,6 @@ namespace quicx {
 namespace quic {
 namespace {
 
-class MockTimer: public common::ITimer {
-public:
-    uint32_t add_count = 0;
-    uint32_t rm_count = 0;
-    std::vector<common::TimerTask> tasks_;
-
-    uint64_t AddTimer(common::TimerTask& task, uint32_t /*time*/, uint64_t /*now*/ = 0) override {
-        add_count++;
-        task.SetIdForTest(add_count);
-        tasks_.push_back(task);
-        return add_count;
-    }
-
-    bool RemoveTimer(common::TimerTask& task) override {
-        uint64_t id = task.GetId();
-        for (auto it = tasks_.begin(); it != tasks_.end(); ++it) {
-            if (it->GetId() == id) {
-                tasks_.erase(it);
-                rm_count++;
-                return true;
-            }
-        }
-        return false;
-    }
-
-    int32_t MinTime(uint64_t /*now*/ = 0) override { return tasks_.empty() ? -1 : 0; }
-    void TimerRun(uint64_t /*now*/ = 0) override {}
-    bool Empty() override { return tasks_.empty(); }
-
-    void TriggerAllTimers() {
-        auto tasks_copy = tasks_;  // Copy because callback might modify tasks_
-        tasks_.clear();            // Assume all triggered
-        for (auto& task : tasks_copy) {
-            if (task.tcb_) {
-                task.tcb_();
-            }
-        }
-    }
-};
 
 std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, uint32_t len) {
     auto packet = std::make_shared<Rtt1Packet>();
@@ -65,7 +28,7 @@ std::shared_ptr<Rtt1Packet> MakePacket(uint64_t packet_number, uint32_t len) {
 }
 
 TEST(SendControlLargeDataTest, DoubleSubtractionBug) {
-    auto timer = std::make_shared<MockTimer>();
+    auto timer = std::make_shared<common::TestTimerScheduler>();
     SendControl send_control(timer);
 
     // 1. Send packets to fill CWND
@@ -92,8 +55,9 @@ TEST(SendControlLargeDataTest, DoubleSubtractionBug) {
 
     // 2. Simulate Packet Loss
     // Trigger timers for all sent packets
-    EXPECT_GT(timer->tasks_.size(), 0u);
-    timer->TriggerAllTimers();
+    EXPECT_GT(timer->PendingCount(), 0u);
+    // Push the clock past every deadline so all retransmit timers fire.
+    timer->Advance(60 * 1000);
 
     // Now all packets are lost. CWND should be reduced (Reno).
     // bytes_in_flight should be reduced by lost bytes.

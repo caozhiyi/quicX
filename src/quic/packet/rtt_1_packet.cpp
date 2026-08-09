@@ -98,7 +98,7 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     if (!crypto_grapher_) {
         // RFC 9000 Appendix A: Two-step packet number recovery
         uint64_t truncated_pn = 0;
-        cur_pos = PacketNumber::Decode(cur_pos, header_.GetPacketNumberLength(), truncated_pn);
+        cur_pos = PacketNumber::Decode(cur_pos, end, header_.GetPacketNumberLength(), truncated_pn);
         packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, header_.GetPacketNumberLength() * 8);
 
         // decode payload frames
@@ -158,7 +158,7 @@ bool Rtt1Packet::DecodeWithCrypto(std::shared_ptr<common::IBuffer> buffer) {
     // RFC 9000 Appendix A: Two-step packet number recovery
     // Step 1: Read the truncated PN bytes from the wire
     uint64_t truncated_pn = 0;
-    cur_pos = PacketNumber::Decode(cur_pos, packet_num_len, truncated_pn);
+    cur_pos = PacketNumber::Decode(cur_pos, end, packet_num_len, truncated_pn);
     // Step 2: Recover full PN using largest received PN
     packet_number_ = PacketNumber::Decode(largest_received_pn_, truncated_pn, packet_num_len * 8);
 

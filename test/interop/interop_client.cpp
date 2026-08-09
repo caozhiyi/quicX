@@ -435,8 +435,8 @@ public:
         int initiated = 0;
         for (size_t i = 0; i < urls.size(); i++) {
             const auto& url = urls[i];
-            std::string path = ExtractPath(url);
             std::string filename = ExtractFilename(url);
+            std::string path = ExtractPath(url);
             std::string filepath = download_dir_ + "/" + filename;
 
             std::cout << "Downloading: " << url << " -> " << filepath << std::endl;

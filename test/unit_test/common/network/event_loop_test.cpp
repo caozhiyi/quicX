@@ -58,8 +58,9 @@ TEST(EventLoopTest, TimerFiresOnce) {
     ASSERT_TRUE(loop.Init());
 
     std::atomic<int> fired{0};
-    uint64_t id = loop.AddTimer([&]() { fired++; }, 5 /*ms*/, false);
-    EXPECT_GT(id, 0u);
+    auto owner = std::make_shared<int>(0);
+    Timer timer = loop.AddTimer(owner, [&]() { fired++; }, 5 /*ms*/);
+    EXPECT_TRUE(timer.IsActive());
 
     // Run until it should have fired
     for (int i = 0; i < 10 && fired.load() == 0; ++i) {
@@ -73,13 +74,44 @@ TEST(EventLoopTest, TimerCanBeRemoved) {
     EventLoop loop;
     ASSERT_TRUE(loop.Init());
     std::atomic<int> fired{0};
-    uint64_t id = loop.AddTimer([&]() { fired++; }, 20 /*ms*/, false);
-    ASSERT_GT(id, 0u);
-    EXPECT_TRUE(loop.RemoveTimer(id));
+    auto owner = std::make_shared<int>(0);
+    Timer timer = loop.AddTimer(owner, [&]() { fired++; }, 20 /*ms*/);
+    ASSERT_TRUE(timer.IsActive());
+    timer.Cancel();
+    EXPECT_FALSE(timer.IsActive());
 
     // Ensure Wait doesn't block long; no timer should fire
     RunLoopNTimes(loop, 2);
     EXPECT_EQ(fired.load(), 0);
+}
+
+TEST(EventLoopTest, RepeatTimerFiresPeriodicallyWithoutRearm) {
+    EventLoop loop;
+    ASSERT_TRUE(loop.Init());
+
+    std::atomic<int> fired{0};
+    auto owner = std::make_shared<int>(0);
+    // A single schedule must keep firing every interval_ms until cancelled.
+    // This is the primitive the http3 stream-cleanup timer switched to, so it
+    // must repeat on its own -- the old one-shot + self-reschedule pattern is
+    // gone and must not be needed here.
+    Timer timer = loop.AddRepeatTimer(owner, [&]() { fired++; }, 10 /*ms*/);
+    ASSERT_TRUE(timer.IsActive());
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    while (std::chrono::steady_clock::now() < deadline) {
+        loop.Wakeup();
+        loop.Wait();
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    EXPECT_GE(fired.load(), 5) << "AddRepeatTimer must re-fire on its own; only " << fired.load()
+                               << " fires in ~200ms";
+
+    timer.Cancel();
+    int after_cancel = fired.load();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(after_cancel, fired.load()) << "repeat timer kept firing after Cancel()";
 }
 
 TEST(EventLoopTest, WakeupUnblocksWait) {
@@ -146,8 +178,9 @@ TEST(EventLoopTest, PureTimerSelfDrives_50ms) {
 
     std::atomic<int> fired{0};
     auto t0 = std::chrono::steady_clock::now();
-    uint64_t id = loop.AddTimer([&]() { fired++; }, 50 /*ms*/, false);
-    ASSERT_GT(id, 0u);
+    auto owner = std::make_shared<int>(0);
+    Timer timer = loop.AddTimer(owner, [&]() { fired++; }, 50 /*ms*/);
+    ASSERT_TRUE(timer.IsActive());
 
     // Single Wait() — no Wakeup, no PostTask, no fd events.
     // Must return because the 50ms timer is due, and callback must have fired.
@@ -170,8 +203,9 @@ TEST(EventLoopTest, PureTimerSelfDrives_LongTimeoutNotPrematurelyWoken) {
     // the test at ~150ms to keep the suite fast — the assertion is that
     // Wait() blocked >100ms (much more than spinning would).
     std::atomic<int> fired{0};
-    uint64_t id = loop.AddTimer([&]() { fired++; }, 9000 /*ms*/, false);
-    ASSERT_GT(id, 0u);
+    auto owner = std::make_shared<int>(0);
+    Timer timer = loop.AddTimer(owner, [&]() { fired++; }, 9000 /*ms*/);
+    ASSERT_TRUE(timer.IsActive());
 
     auto t0 = std::chrono::steady_clock::now();
 
@@ -194,26 +228,27 @@ TEST(EventLoopTest, PureTimerSelfDrives_LongTimeoutNotPrematurelyWoken) {
                             << "ms) despite no events — possible busy-loop or 0-timeout poll";
     EXPECT_LE(elapsed, 1500);
 
-    EXPECT_TRUE(loop.RemoveTimer(id));
+    timer.Cancel();
+    EXPECT_FALSE(timer.IsActive());
 }
 
 TEST(EventLoopTest, PureTimerHighFrequencyRearm) {
-    // Reproduce the PTO usage pattern: every iteration, remove and re-add
-    // the same conceptual timer, then drive the loop. The timer must
-    // eventually fire when we stop re-arming.
+    // Reproduce the PTO usage pattern: every outgoing packet pushes the deadline
+    // out, then the loop is driven. The timer must not fire while it is being
+    // pushed out, and must fire once we stop.
     EventLoop loop;
     ASSERT_TRUE(loop.Init());
 
     std::atomic<int> fired{0};
-    uint64_t id = 0;
+    auto owner = std::make_shared<int>(0);
+    Timer timer = loop.AddTimer(owner, [&]() { fired++; }, 30 /*ms*/);
+    ASSERT_TRUE(timer.IsActive());
 
-    // 200 cycles of remove + re-add at 30ms.
+    // 200 rearm cycles at 30ms. Rearm reuses the node, which is the whole point
+    // of the handle: the id-based predecessor had to remove and re-add, and a
+    // dropped id there meant a timer that could never be cancelled again.
     for (int i = 0; i < 200; ++i) {
-        if (id != 0) {
-            EXPECT_TRUE(loop.RemoveTimer(id));
-        }
-        id = loop.AddTimer([&]() { fired++; }, 30 /*ms*/, false);
-        ASSERT_GT(id, 0u);
+        ASSERT_TRUE(timer.Rearm(30));
 
         // Drive the loop briefly without sleeping long enough for the timer
         // to fire (so it gets re-armed every iteration).

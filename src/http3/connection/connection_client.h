@@ -67,14 +67,14 @@ private:
     void CreateAndSendRequestStream(std::shared_ptr<IRequest> request, std::shared_ptr<IQuicStream> stream,
         std::shared_ptr<IAsyncClientHandler> handler);
 
-    void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error);
+    void HandleStream(std::shared_ptr<IQuicStream> stream, uint32_t error) override;
     // Callback when stream type is identified (RFC 9114 Section 6.2)
     void OnStreamTypeIdentified(
         uint64_t stream_type, std::shared_ptr<IQuicRecvStream> stream, std::shared_ptr<IBufferRead> data);
     // handle goaway frame
     void HandleGoaway(uint64_t id);
     // handle error
-    void HandleError(uint64_t stream_id, uint32_t error_code);
+    void HandleError(uint64_t stream_id, uint32_t error_code) override;
     // handle push promise
     void HandlePushPromise(std::unordered_map<std::string, std::string>& headers, uint64_t push_id);
 

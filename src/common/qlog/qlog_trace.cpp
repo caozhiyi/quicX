@@ -25,9 +25,10 @@ QlogTrace::QlogTrace(const std::string& connection_id, VantagePoint vantage_poin
     use_relative_time_(config.time_format == "relative"),
     event_count_(0),
     writer_(nullptr),
-#ifndef NDEBUG
+    // Always set; the single-thread check in WriteEvent() is the part that is
+    // debug-only (see #ifndef NDEBUG there). Keeping the member unconditional
+    // guarantees sizeof(QlogTrace) is identical across NDEBUG/no-NDEBUG TUs.
     owner_thread_id_(std::this_thread::get_id()),
-#endif
     header_written_(false) {
     // create serializer
     if (config_.format == QlogFileFormat::kSequential) {

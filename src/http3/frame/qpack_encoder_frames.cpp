@@ -75,29 +75,25 @@ QpackInsertWithoutNameRefFrame::QpackInsertWithoutNameRefFrame():
     IQpackEncoderFrame(0) {}
 
 bool QpackInsertWithoutNameRefFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    // Encoder stream: 01 n n n n n n (6-bit zero) + name/value
-    if (!QpackEncodePrefixedInteger(
-            buffer, kQpackInsertWithoutNameRefPrefixBits, kQpackInsertWithoutNameRefFirstByteBase, 0)) {
+    // RFC 9204 4.3.3: 0 1 H |Name Length (5+)| Name | Value Length (7+) | Value
+    // The name length is part of the instruction byte, so it must not be written
+    // as a separate 8-bit prefix string literal.
+    if (!QpackEncodeStringLiteralWithPrefix(name_, buffer, kQpackInsertWithoutNameRefPrefixBits,
+            kQpackInsertWithoutNameRefFirstByteBase, kQpackInsertWithoutNameRefHuffmanBit, false)) {
         return false;
     }
-    if (!QpackEncodeStringLiteral(name_, buffer, false)) {
-        return false;
-    }
-    if (!QpackEncodeStringLiteral(value_, buffer, false)) {
-        return false;
-    }
-    return true;
+    return QpackEncodeStringLiteral(value_, buffer, false);
 }
 bool QpackInsertWithoutNameRefFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t first = 0;
-    uint64_t ignore = 0;
-    if (!QpackDecodePrefixedInteger(buffer, kQpackInsertWithoutNameRefPrefixBits, first, ignore)) {
+    if (buffer->Read(&first, 1) != 1) {
         return false;
     }
-    if ((first & 0xC0) != kQpackInsertWithoutNameRefFirstByteBase) {
+    if ((first & kQpackTop2BitsMask) != kQpackInsertWithoutNameRefFirstByteBase) {
         return false;
     }
-    if (!QpackDecodeStringLiteral(buffer, name_)) {
+    if (!QpackDecodeStringLiteralWithPrefix(
+            buffer, first, kQpackInsertWithoutNameRefPrefixBits, kQpackInsertWithoutNameRefHuffmanBit, name_)) {
         return false;
     }
     return QpackDecodeStringLiteral(buffer, value_);
@@ -124,12 +120,15 @@ QpackDuplicateFrame::QpackDuplicateFrame():
     IQpackEncoderFrame(0) {}
 
 bool QpackDuplicateFrame::Encode(std::shared_ptr<common::IBuffer> buffer) {
-    // Encoder stream Duplicate: 0001 xxxx (4-bit prefix index)
+    // RFC 9204 4.3.4 Duplicate: 000 xxxxx (5-bit prefix index)
     return QpackEncodePrefixedInteger(buffer, kQpackDuplicatePrefixBits, kQpackDuplicateFirstByteBase, index_);
 }
 bool QpackDuplicateFrame::Decode(std::shared_ptr<common::IBuffer> buffer) {
     uint8_t first = 0;
-    return QpackDecodePrefixedInteger(buffer, kQpackDuplicatePrefixBits, first, index_);
+    if (!QpackDecodePrefixedInteger(buffer, kQpackDuplicatePrefixBits, first, index_)) {
+        return false;
+    }
+    return (first & kQpackDuplicateFirstByteMask) == kQpackDuplicateFirstByteBase;
 }
 uint32_t QpackDuplicateFrame::EvaluateEncodeSize() {
     return 1;

@@ -12,8 +12,8 @@
 namespace quicx {
 namespace quic {
 
-RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
-    timer_(timer),
+RecvControl::RecvControl(std::shared_ptr<common::ITimerScheduler> scheduler):
+    scheduler_(scheduler),
     set_timer_(false),
     max_ack_delay_(10) {
     memset(pkt_num_largest_recvd_, 0, sizeof(pkt_num_largest_recvd_));
@@ -24,19 +24,6 @@ RecvControl::RecvControl(std::shared_ptr<common::ITimer> timer):
     for (int i = 0; i < PacketNumberSpace::kNumberSpaceCount; ++i) {
         ack_due_[i] = false;
     }
-
-    timer_task_ = common::TimerTask([this] {
-        set_timer_ = false;
-        // PERF FIX (P0): The max_ack_delay_ timer only ever fires for
-        // Application-space packets (Initial/Handshake go through the
-        // immediate-ACK path in OnPacketRecv and never schedule this timer).
-        // Mark the Application space as ack-due so the next TrySend() will
-        // actually flush the aggregated ACK frame.
-        ack_due_[kApplicationNumberSpace] = true;
-        if (active_send_cb_) {
-            active_send_cb_();
-        }
-    });
 }
 
 void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
@@ -114,10 +101,35 @@ void RecvControl::OnPacketRecv(uint64_t time, std::shared_ptr<IPacket> packet) {
         // For Application packets, use timer-based ACK
         if (!set_timer_) {
             set_timer_ = true;
-            timer_->AddTimer(timer_task_, max_ack_delay_);
+            ArmAckDelayTimer();
         }
         common::Metrics::CounterInc(common::MetricsStd::DiagRecvAckDelayed);
     }
+}
+
+void RecvControl::ArmAckDelayTimer() {
+    // Rearm reuses the existing timer node, which matters because a delayed ACK
+    // is (re)armed for nearly every application packet received.
+    if (ack_delay_timer_.Rearm(max_ack_delay_)) {
+        return;
+    }
+    if (!scheduler_) {
+        return;
+    }
+    ack_delay_timer_ = scheduler_->AddTimer(life_token_,
+        [this] {
+            set_timer_ = false;
+            // PERF FIX (P0): The max_ack_delay_ timer only ever fires for
+            // Application-space packets (Initial/Handshake go through the
+            // immediate-ACK path in OnPacketRecv and never schedule this timer).
+            // Mark the Application space as ack-due so the next TrySend() will
+            // actually flush the aggregated ACK frame.
+            ack_due_[kApplicationNumberSpace] = true;
+            if (active_send_cb_) {
+                active_send_cb_();
+            }
+        },
+        max_ack_delay_);
 }
 
 void RecvControl::OnEcnCounters(uint8_t ecn, PacketNumberSpace ns) {
@@ -140,7 +152,7 @@ void RecvControl::OnEcnCounters(uint8_t ecn, PacketNumberSpace ns) {
 std::shared_ptr<IFrame> RecvControl::MayGenerateAckFrame(uint64_t now, PacketNumberSpace ns, bool ecn_enabled) {
     common::Metrics::CounterInc(common::MetricsStd::DiagAckGenCalls);
     if (set_timer_) {
-        timer_->RemoveTimer(timer_task_);
+        ack_delay_timer_.Cancel();
         set_timer_ = false;
     }
 

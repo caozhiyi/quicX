@@ -26,7 +26,16 @@ private:
     quicx::IClient* client_;
     std::vector<RequestResult> results_;
     std::mutex results_mutex_;
-    std::atomic<int> pending_requests_{0};
+    // Pending-request counter for the *current* batch. Held via shared_ptr so
+    // that Reset() can swap in a brand-new counter for each test phase: if a
+    // request from a previous (already-timed-out) batch completes late, its
+    // callback still holds a reference to the *old* counter and decrements
+    // that detached object instead of corrupting the new batch's count. This
+    // fixes a bug where a single stuck callback in one test would make every
+    // subsequent WaitForCompletion() call block for the full timeout, since
+    // pending_requests_ was never reset and could get out of sync (or even
+    // go negative) across batches.
+    std::shared_ptr<std::atomic<int>> pending_requests_ = std::make_shared<std::atomic<int>>(0);
     std::atomic<int> completed_requests_{0};
     std::chrono::steady_clock::time_point test_start_time_;
 
@@ -37,13 +46,14 @@ public:
     }
 
     void SendRequest(int id, const std::string& endpoint, const std::string& url) {
-        pending_requests_++;
+        std::shared_ptr<std::atomic<int>> pending = pending_requests_;
+        (*pending)++;
 
         auto start = std::chrono::steady_clock::now();
         auto request = quicx::IRequest::Create();
 
         client_->DoRequest(url, quicx::HttpMethod::kGet, request,
-            [this, id, endpoint, start](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
+            [this, id, endpoint, start, pending](std::shared_ptr<quicx::IResponse> response, uint32_t error) {
                 auto end = std::chrono::steady_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
@@ -63,7 +73,7 @@ public:
                 }
 
                 completed_requests_++;
-                pending_requests_--;
+                (*pending)--;
             });
     }
 
@@ -74,11 +84,12 @@ public:
     // subprocess.run timeout could break it, surfacing as the flaky
     // "FAILED: Client timed out" in run_test.py.
     bool WaitForCompletion(int timeout_ms = 15000) {
+        std::shared_ptr<std::atomic<int>> pending = pending_requests_;
         const int step_ms = 10;
         int waited = 0;
-        while (pending_requests_.load() > 0) {
+        while (pending->load() > 0) {
             if (waited >= timeout_ms) {
-                std::cout << "WaitForCompletion: timeout after " << timeout_ms << "ms, " << pending_requests_.load()
+                std::cout << "WaitForCompletion: timeout after " << timeout_ms << "ms, " << pending->load()
                           << " request(s) still pending" << std::endl;
                 return false;
             }
@@ -207,6 +218,12 @@ public:
         std::lock_guard<std::mutex> lock(results_mutex_);
         results_.clear();
         completed_requests_ = 0;
+        // Swap in a brand-new counter for the upcoming batch instead of
+        // resetting the shared one in place, so any late callback still
+        // in flight from the previous (possibly timed-out) batch keeps
+        // decrementing its own detached counter and can no longer affect
+        // this batch's WaitForCompletion().
+        pending_requests_ = std::make_shared<std::atomic<int>>(0);
         test_start_time_ = std::chrono::steady_clock::now();
     }
 
@@ -221,11 +238,11 @@ void RunMixedConcurrentTest(ConcurrentTester& tester, const std::string& base_ur
     std::cout << "Test 1: Mixed Concurrent Requests" << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << "Sending 15 requests concurrently:" << std::endl;
-    std::cout << "  - 5 fast (10ms each)" << std::endl;
-    std::cout << "  - 5 medium (100ms each)" << std::endl;
-    std::cout << "  - 5 slow (500ms each)" << std::endl;
-    std::cout << "Expected sequential time: ~3050ms" << std::endl;
-    std::cout << "Expected concurrent time: ~500ms" << std::endl;
+    std::cout << "  - 5 fast (5ms each)" << std::endl;
+    std::cout << "  - 5 medium (20ms each)" << std::endl;
+    std::cout << "  - 5 slow (50ms each)" << std::endl;
+    std::cout << "Expected sequential time: ~375ms" << std::endl;
+    std::cout << "Expected concurrent time: ~50ms" << std::endl;
     std::cout << std::endl;
 
     tester.Reset();
@@ -257,7 +274,7 @@ void RunBurstTest(ConcurrentTester& tester, const std::string& base_url) {
     std::cout << "Test 2: Burst Request Test" << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << "Sending 20 random delay requests simultaneously" << std::endl;
-    std::cout << "Each request has random delay between 10-500ms" << std::endl;
+    std::cout << "Each request has random delay between 5-50ms" << std::endl;
     std::cout << std::endl;
 
     tester.Reset();

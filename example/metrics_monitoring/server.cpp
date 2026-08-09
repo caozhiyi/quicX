@@ -5,6 +5,7 @@
 #include <quicx/http3/if_server.h>
 #include <chrono>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <thread>
 
@@ -14,6 +15,14 @@ quicx::common::MetricID custom_requests_total;
 quicx::common::MetricID custom_request_duration_ms;
 quicx::common::MetricID custom_active_requests;
 quicx::common::MetricID custom_error_count;
+
+// Multiple HTTP/3 worker threads run request handlers concurrently, and a
+// dedicated metrics_thread periodically dumps the Prometheus text export.
+// std::cout is not synchronized between threads by default, so unguarded
+// concurrent operator<< calls can interleave byte-by-byte and corrupt the
+// output (observed as garbled metric names like "custom_Bzuest_duration_ms").
+// This mutex serializes all console output.
+std::mutex g_cout_mutex;
 }  // namespace
 
 // RAII helper for tracking active requests
@@ -38,6 +47,10 @@ private:
 
 // Print metrics summary to console
 void PrintMetricsSummary() {
+    // Hold the lock for the whole function: it emits many cout statements in
+    // sequence and must not be interleaved with request-handler output.
+    std::lock_guard<std::mutex> lock(g_cout_mutex);
+
     std::cout << "\n" << std::string(80, '=') << std::endl;
     std::cout << " Metrics Summary (Real-time)" << std::endl;
     std::cout << std::string(80, '=') << std::endl;
@@ -153,7 +166,10 @@ int main() {
             RequestTracker tracker;  // RAII tracking
             quicx::common::Metrics::CounterInc(custom_requests_total);
 
-            std::cout << " Request: GET /hello" << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(g_cout_mutex);
+                std::cout << " Request: GET /hello" << std::endl;
+            }
 
             resp->AppendBody("Hello from quicX with metrics!");
             resp->SetStatusCode(200);
@@ -165,7 +181,10 @@ int main() {
             RequestTracker tracker;
             quicx::common::Metrics::CounterInc(custom_requests_total);
 
-            std::cout << " Request: GET /slow (simulating 500ms processing)" << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(g_cout_mutex);
+                std::cout << " Request: GET /slow (simulating 500ms processing)" << std::endl;
+            }
 
             // Simulate slow processing
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -181,7 +200,10 @@ int main() {
             quicx::common::Metrics::CounterInc(custom_requests_total);
             quicx::common::Metrics::CounterInc(custom_error_count);
 
-            std::cout << " Request: GET /error (returning error)" << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(g_cout_mutex);
+                std::cout << " Request: GET /error (returning error)" << std::endl;
+            }
 
             resp->AppendBody("Internal Server Error");
             resp->SetStatusCode(500);
@@ -190,7 +212,10 @@ int main() {
     // Handler 4: Metrics endpoint (Prometheus format)
     server->AddHandler(quicx::HttpMethod::kGet, "/metrics",
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
-            std::cout << " Request: GET /metrics (exporting Prometheus format)" << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(g_cout_mutex);
+                std::cout << " Request: GET /metrics (exporting Prometheus format)" << std::endl;
+            }
 
             std::string metrics_output = quicx::common::Metrics::ExportPrometheus();
 
@@ -204,7 +229,10 @@ int main() {
     // Handler 5: Metrics dashboard (human-readable)
     server->AddHandler(quicx::HttpMethod::kGet, "/dashboard",
         [](std::shared_ptr<quicx::IRequest> req, std::shared_ptr<quicx::IResponse> resp) {
-            std::cout << " Request: GET /dashboard (human-readable metrics)" << std::endl;
+            {
+                std::lock_guard<std::mutex> lock(g_cout_mutex);
+                std::cout << " Request: GET /dashboard (human-readable metrics)" << std::endl;
+            }
 
             std::string metrics_output = quicx::common::Metrics::ExportPrometheus();
 
@@ -248,35 +276,46 @@ int main() {
         std::cerr << " Failed to start server" << std::endl;
         return 1;
     }
-    std::cout << "   Server started successfully\n" << std::endl;
 
     // Step 5: Display Usage Information
-    std::cout << "\n" << std::string(80, '=') << std::endl;
-    std::cout << " Server is running! Available endpoints:" << std::endl;
-    std::cout << std::string(80, '=') << std::endl;
-    std::cout << "\n   https://localhost:7010/hello" << std::endl;
-    std::cout << "     -> Simple hello endpoint\n" << std::endl;
+    //
+    // IMPORTANT: server->Start() above already spawned the QUIC worker
+    // threads, which may start invoking request handlers (and therefore
+    // writing to std::cout under g_cout_mutex) as soon as the very first
+    // client packet arrives. Everything printed from here on must take
+    // g_cout_mutex too, otherwise the main thread's unguarded writes race
+    // with a handler's guarded ones and corrupt std::cout's shared state
+    // (this was confirmed with ThreadSanitizer).
+    {
+        std::lock_guard<std::mutex> lock(g_cout_mutex);
+        std::cout << "   Server started successfully\n" << std::endl;
+        std::cout << "\n" << std::string(80, '=') << std::endl;
+        std::cout << " Server is running! Available endpoints:" << std::endl;
+        std::cout << std::string(80, '=') << std::endl;
+        std::cout << "\n   https://localhost:7010/hello" << std::endl;
+        std::cout << "     -> Simple hello endpoint\n" << std::endl;
 
-    std::cout << "   https://localhost:7010/slow" << std::endl;
-    std::cout << "     -> Slow endpoint (500ms delay)\n" << std::endl;
+        std::cout << "   https://localhost:7010/slow" << std::endl;
+        std::cout << "     -> Slow endpoint (500ms delay)\n" << std::endl;
 
-    std::cout << "   https://localhost:7010/error" << std::endl;
-    std::cout << "     -> Error endpoint (returns 500)\n" << std::endl;
+        std::cout << "   https://localhost:7010/error" << std::endl;
+        std::cout << "     -> Error endpoint (returns 500)\n" << std::endl;
 
-    std::cout << "   https://localhost:7010/metrics" << std::endl;
-    std::cout << "     -> Prometheus metrics export\n" << std::endl;
+        std::cout << "   https://localhost:7010/metrics" << std::endl;
+        std::cout << "     -> Prometheus metrics export\n" << std::endl;
 
-    std::cout << "   https://localhost:7010/dashboard" << std::endl;
-    std::cout << "     -> Human-readable metrics dashboard\n" << std::endl;
+        std::cout << "   https://localhost:7010/dashboard" << std::endl;
+        std::cout << "     -> Human-readable metrics dashboard\n" << std::endl;
 
-    std::cout << "\n Try these commands:" << std::endl;
-    std::cout << "   curl -k https://localhost:7010/hello" << std::endl;
-    std::cout << "   curl -k https://localhost:7010/metrics" << std::endl;
-    std::cout << "   curl -k https://localhost:7010/dashboard > dashboard.html\n" << std::endl;
+        std::cout << "\n Try these commands:" << std::endl;
+        std::cout << "   curl -k https://localhost:7010/hello" << std::endl;
+        std::cout << "   curl -k https://localhost:7010/metrics" << std::endl;
+        std::cout << "   curl -k https://localhost:7010/dashboard > dashboard.html\n" << std::endl;
 
-    std::cout << " Metrics will be printed every 10 seconds..." << std::endl;
-    std::cout << "   Press Ctrl+C to stop\n" << std::endl;
-    std::cout << std::string(80, '=') << "\n" << std::endl;
+        std::cout << " Metrics will be printed every 10 seconds..." << std::endl;
+        std::cout << "   Press Ctrl+C to stop\n" << std::endl;
+        std::cout << std::string(80, '=') << "\n" << std::endl;
+    }
 
     // Step 6: Periodic Metrics Display
     std::thread metrics_thread([&]() {

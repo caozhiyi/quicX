@@ -2,7 +2,7 @@
 #include <benchmark/benchmark.h>
 #include <memory>
 
-#include "common/alloter/pool_block.h"
+#include "common/allocator/pool_block.h"
 
 namespace quicx {
 namespace common {

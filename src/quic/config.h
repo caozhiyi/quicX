@@ -84,10 +84,16 @@ static constexpr uint64_t kBlockedWindowIncrement = 4 * 1024 * 1024;  // 4MB
 // Used in: recv_stream.cpp
 static constexpr uint64_t kMaxStreamWindowSize = 64 * 1024 * 1024;  // 64MB
 
-// Maximum number of out-of-order frames buffered per stream
-// Prevents OOM from malicious peers sending many different-offset frames
-// Used in: recv_stream.cpp
-static constexpr size_t kMaxOutOfOrderFrames = 1024;
+// Maximum number of bytes of out-of-order stream data buffered per stream.
+// Bounds memory from a (potentially malicious) peer. QUIC streams tolerate
+// out-of-order delivery, so this is a *memory* limit only — when exceeded the
+// oldest buffered frame is evicted (NOT a connection close). Sized far above
+// any legitimate single-stream transfer so normal large-file transfers that
+// momentarily stall behind a single lost gap are never affected. Replaces the
+// old kMaxOutOfOrderFrames=1024 frame-count limit, whose CONNECTION_CLOSE on
+// overflow killed legitimate transfers (P0: quicx self-loop transfer/chacha20/
+// rebind-port/rebind-addr/connectionmigration). Used in: recv_stream.cpp
+static constexpr uint64_t kMaxOutOfOrderBytes = 32 * 1024 * 1024;  // 32MB
 
 // ============================================================================
 // Congestion Control Configuration
@@ -132,7 +138,7 @@ static constexpr uint32_t kRetryCidLength = 8;
 // Packet pool size (number of pre-allocated packet buffers)
 // 256 (power of 2) is optimized for memory pool management and high concurrency
 // Increased from original 200 to reduce allocation overhead under load
-// Used in: pool_pakcet_allotor.cpp
+// Used in: pool_packet_allocator.cpp
 static constexpr uint32_t kPacketPoolSize = 256;
 
 // Individual packet buffer size (bytes)

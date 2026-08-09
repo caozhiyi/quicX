@@ -13,8 +13,7 @@
 
 #include <quicx/common/if_event_loop.h>
 #include "common/network/if_event_driver.h"
-#include "common/timer/if_timer.h"
-#include "common/timer/timer_task.h"
+#include "common/timer/timer_core.h"
 
 namespace quicx {
 namespace common {
@@ -37,19 +36,15 @@ public:
     virtual void AddFixedProcess(std::weak_ptr<void> owner, std::function<void()> cb) override;
     virtual void ClearFixedProcesses() override;
 
-    virtual uint64_t AddTimer(std::function<void()> cb, uint32_t delay_ms, bool repeat = false) override;
-    virtual uint64_t AddTimer(TimerTask& task, uint32_t delay_ms, bool repeat = false) override;
-    virtual bool RemoveTimer(uint64_t timer_id) override;
-    virtual bool RemoveTimer(TimerTask& task) override;
+    // ---- ITimerScheduler (handle-based API) ----
+    Timer AddTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t delay_ms) override;
+    Timer AddRepeatTimer(std::weak_ptr<void> owner, std::function<void()> cb, uint32_t interval_ms) override;
+    void PostDelayed(std::function<void()> cb, uint32_t delay_ms) override;
 
     virtual void ClearAllTimers() override;
 
     virtual void PostTask(std::function<void()> fn) override;
     virtual void Wakeup() override;
-
-    virtual std::shared_ptr<ITimer> GetTimer() override;
-
-    virtual void SetTimerForTest(std::shared_ptr<ITimer> timer) override;
 
     // Check if current thread is the loop thread
     virtual bool IsInLoopThread() const override;
@@ -64,12 +59,19 @@ private:
     void DrainPostedTasks();
 
     std::unique_ptr<IEventDriver> driver_;
-    std::shared_ptr<ITimer> timer_;
+
+    // The one real timer engine. Owned by value: it is a single-threaded data
+    // structure whose serialisation domain is this loop's thread, so there is
+    // nothing to share and nothing to reference-count.
+    TimerCore timer_core_;
+
     std::vector<Event> events_;
 
-    std::unordered_map<uint64_t, TimerTask> timers_;   // kept only for repeat timers (see AddTimer)
-    std::unordered_set<uint64_t> timer_ids_;           // all live timer ids; used to bound ClearAllTimers
-    std::unordered_map<uint64_t, bool> timer_repeat_;  // timer id -> repeat
+    // NOTE: timers_ / timer_ids_ / timer_repeat_ are gone. They existed because
+    // the wheel could not tell the loop when a one-shot fired, so ClearAllTimers
+    // had to walk every id ever handed out -- an unordered_set that grew with the
+    // *cumulative* number of timers (QUIC arms one PTO per packet). TimerCore
+    // owns its own nodes and offers Clear(), so the bookkeeping is unnecessary.
     std::unordered_map<uint32_t, std::weak_ptr<IFdHandler>> fd_to_handler_;
 
     std::mutex tasks_mu_;

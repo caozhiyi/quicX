@@ -25,8 +25,7 @@
 #include <memory>
 #include <thread>
 
-#include "common/timer/timer_task.h"
-#include "common/timer/timing_wheel_timer.h"
+#include "test/unit_test/common/timer/test_timer_scheduler.h"
 #include "common/util/time.h"
 #include "quic/connection/controler/send_manager.h"
 
@@ -57,7 +56,7 @@ inline uint64_t ElapsedSince(uint64_t start_ms) {
 class SendManagerRecheckTimerTest: public ::testing::Test {
 protected:
     void SetUp() override {
-        timer_ = std::make_shared<common::TimingWheelTimer>();
+        timer_ = std::make_shared<common::TestTimerScheduler>();
         send_manager_ = std::make_unique<SendManager>(timer_);
         retry_count_ = 0;
         send_manager_->SetSendRetryCallBack([this]() { retry_count_.fetch_add(1); });
@@ -69,11 +68,11 @@ protected:
     // wheel has been ticked.
     uint64_t SleepAndTick(uint32_t ms) {
         std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-        timer_->TimerRun();
+        timer_->RunDue();
         return common::UTCTimeMsec();
     }
 
-    std::shared_ptr<common::TimingWheelTimer> timer_;
+    std::shared_ptr<common::TestTimerScheduler> timer_;
     std::unique_ptr<SendManager> send_manager_;
     std::atomic<int> retry_count_{0};
 };

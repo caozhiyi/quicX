@@ -256,6 +256,11 @@ const std::unordered_map<uint16_t, uint64_t> IConnection::AdaptSettings(const Ht
 }
 
 void IConnection::StartCleanupTimer() {
+    if (cleanup_timer_id_ != 0) {
+        // Already started (id is minted on first call); a periodic wheel timer
+        // re-arms itself, so there is nothing to do here.
+        return;
+    }
     if (!quic_connection_) {
         return;
     }
@@ -263,23 +268,25 @@ void IConnection::StartCleanupTimer() {
     // Capture weak_ptr to this to safely handle timer callbacks after object destruction
     std::weak_ptr<IConnection> weak_self = weak_from_this();
 
-    // Create a periodic timer that runs every kStreamCleanupIntervalMs to
-    // cleanup completed streams and drive the RFC 9114 §5.2 graceful-drain
-    // probe (see CleanupDestroyedStreams).
-    cleanup_timer_id_ = quic_connection_->AddTimer(
-        [weak_self]() {
-            // Check if the connection relies alive
-            auto self = weak_self.lock();
-            if (!self) {
-                // Connection destroyed, do nothing
-                return;
-            }
+    auto cb = [weak_self]() {
+        // Check if the connection relies alive
+        auto self = weak_self.lock();
+        if (!self) {
+            // Connection destroyed, do nothing
+            return;
+        }
 
-            self->CleanupDestroyedStreams();
-            // Re-schedule next cleanup
-            self->StartCleanupTimer();
-        },
-        kStreamCleanupIntervalMs);
+        self->CleanupDestroyedStreams();
+    };
+
+    // One periodic wheel timer replaces the old one-shot + self-rescheduling
+    // pattern. This skips re-allocating a slab entry and copying the closure on
+    // every tick, and removes the re-arm path that used to refill the draining
+    // slot whenever the wheel lagged real time. The timer cancels itself when
+    // the owning QUIC connection (and thus its TimerCoordinator life token)
+    // is destroyed.
+    cleanup_timer_id_ = quic_connection_->AddTimer(std::move(cb), kStreamCleanupIntervalMs,
+                                                   /*periodic=*/true);
 }
 
 void IConnection::CleanupDestroyedStreams() {
